@@ -2747,21 +2747,94 @@ def _fit_entity_ltscales(doc, gscale):
 
 
 MASK_CALLOUT_SPAN = 170.0        # part spans per unit of callout text height
+MASK_CALLOUT_CLEAR = 2.0         # keep this much clear of any cut edge, mm
+
+
+def _cut_segments(msp):
+    """Every straight CUT/VENT edge, as (x0, y0, x1, y1)."""
+    segs = []
+    for e in msp:
+        if e.dxf.layer not in ("CUT", "VENT"):
+            continue
+        if e.dxftype() == "LINE":
+            segs.append((e.dxf.start.x, e.dxf.start.y, e.dxf.end.x, e.dxf.end.y))
+        elif e.dxftype() == "LWPOLYLINE":
+            pts = list(e.get_points("xy"))
+            if e.is_closed and len(pts) > 2:
+                pts = pts + [pts[0]]
+            segs += [(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1])
+                     for i in range(len(pts) - 1)]
+    return segs
+
+
+def _box_hits_cut(box, segs):
+    """Does an axis-aligned text box have a cut edge running through it?
+
+    Only edges that actually CROSS the box count -- a note drawn across an
+    aperture's empty middle is ordinary drafting; a line struck through the
+    lettering is not.
+    """
+    x0, y0, x1, y1 = box
+    for ax, ay, bx, by in segs:
+        if abs(ay - by) < 1e-9:                       # horizontal
+            if y0 < ay < y1 and min(ax, bx) < x1 and max(ax, bx) > x0:
+                return True
+        elif abs(ax - bx) < 1e-9:                     # vertical
+            if x0 < ax < x1 and min(ay, by) < y1 and max(ay, by) > y0:
+                return True
+    return False
 
 
 def _fit_mask_callouts(doc, span):
-    """Grow the NO CORTAR callouts to the part, the way the notes are grown.
+    """Grow the NO CORTAR callouts to the part, and keep them off the cut lines.
 
     A fixed 4.5 mm was fine on the 400 mm rear panel and printed 0.82 mm on the
     1040 mm base -- the smallest text on that sheet, on the one annotation whose
     whole job is to stop somebody drilling the earth land.
+
+    Growing it alone is not enough, and was worse than doing nothing: at 6.12 mm
+    the base's O20 callout rose into the rear window's own cut edge, so the line
+    ran through the middle of "NO PINTAR, NO CORTAR" for its whole length. The
+    text is lifted clear along with its leader, together, so the warning still
+    points at the ring it belongs to.
     """
+    msp = doc.modelspace()
     want = max(4.5, span / MASK_CALLOUT_SPAN)
+    segs = _cut_segments(msp)
+    texts = [e for e in msp if e.dxftype() == "TEXT" and e.dxf.layer == "MASK"]
+    leaders = [e for e in msp
+               if e.dxf.layer == "MASK" and e.dxftype() == "LWPOLYLINE"]
     n = 0
-    for e in doc.modelspace():
-        if e.dxftype() == "TEXT" and e.dxf.layer == "MASK" and e.dxf.height < want:
-            e.dxf.height = want
-            n += 1
+    for t in texts:
+        if t.dxf.height >= want:
+            continue
+        t.dxf.height = want
+        n += 1
+        tx, ty = float(t.dxf.insert.x), float(t.dxf.insert.y)
+        w = len(t.dxf.text) * want * NOTE_ADVANCE_EST
+        # the leader whose horizontal run ends just under this text
+        lead = min(leaders,
+                   key=lambda e, tx=tx, ty=ty: min(
+                       abs(p[0] - tx) + abs(p[1] - ty)
+                       for p in e.get_points("xy")),
+                   default=None)
+        # pad the box: a cut edge running flush along the baseline reads as an
+        # underline through the descenders, which is barely better than through
+        # the middle of the letters
+        pad = MASK_CALLOUT_CLEAR
+        for dy in (0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, -8.0, -10.0, -12.0):
+            box = (tx, ty + dy - pad, tx + w, ty + dy + want + pad)
+            if not _box_hits_cut(box, segs):
+                break
+        else:
+            dy = 0.0                    # nowhere clear: size still beats nothing
+        if dy:
+            t.dxf.insert = (tx, ty + dy)
+            if lead is not None:        # carry the leader's elbow with it
+                pts = list(lead.get_points("xy"))
+                lead.set_points([(px, py + dy) if i else (px, py)
+                                 for i, (px, py) in enumerate(pts)],
+                                format="xy")
     return n
 
 
@@ -5366,8 +5439,9 @@ SHEET_MIN_DATA_PT = 5.2
 # Tallest page shape allowed, height over width. The sheets are auto-fitted to
 # their part, so a tall narrow part produced a tall narrow page: the post came
 # out 288 x 900 pt, and fitting a 1:3 ribbon onto A4 wastes half the paper and
-# scales every dimension and table row down with it. 1.55 is about A4's own
-# proportion, so a sheet capped here fills the paper instead of a stripe of it.
+# scales every dimension and table row down with it. 1.55 is a shade taller than
+# A4's own 1.414 -- picked by measuring, not derived: it beats 1.30 on three of
+# the four narrow sheets, and both beat leaving the shape uncapped.
 SHEET_MAX_ASPECT = 1.55
 # Bottom margin for the text strip. Every office printer reserves 4-5 mm and the
 # last legend line was finishing 0.4 mm from the edge: printed at 100% it landed
@@ -5446,6 +5520,20 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
                                + 1 if BEND_FOOTNOTES.get(stem) else 0)
     _strip_est = SHEET_MARGIN_IN + 0.62 + 0.155 * 6 + (0.20 * _rows + 0.30 if _rows else 0.0)
     _need_in = (h + _strip_est) / SHEET_MAX_ASPECT
+    # ...and wide enough that the floored text still FITS. tbl_fs used to be
+    # min(FS, fit) and could only shrink; with a floor under it, a table one
+    # column wider than the page runs off the edge instead. The corner bracket
+    # sits 1.6% under that today, and the column at risk is DEDUCCIÓN -- the
+    # number the brake operator sizes the blank from. Computed at the fixed
+    # floor, so unlike a floor-driven width this cannot chase its own tail.
+    if _tbl_probe:
+        _need_in = max(_need_in, (SHEET_MIN_DATA_PT * 0.602
+                                  * max(len(ln) for ln in _tbl_probe))
+                                 / (72.0 * 0.94))
+    if _tol_probe:
+        _need_in = max(_need_in, (SHEET_MIN_DATA_PT * 0.602
+                                  * max(len(t) for t in _tol_probe))
+                                 / (72.0 * 0.35))
     if _need_in > w:
         pos = ax.get_position()
         fig.set_size_inches(_need_in, h, forward=True)
@@ -5540,6 +5628,19 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
             fig.text(tol_x, fy(legend_h + 0.40 + _tb_h - 0.155 * i), line, family="monospace",
                      fontsize=tol_fs, weight="bold" if i == 0 else "normal",
                      color="#000" if i == 0 else "#333")
+    # Nothing above clips: matplotlib drops overflowing fig.text silently, so a
+    # too-wide table row simply loses its last column with no error anywhere.
+    for _ln in table:
+        assert len(_ln) * 0.602 * tbl_fs <= usable_pt + 1e-6, (
+            f"{stem}: a bend-table row needs "
+            f"{len(_ln) * 0.602 * tbl_fs:.0f} pt of a {usable_pt:.0f} pt page at "
+            f"{tbl_fs:.1f} pt -- it would print with its right-hand column cut "
+            f"off, DEDUCCIÓN included. Widen the page, do not shrink past the floor")
+    if tol:
+        for _ln in tol:
+            assert len(_ln) * 0.602 * tol_fs <= 0.35 * w * 72.0 + 1e-6, (
+                f"{stem}: a tolerance row does not fit its column")
+
     SHEET_TEXT[stem] = ([ln for ln, _f, _b in block] + [SHEET_HEADING, tb] + tb_lines
                         + list(legend) + list(tol))
     fig.savefig(pdf_path, dpi=150); plt.close(fig)
@@ -5603,6 +5704,13 @@ def _verify_paint_bom():
     assert masked <= PAINT_MASK_PAGES, (
         f"parts with a bare-metal mask and no masking page: "
         f"{sorted(masked - PAINT_MASK_PAGES)}")
+    # PAINT_MASK_PAGES only means something if it is what paint_quote_pdf draws.
+    # Asserting `masked <= PAINT_MASK_PAGES` alone let the rear panel's page be
+    # swapped for a filler and the count stay 4, with the run still green.
+    assert PAINT_PAGES_EXPECTED == 1 + len(PAINT_MASK_PAGES), (
+        f"the paint quote is 1 cover page + {len(PAINT_MASK_PAGES)} masking "
+        f"pages, so PAINT_PAGES_EXPECTED should be "
+        f"{1 + len(PAINT_MASK_PAGES)}, not {PAINT_PAGES_EXPECTED}")
 
 
 def _poly_area(pts):
@@ -5726,8 +5834,10 @@ def _wrap_to_page(text, pt, page_w_in, frac=0.92, ratio=0.55):
 # A partial paint quote is worse than none: page 1 is already flushed into the
 # open PdfPages before a later page can fail, the caller swallows the exception
 # with a one-line note, and the run still prints ALL PASS and exit 0 while
-# segno_pintura.zip ships a 1-page file missing both masking pages. Recorded
+# segno_pintura.zip ships a 1-page file missing every masking page. Recorded
 # here and asserted in _verify_drawing_package.
+PDF_SKIPPED = {}                 # stem -> why its drawing did not render
+
 PAINT_PAGES = {}
 PAINT_PAGES_EXPECTED = 4
 # The parts that get a masking / detail page of their own, after the cover page.
@@ -5826,6 +5936,10 @@ def paint_quote_pdf(path):
              "del lado equivocado, la máscara cae sobre pintura y el panel pierde la "
              "puesta a tierra."),
         ]
+        assert {st for st, _t, _n in sheets} == PAINT_MASK_PAGES, (
+            f"paint_quote_pdf draws {sorted(st for st, _t, _n in sheets)} but "
+            f"PAINT_MASK_PAGES says {sorted(PAINT_MASK_PAGES)} -- the verifier "
+            f"checks the set, so they have to be the same set")
         for stem, title, note in sheets:
             dxf = os.path.join(OUT, stem + ".dxf")
             if not os.path.exists(dxf):
@@ -6865,8 +6979,17 @@ def _verify_drawing_package(with_pdf=True):
     # on a package nobody re-reads at 600 dpi. These counts are the alarm.
     # --- the paint quote is a DELIVERABLE, and its writer's failures are caught
     # by a bare `except Exception` that prints one line and lets the run finish
-    # green. Without this the coater gets a 1-page file with both masking pages
+    # green. Without this the coater gets a 1-page file with the masking pages
     # missing and nothing says so.
+    # A sheet whose PDF raised is caught by a bare `except` that prints one line
+    # and lets the run continue. The zip freshness gate only catches it when the
+    # mtimes happen to line up, so a shop package can go out a drawing short
+    # while the run says ALL PASS. Demonstrated by raising SHEET_MIN_DATA_PT far
+    # enough to overflow the bend tables: four sheets skipped, run still green.
+    assert not PDF_SKIPPED, (
+        "these drawings failed to render and the run continued anyway: "
+        + "; ".join(f"{k}: {v}" for k, v in PDF_SKIPPED.items()))
+
     _verify_paint_bom()
 
     if with_pdf:
@@ -7128,6 +7251,7 @@ def main(argv):
                 print("  out/" + name + ".pdf")
             except Exception as e:  # pragma: no cover
                 print(f"    (pdf skipped: {e})")
+                PDF_SKIPPED[name] = str(e)
     tile_stems = build_pedal_tile_vectors(with_pdf="--no-pdf" not in argv)
     print("  out/segno_pedal_tiles.dxf  (2-ply nest, x%d)" % len(tile_stems))
     if "--no-pdf" not in argv:
