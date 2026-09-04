@@ -2746,6 +2746,25 @@ def _fit_entity_ltscales(doc, gscale):
     return fixed
 
 
+MASK_CALLOUT_SPAN = 170.0        # part spans per unit of callout text height
+
+
+def _fit_mask_callouts(doc, span):
+    """Grow the NO CORTAR callouts to the part, the way the notes are grown.
+
+    A fixed 4.5 mm was fine on the 400 mm rear panel and printed 0.82 mm on the
+    1040 mm base -- the smallest text on that sheet, on the one annotation whose
+    whole job is to stop somebody drilling the earth land.
+    """
+    want = max(4.5, span / MASK_CALLOUT_SPAN)
+    n = 0
+    for e in doc.modelspace():
+        if e.dxftype() == "TEXT" and e.dxf.layer == "MASK" and e.dxf.height < want:
+            e.dxf.height = want
+            n += 1
+    return n
+
+
 def _save(doc, path):
     """Write the DXF with a part-sized $LTSCALE.
 
@@ -2756,6 +2775,7 @@ def _save(doc, path):
     gscale = _ltscale_for(doc)
     doc.header["$LTSCALE"] = gscale
     _fit_entity_ltscales(doc, gscale)
+    _fit_mask_callouts(doc, _SPAN(doc.modelspace()))
     doc.saveas(path)
 
 def _circle(msp, x, y, d, layer="CUT"):
@@ -5628,6 +5648,39 @@ def _step_size(stem):
     except Exception:  # pragma: no cover - STEP is optional for this sheet
         return None
 
+def _blank_size(stem):
+    """Developed (flat) size of a part, straight off its own DXF.
+
+    The same extents the drawing prints as its overall dimension, so the two
+    documents in the zip cannot disagree.
+    """
+    import ezdxf
+    from ezdxf.bbox import extents
+    path = os.path.join(OUT, stem + ".dxf")
+    if not os.path.exists(path):
+        return None
+    msp = ezdxf.readfile(path).modelspace()
+    bb = extents(e for e in msp
+                 if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
+    if not bb.has_data:
+        return None
+    return (bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1])
+
+
+def _faceplate_size_note():
+    """Note 7, derived. It used to hard-code "DESARROLLO (850 x 407 x 2)", which
+    is the FOLDED bounding box, not the development -- and the faceplate drawing
+    in the same zip prints 849.8 x 444.3. Two documents, 37 mm apart, one of them
+    calling the folded size a development."""
+    folded = _step_size("segno_faceplate")
+    flat = _blank_size("segno_faceplate")
+    fold = ("%.0f x %.0f x %.0f" % folded) if folded else "ver plano"
+    dev = ("%.1f x %.1f" % flat) if flat else "ver plano"
+    return (f"  7. El tamaño de la tapa en esta tabla es el de la pieza PLEGADA "
+            f"({fold}), que es lo que entra al horno. Su plano acota el "
+            f"DESARROLLO plano, {dev}: no son la misma medida.")
+
+
 def _paint_rows():
     rows, tot = [], {}
     for stem, label, qty, mat, remark in PAINT_BOM:
@@ -5741,7 +5794,7 @@ def paint_quote_pdf(path):
             "  4. Enmascarado: ver las páginas siguientes. Sólo la zona de puesta a tierra alrededor del perno M6 va sin pintura, en ambas caras (los agujeros piloto se roscan M3 después de pintar).",
             "  5. Las aberturas de pantalla son ajustadas: la película come décimas por cara. Si el espesor supera 100 um avisar antes de aplicar.",
             "  6. El aluminio es blando: colgar para pintar, no apoyar sobre las caras vistas.",
-            "  7. La tapa figura con su tamaño en DESARROLLO (850 x 407 x 2): plegada suma la pestaña frontal de 12 mm y la solapa trasera.",
+            _faceplate_size_note(),
         ]
         # anchored, not flowed: the table above grows with the BOM and the notes
         # must not walk off the bottom of the sheet when it does
@@ -6236,7 +6289,11 @@ def pdf_pedal_tiles(path):
             f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} "
             f"(estrecho, punta) x {TILE_W:.2f}  "
             f"plástico bicapa {TILE_PLY_T:.1f} mm capa NEGRA / núcleo BLANCO; "
-            f"rojo = CUT; negro = ENGRAVE; borde ANCHO hacia el cable; "
+            # by LAYER, not by colour: this note also travels on the DXF, where
+            # CUT is ACI 7 and ENGRAVE is ACI 3 -- the PDF's red/black mapping
+            # does not hold in the file the shop actually cuts from
+            f"capa CUT = corte pasante; capa ENGRAVE = grabado relleno; "
+            f"borde ANCHO hacia el cable; "
             f"imprimir al 100 %; medidas en mm")
     margin, strip = 12.0, 22.0
     page_w = nest_w + 2 * margin
@@ -6285,25 +6342,60 @@ def pdf_pedal_tiles(path):
     plt.close(fig)
 
 
+def _tile_size_callout_ax(ax):
+    """Both widths on a matplotlib axes, for the single-tile sheets."""
+    yb, yt = TILE_W / 2.0, -TILE_W / 2.0
+    xb, xt = TILE_L_BACK / 2.0, TILE_L_TOE / 2.0
+    ax.annotate("", xy=(-xb, yb + 1.6), xytext=(xb, yb + 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(0.0, yb + 2.0, f"{TILE_L_BACK:.2f} ancho", fontsize=5.5,
+            ha="center", va="bottom", color="#333")
+    ax.annotate("", xy=(-xt, yt - 1.6), xytext=(xt, yt - 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(0.0, yt - 2.0, f"{TILE_L_TOE:.2f} estrecho", fontsize=5.5,
+            ha="center", va="top", color="#333")
+
+
 def pdf_one_pedal_tile(path, label):
     """Single-tile 1:1 PDF, same paint as the nest."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    # These ride in the same zip as the nest but carried none of its
+    # information: no material, no quantity, no layer legend, and no statement
+    # that they are 1:1. A replacement cut ordered off one of them was ordered
+    # off a sheet that did not say what to cut it from.
+    # Size the strip to the text, never the text to the strip: capping the lines
+    # is how the heading came out ending mid-phrase at "capa negra / núcleo",
+    # which is the same silent truncation this whole branch exists to stop.
     margin = 10.0
-    fig = plt.figure(figsize=((TILE_L_BACK + 2 * margin) / 25.4,
-                              (TILE_W + 2 * margin + 8.0) / 25.4))
-    ax = fig.add_axes([0, 0, 1, 1])
+    HEAD_MM, BODY_MM = 3.6, 3.0
+    _page_w_in = (TILE_L_BACK + 2 * margin) / 25.4
+    head = (f"Segno {_tile_stem(label)}   |   {PLY_2MM}   |   CANT. 1   |   "
+            f"medidas en mm   |   imprimir al 100 %")
+    body = (f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} "
+            f"(estrecho, punta) x {TILE_W:.2f}. {TILE_LEGEND}")
+    head_lines = _wrap_to_page(head, 6.0, _page_w_in, ratio=0.62)
+    body_lines = _wrap_to_page(body, 5.0, _page_w_in)
+    strip = (6.0 + HEAD_MM * len(head_lines) + BODY_MM * len(body_lines))
+    fig_h = TILE_W + 2 * margin + strip
+    fig = plt.figure(figsize=(_page_w_in, fig_h / 25.4))
+    ax = fig.add_axes([0, strip / fig_h, 1, (TILE_W + 2 * margin) / fig_h])
     ax.set_xlim(-TILE_L_BACK / 2.0 - margin, TILE_L_BACK / 2.0 + margin)
-    ax.set_ylim(-TILE_W / 2.0 - margin - 4.0, TILE_W / 2.0 + margin)
+    ax.set_ylim(-TILE_W / 2.0 - margin, TILE_W / 2.0 + margin)
     ax.set_aspect("equal")
     ax.axis("off")
     fig.patch.set_facecolor("white")
     _draw_tile_on_ax(ax, 0.0, 0.0, label)
-    ax.text(0.0, -TILE_W / 2.0 - 3.2,
-            f"{_tile_stem(label)}  TRAPECIO {TILE_L_BACK:.2f}/{TILE_L_TOE:.2f} "
-            f"x {TILE_W:.2f}",
-            fontsize=6, ha="center", va="top", color="#333")
+    _tile_size_callout_ax(ax)
+    _y = strip - 4.0                       # mm from the page bottom, going down
+    for line in head_lines:                # 0.62 ratio: this text is BOLD
+        fig.text(0.04, _y / fig_h, line, fontsize=6.0, weight="bold")
+        _y -= HEAD_MM
+    _y -= 1.0
+    for line in body_lines:
+        fig.text(0.04, _y / fig_h, line, fontsize=5.0, color="#333")
+        _y -= BODY_MM
     fig.savefig(path, dpi=300)
     plt.close(fig)
 
