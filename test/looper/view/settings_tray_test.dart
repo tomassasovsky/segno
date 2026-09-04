@@ -310,9 +310,12 @@ void main() {
     // The label alone is not the guard — that is exactly what survived the
     // regression. Assert the action reaches the semantics tree...
     expect(
-      tester.getSemantics(scrim).getSemanticsData().hasAction(
-        SemanticsAction.tap,
-      ),
+      tester
+          .getSemantics(scrim)
+          .getSemanticsData()
+          .hasAction(
+            SemanticsAction.tap,
+          ),
       isTrue,
       reason: 'the scrim announces a dismiss button; it must expose the action',
     );
