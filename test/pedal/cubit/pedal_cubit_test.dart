@@ -206,12 +206,41 @@ void main() {
         const tip = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.tip);
         const ring = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.ring);
         expect(cubit.state.ctrl.containsKey(tip), isFalse);
-        expect(cubit.state.ctrl.containsKey(ring), isTrue);
+        expect(cubit.state.ctrl.containsKey(ring), isFalse);
         expect(cubit.state.calibrating, isNull);
         expect(cubit.state.calibrationSeen, isNull);
         await cubit.close();
       },
     );
+
+    test('an expression pedal on the tip drops a footswitch-B row', () async {
+      final cubit = PedalCubit(pedal: pedal, settings: settings);
+      link
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            contact: PedalCtrlContact.ring,
+            kind: PedalCtrlKind.switchPedal,
+            value: 255,
+          ),
+        )
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl2,
+            contact: PedalCtrlContact.ring,
+            kind: PedalCtrlKind.switchPedal,
+            value: 255,
+          ),
+        )
+        ..emit(raw(100));
+      await pumpEventQueue();
+      const tip = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.tip);
+      const ring = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.ring);
+      const other = PedalCtrlInput(PedalCtrlJack.ctrl2, PedalCtrlContact.ring);
+      expect(cubit.state.ctrl.keys, unorderedEquals([tip, other]));
+      expect(cubit.state.ctrl.containsKey(ring), isFalse);
+      await cubit.close();
+    });
 
     test('a stored calibration is applied at start', () async {
       await settings.saveCtrlCalibration(1, min: 30, max: 230);
