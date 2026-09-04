@@ -198,6 +198,14 @@ snapshot, save.
 - **A script exception rolls back the ENTIRE call's transaction**, including
   earlier successful mutations in the same call. Keep calls small; a clean
   `return` commits.
+- **Never `startEdit()` an EXISTING base feature from a script.** A body
+  delete inside the edit threw "refers to a deleted Object" at `finishEdit`,
+  and the rollback left the populated doc as a DIRECT design (`designType`
+  0, every component's feature list empty); undo did not bring the history
+  back. Recovery was close-without-save + reopen (2026-09-04). To change a
+  base-feature body, build a NEW component with `baseFeatures.add()`,
+  `startEdit` / `bodies.add(copy)` / `finishEdit`, and delete the old
+  occurrence -- the pattern the felt caps use.
 - **Occurrence transforms silently reset** when features are added to the
   component afterwards, and sometimes on fold delete/rollback. Build at
   identity, set the final transform LAST in its own call, then snapshot.
