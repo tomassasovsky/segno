@@ -195,6 +195,17 @@ at identity, extrude the max-area CUT profile −0.2, `convertToSheetMetal`, set
 the transform (its x-centre = panel outline centre — recompute!), appearance,
 snapshot, save.
 
+### Ring board (populated only)
+
+`ring_board_asm` is `hardware/kicad/out_ring/segno_ring_board.step`, exported
+with `kicad-cli pcb export step --subst-models` from `segno_pedal_ring.kicad_pcb`
+(the tracked STEP had lagged the board: Ø60 Ring-16 outline while the board
+was Ø68 for the Ring 24 since #794). Placed at
+`[1,0,0,8.3591 | 0,c,-s,25.8119 | 0,s,c,6.3401]` (+7.5 and +2.0 mm along the
+plate since the original 24.884/6.134, see ENC_V); the STEP's board centre is
+at KiCad (36, 36), so the same transform serves both outlines. Fusion imports
+only the PCB solid; the component children come in empty.
+
 ### Corner brackets (both docs)
 
 The bracket is `out/segno_corner_bracket_rear.dxf` built with the lid recipe
