@@ -32,7 +32,7 @@ validated by an in-generator **assertion suite** (see §8). Decisions came from
 | Depth `D` | **397 mm** | sized to a comfortable gap behind the front row (no dead band) |
 | Rear height | **100 mm** / front lip **12 mm** | low-raked wedge |
 | Top slope | **12.5°** | sloped length 407 mm |
-| Material | **2.0 mm 5052-H32 aluminium** | bend R 2.0, K 0.33 |
+| Material | **2.0 mm 1050 aluminium** (shop stock, owner 2026-09-04) | bend R 2.0, K 0.33 |
 
 **Construction = folded lower body + removable top lid.** **Nothing on this build
 is welded.** `segno_base` is ONE flat blank: the bottom plate in the centre with

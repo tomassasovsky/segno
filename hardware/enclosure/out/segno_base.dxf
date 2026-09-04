@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.2039467595
+2461288.2356597222
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.2039467595
+2461288.2356597222
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{41929BC1-345B-40E4-8F20-F78D1EFDFAE2}
+{53CBFBAD-E011-42E4-85BE-CB495F8DBAE3}
   9
 $VERSIONGUID
   2
-{E89349D7-7797-46AD-9722-2BBEA3472167}
+{48F4F696-858F-4C6C-92E9-4668A0A08972}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -14369,7 +14369,7 @@ AcDbText
  40
 9.0
   1
-Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción 1.91); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)
+Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción 1.91); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar
  11
 8.0
  21
@@ -15481,7 +15481,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T07:53:41.092053+00:00
+1.4.4 @ 2026-09-04T08:39:21.808298+00:00
   0
 VISUALSTYLE
   5
@@ -22043,7 +22043,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T07:53:41.097825+00:00
+1.4.4 @ 2026-09-04T08:39:21.813302+00:00
   0
 ENDSEC
   0

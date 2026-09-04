@@ -86,8 +86,8 @@ TRANS_RUN  = 22.0    # transition horizontal run (depth added behind the control
                      # forward, reduces the bottom-plate depth)
 TRANS_DROP = 10.0    # transition vertical drop (peak -> rear-panel top)
 
-T        = 2.0       # sheet thickness (2.0 mm 5052-H32 aluminium)
-RI       = 2.0       # inside bend radius (= T, safe for 5052)
+T        = 2.0       # sheet thickness (2.0 mm 1050 aluminium -- the shop's stock, owner 2026-09-04)
+RI       = 2.0       # inside bend radius (= T; 1050 is softer than 5052 and takes it easily)
 KF       = 0.33      # K-factor for bend-allowance development
 FLANGE   = 18.0      # return-flange depth (lid side wings + wall top flange)
 # Weld-free corner join: internal L-brackets riveted through both walls. These MUST match
@@ -1011,8 +1011,8 @@ EDGE         = 30.0      # uniform edge margin (sides / rear)
 FRONT_PEDAL_MARGIN = 10.0 # front-row pedals sit this close to the front edge
 LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear): pill
                          # centre above the slot's rear edge. 12.0 until 2026-09-04;
-                         # 16 is an owner TRIAL ("a bit further apart from their
-                         # pedals") -- the pill's bottom edge now sits 13 mm behind
+                         # 16 was tried in Fusion and CONFIRMED by the owner the
+                         # same day -- the pill's bottom edge sits 13 mm behind
                          # the slot instead of 9. Everything downstream follows
                          # (legends, ring line, mini console); the support posts
                          # no longer care, see POST_PW.
@@ -1398,6 +1398,21 @@ POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), N
 _POST_Y_WORLD = math.cos(math.radians(SLOPE_ANGLE)) * POST_V - 2.093
 _POST_UNDER_Z = 12.437 + math.tan(math.radians(SLOPE_ANGLE)) * _POST_Y_WORLD
 POST_H     = _POST_UNDER_Z - POST_T - POST_FELT
+POST_RI = POST_T                   # inside radius for the 1.6 mm steel post (= T, as its sheet says)
+
+def post_deduct(angle_deg):
+    """Per-flap development deduction for the STEEL post (its own T/Ri, same
+    K): flap flat = outer length - post_deduct(rotation). Until 2026-09-04 the
+    post flat was nominal segments with NO deduction (the sheet said so), which
+    would have folded ~1.5 mm taller per bend and eaten the felt's 1 mm."""
+    a = math.radians(angle_deg)
+    return (POST_RI + POST_T) * math.tan(a / 2.0) - a * (POST_RI + KF * POST_T) / 2.0
+
+POST_DD_PAD  = post_deduct(90.0 + POST_TILT)   # apoyo -> alma, 102.5 deg
+POST_DD_FOOT = post_deduct(90.0)               # alma -> pie
+POST_PAD_F   = POST_PAD - POST_DD_PAD                       # flat flap lengths, from the bend centre lines
+POST_WEB_F   = POST_H - POST_DD_PAD - POST_DD_FOOT
+POST_FOOT_F  = POST_FOOTL - POST_DD_FOOT
 # PIN to the doc probe: at POST_V=165 the populated doc gave web 45.107 mm at
 # exactly the 1.0 mm felt gap (2026-08-19). This pin moves ONLY with a fresh
 # doc probe -- if it trips, the plane model and the doc have drifted apart;
@@ -2966,7 +2981,7 @@ def dxf_base(path):
           "agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.", "MASK")
 
     _text(msp, 8, BD+Hr+Ht+10, 9,
-          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)",
+          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar",
           "NOTE")
     doc.saveas(path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
 
@@ -3035,21 +3050,23 @@ def dxf_post(path):
     propping the one zone the perimeter folds do not reach. Load runs to the base, not
     the lid, so nothing shows on the top face and the lid still lifts off. The
     pad->web fold is 90 + POST_TILT deg so the pad beds FLUSH on the sloped underside;
-    the foot->web fold is 90. Bend deduction PROVISIONAL (nominal segments)."""
+    the foot->web fold is 90. Flat DEVELOPED with post_deduct (K 0.33, Ri = T)."""
     doc = _doc(); msp = doc.modelspace()
     pw, pad, web, foot = POST_PW, POST_PAD, POST_H, POST_FOOTL
-    Wd = pad + web + foot
+    pad_f, web_f, foot_f = POST_PAD_F, POST_WEB_F, POST_FOOT_F
+    Wd = pad_f + web_f + foot_f
     _poly(msp, [(0, 0), (pw, 0), (pw, Wd), (0, Wd)], "CUT")
-    _poly(msp, [(0, pad), (pw, pad)], "BEND", closed=False)           # pad -> web (fold 90 + tilt)
-    _poly(msp, [(0, pad+web), (pw, pad+web)], "BEND", closed=False)   # web -> foot (fold 90)
-    for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot
-        _circle(msp, pw/2.0 + du, pad + web + foot/2.0, D_M4)
+    _poly(msp, [(0, pad_f), (pw, pad_f)], "BEND", closed=False)             # pad -> web (fold 90 + tilt)
+    _poly(msp, [(0, pad_f+web_f), (pw, pad_f+web_f)], "BEND", closed=False) # web -> foot (fold 90)
+    for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot, foot/2 from its free end
+        _circle(msp, pw/2.0 + du, Wd - foot/2.0, D_M4)
     _text(msp, 5, Wd+6, 9,
           f"Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de {POST_T:.1f} mm "
           f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo {pad:.0f} / alma {web:.0f} / "
           f"pie {foot:.0f} mm); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
           f"de {POST_TILT:.1f}°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), "
-          f"fieltro sobre el apoyo; deducción PROVISORIA", "NOTE")
+          f"fieltro sobre el apoyo; deducción aplicada (K {KF}, Ri {POST_RI:.1f}): {POST_DD_PAD:.2f} mm en el plegado del apoyo, "
+          f"{POST_DD_FOOT:.2f} mm en el del pie; desarrollo {Wd:.2f} mm", "NOTE")
     doc.saveas(path); return {}
 
 # ===========================================================================
@@ -4323,10 +4340,14 @@ def build_ring_diffuser_step():
     ins = lens.union(cq.Workplane("XY").circle(37.5).circle(24.2)
                      .extrude(-plate_t))
     # disc lip: the disc rests on the inner lip at z=0, flush with the sheet
-    # top when glued (disc top = T). Thin the web over the LED circle so the
-    # board-mounted ring glows through 0.8 mm of white PLA.
+    # top when glued (disc top = T). The plate is OPEN over the LED circle
+    # (r 25.6..33.2, through): the ring glows through the 2.4 mm lens alone.
+    # Until 2026-09-04 a 0.8 mm web was left here; the PR #990 board carries
+    # the Ring 24 on a 2.54 mm pin strip and its top stood 0.56 mm into that
+    # web (and its rim into the full plate). Cutting through leaves the disc
+    # lip (r 24.2..25.6) and the glue land (r 33.2..37.5) intact.
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
-                  .circle(32.0).circle(25.6).extrude(plate_t - 0.8))
+                  .circle(33.2).circle(25.6).extrude(plate_t))
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
@@ -4738,7 +4759,7 @@ def build_step(write_parts=True):
 # identifiers shared with the DXF/STEP files and the vendor zips, and the shop
 # matches a sheet to a file by them. Numbers, units, symbols (Ø ± °) and standard
 # designations (5052-H32, M3, K, R2) are international and are left alone.
-AL_SHEET  = f"aluminio 5052-H32 de {T:.1f} mm"
+AL_SHEET  = f"aluminio 1050 de {T:.1f} mm"
 STEEL_CR  = f"acero laminado en frío de {POST_T:.1f} mm"
 VINYL     = "vinilo adhesivo impreso / policarbonato, troquelado - NO ES METAL"
 PLY_2MM   = (f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
@@ -4880,16 +4901,16 @@ def _bend_tables():
         (1, "ala / ala", "x", CORNER_LEG, CORNER_HT, 90.0, UP_TOWARD, RI, DEV90),
     ]
     tabs["segno_post"] = [
-        (1, "apoyo -> alma", "y", POST_PAD,          POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_T, 0.0),
-        (2, "alma -> pie",   "y", POST_PAD + POST_H, POST_PW, 90.0,             UP_TOWARD, POST_T, 0.0),
+        (1, "apoyo -> alma", "y", POST_PAD_F,              POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_RI, POST_DD_PAD),
+        (2, "alma -> pie",   "y", POST_PAD_F + POST_WEB_F, POST_PW, 90.0,             UP_TOWARD, POST_RI, POST_DD_FOOT),
     ]
     return tabs
 
 BEND_TABLES = _bend_tables()
 
-# Per-part footnote printed under the bend table. The post is the odd one out: its
-# flat is nominal segments with NO deduction applied, which is worth saying out
-# loud on the sheet rather than leaving a fabricator to assume it was developed.
+# Per-part footnote printed under the bend table. The post has its own T/Ri
+# (1.6 mm steel) and is developed with post_deduct -- its sheet states the
+# numbers so the shop can check them against its own tooling.
 BEND_FOOTNOTES = {
     "segno_base": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T) | pestaña plana = longitud exterior - deducción. "
                    f"LAS FILAS ESTÁN EN ORDEN DE PLEGADO - no reordenar. Los laterales (4, 5) necesitan un punzón <= 410 mm: los "
@@ -4903,8 +4924,8 @@ BEND_FOOTNOTES = {
     "segno_corner_bracket_rear": (f"Factor K {KF} | pestaña plana = longitud exterior - deducción. CANT. 2, y la segunda se monta DADA "
                                   f"VUELTA - la pieza es casi simétrica, sólo el patrón de agujeros es de mano."),
     "segno_post": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {POST_T:.1f} mm (1.0 x T). "
-                   f"DEDUCCIÓN NO APLICADA - el desarrollo son segmentos nominales (PROVISORIO): verificar la longitud desarrollada "
-                   f"contra el herramental propio antes de cortar."),
+                   f"Deducción aplicada con K {KF} y Ri {POST_RI:.1f} mm (= T): {POST_DD_PAD:.2f} mm en apoyo->alma (102.5°), "
+                   f"{POST_DD_FOOT:.2f} mm en alma->pie; verificar la longitud desarrollada contra el herramental propio antes de cortar."),
 }
 
 def _bend_table_lines(stem):
