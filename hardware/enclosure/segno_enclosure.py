@@ -1096,29 +1096,25 @@ LABEL_DV_PLAIN = LED_GAP - LED_SLOT_H / 2.0
 # terms come back out of the anchor here, or the alignment misses by ~2.15 mm.
 PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H + FSW_SLOT_D / 2.0
                 - PEDAL_AP_DEV + FSW_FRONT_EXTRA)
-# The encoder + LED ring do NOT follow the pedals rearward: the ring would hit the
-# 7" screen. It used to be pinned to the OLD row-2 centre (the 16"-screen-bottom
-# line), which held while the ring was the Ring 16's O46 -- that left 26.7 mm of
-# air under the 7" aperture. The Ring 24's O67 grew the radius by 10.5 mm and ate
-# the gap down to 16.2 (12.2 to the diffuser's glue land), which is why the ring
-# started reading as crowded up against the screen.
+# The encoder + LED ring are ALIGNED, not centred (owner call 2026-09-04, #997):
+# the ring window's FRONT edge sits on SCREEN_TOP_V - BIG_H, the same line the
+# 16" aperture's front edge and the row-2 slots sit on (#796). Three things on
+# the plate then share one hard line across its whole width, and each of the
+# three is a cut edge in the same flat pattern, so it is an exact equality
+# rather than a visual approximation.
 #
-# So the ring is placed off the CLEARANCE now, not off a line that has nothing to
-# do with it: the gap is the number that actually matters, it is stated once, and
-# the ring re-places itself if RING_OD ever changes again.
-# The rule is CENTRED, not clearance-from-one-side: the ring sits midway between
-# the top of the row-1 legend band and the bottom of the 7" aperture, so the air
-# above and below it is equal and stays equal when either bound moves. Hanging it
-# off a single gap to the screen (what this was) leaves the other side to chance,
-# and by eye it still sat high (owner call 2026-08-22).
+# What this replaces: the ring used to be CENTRED between the row-1 legend band
+# top and the 7" aperture's bottom (2026-08-22). Centring kept the air equal on
+# both sides but tied the ring to a soft edge -- the tip of a printed glyph --
+# and it drifted twice when the legend offsets moved (#792, #930). It also
+# crept toward the 7" module: at LED_GAP 16 the centred rule put the ring's
+# glue plate 0.69 mm inside that module's outline in plan (#992). Aligning
+# moves the ring 17.7 mm FORWARD and retires both problems.
 #
-# The band top is the play triangle's tip -- it is the tallest thing in row 1,
-# taller than the cap height of UNDO/MODE, so it is what the eye reads as the
-# edge of the legend band.
-# ROW1_LEGEND_TOP / ENC_V are defined further down, once NO_LED_PEDALS and _ROW1
-# exist -- the band top depends on WHICH label offset row 1 actually uses, and
-# that is a function of the tuple. Writing LABEL_DV_PLAIN here was what made this
-# go stale twice (see there).
+# ROW1_LEGEND_TOP is still computed (the gates below use it, and the band top is
+# the play triangle's tip -- the tallest thing in row 1), but it no longer
+# POSITIONS anything: _check() asserts the ring clears it rather than deriving
+# the ring from it.
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -1172,18 +1168,26 @@ NO_LED_PEDALS = ()
 def _has_led(label):
     return label not in NO_LED_PEDALS
 
-# Row 1's legend band top, and the encoder that is centred against it. The offset
-# is READ OFF the pedals rather than written: a row-1 label sits at LABEL_DV_LED
-# or LABEL_DV_PLAIN depending on NO_LED_PEDALS, and that tuple has now changed
-# twice (#792 emptied row 1 of pills, #930 refilled it). Both times this line
-# still said LABEL_DV_PLAIN while every row-1 label had moved, which left ENC_V
-# 7.5 mm low and quietly broke the centred rule above -- the legends moved in the
-# DXF and the ring did not.
+# Row 1's legend band top. The offset is READ OFF the pedals rather than
+# written: a row-1 label sits at LABEL_DV_LED or LABEL_DV_PLAIN depending on
+# NO_LED_PEDALS, and that tuple has changed twice (#792 emptied row 1 of pills,
+# #930 refilled it). This is now a CLEARANCE bound only -- see ENC_V.
 _ROW1_LABEL_DV = max(LABEL_DV_LED if _has_led(lb) else LABEL_DV_PLAIN
                      for lb in _ROW1)
 ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + _ROW1_LABEL_DV
                    + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
-ENC_V        = (ROW1_LEGEND_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
+# The ring window's FRONT edge on the 16" aperture's front edge (#997).
+ENC_V        = SCREEN_TOP_V - BIG_H + RING_OD / 2.0
+RING_LEGEND_MIN = 4.0   # air between the row-1 legend band top and the ring
+                        # window's front edge. The alignment above is the rule;
+                        # this is the floor that says when the rule has run out
+                        # of room -- at LED_GAP 16 there is 5.18 mm, and pushing
+                        # the pills further back (LED_GAP) is what eats it.
+RING_SCREEN_MIN = 8.0   # air between the ring window's rear edge and the 7"
+                        # aperture's bottom. Was the other half of the centred
+                        # rule; now a floor. The alignment gives 40.50 mm --
+                        # the centred rule gave 16.2, which is what made the
+                        # ring read as crowded against the screen (#792 note).
 
 # Legends. Two transport controls read as SYMBOLS rather than words (owner call
 # 2026-08-21): "REC/PLAY" was a two-line block eating the tallest label slot on
@@ -1779,6 +1783,30 @@ def _check(strict_board_mount=True):
     rear = rear_holes()            # WALL: window, bolts, vents, earth stud
     rear_io = rear_io_cutouts()    # PANEL: the nine connector stations
     byref = {c["ref"]: c for c in cuts}
+
+    # 0. THE SHARED BOTTOM LINE (#796 + #997). Three features on the plate are
+    #    aligned on one hard edge across its width: the 16" aperture's front
+    #    edge, the row-2 pedal slots' front edge, and the LED ring window's
+    #    front edge. MEASURED OFF THE EMITTED CUTS, never off the constants --
+    #    the row-2 slot carries PEDAL_AP_DEV/FSW_FRONT_EXTRA for the fold
+    #    development, and reading the constants instead of the geometry is how
+    #    #992 found a gate passing on a number nobody cut.
+    _line = _bbox(byref["SCREEN_16IN"])[1]
+    for _ref in ("CLEAR", "BANK", "RING"):
+        assert abs(_bbox(byref[_ref])[1] - _line) < 1e-6, (
+            f"BOTTOM_LINE: {_ref} front edge {_bbox(byref[_ref])[1]:.3f} is off the "
+            f"16in aperture's {_line:.3f} -- these three share one cut line")
+    #    ...and the ring, now that it is aligned rather than centred, needs its
+    #    two clearances asserted instead of guaranteed by construction.
+    _r0, _r1 = _bbox(byref["RING"])[1], _bbox(byref["RING"])[3]
+    assert _r0 - ROW1_LEGEND_TOP >= RING_LEGEND_MIN, (
+        f"RING: only {_r0 - ROW1_LEGEND_TOP:.2f} mm between the row-1 legend band "
+        f"top and the ring window -- floor is {RING_LEGEND_MIN}. Pulling the pills "
+        f"back (LED_GAP) is what eats this")
+    _scr = _bbox(byref["SCREEN_7IN"])[1]
+    assert _scr - _r1 >= RING_SCREEN_MIN, (
+        f"RING: only {_scr - _r1:.2f} mm between the ring window and the 7in "
+        f"aperture -- floor is {RING_SCREEN_MIN}")
 
     # 1. width budget: the front row of 8 pedals must fit across FP_W
     row1 = sorted(u for _, u, v in PEDALS if v == PEDAL_ROW1_V)
