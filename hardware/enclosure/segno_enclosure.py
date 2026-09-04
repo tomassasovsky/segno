@@ -4381,18 +4381,22 @@ def build_ring_diffuser_step():
                      .extrude(-plate_t))
     # disc lip: the disc rests on the inner lip at z=0, flush with the sheet
     # top when glued (disc top = T). Under the lens the plate has to clear the
-    # PR #990 board's Ring 24, which sits on a 2.54 mm pin strip: its LED tops
-    # are 0.24 below the lens bottom (z=0) and its bare PCB rim 1.4 lower. So:
-    # a THROUGH cut over the LED annulus only (r 26.5..32.1, the 5050
-    # footprint on Adafruit's model +0.3 each side), and a 0.4 mm counterbore
-    # from the plate's back over the whole ring rim (r 26.0..33.0, 1.6 mm of
-    # plate left, 0.24 clear of the PCB). The plate between the lens bore
-    # (r 25.85) and the LED cut stays, so the disc lip is still attached --
-    # a full through-cut from 25.6 out severed it (re-review 2026-09-04).
+    # Ring 24 on the ring board. Measured in this part's frame (z=0 = lens
+    # bottom = glue plane) against the PR #990 board with the ring SOLDERED
+    # FLAT: PCB top at -2.92, LED tops at -1.52. So: a THROUGH cut over the LED
+    # annulus (r 26.5..32.1, the 5050 bodies on Adafruit's model +0.3) and a
+    # 0.8 mm counterbore from the plate's back over the whole ring (r 26.0..
+    # 33.1), leaving 1.2 mm of plate that clears the LED corners by 0.3 and the
+    # PCB rim by 1.7. The plate between the lens bore (r 25.85) and the LED cut
+    # stays, so the disc lip is still attached (a full through-cut from 25.6
+    # severed it, re-review 2026-09-04). NOTE: with the ring on the 2.54 mm
+    # PIN STRIP that PR #990 models, the LED tops sit +1.02 ABOVE the lens
+    # bottom -- inside the lens -- and no cut in this part can clear them;
+    # that stack needs the strip dropped or the board 1.3 mm lower (#993).
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
                   .circle(32.1).circle(26.5).extrude(plate_t))
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
-                  .circle(33.0).circle(26.0).extrude(0.4))
+                  .circle(33.1).circle(26.0).extrude(0.8))
     assert len(ins.solids().vals()) == 1, "ring diffuser is not one solid -- the disc lip is severed"
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
