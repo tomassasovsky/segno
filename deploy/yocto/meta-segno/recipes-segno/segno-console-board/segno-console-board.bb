@@ -11,6 +11,15 @@ LICENSE = "CLOSED"
 # artifact of firmware/console_board, not a source file.
 SEGNO_CONSOLE_FW_DIR ?= "${THISDIR}/../../../prebuilt/console-board"
 
+# Bitbake must be TOLD these files are inputs. do_install reads them from a
+# directory outside SRC_URI, so without this the task's signature never
+# changes when the firmware does, and shared state hands back the first
+# package it ever built: 0.1.0-experimental.132 shipped an app speaking link
+# protocol 4 next to a board image still on protocol 3, and every console
+# that installed it went dark. The path and the contents both count.
+do_install[file-checksums] += "${SEGNO_CONSOLE_FW_DIR}/console_board.elf:True \
+                               ${SEGNO_CONSOLE_FW_DIR}/version:True"
+
 SRC_URI = "file://segno-console-flash \
            file://segno-console-flash.service \
            file://pi5-swd.cfg"

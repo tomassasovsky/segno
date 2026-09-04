@@ -345,6 +345,39 @@ jobs:
 
       # Make growth visible in the run log, so it is noticed here rather than
       # by a hypervisor falling over.
+      # What the image CARRIES has to be what this run BUILT. Shared state can
+      # hand back a stale package when a recipe's inputs are not in its
+      # signature (that is how .132 shipped an app on link protocol 4 next to
+      # console firmware on protocol 3), and nothing downstream would notice
+      # until a console went dark. So read the marker and the firmware back
+      # out of the rootfs and compare them with this run's artifacts.
+      - name: Verify the image carries this run's console firmware
+        run: |
+          set -eu
+          machine='${{ needs.determine-meta.outputs.machine }}'
+          rootfs=$(readlink -e "$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"/segno-kiosk-image-"$machine".rootfs.ext4 2>/dev/null \
+                   || find "$YOCTO_WORK_DIR" -name "segno-kiosk-image-$machine-*.rootfs.ext4" | sort | tail -1)
+          test -f "$rootfs" || { echo "::error::no rootfs ext4 under $YOCTO_WORK_DIR to verify"; exit 1; }
+          command -v debugfs >/dev/null || { echo "::error::debugfs (e2fsprogs) is not on this runner; cannot verify the image"; exit 1; }
+          want_marker=$(cat deploy/yocto/prebuilt/console-board/version)
+          have_marker=$(debugfs -R 'cat /usr/lib/segno/console-board/version' "$rootfs" 2>/dev/null)
+          echo "artifact: $want_marker"
+          echo "image:    $have_marker"
+          if [ "$want_marker" != "$have_marker" ]; then
+            echo "::error::the image carries console firmware '$have_marker' but this run built '$want_marker' — a stale package reached the rootfs. Refusing to publish."
+            exit 1
+          fi
+          tmp=$(mktemp)
+          debugfs -R "dump /usr/lib/segno/console-board/console_board.elf $tmp" "$rootfs" 2>/dev/null
+          want_elf=$(sha256sum deploy/yocto/prebuilt/console-board/console_board.elf | cut -d' ' -f1)
+          have_elf=$(sha256sum "$tmp" | cut -d' ' -f1)
+          rm -f "$tmp"
+          if [ "$want_elf" != "$have_elf" ]; then
+            echo "::error::the console firmware in the image is not the one this run built (sha256 $have_elf vs $want_elf). Refusing to publish."
+            exit 1
+          fi
+          echo "image firmware matches this run's artifact"
+
       - name: Report disk consumed
         if: always()
         run: |
