@@ -2651,8 +2651,12 @@ def _ltscale_for(doc):
 # Full dash periods the smallest dashed run must show. These two constants pull
 # against each other: more periods on a short entity means smaller gaps, and a
 # gap too small to print is the failure the floor below exists to stop. Three
-# periods of DASHDOT is six marks around a ring -- unmistakably dash-dot -- and
-# it leaves the tightest entity actually shipped (a 35 mm mask leader on the
+# periods of DASHDOT is three dashes and three dots around a ring. Be precise
+# about those dots: they are zero-length pattern elements, and the renderer
+# substitutes a fixed 0.1 DRAWING UNIT minimum that does not scale with ltscale,
+# so each prints about 0.015 mm on the base sheet -- a stroke-width speck, not a
+# measurable mark. What carries the dash-dot signature is the three clear GAPS.
+# Three periods also leaves the tightest entity actually shipped (a 35 mm mask leader on the
 # 1040 mm base) at 1:625 against a 1:900 floor, a 1.44x margin. Four periods
 # left that same leader at 1:833, an 8% margin, and one edit from a red build.
 LTSCALE_MIN_PERIODS = 3.0
@@ -6461,6 +6465,20 @@ def _text_extent(e):
     return (x, y, x + w, y + h)
 
 
+def _pdf_page_count(path):
+    """Pages in a PDF, read from the file itself.
+
+    Deliberately not from whatever wrote it: the point is to catch a deliverable
+    that was replaced or truncated between the writer and this check.
+    """
+    with open(path, "rb") as fh:
+        blob = fh.read()
+    n = blob.count(b"/Type /Page") - blob.count(b"/Type /Pages")
+    if n <= 0:                      # some writers omit the space
+        n = blob.count(b"/Type/Page") - blob.count(b"/Type/Pages")
+    return n
+
+
 def _verify_dash_legibility(doc, stem):
     """Every dashed entity must actually render broken, at BOTH ends of the scale.
 
@@ -6483,17 +6501,19 @@ def _verify_dash_legibility(doc, stem):
     span = _SPAN(msp)        # hoisted: it is an extents() sweep over the whole part
     periods = {}
     checked = 0
+    # A block reference hides its contents from this sweep, and those contents
+    # carry their OWN layers -- so gating on the INSERT's layer was the wrong
+    # axis: the normal way to place one is on CUT or 0, and a O12 MASK circle
+    # inside such a block passed every guard and rasterised as a solid red ring.
+    # The generator emits no blocks at all, so refuse them outright.
+    for e in msp:
+        assert e.dxftype() != "INSERT", (
+            f"{stem}: a block reference on layer {e.dxf.layer} -- whatever it "
+            f"contains is invisible to every check here, dashed MASK geometry "
+            f"included. Emit the entities directly")
     for e in msp:
         layer = e.dxf.layer
-        if layer not in ("BEND", "MASK"):
-            continue
-        # A block reference hides its geometry from this sweep entirely: a O12
-        # MASK circle inside a BLOCK passed every guard and still rasterised
-        # solid. The generator emits none, so refuse them rather than recurse.
-        assert e.dxftype() != "INSERT", (
-            f"{stem}: a block reference on {layer} -- its dashed geometry is "
-            f"invisible to every check here. Emit the entities directly")
-        if e.dxftype() in NOT_LINEWORK:
+        if layer not in ("BEND", "MASK") or e.dxftype() in NOT_LINEWORK:
             continue
         run = _run_length(e)
         assert run is not None, (
@@ -6504,8 +6524,16 @@ def _verify_dash_legibility(doc, stem):
             continue
         lname = _entity_linetype(doc, e)
         period = periods.setdefault(lname, _pattern_period(doc, lname))
+        # `float(ls) if ls else 1.0` is the same expression as `float(ls or 1.0)`
+        # -- rewriting it changed nothing and 0.0 still read as 1.0. It has to be
+        # rejected, not substituted: ezdxf's setter clamps 0 to 1.0, but a raw
+        # `48 / 0.0` tag survives readfile, and the renderer then falls back to
+        # its 0.1 unit minimum dash and draws the line effectively solid.
         ls = e.dxf.get("ltscale", 1.0)
-        scale = gscale * (float(ls) if ls else 1.0)
+        assert ls is None or float(ls) > 0.0, (
+            f"{stem}: a {layer} {e.dxftype()} carries ltscale {ls} -- a zero or "
+            f"negative linetype scale renders as a solid line")
+        scale = gscale * (1.0 if ls is None else float(ls))
         cycles = run / (period * scale)
         checked += 1
         assert cycles >= LTSCALE_MIN_PERIODS - 1e-6, (
@@ -6547,7 +6575,12 @@ def _SPAN(msp):
     return max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1], 1.0)
 
 
-NOTE_WIDTH_CEILING = 1.25        # note block width, as a multiple of the part span
+# Note block width, as a multiple of the part span. 1.25 was useless: _note's
+# 1.2 mm text floor makes any long token plateau at 1.242, so the ceiling sat
+# 0.6% above the very case it was written for and only fired past a 90-character
+# token. The widest sheet shipped is a single tile at 1.153, so 1.20 leaves it
+# 4% of room and still rejects the plateau.
+NOTE_WIDTH_CEILING = 1.20
 
 
 def _verify_note_block_fits(doc, stem):
@@ -6629,6 +6662,14 @@ def _verify_drawing_package(with_pdf=True):
             f"segno_paint_quote.pdf has {got} of {PAINT_PAGES_EXPECTED} pages -- "
             f"a page failed after the file was opened, and segno_pintura.zip "
             f"would ship it truncated")
+        # and count what is actually ON DISK: the line above only proves what the
+        # writer believed. Overwriting the file afterwards, or truncating it to
+        # zero bytes, left the run green.
+        on_disk = _pdf_page_count(pq)
+        assert on_disk == PAINT_PAGES_EXPECTED, (
+            f"segno_paint_quote.pdf holds {on_disk} pages on disk, not "
+            f"{PAINT_PAGES_EXPECTED} -- the file was replaced or truncated after "
+            f"it was written")
 
     if with_pdf:
         for stem in stems:
@@ -6876,12 +6917,6 @@ def main(argv):
     print("  out/segno_pedal_tiles.dxf  (2-ply nest, x%d)" % len(tile_stems))
     if "--no-pdf" not in argv:
         print("  out/segno_pedal_tiles.pdf")
-    if "--no-pdf" not in argv:
-        try:
-            paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
-            print("\nPaint quote sheet: out/segno_paint_quote.pdf")
-        except Exception as e:  # pragma: no cover
-            print(f"\n(paint quote skipped: {e})")
     steps_built = "--no-step" not in argv
     if "--no-step" not in argv:
         try:
@@ -6920,6 +6955,17 @@ def main(argv):
         # anything else is a real build failure: let it crash the run. The old
         # blanket `except Exception` swallowed a NameError here for weeks and
         # shipped stale tower/stand/fit-test STEPs while printing EXIT=0.
+    # AFTER the STEP build, deliberately. Its "Tamaño (mm)" column comes from
+    # _step_size, which reads out/*.step -- run before them and every row on the
+    # coater's sheet says "-". The committed file only ever showed sizes because
+    # a stale STEP happened to be on disk; on a clean tree it did not reproduce.
+    if "--no-pdf" not in argv:
+        try:
+            paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
+            print("\nPaint quote sheet: out/segno_paint_quote.pdf")
+        except Exception as e:  # pragma: no cover
+            print(f"\n(paint quote skipped: {e})")
+
     for z in build_quote_packages(with_step=steps_built,
                                   with_pdf="--no-pdf" not in argv):
         print("Quote package: out/" + os.path.basename(z))
