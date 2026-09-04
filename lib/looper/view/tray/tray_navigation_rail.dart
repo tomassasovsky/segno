@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -96,7 +97,7 @@ class TrayNavigationRail extends StatelessWidget {
       SettingsTrayDestination.audio => lucide(LucideIcons.volume2),
       SettingsTrayDestination.tuner => pen(PenIcon.tuner),
       // TWO arcs over the dot, not three: `wifi-high`, not `wifi`.
-      SettingsTrayDestination.network => lucide(LucideIcons.wifiHigh),
+      SettingsTrayDestination.network => lucide(CupertinoIcons.wifi),
       // A square in a square with eight pins — a chip, not a gear.
       SettingsTrayDestination.system => lucide(LucideIcons.cpu),
     };
@@ -301,7 +302,7 @@ class _RailItem extends StatelessWidget {
                   color: tint,
                   fontSize: 17,
                   height: 1.1,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),

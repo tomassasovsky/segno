@@ -205,11 +205,23 @@ class _TracksViewState extends State<TracksView> {
                             // The pen's `STAGE / stage` insets the status bar
                             // 8 from the top and the run 10 from the left,
                             // right, and bottom.
-                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                const StageStatusBar(),
+                                Container(
+                                  decoration: const BoxDecoration(
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Color(0x99000000),
+                                        offset: Offset(0, -19),
+                                        blurRadius: 48,
+                                      ),
+                                    ],
+                                  ),
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: const StageStatusBar(),
+                                ),
                                 const SizedBox(height: 10),
                                 // Standing loss conditions hold the stage
                                 // for as long as they are true — the pen's
