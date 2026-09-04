@@ -241,6 +241,12 @@ bracket ∩ base = 0 after placing; on the floor it reads 0.018 cm³. Set the
 two bracket transforms in a call of their own — imports in the same call
 reset them.
 
+**Hole diameters can be edited in place.** When only a hole's diameter
+changes (rivets Ø3.2 → Ø3.3, #993), set the sketch circle's `radius` on the
+component's `CUT` sketch instead of rebuilding: the base's eleven-feature
+chain (folds and offsets included) recomputed healthy in one call in both
+docs, and so did the bracket's. Positions, not diameters, need the rebuild.
+
 **Rear panel height.** Its z (populated) / y (VSM) is the rear-wall WINDOW
 centre, `(2.54 + 6.84)/2 = 4.69` off the window's corner-radius centres, and
 the four Ø2.5 pilots sit on the same line. The table carried 4.5 until the
