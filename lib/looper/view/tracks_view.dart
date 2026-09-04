@@ -202,9 +202,11 @@ class _TracksViewState extends State<TracksView> {
                             // (the foot pedals drive transport/mode/clear) and
                             // tightens the layout for the fixed panel; desktop
                             // builds keep the full chrome.
-                            // The pen's `STAGE / stage` insets the status bar
-                            // 8 from the top and the run 10 from the left,
-                            // right, and bottom.
+                            // The pen's `STAGE / stage` insets the run 10 from
+                            // the left, right and bottom. The status bar's own
+                            // 8 from the top now sits on the shadow Container
+                            // below, so the shadow is cast from the stage edge
+                            // rather than from 8 inside it.
                             padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
