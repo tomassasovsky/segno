@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/control/control_tab.dart';
-import 'package:segno/control/view/midi_tray_body.dart';
+import 'package:segno/control/view/controllers_tray_body.dart';
 import 'package:segno/control/view/pedal_tray_body.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -32,14 +32,17 @@ class ControlTrayPanel extends StatelessWidget {
         onChanged: cubit.showControlTab,
         tabs: [
           PillTab(value: ControlTab.pedal, label: l10n.controlPedalTab),
-          PillTab(value: ControlTab.midi, label: l10n.controlMidiTab),
+          PillTab(
+            value: ControlTab.controllers,
+            label: l10n.controlControllersTab,
+          ),
         ],
         // Each body opens with its own leading gap: the mockups set the Pedal
-        // tab on a flat 14 rhythm and the MIDI tab on a 19/9 grouping, and
-        // neither is this panel's to decide.
+        // tab on a flat 14 rhythm and the Controllers tab on a 19/9 grouping,
+        // and neither is this panel's to decide.
         body: switch (tab) {
           ControlTab.pedal => const PedalTrayBody(),
-          ControlTab.midi => const MidiTrayBody(),
+          ControlTab.controllers => const ControllersTrayBody(),
         },
       ),
     );

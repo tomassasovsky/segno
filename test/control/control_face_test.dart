@@ -206,7 +206,7 @@ void main() {
       AppLocalizations.of(tester.element(find.byType(ControlTrayPanel)));
 
   Future<void> showMidi(WidgetTester tester) async {
-    tray.showControlTab(ControlTab.midi);
+    tray.showControlTab(ControlTab.controllers);
     await tester.pumpAndSettle();
   }
 
@@ -214,13 +214,13 @@ void main() {
     testWidgets('the tab strip swaps the body', (tester) async {
       await pump(tester);
       expect(find.byKey(const Key('pedal_tray_body')), findsOneWidget);
-      expect(find.byKey(const Key('midi_tray_body')), findsNothing);
+      expect(find.byKey(const Key('controllers_tray_body')), findsNothing);
 
-      await tester.tap(find.text(l10nOf(tester).controlMidiTab));
+      await tester.tap(find.text(l10nOf(tester).controlControllersTab));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('pedal_tray_body')), findsNothing);
-      expect(find.byKey(const Key('midi_tray_body')), findsOneWidget);
+      expect(find.byKey(const Key('controllers_tray_body')), findsOneWidget);
     });
 
     testWidgets('the domain names itself once, above the strip', (
@@ -492,7 +492,7 @@ void main() {
     });
   });
 
-  group('MIDI tab', () {
+  group('Controllers tab', () {
     const device = MidiDevice(id: 'dev-1', name: 'Nektar Pacer');
     const connected = MidiConnection(
       devices: [device],
