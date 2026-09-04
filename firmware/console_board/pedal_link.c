@@ -33,12 +33,14 @@ size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out)
   return pedal_link_encode(PEDAL_LINK_TYPE_HELLO, p, 3, out);
 }
 
-size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t kind, uint8_t value, uint8_t *out) {
-  uint8_t payload[3];
+size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8_t value,
+                              uint8_t *out) {
+  uint8_t payload[4];
   payload[0] = jack;
-  payload[1] = kind;
-  payload[2] = value;
-  return pedal_link_encode(PEDAL_LINK_TYPE_CTRL, payload, 3, out);
+  payload[1] = contact;
+  payload[2] = kind;
+  payload[3] = value;
+  return pedal_link_encode(PEDAL_LINK_TYPE_CTRL, payload, 4, out);
 }
 
 size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
@@ -91,7 +93,7 @@ int pedal_link_payload_len(uint8_t type) {
     case PEDAL_LINK_TYPE_BUTTON: return 2;
     case PEDAL_LINK_TYPE_ENCODER: return 1;
     case PEDAL_LINK_TYPE_HELLO: return 3;
-    case PEDAL_LINK_TYPE_CTRL: return 3;
+    case PEDAL_LINK_TYPE_CTRL: return 4;
     case PEDAL_LINK_TYPE_STATE: return (int)PEDAL_LINK_STATE_LEN;
     default: return -1;
   }

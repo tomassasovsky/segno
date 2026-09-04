@@ -221,6 +221,34 @@ void main() {
       );
     });
 
+    test('a CTRL jack is named by jack, and its ring as the second switch', () {
+      expect(
+        controlLabel(
+          l10n,
+          const MappingTrigger(kind: ControllerSourceKind.consoleSwitch, id: 0),
+        ),
+        l10n.consoleCtrlSwitchControl(1),
+      );
+      expect(
+        controlLabel(
+          l10n,
+          const MappingTrigger(
+            kind: ControllerSourceKind.consoleExpression,
+            id: 1,
+          ),
+        ),
+        l10n.consoleCtrlExpressionControl(2),
+      );
+      // The B of a two-switch pedal, on CTRL 2's ring.
+      expect(
+        controlLabel(
+          l10n,
+          const MappingTrigger(kind: ControllerSourceKind.consoleSwitch, id: 3),
+        ),
+        l10n.consoleCtrlRingSwitchControl(2),
+      );
+    });
+
     test('an omni trigger reads as channel 1', () {
       expect(
         controlLabel(

@@ -1235,4 +1235,17 @@ void main() {
       expect(await repository.loadInputRestore(1), isNull);
     });
   });
+  group('CTRL calibration', () {
+    test('round-trips per jack, and clears', () async {
+      final repo = SettingsRepository(store: _InMemoryStore());
+      expect(await repo.loadCtrlCalibration(0), isNull);
+      await repo.saveCtrlCalibration(0, min: 24, max: 255);
+      await repo.saveCtrlCalibration(1, min: 0, max: 200);
+      expect(await repo.loadCtrlCalibration(0), (24, 255));
+      expect(await repo.loadCtrlCalibration(1), (0, 200));
+      await repo.clearCtrlCalibration(0);
+      expect(await repo.loadCtrlCalibration(0), isNull);
+      expect(await repo.loadCtrlCalibration(1), (0, 200));
+    });
+  });
 }

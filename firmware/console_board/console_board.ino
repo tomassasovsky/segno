@@ -26,7 +26,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 0;
+static const uint8_t FW_MINOR = 1;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -36,6 +36,15 @@ static const uint8_t PIN_IND = 18;
 // The CTRL TRS jacks: tip on ADC0/ADC1 with a 10k pull-up, ring feeding 3V3
 // through 1k as the pot's top, sleeve to ground.
 static const uint8_t CTRL_PIN[PEDAL_CTRL_COUNT] = {26, 27};
+// The rings, sensed. On a two-switch pedal on one TRS plug (a BOSS FS-6's A&B
+// jack) the second switch shorts the ring to sleeve, which the tip's ADC can
+// never see. Board v2 has no trace for it: these are the expansion pads on J22
+// (GP20 / GP21, otherwise unused), reached by one wire from each jack's ring
+// pin. With the wire, the ring sits at ~3V (an expression pedal's pot top, or
+// an open jack) and drops to 0 when that switch closes. WITHOUT the wire the
+// internal pull-up holds the pin high and the ring simply never reports, so
+// an unmodified board loses nothing.
+static const uint8_t CTRL_RING_PIN[PEDAL_CTRL_COUNT] = {20, 21};
 static const uint8_t PIN_SMPS_PWM = 23;
 
 // ---- LEDs --------------------------------------------------------------------
@@ -242,25 +251,19 @@ static const unsigned long CTRL_SAMPLE_MS = 10;
 
 // An expression pedal never uses the whole scale: the tip's 10k pull-up and
 // the 1k feeding the pot's top compress both ends, and every pedal's travel
-// and range knob differ again. Measured here, an M-Audio EX-P covers
-// 385..4095 of 0..4095 — so scaling the raw reading straight to 0..255 would
-// report ~24 at heel and a bound level would never reach its bottom.
-//
-// So the ends are learned from the pedal itself: the travel seen so far is
-// stretched onto the full output range. A pedal is calibrated by sweeping it
-// once, which is what anyone does on plugging one in anyway. Nothing is
-// stored across a reboot — a sweep costs a second and guessing wrong costs a
-// performance.
-static const uint16_t CTRL_MIN_SPAN = 400;  // below this, the sweep is not trusted
-static uint16_t g_ctrlSeenMin[PEDAL_CTRL_COUNT];
-static uint16_t g_ctrlSeenMax[PEDAL_CTRL_COUNT];
+// and range knob differ again (an M-Audio EX-P covers 385..4095 of 0..4095).
+// Where the ends really are is NOT decided here. This board forgets everything
+// at power-off and cannot tell a plug sliding in from a pedal at its stop, so
+// it reports the raw position and segno learns the ends — deliberately, from
+// a sweep the user makes, and keeps them across reboots.
 static uint8_t g_ctrlKind[PEDAL_CTRL_COUNT];
 static uint16_t g_ctrlRaw[PEDAL_CTRL_COUNT];
 static uint8_t g_ctrlSent[PEDAL_CTRL_COUNT];
 static bool g_ctrlHaveSent[PEDAL_CTRL_COUNT];
-static bool g_ctrlSwitchClosed[PEDAL_CTRL_COUNT];
-static bool g_ctrlSwitchRaw[PEDAL_CTRL_COUNT];
-static unsigned long g_ctrlSwitchSinceMs[PEDAL_CTRL_COUNT];
+// One debounced switch per contact: [jack][contact].
+static bool g_ctrlSwitchClosed[PEDAL_CTRL_COUNT][PEDAL_CTRL_CONTACT_COUNT];
+static bool g_ctrlSwitchRaw[PEDAL_CTRL_COUNT][PEDAL_CTRL_CONTACT_COUNT];
+static unsigned long g_ctrlSwitchSinceMs[PEDAL_CTRL_COUNT][PEDAL_CTRL_CONTACT_COUNT];
 static unsigned long g_ctrlLastSampleMs = 0;
 
 static uint16_t ctrlSample(uint8_t pin) {
@@ -269,11 +272,28 @@ static uint16_t ctrlSample(uint8_t pin) {
   return (uint16_t)(total / 8);
 }
 
-static void sendCtrl(uint8_t jack, uint8_t kind, uint8_t value) {
+static void sendCtrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8_t value) {
   uint8_t buf[PEDAL_LINK_MAX_FRAME];
-  sendFrame(buf, pedal_link_encode_ctrl(jack, kind, value, buf));
-  g_ctrlSent[jack] = value;
-  g_ctrlHaveSent[jack] = true;
+  sendFrame(buf, pedal_link_encode_ctrl(jack, contact, kind, value, buf));
+  if (contact == PEDAL_CTRL_TIP && kind == PEDAL_CTRL_KIND_EXPRESSION) {
+    g_ctrlSent[jack] = value;
+    g_ctrlHaveSent[jack] = true;
+  }
+}
+
+// Debounced on both edges like the footswitches. `closed` is the contact at
+// ground; reports the edge once it has held for CTRL_SWITCH_DEBOUNCE_MS.
+static void pollCtrlSwitch(uint8_t jack, uint8_t contact, bool closed, unsigned long now) {
+  if (closed != g_ctrlSwitchRaw[jack][contact]) {
+    g_ctrlSwitchRaw[jack][contact] = closed;
+    g_ctrlSwitchSinceMs[jack][contact] = now;
+    return;
+  }
+  if (closed != g_ctrlSwitchClosed[jack][contact] &&
+      now - g_ctrlSwitchSinceMs[jack][contact] >= CTRL_SWITCH_DEBOUNCE_MS) {
+    g_ctrlSwitchClosed[jack][contact] = closed;
+    sendCtrl(jack, contact, PEDAL_CTRL_KIND_SWITCH, closed ? 255 : 0);
+  }
 }
 
 static void pollCtrl() {
@@ -282,6 +302,9 @@ static void pollCtrl() {
   g_ctrlLastSampleMs = now;
 
   for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
+    // The ring is a switch or nothing, whatever the tip is doing.
+    pollCtrlSwitch(j, PEDAL_CTRL_RING, digitalRead(CTRL_RING_PIN[j]) == LOW, now);
+
     const uint16_t raw = ctrlSample(CTRL_PIN[j]);
     g_ctrlRaw[j] = raw;
     if (raw > CTRL_LOW && raw < CTRL_HIGH) {
@@ -289,44 +312,24 @@ static void pollCtrl() {
     }
 
     if (g_ctrlKind[j] == PEDAL_CTRL_KIND_EXPRESSION) {
-      if (raw < g_ctrlSeenMin[j]) g_ctrlSeenMin[j] = raw;
-      if (raw > g_ctrlSeenMax[j]) g_ctrlSeenMax[j] = raw;
-      const uint16_t span = (uint16_t)(g_ctrlSeenMax[j] - g_ctrlSeenMin[j]);
-      uint8_t value;
-      if (span >= CTRL_MIN_SPAN) {
-        const uint32_t above = (uint32_t)(raw - g_ctrlSeenMin[j]);
-        value = (uint8_t)(above * 255u / span);
-      } else {
-        // Not swept far enough to trust: report the raw position rather than
-        // stretching noise across the whole range.
-        value = (uint8_t)((uint32_t)raw * 255u / CTRL_MAX);
-      }
+      // The 12-bit reading's top byte: 256 steps over the whole scale, of
+      // which a pedal uses ~230 — twice what a MIDI CC resolves.
+      const uint8_t value = (uint8_t)(raw >> 4);
       const int diff = (int)value - (int)g_ctrlSent[j];
       const int deadband = (int)(CTRL_DEADBAND * 255u / CTRL_MAX);
-      // Always report the ends exactly: a deadband that swallows the last
-      // step leaves a pedal pushed fully down reporting "nearly down", and a
-      // level bound to it never reaches its limit.
+      // Always report the rails exactly: a deadband that swallows the last
+      // step leaves a pedal pushed to its stop reporting "nearly there".
       const bool atEnd = value == 0 || value == 255;
       if (!g_ctrlHaveSent[j] || (atEnd && value != g_ctrlSent[j]) ||
           diff > deadband || diff < -deadband) {
-        sendCtrl(j, PEDAL_CTRL_KIND_EXPRESSION, value);
+        sendCtrl(j, PEDAL_CTRL_TIP, PEDAL_CTRL_KIND_EXPRESSION, value);
       }
       continue;
     }
 
-    // A switch, debounced on both edges like the footswitches. Closed is the
-    // tip pulled to ground; open is the 10k holding it at the rail.
-    const bool closed = raw < CTRL_LOW;
-    if (closed != g_ctrlSwitchRaw[j]) {
-      g_ctrlSwitchRaw[j] = closed;
-      g_ctrlSwitchSinceMs[j] = now;
-      continue;
-    }
-    if (closed != g_ctrlSwitchClosed[j] &&
-        now - g_ctrlSwitchSinceMs[j] >= CTRL_SWITCH_DEBOUNCE_MS) {
-      g_ctrlSwitchClosed[j] = closed;
-      sendCtrl(j, PEDAL_CTRL_KIND_SWITCH, closed ? 255 : 0);
-    }
+    // Closed is the tip pulled to ground; open is the 10k holding it at the
+    // rail.
+    pollCtrlSwitch(j, PEDAL_CTRL_TIP, raw < CTRL_LOW, now);
   }
 }
 
@@ -525,15 +528,18 @@ void setup() {
   }
   for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
     pinMode(CTRL_PIN[j], INPUT);  // the board's own 10k biases the tip
+    // Pulled up INTERNALLY: unwired (an unmodified v2) it reads open forever
+    // and never reports; wired, ~3V from the jack overrides nothing.
+    pinMode(CTRL_RING_PIN[j], INPUT_PULLUP);
     g_ctrlKind[j] = PEDAL_CTRL_KIND_SWITCH;
-    g_ctrlSeenMin[j] = CTRL_MAX;
-    g_ctrlSeenMax[j] = 0;
     g_ctrlRaw[j] = CTRL_MAX;
     g_ctrlSent[j] = 0;
     g_ctrlHaveSent[j] = false;
-    g_ctrlSwitchClosed[j] = false;
-    g_ctrlSwitchRaw[j] = false;
-    g_ctrlSwitchSinceMs[j] = 0;
+    for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) {
+      g_ctrlSwitchClosed[j][c] = false;
+      g_ctrlSwitchRaw[j][c] = false;
+      g_ctrlSwitchSinceMs[j][c] = 0;
+    }
   }
   analogReadResolution(12);
   pinMode(PIN_ENC_A, INPUT_PULLUP);

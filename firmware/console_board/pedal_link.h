@@ -28,11 +28,13 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 3: the CTRL jacks (0x04). 2: the loop-top pulse (0x11) was retired when the
- * ring stopped tracking the loop. The board is flashed over SWD independently
- * of the app, so the two can drift; this is what makes that visible instead of
- * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 3u
+/* 4: CTRL (0x04) grew a contact byte and reports an expression pedal's RAW
+ * position; calibration moved to segno, where it can be deliberate and
+ * survive a reboot. 3: the CTRL jacks. 2: the loop-top pulse (0x11) was
+ * retired when the ring stopped tracking the loop. The board is flashed over
+ * SWD independently of the app, so the two can drift; this is what makes that
+ * visible instead of silent. */
+#define PEDAL_LINK_PROTOCOL_VERSION 4u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -42,7 +44,7 @@ extern "C" {
  * recognised as incompatible at all; a revision that needs more from the board
  * adds a message type, never a hello byte. */
 #define PEDAL_LINK_TYPE_HELLO 0x03u    /* [protocol, fw major, fw minor] */
-#define PEDAL_LINK_TYPE_CTRL 0x04u     /* [jack, kind, value] */
+#define PEDAL_LINK_TYPE_CTRL 0x04u     /* [jack, contact, kind, value] */
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
 
@@ -80,12 +82,23 @@ enum {
 /* The two CTRL jacks, in wire order. Each takes an expression pedal OR a
  * footswitch; the board tells them apart by what the tip does (a switch sits
  * at the rails, a pot moves through the middle) and says which in `kind`.
- * Only the TIP is readable: the ring is the pot's supply, so a two-switch
- * pedal like a BOSS FS-6 offers one switch per jack. */
+ *
+ * A jack has two readable contacts. The TIP is the pot's wiper or a switch.
+ * The RING is the pot's supply (3V3 through 1k) — and, on a two-switch pedal
+ * like a BOSS FS-6 on its A&B jack, the SECOND switch, which shorts the ring
+ * to sleeve. Console board v2 senses the ring on a spare GPIO (a wire from
+ * each jack's ring pin to the J22 pads; see console_board.ino), so that
+ * switch reports as contact RING, always kind SWITCH. */
 enum { PEDAL_CTRL1 = 0, PEDAL_CTRL2, PEDAL_CTRL_COUNT };
+enum { PEDAL_CTRL_TIP = 0, PEDAL_CTRL_RING, PEDAL_CTRL_CONTACT_COUNT };
 enum {
   PEDAL_CTRL_KIND_SWITCH = 0, /* value is 0 or 255 */
-  PEDAL_CTRL_KIND_EXPRESSION,  /* value is the travel, 0..255 */
+  /* value is the RAW position, 0..255 (the 12-bit reading's top byte), NOT a
+   * calibrated travel: a pedal never uses the whole scale (the tip's pull-up
+   * and the ring's 1k compress both ends, and every pedal's travel differs),
+   * and where the ends really are is segno's to learn and keep — the board
+   * forgets everything at power-off. */
+  PEDAL_CTRL_KIND_EXPRESSION,
   PEDAL_CTRL_KIND_COUNT
 };
 
@@ -140,7 +153,8 @@ size_t pedal_link_encode(uint8_t type, const uint8_t *payload, uint8_t len, uint
 size_t pedal_link_encode_button(uint8_t button, uint8_t pressed, uint8_t *out);
 size_t pedal_link_encode_encoder(int8_t delta, uint8_t *out);
 size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out);
-size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t kind, uint8_t value, uint8_t *out);
+size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8_t value,
+                              uint8_t *out);
 size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
