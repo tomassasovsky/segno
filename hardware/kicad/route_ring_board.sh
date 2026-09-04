@@ -29,23 +29,44 @@ POWER_NET="+5V_LED"
 POWER_UM=550
 SIGNAL_UM=300
 
-echo "== 1. rip up existing routing =="
+echo "== 1. rip up existing routing (keeping the stitching vias on file) =="
+# The two GND pours are joined ONLY by hand-placed stitching vias, and the rip-up
+# below destroys them along with everything else: Freerouting routes nets, not
+# zones, so it never puts them back, and the board came out of step 5 with
+# "Missing connection between items: Zone [GND] on F.Cu / Zone [GND] on B.Cu".
+# That is why they are written out here and restored after the session import.
 "$KPY" - "$PCB" <<'PY'
 import pcbnew, sys
 m = pcbnew.LoadBoard(sys.argv[1])
-n = 0
+n = kept = 0
 for t in list(m.GetTracks()):
+    if t.GetClass() == 'PCB_VIA':
+        kept += 1                      # a stitching via: leave it in the DSN so
+        continue                       # Freerouting routes AROUND it
     m.RemoveNative(t); n += 1          # Remove() only DETACHES -- the file saves
 m.Save(sys.argv[1])                    # unchanged and DRC then lies to you
-print("   ripped up %d tracks/vias" % n)
+print("   ripped up %d segments, kept %d vias" % (n, kept))
 PY
 
 echo "== 2. export Specctra DSN =="
 "$KPY" - "$PCB" "$WORK/board.dsn" <<'PY'
 import pcbnew, sys
 m = pcbnew.LoadBoard(sys.argv[1])
+# Route with MORE margin than DRC demands -- the same lesson route_console_board.sh
+# records, which this script was missing. Freerouting works in integer DSN units and
+# lands a hair under whatever clearance it is given: exported at the board's own
+# 0.2 mm rule it came back with 26 clearance violations, 20 of them genuinely under
+# 0.19 mm and the worst at 0.1362 mm. The DSN gets 0.3 mm and the board keeps its
+# 0.2 mm check; the difference is the rounding headroom.
+# Via geometry too: Freerouting inserts its own vias and takes their size from here,
+# and left unset they come back at KiCad's 0.6/0.3 default -- JLCPCB's minimum drill,
+# which is no place to sit for no reason.
+for _n, _nc in m.GetAllNetClasses().items():
+    _nc.SetClearance(pcbnew.FromMM(0.3))
+    _nc.SetViaDiameter(pcbnew.FromMM(0.8))
+    _nc.SetViaDrill(pcbnew.FromMM(0.4))
 assert pcbnew.ExportSpecctraDSN(m, sys.argv[2]), "DSN export failed"
-print("   ok")
+print("   ok (clearance 0.3 mm, vias 0.8/0.4)")
 PY
 
 echo "== 3. give the power net its own class =="
@@ -83,6 +104,8 @@ import pcbnew, sys
 from collections import Counter
 m = pcbnew.LoadBoard(sys.argv[1])
 assert pcbnew.ImportSpecctraSES(m, sys.argv[2]), "SES import failed"
+vias = sum(1 for t in m.GetTracks() if t.GetClass() == 'PCB_VIA')
+print("   %d vias on the board after import" % vias)
 pcbnew.ZONE_FILLER(m).Fill(m.Zones())
 m.Save(sys.argv[1])
 w = Counter()
