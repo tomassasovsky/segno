@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.2548726853
+2461288.259861111
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.2548726853
+2461288.259861111
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{EC5C7BC7-AD63-40DC-95DD-22BBFF139F17}
+{F282D370-02B8-4F83-8675-7DAF302B68AF}
   9
 $VERSIONGUID
   2
-{4CFF32BF-3749-4781-9985-111C4FE370E8}
+{B88AB8AA-F588-48FF-91FA-4CA60AD48000}
   9
 $EXTNAMES
 290
@@ -5991,7 +5991,7 @@ AcDbText
  40
 6.0
   1
-Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa 1.5 mm (los jacks CTRL Neutrik NJ6FD-V admiten panel de 1.2 a 1.5; el cuerpo sigue en 2.0)  CANT. 1  PIEZA PLANA, sin plegados: alimentación 9V + apagado + fusible + 2 x DIN-5 + 2 x TRS + 2 x USB3
+Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa 1.5 mm (los jacks CTRL Neutrik NJ6FD-V admiten panel de 1.2 a 1.5; el cuerpo sigue en 2.0)  CANT. 1  PIEZA PLANA, sin plegados: entrada USB-C PD 20 V (punzón D) + botón de apagado + fusible + 2 x DIN-5 + 2 x jack Neutrik NJ6FD-V (Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que apoya contra el cuerpo
  11
 -197.0
  21
@@ -7103,7 +7103,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:07:01.731658+00:00
+1.4.4 @ 2026-09-04T09:14:12.500833+00:00
   0
 VISUALSTYLE
   5
@@ -13665,7 +13665,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:07:01.733658+00:00
+1.4.4 @ 2026-09-04T09:14:12.502837+00:00
   0
 ENDSEC
   0

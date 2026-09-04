@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.2548842593
+2461288.259861111
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.2548842593
+2461288.259861111
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{D858ABC1-49DC-422D-A7F4-8D4F619BD7A4}
+{F9878484-721A-4207-B23C-9242CAF43659}
   9
 $VERSIONGUID
   2
-{8C5A49E3-518D-4801-85FF-064B2CA32C9C}
+{E92409DC-99FE-494D-BE95-359681B4B1EA}
   9
 $EXTNAMES
 290
@@ -5435,11 +5435,11 @@ AcDbPolyline
  10
 30.14285714285714
  20
-77.85617088735222
+83.4431629360746
  10
 0.0
  20
-77.85617088735222
+83.4431629360746
   0
 LWPOLYLINE
   5
@@ -5459,11 +5459,11 @@ AcDbPolyline
  10
 0.0
  20
-17.916431383419642
+19.909927407780827
  10
 30.14285714285714
  20
-17.916431383419642
+19.909927407780827
   0
 LWPOLYLINE
   5
@@ -5483,11 +5483,11 @@ AcDbPolyline
  10
 0.0
  20
-59.38484359564245
+63.37183564436482
  10
 30.14285714285714
  20
-59.38484359564245
+63.37183564436482
   0
 CIRCLE
   5
@@ -5501,9 +5501,9 @@ CUT
 100
 AcDbCircle
  10
-3.0714285714285694
+5.0
  20
-67.85617088735222
+73.4431629360746
  30
 0.0
  40
@@ -5521,9 +5521,9 @@ CUT
 100
 AcDbCircle
  10
-27.07142857142857
+25.14285714285714
  20
-67.85617088735222
+73.4431629360746
  30
 0.0
  40
@@ -5543,17 +5543,17 @@ AcDbText
  10
 5.0
  20
-83.85617088735222
+89.4431629360746
  30
 0.0
  40
 9.0
   1
-Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de 1.6 mm (NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo 20 / alma 45 / pie 20 mm); plegado del apoyo 102.5° (asienta al ras sobre la pendiente de 12.5°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), fieltro sobre el apoyo; deducción aplicada (K 0.33, Ri 1.6): 2.08 mm en el plegado del apoyo, 1.53 mm en el del pie; desarrollo 77.86 mm
+Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de 1.6 mm (NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo 20 / alma 45 / pie 20 mm); plegado del apoyo 102.5° (asienta al ras sobre la pendiente de 12.5°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), fieltro sobre el apoyo; deducción aplicada (K 0.33, Ri 1.6): 2.08 mm en el plegado del apoyo, 1.53 mm en el del pie; desarrollo 83.44 mm
  11
 5.0
  21
-83.85617088735222
+89.4431629360746
  31
 0.0
 100
@@ -6661,7 +6661,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:07:02.194437+00:00
+1.4.4 @ 2026-09-04T09:14:12.959422+00:00
   0
 VISUALSTYLE
   5
@@ -13223,7 +13223,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:07:02.196185+00:00
+1.4.4 @ 2026-09-04T09:14:12.961509+00:00
   0
 ENDSEC
   0

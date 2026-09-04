@@ -989,7 +989,9 @@ assert HR_FLAT > 0 and LID_REAR_LAP > 0, "seam solver: degenerate rear seam"
 assert D_FL_TIP + PEM_EDGE <= D_SEAM_SCREW <= D_LAP_TIP - (3.4 / 2.0 + 2.0), (
     f"seam screw row d={D_SEAM_SCREW:.2f} outside the lap/flange overlap "
     f"[{D_FL_TIP:.2f}, {D_LAP_TIP:.2f}] with edge margins")
-assert HR_FLAT > max(CORNER_ZR_WALL) + T + 2.0, (
+assert HR_FLAT - BA90 / 2.0 > CORNER_HT + T + RI - DEV90 + 0.5, (
+    "rear web too short: the corner bracket's TOP edge runs into the transition fold's bend zone")
+assert HR_FLAT > max(CORNER_ZR_WALL) + T + RI + 2.0, (
     "rear web too short: corner-bracket rivet holes cross the transition fold")
 
 def lid_top_z(v):
@@ -1387,7 +1389,10 @@ POST_FELT  = 1.0                   # ASSEMBLED metal gap: a thicker (2-3 mm) fel
                                    # pad compresses into this ~1 mm when the lid seats -> preloaded,
                                    # firm, rattle-free contact without jacking the lid.
 POST_TILT  = SLOPE_ANGLE           # pad tilt (deg) so it beds FLUSH on the sloped faceplate underside
-POST_BOLT_DU = 12.0                # M4 foot bolts at +/- this in u
+POST_BOLT_DU = POST_PW / 2.0 - 5.0 # M4 foot bolts at +/- this in u: 5.0 in from the foot's
+                                   # side edge (2.85 mm of web past the O4.3, an M4 head
+                                   # inside the foot). Was a literal 12 for the 40 mm post;
+                                   # the base anchors derive from it, so both move together
 # The shell is soft 1050 aluminium, but the posts are made in STEEL 1.6 mm: ~3x stiffer
 # (E 200 vs 69 GPa), tougher, and only ~+60 g for the pair -- rigidity where it costs no
 # weight (issue #292). Felt cap isolates the steel pad from the soft-Al faceplate.
@@ -1424,9 +1429,19 @@ def post_deduct(angle_deg):
 
 POST_DD_PAD  = post_deduct(90.0 + POST_TILT)   # apoyo -> alma, 102.5 deg
 POST_DD_FOOT = post_deduct(90.0)               # alma -> pie
-POST_PAD_F   = POST_PAD - POST_DD_PAD                       # flat flap lengths, from the bend centre lines
-POST_WEB_F   = POST_H - POST_DD_PAD - POST_DD_FOOT
-POST_FOOT_F  = POST_FOOTL - POST_DD_FOOT
+# OUTER mold-line lengths of the folded C, read off build_post_step's solid:
+# the foot runs from its free end to the web's OUTER (rear) face = foot + t;
+# the web from the floor to where the tilted pad's TOP face meets the web's
+# rear plane = POST_H + t*tan(theta/2); the pad from that point to its free
+# end = pad + t*tan(theta/2). Deducting from the nominal legs (re-review
+# 2026-09-04) folded the post 2 mm short and left the felt unloaded.
+_POST_TP     = POST_T * math.tan(math.radians(90.0 + POST_TILT) / 2.0)
+POST_FOOT_OUT = POST_FOOTL + POST_T
+POST_WEB_OUT  = POST_H + _POST_TP
+POST_PAD_OUT  = POST_PAD + _POST_TP
+POST_PAD_F   = POST_PAD_OUT - POST_DD_PAD                   # flat flap lengths, from the bend centre lines
+POST_WEB_F   = POST_WEB_OUT - POST_DD_PAD - POST_DD_FOOT
+POST_FOOT_F  = POST_FOOT_OUT - POST_DD_FOOT
 # PIN to the doc probe: at POST_V=165 the populated doc gave web 45.107 mm at
 # exactly the 1.0 mm felt gap (2026-08-19). This pin moves ONLY with a fresh
 # doc probe -- if it trips, the plane model and the doc have drifted apart;
@@ -2209,7 +2224,7 @@ def _check(strict_board_mount=True):
         f"REAR_PANEL: panel spans z {_pz0:.1f}..{_pz0+_ph:.1f}, which does not "
         f"leave 4 mm of wall above and below on a {REAR_WALL_H:.0f} mm wall")
     for _ru in (CORNER_RO + T, _bw_wall - CORNER_RO - T):   # where dxf_base drills them
-        for _rz in (T + z for z in CORNER_ZR_WALL):
+        for _rz in (T + RI + z - DEV90 for z in CORNER_ZR_WALL):   # where dxf_base drills them
             _clr = max(_pu0 - _ru, _ru - (_pu0 + _pw), _pz0 - _rz, _rz - (_pz0 + _ph))
             assert _clr >= 4.0, (
                 f"REAR_PANEL: corner rivet head at ({_ru:.1f}, {_rz:.1f}) is "
@@ -2933,10 +2948,16 @@ def dxf_base(path):
     # face. Equating both (the audit of 2026-09-04 found every rivet 2.0 mm off
     # along the wall and 1.9 mm low, #992) gives:
     #   along the wall: s = CORNER_RO + T          (the BA90 terms cancel)
-    #   up the wall:    s = T + z - DEV90          (bracket bottom on the floor top)
+    #   up the wall:    s = T + RI + z - DEV90     (see below)
+    # The bracket does NOT reach the floor top: the floor->wall fold has an
+    # inside radius RI, tangent to the wall's inner face RI above the floor
+    # top, and a flat leg clamped to that face bottoms out on the arc. So the
+    # bracket's bottom edge floats RI above the floor top and its heights z
+    # (from CORNER_ZR_*) are measured from there (re-review 2026-09-04: the
+    # first correction put the bracket ON the floor and the rivets 2.0 mm low).
     RO_WALL = CORNER_RO + T                   # 10.0: rivet offset along the wall, flat
     def _zf(z):                               # bracket height z -> wall flat offset
-        return T + z - DEV90
+        return T + RI + z - DEV90
     for sgn, xc in ((+1, 0.0), (-1, BW)):     # +1 left (side flap -x) | -1 right (side flap +x)
         for z in CORNER_ZR_WALL:               # rear-wall leg (3 rivets)
             _circle(msp, xc + sgn*RO_WALL, BD + _zf(z), RV)     # rear-wall face
@@ -3053,8 +3074,8 @@ def dxf_rear_panel(path):
     _text(msp, -pw/2 + 4, ph/2 + 6, 6,
           f"Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa {REAR_PANEL_T:.1f} mm (los jacks CTRL Neutrik NJ6FD-V "
           f"admiten panel de 1.2 a 1.5; el cuerpo sigue en 2.0)  CANT. 1  "
-          "PIEZA PLANA, sin plegados: alimentación 9V + apagado + fusible + 2 x DIN-5 + "
-          "2 x TRS + 2 x USB3",
+          "PIEZA PLANA, sin plegados: entrada USB-C PD 20 V (punzón D) + botón de apagado + fusible + 2 x DIN-5 + "
+          "2 x jack Neutrik NJ6FD-V (Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que apoya contra el cuerpo",
           "NOTE")
     doc.saveas(path); return {}
 
@@ -4359,14 +4380,20 @@ def build_ring_diffuser_step():
     ins = lens.union(cq.Workplane("XY").circle(37.5).circle(24.2)
                      .extrude(-plate_t))
     # disc lip: the disc rests on the inner lip at z=0, flush with the sheet
-    # top when glued (disc top = T). The plate is OPEN over the LED circle
-    # (r 25.6..33.2, through): the ring glows through the 2.4 mm lens alone.
-    # Until 2026-09-04 a 0.8 mm web was left here; the PR #990 board carries
-    # the Ring 24 on a 2.54 mm pin strip and its top stood 0.56 mm into that
-    # web (and its rim into the full plate). Cutting through leaves the disc
-    # lip (r 24.2..25.6) and the glue land (r 33.2..37.5) intact.
+    # top when glued (disc top = T). Under the lens the plate has to clear the
+    # PR #990 board's Ring 24, which sits on a 2.54 mm pin strip: its LED tops
+    # are 0.24 below the lens bottom (z=0) and its bare PCB rim 1.4 lower. So:
+    # a THROUGH cut over the LED annulus only (r 26.5..32.1, the 5050
+    # footprint on Adafruit's model +0.3 each side), and a 0.4 mm counterbore
+    # from the plate's back over the whole ring rim (r 26.0..33.0, 1.6 mm of
+    # plate left, 0.24 clear of the PCB). The plate between the lens bore
+    # (r 25.85) and the LED cut stays, so the disc lip is still attached --
+    # a full through-cut from 25.6 out severed it (re-review 2026-09-04).
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
-                  .circle(33.2).circle(25.6).extrude(plate_t))
+                  .circle(32.1).circle(26.5).extrude(plate_t))
+    ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
+                  .circle(33.0).circle(26.0).extrude(0.4))
+    assert len(ins.solids().vals()) == 1, "ring diffuser is not one solid -- the disc lip is severed"
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
@@ -4937,15 +4964,23 @@ BEND_FOOTNOTES = {
                    f"4 alivios de esquina de Ø 6.0 abren 413 mm entre las paredes frontal y trasera ya levantadas. Referenciar los "
                    f"plegados 4 y 5 contra las caras ya formadas de las paredes frontal/trasera (la pestaña lateral es una cuña y no "
                    f"queda escuadra con su plegado). Matriz V12 en todos los plegados; el Ri {RI:.1f} mm es obligatorio - si aparecen "
-                   f"fisuras en el sentido del laminado PARAR, no abrir el radio: hay que volver a desarrollar el plano."),
+                   f"fisuras en el sentido del laminado PARAR, no abrir el radio: hay que volver a desarrollar el plano. "
+                   f"PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico). "
+                   f"Chapa de 1250 de ancho (desarrollo 1040.6 x 538.6). Los 9 pilotos Ø2.5 de la pared frontal quedan a 3.8 mm de la línea de "
+                   f"plegado, dentro de la abertura de la matriz V12: taladrarlos DESPUÉS de plegar (van roscados después de pintar). "
+                   f"El borde trasero de los laterales queda a 0.06 mm de la cara interior de la trasera: plegar la trasera a escuadra "
+                   f"antes de levantar los laterales. La máscara PANEL_BOND es en la CARA INTERIOR. Ignorar las capas NOTE/MASK/SILK al anidar."),
     "segno_faceplate": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T) | pestaña plana = longitud exterior - deducción. "
                         f"El plegado de la pestaña frontal cruza las aberturas de los pedales (quedan 12.1 mm de material): matriz V12, "
-                        f"punzón segmentado, prever enderezado."),
+                        f"punzón segmentado, prever enderezado. PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: "
+                        f"el encoder queda a la IZQUIERDA del músico). Los 9 agujeros Ø3.4 de la pestaña frontal quedan a 3.5 mm de la "
+                        f"línea de plegado, dentro de la abertura de la V12: taladrarlos DESPUÉS de plegar."),
     "segno_corner_bracket_rear": (f"Factor K {KF} | pestaña plana = longitud exterior - deducción. CANT. 2, y la segunda se monta DADA "
                                   f"VUELTA - la pieza es casi simétrica, sólo el patrón de agujeros es de mano."),
     "segno_post": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {POST_T:.1f} mm (1.0 x T). "
                    f"Deducción aplicada con K {KF} y Ri {POST_RI:.1f} mm (= T): {POST_DD_PAD:.2f} mm en apoyo->alma (102.5°), "
-                   f"{POST_DD_FOOT:.2f} mm en alma->pie; verificar la longitud desarrollada contra el herramental propio antes de cortar."),
+                   f"{POST_DD_FOOT:.2f} mm en alma->pie; verificar la longitud desarrollada contra el herramental propio antes de cortar. "
+                   f"El plegado del apoyo es AGUDO (incluido {90.0 - POST_TILT:.1f}°): punzón de 30° y matriz aguda, no el juego de 88°."),
 }
 
 def _bend_table_lines(stem):
@@ -5137,7 +5172,7 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
 # stale the way a hand-typed parts table does.
 # ===========================================================================
 
-AL_2MM = "Aluminio 5052-H32 2,0 mm"
+AL_2MM = "Aluminio 1050 2,0 mm"
 ST_16  = "Acero laminado en frío 1,6 mm"
 
 PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupón de muestra"
