@@ -14,8 +14,14 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The MIDI tab of the Control domain: the foot controller, and every global
-/// mapping taken off it.
+/// The Controllers tab of the Control domain: everything plugged into the
+/// console, and every global mapping taken off it.
+///
+/// Not "MIDI", though a MIDI foot controller is the device it names first.
+/// A binding does not care how the control reached it — `ControllerSourceKind`
+/// covers MIDI notes and CCs and the console's own CTRL jacks alike — so the
+/// CTRL rows below belong here as much as the MIDI ones, and a tab named for
+/// the protocol hid them (#498).
 ///
 /// Two stacked things, because they answer two questions — *is anything
 /// delivering MIDI at all*, and *what are its controls wired to*. The device
@@ -25,12 +31,12 @@ import 'package:segno/theme/theme.dart';
 ///
 /// The mappings are GLOBAL (R19) — they follow the rig, not the loaded session
 /// — and the face says so in words before anyone invests in a layout.
-class MidiTrayBody extends StatefulWidget {
-  /// Creates a [MidiTrayBody].
-  const MidiTrayBody({super.key});
+class ControllersTrayBody extends StatefulWidget {
+  /// Creates a [ControllersTrayBody].
+  const ControllersTrayBody({super.key});
 
   @override
-  State<MidiTrayBody> createState() => _MidiTrayBodyState();
+  State<ControllersTrayBody> createState() => _ControllersTrayBodyState();
 }
 
 /// What the face currently has open. At most one thing — an accordion across
@@ -61,7 +67,7 @@ class _MappingOpen extends _Open {
   final (MappingTrigger, String) key;
 }
 
-class _MidiTrayBodyState extends State<MidiTrayBody> {
+class _ControllersTrayBodyState extends State<ControllersTrayBody> {
   /// What is open, or null. See [_Open].
   _Open? _open;
 
@@ -168,7 +174,7 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
         ),
       ],
       child: KeyedSubtree(
-        key: const Key('midi_tray_body'),
+        key: const Key('controllers_tray_body'),
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
