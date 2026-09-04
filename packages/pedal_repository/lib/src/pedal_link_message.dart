@@ -40,26 +40,35 @@ final class EncoderMessage extends PedalLinkMessage {
 }
 
 /// A CTRL jack reporting (board → segno): a footswitch edge, or an
-/// expression pedal's travel.
+/// expression pedal's raw position.
 final class CtrlMessage extends PedalLinkMessage {
   /// Creates a [CtrlMessage].
   const CtrlMessage({
     required this.jack,
     required this.kind,
     required this.value,
-  }) : assert(value >= 0 && value <= 255, 'value must fit a byte');
+    this.contact = PedalCtrlContact.tip,
+  }) : assert(value >= 0 && value <= 255, 'value must fit a byte'),
+       assert(
+         contact == PedalCtrlContact.tip || kind == PedalCtrlKind.switchPedal,
+         'the ring can only carry a switch',
+       );
 
   /// Which jack reported.
   final PedalCtrlJack jack;
 
+  /// Which contact of it.
+  final PedalCtrlContact contact;
+
   /// What the board decided is plugged into it.
   final PedalCtrlKind kind;
 
-  /// `0`..`255`: a switch sends the ends, an expression pedal its travel.
+  /// `0`..`255`: a switch sends the ends, an expression pedal its RAW
+  /// position — uncalibrated; see [PedalCtrlCalibration].
   final int value;
 
   @override
-  List<Object?> get props => [jack, kind, value];
+  List<Object?> get props => [jack, contact, kind, value];
 }
 
 /// The board announcing itself (board → segno), at boot and once a second

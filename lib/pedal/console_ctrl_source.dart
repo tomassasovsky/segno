@@ -14,13 +14,27 @@ import 'package:pedal_repository/pedal_repository.dart';
 /// the two are DIFFERENT controls even on the same jack: swapping pedals
 /// should not silently drive whatever the other one was bound to.
 ///
-/// Values arrive as `0..255` and leave as `0..127`, the range every binding
-/// and every persisted capture already speaks.
+/// Values arrive as `0..255` (an expression pedal's already calibrated by
+/// the repository) and leave as `0..127`, the range every binding and every
+/// persisted capture already speaks.
+///
+/// The control number is the jack for the tip, and the jack plus
+/// [ringIdOffset] for the ring: the second switch of a two-switch pedal is
+/// its own control, and captures made before rings were readable keep their
+/// numbers.
 class ConsoleCtrlSource implements ControllerSource {
   /// Creates a [ConsoleCtrlSource] over [pedal]'s events.
   ConsoleCtrlSource(PedalRepository pedal) {
     _sub = pedal.events.listen(_onEvent);
   }
+
+  /// What a ring contact adds to its jack's index to make a control number.
+  static const ringIdOffset = 2;
+
+  /// The control number for [input].
+  static int idFor(PedalCtrlInput input) =>
+      input.jack.index +
+      (input.contact == PedalCtrlContact.ring ? ringIdOffset : 0);
 
   final StreamController<RawControllerInput> _inputs =
       StreamController<RawControllerInput>.broadcast();
@@ -38,7 +52,7 @@ class ConsoleCtrlSource implements ControllerSource {
           PedalCtrlKind.switchPedal => ControllerSourceKind.consoleSwitch,
           PedalCtrlKind.expression => ControllerSourceKind.consoleExpression,
         },
-        id: event.jack.index,
+        id: idFor(event.input),
         // 0..255 down to the 0..127 every binding speaks. A switch's ends
         // stay the ends, so a press still reads as a press.
         value: event.value >> 1,
