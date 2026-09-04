@@ -829,6 +829,9 @@ FOOT_INSET_Y = 45.0  # from front and rear
 
 # --- fasteners ----------------------------------------------------------------
 D_M3      = 3.2      # M3 clearance (Pi/board standoffs)
+D_RIVET   = 3.3      # 3.2 mm (1/8") pop rivets: the usual 3.3 drill. Was D_M3 = 3.2,
+                     # zero clearance on a rivet that also has to find its hole while
+                     # the bracket sits tangent to the wall fillet (re-review 2026-09-04)
 D_M2      = 2.4      # M2 clearance (external buck standoffs)
 D_M4      = 4.3      # M4 clearance (bottom plate -> shell)
 # The whole lid fixes with ONE screw SKU: M3 into hand-tapped Ø2.5 pilots (front
@@ -2937,7 +2940,7 @@ def dxf_base(path):
     # Only the TALL rear corners get riveted L-brackets. The short 12 mm FRONT corners are
     # already clamped top (lid front-lip screws into the front wall) + bottom (bottom-plate
     # fold ties both walls), so they stay a plain butt+relief corner -- no bracket needed.
-    RV = D_M3
+    RV = D_RIVET
     # The bracket is a folded L whose OUTER faces lie on the two walls' INNER
     # faces, resting on the bottom-plate TOP. Its rivet holes sit CORNER_RO from
     # its own bend CENTRE line in the flat, which after a 90 deg fold (RI, T,
@@ -3033,9 +3036,9 @@ def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
     _poly(msp, [(0, 0), (2*LEG, 0), (2*LEG, ht), (0, ht)], "CUT")
     _poly(msp, [(LEG, 0), (LEG, ht)], "BEND", closed=False)             # 90 deg fold between the legs
     for z in wall_zs:
-        _circle(msp, LEG - CORNER_RO, z, D_M3)                          # rear-wall leg
+        _circle(msp, LEG - CORNER_RO, z, D_RIVET)                        # rear-wall leg
     for z in side_zs:
-        _circle(msp, LEG + CORNER_RO, z, D_M3)                          # side-wall leg
+        _circle(msp, LEG + CORNER_RO, z, D_RIVET)                        # side-wall leg
     _text(msp, 0, ht+6, 6, f"Segno ÁNGULO DE ESQUINA (segno_corner_bracket_rear, {tag})  chapa 2.0 mm  CANT. 2  unión de esquina sin soldadura; remachar a las dos paredes", "NOTE")
     doc.saveas(path); return {}
 
@@ -4981,6 +4984,11 @@ BEND_FOOTNOTES = {
                         f"línea de plegado, dentro de la abertura de la V12: taladrarlos DESPUÉS de plegar."),
     "segno_corner_bracket_rear": (f"Factor K {KF} | pestaña plana = longitud exterior - deducción. CANT. 2, y la segunda se monta DADA "
                                   f"VUELTA - la pieza es casi simétrica, sólo el patrón de agujeros es de mano."),
+    "segno_rear_panel": ("PIEZA PLANA. La cara DIBUJADA es la cara INTERIOR, la que apoya contra la pared trasera del cuerpo: la "
+                         "máscara PANEL_BOND Ø12 va en esa cara y coincide con la del cuerpo; montado al revés, la máscara cae sobre "
+                         "pintura y el panel pierde la puesta a tierra. Chapa de 1.5 mm (jacks CTRL Neutrik NJ6FD-V en agujero Ø12). "
+                         "El Ø24 es el punzón D de Neutrik: redondo, sin plano."),
+    "segno_ring_disc": ("PIEZA PLANA, sin cara preferente: queda sujeta por la tuerca del encoder; el Ø7.2 es el paso del buje."),
     "segno_post": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {POST_T:.1f} mm (1.0 x T). "
                    f"Deducción aplicada con K {KF} y Ri {POST_RI:.1f} mm (= T): {POST_DD_PAD:.2f} mm en apoyo->alma (102.5°), "
                    f"{POST_DD_FOOT:.2f} mm en alma->pie; verificar la longitud desarrollada contra el herramental propio antes de cortar. "
