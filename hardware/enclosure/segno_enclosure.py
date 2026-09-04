@@ -86,13 +86,15 @@ TRANS_RUN  = 22.0    # transition horizontal run (depth added behind the control
                      # forward, reduces the bottom-plate depth)
 TRANS_DROP = 10.0    # transition vertical drop (peak -> rear-panel top)
 
-T        = 2.0       # sheet thickness (2.0 mm 5052-H32 aluminium)
-RI       = 2.0       # inside bend radius (= T, safe for 5052)
+T        = 2.0       # sheet thickness (2.0 mm 1050 aluminium -- the shop's stock, owner 2026-09-04)
+RI       = 2.0       # inside bend radius (= T; 1050 is softer than 5052 and takes it easily)
 KF       = 0.33      # K-factor for bend-allowance development
 FLANGE   = 18.0      # return-flange depth (lid side wings + wall top flange)
 # Weld-free corner join: internal L-brackets riveted through both walls. These MUST match
 # between the base rivet holes, the bracket parts, and the viewer render.
-CORNER_RO = 8.0      # rivet offset ALONG each wall from the corner (hug the corner, clear the I/O panel)
+CORNER_RO = 8.0      # rivet offset from the BRACKET's bend centre line, in its flat (hug the
+                     # corner, clear the I/O panel). The base drills CORNER_RO + T from its
+                     # bend lines -- see dxf_base for the fold-development derivation.
 CORNER_LEG = 12.0    # bracket leg width (along the wall)
 # REAR-corner rivets are STAGGERED between the two legs so a wall-leg rivet and a side-leg
 # rivet never sit at the same height (their tips would meet at the corner). Heights are from
@@ -390,19 +392,151 @@ S7C_ADJ      = 6.0     # height regulation budget: felt compression (~1) + up to
 #  SCREEN_TOP_V, which is defined further down)
 
 # --- LEDs / encoder -----------------------------------------------------------
-# Status indicators = SMD LEDs (WS2812B), NOT through-hole: ONE single-LED
-# board per indicator pedal (hardware/led_strip/, 16 x 8 mm puck) stuck to the
-# faceplate UNDERSIDE with VHB tape; a WHITE PLA pill diffuser insert sets into
-# each slot and glows through. Boards daisy-chain pedal-to-pedal with 3 wires
-# (5V/data/GND) on the castellated end pads.
+# Status indicators = SMD LEDs (WS2812B), NOT through-hole: a WHITE PLA pill
+# diffuser insert sets into each slot and glows through, and an EIGHT-LED
+# segment cut from bare 144 LEDs/m strip snaps into a channel on its back (#927,
+# #930). It is NOT the 16 x 8 puck PCB in hardware/led_strip/ and not VHB tape --
+# see the LED_STRIP_* block below for the source and how it is retained.
+# Segments daisy-chain pedal-to-pedal with 3 wires (5V/data/GND).
 LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
 LED_SLOT_W = 60.0         # pill window per indicator pedal (one 5050 diffused behind it)
 LED_INS_CLR   = 0.2       # diffuser-insert lateral clearance in the slot (total)
 LED_INS_PROUD = 0.4       # lens stands this far above the outer skin
-LED_INS_FLANGE = 3.0      # shoulder overhang past the slot, all around (seats on the
-                          # faceplate UNDERSIDE -- the insert pushes in from INSIDE)
+LED_INS_FLANGE = 4.0      # shoulder overhang past the slot, all around (seats on the
+                          # faceplate UNDERSIDE -- the insert pushes in from INSIDE).
+                          # 3.0 until #930: a 12 mm-wide 144/m strip cannot live in the
+                          # 12 mm flange that gave. 4.0 makes it 14 and restores the
+                          # same 0.7 wall. There is room -- the pill centre is LED_GAP
+                          # (12) behind the pedal slot, so the wider shoulder still
+                          # stops ~5 clear of the aperture.
 LED_INS_FL_T  = 1.5       # shoulder thickness
-LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
+# --- a cut WS2812B strip segment sits in the back of the diffuser (#927) -----
+# Owner call 2026-08-28: the light source is a **bare non-waterproof WS2812B
+# strip**, cut to one segment per pill -- NOT the 16 x 8 puck PCB in
+# hardware/led_strip/. The density landed on 144 LEDs/m in #930 (see
+# LED_STRIP_PITCH); segno_console_shopping_list.md orders to that.
+#
+# It used to be a 6 x 6 x 0.8 "nest" with the module VHB-taped over it, which
+# registered the 5 x 5 PACKAGE rather than anything the size of the source -- and
+# did not even seat: a 1.6-tall PLCC4 in a 0.7-deep recess holds the source 0.9
+# clear of the flange, with tape spanning the gap.
+#
+# THE STRIP IS THE SPRING. Its own 3M tape is useless here -- the LEDs must face
+# the lens, which turns the adhesive to face away into the console -- so the strip
+# is trapped mechanically instead. That is what makes this work where a rigid
+# board could not: at LED_STRIP_T of flex PCB you bow the segment slightly, drop it
+# past the lips, and let it flatten. Nothing in the PRINTED part ever has to
+# deflect, so none of it has to be springy.
+LED_PKG       = 5.0       # WS2812B PLCC4 body, 5.0 x 5.0
+LED_PKG_H     = 1.6       # ...and its height -- the number the old nest ignored
+LED_PKG_CLR   = 0.3       # per side, package to its recess
+# 144 LEDs/m, IP20, 12 mm wide (owner call 2026-08-28, #930). The density is
+# picked for EVENNESS, not brightness: light only has LED_WEB + the lens to
+# spread through, and a bar reads continuous when the LED pitch is within about
+# twice that. 144/m is 6.94 against 3.2 -- 2.2:1. 60/m would be 5.2:1, which is
+# three visible blobs per pill.
+LED_STRIP_W   = 12.0      # *** MEASURE BEFORE PRINTING THE DIFFUSERS (#930) ***
+                          # 144/m is 12 wide where 30 and 60/m are 10 -- but the
+                          # chosen part's listing CONTRADICTS ITSELF: its product
+                          # image says 12, its compare-with-similar row says
+                          # "PCB Board Width: IP30/65 - 10mm; IP67 - 12mm". 12 is
+                          # taken because the image is specific to this part and
+                          # agrees with the reference sheet. It is NOT verified.
+                          # The lips grip 0.4 per side, so a 2 mm error either
+                          # jams the strip or drops it straight through.
+LED_STRIP_OA  = 2.13      # OVERALL thickness, off the reference sheet for IP20.
+                          # The chosen part's image says 0.5 mm of PCB, which
+                          # corroborates this within 0.03 (2.13 - 1.6 = 0.53).
+                          # The PCB is derived FROM the overall rather than
+                          # guessed -- an earlier 0.35 "flex PCB" guess was 0.18
+                          # thin and would have jammed under the lips.
+LED_STRIP_T   = LED_STRIP_OA - LED_PKG_H   # 0.53 of PCB; the rest is the 5050
+LED_STRIP_PITCH = 1000.0 / 144.0               # 6.944 by definition at 144/m.
+                          # The chosen part's image labels 6.5, which cannot be
+                          # right (6.5 x 144 = 936, not 1000) -- marketing art,
+                          # not a dimension. Worth confirming on the real strip
+                          # anyway, since it sets the cut length.
+LED_STRIP_N_MAX = int(LED_SLOT_W // LED_STRIP_PITCH)  # 8 is all that fits the 60 pill
+# 8 or 7 is OPEN, deferred to when the strip is in hand (owner, 2026-08-28).
+# The pill is rendered as a CENTRE-BRIGHT GRADIENT falling off to both ends, and
+# an EVEN count has no centre pixel -- with 8 the middle two sit 3.47 either side
+# of centre. They are 6.94 apart against 3.2 mm of diffusion, so they should read
+# as one bright centre, and 8 fills the pill to within 2.2 mm of each end where 7
+# leaves 5.7. That is a judgement about how it LOOKS, which is why it waits for
+# the real part rather than being settled here.
+#   8 -> no centre pixel, better fill      (current)
+#   7 -> a true centre pixel at 0, dimmer ends
+# Changing it re-cuts the channel, so it changes the print -- nothing is printed
+# yet, which is exactly why now is the cheap time to still be undecided.
+LED_STRIP_N   = LED_STRIP_N_MAX                       # <- the one number to flip
+LED_STRIP_SEG = LED_STRIP_N * LED_STRIP_PITCH         # 55.56 cut length
+LED_STRIP_CLR = 0.3       # per side, across the width
+LED_STRIP_T_CLR = 0.15    # ...and ACROSS THE THICKNESS. Without it the channel is
+                          # exactly LED_STRIP_T deep, off a LED_STRIP_OA the block
+                          # above flags as unverified -- a strip 0.1 over nominal
+                          # then cannot flatten, so it stays bowed and pushes on
+                          # the lips, which is the one thing the design says the
+                          # printed part never has to take. Every other axis had a
+                          # clearance; this one did not.
+LED_CH_L      = LED_STRIP_SEG + 1.4   # cut segment plus slop -- scissors land
+                          # +-0.5 either way. DERIVED now: a fixed 18.0 silently
+                          # stopped fitting the moment the segment went from one
+                          # LED to eight.
+LED_WEB       = 0.8       # white PLA left between package and lens base. This is
+                          # the diffusing wall: thinner reads as a hot spot, and
+                          # it sets how deep the package recess can go.
+LED_LIP       = 0.7       # lip overhang past the channel wall -> 0.4 of grip on
+                          # each strip edge NOMINALLY, i.e. with the strip centred.
+                          # It is not centred by anything: the channel gives it
+                          # +-LED_STRIP_CLR of lateral play, so a strip against one
+                          # wall has 0.7 of grip on that side and 0.1 on the other.
+                          # 0.1 is inside one layer line, and nothing else retains
+                          # the strip -- its adhesive faces away by design.
+                          # *** OWNER CALL (#930): live with 0.1 worst case, or buy
+                          # it back. The levers are LED_LIP (1.0 makes the worst
+                          # case 0.4, but then the strip has to bow past 0.7 of
+                          # interference instead of 0.4) and LED_STRIP_CLR (a
+                          # tighter channel has less play, but LED_STRIP_W is the
+                          # unverified number in this file, so tightening it now is
+                          # betting on a width the vendor listing contradicts).
+                          # Settle it with the strip in hand, not here.
+LED_SHOULDER  = 0.75      # ledge the strip's LED-side face lands on. Without it
+                          # the up-stop is the LED package bottoming in its recess
+                          # -- i.e. the fitting force lands on the part, not the LED.
+LED_PKG_Z_CLR = 0.15      # ...and the shoulder is only really the stop if the
+                          # package top stops SHORT of the recess ceiling. At zero
+                          # the two contacts are line-to-line, so a package on the
+                          # high side of its height tolerance lands the fitting
+                          # force on the LED after all -- the very thing
+                          # LED_SHOULDER exists to prevent. 0.15 of air makes the
+                          # order unambiguous and is nothing optically.
+LED_WALL_MIN  = 0.6       # channel wall floor; the flange edge caps the outside
+# Neither of the next two is a manufacturing allowance -- they are CAD tripwires
+# set just under what the layout delivers, so that moving a constant fails the
+# build. As-printed is a separate question nobody has answered: a 14 mm FDM
+# shoulder can come out 0.2 over, and with a glue bead that eats most of the 0.39
+# to the post pad. Check the first printed diffuser against a post before gluing
+# ten of them.
+LED_POST_MIN  = 0.3       # gap from the shoulder's REAR edge to the support-post
+                          # top pad, checked only where the two share u. Since
+                          # POST_PW is derived to fit BETWEEN the pill shoulders
+                          # (2026-09-04) they share none, and this gate is a
+                          # tripwire that stays armed for whoever widens the post
+                          # or the flange again. Before that, at POST_PW = 40, it
+                          # held a 0.39 mm gap and pinned LED_GAP to a 0.09 mm
+                          # window.
+LED_LAND_MIN  = 2.4       # faceplate metal left between the shoulder's front edge
+                          # and the pedal aperture behind it -- the land the flange
+                          # is glued to, MEASURED OFF THE EMITTED CUTS (the aperture
+                          # is cut PEDAL_AP_DEV rearward of v + FSW_SLOT_D/2 for the
+                          # fold development, #760). The land is LED_GAP -
+                          # LED_SLOT_H/2 - LED_INS_FLANGE - PEDAL_AP_DEV: 2.41 at
+                          # LED_GAP = 12 (a tripwire, #930), 6.41 at the 16 of the
+                          # 2026-09-04 trial. A 12 mm strip needs LED_INS_FLANGE >=
+                          # 3.9 (channel wall + LED_WALL_MIN), so with LED_GAP back
+                          # at 12 the 3.0 a glue bead wants cannot hold -- that is
+                          # what the trial also buys. Anything that eats into the
+                          # land past this floor fails the build.
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
 # EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
@@ -875,7 +1009,13 @@ def lid_under_z(v):
 # (aligned in u). CLEAR/BANK ride centre so the 16" screen still fits depth-wise.
 EDGE         = 30.0      # uniform edge margin (sides / rear)
 FRONT_PEDAL_MARGIN = 10.0 # front-row pedals sit this close to the front edge
-LED_GAP      = 12.0      # status-LED offset behind a pedal (toward rear)
+LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear): pill
+                         # centre above the slot's rear edge. 12.0 until 2026-09-04;
+                         # 16 was tried in Fusion and CONFIRMED by the owner the
+                         # same day -- the pill's bottom edge sits 13 mm behind
+                         # the slot instead of 9. Everything downstream follows
+                         # (legends, ring line, mini console); the support posts
+                         # no longer care, see POST_PW.
 SILK_H       = 25.0      # silkscreen cap height -- SAME for every label (a too-wide word
 SILK_CW      = 0.66      # gets squished horizontally). bold char advance / cap height.
 PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
@@ -907,8 +1047,6 @@ FSW_FRONT_EXTRA = 0.43 / math.cos(_ra)
 # and asserted >= 40 in _check().
 SCREEN_TOP_V = 371.0
 FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
-# CLEAR/BANK sit so their LABEL TOP aligns with the screens' shared top line
-# (SCREEN_TOP_V) -- the layout the user approved in the LED trial (issue #366).
 # SILK_CAP is the cap-height/em ratio of the label font as it actually renders
 # (measured in the "Segno console (populated)" doc; Arial-class bold ~0.717): the
 # silk `h` parameter is an em size, so glyph caps top out at v_lbl + SILK_H*SILK_CAP.
@@ -928,7 +1066,17 @@ SILK_TRI_H   = 0.82
 # here and it silently stops matching the moment either of those changes.
 LABEL_DV_LED   = LED_GAP + 12.0
 LABEL_DV_PLAIN = LED_GAP - LED_SLOT_H / 2.0
-PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.0
+# CLEAR/BANK (row 2) are anchored on a HARD edge: the FRONT edge of their
+# footswitch slot sits ON the 16" aperture's front edge, so the two pedals and
+# the big screen share one bottom line (issue #796, owner call 2026-08-23; the
+# #366 layout anchored the row off its label cap top, a soft glyph edge that
+# lined up with nothing else on the plate). Both sides are cut edges in the same
+# flat pattern, so this is an exact equality. The slot is NOT centred on the row
+# -- faceplate_holes() opens it at v - FSW_SLOT_D/2 + PEDAL_AP_DEV -
+# FSW_FRONT_EXTRA to meet the pedal across the fold development -- so those two
+# terms come back out of the anchor here, or the alignment misses by ~2.15 mm.
+PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H + FSW_SLOT_D / 2.0
+                - PEDAL_AP_DEV + FSW_FRONT_EXTRA)
 # The encoder + LED ring do NOT follow the pedals rearward: the ring would hit the
 # 7" screen. It used to be pinned to the OLD row-2 centre (the 16"-screen-bottom
 # line), which held while the ring was the Ring 16's O46 -- that left 26.7 mm of
@@ -948,9 +1096,10 @@ PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.
 # The band top is the play triangle's tip -- it is the tallest thing in row 1,
 # taller than the cap height of UNDO/MODE, so it is what the eye reads as the
 # edge of the legend band.
-ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + LABEL_DV_PLAIN
-                   + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
-ENC_V        = (ROW1_LEGEND_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
+# ROW1_LEGEND_TOP / ENC_V are defined further down, once NO_LED_PEDALS and _ROW1
+# exist -- the band top depends on WHICH label offset row 1 actually uses, and
+# that is a function of the tuple. Writing LABEL_DV_PLAIN here was what made this
+# go stale twice (see there).
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -993,16 +1142,29 @@ FRONT_SCREW_U = ([_row1_u(0) - _FS_HP]
                  + [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
                  + [_row1_u(len(_ROW1) - 1) + _FS_HP])
 
-# Status-LED pedals. #366 gave a pill to ALL ten; the four TRANSPORT pedals lose
-# theirs again (owner call 2026-08-21): REC/PLAY, STOP, UNDO and MODE are fixed
-# functions, not mappable, so a per-pedal status light has nothing to report --
-# their state is already on the screens. The six that keep a pill are the four
-# TRACKs (which show arm/record/play per lane) plus CLEAR and BANK. The encoder
-# ring is unaffected.
-NO_LED_PEDALS = ("REC/PLAY", "STOP", "UNDO", "MODE")
+# Status-LED pedals. #366 gave a pill to ALL ten; #792 then took the four
+# TRANSPORT pills away again (fixed functions with nothing to report). Owner call
+# 2026-08-28 REVERSES #792 and restores all ten (#930) -- so this tuple is empty,
+# and it stays a tuple rather than being deleted because the argument has now gone
+# both ways once and may again. Emptying it also moves those four labels from
+# LABEL_DV_PLAIN to LABEL_DV_LED, which changes the plate AND the vinyl overlay.
+NO_LED_PEDALS = ()
 
 def _has_led(label):
     return label not in NO_LED_PEDALS
+
+# Row 1's legend band top, and the encoder that is centred against it. The offset
+# is READ OFF the pedals rather than written: a row-1 label sits at LABEL_DV_LED
+# or LABEL_DV_PLAIN depending on NO_LED_PEDALS, and that tuple has now changed
+# twice (#792 emptied row 1 of pills, #930 refilled it). Both times this line
+# still said LABEL_DV_PLAIN while every row-1 label had moved, which left ENC_V
+# 7.5 mm low and quietly broke the centred rule above -- the legends moved in the
+# DXF and the ring did not.
+_ROW1_LABEL_DV = max(LABEL_DV_LED if _has_led(lb) else LABEL_DV_PLAIN
+                     for lb in _ROW1)
+ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + _ROW1_LABEL_DV
+                   + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
+ENC_V        = (ROW1_LEGEND_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
 
 # Legends. Two transport controls read as SYMBOLS rather than words (owner call
 # 2026-08-21): "REC/PLAY" was a two-line block eating the tallest label slot on
@@ -1191,7 +1353,17 @@ POST_V     = 165.0                 # web depth (user call 2026-08-19: "move the 
                                    # under the feet are skipped, see _bottom_vents_local).
 POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
                                    # clears the LED slots; still under the 16in aperture, clear of the vent
-POST_PW    = 40.0                  # post width (u) -- lateral stability
+POST_U_CLR = 1.5                   # u clearance, pad edge to the neighbouring pill
+                                   # shoulder (LED_SLOT_W + 2*LED_INS_FLANGE), each side
+POST_PW    = ((_row1_u(1) - _row1_u(0)) - LED_SLOT_W - 2*LED_INS_FLANGE
+              - 2*POST_U_CLR)      # post width (u): 30.1, DERIVED so the pad sits
+                                   # BETWEEN the two pill shoulders it lands among and
+                                   # shares no u with either. At the old literal 40 it
+                                   # overlapped each shoulder by ~3.7 mm in u, so the
+                                   # shoulder-rear-vs-pad-front gate pinned LED_GAP to a
+                                   # 0.09 mm window; decoupled, the pill depth is free
+                                   # and the post stays where the dent zone wants it.
+                                   # 30 mm on a 20 mm-deep web is still not the weak axis.
 POST_PAD   = 20.0                  # top pad length (v) -- bears on the faceplate underside
 POST_FOOTL = 20.0                  # foot flange length (v) -- bolts to the base floor
                                    # (briefly 17 while the post was wedged against the v375 platforms
@@ -1226,6 +1398,21 @@ POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), N
 _POST_Y_WORLD = math.cos(math.radians(SLOPE_ANGLE)) * POST_V - 2.093
 _POST_UNDER_Z = 12.437 + math.tan(math.radians(SLOPE_ANGLE)) * _POST_Y_WORLD
 POST_H     = _POST_UNDER_Z - POST_T - POST_FELT
+POST_RI = POST_T                   # inside radius for the 1.6 mm steel post (= T, as its sheet says)
+
+def post_deduct(angle_deg):
+    """Per-flap development deduction for the STEEL post (its own T/Ri, same
+    K): flap flat = outer length - post_deduct(rotation). Until 2026-09-04 the
+    post flat was nominal segments with NO deduction (the sheet said so), which
+    would have folded ~1.5 mm taller per bend and eaten the felt's 1 mm."""
+    a = math.radians(angle_deg)
+    return (POST_RI + POST_T) * math.tan(a / 2.0) - a * (POST_RI + KF * POST_T) / 2.0
+
+POST_DD_PAD  = post_deduct(90.0 + POST_TILT)   # apoyo -> alma, 102.5 deg
+POST_DD_FOOT = post_deduct(90.0)               # alma -> pie
+POST_PAD_F   = POST_PAD - POST_DD_PAD                       # flat flap lengths, from the bend centre lines
+POST_WEB_F   = POST_H - POST_DD_PAD - POST_DD_FOOT
+POST_FOOT_F  = POST_FOOTL - POST_DD_FOOT
 # PIN to the doc probe: at POST_V=165 the populated doc gave web 45.107 mm at
 # exactly the 1.0 mm felt gap (2026-08-19). This pin moves ONLY with a fresh
 # doc probe -- if it trips, the plane model and the doc have drifted apart;
@@ -1270,10 +1457,11 @@ def faceplate_holes():
                 engr.append({"u": left_x, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "left"})
             else:                                      # single line -> centred on the pedal
                 engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
-    # --- LED diffuser slots: ONE small pill window per indicator pedal, on the
-    #     old status-LED centre-line (a single-LED WS2812B board under each,
-    #     VHB-taped to the faceplate underside; white-PLA pill diffuser set into
-    #     the slot). Full-round ends: corner r = LED_SLOT_H/2.
+    # --- LED diffuser slots: ONE pill window per pedal, on the old status-LED
+    #     centre-line. Behind each is a white-PLA diffuser pushed in from inside,
+    #     with an LED_STRIP_N-LED segment of bare 144/m strip snapped into its
+    #     back (#927/#930 -- not the VHB-taped single-LED board this used to say).
+    #     Full-round ends: corner r = LED_SLOT_H/2.
     for label, u, v in PEDALS:
         if not _has_led(label):
             continue
@@ -1653,6 +1841,49 @@ def _check(strict_board_mount=True):
         # ~1.0 row 1 / ~0.95 row 2 (doc-probed). Static parts, no relative motion.
         assert clr >= 0.8, f"SCREW_BOSS: only {clr:.1f} mm under the faceplate at v={v_screw:.0f}"
 
+    # 3b*. the LED diffuser's glue shoulder must not reach the pedal aperture it
+    # sits behind: what is left between them is the metal the flange is glued to.
+    #
+    # MEASURED OFF THE EMITTED CUTS, not off LED_GAP. LED_GAP is referenced to
+    # v + FSW_SLOT_D/2, but the aperture is NOT cut there -- PEDAL_AP_DEV (2.59)
+    # shifts it rearward for the fold development (#760). Reading LED_GAP
+    # directly overstates the land by exactly that, which is how the first
+    # version of this gate reported 5.0 mm for a 2.4 mm reality and passed a
+    # condition it would have failed.
+    for lb, _u, _v in PEDALS:
+        if not _has_led(lb):
+            continue
+        ap = next(c for c in cuts if c.get("ref") == lb)
+        ls = next(c for c in cuts if c.get("ref") == lb + "_LEDSLOT")
+        land = ls["v"] - LED_INS_FLANGE - (ap["v"] + ap["h"])
+        assert land >= LED_LAND_MIN, (
+            f"LED_DIFFUSER {lb}: only {land:.2f} mm of faceplate between the "
+            f"shoulder edge and the pedal aperture, under the {LED_LAND_MIN} "
+            f"floor; move the pill back (LED_GAP) or narrow LED_INS_FLANGE")
+    # ...and behind the pill, the same shoulder must not reach the support post's
+    # top pad -- both bear on the faceplate underside, and the existing post gate
+    # (above) tests the LED SLOT (+-30 in u), not the shoulder (+-34), so it does
+    # not see this. Going 3 -> 4 halved the gap here too: 1.39 -> 0.39.
+    for lb, _u, _v in PEDALS:
+        if not _has_led(lb):
+            continue
+        ls = next(c for c in cuts if c.get("ref") == lb + "_LEDSLOT")
+        f_u0, f_u1 = ls["u"] - LED_INS_FLANGE, ls["u"] + ls["w"] + LED_INS_FLANGE
+        f_v1 = ls["v"] + ls["h"] + LED_INS_FLANGE
+        for u in POST_U:
+            if f_u1 <= u - POST_PW/2 or u + POST_PW/2 <= f_u0:
+                continue                              # no overlap in u, no issue
+            gap = (POST_V - POST_PAD) - f_v1
+            assert gap >= LED_POST_MIN, (
+                f"LED_DIFFUSER {lb}: shoulder rear edge is {gap:.2f} mm from the "
+                f"post pad at u={u:.0f}, under the {LED_POST_MIN} floor -- both "
+                f"bear on the faceplate underside")
+
+    # ...and the strip channel has to survive inside that shoulder.
+    assert LED_INS_FLANGE * 2 + LED_SLOT_H - LED_STRIP_W - 2 * LED_STRIP_CLR >= 2 * LED_WALL_MIN, (
+        f"LED_DIFFUSER: a {LED_STRIP_W} strip leaves under {LED_WALL_MIN} of wall "
+        f"inside the {LED_SLOT_H + 2*LED_INS_FLANGE:.1f} shoulder")
+
     # 3b'. base screw holes: both rows land on the case underside, inboard of
     # the walls, and under the anti-slip pad (which is why they need a datum
     # that is NOT the pad -- see the PEDAL_BASE_* block). Issue #716.
@@ -1959,8 +2190,8 @@ def _check(strict_board_mount=True):
     assert _pz0 >= 4.0 and _pz0 + _ph <= REAR_WALL_H - 4.0, (
         f"REAR_PANEL: panel spans z {_pz0:.1f}..{_pz0+_ph:.1f}, which does not "
         f"leave 4 mm of wall above and below on a {REAR_WALL_H:.0f} mm wall")
-    for _ru in (CORNER_RO, _bw_wall - CORNER_RO):
-        for _rz in CORNER_ZR_WALL:
+    for _ru in (CORNER_RO + T, _bw_wall - CORNER_RO - T):   # where dxf_base drills them
+        for _rz in (T + z for z in CORNER_ZR_WALL):
             _clr = max(_pu0 - _ru, _ru - (_pu0 + _pw), _pz0 - _rz, _rz - (_pz0 + _ph))
             assert _clr >= 4.0, (
                 f"REAR_PANEL: corner rivet head at ({_ru:.1f}, {_rz:.1f}) is "
@@ -2433,7 +2664,20 @@ def _rrect(msp, x, y, w, h, r=R_FILLET, layer="CUT"):
     b = math.tan(math.radians(22.5))      # bulge for a 90 deg corner fillet (NOT 45 -> that is a 180 deg bump)
     pts = [(x+r, y, 0.0), (x+w-r, y, b), (x+w, y+r, 0.0), (x+w, y+h-r, b),
            (x+w-r, y+h, 0.0), (x+r, y+h, b), (x, y+h-r, 0.0), (x, y+r, b)]
-    msp.add_lwpolyline(pts, format="xyb", close=True, dxfattribs={"layer": layer})
+    # A full-round end (r == h/2 or r == w/2, every pill and louvre) makes two
+    # of those vertices coincide: a zero-length segment carrying a bulge. Some
+    # nesters reject the entity, a few drop the FOLLOWING bulge and turn the
+    # stadium into a rectangle (#775 A16). Merge coincident neighbours; the
+    # merged vertex keeps the bulge of the segment that LEAVES it.
+    out = []
+    for px, py, pb in pts:
+        if out and abs(out[-1][0] - px) < 1e-9 and abs(out[-1][1] - py) < 1e-9:
+            out[-1] = (px, py, pb)
+        else:
+            out.append((px, py, pb))
+    if len(out) > 1 and abs(out[0][0] - out[-1][0]) < 1e-9 and abs(out[0][1] - out[-1][1]) < 1e-9:
+        out[0] = (out[0][0], out[0][1], out[-1][2]); out.pop()
+    msp.add_lwpolyline(out, format="xyb", close=True, dxfattribs={"layer": layer})
 
 def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
     from ezdxf.enums import TextEntityAlignment
@@ -2660,14 +2904,26 @@ def dxf_base(path):
     # Only the TALL rear corners get riveted L-brackets. The short 12 mm FRONT corners are
     # already clamped top (lid front-lip screws into the front wall) + bottom (bottom-plate
     # fold ties both walls), so they stay a plain butt+relief corner -- no bracket needed.
-    RV = D_M3; RO = CORNER_RO                  # 3.2 mm rivet clearance; offset from the corner
-    # heights z are measured from the BOTTOM-PLATE TOP (the bracket rests there), so add T
-    # to convert to a wall height above the fold line.
+    RV = D_M3
+    # The bracket is a folded L whose OUTER faces lie on the two walls' INNER
+    # faces, resting on the bottom-plate TOP. Its rivet holes sit CORNER_RO from
+    # its own bend CENTRE line in the flat, which after a 90 deg fold (RI, T,
+    # BA90) is CORNER_RO + DEV90 from the other leg's outer face -- i.e. from the
+    # wall it does not lie on. A wall hole drawn s from ITS bend centre line
+    # lands s + DEV90 above the floor's bottom face, and a rear-wall hole drawn
+    # s from the SIDE bend line is s - (BA90/2 - RI) from the side wall's inner
+    # face. Equating both (the audit of 2026-09-04 found every rivet 2.0 mm off
+    # along the wall and 1.9 mm low, #992) gives:
+    #   along the wall: s = CORNER_RO + T          (the BA90 terms cancel)
+    #   up the wall:    s = T + z - DEV90          (bracket bottom on the floor top)
+    RO_WALL = CORNER_RO + T                   # 10.0: rivet offset along the wall, flat
+    def _zf(z):                               # bracket height z -> wall flat offset
+        return T + z - DEV90
     for sgn, xc in ((+1, 0.0), (-1, BW)):     # +1 left (side flap -x) | -1 right (side flap +x)
         for z in CORNER_ZR_WALL:               # rear-wall leg (3 rivets)
-            _circle(msp, xc + sgn*RO, BD + T + z, RV)      # rear-wall face   (flat y = BD + T + z)
+            _circle(msp, xc + sgn*RO_WALL, BD + _zf(z), RV)     # rear-wall face
         for z in CORNER_ZR_SIDE:               # side-wall leg (2 rivets, staggered)
-            _circle(msp, xc - sgn*(T + z), BD - RO, RV)    # side-wall face
+            _circle(msp, xc - sgn*_zf(z), BD - RO_WALL, RV)     # side-wall face
 
     # ---- bottom features: vents + Pi/board M3 standoffs + rubber feet -------------
     _emit(msp, _bottom_vents_local(BW, BD))
@@ -2725,7 +2981,7 @@ def dxf_base(path):
           "agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.", "MASK")
 
     _text(msp, 8, BD+Hr+Ht+10, 9,
-          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)",
+          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar",
           "NOTE")
     doc.saveas(path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
 
@@ -2794,21 +3050,23 @@ def dxf_post(path):
     propping the one zone the perimeter folds do not reach. Load runs to the base, not
     the lid, so nothing shows on the top face and the lid still lifts off. The
     pad->web fold is 90 + POST_TILT deg so the pad beds FLUSH on the sloped underside;
-    the foot->web fold is 90. Bend deduction PROVISIONAL (nominal segments)."""
+    the foot->web fold is 90. Flat DEVELOPED with post_deduct (K 0.33, Ri = T)."""
     doc = _doc(); msp = doc.modelspace()
     pw, pad, web, foot = POST_PW, POST_PAD, POST_H, POST_FOOTL
-    Wd = pad + web + foot
+    pad_f, web_f, foot_f = POST_PAD_F, POST_WEB_F, POST_FOOT_F
+    Wd = pad_f + web_f + foot_f
     _poly(msp, [(0, 0), (pw, 0), (pw, Wd), (0, Wd)], "CUT")
-    _poly(msp, [(0, pad), (pw, pad)], "BEND", closed=False)           # pad -> web (fold 90 + tilt)
-    _poly(msp, [(0, pad+web), (pw, pad+web)], "BEND", closed=False)   # web -> foot (fold 90)
-    for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot
-        _circle(msp, pw/2.0 + du, pad + web + foot/2.0, D_M4)
+    _poly(msp, [(0, pad_f), (pw, pad_f)], "BEND", closed=False)             # pad -> web (fold 90 + tilt)
+    _poly(msp, [(0, pad_f+web_f), (pw, pad_f+web_f)], "BEND", closed=False) # web -> foot (fold 90)
+    for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot, foot/2 from its free end
+        _circle(msp, pw/2.0 + du, Wd - foot/2.0, D_M4)
     _text(msp, 5, Wd+6, 9,
           f"Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de {POST_T:.1f} mm "
           f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo {pad:.0f} / alma {web:.0f} / "
           f"pie {foot:.0f} mm); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
           f"de {POST_TILT:.1f}°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), "
-          f"fieltro sobre el apoyo; deducción PROVISORIA", "NOTE")
+          f"fieltro sobre el apoyo; deducción aplicada (K {KF}, Ri {POST_RI:.1f}): {POST_DD_PAD:.2f} mm en el plegado del apoyo, "
+          f"{POST_DD_FOOT:.2f} mm en el del pie; desarrollo {Wd:.2f} mm", "NOTE")
     doc.saveas(path); return {}
 
 # ===========================================================================
@@ -3554,13 +3812,54 @@ def build_mini_console():
     outp.append(asm)
     return outp
 
+def diffuser_stack():
+    """The z stations down the back of the diffuser, all derived from the parts.
+
+    z = 0 is the lens base / flange front face; +z is OUT through the faceplate.
+    Returns (package recess depth, strip front face, strip back face, lip bottom).
+
+    The package sticks out past the flange back by whatever the recess cannot
+    swallow, and THAT is what sets where the strip sits -- the old nest picked a
+    depth and ignored the package height, so the source never touched anything.
+    LED_PKG_Z_CLR then drops the strip a further hair so the shoulders, not the
+    LED, are what it lands on.
+    """
+    recess_d = LED_INS_FL_T - LED_WEB               # 0.7 of the 1.5 flange
+    stand    = LED_PKG_H + LED_PKG_Z_CLR - recess_d # proud of the flange back
+    strip_t0 = -LED_INS_FL_T - stand                # strip's LED-side face
+    strip_t1 = strip_t0 - LED_STRIP_T - LED_STRIP_T_CLR   # under the strip's back
+    return recess_d, strip_t0, strip_t1, strip_t1 - LED_LIP
+
+
 def build_diffuser_step():
-    """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
+    """LED pill diffuser INSERT (3D-print in WHITE PLA, one per pill -- ten since
+    #930, and the count is derived from PEDALS/_has_led, never written down):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
     shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
-    above the outer skin. The single-LED module (hardware/led_strip/ puck or an
-    off-the-shelf WS2812B breakout) nests in a shallow pocket on the back and is
-    VHB-taped over the flange, which also retains the insert."""
+    above the outer skin. The flange is GLUED to the faceplate underside, so its
+    face is kept flat and clear -- nothing is modelled on it.
+
+    An EIGHT-LED SEGMENT of 144 LEDs/m bare WS2812B strip snaps into a channel on
+    the back (#927, density #930). The channel runs the strip's long edges; both
+    ends stay open, so the 3 wires leave without a notch and a long cut still
+    fits. Eight because the pitch has to stay near the diffusion depth or the
+    pill reads as separate dots -- see the constants.
+
+    THE STRIP IS THE SPRING. Its own adhesive cannot be used -- the LEDs face the
+    lens, which turns the tape to face away into the console -- so the segment is
+    trapped mechanically: bow the ~0.5 mm flex PCB slightly, drop it past the
+    lips, let it flatten. It lands its LED-side face on the shoulders with the
+    WS2812B in the package recess. Nothing in the PRINTED part deflects, which is
+    exactly why this holds where a rigid board could not: a 2.5 mm-deep printed
+    wall cannot flex 0.4 mm without going past what PLA takes, and a flex PCB can
+    do it all day.
+
+    Grip is 0.4 mm on each strip edge, and it does not resist sliding along the
+    channel -- the soldered wires and the closed console do that.
+
+    PRINT LENS-DOWN. The lens face is then the bed face (smooth, no layer lines
+    across the light), the LED_LIP overhang is a trivial bridge, and the ramp is
+    self-supporting."""
     import cadquery as cq
     lens_l = LED_SLOT_W - LED_INS_CLR
     lens_w = LED_SLOT_H - LED_INS_CLR
@@ -3570,9 +3869,68 @@ def build_diffuser_step():
     lens = cq.Workplane("XY").slot2D(lens_l, lens_w).extrude(lens_h)
     lens = lens.edges(">Z").chamfer(0.3)             # soft glow edge on the proud lip
     ins = lens.union(cq.Workplane("XY").slot2D(fl_l, fl_w).extrude(-LED_INS_FL_T))
-    px, py, pd = LED_INS_POCKET                       # LED nest, back face
+
+    recess_d, strip_t0, strip_t1, lip_z = diffuser_stack()
+    y_sh_of = lambda: LED_STRIP_W / 2.0 + LED_STRIP_CLR - LED_SHOULDER
+
+    # Package recess, cut into the flange's back face. It runs the WHOLE channel
+    # as one groove rather than a pocket per LED: there are LED_STRIP_N packages
+    # on the segment, not one, and where they land in x depends on where the
+    # scissors fell (LED_CH_L carries +-0.7 of slop on purpose). A per-LED pocket
+    # would have to be right about all of that; a groove cannot be wrong about
+    # any of it. It also leaves the SAME LED_WEB over every package, which is the
+    # point of choosing a dense strip -- discrete pockets would put 0.8 of wall
+    # over each LED and 1.5 between them, i.e. put the ripple back in.
+    # LED_STRIP_CLR is in here as well as LED_PKG_CLR, because the strip is only
+    # located by the channel walls: it can sit anywhere within +-LED_STRIP_CLR,
+    # and the packages ride with it. Sizing the groove on LED_PKG_CLR alone left
+    # a strip pushed against one wall with its package edge exactly on the groove
+    # wall -- zero clearance before any package-placement tolerance on the strip
+    # itself, and an outer LED fouling that wall stops the strip reaching the
+    # shoulders, which is the one thing LED_SHOULDER and LED_PKG_Z_CLR exist for.
+    pkg = LED_PKG + 2 * (LED_PKG_CLR + LED_STRIP_CLR)
+    assert pkg / 2.0 < y_sh_of(), (
+        f"diffuser package groove is {pkg} wide and undercuts the shoulders the "
+        f"strip lands on -- narrow the clearances or widen the pill")
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
-                  .rect(px, py).extrude(pd))
+                  .rect(LED_CH_L, pkg).extrude(recess_d))
+
+    # channel walls: one profile in YZ, mirrored, extruded along the strip's run.
+    # The OUTSIDE is the flange edge -- an LED_STRIP_W strip in a fl_w flange, so
+    # the wall is whatever is left over, and the build fails if that is too thin
+    # to print rather than silently shaving it.
+    y_in = LED_STRIP_W / 2.0 + LED_STRIP_CLR         # channel wall
+    y_out = fl_w / 2.0
+    assert y_out - y_in >= LED_WALL_MIN, (
+        f"diffuser channel wall is {y_out - y_in:.2f}, under the {LED_WALL_MIN} floor "
+        f"-- widen LED_INS_FLANGE or narrow the channel")
+    y_sh = y_in - LED_SHOULDER
+    prof = [(y_sh, -LED_INS_FL_T),                   # shoulder, off the flange back
+            (y_sh, strip_t0),                        #   ...down to the strip face
+            (y_in, strip_t0),                        # step out to the channel wall
+            (y_in, strip_t1),                        #   ...down past the strip
+            (y_in - LED_LIP, strip_t1),              # retaining lip -- a LED_LIP
+                                                     # CANTILEVER, not a bridge:
+                                                     # the two lips face each
+                                                     # other across the channel
+                                                     # and never meet, so lens-down
+                                                     # this starts over open air
+            (y_in, lip_z),                           # 45 deg lead-in, self-supporting
+            (y_out, lip_z),
+            (y_out, -LED_INS_FL_T)]
+    rail = (cq.Workplane("YZ").polyline(prof).close()
+            .extrude(LED_CH_L / 2.0, both=True))
+    # ...trimmed to the flange's own stadium outline. The rail is a straight
+    # extrusion LED_CH_L long, but the flange's straight run is only fl_l - fl_w
+    # (54 against 56.96), so the last 1.5 mm at each end stood ~0.16 mm PROUD of
+    # the rounded outline -- a squared-off ear, down-facing and unsupported
+    # lens-down, and outside the footprint both _check gates model as
+    # `slot +- LED_INS_FLANGE`.
+    foot = (cq.Workplane("XY").workplane(offset=lip_z)
+            .slot2D(fl_l, fl_w).extrude(-lip_z))
+    rail = rail.intersect(foot)
+    ins = ins.union(rail).union(rail.mirror("XZ"))
+
     step = os.path.join(OUT, "segno_led_diffuser.step")
     stl = os.path.join(OUT, "segno_led_diffuser.stl")
     cq.exporters.export(ins.val(), step)
@@ -3982,10 +4340,14 @@ def build_ring_diffuser_step():
     ins = lens.union(cq.Workplane("XY").circle(37.5).circle(24.2)
                      .extrude(-plate_t))
     # disc lip: the disc rests on the inner lip at z=0, flush with the sheet
-    # top when glued (disc top = T). Thin the web over the LED circle so the
-    # board-mounted ring glows through 0.8 mm of white PLA.
+    # top when glued (disc top = T). The plate is OPEN over the LED circle
+    # (r 25.6..33.2, through): the ring glows through the 2.4 mm lens alone.
+    # Until 2026-09-04 a 0.8 mm web was left here; the PR #990 board carries
+    # the Ring 24 on a 2.54 mm pin strip and its top stood 0.56 mm into that
+    # web (and its rim into the full plate). Cutting through leaves the disc
+    # lip (r 24.2..25.6) and the glue land (r 33.2..37.5) intact.
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
-                  .circle(32.0).circle(25.6).extrude(plate_t - 0.8))
+                  .circle(33.2).circle(25.6).extrude(plate_t))
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
@@ -4397,7 +4759,7 @@ def build_step(write_parts=True):
 # identifiers shared with the DXF/STEP files and the vendor zips, and the shop
 # matches a sheet to a file by them. Numbers, units, symbols (Ø ± °) and standard
 # designations (5052-H32, M3, K, R2) are international and are left alone.
-AL_SHEET  = f"aluminio 5052-H32 de {T:.1f} mm"
+AL_SHEET  = f"aluminio 1050 de {T:.1f} mm"
 STEEL_CR  = f"acero laminado en frío de {POST_T:.1f} mm"
 VINYL     = "vinilo adhesivo impreso / policarbonato, troquelado - NO ES METAL"
 PLY_2MM   = (f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
@@ -4539,16 +4901,16 @@ def _bend_tables():
         (1, "ala / ala", "x", CORNER_LEG, CORNER_HT, 90.0, UP_TOWARD, RI, DEV90),
     ]
     tabs["segno_post"] = [
-        (1, "apoyo -> alma", "y", POST_PAD,          POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_T, 0.0),
-        (2, "alma -> pie",   "y", POST_PAD + POST_H, POST_PW, 90.0,             UP_TOWARD, POST_T, 0.0),
+        (1, "apoyo -> alma", "y", POST_PAD_F,              POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_RI, POST_DD_PAD),
+        (2, "alma -> pie",   "y", POST_PAD_F + POST_WEB_F, POST_PW, 90.0,             UP_TOWARD, POST_RI, POST_DD_FOOT),
     ]
     return tabs
 
 BEND_TABLES = _bend_tables()
 
-# Per-part footnote printed under the bend table. The post is the odd one out: its
-# flat is nominal segments with NO deduction applied, which is worth saying out
-# loud on the sheet rather than leaving a fabricator to assume it was developed.
+# Per-part footnote printed under the bend table. The post has its own T/Ri
+# (1.6 mm steel) and is developed with post_deduct -- its sheet states the
+# numbers so the shop can check them against its own tooling.
 BEND_FOOTNOTES = {
     "segno_base": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T) | pestaña plana = longitud exterior - deducción. "
                    f"LAS FILAS ESTÁN EN ORDEN DE PLEGADO - no reordenar. Los laterales (4, 5) necesitan un punzón <= 410 mm: los "
@@ -4562,8 +4924,8 @@ BEND_FOOTNOTES = {
     "segno_corner_bracket_rear": (f"Factor K {KF} | pestaña plana = longitud exterior - deducción. CANT. 2, y la segunda se monta DADA "
                                   f"VUELTA - la pieza es casi simétrica, sólo el patrón de agujeros es de mano."),
     "segno_post": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {POST_T:.1f} mm (1.0 x T). "
-                   f"DEDUCCIÓN NO APLICADA - el desarrollo son segmentos nominales (PROVISORIO): verificar la longitud desarrollada "
-                   f"contra el herramental propio antes de cortar."),
+                   f"Deducción aplicada con K {KF} y Ri {POST_RI:.1f} mm (= T): {POST_DD_PAD:.2f} mm en apoyo->alma (102.5°), "
+                   f"{POST_DD_FOOT:.2f} mm en alma->pie; verificar la longitud desarrollada contra el herramental propio antes de cortar."),
 }
 
 def _bend_table_lines(stem):
@@ -5859,7 +6221,10 @@ def main(argv):
     if "--no-step" not in argv:
         try:
             d = build_diffuser_step()
-            print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
+            n_pill = sum(1 for lb, _u, _v in PEDALS if _has_led(lb))
+            print("\nLED diffuser insert (3D print, x%d -- %d LEDs each off a %.2f mm\n"
+                  "  cut of 144/m strip): out/%s (+ .stl)"
+                  % (n_pill, LED_STRIP_N, LED_STRIP_SEG, os.path.basename(d)))
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             tiles = build_pedal_name_tiles()

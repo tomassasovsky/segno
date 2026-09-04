@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461278.9149074075
+2461288.2356712963
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461278.9149074075
+2461288.2356712963
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{8B12FAC8-2C73-405B-828C-55054BD419D6}
+{0D8E0963-4DFD-44F8-AB4B-761C4653071A}
   9
 $VERSIONGUID
   2
-{D84D38EA-620C-4C04-880A-7E3CEC3583C9}
+{706F3FBB-67DC-46D1-94A9-B191F1B3D3A6}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -5429,17 +5429,17 @@ AcDbPolyline
  20
 0.0
  10
-40.0
+30.14285714285714
  20
 0.0
  10
-40.0
+30.14285714285714
  20
-85.0806535370934
+77.85617088735222
  10
 0.0
  20
-85.0806535370934
+77.85617088735222
   0
 LWPOLYLINE
   5
@@ -5459,11 +5459,11 @@ AcDbPolyline
  10
 0.0
  20
-20.0
+17.916431383419642
  10
-40.0
+30.14285714285714
  20
-20.0
+17.916431383419642
   0
 LWPOLYLINE
   5
@@ -5483,11 +5483,11 @@ AcDbPolyline
  10
 0.0
  20
-65.0806535370934
+59.38484359564245
  10
-40.0
+30.14285714285714
  20
-65.0806535370934
+59.38484359564245
   0
 CIRCLE
   5
@@ -5501,9 +5501,9 @@ CUT
 100
 AcDbCircle
  10
-8.0
+3.0714285714285694
  20
-75.0806535370934
+67.85617088735222
  30
 0.0
  40
@@ -5521,9 +5521,9 @@ CUT
 100
 AcDbCircle
  10
-32.0
+27.07142857142857
  20
-75.0806535370934
+67.85617088735222
  30
 0.0
  40
@@ -5543,17 +5543,17 @@ AcDbText
  10
 5.0
  20
-91.0806535370934
+83.85617088735222
  30
 0.0
  40
 9.0
   1
-Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de 1.6 mm (NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo 20 / alma 45 / pie 20 mm); plegado del apoyo 102.5° (asienta al ras sobre la pendiente de 12.5°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), fieltro sobre el apoyo; deducción PROVISORIA
+Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de 1.6 mm (NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo 20 / alma 45 / pie 20 mm); plegado del apoyo 102.5° (asienta al ras sobre la pendiente de 12.5°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), fieltro sobre el apoyo; deducción aplicada (K 0.33, Ri 1.6): 2.08 mm en el plegado del apoyo, 1.53 mm en el del pie; desarrollo 77.86 mm
  11
 5.0
  21
-91.0806535370934
+83.85617088735222
  31
 0.0
 100
@@ -6661,7 +6661,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-26T00:57:28.199035+00:00
+1.4.4 @ 2026-09-04T08:39:22.877507+00:00
   0
 VISUALSTYLE
   5
@@ -13223,7 +13223,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-26T00:57:28.201042+00:00
+1.4.4 @ 2026-09-04T08:39:22.879138+00:00
   0
 ENDSEC
   0
