@@ -1482,10 +1482,16 @@ def build(quiet=False):
     # It has never actually been printable. Gated below now.
     # Titles BEFORE the labels: _labels() treats whatever silk already exists as
     # occupied, so anything drawn after it is drawn on top of it.
-    # x 33, not 28: the title is 33.1 mm wide as RENDERED, which is wider than a
-    # character count suggests, and it has to clear H4's pad at the left end of the
-    # bottom strip. Measured, not taste.
-    _silk(board, "SEGNO CONSOLE v3  #747 #987", 33.0, 95.5, 1.6)
+    # No issue numbers. They were on the silk as "#747 #987" and are provenance
+    # for whoever edits this file, not for whoever solders the board -- the
+    # tracker is not something you can look up with a board in your hand, and
+    # the numbers age worse than the board does. They live in this file's
+    # docstring and in console_board_mount.json instead.
+    # x 33, not 28: _silk() takes the text CENTRE, and the title has to clear
+    # H4's pad at the left end of the bottom strip. Dropping the numbers only
+    # shortens it inward from that centre, so the clearance can only improve;
+    # the SILK gates below re-measure it as rendered either way.
+    _silk(board, "SEGNO CONSOLE v3", 33.0, 95.5, 1.6)
     _silk(board, "MIDI IN: ISOLATED", 72.0, 95.5, 1.0)
     _labels(board, fps)
 
