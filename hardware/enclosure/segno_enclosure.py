@@ -2648,14 +2648,38 @@ def _ltscale_for(doc):
 # failure the MASK layer exists to prevent (#775 R3, #1001). DXF has the answer
 # already: an entity-level linetype scale that multiplies the global one. Give
 # any dashed entity too small for the sheet scale its own.
-LTSCALE_MIN_PERIODS = 4.0        # full dash periods the smallest dashed run must show
+# Full dash periods the smallest dashed run must show. These two constants pull
+# against each other: more periods on a short entity means smaller gaps, and a
+# gap too small to print is the failure the floor below exists to stop. Three
+# periods of DASHDOT is six marks around a ring -- unmistakably dash-dot -- and
+# it leaves the tightest entity actually shipped (a 35 mm mask leader on the
+# 1040 mm base) at 1:625 against a 1:900 floor, a 1.44x margin. Four periods
+# left that same leader at 1:833, an 8% margin, and one edit from a red build.
+LTSCALE_MIN_PERIODS = 3.0
 # Floor on the widest gap in a pattern, as a fraction of the part span. The part
 # is drawn about 166 mm wide on its sheet whatever its size (the sheets are
-# auto-fitted), so gap/span translates to paper almost directly: the base's bend
-# lines sit at 1/244 and rasterise to a measured 0.68 mm gap at 600 dpi, which
-# makes 1/1200 about 0.14 mm -- three dots, still visibly broken in greyscale.
-# The stock $LTSCALE 1 that started all this sits at 1/4100.
-LTSCALE_GAP_RATIO = 1200.0
+# auto-fitted), so gap/span translates to paper almost directly. Set from the
+# RASTER, not by extrapolating from the bend lines: a ring injected at 1/1200
+# measures 0.093 mm printed at 600 dpi (about two dots) and its dash-dot
+# collapses to plain dashed, losing the signature MASK depends on. Linear
+# extrapolation misses a roughly constant ink-spread deficit that only matters
+# at these sizes. At 1/900 the worst entity actually shipped -- a base mask
+# leader at 1/833 -- prints 0.19 mm and keeps its dots. The stock $LTSCALE 1
+# that started all this sits at 1/4100.
+LTSCALE_GAP_RATIO = 900.0
+
+
+def _entity_linetype(doc, e):
+    """The linetype the RENDERER will use: the entity's own if it sets one.
+
+    Reading only the layer's meant a MASK ring carrying linetype=CONTINUOUS was
+    validated against DASHDOT and passed, while rasterising as one solid red
+    circle beside real O12 holes.
+    """
+    own = e.dxf.get("linetype", "BYLAYER")
+    if own and own.upper() not in ("BYLAYER", "BYBLOCK"):
+        return own
+    return doc.layers.get(e.dxf.layer).dxf.linetype
 
 
 def _pattern_period(doc, name):
@@ -2709,7 +2733,7 @@ def _fit_entity_ltscales(doc, gscale):
         run = _run_length(e)
         if run is None or run <= 0.0:
             continue                    # the verifier turns this into a failure
-        lname = doc.layers.get(layer).dxf.linetype
+        lname = _entity_linetype(doc, e)
         period = periods.setdefault(lname, _pattern_period(doc, lname))
         cap = run / (LTSCALE_MIN_PERIODS * period)
         if gscale > cap:
@@ -5530,6 +5554,15 @@ def _wrap_to_page(text, pt, page_w_in, frac=0.92, ratio=0.55):
     return textwrap.wrap(text, cols) or [text]
 
 
+# A partial paint quote is worse than none: page 1 is already flushed into the
+# open PdfPages before a later page can fail, the caller swallows the exception
+# with a one-line note, and the run still prints ALL PASS and exit 0 while
+# segno_pintura.zip ships a 1-page file missing both masking pages. Recorded
+# here and asserted in _verify_drawing_package.
+PAINT_PAGES = {}
+PAINT_PAGES_EXPECTED = 3
+
+
 def paint_quote_pdf(path):
     """Supplier-facing sheet (Spanish) for the powder-coating quote: parts table
     with painted area, then a masking page per part that has bare-metal zones."""
@@ -5597,6 +5630,7 @@ def paint_quote_pdf(path):
         # from the edge -- about seven characters of headroom on the line that
         # says the M3 pilots are tapped AFTER painting.
         y = 0.150
+        pages = 1                      # the cover page, already committed below
         page_w = fig.get_size_inches()[0]
         for i, n in enumerate(notes):
             fig.text(0.06, y, n, fontsize=_fit_pt(n, 8.2, page_w, frac=0.88),
@@ -5637,7 +5671,7 @@ def paint_quote_pdf(path):
             note_lines = _wrap_to_page(note, 9.5, page_w)
             # The axes sit at 0.12 of the figure height. Two lines clear it; four
             # would print the instruction across the flat pattern, and nothing
-            # counted the lines. Assert rather than overlap silently.
+            # counted the lines.
             top = 0.055 + (len(note_lines) - 1) * 0.030 + 0.020
             assert top <= 0.12, (
                 f"{stem}: the masking note wraps to {len(note_lines)} lines and "
@@ -5649,6 +5683,8 @@ def paint_quote_pdf(path):
             fig.text(0.04, 0.025, foot, fontsize=_fit_pt(foot, 8.0, page_w),
                      color="#555")
             pdf.savefig(fig); plt.close(fig)
+            pages += 1
+    PAINT_PAGES[os.path.splitext(os.path.basename(path))[0]] = pages
     return path
 
 # ===========================================================================
@@ -6449,7 +6485,15 @@ def _verify_dash_legibility(doc, stem):
     checked = 0
     for e in msp:
         layer = e.dxf.layer
-        if layer not in ("BEND", "MASK") or e.dxftype() in NOT_LINEWORK:
+        if layer not in ("BEND", "MASK"):
+            continue
+        # A block reference hides its geometry from this sweep entirely: a O12
+        # MASK circle inside a BLOCK passed every guard and still rasterised
+        # solid. The generator emits none, so refuse them rather than recurse.
+        assert e.dxftype() != "INSERT", (
+            f"{stem}: a block reference on {layer} -- its dashed geometry is "
+            f"invisible to every check here. Emit the entities directly")
+        if e.dxftype() in NOT_LINEWORK:
             continue
         run = _run_length(e)
         assert run is not None, (
@@ -6458,9 +6502,10 @@ def _verify_dash_legibility(doc, stem):
             f"this type rather than letting it through unseen")
         if run <= 0.0:
             continue
-        lname = doc.layers.get(layer).dxf.linetype
+        lname = _entity_linetype(doc, e)
         period = periods.setdefault(lname, _pattern_period(doc, lname))
-        scale = gscale * float(e.dxf.ltscale or 1.0)
+        ls = e.dxf.get("ltscale", 1.0)
+        scale = gscale * (float(ls) if ls else 1.0)
         cycles = run / (period * scale)
         checked += 1
         assert cycles >= LTSCALE_MIN_PERIODS - 1e-6, (
@@ -6502,7 +6547,7 @@ def _SPAN(msp):
     return max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1], 1.0)
 
 
-NOTE_WIDTH_CEILING = 1.05        # note block width, as a multiple of the part span
+NOTE_WIDTH_CEILING = 1.25        # note block width, as a multiple of the part span
 
 
 def _verify_note_block_fits(doc, stem):
@@ -6510,10 +6555,14 @@ def _verify_note_block_fits(doc, stem):
 
     _note's escape hatch is real: when the 1.2 mm text floor binds it widens the
     column to keep the longest token whole, and the block can then run past the
-    part -- which is how the whole page-scale problem started. The bracket's note
-    reached 1.15x its part and a human reviewer found it, not a test. Fail-safe
-    direction (the sheet just gets wasteful, not wrong), so the ceiling is a
-    ceiling rather than a hard equality; every sheet today sits at 0.78-0.83.
+    part -- which is how the whole page-scale problem started.
+
+    Measured with `extents`, which is the SAME call that decides the sheet's
+    scale, so the number here is the number that matters. An earlier version
+    estimated the width from a per-character advance and read every sheet at
+    0.78-0.83; measured properly they run 0.88-1.15, and the ceiling it claimed
+    to enforce was about 1.5x looser than it said. Estimating the input to a
+    check whose whole subject is that same estimate is how that happens.
     """
     from ezdxf.bbox import extents
     msp = doc.modelspace()
@@ -6522,8 +6571,10 @@ def _verify_note_block_fits(doc, stem):
     if not notes:
         return
     span = _SPAN(msp)
-    widest = max(len(e.dxf.text) * float(e.dxf.height) * NOTE_ADVANCE_EST
-                 for e in notes)
+    nb = extents(notes)
+    if not nb.has_data:
+        return
+    widest = nb.extmax[0] - nb.extmin[0]
     assert widest <= span * NOTE_WIDTH_CEILING, (
         f"{stem}: the note block is {widest:.0f} mm against a {span:.0f} mm part "
         f"({widest/span:.2f}x) -- it, not the part, will set the sheet scale. "
@@ -6566,6 +6617,19 @@ def _verify_drawing_package(with_pdf=True):
     # corners. If a future ezdxf hands them over as LineCollections, or hands
     # them over already closed, it silently seals nothing and the notch returns
     # on a package nobody re-reads at 600 dpi. These counts are the alarm.
+    # --- the paint quote is a DELIVERABLE, and its writer's failures are caught
+    # by a bare `except Exception` that prints one line and lets the run finish
+    # green. Without this the coater gets a 1-page file with both masking pages
+    # missing and nothing says so.
+    if with_pdf:
+        pq = os.path.join(OUT, "segno_paint_quote.pdf")
+        assert os.path.exists(pq), "segno_paint_quote.pdf was not written"
+        got = PAINT_PAGES.get("segno_paint_quote")
+        assert got == PAINT_PAGES_EXPECTED, (
+            f"segno_paint_quote.pdf has {got} of {PAINT_PAGES_EXPECTED} pages -- "
+            f"a page failed after the file was opened, and segno_pintura.zip "
+            f"would ship it truncated")
+
     if with_pdf:
         for stem in stems:
             assert stem in SEALED, \
