@@ -1096,25 +1096,25 @@ LABEL_DV_PLAIN = LED_GAP - LED_SLOT_H / 2.0
 # terms come back out of the anchor here, or the alignment misses by ~2.15 mm.
 PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H + FSW_SLOT_D / 2.0
                 - PEDAL_AP_DEV + FSW_FRONT_EXTRA)
-# The encoder + LED ring are ALIGNED, not centred (owner call 2026-09-04, #997):
-# the ring window's FRONT edge sits on SCREEN_TOP_V - BIG_H, the same line the
-# 16" aperture's front edge and the row-2 slots sit on (#796). Three things on
-# the plate then share one hard line across its whole width, and each of the
-# three is a cut edge in the same flat pattern, so it is an exact equality
-# rather than a visual approximation.
+# The encoder + LED ring are CENTRED between the two CUT EDGES that bound their
+# strip of plate (owner call 2026-09-04, #997, picked off the model): the rear
+# edge of the row-1 LED pills below, and the 7" aperture's bottom edge above.
 #
-# What this replaces: the ring used to be CENTRED between the row-1 legend band
-# top and the 7" aperture's bottom (2026-08-22). Centring kept the air equal on
-# both sides but tied the ring to a soft edge -- the tip of a printed glyph --
-# and it drifted twice when the legend offsets moved (#792, #930). It also
-# crept toward the 7" module: at LED_GAP 16 the centred rule put the ring's
-# glue plate 0.69 mm inside that module's outline in plan (#992). Aligning
-# moves the ring 17.7 mm FORWARD and retires both problems.
+# The rule has been through three forms and the difference that matters is what
+# it is measured against, not centred-vs-aligned:
+#   1. pinned to the old row-2 centre        -- a line with nothing to do with it
+#   2. centred on ROW1_LEGEND_TOP (2026-08-22) -- the tip of a PRINTED GLYPH, a
+#      soft edge that moved under it twice when the label offsets changed
+#      (#792, #930), each time leaving the ring behind
+#   3. aligned to the 16" aperture front edge -- one hard line, but it put the
+#      ring low in its strip and the owner rejected it by eye
+# This is form 4: still centred, but both bounds are now edges CUT in the same
+# flat pattern, so nothing that moves the legends can move the ring, and the air
+# above and below it stays equal when either bound moves.
 #
-# ROW1_LEGEND_TOP is still computed (the gates below use it, and the band top is
-# the play triangle's tip -- the tallest thing in row 1), but it no longer
-# POSITIONS anything: _check() asserts the ring clears it rather than deriving
-# the ring from it.
+# ROW1_LEGEND_TOP is still computed -- the legends live between the pills and
+# the ring, so _check() asserts the ring clears the band rather than deriving
+# anything from it.
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -1176,18 +1176,20 @@ _ROW1_LABEL_DV = max(LABEL_DV_LED if _has_led(lb) else LABEL_DV_PLAIN
                      for lb in _ROW1)
 ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + _ROW1_LABEL_DV
                    + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
-# The ring window's FRONT edge on the 16" aperture's front edge (#997).
-ENC_V        = SCREEN_TOP_V - BIG_H + RING_OD / 2.0
+# The row-1 pill's REAR edge: pills sit LED_GAP above the slot and are
+# LED_SLOT_H tall, so this is a cut edge that follows LED_GAP automatically.
+ROW1_PILL_TOP = PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + LED_GAP + LED_SLOT_H / 2.0
+ENC_V        = (ROW1_PILL_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
 RING_LEGEND_MIN = 4.0   # air between the row-1 legend band top and the ring
-                        # window's front edge. The alignment above is the rule;
+                        # window's front edge. The centring above is the rule;
                         # this is the floor that says when the rule has run out
-                        # of room -- at LED_GAP 16 there is 5.18 mm, and pushing
+                        # of room -- at LED_GAP 16 there is 8.73 mm, and pushing
                         # the pills further back (LED_GAP) is what eats it.
 RING_SCREEN_MIN = 8.0   # air between the ring window's rear edge and the 7"
-                        # aperture's bottom. Was the other half of the centred
-                        # rule; now a floor. The alignment gives 40.50 mm --
-                        # the centred rule gave 16.2, which is what made the
-                        # ring read as crowded against the screen (#792 note).
+                        # aperture's bottom. Half of the centring rule, kept as
+                        # a floor so a bound that moves cannot close it: 36.95
+                        # mm as centred. The old glyph-centred rule gave 16.2,
+                        # which read as crowded against the screen (#792 note).
 
 # Legends. Two transport controls read as SYMBOLS rather than words (owner call
 # 2026-08-21): "REC/PLAY" was a two-line block eating the tallest label slot on
@@ -1792,13 +1794,21 @@ def _check(strict_board_mount=True):
     #    development, and reading the constants instead of the geometry is how
     #    #992 found a gate passing on a number nobody cut.
     _line = _bbox(byref["SCREEN_16IN"])[1]
-    for _ref in ("CLEAR", "BANK", "RING"):
+    for _ref in ("CLEAR", "BANK"):
         assert abs(_bbox(byref[_ref])[1] - _line) < 1e-6, (
             f"BOTTOM_LINE: {_ref} front edge {_bbox(byref[_ref])[1]:.3f} is off the "
-            f"16in aperture's {_line:.3f} -- these three share one cut line")
-    #    ...and the ring, now that it is aligned rather than centred, needs its
-    #    two clearances asserted instead of guaranteed by construction.
+            f"16in aperture's {_line:.3f} -- these share one cut line")
+    #    The RING is centred between the two CUT EDGES that bound its strip
+    #    (#997): the row-1 pills' rear edge below and the 7in aperture's bottom
+    #    above. Measured off the emitted cuts for the same reason as the line
+    #    above -- a constant can say one thing while the plate is cut another.
     _r0, _r1 = _bbox(byref["RING"])[1], _bbox(byref["RING"])[3]
+    _pill_top = _bbox(byref[_ROW1[0] + "_LEDSLOT"])[3]
+    _mid = (_pill_top + _bbox(byref["SCREEN_7IN"])[1]) / 2.0
+    assert abs((_r0 + _r1) / 2.0 - _mid) < 1e-6, (
+        f"RING_CENTRED: ring centre {(_r0 + _r1) / 2.0:.3f} is off the midpoint "
+        f"{_mid:.3f} of the row-1 pill top ({_pill_top:.3f}) and the 7in "
+        f"aperture bottom ({_bbox(byref['SCREEN_7IN'])[1]:.3f})")
     assert _r0 - ROW1_LEGEND_TOP >= RING_LEGEND_MIN, (
         f"RING: only {_r0 - ROW1_LEGEND_TOP:.2f} mm between the row-1 legend band "
         f"top and the ring window -- floor is {RING_LEGEND_MIN}. Pulling the pills "
