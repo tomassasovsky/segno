@@ -516,32 +516,25 @@ LED_WALL_MIN  = 0.6       # channel wall floor; the flange edge caps the outside
 # to the post pad. Check the first printed diffuser against a post before gluing
 # ten of them.
 LED_POST_MIN  = 0.3       # gap from the shoulder's REAR edge to the support-post
-                          # top pad. Same story as LED_LAND_MIN below and the same
-                          # cause: 3 -> 4 took it from 1.39 to 0.39. Also a
-                          # tripwire, not a margin.
-                          #
-                          # BOTH of these exist because LED_STRIP_W is 12. The
-                          # shoulder is only 4 mm to house a 12 mm channel; at
-                          # 10 mm it goes back to 3 and both gaps roughly double
-                          # (land 3.41, post 1.39). The strip's own listing
-                          # contradicts itself on width -- see LED_STRIP_W -- so
-                          # MEASURING IT is what settles whether this part is
-                          # comfortable or on two knife edges at once.
+                          # top pad, checked only where the two share u. Since
+                          # POST_PW is derived to fit BETWEEN the pill shoulders
+                          # (2026-09-04) they share none, and this gate is a
+                          # tripwire that stays armed for whoever widens the post
+                          # or the flange again. Before that, at POST_PW = 40, it
+                          # held a 0.39 mm gap and pinned LED_GAP to a 0.09 mm
+                          # window.
 LED_LAND_MIN  = 2.4       # faceplate metal left between the shoulder's front edge
                           # and the pedal aperture behind it -- the land the flange
-                          # is glued to. THIS IS A TRIPWIRE AT THE CURRENT VALUE,
-                          # NOT A MARGIN, and it is an OPEN OWNER CALL (#930):
-                          # a 12 mm strip needs LED_INS_FLANGE >= 3.9 (channel
-                          # wall + LED_WALL_MIN), which at LED_GAP = 12 leaves at
-                          # most 2.51 -- so the 3.0 the first version of this gate
-                          # asked for and a 12 mm strip cannot both hold here.
-                          # 3.0 never held anyway: it was measured off LED_GAP
-                          # instead of the emitted aperture, and the true land was
-                          # 3.41 before this PR and is 2.41 now. To get 3.0 back,
-                          # LED_GAP has to go to ~12.6 -- which moves all ten pills
-                          # AND their legends, so it is a layout decision, not a
-                          # tolerance one. Anything that eats further into the land
-                          # now fails the build.
+                          # is glued to, MEASURED OFF THE EMITTED CUTS (the aperture
+                          # is cut PEDAL_AP_DEV rearward of v + FSW_SLOT_D/2 for the
+                          # fold development, #760). The land is LED_GAP -
+                          # LED_SLOT_H/2 - LED_INS_FLANGE - PEDAL_AP_DEV: 2.41 at
+                          # LED_GAP = 12 (a tripwire, #930), 6.41 at the 16 of the
+                          # 2026-09-04 trial. A 12 mm strip needs LED_INS_FLANGE >=
+                          # 3.9 (channel wall + LED_WALL_MIN), so with LED_GAP back
+                          # at 12 the 3.0 a glue bead wants cannot hold -- that is
+                          # what the trial also buys. Anything that eats into the
+                          # land past this floor fails the build.
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
 # EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
@@ -1014,7 +1007,13 @@ def lid_under_z(v):
 # (aligned in u). CLEAR/BANK ride centre so the 16" screen still fits depth-wise.
 EDGE         = 30.0      # uniform edge margin (sides / rear)
 FRONT_PEDAL_MARGIN = 10.0 # front-row pedals sit this close to the front edge
-LED_GAP      = 12.0      # status-LED offset behind a pedal (toward rear)
+LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear): pill
+                         # centre above the slot's rear edge. 12.0 until 2026-09-04;
+                         # 16 is an owner TRIAL ("a bit further apart from their
+                         # pedals") -- the pill's bottom edge now sits 13 mm behind
+                         # the slot instead of 9. Everything downstream follows
+                         # (legends, ring line, mini console); the support posts
+                         # no longer care, see POST_PW.
 SILK_H       = 25.0      # silkscreen cap height -- SAME for every label (a too-wide word
 SILK_CW      = 0.66      # gets squished horizontally). bold char advance / cap height.
 PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
@@ -1352,7 +1351,17 @@ POST_V     = 165.0                 # web depth (user call 2026-08-19: "move the 
                                    # under the feet are skipped, see _bottom_vents_local).
 POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
                                    # clears the LED slots; still under the 16in aperture, clear of the vent
-POST_PW    = 40.0                  # post width (u) -- lateral stability
+POST_U_CLR = 1.5                   # u clearance, pad edge to the neighbouring pill
+                                   # shoulder (LED_SLOT_W + 2*LED_INS_FLANGE), each side
+POST_PW    = ((_row1_u(1) - _row1_u(0)) - LED_SLOT_W - 2*LED_INS_FLANGE
+              - 2*POST_U_CLR)      # post width (u): 30.1, DERIVED so the pad sits
+                                   # BETWEEN the two pill shoulders it lands among and
+                                   # shares no u with either. At the old literal 40 it
+                                   # overlapped each shoulder by ~3.7 mm in u, so the
+                                   # shoulder-rear-vs-pad-front gate pinned LED_GAP to a
+                                   # 0.09 mm window; decoupled, the pill depth is free
+                                   # and the post stays where the dent zone wants it.
+                                   # 30 mm on a 20 mm-deep web is still not the weak axis.
 POST_PAD   = 20.0                  # top pad length (v) -- bears on the faceplate underside
 POST_FOOTL = 20.0                  # foot flange length (v) -- bolts to the base floor
                                    # (briefly 17 while the post was wedged against the v375 platforms
