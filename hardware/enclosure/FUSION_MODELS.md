@@ -65,8 +65,16 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   `neopixel_ring24`, `ring_holder24`, `encoder_knob_50x18_alu`,
   `ring_disc_51_5`, `ring_comet`). If the faceplate moves, every one of these
   gets the same delta. The ring family ALSO follows `ENC_V` on its own: it
-  moved +7.5 mm along the plate on 2026-09-04 (219.66 -> 227.16, #930), a world
-  delta of (0, c*0.75, s*0.75) in populated and (0, s*0.75, c*0.75) in VSM.
+  moved +7.5 mm along the plate on 2026-09-04 (219.66 -> 227.16, #930) and a
+  further +2.0 mm for the LED_GAP 16 trial (-> 229.16); a plate move of d is a
+  world delta of (0, c*d, s*d) in populated and (0, s*d, c*d) in VSM.
+- **Support posts** (`support_post_gen`, `support_post_gen2`, root): imported
+  `out/segno_post.step`, whose origin is the part's MIN corner, placed at
+  `[1,0,0,POST_U/10 - POST_PW/20 | 0,1,0,13.8997 | 0,0,1,0.2]` so the post is
+  centred on its slot gap. POST_PW is derived (30.14 since 2026-09-04, was a
+  literal 40), so a flange or pitch change means a post re-import, not a move.
+  The felt caps (`post_felt`, `post_felt2`) are native base-feature slabs
+  trimmed to the post width.
   (screen_bracket is GONE — screens bond to the shell, part deleted in #760.)
 - **FRONT_WALL_KNUCKLE_TRIM**: both base comps carry a cut (sketch of that
   name, offset plane at local z=0.8094) matching the generator's shortened
@@ -321,8 +329,10 @@ that component is deleted, the strip now lives inside the diffuser channel.
 
 **Placement.** x is the pedal's `u/10`; the rotation is `SLOPE_ANGLE`
 (12.498241812070852 deg), not the pedal tilt the tiles use. Row 1 sits at
-`ty = 13.22919, tz = 4.154255`; row 2 (CLEAR, BANK) at
-`ty = 29.420786, tz = 7.743324`. These are the generator's numbers: the part
+`ty = 13.619711, tz = 4.240818`; row 2 (CLEAR, BANK) at
+`ty = 29.811307, tz = 7.829888` (LED_GAP = 16, the 2026-09-04 trial; at the
+old LED_GAP = 12 they were 13.22919 / 4.154255 and 29.420786 / 7.743324).
+These are the generator's numbers: the part
 origin is on the plate's local z = -0.22 (underside minus a 0.2 mm glue line)
 at the pill centre `v = PEDAL_ROW*_V + FSW_SLOT_D/2 + LED_GAP`, DXF
 `y = v/10 + 1.21938` (the lip fold line), through the faceplate transform.
