@@ -37,8 +37,11 @@ enum PedalCtrlKind {
   expression,
 
   /// Nothing on the jack: a plug came out (or, on a switched jack, was never
-  /// in). Sent once, on the tip, with value `0`. Whatever the jack drove
-  /// holds where it was, and the jack is classified afresh on the next plug.
+  /// in). Sent once, on the tip, with value `0`, and it covers the whole
+  /// jack: the ring's switch goes with the tip's, released first if it was
+  /// down. Whatever the jack drove holds where it was, and the jack is
+  /// classified afresh on the next plug. An [expression] tip likewise rules
+  /// out a ring switch: a pot's ring is its supply.
   none,
 }
 

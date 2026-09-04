@@ -76,12 +76,13 @@ class PedalCubit extends Cubit<PedalState> {
   void _onEvent(PedalEvent event) {
     if (isClosed || event is! CtrlChanged) return;
     if (event.kind == PedalCtrlKind.none) {
-      // The plug came out: the jack's tip row goes, and a calibration in
+      // The plug came out: every row of the jack goes, and a calibration in
       // progress on it is abandoned — there is no pedal to sweep any more.
       final gone = state.calibrating == event.jack;
       emit(
         state.copyWith(
-          ctrl: {...state.ctrl}..remove(event.input),
+          ctrl: {...state.ctrl}
+            ..removeWhere((input, _) => input.jack == event.jack),
           calibrating: gone ? () => null : null,
           calibrationSeen: gone ? () => null : null,
         ),
@@ -98,19 +99,19 @@ class PedalCubit extends Cubit<PedalState> {
           ? PedalCtrlCalibration(min: event.raw, max: event.raw)
           : seen.including(event.raw);
     }
-    emit(
-      state.copyWith(
-        ctrl: {
-          ...state.ctrl,
-          event.input: PedalCtrlReading(
-            kind: event.kind,
-            value: event.value,
-            raw: event.raw,
-          ),
-        },
-        calibrationSeen: () => seen,
-      ),
+    // A pot's ring is its supply, not a switch: a footswitch-B row on a jack
+    // that turns out to hold an expression pedal was the plug brushing past.
+    final ctrl = {...state.ctrl};
+    if (event.contact == PedalCtrlContact.tip &&
+        event.kind == PedalCtrlKind.expression) {
+      ctrl.remove(PedalCtrlInput(event.jack, PedalCtrlContact.ring));
+    }
+    ctrl[event.input] = PedalCtrlReading(
+      kind: event.kind,
+      value: event.value,
+      raw: event.raw,
     );
+    emit(state.copyWith(ctrl: ctrl, calibrationSeen: () => seen));
   }
 
   /// Starts calibrating the expression pedal on [jack]: from here until
