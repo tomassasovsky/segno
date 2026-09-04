@@ -108,5 +108,44 @@ void main() {
       expect(ControllerSourceKind.consoleExpression.isContinuous, isTrue);
       expect(ControllerSourceKind.consoleSwitch.isContinuous, isFalse);
     });
+    test('the ring is its own control, numbered after both tips', () async {
+      final seen = await collect(const [
+        CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          contact: PedalCtrlContact.ring,
+          kind: PedalCtrlKind.switchPedal,
+          value: 255,
+        ),
+        CtrlMessage(
+          jack: PedalCtrlJack.ctrl2,
+          contact: PedalCtrlContact.ring,
+          kind: PedalCtrlKind.switchPedal,
+          value: 255,
+        ),
+      ]);
+      // A capture made before rings were readable keeps its number: tips
+      // stay 0 and 1, rings take 2 and 3.
+      expect(seen.map((i) => i.id), [2, 3]);
+      expect(
+        seen.map((i) => i.kind),
+        everyElement(ControllerSourceKind.consoleSwitch),
+      );
+    });
+
+    test('an expression pedal delivers its calibrated travel, not the raw '
+        'reading', () async {
+      pedal.setCtrlCalibration(
+        PedalCtrlJack.ctrl1,
+        const PedalCtrlCalibration(min: 24, max: 255),
+      );
+      final seen = await collect(const [
+        CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.expression,
+          value: 24,
+        ),
+      ]);
+      expect(seen.single.value, 0);
+    });
   });
 }

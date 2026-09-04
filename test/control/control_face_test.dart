@@ -615,6 +615,122 @@ void main() {
       await tester.pump(const Duration(seconds: 4));
     });
 
+    testWidgets('an expression pedal is calibrated from its row', (
+      tester,
+    ) async {
+      final link = FakePedalLink();
+      await pump(tester, pedalLink: link);
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+
+      // An uncalibrated EX-P at heel: raw 24, which with nothing learned yet
+      // is what the row shows.
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.expression,
+          value: 24,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('9%'), findsOneWidget);
+      expect(find.byKey(const Key('midi_ctrl_cal_done')), findsNothing);
+
+      // Open the calibration. Done is inert until the pedal has been swept.
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsOneWidget);
+      var done = tester.widget<ConsoleSmallButton>(
+        find.byKey(const Key('midi_ctrl_cal_done')),
+      );
+      expect(done.onPressed, isNull);
+
+      link
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 24,
+          ),
+        )
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 255,
+          ),
+        );
+      await tester.pumpAndSettle();
+      done = tester.widget<ConsoleSmallButton>(
+        find.byKey(const Key('midi_ctrl_cal_done')),
+      );
+      expect(done.onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_done')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsNothing);
+
+      // Heel now reads a hard zero, and the row says the ends are the user's.
+      // (Each open and close above animates on the fake clock, so keep the
+      // board's hello coming or the watchdog hides the rows.)
+      link
+        ..hello()
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 24,
+          ),
+        );
+      await tester.pumpAndSettle();
+      expect(find.text('0%'), findsOneWidget);
+      expect(find.text('cal'), findsOneWidget);
+
+      // Reopen: a calibrated jack offers its way back to automatic.
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl1')));
+      await tester.pumpAndSettle();
+      link.hello();
+      expect(find.byKey(const Key('midi_ctrl_cal_reset')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_reset')));
+      await tester.pumpAndSettle();
+      link.hello();
+      expect(find.byKey(const Key('midi_ctrl_ctrl1')), findsOneWidget);
+      expect(find.text('cal'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_cancel')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsNothing);
+
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('a switch on the ring is its own row', (tester) async {
+      final link = FakePedalLink();
+      await pump(tester, pedalLink: link);
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl2,
+          contact: PedalCtrlContact.ring,
+          kind: PedalCtrlKind.switchPedal,
+          value: 255,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_ctrl2_ring')), findsOneWidget);
+      expect(find.text('CTRL 2 · footswitch B'), findsOneWidget);
+      // A switch has no ends: nothing to calibrate, nothing opens.
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl2_ring')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsNothing);
+
+      await tester.pump(const Duration(seconds: 4));
+    });
+
     testWidgets('no CTRL readout without a link to read from', (tester) async {
       await pump(tester);
       await showMidi(tester);

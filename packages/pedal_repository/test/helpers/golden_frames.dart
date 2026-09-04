@@ -138,6 +138,13 @@ final goldenMessages = <String, PedalLinkMessage>{
     kind: PedalCtrlKind.expression,
     value: 128,
   ),
+  // The second switch of a two-switch pedal, on the ring.
+  'ctrl2_ring_switch_down': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl2,
+    contact: PedalCtrlContact.ring,
+    kind: PedalCtrlKind.switchPedal,
+    value: 255,
+  ),
   'hello': const HelloMessage(
     protocolVersion: PedalLinkCodec.protocolVersion,
     firmwareMajor: 1,

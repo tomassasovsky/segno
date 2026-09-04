@@ -1830,6 +1830,37 @@
             }
         }
     },
+    "midiCtrlTapToCalibrate": "Tap to calibrate",
+    "midiCtrlCalibrated": "cal",
+    "midiCtrlCalibrateHint": "Sweep the pedal from heel to toe a couple of times, then tap Done. That is where its ends are from now on.",
+    "midiCtrlCalibrateSeen": "Raw {raw}% · reached {min}%–{max}%",
+    "@midiCtrlCalibrateSeen": {
+        "description": "Live line while calibrating an expression pedal: where it is now, and the lowest and highest it has reached, all as raw percent of the board's scale.",
+        "placeholders": {
+            "raw": {
+                "type": "int"
+            },
+            "min": {
+                "type": "int"
+            },
+            "max": {
+                "type": "int"
+            }
+        }
+    },
+    "midiCtrlCalibrateWaiting": "Waiting for the pedal to move.",
+    "midiCtrlCalibrateDone": "Done",
+    "midiCtrlCalibrateCancel": "Cancel",
+    "midiCtrlCalibrateReset": "Reset to automatic",
+    "consoleCtrlRingSwitchControl": "CTRL {jack} · footswitch B",
+    "@consoleCtrlRingSwitchControl": {
+        "description": "The second switch of a two-switch pedal on a CTRL jack's ring (the B of a BOSS FS-6).",
+        "placeholders": {
+            "jack": {
+                "type": "int"
+            }
+        }
+    },
     "midiLearnDeviceMissing": "No MIDI input is connected, so the mappings driven by MIDI are idle. Connect the controller, or relearn a row on whatever you are using now.",
     "pedalCtrlSwitchDown": "pressed",
     "pedalCtrlSwitchUp": "released",
