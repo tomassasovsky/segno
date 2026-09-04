@@ -96,3 +96,35 @@ local_conf_header:
     # is sold for and what the drive can do; drop this line first if the NVMe
     # link proves flaky under load.
     RPI_EXTRA_CONFIG:append = "\ndtparam=pciex1\ndtparam=pciex1_gen=3"
+
+  rpi5-rtc: |
+    # Charge the coin cell on J5, so the RTC keeps time across a power cut and
+    # the console boots with the right clock before WiFi and NTP are up.
+    #
+    # The rest of that chain already works and wants nothing from us: the kernel
+    # seeds the system clock from rtc0 at boot (CONFIG_RTC_HCTOSYS — dmesg says
+    # "rpi-rtc ...: setting system clock to ..."), and stores the synced clock
+    # back into rtc0 about every 11 minutes once systemd-timesyncd reports
+    # NTP-synchronised (CONFIG_RTC_SYSTOHC, default y in the kernel and not
+    # turned off by bcm2712_defconfig). NTP corrects the clock, the kernel pushes
+    # it into the RTC, the cell carries it across the outage.
+    #
+    # What does NOT happen by itself is charging: the firmware leaves the trickle
+    # charger off (rtc_bbat_vchg default 0), so a rechargeable cell fitted to J5
+    # slowly runs down and the RTC becomes dead weight. The fitted part is a
+    # rechargeable 64 mAh coin cell on a 2-pin JST-SH lead.
+    #
+    # 3.0 V is Raspberry Pi's own documented figure for the lithium-manganese
+    # cell they ship. It is the conservative end of the range, not the maximum —
+    # the charger will accept up to 4.4 V — and it stays safe for the LIR-style
+    # cell some of these leads carry instead, where 3.0 V merely undercharges.
+    # NEVER raise it: the Pi docs warn against a Li-ion cell at J5 outright, and
+    # a primary CR2032 must not be charged at any voltage.
+    #
+    # config.txt rides the A/B firmware slots (firmware.0 / firmware.1), which the
+    # .raucb carries — so this reaches a unit as an ordinary OTA, not a hand edit.
+    # After it lands: /sys/class/rtc/rtc0/charging_voltage reads 3000000 (0 while
+    # the charger is off), and battery_voltage holds around 3.0-3.1 V.
+    #
+    # 2712 only; the Pi 4 image has no RTC and no J5. #995.
+    RPI_EXTRA_CONFIG:append = "\ndtparam=rtc_bbat_vchg=3000000"
