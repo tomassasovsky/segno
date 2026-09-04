@@ -210,7 +210,7 @@ Fusion keeps the component bodies of this export (73 solids); the standalone
 `neopixel_ring24` is switched OFF because the board now carries the ring.
 Both PCBs (`segno_console_board_PCB`, `segno_pedal_ring_PCB`) wear the local
 appearance `PCB - purple` (74, 32, 112), a copy of Plastic - Matte (Black)
-recoloured — the boards are purple.
+with its colour changed — the boards are purple.
 
 ### Corner brackets (both docs)
 
