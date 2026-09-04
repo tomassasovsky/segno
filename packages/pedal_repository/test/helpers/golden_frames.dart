@@ -138,6 +138,12 @@ final goldenMessages = <String, PedalLinkMessage>{
     kind: PedalCtrlKind.expression,
     value: 128,
   ),
+  // The jack went empty: a plug came out.
+  'ctrl1_none': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl1,
+    kind: PedalCtrlKind.none,
+    value: 0,
+  ),
   // The second switch of a two-switch pedal, on the ring.
   'ctrl2_ring_switch_down': const CtrlMessage(
     jack: PedalCtrlJack.ctrl2,

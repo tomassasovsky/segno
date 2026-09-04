@@ -177,6 +177,42 @@ void main() {
       },
     );
 
+    test(
+      'an empty jack drops its row and abandons a calibration on it',
+      () async {
+        final cubit = PedalCubit(pedal: pedal, settings: settings)
+          ..beginCtrlCalibration(PedalCtrlJack.ctrl1);
+        link
+          ..emit(raw(100))
+          ..emit(
+            const CtrlMessage(
+              jack: PedalCtrlJack.ctrl1,
+              contact: PedalCtrlContact.ring,
+              kind: PedalCtrlKind.switchPedal,
+              value: 255,
+            ),
+          );
+        await pumpEventQueue();
+        expect(cubit.state.ctrl, hasLength(2));
+
+        link.emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.none,
+            value: 0,
+          ),
+        );
+        await pumpEventQueue();
+        const tip = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.tip);
+        const ring = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.ring);
+        expect(cubit.state.ctrl.containsKey(tip), isFalse);
+        expect(cubit.state.ctrl.containsKey(ring), isTrue);
+        expect(cubit.state.calibrating, isNull);
+        expect(cubit.state.calibrationSeen, isNull);
+        await cubit.close();
+      },
+    );
+
     test('a stored calibration is applied at start', () async {
       await settings.saveCtrlCalibration(1, min: 30, max: 230);
       final cubit = PedalCubit(pedal: pedal, settings: settings);

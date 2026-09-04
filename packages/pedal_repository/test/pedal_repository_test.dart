@@ -409,6 +409,53 @@ void main() {
       });
     });
 
+    test('an empty jack forgets the learned ends, keeps a set calibration', () {
+      fakeAsync((async) {
+        final link = FakePedalLink();
+        final repo = PedalRepository(link);
+        final seen = <CtrlChanged>[];
+        repo.events.listen((e) => seen.add(e as CtrlChanged));
+        for (final v in [24, 200]) {
+          link.emit(raw(v));
+          async
+            ..flushMicrotasks()
+            ..elapse(PedalRepository.settleTime);
+        }
+        expect(seen.last.value, 255); // learned: 200 is the toe
+
+        link.emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.none,
+            value: 0,
+          ),
+        );
+        async.flushMicrotasks();
+        expect(seen.last.kind, PedalCtrlKind.none);
+
+        // The next pedal starts from raw: the old pedal's ends are gone.
+        link.emit(raw(200));
+        async.flushMicrotasks();
+        expect(seen.last.value, 200);
+
+        // ...unless the user calibrated this jack, which survives the plug.
+        repo.setCtrlCalibration(
+          PedalCtrlJack.ctrl1,
+          const PedalCtrlCalibration(min: 24, max: 200),
+        );
+        link.emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.none,
+            value: 0,
+          ),
+        );
+        link.emit(raw(200));
+        async.flushMicrotasks();
+        expect(seen.last.value, 255);
+      });
+    });
+
     test('a switch, on either contact, passes through untouched', () async {
       final link = FakePedalLink();
       final repo = PedalRepository(link);

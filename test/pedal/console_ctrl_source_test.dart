@@ -132,6 +132,23 @@ void main() {
       );
     });
 
+    test('an empty jack is not an input', () async {
+      final seen = await collect(const [
+        CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.expression,
+          value: 100,
+        ),
+        CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.none,
+          value: 0,
+        ),
+      ]);
+      // Pulling the pedal out must not drive its target anywhere.
+      expect(seen, hasLength(1));
+    });
+
     test('an expression pedal delivers its calibrated travel, not the raw '
         'reading', () async {
       pedal.setCtrlCalibration(
