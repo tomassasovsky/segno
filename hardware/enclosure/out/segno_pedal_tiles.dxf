@@ -81,7 +81,7 @@ $MIRRTEXT
   9
 $LTSCALE
  40
-1.0
+4.6
   9
 $ATTMODE
  70
@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.275775463
+2461288.5175925926
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.275775463
+2461288.5175925926
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-EC
+F8
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{41C9608E-9FDE-43C7-945A-6F0F336CED0C}
+{4FD50A2C-9768-42CB-9D80-1DB836A12093}
   9
 $VERSIONGUID
   2
-{5D6F7538-2647-423C-BE98-921C906AEC70}
+{896011DE-AD9C-49AD-A7BE-24D8F4A6330C}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -3285,7 +3285,7 @@ ACAD
   0
 APPID
   5
-E9
+F5
 330
 3
 100
@@ -3299,7 +3299,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-EA
+F6
 330
 3
 100
@@ -6025,7 +6025,7 @@ AcDbText
  10
 0.0
  20
--3.2
+-7.6
  30
 0.0
  40
@@ -6035,7 +6035,7 @@ REC/PLAY
  11
 0.0
  21
--3.2
+-7.6
  31
 0.0
 100
@@ -14703,89 +14703,25 @@ AcDbPolyline
  70
 0
  10
-0.0
+0.30200000000000315
  20
-20.4
+-0.5
  10
-0.0
+0.30200000000000315
  20
-22.299999999999997
+-2.4
  10
-54.359
+54.057
  20
-22.299999999999997
+-2.4
  10
-54.359
+54.057
  20
-20.4
+-0.5
   0
 TEXT
   5
 E3
-330
-17
-100
-AcDbEntity
-  8
-NOTE
-100
-AcDbText
- 10
-27.1795
- 20
-22.599999999999998
- 30
-0.0
- 40
-1.8
-  1
-54.36  (ancho)
- 72
-1
- 11
-27.1795
- 21
-22.599999999999998
- 31
-0.0
-100
-AcDbText
-  0
-LWPOLYLINE
-  5
-E4
-330
-17
-100
-AcDbEntity
-  8
-NOTE
-100
-AcDbPolyline
- 90
-4
- 70
-0
- 10
-0.30200000000000315
- 20
--0.5
- 10
-0.30200000000000315
- 20
--2.4
- 10
-54.057
- 20
--2.4
- 10
-54.057
- 20
--0.5
-  0
-TEXT
-  5
-E5
 330
 17
 100
@@ -14817,7 +14753,7 @@ AcDbText
   0
 LWPOLYLINE
   5
-E6
+E4
 330
 17
 100
@@ -14849,7 +14785,7 @@ AcDbPolyline
   0
 TEXT
   5
-E7
+E5
 330
 17
 100
@@ -14877,9 +14813,433 @@ AcDbText
 100
 AcDbText
   0
+LWPOLYLINE
+  5
+E6
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbPolyline
+ 90
+4
+ 70
+0
+ 10
+0.0
+ 20
+44.3
+ 10
+0.0
+ 20
+46.199999999999996
+ 10
+54.359
+ 20
+46.199999999999996
+ 10
+54.359
+ 20
+44.3
+  0
+TEXT
+  5
+E7
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+27.1795
+ 20
+46.49999999999999
+ 30
+0.0
+ 40
+1.8
+  1
+54.36  (ancho)
+ 72
+1
+ 11
+27.1795
+ 21
+46.49999999999999
+ 31
+0.0
+100
+AcDbText
+  0
 TEXT
   5
 E8
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+219.68423838108737
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+Segno AZULEJOS DE PEDAL (segno_pedal_tiles)
+ 11
+0.0
+ 21
+219.68423838108737
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+E9
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+206.1938851826634
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+CANT. 10  TRAPECIO 54.36 (ancho, cable) /
+ 11
+0.0
+ 21
+206.1938851826634
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+EA
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+192.70353198423948
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+53.75 (estrecho, punta) x 19.90  plástico
+ 11
+0.0
+ 21
+192.70353198423948
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+EB
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+179.2131787858155
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+bicapa de grabado de 2.0 mm (capa NEGRA /
+ 11
+0.0
+ 21
+179.2131787858155
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+EC
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+165.72282558739158
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+núcleo BLANCO) - NO ES METAL; CUT = corte
+ 11
+0.0
+ 21
+165.72282558739158
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+ED
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+152.23247238896764
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+pasante del trapecio; ENGRAVE = grabado
+ 11
+0.0
+ 21
+152.23247238896764
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+EE
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+138.7421191905437
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+relleno (quema la capa, deja ver el blanco);
+ 11
+0.0
+ 21
+138.7421191905437
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+EF
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+125.25176599211973
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+el borde ANCHO va hacia el cable y lleva la
+ 11
+0.0
+ 21
+125.25176599211973
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+F0
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+111.76141279369578
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+parte superior de los glifos; medidas
+ 11
+0.0
+ 21
+111.76141279369578
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+F1
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+98.27105959527184
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+NOMINALES -- el 0,05 mm por lado ya está en
+ 11
+0.0
+ 21
+98.27105959527184
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+F2
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+84.78070639684789
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+la pieza, no agrandar; el taller aplica
+ 11
+0.0
+ 21
+84.78070639684789
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+F3
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+71.29035319842394
+ 30
+0.0
+ 40
+8.431470749014967
+  1
+compensación de kerf; no sustituir fuente,
+ 11
+0.0
+ 21
+71.29035319842394
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+F4
 330
 17
 100
@@ -14895,9 +15255,9 @@ AcDbText
  30
 0.0
  40
-4.0
+8.431470749014967
   1
-Segno AZULEJOS DE PEDAL (segno_pedal_tiles)  CANT. 10  TRAPECIO 54.36 (ancho, cable) / 53.75 (estrecho, punta) x 19.90  plástico bicapa de grabado de 2.0 mm (capa NEGRA / núcleo BLANCO) - NO ES METAL; CUT = corte pasante del trapecio; ENGRAVE = grabado relleno (quema la capa, deja ver el blanco); el borde ANCHO va hacia el cable y lleva la parte superior de los glifos; medidas NOMINALES -- el 0,05 mm por lado ya está en la pieza, no agrandar; el taller aplica compensación de kerf; no sustituir fuente, los glifos ya son geometría
+los glifos ya son geometría
  11
 0.0
  21
@@ -15997,7 +16357,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-EB
+F7
   0
 DICTIONARYVAR
   5
@@ -16009,7 +16369,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:07.403551+00:00
+1.4.4 @ 2026-09-04T15:25:20.015377+00:00
   0
 VISUALSTYLE
   5
@@ -22563,7 +22923,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-EB
+F7
 330
 2D
 100
@@ -22571,7 +22931,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:07.411555+00:00
+1.4.4 @ 2026-09-04T15:25:20.029647+00:00
   0
 ENDSEC
   0

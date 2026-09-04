@@ -2622,6 +2622,35 @@ def _doc():
     doc.layers.add("MASK", color=1, linetype="DASHDOT")
     return doc
 
+# The stock DASHED / DASHDOT patterns are drawn for 1:1 printing: 1.27 mm of dash
+# then 0.254 mm of gap. Every drawing sheet is auto-fitted to its part, so on the
+# 1040 mm base that gap lands at 0.02 mm on paper -- a thirtieth of a 600 dpi dot.
+# It prints SOLID, and a bend line that prints solid is a bend line the shop can
+# read as a cut line. $LTSCALE scales the patterns; size it from the part so the
+# printed gap comes out ~0.3 mm on every sheet, from the 24 mm corner bracket to
+# the 1040 mm base. Tuned against rasterised output -- see _verify_dash_legibility.
+LTSCALE_SPAN = 62.0
+
+def _ltscale_for(doc):
+    """Linetype scale that keeps this part's dashes legible once fitted to a sheet."""
+    from ezdxf.bbox import extents
+    bb = extents(e for e in doc.modelspace()
+                 if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
+    if not bb.has_data:
+        return 1.0
+    span = max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1])
+    return max(1.0, round(span / LTSCALE_SPAN, 1))
+
+def _save(doc, path):
+    """Write the DXF with a part-sized $LTSCALE.
+
+    Set here rather than in the PDF renderer so the value travels WITH the file:
+    the shop opening the DXF in their own CAD sees the same broken bend lines the
+    PDF shows, and `dxf_to_pdf` (which re-reads the saved file) inherits it free.
+    """
+    doc.header["$LTSCALE"] = _ltscale_for(doc)
+    doc.saveas(path)
+
 def _circle(msp, x, y, d, layer="CUT"):
     msp.add_circle((x, y), d / 2.0, dxfattribs={"layer": layer})
 
@@ -2723,6 +2752,50 @@ def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
         attrs["style"] = "SILKBOLD"          # legends print BOLD
     msp.add_text(s, height=h, dxfattribs=attrs).set_placement((x, y), align=al)
 
+# Sheet drawings are auto-fitted to the contents of model space, and model-space
+# TEXT has real width -- so a shop note emitted as ONE long TEXT entity is a page
+# layout hazard, not just ugly. The post's note measured 2909 mm beside an 83 mm
+# part: the part rendered at 3% of the sheet, its dimensions were unreadable and
+# its bend line printed as a smear. Wrap notes to the part's own width, at a text
+# height that keeps the block a caption rather than the largest thing on the page.
+NOTE_BLOCK_FILL = 0.55      # note-block height, as a fraction of the part's height
+NOTE_ADVANCE    = 0.75      # TEXT advance per character, in units of text height
+NOTE_LEADING    = 1.6       # line pitch, in units of text height
+
+def _note(msp, x, y, s, layer="NOTE"):
+    """Emit a shop note as a wrapped block whose bottom line sits at (x, y).
+
+    Grows UPWARD so the existing call sites -- which anchor just above the part --
+    keep meaning what they say, and RETURNS the top of the block so a second note
+    can be stacked on it instead of printed through it.
+    """
+    import textwrap
+    from ezdxf.bbox import extents
+    bb = extents(e for e in msp if e.dxf.layer != "NOTE")
+    span = 100.0
+    if bb.has_data:
+        # the LARGER dimension, not the width: the post is 30 mm wide and 83 mm
+        # tall, and wrapping its note to 30 mm stacked 20 lines above a part that
+        # was already the tall one, turning the sheet into a 1:3 ribbon.
+        span = max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1], 1.0)
+    w = span
+    # lines = len*ADVANCE*th/span and block = LEADING*th*lines, so solving
+    # block = FILL*span for th gives the height that fills the budget exactly.
+    th = math.sqrt(NOTE_BLOCK_FILL * span * span /
+                   (NOTE_ADVANCE * NOTE_LEADING * max(len(s), 1)))
+    th = min(max(th, 1.2), 9.0)
+    # Never split a word: the shop pairs a printed sheet to its DXF by the file
+    # stem written in the note, and wrapping "segno_corner_bracket_rear" across
+    # two lines destroys that pairing (the package verifier catches it, but the
+    # right place to not do it is here).
+    cols = max(24, int(w / (NOTE_ADVANCE * th)),
+               max((len(t) for t in s.split()), default=0))
+    lines = textwrap.wrap(s, cols, break_long_words=False,
+                          break_on_hyphens=False) or [s]
+    for i, ln in enumerate(lines):
+        _text(msp, x, y + (len(lines) - 1 - i) * th * NOTE_LEADING, th, ln, layer)
+    return y + (len(lines) - 1) * th * NOTE_LEADING + th
+
 def _emit(msp, feats, ox=0.0, oy=0.0):
     for f in feats:
         layer = f.get("layer", "CUT")
@@ -2791,8 +2864,8 @@ def dxf_faceplate(path):
                                                                           # stations as the front lip (#760),
                                                                           # Ø3.4 M3 clearance, concentric
                                                                           # with the flange tap pilots
-    _text(msp, 10, yr1+8, 8, f"Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico) AJUSTE DE LA PESTAÑA FRONTAL: plegar la pestaña de modo que quede {LIP_FIT_CLEAR:.1f} mm de holgura entre la cara INTERIOR de la pestaña y la cara EXTERIOR de la pared frontal del cuerpo, MEDIDO DESPUÉS DE PINTAR (ambas caras se pintan, no se enmascara nada). En el CAD el ajuste es cara contra cara, por lo que la pestaña debe plegarse levemente abierta; verificar que la tapa entre sobre el cuerpo terminado antes del plegado definitivo", "NOTE")
-    doc.saveas(path)
+    _note(msp, 10, yr1+8, f"Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico) AJUSTE DE LA PESTAÑA FRONTAL: plegar la pestaña de modo que quede {LIP_FIT_CLEAR:.1f} mm de holgura entre la cara INTERIOR de la pestaña y la cara EXTERIOR de la pared frontal del cuerpo, MEDIDO DESPUÉS DE PINTAR (ambas caras se pintan, no se enmascara nada). En el CAD el ajuste es cara contra cara, por lo que la pestaña debe plegarse levemente abierta; verificar que la tapa entre sobre el cuerpo terminado antes del plegado definitivo")
+    _save(doc, path)
     return {"blank": (LW, yr1)}
 
 def dxf_overlay(path):
@@ -2815,8 +2888,8 @@ def dxf_overlay(path):
         else:
             _text(msp, e["u"], e["v"], e["h"], e["s"], layer="SILK",   # WHITE legend on the print
                   wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
-    _text(msp, 10, FP_V + 8, 8, "Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)", "NOTE")
-    doc.saveas(path); return {}
+    _note(msp, 10, FP_V + 8, "Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)")
+    _save(doc, path); return {}
 
 def dxf_base(path):
     """ONE-PIECE BASE developed as a SINGLE flat blank: the bottom plate in the centre,
@@ -3017,15 +3090,14 @@ def dxf_base(path):
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
             _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
                          "zona de puesta a tierra del perno M6, AMBAS CARAS")
-    _text(msp, 8, BD+Hr+Ht+22, 7,
+    _mask_top = _note(msp, 8, BD+Hr+Ht+10,
+          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar")
+    _note(msp, 8, _mask_top + 8,
           "MASK (rojo trazo y punto) = máscara de pintura, NO ES UN CORTE: zona de metal "
           "desnudo para la puesta a tierra alrededor del perno M6, en AMBAS CARAS. Los "
-          "agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.", "MASK")
-
-    _text(msp, 8, BD+Hr+Ht+10, 9,
-          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar",
-          "NOTE")
-    doc.saveas(path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
+          "agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.",
+          layer="MASK")
+    _save(doc, path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
 
 def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
     """Internal L-bracket that joins a vertical corner WITHOUT welding: one leg pop-rivets to
@@ -3039,8 +3111,8 @@ def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
         _circle(msp, LEG - CORNER_RO, z, D_RIVET)                        # rear-wall leg
     for z in side_zs:
         _circle(msp, LEG + CORNER_RO, z, D_RIVET)                        # side-wall leg
-    _text(msp, 0, ht+6, 6, f"Segno ÁNGULO DE ESQUINA (segno_corner_bracket_rear, {tag})  chapa 2.0 mm  CANT. 2  unión de esquina sin soldadura; remachar a las dos paredes", "NOTE")
-    doc.saveas(path); return {}
+    _note(msp, 0, ht+6, f"Segno ÁNGULO DE ESQUINA (segno_corner_bracket_rear, {tag})  chapa 2.0 mm  CANT. 2  unión de esquina sin soldadura; remachar a las dos paredes")
+    _save(doc, path); return {}
 
 def platform_foot_u(sw):
     """The two x-fractions of the foot-flange screws, as offsets from the shelf centre."""
@@ -3074,13 +3146,12 @@ def dxf_rear_panel(path):
     _u0, _z0, pw, ph = rear_panel_outline()
     _poly(msp, [(-pw/2, -ph/2), (pw/2, -ph/2), (pw/2, ph/2), (-pw/2, ph/2)], "CUT")
     _emit(msp, rear_panel_holes())
-    _text(msp, -pw/2 + 4, ph/2 + 6, 6,
+    _note(msp, -pw/2 + 4, ph/2 + 6,
           f"Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa {REAR_PANEL_T:.1f} mm (los jacks CTRL Neutrik NJ6FD-V "
           f"admiten panel de 1.2 a 1.5; el cuerpo sigue en 2.0)  CANT. 1  "
           "PIEZA PLANA, sin plegados: entrada USB-C PD 20 V (punzón D) + botón de apagado + fusible + 2 x DIN-5 + "
-          "2 x jack Neutrik NJ6FD-V (Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que apoya contra el cuerpo",
-          "NOTE")
-    doc.saveas(path); return {}
+          "2 x jack Neutrik NJ6FD-V (Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que apoya contra el cuerpo")
+    _save(doc, path); return {}
 
 # screen_bracket REMOVED (#760): the screens are bonded to the shell; the
 # bracket fallback was dropped entirely (user call 2026-08-18).
@@ -3103,14 +3174,14 @@ def dxf_post(path):
     _poly(msp, [(0, pad_f+web_f), (pw, pad_f+web_f)], "BEND", closed=False) # web -> foot (fold 90)
     for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot, foot/2 from its free end
         _circle(msp, pw/2.0 + du, Wd - foot/2.0, D_M4)
-    _text(msp, 5, Wd+6, 9,
+    _note(msp, 5, Wd+6,
           f"Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de {POST_T:.1f} mm "
           f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C; medidas EXTERIORES apoyo {POST_PAD_OUT:.2f} / "
           f"alma {POST_WEB_OUT:.2f} / pie {POST_FOOT_OUT:.2f} mm (interiores {pad:.0f} / {web:.1f} / {foot:.0f}); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
           f"de {POST_TILT:.1f}°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), "
           f"fieltro sobre el apoyo; deducción aplicada (K {KF}, Ri {POST_RI:.1f}): {POST_DD_PAD:.2f} mm en el plegado del apoyo, "
-          f"{POST_DD_FOOT:.2f} mm en el del pie; desarrollo {Wd:.2f} mm", "NOTE")
-    doc.saveas(path); return {}
+          f"{POST_DD_FOOT:.2f} mm en el del pie; desarrollo {Wd:.2f} mm")
+    _save(doc, path); return {}
 
 # ===========================================================================
 # STEP  (cadquery)
@@ -5678,8 +5749,8 @@ def dxf_ring_disc(path):
     doc = _doc(); msp = doc.modelspace()
     _circle(msp, 0, 0, RING_ID)                 # outline: OD = ring inner diameter
     _circle(msp, 0, 0, D_ENC)                   # encoder bush hole (centre)
-    _text(msp, -RING_ID/2, RING_ID/2 + 6, 5, "Segno DISCO CENTRAL DEL ARO DE LEDS (segno_ring_disc)  chapa 2.0 mm  CANT. 1  PIEZA PLANA, sin plegados (queda sujeto por la tuerca del encoder; el agujero central es el paso del buje)", "NOTE")
-    doc.saveas(path); return {}
+    _note(msp, -RING_ID/2, RING_ID/2 + 6, "Segno DISCO CENTRAL DEL ARO DE LEDS (segno_ring_disc)  chapa 2.0 mm  CANT. 1  PIEZA PLANA, sin plegados (queda sujeto por la tuerca del encoder; el agujero central es el paso del buje)")
+    _save(doc, path); return {}
 
 
 def _emit_tile(msp, ox, oy, label):
@@ -5703,27 +5774,43 @@ def _emit_tile(msp, ox, oy, label):
             _engrave_fill(msp, "poly", pts, holes=holes)
 
 
-def _tile_size_callout(msp, ox, oy):
-    """NOTE-only: both widths, so the 0.6 mm taper cannot be missed on screen.
+# The pad is a wedge in plan (#922). 54.36 vs 53.76 over 19.90 is 0.87 deg a side
+# -- a viewer that only looks at the outline will swear the tile is a rectangle,
+# so both widths get dimensioned. Split into three so the NEST can put each one
+# on an edge of the nest that is actually free: the tiles are pitched 4.0 mm
+# apart and that gap already carries the per-tile captions, so a dimension drawn
+# into it prints straight through "TRACK2" (#1001).
+TILE_DIM_GAP = 2.4
 
-    The pad is a wedge in plan (#922). 54.36 vs 53.76 over 19.90 is 0.87° a side
-    -- a viewer that only looks at the outline will swear the tile is a rectangle.
-    """
-    yb = oy + TILE_W / 2.0
-    yt = oy - TILE_W / 2.0
-    xb, xt = TILE_L_BACK / 2.0, TILE_L_TOE / 2.0
-    gap = 2.4
-    _poly(msp, [(ox - xb, yb + 0.5), (ox - xb, yb + gap),
-                (ox + xb, yb + gap), (ox + xb, yb + 0.5)], "NOTE", closed=False)
-    _text(msp, ox, yb + gap + 0.3, 1.8, f"{TILE_L_BACK:.2f}  (ancho)", "NOTE",
+def _tile_dim_wide(msp, ox, oy):
+    """The 54.36 mm cable edge, dimensioned ABOVE the tile."""
+    yb, xb, g = oy + TILE_W / 2.0, TILE_L_BACK / 2.0, TILE_DIM_GAP
+    _poly(msp, [(ox - xb, yb + 0.5), (ox - xb, yb + g),
+                (ox + xb, yb + g), (ox + xb, yb + 0.5)], "NOTE", closed=False)
+    _text(msp, ox, yb + g + 0.3, 1.8, f"{TILE_L_BACK:.2f}  (ancho)", "NOTE",
           halign="center")
-    _poly(msp, [(ox - xt, yt - 0.5), (ox - xt, yt - gap),
-                (ox + xt, yt - gap), (ox + xt, yt - 0.5)], "NOTE", closed=False)
-    _text(msp, ox, yt - gap - 2.0, 1.8, f"{TILE_L_TOE:.2f}  (estrecho)", "NOTE",
+
+def _tile_dim_narrow(msp, ox, oy):
+    """The 53.75 mm toe edge, dimensioned BELOW the tile."""
+    yt, xt, g = oy - TILE_W / 2.0, TILE_L_TOE / 2.0, TILE_DIM_GAP
+    _poly(msp, [(ox - xt, yt - 0.5), (ox - xt, yt - g),
+                (ox + xt, yt - g), (ox + xt, yt - 0.5)], "NOTE", closed=False)
+    _text(msp, ox, yt - g - 2.0, 1.8, f"{TILE_L_TOE:.2f}  (estrecho)", "NOTE",
           halign="center")
-    _poly(msp, [(ox - xb - 0.5, yb), (ox - xb - gap, yb),
-                (ox - xb - gap, yt), (ox - xb - 0.5, yt)], "NOTE", closed=False)
-    _text(msp, ox - xb - gap - 6.5, oy - 0.9, 1.8, f"{TILE_W:.2f}", "NOTE")
+
+def _tile_dim_depth(msp, ox, oy):
+    """The 19.90 mm depth, dimensioned to the LEFT of the tile."""
+    yb, yt, xb, g = oy + TILE_W / 2.0, oy - TILE_W / 2.0, TILE_L_BACK / 2.0, TILE_DIM_GAP
+    _poly(msp, [(ox - xb - 0.5, yb), (ox - xb - g, yb),
+                (ox - xb - g, yt), (ox - xb - 0.5, yt)], "NOTE", closed=False)
+    _text(msp, ox - xb - g - 6.5, oy - 0.9, 1.8, f"{TILE_W:.2f}", "NOTE")
+
+def _tile_size_callout(msp, ox, oy):
+    """All three dimensions around one tile -- the single-tile sheets, where the
+    tile is alone on the page and every side is free."""
+    _tile_dim_wide(msp, ox, oy)
+    _tile_dim_narrow(msp, ox, oy)
+    _tile_dim_depth(msp, ox, oy)
 
 
 def dxf_one_pedal_tile(path, label):
@@ -5731,13 +5818,13 @@ def dxf_one_pedal_tile(path, label):
     doc = _doc(); msp = doc.modelspace()
     _emit_tile(msp, 0.0, 0.0, label)
     _tile_size_callout(msp, 0.0, 0.0)
-    _text(msp, -TILE_L_BACK / 2.0, TILE_W / 2.0 + 6.5, 2.6,
+    _note(msp, -TILE_L_BACK / 2.0, TILE_W / 2.0 + 6.5,
           f"Segno {_tile_stem(label)}  CANT. 1  TRAPECIO "
           f"{TILE_L_BACK:.2f}/{TILE_L_TOE:.2f} x {TILE_W:.2f}  "
           f"plástico bicapa {TILE_PLY_T:.1f} mm "
           f"capa NEGRA / núcleo BLANCO; CUT = contorno; ENGRAVE = grabado relleno; "
-          f"borde ANCHO hacia el cable", "NOTE")
-    doc.saveas(path)
+          f"borde ANCHO hacia el cable")
+    _save(doc, path)
     return {}
 
 
@@ -5756,15 +5843,22 @@ def dxf_pedal_tiles(path):
     """
     doc = _doc(); msp = doc.modelspace()
     labels = [lab for lab, _u, _v in PEDALS]
+    # The bottom-left tile carries the narrow + depth dimensions, so its own
+    # caption has to clear them; every other caption keeps the 3.2 mm drop.
     for i, label in enumerate(labels):
         ox, oy = _tile_nest_origin(i)
         _emit_tile(msp, ox, oy, label)
-        _text(msp, ox - TILE_L_BACK / 2.0, oy - TILE_W / 2.0 - 3.2, 2.4, label, "NOTE")
-    # One tile carries the size callout -- the 0.6 mm taper is invisible at nest
-    # scale unless both widths are written next to the outline.
-    _tile_size_callout(msp, *_tile_nest_origin(0))
+        drop = 7.6 if i == 0 else 3.2
+        _text(msp, ox - TILE_L_BACK / 2.0, oy - TILE_W / 2.0 - drop, 2.4, label, "NOTE")
+    # The 0.6 mm taper is invisible at nest scale unless both widths are written
+    # beside an outline -- but each dimension goes on an edge of the NEST that is
+    # free, never into the 4.0 mm inter-tile gap that carries the captions.
+    _tile_dim_narrow(msp, *_tile_nest_origin(0))            # below the bottom row
+    _tile_dim_depth(msp, *_tile_nest_origin(0))             # left of the nest
+    _tile_dim_wide(msp, *_tile_nest_origin(
+        min(TILE_NEST_COLS, len(labels) - 1)))              # above the top row
     rows = (len(labels) + TILE_NEST_COLS - 1) // TILE_NEST_COLS
-    _text(msp, 0.0, rows * (TILE_W + TILE_NEST_GAP) + 10.0, 4.0,
+    _note(msp, 0.0, rows * (TILE_W + TILE_NEST_GAP) + 10.0,
           f"Segno AZULEJOS DE PEDAL (segno_pedal_tiles)  CANT. {len(labels)}  "
           f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} (estrecho, punta) "
           f"x {TILE_W:.2f}  "
@@ -5775,8 +5869,8 @@ def dxf_pedal_tiles(path):
           f"el borde ANCHO va hacia el cable y lleva la parte superior de los glifos; "
           f"medidas NOMINALES -- el 0,05 mm por lado ya está en la pieza, no agrandar; "
           f"el taller aplica compensación de kerf; "
-          f"no sustituir fuente, los glifos ya son geometría", "NOTE")
-    doc.saveas(path)
+          f"no sustituir fuente, los glifos ya son geometría")
+    _save(doc, path)
     return {}
 
 
@@ -5833,17 +5927,23 @@ def pdf_pedal_tiles(path):
     ax.set_aspect("equal")
     ax.axis("off")
     fig.patch.set_facecolor("white")
+    # Tile 0 carries the narrow dimension underneath it, so its caption drops
+    # clear of it; every other caption keeps the 2.6 mm hang.
     for i, label in enumerate(labels):
         ox, oy = _tile_nest_origin(i)
         _draw_tile_on_ax(ax, ox, oy, label)
-        ax.text(ox, oy - TILE_W / 2.0 - 2.6, label, fontsize=6, ha="center",
-                va="top", color="#333")
-    # Size callout on the first tile -- both widths, so the 0.6 mm taper reads.
-    ox0, oy0 = _tile_nest_origin(0)
-    ax.annotate("", xy=(ox0 - TILE_L_BACK / 2.0, oy0 + TILE_W / 2.0 + 1.6),
-                xytext=(ox0 + TILE_L_BACK / 2.0, oy0 + TILE_W / 2.0 + 1.6),
+        ax.text(ox, oy - TILE_W / 2.0 - (6.0 if i == 0 else 2.6), label,
+                fontsize=6, ha="center", va="top", color="#333")
+    # Both widths, so the 0.6 mm taper reads -- but each dimension goes OUTSIDE
+    # the nest, never into the 4.0 mm inter-tile gap. Dimensioning the wide edge
+    # of the bottom-left tile put "54.36 ancho" straight through the caption of
+    # the tile above it, on the sheet the 2-ply shop actually prints (#1001).
+    ox0, oy0 = _tile_nest_origin(0)                                   # bottom row
+    oxt, oyt = _tile_nest_origin(min(cols, len(labels) - 1))          # top row
+    ax.annotate("", xy=(oxt - TILE_L_BACK / 2.0, oyt + TILE_W / 2.0 + 1.6),
+                xytext=(oxt + TILE_L_BACK / 2.0, oyt + TILE_W / 2.0 + 1.6),
                 arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
-    ax.text(ox0, oy0 + TILE_W / 2.0 + 2.0, f"{TILE_L_BACK:.2f} ancho",
+    ax.text(oxt, oyt + TILE_W / 2.0 + 2.0, f"{TILE_L_BACK:.2f} ancho",
             fontsize=5.5, ha="center", va="bottom", color="#333")
     ax.annotate("", xy=(ox0 - TILE_L_TOE / 2.0, oy0 - TILE_W / 2.0 - 1.6),
                 xytext=(ox0 + TILE_L_TOE / 2.0, oy0 - TILE_W / 2.0 - 1.6),
@@ -6132,6 +6232,67 @@ def _verify_tile_package(with_pdf=True):
                        for n in names)
 
 
+def _text_extent(e):
+    """Conservative model-space box for a TEXT entity, as (x0, y0, x1, y1).
+
+    Deliberately UNDER-estimates the advance so the overlap guard below trips on
+    real collisions rather than on the estimate.
+    """
+    h = float(e.dxf.height)
+    w = len(e.dxf.text) * h * 0.62
+    p = e.dxf.align_point if e.dxf.halign else e.dxf.insert
+    x, y = float(p.x), float(p.y)
+    if e.dxf.halign == 1:            # CENTER
+        x -= w / 2.0
+    elif e.dxf.halign == 2:          # RIGHT
+        x -= w
+    return (x, y, x + w, y + h)
+
+
+def _verify_dash_legibility(doc, stem):
+    """A bend line that prints solid is a bend line the shop can read as a cut.
+
+    The DASHED pattern is authored for 1:1 printing (0.254 mm gap) and every
+    sheet is auto-fitted to its part, so the gap has to scale WITH the part or it
+    vanishes: on the 1040 mm base at $LTSCALE 1 it measured 0.02 mm on paper,
+    a thirtieth of a 600 dpi dot (#1001). Asserted against the part span, since
+    that is what sets the reduction; span/500 is the floor, and the LTSCALE rule
+    in _ltscale_for delivers about span/244.
+    """
+    from ezdxf.bbox import extents
+    msp = doc.modelspace()
+    if not any(e.dxf.layer in ("BEND", "MASK") for e in msp):
+        return
+    bb = extents(e for e in msp
+                 if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
+    if not bb.has_data:
+        return
+    span = max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1])
+    gap = 0.254 * float(doc.header.get("$LTSCALE", 1.0))
+    assert gap >= span / 500.0, (
+        f"{stem}: dashed lines would print solid -- a {gap:.3f} mm gap on a "
+        f"{span:.0f} mm part is 1:{span/max(gap,1e-9):.0f}, past the 1:500 floor. "
+        f"$LTSCALE is {doc.header.get('$LTSCALE')}; see _ltscale_for")
+
+
+def _verify_no_overprinted_text(doc, stem):
+    """Annotation that lands on other annotation is unreadable on the sheet.
+
+    Both of the drawings' printed-text collisions came from geometry moving
+    underneath a hand-placed anchor: the base's MASK paragraph sat 12 mm above a
+    note that later grew to 6 wrapped lines, and the tile nest dimensioned a tile
+    into the 4.0 mm gap that carries the captions (#1001).
+    """
+    boxes = [(_text_extent(e), e.dxf.text) for e in doc.modelspace()
+             if e.dxftype() == "TEXT" and e.dxf.layer in ("NOTE", "MASK")]
+    for i, (a, ta) in enumerate(boxes):
+        for b, tb in boxes[i + 1:]:
+            if a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]:
+                raise AssertionError(
+                    f"{stem}: printed text overprints text -- "
+                    f"{ta[:40]!r} and {tb[:40]!r} share the same space")
+
+
 def _verify_drawing_package(with_pdf=True):
     import inspect, zipfile
     import ezdxf
@@ -6205,6 +6366,8 @@ def _verify_drawing_package(with_pdf=True):
             continue
         doc = ezdxf.readfile(dxf)
         used = {e.dxf.layer for e in doc.modelspace()}
+        _verify_dash_legibility(doc, stem)
+        _verify_no_overprinted_text(doc, stem)
 
         # --- R1: every through-cut layer present renders black -----------------
         black = _force_pdf_layer_colours(doc)   # asserts internally; also proves no

@@ -81,7 +81,7 @@ $MIRRTEXT
   9
 $LTSCALE
  40
-1.0
+6.5
   9
 $ATTMODE
  70
@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.275763889
+2461288.5175810186
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.275763889
+2461288.5175810186
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-AD
+B3
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{928F5CA3-957C-493F-8E75-39F1A697AA13}
+{3766860C-3D68-4FC7-BDEA-C2BC90BE9D37}
   9
 $VERSIONGUID
   2
-{9BC5F6F5-D60B-47E7-80C4-AF64D3A85F60}
+{64B58EBA-29A0-455B-885F-B2FDD01F0FBF}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -3285,7 +3285,7 @@ ACAD
   0
 APPID
   5
-AA
+B0
 330
 3
 100
@@ -3299,7 +3299,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-AB
+B1
 330
 3
 100
@@ -5985,13 +5985,193 @@ AcDbText
  10
 -197.0
  20
+130.4
+ 30
+0.0
+ 40
+9.0
+  1
+Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa
+ 11
+-197.0
+ 21
+130.4
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+AA
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-197.0
+ 20
+116.0
+ 30
+0.0
+ 40
+9.0
+  1
+1.5 mm (los jacks CTRL Neutrik NJ6FD-V admiten panel de 1.2
+ 11
+-197.0
+ 21
+116.0
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+AB
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-197.0
+ 20
+101.6
+ 30
+0.0
+ 40
+9.0
+  1
+a 1.5; el cuerpo sigue en 2.0)  CANT. 1  PIEZA PLANA, sin
+ 11
+-197.0
+ 21
+101.6
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+AC
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-197.0
+ 20
+87.2
+ 30
+0.0
+ 40
+9.0
+  1
+plegados: entrada USB-C PD 20 V (punzón D) + botón de
+ 11
+-197.0
+ 21
+87.2
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+AD
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-197.0
+ 20
+72.8
+ 30
+0.0
+ 40
+9.0
+  1
+apagado + fusible + 2 x DIN-5 + 2 x jack Neutrik NJ6FD-V
+ 11
+-197.0
+ 21
+72.8
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+AE
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-197.0
+ 20
+58.4
+ 30
+0.0
+ 40
+9.0
+  1
+(Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que
+ 11
+-197.0
+ 21
+58.4
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+AF
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+-197.0
+ 20
 44.0
  30
 0.0
  40
-6.0
+9.0
   1
-Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa 1.5 mm (los jacks CTRL Neutrik NJ6FD-V admiten panel de 1.2 a 1.5; el cuerpo sigue en 2.0)  CANT. 1  PIEZA PLANA, sin plegados: entrada USB-C PD 20 V (punzón D) + botón de apagado + fusible + 2 x DIN-5 + 2 x jack Neutrik NJ6FD-V (Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que apoya contra el cuerpo
+apoya contra el cuerpo
  11
 -197.0
  21
@@ -7091,7 +7271,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-AC
+B2
   0
 DICTIONARYVAR
   5
@@ -7103,7 +7283,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:06.548857+00:00
+1.4.4 @ 2026-09-04T15:25:19.225068+00:00
   0
 VISUALSTYLE
   5
@@ -13657,7 +13837,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-AC
+B2
 330
 2D
 100
@@ -13665,7 +13845,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:06.550937+00:00
+1.4.4 @ 2026-09-04T15:25:19.232786+00:00
   0
 ENDSEC
   0

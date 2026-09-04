@@ -81,7 +81,7 @@ $MIRRTEXT
   9
 $LTSCALE
  40
-1.0
+16.8
   9
 $ATTMODE
  70
@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.275752315
+2461288.5175694446
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.275752315
+2461288.5175694446
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-197
+19B
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{F86AE997-45ED-43BA-9218-FBD2F4726357}
+{2E4F7E7F-7595-4D56-83C5-2963FADB5A46}
   9
 $VERSIONGUID
   2
-{3EB68BD3-FD8A-4146-A066-3997A35F91E5}
+{629EA838-040B-4585-8EE7-93919999FA13}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -3285,7 +3285,7 @@ ACAD
   0
 APPID
   5
-194
+198
 330
 3
 100
@@ -3299,7 +3299,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-195
+199
 330
 3
 100
@@ -14327,23 +14327,23 @@ TEXT
 100
 AcDbEntity
   8
-MASK
+NOTE
 100
 AcDbText
  10
 8.0
  20
-552.434341583298
+583.634341583298
  30
 0.0
  40
-7.0
+9.0
   1
-MASK (rojo trazo y punto) = máscara de pintura, NO ES UN CORTE: zona de metal desnudo para la puesta a tierra alrededor del perno M6, en AMBAS CARAS. Los agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.
+Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción 1.91); SIN SOLDADURA: las 4 esquinas se
  11
 8.0
  21
-552.434341583298
+583.634341583298
  31
 0.0
 100
@@ -14363,17 +14363,137 @@ AcDbText
  10
 8.0
  20
+569.2343415832979
+ 30
+0.0
+ 40
+9.0
+  1
+remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con
+ 11
+8.0
+ 21
+569.2343415832979
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+194
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+8.0
+ 20
+554.8343415832979
+ 30
+0.0
+ 40
+9.0
+  1
+la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina
+ 11
+8.0
+ 21
+554.8343415832979
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+195
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+8.0
+ 20
 540.434341583298
  30
 0.0
  40
 9.0
   1
-Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción 1.91); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar
+ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar
  11
 8.0
  21
 540.434341583298
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+196
+330
+17
+100
+AcDbEntity
+  8
+MASK
+100
+AcDbText
+ 10
+8.0
+ 20
+615.034341583298
+ 30
+0.0
+ 40
+9.0
+  1
+MASK (rojo trazo y punto) = máscara de pintura, NO ES UN CORTE: zona de metal desnudo para la puesta a tierra alrededor del perno M6, en AMBAS CARAS. Los
+ 11
+8.0
+ 21
+615.034341583298
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+197
+330
+17
+100
+AcDbEntity
+  8
+MASK
+100
+AcDbText
+ 10
+8.0
+ 20
+600.634341583298
+ 30
+0.0
+ 40
+9.0
+  1
+agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.
+ 11
+8.0
+ 21
+600.634341583298
  31
 0.0
 100
@@ -15469,7 +15589,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-196
+19A
   0
 DICTIONARYVAR
   5
@@ -15481,7 +15601,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:05.852807+00:00
+1.4.4 @ 2026-09-04T15:25:18.372379+00:00
   0
 VISUALSTYLE
   5
@@ -22035,7 +22155,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-196
+19A
 330
 2D
 100
@@ -22043,7 +22163,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:05.857928+00:00
+1.4.4 @ 2026-09-04T15:25:18.606929+00:00
   0
 ENDSEC
   0
