@@ -10,8 +10,8 @@
 <rect x="579.5" y="322.4" width="78.3" height="116.1" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="680.7" y="322.4" width="78.3" height="116.1" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="781.8" y="322.4" width="78.3" height="116.1" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="276.1" y="119.0" width="78.3" height="116.1" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="377.3" y="119.0" width="78.3" height="116.1" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="276.1" y="156.6" width="78.3" height="116.1" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="377.3" y="156.6" width="78.3" height="116.1" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="83.0" y="310.0" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="184.1" y="310.0" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="285.3" y="310.0" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
@@ -20,22 +20,22 @@
 <rect x="588.7" y="310.0" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="689.9" y="310.0" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="791.0" y="310.0" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="285.3" y="106.6" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="386.4" y="106.6" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="285.3" y="144.2" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="386.4" y="144.2" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="86.7" y="79.6" width="153.8" height="85.5" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
 <text x="163.6" y="122.4" fill="#4a7f96" font-size="12" text-anchor="middle">7" TOUCH - waveform</text>
 <rect x="498.0" y="79.6" width="342.5" height="193.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
 <text x="669.3" y="176.1" fill="#4a7f96" font-size="12" text-anchor="middle">16" TOUCH - main UI</text>
 <circle cx="163.6" cy="223.5" r="33.5" fill="none" stroke="#a855f7" stroke-width="3"/>
 <circle cx="163.6" cy="223.5" r="3.6" fill="#cbd5e1"/>
-<circle cx="94.5" cy="292.1" r="9.8" fill="#9fb0c8"/>
-<polygon points="112.5,296.6 115.0,296.6 115.0,293.3 118.2,293.3 118.2,290.8 115.0,290.8 115.0,287.6 112.5,287.6 112.5,290.8 109.2,290.8 109.2,293.3 112.5,293.3" fill="#9fb0c8"/>
-<polygon points="123.2,302.3 123.2,281.8 141.2,292.1" fill="#9fb0c8"/>
-<polygon points="205.4,300.8 222.9,300.8 222.9,283.3 205.4,283.3" fill="#9fb0c8"/>
+<circle cx="94.6" cy="292.1" r="9.8" fill="#9fb0c8"/>
+<polygon points="112.6,296.6 115.1,296.6 115.1,293.3 118.3,293.3 118.3,290.8 115.1,290.8 115.1,287.6 112.6,287.6 112.6,290.8 109.3,290.8 109.3,293.3 112.6,293.3" fill="#9fb0c8"/>
+<polygon points="127.6,301.5 127.1,301.7 126.5,301.8 125.9,301.8 125.3,301.7 124.8,301.4 124.3,301.1 123.9,300.6 123.6,300.1 123.4,299.5 123.3,298.9 123.3,285.2 123.4,284.6 123.6,284.0 123.9,283.5 124.3,283.0 124.8,282.7 125.3,282.4 125.9,282.3 126.5,282.3 127.1,282.4 127.6,282.7 139.7,289.6 140.2,289.9 140.6,290.4 140.9,290.9 141.1,291.5 141.2,292.1 141.1,292.7 140.9,293.2 140.6,293.8 140.2,294.2 139.7,294.6" fill="#9fb0c8"/>
+<polygon points="205.4,298.3 205.4,298.7 205.5,299.1 205.7,299.5 205.9,299.8 206.1,300.1 206.4,300.3 206.8,300.5 207.1,300.7 207.5,300.8 207.9,300.8 220.4,300.8 220.8,300.8 221.2,300.7 221.5,300.5 221.9,300.3 222.2,300.1 222.4,299.8 222.6,299.5 222.8,299.1 222.9,298.7 222.9,298.3 222.9,285.8 222.9,285.4 222.8,285.0 222.6,284.7 222.4,284.3 222.2,284.0 221.9,283.8 221.5,283.6 221.2,283.4 220.8,283.3 220.4,283.3 207.9,283.3 207.5,283.3 207.1,283.4 206.8,283.6 206.4,283.8 206.1,284.0 205.9,284.3 205.7,284.7 205.5,285.0 205.4,285.4 205.4,285.8" fill="#9fb0c8"/>
 <text x="331.3" y="311.0" fill="#9fb0c8" font-size="8" text-anchor="middle">UNDO</text>
 <text x="432.4" y="311.0" fill="#9fb0c8" font-size="8" text-anchor="middle">MODE</text>
-<text x="331.3" y="107.6" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
-<text x="432.4" y="107.6" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
+<text x="331.3" y="145.2" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
+<text x="432.4" y="145.2" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
 <text x="44" y="526.6" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — 850 x 90 mm (lowered; transition shoulder carries the lid-lap screws)</text>
 <rect x="44" y="538.6" width="846.0" height="90.0" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
 <rect x="483.3" y="560.6" width="372.0" height="46.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>

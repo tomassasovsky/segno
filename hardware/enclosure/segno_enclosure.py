@@ -1046,8 +1046,6 @@ FSW_FRONT_EXTRA = 0.43 / math.cos(_ra)
 # and asserted >= 40 in _check().
 SCREEN_TOP_V = 371.0
 FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
-# CLEAR/BANK sit so their LABEL TOP aligns with the screens' shared top line
-# (SCREEN_TOP_V) -- the layout the user approved in the LED trial (issue #366).
 # SILK_CAP is the cap-height/em ratio of the label font as it actually renders
 # (measured in the "Segno console (populated)" doc; Arial-class bold ~0.717): the
 # silk `h` parameter is an em size, so glyph caps top out at v_lbl + SILK_H*SILK_CAP.
@@ -1067,7 +1065,17 @@ SILK_TRI_H   = 0.82
 # here and it silently stops matching the moment either of those changes.
 LABEL_DV_LED   = LED_GAP + 12.0
 LABEL_DV_PLAIN = LED_GAP - LED_SLOT_H / 2.0
-PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.0
+# CLEAR/BANK (row 2) are anchored on a HARD edge: the FRONT edge of their
+# footswitch slot sits ON the 16" aperture's front edge, so the two pedals and
+# the big screen share one bottom line (issue #796, owner call 2026-08-23; the
+# #366 layout anchored the row off its label cap top, a soft glyph edge that
+# lined up with nothing else on the plate). Both sides are cut edges in the same
+# flat pattern, so this is an exact equality. The slot is NOT centred on the row
+# -- faceplate_holes() opens it at v - FSW_SLOT_D/2 + PEDAL_AP_DEV -
+# FSW_FRONT_EXTRA to meet the pedal across the fold development -- so those two
+# terms come back out of the anchor here, or the alignment misses by ~2.15 mm.
+PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H + FSW_SLOT_D / 2.0
+                - PEDAL_AP_DEV + FSW_FRONT_EXTRA)
 # The encoder + LED ring do NOT follow the pedals rearward: the ring would hit the
 # 7" screen. It used to be pinned to the OLD row-2 centre (the 16"-screen-bottom
 # line), which held while the ring was the Ring 16's O46 -- that left 26.7 mm of
