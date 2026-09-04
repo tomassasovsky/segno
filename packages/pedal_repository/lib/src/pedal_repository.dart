@@ -230,6 +230,16 @@ class PedalRepository {
     PedalCtrlKind kind,
     int raw,
   ) {
+    if (kind == PedalCtrlKind.none) {
+      // The plug is gone, and whatever comes next may be another pedal: the
+      // learned ends go with it. A calibration the user set stays — it is
+      // the property of the pedal they calibrated, which they will plug back.
+      _settle.remove(jack)?.cancel();
+      _learned.remove(jack);
+      _lastRaw.remove(jack);
+      _emit(CtrlChanged(jack: jack, contact: contact, kind: kind, value: 0));
+      return;
+    }
     if (kind != PedalCtrlKind.expression) {
       _emit(CtrlChanged(jack: jack, contact: contact, kind: kind, value: raw));
       return;

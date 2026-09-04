@@ -1069,6 +1069,8 @@ class _CtrlRow extends StatelessWidget {
       (_, PedalCtrlKind.expression) => l10n.consoleCtrlExpressionControl(
         number,
       ),
+      // An empty jack has no row: the cubit drops the reading on `none`.
+      (_, PedalCtrlKind.none) => l10n.consoleCtrlSwitchControl(number),
     };
     final value = expression
         ? l10n.midiCtrlPercent(reading.percent)

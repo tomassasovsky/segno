@@ -46,11 +46,14 @@ class ConsoleCtrlSource implements ControllerSource {
   void _onEvent(PedalEvent event) {
     if (event is! CtrlChanged) return;
     if (_inputs.isClosed) return;
+    // An empty jack is not an input: whatever it drove holds where it was.
+    if (event.kind == PedalCtrlKind.none) return;
     _inputs.add(
       RawControllerInput(
         kind: switch (event.kind) {
           PedalCtrlKind.switchPedal => ControllerSourceKind.consoleSwitch,
           PedalCtrlKind.expression => ControllerSourceKind.consoleExpression,
+          PedalCtrlKind.none => throw StateError('handled above'),
         },
         id: idFor(event.input),
         // 0..255 down to the 0..127 every binding speaks. A switch's ends

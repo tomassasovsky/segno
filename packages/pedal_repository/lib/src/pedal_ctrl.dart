@@ -35,6 +35,11 @@ enum PedalCtrlKind {
   /// `PedalRepository` maps that onto the pedal's travel (see
   /// [PedalCtrlCalibration]).
   expression,
+
+  /// Nothing on the jack: a plug came out (or, on a switched jack, was never
+  /// in). Sent once, on the tip, with value `0`. Whatever the jack drove
+  /// holds where it was, and the jack is classified afresh on the next plug.
+  none,
 }
 
 /// One readable contact of one jack: the identity of a CTRL control.
