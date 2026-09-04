@@ -634,7 +634,18 @@ D_TRS_SCREW_D    = 3.2   # M3 clearance
 # cut diagonal fits every D shell.
 D_TRS_SCREW_DIAG = (19.0, 24.0)   # (du, dz) between the two diagonal M3 centres
 D_TRS_KEEPOUT    = 30.4  # bore + the M3 pair
-D_PD_BORE = D_TRS_BORE   # same D-series punch as CTRL_1/CTRL_2 (same M3 pair too)
+D_PD_BORE = D_TRS_BORE   # the PD coupler keeps the D-series punch (bore + M3 pair)
+# CTRL_1 / CTRL_2 are Neutrik NJ6FD-V since 2026-09-04 (owner call, #993): a
+# 6-pole switching 1/4" jack, vertical PCB pins, REAR-mounted through a plain
+# round hole and held by its snap-on POM cap. Neutrik's drawing (nj6fd-v-3.dxf,
+# "Panel cut out (rear side)") gives Ø12.00 and a panel of 1.20-1.50 mm; the
+# STEP shows the snout is only 3.5 mm long, so a 2.0 mm panel leaves the cap
+# nothing to snap to. Hence REAR_PANEL_T below. The old D-series TRS constants
+# stay for the PD coupler. The station keep-out is deliberately still
+# D_TRS_KEEPOUT: shrinking it would re-spread the stations and move the base's
+# rear-wall window, and the spare air costs nothing.
+D_CTRL_HOLE  = 12.0      # NJ6FD-V panel hole
+REAR_PANEL_T = 1.5       # the rear panel is a separate flat: 1.5 mm for the NJ6FD-V cap
 USB3_SQ       = 22.1 # USB 3.0 panel coupler: square across flats
 USB3_CORNER_D = 24.1 # ...corners on this circle -> corner radius derived below
 USB3_FLANGE_D = 28.5 # flange OD. This, not the cutout, is the real keep-out
@@ -656,7 +667,10 @@ REAR_IO_PROVENANCE = {
     "D_TRS_SCREW_DIAG":  "datasheet: QIANRENON B0CQ4VD2N2 'D-type panel mounting "
                          "dimensions (19mm*24mm)'; MEIRIYFA B0G5FZNH49 is the same "
                          "standard D shell (photos show the diagonal pair + screws)",
-    "D_TRS_KEEPOUT":     "design: bore + the M3 pair",
+    "D_TRS_KEEPOUT":     "design: bore + the M3 pair (kept as the CTRL station width too)",
+    "D_CTRL_HOLE":       "datasheet: Neutrik nj6fd-v-3.dxf 'Panel cut out (rear side)' Ø12.00 "
+                         "[0.472\"], panel 1.20-1.50 mm; NJ6FD-V datasheet 'Chassis shape 12 mm'",
+    "REAR_PANEL_T":      "datasheet: NJ6FD-V panel thickness 1.20-1.50 mm; snout 3.5 mm in the STEP",
     "D_TRS_SCREW_D":     "datasheet: D-series fixings are M3",
     "USB3_SQ":           "measured: user, coupler BODY across flats (PENGLIN B09VGK59XQ: "
                          "a round M24 barrel with two anti-rotation flats; NUT-mounted, "
@@ -1549,12 +1563,16 @@ def rear_io_cutouts():
     # is point-symmetric about the bore, so an opposite-diagonal part mounts by
     # turning it 180 deg.
     ddu, ddz = D_TRS_SCREW_DIAG
-    for ref in ("PD_IN", "CTRL_1", "CTRL_2"):
+    for ref in ("PD_IN",):
         cu = at[ref][0]
         cuts.append({"kind": "circle", "u": cu, "v": z, "d": D_TRS_BORE, "ref": ref})
         for s in (-1, 1):
             cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z - s*ddz/2.0,
                          "d": D_TRS_SCREW_D, "ref": ref + "_SCR"})
+    # CTRL jacks: Neutrik NJ6FD-V, one round Ø12 hole each, no fixings (rear
+    # body + front snap cap, see D_CTRL_HOLE)
+    for ref in ("CTRL_1", "CTRL_2"):
+        cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": D_CTRL_HOLE, "ref": ref})
     for ref in ("USB3_1", "USB3_2"):                       # square, heavily radiused
         cu = at[ref][0]
         cuts.append({"kind": "rect", "u": cu - USB3_CUT_SQ/2.0, "v": z - USB3_CUT_SQ/2.0,
@@ -2235,7 +2253,7 @@ def _check(strict_board_mount=True):
     _dims = [k for k in globals()
              if k.startswith(("D_TRS", "MIDI_", "USB3_")) and k not in
              ("USB3_CORNER_R", "USB3_CUT_SQ", "USB3_FIT")]
-    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND"]
+    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND", "D_CTRL_HOLE", "REAR_PANEL_T"]
     _missing = sorted(set(_dims) - set(REAR_IO_PROVENANCE))
     assert not _missing, (
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
@@ -3033,7 +3051,8 @@ def dxf_rear_panel(path):
     _poly(msp, [(-pw/2, -ph/2), (pw/2, -ph/2), (pw/2, ph/2), (-pw/2, ph/2)], "CUT")
     _emit(msp, rear_panel_holes())
     _text(msp, -pw/2 + 4, ph/2 + 6, 6,
-          "Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa 2.0 mm  CANT. 1  "
+          f"Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa {REAR_PANEL_T:.1f} mm (los jacks CTRL Neutrik NJ6FD-V "
+          f"admiten panel de 1.2 a 1.5; el cuerpo sigue en 2.0)  CANT. 1  "
           "PIEZA PLANA, sin plegados: alimentación 9V + apagado + fusible + 2 x DIN-5 + "
           "2 x TRS + 2 x USB3",
           "NOTE")
@@ -4760,6 +4779,7 @@ def build_step(write_parts=True):
 # matches a sheet to a file by them. Numbers, units, symbols (Ø ± °) and standard
 # designations (5052-H32, M3, K, R2) are international and are left alone.
 AL_SHEET  = f"aluminio 1050 de {T:.1f} mm"
+AL_SHEET_15 = f"aluminio 1050 de {REAR_PANEL_T:.1f} mm"   # rear panel only (NJ6FD-V cap)
 STEEL_CR  = f"acero laminado en frío de {POST_T:.1f} mm"
 VINYL     = "vinilo adhesivo impreso / policarbonato, troquelado - NO ES METAL"
 PLY_2MM   = (f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
@@ -4776,7 +4796,7 @@ PKG_TILES      = "tiles"        # 2-ply engraved plastic, laser cut + engrave
 PART_SPECS = {
     "segno_base":                (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_faceplate":           (AL_SHEET, 1, PKG_SHEETMETAL),
-    "segno_rear_panel":          (AL_SHEET, 1, PKG_SHEETMETAL),
+    "segno_rear_panel":          (AL_SHEET_15, 1, PKG_SHEETMETAL),
     "segno_ring_disc":           (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_corner_bracket_rear": (AL_SHEET, 2, PKG_SHEETMETAL),
     "segno_post":                (STEEL_CR, 2, PKG_SHEETMETAL),
@@ -5318,7 +5338,7 @@ def report():
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(case top flush with the slot's upper rim, pad +{PEDAL_PAD_T:.1f} above, #373)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
-    P(f"Rear I/O        : USB-C PD + btn + fuse + 2x MIDI DIN-5 + 2x TRS (D-series) + 2x USB3 + vents + earth (no window)")
+    P(f"Rear I/O        : USB-C PD + btn + fuse + 2x MIDI DIN-5 + 2x Neutrik NJ6FD-V (O12) + 2x USB3 + vents + earth (no window)")
     _unc = rear_io_unconfirmed()
     if _unc:
         P("  DO NOT CUT     : " + ", ".join(

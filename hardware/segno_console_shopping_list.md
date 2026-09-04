@@ -85,6 +85,10 @@ board's BOM.
 
 ## Power (#754 — one 20 V PD contract, two bucks)
 
+- [ ] **CTRL jacks: Neutrik NJ6FD-V ×2** — 6-pole switching 1/4" jack, vertical
+      PCB pins, rear-mounted through the panel's Ø12 hole with its snap-on cap
+      (Neutrik: panel 1.2–1.5 mm, which is why the rear panel is 1.5 mm). Solder
+      leads to T/R/S. Mouser/TME stock it; the Amazon listing is B09ZNHVYG8 (25-pack).
 - [ ] **USB-C PD panel coupler**, D punch — QIANRENON
       [B0CQ4VD2N2](https://www.amazon.com/dp/B0CQ4VD2N2) ×1 (100 W, 10 Gbps —
       the 10 Gbps grade matters: all 24 ways wired means CC reaches the trigger;
@@ -112,8 +116,8 @@ board's BOM.
 > **Everything on this list is bought from Amazon.com** (decision, 2026-08-17).
 > A MercadoLibre comparison was run and is in git history at `d5295b69` /
 > `1621f676` if local sourcing ever comes back up; the one finding worth keeping
-> is that a plain local 6.35 chassis jack will NOT fit the Ø24 D punch — see the
-> TRS note in the design doc.
+> is that a plain local 6.35 chassis jack will NOT fit a D punch. Moot since
+> 2026-09-04: the CTRL jacks are Neutrik NJ6FD-V in a plain Ø12 hole (#993).
 
 - The power budget is [`segno_wiring.md` §2](segno_wiring.md) — canonical since
   #754.

@@ -203,7 +203,7 @@ source of truth.
 | power button (`POWER`) | momentary, **unlit** → J8, through the board to J9 → the Pi 5's own J2 solder pads. Two wires; no 5 V run to the rear panel. The machine has no power indicator — the screens are the indicator |
 | fuse (`FUSE`) | 5×20 screw-cap holder — value and placement are §2's (T5A slow-blow, in the 20 V feed) |
 | MIDI DIN-5 ×2 (`MIDI_IN`/`MIDI_OUT`) | IN is opto-isolated **on the board** — the socket alone is not enough. IN's pin 2 stays unbonded (that isolation is the point) |
-| TRS 6.35 D-series ×2 (`CTRL_1`/`CTRL_2`) | expression pedal OR footswitch on the same jack, auto-detected (tip → ADC with pull-up, ring → 3V3 through 1 k) |
+| Neutrik NJ6FD-V ×2 (`CTRL_1`/`CTRL_2`) | 6-pole switching 1/4" jack, rear-mounted through a Ø12 hole with its snap cap (needs the 1.5 mm panel). Vertical PCB pins, no lugs: solder the leads to T / R / S, leave TN / RN / SN open. Expression pedal OR footswitch on the same jack, auto-detected (tip → ADC with pull-up, ring → 3V3 through 1 k) |
 | USB 3.0 coupler ×2 (`USB3_1`/`USB3_2`) | internal A-to-A leads to two Pi ports |
 | M6 earth stud | between the cluster and the vent block; rules in the grounding doc |
 
