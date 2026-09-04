@@ -40,7 +40,7 @@ table, the placement is wrong, not the table.
 |---|---|---|
 | base | `[1,0,0,0 \| 0,1,0,0 \| 0,0,1,0.2]` | `[-1,0,0,84.8 \| 0,0,1,0.2 \| 0,1,0,0]` |
 | faceplate (lid) | `[1,0,0,-0.19 \| 0,c,-s,-1.44377 \| 0,s,c,1.12715]` | `[-1,0,0,84.99 \| 0,s,c,1.12715 \| 0,c,-s,-1.44377]` |
-| rear_panel (inside mount) | `[1,0,0,62.5286 \| 0,0,-1,41.691 \| 0,1,0,4.5]` | `[-1,0,0,22.2714 \| 0,1,0,4.5 \| 0,0,-1,41.691]` |
+| rear_panel (inside mount) | `[1,0,0,62.5286 \| 0,0,-1,41.691 \| 0,1,0,4.69]` | `[-1,0,0,22.2714 \| 0,1,0,4.69 \| 0,0,-1,41.691]` |
 | console_board_v4 (KiCad STEP) | `[1,0,0,36.225 \| 0,1,0,38.575 \| 0,0,1,1.7]` | — |
 
 `c`/`s` = cos/sin of `SLOPE_ANGLE` (12.498241812070852°) at full precision —
@@ -208,16 +208,22 @@ symmetric about mid-height, which is what lets one part serve both corners:
 
 | corner (populated) | transform2 |
 |---|---|
-| left (x≈0), **turned over** | `[0,0,1,0.21 \| -1,0,0,42.899 \| 0,-1,0,8.39]` |
-| right (x≈84.8), upright | `[0,0,-1,84.39 \| -1,0,0,42.899 \| 0,1,0,0.39]` |
+| left (x≈0), **turned over** | `[0,0,1,0.21 \| -1,0,0,42.899 \| 0,-1,0,8.20]` |
+| right (x≈84.8), upright | `[0,0,-1,84.39 \| -1,0,0,42.899 \| 0,1,0,0.20]` |
 
-Rivet holes land at (1.00, 41.79, 1.19/4.39/7.59) and (0.11, 40.90,
-2.79/5.99) on the left, mirrored on the right — coaxial with the base's
+Rivet holes land at (1.00, 41.79, 1.00/4.20/7.40) and (0.11, 40.90,
+2.60/5.80) on the left, mirrored on the right — coaxial with the base's
 Ø3.2 pilots once the base is built from a DXF at or after 2026-09-04 (the
 #992 audit found the base drilled every rivet 2.0 mm too close to the corner
-and 1.9 mm low; `dxf_base` now develops the fold). The bracket bottom sits
-1.9 mm above the floor top by design of the hole heights; that is fine, it is
-riveted, not seated.
+and 1.9 mm low; `dxf_base` now develops the fold). The bracket bottom rests
+on the floor top (z = 0.2), which is what the hole heights are measured from.
+
+**Rear panel height.** Its z (populated) / y (VSM) is the rear-wall WINDOW
+centre, `(2.54 + 6.84)/2 = 4.69` off the window's corner-radius centres, and
+the four Ø2.5 pilots sit on the same line. The table carried 4.5 until the
+#992 audit, which put the panel's mounting holes 2.0 mm under the pilots.
+Nine root-level `M4 x 6` screws (the pre-#760 rear seam) were deleted in the
+same pass: the seam is M3 x 8, all 18 in the `fasteners` group.
 
 ### Populated → VAMP sheet metal: one rotation for every transform
 
