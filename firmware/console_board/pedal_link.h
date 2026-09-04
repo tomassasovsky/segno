@@ -102,8 +102,11 @@ enum {
    * forgets everything at power-off. */
   PEDAL_CTRL_KIND_EXPRESSION,
   /* Nothing on the jack. Sent once when a plug leaves (tip contact only,
-   * value 0); whatever was bound to the jack holds where it was, and the
-   * jack is classified afresh on the next plug. */
+   * value 0) and covers the WHOLE jack: the ring's switch goes with the
+   * tip's, released first if it was down. Whatever was bound to the jack
+   * holds where it was, and the jack is classified afresh on the next plug.
+   * An EXPRESSION tip likewise means no ring switch: a pot's ring is its
+   * supply, and a ring closure the plug's tip brushed in is released. */
   PEDAL_CTRL_KIND_NONE,
   PEDAL_CTRL_KIND_COUNT
 };

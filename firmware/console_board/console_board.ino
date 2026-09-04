@@ -26,7 +26,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 2;
+static const uint8_t FW_MINOR = 3;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -265,8 +265,26 @@ static void pollEncoder() {
 //     jack read a later footswitch as a pedal parked at an end. NONE resets
 //     it, and a switch jack only becomes an expression jack once a mid-scale
 //     reading has HELD for CTRL_SETTLE_MS -- a plug transient never counts.
+//   * The ring contact sees the plug's TIP slide past on the way in and out
+//     (the ring contact sits shallower than the tip contact), and with an
+//     expression pedal that tip is a pot wiper dragged low while the plug's
+//     ring brushes the sleeve spring. Read as a switch, that was "footswitch
+//     B pressed" on a jack with no footswitch. So the ring is not a switch
+//     until it has EARNED it: while the jack is unknown or empty, a ring
+//     closure must hold for CTRL_SETTLE_MS (the first B press is late by
+//     that much, the rest are debounced like any switch); a jump on the tip
+//     silences the ring for the same quiet period; and a jack that turns out
+//     to be an expression pedal has no ring switch at all -- its ring is the
+//     pot's supply. On v2 only one hole is left: a jack already known as a
+//     switch (a footswitch pulled out unseen) gets a pedal plugged in, and
+//     the wiper's brush reports one B press before the pot reclassifies the
+//     jack. A v3 jack's presence contact resets the jack to unknown first.
 static const uint16_t CTRL_MAX = 4095;
-static const uint16_t CTRL_LOW = CTRL_MAX / 8;        // below: switch closed
+// Below: switch closed. A sixteenth of the way up, well over a footswitch's
+// contact (10 raw on a BOSS FS-6) and under the lowest an expression pedal's
+// heel reads (385 raw on an M-Audio EX-P) -- otherwise a pedal plugged in at
+// its heel was one closed switch until it moved.
+static const uint16_t CTRL_LOW = CTRL_MAX / 16;
 static const uint16_t CTRL_HIGH = CTRL_MAX - CTRL_MAX / 8;  // above: open / empty
 static const uint16_t CTRL_DEADBAND = 24;  // ~0.6%, above the noise floor
 static const uint16_t CTRL_JUMP = CTRL_MAX * 2 / 5;   // 40% in one 10 ms sample
@@ -332,7 +350,46 @@ static void pollCtrlSwitch(uint8_t jack, uint8_t contact, bool closed, unsigned 
 
 // The jack has nothing on it: say so once, forget what it was, and start
 // again from unknown on the next plug.
+// The ring: a switch on a two-switch pedal, a supply on an expression pedal,
+// and a contact the plug's tip brushes on its way past either way. Only
+// reached once the tip is out of its quiet period. On a jack already known
+// as a switch an edge is a press, debounced like the tip; anywhere else a
+// closure has to hold for CTRL_SETTLE_MS before it counts, and counting makes
+// the jack a switch. An expression jack's ring is never a switch.
+static void pollCtrlRing(uint8_t jack, unsigned long now) {
+  const bool closed = digitalRead(CTRL_RING_PIN[jack]) == LOW;
+  if (g_ctrlKind[jack] == CTRL_EXPRESSION) {
+    g_ctrlSwitchRaw[jack][PEDAL_CTRL_RING] = closed;
+    return;
+  }
+  if (g_ctrlKind[jack] == CTRL_SWITCH) {
+    pollCtrlSwitch(jack, PEDAL_CTRL_RING, closed, now);
+    return;
+  }
+  if (closed != g_ctrlSwitchRaw[jack][PEDAL_CTRL_RING]) {
+    g_ctrlSwitchRaw[jack][PEDAL_CTRL_RING] = closed;
+    g_ctrlSwitchSinceMs[jack][PEDAL_CTRL_RING] = now;
+    return;
+  }
+  if (closed && !g_ctrlSwitchClosed[jack][PEDAL_CTRL_RING] &&
+      now - g_ctrlSwitchSinceMs[jack][PEDAL_CTRL_RING] >= CTRL_SETTLE_MS) {
+    g_ctrlKind[jack] = CTRL_SWITCH;
+    g_ctrlSwitchClosed[jack][PEDAL_CTRL_RING] = true;
+    sendCtrl(jack, PEDAL_CTRL_RING, PEDAL_CTRL_KIND_SWITCH, 255);
+  }
+}
+
+// A switch reported closed cannot stay closed with nothing on the contact:
+// let go of it, so whatever it held down is released before the row goes.
+static void ctrlReleaseSwitch(uint8_t jack, uint8_t contact) {
+  g_ctrlSwitchRaw[jack][contact] = false;
+  if (!g_ctrlSwitchClosed[jack][contact]) return;
+  g_ctrlSwitchClosed[jack][contact] = false;
+  sendCtrl(jack, contact, PEDAL_CTRL_KIND_SWITCH, 0);
+}
+
 static void ctrlDetach(uint8_t jack) {
+  for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) ctrlReleaseSwitch(jack, c);
   if (g_ctrlKind[jack] != CTRL_NONE) {
     sendCtrl(jack, PEDAL_CTRL_TIP, PEDAL_CTRL_KIND_NONE, 0);
   }
@@ -342,11 +399,6 @@ static void ctrlDetach(uint8_t jack) {
   g_ctrlJumped[jack] = false;
   g_ctrlMidSinceMs[jack] = 0;
   g_ctrlRailSinceMs[jack] = 0;
-  // A switch reported closed cannot stay closed with nothing plugged in.
-  if (g_ctrlSwitchClosed[jack][PEDAL_CTRL_TIP]) {
-    g_ctrlSwitchClosed[jack][PEDAL_CTRL_TIP] = false;
-    g_ctrlSwitchRaw[jack][PEDAL_CTRL_TIP] = false;
-  }
 }
 
 static void pollCtrl() {
@@ -355,9 +407,6 @@ static void pollCtrl() {
   g_ctrlLastSampleMs = now;
 
   for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
-    // The ring is a switch or nothing, whatever the tip is doing.
-    pollCtrlSwitch(j, PEDAL_CTRL_RING, digitalRead(CTRL_RING_PIN[j]) == LOW, now);
-
     // Presence, debounced: the wire on a v3 jack, "always" on a v2 board.
     const bool presentRaw = digitalRead(CTRL_PRESENT_PIN[j]) == LOW;
     if (presentRaw != g_ctrlPresentRaw[j]) {
@@ -393,6 +442,8 @@ static void pollCtrl() {
     }
     if ((long)(now - g_ctrlQuietUntilMs[j]) < 0) continue;
 
+    pollCtrlRing(j, now);
+
     // Mid-scale that HOLDS is a pot. A single mid-scale sample is a plug
     // passing through, and on a switch jack that used to be enough to
     // reclassify it for the rest of the boot.
@@ -404,6 +455,9 @@ static void pollCtrl() {
         g_ctrlKind[j] = CTRL_EXPRESSION;
         g_ctrlHaveSent[j] = false;
         g_ctrlJumped[j] = false;
+        // A pot's ring is its supply, not a switch: take back anything the
+        // plug's brush past the ring contact was read as.
+        ctrlReleaseSwitch(j, PEDAL_CTRL_RING);
       }
     } else {
       g_ctrlMidSinceMs[j] = 0;
