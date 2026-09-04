@@ -13,7 +13,7 @@ the state frames segno pushes back. segno runs the behavior machine.
 | Ring data | GP12 | via 74AHCT125 → J6 pin 5, NeoPixel Ring 24 |
 | Encoder A / B / SW | GP13 / GP14 / GP15 | Internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts |
 | Indicator data | GP18 | via 74AHCT125 → J7 pin 2, **seven** WS2812 pucks in chain order: MODE (above footswitch 1), TRACK1–4, CLEAR, BANK |
-| CTRL1 / CTRL2 tip | GP26 / GP27 | ADC0 / ADC1: a footswitch at the rails, an expression pedal's wiper between them |
+| CTRL1 / CTRL2 tip | GP26 / GP27 | ADC0 / ADC1: a footswitch at the rails, an expression pedal's wiper between them. The first press on a jack the board has not yet classified is held 200 ms (a plug sliding in drags the tip low the same way); once the jack is known to hold a footswitch, edges are debounced at 8 ms and sent at once |
 | CTRL1 / CTRL2 ring | GP20 / GP21 | **not a trace on v2** — one wire from each jack's ring pin to the J22 expansion pads. With it, the B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B` (its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it); without it the pin's internal pull-up holds it open and nothing reports |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
 

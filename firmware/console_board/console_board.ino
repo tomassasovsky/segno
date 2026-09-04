@@ -26,7 +26,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 3;
+static const uint8_t FW_MINOR = 4;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -265,6 +265,12 @@ static void pollEncoder() {
 //     jack read a later footswitch as a pedal parked at an end. NONE resets
 //     it, and a switch jack only becomes an expression jack once a mid-scale
 //     reading has HELD for CTRL_SETTLE_MS -- a plug transient never counts.
+//   * Pressing a footswitch IS a rail-to-rail jump, so the quiet period above
+//     swallowed it: every press and every release was reported ~210 ms late.
+//     A jack only has to wait out a jump while a plug might still be arriving
+//     -- while it is unknown or empty. Once the board knows the jack holds a
+//     footswitch, an edge on it is a foot, debounced at 8 ms and sent at once.
+//     The first press after a plug pays the settle time; no later one does.
 //   * The ring contact sees the plug's TIP slide past on the way in and out
 //     (the ring contact sits shallower than the tip contact), and with an
 //     expression pedal that tip is a pot wiper dragged low while the plug's
@@ -440,9 +446,20 @@ static void pollCtrl() {
       g_ctrlMidSinceMs[j] = 0;
       g_ctrlRailSinceMs[j] = 0;
     }
+
+    // A jack the board already knows holds a footswitch is not waiting for a
+    // plug, and pressing that footswitch is itself a jump: report its edges
+    // at once instead of making every press and release wait out the settle
+    // time. The reclassification checks below still run once it is settled,
+    // so swapping a pedal into this jack is still noticed.
+    const bool known = g_ctrlKind[j] == CTRL_SWITCH;
+    if (known) {
+      pollCtrlSwitch(j, PEDAL_CTRL_TIP, raw < CTRL_LOW, now);
+      pollCtrlRing(j, now);
+    }
     if ((long)(now - g_ctrlQuietUntilMs[j]) < 0) continue;
 
-    pollCtrlRing(j, now);
+    if (!known) pollCtrlRing(j, now);
 
     // Mid-scale that HOLDS is a pot. A single mid-scale sample is a plug
     // passing through, and on a switch jack that used to be enough to
@@ -455,9 +472,12 @@ static void pollCtrl() {
         g_ctrlKind[j] = CTRL_EXPRESSION;
         g_ctrlHaveSent[j] = false;
         g_ctrlJumped[j] = false;
-        // A pot's ring is its supply, not a switch: take back anything the
-        // plug's brush past the ring contact was read as.
-        ctrlReleaseSwitch(j, PEDAL_CTRL_RING);
+        // A pot has no switch on either contact -- its ring is the supply and
+        // its tip is the wiper -- so let go of anything the plug's brush past
+        // those contacts was read as, rather than leave it held down.
+        for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) {
+          ctrlReleaseSwitch(j, c);
+        }
       }
     } else {
       g_ctrlMidSinceMs[j] = 0;
@@ -495,6 +515,7 @@ static void pollCtrl() {
     // 10k holding it at the rail. A jack that was NONE becomes a switch on
     // its first press, not on the plug's arrival: an open jack and an open
     // switch read the same, so there is nothing to say until it moves.
+    if (known) continue;  // polled above, before the settle gate
     if (g_ctrlKind[j] == CTRL_NONE && raw >= CTRL_LOW) continue;
     if (g_ctrlKind[j] != CTRL_SWITCH && raw < CTRL_LOW) g_ctrlKind[j] = CTRL_SWITCH;
     if (g_ctrlKind[j] == CTRL_UNKNOWN) g_ctrlKind[j] = CTRL_SWITCH;
