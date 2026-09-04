@@ -13,10 +13,11 @@ SEGNO_CONSOLE_FW_DIR ?= "${THISDIR}/../../../prebuilt/console-board"
 
 # Bitbake must be TOLD these files are inputs. do_install reads them from a
 # directory outside SRC_URI, so without this the task's signature never
-# changes when the firmware does, and shared state hands back the first
-# package it ever built: 0.1.0-experimental.132 shipped an app speaking link
-# protocol 4 next to a board image still on protocol 3, and every console
-# that installed it went dark. The path and the contents both count.
+# changes when the firmware does, and shared state can hand back the first
+# package it ever built. That would ship an app on one link protocol next to
+# a board image on another, and every console that installed it would go
+# dark: the app refuses to drive a board it cannot trust. The workflow reads
+# the firmware back out of the finished rootfs to make sure.
 do_install[file-checksums] += "${SEGNO_CONSOLE_FW_DIR}/console_board.elf:True \
                                ${SEGNO_CONSOLE_FW_DIR}/version:True"
 

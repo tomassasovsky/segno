@@ -347,10 +347,11 @@ jobs:
       # by a hypervisor falling over.
       # What the image CARRIES has to be what this run BUILT. Shared state can
       # hand back a stale package when a recipe's inputs are not in its
-      # signature (that is how .132 shipped an app on link protocol 4 next to
-      # console firmware on protocol 3), and nothing downstream would notice
-      # until a console went dark. So read the marker and the firmware back
-      # out of the rootfs and compare them with this run's artifacts.
+      # signature (the console-board recipe read its firmware from outside
+      # SRC_URI until f1cc3974), and nothing downstream would notice until a
+      # console went dark with an app on one link protocol and a board on
+      # another. So read the marker and the firmware back out of the rootfs
+      # and compare them with this run's artifacts.
       - name: Verify the image carries this run's console firmware
         run: |
           set -eu
