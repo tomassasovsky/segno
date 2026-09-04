@@ -76,6 +76,8 @@ v3 is the same board with the ring-board link (#987) and the CTRL ring sense
 | R1 (330 Ω), R13 (10 kΩ), R15 (100 kΩ) | fitted | **not fitted, no pads** — the ring-data path is gone; U1's gate B is parked |
 | R19, R20 | — (bench wires from J20/J21 pin 2 to J22's GP20/GP21 pads instead) | **4.7 kΩ**, upright, between R5 and C13 under `CTRL 1`: the ring-sense series parts |
 | J22 `EXP` | 2×4, right of U2: +3V3, +5V, GP19, GP20, GP21, GP22, GP28, GND | **2×4, below the Pico left of `RING`**: +3V3, +5V, **GP12, GP15**, GP19, GP22, GP28, GND. Pin 1 is at the top; odd pins are the top row |
+| J23 `PD` | — | **JST-XH 3-pin, new**, under the Pico's left end between `5V IN` and `EXP`: pin 1 GND, 2 SDA (GP0), 3 SCL (GP1). I2C to the STUSB4500 PD trigger, three wires only — do not run the trigger's VDD from this board |
+| R11, R12 | row under the Pico at y 63 | **3 mm higher**, hugging the module's bottom pads, to make room for J23 |
 
 Use the resistor colour key as printed; the only new value is **4.7 kΩ = yellow · violet · black · brown**.
 
@@ -305,6 +307,7 @@ the two CTRL tips, or those inputs float (see the notes in `console_board.py`).
 | J20 / J21 `CTRL` | tip (wiper / switch) | ring (3V3 via 1 kΩ) | sleeve (GND) | |
 | J10 … J19 | switch | GND | | one per pedal, REC … BANK |
 | J22 `EXP` | +3V3 | +5V | GP19 (v2) / GP12 (v3) | v2: GP20, GP21, GP22, GP28, GND · v3: GP15, GP19, GP22, GP28, GND |
+| J23 `PD` (v3) | GND | SDA (GP0) | SCL (GP1) | I2C to the STUSB4500 trigger; no VDD wire |
 | J2 `PI` (used pins) | 1, 17 = 3V3 | 6, 9, 14, 20, 25, 30, 34, 39 = GND | 8 = MIDI OUT (Pi TXD), 10 = MIDI IN (Pi RXD) | 24 = link RX (Pi GPIO8), 21 = link TX (Pi GPIO9), 18 = SWCLK, 22 = SWDIO |
 
 ---

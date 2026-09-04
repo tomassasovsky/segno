@@ -201,19 +201,20 @@ pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 # as an unconnected pin, and a wall of expected warnings is how a REAL one gets
 # missed -- so the exemptions are named here rather than tolerated in the log.
 # The retired V1 generator did the same for its unused AHCT gates and MIDI IN's DIN pin 2.
-# GP0/GP1 are the only pins left with nothing on them (why: the EXPANSION_GPIO
-# note below). The other unused GPIO go to the expansion header J22 rather
-# than being quietly ERC-exempted into thin air -- an unpopulated header costs a
-# footprint and nothing else, and it is the difference between "add a feature"
-# and "respin the board". That is exactly what happened to GP20/GP21: v2 brought
-# them out on J22, the CTRL jacks' rings turned out to need sensing (a BOSS FS-6
-# puts its second switch there), and the first console got two bench wires from
-# the jack pins to those pads. v3 makes them traces -- see CTRLn_RING below --
-# and gives J22 the two pins the ring link freed (GP12, GP15) in their place.
-SPARE_GPIO = (0, 1)
-# GP0/GP1 are row A at the far end of the module and would have made J22 straddle
-# the whole thing, so they stay spare. J22 sits below the module's middle, where
-# it reaches row A (GP12/GP15, pads 16/20) and row B (pads 25/29/34) alike.
+# No GPIO is left with nothing on it. Unused pins go to the expansion header J22
+# rather than being quietly ERC-exempted into thin air -- an unpopulated header
+# costs a footprint and nothing else, and it is the difference between "add a
+# feature" and "respin the board". That is exactly what happened to GP20/GP21:
+# v2 brought them out on J22, the CTRL jacks' rings turned out to need sensing
+# (a BOSS FS-6 puts its second switch there), and the first console got two
+# bench wires from the jack pins to those pads. v3 makes them traces -- see
+# CTRLn_RING below -- and gives J22 the two pins the ring link freed (GP12,
+# GP15) in their place. GP0/GP1, spare on v2, are v3's I2C to the PD trigger
+# (J23): they are row A at the far end of the module, which is the end J3 and
+# the power inlet are on anyway.
+SPARE_GPIO = ()
+# J22 sits below the module's middle, where it reaches row A (GP12/GP15, pads
+# 16/20) and row B (pads 25/29/34) alike.
 EXPANSION_GPIO = (12, 15, 19, 22, 28)
 for _gp in SPARE_GPIO:
     pico[PICO[_gp]].do_erc = False
@@ -253,6 +254,9 @@ GPIO = {
     # the v2 expansion pins the bench wires went to, so a v2 board with the wires
     # and a v3 board with the traces present the SAME pins to the firmware.
     "CTRL1_RING": 20, "CTRL2_RING": 21,
+    # I2C to the STUSB4500 PD trigger (J23): read the negotiated contract. GP0/1
+    # are I2C0 SDA/SCL, row A's first two pads -- the end the power inlet is on.
+    "PD_SDA": 0, "PD_SCL": 1,
 }
 
 # Which pads each UART instance can reach on RP2350. Moving LINK to a "spare-
@@ -260,6 +264,10 @@ GPIO = {
 # UART, so the pairing is gated rather than trusted to the comment above.
 UART_PINS = {0: ({0, 12, 16, 28}, {1, 13, 17, 29}),
              1: ({4, 8, 20, 24}, {5, 9, 21, 25})}
+# Likewise for I2C: SDA and SCL must be one instance's pair, or the bus is two
+# half-buses that never talk. RP2350 I2C0/I2C1 SDA/SCL by GPIO.
+I2C_PINS = {0: ({0, 4, 8, 12, 16, 20, 28}, {1, 5, 9, 13, 17, 21, 29}),
+            1: ({2, 6, 10, 14, 18, 22, 26}, {3, 7, 11, 15, 19, 23, 27})}
 FSW_ORDER = ["RECPLAY", "STOP", "UNDO", "MODE", "TRACK1",
              "TRACK2", "TRACK3", "TRACK4", "CLEAR", "BANK"]
 
@@ -274,6 +282,9 @@ ctrl1_ring = Net("CTRL1_RING")
 ctrl2_ring = Net("CTRL2_RING")
 pico[PICO[GPIO["CTRL1_RING"]]] += ctrl1_ring
 pico[PICO[GPIO["CTRL2_RING"]]] += ctrl2_ring
+pd_sda, pd_scl = Net("PD_SDA"), Net("PD_SCL")
+pico[PICO[GPIO["PD_SDA"]]] += pd_sda
+pico[PICO[GPIO["PD_SCL"]]] += pd_scl
 
 # ---- J10..J19: footswitches -- 100nF debounce + one 2-pin JST per pedal ------
 sw_nets = {}
@@ -493,6 +504,28 @@ for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
     pico[PICO[_gp]] += n
     j_exp[_i] += n
 j_exp[8] += gnd
+
+# ---- J23: I2C to the PD trigger -- is the contract really 20 V / 5 A? --------
+# The STUSB4500 on the SparkFun trigger board is I2C-readable: its RDO
+# (0x91..0x94) says what current the source actually granted and sets
+# capaMismatch when it was less than the PDO asked for, and 0x21 holds the
+# negotiated voltage. The failure this catches is SILENT otherwise: a 65 W brick
+# grants 20 V at 3.25 A, everything boots, and the console only browns out
+# when 26 WS2812s go white under two lit screens. (A trigger that fails to
+# negotiate at all leaves VBUS at 5 V, the bucks never start, and nothing
+# powers up -- that case diagnoses itself.)
+#
+# Three wires, not four: GND, SDA, SCL. The breakout's VDD comes off VBUS on
+# its own board, and this board's 3V3 sits downstream of the contract being
+# measured -- feeding it back would make the measurement part of the loop.
+# The I2C pull-ups are the breakout's own, to its VDD; none here. ~250 mm of
+# unshielded run past two bucks: 100 kHz, twisted with the ground wire.
+# Firmware reads it and reports it up the pedal link; until it does, the header
+# is just a header.
+j_pd = jst(3, "J23", "PD_I2C")
+j_pd[1] += gnd
+j_pd[2] += pd_sda
+j_pd[3] += pd_scl
 
 # ---- H1..H4: the mounting holes, which are a CIRCUIT, not just geometry ------
 # They used to be bare NPTH -- no copper -- so the board floated inside an earthed
@@ -746,6 +779,11 @@ def _check(strict_stations=True):
         f"LINK_UART: GP{GPIO['LINK_TX']}/GP{GPIO['LINK_RX']} is not a TX/RX pair on "
         f"one UART instance -- valid pairs are {UART_PINS}")
 
+    assert any(GPIO["PD_SDA"] in sda and GPIO["PD_SCL"] in scl
+               for sda, scl in I2C_PINS.values()), (
+        f"PD_I2C: GP{GPIO['PD_SDA']}/GP{GPIO['PD_SCL']} is not an SDA/SCL pair on "
+        f"one I2C instance -- valid pairs are {I2C_PINS}")
+
     for name, gp in GPIO.items():
         # Only a TIP reads a voltage; a ring is a switch or nothing, and burning an
         # ADC pin on one would leave no third pedal input for J22.
@@ -767,6 +805,7 @@ def _check(strict_stations=True):
     # or the connector cannot be placed near all of them. Row A is pads 1..20.
     for group in (("LINK_TX", "LINK_RX"),
                   ("LINK_TO_RING", "LINK_TO_CONSOLE"),
+                  ("PD_SDA", "PD_SCL"),
                   tuple("SW_" + n for n in FSW_ORDER)):
         rows = {PICO[GPIO[n]] <= 20 for n in group if n in GPIO}
         assert len(rows) == 1, (
@@ -1034,6 +1073,7 @@ def _check(strict_stations=True):
     _protected = {n.name for n in (link_tx, link_rx, link_tx_pi, link_rx_pi,
                                    midi_tx, midi_rx, pwr_btn, swclk, swdio,
                                    ind_data, link_to_ring, link_to_console,
+                                   pd_sda, pd_scl,
                                    ctrl1, ctrl2)}
     for _p in default_circuit.parts:
         if len(_p.pins) > 2:
@@ -1221,9 +1261,10 @@ def _selftest():
         STATION_HEADERS["NOT_A_STATION"] = "J99"
 
     def _uart_split():
-        # GP1 is UART0's RX, never a TX, and is one of the two pins still spare --
-        # so this reaches the UART gate instead of the duplicate or expansion checks.
-        GPIO["LINK_TX"] = 1
+        # Swap LINK_TX with IND_DATA: GP18 is on no UART's TX set, and swapping
+        # (not assigning) keeps every pin unique, so this reaches the UART gate
+        # instead of the duplicate or expansion checks. No GPIO is spare on v3.
+        GPIO["LINK_TX"], GPIO["IND_DATA"] = GPIO["IND_DATA"], GPIO["LINK_TX"]
 
     def _row_straddle():
         GPIO["LINK_TO_CONSOLE"], GPIO["IND_DATA"] = GPIO["IND_DATA"], GPIO["LINK_TO_CONSOLE"]

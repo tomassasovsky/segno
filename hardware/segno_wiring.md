@@ -59,6 +59,20 @@ tolerance only has to survive ~100 mm of internal wiring.
 - **Trigger:** SparkFun STUSB4500 board, programmed to request **20 V / 5 A**.
   Its shipped default asks 20 V at only 1.0 A, which contracts 20 W — set the
   PDO before first power-up.
+- **Is the contract really 20 V / 5 A?** The chip is I2C-readable: its RDO
+  (`0x91`–`0x94`) carries the current the source actually granted and a
+  `capaMismatch` bit that is set when that was less than the PDO asked for;
+  `0x21` holds the negotiated voltage. A 65 W brick grants 20 V / 3.25 A with
+  mismatch set: everything boots and the console browns out only when 26
+  WS2812s go white under two lit screens. Console board **v3** has a 3-way
+  JST-XH for it, **J23 `PD`** (GND, SDA, SCL on the Pico's GP0/GP1, I2C0),
+  under the module's left end next to `5V IN`. Three wires on purpose: the
+  breakout's VDD comes off VBUS on its own board and its I2C pull-ups go to
+  that; the console's 3V3 is downstream of the contract being measured, so it
+  must not feed the trigger. ~250 mm unshielded past two bucks: 100 kHz,
+  twisted with the ground wire. On a v2 board the same read works from J22's
+  GP20/GP21 (I2C0) unless those pads carry the CTRL ring wires. Firmware
+  reads it and reports it up the pedal link; **not implemented yet**.
 - **Fuse:** 5×20 **T5A slow-blow** in the 20 V feed, ahead of both bucks.
   Worst-case draw is ~3 A at 20 V, the PD contract ceiling is 5 A, and buck
   inrush wants the slow curve.

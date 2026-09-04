@@ -169,6 +169,10 @@ PLACEMENT = {
     # starts at 84.5 and comes up to y 10.2, so the last two headers would sit on
     # top of it. The corner mounting holes cap the other end the same way.
     "J8":  (18.1, 8.0, 0),
+    "J23": (16.5, 67.4, 0),        # I2C to the PD trigger, under the module's
+                                   # left end between 5V IN and EXP: GP0/GP1 are
+                                   # pads 1/2, a 12 mm hop up. (The pocket beside
+                                   # C30 is the USB-C cable corridor -- USB_CLEAR.)
     "J9":  (23.1, 30.0, 0),        # flying lead to the Pi 5's own J2 button pads
                                    # (NOT a header pin -- no GPIO wakes a Pi 5;
                                    # see PWR_BTN in console_board.py)
@@ -263,7 +267,9 @@ PLACEMENT = {
     # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
     # and its pull-down -- retired with the ring-data path in v3 (#987); their
     # slots stay open and their designators stay unused.
-    "R11": (19.4, 63.0, 0), "R12": (32.2, 63.0, 0),
+    # Raised from y 63 to make the row under them J23's: 3 mm of slack below
+    # the module was all it took.
+    "R11": (19.4, 60.0, 0), "R12": (32.2, 60.0, 0),
     "R2":  (79.5, 63.0, 90),        # 330R, U1 gate A -> J7 pin 2 (indicators)
 
     # The five review-fix resistors. ALL hand-placed: the passive bands were
@@ -1161,7 +1167,7 @@ LABELS = {
     "J10": "REC",  "J11": "STOP", "J12": "UNDO", "J13": "MODE", "J14": "TRK1",
     "J15": "TRK2", "J16": "TRK3", "J17": "TRK4", "J18": "CLR",  "J19": "BANK",
     "J2":  "PI",     "J3":  "5V IN",    "J20": "CTRL 1", "J21": "CTRL 2",
-    "J22": "EXP",    "J4":  "MIDI OUT", "J5":  "MIDI IN",
+    "J22": "EXP",    "J23": "PD",       "J4":  "MIDI OUT", "J5":  "MIDI IN",
     "J6":  "RING",   "J7":  "LEDS",     "J8":  "PWR BTN", "J9": "PI PWR",
 }
 SILK_H = 1.0
