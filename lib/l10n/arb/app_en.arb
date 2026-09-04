@@ -1820,35 +1820,19 @@
     "midiLearnStale": "Missing target",
     "midiLearnStaleDetail": "What this mapping pointed at no longer exists. It does nothing until you point it somewhere else or remove it.",
     "midiNoControlSource": "Nothing is connected to listen to. Plug in a MIDI controller, or a pedal into a CTRL jack.",
-    "midiLearnDeviceMissing": "No MIDI input is connected, so the mappings driven by MIDI are idle. Connect the controller, or relearn a row on whatever you are using now.",
-    "pedalCtrlGroup": "CTRL jacks",
-    "pedalCtrlIdle": "Nothing plugged in yet — a pedal reports once it is moved.",
-    "pedalCtrlSwitchReading": "CTRL {jack} · footswitch · {state}",
-    "@pedalCtrlSwitchReading": {
-        "description": "A live footswitch reading in the CTRL jacks block.",
+    "midiCtrlIdle": "CTRL jacks: nothing has reported yet. Move a pedal and its value shows here.",
+    "midiCtrlPercent": "{percent}%",
+    "@midiCtrlPercent": {
+        "description": "An expression pedal's live position, as a percentage of its travel.",
         "placeholders": {
-            "jack": {
-                "type": "int"
-            },
-            "state": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalCtrlSwitchDown": "pressed",
-    "pedalCtrlSwitchUp": "released",
-    "pedalCtrlExpressionReading": "CTRL {jack} · expression · {percent}%",
-    "@pedalCtrlExpressionReading": {
-        "description": "A live expression-pedal reading in the CTRL jacks block.",
-        "placeholders": {
-            "jack": {
-                "type": "int"
-            },
             "percent": {
                 "type": "int"
             }
         }
     },
+    "midiLearnDeviceMissing": "No MIDI input is connected, so the mappings driven by MIDI are idle. Connect the controller, or relearn a row on whatever you are using now.",
+    "pedalCtrlSwitchDown": "pressed",
+    "pedalCtrlSwitchUp": "released",
     "consoleCtrlSwitchControl": "CTRL {jack} · footswitch",
     "@consoleCtrlSwitchControl": {
         "description": "How a footswitch in one of the console's CTRL jacks is named in a mapping row.",

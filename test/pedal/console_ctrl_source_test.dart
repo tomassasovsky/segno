@@ -26,9 +26,7 @@ void main() {
     ) async {
       final seen = <RawControllerInput>[];
       final sub = source.inputs.listen(seen.add);
-      for (final message in messages) {
-        link.emit(message);
-      }
+      messages.forEach(link.emit);
       await pumpEventQueue();
       await sub.cancel();
       return seen;
