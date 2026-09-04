@@ -2649,6 +2649,13 @@ def _ltscale_for(doc):
 # already: an entity-level linetype scale that multiplies the global one. Give
 # any dashed entity too small for the sheet scale its own.
 LTSCALE_MIN_PERIODS = 4.0        # full dash periods the smallest dashed run must show
+# Floor on the widest gap in a pattern, as a fraction of the part span. The part
+# is drawn about 166 mm wide on its sheet whatever its size (the sheets are
+# auto-fitted), so gap/span translates to paper almost directly: the base's bend
+# lines sit at 1/244 and rasterise to a measured 0.68 mm gap at 600 dpi, which
+# makes 1/1200 about 0.14 mm -- three dots, still visibly broken in greyscale.
+# The stock $LTSCALE 1 that started all this sits at 1/4100.
+LTSCALE_GAP_RATIO = 1200.0
 
 
 def _pattern_period(doc, name):
@@ -2658,20 +2665,36 @@ def _pattern_period(doc, name):
     return total or 1.0
 
 
+# Annotation and fills carry no dash pattern to get wrong. Everything else on a
+# dashed layer is line work and MUST be measurable -- see _run_length.
+NOT_LINEWORK = {"TEXT", "MTEXT", "ATTDEF", "ATTRIB", "HATCH", "POINT",
+                "INSERT", "SOLID", "IMAGE", "WIPEOUT"}
+
+
 def _run_length(e):
-    """Drawn length of a dashable entity, or 0.0 for anything else (TEXT, HATCH)."""
+    """Drawn length of a dashable entity, or None if it cannot be measured.
+
+    None is the important return. The first version answered 0.0 for anything it
+    did not recognise and both the fixer and the verifier skipped on that, so a
+    MASK ellipse or a BEND spline would be scaled by nobody, checked by nobody,
+    and print as a solid closed contour with every assertion green. Unknown now
+    means "stop", not "fine".
+    """
     t = e.dxftype()
-    if t == "CIRCLE":
-        return 2.0 * math.pi * float(e.dxf.radius)
-    if t == "ARC":
-        sweep = (float(e.dxf.end_angle) - float(e.dxf.start_angle)) % 360.0
-        return math.radians(sweep) * float(e.dxf.radius)
     if t == "LINE":
         return math.dist((e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y))
-    if t == "LWPOLYLINE":
-        pts = list(e.get_points("xy"))
+    if t in ("LWPOLYLINE", "POLYLINE"):
+        pts = ([(x, y) for x, y in e.get_points("xy")] if t == "LWPOLYLINE"
+               else [(v.dxf.location.x, v.dxf.location.y) for v in e.vertices])
+        if len(pts) < 2:
+            return 0.0
+        if e.is_closed:
+            pts = pts + [pts[0]]
         return sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
-    return 0.0
+    if hasattr(e, "flattening"):        # CIRCLE, ARC, ELLIPSE, SPLINE
+        pts = [(v.x, v.y) for v in e.flattening(0.01)]
+        return sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+    return None
 
 
 def _fit_entity_ltscales(doc, gscale):
@@ -2681,9 +2704,11 @@ def _fit_entity_ltscales(doc, gscale):
         layer = e.dxf.layer
         if layer not in ("BEND", "MASK"):
             continue
-        run = _run_length(e)
-        if run <= 0.0:
+        if e.dxftype() in NOT_LINEWORK:
             continue
+        run = _run_length(e)
+        if run is None or run <= 0.0:
+            continue                    # the verifier turns this into a failure
         lname = doc.layers.get(layer).dxf.linetype
         period = periods.setdefault(lname, _pattern_period(doc, lname))
         cap = run / (LTSCALE_MIN_PERIODS * period)
@@ -5567,9 +5592,15 @@ def paint_quote_pdf(path):
         ]
         # anchored, not flowed: the table above grows with the BOM and the notes
         # must not walk off the bottom of the sheet when it does
+        # Sized to the page for the same reason the masking pages are: matplotlib
+        # drops overflowing fig.text silently, and note 4 already ends 29.7 pt
+        # from the edge -- about seven characters of headroom on the line that
+        # says the M3 pilots are tapped AFTER painting.
         y = 0.150
+        page_w = fig.get_size_inches()[0]
         for i, n in enumerate(notes):
-            fig.text(0.06, y, n, fontsize=8.2, color="#222" if i == 0 else "#444",
+            fig.text(0.06, y, n, fontsize=_fit_pt(n, 8.2, page_w, frac=0.88),
+                     color="#222" if i == 0 else "#444",
                      weight="bold" if i == 0 else "normal")
             y -= 0.0195
         pdf.savefig(fig); plt.close(fig)
@@ -5604,6 +5635,14 @@ def paint_quote_pdf(path):
             foot = (f"{SHEET_HEADING}   |   medidas en mm   |   "
                     "desarrollo / patrón plano (la pieza se entrega plegada)")
             note_lines = _wrap_to_page(note, 9.5, page_w)
+            # The axes sit at 0.12 of the figure height. Two lines clear it; four
+            # would print the instruction across the flat pattern, and nothing
+            # counted the lines. Assert rather than overlap silently.
+            top = 0.055 + (len(note_lines) - 1) * 0.030 + 0.020
+            assert top <= 0.12, (
+                f"{stem}: the masking note wraps to {len(note_lines)} lines and "
+                f"reaches {top:.3f} of the page, over the drawing at 0.12 -- "
+                f"shorten it or give the axes a taller bottom margin")
             for i, line in enumerate(note_lines):
                 fig.text(0.04, 0.055 + (len(note_lines) - 1 - i) * 0.030, line,
                          fontsize=9.5, color="#b00")
@@ -6285,12 +6324,14 @@ def _verify_tile_package(with_pdf=True):
     # here too -- they live in the DXF_PARTS loop, which never sees these files
     _verify_dash_legibility(doc, "segno_pedal_tiles")
     _verify_no_overprinted_text(doc, "segno_pedal_tiles")
+    _verify_note_block_fits(doc, "segno_pedal_tiles")
     for lab, _u, _v in PEDALS:
         one = os.path.join(OUT, _tile_stem(lab) + ".dxf")
         if os.path.exists(one):
             d1 = ezdxf.readfile(one)
             _verify_dash_legibility(d1, _tile_stem(lab))
             _verify_no_overprinted_text(d1, _tile_stem(lab))
+            _verify_note_block_fits(d1, _tile_stem(lab))
     used = {e.dxf.layer for e in doc.modelspace()}
     assert used <= set(THRU_CUT_LAYERS + ANNOT_LAYERS), (
         f"tile nest uses undeclared layers: {sorted(used - set(THRU_CUT_LAYERS + ANNOT_LAYERS))}")
@@ -6364,6 +6405,9 @@ def _verify_tile_package(with_pdf=True):
                        for n in names)
 
 
+NOTE_ADVANCE_EST = 0.62          # under-estimated TEXT advance, per unit of height
+
+
 def _text_extent(e):
     """Conservative model-space box for a TEXT entity, as (x0, y0, x1, y1).
 
@@ -6371,7 +6415,7 @@ def _text_extent(e):
     real collisions rather than on the estimate.
     """
     h = float(e.dxf.height)
-    w = len(e.dxf.text) * h * 0.62
+    w = len(e.dxf.text) * h * NOTE_ADVANCE_EST
     p = e.dxf.align_point if e.dxf.halign else e.dxf.insert
     x, y = float(p.x), float(p.y)
     if e.dxf.halign == 1:            # CENTER
@@ -6400,13 +6444,18 @@ def _verify_dash_legibility(doc, stem):
     """
     msp = doc.modelspace()
     gscale = float(doc.header.get("$LTSCALE", 1.0))
+    span = _SPAN(msp)        # hoisted: it is an extents() sweep over the whole part
     periods = {}
     checked = 0
     for e in msp:
         layer = e.dxf.layer
-        if layer not in ("BEND", "MASK"):
+        if layer not in ("BEND", "MASK") or e.dxftype() in NOT_LINEWORK:
             continue
         run = _run_length(e)
+        assert run is not None, (
+            f"{stem}: a {layer} {e.dxftype()} cannot be measured, so nothing "
+            f"scaled its dashes and nothing checked them -- teach _run_length "
+            f"this type rather than letting it through unseen")
         if run <= 0.0:
             continue
         lname = doc.layers.get(layer).dxf.linetype
@@ -6418,21 +6467,29 @@ def _verify_dash_legibility(doc, stem):
             f"{stem}: a {run:.1f} mm {layer} {e.dxftype()} shows only "
             f"{cycles:.1f} dash cycles at scale {scale:.3f} -- it renders SOLID "
             f"and can be read as a cut. See _fit_entity_ltscales")
-        # and the gap must survive the reduction onto the page
-        gap_share = _pattern_gap_share(doc, lname)
-        assert period * scale * gap_share >= _SPAN(msp) / 500.0, (
+        # and the widest gap in the pattern must survive the reduction onto the page
+        gap = _pattern_gap(doc, lname) * scale
+        assert gap >= span / LTSCALE_GAP_RATIO, (
             f"{stem}: a {layer} {e.dxftype()} would print solid the other way -- "
-            f"a {period*scale*gap_share:.3f} mm gap on a {_SPAN(msp):.0f} mm part "
-            f"is past the 1:500 floor. See _ltscale_for")
+            f"a {gap:.3f} mm gap on a {span:.0f} mm part is 1:{span/max(gap,1e-9):.0f}, "
+            f"past the 1:{LTSCALE_GAP_RATIO:.0f} floor. See _ltscale_for")
+    assert checked or not any(e.dxf.layer in ("BEND", "MASK")
+                              and e.dxftype() not in NOT_LINEWORK for e in msp), (
+        f"{stem}: has dashed line work but the guard measured none of it")
     return checked
 
 
-def _pattern_gap_share(doc, name):
-    """Fraction of one linetype period that is blank."""
+def _pattern_gap(doc, name):
+    """Length of the LARGEST single blank in one period of a linetype, at scale 1.
+
+    Not the sum of the blanks: DASHDOT's period holds two 0.508 mm gaps, and
+    summing them told the floor the gap was twice its real size -- so the check
+    that exists to keep a gap printable was enforcing half of what it promised.
+    """
     lt = doc.linetypes.get(name)
     vals = [t.value for t in lt.pattern_tags.tags if t.code == 49]
-    total = sum(abs(v) for v in vals) or 1.0
-    return sum(-v for v in vals if v < 0) / total
+    gaps = [-v for v in vals if v < 0]
+    return max(gaps) if gaps else 0.0
 
 
 def _SPAN(msp):
@@ -6443,6 +6500,34 @@ def _SPAN(msp):
     if not bb.has_data:
         return 1.0
     return max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1], 1.0)
+
+
+NOTE_WIDTH_CEILING = 1.05        # note block width, as a multiple of the part span
+
+
+def _verify_note_block_fits(doc, stem):
+    """The note must not be the widest thing on the sheet.
+
+    _note's escape hatch is real: when the 1.2 mm text floor binds it widens the
+    column to keep the longest token whole, and the block can then run past the
+    part -- which is how the whole page-scale problem started. The bracket's note
+    reached 1.15x its part and a human reviewer found it, not a test. Fail-safe
+    direction (the sheet just gets wasteful, not wrong), so the ceiling is a
+    ceiling rather than a hard equality; every sheet today sits at 0.78-0.83.
+    """
+    from ezdxf.bbox import extents
+    msp = doc.modelspace()
+    notes = [e for e in msp
+             if e.dxftype() == "TEXT" and e.dxf.layer in ("NOTE", "MASK")]
+    if not notes:
+        return
+    span = _SPAN(msp)
+    widest = max(len(e.dxf.text) * float(e.dxf.height) * NOTE_ADVANCE_EST
+                 for e in notes)
+    assert widest <= span * NOTE_WIDTH_CEILING, (
+        f"{stem}: the note block is {widest:.0f} mm against a {span:.0f} mm part "
+        f"({widest/span:.2f}x) -- it, not the part, will set the sheet scale. "
+        f"See _note")
 
 
 def _verify_no_overprinted_text(doc, stem):
@@ -6545,6 +6630,7 @@ def _verify_drawing_package(with_pdf=True):
         used = {e.dxf.layer for e in doc.modelspace()}
         _verify_dash_legibility(doc, stem)
         _verify_no_overprinted_text(doc, stem)
+        _verify_note_block_fits(doc, stem)
 
         # --- R1: every through-cut layer present renders black -----------------
         black = _force_pdf_layer_colours(doc)   # asserts internally; also proves no
