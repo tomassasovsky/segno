@@ -247,4 +247,237 @@ void main() {
       expect(link.sent, isEmpty);
     });
   });
+
+  group('PedalRepository CTRL calibration', () {
+    CtrlMessage raw(int value, {PedalCtrlJack jack = PedalCtrlJack.ctrl1}) =>
+        CtrlMessage(jack: jack, kind: PedalCtrlKind.expression, value: value);
+
+    test('an explicit calibration maps every reading onto the travel', () {
+      fakeAsync((async) {
+        final link = FakePedalLink();
+        final repo = PedalRepository(link);
+        final seen = <CtrlChanged>[];
+        repo.events.listen((e) => seen.add(e as CtrlChanged));
+        repo.setCtrlCalibration(
+          PedalCtrlJack.ctrl1,
+          const PedalCtrlCalibration(min: 24, max: 255),
+        );
+
+        link
+          ..emit(raw(24))
+          ..emit(raw(255));
+        async.flushMicrotasks();
+
+        expect(seen.map((e) => e.value), [0, 255]);
+        expect(seen.map((e) => e.raw), [24, 255]);
+        expect(repo.ctrlCalibration(PedalCtrlJack.ctrl1), isNotNull);
+      });
+    });
+
+    test('with no calibration the ends are learned from readings the pedal '
+        'holds, and the reading is re-reported once they move', () {
+      fakeAsync((async) {
+        final link = FakePedalLink();
+        final repo = PedalRepository(link);
+        final seen = <CtrlChanged>[];
+        repo.events.listen((e) => seen.add(e as CtrlChanged));
+
+        // Heel, held: learned. Toe (a pedal whose range knob stops at 200),
+        // held: learned. The span is now trusted, so the toe reading that
+        // was passed through raw is re-reported as a hard 255 — the pedal
+        // did not move, the ends did.
+        link.emit(raw(24));
+        async
+          ..flushMicrotasks()
+          ..elapse(PedalRepository.settleTime);
+        link.emit(raw(200));
+        async
+          ..flushMicrotasks()
+          ..elapse(PedalRepository.settleTime);
+
+        expect(seen.map((e) => e.raw), [24, 200, 200]);
+        expect(seen.map((e) => e.value), [24, 200, 255]);
+
+        // Back to heel: mapped under the learned ends straight away.
+        link.emit(raw(24));
+        async.flushMicrotasks();
+        expect(seen.last.value, 0);
+        expect(seen.last.raw, 24);
+      });
+    });
+
+    test('a reading that does not hold is not learned from', () {
+      fakeAsync((async) {
+        final link = FakePedalLink();
+        final repo = PedalRepository(link);
+        final seen = <CtrlChanged>[];
+        repo.events.listen((e) => seen.add(e as CtrlChanged));
+
+        // A plug on its way in: 0 for a moment, then the real heel.
+        link.emit(raw(0));
+        async
+          ..flushMicrotasks()
+          ..elapse(PedalRepository.settleTime ~/ 2);
+        link.emit(raw(24));
+        async
+          ..flushMicrotasks()
+          ..elapse(PedalRepository.settleTime);
+        link.emit(raw(255));
+        async
+          ..flushMicrotasks()
+          ..elapse(PedalRepository.settleTime);
+
+        // Heel is 24, not 0: the transient never became an end.
+        link.emit(raw(24));
+        async.flushMicrotasks();
+        expect(seen.last.value, 0);
+      });
+    });
+
+    test('an explicit calibration is not widened by what the pedal does', () {
+      fakeAsync((async) {
+        final link = FakePedalLink();
+        final repo = PedalRepository(link);
+        final seen = <CtrlChanged>[];
+        repo.events.listen((e) => seen.add(e as CtrlChanged));
+        repo.setCtrlCalibration(
+          PedalCtrlJack.ctrl1,
+          const PedalCtrlCalibration(min: 50, max: 200),
+        );
+
+        link.emit(raw(0));
+        async
+          ..flushMicrotasks()
+          ..elapse(PedalRepository.settleTime);
+        link.emit(raw(50));
+        async.flushMicrotasks();
+
+        expect(seen.map((e) => e.value), [0, 0]);
+      });
+    });
+
+    test(
+      'clearing a calibration re-reports the position under learned ends',
+      () {
+        fakeAsync((async) {
+          final link = FakePedalLink();
+          final repo = PedalRepository(link);
+          final seen = <CtrlChanged>[];
+          repo.events.listen((e) => seen.add(e as CtrlChanged));
+          repo.setCtrlCalibration(
+            PedalCtrlJack.ctrl1,
+            const PedalCtrlCalibration(min: 0, max: 255),
+          );
+          link.emit(raw(128));
+          async.flushMicrotasks();
+          expect(seen.last.value, closeTo(128, 3));
+
+          repo.setCtrlCalibration(PedalCtrlJack.ctrl1, null);
+          async.flushMicrotasks();
+          expect(repo.ctrlCalibration(PedalCtrlJack.ctrl1), isNull);
+          // Nothing learned yet: raw passes through.
+          expect(seen.last.raw, 128);
+          expect(seen.last.value, 128);
+        });
+      },
+    );
+
+    test('learned ends are forgotten when the board goes quiet', () {
+      fakeAsync((async) {
+        final link = FakePedalLink();
+        final repo = PedalRepository(link);
+        final seen = <CtrlChanged>[];
+        repo.events.listen((e) => seen.add(e as CtrlChanged));
+        link.hello();
+        for (final v in [24, 255]) {
+          link.emit(raw(v));
+          async
+            ..flushMicrotasks()
+            ..elapse(PedalRepository.settleTime);
+        }
+        async.elapse(repo.helloTimeout + const Duration(seconds: 1));
+        expect(repo.status, PedalLinkStatus.disconnected);
+
+        link
+          ..hello()
+          ..emit(raw(100));
+        async.flushMicrotasks();
+        // Whatever comes back may be another pedal: back to raw until it
+        // has been swept again.
+        expect(seen.last.value, 100);
+        async.elapse(repo.helloTimeout + const Duration(seconds: 1));
+      });
+    });
+
+    test('an empty jack forgets the learned ends, keeps a set calibration', () {
+      fakeAsync((async) {
+        final link = FakePedalLink();
+        final repo = PedalRepository(link);
+        final seen = <CtrlChanged>[];
+        repo.events.listen((e) => seen.add(e as CtrlChanged));
+        for (final v in [24, 200]) {
+          link.emit(raw(v));
+          async
+            ..flushMicrotasks()
+            ..elapse(PedalRepository.settleTime);
+        }
+        expect(seen.last.value, 255); // learned: 200 is the toe
+
+        link.emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.none,
+            value: 0,
+          ),
+        );
+        async.flushMicrotasks();
+        expect(seen.last.kind, PedalCtrlKind.none);
+
+        // The next pedal starts from raw: the old pedal's ends are gone.
+        link.emit(raw(200));
+        async.flushMicrotasks();
+        expect(seen.last.value, 200);
+
+        // ...unless the user calibrated this jack, which survives the plug.
+        repo.setCtrlCalibration(
+          PedalCtrlJack.ctrl1,
+          const PedalCtrlCalibration(min: 24, max: 200),
+        );
+        link.emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.none,
+            value: 0,
+          ),
+        );
+        link.emit(raw(200));
+        async.flushMicrotasks();
+        expect(seen.last.value, 255);
+      });
+    });
+
+    test('a switch, on either contact, passes through untouched', () async {
+      final link = FakePedalLink();
+      final repo = PedalRepository(link);
+      final seen = <CtrlChanged>[];
+      repo.events.listen((e) => seen.add(e as CtrlChanged));
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl2,
+          contact: PedalCtrlContact.ring,
+          kind: PedalCtrlKind.switchPedal,
+          value: 255,
+        ),
+      );
+      await pumpEventQueue();
+      expect(seen.single.contact, PedalCtrlContact.ring);
+      expect(seen.single.value, 255);
+      expect(seen.single.raw, 255);
+      expect(
+        seen.single.input,
+        const PedalCtrlInput(PedalCtrlJack.ctrl2, PedalCtrlContact.ring),
+      );
+      await repo.dispose();
+    });
+  });
 }

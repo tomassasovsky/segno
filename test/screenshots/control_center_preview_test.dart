@@ -930,13 +930,13 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('control domain, midi tab on a live link', (tester) async {
+  testWidgets('control domain, controllers tab on a live link', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     final cubit = SettingsTrayCubit(settings: settings)
       ..open()
       ..showDestination(SettingsTrayDestination.control)
-      ..showControlTab(ControlTab.midi);
+      ..showControlTab(ControlTab.controllers);
     addTearDown(cubit.close);
 
     final rig = controlProviders(
@@ -985,7 +985,7 @@ void main() {
     final cubit = SettingsTrayCubit(settings: settings)
       ..open()
       ..showDestination(SettingsTrayDestination.control)
-      ..showControlTab(ControlTab.midi);
+      ..showControlTab(ControlTab.controllers);
     addTearDown(cubit.close);
 
     final rig = controlProviders(

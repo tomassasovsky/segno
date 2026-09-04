@@ -5,15 +5,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The MIDI tab of the Control domain: the foot controller, and every global
-/// mapping taken off it.
+/// The Controllers tab of the Control domain: everything plugged into the
+/// console, and every global mapping taken off it.
+///
+/// Not "MIDI", though a MIDI foot controller is the device it names first.
+/// A binding does not care how the control reached it — `ControllerSourceKind`
+/// covers MIDI notes and CCs and the console's own CTRL jacks alike — so the
+/// CTRL rows below belong here as much as the MIDI ones, and a tab named for
+/// the protocol hid them (#498).
 ///
 /// Two stacked things, because they answer two questions — *is anything
 /// delivering MIDI at all*, and *what are its controls wired to*. The device
@@ -23,12 +31,12 @@ import 'package:segno/theme/theme.dart';
 ///
 /// The mappings are GLOBAL (R19) — they follow the rig, not the loaded session
 /// — and the face says so in words before anyone invests in a layout.
-class MidiTrayBody extends StatefulWidget {
-  /// Creates a [MidiTrayBody].
-  const MidiTrayBody({super.key});
+class ControllersTrayBody extends StatefulWidget {
+  /// Creates a [ControllersTrayBody].
+  const ControllersTrayBody({super.key});
 
   @override
-  State<MidiTrayBody> createState() => _MidiTrayBodyState();
+  State<ControllersTrayBody> createState() => _ControllersTrayBodyState();
 }
 
 /// What the face currently has open. At most one thing — an accordion across
@@ -59,7 +67,7 @@ class _MappingOpen extends _Open {
   final (MappingTrigger, String) key;
 }
 
-class _MidiTrayBodyState extends State<MidiTrayBody> {
+class _ControllersTrayBodyState extends State<ControllersTrayBody> {
   /// What is open, or null. See [_Open].
   _Open? _open;
 
@@ -166,7 +174,7 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
         ),
       ],
       child: KeyedSubtree(
-        key: const Key('midi_tray_body'),
+        key: const Key('controllers_tray_body'),
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -418,16 +426,29 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
     final cubit = context.watch<ControlCubit>();
     final bindings = cubit.state.controllerBindings.bindings;
     final learn = cubit.state.controllerLearn;
-    final connected = connection.status == MidiConnectionStatus.connected;
+    final midiConnected = connection.status == MidiConnectionStatus.connected;
+    // A pedal in a CTRL jack is a control too, and it does not care whether
+    // any MIDI device is attached. What the Add buttons need is SOMETHING
+    // that can move, from either source.
+    final pedalCubit = context.watch<PedalCubit>();
+    final pedalState = pedalCubit.state;
+    final linkConnected = pedalState.status == PedalLinkStatus.connected;
+    final canCapture = midiConnected || linkConnected;
+    bool liveFor(MappingTrigger trigger) => switch (trigger.kind) {
+      ControllerSourceKind.midiNote ||
+      ControllerSourceKind.midiCc => midiConnected,
+      ControllerSourceKind.consoleSwitch ||
+      ControllerSourceKind.consoleExpression => linkConnected,
+    };
     // A capture with no row of its own — Add sweep / Add switch — has nowhere
     // to put its banner but the head of the list it is about to join.
     final adding = learn != null && learn.replacingKey == null;
 
-    final notice = switch ((adding, connected, bindings.isEmpty)) {
+    final notice = switch ((adding, canCapture, bindings.isEmpty)) {
       (true, _, _) => _learnBanner(context, learn!, key: 'midi_add_banner'),
       (_, false, _) => ConsoleBanner(
         key: const Key('midi_idle_notice'),
-        message: l10n.midiLearnDeviceMissing,
+        message: l10n.midiNoControlSource,
         tone: ConsoleBannerTone.failure,
       ),
       (_, _, true) => ConsoleBanner(
@@ -458,7 +479,7 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
               _ => false,
             },
             learn: learn?.replacingKey == binding.key ? learn : null,
-            connected: connected,
+            connected: liveFor(binding.trigger),
             onToggle: () => setState(() {
               final already = switch (_open) {
                 _MappingOpen(:final key) => key == binding.key,
@@ -467,8 +488,59 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
               _open = already ? null : _MappingOpen(binding.key);
             }),
           ),
-        _addRow(context, cubit, connected: connected),
-        _addChooser(context, cubit, connected: connected),
+        // What each CTRL jack is reporting right now, directly above the
+        // buttons that bind it. A pedal is bound by moving it, so it has to be
+        // visible WHILE it moves: without this there is no way to tell a
+        // mis-wired jack from a pedal whose travel the board has not learned
+        // yet. It lived in the Settings page first, which nothing opens
+        // (#498), so nobody could find it.
+        if (linkConnected)
+          if (pedalState.ctrl.isEmpty)
+            ConsoleRow(
+              key: const Key('midi_ctrl_idle'),
+              title: l10n.midiCtrlIdle,
+              titleColor: context.surface.textMuted,
+              showDisclosure: false,
+            )
+          else
+            for (final input in PedalCtrlInput.values)
+              if (pedalState.ctrl[input] case final reading?) ...[
+                _CtrlRow(
+                  key: Key(
+                    'midi_ctrl_${input.jack.name}'
+                    '${input.contact == PedalCtrlContact.ring ? '_ring' : ''}',
+                  ),
+                  input: input,
+                  reading: reading,
+                  calibrating: pedalState.calibrating == input.jack,
+                  calibrated: pedalState.calibrated.contains(input.jack),
+                  onTap: !_isCalibratable(input, reading)
+                      ? null
+                      : () => pedalState.calibrating == input.jack
+                            ? pedalCubit.cancelCtrlCalibration()
+                            : pedalCubit.beginCtrlCalibration(input.jack),
+                ),
+                // Always in the tree, so the panel grows the card open and
+                // shrinks it shut rather than popping in under the row.
+                if (_isCalibratable(input, reading))
+                  ConsoleExpansion(
+                    key: Key('midi_ctrl_calibrate_slot_${input.jack.name}'),
+                    expanded: pedalState.calibrating == input.jack,
+                    child: pedalState.calibrating != input.jack
+                        ? const SizedBox(width: double.infinity)
+                        : _CalibratePanel(
+                            jack: input.jack,
+                            reading: reading,
+                            seen: pedalState.calibrationSeen,
+                            calibrated: pedalState.calibrated.contains(
+                              input.jack,
+                            ),
+                            cubit: pedalCubit,
+                          ),
+                  ),
+              ],
+        _addRow(context, cubit, connected: canCapture),
+        _addChooser(context, cubit, connected: canCapture),
       ],
     );
   }
@@ -512,9 +584,10 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
   }) => ConsoleActionChip(
     key: Key(id),
     label: label,
-    // Inert with nothing attached. A capture needs a control to move, and
-    // offering to listen when nothing can arrive is a button that does
-    // nothing on purpose.
+    // Inert only when NOTHING can move — no MIDI input and no console link.
+    // A capture needs a control to move, and offering to listen when nothing
+    // can arrive is a button that does nothing on purpose; requiring MIDI
+    // specifically would make a rig driven from the CTRL jacks unbindable.
     onPressed: !connected
         ? null
         : () => setState(
@@ -535,10 +608,10 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
   /// raised a modal would be the only control on this console that leaves the
   /// list it belongs to.
   ///
-  /// Shuts with the link, on the Add buttons' own rule: a capture needs a
-  /// control to move, so a chooser left open when the device went away would
-  /// reach the doomed capture the inert buttons exist to prevent, one tap
-  /// later. The choice is kept, so it comes back when the device does.
+  /// Shuts when nothing can move, on the Add buttons' own rule: a capture
+  /// needs a control, so a chooser left open after every source went away
+  /// would reach the doomed capture the inert buttons exist to prevent, one
+  /// tap later. The choice is kept, so it comes back when a source does.
   Widget _addChooser(
     BuildContext context,
     ControlCubit cubit, {
@@ -963,5 +1036,166 @@ bool _bindingResolves(LooperRepository looper, ControllerBinding binding) {
     case DiscreteBinding():
       final target = FxBindingTarget.tryParse(binding.target);
       return target != null && looper.bindingResolves(target);
+  }
+}
+
+/// Only an expression pedal has ends to calibrate; a switch is its ends.
+bool _isCalibratable(PedalCtrlInput input, PedalCtrlReading reading) =>
+    input.contact == PedalCtrlContact.tip &&
+    reading.kind == PedalCtrlKind.expression;
+
+/// One CTRL control's live reading: which kind of pedal the board decided is
+/// on it, and where that pedal is right now. An expression pedal's row opens
+/// its calibration.
+class _CtrlRow extends StatelessWidget {
+  const _CtrlRow({
+    required this.input,
+    required this.reading,
+    required this.calibrating,
+    required this.calibrated,
+    required this.onTap,
+    super.key,
+  });
+
+  final PedalCtrlInput input;
+  final PedalCtrlReading reading;
+  final bool calibrating;
+  final bool calibrated;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final number = input.jack.index + 1;
+    final expression = reading.kind == PedalCtrlKind.expression;
+    final title = switch ((input.contact, reading.kind)) {
+      (PedalCtrlContact.ring, _) => l10n.consoleCtrlRingSwitchControl(number),
+      (_, PedalCtrlKind.switchPedal) => l10n.consoleCtrlSwitchControl(number),
+      (_, PedalCtrlKind.expression) => l10n.consoleCtrlExpressionControl(
+        number,
+      ),
+      // An empty jack has no row: the cubit drops the reading on `none`.
+      (_, PedalCtrlKind.none) => l10n.consoleCtrlSwitchControl(number),
+    };
+    final value = expression
+        ? l10n.midiCtrlPercent(reading.percent)
+        : reading.value > 0
+        ? l10n.pedalCtrlSwitchDown
+        : l10n.pedalCtrlSwitchUp;
+    // A live region: the value is the whole point of the row, and a screen
+    // reader has no other way to follow a pedal being rocked.
+    return Semantics(
+      liveRegion: true,
+      child: ConsoleRow(
+        title: title,
+        subtitle: onTap != null && !calibrating
+            ? l10n.midiCtrlTapToCalibrate
+            : null,
+        // The mono word says the ends are the user's, not learned.
+        state: calibrated ? l10n.midiCtrlCalibrated : null,
+        value: value,
+        valueColor: surface.textSecondary,
+        expanded: onTap == null ? null : calibrating,
+        fill: calibrating ? surface.accentSurface : null,
+        showDisclosure: onTap != null,
+        semanticLabel: '$title, $value',
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// The calibration in progress for one jack: what to do, what the pedal has
+/// reached so far, and the way out.
+class _CalibratePanel extends StatelessWidget {
+  const _CalibratePanel({
+    required this.jack,
+    required this.reading,
+    required this.seen,
+    required this.calibrated,
+    required this.cubit,
+  });
+
+  final PedalCtrlJack jack;
+  final PedalCtrlReading reading;
+  final PedalCtrlCalibration? seen;
+  final bool calibrated;
+  final PedalCubit cubit;
+
+  static int _percent(int raw) => (raw * 100 / 255).round();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final seen = this.seen;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        kConsoleRowInset,
+        0,
+        kConsoleRowInset,
+        kConsoleBlockGap,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppText(
+            l10n.midiCtrlCalibrateHint,
+            style: TextStyle(color: surface.textSecondary, fontSize: 14),
+          ),
+          const SizedBox(height: 8),
+          // Raw, not calibrated: this is the one place the board's own
+          // reading matters, because it is what the ends are made of.
+          Semantics(
+            liveRegion: true,
+            child: AppText(
+              seen == null
+                  ? l10n.midiCtrlCalibrateWaiting
+                  : l10n.midiCtrlCalibrateSeen(
+                      reading.rawPercent,
+                      _percent(seen.min),
+                      _percent(seen.max),
+                    ),
+              key: const Key('midi_ctrl_cal_seen'),
+              style: TextStyle(
+                color: surface.textMuted,
+                fontFamily: SurfaceTheme.monoFont,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (calibrated) ...[
+                ConsoleSmallButton(
+                  key: const Key('midi_ctrl_cal_reset'),
+                  label: l10n.midiCtrlCalibrateReset,
+                  onPressed: () => unawaited(cubit.resetCtrlCalibration(jack)),
+                ),
+                const SizedBox(width: 10),
+              ],
+              ConsoleSmallButton(
+                key: const Key('midi_ctrl_cal_cancel'),
+                label: l10n.midiCtrlCalibrateCancel,
+                onPressed: cubit.cancelCtrlCalibration,
+              ),
+              const SizedBox(width: 10),
+              // Done only once the sweep is wide enough to trust: a pedal that
+              // was not moved must not be calibrated to a point.
+              ConsoleSmallButton(
+                key: const Key('midi_ctrl_cal_done'),
+                label: l10n.midiCtrlCalibrateDone,
+                onPressed: seen == null || !seen.isUsable
+                    ? null
+                    : () => unawaited(cubit.finishCtrlCalibration()),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

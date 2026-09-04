@@ -160,6 +160,21 @@ static void check_fixture(const char *dir, const char *name) {
       CHECK(len == 1, "%s: bad encoder payload", name);
       m = pedal_link_encode_encoder((int8_t)payload[0], again);
       break;
+    case PEDAL_LINK_TYPE_CTRL:
+      CHECK(len == 4, "%s: ctrl with %u payload bytes, want 4", name, len);
+      CHECK(payload[0] < PEDAL_CTRL_COUNT, "%s: ctrl jack %u out of range", name, payload[0]);
+      CHECK(payload[1] < PEDAL_CTRL_CONTACT_COUNT, "%s: ctrl contact %u out of range", name,
+            payload[1]);
+      CHECK(payload[2] < PEDAL_CTRL_KIND_COUNT, "%s: ctrl kind %u out of range", name, payload[2]);
+      /* The ring can only ever be a switch: it is the pot's supply on an
+       * expression pedal, so there is no travel to read there. */
+      CHECK(payload[1] == PEDAL_CTRL_TIP || payload[2] == PEDAL_CTRL_KIND_SWITCH,
+            "%s: an expression pedal on the ring", name);
+      /* NONE is the whole jack, said through its tip, and carries no value. */
+      CHECK(payload[2] != PEDAL_CTRL_KIND_NONE || payload[3] == 0,
+            "%s: an empty jack with a value", name);
+      m = pedal_link_encode_ctrl(payload[0], payload[1], payload[2], payload[3], again);
+      break;
     case PEDAL_LINK_TYPE_HELLO:
       CHECK(len == 3 && payload[0] == PEDAL_LINK_PROTOCOL_VERSION, "%s: bad hello", name);
       m = pedal_link_encode_hello(payload[1], payload[2], again);

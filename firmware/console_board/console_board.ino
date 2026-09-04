@@ -26,13 +26,33 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 0;
+static const uint8_t FW_MINOR = 4;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
 static const uint8_t FSW_PIN[PEDAL_BTN_COUNT] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 static const uint8_t PIN_RING = 12, PIN_ENC_A = 13, PIN_ENC_B = 14, PIN_ENC_SW = 15;
 static const uint8_t PIN_IND = 18;
+// The CTRL TRS jacks: tip on ADC0/ADC1 with a 10k pull-up, ring feeding 3V3
+// through 1k as the pot's top, sleeve to ground.
+static const uint8_t CTRL_PIN[PEDAL_CTRL_COUNT] = {26, 27};
+// The rings, sensed. On a two-switch pedal on one TRS plug (a BOSS FS-6's A&B
+// jack) the second switch shorts the ring to sleeve, which the tip's ADC can
+// never see. Board v2 has no trace for it: these are the expansion pads on J22
+// (GP20 / GP21, otherwise unused), reached by one wire from each jack's ring
+// pin. With the wire, the ring sits at ~3V (an expression pedal's pot top, or
+// an open jack) and drops to 0 when that switch closes. WITHOUT the wire the
+// internal pull-up holds the pin high and the ring simply never reports, so
+// an unmodified board loses nothing.
+static const uint8_t CTRL_RING_PIN[PEDAL_CTRL_COUNT] = {20, 21};
+// Jack presence, from a switched jack's tip-normal contact (board v3, Neutrik
+// NJ6FD-V): the contact ties this pin to the tip -- 3V3 through 10k -- while
+// the jack is EMPTY, and opens the moment a plug goes in, so with the internal
+// pull-down the pin reads HIGH = empty, LOW = plugged. On board v2 these are
+// J22's unpopulated pads: they float, the pull-down wins, and every jack reads
+// "plugged" -- which is exactly the v2 behaviour, with the heuristics below
+// doing the rest. Present = LOW is chosen so that v2 needs no flag.
+static const uint8_t CTRL_PRESENT_PIN[PEDAL_CTRL_COUNT] = {19, 22};
 static const uint8_t PIN_SMPS_PWM = 23;
 
 // ---- LEDs --------------------------------------------------------------------
@@ -216,6 +236,290 @@ static void pollEncoder() {
     if (!owed) return;
     uint8_t buf[PEDAL_LINK_MAX_FRAME];
     sendFrame(buf, pedal_link_encode_encoder(owed > 0 ? 1 : -1, buf));
+  }
+}
+
+// ---- CTRL jacks --------------------------------------------------------------
+// One jack takes an expression pedal OR a footswitch, and nobody tells the
+// board which. A switch only ever sits at the rails; a pot passes through the
+// middle and stays there. So a jack is unknown until it is caught HOLDING an
+// intermediate reading, and from then on it is an expression pedal. Measured
+// on the bench (2026-09-03): a BOSS FS-6 reads 10 and 4095, an M-Audio EX-P
+// sweeps 385..4095.
+//
+// Three things used to make plugging in and out weird, and this block is
+// shaped around them:
+//   * A plug sliding in brushes the tip past the other contacts for tens of
+//     ms and reads 0 or 4095 on the way. On an expression jack that was a
+//     reported slam to one end. Now a jump of CTRL_JUMP or more between two
+//     samples starts a quiet period, and nothing is reported until the reading
+//     has held still for CTRL_SETTLE_MS. Feet cannot do that; plugs do.
+//   * An EMPTY jack reads 4095 -- exactly full toe. Pulling a pedal out drove
+//     its target to 100% and left it there. Now a jump that lands on the top
+//     rail and stays there for CTRL_DETACH_MS is reported as KIND_NONE, and the
+//     app holds whatever the pedal was doing. (A real toe is reached by
+//     motion, not by a jump; a hard kick still moves in steps well under
+//     CTRL_JUMP at 10 ms sampling.) With a switched jack (board v3) presence
+//     is a wire and none of this guessing is needed for it.
+//   * The classification was one-way per boot: once an expression pedal, a
+//     jack read a later footswitch as a pedal parked at an end. NONE resets
+//     it, and a switch jack only becomes an expression jack once a mid-scale
+//     reading has HELD for CTRL_SETTLE_MS -- a plug transient never counts.
+//   * Pressing a footswitch IS a rail-to-rail jump, so the quiet period above
+//     swallowed it: every press and every release was reported ~210 ms late.
+//     A jack only has to wait out a jump while a plug might still be arriving
+//     -- while it is unknown or empty. Once the board knows the jack holds a
+//     footswitch, an edge on it is a foot, debounced at 8 ms and sent at once.
+//     The first press after a plug pays the settle time; no later one does.
+//   * The ring contact sees the plug's TIP slide past on the way in and out
+//     (the ring contact sits shallower than the tip contact), and with an
+//     expression pedal that tip is a pot wiper dragged low while the plug's
+//     ring brushes the sleeve spring. Read as a switch, that was "footswitch
+//     B pressed" on a jack with no footswitch. So the ring is not a switch
+//     until it has EARNED it: while the jack is unknown or empty, a ring
+//     closure must hold for CTRL_SETTLE_MS (the first B press is late by
+//     that much, the rest are debounced like any switch); a jump on the tip
+//     silences the ring for the same quiet period; and a jack that turns out
+//     to be an expression pedal has no ring switch at all -- its ring is the
+//     pot's supply. On v2 only one hole is left: a jack already known as a
+//     switch (a footswitch pulled out unseen) gets a pedal plugged in, and
+//     the wiper's brush reports one B press before the pot reclassifies the
+//     jack. A v3 jack's presence contact resets the jack to unknown first.
+static const uint16_t CTRL_MAX = 4095;
+// Below: switch closed. A sixteenth of the way up, well over a footswitch's
+// contact (10 raw on a BOSS FS-6) and under the lowest an expression pedal's
+// heel reads (385 raw on an M-Audio EX-P) -- otherwise a pedal plugged in at
+// its heel was one closed switch until it moved.
+static const uint16_t CTRL_LOW = CTRL_MAX / 16;
+static const uint16_t CTRL_HIGH = CTRL_MAX - CTRL_MAX / 8;  // above: open / empty
+static const uint16_t CTRL_DEADBAND = 24;  // ~0.6%, above the noise floor
+static const uint16_t CTRL_JUMP = CTRL_MAX * 2 / 5;   // 40% in one 10 ms sample
+static const unsigned long CTRL_SWITCH_DEBOUNCE_MS = 8;
+static const unsigned long CTRL_SAMPLE_MS = 10;
+static const unsigned long CTRL_SETTLE_MS = 200;      // quiet before trusting
+static const unsigned long CTRL_DETACH_MS = 1000;     // at the rail after a jump
+static const unsigned long CTRL_PRESENT_DEBOUNCE_MS = 50;
+
+// An expression pedal never uses the whole scale: the tip's 10k pull-up and
+// the 1k feeding the pot's top compress both ends, and every pedal's travel
+// and range knob differ again (an M-Audio EX-P covers 385..4095 of 0..4095).
+// Where the ends really are is NOT decided here. This board forgets everything
+// at power-off, so it reports the raw position and segno learns the ends --
+// deliberately, from a sweep the user makes -- and keeps them across reboots.
+enum { CTRL_UNKNOWN = 0, CTRL_SWITCH, CTRL_EXPRESSION, CTRL_NONE };
+static uint8_t g_ctrlKind[PEDAL_CTRL_COUNT];
+static uint16_t g_ctrlRaw[PEDAL_CTRL_COUNT];
+static uint8_t g_ctrlSent[PEDAL_CTRL_COUNT];
+static bool g_ctrlHaveSent[PEDAL_CTRL_COUNT];
+static unsigned long g_ctrlQuietUntilMs[PEDAL_CTRL_COUNT];   // settling after a jump
+static unsigned long g_ctrlMidSinceMs[PEDAL_CTRL_COUNT];     // mid-scale held since
+static unsigned long g_ctrlRailSinceMs[PEDAL_CTRL_COUNT];    // top rail after a jump since
+static bool g_ctrlJumped[PEDAL_CTRL_COUNT];                  // the last big move was a jump
+static bool g_ctrlPresentRaw[PEDAL_CTRL_COUNT];
+static bool g_ctrlPresent[PEDAL_CTRL_COUNT];
+static unsigned long g_ctrlPresentSinceMs[PEDAL_CTRL_COUNT];
+// One debounced switch per contact: [jack][contact].
+static bool g_ctrlSwitchClosed[PEDAL_CTRL_COUNT][PEDAL_CTRL_CONTACT_COUNT];
+static bool g_ctrlSwitchRaw[PEDAL_CTRL_COUNT][PEDAL_CTRL_CONTACT_COUNT];
+static unsigned long g_ctrlSwitchSinceMs[PEDAL_CTRL_COUNT][PEDAL_CTRL_CONTACT_COUNT];
+static unsigned long g_ctrlLastSampleMs = 0;
+
+static uint16_t ctrlSample(uint8_t pin) {
+  uint32_t total = 0;
+  for (uint8_t i = 0; i < 8; i++) total += analogRead(pin);
+  return (uint16_t)(total / 8);
+}
+
+static void sendCtrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8_t value) {
+  uint8_t buf[PEDAL_LINK_MAX_FRAME];
+  sendFrame(buf, pedal_link_encode_ctrl(jack, contact, kind, value, buf));
+  if (contact == PEDAL_CTRL_TIP && kind == PEDAL_CTRL_KIND_EXPRESSION) {
+    g_ctrlSent[jack] = value;
+    g_ctrlHaveSent[jack] = true;
+  }
+}
+
+// Debounced on both edges like the footswitches. `closed` is the contact at
+// ground; reports the edge once it has held for CTRL_SWITCH_DEBOUNCE_MS.
+static void pollCtrlSwitch(uint8_t jack, uint8_t contact, bool closed, unsigned long now) {
+  if (closed != g_ctrlSwitchRaw[jack][contact]) {
+    g_ctrlSwitchRaw[jack][contact] = closed;
+    g_ctrlSwitchSinceMs[jack][contact] = now;
+    return;
+  }
+  if (closed != g_ctrlSwitchClosed[jack][contact] &&
+      now - g_ctrlSwitchSinceMs[jack][contact] >= CTRL_SWITCH_DEBOUNCE_MS) {
+    g_ctrlSwitchClosed[jack][contact] = closed;
+    sendCtrl(jack, contact, PEDAL_CTRL_KIND_SWITCH, closed ? 255 : 0);
+  }
+}
+
+// The jack has nothing on it: say so once, forget what it was, and start
+// again from unknown on the next plug.
+// The ring: a switch on a two-switch pedal, a supply on an expression pedal,
+// and a contact the plug's tip brushes on its way past either way. Only
+// reached once the tip is out of its quiet period. On a jack already known
+// as a switch an edge is a press, debounced like the tip; anywhere else a
+// closure has to hold for CTRL_SETTLE_MS before it counts, and counting makes
+// the jack a switch. An expression jack's ring is never a switch.
+static void pollCtrlRing(uint8_t jack, unsigned long now) {
+  const bool closed = digitalRead(CTRL_RING_PIN[jack]) == LOW;
+  if (g_ctrlKind[jack] == CTRL_EXPRESSION) {
+    g_ctrlSwitchRaw[jack][PEDAL_CTRL_RING] = closed;
+    return;
+  }
+  if (g_ctrlKind[jack] == CTRL_SWITCH) {
+    pollCtrlSwitch(jack, PEDAL_CTRL_RING, closed, now);
+    return;
+  }
+  if (closed != g_ctrlSwitchRaw[jack][PEDAL_CTRL_RING]) {
+    g_ctrlSwitchRaw[jack][PEDAL_CTRL_RING] = closed;
+    g_ctrlSwitchSinceMs[jack][PEDAL_CTRL_RING] = now;
+    return;
+  }
+  if (closed && !g_ctrlSwitchClosed[jack][PEDAL_CTRL_RING] &&
+      now - g_ctrlSwitchSinceMs[jack][PEDAL_CTRL_RING] >= CTRL_SETTLE_MS) {
+    g_ctrlKind[jack] = CTRL_SWITCH;
+    g_ctrlSwitchClosed[jack][PEDAL_CTRL_RING] = true;
+    sendCtrl(jack, PEDAL_CTRL_RING, PEDAL_CTRL_KIND_SWITCH, 255);
+  }
+}
+
+// A switch reported closed cannot stay closed with nothing on the contact:
+// let go of it, so whatever it held down is released before the row goes.
+static void ctrlReleaseSwitch(uint8_t jack, uint8_t contact) {
+  g_ctrlSwitchRaw[jack][contact] = false;
+  if (!g_ctrlSwitchClosed[jack][contact]) return;
+  g_ctrlSwitchClosed[jack][contact] = false;
+  sendCtrl(jack, contact, PEDAL_CTRL_KIND_SWITCH, 0);
+}
+
+static void ctrlDetach(uint8_t jack) {
+  for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) ctrlReleaseSwitch(jack, c);
+  if (g_ctrlKind[jack] != CTRL_NONE) {
+    sendCtrl(jack, PEDAL_CTRL_TIP, PEDAL_CTRL_KIND_NONE, 0);
+  }
+  g_ctrlKind[jack] = CTRL_NONE;
+  g_ctrlHaveSent[jack] = false;
+  g_ctrlSent[jack] = 0;
+  g_ctrlJumped[jack] = false;
+  g_ctrlMidSinceMs[jack] = 0;
+  g_ctrlRailSinceMs[jack] = 0;
+}
+
+static void pollCtrl() {
+  const unsigned long now = millis();
+  if (now - g_ctrlLastSampleMs < CTRL_SAMPLE_MS) return;
+  g_ctrlLastSampleMs = now;
+
+  for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
+    // Presence, debounced: the wire on a v3 jack, "always" on a v2 board.
+    const bool presentRaw = digitalRead(CTRL_PRESENT_PIN[j]) == LOW;
+    if (presentRaw != g_ctrlPresentRaw[j]) {
+      g_ctrlPresentRaw[j] = presentRaw;
+      g_ctrlPresentSinceMs[j] = now;
+    } else if (presentRaw != g_ctrlPresent[j] &&
+               now - g_ctrlPresentSinceMs[j] >= CTRL_PRESENT_DEBOUNCE_MS) {
+      g_ctrlPresent[j] = presentRaw;
+      if (!presentRaw) {
+        ctrlDetach(j);
+      } else {
+        // Freshly plugged: unknown, and give the plug time to seat.
+        g_ctrlKind[j] = CTRL_UNKNOWN;
+        g_ctrlQuietUntilMs[j] = now + CTRL_SETTLE_MS;
+      }
+    }
+    if (!g_ctrlPresent[j]) continue;
+
+    const uint16_t raw = ctrlSample(CTRL_PIN[j]);
+    const uint16_t prev = g_ctrlRaw[j];
+    g_ctrlRaw[j] = raw;
+    const uint16_t delta = raw > prev ? raw - prev : prev - raw;
+    const bool mid = raw > CTRL_LOW && raw < CTRL_HIGH;
+
+    // A jump: a plug on its way in or out, never a foot. Say nothing until
+    // the reading has held still, and remember that a jump happened so a
+    // rail it lands on can be told from a rail it was walked to.
+    if (delta >= CTRL_JUMP) {
+      g_ctrlQuietUntilMs[j] = now + CTRL_SETTLE_MS;
+      g_ctrlJumped[j] = true;
+      g_ctrlMidSinceMs[j] = 0;
+      g_ctrlRailSinceMs[j] = 0;
+    }
+
+    // A jack the board already knows holds a footswitch is not waiting for a
+    // plug, and pressing that footswitch is itself a jump: report its edges
+    // at once instead of making every press and release wait out the settle
+    // time. The reclassification checks below still run once it is settled,
+    // so swapping a pedal into this jack is still noticed.
+    const bool known = g_ctrlKind[j] == CTRL_SWITCH;
+    if (known) {
+      pollCtrlSwitch(j, PEDAL_CTRL_TIP, raw < CTRL_LOW, now);
+      pollCtrlRing(j, now);
+    }
+    if ((long)(now - g_ctrlQuietUntilMs[j]) < 0) continue;
+
+    if (!known) pollCtrlRing(j, now);
+
+    // Mid-scale that HOLDS is a pot. A single mid-scale sample is a plug
+    // passing through, and on a switch jack that used to be enough to
+    // reclassify it for the rest of the boot.
+    if (mid) {
+      if (g_ctrlMidSinceMs[j] == 0) g_ctrlMidSinceMs[j] = now;
+      g_ctrlRailSinceMs[j] = 0;
+      if (g_ctrlKind[j] != CTRL_EXPRESSION &&
+          now - g_ctrlMidSinceMs[j] >= CTRL_SETTLE_MS) {
+        g_ctrlKind[j] = CTRL_EXPRESSION;
+        g_ctrlHaveSent[j] = false;
+        g_ctrlJumped[j] = false;
+        // A pot has no switch on either contact -- its ring is the supply and
+        // its tip is the wiper -- so let go of anything the plug's brush past
+        // those contacts was read as, rather than leave it held down.
+        for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) {
+          ctrlReleaseSwitch(j, c);
+        }
+      }
+    } else {
+      g_ctrlMidSinceMs[j] = 0;
+    }
+
+    if (g_ctrlKind[j] == CTRL_EXPRESSION) {
+      // Empty-jack detection for a pedal jack: a jump that landed on the top
+      // rail and stayed there. Walking to the toe never sets g_ctrlJumped.
+      if (g_ctrlJumped[j] && raw >= CTRL_HIGH) {
+        if (g_ctrlRailSinceMs[j] == 0) g_ctrlRailSinceMs[j] = now;
+        if (now - g_ctrlRailSinceMs[j] >= CTRL_DETACH_MS) {
+          ctrlDetach(j);
+          continue;
+        }
+      } else if (raw < CTRL_HIGH) {
+        g_ctrlRailSinceMs[j] = 0;
+        g_ctrlJumped[j] = false;   // it moved: it is a pedal, being played
+      }
+      // The 12-bit reading's top byte: 256 steps over the whole scale, of
+      // which a pedal uses ~230 -- twice what a MIDI CC resolves.
+      const uint8_t value = (uint8_t)(raw >> 4);
+      const int diff = (int)value - (int)g_ctrlSent[j];
+      const int deadband = (int)(CTRL_DEADBAND * 255u / CTRL_MAX);
+      // Always report the rails exactly: a deadband that swallows the last
+      // step leaves a pedal pushed to its stop reporting "nearly there".
+      const bool atEnd = value == 0 || value == 255;
+      if (!g_ctrlHaveSent[j] || (atEnd && value != g_ctrlSent[j]) ||
+          diff > deadband || diff < -deadband) {
+        sendCtrl(j, PEDAL_CTRL_TIP, PEDAL_CTRL_KIND_EXPRESSION, value);
+      }
+      continue;
+    }
+
+    // Unknown or a switch. Closed is the tip pulled to ground; open is the
+    // 10k holding it at the rail. A jack that was NONE becomes a switch on
+    // its first press, not on the plug's arrival: an open jack and an open
+    // switch read the same, so there is nothing to say until it moves.
+    if (known) continue;  // polled above, before the settle gate
+    if (g_ctrlKind[j] == CTRL_NONE && raw >= CTRL_LOW) continue;
+    if (g_ctrlKind[j] != CTRL_SWITCH && raw < CTRL_LOW) g_ctrlKind[j] = CTRL_SWITCH;
+    if (g_ctrlKind[j] == CTRL_UNKNOWN) g_ctrlKind[j] = CTRL_SWITCH;
+    pollCtrlSwitch(j, PEDAL_CTRL_TIP, raw < CTRL_LOW, now);
   }
 }
 
@@ -412,6 +716,32 @@ void setup() {
     g_btnLastRaw[i] = false;
     g_btnRawSinceMs[i] = 0;
   }
+  for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
+    pinMode(CTRL_PIN[j], INPUT);  // the board's own 10k biases the tip
+    // Pulled up INTERNALLY: unwired (an unmodified v2) it reads open forever
+    // and never reports; wired, ~3V from the jack overrides nothing.
+    pinMode(CTRL_RING_PIN[j], INPUT_PULLUP);
+    // Pulled DOWN: a v3 switched jack drives it high only while empty; on
+    // a v2 board it floats on J22's pads and reads "plugged", as it should.
+    pinMode(CTRL_PRESENT_PIN[j], INPUT_PULLDOWN);
+    g_ctrlKind[j] = CTRL_UNKNOWN;
+    g_ctrlRaw[j] = CTRL_MAX;
+    g_ctrlSent[j] = 0;
+    g_ctrlHaveSent[j] = false;
+    g_ctrlQuietUntilMs[j] = 0;
+    g_ctrlMidSinceMs[j] = 0;
+    g_ctrlRailSinceMs[j] = 0;
+    g_ctrlJumped[j] = false;
+    g_ctrlPresentRaw[j] = true;
+    g_ctrlPresent[j] = true;
+    g_ctrlPresentSinceMs[j] = 0;
+    for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) {
+      g_ctrlSwitchClosed[j][c] = false;
+      g_ctrlSwitchRaw[j][c] = false;
+      g_ctrlSwitchSinceMs[j][c] = 0;
+    }
+  }
+  analogReadResolution(12);
   pinMode(PIN_ENC_A, INPUT_PULLUP);
   pinMode(PIN_ENC_B, INPUT_PULLUP);
   pinMode(PIN_ENC_SW, INPUT_PULLUP);
@@ -448,6 +778,7 @@ void loop() {
   pollLink();
   pollButtons();
   pollEncoder();
+  pollCtrl();
 
   const unsigned long now = millis();
   if (now - g_lastHelloMs >= HELLO_MS) {

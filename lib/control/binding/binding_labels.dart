@@ -4,6 +4,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/pedal/console_ctrl_source.dart';
 
 /// How a binding's target and its control are NAMED, in one place.
 ///
@@ -112,6 +113,18 @@ String controlLabel(AppLocalizations l10n, MappingTrigger trigger) {
     ControllerSourceKind.midiNote => l10n.midiLearnNoteControl(
       trigger.id,
       channel,
+    ),
+    // A CTRL jack has no channel — it is named by the jack it is plugged
+    // into, counted from one the way the panel labels them. A switch on the
+    // ring (the B of a two-switch pedal) is the jack's second switch.
+    ControllerSourceKind.consoleSwitch =>
+      trigger.id >= ConsoleCtrlSource.ringIdOffset
+          ? l10n.consoleCtrlRingSwitchControl(
+              trigger.id - ConsoleCtrlSource.ringIdOffset + 1,
+            )
+          : l10n.consoleCtrlSwitchControl(trigger.id + 1),
+    ControllerSourceKind.consoleExpression => l10n.consoleCtrlExpressionControl(
+      trigger.id + 1,
     ),
   };
 }

@@ -1259,8 +1259,8 @@
     "fxStompBound": "Pedal",
     "a11yFxStompBound": "Asignado al pedal {button}",
     "a11yFxStompBoundHeld": "Asignado al pedal {button}, mantenido",
-    "midiLearnGroup": "CONTROL MIDI EXTERNO",
-    "midiLearnHint": "Asigná un pedal de expresión o un switch MIDI a un parámetro o a una cadena FX. Las asignaciones son globales: acompañan al equipo, no a la sesión cargada.",
+    "midiLearnGroup": "CONTROL EXTERNO",
+    "midiLearnHint": "Asigna un pedal en una entrada CTRL, o cualquier control MIDI, a un parámetro o a una cadena de FX. Las asignaciones son globales: siguen a este equipo, no a la sesión cargada.",
     "midiLearnEmpty": "Todavía no hay nada asignado. Agregá una asignación y después mové el control que querés usar.",
     "midiLearnAddSweep": "Agregar barrido",
     "midiLearnAddSwitch": "Agregar switch",
@@ -1280,7 +1280,23 @@
     "midiLearnBehavior": "Comportamiento",
     "midiLearnStale": "Destino ausente",
     "midiLearnStaleDetail": "Lo que esta asignación apuntaba ya no existe. No hace nada hasta que la apuntes a otra cosa o la quites.",
-    "midiLearnDeviceMissing": "No hay ninguna entrada MIDI conectada, así que estas asignaciones están inactivas. Conectá el controlador, o reaprendé una fila con el que estés usando ahora.",
+    "midiNoControlSource": "No hay nada conectado que escuchar. Conecta un controlador MIDI o un pedal a una entrada CTRL.",
+    "midiCtrlIdle": "Entradas CTRL: todavía no ha llegado nada. Mueve un pedal y su valor aparece aquí.",
+    "midiCtrlPercent": "{percent} %",
+    "midiCtrlTapToCalibrate": "Toca para calibrar",
+    "midiCtrlCalibrated": "cal",
+    "midiCtrlCalibrateHint": "Recorre el pedal del talón a la punta un par de veces y toca Listo. Esos serán sus extremos a partir de ahora.",
+    "midiCtrlCalibrateSeen": "Bruto {raw} % · alcanzó {min} %–{max} %",
+    "midiCtrlCalibrateWaiting": "Esperando a que el pedal se mueva.",
+    "midiCtrlCalibrateDone": "Listo",
+    "midiCtrlCalibrateCancel": "Cancelar",
+    "midiCtrlCalibrateReset": "Volver a automático",
+    "consoleCtrlRingSwitchControl": "CTRL {jack} · pulsador B",
+    "midiLearnDeviceMissing": "No hay entrada MIDI conectada, así que las asignaciones que dependen de MIDI están inactivas. Conecta el controlador o vuelve a aprender una fila con lo que estés usando ahora.",
+    "pedalCtrlSwitchDown": "pulsado",
+    "pedalCtrlSwitchUp": "suelto",
+    "consoleCtrlSwitchControl": "CTRL {jack} · pulsador",
+    "consoleCtrlExpressionControl": "CTRL {jack} · expresión",
     "midiLearnCcControl": "CC {number} · canal {channel}",
     "midiLearnNoteControl": "Nota {number} · canal {channel}",
     "midiLearnTargetVolume": "Volumen de {trackName}",
@@ -1705,9 +1721,9 @@
     "@controlPedalTab": {
         "description": "Tab of the Control domain: the footswitch plate's assignable switches."
     },
-    "controlMidiTab": "MIDI",
-    "@controlMidiTab": {
-        "description": "Tab of the Control domain: the MIDI foot controller and its mappings."
+    "controlControllersTab": "Controladores",
+    "@controlControllersTab": {
+        "description": "Tab of the Control domain: everything plugged in — a MIDI foot controller, and the pedals in the CTRL jacks — and the mappings off them."
     },
     "controlTransportGroup": "CONMUTADORES DE TRANSPORTE",
     "@controlTransportGroup": {
