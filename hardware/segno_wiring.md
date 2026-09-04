@@ -68,13 +68,59 @@ tolerance only has to survive ~100 mm of internal wiring.
   tied together have no current sharing: one hogs the load until it limits,
   then they hunt.
 
-| buck | loads | worst case |
+| buck | loads | design figure |
 |---|---|---|
-| **BUCK_PI** | Pi 5 (via its USB-C) + its USB devices + NVMe | 5.0 A / 25 W |
-| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 26 WS2812 | 6.7 A / 34 W |
+| **BUCK_PI** | Pi 5 (via its USB-C) + its USB devices + NVMe | 5.0 A / 25 W (worst case) |
+| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 104 WS2812 | 6.4 A / 32 W (**normal**, not worst case — see the state table) |
 
-The worst case is capped by device limits, not estimated: the Pi's own 5 A
-budget, the screens' ratings, 26 WS2812 at 60 mA all-white.
+BUCK_PI's worst case is capped by device limits, not estimated: the Pi's own 5 A
+budget. BUCK_AUX's figure is the screens' ratings plus the LEDs **as they are
+actually driven** — see below, because the naive all-white number for 104 WS2812
+is misleading in both directions.
+
+**The LED load is dominated by COLOUR and the pill gradient, not by the count
+(#930).** The pills went from 6 single LEDs to ten 8-LED segments of 144/m, and
+the ring is a Ring **24**, so BUCK_AUX carries **104 WS2812**. The naive
+"104 × 60 mA" reading of that is 6.2 A and it is wrong for two reasons: 60 mA is
+all three channels at full (an indicator is normally ONE channel, ~20 mA), and
+a pill is never all-on — it is rendered **centre-bright, dimming to both ends**,
+which sums to ~62% of all-at-full. The vendor's own figure agrees: 0.1 W per LED
+per colour at 5 V is exactly 20 mA.
+
+| state | LED | BUCK_AUX | of 10 A |
+|---|---|---|---|
+| all off (controller quiescent only) | 0.10 A | 5.24 A | 52% |
+| **normal — pills one colour + gradient, ring half** | **1.24 A** | **6.38 A** | **64%** |
+| pills amber (2 ch) + gradient, ring one colour | 2.48 A | 7.62 A | 76% |
+| pills white + gradient, ring full white | 4.44 A | 9.58 A | 96% |
+| everything full white, no gradient | 6.24 A | 11.38 A | **114%** |
+
+Normal operation is **1.24 A of LED**, and **the rail does not need a brightness
+cap** — the gradient is inherent to how a pill is drawn, not a limiter bolted on.
+Two things to keep in view: **white is the expensive colour**, and pills-white
+*and* ring-white together reach 96% with no margin — so if a white lamp test or a
+white "clipping" state is ever added, it is that combination, not the LED count,
+that needs the thought.
+
+**The rail is not the binding limit — the board path is.** BUCK_AUX is a 10 A
+buck, but the LEDs reach it through J3 (two parallel JST-XH contacts, ~6 A) and
+the console board's 0.6 mm +5 V track (~2 A per IPC-2152), both sized when the
+chain was 26 WS2812. **Anything above ~2 A of LED is already past the track** —
+which is rows 3, 4 and 5 of the table, and row 3 (pills amber, ring one colour)
+is an ordinary operating state, not a lamp test. Only the top two rows are
+comfortable. That is an **open call (#930)** and it is a board/firmware question,
+not a rail one — see the J3 bullet below.
+
+**And the whole table is a model of software that does not exist.** The gradient
+duty (62%) and "one channel per indicator" are how a pill is *intended* to be
+drawn; there is no console pixel renderer yet (`firmware/led_driver/` is the
+standalone RP2040 driver, sized 24 ring + 8 indicators, with a fixed
+`setBrightness(120)` ≈ 47%). So the numbers below are a design target for that
+renderer to hit, not a measurement — and the 2 A track is the number it has to
+hit them against. And the 5.14 A non-LED baseline is **rated maxima** for two
+screens and the board, not measured; real draw is likely well under half, so the
+true headroom is larger than this table admits. Measure it on the bench before
+trusting either direction.
 
 - **The Pi is fed through its USB-C, not the header.** Ribbon pins 2/4 are
   deliberately not connected (`PI_POWER` gate): tying them would put BUCK_PI in
@@ -84,8 +130,13 @@ budget, the screens' ratings, 26 WS2812 at 60 mA all-white.
   600 mA unless **`usb_max_current_enable=1`** is set in `config.txt`. Required
   here: the touch panels and the audio interface hang off that budget.
 - The console board takes 5 V from **BUCK_AUX on J3** — four ways as two
-  parallel pairs, because JST-XH is ~3 A per contact and the LED chain alone
-  nears that.
+  parallel pairs, because JST-XH is ~3 A per contact. That pair is ~6 A, which
+  covered the chain when it was 26 WS2812. **It no longer covers the all-white
+  case**: 104 WS2812 flat out is 6.24 A through J3 *and* through the board's
+  0.6 mm +5 V track, which IPC-2152 rates at ~2 A. Normal draw (1.24 A) is
+  nowhere near either. **Open call (#930)** — cap global brightness in firmware,
+  feed the pills from BUCK_AUX directly rather than through the board, or respin
+  the board's 5 V path. See `kicad/console_board_pcb.py` (`TRACK_W`).
 - **Unverified until a build (carried from #754):** the UPERFECT 15.6" is a
   USB-C portable monitor, and many of those expect PD and run dim — or refuse
   to light — on a plain non-PD 5 V feed. BUCK_AUX is exactly that. Verify the

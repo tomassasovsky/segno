@@ -1,5 +1,11 @@
 # segno LED strip
 
+> **NOT USED BY THE CONSOLE, and do not order it for one (#930).** The console's
+> pill indicators are eight-LED segments cut from 144 LEDs/m bare strip, and the
+> diffuser channel is sized for a 12 mm x 0.53 mm strip — this 16 x 8 x 1.6 mm
+> board will not go in. `hardware/MANUFACTURING.md` carries it at quantity 0.
+> The design below is kept because it is finished and may suit another build.
+
 Single-LED WS2812B indicator puck for the Segno console: **one board per
 indicator pedal**, sitting under that pedal's small pill diffuser slot in the
 faceplate. One board is 16 x 8 mm, 2-layer, 1.6 mm, carrying **1x WS2812B
