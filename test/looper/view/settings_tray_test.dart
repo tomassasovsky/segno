@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -145,7 +146,10 @@ void main() {
     unawaited(looper.dispose());
   });
 
-  Future<void> pump(WidgetTester tester) => tester.pumpWidget(
+  Future<void> pump(
+    WidgetTester tester, {
+    VoidCallback? onStageTap,
+  }) => tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.neon,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -177,8 +181,17 @@ void main() {
           // A Scaffold + Stack mirrors how TracksView actually mounts the
           // tray: as a Stack sibling over full-screen content, top edge at
           // (0, 0).
-          child: const Scaffold(
-            body: Stack(children: [SizedBox.expand(), SettingsTray()]),
+          child: Scaffold(
+            body: Stack(
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onStageTap,
+                  child: const SizedBox.expand(),
+                ),
+                const SettingsTray(),
+              ],
+            ),
           ),
         ),
       ),
@@ -277,69 +290,110 @@ void main() {
     expect(cubit.state.dragProgress, 0);
   });
 
-  testWidgets('tapping the scrim closes an open tray', (tester) async {
+  testWidgets('dragging the handle up closes an open tray', (tester) async {
     cubit.open();
     await pump(tester);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    // NB this closes via the HANDLE, not the scrim. The open panel covers the
-    // full 800x600 surface and absorbs taps everywhere except the handle's
-    // band (579..600), so y=580 lands on `settingsTray_handle`. Measured: taps
-    // at y 8, 300 and 570, and at x 795, all leave the tray open. Kept because
-    // "a tap down here dismisses" is worth holding — but it says nothing about
-    // the scrim, which is why the two tests below exist.
-    await tester.tapAt(const Offset(400, 580));
+    await tester.drag(
+      find.byKey(const Key('settingsTray_handle')),
+      const Offset(0, -500),
+    );
     await tester.pumpAndSettle();
 
     expect(cubit.state.dragProgress, 0);
   });
 
-  testWidgets('the scrim carries a working dismiss action', (tester) async {
-    // The regression this guards (#1003): a refactor removed the scrim's
-    // GestureDetector and kept the Semantics(button, label: dismiss) inside
-    // it, so assistive tech went on announcing a dismiss button that had no
-    // handler behind it. Driven through the semantics action, because that is
-    // the path that actually reaches the scrim — touch does not.
-    cubit.open();
-    await pump(tester);
-    await tester.pumpAndSettle();
+  for (final progress in [0.5, 1.0]) {
+    testWidgets('background taps keep a $progress revealed tray open', (
+      tester,
+    ) async {
+      var stageTaps = 0;
+      cubit.dragTo(progress);
+      await pump(tester, onStageTap: () => stageTaps++);
+      await tester.pumpAndSettle();
 
-    final handle = tester.ensureSemantics();
-    final scrim = find.byKey(const Key('settingsTray_scrim'));
+      final screen = tester.getRect(find.byType(Scaffold));
+      // At half reveal these points hit the exposed scrim below the handle;
+      // at full reveal they hit empty panel space above the handle. Neither
+      // may dismiss the tray or activate the stage underneath it.
+      for (final point in [
+        Offset(screen.right - 5, screen.bottom - 50),
+        Offset(screen.center.dx, screen.bottom - 50),
+      ]) {
+        expect(
+          tester
+              .getRect(find.byKey(const Key('settingsTray_handle')))
+              .contains(point),
+          isFalse,
+        );
+        await tester.tapAt(point);
+        await tester.pumpAndSettle();
+        expect(cubit.state.dragProgress, progress);
+        expect(stageTaps, 0);
+      }
+    });
+  }
 
-    // The label alone is not the guard — that is exactly what survived the
-    // regression. Assert the action reaches the semantics tree...
-    expect(
-      tester
-          .getSemantics(scrim)
-          .getSemanticsData()
-          .hasAction(
-            SemanticsAction.tap,
-          ),
-      isTrue,
-      reason: 'the scrim announces a dismiss button; it must expose the action',
-    );
-    // ...and that it is wired to something.
-    expect(
-      tester.widget<GestureDetector>(scrim).onTap,
-      isNotNull,
-      reason: 'the announced dismiss must actually close the tray',
-    );
-    handle.dispose();
-  });
-
-  testWidgets('the scrim does not intercept touches while closed', (
+  testWidgets('the handle exposes a labelled working close action', (
     tester,
   ) async {
-    await pump(tester);
+    final semantics = tester.ensureSemantics();
+    try {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
 
-    // Tapping where the scrim would sit (center of the screen) must not
-    // close an already-closed tray or throw — it is ignored (both for hit
-    // testing and semantics) while the tray has no visible extent.
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      final handle = find.byKey(const Key('settingsTray_handle'));
+      final node = tester.getSemantics(handle);
+      expect(node.label, l10n.close);
+      expect(node.getSemanticsData().flagsCollection.isButton, isTrue);
+      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+      // The inert backdrop is not announced as a second dismiss button.
+      expect(find.bySemanticsLabel(l10n.dismiss), findsNothing);
+      expect(find.bySemanticsLabel(l10n.close), findsOneWidget);
+
+      node.owner!.performAction(node.id, SemanticsAction.tap);
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.dragProgress, 0);
+      expect(tester.getSemantics(handle).label, l10n.a11yTrayHandle);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  for (final key in [LogicalKeyboardKey.enter, LogicalKeyboardKey.space]) {
+    testWidgets('the focused handle closes the tray with ${key.debugName}', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      final pill = find.descendant(
+        of: find.byKey(const Key('settingsTray_handle')),
+        matching: find.byType(AnimatedContainer),
+      );
+      Focus.of(tester.element(pill)).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(key);
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.dragProgress, 0);
+    });
+  }
+
+  testWidgets('the closed scrim lets taps reach the stage', (tester) async {
+    var stageTaps = 0;
+    await pump(tester, onStageTap: () => stageTaps++);
+
     await tester.tapAt(tester.getCenter(find.byType(Scaffold)));
     await tester.pump();
 
     expect(cubit.state.dragProgress, 0);
+    expect(stageTaps, 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -528,7 +582,7 @@ void main() {
       expect(find.byKey(const Key('trayBrightness_popover')), findsNothing);
     });
 
-    testWidgets('every rail entry wears the glyph the pen screens draw', (
+    testWidgets('rail glyphs preserve the custom shapes and Cupertino WiFi', (
       tester,
     ) async {
       cubit.open();
@@ -539,8 +593,8 @@ void main() {
       // not draw — `activity` for a sine, `align-justify` for upright bars,
       // `target` for a bar chart, `speaker` for a cone with waves. Reading the
       // component is what put the wrong glyphs on this rail twice, so this
-      // asserts the screens' answer: four drawn from the pen's geometry, five
-      // from the font, and which is which.
+      // preserves the custom geometry, with the owner's chosen Cupertino
+      // WiFi glyph for Network.
       const drawn = {
         SettingsTrayDestination.signal: PenIcon.signal,
         SettingsTrayDestination.control: PenIcon.control,
@@ -550,7 +604,7 @@ void main() {
       const fromFont = {
         SettingsTrayDestination.loop: LucideIcons.repeat,
         SettingsTrayDestination.audio: LucideIcons.volume2,
-        SettingsTrayDestination.network: LucideIcons.wifiHigh,
+        SettingsTrayDestination.network: CupertinoIcons.wifi,
         SettingsTrayDestination.system: LucideIcons.cpu,
       };
 
@@ -636,46 +690,72 @@ void main() {
       expect(item.left - rail.left, closeTo(10, 0.5));
     });
 
-    testWidgets('the rail label wears the pen type, and its pill the token', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pumpAndSettle();
+    testWidgets(
+      'rail labels keep medium weight across selection',
+      (
+        tester,
+      ) async {
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
 
-      // Read off the pen's rail (`NETWORK / wifi`'s items and the `NavItem`
-      // component agree): 17/normal in the secondary tint, and the selected
-      // item 17/600 in the accent on a pill filled with the flat
-      // `accent-surface` token — not a translucent accent tint, which reads
-      // as a different colour on each background it sits over.
-      final surface = tester.element(find.byType(TrayNavigationRail)).surface;
+        // Selection is shown by accent tint, pill fill and semantics. The
+        // owner chose the same medium text weight in both states.
+        final surface = tester.element(find.byType(TrayNavigationRail)).surface;
 
-      AppText labelIn(String key) => tester.widget<AppText>(
-        find.descendant(
-          of: find.byKey(Key(key)),
-          matching: find.byType(AppText),
-        ),
-      );
+        AppText labelIn(String key) => tester.widget<AppText>(
+          find.descendant(
+            of: find.byKey(Key(key)),
+            matching: find.byType(AppText),
+          ),
+        );
 
-      // Signal is the tray's opening destination, so it is the lit one.
-      final selected = labelIn('settingsTrayRail_signal');
-      expect(selected.style?.fontSize, 17);
-      expect(selected.style?.fontWeight, FontWeight.w600);
-      expect(selected.style?.color, surface.accent);
+        // Signal is the tray's opening destination, so it is the lit one.
+        final selected = labelIn('settingsTrayRail_signal');
+        expect(selected.style?.fontSize, 17);
+        expect(selected.style?.fontWeight, FontWeight.w500);
+        expect(selected.style?.color, surface.accent);
 
-      final pill = tester.widget<AnimatedContainer>(
-        find.descendant(
-          of: find.byKey(const Key('settingsTrayRail_signal')),
-          matching: find.byType(AnimatedContainer),
-        ),
-      );
-      expect((pill.decoration as BoxDecoration?)?.color, surface.accentSurface);
+        final pill = tester.widget<AnimatedContainer>(
+          find.descendant(
+            of: find.byKey(const Key('settingsTrayRail_signal')),
+            matching: find.byType(AnimatedContainer),
+          ),
+        );
+        expect(
+          (pill.decoration as BoxDecoration?)?.color,
+          surface.accentSurface,
+        );
 
-      final unselected = labelIn('settingsTrayRail_network');
-      expect(unselected.style?.fontSize, 17);
-      expect(unselected.style?.fontWeight, FontWeight.normal);
-      expect(unselected.style?.color, surface.textSecondary);
-    });
+        final unselected = labelIn('settingsTrayRail_network');
+        expect(unselected.style?.fontSize, 17);
+        expect(unselected.style?.fontWeight, selected.style?.fontWeight);
+        expect(unselected.style?.fontWeight, FontWeight.w500);
+        expect(unselected.style?.color, surface.textSecondary);
+
+        await tester.tap(find.byKey(const Key('settingsTrayRail_network')));
+        await tester.pumpAndSettle();
+
+        expect(cubit.state.destination, SettingsTrayDestination.network);
+        expect(cubit.state.dragProgress, 1);
+        expect(
+          labelIn('settingsTrayRail_network').style?.fontWeight,
+          FontWeight.w500,
+        );
+        expect(
+          labelIn('settingsTrayRail_signal').style?.fontWeight,
+          FontWeight.w500,
+        );
+        expect(
+          labelIn('settingsTrayRail_network').style?.color,
+          surface.accent,
+        );
+        expect(
+          labelIn('settingsTrayRail_signal').style?.color,
+          surface.textSecondary,
+        );
+      },
+    );
 
     testWidgets('brightness sits at the foot, not under the last domain', (
       tester,
@@ -740,8 +820,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Below the last rail item, still inside the rail's own column: this
-      // lands on the rail background, which must absorb it rather than let it
-      // fall through to the panel's full-bleed dismiss detector.
+      // lands on the rail background, which must leave the tray open.
       //
       // Deliberately NOT measured from the rail's bottom edge — the drag
       // handle rides at the open panel's bottom edge, overlapping the rail's
