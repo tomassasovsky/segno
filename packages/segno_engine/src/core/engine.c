@@ -80,14 +80,21 @@ void le_track_set_len(le_track* t, int32_t len) {
  * engine_core.h). Undo layers are quantized to the loop length, so a reused
  * slot may need to grow before serving a longer track — or to the full
  * max_loop_frames before becoming a recording target. Replaces rather than
- * preserves: every consumer writes the slot whole before it is read. */
+ * preserves: every consumer writes the slot whole before it is read.
+ *
+ * Reports WHICH of the two happened (LE_SLOT_FRESH / LE_SLOT_REUSED, both
+ * non-zero — see engine_core.h): a caller that needs a zeroed slot must clear
+ * it only on the REUSED path, because calloc already zeroed the fresh one and
+ * re-clearing it would touch every page of a cap-sized buffer for nothing. */
 int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
-  if (frames <= 0) return 0;
-  if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) return 1;
+  if (frames <= 0) return LE_SLOT_FAILED;
+  if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) {
+    return LE_SLOT_REUSED;
+  }
   free(ln->pool[slot]);
   ln->pool[slot] = (float*)calloc((size_t)frames, sizeof(float));
   ln->pool_cap[slot] = ln->pool[slot] != NULL ? frames : 0;
-  return ln->pool[slot] != NULL;
+  return ln->pool[slot] != NULL ? LE_SLOT_FRESH : LE_SLOT_FAILED;
 }
 
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`

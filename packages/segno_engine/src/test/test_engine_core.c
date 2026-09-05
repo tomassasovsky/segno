@@ -3804,8 +3804,9 @@ static void test_loop_seam_folds_partially_backed_up_dub_shadow(void) {
  * Reachable by a plain punch-out inside the first F/2 frames after the
  * finalize — no re-punch and no merge needed. od_fade_frames == F, so a dub
  * punched out at frame p has only ramped to p/F and decays back to 0 by frame
- * 2p; LE_DRAIN_CHUNK (32768) then drains the whole remainder in a single
- * block, retiring the layer while the fold is still counting down.
+ * 2p; the drain budget (32768 samples at this harness's 64-frame blocks) then
+ * drains the whole remainder in a single block, retiring the layer while the
+ * fold is still counting down.
  *
  * Severity is low and the numbers say so: the peeled head is the honest raw
  * seam of the take, peak 0.5 like every other case here — a step, not garbage,
@@ -25594,6 +25595,167 @@ static void test_session_import_round_trips_recoverable(void) {
   le_engine_destroy(e);
 }
 
+/* ---- RT cost / allocation-residency pins (appliance latency audit) ---- */
+
+/* le_lane_ensure_slot must report WHICH path it took, and the fresh path must
+ * hand back memory that is already all zeros — that is the whole basis for
+ * le_engine_set_lane_count skipping its memset there (a redundant clear of a
+ * max_loop_frames buffer is what makes every page resident: 11.5 MB per lane
+ * at 96 kHz x 30 s, 623 MB across 8 tracks x 8 lanes with nothing recorded).
+ * The REUSED path deliberately does NOT clear — that clear is the caller's,
+ * and it is load-bearing. */
+static void test_lane_ensure_slot_reports_fresh_vs_reused(void) {
+  printf("test_lane_ensure_slot_reports_fresh_vs_reused\n");
+  le_lane ln;
+  memset(&ln, 0, sizeof(ln));
+
+  /* Fresh: allocated here, and zeroed by calloc — no memset needed. */
+  CHECK(le_lane_ensure_slot(&ln, 0, 1024) == LE_SLOT_FRESH);
+  CHECK(ln.pool[0] != NULL);
+  CHECK(ln.pool_cap[0] == 1024);
+  for (int i = 0; i < 1024; ++i) CHECK(ln.pool[0][i] == 0.0f);
+
+  /* Reused: the existing buffer serves, and its CONTENT survives — callers
+   * that need it clean must clear it themselves. */
+  ln.pool[0][7] = 0.5f;
+  CHECK(le_lane_ensure_slot(&ln, 0, 1024) == LE_SLOT_REUSED);
+  CHECK(ln.pool[0][7] == 0.5f);
+  CHECK(le_lane_ensure_slot(&ln, 0, 512) == LE_SLOT_REUSED); /* already bigger */
+  CHECK(ln.pool[0][7] == 0.5f);
+
+  /* Growth replaces (free + calloc), so it is fresh and zeroed again. */
+  CHECK(le_lane_ensure_slot(&ln, 0, 4096) == LE_SLOT_FRESH);
+  CHECK(ln.pool_cap[0] == 4096);
+  for (int i = 0; i < 4096; ++i) CHECK(ln.pool[0][i] == 0.0f);
+
+  CHECK(le_lane_ensure_slot(&ln, 0, 0) == LE_SLOT_FAILED); /* 0 is non-sense */
+  CHECK(ln.pool_cap[0] == 4096); /* ...and leaves the slot alone */
+
+  free(ln.pool[0]);
+}
+
+/* End-to-end twin of the above through le_engine_set_lane_count: a newly
+ * activated lane must start silent BOTH ways — on the fresh-calloc path
+ * (where the memset was dropped) and on the reuse path after a shrink and
+ * regrow (where the memset stays, because that buffer really does still hold
+ * the previous lane's audio: #594/#595). */
+static void test_lane_grow_starts_from_silence_fresh_and_reused(void) {
+  printf("test_lane_grow_starts_from_silence_fresh_and_reused\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 4096);
+
+  /* Fresh path: lane 1 has never been allocated. */
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  le_lane* ln = &e->tracks[0].lanes[1];
+  CHECK(ln->pool[0] != NULL);
+  for (int32_t i = 0; i < e->max_loop_frames; ++i) CHECK(ln->pool[0][i] == 0.0f);
+
+  /* Dirty the buffer, then shrink and regrow: the SAME allocation comes back
+   * (the reuse path), so the memset there must still clear it. */
+  for (int32_t i = 0; i < e->max_loop_frames; ++i) ln->pool[0][i] = 0.25f;
+  float* before = ln->pool[0];
+  CHECK(le_engine_set_lane_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  CHECK(e->tracks[0].lanes[1].pool[0] == before); /* reuse, not realloc */
+  for (int32_t i = 0; i < e->max_loop_frames; ++i) {
+    CHECK(e->tracks[0].lanes[1].pool[0][i] == 0.0f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Drives one punch-in / punch-out that leaves a PARTIALLY covered overdub
+ * shadow, then pumps `block`-frame blocks until the layer retires. Returns the
+ * number of blocks it took and reports the frames consumed. */
+static int dub_drain_blocks(int block, int* frames_out) {
+  const int L = 120000; /* loop length: many blocks' worth of drain */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 200000);
+  /* Big enough for the longest single call below (the punch-out fade, ~485
+   * frames at 48 kHz) — not just for the 256-frame feed chunks. */
+  float in[1024];
+  float out[1024];
+  for (int i = 0; i < 1024; ++i) in[i] = 0.5f;
+
+  le_engine_record(e, 0); /* EMPTY -> RECORDING */
+  for (int done = 0; done < L; done += 256) {
+    le_engine_process(e, out, in, 256);
+  }
+  le_engine_record(e, 0); /* finalize (via the deferred seam crossfade) */
+  for (int k = 0; k < 64; ++k) {
+    if (load_i32(&e->tracks[0].a_state) != LE_TRACK_RECORDING) break;
+    le_engine_process(e, out, in, 64);
+  }
+  /* rec/dub finalizes straight into OVERDUBBING; punch in explicitly if it
+   * ever stops doing that, so this helper pins the drain and nothing else. */
+  if (load_i32(&e->tracks[0].a_state) != LE_TRACK_OVERDUBBING) {
+    le_engine_record(e, 0);
+    le_engine_process(e, out, in, 64);
+  }
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_OVERDUBBING);
+
+  le_engine_record(e, 0); /* punch out -> PLAYING, far short of a full lap */
+  /* One call long enough to run the punch-out fade fully down. The drain is
+   * skipped while od_gain > 0, and od_gain is still nonzero at the TOP of this
+   * call, so this block costs the count nothing. */
+  le_engine_process(e, out, in, (uint32_t)(e->sample_rate / 100 + 5));
+  CHECK(load_i32(&e->tracks[0].a_layer_in_flight) == 1);
+  /* Partially covered: the drain, not backup-on-write, owns the remainder.
+   * (dub_draining itself arms at the TOP of the next call — this one still
+   * saw od_gain > 0 — so the flag is asserted from inside the pump below.) */
+  CHECK(e->tracks[0].dub_count < e->tracks[0].dub_len);
+
+  int blocks = 0;
+  int frames = 0;
+  const int32_t covered_before = e->tracks[0].dub_count;
+  while (load_i32(&e->tracks[0].a_layer_in_flight) && blocks < 100000) {
+    le_engine_process(e, out, in, (uint32_t)block);
+    /* The very first pumped block must move the drain forward — otherwise a
+     * budget that collapsed to nothing would still "pass" by taking the
+     * bounded loop's escape hatch. */
+    if (blocks == 0) CHECK(e->tracks[0].dub_count > covered_before);
+    ++blocks;
+    frames += block;
+  }
+  CHECK(load_i32(&e->tracks[0].a_layer_in_flight) == 0);
+  le_engine_destroy(e);
+  if (frames_out != NULL) *frames_out = frames;
+  return blocks;
+}
+
+/* The post-punch-out drain budget is sized in BLOCK FRAMES, not per callback,
+ * and is capped at the fixed chunk it replaced. Two properties, both asserted:
+ *
+ *   - BELOW the cap (32 vs 64 frames), halving the period halves the
+ *     per-callback memcpy — so its share of the also-halved deadline is
+ *     unchanged — while the drain's real-time duration stays put. That shows
+ *     up as a block count scaling with 1/block at a CONSTANT frame count.
+ *     Under the old fixed per-callback chunk it was the exact inversion:
+ *     constant blocks, frames scaling with the period.
+ *   - AT the cap (256 frames), the budget stops growing, so the block count
+ *     stops falling — it matches the 64-frame case, which is where the cap
+ *     bites. That pins the drain at never costing more per callback than it
+ *     did before this change, on the long-period desktop hosts the
+ *     proportional budget was never aimed at. */
+static void test_dub_drain_budget_scales_with_the_block(void) {
+  printf("test_dub_drain_budget_scales_with_the_block\n");
+  int f32 = 0, f64 = 0, f256 = 0;
+  const int b32 = dub_drain_blocks(32, &f32);
+  const int b64 = dub_drain_blocks(64, &f64);
+  const int b256 = dub_drain_blocks(256, &f256);
+  printf("  32f: %d blocks / %d frames | 64f: %d / %d | 256f: %d / %d\n", b32,
+         f32, b64, f64, b256, f256);
+
+  CHECK(b64 > 1); /* the scenario really does span several blocks */
+  /* Below the cap: blocks scale inversely with the block size, and the frames
+   * — i.e. the wall-clock drain time — stay put (+/- one rounding block). */
+  CHECK(b32 >= 2 * b64 - 2 && b32 <= 2 * b64 + 2);
+  CHECK(abs(f32 - f64) <= 64);
+  /* At the cap: the same per-callback budget as 64 frames, so the same number
+   * of blocks — the drain does NOT get 4x cheaper-per-second here. */
+  CHECK(b256 == b64);
+}
+
 int main(void) {
   printf("== segno_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -26162,6 +26324,9 @@ int main(void) {
   test_halfband_roundtrip_transparent_and_aligned();
   test_halfband_rejects_out_of_band();
   test_halfband_lengths_and_arg_guards();
+  test_lane_ensure_slot_reports_fresh_vs_reused();
+  test_lane_grow_starts_from_silence_fresh_and_reused();
+  test_dub_drain_budget_scales_with_the_block();
   test_restore_worker_repairs_clipped_lane();
   test_restore_commit_undo_redo_and_rev_guard();
   test_restore_enqueue_rev_bump_discards();
