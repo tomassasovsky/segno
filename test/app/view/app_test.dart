@@ -17,6 +17,8 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/appliance/power_off/power_off_cubit.dart';
+import 'package:segno/appliance/power_off/power_off_gate.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
@@ -26,7 +28,7 @@ import 'package:segno/visualizer/visualizer.dart';
 // audio_bootstrap_test.
 import 'package:segno_engine/segno_engine.dart'
     as le
-    show EngineSnapshot, LatencyState, TrackSnapshot, TrackState;
+    show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot, TrackState;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
@@ -107,6 +109,9 @@ class _RecordingWindowService implements WaveformWindowService {
   /// change-diff: a double that reimplements the logic under test proves
   /// nothing about it.
   final readouts = <PerformanceReadout>[];
+  final deliveredReadouts = <PerformanceReadout>[];
+  int failNextReadoutPushes = 0;
+  Duration readoutFailDelay = Duration.zero;
 
   /// The command handler the app registered — tests invoke it to simulate
   /// the sub-window's volume overlay sending a control.
@@ -119,6 +124,14 @@ class _RecordingWindowService implements WaveformWindowService {
   @override
   Future<void> pushReadout(PerformanceReadout readout) async {
     readouts.add(readout);
+    if (failNextReadoutPushes > 0) {
+      failNextReadoutPushes--;
+      if (readoutFailDelay > Duration.zero) {
+        await Future<void>.delayed(readoutFailDelay);
+      }
+      throw const _WindowGone();
+    }
+    deliveredReadouts.add(readout);
   }
 
   @override
@@ -218,8 +231,9 @@ void main() {
 
     Future<void> pumpApp(
       WidgetTester tester,
-      WaveformWindowService windowService,
-    ) async {
+      WaveformWindowService windowService, {
+      Future<void> Function()? powerOff,
+    }) async {
       await tester.pumpWidget(
         App(
           repository: repository,
@@ -230,6 +244,7 @@ void main() {
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
+          powerOff: powerOff,
         ),
       );
       await tester.pumpAndSettle();
@@ -840,6 +855,60 @@ void main() {
       expect(windowService.readouts.last.activeBank, 1);
     });
 
+    testWidgets('a shutdown phase change reaches an otherwise idle readout', (
+      tester,
+    ) async {
+      final windowService = _RecordingWindowService();
+      var haltCalls = 0;
+      await pumpApp(tester, windowService, powerOff: () async => haltCalls++);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.none);
+
+      tester
+          .element(find.byType(LooperPage))
+          .read<PowerOffCubit>()
+          .press(const PowerOffSnapshot());
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.mark);
+      await tester.pump(const Duration(seconds: 2));
+      expect(haltCalls, 1);
+    });
+
+    testWidgets('a failed readout is retried while the rig remains idle', (
+      tester,
+    ) async {
+      final window = _RecordingWindowService()..failNextReadoutPushes = 1;
+      await pumpApp(tester, window);
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(window.readouts.length, greaterThanOrEqualTo(2));
+      expect(window.deliveredReadouts, isNotEmpty);
+      expect(window.deliveredReadouts.last, window.readouts.first);
+    });
+
+    testWidgets('a late failed readout cannot invalidate a newer delivery', (
+      tester,
+    ) async {
+      final window = _RecordingWindowService();
+      await pumpApp(tester, window);
+      await tester.pump(const Duration(milliseconds: 40));
+      final control = tester
+          .element(find.byType(LooperPage))
+          .read<ControlCubit>();
+      window
+        ..failNextReadoutPushes = 1
+        ..readoutFailDelay = const Duration(milliseconds: 200);
+      control.setMode(InteractionMode.fx);
+      await tester.pump(const Duration(milliseconds: 40));
+      control.setMode(InteractionMode.record);
+      await tester.pump(const Duration(milliseconds: 40));
+      final composed = window.readouts.length;
+      expect(window.deliveredReadouts.last.mode, 'record');
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(window.readouts, hasLength(composed));
+      expect(window.deliveredReadouts.last.mode, 'record');
+    });
+
     testWidgets('does not rebuild the readout while nothing has changed', (
       tester,
     ) async {
@@ -883,6 +952,8 @@ void main() {
         required int position,
         required double peak,
         bool muted = false,
+        le.TrackState state = le.TrackState.playing,
+        int inputChannel = 0,
       }) => le.EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
@@ -901,13 +972,24 @@ void main() {
         masterPositionFrames: position,
         tracks: [
           le.TrackSnapshot(
-            state: le.TrackState.playing,
+            state: state,
             volume: 0.8,
             muted: muted,
             lengthFrames: 96000,
             undoDepth: 0,
             rms: peak / 2,
             peak: peak,
+            lanes: [
+              le.LaneSnapshot(
+                inputChannel: inputChannel,
+                outputMask: 3,
+                volume: 1,
+                muted: false,
+                lengthFrames: 96000,
+                rms: 0,
+                peak: 0,
+              ),
+            ],
           ),
         ],
       );
@@ -983,6 +1065,37 @@ void main() {
           isTrue,
           reason: 'the gate swallowed a fact the second screen draws',
         );
+      });
+
+      testWidgets('recording state and input routing reach the readout', (
+        tester,
+      ) async {
+        final rig = await pumpPlaying(tester);
+        final before = rig.window.readouts.last;
+        engine.nextSnapshot = playing(
+          position: 0,
+          peak: 0.1,
+          state: le.TrackState.recording,
+        );
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(rig.window.readouts.last.tracks.single.state, 'recording');
+        expect(rig.window.readouts.last.mode, before.mode);
+
+        final recording = rig.window.readouts.last;
+        engine.nextSnapshot = playing(
+          position: 0,
+          peak: 0.1,
+          state: le.TrackState.recording,
+          inputChannel: 1,
+        );
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(
+          rig.window.readouts.last.tracks.single.inputNames,
+          isNot(recording.tracks.single.inputNames),
+        );
+        expect(rig.window.readouts.last.tracks.single.state, 'recording');
       });
 
       testWidgets('a burst of polls is rate-limited but never DROPPED', (

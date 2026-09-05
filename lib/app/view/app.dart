@@ -661,6 +661,7 @@ class _AppViewState extends State<_AppView> {
   /// after the window closes, so a re-opened window is re-seeded from scratch
   /// — the same discipline `pushReadout` applies to its own last-sent diff.
   _ReadoutInputs? _lastReadoutInputs;
+  int _readoutRevision = 0;
 
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
@@ -767,6 +768,7 @@ class _AppViewState extends State<_AppView> {
   void _onWindowReady() {
     if (!mounted) return;
     _lastReadoutInputs = null;
+    _readoutRevision++;
     _lastFrameLabel = null;
     _requestWaveformFrame(context.read<LooperRepository>().lastState);
   }
@@ -861,6 +863,7 @@ class _AppViewState extends State<_AppView> {
       _lastFrameLabel = null;
       _lastSentFrame = null;
       _lastReadoutInputs = null;
+      _readoutRevision++;
       await widget.waveformWindow.close();
     }
   }
@@ -981,7 +984,8 @@ class _AppViewState extends State<_AppView> {
         l10n.localeName == last.localeName) {
       return;
     }
-    final sent = (
+    final revision = ++_readoutRevision;
+    _lastReadoutInputs = (
       looper: looper,
       tracks: tracks,
       control: control,
@@ -993,7 +997,6 @@ class _AppViewState extends State<_AppView> {
       localeName: l10n.localeName,
       powerOff: powerOff,
     );
-    _lastReadoutInputs = sent;
     unawaited(
       widget.waveformWindow
           .pushReadout(
@@ -1014,10 +1017,10 @@ class _AppViewState extends State<_AppView> {
             // It never landed, so this gate is now a belief about a readout
             // the second screen does not have. Drop it — the next tick then
             // rebuilds and re-sends rather than suppressing an identical
-            // readout forever. Guarded on identity so a failure that
+            // readout forever. Guarded by revision so a failure that
             // completes after a newer readout has already been armed cannot
             // undo it.
-            if (identical(_lastReadoutInputs, sent)) {
+            if (_readoutRevision == revision) {
               _lastReadoutInputs = null;
             }
           }),

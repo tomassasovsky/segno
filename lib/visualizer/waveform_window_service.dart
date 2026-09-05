@@ -28,7 +28,7 @@ abstract interface class WaveformWindowService {
   /// Sends a waveform frame (loop peaks + playhead [progress] in `0..1`) to the
   /// open window; no-op if closed.
   ///
-  /// [samples] are sent ONLY when they differ from the last frame sent. The
+  /// [samples] are omitted only after their delivery is acknowledged. The
   /// source is a loop-indexed peak buffer the engine writes while capturing,
   /// so through plain playback all 512 values stand still and only [progress]
   /// moves — and re-sending them would copy 2 KB, encode it, and hop the
@@ -86,15 +86,17 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   WindowController? _controller;
   static Completer<void>? _readyCompleter;
 
-  /// Last readout actually sent — the diff that keeps the channel quiet.
+  /// Last acknowledged readout — the diff that keeps the channel quiet.
   /// Cleared on close so a re-opened window is re-seeded from scratch.
   /// Static to match [_readyCompleter]: the channel itself is process-wide.
   static PerformanceReadout? _lastReadout;
 
-  /// Last waveform samples actually sent, for the same reason and with the
+  /// Last acknowledged waveform samples, for the same reason and with the
   /// same lifecycle as [_lastReadout]: a fresh window has no held samples, so
   /// closing must force the next frame to carry them.
   static Float32List? _lastSamples;
+  static var _sampleRevision = 0;
+  static var _readoutRevision = 0;
   static var _mainChannelRegistered = false;
 
   /// Static like [_readyCompleter]: the channel handler is process-wide, so
@@ -153,6 +155,8 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
         // reach.
         _lastSamples = null;
         _lastReadout = null;
+        _sampleRevision++;
+        _readoutRevision++;
         _readyHandler?.call();
         // Guarded: a re-announce (the path the comment above names) arrives
         // with the completer from the last open already completed, and
@@ -203,6 +207,8 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     _readyCompleter = null;
     _lastReadout = null;
     _lastSamples = null;
+    _sampleRevision++;
+    _readoutRevision++;
     await waveformWindowChannel
         .invokeMethod('window_close')
         .catchError((Object _) => null);
@@ -223,25 +229,16 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
       lastSent: _lastSamples,
     );
     final carriesSamples = payload.containsKey('samples');
-    if (carriesSamples) _lastSamples = samples;
-    try {
-      await waveformWindowChannel.invokeMethod('waveform', payload);
-    } on Object {
-      // The frame never landed, so the window does NOT hold these peaks —
-      // forget them. Without this the diff is armed on a delivery that
-      // failed: through steady playback the loop-indexed buffer stands still,
-      // so `samples` would be suppressed on every later frame too and the
-      // second screen would freeze with only the playhead moving, for the
-      // rest of the set.
-      //
-      // Guarded on identity, like [pushReadout]: a slow frame failing after a
-      // later one has already landed must not discard peaks the window really
-      // does hold. Rethrown because clearing this alone is not enough — the
-      // caller drives the frames now, and has to send another one.
-      if (carriesSamples && identical(_lastSamples, samples)) {
-        _lastSamples = null;
-      }
-      rethrow;
+    // An in-flight replacement makes even the old acknowledged value unsafe:
+    // a newer frame may revert to it before this replacement is acknowledged.
+    // Every overlapping replacement therefore carries its own samples.
+    final revision = carriesSamples ? ++_sampleRevision : _sampleRevision;
+    if (carriesSamples) _lastSamples = null;
+    await waveformWindowChannel.invokeMethod('waveform', payload);
+    // Late replies from older sends or a previous window cannot seed the cache.
+    // A failure propagates with the cache still invalid, so retry stays full.
+    if (carriesSamples && revision == _sampleRevision) {
+      _lastSamples = samples;
     }
   }
 
@@ -249,18 +246,11 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   Future<void> pushReadout(PerformanceReadout readout) async {
     if (_controller == null) return;
     if (readout == _lastReadout) return;
-    _lastReadout = readout;
-    try {
-      await waveformWindowChannel.invokeMethod('readout', readout.toMap());
-    } on Object {
-      // Same self-heal as [pushWaveform]: a readout the window never received
-      // must not sit in the diff as one it did, or the next equal readout is
-      // dropped. Rethrown rather than swallowed because this diff is only the
-      // second of two — the caller holds one in front of it, and clearing
-      // only this one would leave the caller never rebuilding the readout to
-      // re-send.
-      if (identical(_lastReadout, readout)) _lastReadout = null;
-      rethrow;
+    final revision = ++_readoutRevision;
+    _lastReadout = null;
+    await waveformWindowChannel.invokeMethod('readout', readout.toMap());
+    if (revision == _readoutRevision) {
+      _lastReadout = readout;
     }
   }
 }

@@ -266,7 +266,7 @@ class _SettingsPageState extends State<SettingsPage> {
   List<Widget> _tracksSection(BuildContext context) {
     final l10n = context.l10n;
     final tracks = context.watch<TracksCubit>();
-    // Selected, not watched: a `Track` carries `rms`/`peak`/`playheadFrames`,
+    // Selected, not watched: a `Track` carries the live `peak`,
     // so watching the track list rebuilt this whole section on every poll
     // tick while audio flowed. Only the length preset and the one-shot flag
     // are drawn here, and both change on a tap. `Equatable` gives the lists
