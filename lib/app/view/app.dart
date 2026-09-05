@@ -594,6 +594,25 @@ class _AppState extends State<App> {
   }
 }
 
+/// The inputs [_AppViewState._readoutOf] was last given, remembered so an
+/// unchanged frame can be skipped in front of the build instead of after it.
+///
+/// A record rather than a `List<Object?>`: the fields are compared one by one
+/// and each on its own terms (see `_pushReadoutIfChanged`), which a positional
+/// list made easy to get quietly wrong.
+typedef _ReadoutInputs = ({
+  LooperState looper,
+  TracksState tracks,
+  ControlState control,
+  TransportClockState clock,
+  PerformanceRecorderState recorder,
+  MonitorState monitors,
+  InputsState inputs,
+  AudioSetupState audio,
+  String localeName,
+  PowerOffPhase powerOff,
+});
+
 /// Builds the themed [MaterialApp], wires the macOS system menu, and opens /
 /// closes the secondary waveform window for tracks mode.
 class _AppView extends StatefulWidget {
@@ -614,6 +633,36 @@ class _AppView extends StatefulWidget {
 class _AppViewState extends State<_AppView> {
   Timer? _pushTimer;
 
+  /// Drives the waveform frames while the sub-window is open. `null` when it
+  /// is closed. See [_requestWaveformFrame] for why the frames follow the poll
+  /// rather than [_pushTimer].
+  StreamSubscription<LooperState>? _pollSub;
+
+  /// Open between waveform frames — while it runs, a frame is held back
+  /// rather than sent, and the last one held is sent when it fires. This is
+  /// what paces the second screen at ~[_waveformFrame] whatever the console's
+  /// refresh rate is set to, WITHOUT a free-running clock of its own; see
+  /// [_requestWaveformFrame].
+  Timer? _frameGate;
+
+  /// The newest projection that arrived while [_frameGate] was closed, sent on
+  /// the trailing edge. `null` when nothing is waiting.
+  LooperState? _pendingFrame;
+
+  /// The label the last waveform frame carried. `null` before the first frame
+  /// and after the window closes.
+  String? _lastFrameLabel;
+
+  /// The projection the last frame SENT carried, so a rejection that lands
+  /// late can tell whether it has been superseded. See [_sendWaveformFrame].
+  LooperState? _lastSentFrame;
+
+  /// The states [_readoutOf] was last given. `null` before the first push and
+  /// after the window closes, so a re-opened window is re-seeded from scratch
+  /// — the same discipline `pushReadout` applies to its own last-sent diff.
+  _ReadoutInputs? _lastReadoutInputs;
+  int _readoutRevision = 0;
+
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
   AppLocalizations get _l10n {
@@ -627,6 +676,7 @@ class _AppViewState extends State<_AppView> {
   @override
   void initState() {
     super.initState();
+    widget.waveformWindow.onWindowReady = _onWindowReady;
     // The sub-window's volume overlay sends control commands back over the
     // window channel (#698); they are applied here, through the same blocs
     // the main UI's own controls dispatch to.
@@ -648,7 +698,10 @@ class _AppViewState extends State<_AppView> {
   @override
   void dispose() {
     _pushTimer?.cancel();
+    _frameGate?.cancel();
+    unawaited(_pollSub?.cancel());
     widget.waveformWindow.onControl = null;
+    widget.waveformWindow.onWindowReady = null;
     unawaited(widget.waveformWindow.close());
     super.dispose();
   }
@@ -702,6 +755,24 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
+  /// A sub-window has announced itself, and therefore holds NOTHING.
+  ///
+  /// Every diff on this side is a belief about what is already on the second
+  /// screen, so all of them are void: the readout gate, and the label the
+  /// waveform tick compares against. The service drops its own two on the
+  /// same signal, but dropping them is not enough here — the readout is
+  /// rebuilt by the next timer tick, while a waveform frame is only produced
+  /// by an EVENT, and a rig that is not moving produces none. So one is
+  /// requested outright, or a reclaimed window shows an empty waveform beside
+  /// a live readout until something happens to change.
+  void _onWindowReady() {
+    if (!mounted) return;
+    _lastReadoutInputs = null;
+    _readoutRevision++;
+    _lastFrameLabel = null;
+    _requestWaveformFrame(context.read<LooperRepository>().lastState);
+  }
+
   /// Whether only one display is connected (the console expects two). `null`
   /// detection (desktop default) is treated as multi-display.
   bool get _isSingleDisplay => (widget.displayCount?.call() ?? 2) < 2;
@@ -735,42 +806,294 @@ class _AppViewState extends State<_AppView> {
         _showWaveformWindowFailedBanner();
         return;
       }
+      // The waveform follows the POLL, not this timer — see
+      // [_requestWaveformFrame].
+      _pollSub ??= context.read<LooperRepository>().looperState.listen(
+        _requestWaveformFrame,
+      );
       _pushTimer ??= Timer.periodic(_waveformFrame, (_) {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
-        final tracks = context.read<TracksCubit>();
         final control = context.read<ControlCubit>().state;
-        final cursor = control.cursor;
-        widget.waveformWindow.pushWaveform(
-          looper.readWaveform(),
-          looper.state.transport.progress,
-          tracks.state.nameOf(cursor),
-        );
-        // Same timer, different discipline: the waveform changes every frame,
-        // the readout does not, so `pushReadout` drops anything equal to what
-        // it last sent rather than re-serialising eight track records at frame
-        // rate across an engine boundary. The clock and recorder facts are
-        // whole seconds, so their churn is once a second, not once a frame.
-        widget.waveformWindow.pushReadout(
-          _readoutOf(
-            looper.state,
-            tracks.state,
-            control,
-            context.read<TransportClockCubit>().state,
-            context.read<PerformanceRecorderCubit>().state,
-            context.read<MonitorCubit>().state,
-            context.read<InputsCubit>().state,
-            context.read<AudioSetupCubit>().state,
-            _l10n,
-            context.read<PowerOffCubit>().state.phase,
-          ),
+        // The readout is what this timer is FOR: its inputs are bloc states
+        // with no common stream to listen to, and the facts it draws are ones
+        // the performer causes — a footswitch arming a track, the cursor
+        // moving, a fader dragged on the sub-window's own overlay — so it is
+        // polled at frame rate and gated on change.
+        //
+        // The waveform frame is not pushed here as a rule: the poll drives
+        // it. This tick covers the one input the poll cannot see — the
+        // selected-track LABEL, which is not looper state at all, so on a
+        // stopped rig (where the deduped poll emits nothing) moving the
+        // cursor would otherwise never reach the second screen. It goes
+        // through the same gate as a poll, so it can never jump ahead of one.
+        final label = context.read<TracksCubit>().state.nameOf(control.cursor);
+        final state = looper.lastState;
+        if (label != _lastFrameLabel) _requestWaveformFrame(state);
+        // Same timer, different discipline from the old push: the readout
+        // rarely changes, so `pushReadout` already dropped anything equal to
+        // what it last sent rather than re-serialising eight track records at
+        // frame rate across an engine boundary.
+        //
+        // That diff was placed for the CHANNEL, not for the CPU: it dropped
+        // ~29 of every 30 readouts *after* paying to build them. The gate
+        // below moves the same decision in front of the build, so an
+        // unchanged frame costs a handful of compares instead of a whole
+        // projection (#898).
+        _pushReadoutIfChanged(
+          state,
+          context.read<TracksCubit>().state,
+          control,
+          context.read<TransportClockCubit>().state,
+          context.read<PerformanceRecorderCubit>().state,
+          context.read<MonitorCubit>().state,
+          context.read<InputsCubit>().state,
+          context.read<AudioSetupCubit>().state,
+          context.read<PowerOffCubit>().state.phase,
         );
       });
     } else {
       _pushTimer?.cancel();
       _pushTimer = null;
+      _frameGate?.cancel();
+      _frameGate = null;
+      _pendingFrame = null;
+      unawaited(_pollSub?.cancel());
+      _pollSub = null;
+      _lastFrameLabel = null;
+      _lastSentFrame = null;
+      _lastReadoutInputs = null;
+      _readoutRevision++;
       await widget.waveformWindow.close();
     }
+  }
+
+  /// Sends a waveform frame for [state], or holds it until the gate opens.
+  ///
+  /// Driven by the poll — and by a label change on the tick below — rather
+  /// than by a periodic push, because the playhead a frame carries IS the
+  /// poll's. A timer of its own period resamples
+  /// [LooperRepository.lastState] on a clock that beats against the poll's:
+  /// at the 30 Hz refresh setting a 33 ms timer reads a 33.33 ms projection,
+  /// so roughly every hundredth frame repeats the playhead and the next skips
+  /// two — visible stutter on the second screen and the 7" panel, for a value
+  /// that was exact before it was read out of the cache. Sending on the event
+  /// that produced the value removes the second clock entirely.
+  ///
+  /// The gate is a rate limit, NOT a decimator, and the difference matters:
+  /// [LooperRepository.looperState] is deduped, so an emit is a CHANGE, not a
+  /// tick. Dropping every second one would drop half of the rig's discrete
+  /// events outright — a stop, a clear, an undo on a quiet rig emits once and
+  /// never again, and there is no following poll to carry it. So a frame that
+  /// arrives early is remembered and sent on the trailing edge instead, and
+  /// the last state always wins.
+  void _requestWaveformFrame(LooperState state) {
+    if (!mounted) return;
+    if (_frameGate != null) {
+      _pendingFrame = state;
+      return;
+    }
+    _sendWaveformFrame(state);
+  }
+
+  void _sendWaveformFrame(LooperState state) {
+    final looper = context.read<LooperRepository>();
+    final cursor = context.read<ControlCubit>().state.cursor;
+    final label = context.read<TracksCubit>().state.nameOf(cursor);
+    _lastFrameLabel = label;
+    _lastSentFrame = state;
+    _pendingFrame = null;
+    _armFrameGate();
+    unawaited(
+      widget.waveformWindow
+          .pushWaveform(looper.readWaveform(), state.transport.progress, label)
+          .catchError((Object _) {
+            // It never landed. Nothing else will produce a frame on a rig
+            // that is not moving — the poll is deduped and the label has not
+            // changed — so the lost frame has to be re-queued here or the
+            // second screen keeps whatever it last drew. Re-QUEUED, not
+            // re-sent: the gate is what keeps a window that is failing every
+            // frame from spinning.
+            //
+            // Only while this is still the newest frame anyone has sent. A
+            // rejection crosses the channel and can land several polls late,
+            // and re-sending a superseded one would put an OLDER playhead on
+            // screen as the last word — on a rig that then goes quiet, for
+            // good. If a newer frame went out it either landed (nothing to
+            // heal) or is healing itself through this same path; if one is
+            // merely waiting, `??=` leaves it alone.
+            if (!mounted || !identical(_lastSentFrame, state)) return;
+            _pendingFrame ??= state;
+            _armFrameGate();
+          }),
+    );
+  }
+
+  void _armFrameGate() {
+    _frameGate ??= Timer(_waveformFrame, _openFrameGate);
+  }
+
+  void _openFrameGate() {
+    _frameGate = null;
+    final pending = _pendingFrame;
+    if (pending != null && mounted) _sendWaveformFrame(pending);
+  }
+
+  /// Builds and pushes the readout only when a fact it is projected FROM has
+  /// actually changed.
+  ///
+  /// [_readoutOf] is pure over its inputs, so unchanged inputs give an
+  /// identical readout and there is nothing to build. The seven cubit states
+  /// are immutable values replaced wholesale on emit, which makes reference
+  /// identity a sound test and a very cheap one; the locale is compared by
+  /// name so a re-resolved `AppLocalizations` for the same locale still
+  /// counts as unchanged.
+  ///
+  /// [LooperState] is the exception, and the whole reason this is not eight
+  /// pointer compares: see [_sameReadoutFacts].
+  ///
+  /// Deliberately NOT a slower timer. The readout draws things the performer
+  /// causes — a footswitch arming a track, the cursor moving, a fader dragged
+  /// on the sub-window's own volume overlay — and a 1 Hz cadence would make
+  /// the second screen visibly lag the gesture that changed it. Gating on
+  /// change keeps frame-rate responsiveness and pays frame-rate cost only
+  /// when something moved.
+  void _pushReadoutIfChanged(
+    LooperState looper,
+    TracksState tracks,
+    ControlState control,
+    TransportClockState clock,
+    PerformanceRecorderState recorder,
+    MonitorState monitors,
+    InputsState inputs,
+    AudioSetupState audio,
+    PowerOffPhase powerOff,
+  ) {
+    final l10n = _l10n;
+    final last = _lastReadoutInputs;
+    if (last != null &&
+        _sameReadoutFacts(looper, last.looper) &&
+        identical(tracks, last.tracks) &&
+        identical(control, last.control) &&
+        identical(clock, last.clock) &&
+        identical(recorder, last.recorder) &&
+        identical(monitors, last.monitors) &&
+        identical(inputs, last.inputs) &&
+        identical(audio, last.audio) &&
+        powerOff == last.powerOff &&
+        l10n.localeName == last.localeName) {
+      return;
+    }
+    final revision = ++_readoutRevision;
+    _lastReadoutInputs = (
+      looper: looper,
+      tracks: tracks,
+      control: control,
+      clock: clock,
+      recorder: recorder,
+      monitors: monitors,
+      inputs: inputs,
+      audio: audio,
+      localeName: l10n.localeName,
+      powerOff: powerOff,
+    );
+    unawaited(
+      widget.waveformWindow
+          .pushReadout(
+            _readoutOf(
+              looper,
+              tracks,
+              control,
+              clock,
+              recorder,
+              monitors,
+              inputs,
+              audio,
+              l10n,
+              powerOff,
+            ),
+          )
+          .catchError((Object _) {
+            // It never landed, so this gate is now a belief about a readout
+            // the second screen does not have. Drop it — the next tick then
+            // rebuilds and re-sends rather than suppressing an identical
+            // readout forever. Guarded by revision so a failure that
+            // completes after a newer readout has already been armed cannot
+            // undo it.
+            if (_readoutRevision == revision) {
+              _lastReadoutInputs = null;
+            }
+          }),
+    );
+  }
+
+  /// Whether [a] and [b] agree on every fact [_readoutOf] reads out of the
+  /// looper.
+  ///
+  /// **This is the one input the gate cannot compare as a whole**, by identity
+  /// or by value. A rig that is merely playing produces a different
+  /// `LooperState` on every single poll: `masterPositionFrames` advances on
+  /// the transport and `peak` moves on every track, and both are part of
+  /// `LooperState ==`, so `_poll`'s `next == _last` dedupe publishes a fresh
+  /// object each tick. A gate written as `identical(looper, previous)` is
+  /// therefore a gate that never closes in exactly the case it was written
+  /// for — the performing one — and only appears to work on an idle rig.
+  ///
+  /// The tempting repair is the wrong one: **do not take `peak` (or
+  /// `masterPositionFrames`) out of equality to make the projection
+  /// identity-stable.** The console's meters are fed through that same
+  /// equality — the repository publishes nothing when the new projection
+  /// compares equal to the last — so a level outside `Track.props` is a level
+  /// that never reaches any UI. All eight meters would go flat, with no error
+  /// and no failing test. `Track.props` carries the same warning at the
+  /// definition.
+  ///
+  /// So the projection stays complete and the gate narrows instead. The list
+  /// below is exactly what [_readoutOf] reads off `looper` — the transport
+  /// fields it copies, and per track the six scalars plus the record routing
+  /// behind `recordedInputs` — and deliberately nothing else. A fact added
+  /// there must be added here; the readout tests in `app_test.dart` fail if
+  /// it is not.
+  static bool _sameReadoutFacts(LooperState a, LooperState b) {
+    if (identical(a, b)) return true;
+    final ta = a.transport;
+    final tb = b.transport;
+    if (ta.tempoBpm != tb.tempoBpm ||
+        ta.tempoSource != tb.tempoSource ||
+        ta.tsNum != tb.tsNum ||
+        ta.tsDen != tb.tsDen ||
+        ta.currentBeat != tb.currentBeat ||
+        ta.countingIn != tb.countingIn ||
+        ta.loopBars != tb.loopBars ||
+        ta.isRunning != tb.isRunning) {
+      return false;
+    }
+    if (a.tracks.length != b.tracks.length) return false;
+    for (var i = 0; i < a.tracks.length; i++) {
+      final x = a.tracks[i];
+      final y = b.tracks[i];
+      if (x.channel != y.channel ||
+          x.state != y.state ||
+          x.muted != y.muted ||
+          x.pending != y.pending ||
+          x.volume != y.volume ||
+          x.chainEnabled != y.chainEnabled ||
+          !_sameRecordRouting(x, y)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Whether [a] and [b] record from the same inputs — all `recordedInputs`,
+  /// and so the readout's `inputNames` and `listeningTracks`, reads off a
+  /// track's lanes.
+  static bool _sameRecordRouting(Track a, Track b) {
+    if (a.lanes.length != b.lanes.length) return false;
+    for (var i = 0; i < a.lanes.length; i++) {
+      if (a.lanes[i].inputChannel != b.lanes[i].inputChannel) return false;
+    }
+    return true;
   }
 
   /// Projects engine + control state onto the 7" readout's value type — the
@@ -798,6 +1121,14 @@ class _AppViewState extends State<_AppView> {
   ) {
     final transport = looper.transport;
     final armed = recorder is PerformanceRecorderArmed ? recorder : null;
+    // Hoisted: `recordedInputs` allocates a Set, a List and sorts, and both
+    // loops below need it — the inputs loop once per (input, track) pair, so
+    // reading it inline made an 8x8 rig recompute the same eight answers 64
+    // times per readout (#898). One pass, then two lookups.
+    final recorded = {
+      for (final track in looper.tracks) track.channel: recordedInputs(track),
+    };
+    final monitoredInputs = monitors.inputs.keys.toList()..sort();
     return PerformanceReadout(
       tracks: [
         for (final track in looper.tracks)
@@ -813,7 +1144,7 @@ class _AppViewState extends State<_AppView> {
                 tracks.nameOf(track.channel) ==
                 storedDefaultTrackName(track.channel),
             inputNames: [
-              for (final input in recordedInputs(track))
+              for (final input in recorded[track.channel]!)
                 l10n.inputName(inputs.names, input),
             ],
           ),
@@ -821,14 +1152,14 @@ class _AppViewState extends State<_AppView> {
       inputs: [
         // Only configured monitors: an unmonitored input has no gain that
         // does anything, and the overlay must not draw a fader that lies.
-        for (final index in monitors.inputs.keys.toList()..sort())
+        for (final index in monitoredInputs)
           ReadoutInput(
             index: index,
             name: l10n.inputName(inputs.names, index),
             volume: monitors.forInput(index).volume,
             listeningTracks: [
               for (final track in looper.tracks)
-                if (recordedInputs(track).contains(index))
+                if (recorded[track.channel]!.contains(index))
                   l10n.trackName(tracks.names, track.channel),
             ],
           ),

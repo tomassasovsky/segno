@@ -17,6 +17,8 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/appliance/power_off/power_off_cubit.dart';
+import 'package:segno/appliance/power_off/power_off_gate.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
@@ -26,7 +28,7 @@ import 'package:segno/visualizer/visualizer.dart';
 // audio_bootstrap_test.
 import 'package:segno_engine/segno_engine.dart'
     as le
-    show EngineSnapshot, LatencyState;
+    show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot, TrackState;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
@@ -107,6 +109,9 @@ class _RecordingWindowService implements WaveformWindowService {
   /// change-diff: a double that reimplements the logic under test proves
   /// nothing about it.
   final readouts = <PerformanceReadout>[];
+  final deliveredReadouts = <PerformanceReadout>[];
+  int failNextReadoutPushes = 0;
+  Duration readoutFailDelay = Duration.zero;
 
   /// The command handler the app registered — tests invoke it to simulate
   /// the sub-window's volume overlay sending a control.
@@ -114,7 +119,20 @@ class _RecordingWindowService implements WaveformWindowService {
   void Function(ReadoutControl control)? onControl;
 
   @override
-  void pushReadout(PerformanceReadout readout) => readouts.add(readout);
+  void Function()? onWindowReady;
+
+  @override
+  Future<void> pushReadout(PerformanceReadout readout) async {
+    readouts.add(readout);
+    if (failNextReadoutPushes > 0) {
+      failNextReadoutPushes--;
+      if (readoutFailDelay > Duration.zero) {
+        await Future<void>.delayed(readoutFailDelay);
+      }
+      throw const _WindowGone();
+    }
+    deliveredReadouts.add(readout);
+  }
 
   @override
   bool get isOpen => _open;
@@ -132,12 +150,37 @@ class _RecordingWindowService implements WaveformWindowService {
     _open = false;
   }
 
+  /// Every waveform frame the app handed over, in order — the playhead and
+  /// the label it carried.
+  final waveforms = <({double progress, String selectedTrack})>[];
+
+  /// How many of the next waveform pushes are lost in flight. The real
+  /// service reports that by completing the future with an error.
+  int failNextWaveformPushes = 0;
+
+  /// How long a failing push takes to REPORT its failure — a channel
+  /// round-trip that rejects several polls late.
+  Duration failDelay = Duration.zero;
+
   @override
-  void pushWaveform(
+  Future<void> pushWaveform(
     Float32List samples,
     double progress,
     String selectedTrack,
-  ) => pushCalls++;
+  ) async {
+    pushCalls++;
+    if (failNextWaveformPushes > 0) {
+      failNextWaveformPushes--;
+      if (failDelay > Duration.zero) await Future<void>.delayed(failDelay);
+      throw const _WindowGone();
+    }
+    waveforms.add((progress: progress, selectedTrack: selectedTrack));
+  }
+}
+
+/// What a push into a window that is not there looks like.
+class _WindowGone implements Exception {
+  const _WindowGone();
 }
 
 /// A MIDI source whose enumeration the test drives by hand, so a pinned
@@ -188,8 +231,9 @@ void main() {
 
     Future<void> pumpApp(
       WidgetTester tester,
-      WaveformWindowService windowService,
-    ) async {
+      WaveformWindowService windowService, {
+      Future<void> Function()? powerOff,
+    }) async {
       await tester.pumpWidget(
         App(
           repository: repository,
@@ -200,6 +244,7 @@ void main() {
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
+          powerOff: powerOff,
         ),
       );
       await tester.pumpAndSettle();
@@ -808,6 +853,413 @@ void main() {
           );
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts.last.activeBank, 1);
+    });
+
+    testWidgets('a shutdown phase change reaches an otherwise idle readout', (
+      tester,
+    ) async {
+      final windowService = _RecordingWindowService();
+      var haltCalls = 0;
+      await pumpApp(tester, windowService, powerOff: () async => haltCalls++);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.none);
+
+      tester
+          .element(find.byType(LooperPage))
+          .read<PowerOffCubit>()
+          .press(const PowerOffSnapshot());
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.goodbye, ReadoutGoodbye.mark);
+      await tester.pump(const Duration(seconds: 2));
+      expect(haltCalls, 1);
+    });
+
+    testWidgets('a failed readout is retried while the rig remains idle', (
+      tester,
+    ) async {
+      final window = _RecordingWindowService()..failNextReadoutPushes = 1;
+      await pumpApp(tester, window);
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(window.readouts.length, greaterThanOrEqualTo(2));
+      expect(window.deliveredReadouts, isNotEmpty);
+      expect(window.deliveredReadouts.last, window.readouts.first);
+    });
+
+    testWidgets('a late failed readout cannot invalidate a newer delivery', (
+      tester,
+    ) async {
+      final window = _RecordingWindowService();
+      await pumpApp(tester, window);
+      await tester.pump(const Duration(milliseconds: 40));
+      final control = tester
+          .element(find.byType(LooperPage))
+          .read<ControlCubit>();
+      window
+        ..failNextReadoutPushes = 1
+        ..readoutFailDelay = const Duration(milliseconds: 200);
+      control.setMode(InteractionMode.fx);
+      await tester.pump(const Duration(milliseconds: 40));
+      control.setMode(InteractionMode.record);
+      await tester.pump(const Duration(milliseconds: 40));
+      final composed = window.readouts.length;
+      expect(window.deliveredReadouts.last.mode, 'record');
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(window.readouts, hasLength(composed));
+      expect(window.deliveredReadouts.last.mode, 'record');
+    });
+
+    testWidgets('does not rebuild the readout while nothing has changed', (
+      tester,
+    ) async {
+      final windowService = _RecordingWindowService();
+      await pumpApp(tester, windowService);
+
+      // One frame to compose and push the boot snapshot.
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts, isNotEmpty);
+      final composed = windowService.readouts.length;
+
+      // Ten more frames with no state moving under it. The real service's
+      // `==` diff would drop these anyway — the point here is that they are
+      // never BUILT: composing a readout allocates eight track records, one
+      // record per monitored input and every localized name on both, thirty
+      // times a second, to throw all of it away (#898).
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        windowService.readouts.length,
+        composed,
+        reason: 'the readout was recomposed for frames nothing had changed in',
+      );
+    });
+
+    group('the gate under a PLAYING rig', () {
+      // The case that matters, and the one an idle rig cannot show. A loop
+      // that is merely playing publishes a NEW `LooperState` on every single
+      // poll: the master playhead advances on the transport and every track's
+      // `peak` moves, and both are part of `LooperState ==`, so the poll's
+      // `next == _last` dedupe never suppresses anything. A gate written as
+      // `identical(state, previous)` therefore falls through on every tick
+      // and rebuilds the readout 30x/s — in exactly the performing case it
+      // was written to spare.
+      //
+      // The repair is NOT to drop `peak` from `Track`'s equality: the meters
+      // are fed through it, and they would all go flat with no error. The
+      // gate narrows to what the readout draws instead — which is neither the
+      // playhead nor the levels.
+      le.EngineSnapshot playing({
+        required int position,
+        required double peak,
+        bool muted = false,
+        le.TrackState state = le.TrackState.playing,
+        int inputChannel = 0,
+      }) => le.EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        devicePresent: true,
+        masterLengthFrames: 96000,
+        masterPositionFrames: position,
+        tracks: [
+          le.TrackSnapshot(
+            state: state,
+            volume: 0.8,
+            muted: muted,
+            lengthFrames: 96000,
+            undoDepth: 0,
+            rms: peak / 2,
+            peak: peak,
+            lanes: [
+              le.LaneSnapshot(
+                inputChannel: inputChannel,
+                outputMask: 3,
+                volume: 1,
+                muted: false,
+                lengthFrames: 96000,
+                rms: 0,
+                peak: 0,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      /// Boots the app on a repository whose poll the test drives by hand.
+      Future<({_RecordingWindowService window, StreamController<void> ticker})>
+      pumpPlaying(WidgetTester tester) async {
+        final ticker = StreamController<void>.broadcast();
+        addTearDown(() => unawaited(ticker.close()));
+        final driven = LooperRepository(engine: engine, ticker: ticker.stream);
+        addTearDown(driven.dispose);
+        engine.nextSnapshot = playing(position: 0, peak: 0.1);
+
+        final window = _RecordingWindowService();
+        await tester.pumpWidget(
+          App(
+            repository: driven,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: window,
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            exportDirectory: () async => '.',
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 40));
+        return (window: window, ticker: ticker);
+      }
+
+      testWidgets('a moving playhead and moving levels compose nothing', (
+        tester,
+      ) async {
+        final rig = await pumpPlaying(tester);
+        expect(rig.window.readouts, isNotEmpty);
+        final composed = rig.window.readouts.length;
+
+        // Twenty polls of a loop going round: a fresh projection every time,
+        // and not one fact the readout draws among the differences.
+        for (var i = 1; i <= 20; i++) {
+          engine.nextSnapshot = playing(
+            position: i * 4000,
+            peak: 0.1 + i / 100,
+          );
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+
+        expect(
+          rig.window.readouts.length,
+          composed,
+          reason:
+              'the readout was recomposed for a moving playhead and moving '
+              'levels — the gate is comparing whole LooperStates again',
+        );
+      });
+
+      testWidgets('a fact the readout DOES draw still gets through', (
+        tester,
+      ) async {
+        final rig = await pumpPlaying(tester);
+        expect(rig.window.readouts.last.tracks.single.muted, isFalse);
+
+        // Muted rides the readout, so this must survive the narrowing that
+        // drops the playhead and the levels.
+        engine.nextSnapshot = playing(position: 8000, peak: 0.9, muted: true);
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+
+        expect(
+          rig.window.readouts.last.tracks.single.muted,
+          isTrue,
+          reason: 'the gate swallowed a fact the second screen draws',
+        );
+      });
+
+      testWidgets('recording state and input routing reach the readout', (
+        tester,
+      ) async {
+        final rig = await pumpPlaying(tester);
+        final before = rig.window.readouts.last;
+        engine.nextSnapshot = playing(
+          position: 0,
+          peak: 0.1,
+          state: le.TrackState.recording,
+        );
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(rig.window.readouts.last.tracks.single.state, 'recording');
+        expect(rig.window.readouts.last.mode, before.mode);
+
+        final recording = rig.window.readouts.last;
+        engine.nextSnapshot = playing(
+          position: 0,
+          peak: 0.1,
+          state: le.TrackState.recording,
+          inputChannel: 1,
+        );
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(
+          rig.window.readouts.last.tracks.single.inputNames,
+          isNot(recording.tracks.single.inputNames),
+        );
+        expect(rig.window.readouts.last.tracks.single.state, 'recording');
+      });
+
+      testWidgets('a burst of polls is rate-limited but never DROPPED', (
+        tester,
+      ) async {
+        // The rate limit is not a decimator, and the difference is the whole
+        // point: `looperState` is deduped, so an emit is a CHANGE, not a
+        // tick. A rig that stops, clears or undoes emits once and then goes
+        // quiet — drop that one and the second screen keeps the pre-stop
+        // playhead until something else happens to move.
+        final rig = await pumpPlaying(tester);
+        final frames = rig.window.pushCalls;
+
+        // Two changes inside one frame period: the first opens the frame, the
+        // second arrives with the gate shut.
+        engine.nextSnapshot = playing(position: 24000, peak: 0.3);
+        rig.ticker.add(null);
+        await tester.pump();
+        engine.nextSnapshot = playing(position: 48000, peak: 0.4);
+        rig.ticker.add(null);
+        await tester.pump();
+
+        expect(
+          rig.window.pushCalls - frames,
+          1,
+          reason: 'the rate limit let a burst through unthrottled',
+        );
+
+        // ...and the held one lands on the trailing edge, carrying the LAST
+        // state rather than the one that happened to arrive on an even tick.
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(
+          rig.window.waveforms.last.progress,
+          closeTo(0.5, 1e-9),
+          reason: 'a change was swallowed instead of held — 48000/96000',
+        );
+      });
+
+      testWidgets('a cursor move reaches the window on a SILENT rig', (
+        tester,
+      ) async {
+        // Nothing is added to the ticker here on purpose: the poll is deduped
+        // and this rig is not moving, so it emits nothing at all. The label
+        // is not looper state, so if the timer does not carry it the second
+        // screen keeps naming the wrong track indefinitely.
+        final rig = await pumpPlaying(tester);
+        final before = rig.window.waveforms.last.selectedTrack;
+
+        tester
+            .element(find.byType(LooperPage))
+            .read<ControlCubit>()
+            .selectTrack(1);
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(
+          rig.window.waveforms.last.selectedTrack,
+          isNot(before),
+          reason: 'the cursor moved and the second screen never heard about it',
+        );
+      });
+
+      testWidgets('a frame lost in flight is re-sent on a still rig', (
+        tester,
+      ) async {
+        // Frames are produced by events now, not by a timer, so a lost one
+        // has nothing behind it: the poll is deduped and this rig stops
+        // moving after the single change below. The old unconditional 33 ms
+        // push healed this implicitly; the re-queue is what replaces it.
+        final rig = await pumpPlaying(tester);
+        final frames = rig.window.pushCalls;
+        rig.window.failNextWaveformPushes = 1;
+
+        engine.nextSnapshot = playing(position: 24000, peak: 0.3);
+        rig.ticker.add(null);
+        await tester.pump();
+        expect(rig.window.pushCalls - frames, 1);
+
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(
+          rig.window.pushCalls - frames,
+          greaterThan(1),
+          reason: 'a dropped frame was never re-sent, and nothing else would',
+        );
+        expect(
+          rig.window.waveforms.last.progress,
+          closeTo(0.25, 1e-9),
+          reason: 'the re-sent frame carried the wrong state — 24000/96000',
+        );
+      });
+
+      testWidgets('a late failure never re-sends a superseded frame', (
+        tester,
+      ) async {
+        final rig = await pumpPlaying(tester);
+        rig.window
+          ..failNextWaveformPushes = 1
+          ..failDelay = const Duration(milliseconds: 200);
+
+        // Frame A goes out and will reject long after the fact.
+        engine.nextSnapshot = playing(position: 24000, peak: 0.3);
+        rig.ticker.add(null);
+        await tester.pump();
+
+        // Frame B lands cleanly in the meantime.
+        engine.nextSnapshot = playing(position: 72000, peak: 0.5);
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(rig.window.waveforms.last.progress, closeTo(0.75, 1e-9));
+
+        // A's rejection arrives. Re-sending it now would put an older
+        // playhead on screen as the last word — and this rig has gone quiet,
+        // so nothing would ever correct it.
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(
+          rig.window.waveforms.last.progress,
+          closeTo(0.75, 1e-9),
+          reason: 'a stale frame was re-sent over a newer one that had landed',
+        );
+      });
+
+      testWidgets('a re-announced window is re-seeded with a frame', (
+        tester,
+      ) async {
+        // The service clears its own send diffs on the ready ping, but a
+        // waveform frame is only produced by an EVENT and this rig is not
+        // moving — so without an explicit request the reclaimed window shows
+        // an empty waveform beside a live readout, indefinitely.
+        final rig = await pumpPlaying(tester);
+        final frames = rig.window.pushCalls;
+        final readouts = rig.window.readouts.length;
+
+        rig.window.onWindowReady!();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(
+          rig.window.pushCalls,
+          greaterThan(frames),
+          reason: 'a reclaimed window was never sent a waveform frame',
+        );
+        expect(
+          rig.window.readouts.length,
+          greaterThan(readouts),
+          reason: 'a reclaimed window was never re-sent the readout',
+        );
+      });
+
+      testWidgets('the waveform keeps following the poll', (tester) async {
+        final rig = await pumpPlaying(tester);
+        final frames = rig.window.pushCalls;
+
+        for (var i = 1; i <= 10; i++) {
+          engine.nextSnapshot = playing(position: i * 4000, peak: 0.2);
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+
+        expect(
+          rig.window.pushCalls,
+          greaterThan(frames),
+          reason:
+              "the waveform must keep ticking — the gate is the readout's "
+              'alone, and a frozen waveform means the playhead died',
+        );
+      });
     });
 
     testWidgets(

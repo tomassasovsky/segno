@@ -39,8 +39,15 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// How many times [snapshot] was called — the FFI walk a periodic reader
+  /// must not pay per tick.
+  int snapshotCalls = 0;
+
   @override
-  EngineSnapshot snapshot() => nextSnapshot;
+  EngineSnapshot snapshot() {
+    snapshotCalls++;
+    return nextSnapshot;
+  }
 
   @override
   CallbackTelemetry callbackTelemetry() => nextCallbackTelemetry;

@@ -108,6 +108,43 @@ typedef WaveformFrame = ({
   String selectedTrack,
 });
 
+/// Merges an incoming `waveform` [payload] onto the [previous] frame.
+///
+/// A payload with no `samples` key is a **progress-only push**: the main
+/// window sends the peaks only when they change (see `waveformFramePayload`),
+/// because through steady playback the loop-indexed buffer stands still and
+/// only the playhead moves. Carrying [previous]'s samples forward is what
+/// makes that safe — reading an absent key as an empty buffer would blank the
+/// waveform on every frame the peaks did not change, which is most of them.
+///
+/// Pure so the hold can be proven without a second engine.
+@visibleForTesting
+WaveformFrame waveformFrameFrom(
+  Map<Object?, Object?> payload,
+  WaveformFrame previous,
+) {
+  final progress = payload['progress'];
+  final selectedTrack = payload['selectedTrack'];
+  final samples = payload['samples'];
+  return (
+    // `is List` covers the absent key and the garbled value in one test: a
+    // frame with no `samples` is the ordinary progress-only push, and one
+    // carrying something that is not a buffer is a frame that arrived
+    // damaged. Both hold what is on screen.
+    samples: samples is List ? _toFloat32List(samples) : previous.samples,
+    // Every field degrades to what is already on screen rather than throwing
+    // OR resetting: this crosses an engine boundary as a loose map, and a
+    // malformed frame must neither take the second screen down mid-set nor
+    // snap the playhead back to the loop start. Hence `is num` / `is String`
+    // rather than casts — a present-but-wrong value is the shape a garbled
+    // frame actually takes; an absent key is the easy case.
+    progress: progress is num ? progress.toDouble() : previous.progress,
+    selectedTrack: selectedTrack is String
+        ? selectedTrack
+        : previous.selectedTrack,
+  );
+}
+
 /// Entrypoint for the secondary waveform window — a separate Flutter engine
 /// spawned by `desktop_multi_window`. It owns no audio engine; the main window
 /// pushes `waveform` frames to it over [waveformWindowChannel].
@@ -129,13 +166,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
     switch (call.method) {
       case 'waveform':
         if (call.arguments is Map) {
-          final map = call.arguments as Map;
-          final progress = map['progress'];
-          frame.value = (
-            samples: _toFloat32List(map['samples']),
-            progress: progress is num ? progress.toDouble() : 0.0,
-            selectedTrack: map['selectedTrack'] as String,
-          );
+          frame.value = waveformFrameFrom(call.arguments as Map, frame.value);
         }
         return null;
       case 'readout':
