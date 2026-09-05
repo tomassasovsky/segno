@@ -15,6 +15,13 @@ plugin, macOS dylib loading, flavor schemes). They will bite otherwise.
 
 ### Verify loop — run these before declaring any change done
 
+**`/verify` runs the applicable subset of the list below for you**, picking
+gates from what the diff touches and printing one PASS / FAIL / SKIP / UNRUN
+line each. Prefer it over running these by hand: it knows the SDK path, the
+per-package test jobs CI runs that a root `flutter test` does not, and the
+difference between "this gate does not apply" and "this gate could not run".
+`/ship` then takes verified work to a PR that satisfies `docs/TRACKING.md`.
+
 - Dart/Flutter tests: `/Users/Tomas/development/flutter/bin/flutter test`
   (bare `flutter test`/`dart test` are hook-blocked; the very_good MCP test
   tool is broken in this env)
@@ -28,7 +35,26 @@ plugin, macOS dylib loading, flavor schemes). They will bite otherwise.
   rules `dart analyze` does **not** — a cubit method returning anything but
   void fails here and passes there
 - Formatting is automatic — a PostToolUse hook runs `dart format` on every
-  edited `.dart` file, so never hand-format or commit format-only churn
+  `.dart` file edited through `Edit`/`Write`, so never hand-format or commit
+  format-only churn. It does **not** see edits made through the shell (`sed`,
+  `python3`, a heredoc); `/verify`'s `dart format --set-exit-if-changed` gate
+  is what catches those
+- Pushes must go through the gh credential helper —
+  `git -c credential.helper='!gh auth git-credential' push`. A PreToolUse hook
+  denies the bare form, which can hang on osxkeychain and strand the branch
+  with no error anyone sees
+
+### Two reviewers worth calling explicitly
+
+Neither is dispatched automatically:
+
+- **`native-boundary-review`** — for any diff under `packages/segno_engine/src`,
+  `firmware/`, `hardware/firmware/`, or the generated bindings. It looks for the
+  portability, generation and hand-copy failures that a green macOS CI run and
+  `dart analyze` cannot see.
+- **`design-conformance`** — for any console/tray/settings surface, before the
+  PR. It checks the shipped UI against `segno-ui.pen`, the design of record, and
+  says for each divergence whether the code drifted or the design moved.
 
 ## Work tracking (required)
 
