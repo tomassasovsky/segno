@@ -27,9 +27,66 @@ extern "C" {
 
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER, mode p3 < 0.5) tuning ------------- */
 #define LE_PV_N 1024             /* STFT window (power of two) */
-#define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum) */
+#define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum);
+                                  * a POWER OF TWO — le_fx_lane_hop_seed and
+                                  * le_pv_hop_phase mask with LE_PV_HOP - 1 */
 #define LE_PV_BINS (LE_PV_N / 2 + 1)
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
+
+/* Analysis-hop stagger: the three axes an octaver instance is addressed by, and
+ * the step each one moves its hop phase by within [0, LE_PV_HOP).
+ *
+ * The point of the stagger is that instances which run TOGETHER hop on
+ * different sample indices, so their length-LE_PV_N FFT frames land in
+ * different audio callbacks instead of all in one. The runs that actually
+ * occur are short and they are the three axes below, so the steps are chosen
+ * to maximise the MINIMUM spacing along each — verified exhaustively over the
+ * odd-and-even step space, these are the joint optimum:
+ *
+ *   OWNER  8 tracks (plus one group holding the monitor inputs and the master
+ *          insert), i.e. the SAME lane and slot on every track — the shape a
+ *          per-track octaver takes. Step 27 -> 27 apart.
+ *   LANE   one track's 8 lanes and then its bus, 9 in a row. Step 57 -> 28
+ *          apart, the optimum for 9 points in 256.
+ *   SLOT   one chain's 8 slots. Step 32 -> exactly 32 apart, so with the
+ *          appliance's 32-frame callback each slot hops in its OWN callback.
+ *
+ * All 81 chain owners get distinct base phases, and the full 9 x 9 x 8 space
+ * of possible instances covers all 256 phases (the most a 256-wide phase can
+ * do for 648 addresses). NOTE the axes must stay SEPARATE: folding owner and
+ * lane into one running index and scaling it by a single multiplier m makes
+ * the owner step 9m (mod 256), which for every m collapses one of the two
+ * axes into a clump far tighter than a callback. */
+#define LE_PV_STAGGER_OWNER_STEP 27
+#define LE_PV_STAGGER_LANE_STEP 57
+#define LE_PV_STAGGER_SLOT_STEP 32
+
+/* The hop-stagger seed (le_fx_state::hop_seed) that le_engine_create hands
+ * track [track]'s lane [lane]: that chain's BASE analysis-hop phase, to which
+ * engine_fx.c's le_pv_hop_phase adds the per-slot step. The engine numbers
+ * every chain owner it holds through this one function: a track's LE_MAX_LANES
+ * lanes, then its bus one past them at lane == LE_MAX_LANES; the monitor
+ * inputs and the master insert are lanes 0..LE_MAX_MONITORED_INPUTS of the one
+ * group past the last track, track == LE_MAX_TRACKS.
+ *
+ * Exposed (rather than kept private to engine.c) because the OFFLINE renderers
+ * that stand in for a live lane — the loop-stage wet cache (engine_cache.c)
+ * and the performance stem render (perf_render.c) — build their own heap
+ * le_fx_state and MUST seed it with the seed of the lane they reproduce. A
+ * different seed is a different phase-vocoder realization of the same octaver:
+ * the cache would then swap a differently-realized wet in at a loop top (a
+ * step discontinuity — a click), and an exported stem would not reproduce what
+ * was heard. */
+static inline int32_t le_fx_lane_hop_seed(int32_t track, int32_t lane) {
+  /* Unsigned and masked, not signed-and-%: the only caller that does not pass
+   * a bounded engine index is perf_render, whose track comes from a manifest
+   * on disk and is only checked for being non-negative. Signed overflow there
+   * would be UB, and C's sign-preserving % would then hand back a NEGATIVE
+   * phase — which le_pv_tick uses to index the OLA accumulator. */
+  const uint32_t base = (uint32_t)track * (uint32_t)LE_PV_STAGGER_OWNER_STEP +
+                        (uint32_t)lane * (uint32_t)LE_PV_STAGGER_LANE_STEP;
+  return (int32_t)(base & (uint32_t)(LE_PV_HOP - 1));
+}
 
 /* --- PSOLA octaver (mode p3 >= 0.5) tuning ---------------------------------- */
 #define LE_PSOLA_AHOP 256    /* re-run pitch detection every this many samples */
@@ -78,6 +135,22 @@ void le_fx_entry_reset(le_fx_state* fx, int slot);
  * once after creating/zeroing a standalone le_fx_state (lane/monitor reset,
  * offline render, VST3 plugin processors, test harnesses). */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
+
+/* Seeds slot [slot]'s OCTAVER runtime settled at [params]: the three param
+ * smoothers already at their targets, and the mode crossfade already resolved
+ * onto the mode params[3] selects. The octaver's analogue of
+ * le_fx_enable_seed_settled above, and there for the same reason — an offline
+ * render standing in for a lane whose octaver has been running since before
+ * the capture must not re-pay that lane's start-up. From le_fx_entry_reset's
+ * state it would: the shift smoother ramps ~5 ms up from unison, and a PSOLA
+ * slot spends ~15 ms fading the wet leg out and another ~15 ms fading it back
+ * in before the mode even flips, none of which the live lane was doing.
+ *
+ * The one thing it CANNOT settle is the analysis-hop phase: the live lane's
+ * counter is its phase plus an elapsed-frame count nothing records. Caller
+ * must pass an octaver slot (no type check here). Control thread / offline
+ * only, and after le_fx_entry_reset. */
+void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
  * For a slot the chain will NOT process while its effective enabled bit is 0

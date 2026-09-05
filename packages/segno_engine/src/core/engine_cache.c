@@ -790,6 +790,24 @@ static void le_cache_render(le_engine* e, struct le_fx_cache* c,
                           memory_order_release);
     return;
   }
+  /* Match the live lane's hop-stagger seed BEFORE any le_fx_entry_reset below
+   * seeds an octaver's hop counter from it: a calloc'd 0 is lane 0 of track
+   * 0's seed, so every other lane would render its wet at a DIFFERENT
+   * phase-vocoder realization than the live chain it replaces — and the swap
+   * happens at a loop top, i.e. a step discontinuity (a click) on every lane
+   * but one.
+   *
+   * That is the per-lane term, and it is the one this can fix. A SECOND term
+   * survives and PREDATES the stagger: RENDER-TWICE-KEEP-SECOND reproduces a
+   * chain that engaged exactly ONE lap earlier, so the kept pass runs the hop
+   * counter from (seed + len) while the live lane it displaces has run k laps
+   * and sits at (seed + k*len). For k > 1 — a loop short enough that the
+   * settle window plus the render spans more than one lap — the phase is
+   * still (k-1)*len mod LE_PV_HOP out, and unlike a delay ring or a reverb
+   * tail a hop phase never decays. Equally true before any seed existed
+   * (every instance was then at phase 0 plus the same lap count): it is a
+   * property of the two-pass design, not of the seed. Tracked in #939. */
+  fx->hop_seed = le_fx_lane_hop_seed(job->channel, job->lane);
   /* Seed the enable-crossfade runtime per EFFECTIVE bit, mirroring the live
    * chain's settled state exactly: enabled slots settled wet (no fade-in at
    * frame 0), disabled slots settled bypass (no 5 ms fade-out the live chain
