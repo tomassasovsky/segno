@@ -27911,6 +27911,9 @@ static ma_result ma_device_init_by_type__alsa(ma_device* pDevice, const ma_devic
          * periods no matter what the caller asked for. Measured on the appliance at
          * SEGNO_ALSA_PERIODS=8, 96 kHz / 64 frames: appl_ptr - hw_ptr sampled 90-129
          * frames of a 512-frame ring, i.e. 512 - 129 = 383 frames never used at all.
+         * (That measurement is HISTORY: #818 re-derived the shipped depth to 4,
+         * where this patch is a no-op. It is kept because it is what showed the
+         * mechanism, not because it describes what ships.)
          *
          * That is why raising the buffer depth from 192 to 512 "changed nothing"
          * during the #710 click hunt: on this path it could not have. Depth reached
@@ -28518,9 +28521,11 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
      * session-long artifact, and it is self-correcting on any future slip too.
      *
      * The gap that reset costs is that start threshold, which #809 moved: it is
-     * half the ring above four periods (see ma_device_init_by_type__alsa), so at
-     * SEGNO_ALSA_PERIODS=8 this resyncs through 256 frames of silence rather than
-     * 128. The deeper cushion is what makes the slip rarer in the first place. */
+     * half the ring above four periods (see ma_device_init_by_type__alsa). At the
+     * shipped SEGNO_ALSA_PERIODS=4 (#818) that is still the two-period floor, so
+     * this resyncs through 128 frames of silence, not 256 -- and the "deeper
+     * cushion makes the slip rarer" trade below five periods does not apply to
+     * any shipping configuration. It would return only on a depth nothing runs. */
     if (pDevice->pContext->alsa.snd_pcm_avail != NULL) {
         ma_uint32 bufFrames = pDevice->playback.internalPeriods * pDevice->playback.internalPeriodSizeInFrames;
         ma_snd_pcm_state_t st = ((ma_snd_pcm_state_proc)pDevice->pContext->alsa.snd_pcm_state)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);

@@ -205,6 +205,110 @@ void main() {
       expect(store.values, isEmpty);
     });
 
+    test(
+      'a sibling period key is rebased when no legacy entry exists',
+      () async {
+        // The unit #818 strands without this: first calibrated while the knob
+        // was already engaged, so it holds a .p8 and NO pre-#809 baseline.
+        // Taking it to 4 must not read as "never calibrated".
+        // p8 @ 64 frames is +128; p4 sits on the two-period floor, so +0.
+        // 608 - 128 = 480 baseline -> 480 at p4, the pre-#809 value.
+        store.values['latency_offset.Scarlett.96000.64.p8'] = 608;
+
+        final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+        expect(await load(appliance), 480);
+        expect(
+          store.values['latency_offset.Scarlett.96000.64.p8'],
+          // The sibling is left intact, so going back to 8 is still exact.
+          608,
+        );
+      },
+    );
+
+    test('the rebase persists under the new key and round-trips', () async {
+      store.values['latency_offset.Scarlett.96000.64.p8'] = 608;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      expect(await load(appliance), 480);
+      expect(store.values['latency_offset.Scarlett.96000.64.p4'], 480);
+      // No legacy key is synthesised: it was never measured pre-#809.
+      expect(
+        store.values.containsKey('latency_offset.Scarlett.96000.64'),
+        isFalse,
+      );
+      // Second read takes the qualified key verbatim.
+      expect(await load(appliance), 480);
+
+      // And the round trip back to 8 recovers the original.
+      expect(
+        await load(SettingsRepository(store: store, alsaPeriods: 8)),
+        608,
+      );
+    });
+
+    test('legacy is preferred over a sibling: it is the exact answer', () {
+      // The legacy value was measured with the threshold pinned at two
+      // periods, which is exactly where periods=4 sits, so it needs no model
+      // at all. Rebasing the .p8 would apply the model twice and land on
+      // 582 - 128 = 454 -- and the PR's own sweep says the real move 8 -> 4
+      // is 104 frames, not the model's 128. Exact beats fresher-but-modelled.
+      store.values['latency_offset.Scarlett.96000.64'] = 477;
+      store.values['latency_offset.Scarlett.96000.64.p8'] = 582;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      expect(load(appliance), completion(477));
+    });
+
+    test('the LEAST modelled sibling is the one rebased from', () async {
+      // Two siblings, no legacy. p6 carries a 64-frame delta and p8 a
+      // 128-frame one, so p6 puts less of the model in the path and wins.
+      store.values['latency_offset.Scarlett.96000.64.p8'] = 900;
+      store.values['latency_offset.Scarlett.96000.64.p6'] = 544;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      // p6 @ 64 adds +64: 544 - 64 = 480 baseline, p4 adds nothing.
+      expect(await load(appliance), 480);
+    });
+
+    test('a zero-delta sibling beats a nearer one that needs the model', () {
+      // The tie-break has to follow the same "least modelled wins" rule the
+      // legacy preference does. At p4, p3 sits on the two-period floor, so
+      // rebasing it is a pass-through; p5 costs 32 frames of a model this
+      // PR's own sweep shows overestimates. p5 is the NEARER depth, so a
+      // distance-ordered scan would have taken it.
+      store.values['latency_offset.Scarlett.96000.64.p3'] = 470;
+      store.values['latency_offset.Scarlett.96000.64.p5'] = 512;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      // p3 and p4 are both on the floor, so the value passes through.
+      expect(load(appliance), completion(470));
+    });
+
+    test(
+      'a sibling that cannot be rebased is skipped, not persisted',
+      () async {
+        // p8 @ 512 frames adds 1024, so a stored 500 there is not a value this
+        // model produced. Rebasing it would persist a non-positive offset --
+        // which both consumers ignore, while the key it wrote would stop
+        // anything else being consulted. With no legacy entry behind it the
+        // right answer is "nothing stored", so a re-measure can still happen.
+        store.values['latency_offset.Scarlett.96000.512.p8'] = 500;
+
+        final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+        final got = await appliance.loadLatencyOffsetFrames(
+          device: 'Scarlett',
+          sampleRate: 96000,
+          bufferFrames: 512,
+        );
+
+        expect(got, isNull);
+        expect(
+          store.values.containsKey('latency_offset.Scarlett.96000.512.p4'),
+          isFalse,
+        );
+      },
+    );
+
     test('desktop (no alsaPeriods) never migrates', () async {
       store.values['latency_offset.Scarlett.96000.64'] = 480;
 
