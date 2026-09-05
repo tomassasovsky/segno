@@ -5831,18 +5831,13 @@ def _wrap_to_page(text, pt, page_w_in, frac=0.92, ratio=0.55):
     return textwrap.wrap(text, cols) or [text]
 
 
-# A partial paint quote is worse than none: page 1 is already flushed into the
-# open PdfPages before a later page can fail, the caller swallows the exception
-# with a one-line note, and the run still prints ALL PASS and exit 0 while
-# segno_pintura.zip ships a 1-page file missing every masking page. Recorded
-# here and asserted in _verify_drawing_package.
+# Check the finished paint quote as well as propagating render failures: a file
+# replaced or truncated after rendering must not pass package verification.
 # Ink margin for the coater's sheet. SHEET_MARGIN_IN did the same job for
 # dxf_to_pdf and this path never got it: measured at 200 dpi the four pages had
 # ink 0.25-1.02 mm from the top edge and 2.41 mm from the bottom, inside the
 # unprintable band of any office printer. Printed at 100% the headings clip.
 PQ_MARGIN_MM = 6.0
-
-PDF_SKIPPED = {}                 # stem -> why its drawing did not render
 
 PAINT_PAGES = {}
 PAINT_PAGES_EXPECTED = 4
@@ -5910,7 +5905,7 @@ def paint_quote_pdf(path):
             "  1. La superficie es NETA: contorno exterior menos aberturas (ranuras de pedales, pantallas, ranuras de ventilación). No incluye cantos.",
             "  2. Las piezas llegan cortadas y plegadas, sin ningún recubrimiento ni aceite protector. Pretratamiento para aluminio a cargo del aplicador.",
             "  3. Los postes son ACERO laminado en frío, no aluminio: van en línea aparte porque llevan otro pretratamiento.",
-            "  4. Enmascarado: ver las páginas siguientes. Sólo la zona de puesta a tierra alrededor del perno M6 va sin pintura, en ambas caras (los agujeros piloto se roscan M3 después de pintar).",
+            "  4. Enmascarar las zonas M6 y PANEL_BOND en las caras indicadas en los planos siguientes. Roscar los pilotos M3 después de pintar.",
             "  5. Las aberturas de pantalla son ajustadas: la película come décimas por cara. Si el espesor supera 100 um avisar antes de aplicar.",
             "  6. El aluminio es blando: colgar para pintar, no apoyar sobre las caras vistas.",
             _faceplate_size_note(),
@@ -5937,8 +5932,8 @@ def paint_quote_pdf(path):
         # ---- masking / detail pages ---------------------------------------
         sheets = [
             ("segno_base", "CUERPO - plano de enmascarado",
-             "Rojo = NO PINTAR. Zona de puesta a tierra de 20 mm alrededor del perno M6, en "
-             "ambas caras. Los agujeros piloto de la transición se roscan M3 después de pintar."),
+             "Rojo = NO PINTAR: Ø20 del perno M6 en AMBAS CARAS; PANEL_BOND Ø12 en la "
+             "CARA INTERIOR. Roscar M3 los pilotos de la transición después de pintar."),
             ("segno_faceplate", "TAPA SUPERIOR - aberturas críticas",
              "Sin enmascarado. Las dos aberturas grandes son de pantalla y quedan ajustadas "
              "contra el display: contemplar el espesor de película."),
@@ -6441,12 +6436,18 @@ def pdf_pedal_tiles(path):
     ax.axis("off")
     fig.patch.set_facecolor("white")
     # Tile 0 carries the narrow dimension underneath it, so its caption drops
-    # clear of it; every other caption keeps the 2.6 mm hang.
+    # clear of it. Center the other captions in the gap: a top-aligned 6 pt
+    # label hanging 2.6 mm into a 4 mm gap crosses the next tile's cut edge.
+    captions = []
     for i, label in enumerate(labels):
         ox, oy = _tile_nest_origin(i)
         _draw_tile_on_ax(ax, ox, oy, label)
-        ax.text(ox, oy - TILE_W / 2.0 - (6.0 if i == 0 else 2.6), label,
-                fontsize=6, ha="center", va="top", color="#333")
+        bottom = oy - TILE_W / 2.0
+        caption = ax.text(ox, bottom - (6.0 if i == 0 else TILE_NEST_GAP / 2),
+                          label, fontsize=6, ha="center",
+                          va="top" if i == 0 else "center", color="#333")
+        if bottom > 0:
+            captions.append((caption, bottom))
     # Both widths, so the 0.6 mm taper reads -- but each dimension goes OUTSIDE
     # the nest, never into the 4.0 mm inter-tile gap. Dimensioning the wide edge
     # of the bottom-left tile put "54.36 ancho" straight through the caption of
@@ -6468,14 +6469,20 @@ def pdf_pedal_tiles(path):
     for i, line in enumerate(wrapped):
         ax.text(0.0, -margin - 4.0 - 3.4 * i, line, fontsize=6, ha="left",
                 va="top", color="#111", family="sans-serif")
-    tb = (f"{PART_TITLES_ES['segno_pedal_tiles']}  [segno_pedal_tiles]   |   "
-          f"{PLY_2MM}   |   CANT. {len(labels)}   |   medidas en mm   |   "
-          f"PIEZA PLANA, sin plegados")
     # What is actually DRAWN on the sheet, nothing else. This used to record
     # SHEET_HEADING and a synthesised title-block line, neither of which this
     # sheet prints -- so the two assertions in _verify_tile_package were reading
     # a list the writer had made up, and could not fail whatever the PDF held.
     SHEET_TEXT["segno_pedal_tiles"] = list(wrapped) + labels
+    # Measure the actual font after layout, independently of its anchor formula.
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for caption, bottom in captions:
+        box = caption.get_window_extent(renderer).transformed(ax.transData.inverted())
+        assert bottom - TILE_NEST_GAP < box.y0 and box.y1 < bottom, (
+            f"tile caption {caption.get_text()!r} crosses a cut edge: "
+            f"text spans {box.y0:.2f}..{box.y1:.2f} mm, "
+            f"gap spans {bottom-TILE_NEST_GAP:.2f}..{bottom:.2f} mm")
     fig.savefig(path, dpi=300)
     plt.close(fig)
 
@@ -7005,19 +7012,6 @@ def _verify_drawing_package(with_pdf=True):
     # corners. If a future ezdxf hands them over as LineCollections, or hands
     # them over already closed, it silently seals nothing and the notch returns
     # on a package nobody re-reads at 600 dpi. These counts are the alarm.
-    # --- the paint quote is a DELIVERABLE, and its writer's failures are caught
-    # by a bare `except Exception` that prints one line and lets the run finish
-    # green. Without this the coater gets a 1-page file with the masking pages
-    # missing and nothing says so.
-    # A sheet whose PDF raised is caught by a bare `except` that prints one line
-    # and lets the run continue. The zip freshness gate only catches it when the
-    # mtimes happen to line up, so a shop package can go out a drawing short
-    # while the run says ALL PASS. Demonstrated by raising SHEET_MIN_DATA_PT far
-    # enough to overflow the bend tables: four sheets skipped, run still green.
-    assert not PDF_SKIPPED, (
-        "these drawings failed to render and the run continued anyway: "
-        + "; ".join(f"{k}: {v}" for k, v in PDF_SKIPPED.items()))
-
     _verify_paint_bom()
 
     if with_pdf:
@@ -7271,15 +7265,11 @@ def main(argv):
         dxf = os.path.join(OUT, name + ".dxf"); fn(dxf)
         print("  out/" + name + ".dxf")
         if "--no-pdf" not in argv and name not in NO_PDF:
-            try:
-                mat, qty, _pkg = PART_SPECS[name]
-                dxf_to_pdf(dxf, os.path.join(OUT, name + ".pdf"),
-                           title=f"{PART_TITLES_ES[name]}  [{name}]",
-                           material=mat, qty=qty, stem=name)
-                print("  out/" + name + ".pdf")
-            except Exception as e:  # pragma: no cover
-                print(f"    (pdf skipped: {e})")
-                PDF_SKIPPED[name] = str(e)
+            mat, qty, _pkg = PART_SPECS[name]
+            dxf_to_pdf(dxf, os.path.join(OUT, name + ".pdf"),
+                       title=f"{PART_TITLES_ES[name]}  [{name}]",
+                       material=mat, qty=qty, stem=name)
+            print("  out/" + name + ".pdf")
     tile_stems = build_pedal_tile_vectors(with_pdf="--no-pdf" not in argv)
     print("  out/segno_pedal_tiles.dxf  (2-ply nest, x%d)" % len(tile_stems))
     if "--no-pdf" not in argv:
@@ -7327,11 +7317,8 @@ def main(argv):
     # coater's sheet says "-". The committed file only ever showed sizes because
     # a stale STEP happened to be on disk; on a clean tree it did not reproduce.
     if "--no-pdf" not in argv:
-        try:
-            paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
-            print("\nPaint quote sheet: out/segno_paint_quote.pdf")
-        except Exception as e:  # pragma: no cover
-            print(f"\n(paint quote skipped: {e})")
+        paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
+        print("\nPaint quote sheet: out/segno_paint_quote.pdf")
 
     for z in build_quote_packages(with_step=steps_built,
                                   with_pdf="--no-pdf" not in argv):
