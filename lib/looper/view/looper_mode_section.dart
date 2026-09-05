@@ -31,8 +31,12 @@ class LooperModeSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final looperState = context.watch<LooperBloc>().state;
-    final mode = looperState.transport.looperMode;
+    // Selected, not watched: `LooperState` carries the moving playhead and
+    // per-track levels, so watching it rebuilt this whole section at the poll
+    // rate to redraw one radio list that only changes on a mode switch.
+    final mode = context.select<LooperBloc, LooperMode>(
+      (bloc) => bloc.state.transport.looperMode,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

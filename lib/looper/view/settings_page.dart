@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -265,7 +266,19 @@ class _SettingsPageState extends State<SettingsPage> {
   List<Widget> _tracksSection(BuildContext context) {
     final l10n = context.l10n;
     final tracks = context.watch<TracksCubit>();
-    final looperTracks = context.watch<LooperBloc>().state.tracks;
+    // Selected, not watched: a `Track` carries the live `peak`,
+    // so watching the track list rebuilt this whole section on every poll
+    // tick while audio flowed. Only the length preset and the one-shot flag
+    // are drawn here, and both change on a tap. `Equatable` gives the lists
+    // structural equality, which is what makes the select actually dedupe.
+    final trackSettings = context.select<LooperBloc, _TrackSettings>(
+      (bloc) => _TrackSettings(
+        lengthPresetBars: [
+          for (final track in bloc.state.tracks) track.lengthPresetBars,
+        ],
+        oneShot: [for (final track in bloc.state.tracks) track.oneShot],
+      ),
+    );
     return [
       AppText(l10n.tracksIntro, style: context.setupBody),
       const SizedBox(height: 28),
@@ -288,11 +301,11 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.lengthPresetLabel),
       const SizedBox(height: 12),
-      for (var i = 0; i < looperTracks.length; i++) ...[
+      for (var i = 0; i < trackSettings.lengthPresetBars.length; i++) ...[
         SetupTrackLengthPresetRow(
           rowKey: Key('settings_trackLengthPreset_$i'),
           channel: i,
-          bars: looperTracks[i].lengthPresetBars,
+          bars: trackSettings.lengthPresetBars[i],
           label: l10n.trackName(tracks.state.names, i),
           autoLabel: l10n.lengthPresetAuto,
           barsLabel: l10n.lengthPresetBars,
@@ -300,27 +313,41 @@ class _SettingsPageState extends State<SettingsPage> {
             LooperTrackLengthPresetChanged(i, bars),
           ),
         ),
-        if (i < looperTracks.length - 1) const SizedBox(height: 8),
+        if (i < trackSettings.lengthPresetBars.length - 1)
+          const SizedBox(height: 8),
       ],
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.oneShotGroupLabel),
       const SizedBox(height: 12),
       AppText(l10n.oneShotIntro, style: context.setupBody),
       const SizedBox(height: 12),
-      for (var i = 0; i < looperTracks.length; i++) ...[
+      for (var i = 0; i < trackSettings.oneShot.length; i++) ...[
         SetupTrackOneShotRow(
           rowKey: Key('settings_trackOneShot_$i'),
           channel: i,
-          oneShot: looperTracks[i].oneShot,
+          oneShot: trackSettings.oneShot[i],
           label: l10n.trackName(tracks.state.names, i),
           onChanged: (oneShot) => context.read<LooperBloc>().add(
             LooperOneShotToggled(i, oneShot: oneShot),
           ),
         ),
-        if (i < looperTracks.length - 1) const SizedBox(height: 8),
+        if (i < trackSettings.oneShot.length - 1) const SizedBox(height: 8),
       ],
     ];
   }
+}
+
+/// The per-track settings the Tracks section draws, wrapped so
+/// `context.select` compares them by value instead of by reference — bare
+/// lists would be fresh instances on every poll and never dedupe.
+class _TrackSettings extends Equatable {
+  const _TrackSettings({required this.lengthPresetBars, required this.oneShot});
+
+  final List<int> lengthPresetBars;
+  final List<bool> oneShot;
+
+  @override
+  List<Object?> get props => [lengthPresetBars, oneShot];
 }
 
 class _SettingsRail extends StatelessWidget {
