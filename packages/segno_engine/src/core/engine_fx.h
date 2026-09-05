@@ -119,6 +119,37 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  * Seeded on a type change so a chain reorder does not wipe the user's tweaks. */
 void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]);
 
+/* --- Resumable YIN pass ------------------------------------------------------
+ *
+ * le_psola_detect_band split at its two pausable points, so a caller that
+ * cannot afford the whole (lags x integration) difference function in one
+ * callback can spread it. See le_yin_pass in engine_private.h for why, and
+ * tuner_slice in engine_process.c for the only sliced caller. All three run on
+ * the audio thread and allocate nothing.
+ *
+ * Sets up a pass over `n` contiguous samples of `x` at `sr` Hz, searching
+ * [min_hz, max_hz]. `dp` is the caller's d'(tau) scratch, `dp_cap` its length
+ * in floats; the pass needs maxlag + 1, where maxlag is min(sr/min_hz,
+ * LE_PSOLA_MAXLAG, n/2). Both `x` and `dp` are borrowed and must stay alive
+ * and unchanged until le_yin_finish. Returns 0 — no pass started, and the
+ * caller should read the frame as unpitched — for a nonsense band, a window
+ * too short for the band, a `dp` too small, or a frame under the silence
+ * floor. */
+int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
+                 int max_hz, float* dp, int dp_cap);
+
+/* Accumulates lags until at least `budget` difference-function inner
+ * iterations have been spent, or the pass completes. A negative budget runs
+ * the pass to completion in one call. One whole lag always runs, so a budget
+ * under one integration length still makes progress. Returns 1 once every lag
+ * is in (and le_yin_finish may be called), else 0. */
+int le_yin_step(le_yin_pass* p, long budget);
+
+/* Peak-picks a COMPLETED pass: writes the parabolic-interpolated period in
+ * samples to *out_period and the voicing confidence in [0,1] to *out_voiced,
+ * and returns 1 when the frame reads as confidently voiced. */
+int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced);
+
 #ifdef __cplusplus
 }
 #endif
