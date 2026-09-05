@@ -160,8 +160,7 @@ class _TrayPanelState extends State<TrayPanel> {
                 ),
                 // Over the rail and the face both, since it hangs off the
                 // rail's edge into the pane. Last in the Stack so its scrim
-                // takes the taps before the panel's own dismiss detector,
-                // which would otherwise close the whole tray.
+                // dismisses only the popover and keeps the tray open.
                 if (_brightness)
                   Positioned.fill(
                     child: TrayBrightnessPopover(
