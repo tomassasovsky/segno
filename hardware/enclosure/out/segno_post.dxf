@@ -81,7 +81,7 @@ $MIRRTEXT
   9
 $LTSCALE
  40
-1.0
+1.3
   9
 $ATTMODE
  70
@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.275775463
+2461288.781597222
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.275775463
+2461288.781597222
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-9B
+A7
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{60526D07-EE97-479F-ACDF-CA5B1573D464}
+{01CC93B9-FD41-4376-A2BF-CD4846568100}
   9
 $VERSIONGUID
   2
-{FD1C3488-A6B6-40A6-B243-C7AA8E1A05F0}
+{726EA594-3824-40D6-93B8-5B0FD54C9AEA}
   9
 $EXTNAMES
 290
@@ -3285,7 +3285,7 @@ ACAD
   0
 APPID
   5
-98
+A4
 330
 3
 100
@@ -3299,7 +3299,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-99
+A5
 330
 3
 100
@@ -5543,13 +5543,373 @@ AcDbText
  10
 5.0
  20
+137.99799265511712
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+Segno POSTE DE APOYO DE LA TAPA
+ 11
+5.0
+ 21
+137.99799265511712
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+98
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+133.9517568451969
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+(segno_post)  ACERO LAMINADO EN FRÍO de 1.6
+ 11
+5.0
+ 21
+133.9517568451969
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+99
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+129.9055210352767
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+mm (NO es el aluminio del gabinete)  CANT.
+ 11
+5.0
+ 21
+129.9055210352767
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9A
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+125.8592852253565
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+2  plegado en C; medidas EXTERIORES apoyo
+ 11
+5.0
+ 21
+125.8592852253565
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9B
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+121.8130494154363
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+21.99 / alma 47.07 / pie 21.60 mm
+ 11
+5.0
+ 21
+121.8130494154363
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9C
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+117.76681360551608
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+(interiores 20 / 45.1 / 20); plegado del
+ 11
+5.0
+ 21
+117.76681360551608
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9D
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+113.72057779559586
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+apoyo 102.5° (asienta al ras sobre la
+ 11
+5.0
+ 21
+113.72057779559586
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9E
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+109.67434198567565
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+pendiente de 12.5°), plegado del pie 90°;
+ 11
+5.0
+ 21
+109.67434198567565
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9F
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+105.62810617575545
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+el pie se abulona al piso del cuerpo (M4 x
+ 11
+5.0
+ 21
+105.62810617575545
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A0
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+101.58187036583523
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+2), fieltro sobre el apoyo; deducción
+ 11
+5.0
+ 21
+101.58187036583523
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A1
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+97.53563455591502
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+aplicada (K 0.33, Ri 1.6): 2.08 mm en el
+ 11
+5.0
+ 21
+97.53563455591502
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A2
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
+93.4893987459948
+ 30
+0.0
+ 40
+2.5288973812001316
+  1
+plegado del apoyo, 1.53 mm en el del pie;
+ 11
+5.0
+ 21
+93.4893987459948
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A3
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+5.0
+ 20
 89.4431629360746
  30
 0.0
  40
-9.0
+2.5288973812001316
   1
-Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de 1.6 mm (NO es el aluminio del gabinete)  CANT. 2  plegado en C; medidas EXTERIORES apoyo 21.99 / alma 47.07 / pie 21.60 mm (interiores 20 / 45.1 / 20); plegado del apoyo 102.5° (asienta al ras sobre la pendiente de 12.5°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), fieltro sobre el apoyo; deducción aplicada (K 0.33, Ri 1.6): 2.08 mm en el plegado del apoyo, 1.53 mm en el del pie; desarrollo 83.44 mm
+desarrollo 83.44 mm
  11
 5.0
  21
@@ -6649,7 +7009,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-9A
+A6
   0
 DICTIONARYVAR
   5
@@ -6661,7 +7021,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:07.082707+00:00
+1.4.4 @ 2026-09-04T21:45:30.792658+00:00
   0
 VISUALSTYLE
   5
@@ -13215,7 +13575,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-9A
+A6
 330
 2D
 100
@@ -13223,7 +13583,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:07.084617+00:00
+1.4.4 @ 2026-09-04T21:45:30.795680+00:00
   0
 ENDSEC
   0

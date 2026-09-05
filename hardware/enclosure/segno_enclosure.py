@@ -2622,6 +2622,235 @@ def _doc():
     doc.layers.add("MASK", color=1, linetype="DASHDOT")
     return doc
 
+# The stock DASHED / DASHDOT patterns are drawn for 1:1 printing: 1.27 mm of dash
+# then 0.254 mm of gap. Every drawing sheet is auto-fitted to its part, so on the
+# 1040 mm base that gap lands at 0.02 mm on paper -- a thirtieth of a 600 dpi dot.
+# It prints SOLID, and a bend line that prints solid is a bend line the shop can
+# read as a cut line. $LTSCALE scales the patterns; size it from the part so the
+# printed gap comes out ~0.3 mm on every sheet, from the 24 mm corner bracket to
+# the 1040 mm base. Tuned against rasterised output -- see _verify_dash_legibility.
+LTSCALE_SPAN = 62.0
+
+def _ltscale_for(doc):
+    """Linetype scale that keeps this part's dashes legible once fitted to a sheet."""
+    from ezdxf.bbox import extents
+    bb = extents(e for e in doc.modelspace()
+                 if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
+    if not bb.has_data:
+        return 1.0
+    span = max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1])
+    return max(1.0, round(span / LTSCALE_SPAN, 1))
+
+# One global scale cannot serve a 1040 mm bend line and a O12 mask ring on the
+# same sheet: the scale that makes the bend line's gaps visible on paper makes
+# the ring's dash longer than its own circumference, and it renders as a solid
+# red circle beside real O12 holes -- exactly the "reads as a cut contour"
+# failure the MASK layer exists to prevent (#775 R3, #1001). DXF has the answer
+# already: an entity-level linetype scale that multiplies the global one. Give
+# any dashed entity too small for the sheet scale its own.
+# Full dash periods the smallest dashed run must show. These two constants pull
+# against each other: more periods on a short entity means smaller gaps, and a
+# gap too small to print is the failure the floor below exists to stop. Three
+# periods of DASHDOT is three dashes and three dots around a ring. Be precise
+# about those dots: they are zero-length pattern elements, and the renderer
+# substitutes a fixed 0.1 DRAWING UNIT minimum that does not scale with ltscale,
+# so each prints about 0.015 mm on the base sheet -- a stroke-width speck, not a
+# measurable mark. What carries the dash-dot signature is the three clear GAPS.
+# Three periods also leaves the tightest entity actually shipped (a 35 mm mask leader on the
+# 1040 mm base) at 1:625 against a 1:900 floor, a 1.44x margin. Four periods
+# left that same leader at 1:833, an 8% margin, and one edit from a red build.
+LTSCALE_MIN_PERIODS = 3.0
+# Floor on the widest gap in a pattern, as a fraction of the part span. The part
+# is drawn about 166 mm wide on its sheet whatever its size (the sheets are
+# auto-fitted), so gap/span translates to paper almost directly. Set from the
+# RASTER, not by extrapolating from the bend lines: a ring injected at 1/1200
+# measures 0.093 mm printed at 600 dpi (about two dots) and its dash-dot
+# collapses to plain dashed, losing the signature MASK depends on. Linear
+# extrapolation misses a roughly constant ink-spread deficit that only matters
+# at these sizes. At 1/900 the worst entity actually shipped -- a base mask
+# leader at 1/833 -- prints 0.19 mm and keeps its dots. The stock $LTSCALE 1
+# that started all this sits at 1/4100.
+LTSCALE_GAP_RATIO = 900.0
+
+
+def _entity_linetype(doc, e):
+    """The linetype the RENDERER will use: the entity's own if it sets one.
+
+    Reading only the layer's meant a MASK ring carrying linetype=CONTINUOUS was
+    validated against DASHDOT and passed, while rasterising as one solid red
+    circle beside real O12 holes.
+    """
+    own = e.dxf.get("linetype", "BYLAYER")
+    if own and own.upper() not in ("BYLAYER", "BYBLOCK"):
+        return own
+    return doc.layers.get(e.dxf.layer).dxf.linetype
+
+
+def _pattern_period(doc, name):
+    """Length of one repeat of a linetype pattern, in drawing units."""
+    lt = doc.linetypes.get(name)
+    total = sum(abs(t.value) for t in lt.pattern_tags.tags if t.code == 49)
+    return total or 1.0
+
+
+# Annotation and fills carry no dash pattern to get wrong. Everything else on a
+# dashed layer is line work and MUST be measurable -- see _run_length.
+NOT_LINEWORK = {"TEXT", "MTEXT", "ATTDEF", "ATTRIB", "HATCH", "POINT",
+                "INSERT", "SOLID", "IMAGE", "WIPEOUT"}
+
+
+def _run_length(e):
+    """Drawn length of a dashable entity, or None if it cannot be measured.
+
+    None is the important return. The first version answered 0.0 for anything it
+    did not recognise and both the fixer and the verifier skipped on that, so a
+    MASK ellipse or a BEND spline would be scaled by nobody, checked by nobody,
+    and print as a solid closed contour with every assertion green. Unknown now
+    means "stop", not "fine".
+    """
+    t = e.dxftype()
+    if t == "LINE":
+        return math.dist((e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y))
+    if t in ("LWPOLYLINE", "POLYLINE"):
+        pts = ([(x, y) for x, y in e.get_points("xy")] if t == "LWPOLYLINE"
+               else [(v.dxf.location.x, v.dxf.location.y) for v in e.vertices])
+        if len(pts) < 2:
+            return 0.0
+        if e.is_closed:
+            pts = pts + [pts[0]]
+        return sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+    if hasattr(e, "flattening"):        # CIRCLE, ARC, ELLIPSE, SPLINE
+        pts = [(v.x, v.y) for v in e.flattening(0.01)]
+        return sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+    return None
+
+
+def _fit_entity_ltscales(doc, gscale):
+    """Scale down the linetype of every dashed entity the global scale would solidify."""
+    periods, fixed = {}, 0
+    for e in doc.modelspace():
+        layer = e.dxf.layer
+        if layer not in ("BEND", "MASK"):
+            continue
+        if e.dxftype() in NOT_LINEWORK:
+            continue
+        run = _run_length(e)
+        if run is None or run <= 0.0:
+            continue                    # the verifier turns this into a failure
+        lname = _entity_linetype(doc, e)
+        period = periods.setdefault(lname, _pattern_period(doc, lname))
+        cap = run / (LTSCALE_MIN_PERIODS * period)
+        if gscale > cap:
+            e.dxf.ltscale = max(cap / gscale, 1e-3)
+            fixed += 1
+    return fixed
+
+
+MASK_CALLOUT_SPAN = 170.0        # part spans per unit of callout text height
+MASK_CALLOUT_CLEAR = 2.0         # keep this much clear of any cut edge, mm
+
+
+def _cut_segments(msp):
+    """Every straight CUT/VENT edge, as (x0, y0, x1, y1)."""
+    segs = []
+    for e in msp:
+        if e.dxf.layer not in ("CUT", "VENT"):
+            continue
+        if e.dxftype() == "LINE":
+            segs.append((e.dxf.start.x, e.dxf.start.y, e.dxf.end.x, e.dxf.end.y))
+        elif e.dxftype() == "LWPOLYLINE":
+            pts = list(e.get_points("xy"))
+            if e.is_closed and len(pts) > 2:
+                pts = pts + [pts[0]]
+            segs += [(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1])
+                     for i in range(len(pts) - 1)]
+    return segs
+
+
+def _box_hits_cut(box, segs):
+    """Does an axis-aligned text box have a cut edge running through it?
+
+    Only edges that actually CROSS the box count -- a note drawn across an
+    aperture's empty middle is ordinary drafting; a line struck through the
+    lettering is not.
+    """
+    x0, y0, x1, y1 = box
+    for ax, ay, bx, by in segs:
+        if abs(ay - by) < 1e-9:                       # horizontal
+            if y0 < ay < y1 and min(ax, bx) < x1 and max(ax, bx) > x0:
+                return True
+        elif abs(ax - bx) < 1e-9:                     # vertical
+            if x0 < ax < x1 and min(ay, by) < y1 and max(ay, by) > y0:
+                return True
+    return False
+
+
+def _fit_mask_callouts(doc, span):
+    """Grow the NO CORTAR callouts to the part, and keep them off the cut lines.
+
+    A fixed 4.5 mm was fine on the 400 mm rear panel and printed 0.82 mm on the
+    1040 mm base -- the smallest text on that sheet, on the one annotation whose
+    whole job is to stop somebody drilling the earth land.
+
+    Growing it alone is not enough, and was worse than doing nothing: at 6.12 mm
+    the base's O20 callout rose into the rear window's own cut edge, so the line
+    ran through the middle of "NO PINTAR, NO CORTAR" for its whole length. The
+    text is lifted clear along with its leader, together, so the warning still
+    points at the ring it belongs to.
+    """
+    msp = doc.modelspace()
+    want = max(4.5, span / MASK_CALLOUT_SPAN)
+    segs = _cut_segments(msp)
+    texts = [e for e in msp if e.dxftype() == "TEXT" and e.dxf.layer == "MASK"]
+    leaders = [e for e in msp
+               if e.dxf.layer == "MASK" and e.dxftype() == "LWPOLYLINE"]
+    n = 0
+    for t in texts:
+        if t.dxf.height >= want:
+            continue
+        t.dxf.height = want
+        n += 1
+        tx, ty = float(t.dxf.insert.x), float(t.dxf.insert.y)
+        w = len(t.dxf.text) * want * NOTE_ADVANCE_EST
+        # the leader whose horizontal run ends just under this text
+        lead = min(leaders,
+                   key=lambda e, tx=tx, ty=ty: min(
+                       abs(p[0] - tx) + abs(p[1] - ty)
+                       for p in e.get_points("xy")),
+                   default=None)
+        # pad the box: a cut edge running flush along the baseline reads as an
+        # underline through the descenders, which is barely better than through
+        # the middle of the letters
+        pad = MASK_CALLOUT_CLEAR
+        for dy in (0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, -8.0, -10.0, -12.0):
+            box = (tx, ty + dy - pad, tx + w, ty + dy + want + pad)
+            if not _box_hits_cut(box, segs):
+                break
+        else:
+            dy = 0.0                    # nowhere clear: size still beats nothing
+        if dy:
+            t.dxf.insert = (tx, ty + dy)
+            if lead is not None:        # carry the leader's elbow with it
+                pts = list(lead.get_points("xy"))
+                lead.set_points([(px, py + dy) if i else (px, py)
+                                 for i, (px, py) in enumerate(pts)],
+                                format="xy")
+    return n
+
+
+def _save(doc, path):
+    """Write the DXF with a part-sized $LTSCALE.
+
+    Set here rather than in the PDF renderer so the value travels WITH the file:
+    the shop opening the DXF in their own CAD sees the same broken bend lines the
+    PDF shows, and `dxf_to_pdf` (which re-reads the saved file) inherits it free.
+    """
+    gscale = _ltscale_for(doc)
+    doc.header["$LTSCALE"] = gscale
+    _fit_entity_ltscales(doc, gscale)
+    _fit_mask_callouts(doc, _SPAN(doc.modelspace()))
+    doc.saveas(path)
+
 def _circle(msp, x, y, d, layer="CUT"):
     msp.add_circle((x, y), d / 2.0, dxfattribs={"layer": layer})
 
@@ -2723,6 +2952,53 @@ def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
         attrs["style"] = "SILKBOLD"          # legends print BOLD
     msp.add_text(s, height=h, dxfattribs=attrs).set_placement((x, y), align=al)
 
+# Sheet drawings are auto-fitted to the contents of model space, and model-space
+# TEXT has real width -- so a shop note emitted as ONE long TEXT entity is a page
+# layout hazard, not just ugly. The post's note measured 2909 mm beside an 83 mm
+# part: the part rendered at 3% of the sheet, its dimensions were unreadable and
+# its bend line printed as a smear. Wrap notes to the part's own width, at a text
+# height that keeps the block a caption rather than the largest thing on the page.
+NOTE_BLOCK_FILL = 0.55      # note-block height, as a fraction of the part's height
+NOTE_ADVANCE    = 0.75      # TEXT advance per character, in units of text height
+NOTE_LEADING    = 1.6       # line pitch, in units of text height
+
+def _note(msp, x, y, s, layer="NOTE"):
+    """Emit a shop note as a wrapped block whose bottom line sits at (x, y).
+
+    Grows UPWARD so the existing call sites -- which anchor just above the part --
+    keep meaning what they say, and RETURNS the top of the block so a second note
+    can be stacked on it instead of printed through it.
+    """
+    import textwrap
+    from ezdxf.bbox import extents
+    bb = extents(e for e in msp if e.dxf.layer != "NOTE")
+    span = 100.0
+    if bb.has_data:
+        # the LARGER dimension, not the width: the post is 30 mm wide and 83 mm
+        # tall, and wrapping its note to 30 mm stacked 20 lines above a part that
+        # was already the tall one, turning the sheet into a 1:3 ribbon.
+        span = max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1], 1.0)
+    w = span
+    # lines = len*ADVANCE*th/span and block = LEADING*th*lines, so solving
+    # block = FILL*span for th gives the height that fills the budget exactly.
+    th = math.sqrt(NOTE_BLOCK_FILL * span * span /
+                   (NOTE_ADVANCE * NOTE_LEADING * max(len(s), 1)))
+    # Never split a word: the shop pairs a printed sheet to its DXF by the file
+    # stem written in the note, and wrapping "segno_corner_bracket_rear" across
+    # two lines destroys that pairing. But widening the COLUMN to fit that token
+    # pushes the block past the part -- the bracket's note came out 89 mm wide
+    # against an 80 mm part. Shrink the text until the longest token fits the
+    # span instead, and only overflow when even the 1.2 mm floor cannot hold it.
+    longest = max((len(t) for t in s.split()), default=1)
+    th = min(th, span / (NOTE_ADVANCE * max(longest, 1)))
+    th = min(max(th, 1.2), 9.0)
+    cols = max(24, int(w / (NOTE_ADVANCE * th)), longest)
+    lines = textwrap.wrap(s, cols, break_long_words=False,
+                          break_on_hyphens=False) or [s]
+    for i, ln in enumerate(lines):
+        _text(msp, x, y + (len(lines) - 1 - i) * th * NOTE_LEADING, th, ln, layer)
+    return y + (len(lines) - 1) * th * NOTE_LEADING + th
+
 def _emit(msp, feats, ox=0.0, oy=0.0):
     for f in feats:
         layer = f.get("layer", "CUT")
@@ -2791,8 +3067,8 @@ def dxf_faceplate(path):
                                                                           # stations as the front lip (#760),
                                                                           # Ø3.4 M3 clearance, concentric
                                                                           # with the flange tap pilots
-    _text(msp, 10, yr1+8, 8, f"Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico) AJUSTE DE LA PESTAÑA FRONTAL: plegar la pestaña de modo que quede {LIP_FIT_CLEAR:.1f} mm de holgura entre la cara INTERIOR de la pestaña y la cara EXTERIOR de la pared frontal del cuerpo, MEDIDO DESPUÉS DE PINTAR (ambas caras se pintan, no se enmascara nada). En el CAD el ajuste es cara contra cara, por lo que la pestaña debe plegarse levemente abierta; verificar que la tapa entre sobre el cuerpo terminado antes del plegado definitivo", "NOTE")
-    doc.saveas(path)
+    _note(msp, 10, yr1+8, f"Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico) AJUSTE DE LA PESTAÑA FRONTAL: plegar la pestaña de modo que quede {LIP_FIT_CLEAR:.1f} mm de holgura entre la cara INTERIOR de la pestaña y la cara EXTERIOR de la pared frontal del cuerpo, MEDIDO DESPUÉS DE PINTAR (ambas caras se pintan, no se enmascara nada). En el CAD el ajuste es cara contra cara, por lo que la pestaña debe plegarse levemente abierta; verificar que la tapa entre sobre el cuerpo terminado antes del plegado definitivo")
+    _save(doc, path)
     return {"blank": (LW, yr1)}
 
 def dxf_overlay(path):
@@ -2815,8 +3091,8 @@ def dxf_overlay(path):
         else:
             _text(msp, e["u"], e["v"], e["h"], e["s"], layer="SILK",   # WHITE legend on the print
                   wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
-    _text(msp, 10, FP_V + 8, 8, "Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)", "NOTE")
-    doc.saveas(path); return {}
+    _note(msp, 10, FP_V + 8, "Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)")
+    _save(doc, path); return {}
 
 def dxf_base(path):
     """ONE-PIECE BASE developed as a SINGLE flat blank: the bottom plate in the centre,
@@ -3017,15 +3293,14 @@ def dxf_base(path):
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
             _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
                          "zona de puesta a tierra del perno M6, AMBAS CARAS")
-    _text(msp, 8, BD+Hr+Ht+22, 7,
+    _mask_top = _note(msp, 8, BD+Hr+Ht+10,
+          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar")
+    _note(msp, 8, _mask_top + 8,
           "MASK (rojo trazo y punto) = máscara de pintura, NO ES UN CORTE: zona de metal "
           "desnudo para la puesta a tierra alrededor del perno M6, en AMBAS CARAS. Los "
-          "agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.", "MASK")
-
-    _text(msp, 8, BD+Hr+Ht+10, 9,
-          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar",
-          "NOTE")
-    doc.saveas(path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
+          "agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.",
+          layer="MASK")
+    _save(doc, path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
 
 def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
     """Internal L-bracket that joins a vertical corner WITHOUT welding: one leg pop-rivets to
@@ -3039,8 +3314,8 @@ def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
         _circle(msp, LEG - CORNER_RO, z, D_RIVET)                        # rear-wall leg
     for z in side_zs:
         _circle(msp, LEG + CORNER_RO, z, D_RIVET)                        # side-wall leg
-    _text(msp, 0, ht+6, 6, f"Segno ÁNGULO DE ESQUINA (segno_corner_bracket_rear, {tag})  chapa 2.0 mm  CANT. 2  unión de esquina sin soldadura; remachar a las dos paredes", "NOTE")
-    doc.saveas(path); return {}
+    _note(msp, 0, ht+6, f"Segno ÁNGULO DE ESQUINA (segno_corner_bracket_rear, {tag})  chapa 2.0 mm  CANT. 2  unión de esquina sin soldadura; remachar a las dos paredes")
+    _save(doc, path); return {}
 
 def platform_foot_u(sw):
     """The two x-fractions of the foot-flange screws, as offsets from the shelf centre."""
@@ -3074,13 +3349,12 @@ def dxf_rear_panel(path):
     _u0, _z0, pw, ph = rear_panel_outline()
     _poly(msp, [(-pw/2, -ph/2), (pw/2, -ph/2), (pw/2, ph/2), (-pw/2, ph/2)], "CUT")
     _emit(msp, rear_panel_holes())
-    _text(msp, -pw/2 + 4, ph/2 + 6, 6,
+    _note(msp, -pw/2 + 4, ph/2 + 6,
           f"Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa {REAR_PANEL_T:.1f} mm (los jacks CTRL Neutrik NJ6FD-V "
           f"admiten panel de 1.2 a 1.5; el cuerpo sigue en 2.0)  CANT. 1  "
           "PIEZA PLANA, sin plegados: entrada USB-C PD 20 V (punzón D) + botón de apagado + fusible + 2 x DIN-5 + "
-          "2 x jack Neutrik NJ6FD-V (Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que apoya contra el cuerpo",
-          "NOTE")
-    doc.saveas(path); return {}
+          "2 x jack Neutrik NJ6FD-V (Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que apoya contra el cuerpo")
+    _save(doc, path); return {}
 
 # screen_bracket REMOVED (#760): the screens are bonded to the shell; the
 # bracket fallback was dropped entirely (user call 2026-08-18).
@@ -3103,14 +3377,14 @@ def dxf_post(path):
     _poly(msp, [(0, pad_f+web_f), (pw, pad_f+web_f)], "BEND", closed=False) # web -> foot (fold 90)
     for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot, foot/2 from its free end
         _circle(msp, pw/2.0 + du, Wd - foot/2.0, D_M4)
-    _text(msp, 5, Wd+6, 9,
+    _note(msp, 5, Wd+6,
           f"Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de {POST_T:.1f} mm "
           f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C; medidas EXTERIORES apoyo {POST_PAD_OUT:.2f} / "
           f"alma {POST_WEB_OUT:.2f} / pie {POST_FOOT_OUT:.2f} mm (interiores {pad:.0f} / {web:.1f} / {foot:.0f}); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
           f"de {POST_TILT:.1f}°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), "
           f"fieltro sobre el apoyo; deducción aplicada (K {KF}, Ri {POST_RI:.1f}): {POST_DD_PAD:.2f} mm en el plegado del apoyo, "
-          f"{POST_DD_FOOT:.2f} mm en el del pie; desarrollo {Wd:.2f} mm", "NOTE")
-    doc.saveas(path); return {}
+          f"{POST_DD_FOOT:.2f} mm en el del pie; desarrollo {Wd:.2f} mm")
+    _save(doc, path); return {}
 
 # ===========================================================================
 # STEP  (cadquery)
@@ -5154,6 +5428,27 @@ def _seal_path_seams(ax):
     return sealed
 
 
+# Floor on the point size of everything a fabricator ACTS on: the bend table and
+# its footnote, the tolerance block, the title block. ISO 3098's smallest
+# standard lettering is 1.8 mm and these are unhinted Type 3 fonts. The floor is
+# in POINTS but what matters is millimetres after the sheet is fitted to A4, and
+# that scale depends on the page aspect -- which this floor itself changes, by
+# widening the page. 6.0 pt is the value that clears 1.8 mm on every sheet once
+# that settles; measured, not derived.
+SHEET_MIN_DATA_PT = 5.2
+# Tallest page shape allowed, height over width. The sheets are auto-fitted to
+# their part, so a tall narrow part produced a tall narrow page: the post came
+# out 288 x 900 pt, and fitting a 1:3 ribbon onto A4 wastes half the paper and
+# scales every dimension and table row down with it. 1.55 is a shade taller than
+# A4's own 1.414 -- picked by measuring, not derived: it beats 1.30 on three of
+# the four narrow sheets, and both beat leaving the shape uncapped.
+SHEET_MAX_ASPECT = 1.55
+# Bottom margin for the text strip. Every office printer reserves 4-5 mm and the
+# last legend line was finishing 0.4 mm from the edge: printed at 100% it landed
+# in the unprintable band, taking the tolerance values with it.
+SHEET_MARGIN_IN = 0.22
+
+
 def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None):
     """One drawing sheet: the flat pattern, a bend table, a title block and a legend.
 
@@ -5193,17 +5488,72 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
     # runs straight off the edge of the 402 mm rear panel (which is how the post
     # sheet ended up with its title block printed over its own heading).
     w, h = fig.get_size_inches()
+
+    # The bend table, the tolerances and the title block are DATA; the legend
+    # under them is boilerplate at a fixed FS. Sizing only the data to the page
+    # meant the three narrow sheets -- the post finishes 288 pt wide -- printed
+    # their fold angles, their deductions and the "punzón de 30°, no el juego de
+    # 88°" note at 1.0-1.4 mm, while the generic legend beside them stayed at
+    # 3 mm. The least important text on the sheet was three times the size of
+    # the most important. Widen the PAGE so the data can hold a floor. The
+    # drawing keeps its size; the extra width is margin (which those sheets also
+    # needed -- they were finishing 0.5 mm from the paper edge).
+    _radii_probe = sorted({r[7] for r in BEND_TABLES.get(stem, ())})
+    _tb_probe = (f"{title}   |   {material}   |   CANT. {qty}   |   medidas en mm"
+                 + ("   |   PIEZA PLANA, sin plegados" if not _radii_probe else
+                    "   |   plegado Ri "
+                    + " / ".join(f"{r:.1f}" for r in _radii_probe)
+                    + f" mm, factor K {KF}"))
+    _tbl_probe = _bend_table_lines(stem)
+    _tol_probe = (_tolerance_lines()
+                  if PART_SPECS.get(stem, (None, None, None))[2] == PKG_SHEETMETAL
+                  else [])
+    # Widen by ASPECT, not by a font floor. A font floor is circular: the wider
+    # page it forces makes the sheet print SMALLER once fitted to paper, so the
+    # text gains nothing and raising the floor actively makes it worse (measured:
+    # 5.2 pt gave 1.79 mm on the post, 6.0 pt gave 1.55). What actually costs
+    # legibility is the page shape -- the post finished 288 x 900 pt, a 1:3
+    # ribbon, and fitting that to A4 throws away half the width and scales
+    # everything down with it. Cap the aspect and the fonts, which are already
+    # sized to the page, follow.
+    _rows = len(_tbl_probe) + (len(textwrap.wrap(BEND_FOOTNOTES.get(stem, ""), 110))
+                               + 1 if BEND_FOOTNOTES.get(stem) else 0)
+    _strip_est = SHEET_MARGIN_IN + 0.62 + 0.155 * 6 + (0.20 * _rows + 0.30 if _rows else 0.0)
+    _need_in = (h + _strip_est) / SHEET_MAX_ASPECT
+    # ...and wide enough that the floored text still FITS. tbl_fs used to be
+    # min(FS, fit) and could only shrink; with a floor under it, a table one
+    # column wider than the page runs off the edge instead. The corner bracket
+    # sits 1.6% under that today, and the column at risk is DEDUCCIÓN -- the
+    # number the brake operator sizes the blank from. Computed at the fixed
+    # floor, so unlike a floor-driven width this cannot chase its own tail.
+    if _tbl_probe:
+        _need_in = max(_need_in, (SHEET_MIN_DATA_PT * 0.602
+                                  * max(len(ln) for ln in _tbl_probe))
+                                 / (72.0 * 0.94))
+    if _tol_probe:
+        _need_in = max(_need_in, (SHEET_MIN_DATA_PT * 0.602
+                                  * max(len(t) for t in _tol_probe))
+                                 / (72.0 * 0.35))
+    if _need_in > w:
+        pos = ax.get_position()
+        fig.set_size_inches(_need_in, h, forward=True)
+        # keep the drawing where it was, in inches, and let the page grow around it
+        ax.set_position([pos.x0 * w / _need_in, pos.y0,
+                         pos.width * w / _need_in, pos.height])
+        w = _need_in
     usable_pt = w * 72.0 * 0.94
     mono_cols = lambda fs: max(40, int(usable_pt / (0.602 * fs)))
-    fit_fs    = lambda text, want, ratio=0.55: min(want, usable_pt / (ratio * max(len(text), 1)))
+    fit_fs    = lambda text, want, ratio=0.55: max(
+        SHEET_MIN_DATA_PT, min(want, usable_pt / (ratio * max(len(text), 1))))
 
-    table = _bend_table_lines(stem)
+    table = _tbl_probe
     foot  = BEND_FOOTNOTES.get(stem, "")
     ROW, FS = 0.20, 7.4                      # inches per row / point size
     # The Spanish table rows are ~10 characters wider than the English ones were,
     # and the sheets are auto-fitted to their part -- so size the table to the page
     # instead of trusting a fixed 7.4 pt to keep fitting.
-    tbl_fs = min(FS, usable_pt / (0.602 * max((len(ln) for ln in table), default=1)))
+    tbl_fs = max(SHEET_MIN_DATA_PT,
+                 min(FS, usable_pt / (0.602 * max((len(ln) for ln in table), default=1))))
     block = [(ln, tbl_fs, True) for ln in table]
     if foot:
         block += [("", tbl_fs, False)]
@@ -5217,20 +5567,26 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
 
     # the bend spec is PER PART -- the post is 1.6 mm steel on Ri 1.6, and a flat
     # part has no radius at all. A blanket "bend Ri 2.0" was wrong on both.
-    radii = sorted({r[7] for r in BEND_TABLES.get(stem, ())})
-    bend_spec = ("   |   PIEZA PLANA, sin plegados" if not radii else
-                 "   |   plegado Ri " + " / ".join(f"{r:.1f}" for r in radii) + f" mm, factor K {KF}")
-    tb = f"{title}   |   {material}   |   CANT. {qty}   |   medidas en mm{bend_spec}"
+    tb = _tb_probe
 
+    # The title block is the line a fabricator checks first: part name, stem,
+    # material, quantity, bend spec. It shares the strip with the tolerance
+    # column, so on a narrow sheet it cannot be both readable and one line --
+    # shrinking it put the material at 1.4 mm, and flooring it walked "factor K
+    # 0.33" off the right edge. Wrap it and grow the strip instead.
+    tb_room = 0.58 if tol else 1.0
+    tb_cols = max(30, int(usable_pt * tb_room / (0.62 * SHEET_MIN_DATA_PT)))
+    tb_lines = textwrap.wrap(tb, tb_cols) or [tb]
     legend_h = 0.155 * max(len(legend), len(tol))
-    strip = 0.62 + legend_h + (ROW * len(block) + 0.30 if block else 0.0)
+    strip = (SHEET_MARGIN_IN + 0.62 + legend_h + 0.16 * (len(tb_lines) - 1)
+             + (ROW * len(block) + 0.30 if block else 0.0))
     pos  = ax.get_position()
     y0_in, h_in = pos.y0 * h, pos.height * h
     newh = h + strip                          # grow the PAGE, never shrink the drawing
     fig.set_size_inches(w, newh, forward=True)
     ax.set_position([pos.x0, (y0_in + strip) / newh, pos.width, h_in / newh])
-    fy = lambda inches: inches / newh
-    y = strip - 0.22
+    fy = lambda inches: (inches + SHEET_MARGIN_IN) / newh
+    y = strip - SHEET_MARGIN_IN - 0.22
     for i, (line, fs, bold) in enumerate(block):
         fig.text(0.03, fy(y), line, family="monospace", fontsize=fs,
                  weight="bold" if i < 2 and bold else "normal",
@@ -5242,12 +5598,17 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
     # 0.62, not the 0.55 fit_fs uses: these two lines are BOLD, and the Spanish
     # title block is long enough that the optimistic ratio walked it off the right
     # edge of the narrow overlay sheet.
-    room = 0.58 if tol else 1.0
-    bold_fs = lambda text, want: min(want, usable_pt * room / (0.62 * max(len(text), 1)))
-    fig.text(0.03, fy(legend_h + 0.40), SHEET_HEADING,
+    room = tb_room
+    bold_fs = lambda text, want: max(
+        SHEET_MIN_DATA_PT, min(want, usable_pt * room / (0.62 * max(len(text), 1))))
+    _tb_h = 0.16 * (len(tb_lines) - 1)
+    fig.text(0.03, fy(legend_h + 0.40 + _tb_h), SHEET_HEADING,
              fontsize=bold_fs(SHEET_HEADING, 12.0), weight="bold")
-    fig.text(0.03, fy(legend_h + 0.18), tb, fontsize=bold_fs(tb, 10.0),
-             weight="bold", color="#000")
+    tb_fs = max(SHEET_MIN_DATA_PT,
+                min(10.0, usable_pt * room / (0.62 * max(len(l) for l in tb_lines))))
+    for i, line in enumerate(tb_lines):
+        fig.text(0.03, fy(legend_h + 0.18 + _tb_h - 0.16 * i), line,
+                 fontsize=tb_fs, weight="bold", color="#000")
     for i, line in enumerate(legend):
         fig.text(0.03, fy(legend_h - 0.115 - 0.155 * i), line,
                  family="monospace", fontsize=FS, color="#333")
@@ -5256,12 +5617,31 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
     # block is: a fixed point size that fits the 1152 pt base sheet walks off the
     # edge of a narrower one.
     if tol:
-        tol_fs = min(FS, (0.33 * w * 72.0) / (0.602 * max(len(t) for t in tol)))
+        # Sized to its own column and ending at 0.97, not floored: a floor here
+        # can only make the block wider than the column it has, and the column is
+        # the last thing before the paper edge -- the corner bracket's tolerance
+        # values were running 0.1 mm PAST it. The aspect cap above is what buys
+        # this text its size; there is nothing left for a floor to add.
+        tol_w, tol_x = 0.35, 0.62
+        tol_fs = min(FS, (tol_w * w * 72.0) / (0.602 * max(len(t) for t in tol)))
         for i, line in enumerate(tol):
-            fig.text(0.635, fy(legend_h + 0.40 - 0.155 * i), line, family="monospace",
+            fig.text(tol_x, fy(legend_h + 0.40 + _tb_h - 0.155 * i), line, family="monospace",
                      fontsize=tol_fs, weight="bold" if i == 0 else "normal",
                      color="#000" if i == 0 else "#333")
-    SHEET_TEXT[stem] = ([ln for ln, _f, _b in block] + [SHEET_HEADING, tb]
+    # Nothing above clips: matplotlib drops overflowing fig.text silently, so a
+    # too-wide table row simply loses its last column with no error anywhere.
+    for _ln in table:
+        assert len(_ln) * 0.602 * tbl_fs <= usable_pt + 1e-6, (
+            f"{stem}: a bend-table row needs "
+            f"{len(_ln) * 0.602 * tbl_fs:.0f} pt of a {usable_pt:.0f} pt page at "
+            f"{tbl_fs:.1f} pt -- it would print with its right-hand column cut "
+            f"off, DEDUCCIÓN included. Widen the page, do not shrink past the floor")
+    if tol:
+        for _ln in tol:
+            assert len(_ln) * 0.602 * tol_fs <= 0.35 * w * 72.0 + 1e-6, (
+                f"{stem}: a tolerance row does not fit its column")
+
+    SHEET_TEXT[stem] = ([ln for ln, _f, _b in block] + [SHEET_HEADING, tb] + tb_lines
                         + list(legend) + list(tol))
     fig.savefig(pdf_path, dpi=150); plt.close(fig)
 
@@ -5276,6 +5656,7 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
 # ===========================================================================
 
 AL_2MM = "Aluminio 1050 2,0 mm"
+AL_15  = "Aluminio 1050 1,5 mm"
 ST_16  = "Acero laminado en frío 1,6 mm"
 
 PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupón de muestra"
@@ -5287,10 +5668,50 @@ PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupón de m
 PAINT_BOM = [
     ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza más grande"),
     ("segno_faceplate",          "Tapa superior",                               1, AL_2MM, "Cara vista principal"),
+    ("segno_rear_panel",         "Panel trasero de conectores",                 1, AL_15,
+     "LLEVA MÁSCARA: land PANEL_BOND"),
     ("segno_corner_bracket_rear","Ángulo de esquina trasera",                   2, AL_2MM, "Interno"),
     ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM, "Interno"),
     ("segno_post",               "Poste de apoyo de la tapa",                   2, ST_16,  "ACERO: otro pretratamiento"),
 ]
+
+def _verify_paint_bom():
+    """Every powder-coated part must appear in the coater's BOM.
+
+    segno_rear_panel did not, for its whole life: no table row, no masking page,
+    and no sheet in segno_pintura.zip -- while its own drawing carries the one
+    instruction that matters, that the O12 PANEL_BOND land stays bare or the
+    chassis loses its earth. The coater would have painted over it and the area
+    quote was 4% short as well. Derived from PART_SPECS so the two cannot drift.
+    """
+    coated = {stem for stem, (_m, _q, pkg) in PART_SPECS.items()
+              if pkg == PKG_SHEETMETAL}
+    listed = {stem for stem, *_ in PAINT_BOM}
+    missing = coated - listed
+    assert not missing, (
+        f"powder-coated parts missing from PAINT_BOM: {sorted(missing)} -- the "
+        f"coater never sees them, and any bare-metal mask they carry is lost")
+    # and anything with a MASK ring needs its own masking page, not just a row
+    masked = set()
+    for stem in listed:
+        dxf = os.path.join(OUT, stem + ".dxf")
+        if not os.path.exists(dxf):
+            continue
+        import ezdxf
+        if any(e.dxf.layer == "MASK" and e.dxftype() in ("CIRCLE", "ARC")
+               for e in ezdxf.readfile(dxf).modelspace()):
+            masked.add(stem)
+    assert masked <= PAINT_MASK_PAGES, (
+        f"parts with a bare-metal mask and no masking page: "
+        f"{sorted(masked - PAINT_MASK_PAGES)}")
+    # PAINT_MASK_PAGES only means something if it is what paint_quote_pdf draws.
+    # Asserting `masked <= PAINT_MASK_PAGES` alone let the rear panel's page be
+    # swapped for a filler and the count stay 4, with the run still green.
+    assert PAINT_PAGES_EXPECTED == 1 + len(PAINT_MASK_PAGES), (
+        f"the paint quote is 1 cover page + {len(PAINT_MASK_PAGES)} masking "
+        f"pages, so PAINT_PAGES_EXPECTED should be "
+        f"{1 + len(PAINT_MASK_PAGES)}, not {PAINT_PAGES_EXPECTED}")
+
 
 def _poly_area(pts):
     a = 0.0
@@ -5335,6 +5756,39 @@ def _step_size(stem):
     except Exception:  # pragma: no cover - STEP is optional for this sheet
         return None
 
+def _blank_size(stem):
+    """Developed (flat) size of a part, straight off its own DXF.
+
+    The same extents the drawing prints as its overall dimension, so the two
+    documents in the zip cannot disagree.
+    """
+    import ezdxf
+    from ezdxf.bbox import extents
+    path = os.path.join(OUT, stem + ".dxf")
+    if not os.path.exists(path):
+        return None
+    msp = ezdxf.readfile(path).modelspace()
+    bb = extents(e for e in msp
+                 if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
+    if not bb.has_data:
+        return None
+    return (bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1])
+
+
+def _faceplate_size_note():
+    """Note 7, derived. It used to hard-code "DESARROLLO (850 x 407 x 2)", which
+    is the FOLDED bounding box, not the development -- and the faceplate drawing
+    in the same zip prints 849.8 x 444.3. Two documents, 37 mm apart, one of them
+    calling the folded size a development."""
+    folded = _step_size("segno_faceplate")
+    flat = _blank_size("segno_faceplate")
+    fold = ("%.0f x %.0f x %.0f" % folded) if folded else "ver plano"
+    dev = ("%.1f x %.1f" % flat) if flat else "ver plano"
+    return (f"  7. El tamaño de la tapa en esta tabla es el de la pieza PLEGADA "
+            f"({fold}), que es lo que entra al horno. Su plano acota el "
+            f"DESARROLLO plano, {dev}: no son la misma medida.")
+
+
 def _paint_rows():
     rows, tot = [], {}
     for stem, label, qty, mat, remark in PAINT_BOM:
@@ -5361,6 +5815,38 @@ def _draw_dxf(ax, dxf_path):
     _seal_path_seams(ax)
     ax.set_aspect("equal")
 
+# matplotlib fig.text neither wraps nor clips: text wider than the page is
+# silently absent from the PDF. Every sheet here is auto-fitted to its part, so
+# the page width is not known until after the drawing is laid out -- fit to it.
+def _fit_pt(text, want, page_w_in, frac=0.92, ratio=0.55, floor=5.0):
+    """Point size at which `text` fits `page_w_in` inches on one line."""
+    usable = page_w_in * 72.0 * frac
+    return max(floor, min(want, usable / (ratio * max(len(text), 1))))
+
+
+def _wrap_to_page(text, pt, page_w_in, frac=0.92, ratio=0.55):
+    """Wrap `text` to the lines that fit `page_w_in` inches at `pt`."""
+    import textwrap
+    cols = max(20, int(page_w_in * 72.0 * frac / (ratio * pt)))
+    return textwrap.wrap(text, cols) or [text]
+
+
+# Check the finished paint quote as well as propagating render failures: a file
+# replaced or truncated after rendering must not pass package verification.
+# Ink margin for the coater's sheet. SHEET_MARGIN_IN did the same job for
+# dxf_to_pdf and this path never got it: measured at 200 dpi the four pages had
+# ink 0.25-1.02 mm from the top edge and 2.41 mm from the bottom, inside the
+# unprintable band of any office printer. Printed at 100% the headings clip.
+PQ_MARGIN_MM = 6.0
+
+PAINT_PAGES = {}
+PAINT_PAGES_EXPECTED = 4
+# The parts that get a masking / detail page of their own, after the cover page.
+# Named here so _verify_paint_bom can check it against the parts that actually
+# carry a MASK ring, rather than trusting the list inside paint_quote_pdf.
+PAINT_MASK_PAGES = {"segno_base", "segno_faceplate", "segno_rear_panel"}
+
+
 def paint_quote_pdf(path):
     """Supplier-facing sheet (Spanish) for the powder-coating quote: parts table
     with painted area, then a masking page per part that has bare-metal zones."""
@@ -5374,9 +5860,12 @@ def paint_quote_pdf(path):
     with PdfPages(path) as pdf:
         # ---- page 1: what has to be painted -------------------------------
         fig = plt.figure(figsize=(11.7, 8.3))   # A4 landscape
-        fig.text(0.06, 0.995, SHEET_HEADING, va="top",
+        _cover_h_mm = fig.get_size_inches()[1] * 25.4
+        _cover_top = 1.0 - PQ_MARGIN_MM / _cover_h_mm
+        fig.text(0.06, _cover_top, SHEET_HEADING, va="top",
                  fontsize=17, weight="bold")
-        fig.text(0.06, 0.945, "Pedido de cotización: pintura en polvo (termolaqueado)",
+        fig.text(0.06, _cover_top - 0.050,
+                 "Pedido de cotización: pintura en polvo (termolaqueado)",
                  va="top", fontsize=12, color="#444")
         y = 0.885
         for k, v in (("Envolvente del equipo armado",
@@ -5416,16 +5905,26 @@ def paint_quote_pdf(path):
             "  1. La superficie es NETA: contorno exterior menos aberturas (ranuras de pedales, pantallas, ranuras de ventilación). No incluye cantos.",
             "  2. Las piezas llegan cortadas y plegadas, sin ningún recubrimiento ni aceite protector. Pretratamiento para aluminio a cargo del aplicador.",
             "  3. Los postes son ACERO laminado en frío, no aluminio: van en línea aparte porque llevan otro pretratamiento.",
-            "  4. Enmascarado: ver las páginas siguientes. Sólo la zona de puesta a tierra alrededor del perno M6 va sin pintura, en ambas caras (los agujeros piloto se roscan M3 después de pintar).",
+            "  4. Enmascarar las zonas M6 y PANEL_BOND en las caras indicadas en los planos siguientes. Roscar los pilotos M3 después de pintar.",
             "  5. Las aberturas de pantalla son ajustadas: la película come décimas por cara. Si el espesor supera 100 um avisar antes de aplicar.",
             "  6. El aluminio es blando: colgar para pintar, no apoyar sobre las caras vistas.",
-            "  7. La tapa figura con su tamaño en DESARROLLO (850 x 407 x 2): plegada suma la pestaña frontal de 12 mm y la solapa trasera.",
+            _faceplate_size_note(),
         ]
         # anchored, not flowed: the table above grows with the BOM and the notes
         # must not walk off the bottom of the sheet when it does
-        y = 0.150
+        # Sized to the page for the same reason the masking pages are: matplotlib
+        # drops overflowing fig.text silently, and note 4 already ends 29.7 pt
+        # from the edge -- about seven characters of headroom on the line that
+        # says the M3 pilots are tapped AFTER painting.
+        # Anchored from the BOTTOM margin up, not from a fixed 0.150 down: the
+        # seventh note was finishing 2.4 mm from the paper edge.
+        pages = 1                      # the cover page, already committed below
+        page_w = fig.get_size_inches()[0]
+        _cov_m = PQ_MARGIN_MM / _cover_h_mm
+        y = _cov_m + 0.015 + 0.0195 * (len(notes) - 1)
         for i, n in enumerate(notes):
-            fig.text(0.06, y, n, fontsize=8.2, color="#222" if i == 0 else "#444",
+            fig.text(0.06, y, n, fontsize=_fit_pt(n, 8.2, page_w, frac=0.88),
+                     color="#222" if i == 0 else "#444",
                      weight="bold" if i == 0 else "normal")
             y -= 0.0195
         pdf.savefig(fig); plt.close(fig)
@@ -5433,25 +5932,65 @@ def paint_quote_pdf(path):
         # ---- masking / detail pages ---------------------------------------
         sheets = [
             ("segno_base", "CUERPO - plano de enmascarado",
-             "Rojo = NO PINTAR. Zona de puesta a tierra de 20 mm alrededor del perno M6, en "
-             "ambas caras. Los agujeros piloto de la transición se roscan M3 después de pintar."),
+             "Rojo = NO PINTAR: Ø20 del perno M6 en AMBAS CARAS; PANEL_BOND Ø12 en la "
+             "CARA INTERIOR. Roscar M3 los pilotos de la transición después de pintar."),
             ("segno_faceplate", "TAPA SUPERIOR - aberturas críticas",
              "Sin enmascarado. Las dos aberturas grandes son de pantalla y quedan ajustadas "
              "contra el display: contemplar el espesor de película."),
+            ("segno_rear_panel", "PANEL TRASERO - plano de enmascarado",
+             "Rojo = NO PINTAR. Land PANEL_BOND de Ø12: apoya contra el cuerpo y hace la "
+             "puesta a tierra del chasis. Va en la cara que MIRA AL CUERPO; enmascarada "
+             "del lado equivocado, la máscara cae sobre pintura y el panel pierde la "
+             "puesta a tierra."),
         ]
+        assert {st for st, _t, _n in sheets} == PAINT_MASK_PAGES, (
+            f"paint_quote_pdf draws {sorted(st for st, _t, _n in sheets)} but "
+            f"PAINT_MASK_PAGES says {sorted(PAINT_MASK_PAGES)} -- the verifier "
+            f"checks the set, so they have to be the same set")
         for stem, title, note in sheets:
             dxf = os.path.join(OUT, stem + ".dxf")
             if not os.path.exists(dxf):
                 continue
             fig = plt.figure(figsize=(11.7, 8.3))
-            ax = fig.add_axes([0.04, 0.12, 0.92, 0.80])
+            # 0.16, not 0.12: the strip below now starts at a printable margin
+            # rather than 2.4 mm from the paper edge, so the note it carries
+            # needs that much more room before it runs into the flat pattern.
+            ax = fig.add_axes([0.04, 0.16, 0.92, 0.76])
             _draw_dxf(ax, dxf)
-            fig.text(0.04, 0.965, title, fontsize=14, weight="bold")
-            fig.text(0.04, 0.055, note, fontsize=9.5, color="#b00")
-            fig.text(0.04, 0.025, f"{SHEET_HEADING}   |   medidas en mm   |   "
-                                  "desarrollo / patrón plano (la pieza se entrega plegada)",
-                     fontsize=8, color="#555")
+            # _draw_dxf finalises through the ezdxf backend, which RESIZES the
+            # figure to the data aspect -- the 11.7 in above is not the page
+            # width. matplotlib neither wraps nor clips overflowing fig.text: it
+            # just stops drawing, with no error. When #1001 narrowed this page
+            # from 1152 pt to 577 pt the red instruction lost its ending mid-word
+            # ("los agujeros piloto d"), taking with it the one thing the page
+            # exists to say -- that the M3 pilots are tapped AFTER painting.
+            # So size every line to the FINISHED page, the way dxf_to_pdf does.
+            page_w = fig.get_size_inches()[0]
+            _pg_h_mm = fig.get_size_inches()[1] * 25.4
+            _m = PQ_MARGIN_MM / _pg_h_mm
+            fig.text(0.04, 1.0 - _m, title,
+                     fontsize=_fit_pt(title, 14.0, page_w),
+                     va="top", weight="bold")
+            foot = (f"{SHEET_HEADING}   |   medidas en mm   |   "
+                    "desarrollo / patrón plano (la pieza se entrega plegada)")
+            note_lines = _wrap_to_page(note, 9.5, page_w)
+            # The axes sit at 0.12 of the figure height. Two lines clear it; four
+            # would print the instruction across the flat pattern, and nothing
+            # counted the lines.
+            top = _m + 0.030 + (len(note_lines) - 1) * 0.030 + 0.020
+            assert top <= 0.16, (
+                f"{stem}: the masking note wraps to {len(note_lines)} lines and "
+                f"reaches {top:.3f} of the page, over the drawing at 0.16 -- "
+                f"shorten it or give the axes a taller bottom margin")
+            for i, line in enumerate(note_lines):
+                fig.text(0.04,
+                         _m + 0.030 + (len(note_lines) - 1 - i) * 0.030, line,
+                         va="bottom", fontsize=9.5, color="#b00")
+            fig.text(0.04, _m, foot, fontsize=_fit_pt(foot, 8.0, page_w),
+                     va="bottom", color="#555")
             pdf.savefig(fig); plt.close(fig)
+            pages += 1
+    PAINT_PAGES[os.path.splitext(os.path.basename(path))[0]] = pages
     return path
 
 # ===========================================================================
@@ -5678,8 +6217,8 @@ def dxf_ring_disc(path):
     doc = _doc(); msp = doc.modelspace()
     _circle(msp, 0, 0, RING_ID)                 # outline: OD = ring inner diameter
     _circle(msp, 0, 0, D_ENC)                   # encoder bush hole (centre)
-    _text(msp, -RING_ID/2, RING_ID/2 + 6, 5, "Segno DISCO CENTRAL DEL ARO DE LEDS (segno_ring_disc)  chapa 2.0 mm  CANT. 1  PIEZA PLANA, sin plegados (queda sujeto por la tuerca del encoder; el agujero central es el paso del buje)", "NOTE")
-    doc.saveas(path); return {}
+    _note(msp, -RING_ID/2, RING_ID/2 + 6, "Segno DISCO CENTRAL DEL ARO DE LEDS (segno_ring_disc)  chapa 2.0 mm  CANT. 1  PIEZA PLANA, sin plegados (queda sujeto por la tuerca del encoder; el agujero central es el paso del buje)")
+    _save(doc, path); return {}
 
 
 def _emit_tile(msp, ox, oy, label):
@@ -5703,27 +6242,73 @@ def _emit_tile(msp, ox, oy, label):
             _engrave_fill(msp, "poly", pts, holes=holes)
 
 
-def _tile_size_callout(msp, ox, oy):
-    """NOTE-only: both widths, so the 0.6 mm taper cannot be missed on screen.
+# The pad is a wedge in plan (#922). 54.36 vs 53.76 over 19.90 is 0.87 deg a side
+# -- a viewer that only looks at the outline will swear the tile is a rectangle,
+# so both widths get dimensioned. Split into three so the NEST can put each one
+# on an edge of the nest that is actually free: the tiles are pitched 4.0 mm
+# apart and that gap already carries the per-tile captions, so a dimension drawn
+# into it prints straight through "TRACK2" (#1001).
+TILE_DIM_GAP = 2.4
 
-    The pad is a wedge in plan (#922). 54.36 vs 53.76 over 19.90 is 0.87° a side
-    -- a viewer that only looks at the outline will swear the tile is a rectangle.
+def _assert_dims_outside_nest(oy_wide, oy_narrow, n_labels):
+    """The nest's width dimensions must sit OUTSIDE the tile block, never in a gap.
+
+    The tiles are pitched TILE_NEST_GAP (4.0 mm) apart and that gap already
+    carries the per-tile captions, so a dimension drawn into it prints straight
+    through one -- "54.36 ancho" over "TRACK2" (#1001). This is the rule stated
+    as an assertion, because the two nest builders draw the layout INDEPENDENTLY
+    (DXF and shop PDF) and the DXF-side text guard cannot see the PDF at all.
     """
-    yb = oy + TILE_W / 2.0
-    yt = oy - TILE_W / 2.0
-    xb, xt = TILE_L_BACK / 2.0, TILE_L_TOE / 2.0
-    gap = 2.4
-    _poly(msp, [(ox - xb, yb + 0.5), (ox - xb, yb + gap),
-                (ox + xb, yb + gap), (ox + xb, yb + 0.5)], "NOTE", closed=False)
-    _text(msp, ox, yb + gap + 0.3, 1.8, f"{TILE_L_BACK:.2f}  (ancho)", "NOTE",
+    rows = (n_labels + TILE_NEST_COLS - 1) // TILE_NEST_COLS
+    nest_h = rows * TILE_W + (rows - 1) * TILE_NEST_GAP
+    assert oy_wide + TILE_W / 2.0 >= nest_h - 1e-6, (
+        f"the wide dimension is drawn inside the tile nest (top edge "
+        f"{oy_wide + TILE_W/2.0:.2f} vs nest height {nest_h:.2f}) -- it will "
+        f"print through a tile caption. See _nest_top_left")
+    assert oy_narrow - TILE_W / 2.0 <= 1e-6, (
+        f"the narrow dimension is drawn inside the tile nest (bottom edge "
+        f"{oy_narrow - TILE_W/2.0:.2f}) -- it will print through a tile caption")
+
+
+def _nest_top_left(n):
+    """Index of the first tile of the TOP row, for any tile count.
+
+    `min(TILE_NEST_COLS, n - 1)` happens to be right for today's 10 tiles in 5
+    columns and is wrong the moment that changes: at 11 tiles it is a MIDDLE-row
+    tile, which puts the wide dimension back into the 4.0 mm inter-tile gap that
+    carries the captions -- the #1001 bug, reintroduced silently.
+    """
+    return TILE_NEST_COLS * ((max(n, 1) - 1) // TILE_NEST_COLS)
+
+def _tile_dim_wide(msp, ox, oy, suffix=""):
+    """The 54.36 mm cable edge, dimensioned ABOVE the tile."""
+    yb, xb, g = oy + TILE_W / 2.0, TILE_L_BACK / 2.0, TILE_DIM_GAP
+    _poly(msp, [(ox - xb, yb + 0.5), (ox - xb, yb + g),
+                (ox + xb, yb + g), (ox + xb, yb + 0.5)], "NOTE", closed=False)
+    _text(msp, ox, yb + g + 0.3, 1.8, f"{TILE_L_BACK:.2f}  (ancho){suffix}", "NOTE",
           halign="center")
-    _poly(msp, [(ox - xt, yt - 0.5), (ox - xt, yt - gap),
-                (ox + xt, yt - gap), (ox + xt, yt - 0.5)], "NOTE", closed=False)
-    _text(msp, ox, yt - gap - 2.0, 1.8, f"{TILE_L_TOE:.2f}  (estrecho)", "NOTE",
+
+def _tile_dim_narrow(msp, ox, oy, suffix=""):
+    """The 53.75 mm toe edge, dimensioned BELOW the tile."""
+    yt, xt, g = oy - TILE_W / 2.0, TILE_L_TOE / 2.0, TILE_DIM_GAP
+    _poly(msp, [(ox - xt, yt - 0.5), (ox - xt, yt - g),
+                (ox + xt, yt - g), (ox + xt, yt - 0.5)], "NOTE", closed=False)
+    _text(msp, ox, yt - g - 2.0, 1.8, f"{TILE_L_TOE:.2f}  (estrecho){suffix}", "NOTE",
           halign="center")
-    _poly(msp, [(ox - xb - 0.5, yb), (ox - xb - gap, yb),
-                (ox - xb - gap, yt), (ox - xb - 0.5, yt)], "NOTE", closed=False)
-    _text(msp, ox - xb - gap - 6.5, oy - 0.9, 1.8, f"{TILE_W:.2f}", "NOTE")
+
+def _tile_dim_depth(msp, ox, oy):
+    """The 19.90 mm depth, dimensioned to the LEFT of the tile."""
+    yb, yt, xb, g = oy + TILE_W / 2.0, oy - TILE_W / 2.0, TILE_L_BACK / 2.0, TILE_DIM_GAP
+    _poly(msp, [(ox - xb - 0.5, yb), (ox - xb - g, yb),
+                (ox - xb - g, yt), (ox - xb - 0.5, yt)], "NOTE", closed=False)
+    _text(msp, ox - xb - g - 6.5, oy - 0.9, 1.8, f"{TILE_W:.2f}", "NOTE")
+
+def _tile_size_callout(msp, ox, oy):
+    """All three dimensions around one tile -- the single-tile sheets, where the
+    tile is alone on the page and every side is free."""
+    _tile_dim_wide(msp, ox, oy)
+    _tile_dim_narrow(msp, ox, oy)
+    _tile_dim_depth(msp, ox, oy)
 
 
 def dxf_one_pedal_tile(path, label):
@@ -5731,13 +6316,13 @@ def dxf_one_pedal_tile(path, label):
     doc = _doc(); msp = doc.modelspace()
     _emit_tile(msp, 0.0, 0.0, label)
     _tile_size_callout(msp, 0.0, 0.0)
-    _text(msp, -TILE_L_BACK / 2.0, TILE_W / 2.0 + 6.5, 2.6,
+    _note(msp, -TILE_L_BACK / 2.0, TILE_W / 2.0 + 6.5,
           f"Segno {_tile_stem(label)}  CANT. 1  TRAPECIO "
           f"{TILE_L_BACK:.2f}/{TILE_L_TOE:.2f} x {TILE_W:.2f}  "
           f"plástico bicapa {TILE_PLY_T:.1f} mm "
           f"capa NEGRA / núcleo BLANCO; CUT = contorno; ENGRAVE = grabado relleno; "
-          f"borde ANCHO hacia el cable", "NOTE")
-    doc.saveas(path)
+          f"borde ANCHO hacia el cable")
+    _save(doc, path)
     return {}
 
 
@@ -5756,15 +6341,26 @@ def dxf_pedal_tiles(path):
     """
     doc = _doc(); msp = doc.modelspace()
     labels = [lab for lab, _u, _v in PEDALS]
+    # The bottom-left tile carries the narrow + depth dimensions, so its own
+    # caption has to clear them; every other caption keeps the 3.2 mm drop.
     for i, label in enumerate(labels):
         ox, oy = _tile_nest_origin(i)
         _emit_tile(msp, ox, oy, label)
-        _text(msp, ox - TILE_L_BACK / 2.0, oy - TILE_W / 2.0 - 3.2, 2.4, label, "NOTE")
-    # One tile carries the size callout -- the 0.6 mm taper is invisible at nest
-    # scale unless both widths are written next to the outline.
-    _tile_size_callout(msp, *_tile_nest_origin(0))
+        drop = 7.6 if i == 0 else 3.2
+        _text(msp, ox - TILE_L_BACK / 2.0, oy - TILE_W / 2.0 - drop, 2.4, label, "NOTE")
+    # The 0.6 mm taper is invisible at nest scale unless both widths are written
+    # beside an outline -- but each dimension goes on an edge of the NEST that is
+    # free, never into the 4.0 mm inter-tile gap that carries the captions.
+    _oy0 = _tile_nest_origin(0)[1]
+    _oyt = _tile_nest_origin(_nest_top_left(len(labels)))[1]
+    _assert_dims_outside_nest(_oyt, _oy0, len(labels))
+    _tile_dim_narrow(msp, *_tile_nest_origin(0),
+                     suffix="  (típ.)")                     # below the bottom row
+    _tile_dim_depth(msp, *_tile_nest_origin(0))             # left of the nest
+    _tile_dim_wide(msp, *_tile_nest_origin(_nest_top_left(len(labels))),
+                   suffix="  (típ.)")                       # above the top row
     rows = (len(labels) + TILE_NEST_COLS - 1) // TILE_NEST_COLS
-    _text(msp, 0.0, rows * (TILE_W + TILE_NEST_GAP) + 10.0, 4.0,
+    _note(msp, 0.0, rows * (TILE_W + TILE_NEST_GAP) + 10.0,
           f"Segno AZULEJOS DE PEDAL (segno_pedal_tiles)  CANT. {len(labels)}  "
           f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} (estrecho, punta) "
           f"x {TILE_W:.2f}  "
@@ -5775,8 +6371,8 @@ def dxf_pedal_tiles(path):
           f"el borde ANCHO va hacia el cable y lleva la parte superior de los glifos; "
           f"medidas NOMINALES -- el 0,05 mm por lado ya está en la pieza, no agrandar; "
           f"el taller aplica compensación de kerf; "
-          f"no sustituir fuente, los glifos ya son geometría", "NOTE")
-    doc.saveas(path)
+          f"no sustituir fuente, los glifos ya son geometría")
+    _save(doc, path)
     return {}
 
 
@@ -5821,7 +6417,13 @@ def pdf_pedal_tiles(path):
             f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} "
             f"(estrecho, punta) x {TILE_W:.2f}  "
             f"plástico bicapa {TILE_PLY_T:.1f} mm capa NEGRA / núcleo BLANCO; "
-            f"rojo = CUT; negro = ENGRAVE; borde ANCHO hacia el cable; "
+            # TILE_LEGEND itself, not a paraphrase of it. Saying the same thing
+            # twice in two wordings is how the sheet came to describe its layers
+            # by PDF colour while the legend described them by name -- and the
+            # verifier could not see the drift, because it was reading a list
+            # this function invented rather than what the sheet prints.
+            f"{TILE_LEGEND}; "
+            f"borde ANCHO hacia el cable; "
             f"imprimir al 100 %; medidas en mm")
     margin, strip = 12.0, 22.0
     page_w = nest_w + 2 * margin
@@ -5833,34 +6435,70 @@ def pdf_pedal_tiles(path):
     ax.set_aspect("equal")
     ax.axis("off")
     fig.patch.set_facecolor("white")
+    # Tile 0 carries the narrow dimension underneath it, so its caption drops
+    # clear of it. Center the other captions in the gap: a top-aligned 6 pt
+    # label hanging 2.6 mm into a 4 mm gap crosses the next tile's cut edge.
+    captions = []
     for i, label in enumerate(labels):
         ox, oy = _tile_nest_origin(i)
         _draw_tile_on_ax(ax, ox, oy, label)
-        ax.text(ox, oy - TILE_W / 2.0 - 2.6, label, fontsize=6, ha="center",
-                va="top", color="#333")
-    # Size callout on the first tile -- both widths, so the 0.6 mm taper reads.
-    ox0, oy0 = _tile_nest_origin(0)
-    ax.annotate("", xy=(ox0 - TILE_L_BACK / 2.0, oy0 + TILE_W / 2.0 + 1.6),
-                xytext=(ox0 + TILE_L_BACK / 2.0, oy0 + TILE_W / 2.0 + 1.6),
+        bottom = oy - TILE_W / 2.0
+        caption = ax.text(ox, bottom - (6.0 if i == 0 else TILE_NEST_GAP / 2),
+                          label, fontsize=6, ha="center",
+                          va="top" if i == 0 else "center", color="#333")
+        if bottom > 0:
+            captions.append((caption, bottom))
+    # Both widths, so the 0.6 mm taper reads -- but each dimension goes OUTSIDE
+    # the nest, never into the 4.0 mm inter-tile gap. Dimensioning the wide edge
+    # of the bottom-left tile put "54.36 ancho" straight through the caption of
+    # the tile above it, on the sheet the 2-ply shop actually prints (#1001).
+    ox0, oy0 = _tile_nest_origin(0)                                   # bottom row
+    oxt, oyt = _tile_nest_origin(_nest_top_left(len(labels)))         # top row
+    _assert_dims_outside_nest(oyt, oy0, len(labels))
+    ax.annotate("", xy=(oxt - TILE_L_BACK / 2.0, oyt + TILE_W / 2.0 + 1.6),
+                xytext=(oxt + TILE_L_BACK / 2.0, oyt + TILE_W / 2.0 + 1.6),
                 arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
-    ax.text(ox0, oy0 + TILE_W / 2.0 + 2.0, f"{TILE_L_BACK:.2f} ancho",
+    ax.text(oxt, oyt + TILE_W / 2.0 + 2.0, f"{TILE_L_BACK:.2f} ancho  (típ.)",
             fontsize=5.5, ha="center", va="bottom", color="#333")
     ax.annotate("", xy=(ox0 - TILE_L_TOE / 2.0, oy0 - TILE_W / 2.0 - 1.6),
                 xytext=(ox0 + TILE_L_TOE / 2.0, oy0 - TILE_W / 2.0 - 1.6),
                 arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
-    ax.text(ox0, oy0 - TILE_W / 2.0 - 1.8, f"{TILE_L_TOE:.2f} estrecho",
+    ax.text(ox0, oy0 - TILE_W / 2.0 - 1.8, f"{TILE_L_TOE:.2f} estrecho  (típ.)",
             fontsize=5.5, ha="center", va="top", color="#333")
     wrapped = textwrap.wrap(note, 110)
     for i, line in enumerate(wrapped):
         ax.text(0.0, -margin - 4.0 - 3.4 * i, line, fontsize=6, ha="left",
                 va="top", color="#111", family="sans-serif")
-    tb = (f"{PART_TITLES_ES['segno_pedal_tiles']}  [segno_pedal_tiles]   |   "
-          f"{PLY_2MM}   |   CANT. {len(labels)}   |   medidas en mm   |   "
-          f"PIEZA PLANA, sin plegados")
-    SHEET_TEXT["segno_pedal_tiles"] = (
-        [SHEET_HEADING, tb, TILE_LEGEND, note] + wrapped)
+    # What is actually DRAWN on the sheet, nothing else. This used to record
+    # SHEET_HEADING and a synthesised title-block line, neither of which this
+    # sheet prints -- so the two assertions in _verify_tile_package were reading
+    # a list the writer had made up, and could not fail whatever the PDF held.
+    SHEET_TEXT["segno_pedal_tiles"] = list(wrapped) + labels
+    # Measure the actual font after layout, independently of its anchor formula.
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for caption, bottom in captions:
+        box = caption.get_window_extent(renderer).transformed(ax.transData.inverted())
+        assert bottom - TILE_NEST_GAP < box.y0 and box.y1 < bottom, (
+            f"tile caption {caption.get_text()!r} crosses a cut edge: "
+            f"text spans {box.y0:.2f}..{box.y1:.2f} mm, "
+            f"gap spans {bottom-TILE_NEST_GAP:.2f}..{bottom:.2f} mm")
     fig.savefig(path, dpi=300)
     plt.close(fig)
+
+
+def _tile_size_callout_ax(ax):
+    """Both widths on a matplotlib axes, for the single-tile sheets."""
+    yb, yt = TILE_W / 2.0, -TILE_W / 2.0
+    xb, xt = TILE_L_BACK / 2.0, TILE_L_TOE / 2.0
+    ax.annotate("", xy=(-xb, yb + 1.6), xytext=(xb, yb + 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(0.0, yb + 2.0, f"{TILE_L_BACK:.2f} ancho", fontsize=5.5,
+            ha="center", va="bottom", color="#333")
+    ax.annotate("", xy=(-xt, yt - 1.6), xytext=(xt, yt - 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(0.0, yt - 2.0, f"{TILE_L_TOE:.2f} estrecho", fontsize=5.5,
+            ha="center", va="top", color="#333")
 
 
 def pdf_one_pedal_tile(path, label):
@@ -5868,20 +6506,41 @@ def pdf_one_pedal_tile(path, label):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    # These ride in the same zip as the nest but carried none of its
+    # information: no material, no quantity, no layer legend, and no statement
+    # that they are 1:1. A replacement cut ordered off one of them was ordered
+    # off a sheet that did not say what to cut it from.
+    # Size the strip to the text, never the text to the strip: capping the lines
+    # is how the heading came out ending mid-phrase at "capa negra / núcleo",
+    # which is the same silent truncation this whole branch exists to stop.
     margin = 10.0
-    fig = plt.figure(figsize=((TILE_L_BACK + 2 * margin) / 25.4,
-                              (TILE_W + 2 * margin + 8.0) / 25.4))
-    ax = fig.add_axes([0, 0, 1, 1])
+    HEAD_MM, BODY_MM = 3.6, 3.0
+    _page_w_in = (TILE_L_BACK + 2 * margin) / 25.4
+    head = (f"Segno {_tile_stem(label)}   |   {PLY_2MM}   |   CANT. 1   |   "
+            f"medidas en mm   |   imprimir al 100 %")
+    body = (f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} "
+            f"(estrecho, punta) x {TILE_W:.2f}. {TILE_LEGEND}")
+    head_lines = _wrap_to_page(head, 6.0, _page_w_in, ratio=0.62)
+    body_lines = _wrap_to_page(body, 5.0, _page_w_in)
+    strip = (6.0 + HEAD_MM * len(head_lines) + BODY_MM * len(body_lines))
+    fig_h = TILE_W + 2 * margin + strip
+    fig = plt.figure(figsize=(_page_w_in, fig_h / 25.4))
+    ax = fig.add_axes([0, strip / fig_h, 1, (TILE_W + 2 * margin) / fig_h])
     ax.set_xlim(-TILE_L_BACK / 2.0 - margin, TILE_L_BACK / 2.0 + margin)
-    ax.set_ylim(-TILE_W / 2.0 - margin - 4.0, TILE_W / 2.0 + margin)
+    ax.set_ylim(-TILE_W / 2.0 - margin, TILE_W / 2.0 + margin)
     ax.set_aspect("equal")
     ax.axis("off")
     fig.patch.set_facecolor("white")
     _draw_tile_on_ax(ax, 0.0, 0.0, label)
-    ax.text(0.0, -TILE_W / 2.0 - 3.2,
-            f"{_tile_stem(label)}  TRAPECIO {TILE_L_BACK:.2f}/{TILE_L_TOE:.2f} "
-            f"x {TILE_W:.2f}",
-            fontsize=6, ha="center", va="top", color="#333")
+    _tile_size_callout_ax(ax)
+    _y = strip - 4.0                       # mm from the page bottom, going down
+    for line in head_lines:                # 0.62 ratio: this text is BOLD
+        fig.text(0.04, _y / fig_h, line, fontsize=6.0, weight="bold")
+        _y -= HEAD_MM
+    _y -= 1.0
+    for line in body_lines:
+        fig.text(0.04, _y / fig_h, line, fontsize=5.0, color="#333")
+        _y -= BODY_MM
     fig.savefig(path, dpi=300)
     plt.close(fig)
 
@@ -6059,6 +6718,18 @@ def _verify_tile_package(with_pdf=True):
     nest = os.path.join(OUT, "segno_pedal_tiles.dxf")
     assert os.path.exists(nest), "segno_pedal_tiles.dxf was not written"
     doc = ezdxf.readfile(nest)
+    # the tile pack has its own verifier, so the drawing gates have to be run
+    # here too -- they live in the DXF_PARTS loop, which never sees these files
+    _verify_dash_legibility(doc, "segno_pedal_tiles")
+    _verify_no_overprinted_text(doc, "segno_pedal_tiles")
+    _verify_note_block_fits(doc, "segno_pedal_tiles")
+    for lab, _u, _v in PEDALS:
+        one = os.path.join(OUT, _tile_stem(lab) + ".dxf")
+        if os.path.exists(one):
+            d1 = ezdxf.readfile(one)
+            _verify_dash_legibility(d1, _tile_stem(lab))
+            _verify_no_overprinted_text(d1, _tile_stem(lab))
+            _verify_note_block_fits(d1, _tile_stem(lab))
     used = {e.dxf.layer for e in doc.modelspace()}
     assert used <= set(THRU_CUT_LAYERS + ANNOT_LAYERS), (
         f"tile nest uses undeclared layers: {sorted(used - set(THRU_CUT_LAYERS + ANNOT_LAYERS))}")
@@ -6111,10 +6782,14 @@ def _verify_tile_package(with_pdf=True):
     if with_pdf:
         assert os.path.exists(os.path.join(OUT, "segno_pedal_tiles.pdf"))
         sheet = SHEET_TEXT["segno_pedal_tiles"]
-        assert TILE_LEGEND.split("|")[0].strip() in " ".join(sheet), (
-            "tile sheet is missing TILE_LEGEND")
-        title_line = next(t for t in sheet if t.startswith(PART_TITLES_ES["segno_pedal_tiles"]))
-        assert "segno_pedal_tiles" in title_line and "CANT." in title_line
+        drawn = " ".join(sheet)
+        # cross-check the record against the PDF itself, so it cannot drift back
+        # into describing a sheet that was never drawn
+        for want in (TILE_LEGEND.split("|")[0].strip(), "segno_pedal_tiles",
+                     "CANT.", PLY_2MM.split()[0]):
+            assert want in drawn, f"the tile nest sheet no longer prints {want!r}"
+        for lab, _u, _v in PEDALS:
+            assert lab in drawn, f"the tile nest sheet no longer labels {lab}"
         for label, _u, _v in PEDALS:
             assert os.path.exists(os.path.join(OUT, _tile_stem(label) + ".pdf"))
 
@@ -6132,6 +6807,200 @@ def _verify_tile_package(with_pdf=True):
                        for n in names)
 
 
+NOTE_ADVANCE_EST = 0.62          # under-estimated TEXT advance, per unit of height
+
+
+def _text_extent(e):
+    """Conservative model-space box for a TEXT entity, as (x0, y0, x1, y1).
+
+    Deliberately UNDER-estimates the advance so the overlap guard below trips on
+    real collisions rather than on the estimate.
+    """
+    h = float(e.dxf.height)
+    w = len(e.dxf.text) * h * NOTE_ADVANCE_EST
+    p = e.dxf.align_point if e.dxf.halign else e.dxf.insert
+    x, y = float(p.x), float(p.y)
+    if e.dxf.halign == 1:            # CENTER
+        x -= w / 2.0
+    elif e.dxf.halign == 2:          # RIGHT
+        x -= w
+    return (x, y, x + w, y + h)
+
+
+def _pdf_page_count(path):
+    """Pages in a PDF, read from the file itself.
+
+    Deliberately not from whatever wrote it: the point is to catch a deliverable
+    that was replaced or truncated between the writer and this check.
+    """
+    with open(path, "rb") as fh:
+        blob = fh.read()
+    n = blob.count(b"/Type /Page") - blob.count(b"/Type /Pages")
+    if n <= 0:                      # some writers omit the space
+        n = blob.count(b"/Type/Page") - blob.count(b"/Type/Pages")
+    return n
+
+
+def _verify_dash_legibility(doc, stem):
+    """Every dashed entity must actually render broken, at BOTH ends of the scale.
+
+    Two ways to print a solid line where a dashed one belongs, and this asserts
+    against both (#1001):
+
+    * too FINE -- the pattern is authored for 1:1 (0.254 mm gap on DASHED) and
+      the sheets are auto-fitted, so on the 1040 mm base at $LTSCALE 1 the gap
+      measured 0.02 mm on paper, a thirtieth of a 600 dpi dot.
+    * too COARSE -- the scale that fixes the base's 1040 mm bend line makes the
+      DASHDOT dash 42.7 mm against a O12 mask ring's 37.7 mm circumference, and
+      the ring renders as one unbroken red circle beside real O12 holes. That is
+      the failure #775 R3 says colour and a callout alone must not have to carry.
+
+    Checked per ENTITY against its own drawn length, so it cannot pass by
+    averaging a long fold line over a short mask ring.
+    """
+    msp = doc.modelspace()
+    gscale = float(doc.header.get("$LTSCALE", 1.0))
+    span = _SPAN(msp)        # hoisted: it is an extents() sweep over the whole part
+    periods = {}
+    checked = 0
+    # A block reference hides its contents from this sweep, and those contents
+    # carry their OWN layers -- so gating on the INSERT's layer was the wrong
+    # axis: the normal way to place one is on CUT or 0, and a O12 MASK circle
+    # inside such a block passed every guard and rasterised as a solid red ring.
+    # The generator emits no blocks at all, so refuse them outright.
+    for e in msp:
+        assert e.dxftype() != "INSERT", (
+            f"{stem}: a block reference on layer {e.dxf.layer} -- whatever it "
+            f"contains is invisible to every check here, dashed MASK geometry "
+            f"included. Emit the entities directly")
+    for e in msp:
+        layer = e.dxf.layer
+        if layer not in ("BEND", "MASK") or e.dxftype() in NOT_LINEWORK:
+            continue
+        run = _run_length(e)
+        assert run is not None, (
+            f"{stem}: a {layer} {e.dxftype()} cannot be measured, so nothing "
+            f"scaled its dashes and nothing checked them -- teach _run_length "
+            f"this type rather than letting it through unseen")
+        if run <= 0.0:
+            continue
+        lname = _entity_linetype(doc, e)
+        period = periods.setdefault(lname, _pattern_period(doc, lname))
+        # `float(ls) if ls else 1.0` is the same expression as `float(ls or 1.0)`
+        # -- rewriting it changed nothing and 0.0 still read as 1.0. It has to be
+        # rejected, not substituted: ezdxf's setter clamps 0 to 1.0, but a raw
+        # `48 / 0.0` tag survives readfile, and the renderer then falls back to
+        # its 0.1 unit minimum dash and draws the line effectively solid.
+        ls = e.dxf.get("ltscale", 1.0)
+        assert ls is None or float(ls) > 0.0, (
+            f"{stem}: a {layer} {e.dxftype()} carries ltscale {ls} -- a zero or "
+            f"negative linetype scale renders as a solid line")
+        scale = gscale * (1.0 if ls is None else float(ls))
+        cycles = run / (period * scale)
+        checked += 1
+        assert cycles >= LTSCALE_MIN_PERIODS - 1e-6, (
+            f"{stem}: a {run:.1f} mm {layer} {e.dxftype()} shows only "
+            f"{cycles:.1f} dash cycles at scale {scale:.3f} -- it renders SOLID "
+            f"and can be read as a cut. See _fit_entity_ltscales")
+        # and the widest gap in the pattern must survive the reduction onto the page
+        gap = _pattern_gap(doc, lname) * scale
+        assert gap >= span / LTSCALE_GAP_RATIO, (
+            f"{stem}: a {layer} {e.dxftype()} would print solid the other way -- "
+            f"a {gap:.3f} mm gap on a {span:.0f} mm part is 1:{span/max(gap,1e-9):.0f}, "
+            f"past the 1:{LTSCALE_GAP_RATIO:.0f} floor. See _ltscale_for")
+    assert checked or not any(e.dxf.layer in ("BEND", "MASK")
+                              and e.dxftype() not in NOT_LINEWORK for e in msp), (
+        f"{stem}: has dashed line work but the guard measured none of it")
+    return checked
+
+
+def _pattern_gap(doc, name):
+    """Length of the LARGEST single blank in one period of a linetype, at scale 1.
+
+    Not the sum of the blanks: DASHDOT's period holds two 0.508 mm gaps, and
+    summing them told the floor the gap was twice its real size -- so the check
+    that exists to keep a gap printable was enforcing half of what it promised.
+    """
+    lt = doc.linetypes.get(name)
+    vals = [t.value for t in lt.pattern_tags.tags if t.code == 49]
+    gaps = [-v for v in vals if v < 0]
+    return max(gaps) if gaps else 0.0
+
+
+def _SPAN(msp):
+    """Span of the PART, ignoring annotation -- what sets the sheet's reduction."""
+    from ezdxf.bbox import extents
+    bb = extents(e for e in msp
+                 if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
+    if not bb.has_data:
+        return 1.0
+    return max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1], 1.0)
+
+
+# Note block width, as a multiple of the part span. 1.25 was useless: _note's
+# 1.2 mm text floor makes any long token plateau at 1.242, so the ceiling sat
+# 0.6% above the very case it was written for and only fired past a 90-character
+# token. The widest sheet shipped is a single tile at 1.153, so 1.20 leaves it
+# 4% of room and still rejects the plateau.
+NOTE_WIDTH_CEILING = 1.20
+
+
+def _verify_note_block_fits(doc, stem):
+    """The note must not be the widest thing on the sheet.
+
+    _note's escape hatch is real: when the 1.2 mm text floor binds it widens the
+    column to keep the longest token whole, and the block can then run past the
+    part -- which is how the whole page-scale problem started.
+
+    Measured with `extents`, which is the SAME call that decides the sheet's
+    scale, so the number here is the number that matters. An earlier version
+    estimated the width from a per-character advance and read every sheet at
+    0.78-0.83; measured properly they run 0.88-1.15, and the ceiling it claimed
+    to enforce was about 1.5x looser than it said. Estimating the input to a
+    check whose whole subject is that same estimate is how that happens.
+    """
+    from ezdxf.bbox import extents
+    msp = doc.modelspace()
+    notes = [e for e in msp
+             if e.dxftype() == "TEXT" and e.dxf.layer in ("NOTE", "MASK")]
+    if not notes:
+        return
+    span = _SPAN(msp)
+    nb = extents(notes)
+    if not nb.has_data:
+        return
+    widest = nb.extmax[0] - nb.extmin[0]
+    assert widest <= span * NOTE_WIDTH_CEILING, (
+        f"{stem}: the note block is {widest:.0f} mm against a {span:.0f} mm part "
+        f"({widest/span:.2f}x) -- it, not the part, will set the sheet scale. "
+        f"See _note")
+
+
+def _verify_no_overprinted_text(doc, stem):
+    """Annotation that lands on other annotation is unreadable on the sheet.
+
+    Guards the collision class that hand-placed anchors create when the geometry
+    under them moves: the base's MASK paragraph is anchored a fixed distance
+    above the part note, so it overprints the moment that note wraps to more
+    lines than the gap allows.
+
+    Deliberately narrow, and worth knowing the limits of. It compares TEXT to
+    TEXT only, so a note over a part outline or a witness line is invisible to
+    it; it uses an under-estimated advance so it favours silence over false
+    alarms; and it sees only the DXF, so it can say nothing about the tile shop
+    PDF, which is drawn independently -- that layout is held by
+    _assert_dims_outside_nest instead.
+    """
+    boxes = [(_text_extent(e), e.dxf.text) for e in doc.modelspace()
+             if e.dxftype() == "TEXT" and e.dxf.layer in ("NOTE", "MASK")]
+    for i, (a, ta) in enumerate(boxes):
+        for b, tb in boxes[i + 1:]:
+            if a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]:
+                raise AssertionError(
+                    f"{stem}: printed text overprints text -- "
+                    f"{ta[:40]!r} and {tb[:40]!r} share the same space")
+
+
 def _verify_drawing_package(with_pdf=True):
     import inspect, zipfile
     import ezdxf
@@ -6143,6 +7012,25 @@ def _verify_drawing_package(with_pdf=True):
     # corners. If a future ezdxf hands them over as LineCollections, or hands
     # them over already closed, it silently seals nothing and the notch returns
     # on a package nobody re-reads at 600 dpi. These counts are the alarm.
+    _verify_paint_bom()
+
+    if with_pdf:
+        pq = os.path.join(OUT, "segno_paint_quote.pdf")
+        assert os.path.exists(pq), "segno_paint_quote.pdf was not written"
+        got = PAINT_PAGES.get("segno_paint_quote")
+        assert got == PAINT_PAGES_EXPECTED, (
+            f"segno_paint_quote.pdf has {got} of {PAINT_PAGES_EXPECTED} pages -- "
+            f"a page failed after the file was opened, and segno_pintura.zip "
+            f"would ship it truncated")
+        # and count what is actually ON DISK: the line above only proves what the
+        # writer believed. Overwriting the file afterwards, or truncating it to
+        # zero bytes, left the run green.
+        on_disk = _pdf_page_count(pq)
+        assert on_disk == PAINT_PAGES_EXPECTED, (
+            f"segno_paint_quote.pdf holds {on_disk} pages on disk, not "
+            f"{PAINT_PAGES_EXPECTED} -- the file was replaced or truncated after "
+            f"it was written")
+
     if with_pdf:
         for stem in stems:
             assert stem in SEALED, \
@@ -6205,6 +7093,9 @@ def _verify_drawing_package(with_pdf=True):
             continue
         doc = ezdxf.readfile(dxf)
         used = {e.dxf.layer for e in doc.modelspace()}
+        _verify_dash_legibility(doc, stem)
+        _verify_no_overprinted_text(doc, stem)
+        _verify_note_block_fits(doc, stem)
 
         # --- R1: every through-cut layer present renders black -----------------
         black = _force_pdf_layer_colours(doc)   # asserts internally; also proves no
@@ -6374,24 +7265,15 @@ def main(argv):
         dxf = os.path.join(OUT, name + ".dxf"); fn(dxf)
         print("  out/" + name + ".dxf")
         if "--no-pdf" not in argv and name not in NO_PDF:
-            try:
-                mat, qty, _pkg = PART_SPECS[name]
-                dxf_to_pdf(dxf, os.path.join(OUT, name + ".pdf"),
-                           title=f"{PART_TITLES_ES[name]}  [{name}]",
-                           material=mat, qty=qty, stem=name)
-                print("  out/" + name + ".pdf")
-            except Exception as e:  # pragma: no cover
-                print(f"    (pdf skipped: {e})")
+            mat, qty, _pkg = PART_SPECS[name]
+            dxf_to_pdf(dxf, os.path.join(OUT, name + ".pdf"),
+                       title=f"{PART_TITLES_ES[name]}  [{name}]",
+                       material=mat, qty=qty, stem=name)
+            print("  out/" + name + ".pdf")
     tile_stems = build_pedal_tile_vectors(with_pdf="--no-pdf" not in argv)
     print("  out/segno_pedal_tiles.dxf  (2-ply nest, x%d)" % len(tile_stems))
     if "--no-pdf" not in argv:
         print("  out/segno_pedal_tiles.pdf")
-    if "--no-pdf" not in argv:
-        try:
-            paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
-            print("\nPaint quote sheet: out/segno_paint_quote.pdf")
-        except Exception as e:  # pragma: no cover
-            print(f"\n(paint quote skipped: {e})")
     steps_built = "--no-step" not in argv
     if "--no-step" not in argv:
         try:
@@ -6430,6 +7312,14 @@ def main(argv):
         # anything else is a real build failure: let it crash the run. The old
         # blanket `except Exception` swallowed a NameError here for weeks and
         # shipped stale tower/stand/fit-test STEPs while printing EXIT=0.
+    # AFTER the STEP build, deliberately. Its "Tamaño (mm)" column comes from
+    # _step_size, which reads out/*.step -- run before them and every row on the
+    # coater's sheet says "-". The committed file only ever showed sizes because
+    # a stale STEP happened to be on disk; on a clean tree it did not reproduce.
+    if "--no-pdf" not in argv:
+        paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
+        print("\nPaint quote sheet: out/segno_paint_quote.pdf")
+
     for z in build_quote_packages(with_step=steps_built,
                                   with_pdf="--no-pdf" not in argv):
         print("Quote package: out/" + os.path.basename(z))

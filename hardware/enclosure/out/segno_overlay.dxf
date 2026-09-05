@@ -81,7 +81,7 @@ $MIRRTEXT
   9
 $LTSCALE
  40
-1.0
+13.6
   9
 $ATTMODE
  70
@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.275752315
+2461288.781585648
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.275752315
+2461288.781585648
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-BB
+BC
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{E46AB335-76BE-4640-9FFF-78F5DDAA911F}
+{6311CD55-01BD-4056-9A06-B517921C44E0}
   9
 $VERSIONGUID
   2
-{7F622A16-93A9-490A-ACFA-6A13494CAFD9}
+{6A99FF8B-2E6A-449A-84E3-A5A5A15D3546}
   9
 $EXTNAMES
 290
@@ -3285,7 +3285,7 @@ ACAD
   0
 APPID
   5
-B8
+B9
 330
 3
 100
@@ -3299,7 +3299,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-B9
+BA
 330
 3
 100
@@ -7533,13 +7533,43 @@ AcDbText
  10
 10.0
  20
+429.03620104461925
+ 30
+0.0
+ 40
+9.0
+  1
+Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS;
+ 11
+10.0
+ 21
+429.03620104461925
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+B8
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+10.0
+ 20
 414.63620104461927
  30
 0.0
  40
-8.0
+9.0
   1
-Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)
+aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)
  11
 10.0
  21
@@ -8639,7 +8669,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-BA
+BB
   0
 DICTIONARYVAR
   5
@@ -8651,7 +8681,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:05.653588+00:00
+1.4.4 @ 2026-09-04T21:45:29.273029+00:00
   0
 VISUALSTYLE
   5
@@ -15205,7 +15235,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-BA
+BB
 330
 2D
 100
@@ -15213,7 +15243,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:37:05.655784+00:00
+1.4.4 @ 2026-09-04T21:45:29.350020+00:00
   0
 ENDSEC
   0
