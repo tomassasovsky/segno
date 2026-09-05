@@ -52,11 +52,11 @@ class TracksFace extends StatelessWidget {
 /// Whether [a] and [b] route identically — same tracks, same lanes, same
 /// input and output on each.
 ///
-/// The Tracks faces cannot `context.select` the roster: a [Track] carries live
-/// meters, so `state.tracks` changes at the meter rate, and a `List` compares
-/// by identity anyway, so a projected list would never test equal either. Each
-/// face therefore drives a `buildWhen` off an explicit comparison of the facts
-/// it actually draws.
+/// The Tracks faces cannot `context.select` the roster: a [Track] carries a
+/// live `peak`, so `state.tracks` changes at the meter rate, and a `List`
+/// compares by identity anyway, so a projected list would never test equal
+/// either. Each face therefore drives a `buildWhen` off an explicit comparison
+/// of the facts it actually draws.
 bool sameRouting(List<Track> a, List<Track> b) {
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++) {

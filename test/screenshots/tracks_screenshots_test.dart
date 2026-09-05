@@ -258,14 +258,12 @@ void main() {
           tracks: [
             Track(
               state: TrackState.playing,
-              rms: 0.72,
               peak: 0.9,
               lengthFrames: 96000,
             ),
             Track(
               channel: 1,
               state: TrackState.playing,
-              rms: 0.5,
               peak: 0.68,
               lengthFrames: 96000,
             ),
@@ -274,7 +272,6 @@ void main() {
               channel: 2,
               state: TrackState.playing,
               muted: true,
-              rms: 0.4,
               peak: 0.55,
               lengthFrames: 96000,
             ),
@@ -354,7 +351,6 @@ void main() {
             // An engaged two-entry chain.
             Track(
               state: TrackState.playing,
-              rms: 0.72,
               peak: 0.9,
               lengthFrames: 96000,
               effects: [
@@ -366,7 +362,6 @@ void main() {
             Track(
               channel: 1,
               state: TrackState.playing,
-              rms: 0.5,
               peak: 0.68,
               lengthFrames: 96000,
               chainEnabled: false,
@@ -376,7 +371,6 @@ void main() {
             Track(
               channel: 2,
               state: TrackState.playing,
-              rms: 0.4,
               peak: 0.55,
               lengthFrames: 96000,
               effects: [BuiltInEffect(type: TrackEffectType.tremolo)],
