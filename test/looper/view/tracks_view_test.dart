@@ -1951,6 +1951,75 @@ void main() {
       );
     });
 
+    for (final change in [
+      (
+        name: 'content',
+        before: const Track(state: TrackState.recording),
+        after: const Track(state: TrackState.recording, lengthFrames: 1),
+      ),
+      (
+        name: 'recording state',
+        before: const Track(),
+        after: const Track(state: TrackState.recording),
+      ),
+      (
+        name: 'recording length',
+        before: const Track(state: TrackState.recording, lengthFrames: 1),
+        after: const Track(state: TrackState.recording, lengthFrames: 2),
+      ),
+      (name: 'mute', before: const Track(), after: const Track(muted: true)),
+      (
+        name: 'input routing',
+        before: const Track(),
+        after: const Track(inputMask: 0x2),
+      ),
+      (
+        name: 'output routing',
+        before: const Track(),
+        after: const Track(outputMask: 0x4),
+      ),
+      (
+        name: 'FX',
+        before: const Track(),
+        after: Track(effects: [BuiltInEffect(type: TrackEffectType.drive)]),
+      ),
+    ]) {
+      testWidgets('a ${change.name} change updates only its column', (
+        tester,
+      ) async {
+        // Keep the global active-transport chrome steady while track 0 changes.
+        const otherTrack = Track(
+          channel: 1,
+          state: TrackState.playing,
+          lengthFrames: 96000,
+        );
+        seedStream(LooperState(tracks: [change.before, otherTrack]));
+        await pump(tester);
+        final before = tester.widget<TrackColumn>(_column(0));
+        final other = tester.widget<TrackColumn>(_column(1));
+
+        final next = LooperState(tracks: [change.after, otherTrack]);
+        when(() => bloc.state).thenReturn(next);
+        states.add(next);
+        await tester.pump();
+
+        final updated = tester.widget<TrackColumn>(_column(0));
+        expect(identical(before, updated), isFalse);
+        expect(updated.track, change.after);
+        expect(
+          identical(other, tester.widget<TrackColumn>(_column(1))),
+          isTrue,
+        );
+        final meter = tester.widget<PeakMeterBar>(
+          find.descendant(
+            of: _column(0),
+            matching: find.byType(PeakMeterBar),
+          ),
+        );
+        expect(meter.hasContent, change.after.hasContent);
+      });
+    }
+
     testWidgets('a structural change still rebuilds the chrome', (
       tester,
     ) async {

@@ -166,10 +166,10 @@ class Track extends Equatable {
   ///   made a noise, so it is left alone — the tile draws `hasContent`, which
   ///   the growing length flips exactly once (#899).
   /// - [lanes] carries `Lane.cacheState`, which follows the background
-  ///   renderer while `CacheTelemetryScope` is open. That scope is debug
-  ///   telemetry, off by default and opened by nothing in the app, so it
-  ///   costs nothing in a performance; a surface that turns it on is asking
-  ///   the poll to report a moving value and gets the rebuilds that implies.
+  ///   renderer while `CacheTelemetryScope` enables telemetry: the Signal
+  ///   face is visible and the track-indicator preference is on. Those
+  ///   observed cache changes also rebuild the tile; closing Signal or
+  ///   disabling indicators stops the telemetry reads.
   List<Object?> get steadyProps => [
     channel,
     state,
