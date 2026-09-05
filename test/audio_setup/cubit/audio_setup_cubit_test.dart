@@ -555,9 +555,8 @@ void main() {
       () async {
         final cubit = buildCubit(
           deviceRefreshInterval: const Duration(milliseconds: 10),
-        );
+        )..beginDeviceScan();
         addTearDown(cubit.close);
-        expect(cubit.state.devices, isEmpty);
 
         when(repository.devices).thenReturn(const [plugged]);
         // Let the refresh timer fire (interval 10ms; ample margin).
@@ -566,6 +565,85 @@ void main() {
         expect(cubit.state.devices, const [plugged]);
       },
     );
+
+    group('the poll is gated on a picker (#649)', () {
+      // The enumeration is a synchronous engine call on the UI isolate, and
+      // its miniaudio fall-through — the path the appliance takes when an
+      // interface is unplugged — measured 950 ms/tick. It must not run when
+      // nothing is rendering the list.
+      const interval = Duration(milliseconds: 10);
+
+      test('never re-enumerates while no picker is mounted', () async {
+        final cubit = buildCubit(deviceRefreshInterval: interval);
+        addTearDown(cubit.close);
+        // The one enumeration at construction hydrates the initial state.
+        verify(repository.devices).called(1);
+
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+
+        verifyNever(repository.devices);
+      });
+
+      test('beginDeviceScan enumerates at once, then keeps polling', () async {
+        final cubit = buildCubit(deviceRefreshInterval: interval);
+        addTearDown(cubit.close);
+        verify(repository.devices).called(1);
+        when(repository.devices).thenReturn(const [plugged]);
+
+        cubit.beginDeviceScan();
+
+        // Immediately, so opening a picker never shows a stale list.
+        expect(cubit.state.devices, const [plugged]);
+        verify(repository.devices).called(1);
+
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+
+        verify(repository.devices).called(greaterThan(1));
+      });
+
+      test('endDeviceScan stops it again', () async {
+        final cubit = buildCubit(deviceRefreshInterval: interval)
+          ..beginDeviceScan()
+          ..endDeviceScan();
+        addTearDown(cubit.close);
+        // Construction + the scope's own immediate refresh.
+        verify(repository.devices).called(2);
+
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+
+        verifyNever(repository.devices);
+      });
+
+      test(
+        'two overlapping pickers keep the poll alive between them',
+        () async {
+          // A route transition mounts the incoming surface before the outgoing
+          // one disposes; the poll must survive that handover.
+          final cubit = buildCubit(deviceRefreshInterval: interval)
+            ..beginDeviceScan()
+            ..beginDeviceScan()
+            ..endDeviceScan();
+          addTearDown(cubit.close);
+
+          when(repository.devices).thenReturn(const [plugged]);
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+
+          expect(cubit.state.devices, const [plugged]);
+        },
+      );
+
+      test('an unbalanced endDeviceScan is inert', () {
+        final cubit = buildCubit(deviceRefreshInterval: interval)
+          ..endDeviceScan()
+          ..beginDeviceScan();
+        addTearDown(cubit.close);
+
+        when(repository.devices).thenReturn(const [plugged]);
+        cubit.refreshDevices();
+
+        expect(cubit.state.devices, const [plugged]);
+      });
+    });
 
     test('setPlaybackDevice updates state and persists', () async {
       final cubit = buildCubit();

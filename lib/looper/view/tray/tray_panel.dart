@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/audio_setup/view/console/audio_tray_panel.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
-import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
@@ -48,7 +47,6 @@ class _TrayPanelState extends State<TrayPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final surface = context.surface;
     final state = context.watch<SettingsTrayCubit>().state;
     // `TrayPanel` is never unmounted — the shell translates it off-screen —
@@ -61,7 +59,6 @@ class _TrayPanelState extends State<TrayPanel> {
         if (mounted) setState(() => _brightness = false);
       });
     }
-    final cubit = context.read<SettingsTrayCubit>();
 
     return Material(
       color: Colors.transparent,
@@ -119,16 +116,6 @@ class _TrayPanelState extends State<TrayPanel> {
             padding: const EdgeInsets.only(bottom: 1),
             child: Stack(
               children: [
-                Positioned.fill(
-                  child: Semantics(
-                    button: true,
-                    label: l10n.dismiss,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: cubit.closeTray,
-                    ),
-                  ),
-                ),
                 SafeArea(
                   top: false,
                   child: Row(
@@ -173,8 +160,7 @@ class _TrayPanelState extends State<TrayPanel> {
                 ),
                 // Over the rail and the face both, since it hangs off the
                 // rail's edge into the pane. Last in the Stack so its scrim
-                // takes the taps before the panel's own dismiss detector,
-                // which would otherwise close the whole tray.
+                // dismisses only the popover and keeps the tray open.
                 if (_brightness)
                   Positioned.fill(
                     child: TrayBrightnessPopover(

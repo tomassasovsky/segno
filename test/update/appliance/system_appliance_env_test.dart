@@ -279,6 +279,17 @@ while true; do sleep 1; done
     });
   });
 
+  group('powerOff', () {
+    test('runs the helper poweroff verb', () async {
+      final argsFile = '${dir.path}/args.txt';
+      final env = SystemApplianceEnv(
+        helperPath: stub('#!/bin/sh\necho "\$1" > "$argsFile"\n'),
+      );
+      await env.powerOff();
+      expect(File(argsFile).readAsStringSync().trim(), 'poweroff');
+    });
+  });
+
   group('flashPedal', () {
     test('republishes PROGRESS lines as [0, 1]', () async {
       final env = SystemApplianceEnv(

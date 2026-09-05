@@ -772,3 +772,10 @@ final class LooperSessionLoaded extends LooperEvent {
   /// Creates a [LooperSessionLoaded].
   const LooperSessionLoaded();
 }
+
+/// Flushes coalesced FX persistence now — a clean halt must not wait for
+/// cubit teardown.
+final class LooperPersistFlush extends LooperEvent {
+  /// Creates a [LooperPersistFlush].
+  const LooperPersistFlush();
+}

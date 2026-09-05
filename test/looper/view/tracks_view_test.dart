@@ -19,6 +19,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
@@ -71,6 +72,7 @@ void main() {
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
+  late PedalRepository pedalRepo;
 
   setUp(() {
     // The toast registry is module-level and survives between tests; a stale
@@ -121,7 +123,7 @@ void main() {
     ).thenReturn(EngineResult.ok);
     // The real control cubit: it owns the system mode/cursor/bank the view
     // reads, and the M key / mode chip / number keys drive it.
-    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    pedalRepo = PedalRepository(const NoopPedalTransport());
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),
@@ -182,6 +184,7 @@ void main() {
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<PerformanceRepository>.value(value: performance),
             RepositoryProvider<SettingsRepository>.value(value: settings),
+            RepositoryProvider<PedalRepository>.value(value: pedalRepo),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -1196,7 +1199,9 @@ void main() {
       );
     });
 
-    testWidgets('the tile border is white only when selected', (tester) async {
+    testWidgets('the tile uses a 2px ring with selection color', (
+      tester,
+    ) async {
       control.selectTrack(0);
       seed(
         const LooperState(
@@ -1208,7 +1213,7 @@ void main() {
       );
       await pump(tester);
 
-      Color borderColor(int channel) {
+      BorderSide borderSide(int channel) {
         final tile = tester.widget<Container>(
           find
               .ancestor(
@@ -1217,15 +1222,21 @@ void main() {
               )
               .first,
         );
-        return ((tile.decoration! as BoxDecoration).border! as Border)
-            .top
-            .color;
+        return ((tile.decoration! as BoxDecoration).border! as Border).top;
       }
 
-      expect(borderColor(0), Colors.white); // selected: 4px white ring
-      // Unselected: the pen's 1px near-black card hairline (the `card` token),
+      final selectedSide = borderSide(0);
+      expect(selectedSide.color, Colors.white);
+      expect(selectedSide.width, 2);
+
+      // Unselected: the pen's 2px near-black card stroke (the `card` token),
       // not borderless.
-      expect(borderColor(1), AppTheme.neon.extension<SurfaceTheme>()!.card);
+      final unselectedSide = borderSide(1);
+      expect(
+        unselectedSide.color,
+        AppTheme.neon.extension<SurfaceTheme>()!.card,
+      );
+      expect(unselectedSide.width, 2);
     });
 
     testWidgets('track tiles have no glow shadow', (tester) async {
@@ -1470,6 +1481,20 @@ void main() {
         findsOneWidget,
       );
       handle.dispose();
+    });
+  });
+
+  group('layout', () {
+    testWidgets('positions the status bar at the 8px stage top inset', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      final stageTop = tester.getTopLeft(find.byType(TracksView)).dy;
+      final statusBarTop = tester.getTopLeft(find.byType(StageStatusBar)).dy;
+
+      expect(statusBarTop - stageTop, 8);
     });
   });
 

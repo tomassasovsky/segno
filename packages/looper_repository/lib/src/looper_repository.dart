@@ -3134,6 +3134,41 @@ class LooperRepository {
     );
   }
 
+  /// Sets hosted-plugin parameter [paramId] of entry [index] of track
+  /// [channel]'s Track-stage chain to the plain [value] — the bus twin of
+  /// [setLanePluginParam].
+  ///
+  /// Granular for the same reason as [setTrackEffectParam]: the whole-chain
+  /// [setTrackEffects] path re-pushes every slot's TYPE, and
+  /// `LE_CMD_SET_TRACK_FX` resets that slot's DSP on the audio thread — so a
+  /// plugin knob routed through it would clear the reverb tails and delay
+  /// lines of the BUILT-INS sharing the bus, at pointer-move rate.
+  ///
+  /// Writes no engine command at all. A bus-stage plugin never instantiates
+  /// (see the section comment above), so there is no slot to poke; the value
+  /// is remembered on the [PluginEffect] so it persists and re-applies the day
+  /// a bus slot ABI lands. Returns [EngineResult.invalid] if the entry is not
+  /// a plugin.
+  EngineResult setTrackPluginParam({
+    required int channel,
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    final effects = _trackEffects[channel];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = effects[index];
+    if (fx is! PluginEffect) return EngineResult.invalid;
+    final values = Map<int, double>.of(fx.paramValues)..[paramId] = value;
+    // A fresh list instance, not an in-place edit — see [setLaneEffectParam].
+    _trackEffects[channel] = List<TrackEffect>.of(effects)
+      ..[index] = fx.copyWith(paramValues: values);
+    _reproject();
+    return EngineResult.ok;
+  }
+
   /// Sets built-in parameter [param] of Master insert entry [index] (see
   /// [setTrackEffectParam] for why this is granular).
   EngineResult setMasterEffectParam({
@@ -3153,6 +3188,26 @@ class LooperRepository {
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMasterFxParam(index: index, param: param, value: value);
+  }
+
+  /// Sets hosted-plugin parameter [paramId] of Master insert entry [index]
+  /// (see [setTrackPluginParam] for why this is granular and why it writes no
+  /// engine command).
+  EngineResult setMasterPluginParam({
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    if (index < 0 || index >= _masterEffects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = _masterEffects[index];
+    if (fx is! PluginEffect) return EngineResult.invalid;
+    final values = Map<int, double>.of(fx.paramValues)..[paramId] = value;
+    _masterEffects = List<TrackEffect>.of(_masterEffects)
+      ..[index] = fx.copyWith(paramValues: values);
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Pushes the remembered Master insert chain to the engine (see

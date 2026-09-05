@@ -204,19 +204,33 @@ class _TracksViewState extends State<TracksView> {
                             // (the foot pedals drive transport/mode/clear) and
                             // tightens the layout for the fixed panel; desktop
                             // builds keep the full chrome.
-                            // The pen's `STAGE / stage` insets the run 10
-                            // from the left, right and bottom, under a status
-                            // bar that starts at 24.
-                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                            // The pen's `STAGE / stage` insets the run 10 from
+                            // the left, right and bottom. The status bar's own
+                            // 8 from the top now sits on the shadow Container
+                            // below, so the shadow is cast from the stage edge
+                            // rather than from 8 inside it.
+                            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                // The pen's `STAGE / stage` status bar: 16
-                                // under the 8 top inset puts the strip at 24,
-                                // and the run starts 10 below it — the pen's
-                                // own 24/64/74 verticals.
-                                const SizedBox(height: 16),
-                                const StageStatusBar(),
+                                Container(
+                                  // `dropShadow`, not the hex it happens to
+                                  // equal in neon: the high-contrast variant
+                                  // deepens it to 0xCC so the status bar keeps
+                                  // separating from the stage, exactly as the
+                                  // tray sheet's shadow does.
+                                  decoration: BoxDecoration(
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: context.surface.dropShadow,
+                                        offset: const Offset(0, -19),
+                                        blurRadius: 48,
+                                      ),
+                                    ],
+                                  ),
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: const StageStatusBar(),
+                                ),
                                 const SizedBox(height: 10),
                                 // Standing loss conditions hold the stage
                                 // for as long as they are true — the pen's

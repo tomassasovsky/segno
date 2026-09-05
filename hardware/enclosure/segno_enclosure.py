@@ -37,12 +37,14 @@ the whole RED list of the #775 DFM sweep came from.
 
 Outputs (./out, mm): STEP (assembly + per-part), DXF flat patterns
 (CUT + VENT = through-cut, BEND = fold reference, MASK = no-paint, NOTE/ENGRAVE/
-SILK = lettering), PDF drawing sheets with a bend table and title block.
+SILK = lettering), PDF drawing sheets with a bend table and title block, and
+the 2-ply pedal-tile pack (CUT outline + ENGRAVE fills, #946).
 
 Run with the bundled venv (cadquery + ezdxf + matplotlib):
     .venv/bin/python segno_enclosure.py            # check + STEP + DXF + PDF
     .venv/bin/python segno_enclosure.py --report   # report + checks only
     .venv/bin/python segno_enclosure.py --no-step   # DXF + PDF only
+    .venv/bin/python segno_enclosure.py --tiles-only  # 2-ply tile pack only
 """
 from __future__ import annotations
 
@@ -84,13 +86,15 @@ TRANS_RUN  = 22.0    # transition horizontal run (depth added behind the control
                      # forward, reduces the bottom-plate depth)
 TRANS_DROP = 10.0    # transition vertical drop (peak -> rear-panel top)
 
-T        = 2.0       # sheet thickness (2.0 mm 5052-H32 aluminium)
-RI       = 2.0       # inside bend radius (= T, safe for 5052)
+T        = 2.0       # sheet thickness (2.0 mm 1050 aluminium -- the shop's stock, owner 2026-09-04)
+RI       = 2.0       # inside bend radius (= T; 1050 is softer than 5052 and takes it easily)
 KF       = 0.33      # K-factor for bend-allowance development
 FLANGE   = 18.0      # return-flange depth (lid side wings + wall top flange)
 # Weld-free corner join: internal L-brackets riveted through both walls. These MUST match
 # between the base rivet holes, the bracket parts, and the viewer render.
-CORNER_RO = 8.0      # rivet offset ALONG each wall from the corner (hug the corner, clear the I/O panel)
+CORNER_RO = 8.0      # rivet offset from the BRACKET's bend centre line, in its flat (hug the
+                     # corner, clear the I/O panel). The base drills CORNER_RO + T from its
+                     # bend lines -- see dxf_base for the fold-development derivation.
 CORNER_LEG = 12.0    # bracket leg width (along the wall)
 # REAR-corner rivets are STAGGERED between the two legs so a wall-leg rivet and a side-leg
 # rivet never sit at the same height (their tips would meet at the corner). Heights are from
@@ -388,19 +392,151 @@ S7C_ADJ      = 6.0     # height regulation budget: felt compression (~1) + up to
 #  SCREEN_TOP_V, which is defined further down)
 
 # --- LEDs / encoder -----------------------------------------------------------
-# Status indicators = SMD LEDs (WS2812B), NOT through-hole: ONE single-LED
-# board per indicator pedal (hardware/led_strip/, 16 x 8 mm puck) stuck to the
-# faceplate UNDERSIDE with VHB tape; a WHITE PLA pill diffuser insert sets into
-# each slot and glows through. Boards daisy-chain pedal-to-pedal with 3 wires
-# (5V/data/GND) on the castellated end pads.
+# Status indicators = SMD LEDs (WS2812B), NOT through-hole: a WHITE PLA pill
+# diffuser insert sets into each slot and glows through, and an EIGHT-LED
+# segment cut from bare 144 LEDs/m strip snaps into a channel on its back (#927,
+# #930). It is NOT the 16 x 8 puck PCB in hardware/led_strip/ and not VHB tape --
+# see the LED_STRIP_* block below for the source and how it is retained.
+# Segments daisy-chain pedal-to-pedal with 3 wires (5V/data/GND).
 LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
 LED_SLOT_W = 60.0         # pill window per indicator pedal (one 5050 diffused behind it)
 LED_INS_CLR   = 0.2       # diffuser-insert lateral clearance in the slot (total)
 LED_INS_PROUD = 0.4       # lens stands this far above the outer skin
-LED_INS_FLANGE = 3.0      # shoulder overhang past the slot, all around (seats on the
-                          # faceplate UNDERSIDE -- the insert pushes in from INSIDE)
+LED_INS_FLANGE = 4.0      # shoulder overhang past the slot, all around (seats on the
+                          # faceplate UNDERSIDE -- the insert pushes in from INSIDE).
+                          # 3.0 until #930: a 12 mm-wide 144/m strip cannot live in the
+                          # 12 mm flange that gave. 4.0 makes it 14 and restores the
+                          # same 0.7 wall. There is room -- the pill centre is LED_GAP
+                          # (12) behind the pedal slot, so the wider shoulder still
+                          # stops ~5 clear of the aperture.
 LED_INS_FL_T  = 1.5       # shoulder thickness
-LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
+# --- a cut WS2812B strip segment sits in the back of the diffuser (#927) -----
+# Owner call 2026-08-28: the light source is a **bare non-waterproof WS2812B
+# strip**, cut to one segment per pill -- NOT the 16 x 8 puck PCB in
+# hardware/led_strip/. The density landed on 144 LEDs/m in #930 (see
+# LED_STRIP_PITCH); segno_console_shopping_list.md orders to that.
+#
+# It used to be a 6 x 6 x 0.8 "nest" with the module VHB-taped over it, which
+# registered the 5 x 5 PACKAGE rather than anything the size of the source -- and
+# did not even seat: a 1.6-tall PLCC4 in a 0.7-deep recess holds the source 0.9
+# clear of the flange, with tape spanning the gap.
+#
+# THE STRIP IS THE SPRING. Its own 3M tape is useless here -- the LEDs must face
+# the lens, which turns the adhesive to face away into the console -- so the strip
+# is trapped mechanically instead. That is what makes this work where a rigid
+# board could not: at LED_STRIP_T of flex PCB you bow the segment slightly, drop it
+# past the lips, and let it flatten. Nothing in the PRINTED part ever has to
+# deflect, so none of it has to be springy.
+LED_PKG       = 5.0       # WS2812B PLCC4 body, 5.0 x 5.0
+LED_PKG_H     = 1.6       # ...and its height -- the number the old nest ignored
+LED_PKG_CLR   = 0.3       # per side, package to its recess
+# 144 LEDs/m, IP20, 12 mm wide (owner call 2026-08-28, #930). The density is
+# picked for EVENNESS, not brightness: light only has LED_WEB + the lens to
+# spread through, and a bar reads continuous when the LED pitch is within about
+# twice that. 144/m is 6.94 against 3.2 -- 2.2:1. 60/m would be 5.2:1, which is
+# three visible blobs per pill.
+LED_STRIP_W   = 12.0      # *** MEASURE BEFORE PRINTING THE DIFFUSERS (#930) ***
+                          # 144/m is 12 wide where 30 and 60/m are 10 -- but the
+                          # chosen part's listing CONTRADICTS ITSELF: its product
+                          # image says 12, its compare-with-similar row says
+                          # "PCB Board Width: IP30/65 - 10mm; IP67 - 12mm". 12 is
+                          # taken because the image is specific to this part and
+                          # agrees with the reference sheet. It is NOT verified.
+                          # The lips grip 0.4 per side, so a 2 mm error either
+                          # jams the strip or drops it straight through.
+LED_STRIP_OA  = 2.13      # OVERALL thickness, off the reference sheet for IP20.
+                          # The chosen part's image says 0.5 mm of PCB, which
+                          # corroborates this within 0.03 (2.13 - 1.6 = 0.53).
+                          # The PCB is derived FROM the overall rather than
+                          # guessed -- an earlier 0.35 "flex PCB" guess was 0.18
+                          # thin and would have jammed under the lips.
+LED_STRIP_T   = LED_STRIP_OA - LED_PKG_H   # 0.53 of PCB; the rest is the 5050
+LED_STRIP_PITCH = 1000.0 / 144.0               # 6.944 by definition at 144/m.
+                          # The chosen part's image labels 6.5, which cannot be
+                          # right (6.5 x 144 = 936, not 1000) -- marketing art,
+                          # not a dimension. Worth confirming on the real strip
+                          # anyway, since it sets the cut length.
+LED_STRIP_N_MAX = int(LED_SLOT_W // LED_STRIP_PITCH)  # 8 is all that fits the 60 pill
+# 8 or 7 is OPEN, deferred to when the strip is in hand (owner, 2026-08-28).
+# The pill is rendered as a CENTRE-BRIGHT GRADIENT falling off to both ends, and
+# an EVEN count has no centre pixel -- with 8 the middle two sit 3.47 either side
+# of centre. They are 6.94 apart against 3.2 mm of diffusion, so they should read
+# as one bright centre, and 8 fills the pill to within 2.2 mm of each end where 7
+# leaves 5.7. That is a judgement about how it LOOKS, which is why it waits for
+# the real part rather than being settled here.
+#   8 -> no centre pixel, better fill      (current)
+#   7 -> a true centre pixel at 0, dimmer ends
+# Changing it re-cuts the channel, so it changes the print -- nothing is printed
+# yet, which is exactly why now is the cheap time to still be undecided.
+LED_STRIP_N   = LED_STRIP_N_MAX                       # <- the one number to flip
+LED_STRIP_SEG = LED_STRIP_N * LED_STRIP_PITCH         # 55.56 cut length
+LED_STRIP_CLR = 0.3       # per side, across the width
+LED_STRIP_T_CLR = 0.15    # ...and ACROSS THE THICKNESS. Without it the channel is
+                          # exactly LED_STRIP_T deep, off a LED_STRIP_OA the block
+                          # above flags as unverified -- a strip 0.1 over nominal
+                          # then cannot flatten, so it stays bowed and pushes on
+                          # the lips, which is the one thing the design says the
+                          # printed part never has to take. Every other axis had a
+                          # clearance; this one did not.
+LED_CH_L      = LED_STRIP_SEG + 1.4   # cut segment plus slop -- scissors land
+                          # +-0.5 either way. DERIVED now: a fixed 18.0 silently
+                          # stopped fitting the moment the segment went from one
+                          # LED to eight.
+LED_WEB       = 0.8       # white PLA left between package and lens base. This is
+                          # the diffusing wall: thinner reads as a hot spot, and
+                          # it sets how deep the package recess can go.
+LED_LIP       = 0.7       # lip overhang past the channel wall -> 0.4 of grip on
+                          # each strip edge NOMINALLY, i.e. with the strip centred.
+                          # It is not centred by anything: the channel gives it
+                          # +-LED_STRIP_CLR of lateral play, so a strip against one
+                          # wall has 0.7 of grip on that side and 0.1 on the other.
+                          # 0.1 is inside one layer line, and nothing else retains
+                          # the strip -- its adhesive faces away by design.
+                          # *** OWNER CALL (#930): live with 0.1 worst case, or buy
+                          # it back. The levers are LED_LIP (1.0 makes the worst
+                          # case 0.4, but then the strip has to bow past 0.7 of
+                          # interference instead of 0.4) and LED_STRIP_CLR (a
+                          # tighter channel has less play, but LED_STRIP_W is the
+                          # unverified number in this file, so tightening it now is
+                          # betting on a width the vendor listing contradicts).
+                          # Settle it with the strip in hand, not here.
+LED_SHOULDER  = 0.75      # ledge the strip's LED-side face lands on. Without it
+                          # the up-stop is the LED package bottoming in its recess
+                          # -- i.e. the fitting force lands on the part, not the LED.
+LED_PKG_Z_CLR = 0.15      # ...and the shoulder is only really the stop if the
+                          # package top stops SHORT of the recess ceiling. At zero
+                          # the two contacts are line-to-line, so a package on the
+                          # high side of its height tolerance lands the fitting
+                          # force on the LED after all -- the very thing
+                          # LED_SHOULDER exists to prevent. 0.15 of air makes the
+                          # order unambiguous and is nothing optically.
+LED_WALL_MIN  = 0.6       # channel wall floor; the flange edge caps the outside
+# Neither of the next two is a manufacturing allowance -- they are CAD tripwires
+# set just under what the layout delivers, so that moving a constant fails the
+# build. As-printed is a separate question nobody has answered: a 14 mm FDM
+# shoulder can come out 0.2 over, and with a glue bead that eats most of the 0.39
+# to the post pad. Check the first printed diffuser against a post before gluing
+# ten of them.
+LED_POST_MIN  = 0.3       # gap from the shoulder's REAR edge to the support-post
+                          # top pad, checked only where the two share u. Since
+                          # POST_PW is derived to fit BETWEEN the pill shoulders
+                          # (2026-09-04) they share none, and this gate is a
+                          # tripwire that stays armed for whoever widens the post
+                          # or the flange again. Before that, at POST_PW = 40, it
+                          # held a 0.39 mm gap and pinned LED_GAP to a 0.09 mm
+                          # window.
+LED_LAND_MIN  = 2.4       # faceplate metal left between the shoulder's front edge
+                          # and the pedal aperture behind it -- the land the flange
+                          # is glued to, MEASURED OFF THE EMITTED CUTS (the aperture
+                          # is cut PEDAL_AP_DEV rearward of v + FSW_SLOT_D/2 for the
+                          # fold development, #760). The land is LED_GAP -
+                          # LED_SLOT_H/2 - LED_INS_FLANGE - PEDAL_AP_DEV: 2.41 at
+                          # LED_GAP = 12 (a tripwire, #930), 6.41 at the 16 of the
+                          # 2026-09-04 trial. A 12 mm strip needs LED_INS_FLANGE >=
+                          # 3.9 (channel wall + LED_WALL_MIN), so with LED_GAP back
+                          # at 12 the 3.0 a glue bead wants cannot hold -- that is
+                          # what the trial also buys. Anything that eats into the
+                          # land past this floor fails the build.
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
 # EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
@@ -498,7 +634,18 @@ D_TRS_SCREW_D    = 3.2   # M3 clearance
 # cut diagonal fits every D shell.
 D_TRS_SCREW_DIAG = (19.0, 24.0)   # (du, dz) between the two diagonal M3 centres
 D_TRS_KEEPOUT    = 30.4  # bore + the M3 pair
-D_PD_BORE = D_TRS_BORE   # same D-series punch as CTRL_1/CTRL_2 (same M3 pair too)
+D_PD_BORE = D_TRS_BORE   # the PD coupler keeps the D-series punch (bore + M3 pair)
+# CTRL_1 / CTRL_2 are Neutrik NJ6FD-V since 2026-09-04 (owner call, #993): a
+# 6-pole switching 1/4" jack, vertical PCB pins, REAR-mounted through a plain
+# round hole and held by its snap-on POM cap. Neutrik's drawing (nj6fd-v-3.dxf,
+# "Panel cut out (rear side)") gives Ø12.00 and a panel of 1.20-1.50 mm; the
+# STEP shows the snout is only 3.5 mm long, so a 2.0 mm panel leaves the cap
+# nothing to snap to. Hence REAR_PANEL_T below. The old D-series TRS constants
+# stay for the PD coupler. The station keep-out is deliberately still
+# D_TRS_KEEPOUT: shrinking it would re-spread the stations and move the base's
+# rear-wall window, and the spare air costs nothing.
+D_CTRL_HOLE  = 12.0      # NJ6FD-V panel hole
+REAR_PANEL_T = 1.5       # the rear panel is a separate flat: 1.5 mm for the NJ6FD-V cap
 USB3_SQ       = 22.1 # USB 3.0 panel coupler: square across flats
 USB3_CORNER_D = 24.1 # ...corners on this circle -> corner radius derived below
 USB3_FLANGE_D = 28.5 # flange OD. This, not the cutout, is the real keep-out
@@ -520,7 +667,10 @@ REAR_IO_PROVENANCE = {
     "D_TRS_SCREW_DIAG":  "datasheet: QIANRENON B0CQ4VD2N2 'D-type panel mounting "
                          "dimensions (19mm*24mm)'; MEIRIYFA B0G5FZNH49 is the same "
                          "standard D shell (photos show the diagonal pair + screws)",
-    "D_TRS_KEEPOUT":     "design: bore + the M3 pair",
+    "D_TRS_KEEPOUT":     "design: bore + the M3 pair (kept as the CTRL station width too)",
+    "D_CTRL_HOLE":       "datasheet: Neutrik nj6fd-v-3.dxf 'Panel cut out (rear side)' Ø12.00 "
+                         "[0.472\"], panel 1.20-1.50 mm; NJ6FD-V datasheet 'Chassis shape 12 mm'",
+    "REAR_PANEL_T":      "datasheet: NJ6FD-V panel thickness 1.20-1.50 mm; snout 3.5 mm in the STEP",
     "D_TRS_SCREW_D":     "datasheet: D-series fixings are M3",
     "USB3_SQ":           "measured: user, coupler BODY across flats (PENGLIN B09VGK59XQ: "
                          "a round M24 barrel with two anti-rotation flats; NUT-mounted, "
@@ -679,6 +829,9 @@ FOOT_INSET_Y = 45.0  # from front and rear
 
 # --- fasteners ----------------------------------------------------------------
 D_M3      = 3.2      # M3 clearance (Pi/board standoffs)
+D_RIVET   = 3.3      # 3.2 mm (1/8") pop rivets: the usual 3.3 drill. Was D_M3 = 3.2,
+                     # zero clearance on a rivet that also has to find its hole while
+                     # the bracket sits tangent to the wall fillet (re-review 2026-09-04)
 D_M2      = 2.4      # M2 clearance (external buck standoffs)
 D_M4      = 4.3      # M4 clearance (bottom plate -> shell)
 # The whole lid fixes with ONE screw SKU: M3 into hand-tapped Ø2.5 pilots (front
@@ -839,7 +992,9 @@ assert HR_FLAT > 0 and LID_REAR_LAP > 0, "seam solver: degenerate rear seam"
 assert D_FL_TIP + PEM_EDGE <= D_SEAM_SCREW <= D_LAP_TIP - (3.4 / 2.0 + 2.0), (
     f"seam screw row d={D_SEAM_SCREW:.2f} outside the lap/flange overlap "
     f"[{D_FL_TIP:.2f}, {D_LAP_TIP:.2f}] with edge margins")
-assert HR_FLAT > max(CORNER_ZR_WALL) + T + 2.0, (
+assert HR_FLAT - BA90 / 2.0 > CORNER_HT + T + RI - DEV90 + 0.5, (
+    "rear web too short: the corner bracket's TOP edge runs into the transition fold's bend zone")
+assert HR_FLAT > max(CORNER_ZR_WALL) + T + RI + 2.0, (
     "rear web too short: corner-bracket rivet holes cross the transition fold")
 
 def lid_top_z(v):
@@ -873,7 +1028,13 @@ def lid_under_z(v):
 # (aligned in u). CLEAR/BANK ride centre so the 16" screen still fits depth-wise.
 EDGE         = 30.0      # uniform edge margin (sides / rear)
 FRONT_PEDAL_MARGIN = 10.0 # front-row pedals sit this close to the front edge
-LED_GAP      = 12.0      # status-LED offset behind a pedal (toward rear)
+LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear): pill
+                         # centre above the slot's rear edge. 12.0 until 2026-09-04;
+                         # 16 was tried in Fusion and CONFIRMED by the owner the
+                         # same day -- the pill's bottom edge sits 13 mm behind
+                         # the slot instead of 9. Everything downstream follows
+                         # (legends, ring line, mini console); the support posts
+                         # no longer care, see POST_PW.
 SILK_H       = 25.0      # silkscreen cap height -- SAME for every label (a too-wide word
 SILK_CW      = 0.66      # gets squished horizontally). bold char advance / cap height.
 PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
@@ -905,8 +1066,6 @@ FSW_FRONT_EXTRA = 0.43 / math.cos(_ra)
 # and asserted >= 40 in _check().
 SCREEN_TOP_V = 371.0
 FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
-# CLEAR/BANK sit so their LABEL TOP aligns with the screens' shared top line
-# (SCREEN_TOP_V) -- the layout the user approved in the LED trial (issue #366).
 # SILK_CAP is the cap-height/em ratio of the label font as it actually renders
 # (measured in the "Segno console (populated)" doc; Arial-class bold ~0.717): the
 # silk `h` parameter is an em size, so glyph caps top out at v_lbl + SILK_H*SILK_CAP.
@@ -926,7 +1085,17 @@ SILK_TRI_H   = 0.82
 # here and it silently stops matching the moment either of those changes.
 LABEL_DV_LED   = LED_GAP + 12.0
 LABEL_DV_PLAIN = LED_GAP - LED_SLOT_H / 2.0
-PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.0
+# CLEAR/BANK (row 2) are anchored on a HARD edge: the FRONT edge of their
+# footswitch slot sits ON the 16" aperture's front edge, so the two pedals and
+# the big screen share one bottom line (issue #796, owner call 2026-08-23; the
+# #366 layout anchored the row off its label cap top, a soft glyph edge that
+# lined up with nothing else on the plate). Both sides are cut edges in the same
+# flat pattern, so this is an exact equality. The slot is NOT centred on the row
+# -- faceplate_holes() opens it at v - FSW_SLOT_D/2 + PEDAL_AP_DEV -
+# FSW_FRONT_EXTRA to meet the pedal across the fold development -- so those two
+# terms come back out of the anchor here, or the alignment misses by ~2.15 mm.
+PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H + FSW_SLOT_D / 2.0
+                - PEDAL_AP_DEV + FSW_FRONT_EXTRA)
 # The encoder + LED ring do NOT follow the pedals rearward: the ring would hit the
 # 7" screen. It used to be pinned to the OLD row-2 centre (the 16"-screen-bottom
 # line), which held while the ring was the Ring 16's O46 -- that left 26.7 mm of
@@ -946,9 +1115,10 @@ PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.
 # The band top is the play triangle's tip -- it is the tallest thing in row 1,
 # taller than the cap height of UNDO/MODE, so it is what the eye reads as the
 # edge of the legend band.
-ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + LABEL_DV_PLAIN
-                   + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
-ENC_V        = (ROW1_LEGEND_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
+# ROW1_LEGEND_TOP / ENC_V are defined further down, once NO_LED_PEDALS and _ROW1
+# exist -- the band top depends on WHICH label offset row 1 actually uses, and
+# that is a function of the tuple. Writing LABEL_DV_PLAIN here was what made this
+# go stale twice (see there).
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -991,16 +1161,29 @@ FRONT_SCREW_U = ([_row1_u(0) - _FS_HP]
                  + [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
                  + [_row1_u(len(_ROW1) - 1) + _FS_HP])
 
-# Status-LED pedals. #366 gave a pill to ALL ten; the four TRANSPORT pedals lose
-# theirs again (owner call 2026-08-21): REC/PLAY, STOP, UNDO and MODE are fixed
-# functions, not mappable, so a per-pedal status light has nothing to report --
-# their state is already on the screens. The six that keep a pill are the four
-# TRACKs (which show arm/record/play per lane) plus CLEAR and BANK. The encoder
-# ring is unaffected.
-NO_LED_PEDALS = ("REC/PLAY", "STOP", "UNDO", "MODE")
+# Status-LED pedals. #366 gave a pill to ALL ten; #792 then took the four
+# TRANSPORT pills away again (fixed functions with nothing to report). Owner call
+# 2026-08-28 REVERSES #792 and restores all ten (#930) -- so this tuple is empty,
+# and it stays a tuple rather than being deleted because the argument has now gone
+# both ways once and may again. Emptying it also moves those four labels from
+# LABEL_DV_PLAIN to LABEL_DV_LED, which changes the plate AND the vinyl overlay.
+NO_LED_PEDALS = ()
 
 def _has_led(label):
     return label not in NO_LED_PEDALS
+
+# Row 1's legend band top, and the encoder that is centred against it. The offset
+# is READ OFF the pedals rather than written: a row-1 label sits at LABEL_DV_LED
+# or LABEL_DV_PLAIN depending on NO_LED_PEDALS, and that tuple has now changed
+# twice (#792 emptied row 1 of pills, #930 refilled it). Both times this line
+# still said LABEL_DV_PLAIN while every row-1 label had moved, which left ENC_V
+# 7.5 mm low and quietly broke the centred rule above -- the legends moved in the
+# DXF and the ring did not.
+_ROW1_LABEL_DV = max(LABEL_DV_LED if _has_led(lb) else LABEL_DV_PLAIN
+                     for lb in _ROW1)
+ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + _ROW1_LABEL_DV
+                   + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
+ENC_V        = (ROW1_LEGEND_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
 
 # Legends. Two transport controls read as SYMBOLS rather than words (owner call
 # 2026-08-21): "REC/PLAY" was a two-line block eating the tallest label slot on
@@ -1010,6 +1193,66 @@ def _has_led(label):
 # the legend is a printed vinyl overlay, and a filled shape is unambiguous where
 # a font substitution on the vendor's RIP would not be.
 SILK_SYMBOLS = {"REC/PLAY": "rec_play", "STOP": "stop"}
+SILK_ICON_R  = 0.10   # fillet radius as a fraction of h -- play + stop (owner)
+
+
+def _fillet_closed(pts, r, n=10):
+    """Closed ring with a circular fillet of radius r at every vertex.
+
+    Used for the play triangle and the stop square so they read as the same
+    family of icons (rounded, not knife-cut). n is arc segments per corner.
+    """
+    pts = list(pts)
+    m = len(pts)
+    if m < 3 or r <= 0.0:
+        return pts
+    out = []
+    for i in range(m):
+        p0 = pts[(i - 1) % m]
+        p1 = pts[i]
+        p2 = pts[(i + 1) % m]
+        v1 = (p0[0] - p1[0], p0[1] - p1[1])
+        v2 = (p2[0] - p1[0], p2[1] - p1[1])
+        l1 = math.hypot(*v1)
+        l2 = math.hypot(*v2)
+        if l1 < 1e-9 or l2 < 1e-9:
+            out.append(p1)
+            continue
+        u1 = (v1[0] / l1, v1[1] / l1)
+        u2 = (v2[0] / l2, v2[1] / l2)
+        dot = max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1]))
+        theta = math.acos(dot)
+        if theta < 1e-6 or theta > math.pi - 1e-6:
+            out.append(p1)
+            continue
+        trim = r / math.tan(theta / 2.0)
+        trim = min(trim, l1 * 0.45, l2 * 0.45)
+        rr = trim * math.tan(theta / 2.0)
+        a = (p1[0] + u1[0] * trim, p1[1] + u1[1] * trim)
+        b = (p1[0] + u2[0] * trim, p1[1] + u2[1] * trim)
+        bis = (u1[0] + u2[0], u1[1] + u2[1])
+        bl = math.hypot(*bis)
+        if bl < 1e-9:
+            out.append(p1)
+            continue
+        bis = (bis[0] / bl, bis[1] / bl)
+        c = (p1[0] + bis[0] * (rr / math.sin(theta / 2.0)),
+             p1[1] + bis[1] * (rr / math.sin(theta / 2.0)))
+        a0 = math.atan2(a[1] - c[1], a[0] - c[0])
+        a1 = math.atan2(b[1] - c[1], b[0] - c[0])
+        # Interior angle is < 180, so the fillet is the minor arc (central
+        # angle π-θ). The long way around bites a concave chunk out of the
+        # corner -- that is how stop looked like a square with four bites.
+        ccw = (a1 - a0) % (2.0 * math.pi)
+        if ccw <= math.pi:
+            sweep, sign = ccw, 1.0
+        else:
+            sweep, sign = (2.0 * math.pi - ccw), -1.0
+        for j in range(n + 1):
+            ang = a0 + sign * sweep * j / n
+            out.append((c[0] + rr * math.cos(ang), c[1] + rr * math.sin(ang)))
+    return out
+
 
 def _silk_symbol_geometry(kind, u, v, h):
     """Filled legend symbols, returned as {"kind": "poly"/"disc"} entries in the
@@ -1017,9 +1260,11 @@ def _silk_symbol_geometry(kind, u, v, h):
     optical baseline as the word labels it replaces.
 
     rec_play: record DOT + play TRIANGLE, side by side, reading left to right in
-              the order the one button cycles.
+              the order the one button cycles. Triangle corners are filleted
+              (SILK_ICON_R) so they match the stop square.
     stop:     the universal filled square, drawn slightly smaller than h because
               a square reads visually larger than a circle of the same height.
+              Corners filleted to the same SILK_ICON_R.
     """
     out = []
     if kind == "rec_play":
@@ -1028,6 +1273,18 @@ def _silk_symbol_geometry(kind, u, v, h):
         gap = h * 0.20                     # tighter than the old 0.34 -- the plus
         pw = h * 0.36                      # goes BETWEEN the two, and the group
         pt = h * 0.10                      # still has to fit inside the pedal
+        # Fillet first, then scale the triangle back to `th` so the rounded
+        # tips do not shrink it under the record dot (they read as one pair).
+        tri = _fillet_closed([(0.0, -th / 2.0), (0.0, th / 2.0), (tw, 0.0)],
+                             h * SILK_ICON_R)
+        ys = [p[1] for p in tri]
+        xs = [p[0] for p in tri]
+        # Same bbox height as the dot. 1.16 overshot (play read larger);
+        # unscaled after the fillet undershot (dot read larger).
+        s = d / (max(ys) - min(ys))
+        cx, cy0 = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
+        tri = [(cx + s * (x - cx), s * (y - cy0)) for x, y in tri]
+        tw = max(p[0] for p in tri) - min(p[0] for p in tri)
         total = d + gap + pw + gap + tw
         x0 = u - total / 2.0
         out.append({"kind": "disc", "u": x0 + d / 2.0, "v": v, "d": d})
@@ -1042,14 +1299,14 @@ def _silk_symbol_geometry(kind, u, v, h):
             (px + a, v - b), (px + a, v + b), (px + b, v + b),
             (px + b, v + a), (px - b, v + a), (px - b, v + b),
             (px - a, v + b), (px - a, v - b), (px - b, v - b)]})
-        tx = x0 + d + gap + pw + gap
-        out.append({"kind": "poly", "pts": [(tx, v - th / 2.0),
-                                            (tx, v + th / 2.0),
-                                            (tx + tw, v)]})
+        tx = x0 + d + gap + pw + gap - min(p[0] for p in tri)
+        out.append({"kind": "poly",
+                    "pts": [(x + tx, y + v) for x, y in tri]})
     elif kind == "stop":
         a = h * 0.70
-        out.append({"kind": "poly", "pts": [(u - a/2, v - a/2), (u + a/2, v - a/2),
-                                            (u + a/2, v + a/2), (u - a/2, v + a/2)]})
+        sq = [(u - a/2, v - a/2), (u + a/2, v - a/2),
+              (u + a/2, v + a/2), (u - a/2, v + a/2)]
+        out.append({"kind": "poly", "pts": _fillet_closed(sq, h * SILK_ICON_R)})
     else:
         raise ValueError("unknown silk symbol: %r" % (kind,))
     return out
@@ -1115,7 +1372,17 @@ POST_V     = 165.0                 # web depth (user call 2026-08-19: "move the 
                                    # under the feet are skipped, see _bottom_vents_local).
 POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
                                    # clears the LED slots; still under the 16in aperture, clear of the vent
-POST_PW    = 40.0                  # post width (u) -- lateral stability
+POST_U_CLR = 1.5                   # u clearance, pad edge to the neighbouring pill
+                                   # shoulder (LED_SLOT_W + 2*LED_INS_FLANGE), each side
+POST_PW    = ((_row1_u(1) - _row1_u(0)) - LED_SLOT_W - 2*LED_INS_FLANGE
+              - 2*POST_U_CLR)      # post width (u): 30.1, DERIVED so the pad sits
+                                   # BETWEEN the two pill shoulders it lands among and
+                                   # shares no u with either. At the old literal 40 it
+                                   # overlapped each shoulder by ~3.7 mm in u, so the
+                                   # shoulder-rear-vs-pad-front gate pinned LED_GAP to a
+                                   # 0.09 mm window; decoupled, the pill depth is free
+                                   # and the post stays where the dent zone wants it.
+                                   # 30 mm on a 20 mm-deep web is still not the weak axis.
 POST_PAD   = 20.0                  # top pad length (v) -- bears on the faceplate underside
 POST_FOOTL = 20.0                  # foot flange length (v) -- bolts to the base floor
                                    # (briefly 17 while the post was wedged against the v375 platforms
@@ -1125,7 +1392,10 @@ POST_FELT  = 1.0                   # ASSEMBLED metal gap: a thicker (2-3 mm) fel
                                    # pad compresses into this ~1 mm when the lid seats -> preloaded,
                                    # firm, rattle-free contact without jacking the lid.
 POST_TILT  = SLOPE_ANGLE           # pad tilt (deg) so it beds FLUSH on the sloped faceplate underside
-POST_BOLT_DU = 12.0                # M4 foot bolts at +/- this in u
+POST_BOLT_DU = POST_PW / 2.0 - 5.0 # M4 foot bolts at +/- this in u: 5.0 in from the foot's
+                                   # side edge (2.85 mm of web past the O4.3, an M4 head
+                                   # inside the foot). Was a literal 12 for the 40 mm post;
+                                   # the base anchors derive from it, so both move together
 # The shell is soft 1050 aluminium, but the posts are made in STEEL 1.6 mm: ~3x stiffer
 # (E 200 vs 69 GPa), tougher, and only ~+60 g for the pair -- rigidity where it costs no
 # weight (issue #292). Felt cap isolates the steel pad from the soft-Al faceplate.
@@ -1150,6 +1420,31 @@ POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), N
 _POST_Y_WORLD = math.cos(math.radians(SLOPE_ANGLE)) * POST_V - 2.093
 _POST_UNDER_Z = 12.437 + math.tan(math.radians(SLOPE_ANGLE)) * _POST_Y_WORLD
 POST_H     = _POST_UNDER_Z - POST_T - POST_FELT
+POST_RI = POST_T                   # inside radius for the 1.6 mm steel post (= T, as its sheet says)
+
+def post_deduct(angle_deg):
+    """Per-flap development deduction for the STEEL post (its own T/Ri, same
+    K): flap flat = outer length - post_deduct(rotation). Until 2026-09-04 the
+    post flat was nominal segments with NO deduction (the sheet said so), which
+    would have folded ~1.5 mm taller per bend and eaten the felt's 1 mm."""
+    a = math.radians(angle_deg)
+    return (POST_RI + POST_T) * math.tan(a / 2.0) - a * (POST_RI + KF * POST_T) / 2.0
+
+POST_DD_PAD  = post_deduct(90.0 + POST_TILT)   # apoyo -> alma, 102.5 deg
+POST_DD_FOOT = post_deduct(90.0)               # alma -> pie
+# OUTER mold-line lengths of the folded C, read off build_post_step's solid:
+# the foot runs from its free end to the web's OUTER (rear) face = foot + t;
+# the web from the floor to where the tilted pad's TOP face meets the web's
+# rear plane = POST_H + t*tan(theta/2); the pad from that point to its free
+# end = pad + t*tan(theta/2). Deducting from the nominal legs (re-review
+# 2026-09-04) folded the post 2 mm short and left the felt unloaded.
+_POST_TP     = POST_T * math.tan(math.radians(90.0 + POST_TILT) / 2.0)
+POST_FOOT_OUT = POST_FOOTL + POST_T
+POST_WEB_OUT  = POST_H + _POST_TP
+POST_PAD_OUT  = POST_PAD + _POST_TP
+POST_PAD_F   = POST_PAD_OUT - POST_DD_PAD                   # flat flap lengths, from the bend centre lines
+POST_WEB_F   = POST_WEB_OUT - POST_DD_PAD - POST_DD_FOOT
+POST_FOOT_F  = POST_FOOT_OUT - POST_DD_FOOT
 # PIN to the doc probe: at POST_V=165 the populated doc gave web 45.107 mm at
 # exactly the 1.0 mm felt gap (2026-08-19). This pin moves ONLY with a fresh
 # doc probe -- if it trips, the plane model and the doc have drifted apart;
@@ -1194,10 +1489,11 @@ def faceplate_holes():
                 engr.append({"u": left_x, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "left"})
             else:                                      # single line -> centred on the pedal
                 engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
-    # --- LED diffuser slots: ONE small pill window per indicator pedal, on the
-    #     old status-LED centre-line (a single-LED WS2812B board under each,
-    #     VHB-taped to the faceplate underside; white-PLA pill diffuser set into
-    #     the slot). Full-round ends: corner r = LED_SLOT_H/2.
+    # --- LED diffuser slots: ONE pill window per pedal, on the old status-LED
+    #     centre-line. Behind each is a white-PLA diffuser pushed in from inside,
+    #     with an LED_STRIP_N-LED segment of bare 144/m strip snapped into its
+    #     back (#927/#930 -- not the VHB-taped single-LED board this used to say).
+    #     Full-round ends: corner r = LED_SLOT_H/2.
     for label, u, v in PEDALS:
         if not _has_led(label):
             continue
@@ -1285,12 +1581,16 @@ def rear_io_cutouts():
     # is point-symmetric about the bore, so an opposite-diagonal part mounts by
     # turning it 180 deg.
     ddu, ddz = D_TRS_SCREW_DIAG
-    for ref in ("PD_IN", "CTRL_1", "CTRL_2"):
+    for ref in ("PD_IN",):
         cu = at[ref][0]
         cuts.append({"kind": "circle", "u": cu, "v": z, "d": D_TRS_BORE, "ref": ref})
         for s in (-1, 1):
             cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z - s*ddz/2.0,
                          "d": D_TRS_SCREW_D, "ref": ref + "_SCR"})
+    # CTRL jacks: Neutrik NJ6FD-V, one round Ø12 hole each, no fixings (rear
+    # body + front snap cap, see D_CTRL_HOLE)
+    for ref in ("CTRL_1", "CTRL_2"):
+        cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": D_CTRL_HOLE, "ref": ref})
     for ref in ("USB3_1", "USB3_2"):                       # square, heavily radiused
         cu = at[ref][0]
         cuts.append({"kind": "rect", "u": cu - USB3_CUT_SQ/2.0, "v": z - USB3_CUT_SQ/2.0,
@@ -1576,6 +1876,49 @@ def _check(strict_board_mount=True):
         # flush-at-rim seating (#373) eats the old margin: real clearance is now
         # ~1.0 row 1 / ~0.95 row 2 (doc-probed). Static parts, no relative motion.
         assert clr >= 0.8, f"SCREW_BOSS: only {clr:.1f} mm under the faceplate at v={v_screw:.0f}"
+
+    # 3b*. the LED diffuser's glue shoulder must not reach the pedal aperture it
+    # sits behind: what is left between them is the metal the flange is glued to.
+    #
+    # MEASURED OFF THE EMITTED CUTS, not off LED_GAP. LED_GAP is referenced to
+    # v + FSW_SLOT_D/2, but the aperture is NOT cut there -- PEDAL_AP_DEV (2.59)
+    # shifts it rearward for the fold development (#760). Reading LED_GAP
+    # directly overstates the land by exactly that, which is how the first
+    # version of this gate reported 5.0 mm for a 2.4 mm reality and passed a
+    # condition it would have failed.
+    for lb, _u, _v in PEDALS:
+        if not _has_led(lb):
+            continue
+        ap = next(c for c in cuts if c.get("ref") == lb)
+        ls = next(c for c in cuts if c.get("ref") == lb + "_LEDSLOT")
+        land = ls["v"] - LED_INS_FLANGE - (ap["v"] + ap["h"])
+        assert land >= LED_LAND_MIN, (
+            f"LED_DIFFUSER {lb}: only {land:.2f} mm of faceplate between the "
+            f"shoulder edge and the pedal aperture, under the {LED_LAND_MIN} "
+            f"floor; move the pill back (LED_GAP) or narrow LED_INS_FLANGE")
+    # ...and behind the pill, the same shoulder must not reach the support post's
+    # top pad -- both bear on the faceplate underside, and the existing post gate
+    # (above) tests the LED SLOT (+-30 in u), not the shoulder (+-34), so it does
+    # not see this. Going 3 -> 4 halved the gap here too: 1.39 -> 0.39.
+    for lb, _u, _v in PEDALS:
+        if not _has_led(lb):
+            continue
+        ls = next(c for c in cuts if c.get("ref") == lb + "_LEDSLOT")
+        f_u0, f_u1 = ls["u"] - LED_INS_FLANGE, ls["u"] + ls["w"] + LED_INS_FLANGE
+        f_v1 = ls["v"] + ls["h"] + LED_INS_FLANGE
+        for u in POST_U:
+            if f_u1 <= u - POST_PW/2 or u + POST_PW/2 <= f_u0:
+                continue                              # no overlap in u, no issue
+            gap = (POST_V - POST_PAD) - f_v1
+            assert gap >= LED_POST_MIN, (
+                f"LED_DIFFUSER {lb}: shoulder rear edge is {gap:.2f} mm from the "
+                f"post pad at u={u:.0f}, under the {LED_POST_MIN} floor -- both "
+                f"bear on the faceplate underside")
+
+    # ...and the strip channel has to survive inside that shoulder.
+    assert LED_INS_FLANGE * 2 + LED_SLOT_H - LED_STRIP_W - 2 * LED_STRIP_CLR >= 2 * LED_WALL_MIN, (
+        f"LED_DIFFUSER: a {LED_STRIP_W} strip leaves under {LED_WALL_MIN} of wall "
+        f"inside the {LED_SLOT_H + 2*LED_INS_FLANGE:.1f} shoulder")
 
     # 3b'. base screw holes: both rows land on the case underside, inboard of
     # the walls, and under the anti-slip pad (which is why they need a datum
@@ -1883,8 +2226,8 @@ def _check(strict_board_mount=True):
     assert _pz0 >= 4.0 and _pz0 + _ph <= REAR_WALL_H - 4.0, (
         f"REAR_PANEL: panel spans z {_pz0:.1f}..{_pz0+_ph:.1f}, which does not "
         f"leave 4 mm of wall above and below on a {REAR_WALL_H:.0f} mm wall")
-    for _ru in (CORNER_RO, _bw_wall - CORNER_RO):
-        for _rz in CORNER_ZR_WALL:
+    for _ru in (CORNER_RO + T, _bw_wall - CORNER_RO - T):   # where dxf_base drills them
+        for _rz in (T + RI + z - DEV90 for z in CORNER_ZR_WALL):   # where dxf_base drills them
             _clr = max(_pu0 - _ru, _ru - (_pu0 + _pw), _pz0 - _rz, _rz - (_pz0 + _ph))
             assert _clr >= 4.0, (
                 f"REAR_PANEL: corner rivet head at ({_ru:.1f}, {_rz:.1f}) is "
@@ -1928,11 +2271,15 @@ def _check(strict_board_mount=True):
     _dims = [k for k in globals()
              if k.startswith(("D_TRS", "MIDI_", "USB3_")) and k not in
              ("USB3_CORNER_R", "USB3_CUT_SQ", "USB3_FIT")]
-    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND"]
+    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND", "D_CTRL_HOLE", "REAR_PANEL_T"]
     _missing = sorted(set(_dims) - set(REAR_IO_PROVENANCE))
     assert not _missing, (
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
         "each is measured, from a datasheet, or unconfirmed before it is cut")
+
+    # 2-ply tile ink must fit the trapezoid the same way the 3D tiles do (#946).
+    for label, _u, _v in PEDALS:
+        _tile_ink(label)
     return True
 
 # ---- side-wall exhaust vents (#753) ------------------------------------------
@@ -2275,6 +2622,235 @@ def _doc():
     doc.layers.add("MASK", color=1, linetype="DASHDOT")
     return doc
 
+# The stock DASHED / DASHDOT patterns are drawn for 1:1 printing: 1.27 mm of dash
+# then 0.254 mm of gap. Every drawing sheet is auto-fitted to its part, so on the
+# 1040 mm base that gap lands at 0.02 mm on paper -- a thirtieth of a 600 dpi dot.
+# It prints SOLID, and a bend line that prints solid is a bend line the shop can
+# read as a cut line. $LTSCALE scales the patterns; size it from the part so the
+# printed gap comes out ~0.3 mm on every sheet, from the 24 mm corner bracket to
+# the 1040 mm base. Tuned against rasterised output -- see _verify_dash_legibility.
+LTSCALE_SPAN = 62.0
+
+def _ltscale_for(doc):
+    """Linetype scale that keeps this part's dashes legible once fitted to a sheet."""
+    from ezdxf.bbox import extents
+    bb = extents(e for e in doc.modelspace()
+                 if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
+    if not bb.has_data:
+        return 1.0
+    span = max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1])
+    return max(1.0, round(span / LTSCALE_SPAN, 1))
+
+# One global scale cannot serve a 1040 mm bend line and a O12 mask ring on the
+# same sheet: the scale that makes the bend line's gaps visible on paper makes
+# the ring's dash longer than its own circumference, and it renders as a solid
+# red circle beside real O12 holes -- exactly the "reads as a cut contour"
+# failure the MASK layer exists to prevent (#775 R3, #1001). DXF has the answer
+# already: an entity-level linetype scale that multiplies the global one. Give
+# any dashed entity too small for the sheet scale its own.
+# Full dash periods the smallest dashed run must show. These two constants pull
+# against each other: more periods on a short entity means smaller gaps, and a
+# gap too small to print is the failure the floor below exists to stop. Three
+# periods of DASHDOT is three dashes and three dots around a ring. Be precise
+# about those dots: they are zero-length pattern elements, and the renderer
+# substitutes a fixed 0.1 DRAWING UNIT minimum that does not scale with ltscale,
+# so each prints about 0.015 mm on the base sheet -- a stroke-width speck, not a
+# measurable mark. What carries the dash-dot signature is the three clear GAPS.
+# Three periods also leaves the tightest entity actually shipped (a 35 mm mask leader on the
+# 1040 mm base) at 1:625 against a 1:900 floor, a 1.44x margin. Four periods
+# left that same leader at 1:833, an 8% margin, and one edit from a red build.
+LTSCALE_MIN_PERIODS = 3.0
+# Floor on the widest gap in a pattern, as a fraction of the part span. The part
+# is drawn about 166 mm wide on its sheet whatever its size (the sheets are
+# auto-fitted), so gap/span translates to paper almost directly. Set from the
+# RASTER, not by extrapolating from the bend lines: a ring injected at 1/1200
+# measures 0.093 mm printed at 600 dpi (about two dots) and its dash-dot
+# collapses to plain dashed, losing the signature MASK depends on. Linear
+# extrapolation misses a roughly constant ink-spread deficit that only matters
+# at these sizes. At 1/900 the worst entity actually shipped -- a base mask
+# leader at 1/833 -- prints 0.19 mm and keeps its dots. The stock $LTSCALE 1
+# that started all this sits at 1/4100.
+LTSCALE_GAP_RATIO = 900.0
+
+
+def _entity_linetype(doc, e):
+    """The linetype the RENDERER will use: the entity's own if it sets one.
+
+    Reading only the layer's meant a MASK ring carrying linetype=CONTINUOUS was
+    validated against DASHDOT and passed, while rasterising as one solid red
+    circle beside real O12 holes.
+    """
+    own = e.dxf.get("linetype", "BYLAYER")
+    if own and own.upper() not in ("BYLAYER", "BYBLOCK"):
+        return own
+    return doc.layers.get(e.dxf.layer).dxf.linetype
+
+
+def _pattern_period(doc, name):
+    """Length of one repeat of a linetype pattern, in drawing units."""
+    lt = doc.linetypes.get(name)
+    total = sum(abs(t.value) for t in lt.pattern_tags.tags if t.code == 49)
+    return total or 1.0
+
+
+# Annotation and fills carry no dash pattern to get wrong. Everything else on a
+# dashed layer is line work and MUST be measurable -- see _run_length.
+NOT_LINEWORK = {"TEXT", "MTEXT", "ATTDEF", "ATTRIB", "HATCH", "POINT",
+                "INSERT", "SOLID", "IMAGE", "WIPEOUT"}
+
+
+def _run_length(e):
+    """Drawn length of a dashable entity, or None if it cannot be measured.
+
+    None is the important return. The first version answered 0.0 for anything it
+    did not recognise and both the fixer and the verifier skipped on that, so a
+    MASK ellipse or a BEND spline would be scaled by nobody, checked by nobody,
+    and print as a solid closed contour with every assertion green. Unknown now
+    means "stop", not "fine".
+    """
+    t = e.dxftype()
+    if t == "LINE":
+        return math.dist((e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y))
+    if t in ("LWPOLYLINE", "POLYLINE"):
+        pts = ([(x, y) for x, y in e.get_points("xy")] if t == "LWPOLYLINE"
+               else [(v.dxf.location.x, v.dxf.location.y) for v in e.vertices])
+        if len(pts) < 2:
+            return 0.0
+        if e.is_closed:
+            pts = pts + [pts[0]]
+        return sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+    if hasattr(e, "flattening"):        # CIRCLE, ARC, ELLIPSE, SPLINE
+        pts = [(v.x, v.y) for v in e.flattening(0.01)]
+        return sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+    return None
+
+
+def _fit_entity_ltscales(doc, gscale):
+    """Scale down the linetype of every dashed entity the global scale would solidify."""
+    periods, fixed = {}, 0
+    for e in doc.modelspace():
+        layer = e.dxf.layer
+        if layer not in ("BEND", "MASK"):
+            continue
+        if e.dxftype() in NOT_LINEWORK:
+            continue
+        run = _run_length(e)
+        if run is None or run <= 0.0:
+            continue                    # the verifier turns this into a failure
+        lname = _entity_linetype(doc, e)
+        period = periods.setdefault(lname, _pattern_period(doc, lname))
+        cap = run / (LTSCALE_MIN_PERIODS * period)
+        if gscale > cap:
+            e.dxf.ltscale = max(cap / gscale, 1e-3)
+            fixed += 1
+    return fixed
+
+
+MASK_CALLOUT_SPAN = 170.0        # part spans per unit of callout text height
+MASK_CALLOUT_CLEAR = 2.0         # keep this much clear of any cut edge, mm
+
+
+def _cut_segments(msp):
+    """Every straight CUT/VENT edge, as (x0, y0, x1, y1)."""
+    segs = []
+    for e in msp:
+        if e.dxf.layer not in ("CUT", "VENT"):
+            continue
+        if e.dxftype() == "LINE":
+            segs.append((e.dxf.start.x, e.dxf.start.y, e.dxf.end.x, e.dxf.end.y))
+        elif e.dxftype() == "LWPOLYLINE":
+            pts = list(e.get_points("xy"))
+            if e.is_closed and len(pts) > 2:
+                pts = pts + [pts[0]]
+            segs += [(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1])
+                     for i in range(len(pts) - 1)]
+    return segs
+
+
+def _box_hits_cut(box, segs):
+    """Does an axis-aligned text box have a cut edge running through it?
+
+    Only edges that actually CROSS the box count -- a note drawn across an
+    aperture's empty middle is ordinary drafting; a line struck through the
+    lettering is not.
+    """
+    x0, y0, x1, y1 = box
+    for ax, ay, bx, by in segs:
+        if abs(ay - by) < 1e-9:                       # horizontal
+            if y0 < ay < y1 and min(ax, bx) < x1 and max(ax, bx) > x0:
+                return True
+        elif abs(ax - bx) < 1e-9:                     # vertical
+            if x0 < ax < x1 and min(ay, by) < y1 and max(ay, by) > y0:
+                return True
+    return False
+
+
+def _fit_mask_callouts(doc, span):
+    """Grow the NO CORTAR callouts to the part, and keep them off the cut lines.
+
+    A fixed 4.5 mm was fine on the 400 mm rear panel and printed 0.82 mm on the
+    1040 mm base -- the smallest text on that sheet, on the one annotation whose
+    whole job is to stop somebody drilling the earth land.
+
+    Growing it alone is not enough, and was worse than doing nothing: at 6.12 mm
+    the base's O20 callout rose into the rear window's own cut edge, so the line
+    ran through the middle of "NO PINTAR, NO CORTAR" for its whole length. The
+    text is lifted clear along with its leader, together, so the warning still
+    points at the ring it belongs to.
+    """
+    msp = doc.modelspace()
+    want = max(4.5, span / MASK_CALLOUT_SPAN)
+    segs = _cut_segments(msp)
+    texts = [e for e in msp if e.dxftype() == "TEXT" and e.dxf.layer == "MASK"]
+    leaders = [e for e in msp
+               if e.dxf.layer == "MASK" and e.dxftype() == "LWPOLYLINE"]
+    n = 0
+    for t in texts:
+        if t.dxf.height >= want:
+            continue
+        t.dxf.height = want
+        n += 1
+        tx, ty = float(t.dxf.insert.x), float(t.dxf.insert.y)
+        w = len(t.dxf.text) * want * NOTE_ADVANCE_EST
+        # the leader whose horizontal run ends just under this text
+        lead = min(leaders,
+                   key=lambda e, tx=tx, ty=ty: min(
+                       abs(p[0] - tx) + abs(p[1] - ty)
+                       for p in e.get_points("xy")),
+                   default=None)
+        # pad the box: a cut edge running flush along the baseline reads as an
+        # underline through the descenders, which is barely better than through
+        # the middle of the letters
+        pad = MASK_CALLOUT_CLEAR
+        for dy in (0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, -8.0, -10.0, -12.0):
+            box = (tx, ty + dy - pad, tx + w, ty + dy + want + pad)
+            if not _box_hits_cut(box, segs):
+                break
+        else:
+            dy = 0.0                    # nowhere clear: size still beats nothing
+        if dy:
+            t.dxf.insert = (tx, ty + dy)
+            if lead is not None:        # carry the leader's elbow with it
+                pts = list(lead.get_points("xy"))
+                lead.set_points([(px, py + dy) if i else (px, py)
+                                 for i, (px, py) in enumerate(pts)],
+                                format="xy")
+    return n
+
+
+def _save(doc, path):
+    """Write the DXF with a part-sized $LTSCALE.
+
+    Set here rather than in the PDF renderer so the value travels WITH the file:
+    the shop opening the DXF in their own CAD sees the same broken bend lines the
+    PDF shows, and `dxf_to_pdf` (which re-reads the saved file) inherits it free.
+    """
+    gscale = _ltscale_for(doc)
+    doc.header["$LTSCALE"] = gscale
+    _fit_entity_ltscales(doc, gscale)
+    _fit_mask_callouts(doc, _SPAN(doc.modelspace()))
+    doc.saveas(path)
+
 def _circle(msp, x, y, d, layer="CUT"):
     msp.add_circle((x, y), d / 2.0, dxfattribs={"layer": layer})
 
@@ -2302,6 +2878,26 @@ def _silk_fill(msp, kind, spec):
         h.paths.add_polyline_path(spec, is_closed=True)
     else:
         raise ValueError("unknown silk fill kind: %r" % (kind,))
+    return h
+
+
+def _engrave_fill(msp, kind, spec, holes=None):
+    """SOLID-fill an ENGRAVE region so a 2-ply laser burns through the cap.
+
+    Same hatch trap as `_silk_fill`: color=256 is BYLAYER (named argument), and
+    the outline stays on the layer so a reader that ignores hatches still sees
+    the glyph. ENGRAVE is color 3, so BYLAYER cannot vanish on a white sheet.
+    """
+    h = msp.add_hatch(color=256, dxfattribs={"layer": "ENGRAVE"})
+    if kind == "circle":
+        cx, cy, r = spec
+        h.paths.add_edge_path().add_arc((cx, cy), r, 0.0, 360.0)
+    elif kind == "poly":
+        h.paths.add_polyline_path(spec, is_closed=True)
+        for hole in holes or []:
+            h.paths.add_polyline_path(hole, is_closed=True)
+    else:
+        raise ValueError("unknown engrave fill kind: %r" % (kind,))
     return h
 
 
@@ -2333,7 +2929,20 @@ def _rrect(msp, x, y, w, h, r=R_FILLET, layer="CUT"):
     b = math.tan(math.radians(22.5))      # bulge for a 90 deg corner fillet (NOT 45 -> that is a 180 deg bump)
     pts = [(x+r, y, 0.0), (x+w-r, y, b), (x+w, y+r, 0.0), (x+w, y+h-r, b),
            (x+w-r, y+h, 0.0), (x+r, y+h, b), (x, y+h-r, 0.0), (x, y+r, b)]
-    msp.add_lwpolyline(pts, format="xyb", close=True, dxfattribs={"layer": layer})
+    # A full-round end (r == h/2 or r == w/2, every pill and louvre) makes two
+    # of those vertices coincide: a zero-length segment carrying a bulge. Some
+    # nesters reject the entity, a few drop the FOLLOWING bulge and turn the
+    # stadium into a rectangle (#775 A16). Merge coincident neighbours; the
+    # merged vertex keeps the bulge of the segment that LEAVES it.
+    out = []
+    for px, py, pb in pts:
+        if out and abs(out[-1][0] - px) < 1e-9 and abs(out[-1][1] - py) < 1e-9:
+            out[-1] = (px, py, pb)
+        else:
+            out.append((px, py, pb))
+    if len(out) > 1 and abs(out[0][0] - out[-1][0]) < 1e-9 and abs(out[0][1] - out[-1][1]) < 1e-9:
+        out[0] = (out[0][0], out[0][1], out[-1][2]); out.pop()
+    msp.add_lwpolyline(out, format="xyb", close=True, dxfattribs={"layer": layer})
 
 def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
     from ezdxf.enums import TextEntityAlignment
@@ -2342,6 +2951,53 @@ def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
     if layer == "SILK":
         attrs["style"] = "SILKBOLD"          # legends print BOLD
     msp.add_text(s, height=h, dxfattribs=attrs).set_placement((x, y), align=al)
+
+# Sheet drawings are auto-fitted to the contents of model space, and model-space
+# TEXT has real width -- so a shop note emitted as ONE long TEXT entity is a page
+# layout hazard, not just ugly. The post's note measured 2909 mm beside an 83 mm
+# part: the part rendered at 3% of the sheet, its dimensions were unreadable and
+# its bend line printed as a smear. Wrap notes to the part's own width, at a text
+# height that keeps the block a caption rather than the largest thing on the page.
+NOTE_BLOCK_FILL = 0.55      # note-block height, as a fraction of the part's height
+NOTE_ADVANCE    = 0.75      # TEXT advance per character, in units of text height
+NOTE_LEADING    = 1.6       # line pitch, in units of text height
+
+def _note(msp, x, y, s, layer="NOTE"):
+    """Emit a shop note as a wrapped block whose bottom line sits at (x, y).
+
+    Grows UPWARD so the existing call sites -- which anchor just above the part --
+    keep meaning what they say, and RETURNS the top of the block so a second note
+    can be stacked on it instead of printed through it.
+    """
+    import textwrap
+    from ezdxf.bbox import extents
+    bb = extents(e for e in msp if e.dxf.layer != "NOTE")
+    span = 100.0
+    if bb.has_data:
+        # the LARGER dimension, not the width: the post is 30 mm wide and 83 mm
+        # tall, and wrapping its note to 30 mm stacked 20 lines above a part that
+        # was already the tall one, turning the sheet into a 1:3 ribbon.
+        span = max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1], 1.0)
+    w = span
+    # lines = len*ADVANCE*th/span and block = LEADING*th*lines, so solving
+    # block = FILL*span for th gives the height that fills the budget exactly.
+    th = math.sqrt(NOTE_BLOCK_FILL * span * span /
+                   (NOTE_ADVANCE * NOTE_LEADING * max(len(s), 1)))
+    # Never split a word: the shop pairs a printed sheet to its DXF by the file
+    # stem written in the note, and wrapping "segno_corner_bracket_rear" across
+    # two lines destroys that pairing. But widening the COLUMN to fit that token
+    # pushes the block past the part -- the bracket's note came out 89 mm wide
+    # against an 80 mm part. Shrink the text until the longest token fits the
+    # span instead, and only overflow when even the 1.2 mm floor cannot hold it.
+    longest = max((len(t) for t in s.split()), default=1)
+    th = min(th, span / (NOTE_ADVANCE * max(longest, 1)))
+    th = min(max(th, 1.2), 9.0)
+    cols = max(24, int(w / (NOTE_ADVANCE * th)), longest)
+    lines = textwrap.wrap(s, cols, break_long_words=False,
+                          break_on_hyphens=False) or [s]
+    for i, ln in enumerate(lines):
+        _text(msp, x, y + (len(lines) - 1 - i) * th * NOTE_LEADING, th, ln, layer)
+    return y + (len(lines) - 1) * th * NOTE_LEADING + th
 
 def _emit(msp, feats, ox=0.0, oy=0.0):
     for f in feats:
@@ -2411,8 +3067,8 @@ def dxf_faceplate(path):
                                                                           # stations as the front lip (#760),
                                                                           # Ø3.4 M3 clearance, concentric
                                                                           # with the flange tap pilots
-    _text(msp, 10, yr1+8, 8, f"Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico) AJUSTE DE LA PESTAÑA FRONTAL: plegar la pestaña de modo que quede {LIP_FIT_CLEAR:.1f} mm de holgura entre la cara INTERIOR de la pestaña y la cara EXTERIOR de la pared frontal del cuerpo, MEDIDO DESPUÉS DE PINTAR (ambas caras se pintan, no se enmascara nada). En el CAD el ajuste es cara contra cara, por lo que la pestaña debe plegarse levemente abierta; verificar que la tapa entre sobre el cuerpo terminado antes del plegado definitivo", "NOTE")
-    doc.saveas(path)
+    _note(msp, 10, yr1+8, f"Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico) AJUSTE DE LA PESTAÑA FRONTAL: plegar la pestaña de modo que quede {LIP_FIT_CLEAR:.1f} mm de holgura entre la cara INTERIOR de la pestaña y la cara EXTERIOR de la pared frontal del cuerpo, MEDIDO DESPUÉS DE PINTAR (ambas caras se pintan, no se enmascara nada). En el CAD el ajuste es cara contra cara, por lo que la pestaña debe plegarse levemente abierta; verificar que la tapa entre sobre el cuerpo terminado antes del plegado definitivo")
+    _save(doc, path)
     return {"blank": (LW, yr1)}
 
 def dxf_overlay(path):
@@ -2435,8 +3091,8 @@ def dxf_overlay(path):
         else:
             _text(msp, e["u"], e["v"], e["h"], e["s"], layer="SILK",   # WHITE legend on the print
                   wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
-    _text(msp, 10, FP_V + 8, 8, "Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)", "NOTE")
-    doc.saveas(path); return {}
+    _note(msp, 10, FP_V + 8, "Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)")
+    _save(doc, path); return {}
 
 def dxf_base(path):
     """ONE-PIECE BASE developed as a SINGLE flat blank: the bottom plate in the centre,
@@ -2560,14 +3216,32 @@ def dxf_base(path):
     # Only the TALL rear corners get riveted L-brackets. The short 12 mm FRONT corners are
     # already clamped top (lid front-lip screws into the front wall) + bottom (bottom-plate
     # fold ties both walls), so they stay a plain butt+relief corner -- no bracket needed.
-    RV = D_M3; RO = CORNER_RO                  # 3.2 mm rivet clearance; offset from the corner
-    # heights z are measured from the BOTTOM-PLATE TOP (the bracket rests there), so add T
-    # to convert to a wall height above the fold line.
+    RV = D_RIVET
+    # The bracket is a folded L whose OUTER faces lie on the two walls' INNER
+    # faces, resting on the bottom-plate TOP. Its rivet holes sit CORNER_RO from
+    # its own bend CENTRE line in the flat, which after a 90 deg fold (RI, T,
+    # BA90) is CORNER_RO + DEV90 from the other leg's outer face -- i.e. from the
+    # wall it does not lie on. A wall hole drawn s from ITS bend centre line
+    # lands s + DEV90 above the floor's bottom face, and a rear-wall hole drawn
+    # s from the SIDE bend line is s - (BA90/2 - RI) from the side wall's inner
+    # face. Equating both (the audit of 2026-09-04 found every rivet 2.0 mm off
+    # along the wall and 1.9 mm low, #992) gives:
+    #   along the wall: s = CORNER_RO + T          (the BA90 terms cancel)
+    #   up the wall:    s = T + RI + z - DEV90     (see below)
+    # The bracket does NOT reach the floor top: the floor->wall fold has an
+    # inside radius RI, tangent to the wall's inner face RI above the floor
+    # top, and a flat leg clamped to that face bottoms out on the arc. So the
+    # bracket's bottom edge floats RI above the floor top and its heights z
+    # (from CORNER_ZR_*) are measured from there (re-review 2026-09-04: the
+    # first correction put the bracket ON the floor and the rivets 2.0 mm low).
+    RO_WALL = CORNER_RO + T                   # 10.0: rivet offset along the wall, flat
+    def _zf(z):                               # bracket height z -> wall flat offset
+        return T + RI + z - DEV90
     for sgn, xc in ((+1, 0.0), (-1, BW)):     # +1 left (side flap -x) | -1 right (side flap +x)
         for z in CORNER_ZR_WALL:               # rear-wall leg (3 rivets)
-            _circle(msp, xc + sgn*RO, BD + T + z, RV)      # rear-wall face   (flat y = BD + T + z)
+            _circle(msp, xc + sgn*RO_WALL, BD + _zf(z), RV)     # rear-wall face
         for z in CORNER_ZR_SIDE:               # side-wall leg (2 rivets, staggered)
-            _circle(msp, xc - sgn*(T + z), BD - RO, RV)    # side-wall face
+            _circle(msp, xc - sgn*_zf(z), BD - RO_WALL, RV)     # side-wall face
 
     # ---- bottom features: vents + Pi/board M3 standoffs + rubber feet -------------
     _emit(msp, _bottom_vents_local(BW, BD))
@@ -2619,15 +3293,14 @@ def dxf_base(path):
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
             _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
                          "zona de puesta a tierra del perno M6, AMBAS CARAS")
-    _text(msp, 8, BD+Hr+Ht+22, 7,
+    _mask_top = _note(msp, 8, BD+Hr+Ht+10,
+          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico); PROCESO: desbarbar y remachar los ángulos de esquina ANTES de pintar, roscar los pilotos M3 (Ø2.5) DESPUÉS de pintar; los Ø4.3 y Ø4.5 del piso son PASO LIBRE M4 con tuerca suelta por debajo, NO roscar")
+    _note(msp, 8, _mask_top + 8,
           "MASK (rojo trazo y punto) = máscara de pintura, NO ES UN CORTE: zona de metal "
           "desnudo para la puesta a tierra alrededor del perno M6, en AMBAS CARAS. Los "
-          "agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.", "MASK")
-
-    _text(msp, 8, BD+Hr+Ht+10, 9,
-          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)",
-          "NOTE")
-    doc.saveas(path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
+          "agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.",
+          layer="MASK")
+    _save(doc, path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
 
 def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
     """Internal L-bracket that joins a vertical corner WITHOUT welding: one leg pop-rivets to
@@ -2638,11 +3311,11 @@ def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
     _poly(msp, [(0, 0), (2*LEG, 0), (2*LEG, ht), (0, ht)], "CUT")
     _poly(msp, [(LEG, 0), (LEG, ht)], "BEND", closed=False)             # 90 deg fold between the legs
     for z in wall_zs:
-        _circle(msp, LEG - CORNER_RO, z, D_M3)                          # rear-wall leg
+        _circle(msp, LEG - CORNER_RO, z, D_RIVET)                        # rear-wall leg
     for z in side_zs:
-        _circle(msp, LEG + CORNER_RO, z, D_M3)                          # side-wall leg
-    _text(msp, 0, ht+6, 6, f"Segno ÁNGULO DE ESQUINA (segno_corner_bracket_rear, {tag})  chapa 2.0 mm  CANT. 2  unión de esquina sin soldadura; remachar a las dos paredes", "NOTE")
-    doc.saveas(path); return {}
+        _circle(msp, LEG + CORNER_RO, z, D_RIVET)                        # side-wall leg
+    _note(msp, 0, ht+6, f"Segno ÁNGULO DE ESQUINA (segno_corner_bracket_rear, {tag})  chapa 2.0 mm  CANT. 2  unión de esquina sin soldadura; remachar a las dos paredes")
+    _save(doc, path); return {}
 
 def platform_foot_u(sw):
     """The two x-fractions of the foot-flange screws, as offsets from the shelf centre."""
@@ -2676,12 +3349,12 @@ def dxf_rear_panel(path):
     _u0, _z0, pw, ph = rear_panel_outline()
     _poly(msp, [(-pw/2, -ph/2), (pw/2, -ph/2), (pw/2, ph/2), (-pw/2, ph/2)], "CUT")
     _emit(msp, rear_panel_holes())
-    _text(msp, -pw/2 + 4, ph/2 + 6, 6,
-          "Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa 2.0 mm  CANT. 1  "
-          "PIEZA PLANA, sin plegados: alimentación 9V + apagado + fusible + 2 x DIN-5 + "
-          "2 x TRS + 2 x USB3",
-          "NOTE")
-    doc.saveas(path); return {}
+    _note(msp, -pw/2 + 4, ph/2 + 6,
+          f"Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa {REAR_PANEL_T:.1f} mm (los jacks CTRL Neutrik NJ6FD-V "
+          f"admiten panel de 1.2 a 1.5; el cuerpo sigue en 2.0)  CANT. 1  "
+          "PIEZA PLANA, sin plegados: entrada USB-C PD 20 V (punzón D) + botón de apagado + fusible + 2 x DIN-5 + "
+          "2 x jack Neutrik NJ6FD-V (Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que apoya contra el cuerpo")
+    _save(doc, path); return {}
 
 # screen_bracket REMOVED (#760): the screens are bonded to the shell; the
 # bracket fallback was dropped entirely (user call 2026-08-18).
@@ -2694,22 +3367,24 @@ def dxf_post(path):
     propping the one zone the perimeter folds do not reach. Load runs to the base, not
     the lid, so nothing shows on the top face and the lid still lifts off. The
     pad->web fold is 90 + POST_TILT deg so the pad beds FLUSH on the sloped underside;
-    the foot->web fold is 90. Bend deduction PROVISIONAL (nominal segments)."""
+    the foot->web fold is 90. Flat DEVELOPED with post_deduct (K 0.33, Ri = T)."""
     doc = _doc(); msp = doc.modelspace()
     pw, pad, web, foot = POST_PW, POST_PAD, POST_H, POST_FOOTL
-    Wd = pad + web + foot
+    pad_f, web_f, foot_f = POST_PAD_F, POST_WEB_F, POST_FOOT_F
+    Wd = pad_f + web_f + foot_f
     _poly(msp, [(0, 0), (pw, 0), (pw, Wd), (0, Wd)], "CUT")
-    _poly(msp, [(0, pad), (pw, pad)], "BEND", closed=False)           # pad -> web (fold 90 + tilt)
-    _poly(msp, [(0, pad+web), (pw, pad+web)], "BEND", closed=False)   # web -> foot (fold 90)
-    for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot
-        _circle(msp, pw/2.0 + du, pad + web + foot/2.0, D_M4)
-    _text(msp, 5, Wd+6, 9,
+    _poly(msp, [(0, pad_f), (pw, pad_f)], "BEND", closed=False)             # pad -> web (fold 90 + tilt)
+    _poly(msp, [(0, pad_f+web_f), (pw, pad_f+web_f)], "BEND", closed=False) # web -> foot (fold 90)
+    for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot, foot/2 from its free end
+        _circle(msp, pw/2.0 + du, Wd - foot/2.0, D_M4)
+    _note(msp, 5, Wd+6,
           f"Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de {POST_T:.1f} mm "
-          f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo {pad:.0f} / alma {web:.0f} / "
-          f"pie {foot:.0f} mm); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
+          f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C; medidas EXTERIORES apoyo {POST_PAD_OUT:.2f} / "
+          f"alma {POST_WEB_OUT:.2f} / pie {POST_FOOT_OUT:.2f} mm (interiores {pad:.0f} / {web:.1f} / {foot:.0f}); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
           f"de {POST_TILT:.1f}°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), "
-          f"fieltro sobre el apoyo; deducción PROVISORIA", "NOTE")
-    doc.saveas(path); return {}
+          f"fieltro sobre el apoyo; deducción aplicada (K {KF}, Ri {POST_RI:.1f}): {POST_DD_PAD:.2f} mm en el plegado del apoyo, "
+          f"{POST_DD_FOOT:.2f} mm en el del pie; desarrollo {Wd:.2f} mm")
+    _save(doc, path); return {}
 
 # ===========================================================================
 # STEP  (cadquery)
@@ -3454,13 +4129,54 @@ def build_mini_console():
     outp.append(asm)
     return outp
 
+def diffuser_stack():
+    """The z stations down the back of the diffuser, all derived from the parts.
+
+    z = 0 is the lens base / flange front face; +z is OUT through the faceplate.
+    Returns (package recess depth, strip front face, strip back face, lip bottom).
+
+    The package sticks out past the flange back by whatever the recess cannot
+    swallow, and THAT is what sets where the strip sits -- the old nest picked a
+    depth and ignored the package height, so the source never touched anything.
+    LED_PKG_Z_CLR then drops the strip a further hair so the shoulders, not the
+    LED, are what it lands on.
+    """
+    recess_d = LED_INS_FL_T - LED_WEB               # 0.7 of the 1.5 flange
+    stand    = LED_PKG_H + LED_PKG_Z_CLR - recess_d # proud of the flange back
+    strip_t0 = -LED_INS_FL_T - stand                # strip's LED-side face
+    strip_t1 = strip_t0 - LED_STRIP_T - LED_STRIP_T_CLR   # under the strip's back
+    return recess_d, strip_t0, strip_t1, strip_t1 - LED_LIP
+
+
 def build_diffuser_step():
-    """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
+    """LED pill diffuser INSERT (3D-print in WHITE PLA, one per pill -- ten since
+    #930, and the count is derived from PEDALS/_has_led, never written down):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
     shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
-    above the outer skin. The single-LED module (hardware/led_strip/ puck or an
-    off-the-shelf WS2812B breakout) nests in a shallow pocket on the back and is
-    VHB-taped over the flange, which also retains the insert."""
+    above the outer skin. The flange is GLUED to the faceplate underside, so its
+    face is kept flat and clear -- nothing is modelled on it.
+
+    An EIGHT-LED SEGMENT of 144 LEDs/m bare WS2812B strip snaps into a channel on
+    the back (#927, density #930). The channel runs the strip's long edges; both
+    ends stay open, so the 3 wires leave without a notch and a long cut still
+    fits. Eight because the pitch has to stay near the diffusion depth or the
+    pill reads as separate dots -- see the constants.
+
+    THE STRIP IS THE SPRING. Its own adhesive cannot be used -- the LEDs face the
+    lens, which turns the tape to face away into the console -- so the segment is
+    trapped mechanically: bow the ~0.5 mm flex PCB slightly, drop it past the
+    lips, let it flatten. It lands its LED-side face on the shoulders with the
+    WS2812B in the package recess. Nothing in the PRINTED part deflects, which is
+    exactly why this holds where a rigid board could not: a 2.5 mm-deep printed
+    wall cannot flex 0.4 mm without going past what PLA takes, and a flex PCB can
+    do it all day.
+
+    Grip is 0.4 mm on each strip edge, and it does not resist sliding along the
+    channel -- the soldered wires and the closed console do that.
+
+    PRINT LENS-DOWN. The lens face is then the bed face (smooth, no layer lines
+    across the light), the LED_LIP overhang is a trivial bridge, and the ramp is
+    self-supporting."""
     import cadquery as cq
     lens_l = LED_SLOT_W - LED_INS_CLR
     lens_w = LED_SLOT_H - LED_INS_CLR
@@ -3470,9 +4186,68 @@ def build_diffuser_step():
     lens = cq.Workplane("XY").slot2D(lens_l, lens_w).extrude(lens_h)
     lens = lens.edges(">Z").chamfer(0.3)             # soft glow edge on the proud lip
     ins = lens.union(cq.Workplane("XY").slot2D(fl_l, fl_w).extrude(-LED_INS_FL_T))
-    px, py, pd = LED_INS_POCKET                       # LED nest, back face
+
+    recess_d, strip_t0, strip_t1, lip_z = diffuser_stack()
+    y_sh_of = lambda: LED_STRIP_W / 2.0 + LED_STRIP_CLR - LED_SHOULDER
+
+    # Package recess, cut into the flange's back face. It runs the WHOLE channel
+    # as one groove rather than a pocket per LED: there are LED_STRIP_N packages
+    # on the segment, not one, and where they land in x depends on where the
+    # scissors fell (LED_CH_L carries +-0.7 of slop on purpose). A per-LED pocket
+    # would have to be right about all of that; a groove cannot be wrong about
+    # any of it. It also leaves the SAME LED_WEB over every package, which is the
+    # point of choosing a dense strip -- discrete pockets would put 0.8 of wall
+    # over each LED and 1.5 between them, i.e. put the ripple back in.
+    # LED_STRIP_CLR is in here as well as LED_PKG_CLR, because the strip is only
+    # located by the channel walls: it can sit anywhere within +-LED_STRIP_CLR,
+    # and the packages ride with it. Sizing the groove on LED_PKG_CLR alone left
+    # a strip pushed against one wall with its package edge exactly on the groove
+    # wall -- zero clearance before any package-placement tolerance on the strip
+    # itself, and an outer LED fouling that wall stops the strip reaching the
+    # shoulders, which is the one thing LED_SHOULDER and LED_PKG_Z_CLR exist for.
+    pkg = LED_PKG + 2 * (LED_PKG_CLR + LED_STRIP_CLR)
+    assert pkg / 2.0 < y_sh_of(), (
+        f"diffuser package groove is {pkg} wide and undercuts the shoulders the "
+        f"strip lands on -- narrow the clearances or widen the pill")
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
-                  .rect(px, py).extrude(pd))
+                  .rect(LED_CH_L, pkg).extrude(recess_d))
+
+    # channel walls: one profile in YZ, mirrored, extruded along the strip's run.
+    # The OUTSIDE is the flange edge -- an LED_STRIP_W strip in a fl_w flange, so
+    # the wall is whatever is left over, and the build fails if that is too thin
+    # to print rather than silently shaving it.
+    y_in = LED_STRIP_W / 2.0 + LED_STRIP_CLR         # channel wall
+    y_out = fl_w / 2.0
+    assert y_out - y_in >= LED_WALL_MIN, (
+        f"diffuser channel wall is {y_out - y_in:.2f}, under the {LED_WALL_MIN} floor "
+        f"-- widen LED_INS_FLANGE or narrow the channel")
+    y_sh = y_in - LED_SHOULDER
+    prof = [(y_sh, -LED_INS_FL_T),                   # shoulder, off the flange back
+            (y_sh, strip_t0),                        #   ...down to the strip face
+            (y_in, strip_t0),                        # step out to the channel wall
+            (y_in, strip_t1),                        #   ...down past the strip
+            (y_in - LED_LIP, strip_t1),              # retaining lip -- a LED_LIP
+                                                     # CANTILEVER, not a bridge:
+                                                     # the two lips face each
+                                                     # other across the channel
+                                                     # and never meet, so lens-down
+                                                     # this starts over open air
+            (y_in, lip_z),                           # 45 deg lead-in, self-supporting
+            (y_out, lip_z),
+            (y_out, -LED_INS_FL_T)]
+    rail = (cq.Workplane("YZ").polyline(prof).close()
+            .extrude(LED_CH_L / 2.0, both=True))
+    # ...trimmed to the flange's own stadium outline. The rail is a straight
+    # extrusion LED_CH_L long, but the flange's straight run is only fl_l - fl_w
+    # (54 against 56.96), so the last 1.5 mm at each end stood ~0.16 mm PROUD of
+    # the rounded outline -- a squared-off ear, down-facing and unsupported
+    # lens-down, and outside the footprint both _check gates model as
+    # `slot +- LED_INS_FLANGE`.
+    foot = (cq.Workplane("XY").workplane(offset=lip_z)
+            .slot2D(fl_l, fl_w).extrude(-lip_z))
+    rail = rail.intersect(foot)
+    ins = ins.union(rail).union(rail.mirror("XZ"))
+
     step = os.path.join(OUT, "segno_led_diffuser.step")
     stl = os.path.join(OUT, "segno_led_diffuser.stl")
     cq.exporters.export(ins.val(), step)
@@ -3480,15 +4255,39 @@ def build_diffuser_step():
     return step
 
 
-# --- pedal name tiles (#795) -------------------------------------------------
-# The WTB-006's top pad has a 54.55 x 20 window through it, and the pad is a
-# uniform 2.2 slab lying on a case top tilted to match -- so the window is a
-# parallel-sided 2.2 deep pocket and a FLAT tile fits it.
+# --- pedal name tiles (#795, trapezoid #922) ---------------------------------
+# The WTB-006's top pad has a window through it, and the pad is a uniform 2.2
+# slab lying on a case top tilted to match -- so the window is a parallel-sided
+# 2.2 deep pocket and a FLAT tile fits it (flat in Z; see the plan taper below).
 # The tile FILLS the window: at 0.25/side the pedal's own case colour showed
 # through the gap around it. 0.05/side is below what FDM resolves, so this is a
 # press fit into a compliant rubber window -- which also retains it.
-TILE_L      = 54.45   # window is 54.55
-TILE_W      = 19.90   # window is 20.00
+#
+# THE TILE IS A TRAPEZOID, NOT A RECTANGLE (#922). The owner rule is 5 mm of pad
+# each side, ALWAYS -- and the WTB-006 is a wedge IN PLAN as well as in height,
+# so a constant width can only be right at one station along the length. The
+# tile's sides run PARALLEL TO THE PAD'S SIDES: wide edge toward the case BACK
+# (cable end), narrow edge toward the TOE. That is also the reading direction --
+# the top of the glyphs points at the wide edge -- so the tile cannot be fitted
+# the wrong way round without the label reading upside down.
+TILE_WALL   = 5.0     # pad left each side of the window. OWNER RULE, and the
+                      # thing the width is DERIVED from. The old 54.45 was a
+                      # transcribed constant: it satisfied this rule at ONE
+                      # station and was wrong at every other.
+# Top-pad width at the window's two ends, MEASURED off the `Top Pad` body in the
+# "Cherub WTB-006 Footswitch" Fusion doc (its PAD_WINDOW sketch carries the pad's
+# own side edges, so the taper comes from the part, not from the case). The pad
+# runs 64.55 at its widest -- that is the number the owner confirmed, and it is
+# the pad's BACK EDGE, not the window's station.
+TILE_PAD_W_BACK = 64.459   # at the window's back (cable-end) edge
+TILE_PAD_W_TOE  = 63.855   # at the window's toe edge -- the pad is a wedge in plan
+TILE_WIN_W  = 20.00   # window length along the pedal
+TILE_CLR    = 0.05    # per side, all four sides
+TILE_WIN_L_BACK = TILE_PAD_W_BACK - 2*TILE_WALL          # 54.459
+TILE_WIN_L_TOE  = TILE_PAD_W_TOE  - 2*TILE_WALL          # 53.855
+TILE_W      = TILE_WIN_W - 2*TILE_CLR                    # 19.90, along the pedal
+TILE_L_BACK = TILE_WIN_L_BACK - 2*TILE_CLR               # 54.359, wide edge
+TILE_L_TOE  = TILE_WIN_L_TOE  - 2*TILE_CLR               # 53.755, narrow edge
 TILE_BODY_T = 1.8     # black body
 TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
                       # LETTERS finish flush with the pad and the black field
@@ -3507,6 +4306,176 @@ TILE_SYM_H  = 14.0    # symbol em: play triangle 0.82*h = 11.5 tall
 # set far larger in the same window.
 TILE_TEXT = {"TRACK1": "1", "TRACK2": "2", "TRACK3": "3", "TRACK4": "4"}
 
+# 2-ply engraved plastic (#946). 2.0 mm is the closest standard stock to the
+# 2.2 mm pad pocket; the tile sits 0.2 mm recessed. Black cap / white core:
+# ENGRAVE burns the cap and the glyph reads white. The plan is the same
+# trapezoid as the 3D tiles -- only the process changes.
+TILE_PLY_T     = 2.0
+TILE_NEST_GAP  = 4.0
+TILE_NEST_COLS = 5
+
+
+def _tile_stem(label):
+    return "segno_pedal_tile_" + label.replace("/", "_")
+
+
+def _tile_outline():
+    """Trapezoid in the tile frame: +Y is the wide (cable-end) edge."""
+    return [(-TILE_L_BACK / 2.0,  TILE_W / 2.0),
+            ( TILE_L_BACK / 2.0,  TILE_W / 2.0),
+            ( TILE_L_TOE  / 2.0, -TILE_W / 2.0),
+            (-TILE_L_TOE  / 2.0, -TILE_W / 2.0)]
+
+
+def _tile_font_props(size):
+    """Helvetica Neue Light -- the same face TILE_FONT names for CadQuery.
+
+    matplotlib finds it as family + weight, not as the PostScript face name.
+    The path is gated so a machine without the font cannot silently ship
+    DejaVu outlines to the shop.
+    """
+    from matplotlib.font_manager import FontProperties, findfont
+    fp = FontProperties(family="Helvetica Neue", weight="light", size=size)
+    path = findfont(fp)
+    assert "helveticaneue" in os.path.basename(path).lower().replace(" ", ""), (
+        f"tile font resolved to {path}, not Helvetica Neue Light")
+    return fp
+
+
+def _signed_area(pts):
+    a = 0.0
+    n = len(pts)
+    for i in range(n):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % n]
+        a += x0 * y1 - x1 * y0
+    return a / 2.0
+
+
+def _point_in_poly(x, y, pts):
+    inside = False
+    n = len(pts)
+    j = n - 1
+    for i in range(n):
+        xi, yi = pts[i]
+        xj, yj = pts[j]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi + 0.0) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _clean_ring(pts):
+    ring = [(float(x), float(y)) for x, y in pts]
+    if len(ring) >= 2 and ring[0] == ring[-1]:
+        ring = ring[:-1]
+    return ring if len(ring) >= 3 else None
+
+
+def _group_outers_and_holes(polys):
+    """Pair each outer contour with the holes that sit inside it.
+
+    matplotlib TextPath emits one polygon per contour; Helvetica Neue Light
+    winds outers clockwise (negative area) and counters the other way.
+    """
+    rings = [r for r in (_clean_ring(p) for p in polys) if r]
+    outers = [r for r in rings if _signed_area(r) < 0]
+    holes = [r for r in rings if _signed_area(r) > 0]
+    if not outers:
+        return [(r, []) for r in rings]
+    groups = []
+    used = set()
+    for outer in outers:
+        own = []
+        for i, hole in enumerate(holes):
+            if i in used:
+                continue
+            cx = sum(p[0] for p in hole) / len(hole)
+            cy = sum(p[1] for p in hole) / len(hole)
+            if _point_in_poly(cx, cy, outer):
+                own.append(hole)
+                used.add(i)
+        groups.append((outer, own))
+    return groups
+
+
+def _text_glyph_groups(txt, em):
+    from matplotlib.textpath import TextPath
+    path = TextPath((0.0, 0.0), txt, prop=_tile_font_props(em), size=em)
+    return _group_outers_and_holes(path.to_polygons())
+
+
+def _ink_bbox(glyphs):
+    xs, ys = [], []
+    for e in glyphs:
+        if e["kind"] == "disc":
+            xs += [e["u"] - e["d"] / 2.0, e["u"] + e["d"] / 2.0]
+            ys += [e["v"] - e["d"] / 2.0, e["v"] + e["d"] / 2.0]
+        else:
+            for p in e["pts"]:
+                xs.append(p[0]); ys.append(p[1])
+            for hole in e.get("holes") or []:
+                for p in hole:
+                    xs.append(p[0]); ys.append(p[1])
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _translate_glyphs(glyphs, dx, dy):
+    out = []
+    for e in glyphs:
+        e = dict(e)
+        if e["kind"] == "disc":
+            e["u"] += dx
+            e["v"] += dy
+        else:
+            e["pts"] = [(x + dx, y + dy) for x, y in e["pts"]]
+            e["holes"] = [[(x + dx, y + dy) for x, y in h]
+                          for h in e.get("holes") or []]
+        out.append(e)
+    return out
+
+
+def _tile_ink(label):
+    """Fitted, centred ink for one tile -- the 2-ply ENGRAVE source (#946).
+
+    Symbols come from `_silk_symbol_geometry` (same as the faceplate and the
+    3D tiles). Words are Helvetica Neue Light outlines, never TEXT entities:
+    a shop font substitution would change the stroke that already sits at
+    0.61 mm. Auto-fit and ink-centre match `build_pedal_name_tiles`.
+    """
+    fit_l = TILE_L_TOE - 2 * TILE_MARGIN
+    fit_w = TILE_W - 2 * TILE_MARGIN
+    if label in SILK_SYMBOLS:
+        probe = _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, 10.0)
+        xmin, ymin, xmax, ymax = _ink_bbox(probe)
+        h = 10.0 * min(fit_l / (xmax - xmin), fit_w / (ymax - ymin))
+        glyphs = _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, h)
+    else:
+        txt = TILE_TEXT.get(label, label)
+        probe = [{"kind": "poly", "pts": o, "holes": hs}
+                 for o, hs in _text_glyph_groups(txt, 10.0)]
+        xmin, ymin, xmax, ymax = _ink_bbox(probe)
+        em = 10.0 * min(fit_l / (xmax - xmin), fit_w / (ymax - ymin))
+        glyphs = [{"kind": "poly", "pts": o, "holes": hs}
+                  for o, hs in _text_glyph_groups(txt, em)]
+    xmin, ymin, xmax, ymax = _ink_bbox(glyphs)
+    glyphs = _translate_glyphs(glyphs, -(xmin + xmax) / 2.0, -(ymin + ymax) / 2.0)
+    xmin, ymin, xmax, ymax = _ink_bbox(glyphs)
+    avail = tile_width_at(ymin)
+    assert (xmax - xmin) <= avail + 1e-6 and (ymax - ymin) <= TILE_W + 1e-6, (
+        f"pedal tile {label!r}: glyph {xmax - xmin:.2f} x {ymax - ymin:.2f} overflows "
+        f"the {avail:.2f} available at y={ymin:.2f} on the "
+        f"{TILE_L_TOE:.2f}(toe)/{TILE_L_BACK:.2f}(back) x {TILE_W} tile")
+    return glyphs, (xmin, ymin, xmax, ymax)
+
+
+def tile_width_at(y):
+    """Tile width at station y, with +Y toward the case BACK (the wide edge).
+    The sides are straight, so this is a plain interpolation between the toe and
+    back widths -- and it is what anything laid on the tile must clear."""
+    return ((TILE_L_BACK + TILE_L_TOE) / 2.0
+            + (TILE_L_BACK - TILE_L_TOE) * (y / TILE_W))
+
 
 def build_pedal_name_tiles():
     """One drop-in name tile per pedal, for the pad window.
@@ -3519,13 +4488,27 @@ def build_pedal_name_tiles():
     The text comes from PEDALS and SILK_SYMBOLS -- the same source as the
     faceplate legends -- so REC/PLAY and STOP carry the dot+plus+triangle and the
     square here too, and the two can never drift apart.
+
+    The tile is a TRAPEZOID (#922): the pad it drops into is a wedge in plan, and
+    the wall is 5 mm each side at EVERY station, so the tile's sides run parallel
+    to the pad's. The WIDE edge faces the case BACK (cable end) and carries the
+    top of the glyphs -- fit it the other way round and the label is upside down,
+    which is the intended tell.
     """
     import cadquery as cq
     made = []
     for label, _u, _v in PEDALS:
+        # Trapezoid: +Y is toward the case BACK (the wide edge, and the top of
+        # the glyphs), -Y toward the toe. The sides are parallel to the pad's.
         body = (cq.Workplane("XY")
-                .box(TILE_L, TILE_W, TILE_BODY_T, centered=(True, True, False)))
-        fit_l, fit_w = TILE_L - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
+                .polyline([(-TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_TOE /2.0, -TILE_W/2.0),
+                           (-TILE_L_TOE /2.0, -TILE_W/2.0)])
+                .close().extrude(TILE_BODY_T))
+        # Fit the glyphs to the NARROW edge: a block sized off the wide edge would
+        # cross the tapered sides at the toe end.
+        fit_l, fit_w = TILE_L_TOE - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
         if label in SILK_SYMBOLS:
             # fit the symbol group to the SAME box the words get, so a symbol
             # tile and a word tile read at one size
@@ -3562,10 +4545,20 @@ def build_pedal_name_tiles():
         glyph = glyph.translate((-(gb.xmin + gb.xmax) / 2.0,
                                  -(gb.ymin + gb.ymax) / 2.0, 0))
         part = body.union(glyph)
+        # Gate the GLYPH, not the part envelope: the part IS the trapezoid, so its
+        # bbox always measures TILE_L_BACK and would gate nothing. Compare the ink
+        # against the tile width at the ink's OWN toe-most station -- that is the
+        # narrowest the tile gets anywhere the glyph reaches.
+        gb = glyph.val().BoundingBox()
+        avail = tile_width_at(gb.ymin)
+        assert gb.xlen <= avail + 1e-6 and gb.ylen <= TILE_W + 1e-6, (
+            f"pedal tile {label!r}: glyph {gb.xlen:.2f} x {gb.ylen:.2f} overflows "
+            f"the {avail:.2f} available at y={gb.ymin:.2f} on the "
+            f"{TILE_L_TOE:.2f}(toe)/{TILE_L_BACK:.2f}(back) x {TILE_W} tile")
         bb = part.val().BoundingBox()
-        assert bb.xlen <= TILE_L + 1e-6 and bb.ylen <= TILE_W + 1e-6, (
-            f"pedal tile {label!r}: glyph {bb.xlen:.2f} x {bb.ylen:.2f} overflows "
-            f"the {TILE_L} x {TILE_W} tile")
+        assert abs(bb.xlen - TILE_L_BACK) < 1e-6 and abs(bb.ylen - TILE_W) < 1e-6, (
+            f"pedal tile {label!r}: envelope {bb.xlen:.3f} x {bb.ylen:.3f} is not "
+            f"the {TILE_L_BACK:.3f} x {TILE_W:.3f} trapezoid")
         stem = "segno_pedal_tile_" + label.replace("/", "_")
         # STEP keeps the body and the glyphs as TWO SOLIDS -- that is the colour
         # split, so a CAD assembly can paint them black/white per body instead of
@@ -3664,10 +4657,24 @@ def build_ring_diffuser_step():
     ins = lens.union(cq.Workplane("XY").circle(37.5).circle(24.2)
                      .extrude(-plate_t))
     # disc lip: the disc rests on the inner lip at z=0, flush with the sheet
-    # top when glued (disc top = T). Thin the web over the LED circle so the
-    # board-mounted ring glows through 0.8 mm of white PLA.
+    # top when glued (disc top = T). Under the lens the plate has to clear the
+    # Ring 24 on the ring board. Measured in this part's frame (z=0 = lens
+    # bottom = glue plane) against the PR #990 board with the ring SOLDERED
+    # FLAT: PCB top at -2.92, LED tops at -1.52. So: a THROUGH cut over the LED
+    # annulus (r 26.5..32.1, the 5050 bodies on Adafruit's model +0.3) and a
+    # 0.8 mm counterbore from the plate's back over the whole ring (r 26.0..
+    # 33.1), leaving 1.2 mm of plate that clears the LED corners by 0.3 and the
+    # PCB rim by 1.7. The plate between the lens bore (r 25.85) and the LED cut
+    # stays, so the disc lip is still attached (a full through-cut from 25.6
+    # severed it, re-review 2026-09-04). NOTE: with the ring on the 2.54 mm
+    # PIN STRIP that PR #990 models, the LED tops sit +1.02 ABOVE the lens
+    # bottom -- inside the lens -- and no cut in this part can clear them;
+    # that stack needs the strip dropped or the board 1.3 mm lower (#993).
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
-                  .circle(32.0).circle(25.6).extrude(plate_t - 0.8))
+                  .circle(32.1).circle(26.5).extrude(plate_t))
+    ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
+                  .circle(33.1).circle(26.0).extrude(0.8))
+    assert len(ins.solids().vals()) == 1, "ring diffuser is not one solid -- the disc lip is severed"
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
@@ -4079,9 +5086,12 @@ def build_step(write_parts=True):
 # identifiers shared with the DXF/STEP files and the vendor zips, and the shop
 # matches a sheet to a file by them. Numbers, units, symbols (Ø ± °) and standard
 # designations (5052-H32, M3, K, R2) are international and are left alone.
-AL_SHEET  = f"aluminio 5052-H32 de {T:.1f} mm"
+AL_SHEET  = f"aluminio 1050 de {T:.1f} mm"
+AL_SHEET_15 = f"aluminio 1050 de {REAR_PANEL_T:.1f} mm"   # rear panel only (NJ6FD-V cap)
 STEEL_CR  = f"acero laminado en frío de {POST_T:.1f} mm"
 VINYL     = "vinilo adhesivo impreso / policarbonato, troquelado - NO ES METAL"
+PLY_2MM   = (f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
+             "(capa negra / núcleo blanco) - NO ES METAL")
 
 # stem -> (material printed on the sheet, qty per console, vendor package).
 # Quantities track the cut list in hardware/MANUFACTURING.md section 1.
@@ -4090,14 +5100,16 @@ VINYL     = "vinilo adhesivo impreso / policarbonato, troquelado - NO ES METAL"
 # post (x2) and the vinyl overlay.
 PKG_SHEETMETAL = "sheetmetal"   # laser + brake + powder coat
 PKG_OVERLAY    = "overlay"      # label/overlay printer, die-cut, no metal
+PKG_TILES      = "tiles"        # 2-ply engraved plastic, laser cut + engrave
 PART_SPECS = {
     "segno_base":                (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_faceplate":           (AL_SHEET, 1, PKG_SHEETMETAL),
-    "segno_rear_panel":          (AL_SHEET, 1, PKG_SHEETMETAL),
+    "segno_rear_panel":          (AL_SHEET_15, 1, PKG_SHEETMETAL),
     "segno_ring_disc":           (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_corner_bracket_rear": (AL_SHEET, 2, PKG_SHEETMETAL),
     "segno_post":                (STEEL_CR, 2, PKG_SHEETMETAL),
     "segno_overlay":             (VINYL,    1, PKG_OVERLAY),
+    "segno_pedal_tiles":         (PLY_2MM, 10, PKG_TILES),
 }
 
 # Spanish part name for the title block. The FILE STEM still travels with it --
@@ -4111,6 +5123,7 @@ PART_TITLES_ES = {
     "segno_corner_bracket_rear": "ÁNGULO DE ESQUINA TRASERA",
     "segno_post":                "POSTE DE APOYO DE LA TAPA",
     "segno_overlay":             "CALCO SUPERIOR IMPRESO (no es metal)",
+    "segno_pedal_tiles":         "AZULEJOS DE PEDAL (plástico bicapa grabado)",
 }
 
 # --- tolerance block (issue #778) ------------------------------------------
@@ -4171,6 +5184,13 @@ SHEET_LEGEND = ("CUT + VENT = CORTE PASANTE (las dos capas, la misma operación)
 # legend, where they would read as an instruction to perform them.
 LEGEND_NO_SCORE = "no cortar, no marcar, no rayar ni grabar"
 
+# Tile sheet: ENGRAVE is the process, not annotation. Do not reuse SHEET_LEGEND
+# here -- that one tells the metal shop ENGRAVE is "texto, no es geometría".
+TILE_LEGEND = ("CUT = CORTE PASANTE (contorno del azulejo)   |   "
+               "ENGRAVE = GRABADO RELLENO: quema la capa negra, deja ver el núcleo blanco "
+               "(NO es texto, es geometría)   |   "
+               "NOTE = instrucciones, no cortar")
+
 # --- bend tables -----------------------------------------------------------
 # A flat pattern with no angles is not a drawing. The base's transition fold is
 # neither 90 nor 180 deg and appeared in no document at all; guess it and the lid's
@@ -4209,31 +5229,44 @@ def _bend_tables():
         (1, "ala / ala", "x", CORNER_LEG, CORNER_HT, 90.0, UP_TOWARD, RI, DEV90),
     ]
     tabs["segno_post"] = [
-        (1, "apoyo -> alma", "y", POST_PAD,          POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_T, 0.0),
-        (2, "alma -> pie",   "y", POST_PAD + POST_H, POST_PW, 90.0,             UP_TOWARD, POST_T, 0.0),
+        (1, "apoyo -> alma", "y", POST_PAD_F,              POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_RI, POST_DD_PAD),
+        (2, "alma -> pie",   "y", POST_PAD_F + POST_WEB_F, POST_PW, 90.0,             UP_TOWARD, POST_RI, POST_DD_FOOT),
     ]
     return tabs
 
 BEND_TABLES = _bend_tables()
 
-# Per-part footnote printed under the bend table. The post is the odd one out: its
-# flat is nominal segments with NO deduction applied, which is worth saying out
-# loud on the sheet rather than leaving a fabricator to assume it was developed.
+# Per-part footnote printed under the bend table. The post has its own T/Ri
+# (1.6 mm steel) and is developed with post_deduct -- its sheet states the
+# numbers so the shop can check them against its own tooling.
 BEND_FOOTNOTES = {
     "segno_base": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T) | pestaña plana = longitud exterior - deducción. "
                    f"LAS FILAS ESTÁN EN ORDEN DE PLEGADO - no reordenar. Los laterales (4, 5) necesitan un punzón <= 410 mm: los "
                    f"4 alivios de esquina de Ø 6.0 abren 413 mm entre las paredes frontal y trasera ya levantadas. Referenciar los "
                    f"plegados 4 y 5 contra las caras ya formadas de las paredes frontal/trasera (la pestaña lateral es una cuña y no "
                    f"queda escuadra con su plegado). Matriz V12 en todos los plegados; el Ri {RI:.1f} mm es obligatorio - si aparecen "
-                   f"fisuras en el sentido del laminado PARAR, no abrir el radio: hay que volver a desarrollar el plano."),
+                   f"fisuras en el sentido del laminado PARAR, no abrir el radio: hay que volver a desarrollar el plano. "
+                   f"PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico). "
+                   f"Chapa de 1250 de ancho (desarrollo 1040.6 x 538.6). Los 9 pilotos Ø2.5 de la pared frontal quedan a 3.8 mm de la línea de "
+                   f"plegado, dentro de la abertura de la matriz V12: taladrarlos DESPUÉS de plegar (van roscados después de pintar). "
+                   f"El borde trasero de los laterales queda a 0.06 mm de la cara interior de la trasera: plegar la trasera a escuadra "
+                   f"antes de levantar los laterales. La máscara PANEL_BOND es en la CARA INTERIOR. Ignorar las capas NOTE/MASK/SILK al anidar."),
     "segno_faceplate": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T) | pestaña plana = longitud exterior - deducción. "
                         f"El plegado de la pestaña frontal cruza las aberturas de los pedales (quedan 12.1 mm de material): matriz V12, "
-                        f"punzón segmentado, prever enderezado."),
+                        f"punzón segmentado, prever enderezado. PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: "
+                        f"el encoder queda a la IZQUIERDA del músico). Los 9 agujeros Ø3.4 de la pestaña frontal quedan a 3.5 mm de la "
+                        f"línea de plegado, dentro de la abertura de la V12: taladrarlos DESPUÉS de plegar."),
     "segno_corner_bracket_rear": (f"Factor K {KF} | pestaña plana = longitud exterior - deducción. CANT. 2, y la segunda se monta DADA "
                                   f"VUELTA - la pieza es casi simétrica, sólo el patrón de agujeros es de mano."),
+    "segno_rear_panel": ("PIEZA PLANA. La cara DIBUJADA es la cara INTERIOR, la que apoya contra la pared trasera del cuerpo: la "
+                         "máscara PANEL_BOND Ø12 va en esa cara y coincide con la del cuerpo; montado al revés, la máscara cae sobre "
+                         "pintura y el panel pierde la puesta a tierra. Chapa de 1.5 mm (jacks CTRL Neutrik NJ6FD-V en agujero Ø12). "
+                         "El Ø24 es el punzón D de Neutrik: redondo, sin plano."),
+    "segno_ring_disc": ("PIEZA PLANA, sin cara preferente: queda sujeta por la tuerca del encoder; el Ø7.2 es el paso del buje."),
     "segno_post": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {POST_T:.1f} mm (1.0 x T). "
-                   f"DEDUCCIÓN NO APLICADA - el desarrollo son segmentos nominales (PROVISORIO): verificar la longitud desarrollada "
-                   f"contra el herramental propio antes de cortar."),
+                   f"Deducción aplicada con K {KF} y Ri {POST_RI:.1f} mm (= T): {POST_DD_PAD:.2f} mm en apoyo->alma (102.5°), "
+                   f"{POST_DD_FOOT:.2f} mm en alma->pie; verificar la longitud desarrollada contra el herramental propio antes de cortar. "
+                   f"El plegado del apoyo es AGUDO (incluido {90.0 - POST_TILT:.1f}°): punzón de 30° y matriz aguda, no el juego de 88°."),
 }
 
 def _bend_table_lines(stem):
@@ -4305,13 +5338,125 @@ SHEET_HEADING = "Segno - gabinete de controlador de audio"
 # _verify_drawing_package() holds the Spanish and the tolerance block against.
 SHEET_TEXT = {}
 
-def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
+# How many outlines _seal_path_seams() closed on each sheet, so the drawing
+# verifier can catch the fix silently ceasing to work (see SEALED_EXPECTED).
+SEALED = {}
+
+# What each sheet MUST seal. Without this the fix degrades in silence: if a
+# future ezdxf routes closed polylines through a LineCollection instead of a
+# patch, or matplotlib stops exposing them, _seal_path_seams() simply finds
+# nothing, returns 0, and the notch comes back unnoticed on a package nobody
+# re-reads at 600 dpi. Counts measured 2026-09-04; a legitimate change to the
+# outlines has to update them deliberately.
+SEALED_EXPECTED = {
+    "segno_faceplate":           11,   # sheet outline + 10 pedal apertures
+    "segno_overlay":             17,   # outline + 10 windows + 6 icon loops
+    "segno_base":                 1,   # the folded blank's outline (31 vertices)
+    "segno_rear_panel":           1,
+    "segno_corner_bracket_rear":  1,
+    "segno_post":                 1,
+    "segno_ring_disc":            0,   # two circles, no straight-sided loop
+}
+
+
+def _seal_path_seams(ax):
+    """Close the open outlines so the PDF MITRES their corners.
+
+    Every closed outline reaches the PDF as an OPEN path: it returns to its
+    start with a lineto and never emits `h` (closepath) -- the faceplate sheet
+    carries exactly one closed path, the page background -- and no `J` operator
+    is written either, so the PDF default cap (0, butt) applies. That vertex
+    therefore gets two butt line ENDS instead of a join, and the quadrant
+    outside the corner (w/2 square, 9 device px at 600 dpi) is covered by
+    neither. `_poly` starts every rectangle at its (min x, min y) point, so the
+    bite always landed on the LOWER-LEFT corner (owner spotted it reviewing the
+    PDFs, 2026-09-04).
+
+    Turning the trailing LINETO into a CLOSEPOLY makes matplotlib emit `h`, and
+    the corner gets the patch's MITRE join -- the sharp 90 deg the cut edge
+    actually is. Geometry is untouched: matplotlib ignores the CLOSEPOLY vertex
+    and closes to the subpath start, which the single-MOVETO guard pins to
+    v[0], and v[-1] == v[0] exactly (not merely within tolerance) on every path
+    this selects -- so the closing segment is the one the trailing lineto drew.
+
+    WHICH GUARD DOES THE WORK: the `last code is LINETO` test. It is what
+    rejects the ENGRAVE/text outline (978 subpaths, 21203 vertices, ends in
+    CURVE3) and every curve-ended outline, whose seams are tangential and show
+    no notch anyway. Dropping either of the other two guards changes zero
+    pixels on every sheet -- they are cheap defence in depth, not the mechanism.
+    Do not "simplify" by deleting the last-code test.
+
+    NOT only rectangles, despite what the notch looked like: the base seals its
+    31-vertex folded-blank outline and the overlay seals 6 icon loops as well.
+    Any straight-sided closed loop qualifies, which is correct -- they all have
+    the same seam. Every one was checked for a miter spike: the shallowest
+    interior angle at a seam is 174 deg, so the worst miter ratio is 1.41
+    against the PDF limit of 10.
+
+    NOT the two approaches tried first, both of which broke something:
+      * rewriting EVERY patch corrupted the arcs -- CLOSEPOLY closes to the
+        current SUBPATH's start, so on the 978-subpath text it drew a chord
+        straight across: 99310 changed pixels.
+      * rounding the CAPS instead turned the dashed BEND line into a SOLID bar
+        (one 2-point segment per dash, each grown by w/2 at both ends until the
+        gaps closed) -- the exact failure #775 R1/R4 forbids -- and RADIUSED
+        the corners, drawing a laser-cut edge as something it is not. Nothing
+        here may set a capstyle.
+
+    DRAWING ONLY: the DXF the shop cuts from was always closed (ezdxf reports
+    is_closed on every one of these), so no part was ever cut wrong.
+    """
+    from matplotlib.path import Path
+    sealed = 0
+    for patch in ax.patches:
+        pth = patch.get_path()
+        v, codes = pth.vertices, pth.codes
+        if len(v) < 4 or codes is None:
+            continue
+        if int(codes[-1]) != Path.LINETO:                 # curve- or close-ended
+            continue
+        if sum(1 for c in codes if int(c) == Path.MOVETO) != 1:   # multi-subpath
+            continue
+        if abs(v[0][0] - v[-1][0]) > 1e-9 or abs(v[0][1] - v[-1][1]) > 1e-9:
+            continue                                      # not actually a loop
+        codes = list(codes); codes[-1] = Path.CLOSEPOLY
+        patch.set_path(Path(v, codes))
+        # Pins matplotlib's current default rather than changing it: the mitre
+        # is the whole point, so it should not move if that default ever does.
+        patch.set_joinstyle("miter")
+        sealed += 1
+    return sealed
+
+
+# Floor on the point size of everything a fabricator ACTS on: the bend table and
+# its footnote, the tolerance block, the title block. ISO 3098's smallest
+# standard lettering is 1.8 mm and these are unhinted Type 3 fonts. The floor is
+# in POINTS but what matters is millimetres after the sheet is fitted to A4, and
+# that scale depends on the page aspect -- which this floor itself changes, by
+# widening the page. 6.0 pt is the value that clears 1.8 mm on every sheet once
+# that settles; measured, not derived.
+SHEET_MIN_DATA_PT = 5.2
+# Tallest page shape allowed, height over width. The sheets are auto-fitted to
+# their part, so a tall narrow part produced a tall narrow page: the post came
+# out 288 x 900 pt, and fitting a 1:3 ribbon onto A4 wastes half the paper and
+# scales every dimension and table row down with it. 1.55 is a shade taller than
+# A4's own 1.414 -- picked by measuring, not derived: it beats 1.30 on three of
+# the four narrow sheets, and both beat leaving the shape uncapped.
+SHEET_MAX_ASPECT = 1.55
+# Bottom margin for the text strip. Every office printer reserves 4-5 mm and the
+# last legend line was finishing 0.4 mm from the edge: printed at 100% it landed
+# in the unprintable band, taking the tolerance values with it.
+SHEET_MARGIN_IN = 0.22
+
+
+def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None):
     """One drawing sheet: the flat pattern, a bend table, a title block and a legend.
 
     `material` and `qty` are REQUIRED, deliberately: they used to default to
     "2.0 mm 5052-H32 Al" / 1 and the single call site passed neither, so the 1.6 mm
     steel post (x2) and the vinyl overlay both shipped sheets calling for 2 mm
-    aluminium, qty 1 (#775 R5/R6)."""
+    aluminium, qty 1 (#775 R5/R6). `legend` defaults to SHEET_LEGEND; the 2-ply
+    tile sheet passes TILE_LEGEND so ENGRAVE is not described as annotation."""
     import textwrap
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -4329,6 +5474,7 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
     # NB the matplotlib backend RESIZES the figure to the data aspect in finalize(),
     # so nothing below may assume the 16x10 above -- read the size back instead.
     Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(msp, finalize=True)
+    SEALED[stem] = _seal_path_seams(ax)
     ax.set_aspect("equal")
     bb = extents(e for e in msp if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
     if bb.has_data:
@@ -4342,17 +5488,72 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
     # runs straight off the edge of the 402 mm rear panel (which is how the post
     # sheet ended up with its title block printed over its own heading).
     w, h = fig.get_size_inches()
+
+    # The bend table, the tolerances and the title block are DATA; the legend
+    # under them is boilerplate at a fixed FS. Sizing only the data to the page
+    # meant the three narrow sheets -- the post finishes 288 pt wide -- printed
+    # their fold angles, their deductions and the "punzón de 30°, no el juego de
+    # 88°" note at 1.0-1.4 mm, while the generic legend beside them stayed at
+    # 3 mm. The least important text on the sheet was three times the size of
+    # the most important. Widen the PAGE so the data can hold a floor. The
+    # drawing keeps its size; the extra width is margin (which those sheets also
+    # needed -- they were finishing 0.5 mm from the paper edge).
+    _radii_probe = sorted({r[7] for r in BEND_TABLES.get(stem, ())})
+    _tb_probe = (f"{title}   |   {material}   |   CANT. {qty}   |   medidas en mm"
+                 + ("   |   PIEZA PLANA, sin plegados" if not _radii_probe else
+                    "   |   plegado Ri "
+                    + " / ".join(f"{r:.1f}" for r in _radii_probe)
+                    + f" mm, factor K {KF}"))
+    _tbl_probe = _bend_table_lines(stem)
+    _tol_probe = (_tolerance_lines()
+                  if PART_SPECS.get(stem, (None, None, None))[2] == PKG_SHEETMETAL
+                  else [])
+    # Widen by ASPECT, not by a font floor. A font floor is circular: the wider
+    # page it forces makes the sheet print SMALLER once fitted to paper, so the
+    # text gains nothing and raising the floor actively makes it worse (measured:
+    # 5.2 pt gave 1.79 mm on the post, 6.0 pt gave 1.55). What actually costs
+    # legibility is the page shape -- the post finished 288 x 900 pt, a 1:3
+    # ribbon, and fitting that to A4 throws away half the width and scales
+    # everything down with it. Cap the aspect and the fonts, which are already
+    # sized to the page, follow.
+    _rows = len(_tbl_probe) + (len(textwrap.wrap(BEND_FOOTNOTES.get(stem, ""), 110))
+                               + 1 if BEND_FOOTNOTES.get(stem) else 0)
+    _strip_est = SHEET_MARGIN_IN + 0.62 + 0.155 * 6 + (0.20 * _rows + 0.30 if _rows else 0.0)
+    _need_in = (h + _strip_est) / SHEET_MAX_ASPECT
+    # ...and wide enough that the floored text still FITS. tbl_fs used to be
+    # min(FS, fit) and could only shrink; with a floor under it, a table one
+    # column wider than the page runs off the edge instead. The corner bracket
+    # sits 1.6% under that today, and the column at risk is DEDUCCIÓN -- the
+    # number the brake operator sizes the blank from. Computed at the fixed
+    # floor, so unlike a floor-driven width this cannot chase its own tail.
+    if _tbl_probe:
+        _need_in = max(_need_in, (SHEET_MIN_DATA_PT * 0.602
+                                  * max(len(ln) for ln in _tbl_probe))
+                                 / (72.0 * 0.94))
+    if _tol_probe:
+        _need_in = max(_need_in, (SHEET_MIN_DATA_PT * 0.602
+                                  * max(len(t) for t in _tol_probe))
+                                 / (72.0 * 0.35))
+    if _need_in > w:
+        pos = ax.get_position()
+        fig.set_size_inches(_need_in, h, forward=True)
+        # keep the drawing where it was, in inches, and let the page grow around it
+        ax.set_position([pos.x0 * w / _need_in, pos.y0,
+                         pos.width * w / _need_in, pos.height])
+        w = _need_in
     usable_pt = w * 72.0 * 0.94
     mono_cols = lambda fs: max(40, int(usable_pt / (0.602 * fs)))
-    fit_fs    = lambda text, want, ratio=0.55: min(want, usable_pt / (ratio * max(len(text), 1)))
+    fit_fs    = lambda text, want, ratio=0.55: max(
+        SHEET_MIN_DATA_PT, min(want, usable_pt / (ratio * max(len(text), 1))))
 
-    table = _bend_table_lines(stem)
+    table = _tbl_probe
     foot  = BEND_FOOTNOTES.get(stem, "")
     ROW, FS = 0.20, 7.4                      # inches per row / point size
     # The Spanish table rows are ~10 characters wider than the English ones were,
     # and the sheets are auto-fitted to their part -- so size the table to the page
     # instead of trusting a fixed 7.4 pt to keep fitting.
-    tbl_fs = min(FS, usable_pt / (0.602 * max((len(ln) for ln in table), default=1)))
+    tbl_fs = max(SHEET_MIN_DATA_PT,
+                 min(FS, usable_pt / (0.602 * max((len(ln) for ln in table), default=1))))
     block = [(ln, tbl_fs, True) for ln in table]
     if foot:
         block += [("", tbl_fs, False)]
@@ -4360,25 +5561,32 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
     # The tolerance block sits in the right-hand third beside the title block, so
     # the legend gets the left ~58% and wraps there rather than running under it.
     tol = _tolerance_lines() if PART_SPECS.get(stem, (None, None, None))[2] == PKG_SHEETMETAL else []
-    legend = textwrap.wrap(SHEET_LEGEND,
-                           max(40, int(mono_cols(FS) * (0.58 if tol else 1.0)))) or [SHEET_LEGEND]
+    legend_src = SHEET_LEGEND if legend is None else legend
+    legend = textwrap.wrap(legend_src,
+                           max(40, int(mono_cols(FS) * (0.58 if tol else 1.0)))) or [legend_src]
 
     # the bend spec is PER PART -- the post is 1.6 mm steel on Ri 1.6, and a flat
     # part has no radius at all. A blanket "bend Ri 2.0" was wrong on both.
-    radii = sorted({r[7] for r in BEND_TABLES.get(stem, ())})
-    bend_spec = ("   |   PIEZA PLANA, sin plegados" if not radii else
-                 "   |   plegado Ri " + " / ".join(f"{r:.1f}" for r in radii) + f" mm, factor K {KF}")
-    tb = f"{title}   |   {material}   |   CANT. {qty}   |   medidas en mm{bend_spec}"
+    tb = _tb_probe
 
+    # The title block is the line a fabricator checks first: part name, stem,
+    # material, quantity, bend spec. It shares the strip with the tolerance
+    # column, so on a narrow sheet it cannot be both readable and one line --
+    # shrinking it put the material at 1.4 mm, and flooring it walked "factor K
+    # 0.33" off the right edge. Wrap it and grow the strip instead.
+    tb_room = 0.58 if tol else 1.0
+    tb_cols = max(30, int(usable_pt * tb_room / (0.62 * SHEET_MIN_DATA_PT)))
+    tb_lines = textwrap.wrap(tb, tb_cols) or [tb]
     legend_h = 0.155 * max(len(legend), len(tol))
-    strip = 0.62 + legend_h + (ROW * len(block) + 0.30 if block else 0.0)
+    strip = (SHEET_MARGIN_IN + 0.62 + legend_h + 0.16 * (len(tb_lines) - 1)
+             + (ROW * len(block) + 0.30 if block else 0.0))
     pos  = ax.get_position()
     y0_in, h_in = pos.y0 * h, pos.height * h
     newh = h + strip                          # grow the PAGE, never shrink the drawing
     fig.set_size_inches(w, newh, forward=True)
     ax.set_position([pos.x0, (y0_in + strip) / newh, pos.width, h_in / newh])
-    fy = lambda inches: inches / newh
-    y = strip - 0.22
+    fy = lambda inches: (inches + SHEET_MARGIN_IN) / newh
+    y = strip - SHEET_MARGIN_IN - 0.22
     for i, (line, fs, bold) in enumerate(block):
         fig.text(0.03, fy(y), line, family="monospace", fontsize=fs,
                  weight="bold" if i < 2 and bold else "normal",
@@ -4390,12 +5598,17 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
     # 0.62, not the 0.55 fit_fs uses: these two lines are BOLD, and the Spanish
     # title block is long enough that the optimistic ratio walked it off the right
     # edge of the narrow overlay sheet.
-    room = 0.58 if tol else 1.0
-    bold_fs = lambda text, want: min(want, usable_pt * room / (0.62 * max(len(text), 1)))
-    fig.text(0.03, fy(legend_h + 0.40), SHEET_HEADING,
+    room = tb_room
+    bold_fs = lambda text, want: max(
+        SHEET_MIN_DATA_PT, min(want, usable_pt * room / (0.62 * max(len(text), 1))))
+    _tb_h = 0.16 * (len(tb_lines) - 1)
+    fig.text(0.03, fy(legend_h + 0.40 + _tb_h), SHEET_HEADING,
              fontsize=bold_fs(SHEET_HEADING, 12.0), weight="bold")
-    fig.text(0.03, fy(legend_h + 0.18), tb, fontsize=bold_fs(tb, 10.0),
-             weight="bold", color="#000")
+    tb_fs = max(SHEET_MIN_DATA_PT,
+                min(10.0, usable_pt * room / (0.62 * max(len(l) for l in tb_lines))))
+    for i, line in enumerate(tb_lines):
+        fig.text(0.03, fy(legend_h + 0.18 + _tb_h - 0.16 * i), line,
+                 fontsize=tb_fs, weight="bold", color="#000")
     for i, line in enumerate(legend):
         fig.text(0.03, fy(legend_h - 0.115 - 0.155 * i), line,
                  family="monospace", fontsize=FS, color="#333")
@@ -4404,12 +5617,31 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
     # block is: a fixed point size that fits the 1152 pt base sheet walks off the
     # edge of a narrower one.
     if tol:
-        tol_fs = min(FS, (0.33 * w * 72.0) / (0.602 * max(len(t) for t in tol)))
+        # Sized to its own column and ending at 0.97, not floored: a floor here
+        # can only make the block wider than the column it has, and the column is
+        # the last thing before the paper edge -- the corner bracket's tolerance
+        # values were running 0.1 mm PAST it. The aspect cap above is what buys
+        # this text its size; there is nothing left for a floor to add.
+        tol_w, tol_x = 0.35, 0.62
+        tol_fs = min(FS, (tol_w * w * 72.0) / (0.602 * max(len(t) for t in tol)))
         for i, line in enumerate(tol):
-            fig.text(0.635, fy(legend_h + 0.40 - 0.155 * i), line, family="monospace",
+            fig.text(tol_x, fy(legend_h + 0.40 + _tb_h - 0.155 * i), line, family="monospace",
                      fontsize=tol_fs, weight="bold" if i == 0 else "normal",
                      color="#000" if i == 0 else "#333")
-    SHEET_TEXT[stem] = ([ln for ln, _f, _b in block] + [SHEET_HEADING, tb]
+    # Nothing above clips: matplotlib drops overflowing fig.text silently, so a
+    # too-wide table row simply loses its last column with no error anywhere.
+    for _ln in table:
+        assert len(_ln) * 0.602 * tbl_fs <= usable_pt + 1e-6, (
+            f"{stem}: a bend-table row needs "
+            f"{len(_ln) * 0.602 * tbl_fs:.0f} pt of a {usable_pt:.0f} pt page at "
+            f"{tbl_fs:.1f} pt -- it would print with its right-hand column cut "
+            f"off, DEDUCCIÓN included. Widen the page, do not shrink past the floor")
+    if tol:
+        for _ln in tol:
+            assert len(_ln) * 0.602 * tol_fs <= 0.35 * w * 72.0 + 1e-6, (
+                f"{stem}: a tolerance row does not fit its column")
+
+    SHEET_TEXT[stem] = ([ln for ln, _f, _b in block] + [SHEET_HEADING, tb] + tb_lines
                         + list(legend) + list(tol))
     fig.savefig(pdf_path, dpi=150); plt.close(fig)
 
@@ -4423,7 +5655,8 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
 # stale the way a hand-typed parts table does.
 # ===========================================================================
 
-AL_2MM = "Aluminio 5052-H32 2,0 mm"
+AL_2MM = "Aluminio 1050 2,0 mm"
+AL_15  = "Aluminio 1050 1,5 mm"
 ST_16  = "Acero laminado en frío 1,6 mm"
 
 PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupón de muestra"
@@ -4435,10 +5668,50 @@ PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupón de m
 PAINT_BOM = [
     ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza más grande"),
     ("segno_faceplate",          "Tapa superior",                               1, AL_2MM, "Cara vista principal"),
+    ("segno_rear_panel",         "Panel trasero de conectores",                 1, AL_15,
+     "LLEVA MÁSCARA: land PANEL_BOND"),
     ("segno_corner_bracket_rear","Ángulo de esquina trasera",                   2, AL_2MM, "Interno"),
     ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM, "Interno"),
     ("segno_post",               "Poste de apoyo de la tapa",                   2, ST_16,  "ACERO: otro pretratamiento"),
 ]
+
+def _verify_paint_bom():
+    """Every powder-coated part must appear in the coater's BOM.
+
+    segno_rear_panel did not, for its whole life: no table row, no masking page,
+    and no sheet in segno_pintura.zip -- while its own drawing carries the one
+    instruction that matters, that the O12 PANEL_BOND land stays bare or the
+    chassis loses its earth. The coater would have painted over it and the area
+    quote was 4% short as well. Derived from PART_SPECS so the two cannot drift.
+    """
+    coated = {stem for stem, (_m, _q, pkg) in PART_SPECS.items()
+              if pkg == PKG_SHEETMETAL}
+    listed = {stem for stem, *_ in PAINT_BOM}
+    missing = coated - listed
+    assert not missing, (
+        f"powder-coated parts missing from PAINT_BOM: {sorted(missing)} -- the "
+        f"coater never sees them, and any bare-metal mask they carry is lost")
+    # and anything with a MASK ring needs its own masking page, not just a row
+    masked = set()
+    for stem in listed:
+        dxf = os.path.join(OUT, stem + ".dxf")
+        if not os.path.exists(dxf):
+            continue
+        import ezdxf
+        if any(e.dxf.layer == "MASK" and e.dxftype() in ("CIRCLE", "ARC")
+               for e in ezdxf.readfile(dxf).modelspace()):
+            masked.add(stem)
+    assert masked <= PAINT_MASK_PAGES, (
+        f"parts with a bare-metal mask and no masking page: "
+        f"{sorted(masked - PAINT_MASK_PAGES)}")
+    # PAINT_MASK_PAGES only means something if it is what paint_quote_pdf draws.
+    # Asserting `masked <= PAINT_MASK_PAGES` alone let the rear panel's page be
+    # swapped for a filler and the count stay 4, with the run still green.
+    assert PAINT_PAGES_EXPECTED == 1 + len(PAINT_MASK_PAGES), (
+        f"the paint quote is 1 cover page + {len(PAINT_MASK_PAGES)} masking "
+        f"pages, so PAINT_PAGES_EXPECTED should be "
+        f"{1 + len(PAINT_MASK_PAGES)}, not {PAINT_PAGES_EXPECTED}")
+
 
 def _poly_area(pts):
     a = 0.0
@@ -4483,6 +5756,39 @@ def _step_size(stem):
     except Exception:  # pragma: no cover - STEP is optional for this sheet
         return None
 
+def _blank_size(stem):
+    """Developed (flat) size of a part, straight off its own DXF.
+
+    The same extents the drawing prints as its overall dimension, so the two
+    documents in the zip cannot disagree.
+    """
+    import ezdxf
+    from ezdxf.bbox import extents
+    path = os.path.join(OUT, stem + ".dxf")
+    if not os.path.exists(path):
+        return None
+    msp = ezdxf.readfile(path).modelspace()
+    bb = extents(e for e in msp
+                 if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
+    if not bb.has_data:
+        return None
+    return (bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1])
+
+
+def _faceplate_size_note():
+    """Note 7, derived. It used to hard-code "DESARROLLO (850 x 407 x 2)", which
+    is the FOLDED bounding box, not the development -- and the faceplate drawing
+    in the same zip prints 849.8 x 444.3. Two documents, 37 mm apart, one of them
+    calling the folded size a development."""
+    folded = _step_size("segno_faceplate")
+    flat = _blank_size("segno_faceplate")
+    fold = ("%.0f x %.0f x %.0f" % folded) if folded else "ver plano"
+    dev = ("%.1f x %.1f" % flat) if flat else "ver plano"
+    return (f"  7. El tamaño de la tapa en esta tabla es el de la pieza PLEGADA "
+            f"({fold}), que es lo que entra al horno. Su plano acota el "
+            f"DESARROLLO plano, {dev}: no son la misma medida.")
+
+
 def _paint_rows():
     rows, tot = [], {}
     for stem, label, qty, mat, remark in PAINT_BOM:
@@ -4506,7 +5812,40 @@ def _draw_dxf(ax, dxf_path):
     _force_pdf_layer_colours(doc)          # VENT black too, not just CUT (#775 R1)
     ax.set_axis_off()
     Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(doc.modelspace(), finalize=True)
+    _seal_path_seams(ax)
     ax.set_aspect("equal")
+
+# matplotlib fig.text neither wraps nor clips: text wider than the page is
+# silently absent from the PDF. Every sheet here is auto-fitted to its part, so
+# the page width is not known until after the drawing is laid out -- fit to it.
+def _fit_pt(text, want, page_w_in, frac=0.92, ratio=0.55, floor=5.0):
+    """Point size at which `text` fits `page_w_in` inches on one line."""
+    usable = page_w_in * 72.0 * frac
+    return max(floor, min(want, usable / (ratio * max(len(text), 1))))
+
+
+def _wrap_to_page(text, pt, page_w_in, frac=0.92, ratio=0.55):
+    """Wrap `text` to the lines that fit `page_w_in` inches at `pt`."""
+    import textwrap
+    cols = max(20, int(page_w_in * 72.0 * frac / (ratio * pt)))
+    return textwrap.wrap(text, cols) or [text]
+
+
+# Check the finished paint quote as well as propagating render failures: a file
+# replaced or truncated after rendering must not pass package verification.
+# Ink margin for the coater's sheet. SHEET_MARGIN_IN did the same job for
+# dxf_to_pdf and this path never got it: measured at 200 dpi the four pages had
+# ink 0.25-1.02 mm from the top edge and 2.41 mm from the bottom, inside the
+# unprintable band of any office printer. Printed at 100% the headings clip.
+PQ_MARGIN_MM = 6.0
+
+PAINT_PAGES = {}
+PAINT_PAGES_EXPECTED = 4
+# The parts that get a masking / detail page of their own, after the cover page.
+# Named here so _verify_paint_bom can check it against the parts that actually
+# carry a MASK ring, rather than trusting the list inside paint_quote_pdf.
+PAINT_MASK_PAGES = {"segno_base", "segno_faceplate", "segno_rear_panel"}
+
 
 def paint_quote_pdf(path):
     """Supplier-facing sheet (Spanish) for the powder-coating quote: parts table
@@ -4521,14 +5860,17 @@ def paint_quote_pdf(path):
     with PdfPages(path) as pdf:
         # ---- page 1: what has to be painted -------------------------------
         fig = plt.figure(figsize=(11.7, 8.3))   # A4 landscape
-        fig.text(0.06, 0.995, SHEET_HEADING, va="top",
+        _cover_h_mm = fig.get_size_inches()[1] * 25.4
+        _cover_top = 1.0 - PQ_MARGIN_MM / _cover_h_mm
+        fig.text(0.06, _cover_top, SHEET_HEADING, va="top",
                  fontsize=17, weight="bold")
-        fig.text(0.06, 0.945, "Pedido de cotización: pintura en polvo (termolaqueado)",
+        fig.text(0.06, _cover_top - 0.050,
+                 "Pedido de cotización: pintura en polvo (termolaqueado)",
                  va="top", fontsize=12, color="#444")
         y = 0.885
         for k, v in (("Envolvente del equipo armado",
                       f"{W:.0f} x {D:.0f} x {H_REAR:.0f} mm (lo que tiene que entrar al horno)"),
-                     ("Material del cuerpo", "Aluminio 5052-H32 de 2,0 mm (chapa cortada por láser)"),
+                     ("Material del cuerpo", "Aluminio 1050 de 2,0 mm (chapa cortada por láser); panel trasero 1,5 mm"),
                      ("Terminación pedida", PAINT_FINISH),
                      ("Superficie total a pintar", f"{grand:.2f} m2 por equipo (ambas caras, sin contar cantos)"),
                      ("Cantidad", "1 unidad prototipo; después por lotes")):
@@ -4563,16 +5905,26 @@ def paint_quote_pdf(path):
             "  1. La superficie es NETA: contorno exterior menos aberturas (ranuras de pedales, pantallas, ranuras de ventilación). No incluye cantos.",
             "  2. Las piezas llegan cortadas y plegadas, sin ningún recubrimiento ni aceite protector. Pretratamiento para aluminio a cargo del aplicador.",
             "  3. Los postes son ACERO laminado en frío, no aluminio: van en línea aparte porque llevan otro pretratamiento.",
-            "  4. Enmascarado: ver las páginas siguientes. Sólo la zona de puesta a tierra alrededor del perno M6 va sin pintura, en ambas caras (los agujeros piloto se roscan M3 después de pintar).",
+            "  4. Enmascarar las zonas M6 y PANEL_BOND en las caras indicadas en los planos siguientes. Roscar los pilotos M3 después de pintar.",
             "  5. Las aberturas de pantalla son ajustadas: la película come décimas por cara. Si el espesor supera 100 um avisar antes de aplicar.",
             "  6. El aluminio es blando: colgar para pintar, no apoyar sobre las caras vistas.",
-            "  7. La tapa figura con su tamaño en DESARROLLO (850 x 407 x 2): plegada suma la pestaña frontal de 12 mm y la solapa trasera.",
+            _faceplate_size_note(),
         ]
         # anchored, not flowed: the table above grows with the BOM and the notes
         # must not walk off the bottom of the sheet when it does
-        y = 0.150
+        # Sized to the page for the same reason the masking pages are: matplotlib
+        # drops overflowing fig.text silently, and note 4 already ends 29.7 pt
+        # from the edge -- about seven characters of headroom on the line that
+        # says the M3 pilots are tapped AFTER painting.
+        # Anchored from the BOTTOM margin up, not from a fixed 0.150 down: the
+        # seventh note was finishing 2.4 mm from the paper edge.
+        pages = 1                      # the cover page, already committed below
+        page_w = fig.get_size_inches()[0]
+        _cov_m = PQ_MARGIN_MM / _cover_h_mm
+        y = _cov_m + 0.015 + 0.0195 * (len(notes) - 1)
         for i, n in enumerate(notes):
-            fig.text(0.06, y, n, fontsize=8.2, color="#222" if i == 0 else "#444",
+            fig.text(0.06, y, n, fontsize=_fit_pt(n, 8.2, page_w, frac=0.88),
+                     color="#222" if i == 0 else "#444",
                      weight="bold" if i == 0 else "normal")
             y -= 0.0195
         pdf.savefig(fig); plt.close(fig)
@@ -4580,25 +5932,65 @@ def paint_quote_pdf(path):
         # ---- masking / detail pages ---------------------------------------
         sheets = [
             ("segno_base", "CUERPO - plano de enmascarado",
-             "Rojo = NO PINTAR. Zona de puesta a tierra de 20 mm alrededor del perno M6, en "
-             "ambas caras. Los agujeros piloto de la transición se roscan M3 después de pintar."),
+             "Rojo = NO PINTAR: Ø20 del perno M6 en AMBAS CARAS; PANEL_BOND Ø12 en la "
+             "CARA INTERIOR. Roscar M3 los pilotos de la transición después de pintar."),
             ("segno_faceplate", "TAPA SUPERIOR - aberturas críticas",
              "Sin enmascarado. Las dos aberturas grandes son de pantalla y quedan ajustadas "
              "contra el display: contemplar el espesor de película."),
+            ("segno_rear_panel", "PANEL TRASERO - plano de enmascarado",
+             "Rojo = NO PINTAR. Land PANEL_BOND de Ø12: apoya contra el cuerpo y hace la "
+             "puesta a tierra del chasis. Va en la cara que MIRA AL CUERPO; enmascarada "
+             "del lado equivocado, la máscara cae sobre pintura y el panel pierde la "
+             "puesta a tierra."),
         ]
+        assert {st for st, _t, _n in sheets} == PAINT_MASK_PAGES, (
+            f"paint_quote_pdf draws {sorted(st for st, _t, _n in sheets)} but "
+            f"PAINT_MASK_PAGES says {sorted(PAINT_MASK_PAGES)} -- the verifier "
+            f"checks the set, so they have to be the same set")
         for stem, title, note in sheets:
             dxf = os.path.join(OUT, stem + ".dxf")
             if not os.path.exists(dxf):
                 continue
             fig = plt.figure(figsize=(11.7, 8.3))
-            ax = fig.add_axes([0.04, 0.12, 0.92, 0.80])
+            # 0.16, not 0.12: the strip below now starts at a printable margin
+            # rather than 2.4 mm from the paper edge, so the note it carries
+            # needs that much more room before it runs into the flat pattern.
+            ax = fig.add_axes([0.04, 0.16, 0.92, 0.76])
             _draw_dxf(ax, dxf)
-            fig.text(0.04, 0.965, title, fontsize=14, weight="bold")
-            fig.text(0.04, 0.055, note, fontsize=9.5, color="#b00")
-            fig.text(0.04, 0.025, f"{SHEET_HEADING}   |   medidas en mm   |   "
-                                  "desarrollo / patrón plano (la pieza se entrega plegada)",
-                     fontsize=8, color="#555")
+            # _draw_dxf finalises through the ezdxf backend, which RESIZES the
+            # figure to the data aspect -- the 11.7 in above is not the page
+            # width. matplotlib neither wraps nor clips overflowing fig.text: it
+            # just stops drawing, with no error. When #1001 narrowed this page
+            # from 1152 pt to 577 pt the red instruction lost its ending mid-word
+            # ("los agujeros piloto d"), taking with it the one thing the page
+            # exists to say -- that the M3 pilots are tapped AFTER painting.
+            # So size every line to the FINISHED page, the way dxf_to_pdf does.
+            page_w = fig.get_size_inches()[0]
+            _pg_h_mm = fig.get_size_inches()[1] * 25.4
+            _m = PQ_MARGIN_MM / _pg_h_mm
+            fig.text(0.04, 1.0 - _m, title,
+                     fontsize=_fit_pt(title, 14.0, page_w),
+                     va="top", weight="bold")
+            foot = (f"{SHEET_HEADING}   |   medidas en mm   |   "
+                    "desarrollo / patrón plano (la pieza se entrega plegada)")
+            note_lines = _wrap_to_page(note, 9.5, page_w)
+            # The axes sit at 0.12 of the figure height. Two lines clear it; four
+            # would print the instruction across the flat pattern, and nothing
+            # counted the lines.
+            top = _m + 0.030 + (len(note_lines) - 1) * 0.030 + 0.020
+            assert top <= 0.16, (
+                f"{stem}: the masking note wraps to {len(note_lines)} lines and "
+                f"reaches {top:.3f} of the page, over the drawing at 0.16 -- "
+                f"shorten it or give the axes a taller bottom margin")
+            for i, line in enumerate(note_lines):
+                fig.text(0.04,
+                         _m + 0.030 + (len(note_lines) - 1 - i) * 0.030, line,
+                         va="bottom", fontsize=9.5, color="#b00")
+            fig.text(0.04, _m, foot, fontsize=_fit_pt(foot, 8.0, page_w),
+                     va="bottom", color="#555")
             pdf.savefig(fig); plt.close(fig)
+            pages += 1
+    PAINT_PAGES[os.path.splitext(os.path.basename(path))[0]] = pages
     return path
 
 # ===========================================================================
@@ -4613,7 +6005,7 @@ def report():
     P("="*68)
     P(f"Envelope        : {W:.0f} W x {D:.0f} D x {H_REAR:.0f} H mm (front lip {H_FRONT:.0f})")
     P(f"Top slope       : {SLOPE_ANGLE:.2f}deg, sloped length {L_SLOPE:.1f} mm")
-    P(f"Material        : {T:.1f} mm 5052-H32 Al, bend R {RI:.1f}, K={KF}, BA90 {BA90:.2f}")
+    P(f"Material        : {T:.1f} mm 1050 Al, bend R {RI:.1f}, K={KF}, BA90 {BA90:.2f}")
     P(f"Construction    : folded weld-free lower body + REMOVABLE TOP LID (faceplate carries")
     P(f"                  screens + encoder/ring PCB + LEDs; pedals stay on platforms)")
     P("-"*68)
@@ -4624,7 +6016,7 @@ def report():
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(case top flush with the slot's upper rim, pad +{PEDAL_PAD_T:.1f} above, #373)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
-    P(f"Rear I/O        : USB-C PD + btn + fuse + 2x MIDI DIN-5 + 2x TRS (D-series) + 2x USB3 + vents + earth (no window)")
+    P(f"Rear I/O        : USB-C PD + btn + fuse + 2x MIDI DIN-5 + 2x Neutrik NJ6FD-V (O12) + 2x USB3 + vents + earth (no window)")
     _unc = rear_io_unconfirmed()
     if _unc:
         P("  DO NOT CUT     : " + ", ".join(
@@ -4825,8 +6217,332 @@ def dxf_ring_disc(path):
     doc = _doc(); msp = doc.modelspace()
     _circle(msp, 0, 0, RING_ID)                 # outline: OD = ring inner diameter
     _circle(msp, 0, 0, D_ENC)                   # encoder bush hole (centre)
-    _text(msp, -RING_ID/2, RING_ID/2 + 6, 5, "Segno DISCO CENTRAL DEL ARO DE LEDS (segno_ring_disc)  chapa 2.0 mm  CANT. 1  PIEZA PLANA, sin plegados (queda sujeto por la tuerca del encoder; el agujero central es el paso del buje)", "NOTE")
-    doc.saveas(path); return {}
+    _note(msp, -RING_ID/2, RING_ID/2 + 6, "Segno DISCO CENTRAL DEL ARO DE LEDS (segno_ring_disc)  chapa 2.0 mm  CANT. 1  PIEZA PLANA, sin plegados (queda sujeto por la tuerca del encoder; el agujero central es el paso del buje)")
+    _save(doc, path); return {}
+
+
+def _emit_tile(msp, ox, oy, label):
+    """One tile at (ox, oy): CUT trapezoid + ENGRAVE filled glyphs."""
+    # Repeat the first point so viewers that ignore the closed flag still
+    # draw the last side. The ezdxf matplotlib backend used to drop it, and
+    # every tile's top-left corner vanished on the PDF (#946).
+    outline = [(x + ox, y + oy) for x, y in _tile_outline()]
+    _poly(msp, outline + [outline[0]], "CUT", closed=True)
+    glyphs, _bb = _tile_ink(label)
+    for e in glyphs:
+        if e["kind"] == "disc":
+            _circle(msp, e["u"] + ox, e["v"] + oy, e["d"], "ENGRAVE")
+            _engrave_fill(msp, "circle", (e["u"] + ox, e["v"] + oy, e["d"] / 2.0))
+        else:
+            pts = [(x + ox, y + oy) for x, y in e["pts"]]
+            holes = [[(x + ox, y + oy) for x, y in h] for h in e.get("holes") or []]
+            _poly(msp, pts, "ENGRAVE")
+            for hole in holes:
+                _poly(msp, hole, "ENGRAVE")
+            _engrave_fill(msp, "poly", pts, holes=holes)
+
+
+# The pad is a wedge in plan (#922). 54.36 vs 53.76 over 19.90 is 0.87 deg a side
+# -- a viewer that only looks at the outline will swear the tile is a rectangle,
+# so both widths get dimensioned. Split into three so the NEST can put each one
+# on an edge of the nest that is actually free: the tiles are pitched 4.0 mm
+# apart and that gap already carries the per-tile captions, so a dimension drawn
+# into it prints straight through "TRACK2" (#1001).
+TILE_DIM_GAP = 2.4
+
+def _assert_dims_outside_nest(oy_wide, oy_narrow, n_labels):
+    """The nest's width dimensions must sit OUTSIDE the tile block, never in a gap.
+
+    The tiles are pitched TILE_NEST_GAP (4.0 mm) apart and that gap already
+    carries the per-tile captions, so a dimension drawn into it prints straight
+    through one -- "54.36 ancho" over "TRACK2" (#1001). This is the rule stated
+    as an assertion, because the two nest builders draw the layout INDEPENDENTLY
+    (DXF and shop PDF) and the DXF-side text guard cannot see the PDF at all.
+    """
+    rows = (n_labels + TILE_NEST_COLS - 1) // TILE_NEST_COLS
+    nest_h = rows * TILE_W + (rows - 1) * TILE_NEST_GAP
+    assert oy_wide + TILE_W / 2.0 >= nest_h - 1e-6, (
+        f"the wide dimension is drawn inside the tile nest (top edge "
+        f"{oy_wide + TILE_W/2.0:.2f} vs nest height {nest_h:.2f}) -- it will "
+        f"print through a tile caption. See _nest_top_left")
+    assert oy_narrow - TILE_W / 2.0 <= 1e-6, (
+        f"the narrow dimension is drawn inside the tile nest (bottom edge "
+        f"{oy_narrow - TILE_W/2.0:.2f}) -- it will print through a tile caption")
+
+
+def _nest_top_left(n):
+    """Index of the first tile of the TOP row, for any tile count.
+
+    `min(TILE_NEST_COLS, n - 1)` happens to be right for today's 10 tiles in 5
+    columns and is wrong the moment that changes: at 11 tiles it is a MIDDLE-row
+    tile, which puts the wide dimension back into the 4.0 mm inter-tile gap that
+    carries the captions -- the #1001 bug, reintroduced silently.
+    """
+    return TILE_NEST_COLS * ((max(n, 1) - 1) // TILE_NEST_COLS)
+
+def _tile_dim_wide(msp, ox, oy, suffix=""):
+    """The 54.36 mm cable edge, dimensioned ABOVE the tile."""
+    yb, xb, g = oy + TILE_W / 2.0, TILE_L_BACK / 2.0, TILE_DIM_GAP
+    _poly(msp, [(ox - xb, yb + 0.5), (ox - xb, yb + g),
+                (ox + xb, yb + g), (ox + xb, yb + 0.5)], "NOTE", closed=False)
+    _text(msp, ox, yb + g + 0.3, 1.8, f"{TILE_L_BACK:.2f}  (ancho){suffix}", "NOTE",
+          halign="center")
+
+def _tile_dim_narrow(msp, ox, oy, suffix=""):
+    """The 53.75 mm toe edge, dimensioned BELOW the tile."""
+    yt, xt, g = oy - TILE_W / 2.0, TILE_L_TOE / 2.0, TILE_DIM_GAP
+    _poly(msp, [(ox - xt, yt - 0.5), (ox - xt, yt - g),
+                (ox + xt, yt - g), (ox + xt, yt - 0.5)], "NOTE", closed=False)
+    _text(msp, ox, yt - g - 2.0, 1.8, f"{TILE_L_TOE:.2f}  (estrecho){suffix}", "NOTE",
+          halign="center")
+
+def _tile_dim_depth(msp, ox, oy):
+    """The 19.90 mm depth, dimensioned to the LEFT of the tile."""
+    yb, yt, xb, g = oy + TILE_W / 2.0, oy - TILE_W / 2.0, TILE_L_BACK / 2.0, TILE_DIM_GAP
+    _poly(msp, [(ox - xb - 0.5, yb), (ox - xb - g, yb),
+                (ox - xb - g, yt), (ox - xb - 0.5, yt)], "NOTE", closed=False)
+    _text(msp, ox - xb - g - 6.5, oy - 0.9, 1.8, f"{TILE_W:.2f}", "NOTE")
+
+def _tile_size_callout(msp, ox, oy):
+    """All three dimensions around one tile -- the single-tile sheets, where the
+    tile is alone on the page and every side is free."""
+    _tile_dim_wide(msp, ox, oy)
+    _tile_dim_narrow(msp, ox, oy)
+    _tile_dim_depth(msp, ox, oy)
+
+
+def dxf_one_pedal_tile(path, label):
+    """Single-tile DXF for a replacement cut. Origin at the tile centre."""
+    doc = _doc(); msp = doc.modelspace()
+    _emit_tile(msp, 0.0, 0.0, label)
+    _tile_size_callout(msp, 0.0, 0.0)
+    _note(msp, -TILE_L_BACK / 2.0, TILE_W / 2.0 + 6.5,
+          f"Segno {_tile_stem(label)}  CANT. 1  TRAPECIO "
+          f"{TILE_L_BACK:.2f}/{TILE_L_TOE:.2f} x {TILE_W:.2f}  "
+          f"plástico bicapa {TILE_PLY_T:.1f} mm "
+          f"capa NEGRA / núcleo BLANCO; CUT = contorno; ENGRAVE = grabado relleno; "
+          f"borde ANCHO hacia el cable")
+    _save(doc, path)
+    return {}
+
+
+def _tile_nest_origin(i):
+    col, row = i % TILE_NEST_COLS, i // TILE_NEST_COLS
+    return (TILE_L_BACK / 2.0 + col * (TILE_L_BACK + TILE_NEST_GAP),
+            TILE_W / 2.0 + row * (TILE_W + TILE_NEST_GAP))
+
+
+def dxf_pedal_tiles(path):
+    """Nested sheet of all ten tiles -- the file the 2-ply shop cuts (#946).
+
+    CUT is the trapezoid outline (through-cut). ENGRAVE is filled glyph geometry
+    (raster/vector-engrave through the black cap). Glyphs are NEVER TEXT: the
+    shop must not substitute a font. Wide edge toward the cable end.
+    """
+    doc = _doc(); msp = doc.modelspace()
+    labels = [lab for lab, _u, _v in PEDALS]
+    # The bottom-left tile carries the narrow + depth dimensions, so its own
+    # caption has to clear them; every other caption keeps the 3.2 mm drop.
+    for i, label in enumerate(labels):
+        ox, oy = _tile_nest_origin(i)
+        _emit_tile(msp, ox, oy, label)
+        drop = 7.6 if i == 0 else 3.2
+        _text(msp, ox - TILE_L_BACK / 2.0, oy - TILE_W / 2.0 - drop, 2.4, label, "NOTE")
+    # The 0.6 mm taper is invisible at nest scale unless both widths are written
+    # beside an outline -- but each dimension goes on an edge of the NEST that is
+    # free, never into the 4.0 mm inter-tile gap that carries the captions.
+    _oy0 = _tile_nest_origin(0)[1]
+    _oyt = _tile_nest_origin(_nest_top_left(len(labels)))[1]
+    _assert_dims_outside_nest(_oyt, _oy0, len(labels))
+    _tile_dim_narrow(msp, *_tile_nest_origin(0),
+                     suffix="  (típ.)")                     # below the bottom row
+    _tile_dim_depth(msp, *_tile_nest_origin(0))             # left of the nest
+    _tile_dim_wide(msp, *_tile_nest_origin(_nest_top_left(len(labels))),
+                   suffix="  (típ.)")                       # above the top row
+    rows = (len(labels) + TILE_NEST_COLS - 1) // TILE_NEST_COLS
+    _note(msp, 0.0, rows * (TILE_W + TILE_NEST_GAP) + 10.0,
+          f"Segno AZULEJOS DE PEDAL (segno_pedal_tiles)  CANT. {len(labels)}  "
+          f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} (estrecho, punta) "
+          f"x {TILE_W:.2f}  "
+          f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
+          f"(capa NEGRA / núcleo BLANCO) - NO ES METAL; "
+          f"CUT = corte pasante del trapecio; "
+          f"ENGRAVE = grabado relleno (quema la capa, deja ver el blanco); "
+          f"el borde ANCHO va hacia el cable y lleva la parte superior de los glifos; "
+          f"medidas NOMINALES -- el 0,05 mm por lado ya está en la pieza, no agrandar; "
+          f"el taller aplica compensación de kerf; "
+          f"no sustituir fuente, los glifos ya son geometría")
+    _save(doc, path)
+    return {}
+
+
+def _draw_tile_on_ax(ax, ox, oy, label, cut="#b00", fill="#111"):
+    """Closed trapezoid + filled glyphs. Used for the shop PDF so corners meet."""
+    from matplotlib.patches import Circle, Polygon
+    outline = [(x + ox, y + oy) for x, y in _tile_outline()]
+    ax.add_patch(Polygon(outline, closed=True, fill=False, edgecolor=cut,
+                         linewidth=0.6, joinstyle="miter", capstyle="projecting"))
+    glyphs, _bb = _tile_ink(label)
+    for e in glyphs:
+        if e["kind"] == "disc":
+            ax.add_patch(Circle((e["u"] + ox, e["v"] + oy), e["d"] / 2.0,
+                                facecolor=fill, edgecolor="none"))
+        else:
+            ax.add_patch(Polygon([(x + ox, y + oy) for x, y in e["pts"]],
+                                 closed=True, facecolor=fill, edgecolor="none"))
+            for hole in e.get("holes") or []:
+                ax.add_patch(Polygon([(x + ox, y + oy) for x, y in hole],
+                                     closed=True, facecolor="white",
+                                     edgecolor="none"))
+
+
+def pdf_pedal_tiles(path):
+    """1:1 shop PDF -- the file to send for 2-ply. Drawn from the same
+    geometry as the DXF, not via the DXF renderer (which dropped a corner).
+
+    Red outline = CUT. Black fill = ENGRAVE (burn the cap). White counters
+    stay the cap. Scale is millimetres, print at 100 %.
+    """
+    import textwrap
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    labels = [lab for lab, _u, _v in PEDALS]
+    cols, gap = TILE_NEST_COLS, TILE_NEST_GAP
+    rows = (len(labels) + cols - 1) // cols
+    nest_w = cols * TILE_L_BACK + (cols - 1) * gap
+    nest_h = rows * TILE_W + (rows - 1) * gap
+    note = (f"Segno AZULEJOS DE PEDAL (segno_pedal_tiles)  CANT. {len(labels)}  "
+            f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} "
+            f"(estrecho, punta) x {TILE_W:.2f}  "
+            f"plástico bicapa {TILE_PLY_T:.1f} mm capa NEGRA / núcleo BLANCO; "
+            # TILE_LEGEND itself, not a paraphrase of it. Saying the same thing
+            # twice in two wordings is how the sheet came to describe its layers
+            # by PDF colour while the legend described them by name -- and the
+            # verifier could not see the drift, because it was reading a list
+            # this function invented rather than what the sheet prints.
+            f"{TILE_LEGEND}; "
+            f"borde ANCHO hacia el cable; "
+            f"imprimir al 100 %; medidas en mm")
+    margin, strip = 12.0, 22.0
+    page_w = nest_w + 2 * margin
+    page_h = nest_h + 2 * margin + strip
+    fig = plt.figure(figsize=(page_w / 25.4, page_h / 25.4))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(-margin, nest_w + margin)
+    ax.set_ylim(-margin - strip, nest_h + margin)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    fig.patch.set_facecolor("white")
+    # Tile 0 carries the narrow dimension underneath it, so its caption drops
+    # clear of it. Center the other captions in the gap: a top-aligned 6 pt
+    # label hanging 2.6 mm into a 4 mm gap crosses the next tile's cut edge.
+    captions = []
+    for i, label in enumerate(labels):
+        ox, oy = _tile_nest_origin(i)
+        _draw_tile_on_ax(ax, ox, oy, label)
+        bottom = oy - TILE_W / 2.0
+        caption = ax.text(ox, bottom - (6.0 if i == 0 else TILE_NEST_GAP / 2),
+                          label, fontsize=6, ha="center",
+                          va="top" if i == 0 else "center", color="#333")
+        if bottom > 0:
+            captions.append((caption, bottom))
+    # Both widths, so the 0.6 mm taper reads -- but each dimension goes OUTSIDE
+    # the nest, never into the 4.0 mm inter-tile gap. Dimensioning the wide edge
+    # of the bottom-left tile put "54.36 ancho" straight through the caption of
+    # the tile above it, on the sheet the 2-ply shop actually prints (#1001).
+    ox0, oy0 = _tile_nest_origin(0)                                   # bottom row
+    oxt, oyt = _tile_nest_origin(_nest_top_left(len(labels)))         # top row
+    _assert_dims_outside_nest(oyt, oy0, len(labels))
+    ax.annotate("", xy=(oxt - TILE_L_BACK / 2.0, oyt + TILE_W / 2.0 + 1.6),
+                xytext=(oxt + TILE_L_BACK / 2.0, oyt + TILE_W / 2.0 + 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(oxt, oyt + TILE_W / 2.0 + 2.0, f"{TILE_L_BACK:.2f} ancho  (típ.)",
+            fontsize=5.5, ha="center", va="bottom", color="#333")
+    ax.annotate("", xy=(ox0 - TILE_L_TOE / 2.0, oy0 - TILE_W / 2.0 - 1.6),
+                xytext=(ox0 + TILE_L_TOE / 2.0, oy0 - TILE_W / 2.0 - 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(ox0, oy0 - TILE_W / 2.0 - 1.8, f"{TILE_L_TOE:.2f} estrecho  (típ.)",
+            fontsize=5.5, ha="center", va="top", color="#333")
+    wrapped = textwrap.wrap(note, 110)
+    for i, line in enumerate(wrapped):
+        ax.text(0.0, -margin - 4.0 - 3.4 * i, line, fontsize=6, ha="left",
+                va="top", color="#111", family="sans-serif")
+    # What is actually DRAWN on the sheet, nothing else. This used to record
+    # SHEET_HEADING and a synthesised title-block line, neither of which this
+    # sheet prints -- so the two assertions in _verify_tile_package were reading
+    # a list the writer had made up, and could not fail whatever the PDF held.
+    SHEET_TEXT["segno_pedal_tiles"] = list(wrapped) + labels
+    # Measure the actual font after layout, independently of its anchor formula.
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for caption, bottom in captions:
+        box = caption.get_window_extent(renderer).transformed(ax.transData.inverted())
+        assert bottom - TILE_NEST_GAP < box.y0 and box.y1 < bottom, (
+            f"tile caption {caption.get_text()!r} crosses a cut edge: "
+            f"text spans {box.y0:.2f}..{box.y1:.2f} mm, "
+            f"gap spans {bottom-TILE_NEST_GAP:.2f}..{bottom:.2f} mm")
+    fig.savefig(path, dpi=300)
+    plt.close(fig)
+
+
+def _tile_size_callout_ax(ax):
+    """Both widths on a matplotlib axes, for the single-tile sheets."""
+    yb, yt = TILE_W / 2.0, -TILE_W / 2.0
+    xb, xt = TILE_L_BACK / 2.0, TILE_L_TOE / 2.0
+    ax.annotate("", xy=(-xb, yb + 1.6), xytext=(xb, yb + 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(0.0, yb + 2.0, f"{TILE_L_BACK:.2f} ancho", fontsize=5.5,
+            ha="center", va="bottom", color="#333")
+    ax.annotate("", xy=(-xt, yt - 1.6), xytext=(xt, yt - 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(0.0, yt - 2.0, f"{TILE_L_TOE:.2f} estrecho", fontsize=5.5,
+            ha="center", va="top", color="#333")
+
+
+def pdf_one_pedal_tile(path, label):
+    """Single-tile 1:1 PDF, same paint as the nest."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    # These ride in the same zip as the nest but carried none of its
+    # information: no material, no quantity, no layer legend, and no statement
+    # that they are 1:1. A replacement cut ordered off one of them was ordered
+    # off a sheet that did not say what to cut it from.
+    # Size the strip to the text, never the text to the strip: capping the lines
+    # is how the heading came out ending mid-phrase at "capa negra / núcleo",
+    # which is the same silent truncation this whole branch exists to stop.
+    margin = 10.0
+    HEAD_MM, BODY_MM = 3.6, 3.0
+    _page_w_in = (TILE_L_BACK + 2 * margin) / 25.4
+    head = (f"Segno {_tile_stem(label)}   |   {PLY_2MM}   |   CANT. 1   |   "
+            f"medidas en mm   |   imprimir al 100 %")
+    body = (f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} "
+            f"(estrecho, punta) x {TILE_W:.2f}. {TILE_LEGEND}")
+    head_lines = _wrap_to_page(head, 6.0, _page_w_in, ratio=0.62)
+    body_lines = _wrap_to_page(body, 5.0, _page_w_in)
+    strip = (6.0 + HEAD_MM * len(head_lines) + BODY_MM * len(body_lines))
+    fig_h = TILE_W + 2 * margin + strip
+    fig = plt.figure(figsize=(_page_w_in, fig_h / 25.4))
+    ax = fig.add_axes([0, strip / fig_h, 1, (TILE_W + 2 * margin) / fig_h])
+    ax.set_xlim(-TILE_L_BACK / 2.0 - margin, TILE_L_BACK / 2.0 + margin)
+    ax.set_ylim(-TILE_W / 2.0 - margin, TILE_W / 2.0 + margin)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    fig.patch.set_facecolor("white")
+    _draw_tile_on_ax(ax, 0.0, 0.0, label)
+    _tile_size_callout_ax(ax)
+    _y = strip - 4.0                       # mm from the page bottom, going down
+    for line in head_lines:                # 0.62 ratio: this text is BOLD
+        fig.text(0.04, _y / fig_h, line, fontsize=6.0, weight="bold")
+        _y -= HEAD_MM
+    _y -= 1.0
+    for line in body_lines:
+        fig.text(0.04, _y / fig_h, line, fontsize=5.0, color="#333")
+        _y -= BODY_MM
+    fig.savefig(path, dpi=300)
+    plt.close(fig)
 
 # ===========================================================================
 # MAIN
@@ -4843,10 +6559,48 @@ DXF_PARTS = [
 ]
 NO_PDF = set()   # every sheet part ships with a PDF drawing
 
-def build_quote_packages(with_step=True, with_pdf=True):
+
+def build_pedal_tile_vectors(with_pdf=True):
+    """Write the 2-ply tile pack: one nested sheet + ten single-tile DXFs (#946)."""
+    os.makedirs(OUT, exist_ok=True)
+    stems = []
+    for label, _u, _v in PEDALS:
+        stem = _tile_stem(label)
+        dxf_one_pedal_tile(os.path.join(OUT, stem + ".dxf"), label)
+        stems.append(stem)
+    nest = "segno_pedal_tiles"
+    dxf_pedal_tiles(os.path.join(OUT, nest + ".dxf"))
+    if with_pdf:
+        pdf_pedal_tiles(os.path.join(OUT, nest + ".pdf"))
+        for label, _u, _v in PEDALS:
+            pdf_one_pedal_tile(os.path.join(OUT, _tile_stem(label) + ".pdf"), label)
+    return stems
+
+
+def _pack_tile_zip(with_pdf=True):
+    """segno_pedal_tiles.zip -- 2-ply shop only. Nest + singles, never metal."""
+    import zipfile
+    zp = os.path.join(OUT, "segno_pedal_tiles.zip")
+    files = ["segno_pedal_tiles.pdf", "segno_pedal_tiles.dxf"] if with_pdf else ["segno_pedal_tiles.dxf"]
+    files += [_tile_stem(lab) + ".dxf" for lab, _u, _v in PEDALS]
+    if with_pdf:
+        files += [_tile_stem(lab) + ".pdf" for lab, _u, _v in PEDALS]
+    with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in files:
+            p = os.path.join(OUT, name)
+            assert os.path.exists(p), f"{name} missing -- tile pack would ship a hole"
+            age = _RUN_STARTED - os.path.getmtime(p)
+            assert age <= 0, (
+                f"{name} is STALE -- it was not regenerated by this run "
+                f"({age:.0f}s older) but segno_pedal_tiles.zip would ship it.")
+            z.write(p, name)
+    return zp
+
+
+def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
     """Refresh the manufacturer zips from the CURRENT outputs so they can never
     go stale (a hand-built segno_sheetmetal.zip once shipped three-week-old
-    flats). Three packs: laser/bend sheet metal, reference STEPs, 3D prints.
+    flats). Four packs: laser/bend sheet metal, overlay, 2-ply tiles, 3D prints.
 
     with_step/with_pdf mirror which builders actually ran THIS run: the
     freshness gate in pack() (rightly) refuses to ship anything this run did
@@ -4883,11 +6637,14 @@ def build_quote_packages(with_step=True, with_pdf=True):
     # here with a title block reading "2.0 mm 5052-H32 Al | qty 1" -- an 846 x 406.6
     # printed vinyl graphic quoted as 0.34 m2 of aluminium, cut and powder coated for
     # nothing, roughly a third of the metal spend (#775 R6). It now has its own pack.
+    if tiles_only:
+        return [_pack_tile_zip(with_pdf)]
     sheet   = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_SHEETMETAL]
     overlay = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_OVERLAY]
     flat_exts = (".dxf", ".pdf") if with_pdf else (".dxf",)
     pack("segno_sheetmetal.zip", sheet, flat_exts)
     pack("segno_overlay.zip", overlay, flat_exts)
+    zips.append(_pack_tile_zip(with_pdf))
     # segno_base and segno_corner_bracket_rear are deliberately NOT here. Nothing
     # generates a per-part STEP for either (see build_assembly_step: the base is
     # ONE folded blank and the assembly STEP is where its 3D form lives), so the
@@ -4952,11 +6709,338 @@ def _dxf_bend_lines(dxf_path):
                                  f"horizontal nor vertical -- it cannot be tabled")
     return sorted(out)
 
+
+def _verify_tile_package(with_pdf=True):
+    """Gates on the 2-ply tile pack: geometry, not TEXT, Spanish notes, own zip."""
+    import zipfile
+    import ezdxf
+
+    nest = os.path.join(OUT, "segno_pedal_tiles.dxf")
+    assert os.path.exists(nest), "segno_pedal_tiles.dxf was not written"
+    doc = ezdxf.readfile(nest)
+    # the tile pack has its own verifier, so the drawing gates have to be run
+    # here too -- they live in the DXF_PARTS loop, which never sees these files
+    _verify_dash_legibility(doc, "segno_pedal_tiles")
+    _verify_no_overprinted_text(doc, "segno_pedal_tiles")
+    _verify_note_block_fits(doc, "segno_pedal_tiles")
+    for lab, _u, _v in PEDALS:
+        one = os.path.join(OUT, _tile_stem(lab) + ".dxf")
+        if os.path.exists(one):
+            d1 = ezdxf.readfile(one)
+            _verify_dash_legibility(d1, _tile_stem(lab))
+            _verify_no_overprinted_text(d1, _tile_stem(lab))
+            _verify_note_block_fits(d1, _tile_stem(lab))
+    used = {e.dxf.layer for e in doc.modelspace()}
+    assert used <= set(THRU_CUT_LAYERS + ANNOT_LAYERS), (
+        f"tile nest uses undeclared layers: {sorted(used - set(THRU_CUT_LAYERS + ANNOT_LAYERS))}")
+    cuts = [e for e in doc.modelspace()
+            if e.dxf.layer == "CUT" and e.dxftype() == "LWPOLYLINE"]
+    assert len(cuts) == len(PEDALS), (
+        f"tile nest: expected {len(PEDALS)} CUT trapezoids, got {len(cuts)}")
+    for e in doc.modelspace():
+        if e.dxftype() == "TEXT":
+            assert e.dxf.layer == "NOTE", (
+                f"tile nest: TEXT on {e.dxf.layer} -- glyphs must be geometry, not font")
+    hatches = [e for e in doc.modelspace()
+               if e.dxftype() == "HATCH" and e.dxf.layer == "ENGRAVE"]
+    assert len(hatches) >= len(PEDALS), (
+        f"tile nest: {len(hatches)} ENGRAVE hatches for {len(PEDALS)} tiles")
+    notes = [e.dxf.text for e in doc.modelspace() if e.dxftype() == "TEXT"]
+    blob = " ".join(notes)
+    assert "CANT." in blob and "segno_pedal_tiles" in blob
+    assert "bicapa" in blob and "borde ANCHO" in blob
+    assert "TRAPECIO" in blob and f"{TILE_L_BACK:.2f}" in blob and f"{TILE_L_TOE:.2f}" in blob
+    for english in ("2.0mm", "DO NOT CUT", " x10 "):
+        assert english.lower() not in blob.lower(), (
+            f"tile nest: untranslated shop text {english!r}")
+
+    for label, _u, _v in PEDALS:
+        path = os.path.join(OUT, _tile_stem(label) + ".dxf")
+        assert os.path.exists(path), f"{_tile_stem(label)}.dxf missing"
+        one = ezdxf.readfile(path)
+        cut = [e for e in one.modelspace()
+               if e.dxf.layer == "CUT" and e.dxftype() == "LWPOLYLINE"]
+        assert len(cut) == 1, f"{label}: {len(cut)} CUT outlines"
+        pts = [(p[0], p[1]) for p in cut[0].get_points()]
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        assert abs((max(xs) - min(xs)) - TILE_L_BACK) < 1e-3, (
+            f"{label}: cut width {max(xs) - min(xs):.3f} != {TILE_L_BACK:.3f}")
+        assert abs((max(ys) - min(ys)) - TILE_W) < 1e-3, (
+            f"{label}: cut depth {max(ys) - min(ys):.3f} != {TILE_W:.3f}")
+        back = [p for p in pts if abs(p[1] - max(ys)) < 1e-6]
+        toe = [p for p in pts if abs(p[1] - min(ys)) < 1e-6]
+        if len(back) >= 2:
+            assert abs(abs(back[0][0] - back[1][0]) - TILE_L_BACK) < 1e-3
+        if len(toe) >= 2:
+            assert abs(abs(toe[0][0] - toe[1][0]) - TILE_L_TOE) < 1e-3
+        assert not any(e.dxftype() == "TEXT" and e.dxf.layer != "NOTE"
+                       for e in one.modelspace())
+        assert any(e.dxftype() == "HATCH" for e in one.modelspace()), (
+            f"{label}: no ENGRAVE hatch -- the shop would cut a blank tile")
+
+    if with_pdf:
+        assert os.path.exists(os.path.join(OUT, "segno_pedal_tiles.pdf"))
+        sheet = SHEET_TEXT["segno_pedal_tiles"]
+        drawn = " ".join(sheet)
+        # cross-check the record against the PDF itself, so it cannot drift back
+        # into describing a sheet that was never drawn
+        for want in (TILE_LEGEND.split("|")[0].strip(), "segno_pedal_tiles",
+                     "CANT.", PLY_2MM.split()[0]):
+            assert want in drawn, f"the tile nest sheet no longer prints {want!r}"
+        for lab, _u, _v in PEDALS:
+            assert lab in drawn, f"the tile nest sheet no longer labels {lab}"
+        for label, _u, _v in PEDALS:
+            assert os.path.exists(os.path.join(OUT, _tile_stem(label) + ".pdf"))
+
+    zp = os.path.join(OUT, "segno_pedal_tiles.zip")
+    if os.path.exists(zp):
+        with zipfile.ZipFile(zp) as z:
+            names = set(z.namelist())
+        assert "segno_pedal_tiles.dxf" in names
+        for label, _u, _v in PEDALS:
+            assert _tile_stem(label) + ".dxf" in names
+        if with_pdf:
+            assert "segno_pedal_tiles.pdf" in names
+        assert not any(n.endswith((".step", ".stl")) for n in names)
+        assert not any(n.startswith("segno_base") or n.startswith("segno_faceplate")
+                       for n in names)
+
+
+NOTE_ADVANCE_EST = 0.62          # under-estimated TEXT advance, per unit of height
+
+
+def _text_extent(e):
+    """Conservative model-space box for a TEXT entity, as (x0, y0, x1, y1).
+
+    Deliberately UNDER-estimates the advance so the overlap guard below trips on
+    real collisions rather than on the estimate.
+    """
+    h = float(e.dxf.height)
+    w = len(e.dxf.text) * h * NOTE_ADVANCE_EST
+    p = e.dxf.align_point if e.dxf.halign else e.dxf.insert
+    x, y = float(p.x), float(p.y)
+    if e.dxf.halign == 1:            # CENTER
+        x -= w / 2.0
+    elif e.dxf.halign == 2:          # RIGHT
+        x -= w
+    return (x, y, x + w, y + h)
+
+
+def _pdf_page_count(path):
+    """Pages in a PDF, read from the file itself.
+
+    Deliberately not from whatever wrote it: the point is to catch a deliverable
+    that was replaced or truncated between the writer and this check.
+    """
+    with open(path, "rb") as fh:
+        blob = fh.read()
+    n = blob.count(b"/Type /Page") - blob.count(b"/Type /Pages")
+    if n <= 0:                      # some writers omit the space
+        n = blob.count(b"/Type/Page") - blob.count(b"/Type/Pages")
+    return n
+
+
+def _verify_dash_legibility(doc, stem):
+    """Every dashed entity must actually render broken, at BOTH ends of the scale.
+
+    Two ways to print a solid line where a dashed one belongs, and this asserts
+    against both (#1001):
+
+    * too FINE -- the pattern is authored for 1:1 (0.254 mm gap on DASHED) and
+      the sheets are auto-fitted, so on the 1040 mm base at $LTSCALE 1 the gap
+      measured 0.02 mm on paper, a thirtieth of a 600 dpi dot.
+    * too COARSE -- the scale that fixes the base's 1040 mm bend line makes the
+      DASHDOT dash 42.7 mm against a O12 mask ring's 37.7 mm circumference, and
+      the ring renders as one unbroken red circle beside real O12 holes. That is
+      the failure #775 R3 says colour and a callout alone must not have to carry.
+
+    Checked per ENTITY against its own drawn length, so it cannot pass by
+    averaging a long fold line over a short mask ring.
+    """
+    msp = doc.modelspace()
+    gscale = float(doc.header.get("$LTSCALE", 1.0))
+    span = _SPAN(msp)        # hoisted: it is an extents() sweep over the whole part
+    periods = {}
+    checked = 0
+    # A block reference hides its contents from this sweep, and those contents
+    # carry their OWN layers -- so gating on the INSERT's layer was the wrong
+    # axis: the normal way to place one is on CUT or 0, and a O12 MASK circle
+    # inside such a block passed every guard and rasterised as a solid red ring.
+    # The generator emits no blocks at all, so refuse them outright.
+    for e in msp:
+        assert e.dxftype() != "INSERT", (
+            f"{stem}: a block reference on layer {e.dxf.layer} -- whatever it "
+            f"contains is invisible to every check here, dashed MASK geometry "
+            f"included. Emit the entities directly")
+    for e in msp:
+        layer = e.dxf.layer
+        if layer not in ("BEND", "MASK") or e.dxftype() in NOT_LINEWORK:
+            continue
+        run = _run_length(e)
+        assert run is not None, (
+            f"{stem}: a {layer} {e.dxftype()} cannot be measured, so nothing "
+            f"scaled its dashes and nothing checked them -- teach _run_length "
+            f"this type rather than letting it through unseen")
+        if run <= 0.0:
+            continue
+        lname = _entity_linetype(doc, e)
+        period = periods.setdefault(lname, _pattern_period(doc, lname))
+        # `float(ls) if ls else 1.0` is the same expression as `float(ls or 1.0)`
+        # -- rewriting it changed nothing and 0.0 still read as 1.0. It has to be
+        # rejected, not substituted: ezdxf's setter clamps 0 to 1.0, but a raw
+        # `48 / 0.0` tag survives readfile, and the renderer then falls back to
+        # its 0.1 unit minimum dash and draws the line effectively solid.
+        ls = e.dxf.get("ltscale", 1.0)
+        assert ls is None or float(ls) > 0.0, (
+            f"{stem}: a {layer} {e.dxftype()} carries ltscale {ls} -- a zero or "
+            f"negative linetype scale renders as a solid line")
+        scale = gscale * (1.0 if ls is None else float(ls))
+        cycles = run / (period * scale)
+        checked += 1
+        assert cycles >= LTSCALE_MIN_PERIODS - 1e-6, (
+            f"{stem}: a {run:.1f} mm {layer} {e.dxftype()} shows only "
+            f"{cycles:.1f} dash cycles at scale {scale:.3f} -- it renders SOLID "
+            f"and can be read as a cut. See _fit_entity_ltscales")
+        # and the widest gap in the pattern must survive the reduction onto the page
+        gap = _pattern_gap(doc, lname) * scale
+        assert gap >= span / LTSCALE_GAP_RATIO, (
+            f"{stem}: a {layer} {e.dxftype()} would print solid the other way -- "
+            f"a {gap:.3f} mm gap on a {span:.0f} mm part is 1:{span/max(gap,1e-9):.0f}, "
+            f"past the 1:{LTSCALE_GAP_RATIO:.0f} floor. See _ltscale_for")
+    assert checked or not any(e.dxf.layer in ("BEND", "MASK")
+                              and e.dxftype() not in NOT_LINEWORK for e in msp), (
+        f"{stem}: has dashed line work but the guard measured none of it")
+    return checked
+
+
+def _pattern_gap(doc, name):
+    """Length of the LARGEST single blank in one period of a linetype, at scale 1.
+
+    Not the sum of the blanks: DASHDOT's period holds two 0.508 mm gaps, and
+    summing them told the floor the gap was twice its real size -- so the check
+    that exists to keep a gap printable was enforcing half of what it promised.
+    """
+    lt = doc.linetypes.get(name)
+    vals = [t.value for t in lt.pattern_tags.tags if t.code == 49]
+    gaps = [-v for v in vals if v < 0]
+    return max(gaps) if gaps else 0.0
+
+
+def _SPAN(msp):
+    """Span of the PART, ignoring annotation -- what sets the sheet's reduction."""
+    from ezdxf.bbox import extents
+    bb = extents(e for e in msp
+                 if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
+    if not bb.has_data:
+        return 1.0
+    return max(bb.extmax[0] - bb.extmin[0], bb.extmax[1] - bb.extmin[1], 1.0)
+
+
+# Note block width, as a multiple of the part span. 1.25 was useless: _note's
+# 1.2 mm text floor makes any long token plateau at 1.242, so the ceiling sat
+# 0.6% above the very case it was written for and only fired past a 90-character
+# token. The widest sheet shipped is a single tile at 1.153, so 1.20 leaves it
+# 4% of room and still rejects the plateau.
+NOTE_WIDTH_CEILING = 1.20
+
+
+def _verify_note_block_fits(doc, stem):
+    """The note must not be the widest thing on the sheet.
+
+    _note's escape hatch is real: when the 1.2 mm text floor binds it widens the
+    column to keep the longest token whole, and the block can then run past the
+    part -- which is how the whole page-scale problem started.
+
+    Measured with `extents`, which is the SAME call that decides the sheet's
+    scale, so the number here is the number that matters. An earlier version
+    estimated the width from a per-character advance and read every sheet at
+    0.78-0.83; measured properly they run 0.88-1.15, and the ceiling it claimed
+    to enforce was about 1.5x looser than it said. Estimating the input to a
+    check whose whole subject is that same estimate is how that happens.
+    """
+    from ezdxf.bbox import extents
+    msp = doc.modelspace()
+    notes = [e for e in msp
+             if e.dxftype() == "TEXT" and e.dxf.layer in ("NOTE", "MASK")]
+    if not notes:
+        return
+    span = _SPAN(msp)
+    nb = extents(notes)
+    if not nb.has_data:
+        return
+    widest = nb.extmax[0] - nb.extmin[0]
+    assert widest <= span * NOTE_WIDTH_CEILING, (
+        f"{stem}: the note block is {widest:.0f} mm against a {span:.0f} mm part "
+        f"({widest/span:.2f}x) -- it, not the part, will set the sheet scale. "
+        f"See _note")
+
+
+def _verify_no_overprinted_text(doc, stem):
+    """Annotation that lands on other annotation is unreadable on the sheet.
+
+    Guards the collision class that hand-placed anchors create when the geometry
+    under them moves: the base's MASK paragraph is anchored a fixed distance
+    above the part note, so it overprints the moment that note wraps to more
+    lines than the gap allows.
+
+    Deliberately narrow, and worth knowing the limits of. It compares TEXT to
+    TEXT only, so a note over a part outline or a witness line is invisible to
+    it; it uses an under-estimated advance so it favours silence over false
+    alarms; and it sees only the DXF, so it can say nothing about the tile shop
+    PDF, which is drawn independently -- that layout is held by
+    _assert_dims_outside_nest instead.
+    """
+    boxes = [(_text_extent(e), e.dxf.text) for e in doc.modelspace()
+             if e.dxftype() == "TEXT" and e.dxf.layer in ("NOTE", "MASK")]
+    for i, (a, ta) in enumerate(boxes):
+        for b, tb in boxes[i + 1:]:
+            if a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]:
+                raise AssertionError(
+                    f"{stem}: printed text overprints text -- "
+                    f"{ta[:40]!r} and {tb[:40]!r} share the same space")
+
+
 def _verify_drawing_package(with_pdf=True):
     import inspect, zipfile
     import ezdxf
 
     stems = [n for n, _ in DXF_PARTS]
+
+    # --- #999: the corner-join fix must still be doing something --------------
+    # _seal_path_seams() closes the open outlines so the PDF mitres their
+    # corners. If a future ezdxf hands them over as LineCollections, or hands
+    # them over already closed, it silently seals nothing and the notch returns
+    # on a package nobody re-reads at 600 dpi. These counts are the alarm.
+    _verify_paint_bom()
+
+    if with_pdf:
+        pq = os.path.join(OUT, "segno_paint_quote.pdf")
+        assert os.path.exists(pq), "segno_paint_quote.pdf was not written"
+        got = PAINT_PAGES.get("segno_paint_quote")
+        assert got == PAINT_PAGES_EXPECTED, (
+            f"segno_paint_quote.pdf has {got} of {PAINT_PAGES_EXPECTED} pages -- "
+            f"a page failed after the file was opened, and segno_pintura.zip "
+            f"would ship it truncated")
+        # and count what is actually ON DISK: the line above only proves what the
+        # writer believed. Overwriting the file afterwards, or truncating it to
+        # zero bytes, left the run green.
+        on_disk = _pdf_page_count(pq)
+        assert on_disk == PAINT_PAGES_EXPECTED, (
+            f"segno_paint_quote.pdf holds {on_disk} pages on disk, not "
+            f"{PAINT_PAGES_EXPECTED} -- the file was replaced or truncated after "
+            f"it was written")
+
+    if with_pdf:
+        for stem in stems:
+            assert stem in SEALED, \
+                f"{stem}: no PDF was drawn, so the corner-join fix never ran"
+            assert SEALED[stem] == SEALED_EXPECTED[stem], (
+                f"{stem}: sealed {SEALED[stem]} outlines, expected "
+                f"{SEALED_EXPECTED[stem]} -- either the part changed (update "
+                f"SEALED_EXPECTED deliberately) or _seal_path_seams stopped "
+                f"finding the outlines and the lower-left corners are notched "
+                f"again (#999)")
 
     # --- R5/R6: nothing ships on a default material or quantity ---------------
     sig = inspect.signature(dxf_to_pdf)
@@ -4967,7 +7051,7 @@ def _verify_drawing_package(with_pdf=True):
         assert stem in PART_SPECS, f"{stem} has no PART_SPECS row (material/qty/package)"
         mat, qty, pkg = PART_SPECS[stem]
         assert mat and isinstance(qty, int) and qty >= 1, f"{stem}: bad material/qty {mat!r}/{qty!r}"
-        assert pkg in (PKG_SHEETMETAL, PKG_OVERLAY), f"{stem}: unknown package {pkg!r}"
+        assert pkg in (PKG_SHEETMETAL, PKG_OVERLAY, PKG_TILES), f"{stem}: unknown package {pkg!r}"
     assert PART_SPECS["segno_post"][0] == STEEL_CR and PART_SPECS["segno_post"][1] == 2, \
         "the support post is 1.6 mm cold-rolled steel x2, per MANUFACTURING.md section 1"
     assert PART_SPECS["segno_corner_bracket_rear"][1] == 2, "corner bracket is x2"
@@ -5009,6 +7093,9 @@ def _verify_drawing_package(with_pdf=True):
             continue
         doc = ezdxf.readfile(dxf)
         used = {e.dxf.layer for e in doc.modelspace()}
+        _verify_dash_legibility(doc, stem)
+        _verify_no_overprinted_text(doc, stem)
+        _verify_note_block_fits(doc, stem)
 
         # --- R1: every through-cut layer present renders black -----------------
         black = _force_pdf_layer_colours(doc)   # asserts internally; also proves no
@@ -5115,6 +7202,9 @@ def _verify_drawing_package(with_pdf=True):
             assert {os.path.splitext(n)[0] for n in z.namelist()} == other, \
                 "segno_overlay.zip must carry exactly the non-metal die-cut parts"
 
+    if os.path.exists(os.path.join(OUT, "segno_pedal_tiles.dxf")):
+        _verify_tile_package(with_pdf=with_pdf)
+
 def write_rear_io_stations():
     """Publish the rear-panel station list for the CONSOLE BOARD generator (#747).
 
@@ -5153,6 +7243,20 @@ def main(argv):
     print("Rear I/O stations: out/%s" % os.path.basename(write_rear_io_stations()))
     if "--report" in argv:
         return
+    if "--tiles-only" in argv:
+        os.makedirs(OUT, exist_ok=True)
+        stems = build_pedal_tile_vectors(with_pdf="--no-pdf" not in argv)
+        print("\nPedal name tiles (2-ply vector, x%d -- TRAPEZOID %.2f(back)/%.2f(toe)\n"
+              "  x %.2f x %.1f mm bicapa; wide edge to the cable end):\n"
+              "  out/segno_pedal_tiles.dxf + %d singles"
+              % (len(stems), TILE_L_BACK, TILE_L_TOE, TILE_W, TILE_PLY_T, len(stems)))
+        for z in build_quote_packages(with_step=False, with_pdf="--no-pdf" not in argv,
+                                      tiles_only=True):
+            print("Quote package: out/" + os.path.basename(z))
+        print("\nDrawing/package assertions ...", end=" ")
+        _verify_tile_package(with_pdf="--no-pdf" not in argv)
+        print("ALL PASS")
+        return
     os.makedirs(OUT, exist_ok=True)
     layout_svg(os.path.join(HERE, "segno_panel_layout.svg"))
     print("\nAnnotated layout: segno_panel_layout.svg")
@@ -5161,31 +7265,30 @@ def main(argv):
         dxf = os.path.join(OUT, name + ".dxf"); fn(dxf)
         print("  out/" + name + ".dxf")
         if "--no-pdf" not in argv and name not in NO_PDF:
-            try:
-                mat, qty, _pkg = PART_SPECS[name]
-                dxf_to_pdf(dxf, os.path.join(OUT, name + ".pdf"),
-                           title=f"{PART_TITLES_ES[name]}  [{name}]",
-                           material=mat, qty=qty, stem=name)
-                print("  out/" + name + ".pdf")
-            except Exception as e:  # pragma: no cover
-                print(f"    (pdf skipped: {e})")
+            mat, qty, _pkg = PART_SPECS[name]
+            dxf_to_pdf(dxf, os.path.join(OUT, name + ".pdf"),
+                       title=f"{PART_TITLES_ES[name]}  [{name}]",
+                       material=mat, qty=qty, stem=name)
+            print("  out/" + name + ".pdf")
+    tile_stems = build_pedal_tile_vectors(with_pdf="--no-pdf" not in argv)
+    print("  out/segno_pedal_tiles.dxf  (2-ply nest, x%d)" % len(tile_stems))
     if "--no-pdf" not in argv:
-        try:
-            paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
-            print("\nPaint quote sheet: out/segno_paint_quote.pdf")
-        except Exception as e:  # pragma: no cover
-            print(f"\n(paint quote skipped: {e})")
+        print("  out/segno_pedal_tiles.pdf")
     steps_built = "--no-step" not in argv
     if "--no-step" not in argv:
         try:
             d = build_diffuser_step()
-            print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
+            n_pill = sum(1 for lb, _u, _v in PEDALS if _has_led(lb))
+            print("\nLED diffuser insert (3D print, x%d -- %d LEDs each off a %.2f mm\n"
+                  "  cut of 144/m strip): out/%s (+ .stl)"
+                  % (n_pill, LED_STRIP_N, LED_STRIP_SEG, os.path.basename(d)))
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             tiles = build_pedal_name_tiles()
-            print("Pedal name tiles (3D print, x%d -- print FACE-DOWN, filament\n"
+            print("Pedal name tiles (3D print, x%d -- TRAPEZOID %.2f(back)/%.2f(toe)\n"
+                  "  x %.2f, wide edge to the cable end; print FACE-DOWN, filament\n"
                   "  change at z=%.1f: white glyphs then black body): out/%s.step ..."
-                  % (len(tiles), TILE_TEXT_T, tiles[0]))
+                  % (len(tiles), TILE_L_BACK, TILE_L_TOE, TILE_W, TILE_TEXT_T, tiles[0]))
             rd = build_ring_disc_step()
             print("Ring centre disc (2.0 Al, x1): out/" + os.path.basename(rd))
             kb = build_encoder_knob_step()
@@ -5209,6 +7312,14 @@ def main(argv):
         # anything else is a real build failure: let it crash the run. The old
         # blanket `except Exception` swallowed a NameError here for weeks and
         # shipped stale tower/stand/fit-test STEPs while printing EXIT=0.
+    # AFTER the STEP build, deliberately. Its "Tamaño (mm)" column comes from
+    # _step_size, which reads out/*.step -- run before them and every row on the
+    # coater's sheet says "-". The committed file only ever showed sizes because
+    # a stale STEP happened to be on disk; on a clean tree it did not reproduce.
+    if "--no-pdf" not in argv:
+        paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
+        print("\nPaint quote sheet: out/segno_paint_quote.pdf")
+
     for z in build_quote_packages(with_step=steps_built,
                                   with_pdf="--no-pdf" not in argv):
         print("Quote package: out/" + os.path.basename(z))

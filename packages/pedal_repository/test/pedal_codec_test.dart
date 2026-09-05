@@ -349,7 +349,7 @@ void main() {
           expect(p2.mode, PedalMode.play);
           expect(p2.trackLeds, [
             for (final led in p3.trackLeds)
-              led == PedalTrackLed.blue ? PedalTrackLed.green : led,
+              if (led == PedalTrackLed.blue) PedalTrackLed.green else led,
           ]);
         },
       );
@@ -458,7 +458,7 @@ void main() {
             .copyWith(countingIn: true);
         final degradedLeds = [
           for (final led in rich.trackLeds)
-            led == PedalTrackLed.blue ? PedalTrackLed.green : led,
+            if (led == PedalTrackLed.blue) PedalTrackLed.green else led,
         ];
 
         // v1 wire: mode degrades to play, blue chain LEDs degrade to

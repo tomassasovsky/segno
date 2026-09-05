@@ -98,6 +98,25 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
   but the committed bindings are canonical `dart format` (tall) style. Without
   it, every regen rewrites the whole file and buries the real diff. With it,
   regens are field-scoped regardless of your local SDK's formatter version.
+- **FFI symbol parity — the skew a clean build will not catch.** Dart reaches
+  the engine only through `dlsym`, which resolves at *first call*. A bundle
+  whose bindings name an entry point its `libsegno_engine.so` does not export
+  therefore compiles, packages, installs and launches — then throws
+  `Failed to lookup symbol '...'` on the device, on whatever path reaches it
+  first. That is not theoretical: the appliance threw 137 such exceptions on
+  2026-08-25, across six app starts, off a *periodic* timer -- so it repeated
+  for as long as each run lasted -- from a bundle whose halves came from
+  different trees. Compare the two lists against a built library with:
+  ```sh
+  packages/segno_engine/tool/check_ffi_symbols.sh <path-to-libsegno_engine.so>
+  ```
+  Both Linux CI jobs run it against the bundle they just built, and
+  `build-arm64-bundle.sh` runs it before the bundle can be deployed or staged
+  for Yocto, so ordinary work should never see it fail. It is worth running by
+  hand after a regen if you are about to hand-stage a bundle. The check is
+  itself tested (`bash packages/segno_engine/tool/test/run_check_ffi_symbols_tests.sh`),
+  including that it **fails closed**: if ffigen's emitted call shape ever drifts
+  out from under the extractor, it aborts rather than quietly checking a subset.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
