@@ -32,7 +32,23 @@ class TrackColumn extends StatelessWidget {
     super.key,
   });
 
-  /// The track this column renders.
+  /// The track this column renders — every fact drawn here comes from it
+  /// except the meter's level.
+  ///
+  /// **The level comes from the ambient [LooperBloc], for `track.channel`.**
+  /// That is the rebuild split (#646/#654/#832): the [TrackPeakMeter] leaf
+  /// subscribes to the one moving number itself, so this instance may carry a
+  /// tick-stale `peak` and the column still draws correctly — and so a meter
+  /// tick redraws a bar instead of this whole tile.
+  ///
+  /// The cost of that is a real constraint on callers: a column is a LIVE
+  /// view, not a function of its argument. Passing a [Track] that is not the
+  /// bloc's own track for that channel — a synthesized preview, a session or
+  /// preset snapshot, a frozen "before" state in an A/B — draws that track's
+  /// steady facts under the rig's current level, or under no level at all for
+  /// a channel the rig does not have. Such a surface needs its own meter
+  /// widget, not this one. Enforced by an assert in [build], so the mistake
+  /// fails loudly in debug instead of rendering perfectly and lying.
   final Track track;
 
   /// The FX stage the footswitch bound to this cell attaches to, in FX mode.
@@ -62,7 +78,7 @@ class TrackColumn extends StatelessWidget {
   /// The track's resolved display name.
   final String name;
 
-  /// Whether this column is the selected one (a heavier white border).
+  /// Whether this column is selected (a white rather than card-colored ring).
   final bool selected;
 
   /// The active system mode (Record vs Mute).
@@ -87,10 +103,31 @@ class TrackColumn extends StatelessWidget {
     final looper = theme.extension<LooperTheme>()!;
     final surface = context.surface;
     final bloc = context.read<LooperBloc>();
+    // Debug-only enforcement of the live-view rule on [track]. The meter reads
+    // its level out of THIS bloc by channel, so handing a column a track the
+    // bloc does not hold draws one track's facts under another's level — a
+    // mis-wiring that renders perfectly and is invisible in a screenshot.
+    //
+    // Compared as `SteadyTrack`, not by `listEquals` on the prop lists: the
+    // comparison has to be Equatable-deep, because `_project` builds a fresh
+    // `lanes` literal every poll and a shallow list compare would call two
+    // value-equal projections one tick apart different — rejecting the
+    // tick-stale instance this widget is DESIGNED to be handed. Steady, so a
+    // stale `peak` stays legal, which is the whole point of the split.
+    assert(
+      () {
+        final live = bloc.state.tracks.where((t) => t.channel == track.channel);
+        if (live.length != 1) return false;
+        return SteadyTrack(live.first) == SteadyTrack(track);
+      }(),
+      'TrackColumn was given a Track the ambient LooperBloc does not hold '
+      '(channel ${track.channel}). A column is a live view of that bloc, not '
+      'a function of its argument — see TrackColumn.track.',
+    );
 
-    // The border is always white; selection only changes its weight. The meter
-    // bar color is one table lookup on the track's meter state (muted included;
-    // see LooperTheme.meterColors).
+    // The ring is always 2px; selection changes it from the card stroke to
+    // white. The meter bar color is one table lookup on the track's meter state
+    // (muted included; see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final isFx = mode == InteractionMode.fx;
     // FX mode recedes the meter to 40% alpha so the chain dressing reads on top
@@ -182,12 +219,11 @@ class TrackColumn extends StatelessWidget {
       decoration: BoxDecoration(
         color: looper.tileBackground,
         borderRadius: BorderRadius.circular(17),
-        // Selected: a 4px white ring (onAccent == pure white). Unselected: a
-        // 1px near-black hairline (the pen's card stroke #17171b, the `card`
-        // token's near-black) — not borderless.
+        // 2px ring: white when selected (onAccent), otherwise the pen's
+        // card stroke #17171b (the `card` token) — not borderless.
         border: Border.all(
           color: selected ? surface.onAccent : surface.card,
-          width: selected ? 4 : 1,
+          width: 2,
         ),
       ),
       padding: const EdgeInsets.all(14),
@@ -263,9 +299,9 @@ class TrackColumn extends StatelessWidget {
                     // polled snapshot, a poll behind any flip another surface
                     // just made. The announcement shares the keyboard path's
                     // helper so the two cannot drift.
-                    TracksCommands(context).announceFxChainToggle(
-                      track.channel,
-                    );
+                    TracksCommands(
+                      context,
+                    ).announceFxChainToggle(track.channel);
                     bloc.add(LooperTrackChainToggled(track.channel));
                 }
               },
@@ -276,8 +312,14 @@ class TrackColumn extends StatelessWidget {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: PeakMeterBar(
-                        peak: track.peak,
+                      // The one part of the column a level tick redraws: the
+                      // bar subscribes to this channel's peak itself, so the
+                      // ~250 lines around it stay off the meter's rebuild path
+                      // (#646/#654/#832).
+                      child: TrackPeakMeter(
+                        // Live, by channel: [track]'s own `peak` is
+                        // deliberately not read here — see [track]'s doc.
+                        channel: track.channel,
                         color: barColor,
                         hasContent: track.hasContent,
                         // A stopped track reports no live peak; hold the last
@@ -377,10 +419,7 @@ class TrackColumn extends StatelessWidget {
 /// bright dots are undoable layers, grey dots are redoable ones, and faint
 /// dots are unused slots — so the white/grey boundary marks where you are.
 class _TrackHistoryDots extends StatelessWidget {
-  const _TrackHistoryDots({
-    required this.undoDepth,
-    required this.redoDepth,
-  });
+  const _TrackHistoryDots({required this.undoDepth, required this.redoDepth});
 
   final int undoDepth;
 
@@ -797,10 +836,7 @@ class _FxPowerPill extends StatelessWidget {
     final l10n = context.l10n;
     return Container(
       key: const Key('tracks_tileFxPower'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 46,
-        vertical: 16,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 46, vertical: 16),
       decoration: BoxDecoration(
         color: enabled ? surface.fx : Colors.transparent,
         borderRadius: BorderRadius.circular(999),
@@ -907,10 +943,7 @@ class _FxEntryChip extends StatelessWidget {
     return Opacity(
       opacity: bypassed ? surface.disabledOpacity : 1,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 8,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           // Neutral pills over the waveform (the pen): a dark-grey fill with a
           // hairline white border and a near-white label — NOT the FX purple,

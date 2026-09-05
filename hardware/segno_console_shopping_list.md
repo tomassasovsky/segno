@@ -52,12 +52,43 @@ Driven by the console board's own Pico 2 — there is **no separate LED-driver
 board, shifter, bulk cap or series resistor to buy**; all of that is on the v2
 board's BOM.
 
-- [ ] WS2812 **ring, 16 LEDs** ×1 — authentic Adafruit NeoPixel Ring 16
-      (44.5 mm OD; clones are 68 mm and won't fit the diffuser)
-- [ ] WS2812 **indicator pills**, 10 LEDs (one per pedal, issue #366) ×1 strip
+- [x] WS2812 **ring, 24 LEDs** — Adafruit NeoPixel **Ring 24**, 65.5 mm OD /
+      52.3 mm ID / 3.2 mm thick. **Owner already has it.** This line said
+      "Ring 16, 44.5 mm OD" until 2026-08-28 — stale since #792/#794 moved
+      the faceplate window to Ø67 and the ring board to Ø68 for the 24.
+      A Ring 16 will NOT fill the window it is now cut for
+- [ ] WS2812B **indicator pills** — **144 LEDs/m, bare/non-waterproof
+      (labelled IP20 or IP30 — the same uncoated strip either way), 12 mm
+      wide**, ×**1 m**. Cut into **10** eight-LED segments of 55.56 mm,
+      one per pedal. You need 0.556 m; 1 m covers mis-cuts.
+      Candidate: LOAMLIN WS2812B 144LED/m, 3.2 ft, **IP30 non-waterproof**,
+      white PCB, DC5V —
+      [LOAMLIN 144/m 3.2 ft](https://www.amazon.com/dp/B0BDS7NHQM), $9.99. Right part on every axis that
+      matters, and its own listing states 0.1 W/LED per colour, which confirms
+      the power model below.
+      The spec is load-bearing, not a preference:
+      **144/m** because the pill only has 3.2 mm of diffuser to spread through,
+      so anything sparser reads as separate dots (60/m is 5.2:1 — three blobs),
+      and because the pill is rendered as a gradient, which needs steps to be
+      smooth; **non-waterproof** because it is inside a sealed console and is the
+      thinnest — IP65/IP67 add 0.87/1.72 mm and push the LED further from the
+      lens.
+      ⚠️ **MEASURE THE STRIP BEFORE PRINTING THE DIFFUSERS.** The candidate's own
+      listing contradicts itself on width — product image says 12 mm, its
+      compare-with-similar row says "IP30/65 - 10mm; IP67 - 12mm". The channel
+      grips 0.4 mm per side, so 2 mm of error either jams the strip or drops it
+      straight through. Width reaches **only the 3D-printed diffuser**, never
+      anything a shop cuts, so print those after the strip lands. Confirm width,
+      pitch and PCB thickness together.
+      Note it is built from 50 cm PCBs, so there is a **solder joint every
+      50 cm**. 80 LEDs are needed of 144, so there is room to cut around it
 
 ## Power (#754 — one 20 V PD contract, two bucks)
 
+- [ ] **CTRL jacks: Neutrik NJ6FD-V ×2** — 6-pole switching 1/4" jack, vertical
+      PCB pins, rear-mounted through the panel's Ø12 hole with its snap-on cap
+      (Neutrik: panel 1.2–1.5 mm, which is why the rear panel is 1.5 mm). Solder
+      leads to T/R/S. Mouser/TME stock it; the Amazon listing is B09ZNHVYG8 (25-pack).
 - [ ] **USB-C PD panel coupler**, D punch — QIANRENON
       [B0CQ4VD2N2](https://www.amazon.com/dp/B0CQ4VD2N2) ×1 (100 W, 10 Gbps —
       the 10 Gbps grade matters: all 24 ways wired means CC reaches the trigger;
@@ -85,8 +116,8 @@ board's BOM.
 > **Everything on this list is bought from Amazon.com** (decision, 2026-08-17).
 > A MercadoLibre comparison was run and is in git history at `d5295b69` /
 > `1621f676` if local sourcing ever comes back up; the one finding worth keeping
-> is that a plain local 6.35 chassis jack will NOT fit the Ø24 D punch — see the
-> TRS note in the design doc.
+> is that a plain local 6.35 chassis jack will NOT fit a D punch. Moot since
+> 2026-09-04: the CTRL jacks are Neutrik NJ6FD-V in a plain Ø12 hole (#993).
 
 - The power budget is [`segno_wiring.md` §2](segno_wiring.md) — canonical since
   #754.

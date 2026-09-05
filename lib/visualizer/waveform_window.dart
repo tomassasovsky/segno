@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:screen_retriever/screen_retriever.dart';
+import 'package:segno/appliance/power_off/power_off_goodbye.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
@@ -352,11 +353,23 @@ class WaveformWindowApp extends StatelessWidget {
               return ConsoleVolumeOverlay(
                 readout: readoutData,
                 onControl: onControl,
-                builder: (context, openMixer) => ConsoleReadoutView(
-                  readout: readoutData,
-                  waveform: waveform,
-                  onMix: openMixer,
-                ),
+                builder: (context, openMixer) {
+                  final readout = ConsoleReadoutView(
+                    readout: readoutData,
+                    waveform: waveform,
+                    onMix: openMixer,
+                  );
+                  if (readoutData.goodbye != ReadoutGoodbye.mark) {
+                    return readout;
+                  }
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      readout,
+                      const PowerOffGoodbye(face: ReadoutGoodbye.mark),
+                    ],
+                  );
+                },
               );
             },
           ),

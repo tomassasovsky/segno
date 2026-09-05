@@ -65,7 +65,7 @@ class _WifiPageState extends State<WifiPage> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () =>
-            unawaited(Navigator.of(context).maybePop()),
+            Navigator.of(context).maybePop(),
       },
       child: Focus(
         autofocus: true,

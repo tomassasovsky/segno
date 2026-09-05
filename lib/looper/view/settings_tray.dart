@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/bluetooth/bluetooth_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -17,7 +18,8 @@ import 'package:wifi_repository/wifi_repository.dart';
 /// [TrayPanel]: a persistent navigation rail down the left, and the
 /// destination it selects (the eight domains; brightness opens a
 /// popover instead)
-/// filling the rest. Tap the scrim or drag the handle back up to dismiss.
+/// filling the rest. Tap or drag the handle back up to dismiss; taps on the
+/// backdrop or unused panel space leave the tray open.
 ///
 /// Hand-rolled (not the `anydrawer` package's route-based drawer): the
 /// slide needs to track the drag continuously, following the finger frame
@@ -109,7 +111,6 @@ class _SettingsTrayState extends State<SettingsTray> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final state = context.watch<SettingsTrayCubit>().state;
     final cubit = context.read<SettingsTrayCubit>();
     final motion = _dragging || MediaQuery.disableAnimationsOf(context)
@@ -125,30 +126,18 @@ class _SettingsTrayState extends State<SettingsTray> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // The scrim: a flat dim, opacity-animated (it never moves — only
-        // ever fades) — dismisses on tap, hit-testable (and in the
-        // semantics tree — IgnorePointer.ignoringSemantics mirrors
-        // `ignoring` by default) only once the tray has any visible extent,
-        // so it never blocks touches to TracksView, or a screen reader's
-        // tap-to-dismiss, while fully closed.
+        // A visual dim that blocks the stage while the tray is visible.
+        // Dismissal belongs to the handle; the backdrop has no action or
+        // button semantics, so a missed control cannot close the tray.
         Positioned.fill(
           child: IgnorePointer(
             ignoring: state.dragProgress <= 0,
-            child: GestureDetector(
+            child: AnimatedOpacity(
               key: const Key('settingsTray_scrim'),
-              behavior: HitTestBehavior.opaque,
-              onTap: cubit.closeTray,
-              child: Semantics(
-                button: true,
-                label: l10n.dismiss,
-                child: AnimatedOpacity(
-                  duration: motion,
-                  // The scrim token carries its own alpha, so the drag drives
-                  // opacity directly rather than through a second 0.5 factor.
-                  opacity: state.dragProgress,
-                  child: ColoredBox(color: context.surface.scrim),
-                ),
-              ),
+              duration: motion,
+              // The scrim token already carries its own alpha.
+              opacity: state.dragProgress,
+              child: ColoredBox(color: context.surface.scrim),
             ),
           ),
         ),
@@ -265,16 +254,15 @@ class _TrayHandle extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final tint = Color.lerp(surface.textTertiary, surface.accent, progress)!;
-    return Semantics(
-      button: true,
-      label: l10n.a11yTrayHandle,
+    return FocusableTapTarget(
+      key: const Key('settingsTray_handle'),
+      semanticLabel: progress > 0 ? l10n.close : l10n.a11yTrayHandle,
+      onTap: onTap,
       child: GestureDetector(
-        key: const Key('settingsTray_handle'),
         behavior: HitTestBehavior.opaque,
         onVerticalDragStart: (_) => onDragStart(),
         onVerticalDragUpdate: (details) => onDragUpdate(details.delta.dy),
         onVerticalDragEnd: (_) => onDragEnd(),
-        onTap: onTap,
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 8),

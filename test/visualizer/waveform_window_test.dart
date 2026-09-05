@@ -361,6 +361,29 @@ void main() {
       expect(view.width, shell.width);
     });
 
+    testWidgets('PerformanceReadout.goodbye covers the panel with the mark', (
+      tester,
+    ) async {
+      final frame = ValueNotifier<WaveformFrame>(
+        (samples: Float32List(0), progress: 0, selectedTrack: ''),
+      );
+      final readout = ValueNotifier<PerformanceReadout>(
+        const PerformanceReadout(goodbye: ReadoutGoodbye.mark),
+      );
+      addTearDown(frame.dispose);
+      addTearDown(readout.dispose);
+      await tester.pumpWidget(
+        WaveformWindowApp(
+          frame: frame,
+          readout: readout,
+          title: 'Segno — Output',
+        ),
+      );
+      addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
+
+      expect(find.byKey(const Key('power_off_mark')), findsOneWidget);
+    });
+
     testWidgets(
       'the MIX pill opens the volume overlay and its commands reach '
       'onControl',

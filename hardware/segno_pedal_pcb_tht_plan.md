@@ -118,6 +118,14 @@ The buck is required for the LED ring in standalone.
 
 ## 4. Ring / encoder board — module-hosting, all-THT respin
 
+> **SUPERSEDED for new builds (#794).** What follows describes the **Ø60** disc
+> built around a **Ring 16**. That board was re-cut to **Ø68 for the Ring 24**:
+> the three M3 holes moved from r=26 to r=22, and J3's pads moved to the Ring
+> 24's pad circle. Units already built to the Ø60 board keep the pattern below,
+> which is why it is kept — but order to `hardware/MANUFACTURING.md`, not to this
+> section.
+
+
 The original 32× WS2812-2020 SMD ring was dropped (miserable to hand-solder; the
 2020 LED + EC11 also lack 3D models in KiCad 10). Replaced with a board that
 **hosts an off-the-shelf 16-LED WS2812-5050 NeoPixel ring module** and is

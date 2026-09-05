@@ -19,7 +19,9 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
+import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -52,6 +54,13 @@ final Finder _chromeProbe = find.byKey(
   const Key('tracks_settings_secondaryTap'),
 );
 
+/// The rebuild probe for one track column: `_TrackSlot` builds its
+/// [TrackColumn] fresh on every run, so the same instance across a pump means
+/// that slot did not re-run.
+Finder _column(int channel) => find.byWidgetPredicate(
+  (widget) => widget is TrackColumn && widget.track.channel == channel,
+);
+
 void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
@@ -63,6 +72,7 @@ void main() {
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
+  late PedalRepository pedalRepo;
 
   setUp(() {
     // The toast registry is module-level and survives between tests; a stale
@@ -113,7 +123,7 @@ void main() {
     ).thenReturn(EngineResult.ok);
     // The real control cubit: it owns the system mode/cursor/bank the view
     // reads, and the M key / mode chip / number keys drive it.
-    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    pedalRepo = PedalRepository(const NoopPedalTransport());
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),
@@ -174,6 +184,7 @@ void main() {
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<PerformanceRepository>.value(value: performance),
             RepositoryProvider<SettingsRepository>.value(value: settings),
+            RepositoryProvider<PedalRepository>.value(value: pedalRepo),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -581,8 +592,15 @@ void main() {
       required InteractionMode mode,
       FxAddress? fxTarget,
       Map<int, String> inputNames = const {},
+      Track? liveTrack,
     }) {
-      seed(LooperState(tracks: [track]));
+      // [track] is seeded as the bloc's OWN track for its channel, not just
+      // handed to the widget. A column is a live view: its meter reads the
+      // level for `track.channel` out of the ambient bloc (see
+      // `TrackColumn.track`), so a harness that let the two disagree would
+      // make every meter assertion here true for the wrong reason.
+      // [liveTrack] exists only to break that on purpose.
+      seed(LooperState(tracks: [liveTrack ?? track]));
       return tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.neon,
@@ -639,6 +657,74 @@ void main() {
       // chain's head effect — never GUITAR as the cell identity.
       expect(find.text('TRACK 3 · FILTER'), findsOneWidget);
       expect(find.text('GUITAR'), findsNothing);
+    });
+
+    testWidgets('a value-equal Track from an EARLIER poll is accepted', (
+      tester,
+    ) async {
+      // The instance a column is handed is a tick old by design: the slot
+      // above it only rebuilds when the STEADY facts change, so it keeps
+      // passing the projection from whichever poll last changed them, while
+      // `_project` builds a fresh `lanes` list literal every tick. The guard
+      // therefore has to be Equatable-deep — a shallow compare of the prop
+      // lists calls two value-equal projections different and red-screens the
+      // stage on the next theme rebuild.
+      // `List.of`, not a literal: a const literal would be canonicalised into
+      // the same instance both times and make this test vacuous, which is
+      // exactly what the analyzer would rather have here.
+      Track projected({required double peak}) => Track(
+        peak: peak,
+        lanes: List.of(const [Lane(inputChannel: 0)]),
+        effects: List.of([BuiltInEffect(type: TrackEffectType.drive)]),
+      );
+
+      await pumpColumn(
+        tester,
+        name: 'DRUMS',
+        mode: InteractionMode.record,
+        track: projected(peak: 0),
+        // Same facts, new lists, and a level that has moved since — exactly
+        // what the rig looks like one poll later.
+        liveTrack: projected(peak: 0.9),
+      );
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a channel the bloc does not hold trips the live-view assert', (
+      tester,
+    ) async {
+      // A snapshot surface — a saved 8-channel session on a 2-channel rig —
+      // would otherwise draw a permanently flat meter per missing channel,
+      // silently, in debug and release alike.
+      await pumpColumn(
+        tester,
+        name: 'GUITAR',
+        mode: InteractionMode.record,
+        track: const Track(channel: 5),
+        liveTrack: const Track(),
+      );
+
+      expect(tester.takeException(), isA<AssertionError>());
+    });
+
+    testWidgets('a Track the bloc does not hold trips the live-view assert', (
+      tester,
+    ) async {
+      // The rule the doc on `TrackColumn.track` states, enforced instead of
+      // asked for: the meter reads its level out of the ambient bloc by
+      // channel, so a column handed a track that bloc does not hold draws one
+      // track's facts under another's level — and renders perfectly while
+      // doing it. Nothing on screen, and no screenshot, would show it.
+      await pumpColumn(
+        tester,
+        name: 'GUITAR',
+        mode: InteractionMode.record,
+        track: const Track(muted: true),
+        liveTrack: const Track(),
+      );
+
+      expect(tester.takeException(), isA<AssertionError>());
     });
 
     testWidgets('a bound chain targeting a NON-track stage reads that stage, '
@@ -1113,7 +1199,9 @@ void main() {
       );
     });
 
-    testWidgets('the tile border is white only when selected', (tester) async {
+    testWidgets('the tile uses a 2px ring with selection color', (
+      tester,
+    ) async {
       control.selectTrack(0);
       seed(
         const LooperState(
@@ -1125,7 +1213,7 @@ void main() {
       );
       await pump(tester);
 
-      Color borderColor(int channel) {
+      BorderSide borderSide(int channel) {
         final tile = tester.widget<Container>(
           find
               .ancestor(
@@ -1134,15 +1222,21 @@ void main() {
               )
               .first,
         );
-        return ((tile.decoration! as BoxDecoration).border! as Border)
-            .top
-            .color;
+        return ((tile.decoration! as BoxDecoration).border! as Border).top;
       }
 
-      expect(borderColor(0), Colors.white); // selected: 4px white ring
-      // Unselected: the pen's 1px near-black card hairline (the `card` token),
+      final selectedSide = borderSide(0);
+      expect(selectedSide.color, Colors.white);
+      expect(selectedSide.width, 2);
+
+      // Unselected: the pen's 2px near-black card stroke (the `card` token),
       // not borderless.
-      expect(borderColor(1), AppTheme.neon.extension<SurfaceTheme>()!.card);
+      final unselectedSide = borderSide(1);
+      expect(
+        unselectedSide.color,
+        AppTheme.neon.extension<SurfaceTheme>()!.card,
+      );
+      expect(unselectedSide.width, 2);
     });
 
     testWidgets('track tiles have no glow shadow', (tester) async {
@@ -1387,6 +1481,20 @@ void main() {
         findsOneWidget,
       );
       handle.dispose();
+    });
+  });
+
+  group('layout', () {
+    testWidgets('positions the status bar at the 8px stage top inset', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      final stageTop = tester.getTopLeft(find.byType(TracksView)).dy;
+      final statusBarTop = tester.getTopLeft(find.byType(StageStatusBar)).dy;
+
+      expect(statusBarTop - stageTop, 8);
     });
   });
 
@@ -1761,12 +1869,12 @@ void main() {
 
       final before = tester.widget<GestureDetector>(_chromeProbe);
 
-      // Exactly what a moving meter emits: same structure, new levels and a
-      // new playhead. Nothing the chrome renders depends on any of it.
+      // Exactly what a moving meter emits: same structure, new levels.
+      // Nothing the chrome renders depends on any of it.
       const loud = LooperState(
         tracks: [
-          Track(rms: 0.8, peak: 0.9, playheadFrames: 4410),
-          Track(channel: 1, rms: 0.5, peak: 0.6, playheadFrames: 4410),
+          Track(peak: 0.9),
+          Track(channel: 1, peak: 0.6),
         ],
         status: EngineStatus(isConnected: true),
       );
@@ -1782,6 +1890,135 @@ void main() {
             'live audio fields (see #646)',
       );
     });
+
+    testWidgets('a level-only change rebuilds no column, only the bar', (
+      tester,
+    ) async {
+      // One level deeper than the chrome guard above, and the half #832 did
+      // not deliver while the transport ran: a moving level must not rebuild
+      // the ~250-line tile around it either. `_TrackSlot` creates its
+      // TrackColumn fresh on every run, so widget identity is an honest
+      // rebuild detector here too.
+      const quiet = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 96000),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+        ],
+        status: EngineStatus(isConnected: true),
+      );
+      seedStream(quiet);
+      await pump(tester);
+
+      final before = tester.widget<TrackColumn>(_column(0));
+      final other = tester.widget<TrackColumn>(_column(1));
+
+      const loud = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 96000, peak: 0.9),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+        ],
+        status: EngineStatus(isConnected: true),
+      );
+      when(() => bloc.state).thenReturn(loud);
+      states.add(loud);
+      await tester.pump();
+
+      expect(
+        identical(other, tester.widget<TrackColumn>(_column(1))),
+        isTrue,
+        reason:
+            "track 0's meter tick rebuilt track 1's column -- a per-track "
+            'field is leaking into every column (see #646)',
+      );
+      expect(
+        identical(before, tester.widget<TrackColumn>(_column(0))),
+        isTrue,
+        reason:
+            "track 0's own column rebuilt for a level -- the slot is still "
+            'comparing the whole Track instead of its steady slice',
+      );
+      // ...and the level still got through, to the one widget that draws it.
+      expect(
+        tester
+            .widget<PeakMeterBar>(
+              find.descendant(
+                of: find.byKey(const Key('tracks_tile_0')),
+                matching: find.byType(PeakMeterBar),
+              ),
+            )
+            .peak,
+        0.9,
+      );
+    });
+
+    for (final change in [
+      (
+        name: 'content',
+        before: const Track(state: TrackState.recording),
+        after: const Track(state: TrackState.recording, lengthFrames: 1),
+      ),
+      (
+        name: 'recording state',
+        before: const Track(),
+        after: const Track(state: TrackState.recording),
+      ),
+      (
+        name: 'recording length',
+        before: const Track(state: TrackState.recording, lengthFrames: 1),
+        after: const Track(state: TrackState.recording, lengthFrames: 2),
+      ),
+      (name: 'mute', before: const Track(), after: const Track(muted: true)),
+      (
+        name: 'input routing',
+        before: const Track(),
+        after: const Track(inputMask: 0x2),
+      ),
+      (
+        name: 'output routing',
+        before: const Track(),
+        after: const Track(outputMask: 0x4),
+      ),
+      (
+        name: 'FX',
+        before: const Track(),
+        after: Track(effects: [BuiltInEffect(type: TrackEffectType.drive)]),
+      ),
+    ]) {
+      testWidgets('a ${change.name} change updates only its column', (
+        tester,
+      ) async {
+        // Keep the global active-transport chrome steady while track 0 changes.
+        const otherTrack = Track(
+          channel: 1,
+          state: TrackState.playing,
+          lengthFrames: 96000,
+        );
+        seedStream(LooperState(tracks: [change.before, otherTrack]));
+        await pump(tester);
+        final before = tester.widget<TrackColumn>(_column(0));
+        final other = tester.widget<TrackColumn>(_column(1));
+
+        final next = LooperState(tracks: [change.after, otherTrack]);
+        when(() => bloc.state).thenReturn(next);
+        states.add(next);
+        await tester.pump();
+
+        final updated = tester.widget<TrackColumn>(_column(0));
+        expect(identical(before, updated), isFalse);
+        expect(updated.track, change.after);
+        expect(
+          identical(other, tester.widget<TrackColumn>(_column(1))),
+          isTrue,
+        );
+        final meter = tester.widget<PeakMeterBar>(
+          find.descendant(
+            of: _column(0),
+            matching: find.byType(PeakMeterBar),
+          ),
+        );
+        expect(meter.hasContent, change.after.hasContent);
+      });
+    }
 
     testWidgets('a structural change still rebuilds the chrome', (
       tester,

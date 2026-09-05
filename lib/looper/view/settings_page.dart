@@ -90,7 +90,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () =>
-            unawaited(Navigator.of(context).maybePop()),
+            Navigator.of(context).maybePop(),
       },
       child: Focus(
         autofocus: true,

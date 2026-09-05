@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -57,21 +58,12 @@ class TrayNavigationRail extends StatelessWidget {
   static const List<SettingsTrayDestination> domains =
       SettingsTrayDestination.values;
 
-  /// The glyph for [destination] — every one of them what the pen's SCREENS
-  /// draw, not what its `NavRail` component names.
+  /// The glyph for [destination]. Custom symbols follow the pen's screens
+  /// rather than the stale Lucide names in its `NavRail` component. Network
+  /// uses the owner's preferred Cupertino WiFi icon.
   ///
-  /// Those two disagree, and the disagreement is why this rail was wrong
-  /// twice. `ctaGc`'s `NavItem` instances carry lucide names — `activity`,
-  /// `gamepad-2`, `align-justify`, `target` — and every screen draws something
-  /// else in their place: a sine rather than a jagged pulse, upright bars
-  /// rather than horizontal rules, a speaker with waves rather than a cabinet,
-  /// a chip rather than a gear. The screens are what a person looks at, so the
-  /// screens win and the component's names are stale defaults.
-  ///
-  /// Four of them are no lucide glyph at all and are drawn from the pen's own
-  /// geometry — see [PenIcon]. The five that ARE stock come from the font,
-  /// which is why this returns a widget rather than an `IconData`: one rail,
-  /// two mechanisms, because the design uses two.
+  /// [PenIcon] supplies custom geometry; stock glyphs use icon fonts. Both
+  /// render at [iconSize] and receive the item's selection tint.
   ///
   /// Exhaustive `switch`, deliberately — the rail is built by iterating
   /// [SettingsTrayDestination.values], so a part that adds a destination gets
@@ -82,23 +74,22 @@ class TrayNavigationRail extends StatelessWidget {
   /// Returns a builder rather than a widget because the tint is the rail
   /// item's to decide — it changes with selection.
   static _Glyph _glyphFor(SettingsTrayDestination destination) {
-    _Glyph lucide(IconData icon) =>
+    _Glyph fontIcon(IconData icon) =>
         (color) => Icon(icon, size: iconSize, color: color);
     _Glyph pen(PenIcon icon) =>
         (color) => PenIconView(icon: icon, size: iconSize, color: color);
     return switch (destination) {
       SettingsTrayDestination.signal => pen(PenIcon.signal),
       SettingsTrayDestination.control => pen(PenIcon.control),
-      SettingsTrayDestination.loop => lucide(LucideIcons.repeat),
+      SettingsTrayDestination.loop => fontIcon(LucideIcons.repeat),
       SettingsTrayDestination.tracks => pen(PenIcon.tracks),
       // A cone with two arcs, which is `volume-2`. The component says
       // `speaker` — lucide's cabinet-with-drivers — and no screen draws it.
-      SettingsTrayDestination.audio => lucide(LucideIcons.volume2),
+      SettingsTrayDestination.audio => fontIcon(LucideIcons.volume2),
       SettingsTrayDestination.tuner => pen(PenIcon.tuner),
-      // TWO arcs over the dot, not three: `wifi-high`, not `wifi`.
-      SettingsTrayDestination.network => lucide(LucideIcons.wifiHigh),
+      SettingsTrayDestination.network => fontIcon(CupertinoIcons.wifi),
       // A square in a square with eight pins — a chip, not a gear.
-      SettingsTrayDestination.system => lucide(LucideIcons.cpu),
+      SettingsTrayDestination.system => fontIcon(LucideIcons.cpu),
     };
   }
 
@@ -139,16 +130,9 @@ class TrayNavigationRail extends StatelessWidget {
             : TrayNavigationRail.width;
         return SizedBox(
           width: railWidth,
-          // The rail absorbs taps that miss an item. Without this they fall
-          // through to the panel's full-bleed dismiss detector and close the
-          // tray — fine for the home face's tile grid (Control Center
-          // dismisses on a miss), wrong for a persistent navigation
-          // surface you are aiming at.
-          //
-          // `excludeFromSemantics` because this detector exists purely to stop
-          // pointers: left in the tree it collapses the whole rail into one
-          // tappable node whose activation does nothing, so a screen reader
-          // offers a no-op action over the real items.
+          // Empty rail space absorbs taps without acting on them. Keep this
+          // detector out of semantics so it cannot become a blank button
+          // around the individually labelled destinations.
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             excludeFromSemantics: true,
@@ -291,17 +275,13 @@ class _RailItem extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                // The pen's `NavItem` label: `$text-base` (17) at normal
-                // weight, and 600 while selected. A weight change here
-                // re-measures nothing that moves a neighbour — the pills are
-                // stretch-width with an Expanded label — so the selected
-                // bolding is safe in a way it is not on the shrink-wrapped
-                // `PillTabs`.
+                // Selection changes tint and fill, while every label keeps
+                // the same weight (owner decision, 2026-09-05).
                 style: TextStyle(
                   color: tint,
                   fontSize: 17,
                   height: 1.1,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),

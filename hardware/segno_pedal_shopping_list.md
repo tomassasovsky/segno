@@ -36,7 +36,11 @@ All parts are standard and available at local electronics shops / MercadoLibre.
 ## Modules (off-board)
 - [ ] Pro Micro — ATmega32U4, **Vin rated 7–12 V** ×1
 - [ ] 5 V buck converter module (e.g. MP1584EN) ×1
-- [ ] NeoPixel Ring 16 — WS2812, 16 LEDs ×1
+- [ ] NeoPixel **Ring 24** — WS2812, 24 LEDs ×1 (65.5 mm OD). **Not a Ring 16**:
+      the ring board was re-cut to Ø68 for the 24 in #794, and its J3 pads sit
+      on the Ring 24's pad circle. A Ring 16 (44.5 mm) will not land on them.
+      Pedals built to the older **Ø60** board took a Ring 16 — check which
+      board you have before ordering
 - [ ] Momentary SPST footswitches ×10
 
 ## Mechanical

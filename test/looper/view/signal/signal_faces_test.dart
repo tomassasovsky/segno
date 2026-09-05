@@ -512,7 +512,7 @@ void main() {
       states.add(
         const LooperState(
           tracks: [
-            Track(rms: 0.7, peak: 0.9, lanes: [Lane(inputChannel: 0)]),
+            Track(peak: 0.9, lanes: [Lane(inputChannel: 0)]),
           ],
           status: EngineStatus(inputChannels: 2, outputChannels: 2),
         ),
@@ -524,7 +524,7 @@ void main() {
       // check below is testing a refusal rather than a state that never
       // arrived — the two look identical to it otherwise, and a mis-wired
       // `states` stream would leave this test green and vacuous.
-      expect(bloc.state.tracks.first.rms, 0.7);
+      expect(bloc.state.tracks.first.peak, 0.9);
 
       // The very same widget instance: `buildWhen` refused the emission, so
       // the run was never rebuilt. A rebuild would hand back a new one.
@@ -1357,7 +1357,7 @@ void main() {
       // A meter tick rewrites the whole Track; the face must not rebuild for
       // it, so a differing level has to compare equal here.
       const b = [
-        Track(rms: 0.7, peak: 0.9, lanes: [Lane(inputChannel: 1)]),
+        Track(peak: 0.9, lanes: [Lane(inputChannel: 1)]),
       ];
       expect(sameChainShape(a, b), isTrue);
 

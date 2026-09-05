@@ -31,12 +31,20 @@ case "\$*" in
         done
         printf '0\n'
         ;;
+    *"-f 802-11-wireless.ssid "*|*"-g 802-11-wireless.ssid "*)
+        id=\$(printf '%s' "\$*" | awk '{print \$NF}')
+        name=\${id#uuid-}
+        printf '802-11-wireless.ssid:%s\n' "\$name"
+        ;;
+    *"UUID,NAME,TYPE connection show"*)
+        for n in \${SAVED:-}; do printf 'uuid-%s:%s:802-11-wireless\n' "\$n" "\$n"; done
+        ;;
     *"connection show"*)
         for n in \${SAVED:-}; do printf '%s:802-11-wireless\n' "\$n"; done
         ;;
     *"device wifi list"*) printf 'Studio:70:WPA2\n' ;;
     *"connection up"*)
-        echo "Error: Connection activation failed" >&2; exit 4 ;;
+        exit \${UP_RC:-0} ;;
     *) : ;;
 esac
 exit 0
@@ -53,6 +61,7 @@ teardown() { rm -rf "$work"; }
 
 run() { PATH="$work/bin:$PATH" SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SAVED="${SAVED:-}" PRIORITIES="${PRIORITIES:-}" \
+    UP_RC="${UP_RC:-0}" \
     sh "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"; }
 
 check() {
@@ -102,6 +111,47 @@ setup
 SAVED="" PRIORITIES="" run connect Cafe pw
 check "uses the floor, still beating the wired -999" yes \
     "$(grep -q 'autoconnect-priority 100' "$work/nmcli-args" && echo yes || echo no)"
+teardown
+
+echo "joining a saved network without a password reuses the profile"
+setup
+SAVED="Cafe" PRIORITIES="Cafe=100" run connect Cafe
+check "does not delete the saved profile" no \
+    "$(grep -q 'connection delete' "$work/nmcli-args" && echo yes || echo no)"
+check "does not create a second profile" no \
+    "$(grep -q 'connection add' "$work/nmcli-args" && echo yes || echo no)"
+check "activates the existing uuid" yes \
+    "$(grep -q 'connection up uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
+teardown
+
+echo "joining a saved network with a new password still keeps the profile"
+setup
+SAVED="Cafe" PRIORITIES="Cafe=100" run connect Cafe pw
+check "does not delete the saved profile" no \
+    "$(grep -q 'connection delete' "$work/nmcli-args" && echo yes || echo no)"
+check "activates the existing uuid" yes \
+    "$(grep -q 'connection up uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
+check "activates with passwd-file" yes \
+    "$(grep -q 'passwd-file' "$work/nmcli-args" && echo yes || echo no)"
+check "does not autoconnect before the psk" yes \
+    "$(grep 'connection modify uuid uuid-Cafe connection.autoconnect no' "$work/nmcli-args" | grep -q . && echo yes || echo no)"
+check "persists the psk after a successful up" yes \
+    "$(grep 'connection modify' "$work/nmcli-args" | grep -q 'wifi-sec.psk' && echo yes || echo no)"
+check "enables autoconnect only with the psk" yes \
+    "$(grep 'connection modify' "$work/nmcli-args" | grep 'wifi-sec.psk' | grep -q 'autoconnect yes' && echo yes || echo no)"
+teardown
+
+echo "a new secured join does not autoconnect before the psk is stored"
+setup
+SAVED="" PRIORITIES="" run connect Cafe pw
+check "adds with autoconnect no" yes \
+    "$(grep 'connection add' "$work/nmcli-args" | grep -q 'autoconnect no' && echo yes || echo no)"
+check "does not add with autoconnect yes" no \
+    "$(grep 'connection add' "$work/nmcli-args" | grep -q 'autoconnect yes' && echo yes || echo no)"
+check "persists the psk after a successful up" yes \
+    "$(grep 'connection modify' "$work/nmcli-args" | grep -q 'wifi-sec.psk' && echo yes || echo no)"
+check "enables autoconnect only with the psk" yes \
+    "$(grep 'connection modify' "$work/nmcli-args" | grep 'wifi-sec.psk' | grep -q 'autoconnect yes' && echo yes || echo no)"
 teardown
 
 echo

@@ -6,9 +6,10 @@ import 'package:segno_engine/segno_engine.dart' hide TrackEffect;
 /// A single looper track: a multi-lane container that owns the transport
 /// (state, loop multiple, undo/redo depth) and its [lanes].
 ///
-/// The scalar [volume]/[muted]/[inputMask]/[outputMask]/[rms]/[peak] fields
-/// mirror lane 0 so existing single-lane callers (the channel strip, the
-/// routing graph) keep working; full per-lane state lives in [lanes].
+/// The scalar [volume]/[muted]/[inputMask]/[outputMask] fields mirror lane 0
+/// so existing single-lane callers (the channel strip, the routing graph) keep
+/// working; full per-lane state lives in [lanes]. [peak] is the exception: it
+/// is the whole track's mixed level, not lane 0's (#655).
 class Track extends Equatable {
   /// Creates a [Track].
   const Track({
@@ -17,8 +18,6 @@ class Track extends Equatable {
     this.volume = 1,
     this.muted = false,
     this.lengthFrames = 0,
-    this.playheadFrames = 0,
-    this.rms = 0,
     this.peak = 0,
     this.undoDepth = 0,
     this.clearRestore = false,
@@ -51,13 +50,9 @@ class Track extends Equatable {
   /// Captured length in frames (equals the master loop once finalized).
   final int lengthFrames;
 
-  /// Current playhead in frames.
-  final int playheadFrames;
-
-  /// RMS level for the most recent block, in `0..1`.
-  final double rms;
-
-  /// Peak level for the most recent block, in `0..1`.
+  /// Peak level of the track's mixed output for the most recent block, in
+  /// `0..1` — the one field that changes at the poll rate while audio flows.
+  /// Kept out of [steadyProps] for that reason.
   final double peak;
 
   /// Available undo steps (overdub layers).
@@ -144,16 +139,43 @@ class Track extends Equatable {
   /// Whether an undone overdub layer can be redone.
   bool get canRedo => redoDepth > 0;
 
-  @override
-  List<Object?> get props => [
+  /// Everything in [props] EXCEPT the live [peak] level.
+  ///
+  /// [peak] is the only field that changes at the poll rate on a track that is
+  /// merely playing, so it is the only one that has to be subscribed at meter
+  /// granularity. A surface that draws the tile AROUND a meter compares on
+  /// this, and subscribes to [peak] separately in the meter leaf itself, so a
+  /// moving level rebuilds the bar and nothing else (#646/#654/#832).
+  ///
+  /// This is the ONLY sanctioned way to ignore a moving level. Anything that
+  /// wants a peak-insensitive comparison — a `context.select` projection, a
+  /// `buildWhen`, a push gate on the second screen — compares on this rather
+  /// than editing [props]; see the warning there.
+  ///
+  /// Listed out rather than derived from [props] so neither list is built
+  /// twice per comparison (a `Track ==` is on the console's hot path). The
+  /// two are locked to each other by a test — `props` is exactly this list
+  /// plus [peak] — so a field added to one cannot silently miss the other.
+  ///
+  /// "Steady" means steady against a moving LEVEL, and nothing more — two
+  /// other fields here move on their own, both deliberately left in:
+  ///
+  /// - A track that is RECORDING differs on every poll tick as [lengthFrames]
+  ///   (and the recording lane's own) grow with the take. That is one tile
+  ///   rebuilding while it records, not eight rebuilding because one of them
+  ///   made a noise, so it is left alone — the tile draws `hasContent`, which
+  ///   the growing length flips exactly once (#899).
+  /// - [lanes] carries `Lane.cacheState`, which follows the background
+  ///   renderer while `CacheTelemetryScope` enables telemetry: the Signal
+  ///   face is visible and the track-indicator preference is on. Those
+  ///   observed cache changes also rebuild the tile; closing Signal or
+  ///   disabling indicators stops the telemetry reads.
+  List<Object?> get steadyProps => [
     channel,
     state,
     volume,
     muted,
     lengthFrames,
-    playheadFrames,
-    rms,
-    peak,
     undoDepth,
     clearRestore,
     redoDepth,
@@ -168,5 +190,43 @@ class Track extends Equatable {
     lanes,
     effects,
     chainEnabled,
+  ];
+
+  /// Value equality over every field, [peak] INCLUDED — deliberately, and
+  /// load-bearing.
+  ///
+  /// **Do not remove [peak] from this list.** The meters are fed through
+  /// `LooperState ==`: `LooperRepository`'s poll drops a projection equal to
+  /// the one before it (`if (next == _last) return`), so a field outside
+  /// equality is a field that never reaches the UI at all. Taking [peak] out
+  /// — tempting, because it is what makes a fresh `LooperState` arrive on
+  /// every poll tick and so defeats any gate written as
+  /// `identical(state, previous)` — would flatten all eight meters with no
+  /// error and no failing widget test: they would simply stop moving.
+  ///
+  /// A caller that needs to ignore the moving level compares [steadyProps]
+  /// instead. Locked by the tests in `test/models/track_test.dart`.
+  @override
+  List<Object?> get props => [
+    channel,
+    state,
+    volume,
+    muted,
+    lengthFrames,
+    undoDepth,
+    clearRestore,
+    redoDepth,
+    multiple,
+    inputMask,
+    outputMask,
+    layerInFlight,
+    pending,
+    lengthPresetBars,
+    quantizeOverride,
+    oneShot,
+    lanes,
+    effects,
+    chainEnabled,
+    peak,
   ];
 }
