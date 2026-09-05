@@ -20,6 +20,7 @@
 #include "engine_fx.h"
 #include "engine_internal.h" /* le_psola_detect prototype (defined below) */
 #include "fft.h" /* le_rfft_fwd / le_rfft_inv / le_fft / le_hann_init */
+#include "rt_alloc.h" /* le_rt_alloc/le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
 
 #ifndef LE_PI
@@ -675,21 +676,39 @@ void le_fx_enable_force_bypass(le_fx_state* fx, int slot) {
 void le_fx_free_octaver(le_fx_state* fx, int slot) {
   for (int chan = 0; chan < 2; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
-    free(o->out);
+    le_rt_free(o->out);
     o->out = NULL;
-    free(o->last_phase);
+    le_rt_free(o->last_phase);
     o->last_phase = NULL;
-    free(o->sum_phase);
+    le_rt_free(o->sum_phase);
     o->sum_phase = NULL;
+  }
+}
+
+void le_fx_free_delay(le_fx_state* fx, int slot) {
+  le_rt_free(fx->delay[slot][0]);
+  fx->delay[slot][0] = NULL;
+  le_rt_free(fx->delay[slot][1]);
+  fx->delay[slot][1] = NULL;
+}
+
+void le_fx_clear_heap_buffers(le_fx_state* fx, int slot) {
+  for (int chan = 0; chan < 2; ++chan) {
+    if (fx->delay[slot][chan] != NULL) {
+      memset(fx->delay[slot][chan], 0, le_rt_size(fx->delay[slot][chan]));
+    }
+    le_octaver_state* o = &fx->oct[slot][chan];
+    if (o->out != NULL) memset(o->out, 0, le_rt_size(o->out));
+    if (o->last_phase != NULL) {
+      memset(o->last_phase, 0, le_rt_size(o->last_phase));
+    }
+    if (o->sum_phase != NULL) memset(o->sum_phase, 0, le_rt_size(o->sum_phase));
   }
 }
 
 void le_fx_state_free_buffers(le_fx_state* fx) {
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    free(fx->delay[s][0]);
-    fx->delay[s][0] = NULL;
-    free(fx->delay[s][1]);
-    fx->delay[s][1] = NULL;
+    le_fx_free_delay(fx, s);
     le_fx_free_octaver(fx, s);
   }
 }
@@ -845,7 +864,20 @@ static int fx_octaver_latency_vt(const le_fx_state* fx, int slot) {
  * present, -1 = OOM. */
 static int fx_alloc_ring(le_fx_state* fx, int slot, int chan, int cap) {
   if (fx->delay[slot][chan] != NULL) return 0;
-  fx->delay[slot][chan] = (float*)calloc((size_t)cap, sizeof(float));
+  /* le_rt_alloc, not calloc: a delay ring is written by the audio thread on
+   * every frame the slot processes, so its pages must not be copy-on-write
+   * after a fork (rt_alloc.h, #804). Released through le_fx_free_delay.
+   *
+   * This is also reached by the two OFFLINE renderers, whose le_fx_state is
+   * per-job and whose rings the audio thread never touches — engine_cache.c's
+   * wet-cache worker and perf_render.c's export. They pay for the uniform
+   * seam: an mmap + madvise + munmap per job (all mmap_lock-write) plus an
+   * eager prefault, where glibc's dynamic mmap threshold used to serve
+   * repeated same-size jobs from the arena. Accepted rather than split,
+   * because a second allocator for "the offline ones" reintroduces exactly the
+   * mismatched-free hazard le_fx_free_delay exists to make impossible, and the
+   * traffic is per user edit / per export, not per block. */
+  fx->delay[slot][chan] = (float*)le_rt_alloc((size_t)cap * sizeof(float));
   return fx->delay[slot][chan] != NULL ? 1 : -1;
 }
 
@@ -855,7 +887,7 @@ static int32_t fx_stereo_ring_prepare(le_fx_state* fx, int slot, int cap) {
   if (a0 < 0) return LE_ERR_INVALID;
   if (fx_alloc_ring(fx, slot, 1, cap) < 0) {
     if (a0 == 1) { /* free only the ring this call allocated */
-      free(fx->delay[slot][0]);
+      le_rt_free(fx->delay[slot][0]);
       fx->delay[slot][0] = NULL;
     }
     return LE_ERR_INVALID;
@@ -877,26 +909,28 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
   int n = 0;
   for (int chan = 0; chan < 2; ++chan) {
     if (fx->delay[slot][chan] == NULL) {
-      fx->delay[slot][chan] = (float*)calloc((size_t)cap, sizeof(float));
+      fx->delay[slot][chan] = (float*)le_rt_alloc((size_t)cap * sizeof(float));
       if (fx->delay[slot][chan] == NULL) goto oom;
       owned[n++] = &fx->delay[slot][chan];
     }
   }
   le_fx_ensure_hann(); /* control-thread; before the slot can be processed */
   for (int chan = 0; chan < 2; ++chan) {
+    /* All three phase-vocoder buffers are written by the audio thread every
+     * hop, so they come from le_rt_alloc like the rings above. */
     le_octaver_state* o = &fx->oct[slot][chan];
     if (o->out == NULL) {
-      o->out = (float*)calloc((size_t)LE_PV_N, sizeof(float));
+      o->out = (float*)le_rt_alloc((size_t)LE_PV_N * sizeof(float));
       if (o->out == NULL) goto oom;
       owned[n++] = &o->out;
     }
     if (o->last_phase == NULL) {
-      o->last_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
+      o->last_phase = (float*)le_rt_alloc((size_t)LE_PV_BINS * sizeof(float));
       if (o->last_phase == NULL) goto oom;
       owned[n++] = &o->last_phase;
     }
     if (o->sum_phase == NULL) {
-      o->sum_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
+      o->sum_phase = (float*)le_rt_alloc((size_t)LE_PV_BINS * sizeof(float));
       if (o->sum_phase == NULL) goto oom;
       owned[n++] = &o->sum_phase;
     }
@@ -904,7 +938,7 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
   return LE_OK;
 oom:
   for (int i = n - 1; i >= 0; --i) {
-    free(*owned[i]);
+    le_rt_free(*owned[i]);
     *owned[i] = NULL;
   }
   return LE_ERR_INVALID;

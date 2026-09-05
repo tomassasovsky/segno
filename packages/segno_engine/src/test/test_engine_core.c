@@ -57,6 +57,7 @@
 #include "loop_clock.h"
 #include "restore_declip.h"   /* offline de-clip DSP (#697 S8) */
 #include "restore_halfband.h" /* 2:1 half-band resampler (#697 S8) */
+#include "rt_alloc.h" /* le_rt_alloc/le_rt_free/le_rt_size (the RT allocator) */
 #include "rnnoise.h" /* vendored third_party/rnnoise (#697 S7 smoke test) */
 #include "segno_engine_api.h"
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
@@ -162,6 +163,190 @@ static void test_ring_wraps_around(void) {
     CHECK(le_ring_pop(&ring, &out) == 1);
     CHECK(out.code == i);
   }
+}
+
+/* ---- le_rt_alloc (the allocator every audio-thread-written buffer uses) ----
+ *
+ * What is testable HERE is the seam's contract: zeroed, sized, writable end to
+ * end, released, and — the point of the whole design — still all of those when
+ * the fork shield fails. What is NOT testable here is the property the seam
+ * exists for: that a fork() no longer costs the callback a page fault. That
+ * needs MADV_DONTFORK, a PREEMPT_RT kernel and a live forker, i.e. the
+ * appliance — which is why the issue this lands under is blocked-verify. */
+
+static void test_rt_alloc_zeroes_and_sizes(void) {
+  printf("test_rt_alloc_zeroes_and_sizes\n");
+  /* Deliberately several pages and not a page multiple: the header offset must
+   * not eat into the payload, and the last byte must be as writable as the
+   * first. */
+  const size_t bytes = 3 * 4096 + 7;
+  unsigned char* p = (unsigned char*)le_rt_alloc(bytes);
+  CHECK(p != NULL);
+  if (p != NULL) {
+    CHECK(le_rt_size(p) == bytes);
+    int all_zero = 1;
+    for (size_t i = 0; i < bytes; ++i) {
+      if (p[i] != 0) all_zero = 0;
+    }
+    CHECK(all_zero == 1); /* calloc's guarantee, kept */
+    for (size_t i = 0; i < bytes; ++i) p[i] = (unsigned char)(i & 0xFF);
+    CHECK(p[0] == 0);
+    CHECK(p[bytes - 1] == (unsigned char)((bytes - 1) & 0xFF));
+    le_rt_free(p);
+  }
+  /* Two live allocations are independent buffers, not one aliased mapping. */
+  float* a = (float*)le_rt_alloc(64 * sizeof(float));
+  float* b = (float*)le_rt_alloc(64 * sizeof(float));
+  CHECK(a != NULL && b != NULL && a != b);
+  if (a != NULL && b != NULL) {
+    a[0] = 1.0f;
+    b[0] = 2.0f;
+    CHECK(a[0] == 1.0f);
+    CHECK(b[0] == 2.0f);
+  }
+  le_rt_free(a);
+  le_rt_free(b);
+  le_rt_free(NULL); /* NULL-safe, so teardown can call it unconditionally */
+  CHECK(le_rt_size(NULL) == 0);
+}
+
+/* le_rt_alloc_for_overwrite: same mapping, same size header, same le_rt_free —
+ * it only skips the page-touching pass for a caller that writes the whole
+ * buffer itself (le_lane_shrink_slot). The contract it must still honour is
+ * that the storage is USABLE and correctly sized; "may skip the prefault" is
+ * not licence to hand back a short or unwritable buffer. */
+static void test_rt_alloc_for_overwrite_is_usable_and_sized(void) {
+  printf("test_rt_alloc_for_overwrite_is_usable_and_sized\n");
+  const size_t bytes = 8192;
+  unsigned char* p = (unsigned char*)le_rt_alloc_for_overwrite(bytes);
+  CHECK(p != NULL);
+  if (p != NULL) {
+    CHECK(le_rt_size(p) == bytes);
+    memset(p, 0x5A, bytes); /* the caller's own whole-buffer write */
+    CHECK(p[0] == 0x5A);
+    CHECK(p[bytes - 1] == 0x5A);
+    le_rt_free(p); /* freed through the same seam, not free() */
+  }
+  /* Shares le_rt_alloc's rejections rather than having its own. */
+  CHECK(le_rt_alloc_for_overwrite(0) == NULL);
+  CHECK(le_rt_alloc_for_overwrite(SIZE_MAX) == NULL);
+}
+
+/* le_lane_reset_reactivating is the live-safe form: it must clear the lane's
+ * heap DSP buffers WITHOUT unmapping them, because an in-flight audio block can
+ * still name a lane index le_engine_set_lane_count's grow branch considers
+ * newly activated. The configure form must still release them. */
+static void test_lane_reset_reactivating_keeps_fx_buffers_mapped(void) {
+  printf("test_lane_reset_reactivating_keeps_fx_buffers_mapped\n");
+  le_lane ln;
+  memset(&ln, 0, sizeof(ln));
+  /* A delay slot with a real ring, dirtied so the clear is observable. */
+  CHECK(le_fx_prepare(&ln.fx, 0, LE_FX_DELAY, 48000) == LE_OK);
+  float* ring = ln.fx.delay[0][0];
+  CHECK(ring != NULL);
+  if (ring == NULL) return;
+  const size_t ring_bytes = le_rt_size(ring);
+  CHECK(ring_bytes > 0);
+  ring[0] = 1.0f;
+  ring[(ring_bytes / sizeof(float)) - 1] = 1.0f;
+
+  le_lane_reset_reactivating(&ln, 0);
+  /* Same mapping, same size — and zeroed, so no stale tail survives. */
+  CHECK(ln.fx.delay[0][0] == ring);
+  CHECK(le_rt_size(ln.fx.delay[0][0]) == ring_bytes);
+  CHECK(ring[0] == 0.0f);
+  CHECK(ring[(ring_bytes / sizeof(float)) - 1] == 0.0f);
+
+  /* The configure form still releases: that path has no audio thread. */
+  le_lane_reset(&ln, 0);
+  CHECK(ln.fx.delay[0][0] == NULL);
+  CHECK(ln.fx.delay[0][1] == NULL);
+}
+
+static void test_rt_alloc_rejects_zero_and_overflow(void) {
+  printf("test_rt_alloc_rejects_zero_and_overflow\n");
+  CHECK(le_rt_alloc(0) == NULL);
+  /* A size whose header-inclusive byte count would wrap: refused, not mapped
+   * short — the same wild-write guard le_audio_ring_alloc keeps above it. */
+  CHECK(le_rt_alloc(SIZE_MAX) == NULL);
+  CHECK(le_rt_alloc(SIZE_MAX - 8) == NULL);
+}
+
+static void test_rt_alloc_degrades_when_fork_shield_fails(void) {
+  printf("test_rt_alloc_degrades_when_fork_shield_fails\n");
+  /* DEGRADE, DO NOT REFUSE: a kernel that rejects MADV_DONTFORK costs the
+   * performance its click-freedom, and refusing the allocation instead would
+   * cost it the recording. On Linux this drives the real refusal branch (and
+   * its stderr line); elsewhere there is no shield to fail and the assertion is
+   * simply that a shield-less allocation is still good memory. */
+  le_rt_set_fork_shield_failure_for_test(1);
+  const size_t bytes = 8192;
+  unsigned char* p = (unsigned char*)le_rt_alloc(bytes);
+  CHECK(p != NULL);
+  if (p != NULL) {
+    CHECK(le_rt_size(p) == bytes);
+    CHECK(p[0] == 0);
+    CHECK(p[bytes - 1] == 0);
+    p[bytes - 1] = 0x5A;
+    CHECK(p[bytes - 1] == 0x5A);
+    le_rt_free(p);
+  }
+  le_rt_set_fork_shield_failure_for_test(0);
+  /* And the seam is restorable: the next allocation is shielded again. */
+  void* q = le_rt_alloc(64);
+  CHECK(q != NULL);
+  le_rt_free(q);
+}
+
+/* The one caller that resizes an le_rt_alloc buffer. It cannot realloc (the
+ * storage is a mapping), so it maps new / copies / publishes / unmaps old —
+ * this pins that the copy actually happens and that the published cap follows
+ * the buffer. */
+static void test_lane_shrink_slot_preserves_leading_frames(void) {
+  printf("test_lane_shrink_slot_preserves_leading_frames\n");
+  le_lane ln;
+  memset(&ln, 0, sizeof(ln));
+  CHECK(le_lane_ensure_slot(&ln, 0, 4096) == 1);
+  CHECK(ln.pool_cap[0] == 4096);
+  CHECK(ln.pool[0] != NULL);
+  if (ln.pool[0] == NULL) return;
+  for (int32_t i = 0; i < 4096; ++i) ln.pool[0][i] = (float)i;
+
+  le_lane_shrink_slot(&ln, 0, 1000);
+  CHECK(ln.pool_cap[0] == 1000);
+  CHECK(ln.pool[0] != NULL);
+  int preserved = 1;
+  for (int32_t i = 0; i < 1000; ++i) {
+    if (ln.pool[0][i] != (float)i) preserved = 0;
+  }
+  CHECK(preserved == 1);
+  /* The new buffer really is the smaller one — not the old mapping relabelled
+   * — and its last frame is writable. */
+  CHECK(le_rt_size(ln.pool[0]) == (size_t)1000 * sizeof(float));
+  ln.pool[0][999] = -1.0f;
+  CHECK(ln.pool[0][999] == -1.0f);
+
+  /* No-ops: a shrink to the same or a larger size leaves the slot alone, so a
+   * caller can ask unconditionally. */
+  float* before = ln.pool[0];
+  le_lane_shrink_slot(&ln, 0, 1000);
+  le_lane_shrink_slot(&ln, 0, 8192);
+  le_lane_shrink_slot(&ln, 0, 0);
+  CHECK(ln.pool[0] == before);
+  CHECK(ln.pool_cap[0] == 1000);
+
+  /* Grow-by-replace: a bigger ask hands back a fresh, zeroed buffer. */
+  CHECK(le_lane_ensure_slot(&ln, 0, 8192) == 1);
+  CHECK(ln.pool_cap[0] == 8192);
+  CHECK(ln.pool[0][0] == 0.0f);
+  CHECK(ln.pool[0][8191] == 0.0f);
+  /* An ask the slot already satisfies keeps the buffer (and its contents). */
+  ln.pool[0][3] = 7.0f;
+  before = ln.pool[0];
+  CHECK(le_lane_ensure_slot(&ln, 0, 100) == 1);
+  CHECK(ln.pool[0] == before);
+  CHECK(ln.pool[0][3] == 7.0f);
+  le_rt_free(ln.pool[0]);
 }
 
 /* ---- le_audio_ring (performance-recording capture ring) ---- */
@@ -8398,6 +8583,16 @@ static void test_sleep_ms(int ms) {
  * fdopen/freopen/tmpfile — same reasoning, and none of them appear in this
  * module.
  *
+ * THE HOLE THAT GREW SINCE #900: mmap. le_rt_alloc is a direct mmap (see
+ * rt_alloc.h) and is invisible to every counter here, so a drain-cycle
+ * regression that claimed an audio-thread buffer through it would pass green.
+ * That was a theoretical gap when the only mmap'd buffers were the capture
+ * rings; it is a real one now that EVERY audio-thread-written buffer takes
+ * that route. Interposing mmap itself is not the answer (libc's own internals
+ * use it constantly, and the noise would swamp the signal); the guard is that
+ * every le_rt_alloc call site is a lifecycle one — configure, arm, lazy
+ * prepare — and none of them is on the drain cycle's path.
+ *
  * Two platforms opt out, and both are stated rather than silently skipped:
  * under a sanitizer the allocator is already interposed by the runtime and a
  * second definition either collides at link time or fights the interceptor;
@@ -9993,34 +10188,38 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   tl_count_allocations = 0;
   CHECK(atomic_load(&g_test_alloc_count) > 0);
   /* WHAT CLEARS THIS FLOOR, measured on this fixture rather than assumed,
-   * because it is a constant coupled to two unrelated sizings and a reader
-   * debugging a failure here needs to know which one moved. Two ENGINE-SIDE
-   * allocations cross the arm:
-   *   - le_perf_drain itself, 724104 bytes — sizeof the struct, which since
-   *     #722 carries json_buf (LE_PD_JSON_BUF = 512 KB) inside it;
-   *   - le_perf_arm's master ring, 524288 bytes — le_perf_ring_capacity
-   *     rounds 1 ch x 48000 x LE_PERF_CAPTURE_SECONDS up to a power of two
-   *     (131072 samples x 4 B), landing EXACTLY on this floor.
+   * because a reader debugging a failure here needs to know which sizing
+   * moved. Exactly ONE engine-side allocation crosses the arm and clears it:
+   * le_perf_drain itself, 724104 bytes — sizeof the struct, which since #722
+   * carries json_buf (LE_PD_JSON_BUF = 512 KB) inside it.
+   *
+   * It used to be two. le_perf_arm's master ring — 524288 bytes,
+   * le_perf_ring_capacity rounding 1 ch x 48000 x LE_PERF_CAPTURE_SECONDS up
+   * to a power of two — landed exactly ON this floor and was the redundant
+   * second clearance. It no longer counts at all: the capture rings are
+   * le_rt_alloc storage now (#900), i.e. their own mmap, and this interposer
+   * only sees malloc/calloc/realloc/strdup. That leaves the drain struct as
+   * the SOLE clearance, with 200 KB of margin rather than two independent
+   * ones, so a shrinking LE_PD_JSON_BUF is now the single thing that can put
+   * this assertion under the floor.
    *
    * HOW MANY ALLOCATIONS THE ARM ACTUALLY COUNTS IS PLATFORM-SPECIFIC, so do
-   * not read any one number as a constant. On macOS those two ARE the whole
-   * tally — two: libc-internal allocations bind to libsystem_malloc and never
-   * reach this executable's definitions, the two-level-namespace hole
+   * not read any one number as a constant. On macOS the drain struct is the
+   * whole tally — one: libc-internal allocations bind to libsystem_malloc and
+   * never reach this executable's definitions, the two-level-namespace hole
    * described above. On glibc the flip side applies: ELF interposition DOES
    * catch libc's internals, so the two fopens' FILE objects and stream buffers
-   * are counted as well and the tally is five (instrumented and measured in
-   * gcc:13; largest is 724104 and the fopen counter reads 2 on both). Both are
-   * correct. Only the two engine-side sizes above are portable, and only the
-   * largest of them is what this floor asserts on — which is why the assertion
-   * below is on `largest` and not on a count.
+   * are counted as well (largest is 724104 and the fopen counter reads 2 on
+   * both). Both are correct. Only the engine-side size above is portable, and
+   * it is what this floor asserts on — which is why the assertion below is on
+   * `largest` and not on a count.
    *
-   * So the control does not depend on the change under test: the ring clears
-   * it on its own, as it did before #722. But it clears it by zero bytes, so
-   * do not read a failure here as "interposition broke" without checking
-   * whether LE_PD_JSON_BUF, LE_PERF_CAPTURE_SECONDS or this fixture's
-   * configure() moved first. Retuning the floor is the right fix in that case;
-   * its job is only to rule out an incidental small allocation satisfying the
-   * non-zero check above. */
+   * So the control still does not depend on the change under test. But do not
+   * read a failure here as "interposition broke" without checking whether
+   * LE_PD_JSON_BUF moved first, or whether another engine-side buffer followed
+   * the rings out of malloc and into le_rt_alloc. Retuning the floor is the
+   * right fix in either case; its job is only to rule out an incidental small
+   * allocation satisfying the non-zero check above. */
   CHECK(atomic_load(&g_test_alloc_largest) >= 512u * 1024u);
   /* The stdio half of the control: le_perf_arm fopens master.pcm and
    * events.log, so a zero here means the fopen interposer is not bound and
@@ -25727,6 +25926,12 @@ int main(void) {
   test_ring_push_pop_fifo();
   test_ring_reports_full();
   test_ring_wraps_around();
+  test_rt_alloc_zeroes_and_sizes();
+  test_rt_alloc_rejects_zero_and_overflow();
+  test_rt_alloc_for_overwrite_is_usable_and_sized();
+  test_lane_reset_reactivating_keeps_fx_buffers_mapped();
+  test_rt_alloc_degrades_when_fork_shield_fails();
+  test_lane_shrink_slot_preserves_leading_frames();
   test_audio_ring_alloc_rejects_bad_capacity();
   test_audio_ring_push_pop_fifo();
   test_audio_ring_push_frame_all_or_nothing();

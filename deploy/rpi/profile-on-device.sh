@@ -17,8 +17,8 @@
 # not held, then restarted on exit however this script ends.
 #
 # VERIFIED end-to-end on the Yocto Pi 4B: bundle deploys, app starts under
-# weston, audio opens (`audio auto-start: started ok pinned=true`), and the VM
-# service answers HTTP JSON-RPC through the tunnel.
+# weston, audio opens (`audio auto-start: started ok pinnedDevice=true`), and
+# the VM service answers HTTP JSON-RPC through the tunnel.
 #
 # One caveat this script cannot remove: the appliance renders ZERO frames while
 # nothing is moving, so a profile session with no one touching the console

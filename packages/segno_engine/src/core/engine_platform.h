@@ -79,6 +79,43 @@ void le_platform_after_device_open(le_engine* engine);
  * dynamic quantum (force-quantum 0). No-op elsewhere. */
 void le_platform_on_engine_teardown(void);
 
+/* Called once, from le_engine_create, before anything is allocated. Linux pins
+ * the process's resident pages into RAM with mlockall — the companion to
+ * rt_alloc.h's fork shield, and the only thing that can protect what an
+ * allocator cannot: the engine's own text and rodata, the audio thread's stack,
+ * and the loaded plugin binaries, all of which are reclaimable pages whose
+ * re-fault would stall a SCHED_FIFO callback on I/O.
+ *
+ * It is attempted ONLY where the operator has granted RLIMIT_MEMLOCK = infinity
+ * (the appliance's segno.service does; a desktop's 8 MB default does not) and
+ * only with MCL_ONFAULT, so it locks what is RESIDENT instead of committing
+ * every sparse reservation in the address space (the Dart VM's heap, a hosted
+ * plugin's arena, ASan's shadow), and only when SEGNO_NO_MLOCK is unset — an
+ * unlimited rlimit is what a desktop pro-audio limits.conf grants by default,
+ * which is not the same as an operator choosing this. It NEVER refuses to
+ * start — see engine_linux.c for why each of those matters.
+ *
+ * No-op on macOS/Windows, which have no equivalent worth doing here: neither
+ * runs the PREEMPT_RT kernel this defends, and mach_vm_wire / VirtualLock are
+ * privileged, per-region calls, not a process-wide switch.
+ * Safe to call more than once, and from more than one thread: the lock is
+ * reference-counted against le_platform_unlock_memory under a mutex, so N
+ * engines lock once and only the last teardown unlocks. */
+void le_platform_lock_memory(void);
+
+/* The other half of le_platform_lock_memory, called from le_engine_destroy.
+ * Drops this engine's reference and, when it was the last one, releases the
+ * process-wide lock (Linux: munlockall).
+ *
+ * It has to exist because mlockall is PROCESS-wide and MCL_FUTURE is open-
+ * ended: without this, an engine that has been destroyed leaves every later
+ * heap growth and every dlopen in the host process locked into RAM for the
+ * process's lifetime, protecting an audio thread that no longer exists. A host
+ * that stops the engine and goes on doing other work (or one that recreates it
+ * on a device change) would otherwise pay that forever. No-op on
+ * macOS/Windows, and a no-op wherever the lock was never taken. */
+void le_platform_unlock_memory(void);
+
 /* Excluded-input-channel mask from per-channel labels. macOS reads CoreAudio
  * labels. Linux returns 0 (no channel-label source yet; PipeWire port labels
  * are future work). All paths route through the shared

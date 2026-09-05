@@ -70,7 +70,7 @@ esac
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/restore_declip.c src/core/restore_halfband.c \
-  src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
+  src/core/rt_alloc.c src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c"
 
 # Vendored RNNoise (third_party/rnnoise, BSD-3-Clause — offline loop-close
@@ -150,6 +150,11 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -c src/test/test_plugin_slot.c -o "$P3/test.o"
   clang -std=gnu11 -DSEGNO_ENABLE_PLUGINS $CENGINE_INC \
     -c src/core/engine_fx.c -o "$P3/engine_fx.o"
+  # engine_fx.c's delay rings / octaver buffers come from le_rt_alloc, so this
+  # slice of the engine needs the allocator TU too (mirrors src/CMakeLists.txt,
+  # where rt_alloc.c is part of segno_dsp_core for exactly this reason).
+  clang -std=gnu11 -DSEGNO_ENABLE_PLUGINS $CENGINE_INC \
+    -c src/core/rt_alloc.c -o "$P3/rt_alloc.o"
   clang -std=gnu11 -DSEGNO_ENABLE_PLUGINS $CENGINE_INC \
     -c src/core/engine_plugin.c -o "$P3/engine_plugin.o"
   # shellcheck disable=SC2086

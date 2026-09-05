@@ -50,6 +50,7 @@
 #include "miniaudio.h"
 #include "perf_drain.h" /* le_perf_drain_stop (reconfigure/destroy teardown) */
 #include "perf_render.h" /* le_perf_render_cancel (reconfigure/destroy teardown) */
+#include "rt_alloc.h" /* le_rt_alloc/le_rt_free: every audio-thread-written buffer */
 #include "tempo_grid.h" /* LE_GRID_DIV_OFF (grid-off quantize default) */
 
 /* All platform-specific behavior (CoreAudio channel labels, JACK port-pinning,
@@ -80,29 +81,111 @@ void le_track_set_len(le_track* t, int32_t len) {
  * engine_core.h). Undo layers are quantized to the loop length, so a reused
  * slot may need to grow before serving a longer track — or to the full
  * max_loop_frames before becoming a recording target. Replaces rather than
- * preserves: every consumer writes the slot whole before it is read. */
+ * preserves: every consumer writes the slot whole before it is read.
+ *
+ * le_rt_alloc, not calloc: the audio thread WRITES this buffer every frame while
+ * the lane is recording or overdubbing, and an overdub sweeps the whole loop
+ * once per lap — ~940 pages for a 10 s loop at 96 kHz, each of them a
+ * copy-on-write fault after any fork in the process (rt_alloc.h, #804). */
 int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
   if (frames <= 0) return 0;
   if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) return 1;
-  free(ln->pool[slot]);
-  ln->pool[slot] = (float*)calloc((size_t)frames, sizeof(float));
-  ln->pool_cap[slot] = ln->pool[slot] != NULL ? frames : 0;
-  return ln->pool[slot] != NULL;
+  /* Map new / publish / unmap old — the same order le_lane_shrink_slot uses,
+   * and now for the same reason. le_rt_free UNMAPS, so freeing first left
+   * pool[slot] itself naming an unmapped page for the width of the allocation,
+   * and a reader that loaded the slot in that window got a pointer that is
+   * guaranteed to fault. This closes that window: a reader loading pool[slot]
+   * at any instant gets either the old buffer or the new one, both mapped.
+   *
+   * Be precise about what that does NOT buy, because the difference is a
+   * SIGSEGV on the SCHED_FIFO thread. A reader that snapshotted the OLD pointer
+   * before the swap and dereferences it after le_rt_free still touches an
+   * unmapped page — no store order can help it, and where the old calloc
+   * storage gave it stale bytes, an unmapped one kills the process. That case
+   * is ruled out by the callers' invariant alone: the track is EMPTY, so
+   * nothing dereferences the slot at all (le_prepare_new_capture,
+   * le_begin_empty_capture, session import). le_rt_alloc storage makes that
+   * invariant load-bearing for CRASH-safety where it used to be load-bearing
+   * only for audio quality, so relax a call site on the strength of the
+   * ordering below and the result is a hard fault, not a click.
+   *
+   * The order is not free: holding both buffers means a grow now peaks at
+   * old + new rather than max(old, new) — 11.6 MB instead of 5.8 for a lane
+   * slot at the appliance's default cap — and cannot reuse the mapping it is
+   * about to release, so a regrow under real memory pressure can fail where it
+   * used to squeak through. Accepted deliberately: publishing before releasing
+   * is the only order that keeps a dangling pool[slot] impossible, the peak is
+   * one buffer on a unit with gigabytes spare, and every lazy-grow caller
+   * already handles a failed grow. The failure SEMANTICS are unchanged from
+   * the free-then-allocate version on purpose — the old buffer is released and
+   * the slot left unallocated — so nothing downstream sees a new state.
+   *
+   * Publication order is pointer-then-cap, the mirror of shrink's: this GROWS,
+   * so a reader that pairs the new pointer with the not-yet-updated (smaller,
+   * or zero) cap reads a short prefix of a larger buffer and is harmless, while
+   * the reverse pairing would over-read. Like shrink's, that is an interleaving
+   * argument and not a barrier — see the note there. */
+  /* le_rt_alloc, not _for_overwrite: a pool slot IS read beyond what has been
+   * written into it — le_prepare_new_capture relies on the tail of a rounded-up
+   * multi-loop length playing as silence, and an undo shadow is read back over
+   * regions the backup-on-write pass never reached. The zeroing is content
+   * here, not just residency. */
+  float* p = (float*)le_rt_alloc((size_t)frames * sizeof(float));
+  float* old = ln->pool[slot];
+  ln->pool[slot] = p;
+  ln->pool_cap[slot] = p != NULL ? frames : 0;
+  le_rt_free(old);
+  return p != NULL;
 }
 
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
  * samples (the counterpart to le_lane_ensure_slot's grow-by-replace). Only the
  * control thread may call it, and only for a slot the audio thread no longer
  * holds — a retired undo layer, whose cap-sized buffer would otherwise pin the
- * whole recording cap for the session (see le_handle_retired). A failed realloc
- * keeps the oversized buffer: correct, just not yet reclaimed. */
+ * whole recording cap for the session (see le_handle_retired). A failed
+ * allocation keeps the oversized buffer: correct, just not yet reclaimed.
+ *
+ * Map-new / copy / publish / unmap-old, not realloc: the slot is le_rt_alloc
+ * storage now (an mmap on POSIX) and cannot be resized in place. That raises the
+ * stakes of getting the order wrong — the old buffer is UNMAPPED at the end, so
+ * a reader still holding the old pointer faults, where a realloc'd one merely
+ * read stale bytes. Hence: the new buffer is fully populated before anything is
+ * published, and the old mapping is torn down only once nothing published
+ * points at it.
+ *
+ * What makes that safe is the INVARIANT, not the store order, and the invariant
+ * now carries more weight than it did: a reader that snapshotted the old
+ * pointer before the swap dereferences an UNMAPPED page once the copy is
+ * published, which no ordering can prevent and which kills the SCHED_FIFO
+ * thread rather than feeding it stale audio. What rules that out is that a
+ * retired slot is one the audio thread handed back through the evt_ring and can
+ * no longer name (engine_process.c's #728 note). The shorter cap is stored
+ * before the new
+ * pointer only because that is the order in which a plain interleaving stays
+ * benign — a reader that has not yet seen the new pointer is bounded by the
+ * shorter cap on the old, larger buffer. It is NOT a publication barrier and
+ * must not be read as one: pool[] and pool_cap[] are plain non-atomic fields,
+ * the audio thread reads them plain and in the opposite order (pointer first —
+ * engine_process.c's live-slot snapshot), so on a weakly ordered core either
+ * side may still reorder. If the invariant above ever stops holding, the fix is
+ * real atomics, not a different store order. */
 void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames) {
   if (frames <= 0 || ln->pool[slot] == NULL) return;
   if (ln->pool_cap[slot] <= frames) return;
-  float* p = (float*)realloc(ln->pool[slot], (size_t)frames * sizeof(float));
+  const size_t bytes = (size_t)frames * sizeof(float);
+  /* _for_overwrite: the memcpy below writes every byte, so le_rt_alloc's
+   * page-touching pass would zero the buffer only for this line to overwrite
+   * the same range immediately — doubled memory traffic on a path that runs
+   * once per retired layer per lane per overdub LAP (le_handle_retired), which
+   * is the hottest le_rt_alloc call site in the engine. The memcpy does the
+   * residency pass the prefault existed to do. */
+  float* p = (float*)le_rt_alloc_for_overwrite(bytes);
   if (p == NULL) return;
-  ln->pool[slot] = p;
+  float* old = ln->pool[slot];
+  memcpy(p, old, bytes);
   ln->pool_cap[slot] = frames;
+  ln->pool[slot] = p;
+  le_rt_free(old);
 }
 
 /* Lowest set bit of `mask` as a channel index, or -1 when no bit is set. Used to
@@ -134,11 +217,32 @@ int valid_channel(le_engine* e, int32_t ch) {
 /* ---- configuration / lifecycle ---- */
 
 /* Resets a lane's routing/volume/mute/effects/metering to defaults (recording
- * hardware input [input_channel]), clearing its effect DSP state and releasing
- * its delay lines. Does NOT touch the pool buffers — the caller owns
- * allocation. Used at configure and when a lane is (re)activated by a growing
- * lane count. */
-void le_lane_reset(le_lane* ln, int32_t input_channel) {
+ * hardware input [input_channel]) and clears its effect DSP state. Does NOT
+ * touch the pool buffers — the caller owns allocation.
+ *
+ * TWO CALLERS, AND THEY DIFFER IN ONE WAY THAT MATTERS. le_engine_configure and
+ * session import run with the device closed, so there is no audio thread and
+ * the lane's heap DSP buffers can simply be RELEASED (`release_heap`).
+ * le_engine_set_lane_count's grow branch runs LIVE, and the lane it
+ * re-activates may still be named by an in-flight block: the audio thread
+ * snapshots lane_n once per block (engine_process.c's mix pass), so a
+ * shrink-then-regrow inside one block leaves it processing a lane index the
+ * control thread now considers newly activated. Releasing there used to hand
+ * that reader garbage from a freed heap buffer; since these buffers became
+ * le_rt_alloc storage it would hand it an UNMAPPED page instead — a SIGSEGV on
+ * the SCHED_FIFO thread. So the live caller zeroes the buffers in place
+ * (le_fx_clear_heap_buffers) and keeps the mappings, which gives the same
+ * no-stale-tail guarantee with no pointer the audio thread can fault on.
+ *
+ * Two things on that live path are deliberately UNCHANGED here, because
+ * neither is affected by the allocator move and both are older than it: the
+ * le_plugin_slot_destroy below still runs (a pre-existing hazard on the same
+ * window, and a plugin-lifetime call rather than an allocator one), and
+ * le_lane_ensure_slot's own free is unreachable from that caller — it asks for
+ * exactly the max_loop_frames configure already allocated, so the capacity
+ * check short-circuits before any release. */
+static void le_lane_reset_impl(le_lane* ln, int32_t input_channel,
+                               int release_heap) {
   /* Wet cache (part 2): a reset lane has no cached identity, so retract any
    * published entry pointer. Never a leak: the entry object itself stays
    * owned (and eventually freed) by engine_cache.c's per-lane bookkeeping —
@@ -176,20 +280,37 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
      * target, so a fresh chain does not fade in on first use. */
     store_i32(&ln->a_fx_enabled[s], 1);
     le_fx_enable_seed_settled(&ln->fx, s);
-    free(ln->fx.delay[s][0]);
-    ln->fx.delay[s][0] = NULL;
-    free(ln->fx.delay[s][1]);
-    ln->fx.delay[s][1] = NULL;
-    le_fx_free_octaver(&ln->fx, s);
+    if (release_heap) {
+      le_fx_free_delay(&ln->fx, s);
+      le_fx_free_octaver(&ln->fx, s);
+    } else {
+      le_fx_clear_heap_buffers(&ln->fx, s); /* live: zero, never unmap */
+    }
     le_fx_entry_reset(&ln->fx, s);
-    /* Destroy any hosted plugin slot too. Reset runs from le_engine_configure
-     * while the device is closed (no audio thread), so a direct destroy is safe
-     * — mirrors le_engine_destroy. Without this, a start→stop→start or any
-     * reconfigure leaks the live IPluginHost and its loaded plugin binary. */
+    /* Destroy any hosted plugin slot too. Safe on the configure path (device
+     * closed, no audio thread) — mirrors le_engine_destroy. Without this, a
+     * start→stop→start or any reconfigure leaks the live IPluginHost and its
+     * loaded plugin binary. On the live re-activation path this shares the
+     * in-flight-block window described above; that is pre-existing and not
+     * something the allocator change altered, so it is left exactly as it was
+     * rather than half-fixed here. */
     le_plugin_slot_destroy(
         atomic_load_explicit(&ln->fx.plugin[s], memory_order_relaxed));
     atomic_store_explicit(&ln->fx.plugin[s], NULL, memory_order_relaxed);
   }
+}
+
+/* Configure / session-import form: the device is closed, so release everything.
+ * Declared in engine_core.h. */
+void le_lane_reset(le_lane* ln, int32_t input_channel) {
+  le_lane_reset_impl(ln, input_channel, 1);
+}
+
+/* le_engine_set_lane_count's grow form: the device is live, so the heap DSP
+ * buffers are zeroed in place instead of unmapped. Declared in
+ * engine_core.h. */
+void le_lane_reset_reactivating(le_lane* ln, int32_t input_channel) {
+  le_lane_reset_impl(ln, input_channel, 0);
 }
 
 /* Resets a live monitor input to defaults: disabled, full stereo output, unity
@@ -213,10 +334,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&m->a_fx_enabled[s], 1);
     le_fx_enable_seed_settled(&m->fx, s);
-    free(m->fx.delay[s][0]);
-    m->fx.delay[s][0] = NULL;
-    free(m->fx.delay[s][1]);
-    m->fx.delay[s][1] = NULL;
+    le_fx_free_delay(&m->fx, s);
     le_fx_free_octaver(&m->fx, s);
     le_fx_entry_reset(&m->fx, s);
     /* Destroy any hosted plugin slot too (see le_lane_reset) — otherwise a
@@ -246,10 +364,7 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&b->a_fx_enabled[s], 1);
     le_fx_enable_seed_settled(&b->fx, s);
-    free(b->fx.delay[s][0]);
-    b->fx.delay[s][0] = NULL;
-    free(b->fx.delay[s][1]);
-    b->fx.delay[s][1] = NULL;
+    le_fx_free_delay(&b->fx, s);
     le_fx_free_octaver(&b->fx, s);
     le_fx_entry_reset(&b->fx, s);
     /* No plugin-slot loading targets the bus owners yet (built-in effects
@@ -402,7 +517,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
       le_lane* ln = &tr->lanes[l];
       /* Free any buffers from a previous configuration. */
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
-        free(ln->pool[i]);
+        le_rt_free(ln->pool[i]);
         ln->pool[i] = NULL;
         ln->pool_cap[i] = 0;
       }
@@ -455,9 +570,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
 
   /* Latency-measurement capture window (~100 ms): the audio thread fills it with
    * the input-magnitude envelope, the resolver cross-correlates it. */
-  free(engine->lat_buf);
+  le_rt_free(engine->lat_buf);
   engine->lat_buf_cap = sample_rate / LE_LATENCY_CAPTURE_DIV;
-  engine->lat_buf = (float*)calloc((size_t)engine->lat_buf_cap, sizeof(float));
+  /* le_rt_alloc: the audio thread appends the input-magnitude envelope to this
+   * window every frame of a latency capture (rt_alloc.h, #804). */
+  engine->lat_buf =
+      (float*)le_rt_alloc((size_t)engine->lat_buf_cap * sizeof(float));
   engine->lat_buf_pos = 0;
   if (engine->lat_buf == NULL) engine->lat_buf_cap = 0;
   le_loop_clock_reset(&engine->clock);
@@ -578,11 +696,13 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_cond_seed_defaults(&engine->cond[c], sample_rate);
   }
-  free(engine->cond_buf);
+  le_rt_free(engine->cond_buf);
   engine->cond_buf_cap =
       (int64_t)LE_COND_SCRATCH_FRAMES * (int64_t)input_channels;
+  /* le_rt_alloc: the audio thread memcpys the whole input block into this
+   * scratch and conditions it in place, every callback (rt_alloc.h, #804). */
   engine->cond_buf =
-      (float*)calloc((size_t)engine->cond_buf_cap, sizeof(float));
+      (float*)le_rt_alloc((size_t)engine->cond_buf_cap * sizeof(float));
   if (engine->cond_buf == NULL) engine->cond_buf_cap = 0;
   /* Raw-fallback telemetry: per session, like a_xruns above. */
   atomic_store_explicit(&engine->a_cond_fallback_blocks, 0u,
@@ -782,8 +902,24 @@ void le_engine_mark_device_lost(le_engine* engine) {
 }
 
 le_engine* le_engine_create(void) {
-  le_engine* engine = (le_engine*)calloc(1, sizeof(le_engine));
-  if (engine == NULL) return NULL;
+  /* FIRST, before this call allocates anything: pin the process into RAM where
+   * the platform supports it and the operator has granted it. The engine struct
+   * below, every buffer configure() will claim, and the loaded code itself all
+   * fall under MCL_FUTURE from here on. Never fatal — see the seam's contract in
+   * engine_platform.h. */
+  le_platform_lock_memory();
+  /* The struct itself is an audio-thread-written buffer — ~1 MB of it, and the
+   * hottest one there is: the command / event / perf-log ring storages live
+   * inside it, and the callback writes its atomics and telemetry on EVERY
+   * block, recording or not. So it comes from le_rt_alloc like the buffers it
+   * owns, and not from calloc (rt_alloc.h, #804). */
+  le_engine* engine = (le_engine*)le_rt_alloc(sizeof(le_engine));
+  if (engine == NULL) {
+    /* No engine means no le_engine_destroy, so hand the lock reference back
+     * here or the process stays pinned for a create that never succeeded. */
+    le_platform_unlock_memory();
+    return NULL;
+  }
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->midi_clock_ring, engine->midi_clock_ring_storage,
@@ -868,11 +1004,10 @@ void le_engine_destroy(le_engine* engine) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
-        free(ln->pool[i]);
+        le_rt_free(ln->pool[i]);
       }
       for (int s = 0; s < LE_FX_MAX; ++s) {
-        free(ln->fx.delay[s][0]);
-        free(ln->fx.delay[s][1]);
+        le_fx_free_delay(&ln->fx, s);
         le_fx_free_octaver(&ln->fx, s);
         /* The device is already closed (no audio thread), so any hosted plugin
          * slot — including one left behind by a stalled-callback clear — can be
@@ -883,8 +1018,7 @@ void le_engine_destroy(le_engine* engine) {
     }
     /* Track-stage chain (part 1b): same per-slot teardown as the lanes. */
     for (int s = 0; s < LE_FX_MAX; ++s) {
-      free(engine->tracks[t].bus.fx.delay[s][0]);
-      free(engine->tracks[t].bus.fx.delay[s][1]);
+      le_fx_free_delay(&engine->tracks[t].bus.fx, s);
       le_fx_free_octaver(&engine->tracks[t].bus.fx, s);
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->tracks[t].bus.fx.plugin[s], memory_order_relaxed));
@@ -892,8 +1026,7 @@ void le_engine_destroy(le_engine* engine) {
   }
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     for (int s = 0; s < LE_FX_MAX; ++s) {
-      free(engine->monitors[c].fx.delay[s][0]);
-      free(engine->monitors[c].fx.delay[s][1]);
+      le_fx_free_delay(&engine->monitors[c].fx, s);
       le_fx_free_octaver(&engine->monitors[c].fx, s);
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
@@ -901,14 +1034,13 @@ void le_engine_destroy(le_engine* engine) {
   }
   /* Master insert chain (part 1b). */
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    free(engine->master_fx.fx.delay[s][0]);
-    free(engine->master_fx.fx.delay[s][1]);
+    le_fx_free_delay(&engine->master_fx.fx, s);
     le_fx_free_octaver(&engine->master_fx.fx, s);
     le_plugin_slot_destroy(atomic_load_explicit(
         &engine->master_fx.fx.plugin[s], memory_order_relaxed));
   }
-  free(engine->lat_buf);
-  free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
+  le_rt_free(engine->lat_buf);
+  le_rt_free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
   /* The device is already closed (no audio thread), so the performance-capture
    * rings — including any left retracted-but-allocated by a disarm that could
    * not confirm quiescence — can be freed directly, without the handshake. The
@@ -930,7 +1062,14 @@ void le_engine_destroy(le_engine* engine) {
     le_audio_ring_release(&engine->perf.monitor_ring[c]);
   }
   le_platform_on_engine_teardown(); /* Linux restores PipeWire's dynamic quantum */
-  free(engine);
+  /* The other half of le_engine_create's le_platform_lock_memory. mlockall is
+   * process-wide and MCL_FUTURE is open-ended, so a destroyed engine that never
+   * unlocked would leave every later allocation and dlopen in the host pinned
+   * into RAM for the process's lifetime, guarding an audio thread that no
+   * longer exists. Reference-counted, so a host running two engines only
+   * releases on the last one. */
+  le_platform_unlock_memory();
+  le_rt_free(engine);
 }
 
 int32_t le_engine_start(le_engine* engine, const le_config* config) {

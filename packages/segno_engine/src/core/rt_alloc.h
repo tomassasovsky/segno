@@ -1,0 +1,153 @@
+/*
+ * rt_alloc.h — the allocator for every buffer the AUDIO THREAD WRITES.
+ *
+ * WHERE THE STORAGE COMES FROM IS PART OF THE REAL-TIME CONTRACT, not an
+ * implementation detail (#804). Any fork() in the host process write-protects
+ * every writable anonymous page of the parent for copy-on-write, and the app
+ * forks while it is playing (the Wi-Fi / Bluetooth / update helpers). A
+ * SCHED_FIFO callback that then writes such a page pays a CoW fault, and under
+ * PREEMPT_RT that fault takes mmap_lock as a SLEEPING lock — so the audio thread
+ * blocks in state D behind whichever ordinary thread is mid-fork. Measured on
+ * the Pi 5 bench as ~100 faults/s while armed, each able to stall the callback
+ * for milliseconds; that is what #804's audible clicks were.
+ *
+ * This is where that is dealt with for every buffer THIS ENGINE owns: the
+ * capture rings (audio_ring.c), the lane loop buffers and the overdub shadow
+ * slot (engine.c), the FX delay/echo/reverb rings and the octaver's
+ * phase-vocoder buffers (engine_fx.c), the latency-capture / input-conditioning
+ * scratch (engine.c), and the le_engine struct itself. A buffer the audio
+ * thread only READS does not need this — a read fault on a shared CoW page is
+ * minor and does not take mmap_lock for write — but everything above is written
+ * from the callback.
+ *
+ * TWO WRITTEN-FROM-THE-CALLBACK REGIONS ARE STILL UNSHIELDED, named here rather
+ * than quietly excluded from "every":
+ *
+ *   - miniaudio's own device buffers. `playback.pInputCache` is ma_realloc'd
+ *     unconditionally for a duplex device (which is what this engine opens),
+ *     and the JACK backend adds its intermediary pair; all of them are plain
+ *     heap and all are written per block. Closing it means installing
+ *     ma_allocation_callbacks on the context, which routes EVERY miniaudio
+ *     allocation — including the device enumeration this repo has already had
+ *     to tune — through a page-granular allocator. That is its own change,
+ *     with its own measurement, not a rider on this one.
+ *
+ *   - the audio thread's own stack. Anonymous, private, written every block,
+ *     and nothing can mark it DONTFORK. It is bounded — a handful of hot
+ *     pages, so a few CoW faults per fork rather than one per buffer page —
+ *     which is why it is a footnote and the buffers above were the fix.
+ *
+ * Both are residual exposure to the same #804 mechanism, both are measurable
+ * only on the bench, and neither is made worse by anything here.
+ *
+ * Not an arena and not a pool: one mapping per buffer. The rule is NEVER FROM
+ * THE AUDIO THREAD — mmap/madvise/munmap all take mmap_lock and are exactly the
+ * blocking the callback exists to avoid. Any other thread may call it, and more
+ * than the control thread does: the wet-cache worker (engine_cache.c) and the
+ * offline performance renderer (perf_render.c) both reach it through
+ * le_fx_prepare on their own threads. Callers are responsible for the buffer's
+ * own ownership; the allocator itself keeps no shared state beyond the test
+ * seam below.
+ */
+#ifndef SEGNO_RT_ALLOC_H
+#define SEGNO_RT_ALLOC_H
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Claims `bytes` of zeroed, page-touched storage for a buffer the audio thread
+ * writes. Returns NULL on failure (including bytes == 0).
+ *
+ * On Linux the storage is its own anonymous mapping marked MADV_DONTFORK, so
+ * fork() skips the vma outright and never write-protects the parent's pages.
+ * Its own mapping rather than a malloc chunk for one reason: MADV_DONTFORK works
+ * on a vma, and a malloc'd buffer lives inside [heap] alongside memory the child
+ * legitimately inherits. A forked child cannot touch these mappings; nothing
+ * does, because every fork in the host process execs immediately.
+ *
+ * If the kernel refuses the madvise the buffer is still returned: the mapping is
+ * perfectly good memory and all that is lost is the fork protection, which puts
+ * the build back where the unpatched one was — a performance with occasional
+ * dropouts. Failing the allocation instead would fail the ARM or the RECORD, and
+ * on an instrument whose whole purpose is capturing a performance, "you cannot
+ * record" is a worse outcome than "the recording clicks". It says so on stderr
+ * (the journal, on the appliance) so a bench session is never left wondering why
+ * the clicks came back — ONCE per process, because the condition is
+ * process-wide and this seam is on the path of every audio-thread buffer,
+ * while segno.log does not rotate on the appliance.
+ *
+ * macOS also gets its own mapping (there is no fork shield to apply, but the
+ * lifecycle is then identical on every POSIX host, so the tests exercise the
+ * code the appliance runs); Windows uses the heap.
+ *
+ * WHAT ONE-MAPPING-PER-BUFFER COSTS, since it is not free either. mmap and
+ * munmap take mmap_lock for WRITE — the same lock this exists to keep the audio
+ * thread off — and munmap additionally issues TLB-shootdown IPIs to every CPU,
+ * the isolated RT core included. That is fine for the lifecycle call sites this
+ * is meant for, and it is why the offline render workers (which claim and
+ * release a chain's worth of buffers per job) are called out at
+ * engine_fx.c's fx_alloc_ring. It is also why a sub-page buffer costs a whole
+ * page: LE_PV_BINS is ~2 KB and gets 4 KB. Both are bench questions on the
+ * appliance, not things a test suite can answer.
+ *
+ * Either way the pages are touched HERE, on the calling thread, so the audio
+ * thread never faults one in on its first lap. That makes the call
+ * proportional to `bytes` — about a millisecond per 2 MB on the appliance — so
+ * it belongs in arm / configure / lazy-prepare. The one call site that is
+ * hotter than that (le_lane_shrink_slot, once per retired layer per overdub
+ * lap) uses le_rt_alloc_for_overwrite below precisely so it does not pay this
+ * twice.
+ */
+void* le_rt_alloc(size_t bytes);
+
+/* le_rt_alloc for a caller that writes EVERY byte of the buffer before anything
+ * reads it. Same mapping, same fork shield, same le_rt_free — it only skips the
+ * page-touching pass, because the caller's own write does that pass anyway and
+ * doing both doubles the memory traffic on a control-thread path.
+ *
+ * The contract is "do not read before you write", not "expect garbage": on
+ * POSIX the kernel still zeroes the pages, and Windows clears them outright.
+ * Reach for it only where the whole-buffer overwrite is visible in the same
+ * function, as in le_lane_shrink_slot's memcpy. */
+void* le_rt_alloc_for_overwrite(size_t bytes);
+
+/* Releases a pointer from le_rt_alloc / le_rt_alloc_for_overwrite. NULL-safe,
+ * so teardown paths can call it unconditionally. Never call free() on such a
+ * pointer, and never call this on a malloc'd one. */
+void le_rt_free(void* p);
+
+/* Payload size of a live le_rt_alloc pointer, in bytes (0 for NULL). Exists for
+ * the tests; the engine tracks its own capacities.
+ *
+ * There is deliberately NO realloc here. An mmap-backed buffer cannot be resized
+ * in place portably, and the map-new / copy / unmap-old that replaces it hands
+ * the caller a window in which the OLD POINTER IS UNMAPPED — a stale reader
+ * faults where a realloc'd one merely read stale bytes. Who may still be holding
+ * that pointer is the caller's invariant, not the allocator's, so the sequence
+ * lives at the one call site that owns the answer (le_lane_shrink_slot). */
+size_t le_rt_size(const void* p);
+
+/* TEST SEAM. Forces the fork shield to fail, so the degrade path above can be
+ * driven without a kernel that refuses MADV_DONTFORK. Unlike le_rt_alloc this
+ * IS single-threaded-only — it is a plain global, so a test that sets it must
+ * clear it and must be the only thread allocating meanwhile.
+ *
+ * Only Linux has a shield to fail, so only there does this change which branch
+ * runs; elsewhere it is inert and the test it drives asserts the invariant that
+ * survives either way — a shield-less allocation is still usable, zeroed memory.
+ * That is the whole contract of degrading rather than refusing.
+ *
+ * A forced failure logs its own distinct line every time and does NOT consume
+ * the one-per-process report a genuine kernel refusal owns. That is what lets
+ * "no MADV_DONTFORK-refused line in a suite run" stay evidence that every
+ * unforced allocation was shielded by a real kernel. */
+void le_rt_set_fork_shield_failure_for_test(int state);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* SEGNO_RT_ALLOC_H */

@@ -1,14 +1,8 @@
 #include "audio_ring.h"
 
-#include <errno.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-#if defined(__linux__)
-#include <sys/mman.h>
-#endif
+#include "rt_alloc.h" /* le_rt_alloc/le_rt_free: the fork-shielded RT allocator */
 
 static int is_power_of_two(size_t n) { return n >= 2 && (n & (n - 1)) == 0; }
 
@@ -32,63 +26,19 @@ int le_audio_ring_alloc(le_audio_ring* ring, size_t capacity) {
    * far past — from the audio thread. No caller can reach this today; the check
    * is one comparison against a wild write on the real-time path. */
   if (capacity > SIZE_MAX / sizeof(float)) return 0;
-  const size_t bytes = capacity * sizeof(float);
-  float* buffer = NULL;
-#if defined(__linux__)
-  /* Its own mapping rather than a malloc chunk, for one reason: MADV_DONTFORK
-   * works on a vma, and a malloc'd ring lives inside [heap] alongside memory
-   * the child legitimately inherits. Marking it VM_DONTCOPY makes fork() skip
-   * the vma, so the parent's ptes are never write-protected and the audio
-   * thread never takes a copy-on-write fault here — measured on the Pi 5 bench
-   * as ~100 faults/s while armed against zero while idle, each one able to
-   * block the SCHED_FIFO callback on mmap_lock for milliseconds (#804).
-   *
-   * A forked child cannot touch this mapping. Nothing does: every fork in the
-   * host process execs immediately. */
-  void* mapped = mmap(NULL, bytes, PROT_READ | PROT_WRITE,
-                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (mapped == MAP_FAILED) return 0;
-  if (madvise(mapped, bytes, MADV_DONTFORK) != 0) {
-    /* Degrade, do not refuse. The mapping is perfectly good memory; all that is
-     * lost is the fork protection, which puts this build back where the
-     * unpatched one was — a capture with occasional dropouts. Failing the
-     * allocation instead would fail the ARM, and on an instrument whose whole
-     * purpose is recording a performance, "you cannot record" is a worse
-     * outcome than "recording clicks". Said out loud on stderr (the journal, on
-     * the appliance) so a bench session is never left wondering why the clicks
-     * came back. */
-    fprintf(stderr,
-            "segno/audio_ring: MADV_DONTFORK refused (errno %d); this ring is "
-            "copy-on-write and every fork will cost the audio thread a fault "
-            "per page (#804)\n",
-            errno);
-  }
-  buffer = (float*)mapped;
-#else
-  buffer = (float*)malloc(bytes);
+  /* le_rt_alloc is the whole story: fork-shielded, zeroed, and page-touched on
+   * this (control) thread. rt_alloc.h carries the reasoning that used to live
+   * here — it is the same reasoning for every buffer the callback writes, which
+   * is why it is no longer the capture ring's private business (#804). */
+  float* buffer = (float*)le_rt_alloc(capacity * sizeof(float));
   if (buffer == NULL) return 0;
-#endif
-  /* Touch every page HERE, on the control thread. mmap and malloc both hand
-   * back untouched pages, and the first lap of a fresh ring would otherwise be
-   * faulted in by the audio callback one page at a time. */
-  memset(buffer, 0, bytes);
   le_audio_ring_init(ring, buffer, capacity);
   return 1;
 }
 
 void le_audio_ring_release(le_audio_ring* ring) {
   if (ring == NULL || ring->buffer == NULL) return;
-#if defined(__linux__)
-  /* A failed unmap means the struct below is about to destroy the only pointer
-   * that could ever have freed this mapping, so it does not pass quietly. */
-  if (munmap(ring->buffer, ring->capacity * sizeof(float)) != 0) {
-    fprintf(stderr, "segno/audio_ring: munmap failed (errno %d), leaking %zu "
-                    "bytes of capture ring\n",
-            errno, ring->capacity * sizeof(float));
-  }
-#else
-  free(ring->buffer);
-#endif
+  le_rt_free(ring->buffer);
   *ring = (le_audio_ring){0};
 }
 

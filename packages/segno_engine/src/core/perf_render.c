@@ -345,7 +345,18 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
     return 0;
   }
 
+  /* Normalised HERE, not at each use. Every manifest this engine writes carries
+   * sample_rate, but a truncated or hand-edited one may not, and the value is
+   * read in six places: two le_fx_prepare capacities, fx_apply_chain's rate,
+   * the limiter release constant, and three WAV headers. Exactly one of them
+   * used to defend itself (le_pr_render_master's `> 0 ? : 48000`), and the
+   * others quietly took 0 — which since #900 is no longer quiet: a 0 capacity
+   * reaches le_rt_alloc, which refuses it (calloc(0) handed back a non-NULL
+   * zero-byte ring the DSP would then have overrun), so the whole render fails
+   * `prepare_failed`. One fallback, at the door, is the fix for both the new
+   * failure and the older silent one. */
   out->sample_rate = (int32_t)le_json_number(le_json_get(root, "sample_rate"), 0);
+  if (out->sample_rate <= 0) out->sample_rate = 48000;
   out->capture_frames =
       (uint64_t)le_json_number(le_json_get(root, "capture_frames"), 0);
   const le_json_value* arm = le_json_get(root, "armSnapshot");
@@ -1216,7 +1227,7 @@ static void le_pr_render_master(const le_pr_manifest* m,
   int limiter_on = m->arm_limiter_on;
   float ceiling = m->arm_limiter_ceiling;
   float lim_gain = 1.0f;
-  const int sr = m->sample_rate > 0 ? m->sample_rate : 48000;
+  const int sr = m->sample_rate; /* normalised at parse; never <= 0 here */
   float lim_release = 1.0f / (0.05f * (float)sr);
   if (lim_release > 1.0f) lim_release = 1.0f;
 

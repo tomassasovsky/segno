@@ -3936,15 +3936,15 @@ static inline void mix_tracks_frame(
    * with the same a_live load only rules out a_live SWAPS; what rules out
    * reallocation generations is that the control thread never resizes a slot
    * the audio thread can be reading through pool[a_live]:
-   *   - le_lane_ensure_slot (grow-by-replace: frees pool[slot], stores a new
-   *     pointer, then the new cap) only ever touches a LIVE slot while the
-   *     track is EMPTY — le_begin_empty_capture, le_prepare_new_capture and
-   *     session import all establish that first, and an EMPTY track's buffer
-   *     is never dereferenced here (the null guard and the state switch below
-   *     both fall through to silence). le_engine_set_lane_count grows slot 0
-   *     of lanes that are not active yet, so this loop does not even visit
-   *     them. Every other slot it grows is an undo/shadow slot the audio
-   *     thread does not hold as live.
+   *   - le_lane_ensure_slot (grow-by-replace: stores a new pointer, then the
+   *     new cap, then releases the old mapping) only ever touches a LIVE slot
+   *     while the track is EMPTY — le_begin_empty_capture,
+   *     le_prepare_new_capture and session import all establish that first,
+   *     and an EMPTY track's buffer is never dereferenced here (the null guard
+   *     and the state switch below both fall through to silence).
+   *     le_engine_set_lane_count grows slot 0 of lanes that are not active
+   *     yet, so this loop does not even visit them. Every other slot it grows
+   *     is an undo/shadow slot the audio thread does not hold as live.
    *   - le_lane_shrink_slot only touches RETIRED slots — a layer the audio
    *     thread handed off through the evt_ring and can no longer name.
    * So for every slot this loop can actually observe as live-and-playing, the

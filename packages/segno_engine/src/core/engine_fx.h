@@ -90,6 +90,31 @@ void le_fx_enable_force_bypass(le_fx_state* fx, int slot);
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
 
+/* Frees a chain slot's delay rings (both channels) and nulls them. Control-
+ * thread only, exactly like le_fx_free_octaver beside it.
+ *
+ * It exists because these buffers are le_rt_alloc storage (rt_alloc.h — the
+ * audio thread writes a delay ring every frame), so the matching release is
+ * le_rt_free and NOT free(). Every owner goes through this one function rather
+ * than open-coding the pair, so there is one place a mismatched free could ever
+ * be written. */
+void le_fx_free_delay(le_fx_state* fx, int slot);
+
+/* Zeroes slot [slot]'s heap DSP buffers IN PLACE — the delay/echo/reverb rings
+ * and the octaver's phase-vocoder buffers — keeping the mappings and the
+ * pointers. The LIVE-SAFE counterpart to le_fx_free_delay + le_fx_free_octaver,
+ * for a reset that has to run while the audio thread may still be inside a
+ * block that names this slot.
+ *
+ * That distinction only became load-bearing when these buffers moved to
+ * le_rt_alloc: a concurrent reader of a freed heap buffer read garbage, a
+ * concurrent reader of an UNMAPPED one takes a SIGSEGV on the SCHED_FIFO
+ * thread. Zeroing gives the same "no stale tail survives" guarantee the free
+ * was there for (le_fx_entry_reset resets indices and smoothers but does not
+ * touch ring CONTENT) without ever handing the audio thread a dead pointer.
+ * Control thread only, like the free it replaces. */
+void le_fx_clear_heap_buffers(le_fx_state* fx, int slot);
+
 /* Frees EVERY heap buffer a standalone le_fx_state owns (both delay rings per
  * slot + the octaver heap) and nulls the pointers — the one teardown for
  * worker-private offline states (the wet-cache render, the perf_render

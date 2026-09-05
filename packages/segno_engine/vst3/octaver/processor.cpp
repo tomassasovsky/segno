@@ -45,10 +45,7 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
     // buffers (fx_.oct[0][*].out/last_phase/sum_phase) are NOT freed here —
     // their size is fixed (LE_PV_N/LE_PV_BINS), independent of sample rate,
     // so they stay valid and are simply reused across a rate change.
-    free(fx_.delay[0][0]);
-    fx_.delay[0][0] = nullptr;
-    free(fx_.delay[0][1]);
-    fx_.delay[0][1] = nullptr;
+    le_fx_free_delay(&fx_, 0);
     cap_ = newCap;
   }
   if (le_fx_prepare(&fx_, 0, LE_FX_OCTAVER, cap_) != LE_OK) return kResultFalse;
@@ -61,10 +58,7 @@ tresult PLUGIN_API Processor::terminate() {
   // per-channel FIFOs (delay[0][0] AND delay[0][1] — Octaver is not packed
   // like Reverb), and le_fx_free_octaver frees the phase-vocoder/PSOLA
   // buffers (out/last_phase/sum_phase) fx_octaver actually uses.
-  free(fx_.delay[0][0]);
-  fx_.delay[0][0] = nullptr;
-  free(fx_.delay[0][1]);
-  fx_.delay[0][1] = nullptr;
+  le_fx_free_delay(&fx_, 0);
   le_fx_free_octaver(&fx_, 0);
   return AudioEffect::terminate();
 }

@@ -140,6 +140,10 @@ void le_platform_after_device_open(le_engine* engine) { (void)engine; }
 
 void le_platform_on_engine_teardown(void) {}
 
+void le_platform_lock_memory(void) {}
+
+void le_platform_unlock_memory(void) {}
+
 #else
 typedef int segno_engine_apple_tu_unused; /* keep the TU non-empty off Apple */
 #endif

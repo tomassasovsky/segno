@@ -24,6 +24,15 @@ project(segno_engine_core VERSION 0.1.0 LANGUAGES C)
 # core/plugin_disabled.c when it's off) — parts 2/3 must link the stub too.
 add_library(segno_dsp_core STATIC
   core/engine_fx.c
+  # rt_alloc.c rides along here, and only here, for a link reason: engine_fx.c's
+  # delay rings and octaver buffers are written by the audio thread, so they are
+  # claimed from le_rt_alloc (rt_alloc.h) — which makes it an unresolved symbol
+  # in every target that links segno_dsp_core alone (the seven VST3 plugin
+  # builds in ../vst3). segno_engine below needs it too and gets it by linking
+  # this library, so listing it in both source lists would be a duplicate
+  # definition rather than belt-and-braces. Same reasoning as the
+  # le_plugin_slot_process seam noted above.
+  core/rt_alloc.c
 )
 
 # Matches segno_engine's own C_STANDARD/atomics configuration below: this
@@ -55,8 +64,9 @@ target_include_directories(segno_dsp_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/midi"
 )
 
-# Verified via `nm -u` on the built object: segno_dsp_core's only unresolved
-# symbols are libc/libm (calloc/free/sinf/cosf/tanf/tanhf/atan2f/expf/logf/
+# Verified via `nm -u` on the built objects: segno_dsp_core's only unresolved
+# symbols are libc/libm (rt_alloc.c's mmap/munmap/madvise/fprintf included, and
+# calloc/free/sinf/cosf/tanf/tanhf/atan2f/expf/logf/
 # powf, plus the compiler-inserted stack-protector/memcpy-check builtins) and
 # le_plugin_slot_process (the link-seam gotcha above). If a future change to
 # engine_fx.c (or a header it pulls in) adds a new external dependency, this
@@ -67,8 +77,9 @@ add_library(segno_engine SHARED
   # ---- core/: the portable engine (S1 split into per-concern TUs) ----
   core/engine.c              # residual control-thread core + shared helpers
   core/engine_convert.c      # pure sample-format conversion
-  # core/engine_fx.c lives in segno_dsp_core above (linked PRIVATE below) so a
-  # second target (future VST3 plugin builds) can link it too.
+  # core/engine_fx.c and core/rt_alloc.c live in segno_dsp_core above (linked
+  # PRIVATE below) so a second target (the VST3 plugin builds) can link them
+  # too. Listing either one here as well would be a duplicate definition.
   core/engine_session.c      # session export / import / commit
   core/engine_devices.c      # device discovery, loopback, id resolution, backend
   core/engine_snapshot.c     # published-state snapshots + visualization reads
