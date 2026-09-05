@@ -188,6 +188,20 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// backend/driver that doesn't allow the current value lands on a valid one
   /// rather than leaving no chip selected. The choice lists are never empty
   /// (they fall back to the static lists), so `.first` is safe.
+  ///
+  /// The buffer fallback deliberately does NOT use `.first`. The offered list
+  /// is ascending, so `first` is the tightest period on offer — and since #893
+  /// put 32 at the head of the generic list, `first` would make the
+  /// least-proven callback deadline the landing spot for a selection this
+  /// method is only trying to keep valid, then persist it. 32 is an option, so
+  /// it has to stay one.
+  ///
+  /// The rule is instead the offered size NEAREST the current selection, ties
+  /// going to the slacker one. That keeps intent: a user who chose 32 and then
+  /// switches to a driver offering `[64, 128, 256]` lands on 64, not on the
+  /// default, and an off-list 480 lands on 512 rather than being dragged down
+  /// to 128. It also avoids both bad edges — `[32, 64]` gives 64 instead of
+  /// the tightest, and `[64, 1024]` gives 64 instead of 21.3 ms at 48 kHz.
   AudioSetupState _snapRateAndBuffer(AudioSetupState next) {
     final rates = next.sampleRateChoices;
     final buffers = next.bufferChoices;
@@ -197,8 +211,21 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           : rates.first,
       bufferFrames: buffers.contains(next.bufferFrames)
           ? next.bufferFrames
-          : buffers.first,
+          : _nearestOffered(buffers, next.bufferFrames),
     );
+  }
+
+  /// The offered buffer size closest to [current], preferring the larger on a
+  /// tie so an ambiguous snap errs toward the safer deadline. [buffers] is
+  /// never empty (`bufferChoices` falls back to the static list).
+  static int _nearestOffered(List<int> buffers, int current) {
+    var best = buffers.first;
+    for (final size in buffers) {
+      final d = (size - current).abs();
+      final bestD = (best - current).abs();
+      if (d < bestD || (d == bestD && size > best)) best = size;
+    }
+    return best;
   }
 
   /// Sets the maximum per-track loop length in whole [minutes] (`0` = engine
@@ -340,9 +367,9 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // The SELECTION follows what the device gave — as far as the chooser can
     // represent it. A row that keeps saying 96 kHz while the engine runs 48 is
     // the lie the Status tab existed to correct; a row saying 480 when the
-    // grid only offers 64/128/256/512 is a different one, with no chip lit and
-    // no way back, and it would be PERSISTED. So an off-list figure stays out
-    // of the selection and is named by the banner instead.
+    // grid only offers AudioSetupState.bufferSizes is a different one, with no
+    // chip lit and no way back, and it would be PERSISTED. So an off-list
+    // figure stays out of the selection and is named by the banner instead.
     final rate = _offerable(actualRate, state.sampleRateChoices, askedRate);
     final buffer = _offerable(actualBuffer, state.bufferChoices, askedBuffer);
     final settled = state.copyWith(
