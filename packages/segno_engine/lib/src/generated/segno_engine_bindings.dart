@@ -1210,6 +1210,19 @@ class SegnoEngineBindings {
   late final _le_engine_clear_undoable = _le_engine_clear_undoablePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Undo on track [channel]: peels the most recent overdub pass, restores a
+  /// cleared take, or empties the track past its base take (redo-ably). During
+  /// a capture (accepted design, slice 2):
+  /// - OVERDUBBING: the pass punches out now (not at the grid) and the layer
+  /// it was writing is peeled as soon as it retires, so the track plays its
+  /// pre-pass audio; redo puts the partial pass back without resuming the
+  /// capture. A pass that had written nothing peels the previous layer.
+  /// - RECORDING: the take is cancelled — finalized at its captured length
+  /// (a defining take still establishes the grid it would have) and held
+  /// for redo while the track reads EMPTY; redo plays it immediately
+  /// (LE_CMD_CANCEL_TAKE / LE_EVT_TAKE_CANCELLED).
+  /// A user clear (le_engine_clear_undoable) on a capturing track freezes the
+  /// take STOPPED at the clear and keeps it restorable the same way.
   int le_engine_undo(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -1822,9 +1835,41 @@ class SegnoEngineBindings {
   late final _le_engine_set_quantize_div = _le_engine_set_quantize_divPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// What le_engine_set_looper_mode would do with [mode] right now: one of
+  /// le_mode_gate (>= 0), or LE_ERR_INVALID for a bad handle/mode and
+  /// LE_ERR_NOT_RUNNING for an unconfigured engine. Selecting the current mode
+  /// is always LE_MODE_GATE_OPEN (a no-op). Ask before offering the choice: an
+  /// LE_MODE_GATE_PLAYING answer is what a "stop loops and switch"
+  /// confirmation stands for.
+  int le_engine_looper_mode_gate(
+    ffi.Pointer<le_engine> engine,
+    int mode,
+  ) {
+    return _le_engine_looper_mode_gate(
+      engine,
+      mode,
+    );
+  }
+
+  late final _le_engine_looper_mode_gatePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_looper_mode_gate');
+  late final _le_engine_looper_mode_gate = _le_engine_looper_mode_gatePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the looper mode (le_looper_mode, 0..4). Values outside the enum
-  /// return LE_ERR_INVALID without posting. Ignored (no-op) while the mode is
-  /// locked (see the class doc) — the audio thread silently drops it.
+  /// return LE_ERR_INVALID without posting. Refused with LE_ERR_INVALID while
+  /// the gate above reads CAPTURING, QUEUED or SPANS; with PLAYING every
+  /// playing track is stopped ahead of the switch in the same ring order; a
+  /// no-op (LE_OK) for the current mode. Landing on the audio thread, a switch
+  /// over recorded audio re-clocks the takes for the target: the shared master
+  /// is established from the primary's span (or goes dormant for SONG/FREE,
+  /// whose tracks run their own clocks), and each take's multiple or division
+  /// is re-derived from its unchanged length. Content, layers, history, mutes
+  /// and lane settings are untouched.
   int le_engine_set_looper_mode(
     ffi.Pointer<le_engine> engine,
     int mode,
@@ -4566,9 +4611,31 @@ enum le_command_code {
   /// — LE_PLOG_RECORD_END / LE_PLOG_RECORD_ABORT — is what is logged).
   LE_CMD_FINALIZE_TAKE(56),
 
+  /// Cancel a take in progress on arg_i (le_engine_undo while RECORDING): the
+  /// take is finalized at its captured length exactly as a press would end
+  /// it — grid, tempo derivation and loop span included — and the track then
+  /// reads EMPTY with that finalized content held for redo, which plays it
+  /// immediately (LE_CMD_REDO_FROM_EMPTY). LE_EVT_TAKE_CANCELLED carries the
+  /// finalized length back so the control thread can file the redo entry.
+  LE_CMD_CANCEL_TAKE(57),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
-  LE_EVT_LAYER_RETIRED(100);
+  LE_EVT_LAYER_RETIRED(100),
+
+  /// LE_CMD_CANCEL_TAKE landed: lanei arm —
+  /// channel, value = the finalized length the
+  /// emptied track holds for redo (0: nothing
+  /// was captured, nothing to redo).
+  LE_EVT_TAKE_CANCELLED(101),
+
+  /// a user clear landed on a capturing track:
+  /// the take was finalized STOPPED first and
+  /// then erased. restore arm — channel, len,
+  /// state (STOPPED), master_len — completes
+  /// the restore point the control thread left
+  /// pending (0 len: a void take, no way back).
+  LE_EVT_CLEAR_FROZEN(102);
 
   final int value;
   const le_command_code(this.value);
@@ -4631,7 +4698,10 @@ enum le_command_code {
     54 => LE_CMD_SET_INPUT_COND,
     55 => LE_CMD_SET_INPUT_COND_PARAM,
     56 => LE_CMD_FINALIZE_TAKE,
+    57 => LE_CMD_CANCEL_TAKE,
     100 => LE_EVT_LAYER_RETIRED,
+    101 => LE_EVT_TAKE_CANCELLED,
+    102 => LE_EVT_CLEAR_FROZEN,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }

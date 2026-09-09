@@ -683,6 +683,14 @@ typedef struct le_track {
   int outstanding_count;
   int queued_undo;   /* undo taps deferred until the in-flight layer retires */
   int32_t empty_len; /* len to restore on redo-from-empty (0 = none) */
+  /* control: a user clear posted on a CAPTURING track. The restore point
+   * needs the length the finalize decides, so it is filed when
+   * LE_EVT_CLEAR_FROZEN comes back; until then the stack keeps the erased
+   * take's layers and `clear_restore_slot` pins the live slot they and the
+   * frozen take share. A fresh capture drops the pending point with the
+   * history (le_drop_clear_history). */
+  int clear_restore_pending;
+  int32_t clear_restore_slot;
   /* #595: an explicit un-route since the last drain asked for a trailing-lane
    * reclaim. The immediate trim in le_engine_set_lane_input can only reclaim
    * the just-un-routed slot — a sibling un-route pushed in the same audio
@@ -1194,7 +1202,7 @@ struct le_engine {
    * configure exactly like the tempo/click settings above (not reset per
    * session, and not reset by clear-all either — no engine-side "revert to
    * Multi" event exists). Default MULTI (0) so an untouched engine is
-   * bit-identical to today's build. LOCKED (le_looper_mode_locked,
+   * bit-identical to today's build. gated (le_looper_mode_switch_blocked,
    * engine_process.c) while any track has content — a simpler predicate than
    * the tempo lock (content alone). */
   _Atomic int32_t a_looper_mode; /* le_looper_mode; default 0 = MULTI */
@@ -1617,7 +1625,7 @@ static inline int32_t le_effective_multiple(const le_engine* e, int32_t ch) {
  *     stays unconditional per D18: the crown is a persistent designation,
  *     settable before content even exists), matching this file's existing
  *     "recompute live, don't trust the setter" discipline (see
- *     le_effective_multiple, le_looper_mode_locked). A track crowned while
+ *     le_effective_multiple, le_looper_mode_switch_blocked). A track crowned while
  *     holding a divisor simply reads as "not yet established" — the same
  *     D16 fallback as no primary at all, so every OTHER track's
  *     recording degrades gracefully to ordinary Multi-style behavior

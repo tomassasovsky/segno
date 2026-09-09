@@ -950,12 +950,18 @@ class ControlCubit extends Cubit<ControlState> {
     // restore point behind (an undone-to-empty redo-only track's does not), so
     // this is the gate on offering whole-rig undo below.
     var restorable = false;
+    final cleared = <int>[];
     for (final track in _tracks) {
       if (!track.hasContent && !track.canRedo) continue;
       if (track.hasContent) restorable = true;
-      _looper
-        ..clear(channel: track.channel)
-        ..setMute(muted: false, channel: track.channel);
+      cleared.add(track.channel);
+    }
+    // One grouped edit (accepted design, slice 2): the repository remembers
+    // the group, so the next Undo on any member restores every member.
+    _looper.clearAll(cleared);
+    for (final track in _tracks) {
+      if (!cleared.contains(track.channel)) continue;
+      _looper.setMute(muted: false, channel: track.channel);
       final lanes = track.lanes.isEmpty ? 1 : track.lanes.length;
       for (var lane = 0; lane < lanes; lane++) {
         unawaited(
@@ -1004,6 +1010,17 @@ class ControlCubit extends Cubit<ControlState> {
   /// overlay — the user is recovering the rig they had, cursor and mode
   /// included.
   void undoClearAll() {
+    // The grouped edit comes back as one operation through any member; the
+    // per-track sweep covers a group the engine has partly retired (a fresh
+    // take on one member), restoring whatever still offers its way back.
+    if (_looper.undoRestoresClearAll) {
+      for (final track in _tracks) {
+        if (track.clearRestore) {
+          _looper.undo(channel: track.channel);
+          return;
+        }
+      }
+    }
     for (final track in _tracks) {
       if (track.clearRestore) _looper.undo(channel: track.channel);
     }

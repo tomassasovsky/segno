@@ -483,8 +483,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
     on<LooperModeChanged>((event, _) {
-      _repository.setLooperMode(event.mode);
-      unawaited(_settings?.saveLooperMode(event.mode.code));
+      // Refused changes (a capture, a queue, unfit spans — see
+      // `LooperRepository.looperModeGate`) leave the setting where it was;
+      // only a change the engine took is what the rig boots into next time.
+      if (_repository.setLooperMode(event.mode).isOk) {
+        unawaited(_settings?.saveLooperMode(event.mode.code));
+      }
     });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {

@@ -97,6 +97,8 @@ void main() {
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
+    when(() => repository.clearAll(any())).thenReturn(EngineResult.ok);
+    when(() => repository.undoRestoresClearAll).thenReturn(false);
     when(() => repository.state).thenReturn(const LooperState());
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
@@ -1138,8 +1140,8 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
       await tester.pump();
       // Clear-all is a ControlIntents action: every content track is cleared
-      // and re-armed on the engine directly.
-      verify(() => repository.clear()).called(1);
+      // as one grouped edit and re-armed on the engine directly.
+      verify(() => repository.clearAll([0])).called(1);
       verify(() => repository.setMute(muted: false)).called(1);
       await settleToasts(tester); // clearing content raises the undo toast
     });

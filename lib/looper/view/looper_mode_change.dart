@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
-import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/theme/theme.dart';
@@ -40,14 +39,15 @@ Map<LooperMode, ({String label, String sub})> looperModeLabels(
   ),
 };
 
-/// Switches the looper to [next], clearing first when the session has content.
+/// Switches the looper to [next] under the accepted mode-change contract.
 ///
-/// **The D4 sequence, and the only implementation of it.** Switching mode with
-/// content in the session is rejected by the engine as a SILENT no-op, so this
-/// never dispatches into that: it confirms, clears, waits for the bloc to
-/// *report* cleared, and only then switches. A second copy of the sequence in
-/// the console tray would be a second chance to get the silent no-op subtly
-/// wrong, so `LooperModeSection` and the Loop face both call this.
+/// **The one implementation of it.** The engine measures what a change
+/// would do (`LooperRepository.looperModeGate`): a stopped, fitting rig
+/// switches directly; a playing rig asks **Stop loops and switch** first
+/// (Cancel keeps everything); a capture, a queued action or unfit spans
+/// refuse with their reason. No audio is cleared, trimmed or stretched to
+/// make a mode fit. `LooperModeSection` and the Loop face both call this, so
+/// the two surfaces cannot drift.
 ///
 /// Filed beside the Settings section rather than under `view/loop/`: a
 /// non-console screen imports it, so a folder named after one consumer would
@@ -55,10 +55,9 @@ Map<LooperMode, ({String label, String sub})> looperModeLabels(
 ///
 /// Resolves **true** when the change was dispatched, so a caller can shut its
 /// chooser on the way through and leave it open when the confirm was declined
-/// — which is what `LOOP / settings-mode-confirm` draws: the mode list is
-/// still open behind the dialog.
+/// or the change was refused.
 ///
-/// Needs [LooperBloc] and [ControlCubit] on [context].
+/// Needs [LooperBloc] and [LooperRepository] on [context].
 Future<bool> requestLooperModeChange(
   BuildContext context, {
   required LooperMode current,
@@ -67,57 +66,48 @@ Future<bool> requestLooperModeChange(
   if (next == current) return false;
   final l10n = context.l10n;
   final bloc = context.read<LooperBloc>();
-  if (!bloc.state.hasContent) {
-    bloc.add(LooperModeChanged(next));
-    return true;
+  final gate = context.read<LooperRepository>().looperModeGate(next);
+  switch (gate) {
+    case LooperModeGate.open:
+      bloc.add(LooperModeChanged(next));
+      return true;
+    case LooperModeGate.playing:
+      final confirmed = await showConsoleConfirmDialog(
+        context,
+        title: l10n.modeChangeStopTitle(looperModeLabels(l10n)[next]!.label),
+        body: l10n.modeChangeStopBody,
+        confirmLabel: l10n.modeChangeStopConfirm,
+      );
+      if (!confirmed || !context.mounted) return false;
+      bloc.add(LooperModeChanged(next));
+      return true;
+    case LooperModeGate.capturing:
+    case LooperModeGate.queued:
+    case LooperModeGate.spans:
+      _showRefusal(context, looperModeRefusal(l10n, gate));
+      return false;
   }
-  final confirmed = await showConsoleConfirmDialog(
-    context,
-    title: l10n.modeChangeConfirmTitle,
-    body: l10n.modeChangeConfirmBody,
-    confirmLabel: l10n.modeChangeConfirmConfirm,
-  );
-  if (!confirmed) return false;
-  if (!context.mounted) return false;
-  await context.read<ControlCubit>().clearAll();
-  if (!context.mounted) return false;
-  // The clear above only POSTS the engine command; LooperBloc's state reflects
-  // it once the next ~16 ms poll tick republishes the snapshot
-  // (LooperRepository.pollInterval), not synchronously. Dispatching the mode
-  // change before that lands would race the D4 content lock — the engine could
-  // still see the pre-clear content and silently drop it, exactly the silent
-  // no-op this flow exists to prevent. Wait for the bloc to actually report
-  // cleared (bounded, so a stuck drain — e.g. a capture mid-punch-out — cannot
-  // hang the switch forever).
-  if (bloc.state.hasContent) {
-    await bloc.stream
-        .firstWhere((s) => !s.hasContent)
-        .timeout(const Duration(seconds: 2), onTimeout: () => bloc.state);
-  }
-  // Re-check rather than dispatching unconditionally: on the (rare) timeout
-  // path above, content may still be present — dispatching anyway would
-  // recreate the exact silent D4 no-op this whole flow exists to prevent.
-  if (!bloc.state.hasContent) {
-    bloc.add(LooperModeChanged(next));
-    return true;
-  }
-  // The confirm dialog is already gone and the picker's own state is
-  // unchanged, so without an explicit signal here the timeout is
-  // indistinguishable from "my tap didn't register" — surface it with a
-  // SnackBar (matching `tracks_commands.dart`'s `showSessionOutcome`
-  // convention for other transient outcomes) so the user knows to retry rather
-  // than silently getting nothing.
-  if (!context.mounted) return false;
+}
+
+/// The short reason a mode is unavailable right now — the copy the accepted
+/// mode cards show in place of a mode's description. `null` when the change
+/// is open or only needs the stop confirmation.
+String? looperModeRefusal(AppLocalizations l10n, LooperModeGate gate) =>
+    switch (gate) {
+      LooperModeGate.capturing => l10n.modeChangeBlockedCapturing,
+      LooperModeGate.queued => l10n.modeChangeBlockedQueued,
+      LooperModeGate.spans => l10n.modeChangeBlockedSpans,
+      LooperModeGate.open || LooperModeGate.playing => null,
+    };
+
+void _showRefusal(BuildContext context, String? reason) {
+  if (reason == null) return;
   ScaffoldMessenger.of(context)
     ..clearSnackBars()
     ..showSnackBar(
       SnackBar(
-        key: const Key('looperMode_timeout_snackbar'),
-        content: Semantics(
-          liveRegion: true,
-          child: AppText(l10n.modeChangeTimedOut),
-        ),
+        key: const Key('looperMode_refused_snackbar'),
+        content: Semantics(liveRegion: true, child: AppText(reason)),
       ),
     );
-  return false;
 }
