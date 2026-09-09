@@ -192,6 +192,9 @@ class PerformanceArmSnapshot {
     this.masterEffects = const [],
     this.masterChainEnabled = true,
     this.fxStagesVersion = currentFxStagesVersion,
+    this.followOutput = false,
+    this.outputLevel = 1,
+    this.outputMuted = false,
   });
 
   /// Rebuilds a [PerformanceArmSnapshot] from a decoded JSON map.
@@ -210,6 +213,9 @@ class PerformanceArmSnapshot {
         limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
         latencyOffsetFrames: (json['latencyOffsetFrames'] as num).toInt(),
         tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
+        followOutput: json['followOutput'] as bool? ?? false,
+        outputLevel: (json['outputLevel'] as num?)?.toDouble() ?? 1,
+        outputMuted: json['outputMuted'] as bool? ?? false,
         fxStagesVersion:
             (json['fxStagesVersion'] as num?)?.toInt() ?? legacyFxStagesVersion,
         tracks: [
@@ -251,6 +257,21 @@ class PerformanceArmSnapshot {
 
   /// The active device profile's latency offset in frames at arm time.
   final int latencyOffsetFrames;
+
+  /// The take's capture policy (slice 3b), frozen at arm: `false` (the
+  /// default) captured the first output destination after its chain and
+  /// before its level, mute, the master gain and the limiter, so the
+  /// offline render stops there too; `true` (Follow output volume) captured
+  /// the final output, so the render replays the destination's level and
+  /// mute, then the master gain and limiter.
+  final bool followOutput;
+
+  /// Output destination 0's level at arm time, the starting point of the
+  /// render's replay under [followOutput].
+  final double outputLevel;
+
+  /// Whether output destination 0 was muted at arm time.
+  final bool outputMuted;
 
   /// Denominator-note beats per minute the engine read at the arm instant;
   /// `0` = unset, stored verbatim exactly like `Session.tempoBpm` (the same
@@ -298,6 +319,9 @@ class PerformanceArmSnapshot {
     'limiterCeiling': limiterCeiling,
     'latencyOffsetFrames': latencyOffsetFrames,
     'tempoBpm': tempoBpm,
+    if (followOutput) 'followOutput': true,
+    if (outputLevel != 1) 'outputLevel': outputLevel,
+    if (outputMuted) 'outputMuted': true,
     if (fxStagesVersion != legacyFxStagesVersion)
       'fxStagesVersion': fxStagesVersion,
     'tracks': [for (final t in tracks) t.toJson()],

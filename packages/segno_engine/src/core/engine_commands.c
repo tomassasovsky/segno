@@ -2470,7 +2470,8 @@ int32_t le_engine_set_input_conditioning_param(le_engine* engine, int32_t input,
 
 /* ---- Track-stage + Master insert chains (FX v3 part 1b) ----
  * The bus twins of the lane/monitor setter families above, on the two
- * le_fx_bus owners (le_track.bus / le_engine.master_fx): type/count via the
+ * le_fx_bus owners (le_track.bus / le_engine.outputs[k].fx, the Master
+ * insert being bus 0's chain since slice 3b): type/count via the
  * ring (lockstep DSP reset on the audio thread), params + enable flags as
  * direct atomic stores (work while stopped), le_fx_prepare_entry's
  * control-thread allocation contract, and the same D-ENSEED pushed-shadow
@@ -2548,20 +2549,24 @@ int32_t le_engine_set_track_fx_chain_enabled(le_engine* engine,
   return LE_OK;
 }
 
-int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
+static int32_t le_output_bus_valid(int32_t bus) {
+  return bus >= 0 && bus < LE_MAX_OUTPUT_BUSES;
+}
+
+int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus, int32_t index,
                                 int32_t type) {
-  if (engine == NULL) return LE_ERR_INVALID;
+  if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
-  le_fx_bus* b = &engine->master_fx;
+  le_fx_bus* b = &engine->outputs[bus].fx;
   int32_t changed = 0;
   if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, index,
                           type, engine->fx_delay_frames, &changed) != LE_OK) {
     return LE_ERR_INVALID;
   }
   const int32_t rc =
-      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MASTER_FX,
-                                       .fx = {0, 0, index, type}});
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_OUTPUT_FX,
+                                       .fx = {bus, 0, index, type}});
   if (rc == LE_OK) {
     b->fx_type_pushed[index] = type;
     if (changed) store_i32(&b->a_fx_enabled[index], 1);
@@ -2569,43 +2574,110 @@ int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
   return rc;
 }
 
-int32_t le_engine_set_master_fx_count(le_engine* engine, int32_t count) {
-  if (engine == NULL) return LE_ERR_INVALID;
+int32_t le_engine_set_output_fx_count(le_engine* engine, int32_t bus,
+                                      int32_t count) {
+  if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
-  le_fx_bus* b = &engine->master_fx;
+  le_fx_bus* b = &engine->outputs[bus].fx;
   const int32_t rc =
-      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MASTER_FX_COUNT,
-                                       .fxcount = {0, 0, count}});
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_OUTPUT_FX_COUNT,
+                                       .fxcount = {bus, 0, count}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&b->fx_count_pushed, b->a_fx_enabled, count);
   }
   return rc;
 }
 
-int32_t le_engine_set_master_fx_param(le_engine* engine, int32_t index,
-                                      int32_t param, float value) {
-  if (engine == NULL) return LE_ERR_INVALID;
+int32_t le_engine_set_output_fx_param(le_engine* engine, int32_t bus,
+                                      int32_t index, int32_t param,
+                                      float value) {
+  if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
-  store_f32(&engine->master_fx.a_fx_param[index][param], value);
+  store_f32(&engine->outputs[bus].fx.a_fx_param[index][param], value);
   return LE_OK;
+}
+
+int32_t le_engine_set_output_fx_enabled(le_engine* engine, int32_t bus,
+                                        int32_t index, int32_t enabled) {
+  if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  store_i32(&engine->outputs[bus].fx.a_fx_enabled[index], enabled ? 1 : 0);
+  return LE_OK;
+}
+
+int32_t le_engine_set_output_fx_chain_enabled(le_engine* engine, int32_t bus,
+                                              int32_t enabled) {
+  if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
+  store_i32(&engine->outputs[bus].fx.a_fx_chain_enabled, enabled ? 1 : 0);
+  return LE_OK;
+}
+
+/* The Master insert API is bus 0's chain (slice 3b). */
+int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
+                                int32_t type) {
+  return le_engine_set_output_fx(engine, 0, index, type);
+}
+
+int32_t le_engine_set_master_fx_count(le_engine* engine, int32_t count) {
+  return le_engine_set_output_fx_count(engine, 0, count);
+}
+
+int32_t le_engine_set_master_fx_param(le_engine* engine, int32_t index,
+                                      int32_t param, float value) {
+  return le_engine_set_output_fx_param(engine, 0, index, param, value);
 }
 
 int32_t le_engine_set_master_fx_enabled(le_engine* engine, int32_t index,
                                         int32_t enabled) {
-  if (engine == NULL) return LE_ERR_INVALID;
-  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  store_i32(&engine->master_fx.a_fx_enabled[index], enabled ? 1 : 0);
-  return LE_OK;
+  return le_engine_set_output_fx_enabled(engine, 0, index, enabled);
 }
 
 int32_t le_engine_set_master_fx_chain_enabled(le_engine* engine,
                                               int32_t enabled) {
+  return le_engine_set_output_fx_chain_enabled(engine, 0, enabled);
+}
+
+int32_t le_engine_set_output_level(le_engine* engine, int32_t bus,
+                                   float level) {
+  if (!le_output_bus_valid(bus)) return LE_ERR_INVALID;
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_OUTPUT_LEVEL,
+                                          .lanef = {bus, 0, level}});
+}
+
+int32_t le_engine_set_output_mute(le_engine* engine, int32_t bus,
+                                  int32_t muted) {
+  if (!le_output_bus_valid(bus)) return LE_ERR_INVALID;
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_OUTPUT_MUTE,
+                                          .lanef = {bus, 0,
+                                                    muted ? 1.0f : 0.0f}});
+}
+
+int32_t le_engine_set_output_mono(le_engine* engine, int32_t bus,
+                                  int32_t mono) {
+  if (!le_output_bus_valid(bus)) return LE_ERR_INVALID;
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_OUTPUT_MONO,
+                                          .lanef = {bus, 0,
+                                                    mono ? 1.0f : 0.0f}});
+}
+
+int32_t le_engine_set_output_balance(le_engine* engine, int32_t bus,
+                                     float balance) {
+  if (!le_output_bus_valid(bus)) return LE_ERR_INVALID;
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_OUTPUT_BALANCE,
+                                          .lanef = {bus, 0, balance}});
+}
+
+int32_t le_engine_cut_sound(le_engine* engine) {
+  return le_push(engine, LE_CMD_CUT_SOUND, 0, 0.0f);
+}
+
+int32_t le_perf_set_follow_output(le_engine* engine, int32_t follow) {
   if (engine == NULL) return LE_ERR_INVALID;
-  store_i32(&engine->master_fx.a_fx_chain_enabled, enabled ? 1 : 0);
+  store_i32(&engine->a_perf_follow_output, follow ? 1 : 0);
   return LE_OK;
 }
 
@@ -2844,13 +2916,22 @@ static int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
   out_ch[1] = -1;
   const uint32_t mask =
       atomic_load_explicit(&e->a_output_enabled_mask, memory_order_relaxed);
-  int found = 0;
-  for (int32_t c = 0; c < e->out_channels && c < LE_MAX_CHANNELS; ++c) {
-    if (!(mask & (1u << c))) continue;
-    out_ch[found++] = c;
-    if (found == 2) break;
+  /* The first output BUS (slice 3b) with an enabled channel: the capture
+   * is that bus's pair, so its pre-level tap has one bus to read. A single
+   * enabled channel of the pair makes the capture mono. */
+  for (int32_t c = 0; c < e->out_channels && c < LE_MAX_CHANNELS; c += 2) {
+    const int left = (mask & (1u << c)) != 0;
+    const int right =
+        c + 1 < e->out_channels && (mask & (1u << (c + 1))) != 0;
+    if (!left && !right) continue;
+    out_ch[0] = left ? c : c + 1;
+    if (left && right) {
+      out_ch[1] = c + 1;
+      return 2;
+    }
+    return 1;
   }
-  return found;
+  return 0;
 }
 
 /* Frees every ring allocated by an arm attempt that never reached the audio
@@ -2900,6 +2981,9 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   engine->perf.master_channels = found;
   engine->perf.master_out_ch[0] = out_ch[0];
   engine->perf.master_out_ch[1] = out_ch[1];
+  /* The capture policy is frozen per take (accepted design): the flag as it
+   * stands at arm, read by the audio thread through this plain field. */
+  engine->perf.follow_output = load_i32(&engine->a_perf_follow_output);
 
   /* The monitor capture set is frozen at arm: whichever inputs are enabled
    * right now, and no others — an input enabled later is logged, not tapped

@@ -1711,6 +1711,52 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
   }
 }
 
+/* Clears every effect tail on [fx] (slice 3b, Cut all sound): the DSP state
+ * of every typed slot and its delay rings, on the audio thread. Settings and
+ * the enable runtime stay, so an engaged effect carries on from silence. */
+static void le_fx_state_clear_tails(le_fx_state* fx, _Atomic int32_t* types,
+                                    int fx_cap) {
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    if (load_i32(&types[s]) == LE_FX_NONE) continue;
+    le_fx_entry_reset(fx, s);
+    for (int chan = 0; chan < 2; ++chan) {
+      if (fx->delay[s][chan] != NULL) {
+        memset(fx->delay[s][chan], 0, (size_t)fx_cap * sizeof(float));
+      }
+    }
+  }
+}
+
+/* Cut all sound (accepted design): every audible recorded track stops (a
+ * take in progress finalizes as a Stop would), the count-in is cancelled,
+ * and every chain's tail is cleared. Monitors keep their preferences. */
+static void handle_cut_sound(le_engine* e, uint64_t frame) {
+  const int fx_cap = e->fx_delay_frames;
+  for (int32_t ch = 0; ch < e->track_count; ++ch) {
+    le_track* t = &e->tracks[ch];
+    const int32_t st = load_i32(&t->a_state);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_PLAYING ||
+        st == LE_TRACK_OVERDUBBING) {
+      handle_stop(e, ch, frame);
+    }
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_lane* ln = &t->lanes[l];
+      le_fx_state_clear_tails(&ln->fx, ln->a_fx_type, fx_cap);
+    }
+    le_fx_state_clear_tails(&t->bus.fx, t->bus.a_fx_type, fx_cap);
+  }
+  if (e->count_in_total > 0) le_count_in_reset(e);
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    le_fx_state_clear_tails(&e->monitors[c].fx, e->monitors[c].a_fx_type,
+                            fx_cap);
+  }
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    le_fx_state_clear_tails(&e->outputs[k].fx.fx, e->outputs[k].fx.a_fx_type,
+                            fx_cap);
+  }
+  atomic_fetch_add_explicit(&e->a_tail_reset_rev, 1u, memory_order_relaxed);
+}
+
 static void handle_play(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
   const int was_held = le_transport_held(e);
@@ -2805,20 +2851,71 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       store_i32(&e->tracks[ch].bus.a_fx_count, count);
       break;
     }
-    case LE_CMD_SET_MASTER_FX: {
+    case LE_CMD_SET_MASTER_FX:
+    case LE_CMD_SET_OUTPUT_FX: {
+      /* The Master insert (51) is bus 0's chain (slice 3b). */
+      const int32_t bus = cmd->code == LE_CMD_SET_OUTPUT_FX ? cmd->fx.channel : 0;
       const int32_t index = cmd->fx.index;
+      if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) break;
       if (index < 0 || index >= LE_FX_MAX) break;
-      store_i32(&e->master_fx.a_fx_type[index], cmd->fx.type);
-      le_fx_entry_reset(&e->master_fx.fx, index);
+      store_i32(&e->outputs[bus].fx.a_fx_type[index], cmd->fx.type);
+      le_fx_entry_reset(&e->outputs[bus].fx.fx, index);
       break;
     }
-    case LE_CMD_SET_MASTER_FX_COUNT: {
+    case LE_CMD_SET_MASTER_FX_COUNT:
+    case LE_CMD_SET_OUTPUT_FX_COUNT: {
+      const int32_t bus =
+          cmd->code == LE_CMD_SET_OUTPUT_FX_COUNT ? cmd->fxcount.channel : 0;
+      if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) break;
       int32_t count = cmd->fxcount.count;
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
-      store_i32(&e->master_fx.a_fx_count, count);
+      store_i32(&e->outputs[bus].fx.a_fx_count, count);
       break;
     }
+    case LE_CMD_SET_OUTPUT_LEVEL: {
+      const int32_t bus = cmd->lanef.channel;
+      if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) break;
+      le_plog_push(e, frame, *cmd);
+      float v = cmd->lanef.value;
+      if (!(v >= 0.0f)) v = 0.0f;
+      if (v > 1.0f) v = 1.0f;
+      store_f32(&e->outputs[bus].a_level_bits, v);
+      break;
+    }
+    case LE_CMD_SET_OUTPUT_MUTE: {
+      const int32_t bus = cmd->lanef.channel;
+      if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) break;
+      le_plog_push(e, frame, *cmd);
+      store_i32(&e->outputs[bus].a_muted, cmd->lanef.value != 0.0f ? 1 : 0);
+      break;
+    }
+    case LE_CMD_SET_OUTPUT_MONO: {
+      const int32_t bus = cmd->lanef.channel;
+      if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) break;
+      le_plog_push(e, frame, *cmd);
+      store_i32(&e->outputs[bus].a_mono, cmd->lanef.value != 0.0f ? 1 : 0);
+      break;
+    }
+    case LE_CMD_SET_OUTPUT_BALANCE: {
+      const int32_t bus = cmd->lanef.channel;
+      if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) break;
+      le_plog_push(e, frame, *cmd);
+      float v = cmd->lanef.value;
+      if (!(v >= -1.0f)) v = v < -1.0f ? -1.0f : 0.0f;
+      if (v > 1.0f) v = 1.0f;
+      float gl;
+      float gr;
+      le_pan_gains(v, &gl, &gr);
+      store_f32(&e->outputs[bus].a_bal_gl_bits, gl);
+      store_f32(&e->outputs[bus].a_bal_gr_bits, gr);
+      store_f32(&e->outputs[bus].a_balance_bits, v);
+      break;
+    }
+    case LE_CMD_CUT_SOUND:
+      le_plog_push(e, frame, *cmd);
+      handle_cut_sound(e, frame);
+      break;
     case LE_CMD_SET_MONITOR_INPUT_OUTPUT: {
       const int32_t input = cmd->trackmask.channel;
       if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
@@ -3076,26 +3173,61 @@ static void le_latency_resolve(le_engine* e, int sr) {
  * The perf master tap (perf_tap_master_frame) keeps capturing post-limiter
  * output — this insert is upstream of it; stems/manifest handling of the
  * Master chain is parts 3/9, not a tap change here. */
-static inline void master_fx_frame(le_engine* e, float* out, uint32_t f,
-                                   int ch_out, int sr, int fx_cap, int mst_c0,
-                                   int mst_c1, int32_t mst_fx_count,
-                                   const int32_t* mst_fx_type,
-                                   const float mst_fx_params[LE_FX_MAX]
-                                                            [LE_FX_PARAMS],
-                                   const int32_t* mst_fx_enabled) {
+/* The same push for the master capture from a bus's pair before its level
+ * (slice 3b): the default tap, so the PA's level does not reach the take. */
+static inline void perf_tap_master_pair(le_engine* e, int bus, float l,
+                                        float r) {
+  if (!e->perf.armed) return;
+  /* master_out_ch is the enabled channel(s) of this pair, frozen at arm: a
+   * mono capture may be the pair's right channel. */
+  const float s[2] = {e->perf.master_out_ch[0] == 2 * bus ? l : r, r};
+  if (!le_audio_ring_push_frame(&e->perf.master_ring, s,
+                                (size_t)e->perf.master_channels)) {
+    atomic_fetch_add_explicit(&e->a_perf_overruns, 1u, memory_order_relaxed);
+  }
+}
+
+/* One output bus for one frame (slice 3b): its chain over the pair, the
+ * pre-level performance tap when it is the captured bus, then level, Mono,
+ * balance and mute. Runs after every source summed onto the outputs, before
+ * the global master gain and limiter. A single-channel last bus processes
+ * its channel as l == r. */
+static inline void output_bus_frame(le_engine* e, float* out, uint32_t f,
+                                    int ch_out, int sr, int fx_cap, int bus,
+                                    int has_fx, int32_t fx_count,
+                                    const int32_t* fx_type,
+                                    const float fx_params[LE_FX_MAX]
+                                                         [LE_FX_PARAMS],
+                                    const int32_t* fx_enabled, float level,
+                                    int muted, int mono, float gl, float gr,
+                                    int tap_here) {
   float* o = out + (size_t)f * (size_t)ch_out;
-  float l = 0.0f;
-  float r = 0.0f;
-  if (mst_c0 >= 0) {
-    l = o[mst_c0];
-    r = (mst_c1 >= 0) ? o[mst_c1] : o[mst_c0];
+  const int c0 = 2 * bus;
+  const int c1 = c0 + 1 < ch_out ? c0 + 1 : -1;
+  float l = o[c0];
+  float r = c1 >= 0 ? o[c1] : l;
+  if (has_fx) {
+    fx_apply_chain(&e->outputs[bus].fx.fx, sr, fx_cap, &l, &r, fx_count,
+                   fx_type, fx_params, fx_enabled);
   }
-  fx_apply_chain(&e->master_fx.fx, sr, fx_cap, &l, &r, mst_fx_count,
-                 mst_fx_type, mst_fx_params, mst_fx_enabled);
-  if (mst_c0 >= 0) {
-    o[mst_c0] = l;
-    if (mst_c1 >= 0) o[mst_c1] = r;
+  if (tap_here) perf_tap_master_pair(e, bus, l, r);
+  if (mono) {
+    const float mid = 0.5f * (l + r);
+    l = mid;
+    r = mid;
+  } else {
+    l *= gl;
+    r *= gr;
   }
+  if (muted) {
+    l = 0.0f;
+    r = 0.0f;
+  } else if (level != 1.0f) {
+    l *= level;
+    r *= level;
+  }
+  o[c0] = l;
+  if (c1 >= 0) o[c1] = r;
 }
 
 /* Master bus for one output frame: global gain, then the feed-forward peak
@@ -4661,14 +4793,23 @@ static inline void mix_tracks_frame(
        * volume while it sounds, silence otherwise, run through the lane's whole
        * (stageless) effects chain on its `fx` state. Effects run every frame the
        * lane has them (even on silence) so delay tails and LFO phase stay
-       * continuous; the wet result is routed only while the lane is audible.
+       * continuous. Two gates (slice 3b; accepted tail distinctions): `fed`
+       * — the lane is playing and not gated — feeds the chain; `gate_ok` —
+       * not muted, not soloed away — lets the chain's output through. So a
+       * Stop or Clear cuts the feed and the lane's Post tail drains through
+       * the same route, while a Mute (or another track's solo) gates the
+       * lane entirely, tail included, and its player continues underneath.
        * EXCEPTION (part 2): while cached playback is engaged below, the live
        * chain is skipped entirely — its state was settled to bypass at the
        * engage edge, and a fallback re-enters through the clean re-enable
        * path instead of resuming a stale tail. */
+      const int gate_ok = !mut[t][l] && (!any_solo || solo[t]);
       const int audible =
           (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
-          !mut[t][l] && (!any_solo || solo[t]);
+          gate_ok;
+      /* The lane's wet pair reaches its route while fed, or while a chain
+       * may still hold a tail and the gate is open. */
+      const int routes = audible || (has_fx[t][l] && gate_ok);
       le_lane* ln = &e->tracks[t].lanes[l];
 
       /* Loop-stage wet cache (part 2). The per-buffer snapshot already
@@ -4735,7 +4876,7 @@ static inline void mix_tracks_frame(
         /* Empty Track chain (the default and the migration state): the legacy
          * per-lane routing runs untouched — bit-identical to the pre-part-1b
          * engine (D-TRACKROUTE's fingerprint invariant). */
-        if (audible) {
+        if (routes) {
           const uint32_t routed = out_mask[t][l] & out_enabled;
           le_fx_route(out, f, ch_out, routed, wl, wr);
           /* The meter reads what reaches an output: a lane routed to
@@ -4745,14 +4886,21 @@ static inline void mix_tracks_frame(
             trk_r += wr;
           }
         }
-      } else if (audible) {
+      } else {
         /* Non-empty Track chain: accumulate onto the stereo bus instead.
          * Topology keys off EMPTINESS, not enabled — a chain-disabled but
          * non-empty chain stays on this bus path (part 1a's bypass makes it
-         * dry), so a stomp toggles DSP, never routing. */
-        bus_l += wl;
-        bus_r += wr;
-        bus_mask |= out_mask[t][l] & out_enabled;
+         * dry), so a stomp toggles DSP, never routing. The bus routes via
+         * the union of the gate-open lanes' destinations, playing or not:
+         * a Stop leaves the union intact so the chain's tail drains, a Mute
+         * takes the lane's route out of it (the track's own chain is gated
+         * with the track; only the shared output chains drain under Mute,
+         * see the accepted tail distinctions). */
+        if (routes) {
+          bus_l += wl;
+          bus_r += wr;
+        }
+        if (gate_ok) bus_mask |= out_mask[t][l] & out_enabled;
       }
 
       const float la = fabsf(loopsample);
@@ -4780,9 +4928,9 @@ static inline void mix_tracks_frame(
      * every frame the chain is non-empty — even when no lane is audible (the
      * bus stays at its seeded 0, 0) — so delay tails and LFO phase stay
      * continuous, mirroring the lane chains' run-on-silence rule above. The
-     * wet pair routes via the union of the audible lanes' enabled masks;
-     * with no audible lane the union is empty and le_fx_route places
-     * nothing (the route-when-audible half of the same split). Meters
+     * wet pair routes via the union of the gate-open lanes' destinations,
+     * so the chain's tail keeps reaching the outputs after a Stop and is
+     * gated by a Mute (slice 3b tail distinctions). Meters
      * (lane_peak / lane_sumsq / frame_trk_peak above) keep reading the dry
      * loopsample, untouched by this stage. */
     if (trk_has_fx[t]) {
@@ -5081,16 +5229,42 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const le_wet_entry* cache_ent[LE_MAX_TRACKS][LE_MAX_LANES];
   snapshot_lane_cache(e, tc, lane_n, cache_ent);
 
-  /* Master insert chain (part 1b), snapshotted once per buffer (see
-   * snapshot_bus_fx). mst_has_fx false (empty chain) skips master_fx_frame
-   * entirely — zero cost, bit-identical output (D-MASTER). */
-  int32_t mst_fx_count;
-  int32_t mst_fx_type[LE_FX_MAX];
-  float mst_fx_params[LE_FX_MAX][LE_FX_PARAMS];
-  int32_t mst_fx_enabled[LE_FX_MAX];
-  int mst_has_fx;
-  snapshot_bus_fx(&e->master_fx, &mst_fx_count, mst_fx_type, mst_fx_params,
-                  mst_fx_enabled, &mst_has_fx);
+  /* Output buses (slice 3b), snapshotted once per buffer: each bus's chain
+   * (see snapshot_bus_fx; an empty chain skips the chain call, and a bus at
+   * unity, stereo, centred and unmuted passes bit-exact) and its facts. */
+  const int bus_n = (ch_out + 1) / 2;
+  int32_t obus_fx_count[LE_MAX_OUTPUT_BUSES];
+  int32_t obus_fx_type[LE_MAX_OUTPUT_BUSES][LE_FX_MAX];
+  float obus_fx_params[LE_MAX_OUTPUT_BUSES][LE_FX_MAX][LE_FX_PARAMS];
+  int32_t obus_fx_enabled[LE_MAX_OUTPUT_BUSES][LE_FX_MAX];
+  int obus_has_fx[LE_MAX_OUTPUT_BUSES];
+  float obus_level[LE_MAX_OUTPUT_BUSES];
+  int obus_muted[LE_MAX_OUTPUT_BUSES];
+  int obus_mono[LE_MAX_OUTPUT_BUSES];
+  float obus_gl[LE_MAX_OUTPUT_BUSES];
+  float obus_gr[LE_MAX_OUTPUT_BUSES];
+  int obus_active[LE_MAX_OUTPUT_BUSES];
+  for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
+    le_output_bus* ob = &e->outputs[k];
+    snapshot_bus_fx(&ob->fx, &obus_fx_count[k], obus_fx_type[k],
+                    obus_fx_params[k], obus_fx_enabled[k], &obus_has_fx[k]);
+    obus_level[k] = load_f32(&ob->a_level_bits);
+    obus_muted[k] = load_i32(&ob->a_muted);
+    obus_mono[k] = load_i32(&ob->a_mono);
+    obus_gl[k] = load_f32(&ob->a_bal_gl_bits);
+    obus_gr[k] = load_f32(&ob->a_bal_gr_bits);
+    /* A bus at its defaults with no chain costs nothing per frame. */
+    obus_active[k] = obus_has_fx[k] || obus_level[k] != 1.0f ||
+                     obus_muted[k] || obus_mono[k] || obus_gl[k] != 1.0f ||
+                     obus_gr[k] != 1.0f;
+  }
+  /* The performance capture's bus and tap point (slice 3b): the pre-level
+   * tap reads the captured bus inside its frame; the follow tap reads the
+   * final outputs below. */
+  const int perf_follow = e->perf.follow_output;
+  const int perf_bus = e->perf.armed && e->perf.master_out_ch[0] >= 0
+                           ? e->perf.master_out_ch[0] / 2
+                           : -1;
 
   /* Per-input live monitor chain, snapshotted once per buffer (see
    * snapshot_monitor_fx). mon_on gates the whole input (loopback exclusion +
@@ -5120,22 +5294,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const uint32_t out_enabled =
       atomic_load_explicit(&e->a_output_enabled_mask, memory_order_relaxed);
 
-  /* D-MASTERCH: the Master chain's first enabled output pair, resolved once
-   * per block from the gate above (the perf_tap_master_frame precedent).
-   * -1 = fewer than one/two enabled channels; see master_fx_frame. */
-  int mst_c0 = -1;
-  int mst_c1 = -1;
-  if (mst_has_fx) {
-    for (int c = 0; c < ch_out; ++c) {
-      if (!(out_enabled & (1u << c))) continue;
-      if (mst_c0 < 0) {
-        mst_c0 = c;
-      } else {
-        mst_c1 = c;
-        break;
-      }
-    }
-  }
 
   const int fx_cap = e->fx_delay_frames;
 
@@ -5184,14 +5342,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                      frame_trk_peak, trk_sumsq, trk_peak, trk_lpeak, trk_rpeak,
                      in_trim, solo, any_solo, perf_frame_base);
 
-    /* Master insert (part 1b, D-MASTER): colors the track mix only — BEFORE
-     * the monitors sum in below, and before master gain/limiter. Empty chain
-     * = zero-cost skip, bit-identical output. */
-    if (mst_has_fx) {
-      master_fx_frame(e, out, f, ch_out, sr, fx_cap, mst_c0, mst_c1,
-                      mst_fx_count, mst_fx_type, mst_fx_params,
-                      mst_fx_enabled);
-    }
 
     /* Per-input live monitoring (see mix_monitors_frame). Reads the
      * CONDITIONED input (in_c): conditioned-clean IS the input's clean, for
@@ -5209,21 +5359,30 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * latency-calibration pulse path bypassed all of this via `continue`
      * above. Dormant click cost: the click_on ternary here plus click_frame's
      * fused compare. */
-    master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
-                     lim_release, &out_sumsq, &frame_out_peak, out_peak_ch);
-    if (frame_out_peak > out_peak) out_peak = frame_out_peak;
-    perf_tap_master_frame(e, out, f, ch_out);
+    /* The click sums in before the output buses (slice 3b): an output's
+     * chain, level and mute process every source routed there, the click
+     * included (accepted design). click_mask & out_enabled: a structurally
+     * disabled output never carries click energy, like every other source's
+     * fan-out. */
     const int click_on =
         click_mode != LE_CLICK_OFF ? le_click_gate(e, click_mode, tc, st) : 0;
     grid_beat_frame(e, pos, click_on); /* dormant-grid cost: one int compare */
-    /* click_mask & out_enabled (code-review fix): a structurally-disabled
-     * output must never carry click energy even if the click's own routing
-     * mask points at it — exactly like every other source's fan-out (lanes:
-     * out_mask & out_enabled in mix_tracks_frame; monitors: mon_out &
-     * out_enabled in mix_monitors_frame). out_enabled is already loaded once
-     * per block above. */
     click_frame(e, out, f, ch_out, click_on, click_mask & out_enabled,
                 click_vol, sr, perf_frame_base + f);
+    /* Output buses (slice 3b): chain, the pre-level capture tap, level,
+     * Mono, balance, mute, per pair, over everything summed above. */
+    for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
+      const int tap_here = k == perf_bus && !perf_follow;
+      if (!obus_active[k] && !tap_here) continue;
+      output_bus_frame(e, out, f, ch_out, sr, fx_cap, k, obus_has_fx[k],
+                       obus_fx_count[k], obus_fx_type[k], obus_fx_params[k],
+                       obus_fx_enabled[k], obus_level[k], obus_muted[k],
+                       obus_mono[k], obus_gl[k], obus_gr[k], tap_here);
+    }
+    master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
+                     lim_release, &out_sumsq, &frame_out_peak, out_peak_ch);
+    if (frame_out_peak > out_peak) out_peak = frame_out_peak;
+    if (perf_follow || perf_bus < 0) perf_tap_master_frame(e, out, f, ch_out);
     viz_tap_frame(e, tc, pos, frame_out_peak, frame_trk_peak);
     /* Free/Song mode (B2b, broadened to SONG by B4): the per-track twin of
      * the tap above, single guarded call — see free_track_viz_tap_frame's

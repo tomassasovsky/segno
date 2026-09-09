@@ -369,6 +369,22 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setInputTrim({required int input, required double gain}) =>
       EngineResult.ok;
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) =>
+      EngineResult.ok;
+  @override
+  EngineResult cutSound() => EngineResult.ok;
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) => EngineResult.ok;
 
   // ---- unused by SessionRepository: inert defaults ----
   @override

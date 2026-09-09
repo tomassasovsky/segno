@@ -250,6 +250,14 @@ class PerformanceRepository {
     if (!_statusController.isClosed) _statusController.add(status);
   }
 
+  /// Sets the capture policy the next [arm] freezes for its take (accepted
+  /// design, Performance recording): `false` (the default) leaves the final
+  /// output volume and mute out of the take; `true` (Follow output volume)
+  /// records what the output jacks carry. A running take keeps the policy it
+  /// was armed with.
+  EngineResult setFollowOutput({required bool follow}) =>
+      _engine.setPerfFollowOutput(follow: follow);
+
   /// Arms performance-recording capture: resolves a new collision-free
   /// `{exportsRoot}/perf-YYYYMMDD-HHMMSS/` bundle directory, takes the
   /// arm-time settled-lane snapshot (mid-overdub lanes marked deferred, never
@@ -310,6 +318,11 @@ class PerformanceRepository {
       limiterEnabled: chains.limiterEnabled,
       limiterCeiling: chains.limiterCeiling,
       latencyOffsetFrames: snapshot.recordOffsetFrames,
+      // The capture policy (slice 3b) the engine freezes for this take,
+      // and destination 0's facts the render's replay starts from.
+      followOutput: snapshot.perfFollowOutput,
+      outputLevel: snapshot.outputLevels.isEmpty ? 1 : snapshot.outputLevels[0],
+      outputMuted: snapshot.outputMuted.isNotEmpty && snapshot.outputMuted[0],
       // The engine tempo at the arm instant, verbatim (0 = unset, matching
       // the session manifest's own sentinel). The crash-salvage fallback
       // only — the disarm snapshot re-reads it authoritatively, because

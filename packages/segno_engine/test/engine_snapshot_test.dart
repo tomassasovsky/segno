@@ -556,6 +556,17 @@ void main() {
         ptr.ref.monitor_peaks[0] = 0.25;
         ptr.ref.output_peaks[3] = 0.75;
         ptr.ref.output_peaks[4] = 0.9;
+        // Output buses (slice 3b): the C publishes one per stereo pair (two
+        // for four outputs); distinct facts per bus, one past the device
+        // that must NOT be read, and the two scalars.
+        ptr.ref.output_bus_count = 2;
+        ptr.ref.output_level[1] = 0.5;
+        ptr.ref.output_muted[1] = 1;
+        ptr.ref.output_mono[0] = 1;
+        ptr.ref.output_balance[1] = -0.25;
+        ptr.ref.output_level[2] = 0.1;
+        ptr.ref.tail_reset_rev = 7;
+        ptr.ref.perf_follow_output = 1;
 
         const tracks = [
           TrackSnapshot(
@@ -625,10 +636,44 @@ void main() {
         expect(snapshot.monitorPeaks[0], closeTo(0.25, 1e-6));
         expect(snapshot.outputPeaks, hasLength(4));
         expect(snapshot.outputPeaks[3], closeTo(0.75, 1e-6));
+        expect(snapshot.outputBusCount, 2);
+        expect(snapshot.outputLevels, hasLength(2));
+        expect(snapshot.outputLevels[0], 0);
+        expect(snapshot.outputLevels[1], closeTo(0.5, 1e-6));
+        expect(snapshot.outputMuted, [false, true]);
+        expect(snapshot.outputMono, [true, false]);
+        expect(snapshot.outputBalances[1], closeTo(-0.25, 1e-6));
+        expect(snapshot.tailResetRev, 7);
+        expect(snapshot.perfFollowOutput, isTrue);
       } finally {
         calloc.free(ptr);
       }
     });
+
+    test(
+      'sizes the output bus lists to output_bus_count, clamped to the C',
+      () {
+        final ptr = calloc<le_snapshot>();
+        try {
+          ptr.ref.output_bus_count = LE_MAX_OUTPUT_BUSES + 3;
+          final over = EngineSnapshot.fromNative(ptr.ref, const []);
+          expect(over.outputBusCount, LE_MAX_OUTPUT_BUSES);
+          expect(over.outputLevels, hasLength(LE_MAX_OUTPUT_BUSES));
+          expect(over.outputBalances, hasLength(LE_MAX_OUTPUT_BUSES));
+
+          ptr.ref.output_bus_count = -1;
+          final none = EngineSnapshot.fromNative(ptr.ref, const []);
+          expect(none.outputBusCount, 0);
+          expect(none.outputLevels, isEmpty);
+          expect(none.outputMuted, isEmpty);
+          expect(none.outputMono, isEmpty);
+          expect(none.outputBalances, isEmpty);
+          expect(none.perfFollowOutput, isFalse);
+        } finally {
+          calloc.free(ptr);
+        }
+      },
+    );
 
     test('sizes the meter lists to the channel counts, clamped to the C', () {
       final ptr = calloc<le_snapshot>();
@@ -797,6 +842,13 @@ void main() {
       List<double>? inputPeaks,
       List<double>? monitorPeaks,
       List<double>? outputPeaks,
+      int outputBusCount = 2,
+      List<double>? outputLevels,
+      List<bool>? outputMuted,
+      List<bool>? outputMono,
+      List<double>? outputBalances,
+      int tailResetRev = 0,
+      bool perfFollowOutput = false,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -839,6 +891,13 @@ void main() {
       inputPeaks: inputPeaks ?? List<double>.filled(channels, 0),
       monitorPeaks: monitorPeaks ?? List<double>.filled(channels, 0),
       outputPeaks: outputPeaks ?? List<double>.filled(channels, 0),
+      outputBusCount: outputBusCount,
+      outputLevels: outputLevels ?? List<double>.filled(2, 1),
+      outputMuted: outputMuted ?? List<bool>.filled(2, false),
+      outputMono: outputMono ?? List<bool>.filled(2, false),
+      outputBalances: outputBalances ?? List<double>.filled(2, 0),
+      tailResetRev: tailResetRev,
+      perfFollowOutput: perfFollowOutput,
     );
 
     /// [channels] zeros with [value] at [index].
@@ -852,6 +911,16 @@ void main() {
 
     test('devicePresent participates in equality', () {
       expect(build(), isNot(equals(build(devicePresent: false))));
+    });
+
+    test('the output bus facts (slice 3b) participate in equality', () {
+      expect(build(), isNot(equals(build(outputBusCount: 1))));
+      expect(build(), isNot(equals(build(outputLevels: [1, 0.5]))));
+      expect(build(), isNot(equals(build(outputMuted: [true, false]))));
+      expect(build(), isNot(equals(build(outputMono: [false, true]))));
+      expect(build(), isNot(equals(build(outputBalances: [0, -1]))));
+      expect(build(), isNot(equals(build(tailResetRev: 1))));
+      expect(build(), isNot(equals(build(perfFollowOutput: true))));
     });
 
     test('activeBackend participates in equality', () {
@@ -1275,6 +1344,13 @@ void main() {
         'inputPeaks',
         'monitorPeaks',
         'outputPeaks',
+        'outputBusCount',
+        'outputLevels',
+        'outputMuted',
+        'outputMono',
+        'outputBalances',
+        'tailResetRev',
+        'perfFollowOutput',
         'tracks',
       };
 

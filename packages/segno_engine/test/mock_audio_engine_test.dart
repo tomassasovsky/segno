@@ -533,6 +533,71 @@ void main() {
         expect(snapshot.tracks[0].peakL, 0);
         expect(snapshot.tracks[0].peakR, 0);
       });
+
+      test('the output bus setters work while stopped, clamp, and publish '
+          'one entry per destination once running (slice 3b)', () {
+        expect(engine.setOutputLevel(bus: 1, level: 2), EngineResult.ok);
+        expect(engine.setOutputMute(bus: 0, muted: true), EngineResult.ok);
+        expect(engine.setOutputMono(bus: 1, mono: true), EngineResult.ok);
+        expect(
+          engine.setOutputBalance(bus: 0, balance: -3),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setOutputLevel(bus: 0, level: double.nan),
+          EngineResult.ok,
+        );
+        // Stopped: no device, so no destinations.
+        expect(engine.snapshot().outputBusCount, 0);
+        expect(engine.snapshot().outputLevels, isEmpty);
+
+        engine.start(engine.defaultConfig);
+        final snapshot = engine.snapshot();
+        expect(snapshot.outputBusCount, (snapshot.outputChannels + 1) ~/ 2);
+        expect(snapshot.outputLevels[1], 1);
+        expect(snapshot.outputLevels[0], 0, reason: 'NaN lands on silence');
+        expect(snapshot.outputMuted[0], isTrue);
+        expect(snapshot.outputMono[1], isTrue);
+        expect(snapshot.outputBalances[0], -1);
+      });
+
+      test('the output bus setters reject a bus the engine cannot address', () {
+        expect(
+          engine.setOutputLevel(bus: -1, level: 1),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setOutputMute(bus: kMaxOutputBuses, muted: true),
+          EngineResult.invalid,
+        );
+        expect(engine.setOutputMono(bus: 99, mono: true), EngineResult.invalid);
+        expect(
+          engine.setOutputBalance(bus: -5, balance: 0),
+          EngineResult.invalid,
+        );
+      });
+
+      test('cutSound needs a running engine and advances tailResetRev', () {
+        expect(engine.cutSound(), EngineResult.notRunning);
+        engine.start(engine.defaultConfig);
+        final before = engine.snapshot().tailResetRev;
+        expect(engine.cutSound(), EngineResult.ok);
+        expect(engine.cutSoundCalls, 1);
+        expect(engine.snapshot().tailResetRev, before + 1);
+      });
+
+      test('the capture policy is frozen per take: the snapshot reports the '
+          "armed take's policy while armed and the pending one otherwise", () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().perfFollowOutput, isFalse);
+        expect(engine.setPerfFollowOutput(follow: true), EngineResult.ok);
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        expect(engine.perfArm('take'), EngineResult.ok);
+        engine.setPerfFollowOutput(follow: false); // too late for this take
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        engine.perfDisarm();
+        expect(engine.snapshot().perfFollowOutput, isFalse);
+      });
     });
 
     group('TempoControl', () {

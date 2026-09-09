@@ -584,6 +584,85 @@ class SessionInputSetup {
       Object.hash(_hashMap(trimDb), _hashMap(pan), _hashMap(pairs));
 }
 
+/// The output setup a session persists (slice 3b): every output
+/// destination's level, mute, Stereo/Mono and balance, each map keyed by
+/// the destination (bus, one per stereo pair of outputs) and holding only
+/// the destinations off that fact's default (unity, unmuted, Stereo,
+/// centre), so an untouched rig serializes to nothing.
+///
+/// Plain maps rather than the looper domain's `OutputSetup`, like
+/// [SessionInputSetup]. Serialized as `{"level": {"1": 0.5}, "muted":
+/// {"0": true}, "mono": {"1": true}, "balance": {"0": -0.2}}` with each
+/// empty map left out and the whole object omitted from the manifest when
+/// all four are empty; absent on an older manifest reads as the default.
+@immutable
+class SessionOutputSetup {
+  /// Creates a [SessionOutputSetup].
+  const SessionOutputSetup({
+    this.level = const {},
+    this.muted = const {},
+    this.mono = const {},
+    this.balance = const {},
+  });
+
+  /// Projects a [SessionOutputSetup] from a decoded JSON map; `null` (an
+  /// older manifest, or a rig with nothing set) reads as the default.
+  factory SessionOutputSetup.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const SessionOutputSetup();
+    double value(Object? raw) => (raw! as num).toDouble();
+    bool flag(Object? raw) => raw == true;
+    return SessionOutputSetup(
+      level: _channelMapFromJson(json['level'], value),
+      muted: _channelMapFromJson(json['muted'], flag),
+      mono: _channelMapFromJson(json['mono'], flag),
+      balance: _channelMapFromJson(json['balance'], value),
+    );
+  }
+
+  /// Level per destination, `0..1`.
+  final Map<int, double> level;
+
+  /// The muted destinations (`true`).
+  final Map<int, bool> muted;
+
+  /// The destinations in Mono (`true`).
+  final Map<int, bool> mono;
+
+  /// Balance per destination, `-1` (left) .. `1` (right).
+  final Map<int, double> balance;
+
+  /// Whether every map is empty (the whole object is then left out of the
+  /// manifest).
+  bool get isEmpty =>
+      level.isEmpty && muted.isEmpty && mono.isEmpty && balance.isEmpty;
+
+  /// Serializes this setup to a JSON map, each empty map left out.
+  Map<String, dynamic> toJson() => {
+    if (level.isNotEmpty) 'level': _channelMapToJson(level),
+    if (muted.isNotEmpty) 'muted': _channelMapToJson(muted),
+    if (mono.isNotEmpty) 'mono': _channelMapToJson(mono),
+    if (balance.isNotEmpty) 'balance': _channelMapToJson(balance),
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionOutputSetup &&
+          runtimeType == other.runtimeType &&
+          _mapEquals(level, other.level) &&
+          _mapEquals(muted, other.muted) &&
+          _mapEquals(mono, other.mono) &&
+          _mapEquals(balance, other.balance);
+
+  @override
+  int get hashCode => Object.hash(
+    _hashMap(level),
+    _hashMap(muted),
+    _hashMap(mono),
+    _hashMap(balance),
+  );
+}
+
 /// A saved Segno session: the transport/tempo settings, the tracks, and (schema
 /// v2+) the lane + monitor effect chains. Paired with per-lane, per-layer WAV
 /// files (schema v3) in a `.segno` bundle directory.
@@ -687,6 +766,7 @@ class Session {
     this.primaryTrack = -1,
     this.pedalBindings = '',
     this.inputSetup = const SessionInputSetup(),
+    this.outputSetup = const SessionOutputSetup(),
   });
 
   /// Projects a [Session] from a decoded JSON map.
@@ -761,6 +841,9 @@ class Session {
       pedalBindings: json['pedalBindings'] as String? ?? '',
       inputSetup: SessionInputSetup.fromJson(
         json['inputSetup'] as Map<String, dynamic>?,
+      ),
+      outputSetup: SessionOutputSetup.fromJson(
+        json['outputSetup'] as Map<String, dynamic>?,
       ),
     );
   }
@@ -931,6 +1014,13 @@ class Session {
   /// older manifest reads as the default.
   final SessionInputSetup inputSetup;
 
+  /// The output setup the session was saved with (slice 3b): every
+  /// destination's level, mute, Stereo/Mono and balance. Session-level like
+  /// [inputSetup]: a destination's setup exists whether or not anything was
+  /// recorded. Omitted from the manifest when it is the default setup;
+  /// absent on an older manifest reads as the default.
+  final SessionOutputSetup outputSetup;
+
   /// Serializes this session manifest to a JSON map. Always writes the
   /// current [formatVersion] (v7 — this code never writes an older schema).
   Map<String, dynamic> toJson() => {
@@ -964,6 +1054,7 @@ class Session {
     'primaryTrack': primaryTrack,
     'pedalBindings': pedalBindings,
     if (!inputSetup.isEmpty) 'inputSetup': inputSetup.toJson(),
+    if (!outputSetup.isEmpty) 'outputSetup': outputSetup.toJson(),
   };
 
   @override
@@ -992,6 +1083,7 @@ class Session {
           masterChain == other.masterChain &&
           pedalBindings == other.pedalBindings &&
           inputSetup == other.inputSetup &&
+          outputSetup == other.outputSetup &&
           _mapEquals(lengthPresetOverrides, other.lengthPresetOverrides) &&
           _mapEquals(onceOverrides, other.onceOverrides) &&
           _listEquals(tracks, other.tracks) &&
@@ -1024,6 +1116,7 @@ class Session {
     masterChain,
     pedalBindings,
     inputSetup,
+    outputSetup,
     _hashMap(lengthPresetOverrides),
     _hashMap(onceOverrides),
     Object.hashAll(tracks),

@@ -438,6 +438,7 @@ void main() {
             pan: {2: -0.5},
             pairs: {0: 0.2},
           ),
+          outputSetup: SessionOutputSetup(level: {1: 0.5}, mono: {0: true}),
         ),
       );
 
@@ -457,6 +458,9 @@ void main() {
       expect(bundle.session.inputSetup.trimDb, {0: -6.0});
       expect(bundle.session.inputSetup.pan, {2: -0.5});
       expect(bundle.session.inputSetup.pairs, {0: 0.2});
+      expect(bundle.session.outputSetup.level, {1: 0.5});
+      expect(bundle.session.outputSetup.mono, {0: true});
+      expect(bundle.session.outputSetup.muted, isEmpty);
     },
   );
 
@@ -516,6 +520,7 @@ void main() {
               )
               as Map<String, dynamic>;
       expect(manifest.containsKey('inputSetup'), isFalse);
+      expect(manifest.containsKey('outputSetup'), isFalse);
       final track = (manifest['tracks'] as List).single;
       expect((track as Map<String, dynamic>).containsKey('pan'), isFalse);
       final json = (track['lanes'] as List).single;

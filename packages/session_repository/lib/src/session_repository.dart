@@ -88,6 +88,7 @@ class SessionLoopSettings {
     this.trackPans = const {},
     this.laneMix = const {},
     this.inputSetup = const SessionInputSetup(),
+    this.outputSetup = const SessionOutputSetup(),
   });
 
   /// The rig's default length preset in bars; `0` = Auto.
@@ -118,6 +119,9 @@ class SessionLoopSettings {
 
   /// The per-input capture setup (slice 3), persisted session-level.
   final SessionInputSetup inputSetup;
+
+  /// The output setup (slice 3b), persisted session-level.
+  final SessionOutputSetup outputSetup;
 }
 
 /// Saves Segno sessions, reads them back, and exports audio.
@@ -617,6 +621,8 @@ class SessionRepository {
       // input's trim, pan or pair exists whether or not a take was recorded
       // from it. Handed in by the bloc layer with the track pans.
       inputSetup: captured.loopSettings.inputSetup,
+      // The output setup (slice 3b): session-level for the same reason.
+      outputSetup: captured.loopSettings.outputSetup,
       clickMode: snapshot.clickMode,
       clickOutputMask: snapshot.clickMask,
       clickVolume: snapshot.clickVolume,

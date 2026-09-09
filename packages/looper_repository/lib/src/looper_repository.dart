@@ -13,6 +13,7 @@ import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
+import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginParamInfo, pluginParamInfoFromEngine;
 import 'package:looper_repository/src/models/session_rig.dart';
@@ -367,6 +368,10 @@ class LooperRepository {
   /// the capture trim and the monitors' pan and gain, and seeded onto a
   /// lane when it records. See [InputSetup].
   InputSetup _inputSetup = const InputSetup();
+
+  /// The output setup (slice 3b): every destination off its defaults, held
+  /// while stopped and replayed on every (re)start like the mix above.
+  OutputSetup _outputSetup = const OutputSetup();
   final Map<(int, int), List<TrackEffect>> _laneEffects = {};
 
   /// Per-(channel, lane) chain-enabled flags (R15; absent => enabled). Only
@@ -971,6 +976,9 @@ class LooperRepository {
     masterEffects: _masterEffects,
     masterChainEnabled: _masterChainEnabled,
     inputSetup: _inputSetup,
+    outputSetup: _outputSetup,
+    outputBusCount: s.outputBusCount,
+    tailResetRev: s.tailResetRev,
     // Sized by the engine to the channels the device has.
     inputPeaks: s.inputPeaks,
     monitorPeaks: s.monitorPeaks,
@@ -1137,6 +1145,9 @@ class LooperRepository {
         (input, db) =>
             _engine.setInputTrim(input: input, gain: inputTrimGainOfDb(db)),
       );
+      // The output destinations (slice 3b): a fresh start puts every bus at
+      // its defaults, so only the remembered ones need pushing.
+      _outputSetup.buses.keys.forEach(_pushOutputBus);
       _laneMute.forEach(
         (key, muted) =>
             _engine.setLaneMute(muted: muted, channel: key.$1, lane: key.$2),
@@ -2350,6 +2361,8 @@ class LooperRepository {
     // the pairs' balance; before the tracks' lanes are seeded by a later
     // record, which reads it.
     setInputSetup(rig.inputSetup);
+    // The output setup (slice 3b): session-owned like the input setup.
+    setOutputSetup(rig.outputSetup);
 
     // Last, after every import/commit that could throw: [rigReplaced]'s
     // contract is "a NEW rig is on the engine", not "a load was attempted".
@@ -2665,6 +2678,19 @@ class LooperRepository {
   EngineResult setOutputMask({required int channel, required int mask}) =>
       setLaneOutput(channel: channel, lane: 0, mask: mask);
 
+  /// Routes every lane of track [channel] to the output channels in [mask]
+  /// (accepted design, Audio routing: a recorded track chooses its output
+  /// destinations as one source). Remembered per lane and re-applied on
+  /// every (re)start; a lane added later takes the engine's default route.
+  EngineResult setTrackOutput({required int channel, required int mask}) {
+    var result = EngineResult.ok;
+    for (var lane = 0; lane < laneCount(channel); lane++) {
+      final r = setLaneOutput(channel: channel, lane: lane, mask: mask);
+      if (r != EngineResult.ok) result = r;
+    }
+    return result;
+  }
+
   /// Sets track [channel]'s active lane count (`>= 1`), lazily allocating the
   /// buffers for any newly added lanes. Remembered and re-applied on every
   /// (re)start; takes effect immediately only while running.
@@ -2839,6 +2865,85 @@ class LooperRepository {
       if (p != EngineResult.ok) result = p;
     }
     _reproject();
+    return result;
+  }
+
+  /// The output setup, the repository's remembered intent (slice 3b).
+  OutputSetup get outputSetup => _outputSetup;
+
+  /// Sets output destination [bus]'s level, `0..1` (accepted design, Output
+  /// setup). Retained behind a mute. Held while stopped and re-applied on
+  /// every (re)start.
+  EngineResult setOutputLevel({required int bus, required double level}) =>
+      _applyOutputBus(
+        bus,
+        _outputSetup.of(bus).copyWith(level: level.clamp(0.0, 1.0)),
+      );
+
+  /// Mutes or unmutes output destination [bus]; the level and balance are
+  /// retained.
+  EngineResult setOutputMute({required int bus, required bool muted}) =>
+      _applyOutputBus(bus, _outputSetup.of(bus).copyWith(muted: muted));
+
+  /// Puts output destination [bus] in Mono (the averaged mix on both jacks,
+  /// balance disabled) or back in Stereo (the retained balance applies).
+  EngineResult setOutputMono({required int bus, required bool mono}) =>
+      _applyOutputBus(bus, _outputSetup.of(bus).copyWith(mono: mono));
+
+  /// Sets output destination [bus]'s balance, `-1` (left only) .. `1`
+  /// (right only); retained while Mono.
+  EngineResult setOutputBalance({required int bus, required double balance}) =>
+      _applyOutputBus(
+        bus,
+        _outputSetup.of(bus).copyWith(balance: balance.clamp(-1.0, 1.0)),
+      );
+
+  /// Replaces the whole output setup (a boot restore, a session load): every
+  /// bus either setup names goes to the engine, so a bus the old setup had
+  /// goes back to its defaults. One projection.
+  EngineResult setOutputSetup(OutputSetup setup) {
+    final previous = _outputSetup;
+    _outputSetup = setup;
+    var result = EngineResult.ok;
+    for (final bus in <int>{...previous.buses.keys, ...setup.buses.keys}) {
+      final r = _pushOutputBus(bus);
+      if (r != EngineResult.ok) result = r;
+    }
+    _reproject();
+    return result;
+  }
+
+  /// Cut all sound (accepted design): every playing or capturing track
+  /// stops (a take in progress finalizes as a Stop would), a running
+  /// count-in is cancelled, and every chain's tail on every stage is
+  /// cleared while the chains keep their settings. Monitors keep their
+  /// preferences. Nothing to cut while stopped.
+  EngineResult cutSound() {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.cutSound();
+  }
+
+  /// Makes [value] bus [bus]'s facts, pushes them and re-projects once.
+  EngineResult _applyOutputBus(int bus, OutputBus value) {
+    if (bus < 0 || bus >= kMaxOutputBuses) return EngineResult.invalid;
+    _outputSetup = _outputSetup.withBus(bus, value);
+    final result = _pushOutputBus(bus);
+    _reproject();
+    return result;
+  }
+
+  /// Pushes bus [bus]'s four facts as the setup holds them (the defaults
+  /// for a bus it does not name).
+  EngineResult _pushOutputBus(int bus) {
+    if (!_intendRunning) return EngineResult.ok;
+    final value = _outputSetup.of(bus);
+    var result = _engine.setOutputLevel(bus: bus, level: value.level);
+    final m = _engine.setOutputMute(bus: bus, muted: value.muted);
+    if (m != EngineResult.ok) result = m;
+    final o = _engine.setOutputMono(bus: bus, mono: value.mono);
+    if (o != EngineResult.ok) result = o;
+    final b = _engine.setOutputBalance(bus: bus, balance: value.balance);
+    if (b != EngineResult.ok) result = b;
     return result;
   }
 

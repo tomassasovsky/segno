@@ -523,6 +523,23 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _repository.setPairBalance(input: event.input, balance: event.balance);
       _persistInputPair(event.input);
     });
+    on<LooperOutputLevelChanged>((event, _) {
+      _repository.setOutputLevel(bus: event.bus, level: event.level);
+      _persistOutputBus(event.bus);
+    });
+    on<LooperOutputMuteChanged>((event, _) {
+      _repository.setOutputMute(bus: event.bus, muted: event.muted);
+      _persistOutputBus(event.bus);
+    });
+    on<LooperOutputMonoChanged>((event, _) {
+      _repository.setOutputMono(bus: event.bus, mono: event.mono);
+      _persistOutputBus(event.bus);
+    });
+    on<LooperOutputBalanceChanged>((event, _) {
+      _repository.setOutputBalance(bus: event.bus, balance: event.balance);
+      _persistOutputBus(event.bus);
+    });
+    on<LooperCutSoundPressed>((_, _) => _repository.cutSound());
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
@@ -806,6 +823,58 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
             ? status.inputChannels
             : kMaxMonitoredInputs,
         setup: (trimDb: setup.trimDb, pan: setup.pan, pairs: setup.pairs),
+      ),
+    );
+    // The output setup (slice 3b): the same whole-setup re-persist, bounded
+    // by the device's destinations.
+    unawaited(
+      settings.replaceOutputSetup(
+        device: device,
+        busCount: status.outputChannels > 0
+            ? (status.outputChannels + 1) ~/ 2
+            : kMaxOutputBuses,
+        setup: _storedOutputSetup(_repository.outputSetup),
+      ),
+    );
+  }
+
+  /// The settings record of [setup]: one map per fact, each holding only
+  /// the destinations off that fact's default.
+  static StoredOutputSetup _storedOutputSetup(OutputSetup setup) => (
+    level: {
+      for (final entry in setup.buses.entries)
+        if (entry.value.level != 1) entry.key: entry.value.level,
+    },
+    muted: {
+      for (final entry in setup.buses.entries)
+        if (entry.value.muted) entry.key: true,
+    },
+    mono: {
+      for (final entry in setup.buses.entries)
+        if (entry.value.mono) entry.key: true,
+    },
+    balance: {
+      for (final entry in setup.buses.entries)
+        if (entry.value.balance != 0) entry.key: entry.value.balance,
+    },
+  );
+
+  /// Persists destination [bus]'s facts as the repository now holds them
+  /// (the repository clamps, so its values are written, not the event's);
+  /// the defaults clear the keys.
+  void _persistOutputBus(int bus) {
+    final settings = _settings;
+    final device = _inputSetupDevice;
+    if (settings == null || device == null) return;
+    final value = _repository.outputSetup.of(bus);
+    unawaited(
+      settings.saveOutputBus(
+        device: device,
+        bus: bus,
+        level: value.level,
+        muted: value.muted,
+        mono: value.mono,
+        balance: value.balance,
       ),
     );
   }

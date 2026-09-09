@@ -268,6 +268,18 @@ static void le_fx_bus_reset(le_fx_bus* b) {
   }
 }
 
+/* Resets one output bus (slice 3b): unity, unmuted, stereo, centred, empty
+ * chain. */
+static void le_output_bus_reset(le_output_bus* o) {
+  store_f32(&o->a_level_bits, 1.0f);
+  store_i32(&o->a_muted, 0);
+  store_i32(&o->a_mono, 0);
+  store_f32(&o->a_balance_bits, 0.0f);
+  store_f32(&o->a_bal_gl_bits, 1.0f);
+  store_f32(&o->a_bal_gr_bits, 1.0f);
+  le_fx_bus_reset(&o->fx);
+}
+
 int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                             int32_t input_channels, int32_t output_channels,
                             int32_t max_loop_frames) {
@@ -629,7 +641,10 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
 
   /* Master insert chain (part 1b): defaults empty/enabled, same rationale as
    * the per-track bus resets above. */
-  le_fx_bus_reset(&engine->master_fx);
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    le_output_bus_reset(&engine->outputs[k]);
+  }
+  store_i32(&engine->a_perf_follow_output, 0);
 
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);
@@ -936,11 +951,15 @@ void le_engine_destroy(le_engine* engine) {
   }
   /* Master insert chain (part 1b). */
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    free(engine->master_fx.fx.delay[s][0]);
-    free(engine->master_fx.fx.delay[s][1]);
-    le_fx_free_octaver(&engine->master_fx.fx, s);
-    le_plugin_slot_destroy(atomic_load_explicit(
-        &engine->master_fx.fx.plugin[s], memory_order_relaxed));
+    for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+      free(engine->outputs[k].fx.fx.delay[s][0]);
+      free(engine->outputs[k].fx.fx.delay[s][1]);
+      le_fx_free_octaver(&engine->outputs[k].fx.fx, s);
+    }
+    for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+      le_plugin_slot_destroy(atomic_load_explicit(
+          &engine->outputs[k].fx.fx.plugin[s], memory_order_relaxed));
+    }
   }
   free(engine->lat_buf);
   free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
@@ -1099,7 +1118,9 @@ int32_t le_engine_stop(le_engine* engine) {
   for (int t = 0; t < engine->track_count; ++t) {
     le_fx_bus_settle_bypass(&engine->tracks[t].bus);
   }
-  le_fx_bus_settle_bypass(&engine->master_fx);
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    le_fx_bus_settle_bypass(&engine->outputs[k].fx);
+  }
   /* Loop-stage wet cache (part 2, [R2](d)): the device (and its callback) is
    * stopped, so join the render worker and release every cache allocation
    * now — no pool or wet buffer may be freed with the worker alive, and a

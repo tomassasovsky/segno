@@ -112,7 +112,51 @@ SessionLoopSettings loopSettingsFromLooper(LooperRepository looper) {
       pan: setup.pan,
       pairs: setup.pairs,
     ),
+    // The output setup (slice 3b), one map per fact, each holding only the
+    // destinations off that fact's default.
+    outputSetup: SessionOutputSetup(
+      level: {
+        for (final entry in state.outputSetup.buses.entries)
+          if (entry.value.level != 1) entry.key: entry.value.level,
+      },
+      muted: {
+        for (final entry in state.outputSetup.buses.entries)
+          if (entry.value.muted) entry.key: true,
+      },
+      mono: {
+        for (final entry in state.outputSetup.buses.entries)
+          if (entry.value.mono) entry.key: true,
+      },
+      balance: {
+        for (final entry in state.outputSetup.buses.entries)
+          if (entry.value.balance != 0) entry.key: entry.value.balance,
+      },
+    ),
   );
+}
+
+/// The looper-domain output setup of a manifest's [setup]: one [OutputBus]
+/// per destination any of its four maps names.
+OutputSetup outputSetupFromSession(SessionOutputSetup setup) {
+  final buses = <int>{
+    ...setup.level.keys,
+    ...setup.muted.keys,
+    ...setup.mono.keys,
+    ...setup.balance.keys,
+  };
+  var result = const OutputSetup();
+  for (final bus in buses) {
+    result = result.withBus(
+      bus,
+      OutputBus(
+        level: setup.level[bus] ?? 1,
+        muted: setup.muted[bus] ?? false,
+        mono: setup.mono[bus] ?? false,
+        balance: setup.balance[bus] ?? 0,
+      ),
+    );
+  }
+  return result;
 }
 
 /// The Master insert as an envelope string, or the manifest's own "no chain"
@@ -227,6 +271,8 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
     pan: bundle.session.inputSetup.pan,
     pairs: bundle.session.inputSetup.pairs,
   ),
+  // The output setup (slice 3b), session-owned like the input setup.
+  outputSetup: outputSetupFromSession(bundle.session.outputSetup),
 );
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage

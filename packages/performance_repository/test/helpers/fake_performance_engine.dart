@@ -124,6 +124,10 @@ class FakePerformanceEngine implements AudioEngine {
     perfOverruns: perfOverruns,
     perfZeroFilledFrames: perfZeroFilledFrames,
     perfStopped: perfStopped,
+    perfFollowOutput: perfFollowOutput ?? false,
+    outputBusCount: outputLevels.length,
+    outputLevels: outputLevels,
+    outputMuted: outputMuted,
     tracks: [
       for (final t in _tracks)
         TrackSnapshot(
@@ -319,6 +323,35 @@ class FakePerformanceEngine implements AudioEngine {
   @override
   EngineResult setInputTrim({required int input, required double gain}) =>
       EngineResult.ok;
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) =>
+      EngineResult.ok;
+  @override
+  EngineResult cutSound() => EngineResult.ok;
+
+  /// The last policy passed to [setPerfFollowOutput]; reported by
+  /// [snapshot] as the policy the next arm freezes.
+  bool? perfFollowOutput;
+
+  /// The output bus facts [snapshot] reports (slice 3b).
+  List<double> outputLevels = const [];
+  List<bool> outputMuted = const [];
+
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    perfFollowOutput = follow;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setLaneInput({
     required int channel,

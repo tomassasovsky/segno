@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
+import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
@@ -19,6 +20,9 @@ class LooperState extends Equatable {
     this.masterChainEnabled = true,
     this.tuner = const TunerReading(),
     this.inputSetup = const InputSetup(),
+    this.outputSetup = const OutputSetup(),
+    this.outputBusCount = 0,
+    this.tailResetRev = 0,
     this.inputPeaks = const [],
     this.monitorPeaks = const [],
     this.outputPeaks = const [],
@@ -53,6 +57,18 @@ class LooperState extends Equatable {
   /// The per-input capture setup (trim, pan, pairs), the repository's own
   /// remembered intent (accepted design, Audio routing).
   final InputSetup inputSetup;
+
+  /// The output setup (level, mute, Stereo/Mono, balance per destination),
+  /// the repository's own remembered intent (accepted design, Output setup).
+  final OutputSetup outputSetup;
+
+  /// How many output destinations the open device has (one per stereo pair
+  /// of its outputs; an odd count leaves a single-jack last one); `0` while
+  /// no device is open.
+  final int outputBusCount;
+
+  /// Advances once per Cut all sound the engine applied.
+  final int tailResetRev;
 
   /// Each hardware input's raw block peak, `0..1`, one entry per channel the
   /// device has (before conditioning and trim). Live.
@@ -94,6 +110,9 @@ class LooperState extends Equatable {
     masterChainEnabled,
     tuner,
     inputSetup,
+    outputSetup,
+    outputBusCount,
+    tailResetRev,
     inputPeaks,
     monitorPeaks,
     outputPeaks,

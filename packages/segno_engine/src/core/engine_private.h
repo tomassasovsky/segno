@@ -252,6 +252,13 @@ typedef struct le_fx_state {
   int32_t enable_target[LE_FX_MAX];
   int32_t enable_warmup[LE_FX_MAX];
   int32_t enable_clear_cooldown;
+  /* Bypass tail drain (slice 3b; accepted: "bypass sends new audio dry and
+   * drains old wet tails"). enable_drain counts the samples a bypassed slot
+   * may keep running on a silent feed so its tail decays into the dry
+   * signal (0 = settled, skipped); enable_quiet counts consecutive samples
+   * of tail under the drain floor, which ends the drain early. */
+  int32_t enable_drain[LE_FX_MAX];
+  int32_t enable_quiet[LE_FX_MAX];
   /* For an LE_FX_PLUGIN slot: the hosted-plugin slot handle the audio thread
    * forwards to, or NULL. The control thread publishes/retracts it
    * (engine_plugin.c); the audio thread only loads it (fx_plugin_process). A
@@ -562,6 +569,18 @@ typedef struct le_fx_bus {
   int32_t fx_type_pushed[LE_FX_MAX];
   le_fx_state fx;
 } le_fx_bus;
+
+/* One output destination (slice 3b): see le_engine_set_output_level. The
+ * balance gains are precomputed like a lane's pan gains. */
+typedef struct le_output_bus {
+  _Atomic uint32_t a_level_bits;   /* 0..1, default 1 */
+  _Atomic int32_t a_muted;         /* 0/1 */
+  _Atomic int32_t a_mono;          /* 0/1 */
+  _Atomic uint32_t a_balance_bits; /* -1..1 */
+  _Atomic uint32_t a_bal_gl_bits;  /* the balance's gains (le_pan_gains) */
+  _Atomic uint32_t a_bal_gr_bits;
+  le_fx_bus fx;
+} le_output_bus;
 
 /* What one history entry represents. */
 typedef enum {
@@ -992,6 +1011,10 @@ typedef struct le_perf_capture {
   le_audio_ring master_ring;
   int32_t master_channels;  /* 1 (mono) or 2 (stereo) — the ring's frame width */
   int32_t master_out_ch[2]; /* captured output channel(s); [1] == -1 if mono */
+  /* Follow output volume, frozen at arm (slice 3b): 0 taps the captured bus
+   * after its chain and before its level, Mono, balance and mute (and before
+   * the master gain and limiter); 1 taps the final output. */
+  int follow_output;
 
   /* One stereo ring per hardware input, valid iff its bit is set in
    * input_mask (frozen at arm: inputs enabled later are not retroactively
@@ -1226,7 +1249,15 @@ struct le_engine {
    * full D-MASTER / D-MASTERCH semantics. Live monitors (summed after it)
    * stay uncolored; master gain/limiter (master_bus_frame) is unchanged and
    * still applies to both. */
-  le_fx_bus master_fx;
+  /* Output buses (slice 3b): bus k is the pair (2k, 2k + 1). Bus 0's chain
+   * is the Master insert of the older API. */
+  le_output_bus outputs[LE_MAX_OUTPUT_BUSES];
+  /* Advances on every applied LE_CMD_CUT_SOUND; published as
+   * le_snapshot.tail_reset_rev. */
+  _Atomic uint32_t a_tail_reset_rev;
+  /* le_perf_set_follow_output: 1 = the master capture is tapped after the
+   * bus's level/balance/mono/mute, 0 = after its chain only. */
+  _Atomic int32_t a_perf_follow_output;
 
   /* Looper transport (master). */
   _Atomic int32_t a_master_len;
