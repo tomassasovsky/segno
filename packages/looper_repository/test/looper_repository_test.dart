@@ -766,14 +766,13 @@ void main() {
         final sub = repo.looperState.listen((_) {});
         addTearDown(sub.cancel);
         expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
-        // The fake keeps reporting Multi: two polls later the request is
-        // taken as dropped on the audio thread.
-        engine.nextSnapshot = _playingAt(100);
-        ticker.add(null);
-        await Future<void>.delayed(Duration.zero);
-        engine.nextSnapshot = _playingAt(200);
-        ticker.add(null);
-        await Future<void>.delayed(Duration.zero);
+        // The fake keeps reporting Multi: after enough polls of the running
+        // engine the request is taken as dropped on the audio thread.
+        for (var i = 1; i <= 6; i++) {
+          engine.nextSnapshot = _playingAt(100 * i);
+          ticker.add(null);
+          await Future<void>.delayed(Duration.zero);
+        }
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
@@ -847,21 +846,52 @@ void main() {
         expect(calls('undo'), 2);
       });
 
-      test('a frozen member joins the group and holds it until its point is '
-          'filed', () {
+      test('a frozen member is a member from the clear: the grouped undo '
+          'taps it too, and the engine queues that tap', () {
         // Track 1 was capturing: its point is filed a block after the clear.
         engine
           ..undoRestoresClearChannels = {0, 2}
           ..clearRestorePendingChannels = {1};
         final repo = rigOfThree()..clearAll([0, 1, 2]);
-        expect(repo.undoRestoresClearAll, isFalse); // not yet
+        expect(repo.undoRestoresClearAll, isTrue);
         repo.undo();
-        expect(calls('undo'), 1); // the track's own history only
-        // Filed now: the group answers for the remaining members.
+        expect(calls('undo'), 3); // all three, the frozen one queued
+        // Spent: the point landing later does not re-form the group.
+        engine
+          ..undoRestoresClearChannels = {0, 1, 2}
+          ..clearRestorePendingChannels = {};
+        expect(repo.undoRestoresClearAll, isFalse);
+      });
+
+      test('a frozen member is a member once its point is filed', () {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()..clearAll([0, 1, 2]);
         engine
           ..undoRestoresClearChannels = {0, 1, 2}
           ..clearRestorePendingChannels = {};
         expect(repo.undoRestoresClearAll, isTrue);
+        repo.undo(channel: 1);
+        expect(calls('undo'), 3);
+      });
+
+      test('an undo tapped at a single frozen clear restores the chains '
+          'the clear emptied', () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          );
+        engine.clearRestorePendingChannels = {1};
+        repo.clear(channel: 1);
+        expect(repo.laneEffects(1, 0), isEmpty);
+        repo.undo(channel: 1);
+        expect(calls('undo'), 1);
+        expect(repo.laneEffects(1, 0), hasLength(1));
       });
 
       test('a frozen member whose capture held nothing leaves the group '

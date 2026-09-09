@@ -419,6 +419,26 @@ static int32_t le_effective_master_len(le_engine* engine, le_track* t) {
   return load_i32(&engine->a_master_len);
 }
 
+/* The master grid the rig runs once every posted restore has landed: the
+ * wire's, or the master a clear point being restored on any track is about to
+ * re-establish while the wire still reads none — the rig-wide twin of
+ * le_effective_master_len, for a press that must know whether it defines the
+ * grid or records over one (a record behind a queued restore of the only
+ * take). */
+static int32_t le_rig_effective_master_len(le_engine* engine) {
+  const int32_t wire = load_i32(&engine->a_master_len);
+  if (wire > 0) return wire;
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    le_track* o = &engine->tracks[c];
+    if (o->state_cmds_posted >
+            atomic_load_explicit(&o->a_state_acks, memory_order_acquire) &&
+        o->pending_master_len > 0) {
+      return o->pending_master_len;
+    }
+  }
+  return 0;
+}
+
 /* The control thread's view of a track's length: what a posted-but-unapplied
  * state command will publish (a restore's take length, an emptying's 0), or
  * the published length once everything posted has been acked — the length
@@ -953,7 +973,9 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
    * Kept coherent with the effective state: the undo-to-empty / redo-from-empty
    * paths store it control-side when they post. */
   const int32_t len = load_i32(&t->lanes[0].a_len);
-  int has_master = load_i32(&engine->a_master_len) > 0;
+  /* Measured behind any queued restore: a press that lands while the only
+   * take is on its way back records over that take's grid, not a fresh one. */
+  int has_master = le_rig_effective_master_len(engine) > 0;
 
   /* A fresh take on an otherwise-empty looper redefines the grid. Undo-to-
    * empty deliberately keeps the master (redo needs it), but once the user

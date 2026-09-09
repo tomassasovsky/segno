@@ -1493,9 +1493,13 @@ class LooperRepository {
 
   /// The clear-all group while every member still restores a cleared take;
   /// empty while one does not.
+  ///
+  /// A frozen member whose point is still to be filed counts as a member:
+  /// the engine queues an undo tapped at it and restores the take once the
+  /// point lands, so the group answers as one from the clear onwards.
   Set<int> _intactClearAllGroup() {
-    // Frozen members first: still pending is "not yet"; a filed point makes
-    // a member; neither means the capture held nothing to give back.
+    // Frozen members first: a filed point makes a member; neither pending
+    // nor filed means the capture held nothing to give back.
     if (_clearAllPending.isNotEmpty) {
       final group = {..._clearAllGroup};
       final pending = <int>{};
@@ -1508,16 +1512,16 @@ class LooperRepository {
       }
       _clearAllGroup = group;
       _clearAllPending = pending;
-      if (pending.isNotEmpty) return const {};
     }
     for (final channel in _clearAllGroup) {
       if (_engine.undoRestoresClear(channel: channel)) continue;
       // The engine retired the point (a fresh take): the group is gone, and
       // a later single clear on that track must not re-form it.
       _clearAllGroup = const {};
+      _clearAllPending = const {};
       return const {};
     }
-    return _clearAllGroup;
+    return {..._clearAllGroup, ..._clearAllPending};
   }
 
   /// Whole-rig recovery from a clear-all: the intact group comes back as one
@@ -1619,13 +1623,21 @@ class LooperRepository {
       }
       _clearAllRedoGroup = group;
       _clearAllGroup = const {};
+      _clearAllPending = const {};
       return result;
     }
     return _undoTrack(channel);
   }
 
+  /// One track's undo. A tap at a frozen clear (its point still to be filed)
+  /// is queued by the engine and restores the take when the point lands, so
+  /// the chains come back for it too; a capture that held nothing leaves the
+  /// track empty with its pre-clear chains, which is what an empty track
+  /// carries anyway.
   EngineResult _undoTrack(int channel) {
-    final restoresClear = _engine.undoRestoresClear(channel: channel);
+    final restoresClear =
+        _engine.undoRestoresClear(channel: channel) ||
+        _engine.clearRestorePending(channel: channel);
     final result = _engine.undo(channel: channel);
     if (restoresClear && result == EngineResult.ok) {
       _restoreClearedTake(channel);
@@ -4151,11 +4163,17 @@ class LooperRepository {
   LooperMode? _requestedLooperMode;
   int _requestReports = 0;
 
+  /// Polls of a running engine that may report a request before dropping
+  /// it: the ring drains on the audio callback, and a device can take longer
+  /// than a poll or two to deliver its first one after a start.
+  static const int _requestReportLimit = 6;
+
   /// Keeps [_looperMode] equal to what the engine runs: a reported change
   /// (the switch landing, a session load) is taken as is; a request the
   /// reports never confirm is dropped in favour of the reported mode.
   void _rememberLooperMode(LooperState next, {required bool poll}) {
     if (!_intendRunning || !next.status.isConnected) return;
+    if (!next.transport.isRunning) return; // no callback, no report
     final reported = next.transport.looperMode;
     final requested = _requestedLooperMode;
     if (requested == null) {
@@ -4168,7 +4186,7 @@ class LooperRepository {
     }
     // Only polls count as reports: a local edit re-projects within the same
     // block the request is still travelling in.
-    if (poll && ++_requestReports >= 2) {
+    if (poll && ++_requestReports >= _requestReportLimit) {
       _requestedLooperMode = null;
       _looperMode = reported;
     }
