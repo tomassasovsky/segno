@@ -616,6 +616,10 @@ typedef struct le_track {
    * meter here. */
   _Atomic uint32_t a_trk_rms_bits;
   _Atomic uint32_t a_trk_peak_bits;
+  /* This track's own playhead (le_track_snapshot.position_frames): the mixer's
+   * read index for the last frame of the block, or the write head while
+   * RECORDING. Published once per block beside the level above. */
+  _Atomic int32_t a_play_pos;
   int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
                        * int, like track_count — not an atomic, not a ring
                        * command (set before the first record into a new lane). */
@@ -1066,6 +1070,7 @@ struct le_engine {
   _Atomic uint32_t a_in_rms_bits;
   _Atomic uint32_t a_in_peak_bits;
   _Atomic uint32_t a_out_rms_bits;
+  _Atomic uint32_t a_out_peak_bits; /* master-bus block peak, post gain+limiter */
 
 
   /* ---- Tuner (LE_CMD_SET_TUNER_INPUT) ----
@@ -1468,6 +1473,11 @@ struct le_engine {
    * engine_process.c) — stays at its zero-initialized/reset value, which
    * le_engine_configure and handle_clear explicitly re-arm to -1. */
   int32_t track_viz_bucket[LE_MAX_TRACKS];
+  /* Audio-thread scratch: each track's read index for the frame most recently
+   * mixed (seg_base + trk_pos — multiples, divisions and Free/Song clocks all
+   * applied). Published to a_play_pos once per block; stale (held) for a track
+   * the mixer skipped, which is what a stopped track should show anyway. */
+  int32_t trk_play_pos[LE_MAX_TRACKS];
 
   /* Latency harness (audio-thread-local + published state). The measurement
    * captures the input-magnitude envelope into lat_buf for a fixed window after

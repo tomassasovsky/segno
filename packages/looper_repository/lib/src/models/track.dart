@@ -27,6 +27,7 @@ class Track extends Equatable {
     this.outputMask = 0x3,
     this.layerInFlight = false,
     this.pending = false,
+    this.positionFrames = 0,
     this.lengthPresetBars = 0,
     this.quantizeOverride,
     this.oneShot = false,
@@ -74,6 +75,17 @@ class Track extends Equatable {
 
   /// Whether a quantized/signal-triggered record arm is waiting to fire.
   final bool pending;
+
+  /// This track's own playhead in frames within [lengthFrames] — the engine
+  /// has already applied the mode's position rule (a multiple's segment, a
+  /// Sync division's folded phase, a Free/Song track's private clock), so
+  /// [progress] is the track's own progress. While recording it is the write
+  /// head instead. `0` for an empty track.
+  ///
+  /// Moves at the poll rate while the track plays, like [peak], and is kept
+  /// out of [steadyProps] for the same reason: the progress bar subscribes
+  /// to it in its own leaf.
+  final int positionFrames;
 
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
@@ -139,11 +151,17 @@ class Track extends Equatable {
   /// Whether an undone overdub layer can be redone.
   bool get canRedo => redoDepth > 0;
 
-  /// Everything in [props] EXCEPT the live [peak] level.
+  /// Normalized play position in `0..1`, or `0` while the track has no length
+  /// (empty, or still on its defining take).
+  double get progress =>
+      lengthFrames > 0 ? (positionFrames / lengthFrames).clamp(0.0, 1.0) : 0;
+
+  /// Everything in [props] EXCEPT the live [peak] level and [positionFrames].
   ///
-  /// [peak] is the only field that changes at the poll rate on a track that is
-  /// merely playing, so it is the only one that has to be subscribed at meter
-  /// granularity. A surface that draws the tile AROUND a meter compares on
+  /// Those two are the fields that change at the poll rate on a track that is
+  /// merely playing, so they are the only ones that have to be subscribed at
+  /// meter granularity. A surface that draws the tile AROUND a meter compares
+  /// on
   /// this, and subscribes to [peak] separately in the meter leaf itself, so a
   /// moving level rebuilds the bar and nothing else (#646/#654/#832).
   ///
@@ -155,7 +173,8 @@ class Track extends Equatable {
   /// Listed out rather than derived from [props] so neither list is built
   /// twice per comparison (a `Track ==` is on the console's hot path). The
   /// two are locked to each other by a test — `props` is exactly this list
-  /// plus [peak] — so a field added to one cannot silently miss the other.
+  /// plus [peak] and [positionFrames] — so a field added to one cannot
+  /// silently miss the other.
   ///
   /// "Steady" means steady against a moving LEVEL, and nothing more — two
   /// other fields here move on their own, both deliberately left in:
@@ -192,10 +211,11 @@ class Track extends Equatable {
     chainEnabled,
   ];
 
-  /// Value equality over every field, [peak] INCLUDED — deliberately, and
-  /// load-bearing.
+  /// Value equality over every field, [peak] and [positionFrames] INCLUDED —
+  /// deliberately, and load-bearing.
   ///
-  /// **Do not remove [peak] from this list.** The meters are fed through
+  /// **Do not remove [peak] (or [positionFrames]) from this list.** The meters
+  /// are fed through
   /// `LooperState ==`: `LooperRepository`'s poll drops a projection equal to
   /// the one before it (`if (next == _last) return`), so a field outside
   /// equality is a field that never reaches the UI at all. Taking [peak] out
@@ -228,5 +248,6 @@ class Track extends Equatable {
     effects,
     chainEnabled,
     peak,
+    positionFrames,
   ];
 }

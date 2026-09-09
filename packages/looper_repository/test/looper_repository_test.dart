@@ -4374,9 +4374,8 @@ void main() {
     });
 
     test(
-      'the crown re-applies on every restart (device change), like looper '
-      'mode — D18, no un-crown call means the cache never has a "default" '
-      'to fall back to, only a remembered channel',
+      'a crown is pushed once and never re-applied on restart — the engine '
+      'owns it, and a restarted rig is empty, so it has no crown',
       () {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
@@ -4387,9 +4386,21 @@ void main() {
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.lastCrownedChannel, 4);
+        expect(engine.lastCrownedChannel, isNull);
       },
     );
+
+    test('a crown requested while stopped lands on the next start, once', () {
+      final repo = buildRepo()..crownPrimary(channel: 3);
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, 3);
+
+      engine.lastCrownedChannel = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, isNull);
+    });
 
     test('a never-crowned track does not push crownPrimary on start', () {
       buildRepo().startEngine(const EngineConfig());
@@ -4474,15 +4485,26 @@ void main() {
           countInBeatsLeft: 3,
           looperMode: LooperMode.band,
           primaryTrack: 2,
+          outputPeak: 0.5,
+          // The crown only projects onto a track that holds a completed
+          // take (see `resolvedPrimaryTrack`), so give the designated
+          // channel one.
+          tracks: [
+            const TrackSnapshot.empty(),
+            const TrackSnapshot.empty(),
+            const TrackSnapshot(
+              state: TrackState.playing,
+              volume: 1,
+              muted: false,
+              lengthFrames: 4,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+            ),
+          ],
         );
 
-        // primaryTrack now projects from the repository's own re-apply
-        // cache, not the raw snapshot field (independent review of #295,
-        // D18 stale-crown fix — see `_project`'s doc) — crown through the
-        // real API so the cache agrees with the snapshot fixture above,
-        // matching how a genuinely-crowned engine is reached in practice.
-        final transport =
-            (buildRepo()..crownPrimary(channel: 2)).state.transport;
+        final transport = buildRepo().state.transport;
         expect(transport.tempoBpm, 128);
         expect(transport.tempoSource, TempoSource.manual);
         expect(transport.tsNum, 3);
@@ -4499,8 +4521,71 @@ void main() {
         expect(transport.countInBeatsLeft, 3);
         expect(transport.looperMode, LooperMode.band);
         expect(transport.primaryTrack, 2);
+        expect(transport.outputPeak, closeTo(0.5, 1e-9));
       },
     );
+
+    group('resolvedPrimaryTrack', () {
+      const playing = TrackSnapshot(
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        lengthFrames: 4,
+        undoDepth: 0,
+        rms: 0,
+        peak: 0,
+      );
+      const recording = TrackSnapshot(
+        state: TrackState.recording,
+        volume: 1,
+        muted: false,
+        lengthFrames: 2,
+        undoDepth: 0,
+        rms: 0,
+        peak: 0,
+      );
+      const empty = TrackSnapshot.empty();
+
+      test('is the designation when that track holds a completed take', () {
+        expect(resolvedPrimaryTrack(2, [playing, empty, playing]), 2);
+      });
+
+      test(
+        'falls onto the lowest recorded track while the designated one is '
+        'empty (its clear kept the designation, D18)',
+        () {
+          expect(resolvedPrimaryTrack(2, [empty, playing, empty, playing]), 1);
+        },
+      );
+
+      test('is none for an empty session, or one still on its first take', () {
+        expect(resolvedPrimaryTrack(-1, [empty, empty]), -1);
+        expect(resolvedPrimaryTrack(0, [recording, empty]), -1);
+        expect(resolvedPrimaryTrack(-1, const []), -1);
+      });
+
+      test('never trusts an out-of-range designation', () {
+        expect(resolvedPrimaryTrack(7, [empty, playing]), 1);
+      });
+
+      test('projects onto TransportState.primaryTrack', () {
+        engine.nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          primaryTrack: 3,
+          tracks: [empty, playing, empty, empty],
+        );
+        expect(buildRepo().state.transport.primaryTrack, 1);
+      });
+    });
 
     test(
       'TransportState defaults to the tempo-free grid-off values',

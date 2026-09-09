@@ -176,23 +176,16 @@ void main() {
       expect(ratio(hc.fx, hc.fxSurface), closeTo(6.83, 0.05));
     });
 
-    test('HC meter/indicator idle tones clear 3:1 on the track tile', () {
+    test('the HC empty-meter tone clears 3:1 on the track tile', () {
       final looper = AppTheme.highContrast.extension<LooperTheme>()!;
-      // WCAG 1.4.11: the empty-meter groove and the idle indicator are the
-      // dimmest non-text components on the tile; both must clear 3:1 in HC.
+      // WCAG 1.4.11: the empty-meter groove is the dimmest non-text
+      // component on the tile; it must clear 3:1 in HC.
       expect(
         ratio(
           looper.meterColor(
             LooperMeterState.empty,
             mode: InteractionMode.record,
           ),
-          looper.tileBackground,
-        ),
-        greaterThanOrEqualTo(3),
-      );
-      expect(
-        ratio(
-          looper.indicatorColor(TrackIndicator.idle),
           looper.tileBackground,
         ),
         greaterThanOrEqualTo(3),

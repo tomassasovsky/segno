@@ -136,7 +136,6 @@
     "a11yPortDedicated": "salida dedicada",
     "a11yPortUnused": "salida sin usar",
     "a11yEffectType": "Tipo de efecto",
-    "a11yWaveform": "Forma de onda del bucle de salida",
     "a11yHideTitleBar": "Ocultar barra de título",
     "a11yShowTitleBar": "Mostrar barra de título",
     "a11yBankSelected": "Banco {bank}",
@@ -190,8 +189,8 @@
     "waveformWindowSubtitle": "Abre una segunda ventana con la forma de onda de salida del bucle completo",
     "highContrastTitle": "Alto contraste",
     "highContrastSubtitle": "Fuerza una paleta más brillante y de mayor contraste. En escritorio, el ajuste de contraste del sistema no se aplica automáticamente.",
-    "trackIndicatorsTitle": "Indicadores de pista",
-    "trackIndicatorsSubtitle": "Mostrar una luz de estado en cada pista",
+    "trackIndicatorsTitle": "Indicadores de caché de carril",
+    "trackIndicatorsSubtitle": "Mostrar el estado de caché en los carriles de Señal",
     "looperGroupLabel": "LOOPER",
     "defaultModeIntro": "Modo en el que inicia el looper: lo que hace una pulsación de pista, desde el pedal, el teclado o la pantalla. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Silenciar silencian / activan sonido. El modo FX (donde las pulsaciones de pista alternan las cadenas de FX) no se ofrece aquí: se entra en él en vivo, nunca al iniciar.",
     "recordModeLabel": "Grabar",
@@ -523,7 +522,7 @@
     "pitchOctaves": "{sign}{count} oct",
     "pitchSemitones": "{sign}{count} st",
     "defaultTrackName": "PISTA {trackNumber}",
-    "outputWaveformWindowTitle": "Segno — Salida",
+    "outputWaveformWindowTitle": "Segno — Pista",
     "@deviceReconnectedSnackbar": {
         "placeholders": {
             "deviceName": {
@@ -994,9 +993,6 @@
     "countInBarsLabel1": "1 compás",
     "countInBarsLabel2": "2 compases",
     "countInBarsLabel4": "4 compases",
-    "stageTempoBpm": "{bpm} bpm",
-    "stageCountIn": "cuenta de entrada",
-    "a11yStageBank": "Banco {bank}",
     "a11yStageRecordIdle": "Sin grabar",
     "countingInLabel": "Cuenta de entrada {beats}",
     "@countingInLabel": {
@@ -1018,10 +1014,6 @@
                 "type": "int"
             }
         }
-    },
-    "a11yTrackArmed": "Armado, esperando el siguiente límite",
-    "@a11yTrackArmed": {
-        "description": "Accessible label for the small badge shown on a track tile with a pending quantized/signal-triggered record arm."
     },
     "settingsSectionMode": "Modo",
     "looperModeIntro": "Elige cómo se relacionan las pistas del looper entre sí y con la rejilla de tempo.",
@@ -1084,14 +1076,6 @@
     "@a11yTrackPrimary": {
         "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
     },
-    "a11yCrownTrack": "Nombrar pista principal",
-    "@a11yCrownTrack": {
-        "description": "Accessible label for the tappable crown badge on a non-primary track in Sync/Band mode."
-    },
-    "a11yTrackCrowned": "Nombrada pista principal",
-    "@a11yTrackCrowned": {
-        "description": "Screen-reader announcement after crowning a track the Sync/Band primary."
-    },
     "a11yTrayHandle": "Bandeja de ajustes rápidos",
     "@a11yTrayHandle": {
         "description": "Accessible label for the settings tray's always-visible pull-tab handle (tap or drag to open/close)."
@@ -1113,149 +1097,29 @@
     "@a11yTrayRail": {
         "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
     },
-    "readoutTempoLabel": "Tempo Bpm",
-    "@readoutTempoLabel": {
-        "description": "Caption over the tempo figure on the 7-inch performance readout."
-    },
-    "readoutBarsLabel": "Compases",
-    "@readoutBarsLabel": {
-        "description": "Caption over the master loop length in bars on the 7-inch performance readout."
-    },
-    "readoutClockLabel": "Tiempo",
-    "@readoutClockLabel": {
-        "description": "Caption over the elapsed transport clock on the 7-inch console readout."
-    },
-    "readoutRecordLabel": "REC",
-    "@readoutRecordLabel": {
-        "description": "The performance-record light's word on the 7-inch console readout; the armed elapsed time renders beside it."
-    },
-    "readoutCountIn": "cuenta de entrada",
-    "@readoutCountIn": {
-        "description": "Shown beside the beat dots on the 7-inch console readout while a count-in is sounding."
-    },
-    "readoutModeRecord": "REC",
-    "@readoutModeRecord": {
-        "description": "Mode chip on the 7-inch readout: a track press records. Short by design - read from stage distance."
-    },
-    "readoutModeMute": "MUTE",
-    "@readoutModeMute": {
-        "description": "Mode chip on the 7-inch readout: a track press mutes."
-    },
-    "readoutModeFx": "FX",
-    "@readoutModeFx": {
-        "description": "Mode chip on the 7-inch readout: a track press stomps its FX chain."
-    },
-    "readoutMix": "MIX",
-    "@readoutMix": {
-        "description": "The pill in the waveform strip's bottom-right corner on the 7-inch readout — the only touch affordance, opens the volume overlay. MIX is common usage for Spanish-speaking musicians and fits the drawn 180-wide pill; MEZCLA would not."
-    },
-    "readoutVolumesInputs": "ENTRADAS",
-    "@readoutVolumesInputs": {
-        "description": "Pinned header caption over the input rows on the 7-inch volume overlay."
-    },
-    "readoutVolumesTracks": "PISTAS",
-    "@readoutVolumesTracks": {
-        "description": "Caption over the track rows on the 7-inch volume overlay."
-    },
-    "readoutVolumesBackToStage": "VOLVER AL ESCENARIO",
-    "@readoutVolumesBackToStage": {
-        "description": "Chip on the 7-inch volume overlay that dismisses it back to the readout."
-    },
-    "readoutVolumesBack": "VOLVER",
-    "@readoutVolumesBack": {
-        "description": "Chip on a 7-inch volume config panel that returns to the volume list."
-    },
-    "readoutVolumesVolume": "VOLUMEN",
-    "@readoutVolumesVolume": {
-        "description": "Caption over the fader on a 7-inch volume config panel."
-    },
-    "readoutVolumesInputKind": "ENTRADA",
-    "@readoutVolumesInputKind": {
-        "description": "Kind caption on the input config panel, and the caption over a track's read-only input-source pills."
-    },
-    "readoutVolumesTrackKind": "PISTA",
-    "@readoutVolumesTrackKind": {
-        "description": "Kind caption over the title on a track's 7-inch config panel."
-    },
-    "readoutVolumesMute": "MUTE",
-    "@readoutVolumesMute": {
-        "description": "The mute toggle on a track's 7-inch config panel."
-    },
-    "readoutVolumesFxChain": "CADENA FX",
-    "@readoutVolumesFxChain": {
-        "description": "The FX-chain engage toggle on a track's 7-inch config panel."
-    },
-    "readoutVolumesListeningTracks": "PISTAS A LA ESCUCHA",
-    "@readoutVolumesListeningTracks": {
-        "description": "Caption over the read-only pills naming the tracks that record an input, on its 7-inch config panel."
-    },
-    "readoutVolumesConditioning": "ACONDICIONAMIENTO",
-    "@readoutVolumesConditioning": {
-        "description": "Caption over the input-conditioning toggles on the 7-inch input config panel (arrives with #697)."
-    },
-    "readoutVolumesHpf": "HPF",
-    "@readoutVolumesHpf": {
-        "description": "High-pass filter conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutVolumesHum": "HUM",
-    "@readoutVolumesHum": {
-        "description": "Hum-removal conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutVolumesExpander": "EXPANSOR",
-    "@readoutVolumesExpander": {
-        "description": "Expander conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutVolumesRestore": "RESTAURAR",
-    "@readoutVolumesRestore": {
-        "description": "Restoration conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutStateRecording": "REC",
-    "@readoutStateRecording": {
-        "description": "Track cell state on the 7-inch readout: capturing a first pass."
-    },
-    "readoutStateOverdubbing": "DUB",
-    "@readoutStateOverdubbing": {
-        "description": "Track cell state on the 7-inch readout: summing input into an existing loop."
-    },
-    "readoutStatePlaying": "PLAY",
-    "@readoutStatePlaying": {
-        "description": "Track cell state on the 7-inch readout: looping playback."
-    },
-    "readoutStateMuted": "MUDO",
-    "@readoutStateMuted": {
-        "description": "Track cell state on the 7-inch readout: muted."
-    },
-    "readoutStatePending": "ARMADO",
-    "@readoutStatePending": {
-        "description": "Track cell state on the 7-inch readout: a quantized action is armed and waiting for the loop boundary."
-    },
-    "readoutStateStopped": "DETENIDO",
-    "@readoutStateStopped": {
-        "description": "Track cell state on the 7-inch readout: playback halted but the loop buffer is retained. Distinct from empty - the track still holds audio."
-    },
-    "readoutStateEmpty": "VACIO",
-    "@readoutStateEmpty": {
-        "description": "Track cell state on the 7-inch readout: nothing captured yet."
-    },
     "tunerCentsAndHz": "{cents} centésimas · {hz} Hz",
     "@tunerCentsAndHz": {
-      "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
-      "placeholders": {
-        "cents": { "type": "String" },
-        "hz": { "type": "String" }
-      }
+        "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
+        "placeholders": {
+            "cents": {
+                "type": "String"
+            },
+            "hz": {
+                "type": "String"
+            }
+        }
     },
     "tunerListening": "Toca una nota",
     "@tunerListening": {
-      "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
+        "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
     },
     "tunerNoTunableInput": "Sin entrada para afinar",
     "@tunerNoTunableInput": {
-      "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
+        "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
     },
     "tunerNoDevice": "Sin dispositivo de audio",
     "@tunerNoDevice": {
-      "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
+        "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
     },
     "trayTunerLabel": "Afinador",
     "@trayTunerLabel": {
@@ -2292,5 +2156,52 @@
     "powerOffSaving": "Guardando…",
     "powerOffSaveFailedTitle": "No se pudo guardar",
     "powerOffSaveFailedBody": "La sesión no se escribió. No se apagó nada — los loops siguen en RAM.",
-    "a11yPowerOffMark": "Segno"
+    "a11yPowerOffMark": "Segno",
+    "stageLibrary": "Biblioteca",
+    "stageSettings": "Ajustes",
+    "stageViewMenu": "Vista de actuación",
+    "stageViewTrack": "Pista",
+    "stageViewWave": "Onda",
+    "a11yStageBankButton": "Banco {bank}, pistas {first} a {last}",
+    "stageBarsUnit": "{count, plural, =1{compás} other{compases}}",
+    "stageLayersUnit": "{count, plural, =1{capa} other{capas}}",
+    "stageNoBars": "—",
+    "stageFxMarker": "FX",
+    "a11yStageFxActive": "Efectos de pista activos",
+    "a11yStageFxBypassed": "Efectos de pista en bypass",
+    "a11yStageTrackMeta": "Pista {number}, {bars}, {layers}",
+    "stageBarsFigure": "{count, plural, =1{1 compás} other{{count} compases}}",
+    "stageNoBarsFigure": "sin compases contados",
+    "stageLayersFigure": "{count, plural, =1{1 capa} other{{count} capas}}",
+    "stageBpmUnit": "BPM",
+    "stageDbUnit": "dBFS",
+    "stageOutputLevel": "SALIDA {db} dBFS",
+    "stageOutputClip": "SALIDA SATURA",
+    "a11yStageOutputLevel": "Nivel de salida {db} dBFS",
+    "a11yStageOutputClip": "Salida saturando",
+    "a11yStageElapsed": "Transcurrido desde la primera grabación, {time}",
+    "a11yStageLoopMode": "Modo de loop {mode}",
+    "a11yStageTempo": "{bpm} pulsos por minuto, {signature}",
+    "stageQueueRecord": "Grabar",
+    "stageQueueOverdub": "Overdub",
+    "stageQueueLoopStart": "Inicio del loop",
+    "stageQueueNextBar": "Próximo compás",
+    "stageQueueHalf": "Próxima blanca",
+    "stageQueueQuarter": "Próxima negra",
+    "stageQueueEighth": "Próxima corchea",
+    "stageQueueSixteenth": "Próxima semicorchea",
+    "stageQueueSound": "Sonido",
+    "a11yTrackQueued": "{action} en cola, {timing}",
+    "readoutStateEmpty": "Vacía",
+    "readoutStateRecording": "Grabando",
+    "readoutStateOverdubbing": "Overdub",
+    "readoutStatePlaying": "Reproduciendo",
+    "readoutStateStopped": "Detenida",
+    "readoutStateMuted": "Silenciada",
+    "readoutFunctionBank": "{function} · Banco {bank}",
+    "readoutFunctionTracks": "Pistas",
+    "readoutFunctionMute": "Silencio",
+    "readoutFunctionFx": "FX",
+    "a11ySelectedTrackWaveform": "Forma de onda de {name}",
+    "a11yReadoutNoTrack": "Ninguna pista seleccionada"
 }

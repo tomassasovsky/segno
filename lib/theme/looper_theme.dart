@@ -1,17 +1,25 @@
-import 'dart:math' show sqrt;
+import 'dart:math' show ln10, log;
 
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/theme/surface_theme.dart';
 
-/// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`).
+/// The bottom of the shared meter scale, in dBFS: a peak at or below this
+/// draws no fill.
+const double kMeterFloorDb = -60;
+
+/// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`), linear in
+/// decibels over [kMeterFloorDb]..0 dBFS.
 ///
-/// Square-root compression keeps normal playback levels readable on tall meters
-/// without clipping early; full scale still maps to 100%.
+/// dB-linear so the fill lines up with the shared dBFS scale drawn beside the
+/// track columns (the accepted stage): a -18 dBFS peak sits 70% of the way
+/// up, exactly where the scale says -18. Full scale maps to 100%; silence and
+/// anything under the floor to 0.
 double peakMeterFill(double peak) {
   if (peak <= 0) return 0;
-  return sqrt(peak.clamp(0.0, 1.0));
+  final db = 20 * log(peak.clamp(0.0, 1.0)) / ln10;
+  return ((db - kMeterFloorDb) / -kMeterFloorDb).clamp(0.0, 1.0);
 }
 
 /// The distinct appearances a track meter (peak bar) can take: the track's
@@ -50,52 +58,6 @@ enum LooperMeterState {
   }
 }
 
-/// The discrete arm/readiness appearance of a track's status indicator —
-/// independent of the meter palette and of the hardware pedal LEDs.
-enum TrackIndicator {
-  /// Inactive / not armed. Dim.
-  idle,
-
-  /// Playing, or armed to play (selected in mute mode). Green.
-  play,
-
-  /// Recording/overdubbing, or armed to record (selected in record mode). Red.
-  record;
-
-  /// Indicator state for a track. Transport state wins over the
-  /// selected/armed derivation; `muted` reads as [idle] (matching the meter's
-  /// muted-first precedence on the same tile).
-  ///
-  /// A **stopped** track that still holds a loop ([hasContent]) reads as
-  /// [play] — it is armed to play and will sound on the next play-all, so the
-  /// indicator stays lit after a stop rather than going dark. An empty/cleared
-  /// track only arms (by mode) when [selected]: green in mute mode, red in
-  /// record mode.
-  factory TrackIndicator.of(
-    TrackState state, {
-    required bool muted,
-    required bool hasContent,
-    required bool selected,
-    required InteractionMode mode,
-  }) {
-    if (muted) return TrackIndicator.idle;
-    return switch (state) {
-      TrackState.recording || TrackState.overdubbing => TrackIndicator.record,
-      TrackState.playing => TrackIndicator.play,
-      TrackState.stopped when hasContent => TrackIndicator.play,
-      // Only RECORD mode arms the selection to record — in mute and FX mode a
-      // track press does something else entirely, so the cursor must not
-      // promise a take that no button there would start.
-      TrackState.empty || TrackState.stopped =>
-        selected
-            ? (mode == InteractionMode.record
-                  ? TrackIndicator.record
-                  : TrackIndicator.play)
-            : TrackIndicator.idle,
-    };
-  }
-}
-
 /// Segno-specific design tokens layered on top of [ThemeData] via a
 /// [ThemeExtension], so the looper grid and visualizer pick up per-mode colors
 /// (per-track accents, waveform stroke, tile surfaces) without hard-coding them
@@ -111,7 +73,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.recordColor,
     required this.recordMeterColors,
     required this.muteMeterColors,
-    required this.indicatorColors,
     required this.toolbarIconColor,
   });
 
@@ -149,9 +110,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Track-meter (peak bar) colors by [LooperMeterState] in mute mode.
   final Map<LooperMeterState, Color> muteMeterColors;
 
-  /// Per-track status-indicator colors by [TrackIndicator].
-  final Map<TrackIndicator, Color> indicatorColors;
-
   /// Icon color for the toolbar's unarmed/neutral icon buttons (Play/Stop
   /// All, Clear All, Fullscreen, Signal, Settings, Session, and the
   /// unarmed performance-record button).
@@ -170,11 +128,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
       }[state] ??
       Colors.transparent;
 
-  /// The status-indicator color for [indicator]. Transparent if the table
-  /// omits it.
-  Color indicatorColor(TrackIndicator indicator) =>
-      indicatorColors[indicator] ?? Colors.transparent;
-
   /// The waveform color for [state]. Transparent if the table omits it.
   ///
   /// Unlike the meters there is no per-mode split: the waveform draws the
@@ -191,7 +144,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Color? recordColor,
     Map<LooperMeterState, Color>? recordMeterColors,
     Map<LooperMeterState, Color>? muteMeterColors,
-    Map<TrackIndicator, Color>? indicatorColors,
     Color? toolbarIconColor,
   }) => LooperTheme(
     tileBackground: tileBackground ?? this.tileBackground,
@@ -201,7 +153,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     recordColor: recordColor ?? this.recordColor,
     recordMeterColors: recordMeterColors ?? this.recordMeterColors,
     muteMeterColors: muteMeterColors ?? this.muteMeterColors,
-    indicatorColors: indicatorColors ?? this.indicatorColors,
     toolbarIconColor: toolbarIconColor ?? this.toolbarIconColor,
   );
 
@@ -234,11 +185,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
       muteMeterColors: _lerpColorMap(
         muteMeterColors,
         other.muteMeterColors,
-        t,
-      ),
-      indicatorColors: _lerpColorMap(
-        indicatorColors,
-        other.indicatorColors,
         t,
       ),
       toolbarIconColor:

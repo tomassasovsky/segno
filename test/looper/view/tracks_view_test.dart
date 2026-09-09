@@ -19,7 +19,8 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
-import 'package:segno/looper/view/stage_status_bar.dart';
+import 'package:segno/looper/view/stage_db_scale.dart';
+import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
@@ -62,6 +63,8 @@ Finder _column(int channel) => find.byWidgetPredicate(
 );
 
 void main() {
+  setUpAll(() => registerFallbackValue(const LooperRecordPressed(0)));
+
   late LooperBloc bloc;
   late TracksCubit tracks;
   late ControlCubit control;
@@ -381,8 +384,6 @@ void main() {
     expect(control.state.mode, InteractionMode.mute);
     await cycle();
     expect(control.state.mode, InteractionMode.fx);
-    // The chip renders the landed mode, so the screen and the plate agree.
-    expect(find.text('FX'), findsOneWidget);
     expect(announcements, contains(l10n.a11yModeFx));
     expect(l10n.a11yModeFx, 'FX mode');
     await cycle();
@@ -581,6 +582,12 @@ void main() {
   });
 
   group('FX-mode cell identity is chain-first, never the track (#692)', () {
+    /// The cell's identity line — the FX-mode dressing's own text, which the
+    /// always-visible track name above the meter is not part of.
+    String fxIdentity(WidgetTester tester) => tester
+        .widget<AppText>(find.byKey(const Key('tracks_tileFxTarget')))
+        .data!;
+
     // These pump a TrackColumn DIRECTLY so the bound chain's FX target can be
     // injected — the on-screen stage wires every column to its own Track
     // chain, so a non-track target (e.g. Master) cannot reach the cell through
@@ -656,7 +663,7 @@ void main() {
       // Chain-first: the default Track-stage target (TRACK 3, 1-based) and the
       // chain's head effect — never GUITAR as the cell identity.
       expect(find.text('TRACK 3 · FILTER'), findsOneWidget);
-      expect(find.text('GUITAR'), findsNothing);
+      expect(fxIdentity(tester), isNot(contains('GUITAR')));
     });
 
     testWidgets('a value-equal Track from an EARLIER poll is accepted', (
@@ -740,8 +747,8 @@ void main() {
       );
 
       expect(find.text('MASTER · REVERB'), findsOneWidget);
-      expect(find.text('GUITAR'), findsNothing);
-      expect(find.textContaining('TRACK'), findsNothing);
+      expect(fxIdentity(tester), isNot(contains('GUITAR')));
+      expect(fxIdentity(tester), isNot(contains('TRACK')));
     });
 
     testWidgets('a NAMED input reads its name over a smaller INPUT n, chain '
@@ -827,48 +834,77 @@ void main() {
     expect(find.byKey(const Key('tracks_tile_0')), findsNothing);
   });
 
-  group('pending arm badge', () {
-    testWidgets('shows on a track with a pending quantized/signal arm', (
+  group('queued cue', () {
+    testWidgets('a pending arm on an empty track reads Record · Loop start', (
       tester,
     ) async {
       seed(const LooperState(tracks: [Track(pending: true)]));
       await pump(tester);
 
-      expect(find.byIcon(Icons.schedule_outlined), findsOneWidget);
+      expect(find.byKey(const Key('tracks_queued_0')), findsOneWidget);
+      expect(find.text('Record'), findsOneWidget);
+      expect(find.text('Loop start'), findsOneWidget);
+    });
+
+    testWidgets('a pending arm on a recorded track reads Overdub, and names '
+        'the quantize grid', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(quantizeDiv: GridDivision.bar),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000, pending: true),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.text('Overdub'), findsOneWidget);
+      expect(find.text('Next bar'), findsOneWidget);
     });
 
     testWidgets('absent on a track with no pending arm', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
 
-      expect(find.byIcon(Icons.schedule_outlined), findsNothing);
+      expect(find.byKey(const Key('tracks_queued_0')), findsNothing);
+    });
+
+    testWidgets('the cue is a readout: the tap still reaches the tile', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(pending: true)]));
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('tracks_queued_0')));
+      // A second press cancels the arm — the tile's record path, not a cue.
+      verify(() => bloc.add(const LooperRecordPressed(0))).called(1);
     });
   });
 
-  group('crown badge (D18, B5c)', () {
-    testWidgets('absent in Multi mode', (tester) async {
-      seed(
-        // LooperMode.multi is TransportState's default — explicit here only
-        // for readability (this is a Multi-mode test).
-        const LooperState(tracks: [Track(), Track(channel: 1)]),
-      );
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_crown_0')), findsNothing);
-      expect(find.byKey(const Key('tracks_crown_1')), findsNothing);
-    });
-
-    testWidgets('absent in Song and Free modes too — Sync/Band only', (
+  group('primary crown', () {
+    testWidgets('marks the primary track in every mode, Multi included', (
       tester,
     ) async {
-      for (final mode in [LooperMode.song, LooperMode.free]) {
+      for (final mode in LooperMode.values) {
         seed(
           LooperState(
-            transport: TransportState(looperMode: mode),
-            tracks: const [Track()],
+            transport: TransportState(looperMode: mode, primaryTrack: 1),
+            tracks: const [
+              Track(state: TrackState.playing, lengthFrames: 1000),
+              Track(
+                channel: 1,
+                state: TrackState.playing,
+                lengthFrames: 1000,
+              ),
+            ],
           ),
         );
         await pump(tester);
+        expect(
+          find.byKey(const Key('tracks_crown_1')),
+          findsOneWidget,
+          reason: mode.name,
+        );
         expect(
           find.byKey(const Key('tracks_crown_0')),
           findsNothing,
@@ -877,67 +913,58 @@ void main() {
       }
     });
 
-    testWidgets('visible on every track in Sync mode', (tester) async {
-      seed(
-        const LooperState(
-          transport: TransportState(looperMode: LooperMode.sync),
-          tracks: [Track(), Track(channel: 1)],
-        ),
-      );
+    testWidgets('an empty session has none', (tester) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
       await pump(tester);
 
-      expect(find.byKey(const Key('tracks_crown_0')), findsOneWidget);
-      expect(find.byKey(const Key('tracks_crown_1')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_crown_0')), findsNothing);
+      expect(find.byKey(const Key('tracks_crown_1')), findsNothing);
     });
 
-    testWidgets('visible in Band mode too', (tester) async {
+    testWidgets('selection and bank do not move it', (tester) async {
       seed(
-        const LooperState(
-          transport: TransportState(looperMode: LooperMode.band),
-          tracks: [Track()],
+        LooperState(
+          transport: const TransportState(primaryTrack: 2),
+          tracks: [
+            for (var i = 0; i < 8; i++)
+              Track(channel: i, state: TrackState.playing, lengthFrames: 1000),
+          ],
         ),
       );
       await pump(tester);
+      expect(find.byKey(const Key('tracks_crown_2')), findsOneWidget);
 
-      expect(find.byKey(const Key('tracks_crown_0')), findsOneWidget);
-    });
+      control.selectTrack(0);
+      await tester.pump();
+      expect(find.byKey(const Key('tracks_crown_2')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_crown_0')), findsNothing);
 
-    testWidgets('tapping a non-primary track crowns it (dispatches '
-        'LooperCrownPrimaryPressed)', (tester) async {
-      seed(
-        const LooperState(
-          transport: TransportState(
-            looperMode: LooperMode.sync,
-            primaryTrack: 0,
-          ),
-          tracks: [Track(), Track(channel: 1)],
-        ),
-      );
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_crown_1')));
+      // Bank B reveals the other four tracks and no second crown.
+      control.browseBank(1);
       await tester.pumpAndSettle();
-
-      verify(() => bloc.add(const LooperCrownPrimaryPressed(1))).called(1);
+      expect(find.byKey(const Key('tracks_crown_2')), findsNothing);
+      for (var i = 4; i < 8; i++) {
+        expect(find.byKey(Key('tracks_crown_$i')), findsNothing);
+      }
     });
 
-    testWidgets("the current primary track's own badge is inert — no un-crown "
-        'gesture exists (D18)', (tester) async {
+    testWidgets('is a readout, not a control — tapping it crowns nothing', (
+      tester,
+    ) async {
       seed(
         const LooperState(
-          transport: TransportState(
-            looperMode: LooperMode.sync,
-            primaryTrack: 0,
-          ),
-          tracks: [Track()],
+          transport: TransportState(primaryTrack: 0),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 1000),
+          ],
         ),
       );
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('tracks_crown_0')));
       await tester.pumpAndSettle();
-
-      verifyNever(() => bloc.add(const LooperCrownPrimaryPressed(0)));
+      verifyNever(() => bloc.add(any(that: isA<LooperCrownPrimaryPressed>())));
     });
   });
 
@@ -1263,238 +1290,130 @@ void main() {
     });
   });
 
-  group('track indicators', () {
-    final looper = AppTheme.neon.extension<LooperTheme>()!;
-
-    // The strip is off by default on the console (the pedals carry readiness),
-    // so every test here that expects one has to turn the pref on first.
-    setUp(() async => tracks.setShowIndicators(value: true));
-
-    Color indicatorColorOf(WidgetTester tester, int channel) {
-      final box = tester.widget<DecoratedBox>(
-        find.descendant(
-          of: find.byKey(Key('tracks_indicator_$channel')),
-          matching: find.byType(DecoratedBox),
-        ),
-      );
-      return (box.decoration as BoxDecoration).color!;
-    }
-
-    testWidgets('renders one strip per visible tile when the pref is on', (
-      tester,
-    ) async {
-      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_indicator_0')), findsOneWidget);
-      expect(find.byKey(const Key('tracks_indicator_1')), findsOneWidget);
-    });
-
-    testWidgets('is absent from the tree when the pref is off', (tester) async {
-      await tracks.setShowIndicators(value: false);
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_indicator_0')), findsNothing);
-      // The tile itself still renders — only the strip is gone.
-      expect(find.byKey(const Key('tracks_tile_0')), findsOneWidget);
-    });
-
-    testWidgets('colour reflects the track status', (tester) async {
-      seed(
-        const LooperState(
-          tracks: [
-            Track(state: TrackState.recording), // -> record
-            Track(channel: 1, state: TrackState.playing), // -> play
-            Track(channel: 2), // empty, unselected -> idle
-          ],
-        ),
-      );
-      await pump(tester);
-
-      expect(
-        indicatorColorOf(tester, 0),
-        looper.indicatorColor(TrackIndicator.record),
-      );
-      expect(
-        indicatorColorOf(tester, 1),
-        looper.indicatorColor(TrackIndicator.play),
-      );
-      expect(
-        indicatorColorOf(tester, 2),
-        looper.indicatorColor(TrackIndicator.idle),
-      );
-    });
-
-    testWidgets('mute mode arms the selected empty tile green', (tester) async {
-      control
-        ..toggleMode() // record -> mute
-        ..selectTrack(0);
-      seed(const LooperState(tracks: [Track()])); // empty + selected
-      await pump(tester);
-
-      // Proves muteMode flows from the shared PedalCubit mode into
-      // TrackIndicator.of: an empty selected track arms play (green) in mute
-      // mode, not record (red).
-      expect(
-        indicatorColorOf(tester, 0),
-        looper.indicatorColor(TrackIndicator.play),
-      );
-    });
-
-    testWidgets('a stopped track that holds a loop is armed to play', (
-      tester,
-    ) async {
-      seed(
-        const LooperState(
-          tracks: [Track(state: TrackState.stopped, lengthFrames: 1000)],
-        ),
-      );
-      await pump(tester);
-
-      // After a stop, a loaded loop stays lit green (armed to play) rather
-      // than going dim.
-      expect(
-        indicatorColorOf(tester, 0),
-        looper.indicatorColor(TrackIndicator.play),
-      );
-    });
-
-    testWidgets('a muted track reads as idle', (tester) async {
-      seed(
-        const LooperState(
-          tracks: [Track(state: TrackState.playing, muted: true)],
-        ),
-      );
-      await pump(tester);
-
-      expect(
-        indicatorColorOf(tester, 0),
-        looper.indicatorColor(TrackIndicator.idle),
-      );
-    });
-
-    testWidgets('only the selected tile arms (empty + selected)', (
-      tester,
-    ) async {
-      control.selectTrack(1);
-      seed(
-        const LooperState(
-          tracks: [Track(), Track(channel: 1), Track(channel: 2)],
-        ),
-      );
-      await pump(tester);
-
-      // Record mode by default: the selected empty track arms red, the rest
-      // stay idle.
-      expect(
-        indicatorColorOf(tester, 0),
-        looper.indicatorColor(TrackIndicator.idle),
-      );
-      expect(
-        indicatorColorOf(tester, 1),
-        looper.indicatorColor(TrackIndicator.record),
-      );
-      expect(
-        indicatorColorOf(tester, 2),
-        looper.indicatorColor(TrackIndicator.idle),
-      );
-    });
-
-    testWidgets('selecting an off-bank channel reveals its bank', (
-      tester,
-    ) async {
-      control.selectTrack(5); // channel in bank B -> selection reveals bank B
-      seed(
-        LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
-      );
-      await pump(tester);
-
-      // Bank B is now showing, so the selected channel is visible and armed —
-      // a selection can never hide behind the other bank.
-      expect(find.byKey(const Key('tracks_tile_5')), findsOneWidget);
-      expect(find.byKey(const Key('tracks_tile_0')), findsNothing);
-      expect(
-        indicatorColorOf(tester, 5),
-        looper.indicatorColor(TrackIndicator.record),
-      );
-    });
-
-    testWidgets('a bank switch reassigns the armed tile', (tester) async {
-      control.selectTrack(0);
-      seed(
-        LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
-      );
-      await pump(tester);
-
-      // Channel 0 is selected and visible in bank A -> armed.
-      expect(
-        indicatorColorOf(tester, 0),
-        looper.indicatorColor(TrackIndicator.record),
-      );
-
-      // Bank B, then select channel 4.
-      control.browseBank(1);
-      await tester.pumpAndSettle();
-      control.selectTrack(4);
-      await tester.pumpAndSettle();
-
-      // The previously-armed tile is no longer in the tree; the newly-selected
-      // visible tile arms.
-      expect(find.byKey(const Key('tracks_indicator_0')), findsNothing);
-      expect(
-        indicatorColorOf(tester, 4),
-        looper.indicatorColor(TrackIndicator.record),
-      );
-    });
-
-    testWidgets('toggling the pref live-updates without restart', (
-      tester,
-    ) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      expect(find.byKey(const Key('tracks_indicator_0')), findsOneWidget);
-
-      await tracks.setShowIndicators(value: false);
-      await tester.pump();
-      expect(find.byKey(const Key('tracks_indicator_0')), findsNothing);
-
-      await tracks.setShowIndicators(value: true);
-      await tester.pump();
-      expect(find.byKey(const Key('tracks_indicator_0')), findsOneWidget);
-    });
-
-    testWidgets('carries no semantics of its own (ExcludeSemantics)', (
-      tester,
-    ) async {
-      final handle = tester.ensureSemantics();
-      seed(const LooperState(tracks: [Track(state: TrackState.recording)]));
-      await pump(tester);
-
-      // The strip is wrapped in ExcludeSemantics, so no semantics node is
-      // attached to its key — the tile's label remains the only state source.
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('tracks_indicator_0')),
-          matching: find.byType(ExcludeSemantics),
-        ),
-        findsOneWidget,
-      );
-      handle.dispose();
-    });
-  });
-
   group('layout', () {
-    testWidgets('positions the status bar at the 8px stage top inset', (
+    testWidgets('the top bar leads, the footer trails the track run', (
       tester,
     ) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
 
       final stageTop = tester.getTopLeft(find.byType(TracksView)).dy;
-      final statusBarTop = tester.getTopLeft(find.byType(StageStatusBar)).dy;
+      final bar = tester.getRect(find.byKey(const Key('stage_top_bar')));
+      final run = tester.getRect(find.byKey(const Key('stage_track_run')));
+      final footer = tester.getRect(find.byKey(const Key('stage_footer')));
 
-      expect(statusBarTop - stageTop, 8);
+      expect(bar.top, stageTop);
+      expect(bar.height, StageTopBar.height);
+      expect(run.top, greaterThan(bar.bottom));
+      expect(footer.top, greaterThanOrEqualTo(run.bottom));
+    });
+
+    testWidgets('the shared dBFS scales flank the run and line up with the '
+        'meters', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      final scales = find.byType(StageDbScale);
+      expect(scales, findsNWidgets(2));
+      final run = tester.getRect(find.byKey(const Key('stage_track_run')));
+      final left = tester.getRect(scales.first);
+      final right = tester.getRect(scales.last);
+      expect(left.right, lessThanOrEqualTo(run.left));
+      expect(right.left, greaterThanOrEqualTo(run.right));
+      expect(left.top, run.top);
+      expect(left.bottom, run.bottom);
+    });
+
+    testWidgets('the view menu switches to Wave and back', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.playing, lengthFrames: 1000)],
+        ),
+      );
+      await pump(tester);
+      expect(find.byKey(const Key('stage_track_run')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('stage_view_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stage_view_wave')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('stage_wave_run')), findsOneWidget);
+      expect(find.byKey(const Key('wave_row_0')), findsOneWidget);
+      expect(find.byKey(const Key('stage_track_run')), findsNothing);
+      // Browsing views never touches playback or the selection.
+      verifyNever(() => bloc.add(any()));
+      expect(control.state.cursor, 0);
+
+      await tester.tap(find.byKey(const Key('stage_view_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stage_view_track')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('stage_track_run')), findsOneWidget);
+    });
+
+    testWidgets('the footer reads tempo, elapsed time, output and mode', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            tempoBpm: 84,
+            tempoSource: TempoSource.manual,
+            looperMode: LooperMode.sync,
+            outputPeak: 0.5,
+          ),
+          tracks: [Track()],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.text('84.0'), findsOneWidget);
+      expect(find.text('4/4'), findsOneWidget);
+      expect(find.text('00:00:00'), findsOneWidget);
+      expect(find.text('OUT -6.0 dBFS'), findsOneWidget);
+      expect(find.text('SYNC'), findsOneWidget);
+    });
+
+    testWidgets('the footer flags output clipping in red', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(outputPeak: 1),
+          tracks: [Track()],
+        ),
+      );
+      await pump(tester);
+
+      final output = tester.widget<AppText>(
+        find.byKey(const Key('stage_footer_output')),
+      );
+      expect(output.data, 'OUT CLIP');
+      expect(
+        output.style!.color,
+        AppTheme.neon.extension<SurfaceTheme>()!.rec,
+      );
+    });
+
+    testWidgets('a track without a tempo grid counts no bars; with one it '
+        'counts the loop bars times its multiple', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(loopBars: 2),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000, multiple: 2),
+            Track(channel: 1),
+          ],
+        ),
+      );
+      await pump(tester);
+      expect(find.text('4'), findsOneWidget); // 2 bars × 2
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('tracks_bars_1')),
+          matching: find.text('—'),
+        ),
+        findsOneWidget,
+      ); // the empty track
     });
   });
 
@@ -1552,21 +1471,23 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('the stage bank pair shows which bank is live', (tester) async {
+    testWidgets('the bank button reveals the other bank without moving the '
+        'selection', (tester) async {
       seed(
         LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
       );
+      control.selectTrack(2);
       await pump(tester);
+      expect(find.text('A'), findsOneWidget);
 
-      // A readout, not a control -- the feet switch banks -- so this asserts
-      // what it displays rather than a selected/button semantics role.
-      expect(find.byKey(const Key('stage_bank_pair')), findsOneWidget);
-      expect(find.byKey(const Key('stage_bank_0')), findsOneWidget);
-      expect(find.byKey(const Key('stage_bank_1')), findsOneWidget);
-
-      control.browseBank(1);
+      await tester.tap(find.byKey(const Key('stage_bank_button')));
       await tester.pumpAndSettle();
+      expect(find.text('B'), findsOneWidget);
       expect(find.byKey(const Key('tracks_tile_4')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_tile_2')), findsNothing);
+      // The selected track stays where it was, out of sight.
+      expect(control.state.cursor, 2);
+      verifyNever(() => bloc.add(any()));
     });
 
     testWidgets('Tab is not swallowed by the tracks key handler', (

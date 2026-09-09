@@ -345,13 +345,16 @@ typedef enum le_command_code {
 
   /* ---- primary track / Sync + Band (B3, D16/D18) ----
    * Designates track [arg_i] the "crowned" primary track for Sync/Band's
-   * multiple-or-division sync (a_primary_track). Accepted in ANY mode (the
-   * crown is a persistent per-session designation per D18 — it simply has no
-   * effect outside Sync/Band); rejected only for an out-of-range channel.
-   * There is no "un-crown": D18's no-auto-reassignment rule means the only
-   * way to change it is another CROWN_PRIMARY. See le_sync_quantize_active
-   * (engine_private.h) for how this gates Sync/Band's finalize + section-
-   * transport behavior. */
+   * multiple-or-division sync (a_primary_track) — the explicit TIMING
+   * HANDOFF. Accepted in ANY mode (the crown is a persistent per-session
+   * designation per D18 — it simply has no effect outside Sync/Band);
+   * rejected only for an out-of-range channel. There is no "un-crown"
+   * command: the engine itself clears the designation when every track is
+   * empty, and crowns the first completed take while nothing is crowned
+   * (le_primary_reconcile, engine_process.c — the accepted-design rule
+   * that supersedes D18's never-auto-assign reading). See
+   * le_sync_quantize_active (engine_private.h) for how this gates Sync/Band's
+   * finalize + section-transport behavior. */
   LE_CMD_CROWN_PRIMARY = 46, /* arg_i = channel */
 
   /* ---- One Shot (B4, Sheeran manual §5.9.4) ----
@@ -690,6 +693,16 @@ typedef struct le_track_snapshot {
    * revert affordance — this field is only the in-progress indicator. See
    * le_engine_restore_track. */
   int32_t restore_state;
+  /* Trailing (accepted design, slice 1): this track's OWN playhead in frames
+   * within its own length — a multiple's segment offset, a Sync division's
+   * folded phase and a Free/Song track's private clock are all already
+   * applied, so `position_frames / length_frames` is the track's progress
+   * without the reader re-deriving the mode's position rule. It is the read
+   * index of the block's LAST frame (so one behind master_position_frames,
+   * which is advanced after each frame); while RECORDING it is the write
+   * head instead (frames captured so far). 0 for an empty or never-played
+   * track. Published once per block beside the level. */
+  int32_t position_frames;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1009,12 +1022,15 @@ typedef struct le_snapshot {
    * the content-lock gate and what each value means. */
   int32_t looper_mode; /* le_looper_mode (default 0 = MULTI) */
 
-  /* ---- primary track (B3, D18; trailing for the same offset-stability
-   * reason as the blocks above). -1 = none (default). Persists through the
-   * primary track being cleared/undone-to-empty; only an explicit re-crown
-   * (le_engine_crown_primary) changes it — see LE_CMD_CROWN_PRIMARY's doc.
-   * Meaningful only in Sync/Band mode (see le_sync_quantize_active); a
-   * nonzero value in any other mode is inert. */
+  /* ---- primary track (B3, D18 as revised by the accepted design; trailing
+   * for the same offset-stability reason as the blocks above). -1 = none
+   * (default, and again whenever every track is empty). The engine crowns
+   * the FIRST COMPLETED TAKE while nothing is crowned; an explicit re-crown
+   * (le_engine_crown_primary) is the timing handoff. The designation
+   * survives the primary alone being cleared/undone-to-empty while a sibling
+   * still holds audio (so its re-record re-establishes it), and dies with
+   * the last take. Every mode publishes it; it only GATES timing in
+   * Sync/Band (see le_sync_quantize_active). */
   int32_t primary_track;
 
   /* ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
@@ -1037,6 +1053,12 @@ typedef struct le_snapshot {
    * (the UI truth for a "conditioning on" badge; a stage enabled on an
    * excluded channel reads 0 here because it never runs). */
   uint32_t input_cond_mask;
+  /* Trailing (accepted design, slice 1): the master bus's absolute peak over
+   * the most recent block, 0..1 (1.0 = full scale), read AFTER the master
+   * gain and limiter — what actually reaches the outputs. Sums can clip when
+   * no single track does, so the stage footer meters this rather than the
+   * per-track peaks. Sibling of output_rms above. */
+  float output_peak;
   /* NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
    * le_callback_telemetry and le_engine_get_callback_telemetry. */
 } le_snapshot;
@@ -1620,10 +1642,12 @@ LE_EXPORT int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode);
  * then Sync/Band's non-primary tracks record exactly like Multi (D16
  * fallback). */
 
-/* Crowns [channel] the primary track (D18). Rejects only an out-of-range
- * channel; accepted in every looper mode (the crown persists regardless of
- * mode, per D18) though it is inert outside Sync/Band. No "un-crown" call
- * exists — re-crowning a different channel is the only way to change it. */
+/* Crowns [channel] the primary track — the explicit timing handoff (D18).
+ * Rejects only an out-of-range channel; accepted in every looper mode (the
+ * crown persists regardless of mode) though it only gates timing in
+ * Sync/Band. There is no "un-crown" call: the engine crowns the first
+ * completed take on its own and clears the crown when the session empties
+ * (LE_CMD_CROWN_PRIMARY's doc). */
 LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
 
 /* Toggles Band section transport (D19 §2 Q3) on [channel]: a play/stop

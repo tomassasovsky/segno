@@ -6,565 +6,283 @@ import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
 void main() {
-  group('readoutClock', () {
-    test('shows m:ss below ten minutes — no phantom leading hours', () {
-      expect(readoutClock(0), '0:00');
-      expect(readoutClock(11), '0:11');
-      expect(readoutClock(272), '4:32');
-    });
-
-    test('shows mm:ss below one hour', () {
-      expect(readoutClock(754), '12:34');
-      expect(readoutClock(3599), '59:59');
-    });
-
-    test('grows hours only at one hour and beyond', () {
-      expect(readoutClock(3600), '1:00:00');
-      expect(readoutClock(3671), '1:01:11');
-      expect(readoutClock(36000), '10:00:00');
+  group('readoutTempo', () {
+    test('drops the decimal on a whole tempo, keeps one otherwise', () {
+      expect(readoutTempo(84), '84');
+      expect(readoutTempo(84.02), '84');
+      expect(readoutTempo(84.5), '84.5');
+      expect(readoutTempo(120.25), '120.3');
     });
   });
 
-  group('readoutTempo', () {
-    test('decides the decimal on the rendered string, not the value', () {
-      // 119.98 is non-integer as a double but rounds to "120.0" at one
-      // decimal — a value-level check would keep that phantom ".0".
-      expect(readoutTempo(120), '120');
-      expect(readoutTempo(119.98), '120');
-      expect(readoutTempo(119.94), '119.9');
-      expect(readoutTempo(120.5), '120.5');
+  group('readoutMeterStateOf', () {
+    test("resolves the selected track's state, muted overlaying it", () {
+      expect(
+        readoutMeterStateOf(
+          const ReadoutTrack(channel: 0, name: 'T', state: 'playing'),
+        ),
+        LooperMeterState.playing,
+      );
+      expect(
+        readoutMeterStateOf(
+          const ReadoutTrack(
+            channel: 0,
+            name: 'T',
+            state: 'playing',
+            muted: true,
+          ),
+        ),
+        LooperMeterState.muted,
+      );
+    });
+
+    test('reads none, or an unknown token, as empty rather than throwing', () {
+      expect(readoutMeterStateOf(null), LooperMeterState.empty);
+      expect(
+        readoutMeterStateOf(
+          const ReadoutTrack(channel: 0, name: 'T', state: 'transmogrifying'),
+        ),
+        LooperMeterState.empty,
+      );
     });
   });
 
   group('ConsoleReadoutView', () {
+    const selected = ReadoutTrack(
+      channel: 0,
+      name: 'Acoustic rhythm guitar',
+      state: 'playing',
+      primary: true,
+      bars: 2,
+      layers: 4,
+      lengthFrames: 96000,
+    );
     const readout = PerformanceReadout(
-      tracks: [
-        ReadoutTrack(name: 'DRUMS', state: 'playing'),
-        ReadoutTrack(name: 'BASS', state: 'recording', selected: true),
-      ],
-      tempoBpm: 120,
+      selected: selected,
+      tempoBpm: 84,
       hasTempo: true,
-      currentBeat: 1,
-      loopBars: 8,
       isRunning: true,
-      elapsedSeconds: 272,
     );
 
     Future<void> pump(
-      WidgetTester tester,
-      PerformanceReadout data, {
-      Locale? locale,
-      VoidCallback? onMix,
-      ThemeData? theme,
-    }) => tester.pumpWidget(
-      MaterialApp(
-        theme: theme ?? AppTheme.neon,
-        locale: locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: Scaffold(
-          body: ConsoleReadoutView(
-            readout: data,
-            waveform: const SizedBox(key: Key('waveform_region')),
-            onMix: onMix,
+      WidgetTester tester, {
+      PerformanceReadout readout = readout,
+      Size size = const Size(1280, 720),
+    }) async {
+      tester.view
+        ..physicalSize = size
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.neon,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          builder: (context, child) =>
+              AppTextDefaults(child: child ?? const SizedBox.shrink()),
+          home: Scaffold(
+            body: ConsoleReadoutView(
+              readout: readout,
+              waveform: const ColoredBox(
+                key: Key('test_waveform'),
+                color: Colors.transparent,
+              ),
+            ),
           ),
         ),
-      ),
-    );
+      );
+    }
 
-    testWidgets('shows tempo, clock, bars, mode word and the beat dots', (
+    testWidgets('names the selected track: number, crown, name', (
       tester,
     ) async {
-      await pump(tester, readout);
-
-      expect(find.byKey(const Key('console_readout_tempo')), findsOneWidget);
-      expect(find.text('120'), findsOneWidget);
-      expect(find.byKey(const Key('console_readout_bars')), findsOneWidget);
-      expect(find.text('8'), findsOneWidget);
-      expect(find.byKey(const Key('console_readout_clock')), findsOneWidget);
-      expect(find.text('4:32'), findsOneWidget);
-      expect(find.byKey(const Key('console_readout_mode')), findsOneWidget);
-      expect(find.byKey(const Key('console_readout_beats')), findsOneWidget);
+      await pump(tester);
+      expect(find.text('1'), findsOneWidget);
+      expect(find.byKey(const Key('console_readout_crown')), findsOneWidget);
+      expect(find.text('Acoustic rhythm guitar'), findsOneWidget);
     });
 
-    testWidgets('renders no track-level content — names live on the 16"', (
+    testWidgets('shows the crown only when the selected track is primary', (
       tester,
     ) async {
-      // Owner decision (`c/readout`): at two metres the per-track words are
-      // noise; the readout must not render them even though the payload
-      // still carries the tracks (the waveform colouring keys off the
-      // selected one).
-      await pump(tester, readout);
-      expect(find.text('DRUMS'), findsNothing);
-      expect(find.text('BASS'), findsNothing);
-    });
-
-    testWidgets('keeps the waveform as the loop strip', (tester) async {
-      await pump(tester, readout);
-      expect(find.byKey(const Key('console_readout_waveform')), findsOneWidget);
-      expect(find.byKey(const Key('waveform_region')), findsOneWidget);
-    });
-
-    testWidgets('the MIX pill fires onMix; the rest of the glass is inert', (
-      tester,
-    ) async {
-      var mixTaps = 0;
-      await pump(tester, readout, onMix: () => mixTaps++);
-
-      expect(find.text('MIX'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('console_readout_mix')));
-      expect(mixTaps, 1);
-
-      // The old tap-anywhere gesture is dead (#707): the strip's glass and
-      // the header figures do nothing — their surfaces stay reserved for
-      // future interactivity.
-      await tester.tapAt(
-        tester.getCenter(find.byKey(const Key('console_readout_waveform'))),
-      );
-      await tester.tap(
-        find.byKey(const Key('console_readout_tempo')),
-        warnIfMissed: false,
-      );
-      expect(mixTaps, 1);
-    });
-
-    testWidgets('the MIX pill hugs the strip corner at the pen geometry', (
-      tester,
-    ) async {
-      await pump(tester, readout);
-      // The default 800x600 surface is width-limited against the pen's
-      // 1920x1080 — the same scale the view derives.
-      const s = 800 / 1920;
-
-      final strip = tester.getRect(
-        find.byKey(const Key('console_readout_waveform')),
-      );
-      final target = tester.getRect(
-        find.byKey(const Key('console_readout_mix')),
-      );
-      // The tap target (pill + its 24-inset margin) reaches exactly the
-      // strip's corner — generous for a finger, nothing like the strip.
-      expect(target.right, moreOrLessEquals(strip.right));
-      expect(target.bottom, moreOrLessEquals(strip.bottom));
-
-      // The drawn pill is the pen's 180x72, inset 24 from the corner.
-      final pill = tester.getRect(
-        find.descendant(
-          of: find.byKey(const Key('console_readout_mix')),
-          matching: find.byType(Container),
+      await pump(
+        tester,
+        readout: const PerformanceReadout(
+          selected: ReadoutTrack(channel: 1, name: 'Lead', state: 'playing'),
         ),
       );
-      expect(pill.width, moreOrLessEquals(180 * s));
-      expect(pill.height, moreOrLessEquals(72 * s));
-      expect(pill.right, moreOrLessEquals(strip.right - 24 * s));
-      expect(pill.bottom, moreOrLessEquals(strip.bottom - 24 * s));
+      expect(find.byKey(const Key('console_readout_crown')), findsNothing);
+      expect(find.text('2'), findsOneWidget);
     });
 
-    testWidgets('drops the decimal on an integer tempo, keeps one otherwise', (
+    testWidgets('reads the state word in the state colour and the bars', (
       tester,
     ) async {
-      // The two-metre face never states "120.0" — the decimal appears only
-      // when the tempo actually carries one.
-      await pump(tester, readout);
-      expect(find.text('120'), findsOneWidget);
-      expect(find.text('120.0'), findsNothing);
-
-      await pump(tester, const PerformanceReadout(tempoBpm: 120.5));
-      expect(find.text('120.5'), findsOneWidget);
-
-      // A tapped tempo lands at 119.98: non-integer as a value, integer as
-      // a rendered figure — it must read "120", not "120.0".
-      await pump(tester, const PerformanceReadout(tempoBpm: 119.98));
-      expect(find.text('120'), findsOneWidget);
-      expect(find.text('120.0'), findsNothing);
-    });
-
-    testWidgets('draws the figures in Inter with tabular numerals, not the '
-        'mono face', (tester) async {
-      // The owner rejected the mono face's dotted zeros; tabular figures are
-      // what keep the ticking clock from jittering in the proportional face.
-      await pump(tester, readout);
-      for (final figure in ['120', '4:32', '8']) {
-        final style = tester.widget<Text>(find.text(figure)).style!;
-        expect(style.fontFamily, isNot(SurfaceTheme.monoFont));
-        expect(
-          style.fontFeatures,
-          contains(const FontFeature.tabularFigures()),
-          reason: '$figure must use tabular numerals',
-        );
-      }
-    });
-
-    testWidgets('lights one beat dot per tsNum, the current one', (
-      tester,
-    ) async {
-      await pump(tester, readout.copyWithBeat(tsNum: 3, currentBeat: 2));
-      final dots = find.descendant(
-        of: find.byKey(const Key('console_readout_beats')),
-        matching: find.byType(DecoratedBox),
+      await pump(tester);
+      final state = tester.widget<AppText>(
+        find.byKey(const Key('console_readout_state')),
       );
-      expect(dots, findsNWidgets(3));
-      final lit = tester
-          .widgetList<DecoratedBox>(dots)
-          .map((d) => (d.decoration as BoxDecoration).color)
-          .where(
-            (c) => c == AppTheme.neon.extension<SurfaceTheme>()!.textPrimary,
-          )
-          .length;
-      expect(lit, 1);
+      expect(state.data, 'Playing');
+      expect(
+        state.style!.color,
+        AppTheme.neon.extension<LooperTheme>()!.waveformColor(
+          LooperMeterState.playing,
+        ),
+      );
+      expect(find.text('2 bars'), findsOneWidget);
     });
 
-    testWidgets('hides the dots and shows -- on the tempo-free path', (
-      tester,
-    ) async {
-      await pump(tester, const PerformanceReadout(elapsedSeconds: 5));
-      expect(find.byKey(const Key('console_readout_beats')), findsNothing);
-      expect(find.text('--'), findsOneWidget);
-      // The clock still runs: the transport can play tempo-free.
-      expect(find.text('0:05'), findsOneWidget);
-    });
-
-    testWidgets('hides the bar count when nothing defines a loop yet', (
-      tester,
-    ) async {
-      await pump(tester, const PerformanceReadout(tempoBpm: 120));
+    testWidgets('an empty track says so and counts no bars', (tester) async {
+      await pump(
+        tester,
+        readout: const PerformanceReadout(
+          selected: ReadoutTrack(channel: 3, name: 'Lead', state: 'empty'),
+        ),
+      );
+      expect(find.text('Empty'), findsOneWidget);
       expect(find.byKey(const Key('console_readout_bars')), findsNothing);
     });
 
-    testWidgets('announces the count-in beside the dots', (tester) async {
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      await pump(tester, readout);
-      expect(find.byKey(const Key('console_readout_count_in')), findsNothing);
-
-      await pump(tester, readout.copyWithBeat(countingIn: true));
-      expect(find.byKey(const Key('console_readout_count_in')), findsOneWidget);
-      expect(find.text(l10n.readoutCountIn), findsOneWidget);
-    });
-
-    testWidgets('fills the active half of the bank pair', (tester) async {
-      Color? fillOf(int bank) {
-        final half = tester.widget<Container>(
-          find.byKey(Key('console_readout_bank_$bank')),
-        );
-        return (half.decoration as BoxDecoration?)?.color;
-      }
-
-      final control = AppTheme.neon.extension<SurfaceTheme>()!.control;
-
-      await pump(tester, readout);
-      expect(find.byKey(const Key('console_readout_bank')), findsOneWidget);
-      expect(find.text('A'), findsOneWidget);
-      expect(find.text('B'), findsOneWidget);
-      expect(fillOf(0), control);
-      expect(fillOf(1), isNull);
-
-      await pump(tester, const PerformanceReadout(activeBank: 1));
-      expect(fillOf(0), isNull);
-      expect(fillOf(1), control);
-    });
-
-    testWidgets('the record light idles dim and lights with the elapsed when '
-        'a capture runs', (tester) async {
-      await pump(tester, readout);
-      expect(find.byKey(const Key('console_readout_record')), findsOneWidget);
-      expect(
-        find.byKey(const Key('console_readout_record_elapsed')),
-        findsNothing,
-      );
-
+    testWidgets('localizes a default track name', (tester) async {
       await pump(
         tester,
-        const PerformanceReadout(recordArmed: true, recordSeconds: 754),
-      );
-      expect(
-        find.byKey(const Key('console_readout_record_elapsed')),
-        findsOneWidget,
-      );
-      expect(find.text('12:34'), findsOneWidget);
-    });
-
-    testWidgets('maps each mode token to its word', (tester) async {
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      for (final (token, word) in [
-        ('record', l10n.readoutModeRecord),
-        ('mute', l10n.readoutModeMute),
-        ('fx', l10n.readoutModeFx),
-      ]) {
-        await pump(tester, PerformanceReadout(mode: token));
-        expect(
-          find.descendant(
-            of: find.byKey(const Key('console_readout_mode')),
-            matching: find.text(word),
+        readout: const PerformanceReadout(
+          selected: ReadoutTrack(
+            channel: 2,
+            name: 'TRACK 3',
+            state: 'stopped',
+            defaultName: true,
           ),
-          findsOneWidget,
-          reason: 'mode $token must read $word',
-        );
-      }
-    });
-
-    testWidgets('paints the mode word red recording, green muting', (
-      tester,
-    ) async {
-      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
-      TextStyle styleOf() => tester
-          .widget<Text>(
-            find.descendant(
-              of: find.byKey(const Key('console_readout_mode')),
-              matching: find.byType(Text),
-            ),
-          )
-          .style!;
-
-      // Both readings come from the LED palette, not the chrome tokens the
-      // desktop surfaces use — this is the two-metre panel, and these are the
-      // colours the pedal's own MODE LED throws. See _ModeWord's doc for the
-      // measured ratios; these assertions are what stop a well-meaning token
-      // unification from quietly dimming the panel.
-      await pump(tester, const PerformanceReadout());
-      expect(styleOf().color, surface.ledRed);
-
-      // #693 — the owner's call from the bench: the mute reading is green on
-      // every surface, so this word may not fall back to plain white.
-      await pump(tester, const PerformanceReadout(mode: 'mute'));
-      expect(styleOf().color, surface.ledGreen);
-
-      // FX has its OWN arm. It used to fall through to the neutral `_` case,
-      // which made "FX" and "a token this build cannot parse" the same colour
-      // on the largest mode reading in the rig.
-      await pump(tester, const PerformanceReadout(mode: 'fx'));
-      expect(styleOf().color, surface.ledBlue);
-
-      // ...so neutral now means exactly one thing: an unknown token from a
-      // newer main window (or the pre-rename legacy `'play'`).
-      for (final token in ['custom', 'play']) {
-        await pump(tester, PerformanceReadout(mode: token));
-        expect(
-          styleOf().color,
-          surface.textPrimary,
-          reason: 'unknown token $token must read neutral',
-        );
-      }
-
-      // All three known modes are distinct from each other and from neutral.
-      expect({
-        surface.ledRed,
-        surface.ledGreen,
-        surface.ledBlue,
-        surface.textPrimary,
-      }, hasLength(4));
-    });
-
-    testWidgets('the armed record pill washes with the recSurface TOKEN', (
-      tester,
-    ) async {
-      BoxDecoration pillOf() =>
-          tester
-                  .widget<Container>(
-                    find.byKey(const Key('console_readout_record')),
-                  )
-                  .decoration!
-              as BoxDecoration;
-
-      // The outline reads `ledRed` for contrast, and deriving the wash from
-      // that same red at a fixed alpha looked tidier. It is not: the wash is
-      // the one part of this pill the flavors override, and an inline alpha
-      // silently pinned the armed fill at 0.14 while high contrast lifts the
-      // token to 0.2 — dimming the accessibility flavor on the 7" panel, the
-      // exact surface this change exists to make more legible.
-      for (final data in [AppTheme.neon, AppTheme.highContrast]) {
-        final s = data.extension<SurfaceTheme>()!;
-        // Unmount between flavors: MaterialApp animates a theme swap, so
-        // re-pumping the same tree with a new theme would still read the old
-        // one on the single frame this pumps.
-        await tester.pumpWidget(const SizedBox.shrink());
-        await pump(
-          tester,
-          const PerformanceReadout(recordArmed: true),
-          theme: data,
-        );
-        expect(pillOf().color, s.recSurface);
-        expect(pillOf().border!.top.color, s.ledRed);
-
-        await pump(tester, const PerformanceReadout(), theme: data);
-        expect(pillOf().color, isNull, reason: 'idle pill takes no wash');
-      }
-
-      // The dark flavor alone cannot see this: its `recSurface` alpha (0x24)
-      // rounds to the same 0.14 the hardcode used, so only the boost proves
-      // the token is actually being read.
-      expect(
-        SurfaceTheme.highContrast.recSurface.a,
-        greaterThan(SurfaceTheme.dark.recSurface.a),
-      );
-    });
-
-    testWidgets('renders an unknown mode token verbatim rather than guessing', (
-      tester,
-    ) async {
-      // A newer main window paired with an older sub-window must degrade to
-      // showing the raw mode, never to showing the wrong one.
-      await pump(tester, const PerformanceReadout(mode: 'custom'));
-      expect(find.text('CUSTOM'), findsOneWidget);
-    });
-
-    testWidgets('scales a long unknown mode token down instead of clipping', (
-      tester,
-    ) async {
-      // The left cluster's FittedBox guard does not cover the right column:
-      // a 20-character token from a newer main window must shrink to the
-      // pen's right-column width, never RenderFlex-overflow the header.
-      await pump(
-        tester,
-        const PerformanceReadout(mode: 'granular-freeze-mode'),
-      );
-      expect(tester.takeException(), isNull);
-      expect(find.text('GRANULAR-FREEZE-MODE'), findsOneWidget);
-    });
-
-    testWidgets('survives the worst legal header without overflowing', (
-      tester,
-    ) async {
-      // Everything the header can carry, at once, in the wordier locale: the
-      // Spanish count-in phrase, a 15-beat signature's dot run, an hour-plus
-      // clock (h:mm:ss), a non-integer tempo, MUTE, bank B, and an armed
-      // capture. The pen proves its drawn worst case with ~110 px of slack;
-      // this one it never draws, so the figures-and-dots cluster must scale
-      // down gracefully rather than clip the right column off the panel.
-      await pump(
-        tester,
-        const PerformanceReadout(
-          tempoBpm: 120.5,
-          hasTempo: true,
-          tsNum: 15,
-          currentBeat: 14,
-          countingIn: true,
-          loopBars: 12,
-          mode: 'mute',
-          activeBank: 1,
-          elapsedSeconds: 3671,
-          recordArmed: true,
-          recordSeconds: 3599,
         ),
-        locale: const Locale('es'),
       );
-      expect(tester.takeException(), isNull);
-      // The whole right column is still on the panel.
-      expect(find.byKey(const Key('console_readout_mode')), findsOneWidget);
-      expect(find.byKey(const Key('console_readout_bank')), findsOneWidget);
-      expect(
-        find.byKey(const Key('console_readout_record_elapsed')),
-        findsOneWidget,
-      );
+      expect(find.text('TRACK 3'), findsOneWidget);
+      expect(find.text('Stopped'), findsOneWidget);
     });
 
-    testWidgets('scales the type with the window height, not absolutely', (
+    testWidgets('keeps the waveform as the strip between header and footer', (
       tester,
     ) async {
-      // The pen draws at 1920x1080; the device window is 640x360 logical
-      // today. The tempo figure must be the pen's 180 times height/1080 —
-      // proportions are the contract, not pixels.
-      tester.view.physicalSize = const Size(1920, 1080);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      await pump(tester, readout);
-      final full = tester.widget<Text>(find.text('120')).style!.fontSize!;
+      await pump(tester);
+      expect(find.byKey(const Key('test_waveform')), findsOneWidget);
+      final wave = tester.getRect(find.byKey(const Key('test_waveform')));
+      final state = tester.getRect(
+        find.byKey(const Key('console_readout_state')),
+      );
+      final footer = tester.getRect(
+        find.byKey(const Key('console_readout_tempo')),
+      );
+      expect(wave.top, greaterThan(state.bottom));
+      expect(wave.bottom, lessThan(footer.top));
+    });
 
-      tester.view.physicalSize = const Size(640, 360);
-      await pump(tester, readout);
-      final third = tester.widget<Text>(find.text('120')).style!.fontSize!;
-      expect(third, moreOrLessEquals(full / 3));
+    testWidgets('the footer carries the tempo, signature and function · bank', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(find.text('84'), findsOneWidget);
+      expect(find.text('4/4'), findsOneWidget);
+      expect(find.text('Tracks · Bank A'), findsOneWidget);
+    });
+
+    testWidgets('the footer names Mute and FX as the current function', (
+      tester,
+    ) async {
+      await pump(tester, readout: readout.copyWithMode('mute', bank: 1));
+      expect(find.text('Mute · Bank B'), findsOneWidget);
+      await pump(tester, readout: readout.copyWithMode('fx', bank: 1));
+      expect(find.text('FX · Bank B'), findsOneWidget);
+    });
+
+    testWidgets('shows — for the tempo on the tempo-free path', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        readout: const PerformanceReadout(selected: selected),
+      );
+      expect(find.text('—'), findsOneWidget);
+    });
+
+    testWidgets('with no track selected the header says so', (tester) async {
+      await pump(tester, readout: const PerformanceReadout());
+      expect(find.byKey(const Key('console_readout_noTrack')), findsOneWidget);
+      expect(find.byKey(const Key('console_readout_name')), findsNothing);
+    });
+
+    testWidgets('nothing on the face takes a tap', (tester) async {
+      await pump(tester);
+      expect(find.byType(InkWell), findsNothing);
+      expect(find.byType(GestureDetector), findsNothing);
     });
 
     group('connectivity echo (#453)', () {
-      const deviceKey = Key('console_readout_deviceLost');
-      const midiKey = Key('console_readout_midiLost');
-
-      SurfaceTheme surface(WidgetTester tester) => Theme.of(
-        tester.element(find.byType(ConsoleReadoutView)),
-      ).extension<SurfaceTheme>()!;
-
-      BoxDecoration decorationOf(WidgetTester tester, Key key) =>
-          tester
-                  .widget<Container>(
-                    find
-                        .descendant(
-                          of: find.byKey(key),
-                          matching: find.byType(Container),
-                        )
-                        .first,
-                  )
-                  .decoration!
-              as BoxDecoration;
-
       testWidgets('absent while nothing is lost', (tester) async {
-        await pump(tester, readout);
-
-        expect(find.byKey(deviceKey), findsNothing);
+        await pump(tester);
+        expect(
+          find.byKey(const Key('console_readout_deviceLost')),
+          findsNothing,
+        );
       });
 
-      testWidgets(
-        'echoes the device-lost line in the rec family, above the strip, '
-        'while the flag holds',
-        (tester) async {
-          await pump(tester, const PerformanceReadout(deviceLost: true));
-
-          expect(find.byKey(deviceKey), findsOneWidget);
-          // MIDI loss is a transient toast on the main window, never echoed
-          // here as a standing line.
-          expect(find.byKey(midiKey), findsNothing);
-          // The line resolves from this window's own l10n — only the boolean
-          // rides the wire.
-          final l10n = AppLocalizations.of(
-            tester.element(find.byKey(deviceKey)),
-          );
-          expect(find.text(l10n.deviceLostBanner), findsOneWidget);
-
-          final s = surface(tester);
-          expect(decorationOf(tester, deviceKey).color, s.recTint);
-
-          // It sits above the waveform strip, as the stage banner sits above
-          // the run.
-          final deviceTop = tester.getTopLeft(find.byKey(deviceKey)).dy;
-          final stripTop = tester
-              .getTopLeft(find.byKey(const Key('console_readout_waveform')))
-              .dy;
-          expect(deviceTop, lessThan(stripTop));
-        },
-      );
-
-      testWidgets('a lost MIDI controller raises no readout echo', (
+      testWidgets('echoes the device-lost line while the interface is gone', (
         tester,
       ) async {
-        await pump(tester, readout);
-
-        // The wire no longer carries a MIDI-loss boolean; nothing on the
-        // readout ever draws one.
-        expect(find.byKey(midiKey), findsNothing);
+        await pump(
+          tester,
+          readout: const PerformanceReadout(
+            selected: selected,
+            deviceLost: true,
+          ),
+        );
+        expect(
+          find.byKey(const Key('console_readout_deviceLost')),
+          findsOneWidget,
+        );
       });
+    });
+
+    testWidgets('survives the 7" panel\'s narrower aspect without overflow', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        size: const Size(1024, 600),
+        readout: const PerformanceReadout(
+          selected: ReadoutTrack(
+            channel: 7,
+            name: 'A deliberately very long track name that keeps going',
+            state: 'overdubbing',
+            primary: true,
+            bars: 64,
+            layers: 12,
+          ),
+          tempoBpm: 300,
+          hasTempo: true,
+          tsNum: 15,
+          tsDen: 16,
+          mode: 'mute',
+          activeBank: 1,
+          deviceLost: true,
+        ),
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 }
 
-/// Test-side convenience: tweak the beat facts without restating the rest.
 extension on PerformanceReadout {
-  PerformanceReadout copyWithBeat({
-    int? tsNum,
-    int? currentBeat,
-    bool? countingIn,
-  }) => PerformanceReadout(
-    tracks: tracks,
-    tempoBpm: tempoBpm,
-    hasTempo: hasTempo,
-    tsNum: tsNum ?? this.tsNum,
-    tsDen: tsDen,
-    currentBeat: currentBeat ?? this.currentBeat,
-    countingIn: countingIn ?? this.countingIn,
-    loopBars: loopBars,
-    isRunning: isRunning,
-    mode: mode,
-    activeBank: activeBank,
-    elapsedSeconds: elapsedSeconds,
-    recordArmed: recordArmed,
-    recordSeconds: recordSeconds,
-  );
+  PerformanceReadout copyWithMode(String mode, {required int bank}) =>
+      PerformanceReadout(
+        selected: selected,
+        tempoBpm: tempoBpm,
+        hasTempo: hasTempo,
+        tsNum: tsNum,
+        tsDen: tsDen,
+        isRunning: isRunning,
+        mode: mode,
+        activeBank: bank,
+        deviceLost: deviceLost,
+        goodbye: goodbye,
+      );
 }

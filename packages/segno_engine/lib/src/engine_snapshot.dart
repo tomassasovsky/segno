@@ -412,6 +412,7 @@ class TrackSnapshot {
     this.oneShot = false,
     this.settledTakeId = 0,
     this.restoreState = TrackRestoreState.idle,
+    this.positionFrames = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -435,6 +436,7 @@ class TrackSnapshot {
       oneShot = false,
       settledTakeId = 0,
       restoreState = TrackRestoreState.idle,
+      positionFrames = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -464,6 +466,7 @@ class TrackSnapshot {
     oneShot: native.one_shot != 0,
     settledTakeId: native.settled_take_id,
     restoreState: TrackRestoreState.fromCode(native.restore_state),
+    positionFrames: native.position_frames,
     lanes: lanes,
   );
 
@@ -533,6 +536,13 @@ class TrackSnapshot {
   /// affordance is [undoDepth]; this only drives an in-progress indicator.
   final TrackRestoreState restoreState;
 
+  /// This track's own playhead in frames within its own [lengthFrames] — the
+  /// engine has already applied the mode's position rule (a multiple's segment,
+  /// a Sync division's folded phase, a Free/Song track's private clock), so
+  /// `positionFrames / lengthFrames` is the track's progress. While recording
+  /// it is the write head instead. `0` for an empty or never-played track.
+  final int positionFrames;
+
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
 
@@ -579,6 +589,7 @@ class TrackSnapshot {
           oneShot == other.oneShot &&
           settledTakeId == other.settledTakeId &&
           restoreState == other.restoreState &&
+          positionFrames == other.positionFrames &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -600,6 +611,7 @@ class TrackSnapshot {
     oneShot,
     settledTakeId,
     restoreState,
+    positionFrames,
     Object.hashAll(lanes),
   );
 }
@@ -886,6 +898,7 @@ class EngineSnapshot {
     required this.inputRms,
     required this.inputPeak,
     required this.outputRms,
+    this.outputPeak = 0,
     required this.latencyState,
     required this.measuredLatencyMs,
     this.devicePresent = false,
@@ -947,6 +960,7 @@ class EngineSnapshot {
       tunerInput = -1,
       inputPeak = 0,
       outputRms = 0,
+      outputPeak = 0,
       latencyState = LatencyState.idle,
       measuredLatencyMs = -1,
       masterLengthFrames = 0,
@@ -1005,6 +1019,7 @@ class EngineSnapshot {
     tunerInput: native.tuner_input,
     inputPeak: native.input_peak,
     outputRms: native.output_rms,
+    outputPeak: native.output_peak,
     latencyState: LatencyState.fromCode(native.latency_state),
     measuredLatencyMs: native.measured_latency_ms,
     masterLengthFrames: native.master_length_frames,
@@ -1109,6 +1124,11 @@ class EngineSnapshot {
 
   /// Output RMS level for the most recent block, in `0..1`.
   final double outputRms;
+
+  /// Master-bus absolute peak for the most recent block, in `0..1`, read after
+  /// the master gain and limiter — what reaches the outputs. A sum can clip
+  /// when no single track does, so the stage footer meters this.
+  final double outputPeak;
 
   /// Phase of the latency harness.
   final LatencyState latencyState;
@@ -1311,6 +1331,7 @@ class EngineSnapshot {
           inputRms == other.inputRms &&
           inputPeak == other.inputPeak &&
           outputRms == other.outputRms &&
+          outputPeak == other.outputPeak &&
           latencyState == other.latencyState &&
           measuredLatencyMs == other.measuredLatencyMs &&
           masterLengthFrames == other.masterLengthFrames &&
@@ -1362,6 +1383,7 @@ class EngineSnapshot {
     tunerInput,
     inputPeak,
     outputRms,
+    outputPeak,
     latencyState,
     measuredLatencyMs,
     masterLengthFrames,

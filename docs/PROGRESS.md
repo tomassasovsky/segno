@@ -263,6 +263,16 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 1 (#1010, epic #1009):** the Tracks view is the
+  accepted stage (four columns per bank with name/crown, number · bars ·
+  layers · FX, one dB-linear whole-track meter with a clip cap, queued cue,
+  bottom progress, shared dBFS scales, footer, Library/bank/view/Settings
+  top bar, Wave view) and the 7" follows the selected track. The engine
+  crowns the first completed take and clears the crown of an empty session;
+  the snapshot
+  carries a per-track playhead and the master-bus peak. The volume overlay,
+  status bar and readiness strip are gone. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Phase 1:** monorepo, miniaudio FFI plugin, duplex passthrough, round-trip
   latency harness, "hello duplex" smoke app.
 - **Phase 2:** single-track looper (record → master length → overdub → mix →

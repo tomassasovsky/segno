@@ -1100,6 +1100,9 @@ void main() {
         'inputRms',
         'inputPeak',
         'outputRms',
+        // A block peak like outputRms: written once per block, read at render
+        // rate — not a per-callback counter.
+        'outputPeak',
         'latencyState',
         'measuredLatencyMs',
         'masterLengthFrames',

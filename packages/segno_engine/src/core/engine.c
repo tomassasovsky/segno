@@ -341,6 +341,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     /* Meters settle to silence with everything else (#655). */
     store_f32(&tr->a_trk_rms_bits, 0.0f);
     store_f32(&tr->a_trk_peak_bits, 0.0f);
+    store_i32(&tr->a_play_pos, 0);
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_redo_depth, 0);
     store_i32(&tr->a_multiple, 1);
@@ -823,11 +824,12 @@ le_engine* le_engine_create(void) {
    * kept explicit anyway, matching every sibling setting here, so the
    * default is legible at the seed site rather than implied by calloc. */
   store_i32(&engine->a_looper_mode, LE_LOOPER_MODE_MULTI);
-  /* Primary track SETTING (B3, D18): same seeded-once persistence as the
-   * looper mode above — -1 (none) until an explicit crown, surviving both
-   * configure() and any track clear (D18: no auto-reassignment). Unlike
-   * a_looper_mode, -1 is NOT calloc's zero-fill, so this store is load-
-   * bearing, not just legibility. */
+  /* Primary track SETTING (B3, D18 as revised): same seeded-once persistence
+   * as the looper mode above — -1 (none) until the first completed take or
+   * an explicit crown, surviving configure(); the audio thread's
+   * le_primary_reconcile clears it again only when every track is empty.
+   * Unlike a_looper_mode, -1 is NOT calloc's zero-fill, so this store is
+   * load-bearing, not just legibility. */
   store_i32(&engine->a_primary_track, -1);
   /* MIDI clock mode SETTING (Phase C/E, D15): same seeded-once persistence as
    * the looper mode / primary track above. OFF (0) is both the enum's zero

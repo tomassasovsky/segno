@@ -19,7 +19,6 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_gate.dart';
-import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
@@ -112,11 +111,6 @@ class _RecordingWindowService implements WaveformWindowService {
   final deliveredReadouts = <PerformanceReadout>[];
   int failNextReadoutPushes = 0;
   Duration readoutFailDelay = Duration.zero;
-
-  /// The command handler the app registered — tests invoke it to simulate
-  /// the sub-window's volume overlay sending a control.
-  @override
-  void Function(ReadoutControl control)? onControl;
 
   @override
   void Function()? onWindowReady;
@@ -432,7 +426,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      await tester.tap(find.byKey(const Key('stage_session_block')));
+      await tester.tap(find.byKey(const Key('stage_library')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
@@ -440,7 +434,7 @@ void main() {
       simulator.press(PedalButton.clear, down: true);
       await tester.pump();
       simulator.press(PedalButton.clear, down: false);
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
       expect(find.byKey(const Key('sessions_manager')), findsNothing);
       expect(find.byType(LooperPage), findsOneWidget);
     });
@@ -976,6 +970,9 @@ void main() {
             volume: 0.8,
             muted: muted,
             lengthFrames: 96000,
+            // The selected track's own playhead is what the second screen
+            // follows; a plain track's equals the master's.
+            positionFrames: position,
             undoDepth: 0,
             rms: peak / 2,
             peak: peak,
@@ -1052,7 +1049,7 @@ void main() {
         tester,
       ) async {
         final rig = await pumpPlaying(tester);
-        expect(rig.window.readouts.last.tracks.single.muted, isFalse);
+        expect(rig.window.readouts.last.selected!.muted, isFalse);
 
         // Muted rides the readout, so this must survive the narrowing that
         // drops the playhead and the levels.
@@ -1061,15 +1058,13 @@ void main() {
         await tester.pump(const Duration(milliseconds: 40));
 
         expect(
-          rig.window.readouts.last.tracks.single.muted,
+          rig.window.readouts.last.selected!.muted,
           isTrue,
           reason: 'the gate swallowed a fact the second screen draws',
         );
       });
 
-      testWidgets('recording state and input routing reach the readout', (
-        tester,
-      ) async {
+      testWidgets('the recording state reaches the readout', (tester) async {
         final rig = await pumpPlaying(tester);
         final before = rig.window.readouts.last;
         engine.nextSnapshot = playing(
@@ -1079,23 +1074,8 @@ void main() {
         );
         rig.ticker.add(null);
         await tester.pump(const Duration(milliseconds: 40));
-        expect(rig.window.readouts.last.tracks.single.state, 'recording');
+        expect(rig.window.readouts.last.selected!.state, 'recording');
         expect(rig.window.readouts.last.mode, before.mode);
-
-        final recording = rig.window.readouts.last;
-        engine.nextSnapshot = playing(
-          position: 0,
-          peak: 0.1,
-          state: le.TrackState.recording,
-          inputChannel: 1,
-        );
-        rig.ticker.add(null);
-        await tester.pump(const Duration(milliseconds: 40));
-        expect(
-          rig.window.readouts.last.tracks.single.inputNames,
-          isNot(recording.tracks.single.inputNames),
-        );
-        expect(rig.window.readouts.last.tracks.single.state, 'recording');
       });
 
       testWidgets('a burst of polls is rate-limited but never DROPPED', (
@@ -1261,175 +1241,6 @@ void main() {
         );
       });
     });
-
-    testWidgets(
-      'overlay volume, mute and chain commands apply through the LooperBloc',
-      (tester) async {
-        final windowService = _RecordingWindowService();
-        await pumpApp(tester, windowService);
-
-        // The app registered the sub→main handler on the service — the
-        // channel's first control path in that direction (#698).
-        final onControl = windowService.onControl;
-        expect(onControl, isNotNull);
-
-        onControl!(
-          const ReadoutControl(
-            action: ReadoutControl.trackVolume,
-            index: 0,
-            value: 1.5,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneVol[(0, 0)], 1.5);
-
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackMuteToggle,
-            index: 1,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneMute[(1, 0)], isTrue);
-
-        // The regression the review caught: a fast second tap lands inside
-        // the snapshot echo window (the polled LooperState still reads
-        // unmuted — this test's ticker never even ticks). Resolved against
-        // repository intent it must UNMUTE; resolved against the stale poll
-        // it would re-send the same mute and leave the track silent.
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackMuteToggle,
-            index: 1,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneMute[(1, 0)], isFalse);
-
-        expect(repository.trackChainEnabled(2), isTrue);
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackChainToggle,
-            index: 2,
-          ),
-        );
-        await tester.pump();
-        expect(repository.trackChainEnabled(2), isFalse);
-
-        // A garbled wire value is clamped at application — the channel is
-        // not trusted with the mix ceiling.
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackVolume,
-            index: 0,
-            value: 99,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneVol[(0, 0)], 2.0);
-
-        // An action from a newer overlay this build does not know is
-        // dropped, never thrown on.
-        onControl(
-          const ReadoutControl(action: 'someFutureAction', index: 0, value: 1),
-        );
-        await tester.pump();
-        expect(tester.takeException(), isNull);
-
-        // Out-of-range indices are dropped BEFORE any repository write: a
-        // garbled map decodes to index -1, and applying it would seed junk
-        // intent (and persist it) before the engine could reject the
-        // channel. Same for an index past the live track roster.
-        engine.laneVol.clear();
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackVolume,
-            index: -1,
-            value: 1,
-          ),
-        );
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackVolume,
-            index: 8,
-            value: 1,
-          ),
-        );
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackChainToggle,
-            index: -1,
-          ),
-        );
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackMuteToggle,
-            index: -1,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneVol, isEmpty);
-        expect(engine.laneMute.containsKey((-1, 0)), isFalse);
-        expect(repository.trackChainEnabled(-1), isTrue);
-        expect(tester.takeException(), isNull);
-      },
-    );
-
-    testWidgets(
-      'input-volume commands drive only CONFIGURED monitors, via the cubit',
-      (tester) async {
-        final windowService = _RecordingWindowService();
-        await pumpApp(tester, windowService);
-        final onControl = windowService.onControl!;
-
-        // No monitor is configured: the command must not materialize one.
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.inputVolume,
-            index: 0,
-            value: 0.5,
-          ),
-        );
-        await tester.pump();
-        expect(
-          tester
-              .element(find.byType(LooperPage))
-              .read<MonitorCubit>()
-              .state
-              .hasInput(0),
-          isFalse,
-        );
-
-        // Configure input 0's monitor the way the main UI would.
-        final monitors = tester
-            .element(find.byType(LooperPage))
-            .read<MonitorCubit>();
-        await monitors.setMode(0, MonitorMode.on);
-        await tester.pump();
-
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.inputVolume,
-            index: 0,
-            value: 0.5,
-          ),
-        );
-        await tester.pump();
-        // The engine call itself is gated on a running engine; repository
-        // intent is what a (re)start applies, so that is the contract.
-        expect(repository.monitorVolume(0), 0.5);
-        expect(monitors.state.forInput(0).volume, 0.5);
-
-        // And the configured input now rides the readout snapshot as the
-        // overlay's INPUTS group.
-        await tester.pump(const Duration(milliseconds: 40));
-        final inputs = windowService.readouts.last.inputs;
-        expect(inputs, hasLength(1));
-        expect(inputs.single.index, 0);
-        expect(inputs.single.volume, 0.5);
-        expect(inputs.single.name, isNotEmpty);
-      },
-    );
 
     testWidgets(
       'shows the audio-recovery banner when booted with the pinned '
