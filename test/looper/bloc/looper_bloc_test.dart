@@ -86,9 +86,15 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setTrackQuantize(
+      () => repository.setTrackRecordTiming(
         channel: any(named: 'channel'),
-        enabled: any(named: 'enabled'),
+        timing: any(named: 'timing'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackOverdubDecay(
+        channel: any(named: 'channel'),
+        percent: any(named: 'percent'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -409,13 +415,45 @@ void main() {
     },
   );
 
+  late SettingsRepository trackSettings;
+  LooperBloc buildBlocWithSettings() {
+    trackSettings = SettingsRepository(store: FakeKeyValueStore());
+    return LooperBloc(repository: repository, settings: trackSettings);
+  }
+
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackQuantizeChanged forwards the override to the repository',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperTrackQuantizeChanged(2, enabled: true)),
-    verify: (_) => verify(
-      () => repository.setTrackQuantize(channel: 2, enabled: true),
-    ).called(1),
+    'LooperTrackRecordTimingChanged forwards the override to the repository '
+    'and persists its code',
+    build: buildBlocWithSettings,
+    act: (bloc) => bloc.add(
+      const LooperTrackRecordTimingChanged(2, timing: RecordTiming.quarter),
+    ),
+    verify: (_) async {
+      verify(
+        () => repository.setTrackRecordTiming(
+          channel: 2,
+          timing: RecordTiming.quarter,
+        ),
+      ).called(1);
+      expect(
+        await trackSettings.loadTrackRecordTiming(2),
+        RecordTiming.quarter.code,
+      );
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackOverdubDecayChanged forwards the override to the repository '
+    'and persists it',
+    build: buildBlocWithSettings,
+    act: (bloc) =>
+        bloc.add(const LooperTrackOverdubDecayChanged(1, percent: 40)),
+    verify: (_) async {
+      verify(
+        () => repository.setTrackOverdubDecay(channel: 1, percent: 40),
+      ).called(1);
+      expect(await trackSettings.loadTrackOverdubDecay(1), 40);
+    },
   );
 
   blocTest<LooperBloc, LooperState>(

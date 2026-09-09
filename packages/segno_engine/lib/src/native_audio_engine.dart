@@ -1032,6 +1032,36 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_quantize_div(
+        _engine,
+        channel,
+        div == null ? -1 : div.code,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_overdub_feedback(
+        _engine,
+        channel,
+        feedback ?? -1.0,
+      ),
+    );
+  }
+
+  @override
   EngineResult setAutoRecord({required bool enabled}) {
     _checkAlive();
     return EngineResult.fromCode(

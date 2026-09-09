@@ -96,6 +96,9 @@ void main() {
     when(repository.allTrackChains).thenReturn(const {});
     when(() => repository.masterEffects).thenReturn(const []);
     when(() => repository.state).thenReturn(const LooperState());
+    when(
+      () => repository.looperState,
+    ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(repository.masterChainEnvelope).thenReturn(const FxChainEnvelope());
     final settings = SettingsRepository(store: FakeKeyValueStore());
     monitor = MonitorCubit(repository: repository, settings: settings);

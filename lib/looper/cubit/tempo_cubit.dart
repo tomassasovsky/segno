@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -189,11 +191,31 @@ class TempoCubit extends Cubit<TempoSettings> {
     required SettingsRepository settings,
   }) : _repository = repository,
        _settings = settings,
-       super(const TempoSettings());
+       super(const TempoSettings()) {
+    // The count-in and Sound start exclude each other at the engine (D9):
+    // Sound start turned on from the record options clears the count-in
+    // there, and this cubit's own value must follow, or its picker would
+    // show a count-in the engine no longer runs.
+    _subscription = _repository.looperState.listen(_onLooperState);
+  }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
+  late final StreamSubscription<LooperState> _subscription;
+
+  void _onLooperState(LooperState looper) {
+    final countInBars = looper.transport.countInBars;
+    if (_loadFuture == null || countInBars == state.countInBars) return;
+    emit(state.copyWith(countInBars: countInBars));
+    unawaited(_settings.saveCountInBars(countInBars));
+  }
+
+  @override
+  Future<void> close() {
+    unawaited(_subscription.cancel());
+    return super.close();
+  }
 
   /// Restores the persisted tempo/click/count-in settings and applies them to
   /// the repository.
@@ -312,12 +334,15 @@ class TempoCubit extends Cubit<TempoSettings> {
   }
 
   /// Sets and persists the count-in length in measures (`0` = off), applying
-  /// it now. Unconditional repository call — see [setTempo]'s doc.
+  /// it now. Unconditional repository call — see [setTempo]'s doc. A
+  /// count-in clears Sound start (the engine's rule, D9), persisted here too
+  /// so a restart does not bring Sound start back over it.
   Future<void> setCountInBars(int bars) async {
     final clamped = bars < 0 ? 0 : bars;
     emit(state.copyWith(countInBars: clamped));
     _repository.setCountIn(clamped);
     await _settings.saveCountInBars(clamped);
+    if (clamped > 0) await _settings.saveAutoRecord(value: false);
   }
 
   /// Registers a tempo tap; two taps within the engine's window set the

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -49,11 +51,31 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
     required SettingsRepository settings,
   }) : _repository = repository,
        _settings = settings,
-       super(const RecordOptions());
+       super(const RecordOptions()) {
+    // Sound start and the count-in exclude each other at the engine (D9): a
+    // count-in set from the tempo settings turns Sound start off there, and
+    // this cubit's own value must follow, or its toggle would show a start
+    // the engine no longer performs.
+    _subscription = _repository.looperState.listen(_onLooperState);
+  }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
+  late final StreamSubscription<LooperState> _subscription;
+
+  void _onLooperState(LooperState looper) {
+    final autoRecord = looper.transport.autoRecord;
+    if (_loadFuture == null || autoRecord == state.autoRecord) return;
+    emit(state.copyWith(autoRecord: autoRecord));
+    unawaited(_settings.saveAutoRecord(value: autoRecord));
+  }
+
+  @override
+  Future<void> close() {
+    unawaited(_subscription.cancel());
+    return super.close();
+  }
 
   /// Restores the persisted options and applies them to the repository.
   Future<void> load() => _loadFuture ??= _restore();
@@ -86,13 +108,16 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
     await _settings.saveRecDub(value: value);
   }
 
-  /// Sets and persists sound-activated recording, applying it now.
+  /// Sets and persists sound-activated recording, applying it now. Turning
+  /// it on clears the count-in (the engine's rule, D9), persisted here too
+  /// so a restart does not bring the count-in back over it.
   Future<void> setAutoRecord({required bool value}) async {
     if (value != state.autoRecord) {
       emit(state.copyWith(autoRecord: value));
       _repository.setAutoRecord(enabled: value);
     }
     await _settings.saveAutoRecord(value: value);
+    if (value) await _settings.saveCountInBars(0);
   }
 
   /// Sets and persists the global default loop length, applying it now.

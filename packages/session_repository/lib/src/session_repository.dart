@@ -448,12 +448,23 @@ class SessionRepository {
           lengthFrames: track.lengthFrames,
           lengthPresetBars: track.lengthPresetBars,
           oneShot: track.oneShot,
+          // Record timing and decay overrides (slice 2b): read back from
+          // the engine, which reports what it holds for the track.
+          recordTiming: track.recordTimingOverride(snapshot.quantizeDiv),
+          overdubDecay: _decayOfFeedback(track.overdubFeedbackOverride),
           lanes: lanes,
         ),
       );
     }
     return _Capture(snapshot: snapshot, laneStems: laneStems, tracks: tracks);
   }
+
+  /// The overdub decay in percent an engine feedback coefficient means:
+  /// each pass keeps `1 - decay / 100` of the existing layer. `null` for an
+  /// inherited (absent) override.
+  static int? _decayOfFeedback(double? feedback) => feedback == null
+      ? null
+      : ((1 - feedback.clamp(0.0, 1.0)) * 100).round();
 
   Session _sessionFrom(
     _Capture captured,
@@ -492,6 +503,11 @@ class SessionRepository {
       tsNum: snapshot.tsNum,
       tsDen: snapshot.tsDen,
       quantizeDiv: snapshot.quantizeDiv,
+      recordTiming: RecordTiming.of(
+        quantize: snapshot.quantize,
+        division: snapshot.quantizeDiv,
+      ),
+      overdubDecay: _decayOfFeedback(snapshot.overdubFeedback) ?? 0,
       clickMode: snapshot.clickMode,
       clickOutputMask: snapshot.clickMask,
       clickVolume: snapshot.clickVolume,

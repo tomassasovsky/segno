@@ -738,6 +738,15 @@ typedef struct le_track_snapshot {
    * at the primary's loop top; -1 while nothing is pending. The stage names
    * the boundary from this rather than guessing from the settings. */
   int32_t pending_trigger;
+  /* ---- per-track record timing and decay overrides (accepted design,
+   * slice 2b; trailing). What the engine holds, so a surface and a session
+   * capture read the setting back rather than what was last sent. */
+  int32_t quantize_override; /* -1 inherit, 0 forced off, 1 forced on
+                              * (le_engine_set_track_quantize) */
+  int32_t quantize_div_override; /* -1 inherit, else le_grid_div
+                                  * (le_engine_set_track_quantize_div) */
+  float overdub_feedback_override; /* negative = inherit, else 0..1
+                                    * (le_engine_set_track_overdub_feedback) */
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1094,6 +1103,14 @@ typedef struct le_snapshot {
    * no single track does, so the stage footer meters this rather than the
    * per-track peaks. Sibling of output_rms above. */
   float output_peak;
+  /* ---- record start settings (accepted design, slice 2b; trailing for the
+   * same offset-stability reason as the blocks above). The control-side
+   * settings the record press reads, published so a surface shows what the
+   * engine holds rather than what it last sent: le_engine_set_count_in and
+   * le_engine_set_auto_record clear each other (D9). */
+  int32_t quantize;    /* 0/1: the global loop-grid record quantize gate */
+  int32_t auto_record; /* 0/1: sound-activated record start */
+  float overdub_feedback; /* the global coefficient, 0..1 (default 1) */
   /* NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
    * le_callback_telemetry and le_engine_get_callback_telemetry. */
 } le_snapshot;
@@ -1573,6 +1590,19 @@ LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled);
 LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
                                                int32_t channel, int32_t mode);
 
+/* Sets track [channel]'s musical quantization division override (accepted
+ * design, slice 2b): a negative [div] inherits the global default
+ * (le_engine_set_quantize_div); 0 = the loop top only; 1..5 = bar .. 1/16
+ * note (le_grid_div). Read live wherever the global division is read, so a
+ * pending arm on this track fires on this track's own boundaries and a change
+ * while armed re-evaluates on the next boundary of the new division. Only
+ * meaningful while the track's quantize gate is effectively on
+ * (le_engine_set_quantize / le_engine_set_track_quantize): the gate decides
+ * whether a press waits at all, the division decides for what. */
+LE_EXPORT int32_t le_engine_set_track_quantize_div(le_engine* engine,
+                                                   int32_t channel,
+                                                   int32_t div);
+
 /* Cancels track [channel]'s pending record arm, whatever armed it — the
  * quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
  * section toggle. No-op (LE_OK) when the track is not armed.
@@ -1743,30 +1773,30 @@ LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
                                            int32_t channel);
 
-/* ---- One Shot (B4, Sheeran manual §5.9.4) ----
+/* ---- One Shot (B4, Sheeran manual §5.9.4; every mode since slice 2b) ----
  * "A track plays just once and then stops" — the manual's tool for a
  * non-looping section (an intro/outro, or a one-off sample bed), "particularly
- * useful for playing backing tracks". A per-track boolean; the manual does
- * not gate it by mode, but segno's engine currently has a natural per-track
- * transport-wrap hook ONLY in Free and Song mode (each track ticks its own
- * free_clock there — see le_track's doc, engine_private.h); in Multi/Sync/
- * Band a track's own "lap" is a derived point on the ONE shared master
- * clock, and giving it an independent per-track stop-after-one-lap would
- * mean much larger transport surgery (and raises un-spec'd questions, e.g.
- * how a one-shot interacts with a Sync/Band division's multiple/divisor)
- * that the manual's Song-specific tool does not call for. Deliberate,
- * documented scope line: the FLAG itself is settable and persists in ANY
- * mode (mirrors LE_CMD_CROWN_PRIMARY's D18 pattern), but the STOP-instead-
- * of-loop behavior only fires in Free/Song — see
- * advance_track_clock_frame's doc, engine_process.c. Applies at the natural
- * wrap point (le_loop_clock_tick's boundary return on that track's OWN
- * clock), reusing handle_stop's exact PLAYING/OVERDUBBING -> STOPPED
- * transition (pending mutes land the same way a manual Stop press would;
- * an overdub in flight ends its capture and drains/retires normally). */
+ * useful for playing backing tracks". A per-track boolean, available in all
+ * five looper modes (accepted design, Playback & overdub): the track plays
+ * to the end of its own lap and stops itself, without stopping other tracks
+ * or the shared clock. What "its own lap" means per mode:
+ *   - Free/Song: one full turn of the track's OWN clock (le_loop_clock_tick's
+ *     boundary return on free_clock; advance_track_clock_frame);
+ *   - Multi/Sync/Band: the track's lap is a derived point on the ONE shared
+ *     master clock — a k-multiple ends when the master wraps back to the
+ *     track's first segment, a Sync/Band division every base/n frames, a
+ *     plain 1x take at the master wrap (le_shared_clock_one_shots). A track
+ *     launched mid-lap in these modes stays aligned to the shared clock and
+ *     stops at the end of the lap it joined; the next launch from a held
+ *     transport starts at the top.
+ * Enabling Once during a pass finishes that pass. The stop reuses
+ * handle_stop's exact PLAYING/OVERDUBBING -> STOPPED transition (pending
+ * mutes land the same way a manual Stop press would; an overdub in flight
+ * ends its capture and drains/retires normally) and logs a synthetic STOP. */
 
 /* Sets track [channel]'s One Shot flag (0/1). Rejects only an out-of-range
- * channel; accepted in every looper mode, though inert outside Free/Song
- * (see the class doc above). A SETTING, not content: like
+ * channel; accepted and live in every looper mode (see the class doc
+ * above). A SETTING, not content: like
  * a_length_preset_bars and target_multiple, it is untouched by clear /
  * undo-to-empty / mode switches — handle_clear's per-track reset
  * (engine_process.c) deliberately does not include it, the same "cleared
@@ -1933,6 +1963,17 @@ LE_EXPORT int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,
  * never plain playback. */
 LE_EXPORT int32_t le_engine_set_overdub_feedback(le_engine* engine,
                                                  float feedback);
+
+/* Sets track [channel]'s overdub feedback override (accepted design, slice
+ * 2b): a negative [feedback] inherits the global coefficient
+ * (le_engine_set_overdub_feedback); otherwise the value is clamped to [0,1]
+ * and used for this track's overdub passes. Live: a change during a pass
+ * reaches the write head through a ~10 ms ramp, never a step, so the
+ * retained layer has no level seam. Like the global coefficient, only
+ * overdub passes apply it; playback never decays. */
+LE_EXPORT int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
+                                                       int32_t channel,
+                                                       float feedback);
 
 /* Enables sound-activated recording: a record press on an empty track waits and
  * begins capturing the first frame the input level crosses the threshold. A

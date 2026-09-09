@@ -221,6 +221,8 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           lanes: lanes,
           lengthPresetBars: track.lengthPresetBars,
           oneShot: track.oneShot,
+          recordTiming: track.recordTiming,
+          overdubDecay: track.overdubDecay,
         ),
       );
     }

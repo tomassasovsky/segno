@@ -37,6 +37,7 @@ export 'src/engine_snapshot.dart'
         LooperMode,
 
         LooperModeGate,
+        RecordTiming,
         TempoSource,
         TrackRestoreState,
         TrackSnapshot,

@@ -450,13 +450,22 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         index: event.index,
       );
     });
-    on<LooperTrackQuantizeChanged>((event, _) {
-      _repository.setTrackQuantize(
+    on<LooperTrackRecordTimingChanged>((event, _) {
+      _repository.setTrackRecordTiming(
         channel: event.channel,
-        enabled: event.enabled,
+        timing: event.timing,
       );
       unawaited(
-        _settings?.saveTrackQuantize(event.channel, enabled: event.enabled),
+        _settings?.saveTrackRecordTiming(event.channel, event.timing?.code),
+      );
+    });
+    on<LooperTrackOverdubDecayChanged>((event, _) {
+      _repository.setTrackOverdubDecay(
+        channel: event.channel,
+        percent: event.percent,
+      );
+      unawaited(
+        _settings?.saveTrackOverdubDecay(event.channel, event.percent),
       );
     });
     on<LooperTrackMultipleChanged>((event, _) {
@@ -811,7 +820,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// [ClickMode.playRec].
   ///
   /// Persisted like every other bloc-driven mutation in this file (compare
-  /// [LooperTrackQuantizeChanged]): safe to do here without a second cache to
+  /// [LooperTrackRecordTimingChanged]): safe to do here without a second
+  /// cache to
   /// keep in sync, because the tempo settings UI reads the *live* click mode
   /// from [TransportState] rather than from a cached cubit value — see
   /// `TempoSettingsSection`'s class doc.

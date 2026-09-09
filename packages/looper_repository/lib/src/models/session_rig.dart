@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
-import 'package:segno_engine/segno_engine.dart' show LooperMode;
+import 'package:segno_engine/segno_engine.dart' show LooperMode, RecordTiming;
 
 /// One lane's restored audio, routing, and mix inside a [SessionRigTrack].
 ///
@@ -63,6 +63,8 @@ class SessionRigTrack {
     required this.lanes,
     this.lengthPresetBars = 0,
     this.oneShot = false,
+    this.recordTiming,
+    this.overdubDecay,
   });
 
   /// Track channel index.
@@ -82,6 +84,14 @@ class SessionRigTrack {
   /// once then stops. Restored on session load — see
   /// `LooperRepository.applySession`'s reset-then-restore handling.
   final bool oneShot;
+
+  /// The track's record timing override (slice 2b); `null` = follows the
+  /// default. Restored on session load like [lengthPresetBars].
+  final RecordTiming? recordTiming;
+
+  /// The track's overdub decay override in percent (slice 2b); `null` =
+  /// follows the default. Restored on session load like [lengthPresetBars].
+  final int? overdubDecay;
 }
 
 /// One hardware input's live-monitor configuration inside a [SessionRig] —

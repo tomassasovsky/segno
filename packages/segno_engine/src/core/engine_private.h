@@ -940,6 +940,19 @@ typedef struct le_track {
    * free_clock itself is — there is no per-track wrap event to hook in
    * Multi/Sync/Band. */
   _Atomic int32_t a_one_shot;
+  /* Musical quantization division override (accepted design, slice 2b): -1
+   * inherits the global a_quantize_div, else a le_grid_div. Control writes,
+   * the audio thread reads it live (le_live_subdiv_ratio). Configure resets
+   * it; clear does not (a setting, like a_one_shot). */
+  _Atomic int32_t a_quantize_div_override;
+  /* Overdub feedback override (slice 2b): the bits of a float; a negative
+   * value inherits the global a_overdub_fb_bits. Same lifetime as the
+   * division override above. */
+  _Atomic uint32_t a_overdub_fb_bits;
+  /* Audio-thread-local feedback actually applied at the write head: ramps
+   * toward the effective coefficient one od_step per frame so a live change
+   * never steps the retained layer (mix_tracks_frame). */
+  float fb_cur;
 } le_track;
 
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,

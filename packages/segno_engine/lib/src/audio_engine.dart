@@ -288,6 +288,26 @@ abstract interface class LooperTransport {
   /// with a record press continues into overdub instead of playback.
   EngineResult setRecDub({required bool enabled});
 
+  /// Sets track [channel]'s musical quantization division override: `null`
+  /// inherits the global division (`setQuantizeDiv`), otherwise the track's
+  /// arms fire on that division's boundaries, read live, so a change while
+  /// armed takes effect at the next boundary. Only meaningful while the
+  /// track's quantize gate is effectively on ([setQuantize] /
+  /// [setTrackQuantize]).
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  });
+
+  /// Sets track [channel]'s overdub feedback override: `null` inherits the
+  /// global [setOverdubFeedback], otherwise the coefficient (clamped to
+  /// `0..1`) for this track's overdub passes. Live: a change during a pass
+  /// ramps at the write head over ~10 ms instead of stepping.
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  });
+
   /// Sets the overdub [feedback] coefficient (clamped by the engine to `0..1`,
   /// default `1.0`). While a track is overdubbing, its existing content is
   /// scaled by this before the new layer is summed in: `1.0` is the classic
