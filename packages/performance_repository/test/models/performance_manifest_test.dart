@@ -150,6 +150,34 @@ void main() {
       expect(decoded.trackChains, isEmpty);
       expect(decoded.masterEffects, isEmpty);
       expect(decoded.masterChainEnabled, isTrue);
+      // The default capture policy (slice 3b) writes none of its keys.
+      expect(snapshot.toJson().containsKey('followOutput'), isFalse);
+      expect(snapshot.toJson().containsKey('outputLevel'), isFalse);
+      expect(snapshot.toJson().containsKey('outputMuted'), isFalse);
+      expect(decoded.followOutput, isFalse);
+      expect(decoded.outputLevel, 1);
+      expect(decoded.outputMuted, isFalse);
+    });
+
+    test('round-trips the capture policy and destination 0 facts (slice 3b) '
+        'as the keys the renderer reads', () {
+      const snapshot = PerformanceArmSnapshot(
+        masterGain: 1,
+        limiterEnabled: false,
+        limiterCeiling: 0.99,
+        latencyOffsetFrames: 0,
+        followOutput: true,
+        outputLevel: 0.5,
+        outputMuted: true,
+      );
+      final json = snapshot.toJson();
+      expect(json['followOutput'], isTrue);
+      expect(json['outputLevel'], 0.5);
+      expect(json['outputMuted'], isTrue);
+      final decoded = PerformanceArmSnapshot.fromJson(json);
+      expect(decoded.followOutput, isTrue);
+      expect(decoded.outputLevel, 0.5);
+      expect(decoded.outputMuted, isTrue);
     });
 
     test(

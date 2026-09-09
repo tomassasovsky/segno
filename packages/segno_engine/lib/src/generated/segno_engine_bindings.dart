@@ -3304,6 +3304,276 @@ class SegnoEngineBindings {
   late final _le_engine_set_master_fx = _le_engine_set_master_fxPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// ---- output buses (accepted design, slice 3b) ----
+  /// Bus [bus] is the hardware pair (2 bus, 2 bus + 1). After every source has
+  /// summed onto the outputs (tracks, monitors, the click), each bus runs its
+  /// chain over its pair, then applies its level (0..1, default 1), Mono (the
+  /// pair averaged onto both channels; balance then disabled), balance (-1..1,
+  /// the unity-centre law of le_engine_set_lane_pan: it attenuates one side)
+  /// and mute (silence; the level is kept). The global master gain and limiter
+  /// follow. A bus a source is not routed to is untouched by that source. The
+  /// Master insert API (le_engine_set_master_fx and friends) is bus 0's chain.
+  /// All remembered by the caller and reset by (re)configure.
+  int le_engine_set_output_level(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    double level,
+  ) {
+    return _le_engine_set_output_level(
+      engine,
+      bus,
+      level,
+    );
+  }
+
+  late final _le_engine_set_output_levelPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_output_level');
+  late final _le_engine_set_output_level = _le_engine_set_output_levelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
+
+  int le_engine_set_output_mute(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    int muted,
+  ) {
+    return _le_engine_set_output_mute(
+      engine,
+      bus,
+      muted,
+    );
+  }
+
+  late final _le_engine_set_output_mutePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_output_mute');
+  late final _le_engine_set_output_mute = _le_engine_set_output_mutePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  int le_engine_set_output_mono(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    int mono,
+  ) {
+    return _le_engine_set_output_mono(
+      engine,
+      bus,
+      mono,
+    );
+  }
+
+  late final _le_engine_set_output_monoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_output_mono');
+  late final _le_engine_set_output_mono = _le_engine_set_output_monoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  int le_engine_set_output_balance(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    double balance,
+  ) {
+    return _le_engine_set_output_balance(
+      engine,
+      bus,
+      balance,
+    );
+  }
+
+  late final _le_engine_set_output_balancePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_output_balance');
+  late final _le_engine_set_output_balance = _le_engine_set_output_balancePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
+
+  /// Bus [bus]'s chain: the same five calls as the Master insert, per bus.
+  int le_engine_set_output_fx(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    int index,
+    int type,
+  ) {
+    return _le_engine_set_output_fx(
+      engine,
+      bus,
+      index,
+      type,
+    );
+  }
+
+  late final _le_engine_set_output_fxPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_output_fx');
+  late final _le_engine_set_output_fx = _le_engine_set_output_fxPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  int le_engine_set_output_fx_count(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    int count,
+  ) {
+    return _le_engine_set_output_fx_count(
+      engine,
+      bus,
+      count,
+    );
+  }
+
+  late final _le_engine_set_output_fx_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_output_fx_count');
+  late final _le_engine_set_output_fx_count = _le_engine_set_output_fx_countPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  int le_engine_set_output_fx_param(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    int index,
+    int param,
+    double value,
+  ) {
+    return _le_engine_set_output_fx_param(
+      engine,
+      bus,
+      index,
+      param,
+      value,
+    );
+  }
+
+  late final _le_engine_set_output_fx_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_output_fx_param');
+  late final _le_engine_set_output_fx_param = _le_engine_set_output_fx_paramPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, int, double)
+      >();
+
+  int le_engine_set_output_fx_enabled(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    int index,
+    int enabled,
+  ) {
+    return _le_engine_set_output_fx_enabled(
+      engine,
+      bus,
+      index,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_output_fx_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_output_fx_enabled');
+  late final _le_engine_set_output_fx_enabled =
+      _le_engine_set_output_fx_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  int le_engine_set_output_fx_chain_enabled(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    int enabled,
+  ) {
+    return _le_engine_set_output_fx_chain_enabled(
+      engine,
+      bus,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_output_fx_chain_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_output_fx_chain_enabled');
+  late final _le_engine_set_output_fx_chain_enabled =
+      _le_engine_set_output_fx_chain_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Cut all sound (accepted design, slice 3b): see LE_CMD_CUT_SOUND. Posted
+  /// through the ring; returns LE_ERR_NOT_RUNNING while stopped (nothing
+  /// sounds then).
+  int le_engine_cut_sound(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_cut_sound(
+      engine,
+    );
+  }
+
+  late final _le_engine_cut_soundPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_engine_cut_sound',
+      );
+  late final _le_engine_cut_sound = _le_engine_cut_soundPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
+  /// Whether the performance capture follows the output bus's level, balance,
+  /// Mono and mute (1) or is tapped after the bus's chain and before them (0,
+  /// the default: adjusting the PA during a performance does not alter the
+  /// saved performance; accepted design, "Follow output volume"). A direct
+  /// store read once per block; frozen per take by the caller.
+  int le_perf_set_follow_output(
+    ffi.Pointer<le_engine> engine,
+    int follow,
+  ) {
+    return _le_perf_set_follow_output(
+      engine,
+      follow,
+    );
+  }
+
+  late final _le_perf_set_follow_outputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_perf_set_follow_output');
+  late final _le_perf_set_follow_output = _le_perf_set_follow_outputPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the Master insert active chain length to [count] (0..LE_FX_MAX).
   /// Count 0 (empty) restores bit-identical output.
   int le_engine_set_master_fx_count(
@@ -4867,6 +5137,25 @@ enum le_command_code {
   /// mirror of LE_CMD_SET_LANE_PAN. Perf-logged.
   LE_CMD_SET_MONITOR_INPUT_PAN(60),
 
+  /// Output bus facts (slice 3b). lanef arm: channel = bus, value. Level
+  /// 0..1, mute/mono as 0/1 in value, balance -1..1. Perf-logged.
+  LE_CMD_SET_OUTPUT_LEVEL(61),
+  LE_CMD_SET_OUTPUT_MUTE(62),
+  LE_CMD_SET_OUTPUT_MONO(63),
+  LE_CMD_SET_OUTPUT_BALANCE(64),
+
+  /// Output bus chain entry type / active length: fx / fxcount arms with
+  /// channel = bus. The Master insert commands 51/52 are bus 0's.
+  LE_CMD_SET_OUTPUT_FX(65),
+  LE_CMD_SET_OUTPUT_FX_COUNT(66),
+
+  /// Cut all sound (accepted design): stops every audible recorded track and
+  /// the count-in, and clears every effect tail on every chain (lane, track,
+  /// monitor, output) while keeping their settings; the snapshot's
+  /// tail_reset_rev advances. Monitors keep their preferences: new live
+  /// input sounds again at once. Perf-logged.
+  LE_CMD_CUT_SOUND(67),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100),
@@ -4950,6 +5239,13 @@ enum le_command_code {
     58 => LE_CMD_SET_LANE_PAN,
     59 => LE_CMD_SET_TRACK_SOLO,
     60 => LE_CMD_SET_MONITOR_INPUT_PAN,
+    61 => LE_CMD_SET_OUTPUT_LEVEL,
+    62 => LE_CMD_SET_OUTPUT_MUTE,
+    63 => LE_CMD_SET_OUTPUT_MONO,
+    64 => LE_CMD_SET_OUTPUT_BALANCE,
+    65 => LE_CMD_SET_OUTPUT_FX,
+    66 => LE_CMD_SET_OUTPUT_FX_COUNT,
+    67 => LE_CMD_CUT_SOUND,
     100 => LE_EVT_LAYER_RETIRED,
     101 => LE_EVT_TAKE_CANCELLED,
     102 => LE_EVT_CLEAR_FROZEN,
@@ -5728,6 +6024,37 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Array.multi([32])
   external ffi.Array<ffi.Float> input_trim;
+
+  /// ---- output buses (slice 3b; trailing). output_bus_count is how many
+  /// the device has ((output_channels + 1) / 2); entries past it read the
+  /// defaults.
+  @ffi.Int32()
+  external int output_bus_count;
+
+  /// 0..1, default 1
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Float> output_level;
+
+  /// 0/1
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Int32> output_muted;
+
+  /// 0/1
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Int32> output_mono;
+
+  /// -1..1
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Float> output_balance;
+
+  /// Advances on every Cut all sound the audio thread applied.
+  @ffi.Uint32()
+  external int tail_reset_rev;
+
+  /// The capture policy of the armed take (1 = Follow output volume), or the
+  /// policy the next arm would freeze while not armed.
+  @ffi.Int32()
+  external int perf_follow_output;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -5972,6 +6299,8 @@ const int LE_MAX_TRACKS = 8;
 const int LE_MAX_LANES = 8;
 
 const int LE_MAX_MONITORED_INPUTS = 32;
+
+const int LE_MAX_OUTPUT_BUSES = 16;
 
 const double LE_CLIP_LEVEL = 0.9990000128746033;
 

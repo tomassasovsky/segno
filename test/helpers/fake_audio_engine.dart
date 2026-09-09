@@ -236,6 +236,54 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-bus facts passed to the output setters (slice 3b).
+  final Map<int, double> outputLevel = {};
+  final Map<int, bool> outputMuted = {};
+  final Map<int, bool> outputMono = {};
+  final Map<int, double> outputBalance = {};
+
+  /// How many times [cutSound] ran.
+  int cutSoundCalls = 0;
+
+  /// The last policy passed to [setPerfFollowOutput].
+  bool? perfFollowOutput;
+
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) {
+    outputLevel[bus] = level;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) {
+    outputMuted[bus] = muted;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) {
+    outputMono[bus] = mono;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) {
+    outputBalance[bus] = balance;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult cutSound() {
+    cutSoundCalls++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    perfFollowOutput = follow;
+    return EngineResult.ok;
+  }
+
   /// Per-(channel, lane) mute passed to [setLaneMute].
   final Map<(int, int), bool> laneMute = {};
 

@@ -30,6 +30,10 @@ const int kMaxChannels = LE_MAX_CHANNELS;
 /// what a socket could be NAMED.
 const int kMaxMonitoredInputs = LE_MAX_MONITORED_INPUTS;
 
+/// The number of output buses the engine can address (one per stereo pair
+/// of [kMaxChannels] outputs), mirroring the native `LE_MAX_OUTPUT_BUSES`.
+const int kMaxOutputBuses = LE_MAX_OUTPUT_BUSES;
+
 /// Phase of the loopback round-trip latency harness.
 ///
 /// Mirrors the native `le_latency_state` enum.
@@ -1157,6 +1161,13 @@ class EngineSnapshot {
     this.inputPeaks = const [],
     this.monitorPeaks = const [],
     this.outputPeaks = const [],
+    this.outputBusCount = 0,
+    this.outputLevels = const [],
+    this.outputMuted = const [],
+    this.outputMono = const [],
+    this.outputBalances = const [],
+    this.tailResetRev = 0,
+    this.perfFollowOutput = false,
     this.tracks = const [],
   });
 
@@ -1216,6 +1227,13 @@ class EngineSnapshot {
       inputPeaks = const [],
       monitorPeaks = const [],
       outputPeaks = const [],
+      outputBusCount = 0,
+      outputLevels = const [],
+      outputMuted = const [],
+      outputMono = const [],
+      outputBalances = const [],
+      tailResetRev = 0,
+      perfFollowOutput = false,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -1234,6 +1252,7 @@ class EngineSnapshot {
   ) {
     final inputs = native.input_channels.clamp(0, LE_MAX_CHANNELS);
     final outputs = native.output_channels.clamp(0, LE_MAX_CHANNELS);
+    final buses = native.output_bus_count.clamp(0, LE_MAX_OUTPUT_BUSES);
     return EngineSnapshot(
       isRunning: native.running != 0,
       devicePresent: native.device_present != 0,
@@ -1289,6 +1308,17 @@ class EngineSnapshot {
       inputPeaks: [for (var i = 0; i < inputs; i++) native.input_peaks[i]],
       monitorPeaks: [for (var i = 0; i < inputs; i++) native.monitor_peaks[i]],
       outputPeaks: [for (var i = 0; i < outputs; i++) native.output_peaks[i]],
+      outputBusCount: buses,
+      outputLevels: [for (var k = 0; k < buses; k++) native.output_level[k]],
+      outputMuted: [
+        for (var k = 0; k < buses; k++) native.output_muted[k] != 0,
+      ],
+      outputMono: [for (var k = 0; k < buses; k++) native.output_mono[k] != 0],
+      outputBalances: [
+        for (var k = 0; k < buses; k++) native.output_balance[k],
+      ],
+      tailResetRev: native.tail_reset_rev,
+      perfFollowOutput: native.perf_follow_output != 0,
       tracks: tracks,
     );
   }
@@ -1554,6 +1584,31 @@ class EngineSnapshot {
   /// the device has (length [outputChannels]; empty while no device is open).
   final List<double> outputPeaks;
 
+  /// The number of output buses the open device has: one per stereo pair of
+  /// [outputChannels] (an odd count leaves a single-channel last bus); `0`
+  /// while no device is open. The four bus lists below have this length.
+  final int outputBusCount;
+
+  /// Per-bus level (`0..1`), retained behind a mute.
+  final List<double> outputLevels;
+
+  /// Per-bus mute.
+  final List<bool> outputMuted;
+
+  /// Per-bus Mono (the averaged mix on both jacks, balance ignored).
+  final List<bool> outputMono;
+
+  /// Per-bus balance (`-1..1`), retained while Mono.
+  final List<double> outputBalances;
+
+  /// Advances once per Cut all sound the audio thread applied: a change here
+  /// is the only signal that every tail was cleared.
+  final int tailResetRev;
+
+  /// The capture policy of the armed performance take (`true` = Follow
+  /// output volume), or the one the next arm would freeze while disarmed.
+  final bool perfFollowOutput;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -1643,6 +1698,13 @@ class EngineSnapshot {
           _listEquals(inputPeaks, other.inputPeaks) &&
           _listEquals(monitorPeaks, other.monitorPeaks) &&
           _listEquals(outputPeaks, other.outputPeaks) &&
+          outputBusCount == other.outputBusCount &&
+          _listEquals(outputLevels, other.outputLevels) &&
+          _listEquals(outputMuted, other.outputMuted) &&
+          _listEquals(outputMono, other.outputMono) &&
+          _listEquals(outputBalances, other.outputBalances) &&
+          tailResetRev == other.tailResetRev &&
+          perfFollowOutput == other.perfFollowOutput &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -1701,6 +1763,13 @@ class EngineSnapshot {
     Object.hashAll(inputPeaks),
     Object.hashAll(monitorPeaks),
     Object.hashAll(outputPeaks),
+    outputBusCount,
+    Object.hashAll(outputLevels),
+    Object.hashAll(outputMuted),
+    Object.hashAll(outputMono),
+    Object.hashAll(outputBalances),
+    tailResetRev,
+    perfFollowOutput,
     ...tracks,
   ]);
 

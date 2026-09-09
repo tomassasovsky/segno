@@ -42,6 +42,12 @@ extern "C" {
  * transition, in milliseconds. Short enough to feel instant on a pedal stomp,
  * long enough to be click-free. */
 #define LE_FX_ENABLE_RAMP_MS 5
+/* Bypass tail drain bounds: a bypassed slot keeps running on a silent feed
+ * for at most LE_FX_DRAIN_MAX_S seconds, and settles as soon as its tail has
+ * stayed under LE_FX_DRAIN_FLOOR for LE_FX_DRAIN_QUIET_MS. */
+#define LE_FX_DRAIN_MAX_S 8
+#define LE_FX_DRAIN_QUIET_MS 50
+#define LE_FX_DRAIN_FLOOR 1e-4f
 
 /* Applies a lane/monitor chain to one stereo sample in place, in chain order.
  * Stageless: every active entry processes both channels on the lane's own `fx`

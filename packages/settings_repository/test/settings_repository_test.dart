@@ -1078,6 +1078,101 @@ void main() {
     });
   });
 
+  group('output setup (slice 3b)', () {
+    test('an unset device loads as the default setup', () async {
+      final setup = await repository.loadOutputSetup(
+        device: 'Scarlett',
+        busCount: 2,
+      );
+      expect(setup.level, isEmpty);
+      expect(setup.muted, isEmpty);
+      expect(setup.mono, isEmpty);
+      expect(setup.balance, isEmpty);
+    });
+
+    test('the per-bus writer sets a key per fact off its default and removes '
+        'the others, keyed per device', () async {
+      await repository.saveOutputBus(
+        device: 'Scarlett',
+        bus: 1,
+        level: 0.5,
+        muted: true,
+        balance: -0.25,
+      );
+      await repository.saveOutputBus(device: 'Scarlett', bus: 0, mono: true);
+
+      expect(store.values['output_level.Scarlett.1'], 0.5);
+      expect(store.values['output_mute.Scarlett.1'], isTrue);
+      expect(store.values['output_balance.Scarlett.1'], -0.25);
+      expect(store.values.containsKey('output_mono.Scarlett.1'), isFalse);
+      expect(store.values['output_mono.Scarlett.0'], isTrue);
+      expect(store.values.containsKey('output_level.Scarlett.0'), isFalse);
+
+      final setup = await repository.loadOutputSetup(
+        device: 'Scarlett',
+        busCount: 2,
+      );
+      expect(setup.level, {1: 0.5});
+      expect(setup.muted, {1: true});
+      expect(setup.mono, {0: true});
+      expect(setup.balance, {1: -0.25});
+
+      final other = await repository.loadOutputSetup(
+        device: 'Built-in',
+        busCount: 2,
+      );
+      expect(other.level, isEmpty);
+      expect(other.mono, isEmpty);
+
+      // Back to the defaults: every key of that bus goes.
+      await repository.saveOutputBus(device: 'Scarlett', bus: 1, level: 1);
+      expect(
+        store.values.keys.where((k) => k.endsWith('.Scarlett.1')),
+        isEmpty,
+      );
+    });
+
+    test('clamps on both sides of the store and reads only the first '
+        'busCount destinations', () async {
+      await repository.saveOutputBus(
+        device: 'Scarlett',
+        bus: 0,
+        level: 3,
+        balance: -7,
+      );
+      expect(store.values['output_level.Scarlett.0'], 1.0);
+      expect(store.values['output_balance.Scarlett.0'], -1.0);
+      store.values['output_level.Scarlett.1'] = -2.0;
+      store.values['output_level.Scarlett.3'] = 0.5;
+      final setup = await repository.loadOutputSetup(
+        device: 'Scarlett',
+        busCount: 2,
+      );
+      expect(setup.level, {1: 0.0});
+      expect(setup.balance, {0: -1.0});
+    });
+
+    test('replaceOutputSetup writes the given buses and clears the first '
+        'busCount destinations it does not name', () async {
+      await repository.saveOutputBus(device: 'Scarlett', bus: 0, muted: true);
+      await repository.saveOutputBus(device: 'Scarlett', bus: 5, mono: true);
+      await repository.replaceOutputSetup(
+        device: 'Scarlett',
+        busCount: 2,
+        setup: (level: {1: 0.5}, muted: {}, mono: {}, balance: {1: 0.5}),
+      );
+      final setup = await repository.loadOutputSetup(
+        device: 'Scarlett',
+        busCount: 8,
+      );
+      expect(setup.level, {1: 0.5});
+      expect(setup.balance, {1: 0.5});
+      expect(setup.muted, isEmpty);
+      // Bus 5 sits past the replaced range: untouched.
+      expect(setup.mono, {5: true});
+    });
+  });
+
   group('input setup', () {
     test('an unset device loads as the default setup', () async {
       final setup = await repository.loadInputSetup(

@@ -259,6 +259,73 @@ final class LooperInputBalanceChanged extends LooperInputEvent {
   List<Object?> get props => [input, balance];
 }
 
+/// An edit to one output destination (accepted design, Output setup).
+sealed class LooperOutputEvent extends LooperEvent {
+  /// Creates a [LooperOutputEvent].
+  const LooperOutputEvent(this.bus);
+
+  /// The destination: one per stereo pair of hardware outputs, `0`-based.
+  final int bus;
+
+  @override
+  List<Object?> get props => [bus];
+}
+
+/// Output destination [bus]'s level changed.
+final class LooperOutputLevelChanged extends LooperOutputEvent {
+  /// Creates a [LooperOutputLevelChanged].
+  const LooperOutputLevelChanged(super.bus, {required this.level});
+
+  /// The level, `0..1`.
+  final double level;
+
+  @override
+  List<Object?> get props => [bus, level];
+}
+
+/// Output destination [bus] was muted or unmuted.
+final class LooperOutputMuteChanged extends LooperOutputEvent {
+  /// Creates a [LooperOutputMuteChanged].
+  const LooperOutputMuteChanged(super.bus, {required this.muted});
+
+  /// Whether the destination is muted.
+  final bool muted;
+
+  @override
+  List<Object?> get props => [bus, muted];
+}
+
+/// Output destination [bus] switched between Stereo and Mono.
+final class LooperOutputMonoChanged extends LooperOutputEvent {
+  /// Creates a [LooperOutputMonoChanged].
+  const LooperOutputMonoChanged(super.bus, {required this.mono});
+
+  /// Whether the destination is in Mono.
+  final bool mono;
+
+  @override
+  List<Object?> get props => [bus, mono];
+}
+
+/// Output destination [bus]'s balance changed.
+final class LooperOutputBalanceChanged extends LooperOutputEvent {
+  /// Creates a [LooperOutputBalanceChanged].
+  const LooperOutputBalanceChanged(super.bus, {required this.balance});
+
+  /// The balance, `-1` (left only) .. `1` (right only).
+  final double balance;
+
+  @override
+  List<Object?> get props => [bus, balance];
+}
+
+/// Cut all sound (accepted design): every audible track stops and every
+/// effect tail is cleared; the rig's settings stay.
+final class LooperCutSoundPressed extends LooperEvent {
+  /// Creates a [LooperCutSoundPressed].
+  const LooperCutSoundPressed();
+}
+
 /// [channel] was crowned the primary track (Sync/Band, D18;
 /// `crownPrimary` — D20). No "un-crown" event exists — the only way to move
 /// the crown is to crown a different channel.

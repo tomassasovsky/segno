@@ -44,7 +44,8 @@ export 'src/engine_snapshot.dart'
         XrunKind,
         kMaxChannels,
         kMaxLanes,
-        kMaxMonitoredInputs;
+        kMaxMonitoredInputs,
+        kMaxOutputBuses;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
 export 'src/input_conditioning_param.dart' show InputConditioningParam;
 export 'src/lane_cache.dart' show LaneCacheState;

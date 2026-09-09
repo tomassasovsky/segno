@@ -246,6 +246,60 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-bus facts passed to the output setters (slice 3b).
+  final Map<int, double> outputLevel = {};
+  final Map<int, bool> outputMuted = {};
+  final Map<int, bool> outputMono = {};
+  final Map<int, double> outputBalance = {};
+
+  /// How many times [cutSound] ran.
+  int cutSoundCalls = 0;
+
+  /// The last policy passed to [setPerfFollowOutput].
+  bool? perfFollowOutput;
+
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) {
+    outputLevel[bus] = level;
+    calls.add('setOutputLevel');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) {
+    outputMuted[bus] = muted;
+    calls.add('setOutputMute');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) {
+    outputMono[bus] = mono;
+    calls.add('setOutputMono');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) {
+    outputBalance[bus] = balance;
+    calls.add('setOutputBalance');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult cutSound() {
+    cutSoundCalls++;
+    calls.add('cutSound');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    perfFollowOutput = follow;
+    calls.add('setPerfFollowOutput');
+    return EngineResult.ok;
+  }
+
   /// Per-input monitor pan passed to [setMonitorInputPan].
   final Map<int, double> monitorPan = {};
 

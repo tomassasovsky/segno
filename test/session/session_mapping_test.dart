@@ -401,6 +401,52 @@ void main() {
       expect(settings.trackPans, isEmpty);
       expect(settings.laneMix, isEmpty);
       expect(settings.inputSetup, const SessionInputSetup());
+      expect(settings.outputSetup, const SessionOutputSetup());
+    });
+
+    test('reads the output setup (slice 3b) off the repository state, one '
+        'map per fact holding only the destinations off that default', () {
+      when(() => looper.state).thenReturn(
+        const LooperState(
+          outputSetup: OutputSetup(
+            buses: {
+              1: OutputBus(level: 0.5, muted: true),
+              0: OutputBus(mono: true, balance: -0.25),
+            },
+          ),
+        ),
+      );
+
+      final settings = loopSettingsFromLooper(looper);
+
+      expect(settings.outputSetup.level, {1: 0.5});
+      expect(settings.outputSetup.muted, {1: true});
+      expect(settings.outputSetup.mono, {0: true});
+      expect(settings.outputSetup.balance, {0: -0.25});
+    });
+
+    test('outputSetupFromSession rebuilds one destination per bus any map '
+        'names, the rest of its facts at their defaults', () {
+      expect(
+        outputSetupFromSession(
+          const SessionOutputSetup(
+            level: {1: 0.5},
+            muted: {1: true},
+            mono: {0: true},
+            balance: {0: -0.25},
+          ),
+        ),
+        const OutputSetup(
+          buses: {
+            1: OutputBus(level: 0.5, muted: true),
+            0: OutputBus(mono: true, balance: -0.25),
+          },
+        ),
+      );
+      expect(
+        outputSetupFromSession(const SessionOutputSetup()),
+        const OutputSetup(),
+      );
     });
 
     test('reads the mix (slice 3) off the repository state: every off-centre '
@@ -936,6 +982,7 @@ void main() {
             pan: {2: -0.5},
             pairs: {0: 0.2},
           ),
+          outputSetup: const SessionOutputSetup(level: {1: 0.5}),
         ),
         laneStems: {
           (0, 0): [l0],
@@ -953,6 +1000,10 @@ void main() {
       expect(
         rig.inputSetup,
         const InputSetup(trimDb: {0: -6}, pan: {2: -0.5}, pairs: {0: 0.2}),
+      );
+      expect(
+        rig.outputSetup,
+        const OutputSetup(buses: {1: OutputBus(level: 0.5)}),
       );
       expect(rig.monitors.single.input, 0);
     });
@@ -979,6 +1030,7 @@ void main() {
       expect(rig.tracks.single.pan, 0);
       expect(rig.tracks.single.lanes.single.pan, 0);
       expect(rig.inputSetup, const InputSetup());
+      expect(rig.outputSetup, const OutputSetup());
     });
 
     test('a bundle with no overrides reaches the rig with both maps empty', () {

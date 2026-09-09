@@ -7,4 +7,9 @@ export 'package:local_storage_client/local_storage_client.dart'
 // AudioBackend is a settings-layer domain enum (no longer the engine's), part
 // of StoredAudioConfig's public API.
 export 'src/settings_repository.dart'
-    show AudioBackend, SettingsRepository, StoredAudioConfig, StoredInputSetup;
+    show
+        AudioBackend,
+        SettingsRepository,
+        StoredAudioConfig,
+        StoredInputSetup,
+        StoredOutputSetup;

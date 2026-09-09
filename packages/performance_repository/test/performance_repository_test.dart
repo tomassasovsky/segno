@@ -165,6 +165,25 @@ void main() {
       expect(engine.lastPerfCaptureDir, repo.armedDirectory);
     });
 
+    test('setFollowOutput forwards the policy to the engine, and the arm '
+        "snapshot records the take's policy and destination 0's facts "
+        '(slice 3b)', () async {
+      expect(repo.setFollowOutput(follow: true), EngineResult.ok);
+      expect(engine.perfFollowOutput, isTrue);
+      engine
+        ..outputLevels = [0.5, 1]
+        ..outputMuted = [true, false];
+
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      final armJson =
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(armJson['followOutput'], isTrue);
+      expect(armJson['outputLevel'], 0.5);
+      expect(armJson['outputMuted'], isTrue);
+    });
+
     test('writes the arm-time snapshot for every settled lane', () async {
       engine
         ..seedLane(0, 0, Float32List.fromList([1, 1, 1, 1]))

@@ -737,3 +737,146 @@ performance render replays solo but not pan (it renders lane 0 mono as
 before), which the stems export does not need and the master capture
 already contains.
 
+### Slice 3b — output destinations
+
+Same branch, stacked on slice 3a's PR #1017 until it merges.
+
+#### Decisions
+
+- **Output buses.** Destination `k` is the stereo pair of hardware outputs
+  `2k` and `2k + 1` (`LE_MAX_OUTPUT_BUSES` = 16; a device with an odd
+  channel count has a single-jack last bus, processed as `l == r`). Each
+  bus owns a level (0..1, retained behind the mute), a mute, Stereo/Mono
+  and a balance on the lane pan law (`le_engine_set_output_level/mute/
+  mono/balance`, ring commands 61 to 64, `lanef {bus, 0, value}`), and its
+  own effect chain (`le_engine_set_output_fx*`, commands 65 and 66). The
+  frame order is now tracks, monitors, click, then per bus: chain, the
+  performance tap, Mono or balance, level, mute; then the global master
+  gain and limiter and the output meters. A bus at its defaults with no
+  chain costs nothing per frame. Every fact is published in the snapshot
+  (`output_bus_count`, `output_level[]`, `output_muted[]`,
+  `output_mono[]`, `output_balance[]`, `tail_reset_rev`,
+  `perf_follow_output`, trailing fields).
+- **The Master insert is bus 0's chain.** `le_engine_set_master_fx*` are
+  one-line wrappers onto bus 0; `le_engine.master_fx` is gone. The chain
+  therefore colours everything summed onto the first pair, live monitors
+  and the click included, which the accepted design asks of an output
+  chain and the old D-MASTER rule (monitors uncoloured, first ENABLED
+  pair) forbade; both tests flipped. The Dart `FxStage.master` keeps
+  addressing that chain until slice 3f rebuilds the FX surfaces around
+  per-destination chains: no owner exists yet for a chain on bus 1 and up,
+  so the engine's output family is not mirrored into Dart for them.
+- **The click rides the bus.** It sums in before the buses, so a
+  destination's chain, level and mute process it like every other source
+  routed there (accepted: "Click is included if routed there"), and it
+  now reaches the output meter and the master gain. The output-enabled
+  mask still gates it structurally.
+- **The performance capture tap** defaults to the captured bus after its
+  chain and before its level, Mono, balance, mute, the master gain and the
+  limiter (Output setup, "Performance capture boundary"; accepted: "Final
+  output volume/mute is excluded by default"). `le_perf_set_follow_output`
+  sets the policy the next arm freezes into `perf.follow_output`; a
+  running take keeps its policy. The captured bus is the first one with an
+  enabled channel (mono when only one is), so a disabled left jack
+  captures the right one. The arm snapshot records `followOutput`,
+  `outputLevel` and `outputMuted` (bus 0 at arm); `perf_render` skips the
+  master stage for a default take and, under Follow, replays bus 0's level
+  and mute from the log (commands 61 and 62 are perf-logged) before the
+  master gain and limiter. The golden parity test runs both policies.
+- **Cut all sound** (`le_engine_cut_sound`, command 67): every playing,
+  recording or overdubbing track goes through the Stop handler (a take in
+  progress finalizes), a running count-in is cancelled, and every chain on
+  every stage has its DSP state and delay rings cleared while its type,
+  count, params and enables stay; `a_tail_reset_rev` advances and the
+  snapshot carries it. Monitors keep their preferences. The clear is a
+  bounded burst of memsets on one discrete event, like a type change.
+- **Bypass drains the tail** (accepted: "bypass sends new audio dry and
+  drains old wet tails"). `enable_mix` now scales the slot's FEED: the
+  output is `dry * (1 - mix) + effect(dry * mix)`, so a settled enabled
+  slot is the effect verbatim, the 5 ms ramp hands the new audio from the
+  effect to the dry path, and once the feed is silent the slot keeps
+  running on silence with its tail summed onto the dry signal until the
+  tail has stayed under 1e-4 for 50 ms or 8 s have passed; then it settles
+  and is skipped (bit-exact passthrough, D-BITEXACT intact). A re-enable
+  mid-drain keeps the state; a re-enable from a settled bypass still
+  resets and clears the rings. A latency-bearing slot (the octaver) holds
+  a delayed copy of the dry signal rather than a tail, so it keeps the old
+  crossfade and settles with no drain: summing its delayed dry onto the
+  direct path would double the audio for the latency window.
+- **Stop drains Post tails; Mute gates them.** The lane body now has two
+  gates: `fed` (playing and not gated) feeds the chain, `gate_ok` (not
+  muted, not soloed away) lets its output through. A Stop or Clear cuts
+  the feed and the lane's tail drains through its route; a Mute gates the
+  lane whole, tail included, while its player continues. The Track chain
+  routes via the union of the gate-open lanes' destinations, so its tail
+  drains after a Stop and is gated by a Mute with the track; the shared
+  tails that keep draining under Mute are the output chains'. The old
+  "wet routes only while audible" rule is gone.
+- **Persistence.** The output setup is session-owned like the input setup
+  (`Session.outputSetup` = `{level, muted, mono, balance}` maps keyed by
+  bus, each holding only the destinations off that fact's default, the
+  object omitted when all are empty) and kept per device in settings
+  (`output_level/mute/mono/balance.<device>.<bus>`, `loadOutputSetup`,
+  `saveOutputBus`, `replaceOutputSetup`), restored at boot, re-persisted
+  on session load. The repository holds `OutputSetup` (an `OutputBus` per
+  destination off its defaults), pushes the four facts of an edited bus,
+  replays them on start and applies a rig's whole setup on session load.
+  Bloc events `LooperOutputLevelChanged/MuteChanged/MonoChanged/
+  BalanceChanged` and `LooperCutSoundPressed`;
+  `PerformanceRepository.setFollowOutput`.
+- **Per-source output selection.** Lanes, monitors and the click already
+  chose output channels; `LooperRepository.setTrackOutput` routes every
+  lane of a track as one source, and `OutputSetup.maskOfBuses /
+  busesOfMask / busOfOutput` translate destinations to channel masks for
+  the surfaces. There is no backing track source in the engine to route.
+- **Kept as is.** The global master gain and limiter stay as the final
+  stage after the buses; retiring the global gain in favour of bus 0's
+  level is a surface decision for slice 3c (the Mixer's master fader). Bus
+  level changes are instant (no ramp), like the lane volume today.
+
+#### Changed ownership
+
+`le_engine.outputs[]` replaces `master_fx`; `le_perf_capture.follow_output`;
+`le_fx_state.enable_drain / enable_quiet`; `fx_apply_chain`'s ramp
+arithmetic; `mix_tracks_frame`'s `audible` split into `fed` / `gate_ok` /
+`routes`; `le_perf_first_enabled_pair` steps by bus; `perf_render`'s
+`le_pr_render_master` is conditional on the take's policy and replays bus
+0's level and mute. Dart: `MasterBusControl` gained the bus setters and
+`cutSound`, `EnginePerformanceCapture` the policy setter; `EngineSnapshot`
+the seven trailing fields; four fake engines updated.
+
+#### Checks
+
+- Native: the 5 suites plain, with ASan and with telemetry off; flipped
+  `test_click_rides_output_bus`, `test_count_in_click_captured_when_routed`,
+  `test_output_fx_colors_monitors`, `test_master_fx_ch_out_4_is_bus_0`,
+  `test_fx_bypass_drains_tail_then_settles`; new
+  `test_perf_master_tap_pre_level_by_default`,
+  `test_perf_master_tap_follow_output_post_gain`,
+  `test_perf_capture_first_bus_with_enabled_channel`,
+  `test_output_bus_level_mute_mono_balance`,
+  `test_output_setters_reject_invalid_and_clamp`,
+  `test_cut_sound_stops_tracks_and_clears_tails`,
+  `test_fx_bypass_new_audio_dry`,
+  `test_stop_drains_lane_tail_and_mute_gates_it`; the golden parity test
+  runs both capture policies; `test_fx_enable_ramp_continuity`'s bound
+  follows the feed ramp. ffigen regenerated and formatted.
+- Dart: `segno_engine` 269, `looper_repository` 464, `settings_repository`
+  152, `session_repository` 103, `performance_repository` 115; root 2217;
+  analyzers clean at the root and in every touched package; `bloc lint`
+  clean.
+
+#### Not verified here
+
+The bus stage and the tail drain by ear on the appliance; the drain floor
+and window (1e-4 for 50 ms, 8 s cap) are engineering values the listen
+check may move. The offline render replays bus 0's level and mute but not
+its Mono, balance or chain (the accumulator is mono and the arm manifest
+carries no bus chain yet). The Follow output preference has no surface or
+setting yet: the repository setter exists for the Performance recording
+page.
+
+#### Next step
+
+Slice 3c: the Audio routing and Output setup surfaces.
+

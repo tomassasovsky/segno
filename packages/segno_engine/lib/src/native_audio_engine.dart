@@ -1053,6 +1053,46 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  // ---- Output buses (slice 3b) ----
+
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_level(_engine, bus, level),
+    );
+  }
+
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_mute(_engine, bus, muted ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_mono(_engine, bus, mono ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_balance(_engine, bus, balance),
+    );
+  }
+
+  @override
+  EngineResult cutSound() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_cut_sound(_engine));
+  }
+
   @override
   EngineResult setOverdubFeedback(double feedback) {
     _checkAlive();
@@ -1602,6 +1642,14 @@ class NativeAudioEngine implements AudioEngine {
     } finally {
       malloc.free(dirPtr);
     }
+  }
+
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_perf_set_follow_output(_engine, follow ? 1 : 0),
+    );
   }
 
   @override

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
+import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:segno_engine/segno_engine.dart' show LooperMode, RecordTiming;
 
@@ -172,6 +173,7 @@ class SessionRig {
     this.recordTiming,
     this.overdubDecay,
     this.inputSetup = const InputSetup(),
+    this.outputSetup = const OutputSetup(),
   });
 
   /// The session's DEFAULT record timing (slice 2b); `null` leaves the live
@@ -190,6 +192,10 @@ class SessionRig {
   /// The per-input capture setup the session was saved with (slice 3):
   /// trims, pans and pairs. Restored on apply; the monitors' pans follow it.
   final InputSetup inputSetup;
+
+  /// The output setup the session was saved with (slice 3b): every
+  /// destination's level, mute, Stereo/Mono and balance. Restored on apply.
+  final OutputSetup outputSetup;
 
   /// The base (master) loop length in frames; `0` for an empty session.
   final int baseLengthFrames;

@@ -587,15 +587,50 @@ abstract interface class MasterBusControl {
   /// default; the current gate is in [EngineSnapshot.outputEnabledMask].
   EngineResult setOutputEnabled({required int output, required bool enabled});
 
+  // ---- Output buses (slice 3b) ----
+  //
+  // Output bus [bus] is the stereo pair of hardware outputs `2 * bus` and
+  // `2 * bus + 1` (a device with an odd channel count has a single-channel
+  // last bus). Every source routed to those outputs (tracks, monitors, the
+  // click) sums in first; then the bus runs its chain, its level, Mono or
+  // balance, and its mute, before the global master gain and limiter. The
+  // facts are published in [EngineSnapshot.outputLevels] and siblings, one
+  // entry per bus the open device has ([EngineSnapshot.outputBusCount]).
+  // Every setter takes effect on the next block, works while stopped, and
+  // is reset to its default by a (re)start. [EngineResult.invalid] for a bus
+  // outside `0..kMaxOutputBuses-1`.
+
+  /// Sets output bus [bus]'s level (`0..1`, clamped, default `1`). Retained
+  /// behind a mute.
+  EngineResult setOutputLevel({required int bus, required double level});
+
+  /// Mutes/unmutes output bus [bus] (default unmuted). The level and
+  /// balance are retained.
+  EngineResult setOutputMute({required int bus, required bool muted});
+
+  /// Puts output bus [bus] in Mono (the averaged mix on both jacks, balance
+  /// ignored while Mono) or back in Stereo (the retained balance applies).
+  EngineResult setOutputMono({required int bus, required bool mono});
+
+  /// Sets output bus [bus]'s balance (`-1..1`, clamped, default centre):
+  /// the unity-centre law of [EngineRouting.setLanePan], the far jack exactly
+  /// silent at full.
+  EngineResult setOutputBalance({required int bus, required double balance});
+
+  /// Cut all sound: every playing, recording or overdubbing track stops (a
+  /// take in progress finalizes as a Stop would), a running count-in is
+  /// cancelled, and every chain's tail on every stage is cleared while the
+  /// chain settings stay. Monitors keep their preferences. Bumps
+  /// [EngineSnapshot.tailResetRev].
+  EngineResult cutSound();
+
   // ---- Master insert chain (FX v3 part 1b) ----
   //
-  // One engine-level chain on the summed track mix, before master
-  // gain/limiter. Live monitor signals are summed AFTER it and stay uncolored
-  // (live-through sound stays predictable); gain + limiter still apply to
-  // both, unchanged. While EMPTY (the default) the output is bit-identical to
-  // the chain never having existed. FX kernels are strict stereo: with more
-  // than two outputs the chain processes the first ENABLED output pair and
-  // passes the rest through bit-exact dry; a mono output processes as l == r.
+  // Output bus 0's chain (slice 3b): one engine-level chain on everything
+  // summed onto the first output pair (tracks, monitors and the click), run
+  // before that bus's level and the global gain/limiter. While EMPTY (the
+  // default) the output is bit-identical to the chain never having existed.
+  // FX kernels are strict stereo; a mono output processes as l == r.
 
   /// Sets Master insert chain entry [index] (`0..kTrackEffectMax-1`) to
   /// [type]. Changing the type resets that entry's DSP state and seeds the
@@ -1081,6 +1116,16 @@ abstract interface class EnginePerformanceCapture {
   /// started (e.g. the directory could not be created) or a previous
   /// disarm's quiescent wait bailed out and left a stale drain session live.
   EngineResult perfArm(String captureDir);
+
+  /// Sets the capture policy the NEXT [perfArm] freezes for its take (slice
+  /// 3b). `false` (the default after a (re)start) taps the captured bus after
+  /// its chain and before its level, Mono/balance, mute, the master gain and
+  /// the limiter, so adjusting the PA during a performance does not reach the
+  /// take; `true` (Follow output volume) taps the final output. A running
+  /// take keeps the policy it was armed with; the frozen policy of the armed
+  /// take, or the pending one while disarmed, is in
+  /// [EngineSnapshot.perfFollowOutput].
+  EngineResult setPerfFollowOutput({required bool follow});
 
   /// Disarms performance-recording capture: signals the audio thread to stop
   /// writing, waits for a quiescent handshake to confirm it has (never a
