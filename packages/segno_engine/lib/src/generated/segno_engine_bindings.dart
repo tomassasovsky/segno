@@ -1273,6 +1273,32 @@ class SegnoEngineBindings {
   late final _le_engine_undo_restores_clear = _le_engine_undo_restores_clearPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Whether a user clear on a capturing track has frozen the take and its
+  /// restore point is still to be filed (1) — the next le_engine_undo_restores_
+  /// clear answer will be 1 once the audio thread's report lands. 0 otherwise,
+  /// for an invalid channel or a stopped engine. A host grouping clears asks
+  /// this beside le_engine_undo_restores_clear to know which tracks the clear
+  /// can give back.
+  int le_engine_clear_restore_pending(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_clear_restore_pending(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_clear_restore_pendingPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_clear_restore_pending');
+  late final _le_engine_clear_restore_pending =
+      _le_engine_clear_restore_pendingPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Whether the NEXT le_engine_redo on `channel` re-applies a clear that an
   /// undo took back (1) rather than re-stacking an overdub layer or
   /// resurrecting an undone-to-empty track (0). The redo twin of

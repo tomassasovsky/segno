@@ -62,6 +62,27 @@ static int le_history_is_cleared(const le_track* t) {
  * between them sees at worst a stale flag on the next poll, the same tolerance
  * every other published depth already carries. */
 static void le_publish_undo_depth(le_track* t) {
+  /* A frozen take's restore point is still to be filed: the layers kept
+   * beneath it are not peelable yet (the track reads EMPTY), and the restore
+   * is not offered until the point lands — so both read 0 for now. */
+  if (t->clear_restore_pending) {
+    store_i32(&t->a_undo_depth, 0);
+    store_i32(&t->a_clear_restore, 0);
+    return;
+  }
+  /* A command that gives the track content is in flight (a clear restore,
+   * a resurrect) while the wire still reads EMPTY: hold both at 0 — an EMPTY
+   * track never shows peelable layers — and republish once the audio thread
+   * has applied it (le_engine_drain_events). */
+  if (t->state_cmds_posted >
+          atomic_load_explicit(&t->a_state_acks, memory_order_acquire) &&
+      t->pending_target != LE_TRACK_EMPTY &&
+      load_i32(&t->a_state) == LE_TRACK_EMPTY) {
+    store_i32(&t->a_undo_depth, 0);
+    store_i32(&t->a_clear_restore, 0);
+    t->depth_republish = 1;
+    return;
+  }
   const int cleared = le_history_is_cleared(t);
   store_i32(&t->a_undo_depth, cleared ? 0 : t->undo_count);
   store_i32(&t->a_clear_restore, cleared ? 1 : 0);
@@ -288,8 +309,15 @@ static void le_clear_redo(le_track* t) {
  * pre-#219 semantic exactly: after clear-then-record, undo depth is 0. */
 static void le_drop_clear_history(le_track* t) {
   /* A frozen take still waiting for its restore point (LE_EVT_CLEAR_FROZEN)
-   * is about to be recorded over too: the point can never be filed. */
-  t->clear_restore_pending = 0;
+   * is about to be recorded over too: the point can never be filed, and the
+   * layers kept beneath it belong to the erased take — they go with it. */
+  if (t->clear_restore_pending) {
+    t->clear_restore_pending = 0;
+    t->undo_count = 0;
+    le_publish_undo_depth(t);
+    le_track_drop_recoverable_if_dead(t);
+    return;
+  }
   if (!le_history_is_cleared(t)) return;
   t->undo_count = 0;
   le_publish_undo_depth(t);
@@ -375,6 +403,20 @@ int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
 static void le_mark_state_cmd(le_track* t, int32_t target) {
   t->state_cmds_posted++;
   t->pending_target = target;
+  t->pending_len = 0; /* the posters that restore a length set it after */
+}
+
+/* The control thread's view of a track's length: what a posted-but-unapplied
+ * state command will publish (a restore's take length, an emptying's 0), or
+ * the published length once everything posted has been acked — the length
+ * twin of le_effective_state, so a decision made in the gap (a clear right
+ * behind a restore) measures the take it will find. */
+static int32_t le_effective_len(le_track* t) {
+  if (t->state_cmds_posted >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+    return t->pending_len;
+  }
+  return load_i32(&t->lanes[0].a_len);
 }
 
 /* Defined below with the quantize machinery; needed by the undo-to-empty
@@ -395,6 +437,10 @@ static void le_trim_trailing_lanes(le_engine* engine, int32_t channel,
  * the undo-to-empty path exactly like a live tap would. */
 static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
+  /* A freezing clear's restore point is still to be filed: the queued taps
+   * wait for it (the next drain retries) rather than fall through to an
+   * empty stack and be dropped. */
+  if (t->clear_restore_pending) return;
   while (t->queued_undo > 0) {
     t->queued_undo--;
     /* A tap queued behind a freezing clear finds the restore point on top
@@ -653,6 +699,14 @@ void le_engine_drain_events(le_engine* engine) {
    * to the merge, the same coherent behaviour as spare starvation. */
   for (int32_t ch = 0; ch < engine->track_count; ++ch) {
     le_track* t = &engine->tracks[ch];
+    /* A depth held back while a restore was in flight: publish it now that
+     * the audio thread has applied the state (see le_publish_undo_depth). */
+    if (t->depth_republish &&
+        t->state_cmds_posted <=
+            atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+      t->depth_republish = 0;
+      le_publish_undo_depth(t);
+    }
     const int in_flight =
         atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire);
     /* Effective state, not raw a_state: a CLEAR / undo-to-empty pushed but not
@@ -909,7 +963,11 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
     for (int32_t c = 0; c < engine->track_count; ++c) {
       le_drop_clear_history(&engine->tracks[c]);
     }
-    if (has_master && le_engine_clear(engine, channel) == LE_OK) {
+    /* A cancelled take still in flight (cancel_pending) will establish the
+     * grid it would have set before this press lands; the internal clear
+     * behind it resets that grid too, so this take defines its own. */
+    if ((has_master || t->cancel_pending) &&
+        le_engine_clear(engine, channel) == LE_OK) {
       has_master = 0; /* the CLEAR ahead of us in the ring resets the grid */
     }
   }
@@ -1072,7 +1130,7 @@ static int le_build_restore_point(le_engine* engine, le_track* t,
   if (t->undo_count >= LE_POOL_SLOTS) return 0; /* no room to push it */
   const int32_t st = le_effective_state(t);
   if (st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) return 0;
-  const int32_t len = load_i32(&t->lanes[0].a_len);
+  const int32_t len = le_effective_len(t);
   if (len <= 0) return 0;
 
   le_hist_entry e = {0};
@@ -1251,6 +1309,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
    * mis-attributed). */
   t->outstanding_count = 0;
   le_mark_state_cmd(t, e.state);
+  t->pending_len = e.len; /* what the restore will publish */
   /* Length and multiple are DELIBERATELY not stored control-side here, unlike
    * the paths that empty a track. Those publish len 0 up front so a poll can
    * never catch EMPTY next to a stale nonzero length; this one runs the other
@@ -1324,8 +1383,11 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
      * EMPTY with a length. */
     return LE_OK;
   }
-  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
-    t->queued_undo++; /* applied on retire — see le_engine_drain_events */
+  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire) ||
+      t->clear_restore_pending) {
+    /* Applied on retire, or once a freezing clear's restore point is filed
+     * — see le_engine_drain_events / le_apply_queued_undo. */
+    t->queued_undo++;
     return LE_OK;
   }
   /* The flight flag cleared: its final retire event was pushed before the
@@ -1346,7 +1408,7 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
    * track (pedal/UI see no content) while the redo stack keeps the live slot,
    * so redo can reinstate it layer by layer. The master grid is deliberately
    * kept — redo needs it, and a full reset stays Clear's job. */
-  const int32_t len = load_i32(&t->lanes[0].a_len);
+  const int32_t len = le_effective_len(t);
   if ((st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) || len <= 0) {
     return LE_ERR_INVALID;
   }
@@ -1368,6 +1430,16 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   store_i32(&t->a_sync_divisor, 0); /* B3: coherent-snapshot mirror */
   store_i32(&t->a_redo_depth, t->redo_count);
   return LE_OK;
+}
+
+int32_t le_engine_clear_restore_pending(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return 0;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return 0;
+  }
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  le_engine_drain_events(engine);
+  return engine->tracks[channel].clear_restore_pending ? 1 : 0;
 }
 
 int32_t le_engine_redo_reclears(le_engine* engine, int32_t channel) {
@@ -1443,6 +1515,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
      * as the record-from-empty reclaim. */
     t->outstanding_count = 0;
     le_mark_state_cmd(t, LE_TRACK_PLAYING);
+    t->pending_len = len; /* what the resurrect will publish */
     le_track_set_len(t, len);
     store_i32(&t->a_redo_depth, t->redo_count);
     return LE_OK;

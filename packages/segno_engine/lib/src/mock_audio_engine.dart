@@ -456,6 +456,9 @@ class MockAudioEngine implements AudioEngine {
   bool redoReclears({int channel = 0}) => false;
 
   @override
+  bool clearRestorePending({int channel = 0}) => false;
+
+  @override
   EngineResult undo({int channel = 0}) => _requireRunning();
 
   @override

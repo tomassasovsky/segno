@@ -20416,11 +20416,16 @@ static void test_clear_during_overdub_freezes_the_pass(void) {
   CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
   process_const(e, 0.5f, LOOP_N / 2, out);
   CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  /* Until the point is filed the erased layers are not peelable: an EMPTY
+   * track never reports an undo depth (the host's depths-sane invariant). */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0);
   drain(e);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
   CHECK(s.tracks[0].clear_restore == 1);
+  CHECK(s.tracks[0].undo_depth == 0);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   drain(e);
   le_engine_get_snapshot(e, &s);
@@ -20660,6 +20665,105 @@ static void test_redo_reclears(void) {
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
   CHECK(le_engine_redo_reclears(e, 0) == 0);
   CHECK(le_engine_undo_restores_clear(e, 0) == 1);
+  le_engine_destroy(e);
+}
+
+
+/* Review round 2 (slice 2a): the remaining one-block races. */
+
+/* A record pressed while a cancel is in flight defines its own grid, not
+ * the cancelled take's. */
+static void test_record_behind_cancel_defines_its_own_grid(void) {
+  printf("test_record_behind_cancel_defines_its_own_grid\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_undo(e, 0) == LE_OK);   /* cancel posted */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* pressed behind it */
+  drain(e);
+  process_const(e, 0.5f, 2 * LOOP_N + 1, out); /* a longer take */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  /* Its own defining length, not a multiple of the cancelled take's. */
+  CHECK(s.tracks[0].length_frames == 2 * LOOP_N + 1);
+  CHECK(s.master_length_frames == 2 * LOOP_N + 1);
+  CHECK(s.tracks[0].multiple == 1);
+  CHECK(s.tracks[0].redo_depth == 0); /* the cancelled take's redo died */
+  le_engine_destroy(e);
+}
+
+/* An undo tapped behind a freezing clear on a RECORDING take (no layer in
+ * flight) waits for the restore point and then restores. */
+static void test_undo_behind_freeze_of_a_take_restores(void) {
+  printf("test_undo_behind_freeze_of_a_take_restores\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_loop_on(e, 0);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.5f, SB_BASE / 2, out);
+  CHECK(le_engine_clear_undoable(e, 1) == LE_OK);
+  CHECK(le_engine_clear_restore_pending(e, 1) == 1);
+  CHECK(le_engine_undo(e, 1) == LE_OK); /* queued behind the point */
+  drain(e);                              /* frozen, reported, erased */
+  le_engine_get_snapshot(e, &s);         /* files the point, restores */
+  CHECK(le_engine_clear_restore_pending(e, 1) == 0);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[1].length_frames == SB_BASE);
+  le_engine_destroy(e);
+}
+
+/* A clear right behind a queued restore keeps a restore point for the
+ * restored take: the control thread measures the length the restore will
+ * publish, not the 0 still on the wire. */
+static void test_clear_behind_queued_restore_keeps_a_point(void) {
+  printf("test_clear_behind_queued_restore_keeps_a_point\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  process_const(e, 0.5f, LOOP_N / 2, out);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* queued: layer in flight */
+  drain(e);                              /* the freezing clear lands */
+  /* This clear's own drain files the point and posts the queued restore;
+   * the clear then measures the restored take, not an empty track. */
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].clear_restore == 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].length_frames == LOOP_N);
+  le_engine_destroy(e);
+}
+
+/* A declined cancel still reports, so the cancel flag never lingers. */
+static void test_declined_cancel_clears_its_flag(void) {
+  printf("test_declined_cancel_clears_its_flag\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize press in the ring */
+  CHECK(le_engine_undo(e, 0) == LE_OK);   /* declined behind it */
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s); /* the poll drains the report */
+  CHECK(e->tracks[0].cancel_pending == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
   le_engine_destroy(e);
 }
 
@@ -26731,6 +26835,10 @@ int main(void) {
   test_freeze_void_take_keeps_nothing();
   test_looper_mode_gate_multiples_and_divisions();
   test_redo_reclears();
+  test_record_behind_cancel_defines_its_own_grid();
+  test_undo_behind_freeze_of_a_take_restores();
+  test_clear_behind_queued_restore_keeps_a_point();
+  test_declined_cancel_clears_its_flag();
   test_crown_primary_re_crown_changes_it();
   test_crown_primary_inert_outside_sync_band();
   test_sync_first_completed_take_becomes_primary();

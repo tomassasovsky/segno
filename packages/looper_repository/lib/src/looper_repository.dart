@@ -1420,6 +1420,13 @@ class LooperRepository {
   /// This is the USER's clear. [applySession] uses [_clearDestructive]
   /// instead — loading a session must never be undoable.
   EngineResult clear({int channel = 0}) {
+    // A single clear is its own operation: whatever group the last clear-all
+    // left behind no longer describes one edit.
+    _clearAllGroup = const {};
+    return _clearTrack(channel);
+  }
+
+  EngineResult _clearTrack(int channel) {
     _snapshotForClearRestore(channel);
     _dropTakeState(channel);
     return _engine.clearUndoable(channel: channel);
@@ -1437,20 +1444,21 @@ class LooperRepository {
   /// rule), and the group with it — the per-track history then answers as
   /// usual, and nothing newer is overwritten.
   EngineResult clearAll(Iterable<int> channels) {
-    final rig = lastState;
     final group = <int>{};
     var result = EngineResult.ok;
     for (final channel in channels) {
-      final rc = clear(channel: channel);
+      final rc = _clearTrack(channel);
       if (!rc.isOk) {
         result = rc;
         continue;
       }
-      // Members are the takes the clear can give back: content, or a capture
-      // the clear froze. A redo-only track is erased but has no restore
-      // point, so it is not what the group's undo restores.
-      final track = channel < rig.tracks.length ? rig.tracks[channel] : null;
-      if (track != null && (track.hasContent || track.isCapturing)) {
+      // Members are the takes the clear can give back, by the engine's own
+      // account: a restore point filed now (a playing or stopped take), or
+      // one still to be filed (a capture the clear froze). A redo-only track
+      // is erased but has no restore point, so it is not what the group's
+      // undo restores.
+      if (_engine.undoRestoresClear(channel: channel) ||
+          _engine.clearRestorePending(channel: channel)) {
         group.add(channel);
       }
     }
@@ -1469,13 +1477,16 @@ class LooperRepository {
   bool get undoRestoresClearAll => _intactClearAllGroup().isNotEmpty;
 
   /// The clear-all group while every member still restores a cleared take;
-  /// empty while one does not. Not forgotten on a false answer: a frozen
-  /// member's restore point is filed a block after the clear, and a member
-  /// recorded over simply leaves the group unrestorable until the next
-  /// [clearAll] replaces it (its own history answers per track).
+  /// empty while one does not.
   Set<int> _intactClearAllGroup() {
     for (final channel in _clearAllGroup) {
-      if (!_engine.undoRestoresClear(channel: channel)) return const {};
+      if (_engine.undoRestoresClear(channel: channel)) continue;
+      // A frozen member's point is still to be filed: not yet, ask again.
+      if (_engine.clearRestorePending(channel: channel)) return const {};
+      // The engine retired the point (a fresh take): the group is gone, and
+      // a later single clear on that track must not re-form it.
+      _clearAllGroup = const {};
+      return const {};
     }
     return _clearAllGroup;
   }
@@ -4094,27 +4105,41 @@ class LooperRepository {
     if (_intendRunning) {
       final result = _engine.setLooperMode(mode);
       if (!result.isOk) return result; // refused: the setting stays
+      // Remembered now (a restart right behind the call re-applies the
+      // intent) and confirmed by the reports: see [_rememberLooperMode].
+      _requestedLooperMode = mode;
+      _requestReports = 0;
     }
     _looperMode = mode;
     return EngineResult.ok;
   }
 
-  /// The looper mode the engine last reported, so a change the engine
-  /// actually made (a switch that landed, a session load) is what
-  /// [_looperMode] re-applies on the next start — see [_rememberLooperMode].
-  LooperMode? _reportedLooperMode;
+  /// A mode the engine accepted but has not yet reported, with how many
+  /// reports have come in since. The switch lands within one audio block,
+  /// so a request still unreported after two polls was dropped on the audio
+  /// thread (a record press landed in the same block, a state the gate could
+  /// not see); the remembered mode then follows the report.
+  LooperMode? _requestedLooperMode;
+  int _requestReports = 0;
 
-  /// Follows the mode the engine REPORTS whenever that changes: a switch the
-  /// gate let through can still be dropped on the audio thread when a record
-  /// press lands in the same block, and what the rig runs is what it should
-  /// come back to. Only a change in the report moves the setting, so a poll
-  /// that lands between the call and the switch cannot undo the call.
+  /// Keeps [_looperMode] equal to what the engine runs: a reported change
+  /// (the switch landing, a session load) is taken as is; a request the
+  /// reports never confirm is dropped in favour of the reported mode.
   void _rememberLooperMode(LooperState next) {
     if (!_intendRunning || !next.status.isConnected) return;
     final reported = next.transport.looperMode;
-    if (reported != _reportedLooperMode) {
-      if (_reportedLooperMode != null) _looperMode = reported;
-      _reportedLooperMode = reported;
+    final requested = _requestedLooperMode;
+    if (requested == null) {
+      _looperMode = reported;
+      return;
+    }
+    if (reported == requested) {
+      _requestedLooperMode = null;
+      return;
+    }
+    if (++_requestReports >= 2) {
+      _requestedLooperMode = null;
+      _looperMode = reported;
     }
   }
 

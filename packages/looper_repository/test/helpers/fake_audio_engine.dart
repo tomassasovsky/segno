@@ -137,6 +137,13 @@ class FakeAudioEngine implements AudioEngine {
   /// The channels whose next redo re-applies a clear.
   Set<int> redoReclearsChannels = {};
 
+  /// The channels whose frozen restore point is still to be filed.
+  Set<int> clearRestorePendingChannels = {};
+
+  @override
+  bool clearRestorePending({int channel = 0}) =>
+      clearRestorePendingChannels.contains(channel);
+
   @override
   bool redoReclears({int channel = 0}) {
     calls.add('redoReclears');

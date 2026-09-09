@@ -204,8 +204,8 @@ PR #1011 merges.
   follows what the engine reports, not what was asked: a switch the gate let
   through can still be dropped on the audio thread when a record press lands
   in the same block, and that drop is silent to the caller.
-- Review round 1 (same day): a cancelled take that captured nothing acks its
-  state command once; the cancel's control side no longer pre-zeroes the
+- Review round 1 (same day): a cancelled take that captured nothing
+  acknowledges its state command once; the cancel's control side no longer pre-zeroes the
   published length (the audio thread may decline a cancel that races a
   finalize); a late cancel report is ignored after a clear or a fresh take;
   an undo queued behind a freezing clear restores the frozen take instead of
@@ -213,6 +213,27 @@ PR #1011 merges.
   nothing; Multi's gate measures whole multiples of the shortest take (what
   Multi itself records), Sync/Band the primary's multiples and divisions;
   the switch into a shared-clock mode re-establishes the tempo grid.
+- Review round 2 (same day, on the round-1 fixes): a record pressed behind
+  a cancel in flight resets the grid the cancel would have set, so it
+  defines its own; an undo tapped behind a freezing clear on a recording
+  take waits for the restore point (queued taps wait while the point is
+  pending); a clear right behind a queued restore measures the length the
+  restore will publish (`le_effective_len`) and keeps a restore point; a
+  declined or void cancel still reports, so the cancel flag never lingers;
+  an empty track never shows peelable layers on the wire (the depth is held
+  at 0 while a frozen point is pending or a restore is in flight, and
+  republished by the drain once the audio thread applied it — the fuzz
+  suite's depths-sane invariant); the frozen take's layers go with its
+  pending point when a fresh capture records over it. The repository takes
+  group membership from the engine (`le_engine_clear_restore_pending`
+  beside `undo_restores_clear`), ends a group when the engine retired a
+  member's point or a single clear happens, and drops a mode request the
+  reports never confirm (two polls) in favour of the reported mode.
+- The fuzz suite (`flutter test --tags fuzz`) and
+  `pumped_native_engine_test` were run against a locally built engine
+  library; `tool/build_test_lib.sh` itself does not build on this Mac (it
+  lacks the rnnoise include and source list the native test script has), so
+  the library was built by hand with that list.
 
 ### Changed ownership
 
@@ -232,11 +253,11 @@ PR #1011 merges.
 ### Checks
 
 - Native: `run_native_tests.sh` 5 suites ALL PASSED, also with
-  `-fsanitize=address` and `-DLE_CALLBACK_TELEMETRY=0`; 17 new or rewritten
+  `-fsanitize=address` and `-DLE_CALLBACK_TELEMETRY=0`; 21 new or rewritten
   tests (mode gate spans/multiples/divisions/queued/capturing/playing,
   Song/Free re-clocking, undo during overdub, undo during a defining and a
   later take, clear during recording and overdubbing, the cancel and freeze
-  races, `redo_reclears`).
+  races, `redo_reclears`, the round-2 one-block races).
 - `segno_engine` 242, `looper_repository` 414, `performance_repository` 111,
   `session_repository` 84 tests passed; root suite and coverage recorded in
   the PR; analyzers clean in every touched package; `bloc lint` clean.
