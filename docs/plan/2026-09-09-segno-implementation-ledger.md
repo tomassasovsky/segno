@@ -584,6 +584,12 @@ tracks. The mode cards' rebuild key gained the count-in and the in-flight
 layer, both of which the engine's gate reads. A cancelled slider gesture
 ends at the committed value, so a preview never outlives its touch.
 
+A third check found the slider's tap and drag recognizers each cancelling
+on the interaction the other wins, so a plain tap committed twice, once at
+a stale value; the commit now rides the raw pointer (one pointer up, one
+commit). A manifest preset above the engine's 64-bar limit was cached
+while the engine refused it; every path clamps to the limit now.
+
 ### Next step
 
 Slice 3 (inputs, outputs, Mixer and FX), per `implementation-map.md`.
