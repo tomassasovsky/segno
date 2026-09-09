@@ -8,6 +8,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -247,13 +248,13 @@ void main() {
       await pump(tester, initial: LoopSettingsPageId.mode);
       final l10n = l10nOf(tester);
       expect(find.text(l10n.loopModeReasonEqualLengths), findsOneWidget);
-      expect(find.text(l10n.loopModeReasonCapturing), findsOneWidget);
+      expect(find.text(l10n.modeChangeBlockedCapturing), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_mode_multi')));
       await tester.pumpAndSettle();
       verifyNever(() => bloc.add(any(that: isA<LooperModeChanged>())));
     });
 
-    testWidgets('a playing rig asks before the switch, in the pen dialog', (
+    testWidgets('playing loops ask before the switch, in the pen dialog', (
       tester,
     ) async {
       when(

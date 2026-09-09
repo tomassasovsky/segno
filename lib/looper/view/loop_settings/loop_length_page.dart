@@ -131,13 +131,11 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
             top: top + (scope == null ? 40 : 24),
             child: LoopFieldLabel(
               title: l10n.loopLengthLabel,
-              origin: scope == null
-                  ? null
-                  : shared
-                  ? LoopFieldOrigin.sharedInMulti
-                  : barsCustom
-                  ? LoopFieldOrigin.custom
-                  : LoopFieldOrigin.isDefault,
+              origin: scopedOrigin(
+                scoped: scope != null,
+                custom: barsCustom,
+                shared: shared,
+              ),
             ),
           ),
           Positioned(
@@ -195,11 +193,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
             child: LoopFieldLabel(
               title: l10n.loopTimingLabel,
               originBeside: true,
-              origin: scope == null
-                  ? null
-                  : timingCustom
-                  ? LoopFieldOrigin.custom
-                  : LoopFieldOrigin.isDefault,
+              origin: scopedOrigin(scoped: scope != null, custom: timingCustom),
             ),
           ),
           if (timingCustom && !locked)

@@ -288,15 +288,10 @@ class LooperRepository {
   bool _effectiveOneShot(int channel) =>
       _trackOneShot[channel] ?? _defaultOneShot;
 
-  /// Pushes every track's effective length preset and One Shot flag, for
-  /// the channels the engine reports and any channel holding an override.
-  void _pushTrackDefaults() {
-    var count = _engine.snapshot().tracks.length;
-    for (final channel in _trackLengthPreset.keys.followedBy(
-      _trackOneShot.keys,
-    )) {
-      if (channel >= count) count = channel + 1;
-    }
+  /// Pushes every track's effective length preset and One Shot flag to the
+  /// first [count] channels (the ones the engine has; an override for a
+  /// channel beyond them is kept but not pushed).
+  void _pushTrackDefaults({required int count}) {
     for (var channel = 0; channel < count; channel++) {
       _engine
         ..setTrackLengthPreset(
@@ -304,6 +299,34 @@ class LooperRepository {
           bars: _effectiveLengthPreset(channel),
         )
         ..setOneShot(channel: channel, oneShot: _effectiveOneShot(channel));
+    }
+  }
+
+  /// The channels the running engine has, from the last projection; a
+  /// projection without tracks (stopped, or not yet polled after a start)
+  /// falls back to one engine walk.
+  int get _runningTrackCount {
+    final last = _last;
+    if (last != null && last.tracks.isNotEmpty) return last.tracks.length;
+    return _engine.snapshot().tracks.length;
+  }
+
+  /// Re-pushes the length presets a mode change moves: only Multi shares the
+  /// default, so only a switch into or out of Multi changes a track's
+  /// effective preset, and only for a track holding an override. One Shot
+  /// never depends on the mode.
+  void _pushLengthPresetsAcross({
+    required LooperMode from,
+    required LooperMode to,
+  }) {
+    if ((from == LooperMode.multi) == (to == LooperMode.multi)) return;
+    final count = _runningTrackCount;
+    for (final channel in _trackLengthPreset.keys) {
+      if (channel >= count) continue;
+      _engine.setTrackLengthPreset(
+        channel: channel,
+        bars: _effectiveLengthPreset(channel),
+      );
     }
   }
 
@@ -1029,7 +1052,7 @@ class LooperRepository {
       );
       // Every track's effective length preset and One Shot flag (the
       // defaults, and the overrides where a track carries one).
-      _pushTrackDefaults();
+      _pushTrackDefaults(count: _engine.snapshot().tracks.length);
       _trackOverdubDecay.forEach(
         (channel, percent) => _engine.setTrackOverdubFeedback(
           channel: channel,
@@ -1978,14 +2001,14 @@ class LooperRepository {
           ..setLaneMute(muted: false, channel: channel)
           ..setLaneCount(channel: channel, count: 1)
           // a_length_preset_bars survives `clear` by design (see above) — a
-          // session load resets every track to AUTO here, same as the lane
-          // config it sits alongside; the rig loop below re-arms a nonzero
-          // preset for any track this session actually defines one for.
-          ..setTrackLengthPreset(channel: channel, bars: 0)
-          // a_one_shot survives `clear` by design too (see above) — reset
-          // every track to off here; the rig loop below re-arms it for any
-          // track this session actually marks One Shot.
-          ..setOneShot(channel: channel, oneShot: false)
+          // session load puts every track back on the default here (the
+          // override maps are already cleared), same as the lane config it
+          // sits alongside; the rig loop below re-arms the overrides the
+          // session carries.
+          ..setTrackLengthPreset(channel: channel, bars: _defaultLengthPreset)
+          // a_one_shot survives `clear` by design too (see above) — back to
+          // the default here; the rig loop below re-arms the overrides.
+          ..setOneShot(channel: channel, oneShot: _defaultOneShot)
           // The record timing and decay overrides survive `clear` the same
           // way: back to inherit here, re-armed from the rig below.
           ..setTrackQuantize(channel: channel, enabled: null)
@@ -2011,10 +2034,9 @@ class LooperRepository {
     // on whatever the app was last set to.
     if (rig.recordTiming case final timing?) setRecordTiming(timing);
     if (rig.overdubDecay case final decay?) setOverdubDecay(decay);
-    // Bounded to `trackCount` — same rationale as `rig.oneShotChannels` below:
-    // a manifest saved on a build with more physical tracks than this engine
-    // must not push an out-of-range channel, nor hold one as a pending crown
-    // this engine can never actually apply.
+    // Bounded to `trackCount`: a manifest saved on a build with more physical
+    // tracks than this engine must not push an out-of-range channel, nor
+    // hold one as a pending crown this engine can never actually apply.
     if (rig.primaryTrack >= 0 && rig.primaryTrack < trackCount) {
       crownPrimary(channel: rig.primaryTrack);
     }
@@ -2115,18 +2137,27 @@ class LooperRepository {
         setLaneVolume(lane.volume, channel: track.channel, lane: lane.lane);
         setLaneMute(muted: lane.muted, channel: track.channel, lane: lane.lane);
       }
-      // Length preset (A6): inert for the audio just imported (it only
-      // governs a future defining recording), but must round-trip so a track
-      // re-recorded after a load still honors the preset it was saved with.
-      // The manifest carries the EFFECTIVE preset; it becomes an override
-      // only where it differs from the default, so a track that matches
-      // keeps following the default (accepted design: Use default removes
-      // the override, a matching explicit value stays custom).
-      if (track.lengthPresetBars != _defaultLengthPreset) {
-        setTrackLengthPreset(
+      // Length preset and Loop/Once overrides (A6, slice 2c): inert for the
+      // audio just imported (the preset only governs a future defining
+      // recording), but they round-trip so a track re-recorded after a load
+      // still honors what it was saved with. The manifest carries the
+      // OVERRIDE (absent = the track follows the default), written to the
+      // cache as is and pushed as the effective value; the reset loop above
+      // put every track on the default, so a track without one is done.
+      final lengthOverride = track.lengthPresetOverride;
+      if (lengthOverride != null) {
+        _trackLengthPreset[track.channel] = lengthOverride < 0
+            ? 0
+            : lengthOverride;
+        _engine.setTrackLengthPreset(
           channel: track.channel,
-          bars: track.lengthPresetBars,
+          bars: _effectiveLengthPreset(track.channel),
         );
+      }
+      final onceOverride = track.onceOverride;
+      if (onceOverride != null) {
+        _trackOneShot[track.channel] = onceOverride;
+        _engine.setOneShot(channel: track.channel, oneShot: onceOverride);
       }
       // Record timing and decay overrides (slice 2b): the reset loop above
       // put every track back on the defaults; re-arm what the rig carries.
@@ -2137,33 +2168,6 @@ class LooperRepository {
       final decay = track.overdubDecay;
       if (decay != null) {
         setTrackOverdubDecay(channel: track.channel, percent: decay);
-      }
-    }
-
-    // One Shot, session-level set (post-B5c independent review fix): the
-    // per-track restore just above only runs for a channel that also has a
-    // [SessionRigTrack] entry, i.e. content — a channel armed with One Shot
-    // but never recorded onto has no such entry (see
-    // `SessionRepository._capture`'s doc) and would otherwise stay off
-    // forever after this load. [rig.oneShotChannels] is the content-independent
-    // source of truth (every armed channel, captured unconditionally), so
-    // restore from it too; harmless overlap with the per-track loop above for
-    // a content-bearing channel since [setOneShot] is idempotent. Bounded to
-    // `trackCount` — a manifest saved on a build with more physical tracks
-    // than this engine must not push an out-of-range channel.
-    // The manifest lists the channels that were One Shot (and each
-    // content-bearing track says so too); every other channel was not.
-    // Either becomes an override only where it differs from the default,
-    // like the length preset above.
-    final onceChannels = {
-      ...rig.oneShotChannels,
-      for (final track in rig.tracks)
-        if (track.oneShot) track.channel,
-    };
-    for (var channel = 0; channel < trackCount; channel++) {
-      final once = onceChannels.contains(channel);
-      if (once != _defaultOneShot) {
-        setTrackOnce(channel: channel, once: once);
       }
     }
 
@@ -2215,8 +2219,8 @@ class LooperRepository {
       setTrackChainEnabled(channel: channel, enabled: true);
     }
     rig.trackChains.forEach((channel, chain) {
-      // Bounded to `trackCount`, same rationale as `rig.primaryTrack` /
-      // `rig.oneShotChannels` above: a manifest saved on a build with more
+      // Bounded to `trackCount`, same rationale as `rig.primaryTrack`
+      // above: a manifest saved on a build with more
       // physical tracks than this engine must not poison the re-apply cache
       // with a channel this engine can never own (the native call rejects it,
       // but the cache would replay it on every restart and re-save it).
@@ -4387,12 +4391,16 @@ class LooperRepository {
     } else {
       _trackLengthPreset[channel] = bars < 0 ? 0 : bars;
     }
+    // Engine first, then the projection, so the published override and the
+    // engine's effective value move in the same state.
+    final result = _intendRunning
+        ? _engine.setTrackLengthPreset(
+            channel: channel,
+            bars: _effectiveLengthPreset(channel),
+          )
+        : EngineResult.ok;
     _reproject();
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setTrackLengthPreset(
-      channel: channel,
-      bars: _effectiveLengthPreset(channel),
-    );
+    return result;
   }
 
   /// The mode the rig is set to, INCLUDING one chosen while the engine is
@@ -4412,22 +4420,25 @@ class LooperRepository {
   /// every track is given it (the shared length). Remembered and re-applied
   /// on every (re)start; re-projects so the published default moves.
   EngineResult setDefaultLengthPreset(int bars) {
-    _defaultLengthPreset = bars < 0 ? 0 : bars;
-    _reproject();
-    if (!_intendRunning) return EngineResult.ok;
+    final next = bars < 0 ? 0 : bars;
+    if (next == _defaultLengthPreset) return EngineResult.ok;
+    _defaultLengthPreset = next;
     var result = EngineResult.ok;
-    final count = _engine.snapshot().tracks.length;
-    for (var channel = 0; channel < count; channel++) {
-      if (_looperMode != LooperMode.multi &&
-          _trackLengthPreset.containsKey(channel)) {
-        continue;
+    if (_intendRunning) {
+      final count = _runningTrackCount;
+      for (var channel = 0; channel < count; channel++) {
+        if (_looperMode != LooperMode.multi &&
+            _trackLengthPreset.containsKey(channel)) {
+          continue;
+        }
+        final rc = _engine.setTrackLengthPreset(
+          channel: channel,
+          bars: _effectiveLengthPreset(channel),
+        );
+        if (!rc.isOk) result = rc;
       }
-      final rc = _engine.setTrackLengthPreset(
-        channel: channel,
-        bars: _effectiveLengthPreset(channel),
-      );
-      if (!rc.isOk) result = rc;
     }
+    _reproject();
     return result;
   }
 
@@ -4449,10 +4460,11 @@ class LooperRepository {
       _requestedLooperMode = mode;
       _requestReports = 0;
     }
+    final previous = _looperMode;
     _looperMode = mode;
-    // Multi shares the default length: the effective presets change with the
-    // mode, so push them again (and re-project the published overrides).
-    if (_intendRunning) _pushTrackDefaults();
+    // Multi shares the default length: a switch across it moves the
+    // effective preset of every track holding an override.
+    if (_intendRunning) _pushLengthPresetsAcross(from: previous, to: mode);
     _reproject();
     return EngineResult.ok;
   }
@@ -4482,19 +4494,21 @@ class LooperRepository {
   }) {
     if (!_intendRunning || !next.status.isConnected) return;
     final requested = _requestedLooperMode;
+    final previous = _looperMode;
     if (requested == null) {
       _looperMode = reported;
-      return;
-    }
-    if (reported == requested) {
+    } else if (reported == requested) {
       _requestedLooperMode = null;
-      return;
-    }
-    // Only polls count as reports: a local edit re-projects within the same
-    // block the request is still travelling in.
-    if (poll && ++_requestReports >= _requestReportLimit) {
+    } else if (poll && ++_requestReports >= _requestReportLimit) {
+      // Only polls count as reports: a local edit re-projects within the
+      // same block the request is still travelling in.
       _requestedLooperMode = null;
       _looperMode = reported;
+    }
+    // The report is the truth: a request the engine dropped was pushed with
+    // its mode's presets by [setLooperMode], so the revert pushes them back.
+    if (_looperMode != previous) {
+      _pushLengthPresetsAcross(from: previous, to: _looperMode);
     }
   }
 
@@ -4519,12 +4533,6 @@ class LooperRepository {
     return _engine.crownPrimary(channel: channel);
   }
 
-  /// Sets track [channel]'s One Shot flag (song-mode-spec.md §2, B5c) as an
-  /// explicit override: `true` = plays once then stops. The older callers'
-  /// shape of [setTrackOnce].
-  EngineResult setOneShot({required int channel, required bool oneShot}) =>
-      setTrackOnce(channel: channel, once: oneShot);
-
   /// Sets track [channel]'s Loop/Once override (accepted design, Playback &
   /// overdub): `null` follows the default ([setDefaultOnce]), `true` plays
   /// once then stops, `false` loops. Remembered and re-applied on every
@@ -4536,12 +4544,14 @@ class LooperRepository {
     } else {
       _trackOneShot[channel] = once;
     }
+    final result = _intendRunning
+        ? _engine.setOneShot(
+            channel: channel,
+            oneShot: _effectiveOneShot(channel),
+          )
+        : EngineResult.ok;
     _reproject();
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setOneShot(
-      channel: channel,
-      oneShot: _effectiveOneShot(channel),
-    );
+    return result;
   }
 
   /// Sets the default Loop/Once (accepted design, Playback & overdub):
@@ -4549,16 +4559,18 @@ class LooperRepository {
   /// Remembered and re-applied on every (re)start; re-projects so the
   /// published default moves.
   EngineResult setDefaultOnce({required bool once}) {
+    if (once == _defaultOneShot) return EngineResult.ok;
     _defaultOneShot = once;
-    _reproject();
-    if (!_intendRunning) return EngineResult.ok;
     var result = EngineResult.ok;
-    final count = _engine.snapshot().tracks.length;
-    for (var channel = 0; channel < count; channel++) {
-      if (_trackOneShot.containsKey(channel)) continue;
-      final rc = _engine.setOneShot(channel: channel, oneShot: once);
-      if (!rc.isOk) result = rc;
+    if (_intendRunning) {
+      final count = _runningTrackCount;
+      for (var channel = 0; channel < count; channel++) {
+        if (_trackOneShot.containsKey(channel)) continue;
+        final rc = _engine.setOneShot(channel: channel, oneShot: once);
+        if (!rc.isOk) result = rc;
+      }
     }
+    _reproject();
     return result;
   }
 

@@ -1028,8 +1028,7 @@ void main() {
   });
 
   group('length and Once defaults', () {
-    test('the default length preset and Once default and round-trip',
-        () async {
+    test('the default length preset and Once default and round-trip', () async {
       expect(await repository.loadDefaultLengthPreset(), 0);
       expect(await repository.loadDefaultOnce(), isFalse);
       await repository.saveDefaultLengthPreset(8);
@@ -1049,8 +1048,7 @@ void main() {
       expect(await repository.loadTrackLengthPreset(1), isNull);
     });
 
-    test('a track Once override tells inherit, Loop and Once apart',
-        () async {
+    test('a track Once override tells inherit, Loop and Once apart', () async {
       expect(await repository.loadTrackOnce(0), isNull);
       await repository.saveTrackOnce(0, once: true);
       await repository.saveTrackOnce(1, once: false);
@@ -1093,17 +1091,6 @@ void main() {
     test('round-trips a saved signature', () async {
       await repository.saveTimeSignature(7, 8);
       expect(await repository.loadTimeSignature(), (7, 8));
-    });
-  });
-
-  group('sync tempo', () {
-    test('defaults to on when unset', () async {
-      expect(await repository.loadSyncTempo(), isTrue);
-    });
-
-    test('round-trips a saved preference', () async {
-      await repository.saveSyncTempo(value: false);
-      expect(await repository.loadSyncTempo(), isFalse);
     });
   });
 

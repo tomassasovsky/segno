@@ -87,7 +87,6 @@ class TempoSettings extends Equatable {
     this.bpm = 0,
     this.tsNum = 4,
     this.tsDen = 4,
-    this.syncTempo = true,
     this.clickMode = ClickMode.off,
     this.clickOutputMask = 0,
     this.clickVolume = 1,
@@ -104,9 +103,6 @@ class TempoSettings extends Equatable {
 
   /// Time-signature denominator (`4` or `8`).
   final int tsDen;
-
-  /// Whether loop↔grid sync is on.
-  final bool syncTempo;
 
   /// Click audibility mode.
   final ClickMode clickMode;
@@ -125,7 +121,6 @@ class TempoSettings extends Equatable {
     double? bpm,
     int? tsNum,
     int? tsDen,
-    bool? syncTempo,
     ClickMode? clickMode,
     int? clickOutputMask,
     double? clickVolume,
@@ -134,7 +129,6 @@ class TempoSettings extends Equatable {
     bpm: bpm ?? this.bpm,
     tsNum: tsNum ?? this.tsNum,
     tsDen: tsDen ?? this.tsDen,
-    syncTempo: syncTempo ?? this.syncTempo,
     clickMode: clickMode ?? this.clickMode,
     clickOutputMask: clickOutputMask ?? this.clickOutputMask,
     clickVolume: clickVolume ?? this.clickVolume,
@@ -146,7 +140,6 @@ class TempoSettings extends Equatable {
     bpm,
     tsNum,
     tsDen,
-    syncTempo,
     clickMode,
     clickOutputMask,
     clickVolume,
@@ -207,7 +200,6 @@ class TempoCubit extends Cubit<TempoSettings> {
   Future<void> _restore() async {
     final bpm = await _settings.loadTempoBpm();
     final (tsNum, tsDen) = await _settings.loadTimeSignature();
-    final syncTempo = await _settings.loadSyncTempo();
     final clickMode = ClickMode.fromCode(await _settings.loadClickMode());
     final clickOutputMask = await _settings.loadClickOutputMask();
     final clickVolume = await _settings.loadClickVolume();
@@ -219,7 +211,6 @@ class TempoCubit extends Cubit<TempoSettings> {
     if (bpm > 0) _repository.setTempo(bpm);
     _repository
       ..setTimeSignature(tsNum, tsDen)
-      ..setSyncTempo(on: syncTempo)
       ..setClickMode(clickMode)
       ..setClickOutput(clickOutputMask)
       ..setClickVolume(clickVolume)
@@ -231,7 +222,6 @@ class TempoCubit extends Cubit<TempoSettings> {
           bpm: bpm,
           tsNum: tsNum,
           tsDen: tsDen,
-          syncTempo: syncTempo,
           clickMode: clickMode,
           clickOutputMask: clickOutputMask,
           clickVolume: clickVolume,
@@ -253,10 +243,14 @@ class TempoCubit extends Cubit<TempoSettings> {
   /// the live engine holds something else. `emit` stays cheap to call
   /// unconditionally too: [Cubit] already no-ops a no-change emit
   /// internally.
-  Future<void> setTempo(double bpm) async {
+  ///
+  /// [persist] false applies the tempo to the engine and the state without
+  /// writing it: a slider drag calls this on every pointer frame and commits
+  /// once at the end.
+  Future<void> setTempo(double bpm, {bool persist = true}) async {
     emit(state.copyWith(bpm: bpm));
     _repository.setTempo(bpm);
-    await _settings.saveTempoBpm(bpm);
+    if (persist) await _settings.saveTempoBpm(bpm);
   }
 
   /// Sets and persists the time signature, applying it now. [num]/[den] must
@@ -267,14 +261,6 @@ class TempoCubit extends Cubit<TempoSettings> {
     emit(state.copyWith(tsNum: num, tsDen: den));
     _repository.setTimeSignature(num, den);
     await _settings.saveTimeSignature(num, den);
-  }
-
-  /// Sets and persists loop↔grid sync, applying it now. Unconditional
-  /// repository call — see [setTempo]'s doc.
-  Future<void> setSyncTempo({required bool value}) async {
-    emit(state.copyWith(syncTempo: value));
-    _repository.setSyncTempo(on: value);
-    await _settings.saveSyncTempo(value: value);
   }
 
   /// Sets and persists the click audibility mode, applying it now.

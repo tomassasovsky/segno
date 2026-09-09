@@ -61,8 +61,8 @@ class SessionRigTrack {
   const SessionRigTrack({
     required this.channel,
     required this.lanes,
-    this.lengthPresetBars = 0,
-    this.oneShot = false,
+    this.lengthPresetOverride,
+    this.onceOverride,
     this.recordTiming,
     this.overdubDecay,
   });
@@ -74,23 +74,25 @@ class SessionRigTrack {
   /// first — it is the primary import that resets the track's undo state.
   final List<SessionRigLane> lanes;
 
-  /// The track's length preset (A6): `0` = AUTO, `1..64` = a fixed bar count.
-  /// Restored on session load; it only governs a FUTURE defining recording on
-  /// this track, so restoring it here is inert for the audio the load just
+  /// The track's length preset override (A6, slice 2c): `null` = follows the
+  /// default, `0` = an explicit Auto, `1..64` = a fixed bar count. Restored
+  /// on session load; it only governs a FUTURE defining recording on this
+  /// track, so restoring it here is inert for the audio the load just
   /// imported — it only matters if the user re-records the track later.
-  final int lengthPresetBars;
+  final int? lengthPresetOverride;
 
-  /// The track's One Shot flag (song-mode-spec.md §2, B5c): `true` = plays
-  /// once then stops. Restored on session load — see
-  /// `LooperRepository.applySession`'s reset-then-restore handling.
-  final bool oneShot;
+  /// The track's Loop/Once override (song-mode-spec.md §2, B5c; slice 2c):
+  /// `null` = follows the default, `true` = plays once then stops. Restored
+  /// on session load — see `LooperRepository.applySession`'s
+  /// reset-then-restore handling.
+  final bool? onceOverride;
 
   /// The track's record timing override (slice 2b); `null` = follows the
-  /// default. Restored on session load like [lengthPresetBars].
+  /// default. Restored on session load like [lengthPresetOverride].
   final RecordTiming? recordTiming;
 
   /// The track's overdub decay override in percent (slice 2b); `null` =
-  /// follows the default. Restored on session load like [lengthPresetBars].
+  /// follows the default. Restored on session load like [lengthPresetOverride].
   final int? overdubDecay;
 }
 
@@ -165,7 +167,6 @@ class SessionRig {
     this.monitors = const [],
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
-    this.oneShotChannels = const {},
     this.recordTiming,
     this.overdubDecay,
   });
@@ -217,13 +218,4 @@ class SessionRig {
   /// gets the engine's own crown (its lowest recorded track) once the import
   /// commits.
   final int primaryTrack;
-
-  /// Every channel with One Shot armed (post-B5c independent review fix),
-  /// independent of whether that channel has a [SessionRigTrack] entry — a
-  /// channel pre-armed with One Shot but never recorded onto has no track
-  /// entry at all (see `SessionRepository._capture`'s doc), so its flag only
-  /// round-trips through this session-level set, not through
-  /// [SessionRigTrack.oneShot]. Restored unconditionally on apply, like
-  /// [looperMode]/[primaryTrack] above.
-  final Set<int> oneShotChannels;
 }

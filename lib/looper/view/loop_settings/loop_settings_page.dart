@@ -9,48 +9,9 @@ import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_tempo_page.dart';
 
-/// The pages of the Loop settings route: the hub and its six submenus plus
-/// the Time signature page the Tempo & click page opens.
-enum LoopSettingsPageId {
-  /// The six rows.
-  hub,
-
-  /// The five mode cards.
-  mode,
-
-  /// Pedal or Sound; Play or Overdub.
-  recording,
-
-  /// Tempo, click and count-in.
-  tempo,
-
-  /// The 17 time signatures.
-  signature,
-
-  /// Loop length and record timing.
-  length,
-
-  /// Loop/Once and overdub decay.
-  playback,
-
-  /// Tempo following and pitch, as a readout.
-  audioTempo;
-
-  /// The page a hub row opens.
-  static LoopSettingsPageId of(LoopSettingsSubmenu submenu) =>
-      switch (submenu) {
-        LoopSettingsSubmenu.mode => LoopSettingsPageId.mode,
-        LoopSettingsSubmenu.recording => LoopSettingsPageId.recording,
-        LoopSettingsSubmenu.tempo => LoopSettingsPageId.tempo,
-        LoopSettingsSubmenu.length => LoopSettingsPageId.length,
-        LoopSettingsSubmenu.playback => LoopSettingsPageId.playback,
-        LoopSettingsSubmenu.audioTempo => LoopSettingsPageId.audioTempo,
-      };
-}
-
 /// The Loop settings route (accepted design, Loop setup): the hub and its
 /// submenus as one full-screen page stack, each drawn at the pen's size.
-/// Back climbs the stack and leaves the route from the hub; Stage leaves it
+/// Back pops the stack and leaves the route from the hub; Stage leaves it
 /// from anywhere.
 class LoopSettingsPage extends StatefulWidget {
   /// Creates a [LoopSettingsPage] opened at [initial].
@@ -114,7 +75,7 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
         children: [
           switch (page) {
             LoopSettingsPageId.hub => LoopSettingsHub(
-              onOpen: (submenu) => _open(LoopSettingsPageId.of(submenu)),
+              onOpen: _open,
             ),
             LoopSettingsPageId.mode => const LoopModePage(),
             LoopSettingsPageId.recording => const LoopRecordingPage(),

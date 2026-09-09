@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The pen's canvas for every Loop settings page: 1920 x 1080.
@@ -86,16 +87,13 @@ class LoopSettingsFrame extends StatelessWidget {
                 Positioned(
                   left: 36,
                   top: 16,
-                  child: _TopBarButton(
+                  child: LoopOutlinedButton(
                     key: const Key('loop_settings_back'),
                     width: 64,
+                    radius: 8,
+                    icon: LucideIcons.arrowLeft,
                     semanticLabel: l10n.loopSettingsBack,
                     onTap: onBack,
-                    child: Icon(
-                      LucideIcons.arrowLeft,
-                      size: 28,
-                      color: surface.textPrimary,
-                    ),
                   ),
                 ),
                 Positioned(
@@ -113,20 +111,13 @@ class LoopSettingsFrame extends StatelessWidget {
                 Positioned(
                   left: 1771,
                   top: 16,
-                  child: _TopBarButton(
+                  child: LoopOutlinedButton(
                     key: const Key('loop_settings_stage'),
                     width: 113,
-                    filled: true,
-                    semanticLabel: l10n.loopSettingsStage,
+                    radius: 8,
+                    tone: LoopButtonTone.raised,
+                    label: l10n.loopSettingsStage,
                     onTap: onStage,
-                    child: AppText(
-                      l10n.loopSettingsStage,
-                      style: TextStyle(
-                        color: surface.textPrimary,
-                        fontSize: 24,
-                        height: 1,
-                      ),
-                    ),
                   ),
                 ),
               ],
@@ -159,49 +150,6 @@ class LoopSettingsFrame extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// A top-bar button: 64 high, outlined, filled for Stage.
-class _TopBarButton extends StatelessWidget {
-  const _TopBarButton({
-    required this.width,
-    required this.semanticLabel,
-    required this.onTap,
-    required this.child,
-    this.filled = false,
-    super.key,
-  });
-
-  final double width;
-  final String semanticLabel;
-  final VoidCallback onTap;
-  final Widget child;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      child: Material(
-        color: filled ? surface.cardHigh : Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: surface.borderStrong),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox(
-            width: width,
-            height: 64,
-            child: Center(child: child),
-          ),
-        ),
       ),
     );
   }

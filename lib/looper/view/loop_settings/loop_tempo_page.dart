@@ -50,11 +50,19 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
   static const double _minBpm = 30;
   static const double _maxBpm = 300;
 
-  void _setTempo(double fraction) {
-    var bpm = _minBpm + fraction * (_maxBpm - _minBpm);
-    bpm = _fine ? (bpm * 100).round() / 100 : bpm.roundToDouble();
-    unawaited(context.read<TempoCubit>().setTempo(bpm));
+  double _bpmOf(double fraction) {
+    final bpm = _minBpm + fraction * (_maxBpm - _minBpm);
+    return _fine ? (bpm * 100).round() / 100 : bpm.roundToDouble();
   }
+
+  /// A drag applies the tempo as it moves (the click follows) and writes it
+  /// once when the pointer lifts.
+  void _previewTempo(double fraction) => unawaited(
+    context.read<TempoCubit>().setTempo(_bpmOf(fraction), persist: false),
+  );
+
+  void _commitTempo(double fraction) =>
+      unawaited(context.read<TempoCubit>().setTempo(_bpmOf(fraction)));
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +129,8 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
               child: LoopSlider(
                 key: const Key('loop_tempo_slider'),
                 value: fraction,
-                onChanged: _setTempo,
+                onChanged: _previewTempo,
+                onChangeEnd: _commitTempo,
                 width: 1064,
                 semanticLabel: l10n.loopTempoSliderLabel,
               ),
@@ -174,48 +183,19 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
             Positioned(
               left: 1440 + 80,
               top: 77,
-              child: Semantics(
-                button: true,
-                label: l10n.loopTempoSignature,
-                value: timeSignatureLabel(transport.tsNum, transport.tsDen),
-                child: Material(
-                  color: surface.card,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(color: surface.borderSubtle),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    key: const Key('loop_tempo_signature'),
-                    onTap: widget.onOpenSignature,
-                    child: SizedBox(
-                      width: 120,
-                      height: 64,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          AppText(
-                            timeSignatureLabel(
-                              transport.tsNum,
-                              transport.tsDen,
-                            ),
-                            style: TextStyle(
-                              color: surface.textPrimary,
-                              fontSize: 24,
-                              height: 1,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Icon(
-                            LucideIcons.chevronRight,
-                            size: 28,
-                            color: surface.textPrimary,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+              child: LoopOutlinedButton(
+                key: const Key('loop_tempo_signature'),
+                width: 120,
+                radius: 8,
+                tone: LoopButtonTone.card,
+                label: timeSignatureLabel(transport.tsNum, transport.tsDen),
+                trailingIcon: LucideIcons.chevronRight,
+                semanticLabel: l10n.loopTempoSignature,
+                semanticValue: timeSignatureLabel(
+                  transport.tsNum,
+                  transport.tsDen,
                 ),
+                onTap: widget.onOpenSignature,
               ),
             ),
             // ---- hear click

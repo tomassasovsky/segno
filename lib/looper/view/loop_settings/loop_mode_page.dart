@@ -23,9 +23,10 @@ class LoopModePage extends StatelessWidget {
     final current = context.select<LooperBloc, LooperMode>(
       (bloc) => bloc.state.transport.looperMode,
     );
-    // The reasons move with the rig (a take starting, a queue landing), so
-    // they are read on every projection rather than once.
-    context.select<LooperBloc, int>((bloc) => bloc.state.tracks.length);
+    // The reasons change when a take starts or ends, a queued action lands
+    // or a length moves, so the cards rebuild on the state the gate reads,
+    // not only on the mode.
+    context.select<LooperBloc, int>((bloc) => _gateSignature(bloc.state));
     final repository = context.read<LooperRepository>();
     final l10n = context.l10n;
     final primary = context.select<LooperBloc, int>(
@@ -55,7 +56,6 @@ class LoopModePage extends StatelessWidget {
                   context,
                   current: current,
                   next: mode,
-                  confirm: () => _confirmStop(context, mode),
                 ),
               ),
             ),
@@ -80,136 +80,23 @@ class LoopModePage extends StatelessWidget {
       LooperMode.band => l10n.loopModeBandDesc,
       LooperMode.free => l10n.loopModeFreeDesc,
     },
-    LooperModeGate.capturing => l10n.loopModeReasonCapturing,
-    LooperModeGate.queued => l10n.loopModeReasonQueued,
+    LooperModeGate.capturing ||
+    LooperModeGate.queued => looperModeRefusal(l10n, gate)!,
     LooperModeGate.spans => switch (mode) {
       LooperMode.multi => l10n.loopModeReasonEqualLengths,
       _ => l10n.loopModeReasonFollowPrimary(primary < 0 ? 1 : primary + 1),
     },
   };
 
-  /// The pen's "Switch to …?" dialog: 960 x 267, Cancel and the filled
-  /// "Stop loops and switch".
-  static Future<bool> _confirmStop(
-    BuildContext context,
-    LooperMode next,
-  ) async {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierColor: surface.scrim,
-      builder: (dialogContext) => Center(
-        child: Material(
-          color: Colors.transparent,
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Container(
-              key: const Key('loop_mode_confirm'),
-              width: 960,
-              height: 267,
-              padding: const EdgeInsets.all(41),
-              decoration: BoxDecoration(
-                color: surface.cardHigh,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: surface.borderStrong),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppText(
-                    l10n.modeChangeStopTitle(
-                      looperModeLabels(l10n)[next]!.label,
-                    ),
-                    style: TextStyle(
-                      color: surface.textPrimary,
-                      fontSize: 32,
-                      height: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 29),
-                  AppText(
-                    l10n.modeChangeStopBody,
-                    style: TextStyle(
-                      color: surface.textSecondary,
-                      fontSize: 24,
-                      height: 1,
-                    ),
-                  ),
-                  const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      _DialogButton(
-                        key: const Key('loop_mode_confirm_cancel'),
-                        label: l10n.consoleKeepIt,
-                        width: 125,
-                        onTap: () => Navigator.of(dialogContext).pop(false),
-                      ),
-                      const SizedBox(width: 15),
-                      _DialogButton(
-                        key: const Key('loop_mode_confirm_switch'),
-                        label: l10n.modeChangeStopConfirm,
-                        width: 305,
-                        filled: true,
-                        onTap: () => Navigator.of(dialogContext).pop(true),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    return confirmed ?? false;
-  }
-}
-
-class _DialogButton extends StatelessWidget {
-  const _DialogButton({
-    required this.label,
-    required this.width,
-    required this.onTap,
-    this.filled = false,
-    super.key,
-  });
-
-  final String label;
-  final double width;
-  final VoidCallback onTap;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Material(
-      color: filled ? surface.accent : Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(7),
-        side: BorderSide(color: filled ? surface.accent : surface.borderStrong),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          width: width,
-          height: 64,
-          child: Center(
-            child: AppText(
-              label,
-              style: TextStyle(
-                color: filled ? surface.onAccent : surface.textPrimary,
-                fontSize: 24,
-                height: 1,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  /// What the gate reads off a projection: every track's state, queued
+  /// trigger and length. A change in any of them can open or close a card.
+  static int _gateSignature(LooperState state) => Object.hashAll([
+    for (final track in state.tracks) ...[
+      track.state,
+      track.pendingTrigger,
+      track.lengthFrames,
+    ],
+  ]);
 }
 
 /// One mode card: 330 x 420, the name and a check when selected, the

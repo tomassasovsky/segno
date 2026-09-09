@@ -1019,23 +1019,6 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('tracks domain, lengths tab with a preset grid open', (
-    tester,
-  ) async {
-    await pumpTracks(tester, TracksTab.lengths);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_tracks_lengths.png'),
-    );
-
-    await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_tracks_length_pick.png'),
-    );
-  }, skip: !hasFonts);
-
   testWidgets('tracks domain, routing tab', (tester) async {
     await pumpTracks(tester, TracksTab.routing);
     await expectLater(

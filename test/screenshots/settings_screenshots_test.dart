@@ -4,7 +4,6 @@ library;
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -49,16 +48,6 @@ class _MockMidiDeviceRepository extends Mock implements MidiDeviceRepository {}
 
 class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 
-Future<void> _loadFont(String family, List<String> paths) async {
-  final loader = FontLoader(family);
-  for (final p in paths) {
-    loader.addFont(
-      File(p).readAsBytes().then((b) => ByteData.view(b.buffer)),
-    );
-  }
-  await loader.load();
-}
-
 void main() {
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
@@ -71,20 +60,20 @@ void main() {
 
   setUpAll(() async {
     if (!hasScreenshotFonts) return;
-    await _loadFont('Roboto', [
+    await loadScreenshotFont('Roboto', [
       '$fontDir/Roboto-Regular.ttf',
       '$fontDir/Roboto-Medium.ttf',
       '$fontDir/Roboto-Bold.ttf',
     ]);
     // The Signal surface's bundled typefaces, so its mono readouts and grotesk
     // headings render as text (not Ahem boxes) under golden capture.
-    await _loadFont('Inter', [
+    await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
       'assets/fonts/Inter-Medium.ttf',
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
-    await _loadFont('JetBrains Mono', [
+    await loadScreenshotFont('JetBrains Mono', [
       'assets/fonts/JetBrainsMono-Regular.ttf',
       'assets/fonts/JetBrainsMono-Medium.ttf',
       'assets/fonts/JetBrainsMono-SemiBold.ttf',
@@ -327,7 +316,6 @@ void main() {
       matchesGoldenFile('goldens/settings_audio_recording.png'),
     );
   }, skip: !hasScreenshotFonts);
-
 }
 
 class _ScreenshotLooperBloc extends MockBloc<LooperEvent, LooperState>

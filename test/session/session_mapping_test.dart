@@ -340,6 +340,56 @@ void main() {
     });
   });
 
+  group('loopSettingsFromLooper', () {
+    late LooperRepository looper;
+
+    setUp(() {
+      looper = _MockLooperRepository();
+    });
+
+    test(
+      'reads the defaults and per-track overrides off the repository state, '
+      'keeping an explicit Auto (0) and an explicit Loop (false) as '
+      'overrides and leaving a following track out',
+      () {
+        when(() => looper.state).thenReturn(
+          const LooperState(
+            transport: TransportState(
+              defaultLengthPresetBars: 4,
+              defaultOneShot: true,
+            ),
+            tracks: [
+              Track(lengthPresetOverride: 8, oneShotOverride: false),
+              Track(channel: 1, lengthPresetOverride: 0),
+              Track(channel: 2, oneShotOverride: true),
+              Track(channel: 3),
+            ],
+          ),
+        );
+
+        final settings = loopSettingsFromLooper(looper);
+
+        expect(settings.defaultLengthPresetBars, 4);
+        expect(settings.defaultOnce, isTrue);
+        expect(settings.lengthPresetOverrides, {0: 8, 1: 0});
+        expect(settings.onceOverrides, {0: false, 2: true});
+      },
+    );
+
+    test('a default rig yields the no-override settings', () {
+      when(() => looper.state).thenReturn(
+        const LooperState(tracks: [Track(), Track(channel: 1)]),
+      );
+
+      final settings = loopSettingsFromLooper(looper);
+
+      expect(settings.defaultLengthPresetBars, 0);
+      expect(settings.defaultOnce, isFalse);
+      expect(settings.lengthPresetOverrides, isEmpty);
+      expect(settings.onceOverrides, isEmpty);
+    });
+  });
+
   group('rigFromBundle', () {
     // Direct (always-on) coverage of `rigFromBundle`'s lane/track drop
     // branches — the env-var-gated round-trip test only covers the happy path.
@@ -734,7 +784,9 @@ void main() {
       expect(lanes[1].livePcm, l1[1]);
     });
 
-    test('carries the track length preset (A6) through to the rig', () {
+    test('carries the length preset and Loop/Once overrides (slice 2c) '
+        'through to the rig: a fixed-bars, an explicit Auto (0), and a '
+        'follows-the-default (null) override each stay what they were', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
       final bundle = (
         session: sessionWith([
@@ -742,27 +794,40 @@ void main() {
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
-            lengthPresetBars: 4,
+            lengthPresetOverride: 4,
+            onceOverride: true,
             lanes: [lane(0, 'track0_lane0_L0.wav')],
           ),
           SessionTrack(
             channel: 1,
             multiple: 1,
             lengthFrames: 4,
-            // AUTO (0, the default) round-trips too, not just a set value.
+            lengthPresetOverride: 0,
+            onceOverride: false,
             lanes: [lane(0, 'track1_lane0_L0.wav')],
+          ),
+          SessionTrack(
+            channel: 2,
+            multiple: 1,
+            lengthFrames: 4,
+            lanes: [lane(0, 'track2_lane0_L0.wav')],
           ),
         ]),
         laneStems: {
           (0, 0): [l0],
           (1, 0): [l0],
+          (2, 0): [l0],
         },
       );
 
       final rig = rigFromBundle(bundle);
-      expect(rig.tracks, hasLength(2));
-      expect(rig.tracks[0].lengthPresetBars, 4);
-      expect(rig.tracks[1].lengthPresetBars, 0);
+      expect(rig.tracks, hasLength(3));
+      expect(rig.tracks[0].lengthPresetOverride, 4);
+      expect(rig.tracks[0].onceOverride, isTrue);
+      expect(rig.tracks[1].lengthPresetOverride, 0);
+      expect(rig.tracks[1].onceOverride, isFalse);
+      expect(rig.tracks[2].lengthPresetOverride, isNull);
+      expect(rig.tracks[2].onceOverride, isNull);
     });
 
     test('carries the record timing and overdub decay overrides (slice 2b) '
@@ -799,8 +864,7 @@ void main() {
     });
 
     test(
-      'carries the looper mode, primary track, and per-track one-shot '
-      '(B5c) through to the rig',
+      'carries the looper mode and primary track (B5c) through to the rig',
       () {
         final l0 = Float32List.fromList([1, 1, 1, 1]);
         final bundle = (
@@ -815,68 +879,18 @@ void main() {
                 channel: 0,
                 multiple: 1,
                 lengthFrames: 4,
-                oneShot: true,
                 lanes: [lane(0, 'track0_lane0_L0.wav')],
-              ),
-              SessionTrack(
-                channel: 1,
-                multiple: 1,
-                lengthFrames: 4,
-                // Off (the default) round-trips too, not just a set value.
-                lanes: [lane(0, 'track1_lane0_L0.wav')],
               ),
             ],
           ),
           laneStems: {
             (0, 0): [l0],
-            (1, 0): [l0],
           },
         );
 
         final rig = rigFromBundle(bundle);
         expect(rig.looperMode, LooperMode.band);
         expect(rig.primaryTrack, 1);
-        expect(rig.tracks, hasLength(2));
-        expect(rig.tracks[0].oneShot, isTrue);
-        expect(rig.tracks[1].oneShot, isFalse);
-      },
-    );
-
-    test(
-      'carries a One Shot flag pre-armed on a CONTENT-LESS channel through '
-      'to the rig via the session-level set (independent review of #295): '
-      'channel 2 has no SessionTrack at all (never recorded onto), so its '
-      'flag only reaches the rig through Session.oneShotChannels, not '
-      'through any SessionRigTrack',
-      () {
-        final l0 = Float32List.fromList([1, 1, 1, 1]);
-        final bundle = (
-          session: Session(
-            sampleRate: 48000,
-            channels: 1,
-            baseLengthFrames: 4,
-            // Channel 2 is deliberately absent from `tracks` — it holds no
-            // content — yet its One Shot flag is armed at session level.
-            oneShotChannels: const [0, 2],
-            tracks: [
-              SessionTrack(
-                channel: 0,
-                multiple: 1,
-                lengthFrames: 4,
-                oneShot: true,
-                lanes: [lane(0, 'track0_lane0_L0.wav')],
-              ),
-            ],
-          ),
-          laneStems: {
-            (0, 0): [l0],
-          },
-        );
-
-        final rig = rigFromBundle(bundle);
-
-        expect(rig.tracks, hasLength(1));
-        expect(rig.oneShotChannels, {0, 2});
       },
     );
 

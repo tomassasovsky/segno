@@ -158,8 +158,8 @@ class SessionTrack {
     required this.multiple,
     required this.lengthFrames,
     required this.lanes,
-    this.lengthPresetBars = 0,
-    this.oneShot = false,
+    this.lengthPresetOverride,
+    this.onceOverride,
     this.recordTiming,
     this.overdubDecay,
   });
@@ -218,8 +218,8 @@ class SessionTrack {
       multiple: (json['multiple'] as num).toInt(),
       lengthFrames: (json['lengthFrames'] as num).toInt(),
       lanes: lanes,
-      lengthPresetBars: (json['lengthPresetBars'] as num?)?.toInt() ?? 0,
-      oneShot: json['oneShot'] as bool? ?? false,
+      lengthPresetOverride: (json['lengthPresetOverride'] as num?)?.toInt(),
+      onceOverride: json['onceOverride'] as bool?,
       recordTiming: RecordTiming.fromName(json['recordTiming'] as String?),
       overdubDecay: (json['overdubDecay'] as num?)?.toInt(),
     );
@@ -237,26 +237,24 @@ class SessionTrack {
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
 
-  /// This track's persisted length preset in bars (schema v4, Phase A);
-  /// `0` = AUTO (no preset — today's only behavior).
-  ///
-  /// Placeholder pending A6 (`2026-07-22-feat-tempo-aware-looper-modes-part-1
-  /// -plan.md`, task A6 — track length presets): as of this PR the looper
-  /// domain's `Track` model has no length-preset field yet, so
-  /// `session_repository`'s capture path always writes `0` here. The field
-  /// exists now — matching the manifest v4 schema in full per D12 — so a
-  /// session saved on this code round-trips the value once A6 lands the
-  /// real per-track preset choice; no migration is needed later.
-  final int lengthPresetBars;
+  /// This track's length preset override (accepted design, slice 2c):
+  /// `null` (or absent) = follows the session's default
+  /// ([Session.defaultLengthPresetBars]), `0` = an explicit Auto, `1..64` =
+  /// a fixed bar count. The OVERRIDE is what persists, not the effective
+  /// preset, so the restored override set does not depend on whatever
+  /// default the device holds at load time. Restored on load.
+  final int? lengthPresetOverride;
 
-  /// This track's persisted One Shot flag (schema v4, B5c; song-mode-spec.md
-  /// §2): `true` = the track plays once and then stops instead of looping.
-  /// Default `false` (today's only behavior pre-B5c).
-  final bool oneShot;
+  /// This track's Loop/Once override (song-mode-spec.md §2, slice 2c):
+  /// `null` (or absent) = follows the session's default
+  /// ([Session.defaultOnce]), `true` = plays once then stops, `false` =
+  /// loops. Persisted as the override for the same reason as
+  /// [lengthPresetOverride]. Restored on load.
+  final bool? onceOverride;
 
   /// This track's record timing override (accepted design, slice 2b) by
   /// name; `null` (or absent, on an older manifest) = follows the session's
-  /// default. Restored on load like [lengthPresetBars].
+  /// default. Restored on load like [lengthPresetOverride].
   final RecordTiming? recordTiming;
 
   /// This track's overdub decay override in percent (`0..100`, slice 2b);
@@ -269,8 +267,9 @@ class SessionTrack {
     'multiple': multiple,
     'lengthFrames': lengthFrames,
     'lanes': [for (final l in lanes) l.toJson()],
-    'lengthPresetBars': lengthPresetBars,
-    'oneShot': oneShot,
+    if (lengthPresetOverride != null)
+      'lengthPresetOverride': lengthPresetOverride,
+    if (onceOverride != null) 'onceOverride': onceOverride,
     if (recordTiming != null) 'recordTiming': recordTiming!.name,
     if (overdubDecay != null) 'overdubDecay': overdubDecay,
   };
@@ -283,8 +282,8 @@ class SessionTrack {
           channel == other.channel &&
           multiple == other.multiple &&
           lengthFrames == other.lengthFrames &&
-          lengthPresetBars == other.lengthPresetBars &&
-          oneShot == other.oneShot &&
+          lengthPresetOverride == other.lengthPresetOverride &&
+          onceOverride == other.onceOverride &&
           recordTiming == other.recordTiming &&
           overdubDecay == other.overdubDecay &&
           _listEquals(lanes, other.lanes);
@@ -294,8 +293,8 @@ class SessionTrack {
     channel,
     multiple,
     lengthFrames,
-    lengthPresetBars,
-    oneShot,
+    lengthPresetOverride,
+    onceOverride,
     recordTiming,
     overdubDecay,
     Object.hashAll(lanes),
@@ -511,24 +510,19 @@ class SessionMonitor {
 /// `bool countIn`) — the ERD predates those implementation details and the
 /// plan's own D12 says to prefer fidelity to the real model.
 ///
-/// B5c adds [looperMode] and [primaryTrack] here (session-level) and
-/// [SessionTrack.oneShot] (per-track) — the `songSections`/`bandGroups`
-/// fields the index plan ERD originally sketched are DROPPED per the B1
-/// spec (a Song/Band "section" is a track, nothing separate to persist).
+/// B5c adds [looperMode] and [primaryTrack] here (session-level) — the
+/// `songSections`/`bandGroups` fields the index plan ERD originally sketched
+/// are DROPPED per the B1 spec (a Song/Band "section" is a track, nothing
+/// separate to persist).
 ///
-/// [oneShotChannels] is a post-B5c addition (independent review of #295):
-/// [SessionTrack.oneShot] only exists for a channel `_capture()` actually
-/// builds a [SessionTrack] for, which requires the channel to hold content
-/// (`lanes` non-empty) — but `LooperModeControl.setOneShot`'s own doc says
-/// One Shot is "a persistent per-track SETTING, not content" and is settable
-/// on an empty track in advance of recording (the UI honors this:
-/// `SetupTrackOneShotRow` renders for every track regardless of state). A
-/// flag armed on a still-empty channel therefore had no manifest field to
-/// round-trip through — silently dropped on save. [oneShotChannels] fixes
-/// this the same way [looperMode]/[primaryTrack] fixed the equivalent gap
-/// for those fields: hoisted to session level, captured from every channel
-/// unconditionally (see `SessionRepository._sessionFrom`), independent of
-/// whether that channel has a [SessionTrack] entry at all.
+/// Slice 2c moves the per-track length preset and Loop/Once to the
+/// default-plus-override shape slice 2b introduced for record timing and
+/// overdub decay: the session carries the rig defaults
+/// ([defaultLengthPresetBars], [defaultOnce]) and each track carries only its
+/// nullable override ([SessionTrack.lengthPresetOverride],
+/// [SessionTrack.onceOverride]). The previous per-track EFFECTIVE values and
+/// the session-level `oneShotChannels` set are gone; a manifest still carrying
+/// those keys loads with every override unset.
 ///
 /// Schema v5 (FX system v3, #351 part 3b) adds the two BUS stages of the
 /// four-stage FX model — [trackChains] (one per track channel) and the single
@@ -575,13 +569,14 @@ class Session {
     this.quantizeDiv = GridDivision.off,
     this.recordTiming = RecordTiming.immediately,
     this.overdubDecay = 0,
+    this.defaultLengthPresetBars = 0,
+    this.defaultOnce = false,
     this.clickMode = ClickMode.off,
     this.clickOutputMask = 0,
     this.clickVolume = 1,
     this.countInBars = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
-    this.oneShotChannels = const [],
     this.pedalBindings = '',
   });
 
@@ -637,16 +632,15 @@ class Session {
           RecordTiming.fromName(json['recordTiming'] as String?) ??
           RecordTiming.immediately,
       overdubDecay: (json['overdubDecay'] as num?)?.toInt() ?? 0,
+      defaultLengthPresetBars:
+          (json['defaultLengthPresetBars'] as num?)?.toInt() ?? 0,
+      defaultOnce: json['defaultOnce'] as bool? ?? false,
       clickMode: _clickModeFromJson(json['clickMode'] as String?),
       clickOutputMask: (json['clickOutputMask'] as num?)?.toInt() ?? 0,
       clickVolume: (json['clickVolume'] as num?)?.toDouble() ?? 1,
       countInBars: (json['countInBars'] as num?)?.toInt() ?? 0,
       looperMode: _looperModeFromJson(json['looperMode'] as String?),
       primaryTrack: (json['primaryTrack'] as num?)?.toInt() ?? -1,
-      oneShotChannels: [
-        for (final c in (json['oneShotChannels'] as List<dynamic>? ?? const []))
-          (c as num).toInt(),
-      ],
       pedalBindings: json['pedalBindings'] as String? ?? '',
     );
   }
@@ -735,6 +729,17 @@ class Session {
   /// fields.
   final int overdubDecay;
 
+  /// The session's default length preset in bars (slice 2c): `0` = Auto,
+  /// `1..64` = a fixed bar count. Every track without a
+  /// [SessionTrack.lengthPresetOverride] follows it. Captured on save like
+  /// [recordTiming]; absent on an older manifest reads `0`.
+  final int defaultLengthPresetBars;
+
+  /// The session's default Loop/Once (slice 2c): `true` = every track without
+  /// a [SessionTrack.onceOverride] plays once then stops. Captured on save
+  /// like [recordTiming]; absent on an older manifest reads `false`.
+  final bool defaultOnce;
+
   /// Click audibility mode (schema v4, Phase A; default [ClickMode.off]).
   /// The richer 4-value replacement for the index plan ERD's `metronomeOn`
   /// sketch — see the class doc.
@@ -762,14 +767,6 @@ class Session {
   /// The session's crowned primary track (schema v4, B5c, D18); `-1` = none
   /// was ever crowned (default).
   final int primaryTrack;
-
-  /// Every channel with One Shot armed (schema v4, post-B5c independent
-  /// review fix), captured regardless of whether that channel holds content
-  /// — see the class doc. The authoritative, content-independent source for
-  /// restoring One Shot on load; [SessionTrack.oneShot] remains the
-  /// per-track mirror of this for a content-bearing channel (kept for a
-  /// manifest a pre-fix build might still need to read defensively).
-  final List<int> oneShotChannels;
 
   /// This session's pedal remap as an OPAQUE encoded string (schema v6);
   /// `''` when the session defines none — which is also what every
@@ -805,13 +802,14 @@ class Session {
     'quantizeDiv': quantizeDiv.name,
     'recordTiming': recordTiming.name,
     'overdubDecay': overdubDecay,
+    'defaultLengthPresetBars': defaultLengthPresetBars,
+    'defaultOnce': defaultOnce,
     'clickMode': clickMode.name,
     'clickOutputMask': clickOutputMask,
     'clickVolume': clickVolume,
     'countInBars': countInBars,
     'looperMode': looperMode.name,
     'primaryTrack': primaryTrack,
-    'oneShotChannels': oneShotChannels,
     'pedalBindings': pedalBindings,
   };
 
@@ -830,6 +828,8 @@ class Session {
           quantizeDiv == other.quantizeDiv &&
           recordTiming == other.recordTiming &&
           overdubDecay == other.overdubDecay &&
+          defaultLengthPresetBars == other.defaultLengthPresetBars &&
+          defaultOnce == other.defaultOnce &&
           clickMode == other.clickMode &&
           clickOutputMask == other.clickOutputMask &&
           clickVolume == other.clickVolume &&
@@ -841,8 +841,7 @@ class Session {
           _listEquals(tracks, other.tracks) &&
           _listEquals(laneChains, other.laneChains) &&
           _listEquals(monitors, other.monitors) &&
-          _listEquals(trackChains, other.trackChains) &&
-          _listEquals(oneShotChannels, other.oneShotChannels);
+          _listEquals(trackChains, other.trackChains);
 
   // hashAll, not hash: the field count passed v6's addition of
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
@@ -858,6 +857,8 @@ class Session {
     quantizeDiv,
     recordTiming,
     overdubDecay,
+    defaultLengthPresetBars,
+    defaultOnce,
     clickMode,
     clickOutputMask,
     clickVolume,
@@ -870,7 +871,6 @@ class Session {
     Object.hashAll(laneChains),
     Object.hashAll(monitors),
     Object.hashAll(trackChains),
-    Object.hashAll(oneShotChannels),
   ]);
 }
 

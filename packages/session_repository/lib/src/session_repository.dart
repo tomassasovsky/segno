@@ -52,6 +52,40 @@ class SessionChains {
   final String masterChain;
 }
 
+/// The rig's loop settings a save persists (slice 2c): the length preset and
+/// Loop/Once defaults plus each track's nullable override of them.
+///
+/// Handed in by the bloc layer like [SessionChains], because the engine only
+/// holds the EFFECTIVE per-track values (`TrackSnapshot.lengthPresetBars`,
+/// `TrackSnapshot.oneShot`); the default and the overrides are looper
+/// repository state. Persisting the override rather than the effective value
+/// is the point: a track that follows the default must reload as following
+/// the default, whatever the device's default is at load time.
+@immutable
+class SessionLoopSettings {
+  /// Creates a [SessionLoopSettings].
+  const SessionLoopSettings({
+    this.defaultLengthPresetBars = 0,
+    this.defaultOnce = false,
+    this.lengthPresetOverrides = const {},
+    this.onceOverrides = const {},
+  });
+
+  /// The rig's default length preset in bars; `0` = Auto.
+  final int defaultLengthPresetBars;
+
+  /// The rig's default Loop/Once; `true` = Once.
+  final bool defaultOnce;
+
+  /// Per-channel length preset overrides; a channel absent here follows the
+  /// default, `0` is an explicit Auto, `1..64` a fixed bar count.
+  final Map<int, int> lengthPresetOverrides;
+
+  /// Per-channel Loop/Once overrides; a channel absent here follows the
+  /// default.
+  final Map<int, bool> onceOverrides;
+}
+
 /// Saves Segno sessions, reads them back, and exports audio.
 ///
 /// A session is a `.segno` bundle directory: a [Session.manifestName] manifest,
@@ -232,13 +266,19 @@ class SessionRepository {
   /// [SessionChains] field because a remap is control-surface configuration,
   /// not an effect chain — the two travel together only by coincidence of
   /// both being opaque strings.
+  ///
+  /// [loopSettings] carries the rig's length preset and Loop/Once defaults
+  /// plus each track's override of them (slice 2c), handed in by the bloc
+  /// layer the same way [chains] are — see [SessionLoopSettings] for why the
+  /// engine snapshot cannot supply them.
   Future<Session> save(
     String directory, {
     SessionChains chains = const SessionChains(),
     String pedalBindings = '',
+    SessionLoopSettings loopSettings = const SessionLoopSettings(),
   }) async {
     await _awaitLayersSettled();
-    final captured = _capture();
+    final captured = _capture(loopSettings);
     await Directory(directory).create(recursive: true);
 
     final written = <String>{};
@@ -390,7 +430,13 @@ class SessionRepository {
   /// undo/redo depths are track-wide, so every lane carries the same count). A
   /// lane whose live buffer is empty is skipped, and a track left with no lane
   /// is dropped.
-  _Capture _capture() {
+  ///
+  /// [loopSettings] supplies each captured track's length preset and
+  /// Loop/Once overrides; an export has no manifest to write them into, so
+  /// it passes none.
+  _Capture _capture([
+    SessionLoopSettings loopSettings = const SessionLoopSettings(),
+  ]) {
     final snapshot = _engine.snapshot();
     final laneStems = <(int, int), List<Float32List>>{};
     final tracks = <SessionTrack>[];
@@ -446,8 +492,11 @@ class SessionRepository {
           channel: i,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
-          lengthPresetBars: track.lengthPresetBars,
-          oneShot: track.oneShot,
+          // Length preset and Loop/Once overrides (slice 2c): handed in by
+          // the bloc layer, because the engine only holds the effective
+          // values — see [SessionLoopSettings].
+          lengthPresetOverride: loopSettings.lengthPresetOverrides[i],
+          onceOverride: loopSettings.onceOverrides[i],
           // Record timing and decay overrides (slice 2b): read back from
           // the engine, which reports what it holds for the track.
           recordTiming: track.recordTimingOverride(snapshot.quantizeDiv),
@@ -456,15 +505,19 @@ class SessionRepository {
         ),
       );
     }
-    return _Capture(snapshot: snapshot, laneStems: laneStems, tracks: tracks);
+    return _Capture(
+      snapshot: snapshot,
+      laneStems: laneStems,
+      tracks: tracks,
+      loopSettings: loopSettings,
+    );
   }
 
   /// The overdub decay in percent an engine feedback coefficient means:
   /// each pass keeps `1 - decay / 100` of the existing layer. `null` for an
   /// inherited (absent) override.
-  static int? _decayOfFeedback(double? feedback) => feedback == null
-      ? null
-      : ((1 - feedback.clamp(0.0, 1.0)) * 100).round();
+  static int? _decayOfFeedback(double? feedback) =>
+      feedback == null ? null : ((1 - feedback.clamp(0.0, 1.0)) * 100).round();
 
   Session _sessionFrom(
     _Capture captured,
@@ -508,6 +561,11 @@ class SessionRepository {
         division: snapshot.quantizeDiv,
       ),
       overdubDecay: _decayOfFeedback(snapshot.overdubFeedback) ?? 0,
+      // The length preset and Loop/Once defaults (slice 2c) are captured for
+      // the record like recordTiming/overdubDecay above; the looper
+      // repository does not apply them on load either.
+      defaultLengthPresetBars: captured.loopSettings.defaultLengthPresetBars,
+      defaultOnce: captured.loopSettings.defaultOnce,
       clickMode: snapshot.clickMode,
       clickOutputMask: snapshot.clickMask,
       clickVolume: snapshot.clickVolume,
@@ -519,19 +577,6 @@ class SessionRepository {
       // construction (D18; [LooperModeControl]'s class doc).
       looperMode: snapshot.looperMode,
       primaryTrack: snapshot.primaryTrack,
-      // One Shot, per channel (post-B5c independent review fix): read
-      // straight off `snapshot.tracks` — EVERY channel, unconditional on
-      // `state`/`lengthFrames` — rather than off `captured.tracks` (which
-      // the loop above only builds for a settled, content-bearing channel).
-      // `LooperModeControl.setOneShot` is explicitly "not gated by the D4
-      // content lock" and settable on an empty track in advance of
-      // recording, so this is the one content-independent home the flag
-      // needs to round-trip a pre-armed-but-empty channel through save/load
-      // — see [Session.oneShotChannels]'s doc.
-      oneShotChannels: [
-        for (var i = 0; i < snapshot.tracks.length; i++)
-          if (snapshot.tracks[i].oneShot) i,
-      ],
       // Control-surface configuration (schema v6), opaque here like the
       // chains — handed straight through from the bloc layer.
       pedalBindings: pedalBindings,
@@ -606,9 +651,11 @@ class _Capture {
     required this.snapshot,
     required this.laneStems,
     required this.tracks,
+    required this.loopSettings,
   });
 
   final EngineSnapshot snapshot;
   final Map<(int, int), List<Float32List>> laneStems;
   final List<SessionTrack> tracks;
+  final SessionLoopSettings loopSettings;
 }

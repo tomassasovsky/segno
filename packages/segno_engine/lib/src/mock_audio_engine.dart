@@ -686,6 +686,7 @@ class MockAudioEngine implements AudioEngine {
   }) {
     final result = _requireRunning();
     if (!result.isOk) return result;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     if (bars < 0 || bars > LE_LENGTH_PRESET_MAX_BARS) {
       return EngineResult.invalid;
     }

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,7 +7,6 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -27,10 +25,6 @@ enum SettingsSection {
 
   /// Audio device and engine settings.
   audio,
-
-  /// The Loop settings pages (accepted design, slice 2c), opened as their
-  /// own route from this rail.
-  loop,
 
   /// Per-track names and length presets.
   tracks,
@@ -75,12 +69,6 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _select(SettingsSection section) {
-    // Loop settings are their own route (accepted design, slice 2c): the
-    // rail entry opens it and this page keeps its current section.
-    if (section == SettingsSection.loop) {
-      unawaited(openLoopSettings());
-      return;
-    }
     if (section == _section) return;
     setState(() => _section = section);
     widget.onSectionChanged?.call(section);
@@ -159,7 +147,6 @@ class _SettingsPageState extends State<SettingsPage> {
   List<Widget> _sectionChildren(BuildContext context) => switch (_section) {
     SettingsSection.view => _viewSection(context),
     SettingsSection.audio => _audioSection(context),
-    SettingsSection.loop => const [],
     SettingsSection.tracks => _tracksSection(context),
     SettingsSection.updates => const [UpdatesSettingsSection()],
   };
@@ -260,19 +247,6 @@ class _SettingsPageState extends State<SettingsPage> {
   List<Widget> _tracksSection(BuildContext context) {
     final l10n = context.l10n;
     final tracks = context.watch<TracksCubit>();
-    // Selected, not watched: a `Track` carries the live `peak`,
-    // so watching the track list rebuilt this whole section on every poll
-    // tick while audio flowed. Only the length preset and the one-shot flag
-    // are drawn here, and both change on a tap. `Equatable` gives the lists
-    // structural equality, which is what makes the select actually dedupe.
-    final trackSettings = context.select<LooperBloc, _TrackSettings>(
-      (bloc) => _TrackSettings(
-        lengthPresetBars: [
-          for (final track in bloc.state.tracks) track.lengthPresetBars,
-        ],
-        oneShot: [for (final track in bloc.state.tracks) track.oneShot],
-      ),
-    );
     return [
       AppText(l10n.tracksIntro, style: context.setupBody),
       const SizedBox(height: 28),
@@ -292,56 +266,8 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         if (i < tracks.state.names.length - 1) const SizedBox(height: 8),
       ],
-      const SizedBox(height: 28),
-      SetupGroupLabel(l10n.lengthPresetLabel),
-      const SizedBox(height: 12),
-      for (var i = 0; i < trackSettings.lengthPresetBars.length; i++) ...[
-        SetupTrackLengthPresetRow(
-          rowKey: Key('settings_trackLengthPreset_$i'),
-          channel: i,
-          bars: trackSettings.lengthPresetBars[i],
-          label: l10n.trackName(tracks.state.names, i),
-          autoLabel: l10n.lengthPresetAuto,
-          barsLabel: l10n.lengthPresetBars,
-          onChanged: (bars) => context.read<LooperBloc>().add(
-            LooperTrackLengthPresetChanged(i, bars),
-          ),
-        ),
-        if (i < trackSettings.lengthPresetBars.length - 1)
-          const SizedBox(height: 8),
-      ],
-      const SizedBox(height: 28),
-      SetupGroupLabel(l10n.oneShotGroupLabel),
-      const SizedBox(height: 12),
-      AppText(l10n.oneShotIntro, style: context.setupBody),
-      const SizedBox(height: 12),
-      for (var i = 0; i < trackSettings.oneShot.length; i++) ...[
-        SetupTrackOneShotRow(
-          rowKey: Key('settings_trackOneShot_$i'),
-          channel: i,
-          oneShot: trackSettings.oneShot[i],
-          label: l10n.trackName(tracks.state.names, i),
-          onChanged: (oneShot) => context.read<LooperBloc>().add(
-            LooperOneShotToggled(i, oneShot: oneShot),
-          ),
-        ),
-        if (i < trackSettings.oneShot.length - 1) const SizedBox(height: 8),
-      ],
     ];
   }
-}
-
-/// The per-track settings the Tracks section draws, wrapped so
-/// `context.select` compares them by value instead of by reference — bare
-/// lists would be fresh instances on every poll and never dedupe.
-class _TrackSettings extends Equatable {
-  const _TrackSettings({required this.lengthPresetBars, required this.oneShot});
-
-  final List<int> lengthPresetBars;
-  final List<bool> oneShot;
-
-  @override
-  List<Object?> get props => [lengthPresetBars, oneShot];
 }
 
 class _SettingsRail extends StatelessWidget {
@@ -375,70 +301,80 @@ class _SettingsRail extends StatelessWidget {
           const SizedBox(height: 28),
           AppText(l10n.settingsTitle, style: context.setupTitle),
           const SizedBox(height: 20),
-          for (final section in SettingsSection.values)
+          for (final section in SettingsSection.values) ...[
             // The Updates tab appears only where in-app updates are supported
             // (appliance / desktop); it stays hidden on unsupported builds.
             if (section != SettingsSection.updates ||
                 context.watch<UpdateCubit>().state.supported)
-              _SectionTab(
-                section: section,
+              _RailTab(
+                key: Key('settings_tab_${section.name}'),
+                label: _sectionLabel(l10n, section),
                 selected: section == current,
                 onTap: () => onSelect(section),
               ),
+            // Loop settings are their own route (accepted design, slice
+            // 2c): a row after Audio that opens it and leaves this page on
+            // its current section.
+            if (section == SettingsSection.audio)
+              _RailTab(
+                key: const Key('settings_tab_loop'),
+                label: l10n.settingsSectionLoop,
+                selected: false,
+                onTap: () => unawaited(openLoopSettings()),
+              ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _SectionTab extends StatelessWidget {
-  const _SectionTab({
-    required this.section,
+String _sectionLabel(AppLocalizations l10n, SettingsSection section) =>
+    switch (section) {
+      SettingsSection.view => l10n.settingsSectionView,
+      SettingsSection.audio => l10n.settingsSectionAudio,
+      SettingsSection.tracks => l10n.settingsSectionTracks,
+      SettingsSection.updates => l10n.settingsSectionUpdates,
+    };
+
+class _RailTab extends StatelessWidget {
+  const _RailTab({
+    required this.label,
     required this.selected,
     required this.onTap,
+    super.key,
   });
 
-  final SettingsSection section;
+  final String label;
   final bool selected;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final label = switch (section) {
-      SettingsSection.view => l10n.settingsSectionView,
-      SettingsSection.audio => l10n.settingsSectionAudio,
-      SettingsSection.loop => l10n.settingsSectionLoop,
-      SettingsSection.tracks => l10n.settingsSectionTracks,
-      SettingsSection.updates => l10n.settingsSectionUpdates,
-    };
-    return SizedBox(
-      width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Material(
-          color: selected ? context.surface.cardHigh : Colors.transparent,
+  Widget build(BuildContext context) => SizedBox(
+    width: double.infinity,
+    child: Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Material(
+        color: selected ? context.surface.cardHigh : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            key: Key('settings_tab_${section.name}'),
-            borderRadius: BorderRadius.circular(10),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              child: AppText(
-                label,
-                style: TextStyle(
-                  color: selected
-                      ? context.surface.textPrimary
-                      : context.surface.textSecondary,
-                  fontSize: 14,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                ),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            child: AppText(
+              label,
+              style: TextStyle(
+                color: selected
+                    ? context.surface.textPrimary
+                    : context.surface.textSecondary,
+                fontSize: 14,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 }
