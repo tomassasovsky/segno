@@ -19,6 +19,9 @@ void main() {
     when(
       () => repository.setOverdubDecay(any()),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setDefaultOnce(once: any(named: 'once')),
+    ).thenReturn(EngineResult.ok);
   });
 
   PlaybackOptionsCubit build() =>
@@ -46,6 +49,27 @@ void main() {
       verify: (_) async {
         expect(await settings.loadOverdubDecay(), 100);
         verify(() => repository.setOverdubDecay(100)).called(1);
+      },
+    );
+
+    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
+      'load restores the persisted default Once and applies it',
+      setUp: () => settings.saveDefaultOnce(value: true),
+      build: build,
+      act: (cubit) => cubit.load(),
+      expect: () => [const PlaybackOptions(once: true)],
+      verify: (_) =>
+          verify(() => repository.setDefaultOnce(once: true)).called(1),
+    );
+
+    blocTest<PlaybackOptionsCubit, PlaybackOptions>(
+      'setOnce emits, persists and applies the default',
+      build: build,
+      act: (cubit) => cubit.setOnce(value: true),
+      expect: () => [const PlaybackOptions(once: true)],
+      verify: (_) async {
+        expect(await settings.loadDefaultOnce(), isTrue);
+        verify(() => repository.setDefaultOnce(once: true)).called(1);
       },
     );
 

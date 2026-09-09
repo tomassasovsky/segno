@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/settings_page.dart';
 import 'package:segno/theme/page_transitions.dart';
 
@@ -9,6 +10,32 @@ final GlobalKey<NavigatorState> segnoNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Route name for the settings page (used to avoid stacking duplicates).
 const String segnoSettingsRouteName = 'segno/settings';
+
+/// Route name for the Loop settings pages.
+const String segnoLoopSettingsRouteName = 'segno/loop-settings';
+
+bool _loopSettingsOpen = false;
+
+/// Pushes the Loop settings route (the accepted hub and its submenus) onto
+/// the root navigator, opened at [initial]; guarded against stacking
+/// duplicates like [openSegnoSettings].
+Future<void> openLoopSettings({
+  LoopSettingsPageId initial = LoopSettingsPageId.hub,
+}) async {
+  final navigator = segnoNavigatorKey.currentState;
+  if (navigator == null || _loopSettingsOpen) return;
+  _loopSettingsOpen = true;
+  try {
+    await navigator.push(
+      desktopPageRoute<void>(
+        (_) => LoopSettingsPage(initial: initial),
+        settings: const RouteSettings(name: segnoLoopSettingsRouteName),
+      ),
+    );
+  } finally {
+    _loopSettingsOpen = false;
+  }
+}
 
 bool _settingsOpen = false;
 
@@ -21,6 +48,7 @@ bool _settingsOpen = false;
 void resetSegnoNavigatorForTest() {
   _settingsOpen = false;
   _openSettingsSection = null;
+  _loopSettingsOpen = false;
 }
 
 SettingsSection? _openSettingsSection;

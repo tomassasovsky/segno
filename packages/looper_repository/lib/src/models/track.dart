@@ -51,6 +51,8 @@ class Track extends Equatable {
     this.pendingTrigger,
     this.positionFrames = 0,
     this.lengthPresetBars = 0,
+    this.lengthPresetOverride,
+    this.oneShotOverride,
     this.recordTimingOverride,
     this.overdubDecayOverride,
     this.oneShot = false,
@@ -120,6 +122,19 @@ class Track extends Equatable {
   /// fixed N bars. Inert on a track that already has content; applies to the
   /// next defining recording only. See `LooperRepository.setTrackLengthPreset`.
   final int lengthPresetBars;
+
+  /// This track's length preset override (accepted design, Length &
+  /// quantize): `null` follows the default, `0` is an explicit Auto, else a
+  /// fixed bar count. [lengthPresetBars] is what the engine holds (the
+  /// effective preset). Cached like [recordTimingOverride]. Stored but
+  /// inactive in Multi, where every track shares the default.
+  final int? lengthPresetOverride;
+
+  /// This track's Loop/Once override (accepted design, Playback & overdub):
+  /// `null` follows the default, `true` plays once then stops, `false`
+  /// loops. [oneShot] is what the engine holds. Cached like
+  /// [recordTimingOverride].
+  final bool? oneShotOverride;
 
   /// This track's record timing override (accepted design, Length &
   /// quantize): `null` follows the default in full, else the timing this
@@ -254,6 +269,8 @@ class Track extends Equatable {
     pending,
     pendingTrigger,
     lengthPresetBars,
+    lengthPresetOverride,
+    oneShotOverride,
     recordTimingOverride,
     overdubDecayOverride,
     oneShot,
@@ -294,6 +311,8 @@ class Track extends Equatable {
     pending,
     pendingTrigger,
     lengthPresetBars,
+    lengthPresetOverride,
+    oneShotOverride,
     recordTimingOverride,
     overdubDecayOverride,
     oneShot,

@@ -7,7 +7,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// persisted via [SettingsRepository] (accepted design, Playback & overdub).
 class PlaybackOptions extends Equatable {
   /// Creates a [PlaybackOptions].
-  const PlaybackOptions({this.overdubDecay = 0});
+  const PlaybackOptions({this.overdubDecay = 0, this.once = false});
 
   /// The default overdub decay in percent (`0..100`): what each overdub pass
   /// removes from the existing layer before adding the new input; `0` (Off)
@@ -15,12 +15,19 @@ class PlaybackOptions extends Equatable {
   /// override (`LooperTrackOverdubDecayChanged`).
   final int overdubDecay;
 
+  /// The default Loop/Once: `true` = a track plays once then stops. Tracks
+  /// follow it unless they carry their own override
+  /// (`LooperTrackOnceChanged`).
+  final bool once;
+
   /// Returns a copy with the given overrides.
-  PlaybackOptions copyWith({int? overdubDecay}) =>
-      PlaybackOptions(overdubDecay: overdubDecay ?? this.overdubDecay);
+  PlaybackOptions copyWith({int? overdubDecay, bool? once}) => PlaybackOptions(
+    overdubDecay: overdubDecay ?? this.overdubDecay,
+    once: once ?? this.once,
+  );
 
   @override
-  List<Object?> get props => [overdubDecay];
+  List<Object?> get props => [overdubDecay, once];
 }
 
 /// Owns the global playback options: applies them to the repository and
@@ -44,8 +51,22 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions> {
 
   Future<void> _restore() async {
     final overdubDecay = await _settings.loadOverdubDecay();
-    _repository.setOverdubDecay(overdubDecay);
-    if (!isClosed) emit(PlaybackOptions(overdubDecay: overdubDecay));
+    final once = await _settings.loadDefaultOnce();
+    _repository
+      ..setOverdubDecay(overdubDecay)
+      ..setDefaultOnce(once: once);
+    if (!isClosed) {
+      emit(PlaybackOptions(overdubDecay: overdubDecay, once: once));
+    }
+  }
+
+  /// Sets and persists the default Loop/Once, applying it now.
+  Future<void> setOnce({required bool value}) async {
+    if (value != state.once) {
+      emit(state.copyWith(once: value));
+      _repository.setDefaultOnce(once: value);
+    }
+    await _settings.saveDefaultOnce(value: value);
   }
 
   /// Sets and persists the default overdub decay in percent, applying it

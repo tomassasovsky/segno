@@ -125,7 +125,8 @@ final class LooperTrackMultipleChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, multiple];
 }
 
-/// Track [channel]'s length preset changed (A6, D17; `0` = AUTO).
+/// Track [channel]'s length preset override changed (A6, D17): `null`
+/// follows the default, `0` is an explicit Auto, else a fixed bar count.
 ///
 /// Governs the DEFINING (first/master) recording only — orthogonal to
 /// [LooperTrackMultipleChanged], which governs a non-defining track once a
@@ -134,11 +135,26 @@ final class LooperTrackLengthPresetChanged extends LooperChannelEvent {
   /// Creates a [LooperTrackLengthPresetChanged].
   const LooperTrackLengthPresetChanged(super.channel, this.bars);
 
-  /// The fixed bar count, or `0` for AUTO.
-  final int bars;
+  /// The fixed bar count, `0` for an explicit Auto, or `null` to follow the
+  /// default.
+  final int? bars;
 
   @override
   List<Object?> get props => [channel, bars];
+}
+
+/// Track [channel]'s Loop/Once override changed (accepted design, Playback
+/// & overdub): `null` follows the default, `true` plays once then stops,
+/// `false` loops.
+final class LooperTrackOnceChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackOnceChanged].
+  const LooperTrackOnceChanged(super.channel, {required this.once});
+
+  /// The override (`null` => follow the default).
+  final bool? once;
+
+  @override
+  List<Object?> get props => [channel, once];
 }
 
 /// Track [channel]'s One Shot flag changed (song-mode-spec.md §2, B5c):

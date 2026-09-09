@@ -379,8 +379,15 @@ void main() {
       );
 
       expect(started.started, isTrue);
+      // The override is remembered and projected; the engine is given the
+      // shared default (Auto) on every track while the rig is in Multi, the
+      // boot mode, and the override lands once the mode leaves Multi.
+      expect(repository.state.tracks[1].lengthPresetOverride, 8);
+      expect(repository.state.tracks[0].lengthPresetOverride, isNull);
+      expect(engine.trackLengthPreset[1], 0);
+      expect(engine.trackLengthPreset[0], 0);
+      repository.setLooperMode(LooperMode.song);
       expect(engine.trackLengthPreset[1], 8);
-      expect(engine.trackLengthPreset.containsKey(0), isFalse);
     });
 
     test('restores saved per-lane effects on launch', () async {

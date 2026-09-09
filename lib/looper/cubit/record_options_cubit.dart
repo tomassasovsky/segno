@@ -13,6 +13,7 @@ class RecordOptions extends Equatable {
     this.recDub = false,
     this.autoRecord = false,
     this.defaultMultiple = 0,
+    this.defaultLengthBars = 0,
   });
 
   /// When `true`, a record press finalizing a recording continues into overdub
@@ -26,19 +27,31 @@ class RecordOptions extends Equatable {
   /// The global default loop length used by inheriting tracks (`0` = auto).
   final int defaultMultiple;
 
+  /// The default length preset for a defining recording (`0` = Auto, else
+  /// `1..64` bars; accepted design, Length & quantize). Tracks follow it
+  /// unless they carry their own override.
+  final int defaultLengthBars;
+
   /// Returns a copy with the given overrides.
   RecordOptions copyWith({
     bool? recDub,
     bool? autoRecord,
     int? defaultMultiple,
+    int? defaultLengthBars,
   }) => RecordOptions(
     recDub: recDub ?? this.recDub,
     autoRecord: autoRecord ?? this.autoRecord,
     defaultMultiple: defaultMultiple ?? this.defaultMultiple,
+    defaultLengthBars: defaultLengthBars ?? this.defaultLengthBars,
   );
 
   @override
-  List<Object?> get props => [recDub, autoRecord, defaultMultiple];
+  List<Object?> get props => [
+    recDub,
+    autoRecord,
+    defaultMultiple,
+    defaultLengthBars,
+  ];
 }
 
 /// Owns the global record-behavior options: applies them to the repository and
@@ -84,19 +97,33 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
     final recDub = await _settings.loadRecDub();
     final autoRecord = await _settings.loadAutoRecord();
     final defaultMultiple = await _settings.loadDefaultMultiple();
+    final defaultLengthBars = await _settings.loadDefaultLengthPreset();
     _repository
       ..setRecDub(enabled: recDub)
       ..setAutoRecord(enabled: autoRecord)
-      ..setDefaultMultiple(multiple: defaultMultiple);
+      ..setDefaultMultiple(multiple: defaultMultiple)
+      ..setDefaultLengthPreset(defaultLengthBars);
     if (!isClosed) {
       emit(
         RecordOptions(
           recDub: recDub,
           autoRecord: autoRecord,
           defaultMultiple: defaultMultiple,
+          defaultLengthBars: defaultLengthBars,
         ),
       );
     }
+  }
+
+  /// Sets and persists the default length preset for a defining recording
+  /// (`0` = Auto, else `1..64` bars), applying it now.
+  Future<void> setDefaultLengthBars(int bars) async {
+    final clamped = bars.clamp(0, 64);
+    if (clamped != state.defaultLengthBars) {
+      emit(state.copyWith(defaultLengthBars: clamped));
+      _repository.setDefaultLengthPreset(clamped);
+    }
+    await _settings.saveDefaultLengthPreset(clamped);
   }
 
   /// Sets and persists the rec/dub second-press mode, applying it now.

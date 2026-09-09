@@ -43,7 +43,7 @@ void main() {
   late ControlCubit control;
   late PedalCubit pedal;
   late RefreshRateCubit refreshRate;
-  late QuantizeCubit quantize;
+  late RecordTimingCubit quantize;
   late MonitorCubit monitor;
   late RecordOptionsCubit recordOptions;
   late LooperRepository repository;
@@ -52,6 +52,7 @@ void main() {
   late UpdateCubit updates;
 
   setUpAll(() {
+    registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(GridDivision.off);
     registerFallbackValue(MonitorMode.off);
     registerFallbackValue(ClickMode.off);
@@ -125,10 +126,13 @@ void main() {
       () => repository.masterChainEnvelope(),
     ).thenReturn(const FxChainEnvelope());
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
-    quantize = QuantizeCubit(repository: repository, settings: settings);
+    quantize = RecordTimingCubit(repository: repository, settings: settings);
     monitor = MonitorCubit(repository: repository, settings: settings);
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setRecordTiming(any()),
     ).thenReturn(EngineResult.ok);
     when(
       () => repository.setMonitorInputMode(
@@ -207,7 +211,7 @@ void main() {
             BlocProvider<ControlCubit>.value(value: control),
             BlocProvider<PedalCubit>.value(value: pedal),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
-            BlocProvider<QuantizeCubit>.value(value: quantize),
+            BlocProvider<RecordTimingCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
             BlocProvider<LooperBloc>.value(value: looperBloc),
@@ -433,7 +437,7 @@ void main() {
     tester,
   ) async {
     await pump(tester);
-    expect(quantize.state, isFalse);
+    expect(quantize.state.quantize, isFalse);
 
     // Quantize lives in the Audio > Recording group.
     await tester.tap(find.byKey(const Key('settings_tab_audio')));
@@ -443,27 +447,9 @@ void main() {
     await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(quantize.state, isTrue);
+    expect(quantize.state.quantize, isTrue);
     expect(await settings.loadQuantize(), isTrue);
-    verify(() => repository.setQuantize(enabled: true)).called(1);
-  });
-
-  testWidgets('choosing a quantize granularity on the Tempo tab applies it', (
-    tester,
-  ) async {
-    await pump(tester);
-
-    await tester.tap(find.byKey(const Key('settings_tab_tempo')));
-    await tester.pumpAndSettle();
-    final option = find.byKey(
-      const Key('tempoSettings_quantizeDiv_quarter'),
-    );
-    await tester.ensureVisible(option);
-    await tester.tap(option);
-    await tester.pumpAndSettle();
-
-    expect(tempo.state.quantizeDiv, GridDivision.quarter);
-    verify(() => repository.setQuantizeDiv(GridDivision.quarter)).called(1);
+    verify(() => repository.setRecordTiming(RecordTiming.loopStart)).called(1);
   });
 
   testWidgets('selecting a section tab shows only that section', (
@@ -499,52 +485,23 @@ void main() {
     );
     expect(find.byKey(const Key('settings_trackName_0')), findsNothing);
 
-    await tester.tap(find.byKey(const Key('settings_tab_tempo')));
+    // The Loop settings entry opens its own route rather than a section
+    // (accepted design, slice 2c); tapping it here, with no root navigator,
+    // leaves the page on the Audio section.
+    expect(find.byKey(const Key('settings_tab_loop')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('settings_tab_loop')));
     await tester.pumpAndSettle();
-    // The Tempo section renders the BPM control (its own settings surface,
-    // not audio_setup — index plan UI conventions).
-    expect(find.byKey(const Key('tempoSettings_bpm_field')), findsOneWidget);
     expect(
       find.byKey(const Key('audioSettings_playbackDevice_picker')),
-      findsNothing,
+      findsOneWidget,
     );
+    expect(find.byKey(const Key('settings_tab_tempo')), findsNothing);
+    expect(find.byKey(const Key('settings_tab_mode')), findsNothing);
 
     // There is no longer a Routing tab — the whole-system signal flow moved to
     // the Signal surface.
     expect(find.byKey(const Key('settings_tab_routing')), findsNothing);
   });
-
-  testWidgets(
-    'the mode tab renders the mode picker with the live mode selected',
-    (tester) async {
-      const seeded = LooperState(
-        transport: TransportState(looperMode: LooperMode.sync),
-      );
-      when(() => looperBloc.state).thenReturn(seeded);
-      whenListen(
-        looperBloc,
-        const Stream<LooperState>.empty(),
-        initialState: seeded,
-      );
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('settings_tab_mode')));
-      await tester.pumpAndSettle();
-
-      for (final mode in LooperMode.values) {
-        expect(
-          find.byKey(Key('looperMode_option_${mode.name}')),
-          findsOneWidget,
-        );
-      }
-      // Selecting the mode already active is a no-op (no content, no
-      // dialog needed either way) — proves the live transport state reached
-      // the picker, not just its default.
-      await tester.tap(find.byKey(const Key('looperMode_option_sync')));
-      await tester.pumpAndSettle();
-      verifyNever(() => looperBloc.add(any()));
-    },
-  );
 
   testWidgets(
     'the one-shot row shows the current flag and dispatches a change',
@@ -611,7 +568,7 @@ void main() {
             BlocProvider<ControlCubit>.value(value: control),
             BlocProvider<PedalCubit>.value(value: pedal),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
-            BlocProvider<QuantizeCubit>.value(value: quantize),
+            BlocProvider<RecordTimingCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
             BlocProvider<LooperBloc>.value(value: looperBloc),

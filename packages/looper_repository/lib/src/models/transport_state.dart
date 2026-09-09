@@ -35,6 +35,8 @@ class TransportState extends Equatable {
     this.autoRecord = false,
     this.overdubDecay = 0,
     this.recordTiming = RecordTiming.immediately,
+    this.defaultLengthPresetBars = 0,
+    this.defaultOneShot = false,
   });
 
   /// Whether the audio device is open and processing.
@@ -139,6 +141,17 @@ class TransportState extends Equatable {
   /// engine is stopped and has nothing to report.
   final RecordTiming recordTiming;
 
+  /// The default length preset for a defining recording the repository
+  /// holds (`0` = Auto, else bars; accepted design, Length & quantize).
+  /// Tracks follow it unless they carry `Track.lengthPresetOverride`; in
+  /// Multi every track shares it.
+  final int defaultLengthPresetBars;
+
+  /// The default Loop/Once the repository holds (accepted design, Playback &
+  /// overdub): `true` = play once then stop. Tracks follow it unless they
+  /// carry `Track.oneShotOverride`.
+  final bool defaultOneShot;
+
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 
@@ -173,5 +186,7 @@ class TransportState extends Equatable {
     autoRecord,
     overdubDecay,
     recordTiming,
+    defaultLengthPresetBars,
+    defaultOneShot,
   ];
 }

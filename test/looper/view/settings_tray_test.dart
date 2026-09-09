@@ -602,7 +602,6 @@ void main() {
         SettingsTrayDestination.tuner: PenIcon.tuner,
       };
       const fromFont = {
-        SettingsTrayDestination.loop: LucideIcons.repeat,
         SettingsTrayDestination.audio: LucideIcons.volume2,
         SettingsTrayDestination.network: CupertinoIcons.wifi,
         SettingsTrayDestination.system: LucideIcons.cpu,

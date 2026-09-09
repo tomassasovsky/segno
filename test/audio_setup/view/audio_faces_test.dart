@@ -87,7 +87,7 @@ void main() {
   late SettingsRepository settings;
   late AudioSetupCubit audio;
   late InputsCubit inputs;
-  late QuantizeCubit quantize;
+  late RecordTimingCubit quantize;
   late RecordOptionsCubit options;
   late SettingsTrayCubit tray;
 
@@ -96,6 +96,7 @@ void main() {
   late StreamController<LooperState> engine;
 
   setUpAll(() {
+    registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(const LooperRecordPressed(0));
   });
@@ -123,6 +124,9 @@ void main() {
     when(repository.asioDrivers).thenReturn(const []);
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setRecordTiming(any()),
     ).thenReturn(EngineResult.ok);
     when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
@@ -172,7 +176,7 @@ void main() {
       deviceRefreshInterval: Duration.zero,
     );
     inputs = InputsCubit(settings: settings, repository: repository);
-    quantize = QuantizeCubit(repository: repository, settings: settings);
+    quantize = RecordTimingCubit(repository: repository, settings: settings);
     options = RecordOptionsCubit(repository: repository, settings: settings);
     tray = SettingsTrayCubit(settings: settings)
       ..showAudioTab(tab)
@@ -617,7 +621,7 @@ void main() {
         deviceRefreshInterval: Duration.zero,
       );
       inputs = InputsCubit(settings: settings, repository: repository);
-      quantize = QuantizeCubit(repository: repository, settings: settings);
+      quantize = RecordTimingCubit(repository: repository, settings: settings);
       options = RecordOptionsCubit(repository: repository, settings: settings);
       tray = SettingsTrayCubit(settings: settings)
         ..showDestination(SettingsTrayDestination.audio);
@@ -782,7 +786,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('audio_quantize_switch')));
       await tester.pumpAndSettle();
-      expect(quantize.state, isTrue);
+      expect(quantize.state.quantize, isTrue);
 
       await tester.tap(find.byKey(const Key('audio_rec_dub_switch')));
       await tester.pumpAndSettle();

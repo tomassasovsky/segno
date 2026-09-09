@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -12,9 +13,7 @@ import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
-import 'package:segno/looper/view/looper_mode_section.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
-import 'package:segno/looper/view/tempo_settings_section.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
@@ -29,11 +28,9 @@ enum SettingsSection {
   /// Audio device and engine settings.
   audio,
 
-  /// Tempo, click, and count-in.
-  tempo,
-
-  /// Looper interaction mode defaults.
-  mode,
+  /// The Loop settings pages (accepted design, slice 2c), opened as their
+  /// own route from this rail.
+  loop,
 
   /// Per-track names and length presets.
   tracks,
@@ -78,6 +75,12 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _select(SettingsSection section) {
+    // Loop settings are their own route (accepted design, slice 2c): the
+    // rail entry opens it and this page keeps its current section.
+    if (section == SettingsSection.loop) {
+      unawaited(openLoopSettings());
+      return;
+    }
     if (section == _section) return;
     setState(() => _section = section);
     widget.onSectionChanged?.call(section);
@@ -156,8 +159,7 @@ class _SettingsPageState extends State<SettingsPage> {
   List<Widget> _sectionChildren(BuildContext context) => switch (_section) {
     SettingsSection.view => _viewSection(context),
     SettingsSection.audio => _audioSection(context),
-    SettingsSection.tempo => _tempoSection(context),
-    SettingsSection.mode => _modeSection(context),
+    SettingsSection.loop => const [],
     SettingsSection.tracks => _tracksSection(context),
     SettingsSection.updates => const [UpdatesSettingsSection()],
   };
@@ -253,14 +255,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   List<Widget> _audioSection(BuildContext context) => const [
     AudioSettingsSection(),
-  ];
-
-  List<Widget> _tempoSection(BuildContext context) => const [
-    TempoSettingsSection(),
-  ];
-
-  List<Widget> _modeSection(BuildContext context) => const [
-    LooperModeSection(),
   ];
 
   List<Widget> _tracksSection(BuildContext context) {
@@ -414,8 +408,7 @@ class _SectionTab extends StatelessWidget {
     final label = switch (section) {
       SettingsSection.view => l10n.settingsSectionView,
       SettingsSection.audio => l10n.settingsSectionAudio,
-      SettingsSection.tempo => l10n.settingsSectionTempo,
-      SettingsSection.mode => l10n.settingsSectionMode,
+      SettingsSection.loop => l10n.settingsSectionLoop,
       SettingsSection.tracks => l10n.settingsSectionTracks,
       SettingsSection.updates => l10n.settingsSectionUpdates,
     };

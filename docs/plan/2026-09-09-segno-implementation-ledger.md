@@ -437,3 +437,75 @@ until PR #1013 merges.
 
 Slice 2c: the Loop settings hub and its six submenus, Undo/Redo/Clear All
 wiring, goldens, and the pen write-back of any departure.
+
+## Slice 2c — Loop settings surfaces (#1012)
+
+Branch: `claude/segno-slice2c-loop-settings-1012`, stacked on slice 2b's
+branch until PR #1014 merges.
+
+### Decisions
+
+- The accepted Loop settings are full-screen pages at the pen's size
+  (`LoopSettingsPage`: the hub and its six submenus plus the Time signature
+  page as one page stack, each page a 1920 x 1080 canvas scaled down to fit
+  a smaller window). They open from the console tray's Loop rail entry and
+  from the desktop Settings rail's Loop settings entry; the tray's in-panel
+  Loop domain (Tempo / Click / Mode tabs) and the desktop Tempo and Mode
+  sections are gone with their tests, so the settings have one path each.
+- Record timing has one owner in the app, `RecordTimingCubit` (the gate and
+  the division persisted in their existing keys, applied as one repository
+  call); the boolean quantize cubit is gone and the two audio-setup toggles
+  read the gate off the new one.
+- The Length & quantize and Playback & overdub editors carry defaults and
+  per-track overrides with field-level inheritance: the repository now holds
+  a default length preset and a default Loop/Once beside the decay default
+  (`setDefaultLengthPreset`, `setDefaultOnce`), per-track overrides
+  (`setTrackLengthPreset` with `null` = follow, `0` = an explicit Auto;
+  `setTrackOnce`), and pushes every track's effective value on start and on
+  a mode change. In Multi the length is shared: every track is given the
+  default and its override is stored but inactive ("Shared in Multi"). A
+  session manifest keeps carrying effective values; on load they become
+  overrides only where they differ from the default.
+- A capture in progress locks the Recording page and the Length & quantize
+  page behind the pen's banner; the Playback & overdub page stays live.
+- The Loop mode cards show a refused mode's reason in place of its
+  description (from the engine's gate) and ask "Stop loops and switch" in
+  the pen's own dialog; the console confirm dialog stays the default for
+  the other callers of `requestLooperModeChange`.
+- Audio & tempo is a readout: the recorded-speed state with its choices
+  disabled and one line saying tempo following is not available yet.
+- Undo, Redo and Clear All already reach the grouped edits of slice 2a
+  from keys (`Z`, `Y`, `C`, `Shift+C`) and pedals (`LooperAction.undo` and
+  `clear`); no new wiring was needed here.
+- Departures from the pen, to be written back into `segno-ui.pen`: the
+  pen's own icon glyphs are drawn with lucide equivalents (chevron, check,
+  arrow-left, repeat, arrow-right-to-line, minus, plus, timer, music); the
+  pen's hex colours map onto the console theme tokens as slice 1 did; the
+  Length page's lock banner sits under the scope selector with the sections
+  moved down by 92; the tempo steps are two labelled buttons (1 BPM /
+  0.01 BPM) rather than the pen's unlabelled pair.
+
+### Checks
+
+- Root: `flutter test` and `dart analyze` clean, `bloc lint` clean; new
+  tests for the record timing cubit and every Loop settings page (hub
+  summaries and navigation, mode reasons and the dialog, the recording
+  notes and lock, tempo taps and the signature grid, length scope and
+  overrides and Multi sharing and lock, playback overrides and the decay
+  slider, the audio readout).
+- `looper_repository` 432, `settings_repository` 141 (defaults and
+  overrides for length and Once); the engine is untouched by this part.
+
+### Not verified here
+
+- The pages on the appliance's two displays and by encoder; the pen's
+  encoder focus rectangles are not implemented. The goldens
+  (`test/screenshots/loop_settings_screenshots_test.dart`, eleven pages
+  including the lock, the dialog and a per-track scope) were generated and
+  checked against the pen on the author's machine; the tray's Loop previews
+  are gone with the tray domain, and the suite loads the lucide package
+  font so the icons render as glyphs rather than tofu boxes.
+
+### Next step
+
+Slice 3 (inputs, outputs, Mixer and FX), per `implementation-map.md`.

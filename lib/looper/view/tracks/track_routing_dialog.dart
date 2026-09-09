@@ -7,7 +7,7 @@ import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
-import 'package:segno/looper/cubit/quantize_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/tracks/routing_tracks_tab.dart';
 import 'package:segno/looper/view/tracks/tracks_face.dart';
@@ -25,7 +25,7 @@ Future<void> showTrackRoutingDialog(
 }) {
   final looper = context.read<LooperBloc>();
   final tracks = context.read<TracksCubit>();
-  final quantize = context.read<QuantizeCubit>();
+  final quantize = context.read<RecordTimingCubit>();
   final inputs = context.read<InputsCubit>();
   final repository = context.read<LooperRepository>();
   return showDialog<void>(
@@ -529,7 +529,7 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
   /// would put a chooser inside a chooser.
   Widget _quantizeGroup(BuildContext context, Track track) {
     final l10n = context.l10n;
-    final global = context.watch<QuantizeCubit>().state;
+    final global = context.watch<RecordTimingCubit>().state.quantize;
     final override = track.quantizeOverride;
     return ConsoleCard(
       fill: context.surface.background,

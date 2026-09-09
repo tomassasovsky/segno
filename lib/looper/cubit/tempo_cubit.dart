@@ -31,16 +31,6 @@ const (double, double) kTempoRange = (30, 300);
 /// of them is two pickers that can drift into offering different lengths.
 const List<int> kCountInBarOptions = [0, 1, 2, 4];
 
-/// What each [GridDivision] is called. One table, both surfaces.
-Map<GridDivision, String> quantizeDivisionLabels(AppLocalizations l10n) => {
-  GridDivision.off: l10n.quantizeDivOffLabel,
-  GridDivision.bar: l10n.quantizeDivBarLabel,
-  GridDivision.half: l10n.quantizeDivHalfLabel,
-  GridDivision.quarter: l10n.quantizeDivQuarterLabel,
-  GridDivision.eighth: l10n.quantizeDivEighthLabel,
-  GridDivision.sixteenth: l10n.quantizeDivSixteenthLabel,
-};
-
 /// What each [ClickMode] is called. One table, both surfaces.
 Map<ClickMode, String> clickModeLabels(AppLocalizations l10n) => {
   ClickMode.off: l10n.clickModeOffLabel,
@@ -98,7 +88,6 @@ class TempoSettings extends Equatable {
     this.tsNum = 4,
     this.tsDen = 4,
     this.syncTempo = true,
-    this.quantizeDiv = GridDivision.off,
     this.clickMode = ClickMode.off,
     this.clickOutputMask = 0,
     this.clickVolume = 1,
@@ -119,9 +108,6 @@ class TempoSettings extends Equatable {
   /// Whether loop↔grid sync is on.
   final bool syncTempo;
 
-  /// Musical quantization granularity.
-  final GridDivision quantizeDiv;
-
   /// Click audibility mode.
   final ClickMode clickMode;
 
@@ -140,7 +126,6 @@ class TempoSettings extends Equatable {
     int? tsNum,
     int? tsDen,
     bool? syncTempo,
-    GridDivision? quantizeDiv,
     ClickMode? clickMode,
     int? clickOutputMask,
     double? clickVolume,
@@ -150,7 +135,6 @@ class TempoSettings extends Equatable {
     tsNum: tsNum ?? this.tsNum,
     tsDen: tsDen ?? this.tsDen,
     syncTempo: syncTempo ?? this.syncTempo,
-    quantizeDiv: quantizeDiv ?? this.quantizeDiv,
     clickMode: clickMode ?? this.clickMode,
     clickOutputMask: clickOutputMask ?? this.clickOutputMask,
     clickVolume: clickVolume ?? this.clickVolume,
@@ -163,7 +147,6 @@ class TempoSettings extends Equatable {
     tsNum,
     tsDen,
     syncTempo,
-    quantizeDiv,
     clickMode,
     clickOutputMask,
     clickVolume,
@@ -225,9 +208,6 @@ class TempoCubit extends Cubit<TempoSettings> {
     final bpm = await _settings.loadTempoBpm();
     final (tsNum, tsDen) = await _settings.loadTimeSignature();
     final syncTempo = await _settings.loadSyncTempo();
-    final quantizeDiv = GridDivision.fromCode(
-      await _settings.loadQuantizeDiv(),
-    );
     final clickMode = ClickMode.fromCode(await _settings.loadClickMode());
     final clickOutputMask = await _settings.loadClickOutputMask();
     final clickVolume = await _settings.loadClickVolume();
@@ -240,7 +220,6 @@ class TempoCubit extends Cubit<TempoSettings> {
     _repository
       ..setTimeSignature(tsNum, tsDen)
       ..setSyncTempo(on: syncTempo)
-      ..setQuantizeDiv(quantizeDiv)
       ..setClickMode(clickMode)
       ..setClickOutput(clickOutputMask)
       ..setClickVolume(clickVolume)
@@ -253,7 +232,6 @@ class TempoCubit extends Cubit<TempoSettings> {
           tsNum: tsNum,
           tsDen: tsDen,
           syncTempo: syncTempo,
-          quantizeDiv: quantizeDiv,
           clickMode: clickMode,
           clickOutputMask: clickOutputMask,
           clickVolume: clickVolume,
@@ -297,14 +275,6 @@ class TempoCubit extends Cubit<TempoSettings> {
     emit(state.copyWith(syncTempo: value));
     _repository.setSyncTempo(on: value);
     await _settings.saveSyncTempo(value: value);
-  }
-
-  /// Sets and persists the musical quantization granularity, applying it
-  /// now. Unconditional repository call — see [setTempo]'s doc.
-  Future<void> setQuantizeDiv(GridDivision div) async {
-    emit(state.copyWith(quantizeDiv: div));
-    _repository.setQuantizeDiv(div);
-    await _settings.saveQuantizeDiv(div.code);
   }
 
   /// Sets and persists the click audibility mode, applying it now.
