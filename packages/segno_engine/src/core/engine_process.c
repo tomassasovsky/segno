@@ -3428,11 +3428,12 @@ static inline void advance_track_clock_frame(le_engine* e, int32_t ch,
 }
 
 /* One Shot in the shared-clock modes (accepted design, slice 2b; the
- * Multi/Sync/Band half of le_engine_set_one_shot's doc). Called right after
- * the master clock ticks, BEFORE the grid arms fire, so a take that
- * finalizes at this very boundary is not stopped before its first lap. A
- * one-shot track that is sounding stops when its own lap ends on the shared
- * clock:
+ * Multi/Sync/Band half of le_engine_set_one_shot's doc). Called once per
+ * ticking frame AFTER the grid and section arms have fired, so the arms see
+ * the states they were queued against (a punch-out lands as a punch-out, a
+ * section stop stays a stop, and a held transport is measured before any
+ * Once stop could fake one). A one-shot track that is sounding stops when
+ * its own lap ends on the shared clock:
  *   - a Sync/Band division (a_sync_divisor n >= 2) laps every base/n
  *     frames, phase-locked to the primary (sync_division_positions_frame),
  *     so its lap ends whenever the new position is a multiple of its length
@@ -3441,29 +3442,48 @@ static inline void advance_track_clock_frame(le_engine* e, int32_t ch,
  *     segment: (loop_iteration - start_iter) % multiple == 0, the same
  *     segment arithmetic mix_tracks_frame reads (seg_base); a 1x take laps at
  *     every wrap.
+ * Two guards keep the stop from cutting a pass short:
+ *   - sounding_frames counts the frames the track has been sounding and is
+ *     reset while it is not; a lap end only stops a track that has sounded
+ *     for a whole lap (k * base, or the division's length), so a take
+ *     finalized mid-lap (this frame included) plays its first full lap;
+ *   - a track whose grid arm fired this frame into OVERDUBBING (a punch-in,
+ *     or a rec/dub finalize) is skipped: the queued pass wins, and Once ends
+ *     the track at that pass's end.
  * No-op with no master (Free/Song keep e->clock dormant and tick their own
  * clocks through advance_track_clock_frame). */
 static inline void le_shared_clock_one_shots(le_engine* e, int tc, int wrapped,
+                                             const uint8_t* fired,
                                              uint64_t frame) {
   const int32_t base = e->clock.length;
   if (base <= 0) return;
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
-    if (!load_i32(&tr->a_one_shot)) continue;
     const int32_t st = load_i32(&tr->a_state);
-    if (st != LE_TRACK_PLAYING && st != LE_TRACK_OVERDUBBING) continue;
+    if (st != LE_TRACK_PLAYING && st != LE_TRACK_OVERDUBBING) {
+      tr->sounding_frames = 0;
+      continue;
+    }
+    tr->sounding_frames++;
+    if (!load_i32(&tr->a_one_shot)) continue;
+    if (fired[t] && st == LE_TRACK_OVERDUBBING) continue;
     int lap_end;
+    uint64_t whole_lap;
     const int32_t n = load_i32(&tr->a_sync_divisor);
     if (n >= 2) {
       const int32_t len = base / n;
       lap_end = len > 0 && (e->clock.position % len) == 0;
+      whole_lap = (uint64_t)(len > 0 ? len : base);
     } else {
       int32_t k = load_i32(&tr->a_multiple);
       if (k < 1) k = 1;
       lap_end = wrapped &&
                 ((e->loop_iteration - tr->start_iter) % (uint64_t)k) == 0;
+      whole_lap = (uint64_t)k * (uint64_t)base;
     }
-    if (lap_end) le_one_shot_stop(e, tr, t, frame);
+    if (lap_end && tr->sounding_frames >= whole_lap) {
+      le_one_shot_stop(e, tr, t, frame);
+    }
   }
 }
 
@@ -3542,10 +3562,9 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       e->transport_held = 0; /* #262: transport is running; re-arm the hold edge */
       const int wrapped = le_loop_clock_tick(&e->clock);
       if (wrapped) e->loop_iteration++;
-      /* Once (slice 2b): a one-shot track whose own lap ended on this tick
-       * stops here, before the grid arms below can finalize a take at the
-       * same boundary. */
-      le_shared_clock_one_shots(e, tc, wrapped, frame);
+      /* Which tracks' grid arms fire on this tick: read by the Once check
+       * below, which runs after the arms so it sees what they did. */
+      uint8_t fired[LE_MAX_TRACKS] = {0};
       /* Grid-armed fire check. The loop top (wrap) is every division's
        * boundary AND the layer boundary, so it fires everything — the exact
        * pre-A3 behavior, and the whole behavior when the quantize division is
@@ -3585,6 +3604,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
           pt->pending_record = 0;
           store_i32(&pt->a_pending, 0);
           handle_record(e, qt, frame);
+          fired[qt] = 1;
         }
       }
       /* Band section transport (B3b, trigger 2): fires ONLY on the true
@@ -3605,6 +3625,10 @@ static inline void advance_transport_frame(le_engine* e, int tc,
           }
         }
       }
+      /* Once (slice 2b): a one-shot track whose own lap ended on this tick
+       * stops here, after the arms above have done what they were queued
+       * for. */
+      le_shared_clock_one_shots(e, tc, wrapped, fired, frame);
     } else {
       /* Nothing is playing or recording: hold the transport at the top so the
        * next play starts from the beginning rather than looping in silence.
@@ -3623,7 +3647,10 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       }
       e->clock.position = 0;
       e->loop_iteration = 0;
-      for (int t = 0; t < tc; ++t) e->tracks[t].start_iter = 0;
+      for (int t = 0; t < tc; ++t) {
+        e->tracks[t].start_iter = 0;
+        e->tracks[t].sounding_frames = 0; /* the next launch is a fresh lap */
+      }
     }
   }
   /* Free/Song mode (B2b, index Architecture §4; broadened to SONG by B4):

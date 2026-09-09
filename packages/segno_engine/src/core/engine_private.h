@@ -953,6 +953,12 @@ typedef struct le_track {
    * toward the effective coefficient one od_step per frame so a live change
    * never steps the retained layer (mix_tracks_frame). */
   float fb_cur;
+  /* Frames this track has been sounding (PLAYING or OVERDUBBING) on the
+   * shared clock, audio-thread-local (slice 2b, Once): counted by
+   * le_shared_clock_one_shots and reset while the track is not sounding, so
+   * a take finalized or launched mid-lap plays at least one full lap before
+   * Once stops it at a lap end. */
+  uint64_t sounding_frames;
 } le_track;
 
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,

@@ -795,7 +795,11 @@ class LooperRepository {
       clickMode: s.clickMode,
       clickMask: s.clickMask,
       clickVolume: s.clickVolume,
-      countInBars: s.countInBars,
+      // The repository's own re-apply cache, like the record start settings
+      // below: the engine's mirror reads 0 while it is stopped (nothing is
+      // pushed to a stopped engine) and lands a block late while it runs,
+      // and the cubits that own the setting follow this value.
+      countInBars: _countInBars,
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
       looperMode: s.looperMode,
@@ -808,9 +812,11 @@ class LooperRepository {
       recDub: _recDub,
       // The record start and decay defaults are the repository's own
       // re-apply caches (what a stopped engine would be given on start);
-      // Sound start is the engine's, since a count-in clears it there.
+      // the caches mirror the engine's count-in and Sound start exclusion
+      // ([setCountIn], [setAutoRecord]), so they read right while the
+      // engine is stopped and in the mock flavour, which reports neither.
       quantize: _quantize,
-      autoRecord: s.autoRecord,
+      autoRecord: _autoRecord,
       overdubDecay: _overdubDecay,
       recordTiming: RecordTiming.of(
         quantize: _quantize,

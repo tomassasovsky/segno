@@ -400,6 +400,32 @@ until PR #1013 merges.
   analyzers clean in every touched package; `bloc lint` clean; pumped-native
   and fuzz suites against a hand-built library.
 
+### Review round 1 (2026-09-09, on the first commit)
+
+- The Once check ran before the grid and section arms fired, so at a lap
+  end a queued punch-out on a Once track landed as a punch-in on the stopped
+  track (an extra lap), a Band section stop restarted the section, and the
+  arm's `handle_record` measured a transport the Once stop had just held and
+  unparked user-stopped siblings. The check now runs after both arm loops; a
+  track whose arm fired into an overdub this frame is skipped (the queued
+  pass wins, Once ends the track at its end). Four native tests pin the
+  three races and the queued punch-in.
+- A take finalized mid-lap stopped on the tail of its own recording. Each
+  track now counts the frames it has been sounding (`sounding_frames`) and a
+  lap end only stops it after a whole lap (`k * base`, or the division's
+  length); the mid-lap finalize and the division tests pin it.
+- The count-in and Sound start mirrors in the two cubits compared against
+  the engine's own report, which reads 0/off while the engine is stopped and
+  lands a block late while it runs, and would have persisted that. Both are
+  now projected from the repository's held values (which already mirror
+  the D9 exclusion), so they read right while stopped and in the mock
+  flavour.
+- Noted, not changed: the session captures a track's timing override from
+  the engine's report, so a forced gate with an inherited division is saved
+  with the division baked in and comes back explicit (custom stays custom),
+  and a save while the engine is stopped drops the overrides, as it does the
+  One Shot flags today.
+
 ### Not verified here
 
 - Hardware timing of the per-track grids and of the Once stop on the

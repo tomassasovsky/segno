@@ -19977,6 +19977,110 @@ static void test_one_shot_multiple_stops_after_its_own_laps(void) {
   le_engine_destroy(e);
 }
 
+/* A punch-out queued for the lap end on a Once track lands as a punch-out:
+ * the arm fires before the Once check, so the track stops at that wrap
+ * instead of being punched back in on a stopped track for an extra lap. */
+static void test_one_shot_punch_out_arm_at_wrap_stops(void) {
+  printf("test_one_shot_punch_out_arm_at_wrap_stops\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  record_base_loop(e, 1.0f);
+  process_const(e, 0.0f, LOOP_N, out); /* one full lap sounding */
+  le_engine_record(e, 0);              /* punch in now */
+  process_const(e, 1.0f, 1, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch-out armed for the top */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
+  process_const(e, 1.0f, LOOP_N - s.master_position_frames, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED); /* punched out, then Once */
+  CHECK(s.tracks[0].pending == 0);
+  le_engine_destroy(e);
+}
+
+/* A punch-in queued for the lap end on a Once track wins over the stop: the
+ * overdub pass runs, and Once ends the track at that pass's end. */
+static void test_one_shot_punch_in_arm_at_wrap_overdubs(void) {
+  printf("test_one_shot_punch_in_arm_at_wrap_overdubs\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch-in armed for the top */
+  drain(e);
+  process_const(e, 0.0f, LOOP_N - s.master_position_frames, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING); /* the pass runs */
+  process_const(e, 0.5f, LOOP_N, out); /* the pass, to the next top */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED); /* Once ends it there */
+  le_engine_destroy(e);
+}
+
+/* A Once stop cannot fake a held transport: a sibling the user stopped
+ * stays stopped when a Once track's lap ends while its own arm fires. */
+static void test_one_shot_stop_does_not_unpark_siblings(void) {
+  printf("test_one_shot_stop_does_not_unpark_siblings\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_base_loop(e, 1.0f);
+  le_engine_record(e, 1);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 1); /* a second take, then stopped by the user */
+  drain(e);
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch-in armed for the top */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  process_const(e, 0.0f, LOOP_N - s.master_position_frames, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED); /* not resurrected */
+  le_engine_destroy(e);
+}
+
+/* A take finalized mid-lap by an immediate press plays a whole lap before
+ * Once stops it, not just the tail of its own recording. */
+static void test_one_shot_take_finalized_mid_lap_plays_a_full_lap(void) {
+  printf("test_one_shot_take_finalized_mid_lap_plays_a_full_lap\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_base_loop(e, 1.0f); /* leaves the playhead at the top */
+  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
+  le_engine_record(e, 1);         /* from the top */
+  process_const(e, 2.0f, 2, out); /* positions 1, 2 */
+  le_engine_record(e, 1);         /* finalize at position 2: rounds up */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 1);
+  CHECK(s.master_position_frames == 2);
+  process_const(e, 0.0f, LOOP_N - 2, out); /* the tail, to the wrap */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* less than a lap so far */
+  process_const(e, 0.0f, LOOP_N, out); /* one whole lap */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  le_engine_destroy(e);
+}
+
 static void test_one_shot_not_stopped_by_a_finalize_at_the_wrap(void) {
   printf("test_one_shot_not_stopped_by_a_finalize_at_the_wrap\n");
   /* A one-shot take whose quantized finalize lands on the wrap plays its
@@ -21652,7 +21756,9 @@ static void test_one_shot_division_stops_after_its_own_lap(void) {
   CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
   drain(e);
   int stopped_after = -1;
-  for (int i = 1; i <= SB_BASE / 4; ++i) {
+  /* Within two of its own laps: the first lap end after a whole lap of
+   * sounding (the division finalized mid-lap). */
+  for (int i = 1; i <= SB_BASE / 2; ++i) {
     tg_advance(e, 1);
     le_engine_get_snapshot(e, &s);
     if (s.tracks[1].state == LE_TRACK_STOPPED) {
@@ -21660,10 +21766,46 @@ static void test_one_shot_division_stops_after_its_own_lap(void) {
       break;
     }
   }
-  CHECK(stopped_after >= 1); /* within one of its own laps */
+  CHECK(stopped_after >= 1);
   CHECK(s.master_position_frames % (SB_BASE / 4) == 0); /* at its top */
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
 
+  le_engine_destroy(e);
+}
+
+/* A Band section stop queued for the primary's top on a Once section stays
+ * a stop: the toggle fires before the Once check, so the section is not
+ * restarted for an extra lap. */
+static void test_one_shot_section_stop_toggle_at_wrap_stays_stopped(void) {
+  printf("test_one_shot_section_stop_toggle_at_wrap_stays_stopped\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+  drain(e);
+  sb_make_primary_ex(e, 0, SB_BASE, 0.0f);
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, SB_BASE, out);
+  le_engine_record(e, 1); /* one base loop, finalized at the top */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.master_position_frames == 0);
+  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
+  drain(e);
+  process_const(e, 0.0f, SB_BASE / 2, out);
+  CHECK(le_engine_toggle_section(e, 1) == LE_OK); /* stop at the top */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+  process_const(e, 0.0f, SB_BASE - s.master_position_frames, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  process_const(e, 0.0f, SB_BASE, out); /* and it stays stopped */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
   le_engine_destroy(e);
 }
 
@@ -27340,7 +27482,12 @@ int main(void) {
   test_one_shot_stops_at_lap_in_multi_mode();
   test_one_shot_multiple_stops_after_its_own_laps();
   test_one_shot_division_stops_after_its_own_lap();
+  test_one_shot_section_stop_toggle_at_wrap_stays_stopped();
   test_one_shot_not_stopped_by_a_finalize_at_the_wrap();
+  test_one_shot_punch_out_arm_at_wrap_stops();
+  test_one_shot_punch_in_arm_at_wrap_overdubs();
+  test_one_shot_stop_does_not_unpark_siblings();
+  test_one_shot_take_finalized_mid_lap_plays_a_full_lap();
   test_one_shot_overdubbing_track_stops_cleanly_at_wrap();
   test_one_shot_persists_across_mode_switch_fires_on_first_wrap();
   test_one_shot_wrap_logs_synthetic_stop();
