@@ -187,10 +187,10 @@ class SessionRig {
   /// mode choice.
   final LooperMode looperMode;
 
-  /// The session's crowned primary track (Sync/Band, D18), or `-1` when none
-  /// was ever crowned. See `LooperRepository.applySession`'s doc for why this
-  /// cannot always be fully reset to `-1` on the LIVE engine (no "un-crown"
-  /// native call exists) even though it is captured/restored here.
+  /// The session's crowned primary track (D18), or `-1` when the session
+  /// saved none. Pushed as the explicit crown on apply; a session without one
+  /// gets the engine's own crown (its lowest recorded track) once the import
+  /// commits.
   final int primaryTrack;
 
   /// Every channel with One Shot armed (post-B5c independent review fix),

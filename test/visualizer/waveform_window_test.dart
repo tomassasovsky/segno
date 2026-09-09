@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
-import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
 import 'package:segno/visualizer/waveform_window_service.dart';
@@ -383,56 +382,6 @@ void main() {
 
       expect(find.byKey(const Key('power_off_mark')), findsOneWidget);
     });
-
-    testWidgets(
-      'the MIX pill opens the volume overlay and its commands reach '
-      'onControl',
-      (tester) async {
-        final frame = ValueNotifier<WaveformFrame>(
-          (samples: Float32List(0), progress: 0, selectedTrack: ''),
-        );
-        final readout = ValueNotifier<PerformanceReadout>(
-          const PerformanceReadout(
-            tracks: [ReadoutTrack(name: 'GUITAR', state: 'playing')],
-          ),
-        );
-        addTearDown(frame.dispose);
-        addTearDown(readout.dispose);
-        final controls = <ReadoutControl>[];
-        await tester.pumpWidget(
-          WaveformWindowApp(
-            frame: frame,
-            readout: readout,
-            title: 'Segno — Output',
-            onControl: controls.add,
-          ),
-        );
-        addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
-
-        // The MIX pill is the only way in (#707): a tap on the readout's
-        // dead glass does nothing...
-        await tester.tapAt(tester.getCenter(find.byType(ConsoleReadoutView)));
-        await tester.pump();
-        expect(find.byKey(const Key('volume_overlay_list')), findsNothing);
-        expect(find.byType(ConsoleReadoutView), findsOneWidget);
-
-        // ...the pill opens the overlay.
-        await tester.tap(find.byKey(const Key('console_readout_mix')));
-        await tester.pump();
-        expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
-
-        // A row tap flows out through the window's control callback — the
-        // seam the entrypoint wires to the channel.
-        await tester.tap(find.byKey(const Key('volume_row_track_0')));
-        expect(controls, hasLength(1));
-        expect(controls.single.action, ReadoutControl.trackVolume);
-
-        // Step home so the revert timer is cancelled before teardown.
-        await tester.tap(find.byKey(const Key('volume_overlay_back_to_stage')));
-        await tester.pump();
-        expect(find.byType(ConsoleReadoutView), findsOneWidget);
-      },
-    );
 
     testWidgets('gives the readout a Material ancestor on both faces', (
       tester,

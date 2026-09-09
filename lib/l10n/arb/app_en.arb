@@ -173,7 +173,11 @@
     "sessionDateToday": "today {time}",
     "@sessionDateToday": {
         "description": "Sessions list date column for a session saved today; {time} is HH:MM.",
-        "placeholders": {"time": {"type": "String"}}
+        "placeholders": {
+            "time": {
+                "type": "String"
+            }
+        }
     },
     "sessionDateYesterday": "yesterday",
     "sessionsEmpty": "No saved sessions yet. Use “Save as…” to create one.",
@@ -273,7 +277,6 @@
     "a11yPortDedicated": "dedicated output",
     "a11yPortUnused": "unused output",
     "a11yEffectType": "Effect type",
-    "a11yWaveform": "Output loop waveform",
     "a11yHideTitleBar": "Hide title bar",
     "a11yShowTitleBar": "Show title bar",
     "a11yBankSelected": "Bank {bank}",
@@ -484,8 +487,8 @@
     "waveformWindowSubtitle": "Open a second window showing the whole-loop output waveform",
     "highContrastTitle": "High contrast",
     "highContrastSubtitle": "Force a brighter, higher-contrast palette. On desktop the OS contrast setting is not applied automatically.",
-    "trackIndicatorsTitle": "Track indicators",
-    "trackIndicatorsSubtitle": "Show a status light on each track",
+    "trackIndicatorsTitle": "Lane cache indicators",
+    "trackIndicatorsSubtitle": "Show cache status on the Signal lanes",
     "looperGroupLabel": "LOOPER",
     "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Mute mode they mute / unmute. FX mode (where track presses toggle FX chains) is not offered here — it is switched into live, never booted into.",
     "recordModeLabel": "Record",
@@ -769,24 +772,45 @@
     "@stageFxCellLabel": {
         "description": "The chain-first identity of an FX-mode stage cell: the FX stage the footswitch's bound chain attaches to, a middle dot, then the chain's own name. Names the FX control the cell drives — never the track in that column, which the cell no longer claims (#692).",
         "placeholders": {
-            "target": { "type": "String", "example": "MASTER" },
-            "chain": { "type": "String", "example": "REVERB" }
+            "target": {
+                "type": "String",
+                "example": "MASTER"
+            },
+            "chain": {
+                "type": "String",
+                "example": "REVERB"
+            }
         }
     },
     "stageFxTargetInput": "INPUT {number}",
     "@stageFxTargetInput": {
         "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a hardware input's monitor chain, when that input has no user-assigned name. 1-based, upper-case for stage distance. Carries no track name (the bound chain need not belong to the column's track).",
-        "placeholders": { "number": { "type": "int", "example": "1" } }
+        "placeholders": {
+            "number": {
+                "type": "int",
+                "example": "1"
+            }
+        }
     },
     "stageFxTargetTrack": "TRACK {number}",
     "@stageFxTargetTrack": {
         "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a track's bus chain. 1-based. Always shown chain-first (never the track's name), even when the bound chain targets the column's own track (#692).",
-        "placeholders": { "number": { "type": "int", "example": "3" } }
+        "placeholders": {
+            "number": {
+                "type": "int",
+                "example": "3"
+            }
+        }
     },
     "stageFxTargetLane": "LANE {lane}",
     "@stageFxTargetLane": {
         "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a loop lane's record-route chain.",
-        "placeholders": { "lane": { "type": "int", "example": "2" } }
+        "placeholders": {
+            "lane": {
+                "type": "int",
+                "example": "2"
+            }
+        }
     },
     "stageFxTargetMaster": "MASTER",
     "@stageFxTargetMaster": {
@@ -1036,7 +1060,7 @@
             }
         }
     },
-    "outputWaveformWindowTitle": "Segno — Output",
+    "outputWaveformWindowTitle": "Segno — Track",
     "midiInputGroup": "MIDI FOOT CONTROLLER",
     "midiNoDevicesFound": "No MIDI input devices found",
     "midiNone": "None",
@@ -1258,30 +1282,55 @@
     "@perfSavedSubtitle": {
         "description": "Completion dialog subtitle: capture name, exported track count, wall-clock length (M:SS).",
         "placeholders": {
-            "name": {"type": "String"},
-            "count": {"type": "int"},
-            "duration": {"type": "String"}
+            "name": {
+                "type": "String"
+            },
+            "count": {
+                "type": "int"
+            },
+            "duration": {
+                "type": "String"
+            }
         }
     },
     "perfSavedSubtitleTimed": "{name} — {duration}. Written to the session folder.",
     "@perfSavedSubtitleTimed": {
         "description": "Completion dialog subtitle when the length is known but the export produced no DAW tracks.",
-        "placeholders": {"name": {"type": "String"}, "duration": {"type": "String"}}
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "duration": {
+                "type": "String"
+            }
+        }
     },
     "perfSavedSubtitlePlain": "{name} — written to the session folder.",
     "@perfSavedSubtitlePlain": {
         "description": "Completion dialog subtitle when the track count or length is unknown (a recovered boot capture).",
-        "placeholders": {"name": {"type": "String"}}
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "perfRenderingTitle": "Rendering… {percent}%",
     "@perfRenderingTitle": {
         "description": "Title of the rendering dialog while the offline mixdown/stems render runs.",
-        "placeholders": {"percent": {"type": "int"}}
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
     },
     "perfRenderingSubtitleNamed": "{name} — writing the mixdown and the per-track stems. You can keep playing; arming another capture waits until this finishes.",
     "@perfRenderingSubtitleNamed": {
         "description": "Rendering dialog subtitle when the capture name is known.",
-        "placeholders": {"name": {"type": "String"}}
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "perfRenderingSubtitle": "Writing the mixdown and the per-track stems. You can keep playing; arming another capture waits until this finishes.",
     "perfHide": "Hide",
@@ -1406,28 +1455,6 @@
     "countInBarsLabel1": "1 bar",
     "countInBarsLabel2": "2 bars",
     "countInBarsLabel4": "4 bars",
-    "stageTempoBpm": "{bpm} bpm",
-    "@stageTempoBpm": {
-        "description": "The console status bar's tempo readout, in the pen's lower-case mono face.",
-        "placeholders": {
-            "bpm": {
-                "type": "String"
-            }
-        }
-    },
-    "stageCountIn": "count-in",
-    "@stageCountIn": {
-        "description": "The console status bar's count-in word, shown beside the beat dots while a count-in runs."
-    },
-    "a11yStageBank": "Bank {bank}",
-    "@a11yStageBank": {
-        "description": "Announced for the console status bar's bank readout — which bank the pedal is on.",
-        "placeholders": {
-            "bank": {
-                "type": "String"
-            }
-        }
-    },
     "a11yStageRecordIdle": "Not recording",
     "@a11yStageRecordIdle": {
         "description": "Announced for the console status bar's performance-record light while no capture is running."
@@ -1452,10 +1479,6 @@
                 "type": "int"
             }
         }
-    },
-    "a11yTrackArmed": "Armed, waiting for the next boundary",
-    "@a11yTrackArmed": {
-        "description": "Accessible label for the small badge shown on a track tile with a pending quantized/signal-triggered record arm."
     },
     "settingsSectionMode": "Mode",
     "looperModeIntro": "Choose how the looper's tracks relate to each other and the tempo grid.",
@@ -1565,14 +1588,6 @@
     "@a11yTrackPrimary": {
         "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
     },
-    "a11yCrownTrack": "Crown as primary track",
-    "@a11yCrownTrack": {
-        "description": "Accessible label for the tappable crown badge on a non-primary track in Sync/Band mode."
-    },
-    "a11yTrackCrowned": "Crowned primary",
-    "@a11yTrackCrowned": {
-        "description": "Screen-reader announcement after crowning a track the Sync/Band primary."
-    },
     "a11yTrayHandle": "Quick settings tray",
     "@a11yTrayHandle": {
         "description": "Accessible label for the settings tray's always-visible pull-tab handle (tap or drag to open/close)."
@@ -1588,7 +1603,11 @@
     "trayBrightnessPercent": "{percent}%",
     "@trayBrightnessPercent": {
         "description": "The readout above the brightness capsule in its popover.",
-        "placeholders": { "percent": { "type": "int" } }
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
     },
     "trayBrightLabel": "Bright",
     "@trayBrightLabel": {
@@ -1598,149 +1617,29 @@
     "@a11yTrayRail": {
         "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
     },
-    "readoutTempoLabel": "TEMPO",
-    "@readoutTempoLabel": {
-        "description": "Caption over the tempo figure on the 7-inch performance readout."
-    },
-    "readoutBarsLabel": "BARS",
-    "@readoutBarsLabel": {
-        "description": "Caption over the master loop length in bars on the 7-inch performance readout."
-    },
-    "readoutClockLabel": "TIME",
-    "@readoutClockLabel": {
-        "description": "Caption over the elapsed transport clock on the 7-inch console readout."
-    },
-    "readoutRecordLabel": "REC",
-    "@readoutRecordLabel": {
-        "description": "The performance-record light's word on the 7-inch console readout; the armed elapsed time renders beside it."
-    },
-    "readoutCountIn": "count-in",
-    "@readoutCountIn": {
-        "description": "Shown beside the beat dots on the 7-inch console readout while a count-in is sounding."
-    },
-    "readoutModeRecord": "REC",
-    "@readoutModeRecord": {
-        "description": "Mode chip on the 7-inch readout: a track press records. Short by design - read from stage distance."
-    },
-    "readoutModeMute": "MUTE",
-    "@readoutModeMute": {
-        "description": "Mode chip on the 7-inch readout: a track press mutes."
-    },
-    "readoutModeFx": "FX",
-    "@readoutModeFx": {
-        "description": "Mode chip on the 7-inch readout: a track press stomps its FX chain."
-    },
-    "readoutMix": "MIX",
-    "@readoutMix": {
-        "description": "The pill in the waveform strip's bottom-right corner on the 7-inch readout — the only touch affordance, opens the volume overlay. Kept short (and untranslated where possible): the pill is drawn 180 wide."
-    },
-    "readoutVolumesInputs": "INPUTS",
-    "@readoutVolumesInputs": {
-        "description": "Pinned header caption over the input rows on the 7-inch volume overlay."
-    },
-    "readoutVolumesTracks": "TRACKS",
-    "@readoutVolumesTracks": {
-        "description": "Caption over the track rows on the 7-inch volume overlay."
-    },
-    "readoutVolumesBackToStage": "BACK TO STAGE",
-    "@readoutVolumesBackToStage": {
-        "description": "Chip on the 7-inch volume overlay that dismisses it back to the readout."
-    },
-    "readoutVolumesBack": "BACK",
-    "@readoutVolumesBack": {
-        "description": "Chip on a 7-inch volume config panel that returns to the volume list."
-    },
-    "readoutVolumesVolume": "VOLUME",
-    "@readoutVolumesVolume": {
-        "description": "Caption over the fader on a 7-inch volume config panel."
-    },
-    "readoutVolumesInputKind": "INPUT",
-    "@readoutVolumesInputKind": {
-        "description": "Kind caption on the input config panel, and the caption over a track's read-only input-source pills."
-    },
-    "readoutVolumesTrackKind": "TRACK",
-    "@readoutVolumesTrackKind": {
-        "description": "Kind caption over the title on a track's 7-inch config panel."
-    },
-    "readoutVolumesMute": "MUTE",
-    "@readoutVolumesMute": {
-        "description": "The mute toggle on a track's 7-inch config panel."
-    },
-    "readoutVolumesFxChain": "FX CHAIN",
-    "@readoutVolumesFxChain": {
-        "description": "The FX-chain engage toggle on a track's 7-inch config panel."
-    },
-    "readoutVolumesListeningTracks": "LISTENING TRACKS",
-    "@readoutVolumesListeningTracks": {
-        "description": "Caption over the read-only pills naming the tracks that record an input, on its 7-inch config panel."
-    },
-    "readoutVolumesConditioning": "CONDITIONING",
-    "@readoutVolumesConditioning": {
-        "description": "Caption over the input-conditioning toggles on the 7-inch input config panel (arrives with #697)."
-    },
-    "readoutVolumesHpf": "HPF",
-    "@readoutVolumesHpf": {
-        "description": "High-pass filter conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutVolumesHum": "HUM",
-    "@readoutVolumesHum": {
-        "description": "Hum-removal conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutVolumesExpander": "EXPANDER",
-    "@readoutVolumesExpander": {
-        "description": "Expander conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutVolumesRestore": "RESTORE",
-    "@readoutVolumesRestore": {
-        "description": "Restoration conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutStateRecording": "REC",
-    "@readoutStateRecording": {
-        "description": "Track cell state on the 7-inch readout: capturing a first pass."
-    },
-    "readoutStateOverdubbing": "DUB",
-    "@readoutStateOverdubbing": {
-        "description": "Track cell state on the 7-inch readout: summing input into an existing loop."
-    },
-    "readoutStatePlaying": "PLAY",
-    "@readoutStatePlaying": {
-        "description": "Track cell state on the 7-inch readout: looping playback."
-    },
-    "readoutStateMuted": "MUTED",
-    "@readoutStateMuted": {
-        "description": "Track cell state on the 7-inch readout: muted."
-    },
-    "readoutStatePending": "ARMED",
-    "@readoutStatePending": {
-        "description": "Track cell state on the 7-inch readout: a quantized action is armed and waiting for the loop boundary."
-    },
-    "readoutStateStopped": "STOPPED",
-    "@readoutStateStopped": {
-        "description": "Track cell state on the 7-inch readout: playback halted but the loop buffer is retained. Distinct from empty - the track still holds audio."
-    },
-    "readoutStateEmpty": "EMPTY",
-    "@readoutStateEmpty": {
-        "description": "Track cell state on the 7-inch readout: nothing captured yet."
-    },
     "tunerCentsAndHz": "{cents} cents · {hz} Hz",
     "@tunerCentsAndHz": {
-      "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
-      "placeholders": {
-        "cents": { "type": "String" },
-        "hz": { "type": "String" }
-      }
+        "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
+        "placeholders": {
+            "cents": {
+                "type": "String"
+            },
+            "hz": {
+                "type": "String"
+            }
+        }
     },
     "tunerListening": "Play a note",
     "@tunerListening": {
-      "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
+        "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
     },
     "tunerNoTunableInput": "No input to tune",
     "@tunerNoTunableInput": {
-      "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
+        "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
     },
     "tunerNoDevice": "No audio device",
     "@tunerNoDevice": {
-      "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
+        "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
     },
     "trayTunerLabel": "Tuner",
     "@trayTunerLabel": {
@@ -3320,5 +3219,180 @@
     "a11yPowerOffMark": "Segno",
     "@a11yPowerOffMark": {
         "description": "Announced name of the Plymouth lockup on the goodbye mark."
-    }
+    },
+    "stageLibrary": "Library",
+    "@stageLibrary": {
+        "description": "Accessible name of the top-bar Library icon."
+    },
+    "stageSettings": "Settings",
+    "stageViewMenu": "Performance view",
+    "@stageViewMenu": {
+        "description": "Accessible name of the top-bar view icon and its menu."
+    },
+    "stageViewTrack": "Track",
+    "stageViewWave": "Wave",
+    "a11yStageBankButton": "Bank {bank}, tracks {first} to {last}",
+    "@a11yStageBankButton": {
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            },
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        }
+    },
+    "stageBarsUnit": "{count, plural, =1{bar} other{bars}}",
+    "@stageBarsUnit": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "stageLayersUnit": "{count, plural, =1{layer} other{layers}}",
+    "@stageLayersUnit": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "stageNoBars": "—",
+    "@stageNoBars": {
+        "description": "Bars figure of a track with no counted bars."
+    },
+    "stageFxMarker": "FX",
+    "a11yStageFxActive": "Track effects active",
+    "a11yStageFxBypassed": "Track effects bypassed",
+    "a11yStageTrackMeta": "Track {number}, {bars}, {layers}",
+    "@a11yStageTrackMeta": {
+        "placeholders": {
+            "number": {
+                "type": "int"
+            },
+            "bars": {
+                "type": "String"
+            },
+            "layers": {
+                "type": "String"
+            }
+        }
+    },
+    "stageBarsFigure": "{count, plural, =1{1 bar} other{{count} bars}}",
+    "@stageBarsFigure": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "stageNoBarsFigure": "no counted bars",
+    "stageLayersFigure": "{count, plural, =1{1 layer} other{{count} layers}}",
+    "@stageLayersFigure": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "stageBpmUnit": "BPM",
+    "stageDbUnit": "dBFS",
+    "stageOutputLevel": "OUT {db} dBFS",
+    "@stageOutputLevel": {
+        "placeholders": {
+            "db": {
+                "type": "String"
+            }
+        }
+    },
+    "stageOutputClip": "OUT CLIP",
+    "a11yStageOutputLevel": "Output level {db} dBFS",
+    "@a11yStageOutputLevel": {
+        "placeholders": {
+            "db": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yStageOutputClip": "Output clipping",
+    "a11yStageElapsed": "Elapsed since first recording, {time}",
+    "@a11yStageElapsed": {
+        "placeholders": {
+            "time": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yStageLoopMode": "Loop mode {mode}",
+    "@a11yStageLoopMode": {
+        "placeholders": {
+            "mode": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yStageTempo": "{bpm} beats per minute, {signature}",
+    "@a11yStageTempo": {
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            },
+            "signature": {
+                "type": "String"
+            }
+        }
+    },
+    "stageQueueRecord": "Record",
+    "stageQueueOverdub": "Overdub",
+    "stageQueueLoopStart": "Loop start",
+    "stageQueueNextBar": "Next bar",
+    "stageQueueHalf": "Next half note",
+    "stageQueueQuarter": "Next quarter note",
+    "stageQueueEighth": "Next eighth note",
+    "stageQueueSixteenth": "Next sixteenth note",
+    "stageQueueSound": "Sound",
+    "a11yTrackQueued": "{action} queued, {timing}",
+    "@a11yTrackQueued": {
+        "placeholders": {
+            "action": {
+                "type": "String"
+            },
+            "timing": {
+                "type": "String"
+            }
+        }
+    },
+    "readoutStateEmpty": "Empty",
+    "readoutStateRecording": "Recording",
+    "readoutStateOverdubbing": "Overdubbing",
+    "readoutStatePlaying": "Playing",
+    "readoutStateStopped": "Stopped",
+    "readoutStateMuted": "Muted",
+    "readoutFunctionBank": "{function} · Bank {bank}",
+    "@readoutFunctionBank": {
+        "placeholders": {
+            "function": {
+                "type": "String"
+            },
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "readoutFunctionTracks": "Tracks",
+    "readoutFunctionMute": "Mute",
+    "readoutFunctionFx": "FX",
+    "a11ySelectedTrackWaveform": "{name} waveform",
+    "@a11ySelectedTrackWaveform": {
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yReadoutNoTrack": "No track selected"
 }

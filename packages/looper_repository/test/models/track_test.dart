@@ -44,8 +44,13 @@ void main() {
         quantizeOverride: true,
         oneShot: true,
         chainEnabled: false,
+        positionFrames: 4800,
       );
-      expect(track.props, [...track.steadyProps, track.peak]);
+      expect(track.props, [
+        ...track.steadyProps,
+        track.peak,
+        track.positionFrames,
+      ]);
     });
 
     test('a moving peak leaves steadyProps unchanged', () {
@@ -53,6 +58,33 @@ void main() {
       const loud = Track(channel: 1, state: TrackState.playing, peak: 0.9);
       expect(loud.steadyProps, still.steadyProps);
       expect(loud, isNot(still));
+    });
+
+    test('a moving playhead leaves steadyProps unchanged too', () {
+      const still = Track(channel: 1, state: TrackState.playing);
+      const later = Track(
+        channel: 1,
+        state: TrackState.playing,
+        positionFrames: 960,
+      );
+      expect(later.steadyProps, still.steadyProps);
+      expect(later, isNot(still));
+    });
+
+    test('progress is the playhead over the length, 0 without a length', () {
+      const playing = Track(
+        channel: 0,
+        state: TrackState.playing,
+        lengthFrames: 1000,
+        positionFrames: 250,
+      );
+      expect(playing.progress, 0.25);
+      const defining = Track(
+        channel: 0,
+        state: TrackState.recording,
+        positionFrames: 250,
+      );
+      expect(defining.progress, 0);
     });
   });
 }

@@ -59,6 +59,7 @@ static void le_fill_track_snapshot(le_track* tr, int active,
       active ? atomic_load_explicit(&tr->a_settled_take_id, memory_order_acquire)
              : 0;
   out->restore_state = active ? load_i32(&tr->a_restore_state) : 0;
+  out->position_frames = active ? load_i32(&tr->a_play_pos) : 0;
 }
 
 /* Max added latency (frames) across every active octaver in any record-route or
@@ -249,6 +250,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     }
   }
   out->input_cond_mask = cond_mask;
+  out->output_peak = load_f32(&engine->a_out_peak_bits);
   /* The audio-callback telemetry (#722) is deliberately NOT read here — it has
    * its own entry point below. Anything on this struct is projected into the
    * app's render-rate state, whose equality drives the rebuild dedupe, and a
@@ -292,6 +294,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->one_shot = 0;
     out->settled_take_id = 0;
     out->restore_state = 0;
+    out->position_frames = 0;
     return;
   }
   le_fill_track_snapshot(&engine->tracks[channel], 1, out);

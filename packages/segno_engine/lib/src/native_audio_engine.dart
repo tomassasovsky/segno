@@ -1721,6 +1721,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
       inputRms: s.inputRms,
       inputPeak: s.inputPeak,
       outputRms: s.outputRms,
+      outputPeak: s.outputPeak,
       latencyState: s.latencyState,
       measuredLatencyMs: s.measuredLatencyMs,
       inputChannels: s.inputChannels,

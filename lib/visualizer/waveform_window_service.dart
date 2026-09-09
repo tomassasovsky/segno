@@ -4,11 +4,10 @@ import 'dart:typed_data';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:segno/visualizer/performance_readout.dart';
-import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
 import 'package:segno/visualizer/waveform_window_channel.dart';
 
-/// Manages the secondary output-waveform window: opening/closing it and pushing
+/// Manages the secondary selected-track window: opening/closing it and pushing
 /// waveform frames to it. Injected into the app so tests use a no-op.
 abstract interface class WaveformWindowService {
   /// Whether the waveform window is currently open.
@@ -25,8 +24,8 @@ abstract interface class WaveformWindowService {
   /// Closes the waveform window (idempotent).
   Future<void> close();
 
-  /// Sends a waveform frame (loop peaks + playhead [progress] in `0..1`) to the
-  /// open window; no-op if closed.
+  /// Sends a waveform frame (the selected track's loop peaks + its playhead
+  /// [progress] in `0..1`) to the open window; no-op if closed.
   ///
   /// [samples] are omitted only after their delivery is acknowledged. The
   /// source is a loop-indexed peak buffer the engine writes while capturing,
@@ -34,7 +33,8 @@ abstract interface class WaveformWindowService {
   /// moves — and re-sending them would copy 2 KB, encode it, and hop the
   /// platform channel thirty times a second to redraw the same picture. The
   /// window holds the last samples it was given, so a samples-free frame
-  /// moves the playhead over the waveform already on screen.
+  /// moves the playhead over the waveform already on screen. A cursor move
+  /// changes [selectedTrack], and with it the peaks.
   ///
   /// The returned future completes when the frame has been delivered, and
   /// **with an error when it never landed**. Frames are produced by events
@@ -61,12 +61,6 @@ abstract interface class WaveformWindowService {
   /// that was built once and dropped in flight is never rebuilt and the
   /// second screen holds stale facts for the rest of the set.
   Future<void> pushReadout(PerformanceReadout readout);
-
-  /// Handler for control commands the sub-window's volume overlay sends back
-  /// (#698) — the channel's first sub→main control path. The app shell sets
-  /// this to a callback that applies the command through the same blocs the
-  /// main UI uses; `null` drops commands on the floor.
-  abstract void Function(ReadoutControl control)? onControl;
 
   /// Fired when a sub-window announces it is up — and therefore that it is
   /// holding NOTHING.
@@ -100,19 +94,8 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   static var _mainChannelRegistered = false;
 
   /// Static like [_readyCompleter]: the channel handler is process-wide, so
-  /// whichever instance last set a handler owns command delivery.
-  static void Function(ReadoutControl control)? _controlHandler;
-
-  /// Static for the same reason as [_controlHandler].
+  /// whichever instance last set a handler owns the ready signal.
   static void Function()? _readyHandler;
-
-  @override
-  void Function(ReadoutControl control)? get onControl => _controlHandler;
-
-  @override
-  set onControl(void Function(ReadoutControl control)? handler) {
-    _controlHandler = handler;
-  }
 
   @override
   void Function()? get onWindowReady => _readyHandler;
@@ -163,12 +146,6 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
         // completing twice throws out of this channel handler.
         final ready = _readyCompleter;
         if (ready != null && !ready.isCompleted) ready.complete();
-      }
-      if (call.method == waveformWindowControlMethod) {
-        final arguments = call.arguments;
-        if (arguments is Map<Object?, Object?>) {
-          _controlHandler?.call(ReadoutControl.fromMap(arguments));
-        }
       }
       return null;
     });
@@ -259,9 +236,6 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
 class NoopWaveformWindowService implements WaveformWindowService {
   @override
   bool get isOpen => false;
-
-  @override
-  void Function(ReadoutControl control)? onControl;
 
   @override
   void Function()? onWindowReady;

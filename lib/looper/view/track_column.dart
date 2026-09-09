@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/common/pen_icons.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -13,10 +14,58 @@ import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
 import 'package:segno/theme/theme.dart';
 
-/// One tall track column in the Tracks view: a header (channel number,
-/// loop-multiple badge, and undo/redo on the selected column), a tappable level
-/// meter (record/overdub in record mode, mute/unmute in mute mode; long-press
-/// stops), an editable name, and an optional readiness indicator strip.
+/// The boundary a queued (pending) action waits for, as the accepted stage
+/// names it inside the track: the engine's quantize grid, or the Sound start
+/// that arms a take on the chosen input's signal.
+enum QueueTiming {
+  /// The next loop top (quantize on with no finer grid).
+  loopStart,
+
+  /// The next bar line.
+  bar,
+
+  /// The next half note.
+  half,
+
+  /// The next quarter note.
+  quarter,
+
+  /// The next eighth note.
+  eighth,
+
+  /// The next sixteenth note.
+  sixteenth,
+
+  /// Sound start: the arm fires on signal at the recording input.
+  sound,
+}
+
+/// The [QueueTiming] a pending arm resolves to under [division], or
+/// [QueueTiming.sound] when a Sound start ([soundStart]) armed it.
+QueueTiming queueTimingOf(GridDivision division, {required bool soundStart}) {
+  if (soundStart) return QueueTiming.sound;
+  return switch (division) {
+    GridDivision.off => QueueTiming.loopStart,
+    GridDivision.bar => QueueTiming.bar,
+    GridDivision.half => QueueTiming.half,
+    GridDivision.quarter => QueueTiming.quarter,
+    GridDivision.eighth => QueueTiming.eighth,
+    GridDivision.sixteenth => QueueTiming.sixteenth,
+  };
+}
+
+/// The FX marker's three readings: bright when the track's chain is engaged,
+/// dim when it is bypassed, absent when no effect is assigned.
+enum _FxMarker { active, bypassed, absent }
+
+/// One tall track column of the accepted stage: the info block (name with the
+/// primary crown, number, bars, layers and the FX marker) over one
+/// whole-track level meter — the queued-action cue and the FX-mode dressing
+/// ride over it — and the thin progress bar along the bottom.
+///
+/// Tapping the meter selects the track and acts by mode (record/overdub in
+/// record mode, mute/unmute in mute mode, FX chain on/off in FX mode);
+/// long-press stops. Tapping the name renames. The crown is a readout.
 class TrackColumn extends StatelessWidget {
   /// Creates a [TrackColumn].
   const TrackColumn({
@@ -24,16 +73,16 @@ class TrackColumn extends StatelessWidget {
     required this.name,
     required this.selected,
     required this.mode,
-    this.looperMode = LooperMode.multi,
     this.isPrimary = false,
-    this.onCrownPrimary,
+    this.bars,
+    this.queueTiming = QueueTiming.loopStart,
     this.fxTarget,
     this.inputNames = const {},
     super.key,
   });
 
   /// The track this column renders — every fact drawn here comes from it
-  /// except the meter's level.
+  /// except the meter's level and the progress bar's playhead.
   ///
   /// **The level comes from the ambient [LooperBloc], for `track.channel`.**
   /// That is the rebuild split (#646/#654/#832): the [TrackPeakMeter] leaf
@@ -81,20 +130,41 @@ class TrackColumn extends StatelessWidget {
   /// Whether this column is selected (a white rather than card-colored ring).
   final bool selected;
 
-  /// The active system mode (Record vs Mute).
+  /// The active system mode (Record vs Mute vs FX).
   final InteractionMode mode;
 
-  /// The five-mode axis (B5c): governs whether the crown badge shows at all
-  /// — visible in Sync/Band, absent in Multi/Song/Free (Wave-view style, per
-  /// the brainstorm).
-  final LooperMode looperMode;
-
-  /// Whether [track] is the crowned primary track (D18).
+  /// Whether [track] wears the primary crown — the first completed recording,
+  /// or the explicit timing handoff. A readout, never a control.
   final bool isPrimary;
 
-  /// Dispatches a crown-primary press for the given channel. Required
-  /// whenever [looperMode] is Sync/Band (the badge is interactive then).
-  final void Function(int channel)? onCrownPrimary;
+  /// The track's length in bars, or `null` when nothing counts them (an empty
+  /// track, or a session without a tempo grid).
+  final int? bars;
+
+  /// What a pending arm on this track is waiting for — drawn in the queued
+  /// cue beside its action.
+  final QueueTiming queueTiming;
+
+  /// The column's inset from its ring to its content — the pen's 18.
+  static const double padding = 18;
+
+  /// The ring's stroke.
+  static const double border = 2;
+
+  /// The info block's fixed height — the pen's 124: two name lines and the
+  /// meta row, so every column's meter starts at the same y.
+  static const double infoHeight = 124;
+
+  /// The vertical gap between the info block, the meter and the progress bar.
+  static const double gap = 14;
+
+  /// Where the meter starts below the column's top edge — what the shared
+  /// dBFS scales beside the run line their 0 dBFS mark up with.
+  static const double meterTopInset = border + padding + infoHeight + gap;
+
+  /// Where the meter ends above the column's bottom edge — the scales' -60.
+  static const double meterBottomInset =
+      border + padding + TrackProgressBar.height + gap;
 
   @override
   Widget build(BuildContext context) {
@@ -130,13 +200,12 @@ class TrackColumn extends StatelessWidget {
     // (muted included; see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final isFx = mode == InteractionMode.fx;
+    final stateColor = looper.meterColor(meterState, mode: mode);
     // FX mode recedes the meter to 40% alpha so the chain dressing reads on top
     // of it (#692). The meter stays TRUTHFUL — it is taken pre-chain, so it is
     // the same fill and hue the other modes show — it just steps back to let
     // the chain identity own the tile. The other modes paint it at full weight.
-    final barColor = isFx
-        ? looper.meterColor(meterState, mode: mode).withValues(alpha: 0.4)
-        : looper.meterColor(meterState, mode: mode);
+    final barColor = isFx ? stateColor.withValues(alpha: 0.4) : stateColor;
     // The FX-mode cell identity, chain-first (#692): the FX stage the bound
     // chain sits on, then the chain's own name — the track name is deliberately
     // absent, since the cell drives an FX control that need not belong to this
@@ -178,32 +247,7 @@ class TrackColumn extends StatelessWidget {
     final fxCellLabel = fxIdentitySub == null
         ? fxIdentityPrimary
         : '$fxIdentityPrimary $fxIdentitySub';
-    // Crown badge (D18, B5c): visible only in Sync/Band (Wave-view style,
-    // per the brainstorm) — an inert, empty slot in every other mode so the
-    // column layout never shifts when the mode changes.
-    final crownVisible =
-        looperMode == LooperMode.sync || looperMode == LooperMode.band;
-    // Built once and placed where it applies — a single construction site
-    // means the badge's key/callback wiring can never diverge.
-    final crownBadge = crownVisible
-        ? _CrownBadge(
-            key: Key('tracks_crown_${track.channel}'),
-            isPrimary: isPrimary,
-            color: theme.colorScheme.primary,
-            onCrown: onCrownPrimary == null
-                ? null
-                : () => onCrownPrimary!(track.channel),
-          )
-        : null;
 
-    // The track name label. On the console it renders at a uniform, larger
-    // size (consistent height across columns; the longest name reaches ~60% of
-    // the column width); desktop keeps the fixed text size.
-    final nameStyle = theme.textTheme.titleMedium?.copyWith(
-      color: surface.textPrimary,
-      fontWeight: FontWeight.w800,
-      letterSpacing: 1.5,
-    );
     // The meter conveys state through colour only (WCAG 1.4.1); name the state
     // in words so it reaches the tile's accessible label.
     final stateWord = switch (meterState) {
@@ -214,57 +258,43 @@ class TrackColumn extends StatelessWidget {
       LooperMeterState.stopped => l10n.trackStateStopped,
       LooperMeterState.muted => l10n.trackStateMuted,
     };
+    // Layers: the base take plus every retired overdub pass. The base loop is
+    // not an engine undo layer (undo_depth counts retired passes only), but it
+    // is a layer the performer hears, so it counts as the first.
+    final layers = track.undoDepth + (track.hasContent ? 1 : 0);
+    final fxMarker = track.effects.isEmpty
+        ? _FxMarker.absent
+        : track.chainEnabled
+        ? _FxMarker.active
+        : _FxMarker.bypassed;
 
     return Container(
       decoration: BoxDecoration(
         color: looper.tileBackground,
         borderRadius: BorderRadius.circular(17),
         // 2px ring: white when selected (onAccent), otherwise the pen's
-        // card stroke #17171b (the `card` token) — not borderless.
+        // card stroke (the `card` token) — not borderless.
         border: Border.all(
           color: selected ? surface.onAccent : surface.card,
-          width: 2,
+          width: border,
         ),
       ),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(padding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // The foot pedals own undo/redo, so there are no on-screen buttons
-          // and the channel number is centred. The loop-multiple badge still
-          // rides the right edge; a pending arm badge (A5) rides the left.
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              AppText(
-                '${track.channel + 1}',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  // The pen's cell number: UI sans, muted grey.
-                  fontFamily: SurfaceTheme.displayFont,
-                  color: surface.textTertiary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (track.isMultiple)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: AppText(
-                    l10n.loopMultipleLabel(track.multiple),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-              if (track.pending)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: _PendingArmBadge(color: looper.recordColor),
-                ),
-              if (crownBadge != null)
-                Align(alignment: Alignment.topCenter, child: crownBadge),
-            ],
+          SizedBox(
+            height: infoHeight,
+            child: _TrackInfo(
+              channel: track.channel,
+              name: name,
+              isPrimary: isPrimary,
+              bars: bars,
+              layers: layers,
+              fxMarker: fxMarker,
+            ),
           ),
+          const SizedBox(height: gap),
           Expanded(
             child: FocusableTapTarget(
               key: Key('tracks_tile_${track.channel}'),
@@ -274,9 +304,9 @@ class TrackColumn extends StatelessWidget {
               // every surface, touch included.
               // FX mode names the cell chain-first — its bound chain's target
               // identity (#692), not the track — and adds the CHAIN state,
-              // which the meter and indicator (transport only) never report,
-              // while KEEPING the transport word the other modes carry, which
-              // the meter otherwise conveys by colour alone (WCAG 1.4.1).
+              // which the meter never reports, while KEEPING the transport
+              // word the other modes carry, which the meter otherwise conveys
+              // by colour alone (WCAG 1.4.1).
               semanticLabel: switch (mode) {
                 InteractionMode.record => l10n.a11yTrackTile(name, stateWord),
                 InteractionMode.mute => l10n.a11yTrackTileMute(name, stateWord),
@@ -326,6 +356,8 @@ class TrackColumn extends StatelessWidget {
                         // fill so a loaded-but-paused loop keeps a visible bar
                         // after a stop.
                         frozen: track.state == TrackState.stopped,
+                        // The accepted stage's red clip cap.
+                        clipColor: looper.recordColor,
                       ),
                     ),
                     // FX mode re-dresses the tile in place (#692): over the
@@ -346,237 +378,371 @@ class TrackColumn extends StatelessWidget {
                           chainEnabled: track.chainEnabled,
                         ),
                       ),
+                    // A queued action sits centrally in its own track, with
+                    // its action and boundary (the accepted stage). A readout,
+                    // never a target: the tap falls through to the tile.
+                    if (track.pending)
+                      Positioned.fill(
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: _QueuedCue(
+                              key: Key('tracks_queued_${track.channel}'),
+                              action: track.hasContent
+                                  ? l10n.stageQueueOverdub
+                                  : l10n.stageQueueRecord,
+                              timing: _queueTimingLabel(l10n, queueTiming),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 5),
-          _TrackHistoryDots(
-            // The base loop is not an engine undo layer (undo_depth counts
-            // retired overdub passes only), but it is undoable — undoing it
-            // clears the track — so count it as the first history entry.
-            undoDepth: track.undoDepth + (track.hasContent ? 1 : 0),
-            redoDepth: track.redoDepth,
+          const SizedBox(height: gap),
+          TrackProgressBar(
+            key: Key('tracks_progress_${track.channel}'),
+            channel: track.channel,
+            color: barColor,
           ),
-          // The track name identifies the column in every mode BUT FX. In FX
-          // mode the cell is not the track — it drives a bound FX chain, named
-          // chain-first by the `TARGET · CHAIN` identity inside the tile above
-          // (#692) — so the track name is removed from the cell entirely rather
-          // than re-asserting the track-as-FX-control conflation here.
-          if (!isFx) ...[
-            const SizedBox(height: 2),
-            FocusableTapTarget(
-              key: Key('tracks_name_${track.channel}'),
-              semanticLabel: l10n.a11yRenameTrack(name),
-              onTap: () => showRenameTrackDialog(
-                context: context,
-                cubit: context.read<TracksCubit>(),
-                channel: track.channel,
-                current: name,
-              ),
-              // Fixed console name size: uniform height across columns,
-              // tuned so a 6-char name (e.g. GUITAR) reaches ~60% of the
-              // column width on the 16" panel. Hard-coded (not width-relative).
-              child: AppText(
-                name,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: nameStyle?.copyWith(fontSize: 47.3, height: 1),
-              ),
-            ),
-          ],
-          // A discrete arm/readiness strip, shown only when the view preference
-          // is on. When off the widget is absent and the tile reflows.
-          if (context.select<TracksCubit, bool>(
-            (c) => c.state.showIndicators,
-          )) ...[
-            const SizedBox(height: 6),
-            _TrackIndicator(
-              key: Key('tracks_indicator_${track.channel}'),
-              status: TrackIndicator.of(
-                track.state,
-                muted: track.muted,
-                hasContent: track.hasContent,
-                selected: selected,
-                mode: mode,
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 }
 
-/// A single-line, paged undo/redo history for a track.
-///
-/// History entries are laid out over pages of exactly [_slotsPerPage] dots.
-/// The page-turn chevrons live in fixed gutters outside the dot row (invisible
-/// when there is no adjacent page), so they never take a slot and the dots
-/// never shift sideways. Only the page holding the current position is shown:
-/// bright dots are undoable layers, grey dots are redoable ones, and faint
-/// dots are unused slots — so the white/grey boundary marks where you are.
-class _TrackHistoryDots extends StatelessWidget {
-  const _TrackHistoryDots({required this.undoDepth, required this.redoDepth});
+/// The accepted stage's wording for a [QueueTiming].
+String _queueTimingLabel(AppLocalizations l10n, QueueTiming timing) =>
+    switch (timing) {
+      QueueTiming.loopStart => l10n.stageQueueLoopStart,
+      QueueTiming.bar => l10n.stageQueueNextBar,
+      QueueTiming.half => l10n.stageQueueHalf,
+      QueueTiming.quarter => l10n.stageQueueQuarter,
+      QueueTiming.eighth => l10n.stageQueueEighth,
+      QueueTiming.sixteenth => l10n.stageQueueSixteenth,
+      QueueTiming.sound => l10n.stageQueueSound,
+    };
 
-  final int undoDepth;
-
-  final int redoDepth;
-
-  static const _slotsPerPage = 10;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = undoDepth + redoDepth;
-    if (total == 0) return const SizedBox.shrink();
-
-    final surface = context.surface;
-    final looper = Theme.of(context).extension<LooperTheme>()!;
-
-    final pageCount = (total + _slotsPerPage - 1) ~/ _slotsPerPage;
-    // Show the page holding the newest undoable layer (0-based item index),
-    // or the first page when there is nothing left to undo.
-    final current = undoDepth == 0 ? 0 : undoDepth - 1;
-    final page = current ~/ _slotsPerPage;
-    final start = page * _slotsPerPage;
-
-    // Three tiers of history slot: a layer you can peel, one you could redo
-    // back to, and an unused slot. The last is `borderSubtle` rather than a
-    // text tone — an empty slot is a container hairline, not a label.
-    Color slotColor(int item) {
-      if (item < undoDepth) return surface.textPrimary;
-      if (item < total) return surface.textTertiary;
-      return surface.borderSubtle;
-    }
-
-    // The console's are the pen's: `STAGE / stage` draws ten 10px dots 5 apart
-    // in a 14-tall strip. They had been scaled up to 18 on the argument that
-    // they should match the larger track name — but they are a history
-    // READOUT, not a control, and at 18 with an 8 gap the row was half again
-    // as wide as the column the pen gives it. Desktop keeps its compact sizes.
-    const dotSize = 10.0;
-    const rowHeight = 14.0;
-    const gutterSize = 14.0;
-    const gapSize = 5.0;
-
-    Widget gutter(IconData icon, {required bool visible}) => Visibility(
-      visible: visible,
-      maintainSize: true,
-      maintainAnimation: true,
-      maintainState: true,
-      child: Icon(icon, size: gutterSize, color: looper.toolbarIconColor),
-    );
-
-    return SizedBox(
-      height: rowHeight,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          spacing: gapSize,
-          children: [
-            gutter(Icons.chevron_left, visible: page > 0),
-            for (var i = 0; i < _slotsPerPage; i++)
-              SizedBox.square(
-                dimension: dotSize,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: slotColor(start + i),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            gutter(Icons.chevron_right, visible: page < pageCount - 1),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A static, full-width status strip below a track name. Its colour is the
-/// track's [TrackIndicator] state. Carries no semantics of its own
-/// ([ExcludeSemantics]): the tile already names its state for screen readers,
-/// so a second label here would double-announce. Static colour ⇒ no motion.
-class _TrackIndicator extends StatelessWidget {
-  const _TrackIndicator({required this.status, super.key});
-
-  final TrackIndicator status;
-
-  @override
-  Widget build(BuildContext context) {
-    final looper = Theme.of(context).extension<LooperTheme>()!;
-    return ExcludeSemantics(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: looper.indicatorColor(status),
-          borderRadius: BorderRadius.circular(2),
-        ),
-        child: const SizedBox(height: 5, width: double.infinity),
-      ),
-    );
-  }
-}
-
-/// The crown badge marking (and setting) the Sync/Band primary track (D18),
-/// Wave-view style per the brainstorm: a filled, inert badge on the
-/// currently-crowned track; a dim, tappable one on every other track (tap to
-/// crown IT instead — there is no separate "un-crown" gesture, matching the
-/// engine's `crownPrimary`-only API).
-class _CrownBadge extends StatelessWidget {
-  const _CrownBadge({
+/// The column's info block: the name (with the crown before it when the track
+/// is primary) centred over two lines, and the meta row — number, bars,
+/// layers, FX — along the block's bottom edge. Tapping the name renames.
+class _TrackInfo extends StatelessWidget {
+  const _TrackInfo({
+    required this.channel,
+    required this.name,
     required this.isPrimary,
-    required this.color,
-    required this.onCrown,
-    super.key,
+    required this.bars,
+    required this.layers,
+    required this.fxMarker,
   });
 
-  /// Whether this track is the currently-crowned primary.
+  final int channel;
+  final String name;
   final bool isPrimary;
-
-  /// The badge's active tint when [isPrimary] (dimmed otherwise).
-  final Color color;
-
-  /// Crowns this track. `null` renders the badge fully inert (no callback
-  /// wired) — the caller decides whether crowning is available at all.
-  final VoidCallback? onCrown;
+  final int? bars;
+  final int layers;
+  final _FxMarker fxMarker;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return FocusableTapTarget(
-      // Tapping the already-primary track's own badge would be a no-op (no
-      // un-crown gesture exists), so it is presented as inert, matching
-      // FocusableTapTarget's disabled-semantics convention.
-      onTap: isPrimary ? null : onCrown,
-      semanticLabel: isPrimary ? l10n.a11yTrackPrimary : l10n.a11yCrownTrack,
-      selected: isPrimary,
-      borderRadius: 4,
-      child: Icon(
-        Icons.workspace_premium,
-        size: 14,
-        color: isPrimary ? color : color.withValues(alpha: 0.35),
+    final surface = context.surface;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Center(
+            child: FocusableTapTarget(
+              key: Key('tracks_name_$channel'),
+              semanticLabel: l10n.a11yRenameTrack(name),
+              onTap: () => showRenameTrackDialog(
+                context: context,
+                cubit: context.read<TracksCubit>(),
+                channel: channel,
+                current: name,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isPrimary) ...[
+                    PrimaryCrown(
+                      key: Key('tracks_crown_$channel'),
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Flexible(
+                    child: AppText(
+                      name,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        // The pen's name: UI sans, 700 32/1.2, two lines.
+                        fontFamily: SurfaceTheme.displayFont,
+                        color: surface.textPrimary,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                        height: 1.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        _TrackMeta(
+          channel: channel,
+          bars: bars,
+          layers: layers,
+          fxMarker: fxMarker,
+        ),
+      ],
+    );
+  }
+}
+
+/// The meta row under the name: the channel number, the bar and layer counts
+/// with their small units, and the FX marker at the trailing edge — bright
+/// when the chain is engaged, dim when bypassed, invisible (but holding its
+/// width) when no effect is assigned.
+class _TrackMeta extends StatelessWidget {
+  const _TrackMeta({
+    required this.channel,
+    required this.bars,
+    required this.layers,
+    required this.fxMarker,
+  });
+
+  final int channel;
+  final int? bars;
+  final int layers;
+  final _FxMarker fxMarker;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final figure = TextStyle(
+      fontFamily: SurfaceTheme.displayFont,
+      color: surface.textPrimary,
+      fontSize: 24,
+      height: 1,
+    );
+    final unit = TextStyle(
+      fontFamily: SurfaceTheme.displayFont,
+      color: surface.textTertiary,
+      fontSize: 17,
+      height: 1,
+    );
+    final barsCount = bars;
+    final barsFigure = barsCount == null
+        ? l10n.stageNoBarsFigure
+        : l10n.stageBarsFigure(barsCount);
+    return Semantics(
+      label: l10n.a11yStageTrackMeta(
+        channel + 1,
+        barsFigure,
+        l10n.stageLayersFigure(layers),
+      ),
+      child: ExcludeSemantics(
+        // Spread across the column at the pen's size; scaled down as one
+        // piece in a narrower column (a desktop window) rather than
+        // overflowing or wrapping.
+        child: ShrinkToWidth(
+          child: Row(
+            key: Key('tracks_meta_$channel'),
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              AppText(
+                '${channel + 1}',
+                style: TextStyle(
+                  fontFamily: SurfaceTheme.displayFont,
+                  color: surface.textTertiary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                ),
+              ),
+              _Figure(
+                key: Key('tracks_bars_$channel'),
+                figure: barsCount == null ? l10n.stageNoBars : '$barsCount',
+                unit: l10n.stageBarsUnit(barsCount ?? 0),
+                figureStyle: figure,
+                unitStyle: unit,
+              ),
+              _Figure(
+                key: Key('tracks_layers_$channel'),
+                figure: '$layers',
+                unit: l10n.stageLayersUnit(layers),
+                figureStyle: figure,
+                unitStyle: unit,
+              ),
+              Semantics(
+                label: switch (fxMarker) {
+                  _FxMarker.active => l10n.a11yStageFxActive,
+                  _FxMarker.bypassed => l10n.a11yStageFxBypassed,
+                  _FxMarker.absent => null,
+                },
+                child: Opacity(
+                  // Absent keeps its width so the row never reflows when a
+                  // chain appears.
+                  opacity: fxMarker == _FxMarker.absent ? 0 : 1,
+                  child: AppText(
+                    l10n.stageFxMarker,
+                    key: Key('tracks_fx_$channel'),
+                    style: TextStyle(
+                      fontFamily: SurfaceTheme.displayFont,
+                      color: fxMarker == _FxMarker.active
+                          ? surface.textPrimary
+                          : surface.textMuted,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-/// A small badge marking a track with a pending quantized/signal-triggered
-/// record arm ([Track.pending], A3) — armed and waiting for its boundary,
-/// cancellable by a second press on the tile or the pedal/controller's
-/// global cancel-arm action (A5).
-class _PendingArmBadge extends StatelessWidget {
-  const _PendingArmBadge({required this.color});
+/// Lays [child] out at least as wide as the available width, then scales it
+/// down uniformly when its own width exceeds that — the idiom for a row of
+/// pen-sized readouts that must survive a narrower desktop window without
+/// overflowing. At the pen's size nothing scales.
+class ShrinkToWidth extends StatelessWidget {
+  /// Creates a [ShrinkToWidth].
+  const ShrinkToWidth({required this.child, super.key});
 
-  final Color color;
+  /// The row to protect.
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minWidth: constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
+        ),
+        child: child,
+      ),
+    ),
+  );
+}
+
+/// A figure with its small unit after it: `2 bars`, `4 layers`.
+class _Figure extends StatelessWidget {
+  const _Figure({
+    required this.figure,
+    required this.unit,
+    required this.figureStyle,
+    required this.unitStyle,
+    super.key,
+  });
+
+  final String figure;
+  final String unit;
+  final TextStyle figureStyle;
+  final TextStyle unitStyle;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.baseline,
+    textBaseline: TextBaseline.alphabetic,
+    children: [
+      AppText(figure, style: figureStyle),
+      const SizedBox(width: 5),
+      AppText(unit, style: unitStyle),
+    ],
+  );
+}
+
+/// The primary-track crown, drawn as the pen draws it. A readout: it names
+/// the track as primary for a screen reader and takes no tap.
+class PrimaryCrown extends StatelessWidget {
+  /// Creates a [PrimaryCrown] [size] wide.
+  const PrimaryCrown({required this.size, super.key});
+
+  /// The glyph's width; the crown is wider than tall.
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: context.l10n.a11yTrackPrimary,
+    child: PenIconView(
+      icon: PenIcon.crown,
+      size: size,
+      color: context.surface.textPrimary,
+    ),
+  );
+}
+
+/// The queued-action cue: the action over its boundary, in a small card in
+/// the middle of the track's meter. Carries its own semantics; takes no tap
+/// (the tile beneath keeps the gesture, so a second press still cancels the
+/// arm).
+class _QueuedCue extends StatelessWidget {
+  const _QueuedCue({required this.action, required this.timing, super.key});
+
+  final String action;
+  final String timing;
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      label: context.l10n.a11yTrackArmed,
-      child: Icon(Icons.schedule_outlined, size: 14, color: color),
+    final surface = context.surface;
+    return IgnorePointer(
+      child: Semantics(
+        label: context.l10n.a11yTrackQueued(action, timing),
+        child: ExcludeSemantics(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 18),
+            decoration: BoxDecoration(
+              color: surface.card,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppText(
+                  action,
+                  style: TextStyle(
+                    fontFamily: SurfaceTheme.displayFont,
+                    color: surface.textPrimary,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w600,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                AppText(
+                  timing,
+                  style: TextStyle(
+                    fontFamily: SurfaceTheme.displayFont,
+                    color: surface.warning,
+                    fontSize: 20,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -653,9 +819,10 @@ class _FxChainDressing extends StatelessWidget {
               // a centered NO CHAIN and the invitation to build one.
               ? const Align(
                   // Upper-middle: the NO CHAIN group centres at ~40% of the
-                  // card, matching the pen.
+                  // card, matching the pen. Scaled down, never overflowing,
+                  // in a meter shorter than the pen's (a desktop window).
                   alignment: Alignment(0, -0.33),
-                  child: _FxNoChain(),
+                  child: FittedBox(fit: BoxFit.scaleDown, child: _FxNoChain()),
                 )
               // The centered group, anchored so its centre sits at ~42.7% of
               // the card (the pen). A bypassed chain reads as dimmed — but
@@ -664,33 +831,39 @@ class _FxChainDressing extends StatelessWidget {
               // pill blue (the pen's dimmed values are flat neutral greys).
               : Align(
                   alignment: const Alignment(0, -0.26),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // A FIXED two-line slot for the identity, top-anchored: a
-                      // one-line identity leaves the lower line empty. This
-                      // keeps the chip row and the ON/OFF pill at the SAME y in
-                      // every cell — a named input's second tier no longer
-                      // pushes the indicators down out of line with its
-                      // one-line neighbours across the row.
-                      SizedBox(
-                        height: _kFxIdentitySlot,
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: _FxCellIdentity(
-                            primary: identityPrimary,
-                            sub: identitySub,
-                            enabled: chainEnabled,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // A FIXED two-line slot for the identity, top-anchored:
+                        // a one-line identity leaves the lower line empty. This
+                        // keeps the chip row and the ON/OFF pill at the SAME y
+                        // in every cell — a named input's second tier no longer
+                        // pushes the indicators down out of line with its one-
+                        // line neighbours across the row.
+                        SizedBox(
+                          height: _kFxIdentitySlot,
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: _FxCellIdentity(
+                              primary: identityPrimary,
+                              sub: identitySub,
+                              enabled: chainEnabled,
+                            ),
                           ),
                         ),
-                      ),
-                      // Inter-element gaps opened to the pen's proportions:
-                      // identity→chips ~3.8% of the card, chips→pill ~3.2%.
-                      const SizedBox(height: 20),
-                      _FxEntryRun(effects: effects, chainEnabled: chainEnabled),
-                      const SizedBox(height: 30),
-                      _FxPowerPill(enabled: chainEnabled),
-                    ],
+                        // Inter-element gaps opened to the pen's proportions:
+                        // identity→chips ~3.8% of the card, chips→pill ~3.2%.
+                        const SizedBox(height: 20),
+                        _FxEntryRun(
+                          effects: effects,
+                          chainEnabled: chainEnabled,
+                        ),
+                        const SizedBox(height: 30),
+                        _FxPowerPill(enabled: chainEnabled),
+                      ],
+                    ),
                   ),
                 ),
         ),
