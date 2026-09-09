@@ -442,6 +442,10 @@ void main() {
         int position, {
         TrackState state = TrackState.playing,
         int undoDepth = 1,
+        int trackLength = 96000,
+        int? trackPosition,
+        int masterLength = 96000,
+        LooperMode mode = LooperMode.multi,
       }) => EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
@@ -455,15 +459,16 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        masterLengthFrames: 96000,
+        masterLengthFrames: masterLength,
         masterPositionFrames: position,
+        looperMode: mode,
         tracks: [
           TrackSnapshot(
             state: state,
             volume: 0.8,
             muted: false,
-            lengthFrames: 96000,
-            positionFrames: position,
+            lengthFrames: trackLength,
+            positionFrames: trackPosition ?? position,
             undoDepth: undoDepth,
             rms: 0.3,
             peak: 0.5,
@@ -564,6 +569,111 @@ void main() {
         engine.nextSnapshot = const EngineSnapshot.initial();
         expect(repo.readTrackWaveform(0), isEmpty);
         expect(repo.readTrackWaveform(3), isEmpty);
+
+        // A take recorded later under the same steady facts is a new shape:
+        // it starts its own sweep instead of inheriting the finished one.
+        final before = reads();
+        engine
+          ..nextSnapshot = at(24000)
+          ..visual = Float32List.fromList([0.25]);
+        expect(repo.readTrackWaveform(0), [0.25]);
+        expect(reads(), before + 1);
+      });
+
+      test('the poll forgets a track that lost its content, so the readers '
+          'never have to ask for an empty one', () async {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine.visual = Float32List.fromList([0.75]);
+        repo.readTrackWaveform(0);
+        // Sweep a lap so the copy would otherwise be held.
+        for (final p in [60000, 90000, 10000, 30000]) {
+          engine.nextSnapshot = at(p);
+          ticker.add(null);
+          await Future<void>.delayed(Duration.zero);
+          repo.readTrackWaveform(0);
+        }
+        final swept = reads();
+
+        // Cleared, then a take of the same length again: the readers only
+        // ask while there is content, so the poll must do the forgetting.
+        engine.nextSnapshot = const EngineSnapshot.initial();
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..nextSnapshot = at(40000)
+          ..visual = Float32List.fromList([0.25]);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.readTrackWaveform(0), [0.25]);
+        expect(reads(), swept + 1);
+      });
+
+      test("a multiple's copy follows the master lap, not the track's", () {
+        // The tap is bucketed on the master clock and holds whichever base
+        // lap is sounding; a 2x track wraps once per two master laps.
+        engine.nextSnapshot = at(24000, trackLength: 192000);
+        final repo = buildRepo()..readTrackWaveform(0);
+        for (final p in [60000, 90000]) {
+          engine.nextSnapshot = at(p, trackLength: 192000);
+          repo.readTrackWaveform(0);
+        }
+        // The master wraps into the second base lap; the track does not.
+        engine.nextSnapshot = at(
+          8000,
+          trackLength: 192000,
+          trackPosition: 104000,
+        );
+        repo.readTrackWaveform(0);
+        engine
+          ..nextSnapshot = at(30000, trackLength: 192000, trackPosition: 126000)
+          ..visual = Float32List.fromList([0.75]);
+        expect(repo.readTrackWaveform(0), [0.75], reason: 'sweep complete');
+        final swept = reads();
+        engine
+          ..nextSnapshot = at(70000, trackLength: 192000, trackPosition: 166000)
+          ..visual = Float32List.fromList([0.125]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), swept);
+        // The next master wrap brings the first base lap back: re-read.
+        engine.nextSnapshot = at(
+          4000,
+          trackLength: 192000,
+          trackPosition: 4000,
+        );
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
+      });
+
+      test("in Free mode the sweep is the track's own lap", () {
+        // No master loop at all: the transport's progress is 0 throughout,
+        // and the track's own clock is what the tap follows.
+        EngineSnapshot free(int p) =>
+            at(0, masterLength: 0, trackPosition: p, mode: LooperMode.free);
+        engine.nextSnapshot = free(24000);
+        final repo = buildRepo()..readTrackWaveform(0);
+        for (final p in [60000, 90000, 8000]) {
+          engine.nextSnapshot = free(p);
+          repo.readTrackWaveform(0);
+        }
+        engine
+          ..nextSnapshot = free(30000)
+          ..visual = Float32List.fromList([0.75]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        final swept = reads();
+        engine
+          ..nextSnapshot = free(60000)
+          ..visual = Float32List.fromList([0.125]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), swept);
+        engine.nextSnapshot = free(2000);
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
       });
     });
 
@@ -1284,6 +1394,25 @@ void main() {
 
       repo.setTrackQuantize(channel: 0, enabled: null);
       expect(repo.state.tracks.first.quantizeOverride, isNull);
+    });
+
+    test('rec/dub is projected, and lands on the next frame', () async {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final seen = <bool>[];
+      final sub = repo.looperState.listen(
+        (state) => seen.add(state.transport.recDub),
+      );
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, [false]);
+
+      // No tick in between: the setting re-projects on its own.
+      repo.setRecDub(enabled: true);
+      expect(repo.state.transport.recDub, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, [false, true]);
     });
 
     test('rec/dub, auto-record and multiples re-apply on start', () {

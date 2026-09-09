@@ -93,9 +93,9 @@ The code review reported ten findings; all ten are fixed on the branch:
   clip cap retires on a timer instead of on the next rebuild; the wave rows
   and the second display read a track's waveform once per content change,
   not once per playhead tick (superseded in round 2 below); the bar ruler
-  paints in its own layer so the playhead never re-shapes its labels; the readout gate no longer
-  reopens on a growing take, and a cursor move between equally named tracks
-  still reaches the second display.
+  paints in its own layer so the playhead never re-shapes its labels; the
+  readout gate no longer reopens on a growing take, and a cursor move
+  between equally named tracks still reaches the second display.
 - Dead chrome state (`anyActive`, transport enables) removed.
 
 ### Review round 2 (2026-09-09, re-review of the round-1 commit)
@@ -122,7 +122,25 @@ stop. Fixed:
   cap's state is the timer itself; a view test the round-1 commit had split
   in two is whole again.
 
-Accepted as is: `Track.pending` and `Track.pendingTrigger` are two fields
+### Review round 3 (2026-09-09, re-review of the round-2 commit)
+
+- The sweep is now measured on the clock the engine buckets the tap on: the
+  master loop in Multi, Sync and Band, the track's own loop in Free and
+  Song. A track's own progress was the wrong lap for a multiple (its buffer
+  holds whichever base lap is sounding and is rewritten every master lap)
+  and for a Sync division (a fraction of a master lap, so the sweep was
+  declared done early).
+- Copies of tracks that lose their content are dropped on every projection,
+  so a take recorded or restored later under the same steady facts starts
+  its own sweep instead of inheriting a finished one.
+- `setRecDub` re-projects, so the queued take-end cue reads the new setting
+  on the next frame; the ruler test asserts the layer order.
+
+Accepted as is: a rec/dub take-end whose track had a mute deferred during
+the take lands playing, not overdubbing (the UI has no pending-mute fact);
+wrap detection needs at least one read per half lap, which the visible
+stage and the second display's per-poll push provide.
+Also accepted: `Track.pending` and `Track.pendingTrigger` are two fields
 for one fact (the wire guarantees `pending == (pendingTrigger != null)`; the
 fixtures would all move for a getter), and the overdub punch-out boundary
 rule (D8) is named in the view rather than published by the engine.
