@@ -746,6 +746,14 @@ class LoopSlider extends StatelessWidget {
     onChangeEnd?.call(_fraction(dx));
   }
 
+  /// A cancelled gesture (another finger taking the arena, a route pushed
+  /// mid-drag) ends at the committed value, so a preview never outlives
+  /// its touch.
+  void _cancel() {
+    if (!enabled) return;
+    onChangeEnd?.call(value.clamp(0.0, 1.0));
+  }
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -759,9 +767,11 @@ class LoopSlider extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTapDown: (d) => _set(d.localPosition.dx),
         onTapUp: (d) => _end(d.localPosition.dx),
+        onTapCancel: _cancel,
         onHorizontalDragStart: (d) => _set(d.localPosition.dx),
         onHorizontalDragUpdate: (d) => _set(d.localPosition.dx),
         onHorizontalDragEnd: (d) => _end(d.localPosition.dx),
+        onHorizontalDragCancel: _cancel,
         child: Opacity(
           opacity: enabled ? 1 : surface.disabledOpacity,
           child: Container(

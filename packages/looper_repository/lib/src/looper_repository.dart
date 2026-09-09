@@ -2137,28 +2137,6 @@ class LooperRepository {
         setLaneVolume(lane.volume, channel: track.channel, lane: lane.lane);
         setLaneMute(muted: lane.muted, channel: track.channel, lane: lane.lane);
       }
-      // Length preset and Loop/Once overrides (A6, slice 2c): inert for the
-      // audio just imported (the preset only governs a future defining
-      // recording), but they round-trip so a track re-recorded after a load
-      // still honors what it was saved with. The manifest carries the
-      // OVERRIDE (absent = the track follows the default), written to the
-      // cache as is and pushed as the effective value; the reset loop above
-      // put every track on the default, so a track without one is done.
-      final lengthOverride = track.lengthPresetOverride;
-      if (lengthOverride != null) {
-        _trackLengthPreset[track.channel] = lengthOverride < 0
-            ? 0
-            : lengthOverride;
-        _engine.setTrackLengthPreset(
-          channel: track.channel,
-          bars: _effectiveLengthPreset(track.channel),
-        );
-      }
-      final onceOverride = track.onceOverride;
-      if (onceOverride != null) {
-        _trackOneShot[track.channel] = onceOverride;
-        _engine.setOneShot(channel: track.channel, oneShot: onceOverride);
-      }
       // Record timing and decay overrides (slice 2b): the reset loop above
       // put every track back on the defaults; re-arm what the rig carries.
       final timing = track.recordTiming;
@@ -2170,6 +2148,29 @@ class LooperRepository {
         setTrackOverdubDecay(channel: track.channel, percent: decay);
       }
     }
+
+    // Length preset and Loop/Once overrides (A6, slice 2c): the manifest
+    // carries the OVERRIDES per channel (absent = follows the default),
+    // content or not, so they restore outside the per-track loop. Written
+    // to the cache as is and pushed as the effective value; the reset loop
+    // above put every track on the default, so a channel without one is
+    // done. Bounded to `trackCount`, like `rig.primaryTrack`: a channel
+    // this engine does not have must not poison the re-apply cache. The
+    // preset only governs a future defining recording, so it is inert for
+    // the audio just imported.
+    rig.lengthPresetOverrides.forEach((channel, bars) {
+      if (channel < 0 || channel >= trackCount) return;
+      _trackLengthPreset[channel] = bars < 0 ? 0 : bars;
+      _engine.setTrackLengthPreset(
+        channel: channel,
+        bars: _effectiveLengthPreset(channel),
+      );
+    });
+    rig.onceOverrides.forEach((channel, once) {
+      if (channel < 0 || channel >= trackCount) return;
+      _trackOneShot[channel] = once;
+      _engine.setOneShot(channel: channel, oneShot: once);
+    });
 
     // Chains: reset every remembered chain the rig does not define, then
     // apply the rig's. `setLaneEffects` / `setMonitorEffects` keep cache and

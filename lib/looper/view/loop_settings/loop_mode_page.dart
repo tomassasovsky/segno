@@ -88,12 +88,15 @@ class LoopModePage extends StatelessWidget {
     },
   };
 
-  /// What the gate reads off a projection: every track's state, queued
-  /// trigger and length. A change in any of them can open or close a card.
+  /// What the gate reads off a projection: the count-in, and every track's
+  /// state, queued trigger, in-flight layer and length. A change in any of
+  /// them can open or close a card.
   static int _gateSignature(LooperState state) => Object.hashAll([
+    state.transport.countingIn,
     for (final track in state.tracks) ...[
       track.state,
       track.pendingTrigger,
+      track.layerInFlight,
       track.lengthFrames,
     ],
   ]);

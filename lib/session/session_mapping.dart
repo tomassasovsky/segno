@@ -180,6 +180,11 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   // off the manifest rather than through `_rigTracks`.
   looperMode: bundle.session.looperMode,
   primaryTrack: bundle.session.primaryTrack,
+  // The length preset and Loop/Once overrides (slice 2c) — session-level on
+  // both sides, keyed by channel, so a channel with no content (and so no
+  // track entry) still restores its override.
+  lengthPresetOverrides: bundle.session.lengthPresetOverrides,
+  onceOverrides: bundle.session.onceOverrides,
   // The session's own defaults (slice 2b), beside the per-track overrides in
   // `_rigTracks`: a track that follows the default has to find the default
   // the session was saved with, not whatever the app was last set to.
@@ -243,8 +248,6 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
         SessionRigTrack(
           channel: track.channel,
           lanes: lanes,
-          lengthPresetOverride: track.lengthPresetOverride,
-          onceOverride: track.onceOverride,
           recordTiming: track.recordTiming,
           overdubDecay: track.overdubDecay,
         ),

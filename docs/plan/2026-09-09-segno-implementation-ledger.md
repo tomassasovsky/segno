@@ -572,6 +572,18 @@ ten findings and a set of cleanups, fixed in the second commit:
   widgets stay (the pages are pen-geometry canvases, as slice 1's
   `PrimaryCrown(size:)`).
 
+### Review round 2
+
+A check of the round-1 commit found three things, fixed in the third
+commit: the per-track override fields on the manifest were only written
+for a channel with content, so an override on an empty channel was lost on
+save (the case the old `oneShotChannels` covered); the overrides are now
+session-level maps keyed by channel (`Session.lengthPresetOverrides`,
+`onceOverrides`, `SessionRig` likewise) and restore bounded to the engine's
+tracks. The mode cards' rebuild key gained the count-in and the in-flight
+layer, both of which the engine's gate reads. A cancelled slider gesture
+ends at the committed value, so a preview never outlives its touch.
+
 ### Next step
 
 Slice 3 (inputs, outputs, Mixer and FX), per `implementation-map.md`.

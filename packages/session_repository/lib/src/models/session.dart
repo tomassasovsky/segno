@@ -158,8 +158,6 @@ class SessionTrack {
     required this.multiple,
     required this.lengthFrames,
     required this.lanes,
-    this.lengthPresetOverride,
-    this.onceOverride,
     this.recordTiming,
     this.overdubDecay,
   });
@@ -218,8 +216,6 @@ class SessionTrack {
       multiple: (json['multiple'] as num).toInt(),
       lengthFrames: (json['lengthFrames'] as num).toInt(),
       lanes: lanes,
-      lengthPresetOverride: (json['lengthPresetOverride'] as num?)?.toInt(),
-      onceOverride: json['onceOverride'] as bool?,
       recordTiming: RecordTiming.fromName(json['recordTiming'] as String?),
       overdubDecay: (json['overdubDecay'] as num?)?.toInt(),
     );
@@ -237,24 +233,12 @@ class SessionTrack {
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
 
-  /// This track's length preset override (accepted design, slice 2c):
-  /// `null` (or absent) = follows the session's default
-  /// ([Session.defaultLengthPresetBars]), `0` = an explicit Auto, `1..64` =
-  /// a fixed bar count. The OVERRIDE is what persists, not the effective
-  /// preset, so the restored override set does not depend on whatever
-  /// default the device holds at load time. Restored on load.
-  final int? lengthPresetOverride;
-
-  /// This track's Loop/Once override (song-mode-spec.md §2, slice 2c):
-  /// `null` (or absent) = follows the session's default
-  /// ([Session.defaultOnce]), `true` = plays once then stops, `false` =
-  /// loops. Persisted as the override for the same reason as
-  /// [lengthPresetOverride]. Restored on load.
-  final bool? onceOverride;
-
   /// This track's record timing override (accepted design, slice 2b) by
   /// name; `null` (or absent, on an older manifest) = follows the session's
-  /// default. Restored on load like [lengthPresetOverride].
+  /// default. Restored on load. (The length preset and Loop/Once overrides
+  /// of slice 2c are NOT here: they live session-level, in
+  /// [Session.lengthPresetOverrides] / [Session.onceOverrides] — see those
+  /// docs for why.)
   final RecordTiming? recordTiming;
 
   /// This track's overdub decay override in percent (`0..100`, slice 2b);
@@ -267,9 +251,6 @@ class SessionTrack {
     'multiple': multiple,
     'lengthFrames': lengthFrames,
     'lanes': [for (final l in lanes) l.toJson()],
-    if (lengthPresetOverride != null)
-      'lengthPresetOverride': lengthPresetOverride,
-    if (onceOverride != null) 'onceOverride': onceOverride,
     if (recordTiming != null) 'recordTiming': recordTiming!.name,
     if (overdubDecay != null) 'overdubDecay': overdubDecay,
   };
@@ -282,8 +263,6 @@ class SessionTrack {
           channel == other.channel &&
           multiple == other.multiple &&
           lengthFrames == other.lengthFrames &&
-          lengthPresetOverride == other.lengthPresetOverride &&
-          onceOverride == other.onceOverride &&
           recordTiming == other.recordTiming &&
           overdubDecay == other.overdubDecay &&
           _listEquals(lanes, other.lanes);
@@ -293,8 +272,6 @@ class SessionTrack {
     channel,
     multiple,
     lengthFrames,
-    lengthPresetOverride,
-    onceOverride,
     recordTiming,
     overdubDecay,
     Object.hashAll(lanes),
@@ -518,11 +495,18 @@ class SessionMonitor {
 /// Slice 2c moves the per-track length preset and Loop/Once to the
 /// default-plus-override shape slice 2b introduced for record timing and
 /// overdub decay: the session carries the rig defaults
-/// ([defaultLengthPresetBars], [defaultOnce]) and each track carries only its
-/// nullable override ([SessionTrack.lengthPresetOverride],
-/// [SessionTrack.onceOverride]). The previous per-track EFFECTIVE values and
-/// the session-level `oneShotChannels` set are gone; a manifest still carrying
-/// those keys loads with every override unset.
+/// ([defaultLengthPresetBars], [defaultOnce]) and, SESSION-LEVEL, the two
+/// override maps keyed by channel ([lengthPresetOverrides],
+/// [onceOverrides]). The overrides are not per-[SessionTrack] fields because
+/// a track entry only exists for a channel with recorded content, while an
+/// override can be set on a channel with nothing recorded yet (the user dials
+/// in Once or a bar count before the first take) — a per-track field would
+/// have no entry to ride on and the override would be dropped on save. The
+/// previous per-track EFFECTIVE values (`lengthPresetBars`/`oneShot`), the
+/// per-track override keys of the first slice-2c cut
+/// (`lengthPresetOverride`/`onceOverride`) and the session-level
+/// `oneShotChannels` set are all gone; a manifest still carrying any of those
+/// keys loads with every override unset.
 ///
 /// Schema v5 (FX system v3, #351 part 3b) adds the two BUS stages of the
 /// four-stage FX model — [trackChains] (one per track channel) and the single
@@ -571,6 +555,8 @@ class Session {
     this.overdubDecay = 0,
     this.defaultLengthPresetBars = 0,
     this.defaultOnce = false,
+    this.lengthPresetOverrides = const {},
+    this.onceOverrides = const {},
     this.clickMode = ClickMode.off,
     this.clickOutputMask = 0,
     this.clickVolume = 1,
@@ -635,6 +621,14 @@ class Session {
       defaultLengthPresetBars:
           (json['defaultLengthPresetBars'] as num?)?.toInt() ?? 0,
       defaultOnce: json['defaultOnce'] as bool? ?? false,
+      lengthPresetOverrides: _channelMapFromJson(
+        json['lengthPresetOverrides'],
+        (v) => (v! as num).toInt(),
+      ),
+      onceOverrides: _channelMapFromJson(
+        json['onceOverrides'],
+        (v) => v! as bool,
+      ),
       clickMode: _clickModeFromJson(json['clickMode'] as String?),
       clickOutputMask: (json['clickOutputMask'] as num?)?.toInt() ?? 0,
       clickVolume: (json['clickVolume'] as num?)?.toDouble() ?? 1,
@@ -730,15 +724,36 @@ class Session {
   final int overdubDecay;
 
   /// The session's default length preset in bars (slice 2c): `0` = Auto,
-  /// `1..64` = a fixed bar count. Every track without a
-  /// [SessionTrack.lengthPresetOverride] follows it. Captured on save like
+  /// `1..64` = a fixed bar count. Every channel absent from
+  /// [lengthPresetOverrides] follows it. Captured on save like
   /// [recordTiming]; absent on an older manifest reads `0`.
   final int defaultLengthPresetBars;
 
-  /// The session's default Loop/Once (slice 2c): `true` = every track without
-  /// a [SessionTrack.onceOverride] plays once then stops. Captured on save
+  /// The session's default Loop/Once (slice 2c): `true` = every channel
+  /// absent from [onceOverrides] plays once then stops. Captured on save
   /// like [recordTiming]; absent on an older manifest reads `false`.
   final bool defaultOnce;
+
+  /// Every channel's length preset override (slice 2c), keyed by channel:
+  /// `0` = an explicit Auto, `1..64` = a fixed bar count; a channel absent
+  /// here follows [defaultLengthPresetBars]. The OVERRIDE is what persists,
+  /// not the effective preset, so the restored override set does not depend
+  /// on whatever default the device holds at load time.
+  ///
+  /// Session-level rather than a [SessionTrack] field because the two do not
+  /// share a lifetime: a [SessionTrack] exists only for a channel with
+  /// recorded content, while an override can be set on a channel with
+  /// nothing recorded on it. Put on the track, such an override would have
+  /// no entry to ride on and would be dropped on save. Serialized as a JSON
+  /// object keyed by the channel as a decimal string, omitted when empty;
+  /// absent on an older manifest reads empty.
+  final Map<int, int> lengthPresetOverrides;
+
+  /// Every channel's Loop/Once override (song-mode-spec.md §2, slice 2c),
+  /// keyed by channel: `true` = plays once then stops, `false` = loops; a
+  /// channel absent here follows [defaultOnce]. Session-level, keyed and
+  /// serialized exactly like [lengthPresetOverrides], for the same reason.
+  final Map<int, bool> onceOverrides;
 
   /// Click audibility mode (schema v4, Phase A; default [ClickMode.off]).
   /// The richer 4-value replacement for the index plan ERD's `metronomeOn`
@@ -804,6 +819,10 @@ class Session {
     'overdubDecay': overdubDecay,
     'defaultLengthPresetBars': defaultLengthPresetBars,
     'defaultOnce': defaultOnce,
+    if (lengthPresetOverrides.isNotEmpty)
+      'lengthPresetOverrides': _channelMapToJson(lengthPresetOverrides),
+    if (onceOverrides.isNotEmpty)
+      'onceOverrides': _channelMapToJson(onceOverrides),
     'clickMode': clickMode.name,
     'clickOutputMask': clickOutputMask,
     'clickVolume': clickVolume,
@@ -838,6 +857,8 @@ class Session {
           primaryTrack == other.primaryTrack &&
           masterChain == other.masterChain &&
           pedalBindings == other.pedalBindings &&
+          _mapEquals(lengthPresetOverrides, other.lengthPresetOverrides) &&
+          _mapEquals(onceOverrides, other.onceOverrides) &&
           _listEquals(tracks, other.tracks) &&
           _listEquals(laneChains, other.laneChains) &&
           _listEquals(monitors, other.monitors) &&
@@ -867,6 +888,8 @@ class Session {
     primaryTrack,
     masterChain,
     pedalBindings,
+    _hashMap(lengthPresetOverrides),
+    _hashMap(onceOverrides),
     Object.hashAll(tracks),
     Object.hashAll(laneChains),
     Object.hashAll(monitors),
@@ -910,4 +933,38 @@ bool _listEquals<T>(List<T> a, List<T> b) {
     if (a[i] != b[i]) return false;
   }
   return true;
+}
+
+bool _mapEquals<K, V>(Map<K, V> a, Map<K, V> b) {
+  if (a.length != b.length) return false;
+  for (final entry in a.entries) {
+    if (!b.containsKey(entry.key) || b[entry.key] != entry.value) return false;
+  }
+  return true;
+}
+
+/// An order-independent hash of a map, so two equal maps built in a different
+/// insertion order hash the same.
+int _hashMap<K, V>(Map<K, V> map) {
+  var hash = 0;
+  for (final entry in map.entries) {
+    hash ^= Object.hash(entry.key, entry.value);
+  }
+  return hash;
+}
+
+/// Serializes a per-channel map as a JSON object keyed by the channel as a
+/// decimal string (JSON object keys are always strings).
+Map<String, Object?> _channelMapToJson<V>(Map<int, V> map) => {
+  for (final entry in map.entries) '${entry.key}': entry.value,
+};
+
+/// Reads a per-channel map written by [_channelMapToJson]; absent (an older
+/// manifest) reads empty. [value] projects each raw JSON value.
+Map<int, V> _channelMapFromJson<V>(Object? raw, V Function(Object?) value) {
+  if (raw == null) return const {};
+  return {
+    for (final entry in (raw as Map<String, dynamic>).entries)
+      int.parse(entry.key): value(entry.value),
+  };
 }

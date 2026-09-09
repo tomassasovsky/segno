@@ -784,35 +784,42 @@ void main() {
       expect(lanes[1].livePcm, l1[1]);
     });
 
-    test('carries the length preset and Loop/Once overrides (slice 2c) '
-        'through to the rig: a fixed-bars, an explicit Auto (0), and a '
-        'follows-the-default (null) override each stay what they were', () {
+    test('carries the session-level length preset and Loop/Once override '
+        'maps (slice 2c) through to the rig as they are: a fixed-bars, an '
+        'explicit Auto (0), an explicit Loop (false), a following (absent) '
+        'channel, and a channel with NO content at all', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
       final bundle = (
-        session: sessionWith([
-          SessionTrack(
-            channel: 0,
-            multiple: 1,
-            lengthFrames: 4,
-            lengthPresetOverride: 4,
-            onceOverride: true,
-            lanes: [lane(0, 'track0_lane0_L0.wav')],
-          ),
-          SessionTrack(
-            channel: 1,
-            multiple: 1,
-            lengthFrames: 4,
-            lengthPresetOverride: 0,
-            onceOverride: false,
-            lanes: [lane(0, 'track1_lane0_L0.wav')],
-          ),
-          SessionTrack(
-            channel: 2,
-            multiple: 1,
-            lengthFrames: 4,
-            lanes: [lane(0, 'track2_lane0_L0.wav')],
-          ),
-        ]),
+        session: Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [
+            SessionTrack(
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track0_lane0_L0.wav')],
+            ),
+            SessionTrack(
+              channel: 1,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track1_lane0_L0.wav')],
+            ),
+            SessionTrack(
+              channel: 2,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track2_lane0_L0.wav')],
+            ),
+          ],
+          // Channel 2 follows the defaults; channel 5 has no track entry
+          // (nothing recorded) and must still reach the rig — the reason
+          // the maps are session-level rather than on SessionRigTrack.
+          lengthPresetOverrides: const {0: 4, 1: 0, 5: 16},
+          onceOverrides: const {0: true, 1: false, 5: true},
+        ),
         laneStems: {
           (0, 0): [l0],
           (1, 0): [l0],
@@ -822,12 +829,32 @@ void main() {
 
       final rig = rigFromBundle(bundle);
       expect(rig.tracks, hasLength(3));
-      expect(rig.tracks[0].lengthPresetOverride, 4);
-      expect(rig.tracks[0].onceOverride, isTrue);
-      expect(rig.tracks[1].lengthPresetOverride, 0);
-      expect(rig.tracks[1].onceOverride, isFalse);
-      expect(rig.tracks[2].lengthPresetOverride, isNull);
-      expect(rig.tracks[2].onceOverride, isNull);
+      expect(rig.tracks.any((t) => t.channel == 5), isFalse);
+      expect(rig.lengthPresetOverrides, {0: 4, 1: 0, 5: 16});
+      expect(rig.onceOverrides, {0: true, 1: false, 5: true});
+      expect(rig.lengthPresetOverrides.containsKey(2), isFalse);
+      expect(rig.onceOverrides.containsKey(2), isFalse);
+    });
+
+    test('a bundle with no overrides reaches the rig with both maps empty', () {
+      final l0 = Float32List.fromList([1, 1, 1, 1]);
+      final bundle = (
+        session: sessionWith([
+          SessionTrack(
+            channel: 0,
+            multiple: 1,
+            lengthFrames: 4,
+            lanes: [lane(0, 'track0_lane0_L0.wav')],
+          ),
+        ]),
+        laneStems: {
+          (0, 0): [l0],
+        },
+      );
+
+      final rig = rigFromBundle(bundle);
+      expect(rig.lengthPresetOverrides, isEmpty);
+      expect(rig.onceOverrides, isEmpty);
     });
 
     test('carries the record timing and overdub decay overrides (slice 2b) '
