@@ -20710,7 +20710,9 @@ static void test_undo_behind_freeze_of_a_take_restores(void) {
   CHECK(le_engine_clear_undoable(e, 1) == LE_OK);
   CHECK(le_engine_clear_restore_pending(e, 1) == 1);
   CHECK(le_engine_undo(e, 1) == LE_OK); /* queued behind the point */
-  drain(e);                              /* frozen, reported, erased */
+  le_engine_get_snapshot(e, &s); /* a poll before the point is filed must
+                                  * leave the tap queued, not consume it */
+  drain(e);                      /* frozen, reported, erased */
   le_engine_get_snapshot(e, &s);         /* files the point, restores */
   CHECK(le_engine_clear_restore_pending(e, 1) == 0);
   drain(e);
@@ -20747,6 +20749,30 @@ static void test_clear_behind_queued_restore_keeps_a_point(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
   CHECK(s.tracks[0].length_frames == LOOP_N);
+  CHECK(s.master_length_frames == LOOP_N); /* the grid came back with it */
+  le_engine_destroy(e);
+}
+
+/* A cancel of a take that captured nothing keeps the layer generations in
+ * step: overdub layers on that track still stack afterwards. */
+static void test_void_cancel_keeps_layers_stacking(void) {
+  printf("test_void_cancel_keeps_layers_stacking\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e); /* RECORDING, nothing captured */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  process_const(e, 0.5f, LOOP_N, out);   /* one full pass */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out */
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
   le_engine_destroy(e);
 }
 
@@ -26839,6 +26865,7 @@ int main(void) {
   test_undo_behind_freeze_of_a_take_restores();
   test_clear_behind_queued_restore_keeps_a_point();
   test_declined_cancel_clears_its_flag();
+  test_void_cancel_keeps_layers_stacking();
   test_crown_primary_re_crown_changes_it();
   test_crown_primary_inert_outside_sync_band();
   test_sync_first_completed_take_becomes_primary();

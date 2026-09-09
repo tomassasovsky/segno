@@ -780,6 +780,24 @@ void main() {
         expect(engine.lastLooperMode, LooperMode.multi);
       });
 
+      test('the restart replay is armed as a request, so the first report '
+          'after a start does not overwrite the remembered mode', () async {
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
+        repo.startEngine(const EngineConfig());
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        // One report of the engine's default before the replay lands.
+        engine.nextSnapshot = _playingAt(100);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastLooperMode, LooperMode.band);
+      });
+
       test('an accepted change is remembered and re-applied', () {
         final repo = buildRepo()..startEngine(const EngineConfig());
         engine.nextLooperModeGate = LooperModeGate.playing;
@@ -844,6 +862,20 @@ void main() {
           ..undoRestoresClearChannels = {0, 1, 2}
           ..clearRestorePendingChannels = {};
         expect(repo.undoRestoresClearAll, isTrue);
+      });
+
+      test('a frozen member whose capture held nothing leaves the group '
+          'without ending it', () {
+        // Track 1 was a take with nothing captured yet: pending at the
+        // clear, then reported void (no point, no longer pending).
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()..clearAll([0, 1, 2]);
+        engine.clearRestorePendingChannels = {};
+        expect(repo.undoRestoresClearAll, isTrue);
+        repo.undo(channel: 2);
+        expect(calls('undo'), 2); // tracks 0 and 2, as one
       });
 
       test('a member whose point the engine retired ends the group, and a '

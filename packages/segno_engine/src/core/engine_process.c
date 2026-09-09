@@ -75,6 +75,7 @@ static void le_dub_session_start(le_engine* e, le_track* t);
 static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame);
 static void le_primary_reconcile(le_engine* e);
 static void sync_grid_to_loop(le_engine* e, int32_t len);
+static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame);
 static void le_restore_multiple_or_divisor(le_track* t, int32_t base,
                                            int32_t len);
 
@@ -1483,7 +1484,11 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
     e->count_in_grace_channel = -1;
     if (load_i32(&e->tracks[ch].a_state) == LE_TRACK_RECORDING &&
         e->clock.length == 0) {
-      handle_clear(e, ch, 0, frame);
+      /* Back to empty without handle_clear's layer-generation bump (only a
+       * control-side clear matches that bump; a mismatch would drop every
+       * later retired layer on this track). Nothing else was established:
+       * the take never finalized, so no grid needs resetting. */
+      apply_undo_to_empty(e, ch, frame);
       return;
     }
   }
@@ -1598,6 +1603,7 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
   t->od_gain = 0.0f;
   t->xfade_capture = 0;
   t->seam_capture = 0; /* #728 */
+  t->length_preset_target_frames = 0; /* a stale armed target dies with it */
   /* The capture (if any) is gone: a mute deferred during it must not
    * ambush some future capture's end. */
   for (int l = 0; l < LE_MAX_LANES; ++l) {
@@ -2156,17 +2162,15 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       }
       int32_t len = 0;
       if (t->record_pos <= 0) {
-        /* Nothing captured: a void defining take resets the rig like the
-         * count-in grace abort (handle_clear acks the state command
-         * itself); a void later take just empties. */
+        /* Nothing captured: the take never established anything, so the
+         * track simply reads empty again. Not handle_clear: that bumps the
+         * audio thread's layer generation, which only a control-side clear
+         * matches, and a mismatch drops every later retired layer. */
         if (e->clock.length == 0) {
-          handle_clear(e, ch, 0, frame);
-          const le_command none = {.code = LE_EVT_TAKE_CANCELLED,
-                                   .lanei = {ch, 0, 0}};
-          (void)le_ring_push(&e->evt_ring, none); /* clears the flag */
-          break;
+          apply_undo_to_empty(e, ch, frame);
+        } else {
+          finalize_new_track(e, t, LE_TRACK_PLAYING, frame); /* void: EMPTY */
         }
-        finalize_new_track(e, t, LE_TRACK_PLAYING, frame);
       } else {
         if (e->clock.length == 0) {
           finalize_master(e, t, LE_TRACK_PLAYING, frame);
