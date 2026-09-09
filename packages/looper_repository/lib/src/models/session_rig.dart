@@ -21,13 +21,18 @@ class SessionRigLane {
     required this.outputMask,
     required this.inputChannel,
     this.pan = 0,
+    this.balance = 1,
     this.undoCount = 0,
     this.redoCount = 0,
   });
 
-  /// The lane's recorded image (slice 3): the pan the engine held for the
-  /// lane MINUS the track's own pan, so the track pan restores on top of it.
+  /// The lane's recorded image (slice 3): where its input sat when the take
+  /// started, before the track's own pan (`Lane.imagePan`).
   final double pan;
+
+  /// The gain the input pair's balance gave the lane's side when the take
+  /// started, `0..1` (`Lane.balance`); [volume] is the level.
+  final double balance;
 
   /// Lane index within the track.
   final int lane;

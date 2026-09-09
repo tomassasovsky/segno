@@ -56,6 +56,7 @@ class SessionLane {
     required this.inputChannel,
     required this.layers,
     this.pan = 0,
+    this.balance = 1,
     this.undoCount = 0,
     this.redoCount = 0,
   });
@@ -72,6 +73,7 @@ class SessionLane {
         SessionLayer.fromJson(l as Map<String, dynamic>),
     ],
     pan: (json['pan'] as num?)?.toDouble() ?? 0,
+    balance: (json['balance'] as num?)?.toDouble() ?? 1,
     undoCount: (json['undoCount'] as num?)?.toInt() ?? 0,
     redoCount: (json['redoCount'] as num?)?.toInt() ?? 0,
   );
@@ -79,7 +81,12 @@ class SessionLane {
   /// Lane index within the track.
   final int lane;
 
-  /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
+  /// The lane's LEVEL in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above
+  /// unity): the looper repository's intent, not the gain the engine holds
+  /// (that is the level times [balance]). Captured from the repository's
+  /// projection when the save hands it in; a capture without one (an export)
+  /// falls back to the engine's gain with a [balance] of `1`, which plays the
+  /// same.
   final double volume;
 
   /// Whether the lane is muted.
@@ -94,9 +101,16 @@ class SessionLane {
   /// The lane's recorded image (slice 3), `-1` (left) .. `1` (right): where
   /// its input sat when the take was recorded, WITHOUT the track's own pan
   /// ([SessionTrack.pan]), which the looper repository lands on top of it on
-  /// load. Written only when off centre; absent on an older manifest reads
-  /// `0`.
+  /// load. Read from the repository's projection (`Lane.imagePan`), never
+  /// from the engine, which only holds the sum. Written only when off
+  /// centre; absent on an older manifest reads `0`.
   final double pan;
+
+  /// The gain the input pair's balance gave this lane's side when the take
+  /// was recorded, `0..1` (`1` for a mono input; slice 3). The engine plays
+  /// the lane at [volume] times this, and the mixdown does the same. Written
+  /// only when below unity; absent on an older manifest reads `1`.
+  final double balance;
 
   /// The lane's audio buffers, oldest undo → live → newest redo.
   final List<SessionLayer> layers;
@@ -126,6 +140,7 @@ class SessionLane {
     'inputChannel': inputChannel,
     'layers': [for (final l in layers) l.toJson()],
     if (pan != 0) 'pan': pan,
+    if (balance != 1) 'balance': balance,
     'undoCount': undoCount,
     'redoCount': redoCount,
   };
@@ -141,6 +156,7 @@ class SessionLane {
           outputMask == other.outputMask &&
           inputChannel == other.inputChannel &&
           pan == other.pan &&
+          balance == other.balance &&
           undoCount == other.undoCount &&
           redoCount == other.redoCount &&
           _listEquals(layers, other.layers);
@@ -153,6 +169,7 @@ class SessionLane {
     outputMask,
     inputChannel,
     pan,
+    balance,
     undoCount,
     redoCount,
     Object.hashAll(layers),
@@ -413,7 +430,6 @@ class SessionMonitor {
     required this.muted,
     required this.encoded,
     this.mode = '',
-    this.pan = 0,
   });
 
   /// Projects a [SessionMonitor] from a decoded JSON map.
@@ -425,7 +441,6 @@ class SessionMonitor {
     muted: json['muted'] as bool,
     encoded: json['encoded'] as String,
     mode: json['mode'] as String? ?? '',
-    pan: (json['pan'] as num?)?.toDouble() ?? 0,
   );
 
   /// Hardware input index.
@@ -467,14 +482,12 @@ class SessionMonitor {
   /// every version before it used.
   final String mode;
 
-  /// The monitor's pan as the rig held it when the session was saved
-  /// (slice 3), `-1` (left) .. `1` (right); a pair member sits hard on its
-  /// side. A record of what was heard: on load the monitors' pans are
-  /// rebuilt from [Session.inputSetup], which is what produced them, so the
-  /// app does not read this field back. Written only when off centre.
-  final double pan;
-
   /// Serializes this monitor to a JSON map.
+  ///
+  /// No pan: a monitor's pan is derived from [Session.inputSetup] on load
+  /// (a pair member sits hard on its side, a mono input follows its pan),
+  /// so a written copy would never be read back. A manifest that carries one
+  /// from an earlier slice-3 build is read without it.
   Map<String, dynamic> toJson() => {
     'input': input,
     'enabled': enabled,
@@ -483,7 +496,6 @@ class SessionMonitor {
     'muted': muted,
     'encoded': encoded,
     if (mode.isNotEmpty) 'mode': mode,
-    if (pan != 0) 'pan': pan,
   };
 
   @override
@@ -497,20 +509,11 @@ class SessionMonitor {
           volume == other.volume &&
           muted == other.muted &&
           encoded == other.encoded &&
-          mode == other.mode &&
-          pan == other.pan;
+          mode == other.mode;
 
   @override
-  int get hashCode => Object.hash(
-    input,
-    enabled,
-    outputMask,
-    volume,
-    muted,
-    encoded,
-    mode,
-    pan,
-  );
+  int get hashCode =>
+      Object.hash(input, enabled, outputMask, volume, muted, encoded, mode);
 }
 
 /// The per-input capture setup a session was saved with (slice 3): capture
@@ -603,12 +606,13 @@ class SessionInputSetup {
 /// separate to persist).
 ///
 /// Slice 3 (the Mixer and Audio routing pages) adds the mix: every track's
-/// pan ([SessionTrack.pan]), every lane's recorded image ([SessionLane.pan]),
-/// every monitor's pan ([SessionMonitor.pan]) and the session-level
+/// pan ([SessionTrack.pan]), every lane's recorded image ([SessionLane.pan])
+/// and pair balance ([SessionLane.balance]), and the session-level
 /// [inputSetup] the monitors' pans and future takes come from. All four are
-/// presence-keyed and default to centre / the default setup, so a manifest
-/// written before them loads unchanged and a rig with every pan at centre
-/// writes none of them.
+/// presence-keyed and default to centre / unity / the default setup, so a
+/// manifest written before them loads unchanged and a rig with every pan at
+/// centre writes none of them. A monitor carries no pan of its own: it is
+/// rebuilt from [inputSetup] on load.
 ///
 /// Slice 2c moves the per-track length preset and Loop/Once to the
 /// default-plus-override shape slice 2b introduced for record timing and

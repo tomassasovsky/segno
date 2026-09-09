@@ -105,6 +105,16 @@ void main() {
   });
 
   group('reset mixer', () {
+    test('while stopped clears the remembered pans the start would replay', () {
+      final repo = LooperRepository(engine: engine, ticker: ticker.stream)
+        ..setTrackPan(0.4, channel: 2)
+        ..resetMixer();
+      addTearDown(repo.dispose);
+      expect(repo.trackPan(2), 0);
+      repo.startEngine(const EngineConfig());
+      expect(engine.lanePan[(2, 0)], isNull);
+    });
+
     test('returns levels and pans, keeps mute and solo', () {
       final repo = start()
         ..setVolume(0.4)
@@ -168,6 +178,10 @@ void main() {
     test('rejects an odd lower member and a balance on a mono input', () {
       final repo = start();
       expect(
+        repo.setInputPair(input: kMaxChannels - 1, paired: true),
+        EngineResult.invalid,
+      );
+      expect(
         repo.setInputPair(input: 1, paired: true),
         EngineResult.invalid,
       );
@@ -214,7 +228,44 @@ void main() {
       repo.setVolume(1);
       expect(engine.laneVol[(0, 0)], 1.0);
       expect(engine.laneVol[(0, 1)], 0.0);
-      expect(repo.state.tracks[0].volume, isNotNull);
+      // The projection shows the level, not the engine's product.
+      expect(repo.state.tracks[0].volume, 1.0);
+    });
+
+    test(
+      'a lane added after the take gets the track pan and its own image',
+      () {
+        final repo = start()
+          ..setTrackPan(-0.5)
+          ..record();
+        expect(engine.lanePan[(0, 0)], -0.5);
+        repo
+          ..setInputPan(input: 1, pan: 1)
+          ..setLaneCount(channel: 0, count: 2)
+          ..setLaneInput(channel: 0, lane: 1, inputChannel: 1);
+        // Grown: the track pan lands on the new lane at once.
+        expect(engine.lanePan[(0, 1)], -0.5);
+        // Its first take (an overdub) fixes its image: 1 + (-0.5).
+        repo.record();
+        expect(engine.lanePan[(0, 1)], 0.5);
+        // Lane 0 kept its own image.
+        expect(engine.lanePan[(0, 0)], -0.5);
+      },
+    );
+
+    test('a shrunk then regrown lane index carries no old image', () {
+      final repo = start()
+        ..setLaneCount(channel: 0, count: 2)
+        ..setLaneInput(channel: 0, lane: 1, inputChannel: 1)
+        ..setInputPair(input: 0, paired: true)
+        ..setPairBalance(input: 0, balance: 1)
+        ..record();
+      expect(engine.laneVol[(0, 0)], 0.0); // Left silenced by the balance
+      repo
+        ..setLaneCount(channel: 0, count: 1)
+        ..setLaneCount(channel: 0, count: 2);
+      expect(engine.laneVol[(0, 1)], 1.0);
+      expect(engine.lanePan[(0, 1)], 0.0);
     });
   });
 
@@ -267,19 +318,55 @@ void main() {
       expect(engine.monitorPan[1], 1.0);
       expect(engine.monitorVolume[0], closeTo(0.70710678, 1e-6));
     });
+
+    test(
+      'a lane balance the rig carries survives the next fader move',
+      () async {
+        final repo = start();
+        await repo.applySession(
+          const SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                    pan: -1,
+                    balance: 0,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+        expect(engine.laneVol[(0, 0)], 0.0);
+        expect(repo.state.tracks[0].volume, 1.0);
+        repo
+          ..setVolume(0.8)
+          ..resetMixer();
+        expect(engine.laneVol[(0, 0)], 0.0);
+      },
+    );
   });
 
   group('MixTarget', () {
     test('round-trips through its canonical string', () {
       const target = MixTarget.pairBalance(4);
-      expect(target.canonicalString, '{"target":"pairBalance","index":4}');
-      expect(MixTarget.parse(target.canonicalString), target);
-      expect(MixTarget.parse('{"target":"nothing","index":1}'), isNull);
-      expect(MixTarget.parse('{"target":"trackPan","index":"x"}'), isNull);
-      expect(MixTarget.parse('not json'), isNull);
+      expect(target.canonicalString(), '{"target":"pairBalance","index":4}');
+      expect(MixTarget.tryParse(target.canonicalString()), target);
+      expect(MixTarget.tryParse('{"target":"nothing","index":1}'), isNull);
+      expect(MixTarget.tryParse('{"target":"trackPan","index":"x"}'), isNull);
+      expect(MixTarget.tryParse('not json'), isNull);
       expect(
-        MixTarget.fromJson({'target': 'trackLevel', 'index': 2, 'extra': 1}),
-        const MixTarget.trackLevel(2),
+        MixTarget.fromJson({'target': 'trackPan', 'index': 2, 'extra': 1}),
+        const MixTarget.trackPan(2),
       );
     });
   });
@@ -298,8 +385,15 @@ void main() {
       expect(setup.balanceGainOf(0), 0); // balance 1 = Right only
       expect(setup.balanceGainOf(1), 1);
       expect(setup.balanceGainOf(2), 1);
-      expect(inputTrimDbOfGain(inputTrimGainOfDb(-12)), closeTo(-12, 1e-9));
-      expect(inputTrimDbOfGain(0), kMinInputTrimDb);
+      expect(inputTrimGainOfDb(-6), closeTo(0.5012, 1e-3));
+      // The same constants the engine's pan law pins in the native
+      // test_lane_pan_law (half pan: the far side at cos(pi/4)).
+      const half = InputSetup(pairs: {0: 0.5});
+      expect(half.balanceGainOf(0), closeTo(0.70710678, 1e-6));
+      expect(half.balanceGainOf(1), 1);
+      const mirror = InputSetup(pairs: {0: -0.5});
+      expect(mirror.balanceGainOf(0), 1);
+      expect(mirror.balanceGainOf(1), closeTo(0.70710678, 1e-6));
     });
   });
 }

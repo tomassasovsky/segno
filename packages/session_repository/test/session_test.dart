@@ -433,6 +433,8 @@ void main() {
             lengthFrames: 4,
             pan: 0.25,
             lanes: [
+              // Lane 0 recorded the Left member of a pair whose balance
+              // silenced its side: hard left, at a balance gain of 0.
               SessionLane(
                 lane: 0,
                 volume: 1,
@@ -440,6 +442,7 @@ void main() {
                 outputMask: 0x3,
                 inputChannel: 0,
                 pan: -1,
+                balance: 0,
                 layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
               ),
               SessionLane(
@@ -461,7 +464,6 @@ void main() {
             volume: 1,
             muted: false,
             encoded: '',
-            pan: -1,
           ),
         ],
         inputSetup: SessionInputSetup(
@@ -471,34 +473,54 @@ void main() {
         ),
       );
 
-      test('round-trips every pan and the input setup through JSON', () {
+      test('round-trips every pan, a lane balance of 0 and the input setup '
+          'through JSON', () {
         final json = jsonDecode(jsonEncode(mixed.toJson()));
         final loaded = Session.fromJson(json as Map<String, dynamic>);
         expect(loaded, mixed);
         expect(loaded.tracks.single.pan, 0.25);
         expect(loaded.tracks.single.lanes[0].pan, -1);
+        expect(loaded.tracks.single.lanes[0].balance, 0);
         expect(loaded.tracks.single.lanes[1].pan, 0);
-        expect(loaded.monitors.single.pan, -1);
+        expect(loaded.tracks.single.lanes[1].balance, 1);
         expect(loaded.inputSetup.trimDb, {0: -6.0});
         expect(loaded.inputSetup.pan, {2: -0.5});
         expect(loaded.inputSetup.pairs, {0: 0.2});
       });
 
       test('writes the documented shape: a pan only where it is off centre, '
-          'and the input setup as channel-keyed objects', () {
+          'a balance only where it is below unity, no monitor pan, and the '
+          'input setup as channel-keyed objects', () {
         final json = mixed.toJson();
         final track = (json['tracks'] as List).single as Map<String, dynamic>;
         expect(track['pan'], 0.25);
         final lanes = track['lanes'] as List;
         expect((lanes[0] as Map<String, dynamic>)['pan'], -1);
+        expect((lanes[0] as Map<String, dynamic>)['balance'], 0);
         expect((lanes[1] as Map<String, dynamic>).containsKey('pan'), isFalse);
+        expect(
+          (lanes[1] as Map<String, dynamic>).containsKey('balance'),
+          isFalse,
+        );
         final monitor = (json['monitors'] as List).single;
-        expect((monitor as Map<String, dynamic>)['pan'], -1);
+        expect((monitor as Map<String, dynamic>).containsKey('pan'), isFalse);
         expect(json['inputSetup'], {
           'trimDb': {'0': -6},
           'pan': {'2': -0.5},
           'pairs': {'0': 0.2},
         });
+      });
+
+      test('a monitor pan an earlier slice-3 build wrote is ignored on '
+          'read', () {
+        final json = mixed.toJson();
+        final monitor = (json['monitors'] as List).single;
+        (monitor as Map<String, dynamic>)['pan'] = -1;
+        final loaded = Session.fromJson(
+          jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+        );
+        expect(loaded, mixed);
+        expect(loaded.monitors.single.toJson().containsKey('pan'), isFalse);
       });
 
       test(
@@ -529,7 +551,9 @@ void main() {
           );
           expect(loaded.tracks[0].pan, 0);
           expect(loaded.tracks[0].lanes[1].pan, 0);
-          expect(loaded.monitors.single.pan, 0);
+          // A manifest without `balance` (every one before this field)
+          // reads unity: the lane plays at its level.
+          expect(loaded.tracks[0].lanes[1].balance, 1);
           expect(loaded.inputSetup, const SessionInputSetup());
           expect(loaded.inputSetup.isEmpty, isTrue);
         },
@@ -550,7 +574,8 @@ void main() {
         expect(SessionInputSetup.fromJson(null), const SessionInputSetup());
       });
 
-      test('the pans and the input setup take part in equality', () {
+      test('the pans, the balance and the input setup take part in '
+          'equality', () {
         expect(
           mixed,
           isNot(equals(Session.fromJson(mixed.toJson()..remove('inputSetup')))),
@@ -579,6 +604,22 @@ void main() {
                 outputMask: 0x3,
                 inputChannel: 0,
                 pan: 0.5,
+                layers: [],
+              ),
+            ),
+          ),
+        );
+        expect(
+          lane,
+          isNot(
+            equals(
+              const SessionLane(
+                lane: 0,
+                volume: 1,
+                muted: false,
+                outputMask: 0x3,
+                inputChannel: 0,
+                balance: 0.5,
                 layers: [],
               ),
             ),

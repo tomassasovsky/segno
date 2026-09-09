@@ -1089,15 +1089,15 @@ void main() {
       expect(setup.pairs, isEmpty);
     });
 
-    test('round-trips trims, pans and pairs under per-device keys', () async {
-      await repository.saveInputSetup(
+    test('the per-input writers set a key for a value off its default and '
+        'remove it for null or the default', () async {
+      await repository.saveInputTrim(device: 'Scarlett', input: 0, db: -6);
+      await repository.saveInputTrim(device: 'Scarlett', input: 3, db: 4.5);
+      await repository.saveInputPan(device: 'Scarlett', input: 2, pan: -0.5);
+      await repository.saveInputPair(
         device: 'Scarlett',
-        inputCount: 4,
-        setup: (
-          trimDb: {0: -6, 3: 4.5},
-          pan: {2: -0.5},
-          pairs: {0: 0.25},
-        ),
+        input: 0,
+        balance: 0.25,
       );
 
       expect(store.values['input_trim.Scarlett.0'], -6.0);
@@ -1123,10 +1123,54 @@ void main() {
       expect(other.trimDb, isEmpty);
       expect(other.pan, isEmpty);
       expect(other.pairs, isEmpty);
+
+      // Back to the default, by value and by null: the keys go.
+      await repository.saveInputTrim(device: 'Scarlett', input: 0, db: 0);
+      await repository.saveInputTrim(device: 'Scarlett', input: 3, db: null);
+      await repository.saveInputPan(device: 'Scarlett', input: 2, pan: null);
+      await repository.saveInputPair(
+        device: 'Scarlett',
+        input: 0,
+        balance: null,
+      );
+      expect(
+        store.values.keys.where((k) => k.contains('.Scarlett.')),
+        isEmpty,
+      );
     });
 
-    test('a save clears every value the setup no longer carries', () async {
-      await repository.saveInputSetup(
+    test('a pair at an even balance writes the link alone, and a balance '
+        'put back to even removes its key but keeps the link', () async {
+      await repository.saveInputPair(device: 'Scarlett', input: 2, balance: 0);
+      expect(store.values['input_pair.Scarlett.2'], isTrue);
+      expect(store.values.containsKey('input_balance.Scarlett.2'), isFalse);
+
+      await repository.saveInputPair(
+        device: 'Scarlett',
+        input: 2,
+        balance: -1,
+      );
+      expect(store.values['input_balance.Scarlett.2'], -1.0);
+
+      await repository.saveInputPair(device: 'Scarlett', input: 2, balance: 0);
+      expect(store.values['input_pair.Scarlett.2'], isTrue);
+      expect(store.values.containsKey('input_balance.Scarlett.2'), isFalse);
+      final setup = await repository.loadInputSetup(
+        device: 'Scarlett',
+        inputCount: 4,
+      );
+      expect(setup.pairs, {2: 0.0});
+    });
+
+    test('the pan and balance writers clamp to -1..1', () async {
+      await repository.saveInputPan(device: 'Scarlett', input: 1, pan: 3);
+      await repository.saveInputPair(device: 'Scarlett', input: 0, balance: -4);
+      expect(store.values['input_pan.Scarlett.1'], 1.0);
+      expect(store.values['input_balance.Scarlett.0'], -1.0);
+    });
+
+    test('a replace clears every value the setup no longer carries', () async {
+      await repository.replaceInputSetup(
         device: 'Scarlett',
         inputCount: 4,
         setup: (
@@ -1135,7 +1179,7 @@ void main() {
           pairs: {0: 0.25, 2: -1},
         ),
       );
-      await repository.saveInputSetup(
+      await repository.replaceInputSetup(
         device: 'Scarlett',
         inputCount: 4,
         setup: (trimDb: {1: 2}, pan: {2: -0.5}, pairs: {2: -1}),
@@ -1159,9 +1203,9 @@ void main() {
       expect(setup.pairs, {2: -1.0});
     });
 
-    test('a default value is stored as an absent key, and an input past the '
-        'device count is still written', () async {
-      await repository.saveInputSetup(
+    test('a replace stores a default value as an absent key, and still '
+        'writes an input past the device count', () async {
+      await repository.replaceInputSetup(
         device: 'Scarlett',
         inputCount: 2,
         setup: (trimDb: {0: 0, 5: -3}, pan: {1: 0}, pairs: {}),

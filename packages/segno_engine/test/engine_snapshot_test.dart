@@ -51,17 +51,11 @@ void main() {
       expect(snapshot.clickMode, ClickMode.off);
       expect(snapshot.clickMask, 0);
       expect(snapshot.clickVolume, 1);
-      // The per-channel meter and trim lists (slice 3) are sized to the
-      // native channel ceiling even before a device opens, so indexing by
-      // hardware channel never throws; nothing meters and trim is unity.
-      expect(snapshot.inputPeaks, hasLength(kMaxChannels));
-      expect(snapshot.monitorPeaks, hasLength(kMaxChannels));
-      expect(snapshot.outputPeaks, hasLength(kMaxChannels));
-      expect(snapshot.inputTrim, hasLength(kMaxChannels));
-      expect(snapshot.inputPeaks, everyElement(0));
-      expect(snapshot.monitorPeaks, everyElement(0));
-      expect(snapshot.outputPeaks, everyElement(0));
-      expect(snapshot.inputTrim, everyElement(1));
+      // The per-channel meter lists (slice 3) hold one entry per channel the
+      // device has, so with no device open they are empty.
+      expect(snapshot.inputPeaks, isEmpty);
+      expect(snapshot.monitorPeaks, isEmpty);
+      expect(snapshot.outputPeaks, isEmpty);
       expect(snapshot.countInBars, 0);
       expect(snapshot.countingIn, isFalse);
       expect(snapshot.countInBeatsLeft, 0);
@@ -554,13 +548,14 @@ void main() {
           ..counting_in = 1
           ..count_in_beats_left = 5
           ..looper_mode = 3;
-        // Per-channel meters and trim (slice 3): one distinct entry each so a
-        // swapped array or a misread index shows up.
-        ptr.ref.input_peaks[3] = 0.5;
-        ptr.ref.monitor_peaks[1] = 0.25;
-        ptr.ref.output_peaks[0] = 0.75;
-        ptr.ref.input_trim[2] = 2;
-        ptr.ref.input_trim[LE_MAX_CHANNELS - 1] = 0.5;
+        // Per-channel meters (slice 3): one distinct entry each so a swapped
+        // array or a misread index shows up, plus one past the device's
+        // channel count that must NOT be read.
+        ptr.ref.input_peaks[1] = 0.5;
+        ptr.ref.input_peaks[2] = 0.9;
+        ptr.ref.monitor_peaks[0] = 0.25;
+        ptr.ref.output_peaks[3] = 0.75;
+        ptr.ref.output_peaks[4] = 0.9;
 
         const tracks = [
           TrackSnapshot(
@@ -620,21 +615,41 @@ void main() {
         expect(snapshot.countInBeatsLeft, 5);
         // Looper mode (B2a) trailing field.
         expect(snapshot.looperMode, LooperMode.band);
-        // Per-channel meters and trim (slice 3) trailing arrays: every entry
-        // is read, in order, for the whole native ceiling.
-        expect(snapshot.inputPeaks, hasLength(LE_MAX_CHANNELS));
-        expect(snapshot.inputPeaks[3], closeTo(0.5, 1e-6));
+        // Per-channel meters (slice 3) trailing arrays: one entry per
+        // negotiated channel (2 in / 4 out), read in order; the native
+        // arrays' entries past the device are not projected.
+        expect(snapshot.inputPeaks, hasLength(2));
         expect(snapshot.inputPeaks[0], 0);
-        expect(snapshot.monitorPeaks, hasLength(LE_MAX_CHANNELS));
-        expect(snapshot.monitorPeaks[1], closeTo(0.25, 1e-6));
-        expect(snapshot.outputPeaks, hasLength(LE_MAX_CHANNELS));
-        expect(snapshot.outputPeaks[0], closeTo(0.75, 1e-6));
-        expect(snapshot.inputTrim, hasLength(LE_MAX_CHANNELS));
-        expect(snapshot.inputTrim[2], closeTo(2, 1e-6));
-        expect(snapshot.inputTrim[LE_MAX_CHANNELS - 1], closeTo(0.5, 1e-6));
-        // A zeroed native struct reads trim 0 here, not the default 1: the
-        // engine itself seeds unity, the projection does not invent it.
-        expect(snapshot.inputTrim[0], 0);
+        expect(snapshot.inputPeaks[1], closeTo(0.5, 1e-6));
+        expect(snapshot.monitorPeaks, hasLength(2));
+        expect(snapshot.monitorPeaks[0], closeTo(0.25, 1e-6));
+        expect(snapshot.outputPeaks, hasLength(4));
+        expect(snapshot.outputPeaks[3], closeTo(0.75, 1e-6));
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('sizes the meter lists to the channel counts, clamped to the C', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        // A count past the native ceiling must not index off the end of the
+        // fixed arrays; a negative one (a garbage struct) must not throw.
+        ptr.ref
+          ..input_channels = LE_MAX_CHANNELS + 7
+          ..output_channels = -1;
+        final over = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(over.inputPeaks, hasLength(LE_MAX_CHANNELS));
+        expect(over.monitorPeaks, hasLength(LE_MAX_CHANNELS));
+        expect(over.outputPeaks, isEmpty);
+
+        ptr.ref
+          ..input_channels = 0
+          ..output_channels = 0;
+        final none = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(none.inputPeaks, isEmpty);
+        expect(none.monitorPeaks, isEmpty);
+        expect(none.outputPeaks, isEmpty);
       } finally {
         calloc.free(ptr);
       }
@@ -749,6 +764,9 @@ void main() {
 
     // Distinct (non-const) instances so the `==` body runs rather than being
     // short-circuited by `identical`, exercising every field comparison.
+    /// The channel count the [build] meter lists are sized to.
+    const channels = 4;
+
     EngineSnapshot build({
       bool devicePresent = true,
       AudioBackend activeBackend = AudioBackend.miniaudio,
@@ -779,7 +797,6 @@ void main() {
       List<double>? inputPeaks,
       List<double>? monitorPeaks,
       List<double>? outputPeaks,
-      List<double>? inputTrim,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -819,15 +836,14 @@ void main() {
       inputCondMask: inputCondMask,
       // Fresh (non-const) lists so equality has to compare contents, not
       // identity.
-      inputPeaks: inputPeaks ?? List<double>.filled(kMaxChannels, 0),
-      monitorPeaks: monitorPeaks ?? List<double>.filled(kMaxChannels, 0),
-      outputPeaks: outputPeaks ?? List<double>.filled(kMaxChannels, 0),
-      inputTrim: inputTrim ?? List<double>.filled(kMaxChannels, 1),
+      inputPeaks: inputPeaks ?? List<double>.filled(channels, 0),
+      monitorPeaks: monitorPeaks ?? List<double>.filled(channels, 0),
+      outputPeaks: outputPeaks ?? List<double>.filled(channels, 0),
     );
 
-    /// [kMaxChannels] entries of [fill] with [value] at [index].
-    List<double> perChannel(int index, double value, {double fill = 0}) =>
-        List<double>.filled(kMaxChannels, fill)..[index] = value;
+    /// [channels] zeros with [value] at [index].
+    List<double> perChannel(int index, double value) =>
+        List<double>.filled(channels, 0)..[index] = value;
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
       expect(build(), equals(build()));
@@ -950,10 +966,10 @@ void main() {
       expect(build(), isNot(equals(build(outputPeaks: perChannel(1, 0.5)))));
     });
 
-    test('inputTrim participates in equality', () {
+    test('a meter list of another length is not equal', () {
       expect(
         build(),
-        isNot(equals(build(inputTrim: perChannel(4, 2, fill: 1)))),
+        isNot(equals(build(inputPeaks: List<double>.filled(channels + 1, 0)))),
       );
     });
 
@@ -1252,12 +1268,13 @@ void main() {
         'autoRecord',
         'overdubFeedback',
         // Per-channel block peaks (slice 3), like outputPeak: written once per
-        // block, read at render rate — not per-callback counters. Trim is a
-        // setting.
+        // block, read at render rate — not per-callback counters. One entry
+        // per channel the device has; the C's fixed-width `input_trim` array
+        // is deliberately NOT projected (the repository keeps its own dB
+        // intent), so adding it back is a review question, not a golden fix.
         'inputPeaks',
         'monitorPeaks',
         'outputPeaks',
-        'inputTrim',
         'tracks',
       };
 

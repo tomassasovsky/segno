@@ -407,17 +407,19 @@ void main() {
   );
 
   test(
-    'save then read round-trips the mix (slice 3): each lane persists its '
-    'recorded image with the track pan taken back out, the track pan rides '
-    'the track, and the input setup rides the session',
+    'save then read round-trips the mix (slice 3): each lane persists the '
+    "level, image and balance the loop settings hand in — not the engine's "
+    'products — the track pan rides the track, and the input setup rides '
+    'the session',
     () async {
       final source = FakeSessionEngine()
-        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        // The ENGINE holds the products: lane 0 plays at 0.4 (a level of
+        // 0.8 times a balance gain of 0.5) at -0.75 (an image of -1 plus
+        // a track pan of 0.25). Neither can be taken apart again, so the
+        // capture must not read them.
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]), volume: 0.4)
         ..seedLane(0, 1, Float32List.fromList([2, 2, 2, 2]), inputChannel: 2)
         ..seedTrack(1, Float32List.fromList([1, 1, 1, 1]))
-        // What the engine holds is the image PLUS the track pan (clamped):
-        // lane 0 recorded hard left (-1) under a track pan of 0.25, lane 1
-        // recorded at -0.5 under the same track pan; track 1 is at centre.
         ..setLanePan(pan: -0.75)
         ..setLanePan(pan: -0.25, lane: 1)
         ..setLanePan(pan: 0.5, channel: 1);
@@ -426,6 +428,11 @@ void main() {
         dir,
         loopSettings: const SessionLoopSettings(
           trackPans: {0: 0.25},
+          laneMix: {
+            (0, 0): (level: 0.8, imagePan: -1, balance: 0.5),
+            (0, 1): (level: 1, imagePan: -0.5, balance: 1),
+            (1, 0): (level: 1, imagePan: 0.5, balance: 1),
+          },
           inputSetup: SessionInputSetup(
             trimDb: {0: -6},
             pan: {2: -0.5},
@@ -438,8 +445,12 @@ void main() {
 
       final track0 = bundle.session.tracks[0];
       expect(track0.pan, 0.25);
+      expect(track0.lanes[0].volume, 0.8);
       expect(track0.lanes[0].pan, -1);
+      expect(track0.lanes[0].balance, 0.5);
+      expect(track0.lanes[1].volume, 1);
       expect(track0.lanes[1].pan, -0.5);
+      expect(track0.lanes[1].balance, 1);
       final track1 = bundle.session.tracks[1];
       expect(track1.pan, 0);
       expect(track1.lanes[0].pan, 0.5);
@@ -450,38 +461,94 @@ void main() {
   );
 
   test(
-    'a lane the track pan pushed into the clamp comes back as far from '
-    'centre as it still plays, and a rig with every pan at centre writes no '
-    'mix keys',
+    'a lane whose pair balance silenced its side (balance 0) round-trips, '
+    'and its level survives even though the engine held 0',
     () async {
       final source = FakeSessionEngine()
-        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
-        // Image 0.5 plus a track pan of 0.8 clamps to 1 in the engine.
-        ..setLanePan(pan: 1);
-      final dir = '${tempDir.path}/clamped';
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]), volume: 0)
+        ..setLanePan(pan: -1);
+      final dir = '${tempDir.path}/silenced';
       await repoFor(source).save(
         dir,
-        loopSettings: const SessionLoopSettings(trackPans: {0: 0.8}),
+        loopSettings: const SessionLoopSettings(
+          laneMix: {
+            (0, 0): (level: 0.75, imagePan: -1, balance: 0),
+          },
+        ),
       );
-      final bundle = await repoFor(FakeSessionEngine()).read(dir);
-      expect(bundle.session.tracks.single.lanes.single.pan, closeTo(0.2, 1e-9));
 
-      final plainDir = '${tempDir.path}/centred';
-      final plain = FakeSessionEngine()
-        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
-      await repoFor(plain).save(plainDir);
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      final lane = bundle.session.tracks.single.lanes.single;
+      expect(lane.volume, 0.75);
+      expect(lane.pan, -1);
+      expect(lane.balance, 0);
       final manifest =
           jsonDecode(
-                await File(
-                  '$plainDir/${Session.manifestName}',
-                ).readAsString(),
+                await File('$dir/${Session.manifestName}').readAsString(),
+              )
+              as Map<String, dynamic>;
+      final track = (manifest['tracks'] as List).single;
+      final json = ((track as Map<String, dynamic>)['lanes'] as List).single;
+      expect((json as Map<String, dynamic>)['balance'], 0);
+    },
+  );
+
+  test(
+    'a lane the loop settings do not describe persists the engine gain as '
+    'its level, a centred image and unity balance, and a rig with every pan '
+    'at centre writes no mix keys',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]), volume: 0.6)
+        ..setLanePan(pan: 1);
+      final dir = '${tempDir.path}/unlisted';
+      await repoFor(source).save(dir);
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      final lane = bundle.session.tracks.single.lanes.single;
+      expect(lane.volume, 0.6);
+      expect(lane.pan, 0);
+      expect(lane.balance, 1);
+
+      final manifest =
+          jsonDecode(
+                await File('$dir/${Session.manifestName}').readAsString(),
               )
               as Map<String, dynamic>;
       expect(manifest.containsKey('inputSetup'), isFalse);
       final track = (manifest['tracks'] as List).single;
       expect((track as Map<String, dynamic>).containsKey('pan'), isFalse);
-      final lane = (track['lanes'] as List).single;
-      expect((lane as Map<String, dynamic>).containsKey('pan'), isFalse);
+      final json = (track['lanes'] as List).single;
+      expect((json as Map<String, dynamic>).containsKey('pan'), isFalse);
+      expect(json.containsKey('balance'), isFalse);
+    },
+  );
+
+  test(
+    'a manifest written before `balance` reads every lane at unity',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/prebalance';
+      await repoFor(source).save(
+        dir,
+        loopSettings: const SessionLoopSettings(
+          laneMix: {
+            (0, 0): (level: 1, imagePan: 0, balance: 0.5),
+          },
+        ),
+      );
+      final file = File('$dir/${Session.manifestName}');
+      final manifest =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final track = (manifest['tracks'] as List).single;
+      final lane = ((track as Map<String, dynamic>)['lanes'] as List).single;
+      (lane as Map<String, dynamic>).remove('balance');
+      await file.writeAsString(jsonEncode(manifest));
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      expect(bundle.session.tracks.single.lanes.single.balance, 1);
     },
   );
 
@@ -675,6 +742,32 @@ void main() {
     expect(wav.frames, 4);
     for (final sample in wav.samples) {
       expect(sample, closeTo(1.25, 1e-6)); // 1.0 (lane 0) + 0.25 (lane 1)
+    }
+  });
+
+  test('the saved mixdown plays a lane at its level times its balance, the '
+      'gain the engine held', () async {
+    final engine = FakeSessionEngine()
+      // The engine's own gain (0.25) is what the level times the balance
+      // came to; the save reads the two factors and multiplies them back.
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]), volume: 0.25);
+    final dir = '${tempDir.path}/mix_gain';
+
+    await repoFor(engine).save(
+      dir,
+      loopSettings: const SessionLoopSettings(
+        laneMix: {
+          (0, 0): (level: 0.5, imagePan: 0, balance: 0.5),
+        },
+      ),
+    );
+    final wav = WavCodec.decodeFloat32(
+      File('$dir/${SessionRepository.mixdownName}').readAsBytesSync(),
+    );
+
+    expect(wav.frames, 4);
+    for (final sample in wav.samples) {
+      expect(sample, closeTo(0.25, 1e-6));
     }
   });
 

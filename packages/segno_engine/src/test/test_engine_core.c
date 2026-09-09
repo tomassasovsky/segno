@@ -15096,6 +15096,51 @@ static void test_track_stereo_peaks_follow_fader(void) {
   le_engine_destroy(e);
 }
 
+/* The Mixer meters read what reaches an output: a lane or a monitor routed
+ * only to a disabled output sends nothing and meters nothing, on the legacy
+ * per-lane route and on the summed track bus alike. */
+static void test_meters_read_only_what_routes(void) {
+  printf("test_meters_read_only_what_routes\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  record_mono_track(e, 0, 1.0f);
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x2) == LE_OK); /* output 1 only */
+  CHECK(le_engine_set_output_enabled(e, 1, 0) == LE_OK);   /* ... disabled */
+  CHECK(le_engine_set_monitor_input(e, 1, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 1, 0x2) == LE_OK);
+  drain(e);
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 0.0f;
+    in[i * 2 + 1] = 0.7f;
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tracks[0].peak - 1.0f) < 1e-6f); /* the dry content */
+  CHECK(s.tracks[0].peak_l == 0.0f);
+  CHECK(s.tracks[0].peak_r == 0.0f);
+  CHECK(s.monitor_peaks[1] == 0.0f);
+  CHECK(s.output_peaks[1] == 0.0f);
+  /* With a track chain the summed bus route meters the same way. */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].peak_l == 0.0f);
+  CHECK(s.tracks[0].peak_r == 0.0f);
+  /* Enable the output: both meter again. */
+  CHECK(le_engine_set_output_enabled(e, 1, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].peak_r > 0.0f);
+  CHECK(fabsf(s.monitor_peaks[1] - 0.7f) < 1e-6f);
+  le_engine_destroy(e);
+}
+
 /* One undo on the track removes the last overdub pass across ALL its lanes
  * consistently (the one shared undo span drives every lane in lockstep). */
 static void test_undo_across_lanes(void) {
@@ -27426,6 +27471,7 @@ int main(void) {
   test_input_trim_scales_capture_only();
   test_monitor_pan_and_wide_inputs();
   test_track_stereo_peaks_follow_fader();
+  test_meters_read_only_what_routes();
   test_undo_across_lanes();
   test_lazy_lane_allocation();
   test_lane_phase_lock_matches_baseline();

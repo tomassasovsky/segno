@@ -28,7 +28,9 @@ import 'package:segno/session/cubit/session_cubit.dart';
 /// was live before the load, and not nothing.
 ///
 /// Scope, deliberately: the FX stages plus the lane COUNT that bounds the Loop
-/// stage's key space. The sibling lane-CONFIG keys `applySession` also resets
+/// stage's key space, and since slice 3 the track pans and the input setup
+/// (trims, pans, pairs), which a load owns the same way. The sibling
+/// lane-CONFIG keys `applySession` also resets
 /// (per-lane input / output / volume / mute) still keep their pre-load values,
 /// so a loaded session's lane ROUTING does not yet survive a restart — the
 /// same bug class as #389, tracked separately rather than widened into it.

@@ -140,6 +140,129 @@ void main() {
       },
     );
 
+    group('solo', () {
+      const codeSetMute = 8;
+      const codeSetLaneMute = 29;
+      const codeSetTrackSolo = 59;
+
+      test(
+        'a solo on another track drops this activator to 0 at that beat '
+        'and restores it to 1 when the solo clears',
+        () {
+          _writeLog('${dir.path}/events.log', 48000, [
+            (48000, codeSetTrackSolo, _generic(1, 1)), // track 1 soloed
+            (96000, codeSetTrackSolo, _generic(1, 0)), // solo cleared
+          ]);
+          final entries = EventLogReader.readAll(dir.path)!;
+          final result = EventLogReader.readChannelAutomation(
+            entries,
+            0,
+            48000,
+            120,
+          );
+          expect(result.mute, hasLength(2));
+          expect(result.mute[0].beat, closeTo(2.0, 1e-9));
+          expect(result.mute[0].value, 0.0);
+          expect(result.mute[1].beat, closeTo(4.0, 1e-9));
+          expect(result.mute[1].value, 1.0);
+        },
+      );
+
+      test('a muted track stays 0 through a solo on another track', () {
+        _writeLog('${dir.path}/events.log', 48000, [
+          (0, codeSetMute, _generic(0, 1)), // track 0 muted
+          (100, codeSetTrackSolo, _generic(1, 1)),
+          (200, codeSetTrackSolo, _generic(1, 0)),
+        ]);
+        final entries = EventLogReader.readAll(dir.path)!;
+        final result = EventLogReader.readChannelAutomation(
+          entries,
+          0,
+          48000,
+          120,
+        );
+        expect(result.mute, hasLength(1));
+        expect(result.mute.single.value, 0.0);
+      });
+
+      test('a track muted at arm stays 0 through a solo clear', () {
+        _writeLog('${dir.path}/events.log', 48000, [
+          (100, codeSetTrackSolo, _generic(1, 1)),
+          (200, codeSetTrackSolo, _generic(1, 0)),
+          (300, codeSetLaneMute, _lanef(0, 0, 0)), // unmuted -> audible
+        ]);
+        final entries = EventLogReader.readAll(dir.path)!;
+        final result = EventLogReader.readChannelAutomation(
+          entries,
+          0,
+          48000,
+          120,
+          initiallyMuted: true,
+        );
+        expect(result.mute, hasLength(1));
+        expect(result.mute.single.value, 1.0);
+      });
+
+      test('the soloed track itself stays 1', () {
+        _writeLog('${dir.path}/events.log', 48000, [
+          (100, codeSetTrackSolo, _generic(1, 1)),
+          (200, codeSetTrackSolo, _generic(1, 0)),
+        ]);
+        final entries = EventLogReader.readAll(dir.path)!;
+        final result = EventLogReader.readChannelAutomation(
+          entries,
+          1,
+          48000,
+          120,
+        );
+        expect(result.mute, isEmpty);
+      });
+
+      test(
+        'a solo seeded from the arm snapshot silences this track until '
+        'the last solo clears',
+        () {
+          _writeLog('${dir.path}/events.log', 48000, [
+            (100, codeSetTrackSolo, _generic(2, 1)), // second solo
+            (200, codeSetTrackSolo, _generic(1, 0)), // first cleared
+            (300, codeSetTrackSolo, _generic(2, 0)), // last cleared
+          ]);
+          final entries = EventLogReader.readAll(dir.path)!;
+          final result = EventLogReader.readChannelAutomation(
+            entries,
+            0,
+            48000,
+            120,
+            initiallySoloed: {1},
+          );
+          // Silenced from arm, so nothing to emit until it becomes audible.
+          expect(result.mute, hasLength(1));
+          expect(result.mute.single.beat, closeTo(300 / 48000 * 2, 1e-9));
+          expect(result.mute.single.value, 1.0);
+        },
+      );
+
+      test('does not emit duplicate breakpoints for redundant gestures', () {
+        _writeLog('${dir.path}/events.log', 48000, [
+          (0, codeSetMute, _generic(0, 1)), // muted
+          (100, codeSetMute, _generic(0, 1)), // muted again: no change
+          (200, codeSetTrackSolo, _generic(1, 1)), // still inaudible
+          (300, codeSetLaneMute, _lanef(0, 0, 0)), // unmuted under solo
+          (400, codeSetTrackSolo, _generic(1, 0)), // audible now
+          (500, codeSetTrackSolo, _generic(1, 0)), // clear again: no change
+        ]);
+        final entries = EventLogReader.readAll(dir.path)!;
+        final result = EventLogReader.readChannelAutomation(
+          entries,
+          0,
+          48000,
+          120,
+        );
+        expect(result.mute.map((b) => b.value).toList(), [0.0, 1.0]);
+        expect(result.mute[1].beat, closeTo(400 / 48000 * 2, 1e-9));
+      });
+    });
+
     test('converts frame to beat correctly at a given tempo', () {
       const codeSetVolume = 7;
       const sampleRate = 48000;

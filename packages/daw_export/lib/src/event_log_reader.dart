@@ -20,6 +20,7 @@ abstract final class EventLogReader {
   static const int _codeSetMute = 8;
   static const int _codeSetLaneVolume = 28;
   static const int _codeSetLaneMute = 29;
+  static const int _codeSetTrackSolo = 59;
 
   /// Reads `<captureDir>/events.log` and returns every entry in file order
   /// (already frame-monotonic *within* each of the two producer streams,
@@ -56,7 +57,7 @@ abstract final class EventLogReader {
     return entries;
   }
 
-  /// Extracts channel `channel`'s lane-0 volume-ride and mute-toggle
+  /// Extracts channel `channel`'s lane-0 volume-ride and audibility
   /// breakpoints (in beat units at [tempoBpm]) from [entries], matching the
   /// scope precedent the native offline renderer already established
   /// (`perf_render.c`, parts 7-8): only lane 0's track-addressed
@@ -68,18 +69,37 @@ abstract final class EventLogReader {
   /// the native renderer. Entries are sorted by frame before conversion —
   /// `events.log`'s two producer streams are not globally pre-sorted (see
   /// the format doc).
+  ///
+  /// The returned `mute` lane is Ableton's track activator (1 == audible),
+  /// so it carries the channel's *effective* audibility rather than its raw
+  /// mute flag: `!muted && (no track soloed || this track soloed)`. Solo
+  /// (`LE_CMD_SET_TRACK_SOLO`, generic arm, non-zero == soloed) is tracked
+  /// across ALL channels because a solo on another track silences this one
+  /// and clearing the last solo restores it exactly as its mute flag left
+  /// it. [initiallyMuted] and [initiallySoloed] seed that state from the
+  /// arm-time manifest (events are logged relative to arm); a breakpoint is
+  /// emitted only when the effective audibility actually changes, so a
+  /// redundant gesture (muting an already-muted track, unmuting under
+  /// someone else's solo) adds nothing.
   static ({List<AutomationBreakpoint> volume, List<AutomationBreakpoint> mute})
   readChannelAutomation(
     List<RawLogEntry> entries,
     int channel,
     int sampleRate,
-    double tempoBpm,
-  ) {
+    double tempoBpm, {
+    bool initiallyMuted = false,
+    Set<int> initiallySoloed = const {},
+  }) {
     final sorted = [...entries]..sort((a, b) => a.frame.compareTo(b.frame));
     final volume = <AutomationBreakpoint>[];
     final mute = <AutomationBreakpoint>[];
 
     double beatOf(int frame) => (frame / sampleRate) * (tempoBpm / 60.0);
+
+    var muted = initiallyMuted;
+    final soloed = {...initiallySoloed};
+    bool audible() => !muted && (soloed.isEmpty || soloed.contains(channel));
+    var lastAudible = audible();
 
     for (final e in sorted) {
       switch (e.code) {
@@ -104,30 +124,35 @@ abstract final class EventLogReader {
           }
         case _codeSetMute:
           if (e.payload.getInt32(0, Endian.little) == channel) {
-            mute.add(
-              AutomationBreakpoint(
-                beat: beatOf(e.frame),
-                // Ableton's activator is on == audible; the logged mute
-                // flag is inverted from that (1 == muted == inaudible).
-                value: e.payload.getFloat32(4, Endian.little) != 0.0
-                    ? 0.0
-                    : 1.0,
-              ),
-            );
+            muted = e.payload.getFloat32(4, Endian.little) != 0.0;
           }
         case _codeSetLaneMute:
           if (e.payload.getInt32(0, Endian.little) == channel &&
               e.payload.getInt32(4, Endian.little) == 0) {
-            mute.add(
-              AutomationBreakpoint(
-                beat: beatOf(e.frame),
-                value: e.payload.getFloat32(8, Endian.little) != 0.0
-                    ? 0.0
-                    : 1.0,
-              ),
-            );
+            muted = e.payload.getFloat32(8, Endian.little) != 0.0;
           }
+        case _codeSetTrackSolo:
+          final soloChannel = e.payload.getInt32(0, Endian.little);
+          if (e.payload.getFloat32(4, Endian.little) != 0.0) {
+            soloed.add(soloChannel);
+          } else {
+            soloed.remove(soloChannel);
+          }
+        default:
+          continue;
       }
+      // Ableton's activator is on == audible; the logged mute flag is
+      // inverted from that (1 == muted == inaudible), and a solo elsewhere
+      // silences this channel without touching its own flag.
+      final nowAudible = audible();
+      if (nowAudible == lastAudible) continue;
+      lastAudible = nowAudible;
+      mute.add(
+        AutomationBreakpoint(
+          beat: beatOf(e.frame),
+          value: nowAudible ? 1.0 : 0.0,
+        ),
+      );
     }
 
     return (volume: volume, mute: mute);

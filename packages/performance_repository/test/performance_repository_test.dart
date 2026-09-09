@@ -196,6 +196,29 @@ void main() {
     });
 
     test(
+      "captures each track's mute and solo flags in the arm manifest",
+      () async {
+        engine
+          ..seedLane(0, 0, Float32List.fromList([1, 1]), muted: true)
+          ..seedLane(1, 0, Float32List.fromList([1, 1]), solo: true);
+
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+        final armSnapshot = PerformanceArmSnapshot.fromJson(
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>,
+        );
+
+        final track0 = armSnapshot.tracks.firstWhere((t) => t.channel == 0);
+        expect(track0.muted, isTrue);
+        expect(track0.solo, isFalse);
+        final track1 = armSnapshot.tracks.firstWhere((t) => t.channel == 1);
+        expect(track1.muted, isFalse);
+        expect(track1.solo, isTrue);
+      },
+    );
+
+    test(
       'the arm-time manifest never carries takeId, even for a lane whose '
       'settled take id is > 0 (#819) — only the disarm pass stamps it, and '
       'the renderer reads it only from the disarm snapshot',

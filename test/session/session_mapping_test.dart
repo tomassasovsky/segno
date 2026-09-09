@@ -84,19 +84,15 @@ void main() {
       expect((decoded.single as BuiltInEffect).type, TrackEffectType.reverb);
     });
 
-    test('records a monitor pan as heard (slice 3), and leaves the key out '
-        'of a centred one', () {
+    test('writes no monitor pan (slice 3): the load rebuilds it from the '
+        'input setup', () {
       when(looper.allMonitors).thenReturn(const {
         0: InputMonitor(input: 0, mode: MonitorMode.on, pan: -1),
-        2: InputMonitor(input: 2, mode: MonitorMode.on),
       });
 
       final chains = chainsFromLooper(looper);
 
-      expect(chains.monitors[0].pan, -1);
-      expect(chains.monitors[1].pan, 0);
-      expect(chains.monitors[0].toJson()['pan'], -1);
-      expect(chains.monitors[1].toJson().containsKey('pan'), isFalse);
+      expect(chains.monitors.single.toJson().containsKey('pan'), isFalse);
     });
 
     test('emits no monitors when none are configured', () {
@@ -403,17 +399,29 @@ void main() {
       expect(settings.lengthPresetOverrides, isEmpty);
       expect(settings.onceOverrides, isEmpty);
       expect(settings.trackPans, isEmpty);
+      expect(settings.laneMix, isEmpty);
       expect(settings.inputSetup, const SessionInputSetup());
     });
 
     test('reads the mix (slice 3) off the repository state: every off-centre '
-        'track pan, and the input setup map for map', () {
+        "track pan, every lane's level, image and balance (the repository's "
+        "intent, not the engine's products), and the input setup map for "
+        'map', () {
       when(() => looper.state).thenReturn(
         const LooperState(
           tracks: [
-            Track(pan: -0.5),
+            Track(
+              pan: -0.5,
+              lanes: [
+                // The engine holds the products (`volume` times `balance`,
+                // `pan` = image plus track pan); the save must read the
+                // factors.
+                Lane(volume: 0.8, pan: -1, imagePan: -1, balance: 0),
+                Lane(inputChannel: 2, pan: -0.5, imagePan: 0.5),
+              ],
+            ),
             Track(channel: 1),
-            Track(channel: 2, pan: 1),
+            Track(channel: 2, pan: 1, lanes: [Lane()]),
           ],
           inputSetup: InputSetup(
             trimDb: {0: -6},
@@ -426,6 +434,11 @@ void main() {
       final settings = loopSettingsFromLooper(looper);
 
       expect(settings.trackPans, {0: -0.5, 2: 1.0});
+      expect(settings.laneMix, {
+        (0, 0): (level: 0.8, imagePan: -1.0, balance: 0.0),
+        (0, 1): (level: 1.0, imagePan: 0.5, balance: 1.0),
+        (2, 0): (level: 1.0, imagePan: 0.0, balance: 1.0),
+      });
       expect(settings.inputSetup.trimDb, {0: -6.0});
       expect(settings.inputSetup.pan, {2: -0.5});
       expect(settings.inputSetup.pairs, {0: 0.2});
@@ -879,8 +892,8 @@ void main() {
     });
 
     test("carries the mix (slice 3) to the rig: the track pan, each lane's "
-        "recorded image, and the input setup; the monitors' pans are not "
-        'mapped, the repository rebuilds them from the setup', () {
+        'recorded image and balance, and the input setup; a monitor carries '
+        'no pan, the repository rebuilds it from the setup', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
       final bundle = (
         session: Session(
@@ -901,6 +914,7 @@ void main() {
                   outputMask: 0x3,
                   inputChannel: 0,
                   pan: -1,
+                  balance: 0,
                   layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
                 ),
                 lane(1, 'track0_lane1_L0.wav'),
@@ -915,7 +929,6 @@ void main() {
               volume: 1,
               muted: false,
               encoded: '',
-              pan: -1,
             ),
           ],
           inputSetup: const SessionInputSetup(
@@ -934,7 +947,9 @@ void main() {
 
       expect(rig.tracks.single.pan, 0.25);
       expect(rig.tracks.single.lanes[0].pan, -1);
+      expect(rig.tracks.single.lanes[0].balance, 0);
       expect(rig.tracks.single.lanes[1].pan, 0);
+      expect(rig.tracks.single.lanes[1].balance, 1);
       expect(
         rig.inputSetup,
         const InputSetup(trimDb: {0: -6}, pan: {2: -0.5}, pairs: {0: 0.2}),

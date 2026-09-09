@@ -1238,11 +1238,61 @@ class SettingsRepository {
     return (trimDb: trimDb, pan: pan, pairs: pairs);
   }
 
-  /// Saves [setup] for [device]: every input in it is written, and the first
-  /// [inputCount] inputs it does not mention have their keys removed, so a
-  /// trim, pan or pair the user put back to its default does not come back
+  /// Saves [input]'s capture trim on [device], in dB; `null` or unity
+  /// removes the key, so a trim put back to its default does not come back
   /// on the next launch.
-  Future<void> saveInputSetup({
+  Future<void> saveInputTrim({
+    required String device,
+    required int input,
+    required double? db,
+  }) => db == null || db == 0
+      ? _store.remove(_inputTrimKey(device, input))
+      : _store.setDouble(_inputTrimKey(device, input), db);
+
+  /// Saves mono [input]'s pan on [device], `-1..1`; `null` or centre
+  /// removes the key.
+  Future<void> saveInputPan({
+    required String device,
+    required int input,
+    required double? pan,
+  }) => pan == null || pan == 0
+      ? _store.remove(_inputPanKey(device, input))
+      : _store.setDouble(_inputPanKey(device, input), pan.clamp(-1.0, 1.0));
+
+  /// Saves the stereo pair whose lower (even) member is [input] on [device]:
+  /// linked at [balance] (`-1..1`), or unlinked when [balance] is `null`.
+  /// Two keys, both under the lower member: the link itself and, only when
+  /// off even, the balance — so an even pair writes one key and an unlinked
+  /// pair none.
+  Future<void> saveInputPair({
+    required String device,
+    required int input,
+    required double? balance,
+  }) async {
+    if (balance == null) {
+      await _store.remove(_inputPairKey(device, input));
+      await _store.remove(_inputBalanceKey(device, input));
+      return;
+    }
+    await _store.setBool(_inputPairKey(device, input), value: true);
+    if (balance == 0) {
+      await _store.remove(_inputBalanceKey(device, input));
+    } else {
+      await _store.setDouble(
+        _inputBalanceKey(device, input),
+        balance.clamp(-1.0, 1.0),
+      );
+    }
+  }
+
+  /// Replaces the whole capture setup of [device] with [setup] — a session
+  /// load re-persisting what it applied, so the next boot matches the loaded
+  /// session. Every input in [setup] is written through the per-input
+  /// writers above, and the first [inputCount] inputs it does not mention
+  /// have their keys removed, so nothing of the previous setup survives.
+  /// An edit persists only its own input ([saveInputTrim], [saveInputPan],
+  /// [saveInputPair]); this is the one whole-setup writer.
+  Future<void> replaceInputSetup({
     required String device,
     required int inputCount,
     required StoredInputSetup setup,
@@ -1254,26 +1304,17 @@ class SettingsRepository {
       ...setup.pairs.keys,
     };
     for (final input in inputs) {
-      final trim = setup.trimDb[input];
-      if (trim != null && trim != 0) {
-        await _store.setDouble(_inputTrimKey(device, input), trim);
-      } else {
-        await _store.remove(_inputTrimKey(device, input));
-      }
-      final pan = setup.pan[input];
-      if (pan != null && pan != 0) {
-        await _store.setDouble(_inputPanKey(device, input), pan);
-      } else {
-        await _store.remove(_inputPanKey(device, input));
-      }
-      final balance = setup.pairs[input];
-      if (balance != null) {
-        await _store.setBool(_inputPairKey(device, input), value: true);
-        await _store.setDouble(_inputBalanceKey(device, input), balance);
-      } else {
-        await _store.remove(_inputPairKey(device, input));
-        await _store.remove(_inputBalanceKey(device, input));
-      }
+      await saveInputTrim(
+        device: device,
+        input: input,
+        db: setup.trimDb[input],
+      );
+      await saveInputPan(device: device, input: input, pan: setup.pan[input]);
+      await saveInputPair(
+        device: device,
+        input: input,
+        balance: setup.pairs[input],
+      );
     }
   }
 
