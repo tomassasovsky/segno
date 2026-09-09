@@ -130,11 +130,27 @@ class FakeAudioEngine implements AudioEngine {
   /// restore-point bookkeeping, which the real engine owns.
   bool undoRestoresClearResult = false;
 
+  /// Per-channel override of [undoRestoresClearResult]: when set, only these
+  /// channels restore a clear on their next undo.
+  Set<int>? undoRestoresClearChannels;
+
+  /// The channels whose next redo re-applies a clear.
+  Set<int> redoReclearsChannels = {};
+
+  @override
+  bool redoReclears({int channel = 0}) {
+    calls.add('redoReclears');
+    return redoReclearsChannels.contains(channel);
+  }
+
   @override
   bool undoRestoresClear({int channel = 0}) {
     lastChannel = channel;
     calls.add('undoRestoresClear');
-    return undoRestoresClearResult;
+    final channels = undoRestoresClearChannels;
+    return channels == null
+        ? undoRestoresClearResult
+        : channels.contains(channel);
   }
 
   @override

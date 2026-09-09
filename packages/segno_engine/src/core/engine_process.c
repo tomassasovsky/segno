@@ -74,6 +74,7 @@ static void le_dub_session_start(le_engine* e, le_track* t);
  * rolling a partial one. */
 static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame);
 static void le_primary_reconcile(le_engine* e);
+static void sync_grid_to_loop(le_engine* e, int32_t len);
 static void le_restore_multiple_or_divisor(le_track* t, int32_t base,
                                            int32_t len);
 
@@ -300,37 +301,23 @@ static int le_looper_mode_switch_blocked(le_engine* e) {
   return 0;
 }
 
-/* The audio-thread primary for re-clocking a switch: the crowned track when
- * it holds a take, else the lowest populated track — the control gate's
- * le_mode_gate_primary, so both sides measure against the same span. */
-static int32_t le_switch_primary(le_engine* e) {
-  const int32_t crowned = load_i32(&e->a_primary_track);
-  if (crowned >= 0 && crowned < e->track_count &&
-      load_i32(&e->tracks[crowned].lanes[0].a_len) > 0) {
-    return crowned;
-  }
-  for (int32_t t = 0; t < e->track_count; ++t) {
-    if (load_i32(&e->tracks[t].lanes[0].a_len) > 0) return t;
-  }
-  return -1;
-}
-
 /* Lands a looper-mode switch (LE_CMD_SET_LOOPER_MODE) on a stopped rig,
  * re-clocking recorded takes for the target without touching their audio:
  *   - into SONG/FREE: every take runs its own clock at its unchanged length
  *     and the shared master goes dormant (those modes record and play on
  *     per-track clocks — finalize_master's free-mode branch);
  *   - into MULTI/SYNC/BAND: the shared master is (re)established from the
- *     primary's span and each take's multiple or division is re-derived
- *     from its length (le_restore_multiple_or_divisor), the per-track clocks
- *     going dormant.
+ *     base take's span (le_mode_base_channel: the shortest take for Multi,
+ *     the primary for Sync/Band) and each take's multiple or division is
+ *     re-derived from its length (le_restore_multiple_or_divisor), the
+ *     per-track clocks going dormant.
  * Every playhead restarts from the top — the rig is stopped, as the gate
  * guarantees. An empty rig only records the new mode. */
 static void le_apply_mode_switch(le_engine* e, int32_t m) {
   const int32_t prev = load_i32(&e->a_looper_mode);
   if (prev == m) return;
   store_i32(&e->a_looper_mode, m);
-  const int32_t primary = le_switch_primary(e);
+  const int32_t primary = le_mode_base_channel(e, m);
   if (primary < 0) return; /* nothing recorded: nothing to re-clock */
   const int to_free = m == LE_LOOPER_MODE_FREE || m == LE_LOOPER_MODE_SONG;
   if (to_free) {
@@ -346,6 +333,9 @@ static void le_apply_mode_switch(le_engine* e, int32_t m) {
     store_i32(&e->a_master_len, base);
     store_i32(&e->a_master_pos, 0);
     e->loop_viz_bucket = -1;
+    /* The shared grid follows the master, as it does at a defining
+     * finalize: an existing tempo rounds the bar count, none derives one. */
+    sync_grid_to_loop(e, base);
   }
   for (int32_t t = 0; t < e->track_count; ++t) {
     le_track* tr = &e->tracks[t];
@@ -691,11 +681,11 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
    * transport "structurally identical" to Free's) — up to 8 independent
    * lengths, each established by that track's own defining recording, so
    * e->clock / a_master_len / loop_iteration must stay untouched here
-   * (dormant at whatever they already are — 0 in practice: D4 only allows
-   * switching INTO Free/Song with every track empty, and le_engine_configure
-   * / handle_clear reset the master alongside every track whenever the rig
-   * goes fully empty, so no Multi-mode residue can reach a Free/Song-mode
-   * finalize). sync_grid_to_loop / le_apply_length_preset_tempo are Multi
+   * (dormant at whatever they already are — 0 in practice: a switch INTO
+   * Free/Song resets the master on the way in (le_apply_mode_switch), and
+   * le_engine_configure / handle_clear reset it alongside every track
+   * whenever the rig goes fully empty, so no Multi-mode residue can reach a
+   * Free/Song-mode finalize). sync_grid_to_loop / le_apply_length_preset_tempo are Multi
    * mode's "this ONE loop derives/rounds THE session tempo" logic (D7) —
    * with several independent lengths there is no single loop to derive a
    * session-wide tempo from, so neither runs for a Free/Song-mode finalize:
@@ -1754,7 +1744,9 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
    * capture is never resumed: undo brings the frozen take back STOPPED. */
   if (freeze) {
     const int32_t st = load_i32(&t->a_state);
-    if (st == LE_TRACK_RECORDING) {
+    if (st == LE_TRACK_RECORDING && t->record_pos <= 0) {
+      /* Nothing captured yet: nothing to freeze, and no one-frame master. */
+    } else if (st == LE_TRACK_RECORDING) {
       if (e->clock.length == 0) {
         if (t->xfade_capture > 0) {
           t->record_pos = t->xfade_len; /* lock the intended length, no fade */
@@ -1771,11 +1763,17 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
       store_i32(&t->a_state, LE_TRACK_STOPPED);
       le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 0, frame);
     }
+    const int32_t frozen_len =
+        load_i32(&t->a_state) == LE_TRACK_STOPPED ? load_i32(&t->lanes[0].a_len)
+                                                  : 0;
     const le_command evt = {
         .code = LE_EVT_CLEAR_FROZEN,
-        .restore = {ch, load_i32(&t->lanes[0].a_len), LE_TRACK_STOPPED,
+        .restore = {ch, frozen_len, LE_TRACK_STOPPED,
                     load_i32(&e->a_master_len)}};
-    (void)le_ring_push(&e->evt_ring, evt); /* a full ring: no way back */
+    /* A full ring (stalled audio callbacks) loses the report: the pending
+     * point is then dropped by the next capture, and the erased take is not
+     * restorable — the same outcome as a plain clear. */
+    (void)le_ring_push(&e->evt_ring, evt);
   }
   le_audio_rev_bump(t); /* [R1] clear: the track's content is gone */
   t->record_pos = 0;
@@ -2155,12 +2153,13 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       int32_t len = 0;
       if (t->record_pos <= 0) {
         /* Nothing captured: a void defining take resets the rig like the
-         * count-in grace abort; a void later take just empties. */
+         * count-in grace abort (handle_clear acks the state command
+         * itself); a void later take just empties. */
         if (e->clock.length == 0) {
           handle_clear(e, ch, 0, frame);
-        } else {
-          finalize_new_track(e, t, LE_TRACK_PLAYING, frame);
+          break;
         }
+        finalize_new_track(e, t, LE_TRACK_PLAYING, frame);
       } else {
         if (e->clock.length == 0) {
           finalize_master(e, t, LE_TRACK_PLAYING, frame);

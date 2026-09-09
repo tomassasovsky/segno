@@ -151,7 +151,7 @@ void main() {
       pedal = PedalRepository(transport);
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
       when(() => looper.clearAll(any())).thenReturn(EngineResult.ok);
-      when(() => looper.undoRestoresClearAll).thenReturn(false);
+      when(() => looper.undoClearAll()).thenReturn(EngineResult.ok);
       for (final stub in [
         () => looper.record(channel: any(named: 'channel')),
         () => looper.undo(channel: any(named: 'channel')),
@@ -1664,73 +1664,20 @@ void main() {
     });
 
     group('undoClearAll', () {
-      test(
-        'undoes every track holding a clear restore point, and only those',
-        () {
-          setEngine(
-            _tracksWith(const [
-              Track(clearRestore: true),
-              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
-              Track(channel: 2, clearRestore: true),
-              // Peelable layer, not a clear restore point.
-              Track(
-                channel: 3,
-                state: TrackState.playing,
-                lengthFrames: 48000,
-                undoDepth: 2,
-              ),
-            ]),
-          );
-
-          cubit.undoClearAll();
-
-          // Exactly the two pending-clear channels are restored.
-          verify(() => looper.undo()).called(1);
-          verify(() => looper.undo(channel: 2)).called(1);
-          verifyNever(() => looper.undo(channel: 1));
-          verifyNever(() => looper.undo(channel: 3));
-          for (var channel = 4; channel < 8; channel++) {
-            verifyNever(() => looper.undo(channel: channel));
-          }
-        },
-      );
-
-      test(
-        'a grouped clear comes back through one undo on any member',
-        () {
-          when(() => looper.undoRestoresClearAll).thenReturn(true);
-          setEngine(
-            _tracksWith(const [
-              Track(clearRestore: true),
-              Track(channel: 1, clearRestore: true),
-              Track(channel: 2, clearRestore: true),
-            ]),
-          );
-
-          cubit.undoClearAll();
-
-          // The repository restores the whole group from that one call.
-          verify(() => looper.undo()).called(1);
-          verifyNever(() => looper.undo(channel: 1));
-          verifyNever(() => looper.undo(channel: 2));
-        },
-      );
-
-      test('is a no-op when no track holds a clear restore point', () {
+      test('delegates whole-rig recovery to the repository', () {
+        when(() => looper.undoClearAll()).thenReturn(EngineResult.ok);
         setEngine(
           _tracksWith(const [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-            Track(
-              channel: 1,
-              state: TrackState.playing,
-              lengthFrames: 48000,
-              undoDepth: 3,
-            ),
+            Track(clearRestore: true),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
           ]),
         );
 
         cubit.undoClearAll();
 
+        // The repository owns the group and the per-track fallback; the cubit
+        // never picks a channel itself.
+        verify(() => looper.undoClearAll()).called(1);
         verifyNever(() => looper.undo(channel: any(named: 'channel')));
         verifyNever(() => looper.undo());
       });

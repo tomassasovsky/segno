@@ -686,11 +686,15 @@ typedef struct le_track {
   /* control: a user clear posted on a CAPTURING track. The restore point
    * needs the length the finalize decides, so it is filed when
    * LE_EVT_CLEAR_FROZEN comes back; until then the stack keeps the erased
-   * take's layers and `clear_restore_slot` pins the live slot they and the
-   * frozen take share. A fresh capture drops the pending point with the
-   * history (le_drop_clear_history). */
+   * take's layers and `clear_restore_slot` names the live slot they and the
+   * frozen take share (kept allocated). A fresh capture drops the pending
+   * point with the history (le_drop_clear_history). */
   int clear_restore_pending;
   int32_t clear_restore_slot;
+  /* control: LE_CMD_CANCEL_TAKE posted and its LE_EVT_TAKE_CANCELLED not yet
+   * filed. A clear or a fresh capture in between supersedes the cancel, so
+   * the late event must not file a redo slot the track no longer owns. */
+  int cancel_pending;
   /* #595: an explicit un-route since the last drain asked for a trailing-lane
    * reclaim. The immediate trim in le_engine_set_lane_input can only reclaim
    * the just-un-routed slot — a sibling un-route pushed in the same audio
@@ -1202,7 +1206,7 @@ struct le_engine {
    * configure exactly like the tempo/click settings above (not reset per
    * session, and not reset by clear-all either — no engine-side "revert to
    * Multi" event exists). Default MULTI (0) so an untouched engine is
-   * bit-identical to today's build. gated (le_looper_mode_switch_blocked,
+   * bit-identical to today's build. gated over a capture, a pending arm or a playing take (le_looper_mode_switch_blocked,
    * engine_process.c) while any track has content — a simpler predicate than
    * the tempo lock (content alone). */
   _Atomic int32_t a_looper_mode; /* le_looper_mode; default 0 = MULTI */
@@ -1685,5 +1689,40 @@ static inline float load_f32(_Atomic uint32_t* slot) {
 #ifdef __cplusplus
 }
 #endif
+
+/* The track a looper-mode switch measures the other spans against (accepted
+ * design, slice 2), for both the control-thread gate and the audio-thread
+ * re-clock — one definition so the two never disagree:
+ *   - MULTI: the shortest populated take. Multi records longer takes as whole
+ *     multiples of the base (finalize_new_track rounds up), so the base is
+ *     the shortest span and every other must be a whole multiple of it.
+ *   - SYNC / BAND: the crowned primary when it holds a take, else the lowest
+ *     populated track (le_primary_reconcile's own choice); other spans must
+ *     be whole multiples of it or the divisions the engine plays (1/2, 1/4).
+ * -1 when nothing is recorded. */
+static inline int32_t le_mode_base_channel(le_engine* e, int32_t mode) {
+  if (mode == LE_LOOPER_MODE_MULTI) {
+    int32_t best = -1;
+    int32_t best_len = 0;
+    for (int32_t c = 0; c < e->track_count; ++c) {
+      const int32_t len = load_i32(&e->tracks[c].lanes[0].a_len);
+      if (len <= 0) continue;
+      if (best < 0 || len < best_len) {
+        best = c;
+        best_len = len;
+      }
+    }
+    return best;
+  }
+  const int32_t crowned = load_i32(&e->a_primary_track);
+  if (crowned >= 0 && crowned < e->track_count &&
+      load_i32(&e->tracks[crowned].lanes[0].a_len) > 0) {
+    return crowned;
+  }
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    if (load_i32(&e->tracks[c].lanes[0].a_len) > 0) return c;
+  }
+  return -1;
+}
 
 #endif /* SEGNO_ENGINE_PRIVATE_H */

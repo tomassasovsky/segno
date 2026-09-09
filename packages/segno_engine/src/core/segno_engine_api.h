@@ -100,7 +100,7 @@ typedef enum le_click_mode {
  * default. Sync/Band (primary-track sync + multiples/divisions, B3/B3b),
  * Free (independent per-track clocks, B2b), and Song (independent per-track
  * sections, B4) all have their full behavior as of this part; B2a itself was
- * only the field plus a content gate (now le_looper_mode_switch_blocked,
+ * only the field plus a content gate; the accepted content rules (slice 2)
  * engine_process.c) that guards switching it, with every value's audio path
  * staying MULTI behavior until its own part landed. This is a DIFFERENT axis
  * from InteractionMode (Dart-only: record/mute, what a track press does) —
@@ -351,11 +351,8 @@ typedef enum le_command_code {
   /* ---- looper mode (B2a, D4) ----
    * The five-mode axis (le_looper_mode). LOCKED (silently rejected, no-op)
    * over a capture, a pending arm or a playing take — le_looper_mode_switch_blocked,
-   * engine_process.c. Simpler than the D6 tempo lock: content alone, no grid
-   * or count-in check. Only clearing every track releases the lock. Mode
-   * semantics beyond the field itself land in B2b onward; this part accepts
-   * any of the 5 values unconditionally once unlocked. Not perf-logged (a
-   * mode switch changes no audible output in this part). */
+   * the audio-thread twin of le_engine_looper_mode_gate. See the looper-mode
+   * section of the control API for the content rules. */
   LE_CMD_SET_LOOPER_MODE = 45, /* arg_i = le_looper_mode (0..4) */
 
   /* ---- primary track / Sync + Band (B3, D16/D18) ----
@@ -1467,7 +1464,9 @@ LE_EXPORT int32_t le_engine_clear_undoable(le_engine* engine, int32_t channel);
  *     for redo while the track reads EMPTY; redo plays it immediately
  *     (LE_CMD_CANCEL_TAKE / LE_EVT_TAKE_CANCELLED).
  * A user clear (le_engine_clear_undoable) on a capturing track freezes the
- * take STOPPED at the clear and keeps it restorable the same way. */
+ * take STOPPED at the clear and keeps it restorable the same way. An undo
+ * that reaches the engine while the take is already ending (a finalize that
+ * landed in the same block) is declined: the take stays as it finalized. */
 LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
 /* Whether the NEXT le_engine_undo on `channel` would restore a cleared take
  * (1) rather than peel an overdub layer or empty the track (0). Also 0 for an
@@ -1481,6 +1480,11 @@ LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
  * exact the moment it returns. */
 LE_EXPORT int32_t le_engine_undo_restores_clear(le_engine* engine,
                                                 int32_t channel);
+/* Whether the NEXT le_engine_redo on `channel` re-applies a clear that an
+ * undo took back (1) rather than re-stacking an overdub layer or
+ * resurrecting an undone-to-empty track (0). The redo twin of
+ * le_engine_undo_restores_clear, for the same host bookkeeping. */
+LE_EXPORT int32_t le_engine_redo_reclears(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_redo(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                              float volume);

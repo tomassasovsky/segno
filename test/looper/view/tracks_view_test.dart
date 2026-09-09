@@ -98,7 +98,7 @@ void main() {
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.clearAll(any())).thenReturn(EngineResult.ok);
-    when(() => repository.undoRestoresClearAll).thenReturn(false);
+    when(() => repository.undoClearAll()).thenReturn(EngineResult.ok);
     when(() => repository.state).thenReturn(const LooperState());
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
@@ -1802,8 +1802,10 @@ void main() {
         await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
 
         // The whole rig comes back: exactly the pending-clear channels.
-        verify(() => repository.undo()).called(1);
-        verify(() => repository.undo(channel: 2)).called(1);
+        // Whole-rig recovery is the repository's: the group, else each
+        // restore point on its own.
+        verify(() => repository.undoClearAll()).called(1);
+        verifyNever(() => repository.undo(channel: any(named: 'channel')));
         verifyNever(() => repository.undo(channel: 1));
       },
     );
@@ -1867,7 +1869,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 10));
 
-        verify(() => repository.undo()).called(1);
+        verify(() => repository.undoClearAll()).called(1);
         expect(find.byKey(const Key(AppToastId.undoClearAll)), findsNothing);
       },
     );

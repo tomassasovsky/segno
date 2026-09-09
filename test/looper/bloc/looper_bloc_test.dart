@@ -1749,7 +1749,7 @@ void main() {
     });
 
     blocTest<LooperBloc, LooperState>(
-      'LooperModeChanged persists the mode code (B5c)',
+      'LooperModeChanged asks the repository and persists nothing itself',
       build: () {
         when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
         return LooperBloc(repository: repository, settings: settings);
@@ -1757,7 +1757,37 @@ void main() {
       act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.free)),
       verify: (_) {
         verify(() => repository.setLooperMode(LooperMode.free)).called(1);
-        verify(() => settings.saveLooperMode(LooperMode.free.code)).called(1);
+        // A refused or dropped change must not become the boot mode: the
+        // setting follows the mode the engine reports (below).
+        verifyNever(() => settings.saveLooperMode(any()));
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'the mode the engine reports is what gets persisted',
+      build: () {
+        when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
+        return LooperBloc(repository: repository, settings: settings);
+      },
+      act: (bloc) => bloc
+        ..add(
+          const LooperStateUpdated(
+            LooperState(transport: TransportState(looperMode: LooperMode.band)),
+          ),
+        )
+        ..add(
+          const LooperStateUpdated(
+            LooperState(
+              transport: TransportState(
+                looperMode: LooperMode.band,
+                masterPositionFrames: 10,
+              ),
+            ),
+          ),
+        ),
+      verify: (_) {
+        // Once for the change, not again for a tick that keeps the mode.
+        verify(() => settings.saveLooperMode(LooperMode.band.code)).called(1);
       },
     );
   });

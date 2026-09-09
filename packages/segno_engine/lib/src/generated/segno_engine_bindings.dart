@@ -1222,7 +1222,9 @@ class SegnoEngineBindings {
   /// for redo while the track reads EMPTY; redo plays it immediately
   /// (LE_CMD_CANCEL_TAKE / LE_EVT_TAKE_CANCELLED).
   /// A user clear (le_engine_clear_undoable) on a capturing track freezes the
-  /// take STOPPED at the clear and keeps it restorable the same way.
+  /// take STOPPED at the clear and keeps it restorable the same way. An undo
+  /// that reaches the engine while the take is already ending (a finalize that
+  /// landed in the same block) is declined: the take stays as it finalized.
   int le_engine_undo(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -1269,6 +1271,29 @@ class SegnoEngineBindings {
         >
       >('le_engine_undo_restores_clear');
   late final _le_engine_undo_restores_clear = _le_engine_undo_restores_clearPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Whether the NEXT le_engine_redo on `channel` re-applies a clear that an
+  /// undo took back (1) rather than re-stacking an overdub layer or
+  /// resurrecting an undone-to-empty track (0). The redo twin of
+  /// le_engine_undo_restores_clear, for the same host bookkeeping.
+  int le_engine_redo_reclears(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_redo_reclears(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_redo_reclearsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_redo_reclears');
+  late final _le_engine_redo_reclears = _le_engine_redo_reclearsPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   int le_engine_redo(

@@ -544,18 +544,32 @@ void main() {
       }
     });
 
-    test('setLooperMode is rejected (D4) while a track has content', () {
+    test('setLooperMode over a playing take stops it and switches', () {
       expect(engine.record(), EngineResult.ok);
       engine.pump(frames: 256, input: 0.5);
       expect(engine.record(), EngineResult.ok); // finalize -> PLAYING
       engine.pump(frames: 0);
-      expect(engine.snapshot().tracks.first.state, isNot(TrackState.empty));
+      expect(engine.snapshot().tracks.first.state, TrackState.playing);
 
-      // Accepted by the exported wrapper (control-thread validation only);
-      // dropped by the audio thread's le_looper_mode_locked gate.
+      // The accepted rule: playing loops are stopped ahead of the switch,
+      // the take stays, the mode applies.
+      expect(engine.looperModeGate(LooperMode.sync), LooperModeGate.playing);
       expect(engine.setLooperMode(LooperMode.sync), EngineResult.ok);
       engine.pump(frames: 0);
+      final after = engine.snapshot();
+      expect(after.looperMode, LooperMode.sync);
+      expect(after.tracks.first.state, TrackState.stopped);
+      expect(after.tracks.first.lengthFrames, greaterThan(0));
+    });
+
+    test('setLooperMode is refused while a take records', () {
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 256, input: 0.5);
+      expect(engine.looperModeGate(LooperMode.free), LooperModeGate.capturing);
+      expect(engine.setLooperMode(LooperMode.free), EngineResult.invalid);
+      engine.pump(frames: 0);
       expect(engine.snapshot().looperMode, LooperMode.multi);
+      expect(engine.snapshot().tracks.first.state, TrackState.recording);
     });
   }, skip: skip);
 

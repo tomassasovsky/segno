@@ -189,12 +189,30 @@ PR #1011 merges.
   keeps it restorable (`LE_EVT_CLEAR_FROZEN` completes the restore point once
   the finalize has decided the length); undo brings it back stopped, never as
   a resumed capture. Clear All is one grouped edit in the repository
-  (`clearAll`, `undoRestoresClearAll`): the next undo on any member restores
-  every member, the next redo re-clears the group; the group dissolves when a
-  member loses its restore point (a fresh take), and the per-track history
-  answers as usual — nothing newer is overwritten.
+  (`clearAll`, `undoRestoresClearAll`, `undoClearAll`): the next undo on any
+  member restores every member, the next redo re-clears the group (each
+  member's next redo must be that re-clear, `le_engine_redo_reclears`); while
+  a member has lost its restore point (a fresh take) the group stands down
+  and the per-track history answers — nothing newer is overwritten. The
+  frozen-capture and cancelled-arm treatment implements the capture-recovery
+  proposal (`2026-09-08-capture-recovery-ux.md`, accepted for the established
+  Multi cycle; the Clear All cases are the proposal's own choices), which the
+  handoff contract lists under the settled history rules.
 - The Undo pedal and key reach the group through the ordinary `undo`, so a
   performer who clears everything and taps Undo gets the rig back.
+- The remembered looper mode (re-applied on start, persisted in settings)
+  follows what the engine reports, not what was asked: a switch the gate let
+  through can still be dropped on the audio thread when a record press lands
+  in the same block, and that drop is silent to the caller.
+- Review round 1 (same day): a cancelled take that captured nothing acks its
+  state command once; the cancel's control side no longer pre-zeroes the
+  published length (the audio thread may decline a cancel that races a
+  finalize); a late cancel report is ignored after a clear or a fresh take;
+  an undo queued behind a freezing clear restores the frozen take instead of
+  peeling a layer; a freezing clear on a take with nothing captured keeps
+  nothing; Multi's gate measures whole multiples of the shortest take (what
+  Multi itself records), Sync/Band the primary's multiples and divisions;
+  the switch into a shared-clock mode re-establishes the tempo grid.
 
 ### Changed ownership
 
@@ -214,10 +232,11 @@ PR #1011 merges.
 ### Checks
 
 - Native: `run_native_tests.sh` 5 suites ALL PASSED, also with
-  `-fsanitize=address` and `-DLE_CALLBACK_TELEMETRY=0`; 10 new or rewritten
-  tests (mode gate spans/queued/capturing/playing, Song/Free re-clocking,
-  undo during overdub, undo during a defining and a later take, clear during
-  recording and overdubbing).
+  `-fsanitize=address` and `-DLE_CALLBACK_TELEMETRY=0`; 17 new or rewritten
+  tests (mode gate spans/multiples/divisions/queued/capturing/playing,
+  Song/Free re-clocking, undo during overdub, undo during a defining and a
+  later take, clear during recording and overdubbing, the cancel and freeze
+  races, `redo_reclears`).
 - `segno_engine` 242, `looper_repository` 414, `performance_repository` 111,
   `session_repository` 84 tests passed; root suite and coverage recorded in
   the PR; analyzers clean in every touched package; `bloc lint` clean.

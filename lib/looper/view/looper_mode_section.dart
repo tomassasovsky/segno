@@ -19,11 +19,11 @@ import 'package:segno/theme/theme.dart';
 /// `TempoSettingsSection` reads tempo/click state), so a controller/pedal- or
 /// session-load-driven mode change shows up immediately with no second cache.
 ///
-/// D4 UX: switching mode while any track has content would otherwise be a
-/// SILENT no-op (the engine rejects it, D4's content lock). The sequence that
-/// prevents it — confirm, clear, wait for the bloc to report cleared, then
-/// dispatch — lives in [requestLooperModeChange], shared with the console's
-/// Loop face rather than copied into it.
+/// Switching with recorded audio follows the accepted contract (a stopped,
+/// fitting rig switches directly; playing loops ask to stop and switch;
+/// captures, queues and unfit spans refuse with their reason). That flow
+/// lives in [requestLooperModeChange], shared with the console's Loop face
+/// rather than copied into it.
 class LooperModeSection extends StatelessWidget {
   /// Creates a [LooperModeSection].
   const LooperModeSection({super.key});

@@ -211,6 +211,11 @@ abstract interface class LooperTransport {
   /// before/after inference races. This answer is exact when it returns.
   bool undoRestoresClear({int channel = 0});
 
+  /// Whether the next [redo] on [channel] re-applies a clear an undo took
+  /// back, rather than re-stacking a layer or resurrecting an emptied track.
+  /// The redo twin of [undoRestoresClear], for the same host bookkeeping.
+  bool redoReclears({int channel = 0});
+
   /// Removes the most recent overdub layer on track [channel] (multi-level).
   ///
   /// Past the base layer the track empties (redo-ably); on a track cleared via
