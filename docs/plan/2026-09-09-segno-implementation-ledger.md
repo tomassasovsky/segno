@@ -229,6 +229,20 @@ PR #1011 merges.
   beside `undo_restores_clear`), ends a group when the engine retired a
   member's point or a single clear happens, and drops a mode request the
   reports never confirm (two polls) in favour of the reported mode.
+- Review round 3 (same day, on the round-2 fixes): a clear right behind a
+  queued restore records the master grid that restore re-establishes
+  (`pending_master_len`), not the wire's 0, so its own restore brings the
+  grid back; a cancel of a take that captured nothing empties the track
+  without the clear handler's layer-generation bump (which only a
+  control-side clear matches — a mismatch dropped every later retired layer
+  on that track); the count-in grace abort had the same pre-existing bump
+  and takes the same path now; the repository keeps unconfirmed frozen
+  members apart from the group and drops one whose capture held nothing
+  instead of ending the group; the restart replay of the looper mode is
+  armed as a request so the first report after a start cannot overwrite the
+  remembered mode; only polls count as reports. Accepted as is: a second
+  undo tap queued behind a freezing clear is a no-op once the first restores
+  (as after an undo-to-empty), documented at the apply site.
 - The fuzz suite (`flutter test --tags fuzz`) and
   `pumped_native_engine_test` were run against a locally built engine
   library; `tool/build_test_lib.sh` itself does not build on this Mac (it
@@ -253,7 +267,7 @@ PR #1011 merges.
 ### Checks
 
 - Native: `run_native_tests.sh` 5 suites ALL PASSED, also with
-  `-fsanitize=address` and `-DLE_CALLBACK_TELEMETRY=0`; 21 new or rewritten
+  `-fsanitize=address` and `-DLE_CALLBACK_TELEMETRY=0`; 22 new or rewritten
   tests (mode gate spans/multiples/divisions/queued/capturing/playing,
   Song/Free re-clocking, undo during overdub, undo during a defining and a
   later take, clear during recording and overdubbing, the cancel and freeze

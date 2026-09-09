@@ -655,7 +655,7 @@ class LooperRepository {
     if (next == _last) return;
     _last = next;
     _forgetEmptyWaveforms(next);
-    _rememberLooperMode(next);
+    _rememberLooperMode(next, poll: true);
     // Before listeners see it: `auto` monitors resolve against the arm state
     // this projection just moved, and the gate should open on the same frame
     // the track arms rather than one behind it.
@@ -672,7 +672,7 @@ class LooperRepository {
     if (next == _last) return;
     _last = next;
     _forgetEmptyWaveforms(next);
-    _rememberLooperMode(next);
+    _rememberLooperMode(next, poll: false);
     _reconcileAutoMonitors();
     _controller.add(next);
   }
@@ -944,6 +944,11 @@ class LooperRepository {
         ..setClickVolume(_clickVolume)
         ..setCountIn(_countInBars)
         ..setLooperMode(_looperMode);
+      // The replay rides the ring like a call: armed as a request so the first
+      // report after the start (still the engine's default) does not overwrite
+      // the remembered mode before the replay has landed.
+      _requestedLooperMode = _looperMode;
+      _requestReports = 0;
       // A crown requested while stopped lands now, once. The engine owns the
       // crown from here (see [_pendingCrown]).
       final pendingCrown = _pendingCrown;
@@ -1423,6 +1428,7 @@ class LooperRepository {
     // A single clear is its own operation: whatever group the last clear-all
     // left behind no longer describes one edit.
     _clearAllGroup = const {};
+    _clearAllPending = const {};
     return _clearTrack(channel);
   }
 
@@ -1445,6 +1451,7 @@ class LooperRepository {
   /// usual, and nothing newer is overwritten.
   EngineResult clearAll(Iterable<int> channels) {
     final group = <int>{};
+    final pending = <int>{};
     var result = EngineResult.ok;
     for (final channel in channels) {
       final rc = _clearTrack(channel);
@@ -1454,21 +1461,29 @@ class LooperRepository {
       }
       // Members are the takes the clear can give back, by the engine's own
       // account: a restore point filed now (a playing or stopped take), or
-      // one still to be filed (a capture the clear froze). A redo-only track
-      // is erased but has no restore point, so it is not what the group's
-      // undo restores.
-      if (_engine.undoRestoresClear(channel: channel) ||
-          _engine.clearRestorePending(channel: channel)) {
+      // one still to be filed (a capture the clear froze — confirmed once
+      // its report lands, dropped if the capture had nothing). A redo-only
+      // track is erased but has no restore point, so it is not what the
+      // group's undo restores.
+      if (_engine.undoRestoresClear(channel: channel)) {
         group.add(channel);
+      } else if (_engine.clearRestorePending(channel: channel)) {
+        pending.add(channel);
       }
     }
     _clearAllGroup = group;
+    _clearAllPending = pending;
     _clearAllRedoGroup = const {};
     return result;
   }
 
   /// The channels the last [clearAll] erased with a restore point.
   Set<int> _clearAllGroup = const {};
+
+  /// Frozen captures of the last [clearAll] whose restore point is still to
+  /// be filed: promoted to [_clearAllGroup] when it lands, dropped when the
+  /// capture turned out to hold nothing.
+  Set<int> _clearAllPending = const {};
 
   /// The channels an undone [clearAll] restored.
   Set<int> _clearAllRedoGroup = const {};
@@ -1479,10 +1494,24 @@ class LooperRepository {
   /// The clear-all group while every member still restores a cleared take;
   /// empty while one does not.
   Set<int> _intactClearAllGroup() {
+    // Frozen members first: still pending is "not yet"; a filed point makes
+    // a member; neither means the capture held nothing to give back.
+    if (_clearAllPending.isNotEmpty) {
+      final group = {..._clearAllGroup};
+      final pending = <int>{};
+      for (final channel in _clearAllPending) {
+        if (_engine.clearRestorePending(channel: channel)) {
+          pending.add(channel);
+        } else if (_engine.undoRestoresClear(channel: channel)) {
+          group.add(channel);
+        }
+      }
+      _clearAllGroup = group;
+      _clearAllPending = pending;
+      if (pending.isNotEmpty) return const {};
+    }
     for (final channel in _clearAllGroup) {
       if (_engine.undoRestoresClear(channel: channel)) continue;
-      // A frozen member's point is still to be filed: not yet, ask again.
-      if (_engine.clearRestorePending(channel: channel)) return const {};
       // The engine retired the point (a fresh take): the group is gone, and
       // a later single clear on that track must not re-form it.
       _clearAllGroup = const {};
@@ -4125,7 +4154,7 @@ class LooperRepository {
   /// Keeps [_looperMode] equal to what the engine runs: a reported change
   /// (the switch landing, a session load) is taken as is; a request the
   /// reports never confirm is dropped in favour of the reported mode.
-  void _rememberLooperMode(LooperState next) {
+  void _rememberLooperMode(LooperState next, {required bool poll}) {
     if (!_intendRunning || !next.status.isConnected) return;
     final reported = next.transport.looperMode;
     final requested = _requestedLooperMode;
@@ -4137,7 +4166,9 @@ class LooperRepository {
       _requestedLooperMode = null;
       return;
     }
-    if (++_requestReports >= 2) {
+    // Only polls count as reports: a local edit re-projects within the same
+    // block the request is still travelling in.
+    if (poll && ++_requestReports >= 2) {
       _requestedLooperMode = null;
       _looperMode = reported;
     }

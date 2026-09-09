@@ -404,6 +404,19 @@ static void le_mark_state_cmd(le_track* t, int32_t target) {
   t->state_cmds_posted++;
   t->pending_target = target;
   t->pending_len = 0; /* the posters that restore a length set it after */
+  t->pending_master_len = 0;
+}
+
+/* The master grid a clear on [t] must record for its restore point: what an
+ * in-flight restore on this track is about to re-establish, else the wire's
+ * — the grid twin of le_effective_len. */
+static int32_t le_effective_master_len(le_engine* engine, le_track* t) {
+  if (t->state_cmds_posted >
+          atomic_load_explicit(&t->a_state_acks, memory_order_acquire) &&
+      t->pending_master_len > 0) {
+    return t->pending_master_len;
+  }
+  return load_i32(&engine->a_master_len);
 }
 
 /* The control thread's view of a track's length: what a posted-but-unapplied
@@ -448,7 +461,8 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
      * (a restore point is never peeled as a layer). */
     if (le_history_is_cleared(t)) {
       (void)le_restore_clear(engine, channel);
-      break;
+      break; /* the restore is in flight: further queued taps are no-ops,
+              * exactly as after an undo-to-empty below */
     }
     if (t->undo_count > 0) {
       le_undo_swap(t);
@@ -1137,9 +1151,14 @@ static int le_build_restore_point(le_engine* engine, le_track* t,
   e.kind = LE_HIST_CLEAR;
   e.slot = load_i32(&t->lanes[0].a_live);
   e.len = len;
-  e.multiple = load_i32(&t->a_multiple);
   e.state = st;
-  e.master_len = load_i32(&engine->a_master_len);
+  /* Measured against what an in-flight restore will publish, not the wire:
+   * a clear right behind a queued restore must record the grid that restore
+   * re-establishes, or its own restore leaves the rig with content and no
+   * master. */
+  e.master_len = le_effective_master_len(engine, t);
+  e.multiple = e.master_len > 0 && len >= e.master_len ? len / e.master_len
+                                                        : load_i32(&t->a_multiple);
   const int32_t lanes = le_lanes_active(t);
   for (int32_t l = 0; l < lanes; ++l) {
     if (load_i32(&t->lanes[l].a_muted)) e.muted_mask |= 1u << l;
@@ -1310,6 +1329,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   t->outstanding_count = 0;
   le_mark_state_cmd(t, e.state);
   t->pending_len = e.len; /* what the restore will publish */
+  t->pending_master_len = e.master_len;
   /* Length and multiple are DELIBERATELY not stored control-side here, unlike
    * the paths that empty a track. Those publish len 0 up front so a poll can
    * never catch EMPTY next to a stale nonzero length; this one runs the other

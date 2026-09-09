@@ -721,6 +721,8 @@ typedef struct le_track {
   int32_t pending_target;  /* control: the last posted command's end state */
   int32_t pending_len;     /* control: the length that command will publish
                             * (0 for a command that empties the track) */
+  int32_t pending_master_len; /* control: the master grid that command
+                               * re-establishes (0: leaves it as published) */
   _Atomic int32_t a_state_acks; /* audio: state-flip commands applied */
   uint32_t dub_generation; /* bumped on clear; audio mirrors it in handle_clear
                             * and tags retire events, so a stale event from
