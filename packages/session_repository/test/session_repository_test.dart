@@ -407,8 +407,8 @@ void main() {
 
   test(
     'save then read round-trips the loop settings (slice 2c): the rig '
-    'defaults, and per track a null, an explicit-Auto (0), a fixed-bars, '
-    'a Once, and a Loop override',
+    'defaults, and per channel a following (absent), an explicit-Auto (0), '
+    'a fixed-bars, a Once, and a Loop override',
     () async {
       final source = FakeSessionEngine();
       for (var channel = 0; channel < 4; channel++) {
@@ -420,10 +420,9 @@ void main() {
         loopSettings: const SessionLoopSettings(
           defaultLengthPresetBars: 4,
           defaultOnce: true,
-          // Channel 3 follows the defaults (no entry); channel 5 has no
-          // content, so its overrides have no SessionTrack to persist on.
-          lengthPresetOverrides: {0: 8, 1: 0, 5: 16},
-          onceOverrides: {0: false, 2: true, 5: true},
+          // Channel 3 follows the defaults (no entry in either map).
+          lengthPresetOverrides: {0: 8, 1: 0},
+          onceOverrides: {0: false, 2: true},
         ),
       );
 
@@ -431,17 +430,63 @@ void main() {
 
       expect(bundle.session.defaultLengthPresetBars, 4);
       expect(bundle.session.defaultOnce, isTrue);
-      SessionTrack track(int channel) =>
-          bundle.session.tracks.firstWhere((t) => t.channel == channel);
-      expect(track(0).lengthPresetOverride, 8);
-      expect(track(0).onceOverride, isFalse);
-      expect(track(1).lengthPresetOverride, 0);
-      expect(track(1).onceOverride, isNull);
-      expect(track(2).lengthPresetOverride, isNull);
-      expect(track(2).onceOverride, isTrue);
-      expect(track(3).lengthPresetOverride, isNull);
-      expect(track(3).onceOverride, isNull);
-      expect(bundle.session.tracks.any((t) => t.channel == 5), isFalse);
+      expect(bundle.session.lengthPresetOverrides, {0: 8, 1: 0});
+      expect(bundle.session.onceOverrides, {0: false, 2: true});
+      expect(bundle.session.lengthPresetOverrides.containsKey(3), isFalse);
+      expect(bundle.session.onceOverrides.containsKey(3), isFalse);
+    },
+  );
+
+  test(
+    'save then read keeps a Once override and a length override on a '
+    'channel with NO content: such a channel gets no SessionTrack '
+    '(_capture only builds one for a channel with lanes), so the overrides '
+    'must ride the session-level maps instead',
+    () async {
+      final source = FakeSessionEngine()
+        // Channel 1 is left empty on purpose — never seeded — while its
+        // overrides are set, mirroring a user dialing in Once and a bar
+        // count on a track before ever recording onto it.
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/overrideEmpty';
+      await repoFor(source).save(
+        dir,
+        loopSettings: const SessionLoopSettings(
+          lengthPresetOverrides: {0: 2, 1: 16},
+          onceOverrides: {0: true, 1: true},
+        ),
+      );
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      // Channel 1 never got a SessionTrack at all (no content) — the gap
+      // the per-track shape fell into.
+      expect(bundle.session.tracks.any((t) => t.channel == 1), isFalse);
+      // But both its overrides survived through the content-independent
+      // session-level maps, alongside channel 0's (which also has content).
+      expect(bundle.session.lengthPresetOverrides, {0: 2, 1: 16});
+      expect(bundle.session.onceOverrides, {0: true, 1: true});
+    },
+  );
+
+  test(
+    'save with overrides on a session with NO content at all still persists '
+    'them (the maps do not depend on any track existing)',
+    () async {
+      final dir = '${tempDir.path}/overrideNoTracks';
+      await repoFor(FakeSessionEngine()).save(
+        dir,
+        loopSettings: const SessionLoopSettings(
+          lengthPresetOverrides: {2: 4},
+          onceOverrides: {2: true},
+        ),
+      );
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      expect(bundle.session.tracks, isEmpty);
+      expect(bundle.session.lengthPresetOverrides, {2: 4});
+      expect(bundle.session.onceOverrides, {2: true});
     },
   );
 
@@ -460,8 +505,8 @@ void main() {
       expect(bundle.session.primaryTrack, -1);
       expect(bundle.session.defaultLengthPresetBars, 0);
       expect(bundle.session.defaultOnce, isFalse);
-      expect(bundle.session.tracks.single.lengthPresetOverride, isNull);
-      expect(bundle.session.tracks.single.onceOverride, isNull);
+      expect(bundle.session.lengthPresetOverrides, isEmpty);
+      expect(bundle.session.onceOverrides, isEmpty);
     },
   );
 

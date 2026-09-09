@@ -5670,12 +5670,8 @@ void main() {
       bool muted = false,
       int outputMask = 0x3,
       int inputChannel = 0,
-      int? lengthPresetOverride,
-      bool? onceOverride,
     }) => SessionRigTrack(
       channel: channel,
-      lengthPresetOverride: lengthPresetOverride,
-      onceOverride: onceOverride,
       lanes: [
         SessionRigLane(
           lane: 0,
@@ -5873,12 +5869,9 @@ void main() {
             // would stay stored but inactive.
             looperMode: LooperMode.song,
             tracks: [
-              rigTrack(
-                0,
-                Float32List.fromList([1, 1, 1, 1]),
-                lengthPresetOverride: 8,
-              ),
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
+            lengthPresetOverrides: const {0: 8},
           ),
           clearPollInterval: Duration.zero,
         );
@@ -5935,12 +5928,9 @@ void main() {
           SessionRig(
             baseLengthFrames: 4,
             tracks: [
-              rigTrack(
-                0,
-                Float32List.fromList([1, 1, 1, 1]),
-                onceOverride: true,
-              ),
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
+            onceOverrides: const {0: true},
           ),
           clearPollInterval: Duration.zero,
         );
@@ -5971,14 +5961,13 @@ void main() {
             // Song: outside Multi the override is the effective preset.
             looperMode: LooperMode.song,
             tracks: [
-              rigTrack(
-                0,
-                Float32List.fromList([1, 1, 1, 1]),
-                lengthPresetOverride: 8,
-                onceOverride: false,
-              ),
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
               rigTrack(1, Float32List.fromList([1, 1, 1, 1])),
             ],
+            // Track 2 has no content: its override still restores, since
+            // the overrides ride the rig, not the tracks.
+            lengthPresetOverrides: const {0: 8, 2: 16},
+            onceOverrides: const {0: false, 2: true},
           ),
           clearPollInterval: Duration.zero,
         );
@@ -5994,10 +5983,11 @@ void main() {
         expect(tracks[1].oneShotOverride, isNull);
         expect(engine.trackLengthPreset[1], 4);
         expect(engine.trackOneShot[1], isTrue);
-        // Track 2: the rig says nothing, so the stale overrides are gone.
-        expect(tracks[2].lengthPresetOverride, isNull);
-        expect(tracks[2].oneShotOverride, isNull);
-        expect(engine.trackLengthPreset[2], 4);
+        // Track 2: no content, but the rig's overrides replace the stale
+        // ones all the same.
+        expect(tracks[2].lengthPresetOverride, 16);
+        expect(tracks[2].oneShotOverride, isTrue);
+        expect(engine.trackLengthPreset[2], 16);
         expect(engine.trackOneShot[2], isTrue);
         expect(repo.state.transport.defaultLengthPresetBars, 4);
         expect(repo.state.transport.defaultOneShot, isTrue);
@@ -6009,7 +5999,7 @@ void main() {
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackLengthPreset, {0: 8, 1: 4, 2: 4});
+        expect(engine.trackLengthPreset, {0: 8, 1: 4, 2: 16});
         expect(engine.trackOneShot, {0: false, 1: true, 2: true});
       },
     );

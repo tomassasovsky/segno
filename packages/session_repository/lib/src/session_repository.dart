@@ -53,7 +53,7 @@ class SessionChains {
 }
 
 /// The rig's loop settings a save persists (slice 2c): the length preset and
-/// Loop/Once defaults plus each track's nullable override of them.
+/// Loop/Once defaults plus each channel's override of them.
 ///
 /// Handed in by the bloc layer like [SessionChains], because the engine only
 /// holds the EFFECTIVE per-track values (`TrackSnapshot.lengthPresetBars`,
@@ -61,6 +61,12 @@ class SessionChains {
 /// repository state. Persisting the override rather than the effective value
 /// is the point: a track that follows the default must reload as following
 /// the default, whatever the device's default is at load time.
+///
+/// The override maps are written to the manifest as they are, session-level
+/// and regardless of content ([Session.lengthPresetOverrides] /
+/// [Session.onceOverrides]): a channel with nothing recorded on it has no
+/// [SessionTrack] to carry a per-track field, but its override must still
+/// survive the save.
 @immutable
 class SessionLoopSettings {
   /// Creates a [SessionLoopSettings].
@@ -431,9 +437,9 @@ class SessionRepository {
   /// lane whose live buffer is empty is skipped, and a track left with no lane
   /// is dropped.
   ///
-  /// [loopSettings] supplies each captured track's length preset and
-  /// Loop/Once overrides; an export has no manifest to write them into, so
-  /// it passes none.
+  /// [loopSettings] rides the capture through to [_sessionFrom], which
+  /// writes it into the manifest whole; an export has no manifest to write
+  /// it into, so it passes none.
   _Capture _capture([
     SessionLoopSettings loopSettings = const SessionLoopSettings(),
   ]) {
@@ -492,11 +498,6 @@ class SessionRepository {
           channel: i,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
-          // Length preset and Loop/Once overrides (slice 2c): handed in by
-          // the bloc layer, because the engine only holds the effective
-          // values — see [SessionLoopSettings].
-          lengthPresetOverride: loopSettings.lengthPresetOverrides[i],
-          onceOverride: loopSettings.onceOverrides[i],
           // Record timing and decay overrides (slice 2b): read back from
           // the engine, which reports what it holds for the track.
           recordTiming: track.recordTimingOverride(snapshot.quantizeDiv),
@@ -566,6 +567,13 @@ class SessionRepository {
       // repository does not apply them on load either.
       defaultLengthPresetBars: captured.loopSettings.defaultLengthPresetBars,
       defaultOnce: captured.loopSettings.defaultOnce,
+      // The per-channel overrides go in unconditionally, content or not —
+      // they are session-level in the manifest for exactly that reason: a
+      // channel with nothing recorded has no track entry above to carry
+      // them, and an override armed before the first take must survive the
+      // save. Handed in by the bloc layer — see [SessionLoopSettings].
+      lengthPresetOverrides: captured.loopSettings.lengthPresetOverrides,
+      onceOverrides: captured.loopSettings.onceOverrides,
       clickMode: snapshot.clickMode,
       clickOutputMask: snapshot.clickMask,
       clickVolume: snapshot.clickVolume,
