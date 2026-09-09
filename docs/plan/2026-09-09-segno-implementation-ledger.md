@@ -674,10 +674,53 @@ PR #1015 merges.
   `performance_repository` 111; root 2207; analyzers clean at the root and
   in every touched package; `bloc lint` clean.
 
+#### Review round 1
+
+A review pass (four finder angles, six verifiers) confirmed a set of
+findings, fixed in the second commit:
+
+- A lane's level, image and balance are the repository's own values
+  everywhere: the projection shows the level (`Lane.volume`, `Track.volume`)
+  rather than the engine's level-times-balance, and the manifest carries
+  `lanes[].volume` as the level, `lanes[].pan` as the image and
+  `lanes[].balance`, all captured from the projection, so a save/load no
+  longer collapses a pair's balance into the level (the first fader move
+  after a load used to un-silence the balanced-out side).
+- A lane added after the defining take gets the track pan and, on its first
+  take (an overdub), its own image (`setLaneCount` pushes grown lanes and
+  drops the image of a lane that leaves the window; the overdub path seeds
+  lanes without an image). Boot restores the track pans after the lane
+  counts.
+- Solo is honoured by the offline performance render and the DAW export
+  (an audibility gate across every track, seeded from the arm manifest's
+  new per-track `solo`); pan stays out of both, which are mono.
+- The meters read what reaches an output: a lane or monitor routed only to
+  a disabled output meters nothing, on the legacy route and on the track
+  bus alike. The pan's gains are computed when the pan is set (two loads
+  per lane per frame instead of a cosine); the trim and the solos are read
+  once per block; the meter publish and the Dart snapshot lists are bounded
+  by the device's channel counts; the Dart snapshot drops `inputTrim` (the
+  repository keeps its own intent).
+- Pairing is refused while a track fed by either member is armed or
+  capturing (the accepted rule), and a pair past the engine's ceiling is
+  refused before it is stored. Reset mixer walks every remembered track,
+  so a reset while stopped clears what the next start would replay.
+- The input setup is session-owned (the design's sentence: pairing, trim
+  and position belong to the saved session setup; names stay
+  appliance-wide), so a load replaces it and now re-persists it, and the
+  track pans, so the next boot matches the loaded session. The settings
+  writers are per input; a whole-setup writer serves the load.
+- Cleanups: `InputSetup.with*` helpers and one `_applyInputSetup` path;
+  `setInputSetup` for the boot restore and the load; `MixTarget` follows
+  `FxAddress` (`tryParse`, `canonicalString()`) and drops the track level,
+  which `TrackVolumeTarget` already names; `SessionMonitor.pan` (write-only)
+  is gone; the dead dB-of-gain conversion is gone; the Dart balance law and
+  the engine's pan law share pinned constants.
+
 #### Not verified here
 
 The pan law by ear and the meters on the appliance; the offline
-performance render replays neither pan nor solo (it renders lane 0 mono as
+performance render replays solo but not pan (it renders lane 0 mono as
 before), which the stems export does not need and the master capture
 already contains.
 

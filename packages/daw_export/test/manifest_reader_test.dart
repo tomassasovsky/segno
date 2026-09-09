@@ -371,6 +371,67 @@ void main() {
     );
 
     test(
+      "seeds the activator lane from the arm snapshot's muted/solo flags: "
+      "a track muted at arm stays off through another track's solo, and a "
+      'track soloed at arm silences the rest until that solo clears',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        for (final channel in [0, 1, 2]) {
+          File('${dir.path}/stems/wet/track$channel.wav').writeAsBytesSync([0]);
+        }
+        Map<String, dynamic> track(
+          int channel, {
+          bool muted = false,
+          bool solo = false,
+        }) => {
+          'channel': channel,
+          'muted': muted,
+          'solo': solo,
+          'lanes': [
+            {
+              'lane': 0,
+              'deferred': false,
+              'pcmRef': 'stems/wet/track$channel.wav',
+            },
+          ],
+        };
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 96000,
+            'armSnapshot': {
+              'tracks': [
+                track(0),
+                track(1, muted: true),
+                track(2, solo: true),
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+        const codeSetTrackSolo = 59;
+        _writeLog('${dir.path}/events.log', 48000, [
+          (48000, codeSetTrackSolo, _generic(2, 0)), // solo cleared at 1s
+        ]);
+
+        final project = DawManifestReader.read(dir.path);
+        final tracks = project!.tracks;
+        expect(tracks, hasLength(3));
+
+        // Track 0: silenced by track 2's solo from arm, audible once it clears.
+        final lane0 = tracks[0].automationLanes.single;
+        expect(lane0.target, AutomationTarget.activator);
+        expect(lane0.breakpoints.single.beat, 2.0);
+        expect(lane0.breakpoints.single.value, 1.0);
+        // Track 1: muted at arm, so the solo clear changes nothing.
+        expect(tracks[1].automationLanes, isEmpty);
+        // Track 2: the soloed track itself was audible throughout.
+        expect(tracks[2].automationLanes, isEmpty);
+      },
+    );
+
+    test(
       'a channel whose single lane has an effects chain resolves a device '
       'chain and prefers the dry stem over wet',
       () {

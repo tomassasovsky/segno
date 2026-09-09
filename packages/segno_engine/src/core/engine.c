@@ -156,6 +156,8 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
   atomic_store_explicit(&ln->a_output_mask, 0x3u, memory_order_relaxed);
   store_f32(&ln->a_vol_bits, 1.0f);
   store_f32(&ln->a_pan_bits, 0.0f);
+  store_f32(&ln->a_pan_gl_bits, 1.0f);
+  store_f32(&ln->a_pan_gr_bits, 1.0f);
   store_i32(&ln->a_muted, 0);
   ln->pending_mute = 0;
   store_i32(&ln->a_live, 0);
@@ -201,6 +203,8 @@ static void le_monitor_input_reset(le_monitor_input* m) {
   atomic_store_explicit(&m->a_output_mask, 0x3u, memory_order_relaxed);
   store_f32(&m->a_vol_bits, 1.0f);
   store_f32(&m->a_pan_bits, 0.0f);
+  store_f32(&m->a_pan_gl_bits, 1.0f);
+  store_f32(&m->a_pan_gr_bits, 1.0f);
   store_i32(&m->a_muted, 0);
   store_f32(&m->a_peak_bits, 0.0f);
   store_i32(&m->a_fx_count, 0);

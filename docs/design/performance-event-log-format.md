@@ -143,6 +143,9 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_SET_MASTER_FX`                | 51    | fx          | No      | ” |
 | `LE_CMD_SET_MASTER_FX_COUNT`          | 52    | fxcount     | No      | ” |
 | `LE_CMD_FINALIZE_TAKE`                | 56    | —           | No      | The `ARM`/`DISARM` rationale from the other side: finalize *intent*, and the transport fact it causes is what's logged — `LE_PLOG_RECORD_END` from the finalize it triggers, or `LE_PLOG_RECORD_ABORT` (unpaired, header version 3) when it cancels a count-in. A refused/no-op apply logs nothing: nothing audible happened. |
+| `LE_CMD_SET_LANE_PAN`                 | 58    | lanef       | Yes     | Lane pan (slice 3): the lane's recorded image plus the track's pan, as the engine holds it |
+| `LE_CMD_SET_TRACK_SOLO`               | 59    | generic     | Yes     | Track solo: an audibility gate, like mute — the offline render and the DAW export honour it |
+| `LE_CMD_SET_MONITOR_INPUT_PAN`        | 60    | lanef       | Yes     | Monitor pan (slice 3); the monitor tap is already post-pan, so the logged value is what was heard |
 
 The track/master FX **param and enabled setters** (direct-atomic, no ring
 command) push nothing either — deliberately NOT mirroring the lane family's

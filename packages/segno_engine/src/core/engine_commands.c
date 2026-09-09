@@ -2780,8 +2780,8 @@ int32_t le_engine_set_input_trim(le_engine* engine, int32_t input,
   if (!(gain >= 0.0f)) gain = 0.0f; /* NaN lands on silence, not on unity */
   if (gain > LE_MAX_INPUT_TRIM) gain = LE_MAX_INPUT_TRIM;
   /* A direct store, like the enable flags: the capture reads it once per
-   * lane per frame (relaxed), and it must hold while the engine is stopped
-   * so a restart's re-apply lands before the first block. */
+   * block (relaxed), and it must hold while the engine is stopped so a
+   * restart's re-apply lands before the first block. */
   store_f32(&engine->a_in_trim_bits[input], gain);
   return LE_OK;
 }

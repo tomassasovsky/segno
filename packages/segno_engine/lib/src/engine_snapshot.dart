@@ -14,8 +14,9 @@ const int kMaxLanes = LE_MAX_LANES;
 
 /// The number of hardware channels the engine can open per direction,
 /// mirroring the native `LE_MAX_CHANNELS`. Referenced (not re-typed) so it
-/// can never drift from the C. Sizes the per-channel meter and trim lists on
-/// [EngineSnapshot].
+/// can never drift from the C. Bounds the hardware channel index the engine
+/// accepts (trim, pairing) and caps the per-channel meter lists on
+/// [EngineSnapshot], which are sized to the open device, not to this.
 const int kMaxChannels = LE_MAX_CHANNELS;
 
 /// The number of hardware inputs the live-monitor path covers, mirroring the
@@ -28,27 +29,6 @@ const int kMaxChannels = LE_MAX_CHANNELS;
 /// name for this (`kMaxInputs`) was misread at least once (#558) as a cap on
 /// what a socket could be NAMED.
 const int kMaxMonitoredInputs = LE_MAX_MONITORED_INPUTS;
-
-/// One `0` per hardware channel: the default for the [EngineSnapshot] meter
-/// lists. A literal rather than a `List.filled` so the snapshot constructors
-/// stay `const`; its length is pinned to [kMaxChannels] by test.
-const List<double> _kEightZeros = [0, 0, 0, 0, 0, 0, 0, 0];
-const List<double> _kZeroPerChannel = [
-  ..._kEightZeros,
-  ..._kEightZeros,
-  ..._kEightZeros,
-  ..._kEightZeros,
-];
-
-/// One `1` (unity) per hardware channel: the default for
-/// [EngineSnapshot.inputTrim]. See [_kZeroPerChannel].
-const List<double> _kEightOnes = [1, 1, 1, 1, 1, 1, 1, 1];
-const List<double> _kUnityPerChannel = [
-  ..._kEightOnes,
-  ..._kEightOnes,
-  ..._kEightOnes,
-  ..._kEightOnes,
-];
 
 /// Phase of the loopback round-trip latency harness.
 ///
@@ -1174,10 +1154,9 @@ class EngineSnapshot {
     this.quantize = false,
     this.autoRecord = false,
     this.overdubFeedback = 1,
-    this.inputPeaks = _kZeroPerChannel,
-    this.monitorPeaks = _kZeroPerChannel,
-    this.outputPeaks = _kZeroPerChannel,
-    this.inputTrim = _kUnityPerChannel,
+    this.inputPeaks = const [],
+    this.monitorPeaks = const [],
+    this.outputPeaks = const [],
     this.tracks = const [],
   });
 
@@ -1234,10 +1213,9 @@ class EngineSnapshot {
       quantize = false,
       autoRecord = false,
       overdubFeedback = 1,
-      inputPeaks = _kZeroPerChannel,
-      monitorPeaks = _kZeroPerChannel,
-      outputPeaks = _kZeroPerChannel,
-      inputTrim = _kUnityPerChannel,
+      inputPeaks = const [],
+      monitorPeaks = const [],
+      outputPeaks = const [],
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -1245,75 +1223,75 @@ class EngineSnapshot {
   ///
   /// Tracks are read separately (via `le_engine_get_track`) because this ffi
   /// version cannot index a native struct array.
+  ///
+  /// The per-channel meter lists are sized to the negotiated channel counts
+  /// (clamped to the native `LE_MAX_CHANNELS` arrays), not to the arrays:
+  /// this runs at render rate, and the entries past the device would only
+  /// be zeros that every `==` and `hashCode` then walks.
   factory EngineSnapshot.fromNative(
     le_snapshot native,
     List<TrackSnapshot> tracks,
-  ) => EngineSnapshot(
-    isRunning: native.running != 0,
-    devicePresent: native.device_present != 0,
-    sampleRate: native.sample_rate,
-    bufferFrames: native.buffer_frames,
-    inputChannels: native.input_channels,
-    outputChannels: native.output_channels,
-    excludedInputMask: native.excluded_input_mask,
-    inputClipMask: native.input_clip_mask,
-    inputCondMask: native.input_cond_mask,
-    framesProcessed: native.frames_processed,
-    xrunCount: native.xrun_count,
-    inputRms: native.input_rms,
-    tunerHz: native.tuner_hz,
-    tunerConfidence: native.tuner_confidence,
-    tunerInput: native.tuner_input,
-    inputPeak: native.input_peak,
-    outputRms: native.output_rms,
-    outputPeak: native.output_peak,
-    latencyState: LatencyState.fromCode(native.latency_state),
-    measuredLatencyMs: native.measured_latency_ms,
-    masterLengthFrames: native.master_length_frames,
-    masterPositionFrames: native.master_position_frames,
-    recordOffsetFrames: native.record_offset_frames,
-    fxAddedLatencyFrames: native.fx_added_latency_frames,
-    masterGain: native.master_gain,
-    activeBackend: AudioBackend.fromNative(native.active_backend),
-    outputEnabledMask: native.output_enabled_mask,
-    isPerfArmed: native.perf_armed != 0,
-    perfFrames: native.perf_frames,
-    perfOverruns: native.perf_overruns,
-    perfZeroFilledFrames: native.perf_zero_filled_frames,
-    perfStopped: native.perf_stopped != 0,
-    tempoBpm: native.tempo_bpm,
-    tempoSource: TempoSource.fromCode(native.tempo_source),
-    tsNum: native.ts_num,
-    tsDen: native.ts_den,
-    syncTempo: native.sync_tempo != 0,
-    quantizeDiv: GridDivision.fromCode(native.quantize_div),
-    loopBars: native.loop_bars,
-    currentBeat: native.current_beat,
-    clickMode: ClickMode.fromCode(native.click_mode),
-    clickMask: native.click_mask,
-    clickVolume: native.click_volume,
-    countInBars: native.count_in_bars,
-    countingIn: native.counting_in != 0,
-    countInBeatsLeft: native.count_in_beats_left,
-    looperMode: LooperMode.fromCode(native.looper_mode),
-    primaryTrack: native.primary_track,
-    quantize: native.quantize != 0,
-    autoRecord: native.auto_record != 0,
-    overdubFeedback: native.overdub_feedback,
-    inputPeaks: [
-      for (var i = 0; i < LE_MAX_CHANNELS; i++) native.input_peaks[i],
-    ],
-    monitorPeaks: [
-      for (var i = 0; i < LE_MAX_CHANNELS; i++) native.monitor_peaks[i],
-    ],
-    outputPeaks: [
-      for (var i = 0; i < LE_MAX_CHANNELS; i++) native.output_peaks[i],
-    ],
-    inputTrim: [
-      for (var i = 0; i < LE_MAX_CHANNELS; i++) native.input_trim[i],
-    ],
-    tracks: tracks,
-  );
+  ) {
+    final inputs = native.input_channels.clamp(0, LE_MAX_CHANNELS);
+    final outputs = native.output_channels.clamp(0, LE_MAX_CHANNELS);
+    return EngineSnapshot(
+      isRunning: native.running != 0,
+      devicePresent: native.device_present != 0,
+      sampleRate: native.sample_rate,
+      bufferFrames: native.buffer_frames,
+      inputChannels: native.input_channels,
+      outputChannels: native.output_channels,
+      excludedInputMask: native.excluded_input_mask,
+      inputClipMask: native.input_clip_mask,
+      inputCondMask: native.input_cond_mask,
+      framesProcessed: native.frames_processed,
+      xrunCount: native.xrun_count,
+      inputRms: native.input_rms,
+      tunerHz: native.tuner_hz,
+      tunerConfidence: native.tuner_confidence,
+      tunerInput: native.tuner_input,
+      inputPeak: native.input_peak,
+      outputRms: native.output_rms,
+      outputPeak: native.output_peak,
+      latencyState: LatencyState.fromCode(native.latency_state),
+      measuredLatencyMs: native.measured_latency_ms,
+      masterLengthFrames: native.master_length_frames,
+      masterPositionFrames: native.master_position_frames,
+      recordOffsetFrames: native.record_offset_frames,
+      fxAddedLatencyFrames: native.fx_added_latency_frames,
+      masterGain: native.master_gain,
+      activeBackend: AudioBackend.fromNative(native.active_backend),
+      outputEnabledMask: native.output_enabled_mask,
+      isPerfArmed: native.perf_armed != 0,
+      perfFrames: native.perf_frames,
+      perfOverruns: native.perf_overruns,
+      perfZeroFilledFrames: native.perf_zero_filled_frames,
+      perfStopped: native.perf_stopped != 0,
+      tempoBpm: native.tempo_bpm,
+      tempoSource: TempoSource.fromCode(native.tempo_source),
+      tsNum: native.ts_num,
+      tsDen: native.ts_den,
+      syncTempo: native.sync_tempo != 0,
+      quantizeDiv: GridDivision.fromCode(native.quantize_div),
+      loopBars: native.loop_bars,
+      currentBeat: native.current_beat,
+      clickMode: ClickMode.fromCode(native.click_mode),
+      clickMask: native.click_mask,
+      clickVolume: native.click_volume,
+      countInBars: native.count_in_bars,
+      countingIn: native.counting_in != 0,
+      countInBeatsLeft: native.count_in_beats_left,
+      looperMode: LooperMode.fromCode(native.looper_mode),
+      primaryTrack: native.primary_track,
+      quantize: native.quantize != 0,
+      autoRecord: native.auto_record != 0,
+      overdubFeedback: native.overdub_feedback,
+      inputPeaks: [for (var i = 0; i < inputs; i++) native.input_peaks[i]],
+      monitorPeaks: [for (var i = 0; i < inputs; i++) native.monitor_peaks[i]],
+      outputPeaks: [for (var i = 0; i < outputs; i++) native.output_peaks[i]],
+      tracks: tracks,
+    );
+  }
 
   /// Whether the audio device is open and the callback is running.
   final bool isRunning;
@@ -1559,11 +1537,11 @@ class EngineSnapshot {
   final double overdubFeedback;
 
   /// Per-input RAW device level over the most recent block, `0..1`, indexed
-  /// by hardware channel (length [kMaxChannels]; entries past the device's
-  /// channel count read `0`). Read before conditioning and trim, like
-  /// [inputClipMask], so a hot ADC reads hot however the trim is set. A block
-  /// peak like [outputPeak]: written once per block, not a per-callback
-  /// counter.
+  /// by hardware channel: one entry per channel the device has (length
+  /// [inputChannels]; empty while no device is open). Read before
+  /// conditioning and trim, like [inputClipMask], so a hot ADC reads hot
+  /// however the trim is set. A block peak like [outputPeak]: written once
+  /// per block, not a per-callback counter.
   final List<double> inputPeaks;
 
   /// Per-input level of what that input's monitor sends to the outputs over
@@ -1572,14 +1550,9 @@ class EngineSnapshot {
   final List<double> monitorPeaks;
 
   /// Per-output level after the master gain and limiter over the most recent
-  /// block, `0..1`, indexed by hardware output channel (length
-  /// [kMaxChannels]).
+  /// block, `0..1`, indexed by hardware output channel: one entry per channel
+  /// the device has (length [outputChannels]; empty while no device is open).
   final List<double> outputPeaks;
-
-  /// Per-input capture trim the engine holds (`EngineRouting.setInputTrim`):
-  /// linear, default `1`, indexed by hardware channel (length
-  /// [kMaxChannels]). Entries past the device's channel count read `1`.
-  final List<double> inputTrim;
 
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
@@ -1670,7 +1643,6 @@ class EngineSnapshot {
           _listEquals(inputPeaks, other.inputPeaks) &&
           _listEquals(monitorPeaks, other.monitorPeaks) &&
           _listEquals(outputPeaks, other.outputPeaks) &&
-          _listEquals(inputTrim, other.inputTrim) &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -1729,7 +1701,6 @@ class EngineSnapshot {
     Object.hashAll(inputPeaks),
     Object.hashAll(monitorPeaks),
     Object.hashAll(outputPeaks),
-    Object.hashAll(inputTrim),
     ...tracks,
   ]);
 

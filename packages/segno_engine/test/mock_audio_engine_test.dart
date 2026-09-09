@@ -457,16 +457,16 @@ void main() {
         );
       });
 
-      test('setInputTrim works while stopped and surfaces in the snapshot', () {
-        // Direct-store contract: no start() needed.
+      test('setInputTrim works while stopped and reads back per input', () {
+        // Direct-store contract: no start() needed. The snapshot carries no
+        // trim, so the mock's read-back seam is the only window onto it.
         expect(engine.setInputTrim(input: 3, gain: 2), EngineResult.ok);
-        expect(engine.snapshot().inputTrim[3], closeTo(2, 1e-9));
-        expect(engine.snapshot().inputTrim[0], 1, reason: 'default unity');
-        expect(engine.snapshot().inputTrim, hasLength(kMaxChannels));
+        expect(engine.inputTrimOf(input: 3), closeTo(2, 1e-9));
+        expect(engine.inputTrimOf(input: 0), 1, reason: 'default unity');
 
         // ...and it holds across a start.
         engine.start(engine.defaultConfig);
-        expect(engine.snapshot().inputTrim[3], closeTo(2, 1e-9));
+        expect(engine.inputTrimOf(input: 3), closeTo(2, 1e-9));
       });
 
       test('setInputTrim clamps to 0..+12 dB and lands NaN on silence', () {
@@ -474,10 +474,9 @@ void main() {
           ..setInputTrim(input: 0, gain: 100)
           ..setInputTrim(input: 1, gain: -3)
           ..setInputTrim(input: 2, gain: double.nan);
-        final trim = engine.snapshot().inputTrim;
-        expect(trim[0], closeTo(3.98107, 1e-4));
-        expect(trim[1], 0);
-        expect(trim[2], 0);
+        expect(engine.inputTrimOf(input: 0), closeTo(3.98107, 1e-4));
+        expect(engine.inputTrimOf(input: 1), 0);
+        expect(engine.inputTrimOf(input: 2), 0);
       });
 
       test('setInputTrim rejects an out-of-range input', () {
@@ -489,6 +488,8 @@ void main() {
           engine.setInputTrim(input: kMaxChannels, gain: 1),
           EngineResult.invalid,
         );
+        expect(engine.inputTrimOf(input: -1), 1);
+        expect(engine.inputTrimOf(input: kMaxChannels), 1);
       });
 
       test('setMonitorInputPan round-trips, clamped, per input', () {
@@ -514,11 +515,18 @@ void main() {
         expect(engine.monitorInputPan(input: -1), 0);
       });
 
-      test('the mock meters nothing', () {
+      test('the mock meters nothing, one entry per negotiated channel', () {
+        expect(engine.snapshot().inputPeaks, isEmpty, reason: 'no device');
+        expect(engine.snapshot().monitorPeaks, isEmpty);
+        expect(engine.snapshot().outputPeaks, isEmpty);
+
         engine
           ..start(engine.defaultConfig)
           ..setTrackSolo(channel: 0, solo: true);
         final snapshot = engine.snapshot();
+        expect(snapshot.inputPeaks, hasLength(snapshot.inputChannels));
+        expect(snapshot.monitorPeaks, hasLength(snapshot.inputChannels));
+        expect(snapshot.outputPeaks, hasLength(snapshot.outputChannels));
         expect(snapshot.inputPeaks, everyElement(0));
         expect(snapshot.monitorPeaks, everyElement(0));
         expect(snapshot.outputPeaks, everyElement(0));

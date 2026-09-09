@@ -87,6 +87,44 @@ class InputSetup extends Equatable {
     return far >= 1 ? 0 : math.cos(far * math.pi / 2);
   }
 
+  /// A copy with [input]'s trim at [db] (unity drops the entry).
+  InputSetup withTrim(int input, double db) {
+    final trims = Map<int, double>.of(trimDb);
+    if (db == 0) {
+      trims.remove(input);
+    } else {
+      trims[input] = db;
+    }
+    return copyWith(trimDb: trims);
+  }
+
+  /// A copy with mono [input]'s pan at [pan] (centre drops the entry).
+  InputSetup withPan(int input, double pan) {
+    final pans = Map<int, double>.of(this.pan);
+    if (pan == 0) {
+      pans.remove(input);
+    } else {
+      pans[input] = pan;
+    }
+    return copyWith(pan: pans);
+  }
+
+  /// A copy with the pair whose lower member is [input] linked (at an even
+  /// balance, or the balance it had) or unlinked.
+  InputSetup withPair(int input, {required bool paired}) {
+    final next = Map<int, double>.of(pairs);
+    if (paired) {
+      next.putIfAbsent(input, () => 0);
+    } else {
+      next.remove(input);
+    }
+    return copyWith(pairs: next);
+  }
+
+  /// A copy with the pair whose lower member is [input] at [balance].
+  InputSetup withBalance(int input, double balance) =>
+      copyWith(pairs: Map<int, double>.of(pairs)..[input] = balance);
+
   /// Returns a copy with the given overrides.
   InputSetup copyWith({
     Map<int, double>? trimDb,
@@ -104,8 +142,3 @@ class InputSetup extends Equatable {
 
 /// The linear capture gain for a trim of [db] decibels.
 double inputTrimGainOfDb(double db) => math.pow(10, db / 20).toDouble();
-
-/// The trim in decibels of a linear capture [gain]; silence reads as
-/// [kMinInputTrimDb].
-double inputTrimDbOfGain(double gain) =>
-    gain <= 0 ? kMinInputTrimDb : 20 * math.log(gain) / math.ln10;

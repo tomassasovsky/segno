@@ -318,6 +318,11 @@ typedef struct le_lane {
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
   _Atomic uint32_t a_vol_bits;     /* per-lane volume (float bits, 0..1) */
   _Atomic uint32_t a_pan_bits;     /* per-lane pan (float bits, -1..1) */
+  /* The pan's gains (le_pan_gains), written beside a_pan_bits by the ring
+   * handler so the audio thread loads two floats per lane per frame instead
+   * of computing a cosine. Unity at centre. */
+  _Atomic uint32_t a_pan_gl_bits;
+  _Atomic uint32_t a_pan_gr_bits;
   _Atomic int32_t a_muted;         /* per-lane mute */
   int32_t pending_mute; /* audio-thread-local: a mute that arrived while the
                          * track was capturing. Applied (into a_muted) when the
@@ -443,6 +448,8 @@ typedef struct le_monitor_input {
   _Atomic uint32_t a_output_mask; /* output channels the monitor plays to */
   _Atomic uint32_t a_vol_bits;    /* monitor gain (float bits, 0..1) */
   _Atomic uint32_t a_pan_bits;    /* monitor pan (float bits, -1..1) */
+  _Atomic uint32_t a_pan_gl_bits; /* its gains, see le_lane */
+  _Atomic uint32_t a_pan_gr_bits;
   _Atomic int32_t a_muted;        /* 0/1 monitor mute */
   _Atomic uint32_t a_peak_bits;   /* block peak of what it routes, 0..1 */
   _Atomic int32_t a_fx_count;

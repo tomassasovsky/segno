@@ -1030,6 +1030,16 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
       arm_track != NULL ? le_json_get(arm_track, "volume") : NULL, 1.0);
   int muted = le_json_bool(
       arm_track != NULL ? le_json_get(arm_track, "muted") : NULL, 0);
+  /* Solo (slice 3) is an audibility gate across EVERY track: while any is
+   * soloed only soloed tracks route. Seeded from the arm manifest (a track
+   * absent there reads 0) and moved by the logged LE_CMD_SET_TRACK_SOLO of
+   * every channel, not only this one. */
+  int solo[LE_MAX_TRACKS] = {0};
+  for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) {
+    const le_json_value* track = le_pr_find_track(m->arm_tracks, t);
+    solo[t] = le_json_bool(track != NULL ? le_json_get(track, "solo") : NULL,
+                           0);
+  }
 
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   if (fx == NULL) {
@@ -1164,6 +1174,11 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
         case LE_CMD_SET_MUTE:
           if (cmd->arg_i == channel) muted = cmd->arg_f != 0.0f;
           break;
+        case LE_CMD_SET_TRACK_SOLO:
+          if (cmd->arg_i >= 0 && cmd->arg_i < LE_MAX_TRACKS) {
+            solo[cmd->arg_i] = cmd->arg_f != 0.0f;
+          }
+          break;
         default:
           break;
       }
@@ -1181,7 +1196,10 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
       }
     }
 
-    const float in = muted ? 0.0f : dry[f] * volume;
+    int any_solo = 0;
+    for (int32_t t = 0; t < LE_MAX_TRACKS; ++t) any_solo |= solo[t];
+    const int audible = !muted && (!any_solo || solo[channel]);
+    const float in = audible ? dry[f] * volume : 0.0f;
     float l = in;
     float r = in;
     fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r, chain.count,

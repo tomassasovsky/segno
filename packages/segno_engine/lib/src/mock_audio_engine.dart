@@ -146,6 +146,13 @@ class MockAudioEngine implements AudioEngine {
   /// it on configure; the mock is a simplified simulation).
   final List<double> _inputTrim = List<double>.filled(LE_MAX_CHANNELS, 1);
 
+  /// The capture trim the mock holds for [input] (linear), or `1` for an
+  /// out-of-range input. A read-back seam like [monitorInputPan]: the engine
+  /// snapshot carries no trim (the repository keeps its own dB intent), so
+  /// tests read the mock directly.
+  double inputTrimOf({required int input}) =>
+      input < 0 || input >= LE_MAX_CHANNELS ? 1 : _inputTrim[input];
+
   /// Per-input monitor pan (`setMonitorInputPan`), `-1..1`, default centre.
   final List<double> _monitorPan = List<double>.filled(LE_MAX_CHANNELS, 0);
 
@@ -211,13 +218,15 @@ class MockAudioEngine implements AudioEngine {
       _framesProcessed += buffer;
       if (_perfArmed) _perfFrames += buffer;
     }
+    final inputs = _running ? _negotiatedInputs : 0;
+    final outputs = _running ? _negotiatedOutputs : 0;
     return EngineSnapshot(
       isRunning: _running,
       devicePresent: _running,
       sampleRate: _activeConfig?.sampleRate ?? 48000,
       bufferFrames: _activeConfig?.bufferFrames ?? 128,
-      inputChannels: _running ? _negotiatedInputs : 0,
-      outputChannels: _running ? _negotiatedOutputs : 0,
+      inputChannels: inputs,
+      outputChannels: outputs,
       framesProcessed: _framesProcessed,
       xrunCount: 0,
       inputRms: 0,
@@ -256,9 +265,11 @@ class MockAudioEngine implements AudioEngine {
       countInBars: _countInBars,
       looperMode: _looperMode,
       primaryTrack: _primaryTrack,
-      // The meter lists stay at their all-zero defaults: the mock processes no
-      // audio. The trim list is the one per-input value it holds.
-      inputTrim: List<double>.unmodifiable(_inputTrim),
+      // One entry per negotiated channel, like the native projection; all
+      // zero because the mock processes no audio.
+      inputPeaks: List<double>.filled(inputs, 0),
+      monitorPeaks: List<double>.filled(inputs, 0),
+      outputPeaks: List<double>.filled(outputs, 0),
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }

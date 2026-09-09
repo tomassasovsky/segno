@@ -2,11 +2,10 @@ import 'dart:convert';
 
 import 'package:equatable/equatable.dart';
 
-/// What a mix parameter belongs to (accepted design, slice 3).
+/// What a mix parameter belongs to (accepted design, slice 3). A track's
+/// playback level is not here: `TrackVolumeTarget` (the control value
+/// targets) already names it and saved bindings carry that form.
 enum MixTargetKind {
-  /// A recorded track's playback level.
-  trackLevel,
-
   /// A recorded track's pan.
   trackPan,
 
@@ -35,14 +34,11 @@ enum MixTargetKind {
 /// order `target`, `index`, no whitespace, so the same target always encodes
 /// to the same string and string equality is identity. Fields are
 /// additive-only: [fromJson] ignores keys it does not know and never throws
-/// on a wrong-typed field.
+/// on a wrong-typed field. The same shape as `FxAddress` ([fromJson],
+/// [tryParse], [canonicalString]) so one dispatcher can decode both.
 class MixTarget extends Equatable {
   /// Creates a [MixTarget].
   const MixTarget({required this.kind, required this.index});
-
-  /// Track [channel]'s playback level.
-  const MixTarget.trackLevel(int channel)
-    : this(kind: MixTargetKind.trackLevel, index: channel);
 
   /// Track [channel]'s pan.
   const MixTarget.trackPan(int channel)
@@ -71,7 +67,7 @@ class MixTarget extends Equatable {
   }
 
   /// Parses a [canonicalString], or `null` when it is not one.
-  static MixTarget? parse(String canonical) {
+  static MixTarget? tryParse(String canonical) {
     try {
       final decoded = jsonDecode(canonical);
       return decoded is Map<String, dynamic> ? fromJson(decoded) : null;
@@ -90,7 +86,7 @@ class MixTarget extends Equatable {
   Map<String, dynamic> toJson() => {'target': kind.name, 'index': index};
 
   /// The byte-stable string form of [toJson].
-  String get canonicalString => jsonEncode(toJson());
+  String canonicalString() => jsonEncode(toJson());
 
   @override
   List<Object?> get props => [kind, index];
