@@ -80,7 +80,9 @@ class TransportState extends Equatable {
   /// Click volume in `0..LE_MAX_GAIN` (default `1`).
   final double clickVolume;
 
-  /// Count-in length in measures; `0` = off (default).
+  /// Count-in length in measures; `0` = off (default). The repository's
+  /// held value (slice 2b), which a Sound start clears (D9) and which reads
+  /// right while the engine is stopped.
   final int countInBars;
 
   /// Whether a count-in is currently running.
@@ -119,9 +121,9 @@ class TransportState extends Equatable {
   final bool quantize;
 
   /// Whether recording starts on sound at the input (Sound start) rather
-  /// than on the press. Read from the engine, which clears it when a
-  /// count-in is set and clears the count-in when it is set (D9), so this
-  /// and [countInBars] never both read on.
+  /// than on the press. The repository's held value, which mirrors the
+  /// engine's rule that a count-in clears it and it clears the count-in
+  /// (D9), so this and [countInBars] never both read on.
   final bool autoRecord;
 
   /// The default overdub decay in percent (`0..100`): what each overdub pass

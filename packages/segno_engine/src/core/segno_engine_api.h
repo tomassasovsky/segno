@@ -1786,10 +1786,14 @@ LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
  *     master clock — a k-multiple ends when the master wraps back to the
  *     track's first segment, a Sync/Band division every base/n frames, a
  *     plain 1x take at the master wrap (le_shared_clock_one_shots). A track
- *     launched mid-lap in these modes stays aligned to the shared clock and
- *     stops at the end of the lap it joined; the next launch from a held
- *     transport starts at the top.
- * Enabling Once during a pass finishes that pass. The stop reuses
+ *     that starts sounding mid-lap (a take finalized by an immediate press,
+ *     a launch while siblings play) stays aligned to the shared clock and
+ *     stops at the first lap end after it has sounded for a whole lap, so a
+ *     fresh take never stops on the tail of its own recording; the next
+ *     launch from a held transport starts at the top.
+ * Enabling Once during a pass finishes that pass. A record or overdub
+ * request queued for the lap end on a Once track wins over the stop: the
+ * new pass runs, and Once ends the track at that pass's end. The stop reuses
  * handle_stop's exact PLAYING/OVERDUBBING -> STOPPED transition (pending
  * mutes land the same way a manual Stop press would; an overdub in flight
  * ends its capture and drains/retires normally) and logs a synthetic STOP. */

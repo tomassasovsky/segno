@@ -5314,7 +5314,10 @@ void main() {
         expect(transport.clickMode, ClickMode.playRec);
         expect(transport.clickMask, 0x3);
         expect(transport.clickVolume, closeTo(0.8, 1e-9));
-        expect(transport.countInBars, 2);
+        // The count-in is the repository's own held value (slice 2b), not
+        // the engine's mirror: nothing was set here, so it reads off even
+        // though the snapshot says 2.
+        expect(transport.countInBars, 0);
         expect(transport.countingIn, isTrue);
         expect(transport.countInBeatsLeft, 3);
         expect(transport.looperMode, LooperMode.band);
