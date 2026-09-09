@@ -66,32 +66,33 @@ Future<bool> requestLooperModeChange(
   if (next == current) return false;
   final l10n = context.l10n;
   final bloc = context.read<LooperBloc>();
-  final gate = context.read<LooperRepository>().looperModeGate(next);
-  switch (gate) {
-    case LooperModeGate.open:
-      bloc.add(LooperModeChanged(next));
-      return true;
-    case LooperModeGate.playing:
-      final confirmed = await showConsoleConfirmDialog(
-        context,
-        title: l10n.modeChangeStopTitle(looperModeLabels(l10n)[next]!.label),
-        body: l10n.modeChangeStopBody,
-        confirmLabel: l10n.modeChangeStopConfirm,
-      );
-      if (!confirmed || !context.mounted) return false;
-      bloc.add(LooperModeChanged(next));
-      return true;
-    case LooperModeGate.capturing:
-    case LooperModeGate.queued:
-    case LooperModeGate.spans:
-      _showRefusal(context, looperModeRefusal(l10n, gate));
-      return false;
+  final repository = context.read<LooperRepository>();
+  var gate = repository.looperModeGate(next);
+  if (gate == LooperModeGate.playing) {
+    final confirmed = await showConsoleConfirmDialog(
+      context,
+      title: l10n.modeChangeStopTitle(looperModeLabels(l10n)[next]!.label),
+      body: l10n.modeChangeStopBody,
+      confirmLabel: l10n.modeChangeStopConfirm,
+    );
+    if (!confirmed || !context.mounted) return false;
+    // Asked again: a pedal may have armed a take while the dialog was up,
+    // and a refusal then must be named, not swallowed.
+    gate = repository.looperModeGate(next);
   }
+  final reason = looperModeRefusal(l10n, gate);
+  if (reason != null) {
+    _showRefusal(context, reason);
+    return false;
+  }
+  bloc.add(LooperModeChanged(next));
+  return true;
 }
 
-/// The short reason a mode is unavailable right now — the copy the accepted
-/// mode cards show in place of a mode's description. `null` when the change
-/// is open or only needs the stop confirmation.
+/// The short reason a mode is unavailable right now. `null` when the change
+/// is open or only needs the stop confirmation. Shown from the chooser as a
+/// snackbar here; the accepted mode cards (slice 2c) will draw it in place of
+/// the mode's description.
 String? looperModeRefusal(AppLocalizations l10n, LooperModeGate gate) =>
     switch (gate) {
       LooperModeGate.capturing => l10n.modeChangeBlockedCapturing,
@@ -100,8 +101,7 @@ String? looperModeRefusal(AppLocalizations l10n, LooperModeGate gate) =>
       LooperModeGate.open || LooperModeGate.playing => null,
     };
 
-void _showRefusal(BuildContext context, String? reason) {
-  if (reason == null) return;
+void _showRefusal(BuildContext context, String reason) {
   ScaffoldMessenger.of(context)
     ..clearSnackBars()
     ..showSnackBar(

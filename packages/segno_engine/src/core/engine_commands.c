@@ -260,8 +260,8 @@ static void le_undo_swap(le_track* t) {
 static void le_track_drop_recoverable_if_dead(le_track* t) {
   if (load_i32(&t->lanes[0].a_len) > 0) return;
   if (t->undo_count > 0 || t->redo_count > 0) return;
-  /* A frozen take's restore point is on its way (LE_EVT_CLEAR_FROZEN): the
-   * live slot it names must not be trimmed out from under it. */
+  /* A frozen take's restore point is still to be filed (LE_EVT_CLEAR_FROZEN):
+   * the live slot it will name must stay allocated. */
   if (t->clear_restore_pending) return;
   for (int l = 0; l < LE_MAX_LANES; ++l) {
     store_i32(&t->lanes[l].a_recoverable, 0);
@@ -382,6 +382,7 @@ static void le_mark_state_cmd(le_track* t, int32_t target) {
  * Returns the DISARM push result (LE_OK when there was no arm to cancel) —
  * the internal callers discard it, le_engine_cancel_arm reports it. */
 static int32_t le_cancel_arm(le_engine* engine, int32_t channel);
+static int32_t le_restore_clear(le_engine* engine, int32_t channel);
 
 /* #595: trailing-lane reclaim, defined below but called from the event drain
  * (le_engine_drain_events) as well as the un-route itself. */
@@ -396,6 +397,13 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
   while (t->queued_undo > 0) {
     t->queued_undo--;
+    /* A tap queued behind a freezing clear finds the restore point on top
+     * once LE_EVT_CLEAR_FROZEN filed it: that tap restores the frozen take
+     * (a restore point is never peeled as a layer). */
+    if (le_history_is_cleared(t)) {
+      (void)le_restore_clear(engine, channel);
+      break;
+    }
     if (t->undo_count > 0) {
       le_undo_swap(t);
       continue;
@@ -558,6 +566,10 @@ static void le_handle_take_cancelled(le_engine* engine, const le_command* evt) {
   const int32_t len = evt->lanei.value;
   if (ch < 0 || ch >= engine->track_count) return;
   le_track* t = &engine->tracks[ch];
+  /* A clear or a fresh capture since the cancel was posted owns the slot
+   * now; the late event files nothing. */
+  if (!t->cancel_pending) return;
+  t->cancel_pending = 0;
   if (len <= 0) return;
   /* The cancel already cleared the redo branch (a fresh take does, at
    * capture start), so the slot goes on an empty stack. */
@@ -813,6 +825,7 @@ static void le_begin_empty_capture(le_engine* engine, int32_t channel) {
    * then records into that very slot — the one a restore point names. */
   le_drop_clear_history(t);
   t->queued_undo = 0;
+  t->cancel_pending = 0; /* a new take supersedes a cancelled one's redo */
   const int32_t lanes = le_lanes_active(t);
   for (int32_t l = 0; l < lanes; ++l) {
     /* A fresh capture can grow to the recording cap, but undo may have left a
@@ -1147,6 +1160,7 @@ static int32_t le_clear_track(le_engine* engine, int32_t channel,
    * makes any still-in-ring retire event from before the clear stale. */
   t->outstanding_count = 0;
   t->queued_undo = 0;
+  t->cancel_pending = 0; /* a clear supersedes a cancelled take's redo */
   t->dub_generation++;
   le_mark_state_cmd(t, LE_TRACK_EMPTY);
   /* Coherent snapshot before the audio thread applies — except for a frozen
@@ -1300,10 +1314,14 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
     const int32_t rc = le_push(engine, LE_CMD_CANCEL_TAKE, channel, 0.0f);
     if (rc != LE_OK) return rc;
     t->queued_undo = 0;
+    t->cancel_pending = 1;
     le_mark_state_cmd(t, LE_TRACK_EMPTY);
-    le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
-    store_i32(&t->a_multiple, 1);
-    store_i32(&t->a_sync_divisor, 0);
+    /* The published length is NOT zeroed here, unlike the undo-to-empty
+     * path: the audio thread may decline the cancel (the take finalized in
+     * the same block), and a take that keeps playing needs its length. The
+     * audio thread zeroes it with the state when it applies the cancel; the
+     * published state stays the capture's until then, so a poll never sees
+     * EMPTY with a length. */
     return LE_OK;
   }
   if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
@@ -1350,6 +1368,20 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   store_i32(&t->a_sync_divisor, 0); /* B3: coherent-snapshot mirror */
   store_i32(&t->a_redo_depth, t->redo_count);
   return LE_OK;
+}
+
+int32_t le_engine_redo_reclears(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return 0;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return 0;
+  }
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  le_engine_drain_events(engine);
+  const le_track* t = &engine->tracks[channel];
+  return t->redo_count > 0 &&
+                 t->redo_stack[t->redo_count - 1].kind == LE_HIST_CLEAR
+             ? 1
+             : 0;
 }
 
 int32_t le_engine_redo(le_engine* engine, int32_t channel) {
@@ -1573,42 +1605,25 @@ int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div) {
  * (apply_command, le_looper_mode_switch_blocked), the only side that owns track
  * states — a locked command is accepted by this wrapper and dropped there. */
 
-/* The track a Sync/Band relationship is measured against: the crowned
- * designation when it holds a take, else the lowest populated track (the
- * same choice le_primary_reconcile makes on the audio thread). -1 when
- * nothing is recorded. */
-static int32_t le_mode_gate_primary(le_engine* engine) {
-  const int32_t crowned = load_i32(&engine->a_primary_track);
-  if (crowned >= 0 && crowned < engine->track_count &&
-      load_i32(&engine->tracks[crowned].lanes[0].a_len) > 0) {
-    return crowned;
-  }
-  for (int32_t c = 0; c < engine->track_count; ++c) {
-    if (load_i32(&engine->tracks[c].lanes[0].a_len) > 0) return c;
-  }
-  return -1;
-}
-
 /* Whether the recorded spans fit [mode] as they are (accepted design, slice
- * 2): MULTI needs equal spans; SYNC/BAND need whole multiples of the primary
- * or the divisions the engine plays (1/2, 1/4); SONG/FREE take anything. */
+ * 2), measured against le_mode_base_channel's base: MULTI needs whole
+ * multiples of the shortest take; SYNC/BAND need whole multiples of the
+ * primary or the divisions the engine plays (1/2, 1/4); SONG/FREE take
+ * anything. */
 static int le_spans_fit_mode(le_engine* engine, int32_t mode) {
   if (mode == LE_LOOPER_MODE_SONG || mode == LE_LOOPER_MODE_FREE) return 1;
-  const int32_t primary = le_mode_gate_primary(engine);
-  if (primary < 0) return 1; /* an empty rig fits every mode */
-  const int32_t base = load_i32(&engine->tracks[primary].lanes[0].a_len);
+  const int32_t base_ch = le_mode_base_channel(engine, mode);
+  if (base_ch < 0) return 1; /* an empty rig fits every mode */
+  const int32_t base = load_i32(&engine->tracks[base_ch].lanes[0].a_len);
   for (int32_t c = 0; c < engine->track_count; ++c) {
     const int32_t len = load_i32(&engine->tracks[c].lanes[0].a_len);
     if (len <= 0) continue;
-    if (mode == LE_LOOPER_MODE_MULTI) {
-      if (len != base) return 0;
-      continue;
-    }
     if (len >= base) {
       if (len % base != 0) return 0;
-    } else if (base % len != 0 || (base / len != 2 && base / len != 4)) {
-      return 0;
+      continue;
     }
+    if (mode == LE_LOOPER_MODE_MULTI) return 0; /* Multi plays no division */
+    if (base % len != 0 || (base / len != 2 && base / len != 4)) return 0;
   }
   return 1;
 }
@@ -1660,8 +1675,9 @@ int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode) {
   }
   if (mode == load_i32(&engine->a_looper_mode)) return LE_OK;
   if (gate == LE_MODE_GATE_PLAYING) {
-    /* Stop loops and switch: the stops ride the ring ahead of the mode, so
-     * the switch lands on a stopped rig (every playhead back at the top). */
+    /* Stop loops and switch: the stops are posted before the mode in the
+     * same ring, so the switch lands on a stopped rig (every playhead back
+     * at the top). */
     for (int32_t c = 0; c < engine->track_count; ++c) {
       le_track* t = &engine->tracks[c];
       if (le_effective_state(t) != LE_TRACK_PLAYING) continue;

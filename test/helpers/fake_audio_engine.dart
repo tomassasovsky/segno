@@ -170,6 +170,8 @@ class FakeAudioEngine implements AudioEngine {
   bool undoRestoresClear({int channel = 0}) => undoRestoresClearResult;
 
   @override
+  bool redoReclears({int channel = 0}) => false;
+  @override
   EngineResult undo({int channel = 0}) {
     undoCalls++;
     return EngineResult.ok;

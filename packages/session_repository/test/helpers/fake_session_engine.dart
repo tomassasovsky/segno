@@ -307,6 +307,8 @@ class FakeSessionEngine implements AudioEngine {
   bool undoRestoresClear({int channel = 0}) => false;
 
   @override
+  bool redoReclears({int channel = 0}) => false;
+  @override
   EngineResult setLaneCount({required int channel, required int count}) =>
       EngineResult.ok;
 

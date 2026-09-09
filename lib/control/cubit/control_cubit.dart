@@ -940,9 +940,9 @@ class ControlCubit extends Cubit<ControlState> {
   ///
   /// While performance recording is armed (D-CLEAR), awaits
   /// [PerformanceRepository.persistLiveLanes] first: a track mid-capture is
-  /// skipped by the engine clear below (the audio thread still owns its
-  /// buffer), so its performance-recording bundle would otherwise lose that
-  /// pass entirely rather than the persisted-then-cleared PCM the repository
+  /// frozen and erased by the engine clear below (its take stays restorable),
+  /// so its performance-recording bundle would otherwise lose that pass
+  /// entirely rather than the persisted-then-cleared PCM the repository
   /// itself already knows how to skip.
   Future<void> clearAll() async {
     if (_performanceArmed) await _performance.persistLiveLanes();
@@ -1009,22 +1009,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// Emits nothing mode-related: unlike [clearAll] it does not re-home the
   /// overlay — the user is recovering the rig they had, cursor and mode
   /// included.
-  void undoClearAll() {
-    // The grouped edit comes back as one operation through any member; the
-    // per-track sweep covers a group the engine has partly retired (a fresh
-    // take on one member), restoring whatever still offers its way back.
-    if (_looper.undoRestoresClearAll) {
-      for (final track in _tracks) {
-        if (track.clearRestore) {
-          _looper.undo(channel: track.channel);
-          return;
-        }
-      }
-    }
-    for (final track in _tracks) {
-      if (track.clearRestore) _looper.undo(channel: track.channel);
-    }
-  }
+  void undoClearAll() => _looper.undoClearAll();
 
   /// Undoes the latest overdub pass on [channel] (per-layer all the way
   /// down; past the base recording the track empties, redo-ably).

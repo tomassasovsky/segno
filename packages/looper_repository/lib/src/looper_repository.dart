@@ -655,6 +655,7 @@ class LooperRepository {
     if (next == _last) return;
     _last = next;
     _forgetEmptyWaveforms(next);
+    _rememberLooperMode(next);
     // Before listeners see it: `auto` monitors resolve against the arm state
     // this projection just moved, and the gate should open on the same frame
     // the track arms rather than one behind it.
@@ -671,6 +672,7 @@ class LooperRepository {
     if (next == _last) return;
     _last = next;
     _forgetEmptyWaveforms(next);
+    _rememberLooperMode(next);
     _reconcileAutoMonitors();
     _controller.add(next);
   }
@@ -1435,14 +1437,21 @@ class LooperRepository {
   /// rule), and the group with it — the per-track history then answers as
   /// usual, and nothing newer is overwritten.
   EngineResult clearAll(Iterable<int> channels) {
+    final rig = lastState;
     final group = <int>{};
     var result = EngineResult.ok;
     for (final channel in channels) {
       final rc = clear(channel: channel);
-      if (rc.isOk) {
-        group.add(channel);
-      } else {
+      if (!rc.isOk) {
         result = rc;
+        continue;
+      }
+      // Members are the takes the clear can give back: content, or a capture
+      // the clear froze. A redo-only track is erased but has no restore
+      // point, so it is not what the group's undo restores.
+      final track = channel < rig.tracks.length ? rig.tracks[channel] : null;
+      if (track != null && (track.hasContent || track.isCapturing)) {
+        group.add(channel);
       }
     }
     _clearAllGroup = group;
@@ -1450,28 +1459,40 @@ class LooperRepository {
     return result;
   }
 
-  /// The channels the last [clearAll] erased, while every one of them still
-  /// holds its restore point.
+  /// The channels the last [clearAll] erased with a restore point.
   Set<int> _clearAllGroup = const {};
 
-  /// The channels an undone [clearAll] restored, while every one of them can
-  /// still redo (re-clear).
+  /// The channels an undone [clearAll] restored.
   Set<int> _clearAllRedoGroup = const {};
 
   /// Whether the next [undo] would restore a whole cleared group.
   bool get undoRestoresClearAll => _intactClearAllGroup().isNotEmpty;
 
-  /// The clear-all group when every member still restores a cleared take;
-  /// empty otherwise (and the group is forgotten).
+  /// The clear-all group while every member still restores a cleared take;
+  /// empty while one does not. Not forgotten on a false answer: a frozen
+  /// member's restore point is filed a block after the clear, and a member
+  /// recorded over simply leaves the group unrestorable until the next
+  /// [clearAll] replaces it (its own history answers per track).
   Set<int> _intactClearAllGroup() {
-    if (_clearAllGroup.isEmpty) return const {};
     for (final channel in _clearAllGroup) {
-      if (!_engine.undoRestoresClear(channel: channel)) {
-        _clearAllGroup = const {};
-        return const {};
-      }
+      if (!_engine.undoRestoresClear(channel: channel)) return const {};
     }
     return _clearAllGroup;
+  }
+
+  /// Whole-rig recovery from a clear-all: the intact group comes back as one
+  /// operation; otherwise every track that still holds a clear restore point
+  /// is restored on its own (a group the engine partly retired).
+  EngineResult undoClearAll() {
+    final group = _intactClearAllGroup();
+    if (group.isNotEmpty) return undo(channel: group.first);
+    var result = EngineResult.ok;
+    for (final track in lastState.tracks) {
+      if (!track.clearRestore) continue;
+      final rc = undo(channel: track.channel);
+      if (!rc.isOk) result = rc;
+    }
+    return result;
   }
 
   /// The destructive clear: same erasure, no way back. Session load only.
@@ -1608,24 +1629,20 @@ class LooperRepository {
   /// A redo that resurrects an undone-to-empty track comes back unmuted
   /// engine-side; the remembered mutes are forgotten to match.
   EngineResult redo({int channel = 0}) {
-    // A restored group re-clears as one operation, whichever member is asked.
+    // A restored group re-clears as one operation, whichever member is asked
+    // — while every member's next redo IS the re-clear. A member whose
+    // history moved since (a layer peeled and re-stacked) makes the group
+    // stand down; the track's own redo answers.
     if (_clearAllRedoGroup.contains(channel)) {
       final group = _clearAllRedoGroup;
-      final snapshot = _engine.snapshot();
-      var intact = true;
-      for (final member in group) {
-        if (member >= snapshot.tracks.length ||
-            snapshot.tracks[member].redoDepth <= 0) {
-          intact = false;
-        }
-      }
+      final intact = group.every(
+        (member) => _engine.redoReclears(channel: member),
+      );
       _clearAllRedoGroup = const {};
       if (intact) {
         var result = EngineResult.ok;
         for (final member in group) {
-          _snapshotForClearRestore(member);
-          _dropTakeState(member);
-          final rc = _engine.redo(channel: member);
+          final rc = _redoTrack(member);
           if (!rc.isOk) result = rc;
         }
         _clearAllGroup = group;
@@ -1635,7 +1652,17 @@ class LooperRepository {
     return _redoTrack(channel);
   }
 
+  /// One track's redo. A redo that re-applies an undone clear does the
+  /// clear's own bookkeeping (snapshot the chains and mutes, drop the take
+  /// state) so the next undo restores them again; a redo that resurrects an
+  /// undone-to-empty track comes back unmuted engine-side, so the remembered
+  /// mutes are forgotten to match.
   EngineResult _redoTrack(int channel) {
+    if (_engine.redoReclears(channel: channel)) {
+      _snapshotForClearRestore(channel);
+      _dropTakeState(channel);
+      return _engine.redo(channel: channel);
+    }
     final snapshot = _engine.snapshot();
     if (channel >= 0 &&
         channel < snapshot.tracks.length &&
@@ -1766,9 +1793,9 @@ class LooperRepository {
     }
 
     // Session-level mode + crown (B5c), applied here — before any content is
-    // imported below — because [setLooperMode] is REJECTED by the D4 content
-    // lock once a track holds audio (see [LooperModeControl]'s class doc);
-    // every track is guaranteed empty at this point. The mode is always
+    // imported below — so the mode lands on an empty rig with nothing to
+    // measure or stop (see [LooperModeControl]'s class doc for the content
+    // rules a switch over takes would apply). The mode is always
     // pushed (like [setLooperMode]'s own "no unset sentinel" posture — `multi`
     // IS the default), mirroring how the tempo grid's SETTINGS push
     // unconditionally elsewhere in this method. The crown is NOT gated by
@@ -4066,10 +4093,29 @@ class LooperRepository {
   EngineResult setLooperMode(LooperMode mode) {
     if (_intendRunning) {
       final result = _engine.setLooperMode(mode);
-      if (!result.isOk) return result; /* refused: the setting stays */
+      if (!result.isOk) return result; // refused: the setting stays
     }
     _looperMode = mode;
     return EngineResult.ok;
+  }
+
+  /// The looper mode the engine last reported, so a change the engine
+  /// actually made (a switch that landed, a session load) is what
+  /// [_looperMode] re-applies on the next start — see [_rememberLooperMode].
+  LooperMode? _reportedLooperMode;
+
+  /// Follows the mode the engine REPORTS whenever that changes: a switch the
+  /// gate let through can still be dropped on the audio thread when a record
+  /// press lands in the same block, and what the rig runs is what it should
+  /// come back to. Only a change in the report moves the setting, so a poll
+  /// that lands between the call and the switch cannot undo the call.
+  void _rememberLooperMode(LooperState next) {
+    if (!_intendRunning || !next.status.isConnected) return;
+    final reported = next.transport.looperMode;
+    if (reported != _reportedLooperMode) {
+      if (_reportedLooperMode != null) _looperMode = reported;
+      _reportedLooperMode = reported;
+    }
   }
 
   /// What [setLooperMode] would do with [mode] right now (accepted design,

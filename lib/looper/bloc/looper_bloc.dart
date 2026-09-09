@@ -31,7 +31,16 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
        _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
        super(const LooperState()) {
-    on<LooperStateUpdated>((event, emit) => emit(event.state));
+    on<LooperStateUpdated>((event, emit) {
+      // The looper mode the rig boots into is the one the engine REPORTS: a
+      // switch the audio thread dropped (a record press landing in the same
+      // block) never reaches the setting, and one it took always does.
+      final mode = event.state.transport.looperMode;
+      if (mode != state.transport.looperMode) {
+        unawaited(_settings?.saveLooperMode(mode.code));
+      }
+      emit(event.state);
+    });
     on<LooperRecordPressed>((event, _) {
       if (_takeLocked()) return;
       _repository.record(channel: event.channel);
@@ -482,14 +491,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
-    on<LooperModeChanged>((event, _) {
-      // Refused changes (a capture, a queue, unfit spans — see
-      // `LooperRepository.looperModeGate`) leave the setting where it was;
-      // only a change the engine took is what the rig boots into next time.
-      if (_repository.setLooperMode(event.mode).isOk) {
-        unawaited(_settings?.saveLooperMode(event.mode.code));
-      }
-    });
+    on<LooperModeChanged>(
+      // Persisted from the reported state (LooperStateUpdated above), not
+      // from this call: a refused or dropped change must not become the mode
+      // the rig boots into.
+      (event, _) => _repository.setLooperMode(event.mode),
+    );
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);

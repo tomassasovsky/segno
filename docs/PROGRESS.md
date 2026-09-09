@@ -269,7 +269,8 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   captures and queued arms refuse; nothing is cleared or resized); undo during
   an overdub removes the pass, undo during a take cancels it with an
   immediate-playback redo, a clear on a capturing track freezes the take
-  restorable, and Clear All is one grouped edit. Ledger: same file.
+  restorable, and Clear All is one grouped edit. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Accepted design, slice 1 (#1010, epic #1009):** the Tracks view is the
   accepted stage (four columns per bank with name/crown, number · bars ·
   layers · FX, one dB-linear whole-track meter with a clip cap, queued cue,

@@ -52,7 +52,6 @@ void main() {
     registerFallbackValue(LooperMode.multi);
     registerFallbackValue(GridDivision.off);
     registerFallbackValue(ClickMode.off);
-    registerFallbackValue(LooperMode.multi);
   });
 
   setUp(() {

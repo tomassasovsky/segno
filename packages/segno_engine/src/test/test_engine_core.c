@@ -20232,17 +20232,7 @@ static void test_looper_mode_gate_measures_spans(void) {
   CHECK(s.tracks[0].multiple == 1);
   CHECK(s.tracks[1].multiple == 2);
   CHECK(s.tracks[1].length_frames == 2 * SB_BASE); /* unchanged audio span */
-  /* Back to Multi is refused: the spans differ, and nothing is trimmed. */
-  CHECK(le_engine_looper_mode_gate(e, LE_LOOPER_MODE_MULTI) ==
-        LE_MODE_GATE_SPANS);
-  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_MULTI) == LE_ERR_INVALID);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.looper_mode == LE_LOOPER_MODE_SYNC);
-  CHECK(s.tracks[1].length_frames == 2 * SB_BASE);
-  /* Clearing the longer take makes Multi fit again. */
-  le_engine_clear(e, 1);
-  drain(e);
+  /* Back to Multi fits too: a 2x take is what Multi itself records. */
   CHECK(le_engine_looper_mode_gate(e, LE_LOOPER_MODE_MULTI) ==
         LE_MODE_GATE_OPEN);
   le_engine_destroy(e);
@@ -20323,7 +20313,7 @@ static void test_undo_during_recording_cancels_the_take(void) {
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
   CHECK(s.tracks[0].length_frames == 0);
   CHECK(s.master_length_frames == LOOP_N); /* the grid the take set */
-  CHECK(s.primary_track == -1);            /* an empty rig wears no crown */
+  CHECK(s.primary_track == -1);            /* an empty rig has no primary */
   drain(e); /* the cancel event files the redo candidate */
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].redo_depth == 1);
@@ -20444,6 +20434,232 @@ static void test_clear_during_overdub_freezes_the_pass(void) {
     if (fabsf(out[i] - 1.5f) < 1e-5f) hot++;
   }
   CHECK(hot == LOOP_N / 2); /* base + the half pass that was written */
+  le_engine_destroy(e);
+}
+
+
+/* Review round (slice 2a): the races and edges the first pass left open. */
+
+/* A cancel that lands on a take with nothing captured acks the state
+ * command exactly once, so later control-side decisions stay coherent. */
+static void test_cancel_void_take_acks_once(void) {
+  printf("test_cancel_void_take_acks_once\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e); /* RECORDING, with nothing captured yet */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].redo_depth == 0);
+  CHECK(e->tracks[0].state_cmds_posted ==
+        (int)atomic_load_explicit(&e->tracks[0].a_state_acks,
+                                  memory_order_acquire));
+  /* The track still works: a take, an undoable clear and its restore. */
+  record_loop_on(e, 0);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == SB_BASE);
+  le_engine_destroy(e);
+}
+
+/* A cancel that reaches the audio thread after the take already finalized
+ * is declined, and the finalized take keeps its length and plays on. */
+static void test_cancel_after_finalize_is_declined(void) {
+  printf("test_cancel_after_finalize_is_declined\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize press, in the ring */
+  CHECK(le_engine_undo(e, 0) == LE_OK);   /* posted behind it */
+  drain(e);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == LOOP_N);
+  CHECK(s.tracks[0].multiple == 1);
+  CHECK(s.tracks[0].redo_depth == 0);
+  check_content(e, 1.0f);
+  le_engine_destroy(e);
+}
+
+/* A cancel superseded by a clear before its report lands files no redo. */
+static void test_cancel_superseded_by_clear_files_no_redo(void) {
+  printf("test_cancel_superseded_by_clear_files_no_redo\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_clear(e, 0) == LE_OK); /* before the cancel is applied */
+  drain(e);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].redo_depth == 0);
+  CHECK(s.master_length_frames == 0); /* the clear reset the rig */
+  CHECK(le_engine_redo(e, 0) == LE_ERR_INVALID);
+  le_engine_destroy(e);
+}
+
+/* An undo tapped behind a freezing clear restores the frozen take once the
+ * restore point is filed; it never peels the erased take's layers. */
+static void test_undo_queued_behind_freeze_restores(void) {
+  printf("test_undo_queued_behind_freeze_restores\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  process_const(e, 0.5f, LOOP_N / 2, out);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* queued: a layer is in flight */
+  drain(e);              /* the clear lands: frozen, reported, erased */
+  le_engine_get_snapshot(e, &s); /* the poll files the point, then the
+                                  * queued tap posts the restore */
+  drain(e);              /* the restore lands */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].length_frames == LOOP_N);
+  CHECK(s.tracks[0].clear_restore == 0);
+  le_engine_play(e, 0);
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  int hot = 0;
+  for (int i = 0; i < LOOP_N; ++i) {
+    if (fabsf(out[i] - 1.5f) < 1e-5f) hot++;
+  }
+  CHECK(hot == LOOP_N / 2);
+  le_engine_destroy(e);
+}
+
+/* A freezing clear on a take with nothing captured keeps no restore point
+ * and never finalizes a one-frame master. */
+static void test_freeze_void_take_keeps_nothing(void) {
+  printf("test_freeze_void_take_keeps_nothing\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK); /* same block */
+  drain(e);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].clear_restore == 0);
+  CHECK(s.master_length_frames == 0);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 0);
+  le_engine_destroy(e);
+}
+
+/* Multi takes whole multiples of its shortest take back (its own finalize
+ * records them); Sync takes the played divisions. */
+static void test_looper_mode_gate_multiples_and_divisions(void) {
+  printf("test_looper_mode_gate_multiples_and_divisions\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_loop_on(e, 0); /* SB_BASE */
+  le_engine_record(e, 1);
+  process_const(e, 0.5f, SB_BASE + 1, out);
+  le_engine_record(e, 1); /* rounds up to 2 base loops */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].length_frames == 2 * SB_BASE);
+  /* Multi -> Song -> Multi: the rig Multi recorded fits Multi again. */
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SONG) == LE_OK);
+  drain(e);
+  CHECK(le_engine_looper_mode_gate(e, LE_LOOPER_MODE_MULTI) ==
+        LE_MODE_GATE_OPEN);
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_MULTI) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+  CHECK(s.master_length_frames == SB_BASE); /* the shortest take */
+  CHECK(s.tracks[0].multiple == 1);
+  CHECK(s.tracks[1].multiple == 2);
+  le_engine_destroy(e);
+  /* Free-mode takes of 16 and 8 frames: a Sync division, not a Multi rig. */
+  e = make_configured_engine();
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_FREE) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, SB_BASE, out);
+  le_engine_record(e, 0);
+  drain(e);
+  le_engine_record(e, 1);
+  process_const(e, 0.5f, SB_BASE / 2, out);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_stop_track(e, 0);
+  le_engine_stop_track(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == SB_BASE);
+  CHECK(s.tracks[1].length_frames == SB_BASE / 2);
+  /* 16 and 8: Multi reads the 8 as the base (16 is its 2x), Sync reads the
+   * 8 as a division of the primary; both fit. */
+  CHECK(le_engine_looper_mode_gate(e, LE_LOOPER_MODE_MULTI) ==
+        LE_MODE_GATE_OPEN);
+  CHECK(le_engine_looper_mode_gate(e, LE_LOOPER_MODE_SYNC) ==
+        LE_MODE_GATE_OPEN);
+  /* A third take of 6 frames fits neither: not a multiple of 6 for Multi,
+   * not a played division of 16 for Sync. Free keeps it. */
+  le_engine_record(e, 2);
+  process_const(e, 0.5f, 6, out);
+  le_engine_record(e, 2);
+  drain(e);
+  /* Starting the take from a held transport restarted the stopped siblings
+   * (the unpark rule): stop all three so the spans are the only gate. */
+  le_engine_stop_track(e, 0);
+  le_engine_stop_track(e, 1);
+  le_engine_stop_track(e, 2);
+  drain(e);
+  CHECK(le_engine_looper_mode_gate(e, LE_LOOPER_MODE_MULTI) ==
+        LE_MODE_GATE_SPANS);
+  CHECK(le_engine_looper_mode_gate(e, LE_LOOPER_MODE_SYNC) ==
+        LE_MODE_GATE_SPANS);
+  CHECK(le_engine_looper_mode_gate(e, LE_LOOPER_MODE_SONG) ==
+        LE_MODE_GATE_OPEN);
+  le_engine_clear(e, 2);
+  drain(e);
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_SYNC);
+  CHECK(s.master_length_frames == SB_BASE);
+  CHECK(s.tracks[1].sync_divisor == 2);
+  CHECK(s.tracks[1].multiple == 1);
+  le_engine_destroy(e);
+}
+
+/* The redo twin of undo_restores_clear names a re-clear, and only that. */
+static void test_redo_reclears(void) {
+  printf("test_redo_reclears\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  record_loop_on(e, 0);
+  CHECK(le_engine_redo_reclears(e, 0) == 0);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* restore */
+  drain(e);
+  CHECK(le_engine_redo_reclears(e, 0) == 1);
+  CHECK(le_engine_redo(e, 0) == LE_OK); /* re-clear */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(le_engine_redo_reclears(e, 0) == 0);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 1);
   le_engine_destroy(e);
 }
 
@@ -26508,6 +26724,13 @@ int main(void) {
   test_undo_during_later_take_keeps_the_span();
   test_clear_during_recording_freezes_the_take();
   test_clear_during_overdub_freezes_the_pass();
+  test_cancel_void_take_acks_once();
+  test_cancel_after_finalize_is_declined();
+  test_cancel_superseded_by_clear_files_no_redo();
+  test_undo_queued_behind_freeze_restores();
+  test_freeze_void_take_keeps_nothing();
+  test_looper_mode_gate_multiples_and_divisions();
+  test_redo_reclears();
   test_crown_primary_re_crown_changes_it();
   test_crown_primary_inert_outside_sync_band();
   test_sync_first_completed_take_becomes_primary();
