@@ -333,6 +333,26 @@ void main() {
         (tester.widget<CustomPaint>(ruler).painter! as BarRulerPainter).bars,
         4,
       );
+      // Over the wave, so its lines stay visible across loud bars: the last
+      // child of the stack, after the wave's own layer.
+      final stack = tester.widget<Stack>(
+        find.ancestor(of: ruler, matching: find.byType(Stack)).first,
+      );
+      expect(stack.children.length, 2);
+      expect(
+        find.descendant(
+          of: find.byWidget(stack.children.last),
+          matching: ruler,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byWidget(stack.children.first),
+          matching: find.byKey(const Key('waveform_view_paint')),
+        ),
+        findsOneWidget,
+      );
 
       await pumpBars(tester, 0);
       expect(find.byKey(const Key('waveform_view_ruler')), findsNothing);

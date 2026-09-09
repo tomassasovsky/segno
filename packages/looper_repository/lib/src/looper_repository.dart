@@ -654,6 +654,7 @@ class LooperRepository {
     final next = _project(snapshot);
     if (next == _last) return;
     _last = next;
+    _forgetEmptyWaveforms(next);
     // Before listeners see it: `auto` monitors resolve against the arm state
     // this projection just moved, and the gate should open on the same frame
     // the track arms rather than one behind it.
@@ -669,6 +670,7 @@ class LooperRepository {
     final next = _project(_engine.snapshot());
     if (next == _last) return;
     _last = next;
+    _forgetEmptyWaveforms(next);
     _reconcileAutoMonitors();
     _controller.add(next);
   }
@@ -2421,37 +2423,42 @@ class LooperRepository {
   ///
   /// The engine's buffer is a lazily swept tap, not a stored shape: each
   /// bucket holds the peak of the most recent pass over its slice of the
-  /// loop, written as the playhead leaves it. So right after a content change
-  /// (a finalize, an undo, a stop-then-play) the buffer still shows the
-  /// previous pass until one full lap has rewritten it, and while a take or a
-  /// pass is captured it changes every block. Reading it across the engine
-  /// boundary on every poll for every visible track is the cost the stage
-  /// and the second display used to pay for that; this keeps one copy per
-  /// track and re-reads only while the shape can still be changing:
+  /// loop, written as the sweeping playhead leaves it. So right after a
+  /// content change (a finalize, an undo, a stop-then-play) the buffer still
+  /// shows the previous pass until one full sweep has rewritten it, and while
+  /// a take or a pass is captured it changes every block. Reading it across
+  /// the engine boundary on every poll for every visible track is the cost
+  /// the stage and the second display used to pay for that; this keeps one
+  /// copy per track and re-reads only while the shape can still be changing:
   ///
   /// - on every call while the track's steady facts just changed, until the
-  ///   playhead has swept a full lap past the change (that call included);
+  ///   sweep has passed a full lap beyond the change (that call included);
   /// - on every call while the track is capturing;
-  /// - once per lap thereafter, at the wrap, while the track moves;
+  /// - once per sweep lap thereafter, at the wrap, while the track plays (a
+  ///   multiple's buffer holds whichever base lap is sounding, so this is
+  ///   what keeps the drawn segment the audible one);
   /// - never while the track stands still (its last shape is kept).
   ///
-  /// The sweep is measured on the track's own [Track.progress], which is at
-  /// worst a multiple of the master lap the tap is bucketed on, so "one lap"
-  /// here is never shorter than the real re-sweep.
+  /// The sweep is measured on the clock the engine buckets the tap on: the
+  /// master loop, except in Free and Song mode where each track sweeps its
+  /// own loop. A track's own progress would be the wrong lap for a multiple
+  /// (N master laps) and a Sync division (a fraction of one).
   Float32List readTrackWaveform(int channel) {
-    Track? track;
-    for (final t in lastState.tracks) {
-      if (t.channel == channel) {
-        track = t;
-        break;
-      }
-    }
+    final rig = lastState;
+    final track = channel >= 0 && channel < rig.tracks.length
+        ? rig.tracks[channel]
+        : null;
     if (track == null || !track.hasContent) {
       _waveforms.remove(channel);
       return Float32List(0);
     }
     final key = _WaveformKey.of(track);
-    final progress = track.progress;
+    final progress = switch (rig.transport.looperMode) {
+      LooperMode.free || LooperMode.song => track.progress,
+      LooperMode.multi ||
+      LooperMode.sync ||
+      LooperMode.band => rig.transport.progress,
+    };
     final entry = _waveforms[channel];
     if (entry == null || entry.key != key) {
       final samples = _engine.readTrackVisual(channel);
@@ -2467,13 +2474,8 @@ class LooperRepository {
     // previous call and here were the last ones still holding the old pass.
     final justSwept = swept && !entry.swept;
     entry.swept = swept;
-    final moving = switch (track.state) {
-      TrackState.playing ||
-      TrackState.overdubbing ||
-      TrackState.recording => true,
-      TrackState.empty || TrackState.stopped => false,
-    };
-    if (key.capturing || (moving && (!swept || justSwept || wrapped))) {
+    final playing = track.state == TrackState.playing;
+    if (track.isCapturing || (playing && (!swept || justSwept || wrapped))) {
       entry.samples = _engine.readTrackVisual(channel);
     }
     return entry.samples;
@@ -2481,6 +2483,20 @@ class LooperRepository {
 
   /// One copy of each track's waveform, see [readTrackWaveform].
   final _waveforms = <int, _WaveformRead>{};
+
+  /// Drops the copies of tracks that lost their content, so a take recorded
+  /// or restored later under the same steady facts starts its own sweep
+  /// rather than inheriting a finished one. Called per projection; the
+  /// readers only ask for tracks with content, so they never see the empty
+  /// branch above themselves.
+  void _forgetEmptyWaveforms(LooperState next) {
+    if (_waveforms.isEmpty) return;
+    // A stopped engine reports no tracks at all: those copies go too.
+    _waveforms.removeWhere(
+      (channel, _) =>
+          channel >= next.tracks.length || !next.tracks[channel].hasContent,
+    );
+  }
 
   /// Sets the record-offset latency compensation in frames. Remembered and
   /// re-applied on every (re)start (device change / reconnect) so the
@@ -3787,6 +3803,9 @@ class LooperRepository {
   /// every (re)start.
   EngineResult setRecDub({required bool enabled}) {
     _recDub = enabled;
+    // Projected as `TransportState.recDub`: the queued take-end cue reads it,
+    // so it lands on the next frame, not the next poll.
+    _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setRecDub(enabled: enabled);
   }
@@ -4051,11 +4070,6 @@ class _WaveformKey extends Equatable {
   final int undoDepth;
   final int redoDepth;
   final bool clearRestore;
-
-  /// Whether the engine writes into the track every block, so the shape
-  /// changes under the reader.
-  bool get capturing =>
-      state == TrackState.recording || state == TrackState.overdubbing;
 
   @override
   List<Object?> get props => [
