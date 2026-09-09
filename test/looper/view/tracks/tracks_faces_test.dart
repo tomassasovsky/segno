@@ -54,7 +54,7 @@ void main() {
   late SettingsRepository settings;
   late TracksCubit tracks;
   late InputsCubit inputs;
-  late QuantizeCubit quantize;
+  late RecordTimingCubit quantize;
   late SettingsTrayCubit tray;
 
   /// The live state stream, when a test needs the face to REACT rather than
@@ -63,6 +63,7 @@ void main() {
   StreamController<LooperState>? states;
 
   setUpAll(() {
+    registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(const LooperRecordPressed(0));
   });
 
@@ -72,6 +73,9 @@ void main() {
     repository = _MockLooperRepository();
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setRecordTiming(any()),
     ).thenReturn(EngineResult.ok);
     // The input names follow the OPEN DEVICE, so the cubit reads the
     // repository's stream the moment it is built.
@@ -118,7 +122,7 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tracks = TracksCubit(settings: settings);
     inputs = InputsCubit(settings: settings, repository: repository);
-    quantize = QuantizeCubit(repository: repository, settings: settings);
+    quantize = RecordTimingCubit(repository: repository, settings: settings);
     tray = SettingsTrayCubit(settings: settings)..showTracksTab(tab);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).

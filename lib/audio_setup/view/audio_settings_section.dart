@@ -8,8 +8,8 @@ import 'package:segno/audio_setup/view/audio_device_picker.dart';
 import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
 import 'package:segno/audio_setup/view/midi_learn_section.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/quantize_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
@@ -162,9 +162,10 @@ class AudioSettingsSection extends StatelessWidget {
             toggleKey: const Key('audioSettings_quantize_switch'),
             title: l10n.quantizeRecording,
             subtitle: l10n.quantizeRecordingSubtitle,
-            value: context.watch<QuantizeCubit>().state,
-            onChanged: (on) =>
-                unawaited(context.read<QuantizeCubit>().setEnabled(value: on)),
+            value: context.watch<RecordTimingCubit>().state.quantize,
+            onChanged: (on) => unawaited(
+              context.read<RecordTimingCubit>().setEnabled(value: on),
+            ),
           ),
           const SizedBox(height: 12),
           SetupToggleRow(

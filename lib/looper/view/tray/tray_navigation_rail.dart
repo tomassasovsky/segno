@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/pen_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -81,7 +83,6 @@ class TrayNavigationRail extends StatelessWidget {
     return switch (destination) {
       SettingsTrayDestination.signal => pen(PenIcon.signal),
       SettingsTrayDestination.control => pen(PenIcon.control),
-      SettingsTrayDestination.loop => fontIcon(LucideIcons.repeat),
       SettingsTrayDestination.tracks => pen(PenIcon.tracks),
       // A cone with two arcs, which is `volume-2`. The component says
       // `speaker` — lucide's cabinet-with-drivers — and no screen draws it.
@@ -105,7 +106,6 @@ class TrayNavigationRail extends StatelessWidget {
   ) => switch (destination) {
     SettingsTrayDestination.signal => l10n.traySignalLabel,
     SettingsTrayDestination.control => l10n.trayControlLabel,
-    SettingsTrayDestination.loop => l10n.trayLoopLabel,
     SettingsTrayDestination.tracks => l10n.trayTracksLabel,
     SettingsTrayDestination.audio => l10n.trayAudioLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
@@ -174,7 +174,7 @@ class TrayNavigationRail extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             spacing: _itemGap,
                             children: [
-                              for (final target in domains)
+                              for (final target in domains) ...[
                                 // Stretch so every pill spans the rail: pills
                                 // sized to their own text read as chips, not
                                 // as rows of one list.
@@ -185,6 +185,25 @@ class TrayNavigationRail extends StatelessWidget {
                                   selected: destination == target,
                                   onTap: () => cubit.showDestination(target),
                                 ),
+                                // Loop settings (accepted design, slice 2c)
+                                // are full-screen pages, not a face beside
+                                // the rail: the entry keeps its place after
+                                // Control and opens the route. Never
+                                // "selected", for the reason brightness is
+                                // not.
+                                if (target == SettingsTrayDestination.control)
+                                  _RailItem(
+                                    key: const Key('settingsTrayRail_loop'),
+                                    glyph: (color) => Icon(
+                                      LucideIcons.repeat,
+                                      size: TrayNavigationRail.iconSize,
+                                      color: color,
+                                    ),
+                                    label: l10n.trayLoopLabel,
+                                    selected: false,
+                                    onTap: () => unawaited(openLoopSettings()),
+                                  ),
+                              ],
                             ],
                           ),
                         ),

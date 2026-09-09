@@ -110,6 +110,12 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setTrackOnce(
+        channel: any(named: 'channel'),
+        once: any(named: 'once'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setOneShot(
         channel: any(named: 'channel'),
         oneShot: any(named: 'oneShot'),
@@ -439,6 +445,17 @@ void main() {
         await trackSettings.loadTrackRecordTiming(2),
         RecordTiming.quarter.code,
       );
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackOnceChanged forwards the override to the repository and '
+    'persists it',
+    build: buildBlocWithSettings,
+    act: (bloc) => bloc.add(const LooperTrackOnceChanged(2, once: true)),
+    verify: (_) async {
+      verify(() => repository.setTrackOnce(channel: 2, once: true)).called(1);
+      expect(await trackSettings.loadTrackOnce(2), isTrue);
     },
   );
 

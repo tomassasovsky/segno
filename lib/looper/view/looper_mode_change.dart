@@ -58,10 +58,15 @@ Map<LooperMode, ({String label, String sub})> looperModeLabels(
 /// or the change was refused.
 ///
 /// Needs [LooperBloc] and [LooperRepository] on [context].
+///
+/// [confirm] asks "Stop loops and switch" in the caller's own dialog (the
+/// accepted mode cards draw the pen's); the console confirm dialog is the
+/// default.
 Future<bool> requestLooperModeChange(
   BuildContext context, {
   required LooperMode current,
   required LooperMode next,
+  Future<bool> Function()? confirm,
 }) async {
   if (next == current) return false;
   final l10n = context.l10n;
@@ -69,12 +74,16 @@ Future<bool> requestLooperModeChange(
   final repository = context.read<LooperRepository>();
   var gate = repository.looperModeGate(next);
   if (gate == LooperModeGate.playing) {
-    final confirmed = await showConsoleConfirmDialog(
-      context,
-      title: l10n.modeChangeStopTitle(looperModeLabels(l10n)[next]!.label),
-      body: l10n.modeChangeStopBody,
-      confirmLabel: l10n.modeChangeStopConfirm,
-    );
+    final confirmed = confirm != null
+        ? await confirm()
+        : await showConsoleConfirmDialog(
+            context,
+            title: l10n.modeChangeStopTitle(
+              looperModeLabels(l10n)[next]!.label,
+            ),
+            body: l10n.modeChangeStopBody,
+            confirmLabel: l10n.modeChangeStopConfirm,
+          );
     if (!confirmed || !context.mounted) return false;
     // Asked again: a pedal may have armed a take while the dialog was up,
     // and a refusal then must be named, not swallowed.

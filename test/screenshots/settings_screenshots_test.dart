@@ -205,7 +205,6 @@ void main() {
           tempoBpm: 120,
           tempoSource: TempoSource.manual,
           currentBeat: 1,
-          quantizeDiv: GridDivision.quarter,
           clickMode: ClickMode.rec,
           clickMask: 0x3,
           clickVolume: 0.8,
@@ -255,8 +254,8 @@ void main() {
                   settings: settings,
                 ),
               ),
-              BlocProvider<QuantizeCubit>.value(
-                value: QuantizeCubit(
+              BlocProvider<RecordTimingCubit>.value(
+                value: RecordTimingCubit(
                   repository: repository,
                   settings: settings,
                 ),
@@ -329,32 +328,6 @@ void main() {
     );
   }, skip: !hasScreenshotFonts);
 
-  testWidgets('Tempo section — grid, click, and count-in', (tester) async {
-    await pump(tester);
-    await tester.tap(find.byKey(const Key('settings_tab_tempo')));
-    await tester.pumpAndSettle();
-    // Reveal the CLICK + COUNT-IN groups below the fold.
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('tempoSettings_countIn_0')),
-      200,
-      scrollable: find.byType(Scrollable).last,
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(SettingsPage),
-      matchesGoldenFile('goldens/settings_tempo.png'),
-    );
-  }, skip: !hasScreenshotFonts);
-
-  testWidgets('Mode section — the five-mode picker (B5c)', (tester) async {
-    await pump(tester);
-    await tester.tap(find.byKey(const Key('settings_tab_mode')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(SettingsPage),
-      matchesGoldenFile('goldens/settings_mode.png'),
-    );
-  }, skip: !hasScreenshotFonts);
 }
 
 class _ScreenshotLooperBloc extends MockBloc<LooperEvent, LooperState>

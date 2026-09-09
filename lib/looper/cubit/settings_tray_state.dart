@@ -40,15 +40,6 @@ enum SettingsTrayDestination {
   /// [SettingsTrayState.controlTab], not a destination of its own.
   control,
 
-  /// In-tray Loop domain — the tempo grid, the click and the looper mode as
-  /// tabs of one entry.
-  ///
-  /// One destination, not three: all three tabs answer the same question —
-  /// *what governs the loop grid?* — and they had been split between a Loop
-  /// rail entry and two groups of the Settings scroll (#518). Which tab is
-  /// showing is [SettingsTrayState.loopTab], not a destination of its own.
-  loop,
-
   /// In-tray Tracks domain — names, lengths and routing as tabs of one entry.
   ///
   /// One destination, not three: all three tabs answer the same question —
@@ -56,7 +47,7 @@ enum SettingsTrayDestination {
   /// between the Settings scroll's `tracks` section, the Signal domain and, for
   /// the quantize override, nowhere at all (#523).
   ///
-  /// The difference from [control] and [loop] is what a ROW means: there a row
+  /// The difference from [control] is what a ROW means: there a row
   /// is a global setting, here every row on all three tabs is a **track**, and
   /// the engine's own roster drives all three lists. That is why this domain
   /// is the one that needed an empty state — a face whose rows are objects can
@@ -112,7 +103,6 @@ class SettingsTrayState extends Equatable {
     this.signalEffectSlot,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
-    this.loopTab = LoopTab.tempo,
     this.tracksTab = TracksTab.names,
     this.audioTab = AudioTab.device,
     this.systemTab = SystemTab.display,
@@ -179,9 +169,6 @@ class SettingsTrayState extends Equatable {
   /// Which tab the Control domain shows. Same rule as [networkTab].
   final ControlTab controlTab;
 
-  /// Which tab the Loop domain shows. Same rule as [networkTab].
-  final LoopTab loopTab;
-
   /// Which tab the Tracks domain shows. Same rule as [networkTab].
   final TracksTab tracksTab;
 
@@ -203,7 +190,6 @@ class SettingsTrayState extends Equatable {
     bool clearSignalEffect = false,
     NetworkTab? networkTab,
     ControlTab? controlTab,
-    LoopTab? loopTab,
     TracksTab? tracksTab,
     AudioTab? audioTab,
     SystemTab? systemTab,
@@ -222,7 +208,6 @@ class SettingsTrayState extends Equatable {
         : signalEffectSlot ?? this.signalEffectSlot,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
-    loopTab: loopTab ?? this.loopTab,
     tracksTab: tracksTab ?? this.tracksTab,
     audioTab: audioTab ?? this.audioTab,
     systemTab: systemTab ?? this.systemTab,
@@ -238,7 +223,6 @@ class SettingsTrayState extends Equatable {
     signalEffectSlot,
     networkTab,
     controlTab,
-    loopTab,
     tracksTab,
     audioTab,
     systemTab,
