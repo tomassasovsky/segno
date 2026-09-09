@@ -27,6 +27,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/wave_track_row.dart' show WaveformKey;
 import 'package:segno/pedal/flashed_firmware.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
@@ -598,6 +599,11 @@ class _AppState extends State<App> {
 /// A record rather than a `List<Object?>`: the fields are compared one by one
 /// and each on its own terms (see `_pushReadoutIfChanged`), which a positional
 /// list made easy to get quietly wrong.
+/// The selected track's waveform with the [WaveformKey] it was read under —
+/// see [_AppViewState._selectedWaveform]. The stage's own per-row cache in
+/// `TrackWaveform` uses the same rule.
+typedef _WaveformCache = ({WaveformKey key, Float32List samples});
+
 typedef _ReadoutInputs = ({
   LooperState looper,
   TracksState tracks,
@@ -645,6 +651,15 @@ class _AppViewState extends State<_AppView> {
   /// The label the last waveform frame carried. `null` before the first frame
   /// and after the window closes.
   String? _lastFrameLabel;
+
+  /// The cursor the last waveform frame was sent for, with [_lastFrameLabel]:
+  /// two tracks may share a name, so the label alone cannot tell a cursor
+  /// move apart from a rig standing still.
+  int? _lastFrameCursor;
+
+  /// The selected track's waveform as last read, with the facts it was read
+  /// under. See [_selectedWaveform].
+  _WaveformCache? _waveformCache;
 
   /// The projection the last frame SENT carried, so a rejection that lands
   /// late can tell whether it has been superseded. See [_sendWaveformFrame].
@@ -768,7 +783,9 @@ class _AppViewState extends State<_AppView> {
         // through the same gate as a poll, so it can never jump ahead of one.
         final label = context.read<TracksCubit>().state.nameOf(control.cursor);
         final state = looper.lastState;
-        if (label != _lastFrameLabel) _requestWaveformFrame(state);
+        if (label != _lastFrameLabel || control.cursor != _lastFrameCursor) {
+          _requestWaveformFrame(state);
+        }
         // Same timer, different discipline from the old push: the readout
         // rarely changes, so `pushReadout` already dropped anything equal to
         // what it last sent rather than re-serialising eight track records at
@@ -796,6 +813,8 @@ class _AppViewState extends State<_AppView> {
       unawaited(_pollSub?.cancel());
       _pollSub = null;
       _lastFrameLabel = null;
+      _lastFrameCursor = null;
+      _waveformCache = null;
       _lastSentFrame = null;
       _lastReadoutInputs = null;
       _readoutRevision++;
@@ -836,6 +855,7 @@ class _AppViewState extends State<_AppView> {
     final cursor = context.read<ControlCubit>().state.cursor;
     final label = context.read<TracksCubit>().state.nameOf(cursor);
     _lastFrameLabel = label;
+    _lastFrameCursor = cursor;
     _lastSentFrame = state;
     _pendingFrame = null;
     _armFrameGate();
@@ -846,9 +866,7 @@ class _AppViewState extends State<_AppView> {
       (track) => track.channel == cursor,
       orElse: () => const Track(),
     );
-    final samples = selected.hasContent
-        ? looper.readTrackWaveform(cursor)
-        : Float32List(0);
+    final samples = _selectedWaveform(looper, selected);
     unawaited(
       widget.waveformWindow
           .pushWaveform(samples, selected.progress, label)
@@ -872,6 +890,29 @@ class _AppViewState extends State<_AppView> {
             _armFrameGate();
           }),
     );
+  }
+
+  /// [selected]'s waveform, re-read from the engine only when its content
+  /// can have changed: while a take or an overdub pass is being captured, or
+  /// when a finalize, undo, redo or clear moved the track's steady facts.
+  ///
+  /// A playing rig sends a frame per poll, and each read copies the whole
+  /// peak buffer across the FFI boundary; a track that is merely playing has
+  /// the same shape every tick, so the copy is kept until a fact says
+  /// otherwise. An empty track sends an empty buffer, never a borrowed shape.
+  Float32List _selectedWaveform(LooperRepository looper, Track selected) {
+    if (!selected.hasContent) {
+      _waveformCache = null;
+      return Float32List(0);
+    }
+    final key = WaveformKey.of(selected);
+    final cached = _waveformCache;
+    if (cached != null && !key.capturing && cached.key == key) {
+      return cached.samples;
+    }
+    final samples = looper.readTrackWaveform(selected.channel);
+    _waveformCache = (key: key, samples: samples);
+    return samples;
   }
 
   void _armFrameGate() {
@@ -975,8 +1016,7 @@ class _AppViewState extends State<_AppView> {
         ta.tsNum != tb.tsNum ||
         ta.tsDen != tb.tsDen ||
         ta.loopBars != tb.loopBars ||
-        ta.primaryTrack != tb.primaryTrack ||
-        ta.isRunning != tb.isRunning) {
+        ta.primaryTrack != tb.primaryTrack) {
       return false;
     }
     if (a.tracks.length != b.tracks.length) return false;
@@ -988,7 +1028,9 @@ class _AppViewState extends State<_AppView> {
         x.pending == y.pending &&
         x.multiple == y.multiple &&
         x.undoDepth == y.undoDepth &&
-        x.lengthFrames == y.lengthFrames;
+        // Content, not length: a take in progress grows `lengthFrames` every
+        // tick, and the readout draws neither the length nor the waveform.
+        x.hasContent == y.hasContent;
   }
 
   static Track? _trackAt(LooperState state, int channel) {
@@ -1031,14 +1073,12 @@ class _AppViewState extends State<_AppView> {
               bars: track.hasContent && transport.loopBars > 0
                   ? transport.loopBars * track.multiple
                   : 0,
-              layers: track.undoDepth + (track.hasContent ? 1 : 0),
-              lengthFrames: track.lengthFrames,
+              layers: track.layers,
             ),
       tempoBpm: transport.tempoBpm,
       hasTempo: transport.tempoSource != TempoSource.none,
       tsNum: transport.tsNum,
       tsDen: transport.tsDen,
-      isRunning: transport.isRunning,
       mode: control.mode.token,
       activeBank: control.activeBank,
       // The stage's one standing loss condition, echoed on the 7" readout

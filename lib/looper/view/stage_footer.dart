@@ -49,11 +49,17 @@ class StageFooter extends StatelessWidget {
 /// The tempo slice the strip renders. A record, so `context.select` compares
 /// it structurally and a per-poll engine tick rebuilds nothing until a drawn
 /// fact changes.
-typedef _TempoFacts = ({double bpm, bool hasTempo, int tsNum, int tsDen});
+typedef _TempoFacts = ({
+  double bpm,
+  bool hasTempo,
+  int tsNum,
+  int tsDen,
+  int countInBeatsLeft,
+});
 
-/// `84.0 BPM  4/4`. The bpm figure reads `—` on the tempo-free path
-/// (`TempoSource.none`): drawing `0.0` over a grid that does not exist would
-/// state a wrong fact.
+/// `84.0 BPM  4/4`, or `84.0 BPM  Count-in · 3` while a count-in runs. The
+/// bpm figure reads `—` on the tempo-free path (`TempoSource.none`): drawing
+/// `0.0` over a grid that does not exist would state a wrong fact.
 class _TempoBlock extends StatelessWidget {
   const _TempoBlock();
 
@@ -68,10 +74,15 @@ class _TempoBlock extends StatelessWidget {
         hasTempo: transport.tempoSource != TempoSource.none,
         tsNum: transport.tsNum,
         tsDen: transport.tsDen,
+        countInBeatsLeft: transport.countingIn ? transport.countInBeatsLeft : 0,
       );
     });
     final bpm = tempo.hasTempo ? tempo.bpm.toStringAsFixed(1) : '—';
-    final signature = '${tempo.tsNum}/${tempo.tsDen}';
+    // A count-in replaces the signature for its beats: the one moment the
+    // footer's tempo block says something the performer must act on.
+    final signature = tempo.countInBeatsLeft > 0
+        ? l10n.stageCountIn(tempo.countInBeatsLeft)
+        : '${tempo.tsNum}/${tempo.tsDen}';
     final secondary = TextStyle(
       fontFamily: SurfaceTheme.displayFont,
       color: surface.textSecondary,

@@ -1100,6 +1100,10 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
   }
   le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
+  /* A non-defining take is a completed take too: if the crown went with a
+   * cleared or undone sibling while this take was in progress, it lands
+   * here (a defining take goes through finalize_master's own call). */
+  le_primary_reconcile(e);
   t->record_pos = 0;
   /* Take id (#819): logged in the RECORD_END payload and published as the
    * settled take so the disarm manifest can anchor by identity. */
@@ -1951,6 +1955,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         }
         t->pending_record = 1;
         t->pending_trigger = trig;
+        store_i32(&t->a_pending_trigger, trig);
         store_i32(&t->a_pending, 1);
       }
       break;

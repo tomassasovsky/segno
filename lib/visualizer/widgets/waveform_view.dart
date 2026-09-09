@@ -61,14 +61,38 @@ class WaveformView extends StatelessWidget {
         bars: bars,
         color: looper?.waveformColor(state) ?? Colors.tealAccent,
         background: background,
-        rulerColor: surface?.textMuted ?? Colors.grey,
       ),
       size: Size.infinite,
     );
+    // The ruler is its own layer under the wave: the playhead repaints the
+    // wave every poll, and the ruler's bar labels are laid-out text that
+    // must not be re-shaped at frame rate for a fact (the bar count) that
+    // changes once per take.
+    final ruler = bars > 0
+        ? RepaintBoundary(
+            child: CustomPaint(
+              key: const Key('waveform_view_ruler'),
+              painter: BarRulerPainter(
+                bars: bars,
+                color: surface?.textMuted ?? Colors.grey,
+              ),
+              size: Size.infinite,
+            ),
+          )
+        : null;
     return Semantics(
       label: semanticLabel,
       value: '${(progress.clamp(0.0, 1.0) * 100).round()}%',
-      child: ColoredBox(color: background, child: paint),
+      child: ColoredBox(
+        color: background,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ?ruler,
+            RepaintBoundary(child: paint),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -82,7 +106,6 @@ class WaveformPainter extends CustomPainter {
     required this.background,
     this.progress = 0,
     this.bars = 0,
-    this.rulerColor = Colors.grey,
   });
 
   /// Loop waveform peaks, index 0 = loop start, each in `0..1`.
@@ -91,7 +114,8 @@ class WaveformPainter extends CustomPainter {
   /// Playhead position in `0..1`.
   final double progress;
 
-  /// Whole bars across the loop, for the ruler; `0` draws none.
+  /// Whole bars across the loop; `> 0` leaves [rulerHeight] free at the
+  /// bottom for the [BarRulerPainter] layer under this one.
   final int bars;
 
   /// Waveform color.
@@ -100,9 +124,6 @@ class WaveformPainter extends CustomPainter {
   /// The surface the waveform is drawn on. Used to cut the playhead free of
   /// the bars — see [paint].
   final Color background;
-
-  /// The ruler's number colour; its lines are a faint white.
-  final Color rulerColor;
 
   /// The ruler's reserved strip under the waveform, for the bar numbers.
   static const double rulerHeight = 28;
@@ -137,27 +158,6 @@ class WaveformPainter extends CustomPainter {
       }
     }
 
-    if (ruler) {
-      final line = Paint()..color = Colors.white.withValues(alpha: 0.09);
-      for (var bar = 0; bar < bars; bar++) {
-        final x = bar / bars * size.width;
-        canvas.drawRect(Rect.fromLTWH(x, 0, 1, size.height), line);
-        final label = TextPainter(
-          text: TextSpan(
-            text: '${bar + 1}',
-            style: TextStyle(
-              fontFamily: SurfaceTheme.monoFont,
-              fontSize: 18,
-              height: 1,
-              color: rulerColor,
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        label.paint(canvas, Offset(x + 5, size.height - label.height));
-      }
-    }
-
     if (progress > 0) {
       final x = (progress.clamp(0.0, 1.0)) * size.width;
       // A background-coloured gutter either side of the playhead. It vanishes
@@ -184,6 +184,45 @@ class WaveformPainter extends CustomPainter {
       oldDelegate.progress != progress ||
       oldDelegate.bars != bars ||
       oldDelegate.color != color ||
-      oldDelegate.background != background ||
-      oldDelegate.rulerColor != rulerColor;
+      oldDelegate.background != background;
+}
+
+/// The bar ruler under the wave: one faint line per bar across the full
+/// height and the bar number in the strip the wave leaves free at the bottom
+/// ([WaveformPainter.rulerHeight]). Painted in its own layer, so the wave's
+/// per-poll playhead repaint never re-shapes these labels.
+class BarRulerPainter extends CustomPainter {
+  /// Creates a [BarRulerPainter] for [bars] whole bars.
+  BarRulerPainter({required this.bars, required this.color});
+
+  /// Whole bars across the loop; `0` paints nothing.
+  final int bars;
+
+  /// The label colour.
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (bars <= 0 || size.width <= 0 || size.height <= 0) return;
+    final line = Paint()..color = Colors.white.withValues(alpha: 0.09);
+    final style = TextStyle(
+      fontFamily: SurfaceTheme.monoFont,
+      fontSize: 18,
+      height: 1,
+      color: color,
+    );
+    for (var bar = 0; bar < bars; bar++) {
+      final x = bar / bars * size.width;
+      canvas.drawRect(Rect.fromLTWH(x, 0, 1, size.height), line);
+      final label = TextPainter(
+        text: TextSpan(text: '${bar + 1}', style: style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas, Offset(x + 5, size.height - label.height));
+    }
+  }
+
+  @override
+  bool shouldRepaint(BarRulerPainter oldDelegate) =>
+      oldDelegate.bars != bars || oldDelegate.color != color;
 }

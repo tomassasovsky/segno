@@ -852,7 +852,12 @@ void main() {
         const LooperState(
           transport: TransportState(quantizeDiv: GridDivision.bar),
           tracks: [
-            Track(state: TrackState.playing, lengthFrames: 1000, pending: true),
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 1000,
+              pending: true,
+              pendingTrigger: ArmTrigger.grid,
+            ),
           ],
         ),
       );
@@ -860,6 +865,73 @@ void main() {
 
       expect(find.text('Overdub'), findsOneWidget);
       expect(find.text('Next bar'), findsOneWidget);
+    });
+
+    testWidgets("a Sound start arm names the signal, from the engine's own "
+        'trigger — not the settings', (tester) async {
+      // No RecordOptionsCubit is provided here at all: the boundary is a
+      // fact the engine publishes with the arm.
+      seed(
+        const LooperState(
+          transport: TransportState(quantizeDiv: GridDivision.bar),
+          tracks: [Track(pending: true, pendingTrigger: ArmTrigger.sound)],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.text('Record'), findsOneWidget);
+      expect(find.text('Sound'), findsOneWidget);
+      expect(find.text('Next bar'), findsNothing);
+    });
+
+    testWidgets("an overdub's punch-out reads Play at the loop start, whatever "
+        'the grid', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(quantizeDiv: GridDivision.eighth),
+          tracks: [
+            Track(
+              state: TrackState.overdubbing,
+              lengthFrames: 1000,
+              pending: true,
+              pendingTrigger: ArmTrigger.grid,
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.text('Play'), findsOneWidget);
+      expect(find.text('Loop start'), findsOneWidget);
+    });
+
+    testWidgets('a section arm plays a stopped track and stops a sounding '
+        'one, at the loop start', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(quantizeDiv: GridDivision.bar),
+          tracks: [
+            Track(
+              state: TrackState.stopped,
+              lengthFrames: 1000,
+              pending: true,
+              pendingTrigger: ArmTrigger.section,
+            ),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 1000,
+              pending: true,
+              pendingTrigger: ArmTrigger.section,
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.text('Play'), findsOneWidget);
+      expect(find.text('Stop'), findsOneWidget);
+      expect(find.text('Loop start'), findsNWidgets(2));
     });
 
     testWidgets('absent on a track with no pending arm', (tester) async {
@@ -1343,6 +1415,81 @@ void main() {
       expect(find.byKey(const Key('stage_track_run')), findsNothing);
       // Browsing views never touches playback or the selection.
       verifyNever(() => bloc.add(any()));
+    });
+
+    testWidgets('a Wave row reads its waveform once per content change, not '
+        'once per playhead tick', (tester) async {
+      const playing = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.5),
+        ],
+      );
+      final controller = StreamController<LooperState>();
+      addTearDown(controller.close);
+      var current = playing;
+      when(() => bloc.state).thenAnswer((_) => current);
+      when(() => repository.state).thenAnswer((_) => current);
+      whenListen(bloc, controller.stream, initialState: playing);
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('stage_view_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stage_view_wave')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('wave_waveform_0')), findsOneWidget);
+      final reads = verify(() => repository.readTrackWaveform(0)).callCount;
+      expect(reads, greaterThan(0));
+
+      // Ten polls of the loop going round: the playhead moves the row, the
+      // shape behind it does not, so the engine buffer is not copied again.
+      for (var i = 1; i <= 10; i++) {
+        current = LooperState(
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 1000,
+              positionFrames: i * 90,
+              peak: 0.5 + i / 100,
+            ),
+          ],
+        );
+        controller.add(current);
+        await tester.pumpAndSettle();
+      }
+      verifyNever(() => repository.readTrackWaveform(0));
+
+      // A finalized pass changes the shape: read again, once.
+      current = const LooperState(
+        tracks: [
+          Track(
+            state: TrackState.playing,
+            lengthFrames: 1000,
+            undoDepth: 1,
+            peak: 0.5,
+          ),
+        ],
+      );
+      controller.add(current);
+      await tester.pumpAndSettle();
+      verify(() => repository.readTrackWaveform(0)).called(1);
+
+      // While a pass is being captured the buffer grows under the reader:
+      // every rebuild reads.
+      for (var i = 1; i <= 3; i++) {
+        current = LooperState(
+          tracks: [
+            Track(
+              state: TrackState.overdubbing,
+              lengthFrames: 1000,
+              undoDepth: 1,
+              positionFrames: i * 90,
+              peak: 0.5,
+            ),
+          ],
+        );
+        controller.add(current);
+        await tester.pumpAndSettle();
+      }
+      verify(() => repository.readTrackWaveform(0)).called(3);
       expect(control.state.cursor, 0);
 
       await tester.tap(find.byKey(const Key('stage_view_menu')));
@@ -1373,6 +1520,25 @@ void main() {
       expect(find.text('00:00:00'), findsOneWidget);
       expect(find.text('OUT -6.0 dBFS'), findsOneWidget);
       expect(find.text('SYNC'), findsOneWidget);
+    });
+
+    testWidgets('the footer counts a count-in down in place of the '
+        'signature', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+            countingIn: true,
+            countInBeatsLeft: 3,
+          ),
+          tracks: [Track()],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.text('Count-in · 3'), findsOneWidget);
+      expect(find.text('4/4'), findsNothing);
     });
 
     testWidgets('the footer flags output clipping in red', (tester) async {

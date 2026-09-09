@@ -12,7 +12,6 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
-import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -88,7 +87,6 @@ class _TracksViewState extends State<TracksView> {
     // every surface (keyboard, tiles, pedal) reads and writes.
     final overlay = context.watch<ControlCubit>().state;
     final mode = overlay.mode;
-    final commands = TracksCommands(context);
     // NOT `context.watch<LooperBloc>()`: `LooperState` carries live audio —
     // per-track `peak` / `positionFrames` and the transport's position and
     // output peak — so it changes on every poll tick while audio flows, and
@@ -100,20 +98,7 @@ class _TracksViewState extends State<TracksView> {
     // data is subscribed one level down, in [_TrackSlot], and the moving
     // level one level below THAT, in [TrackPeakMeter].
     final chrome = context.select<LooperBloc, _ChromeState>(
-      (bloc) => _ChromeState.of(bloc.state, commands),
-    );
-    // Sound start arms a take on signal; the queued cue names that boundary
-    // rather than the grid. Optional: the desktop test harness need not
-    // provide the record options.
-    bool soundStart;
-    try {
-      soundStart = context.watch<RecordOptionsCubit>().state.autoRecord;
-    } on ProviderNotFoundException {
-      soundStart = false;
-    }
-    final queueTiming = queueTimingOf(
-      chrome.quantizeDiv,
-      soundStart: soundStart,
+      (bloc) => _ChromeState.of(bloc.state),
     );
 
     // When the engine is stopped *because* the pinned interface is gone, the
@@ -299,7 +284,8 @@ class _TracksViewState extends State<TracksView> {
                                                       channel ==
                                                       chrome.primaryTrack,
                                                   bars: barsOf(channel),
-                                                  queueTiming: queueTiming,
+                                                  quantizeDiv:
+                                                      chrome.quantizeDiv,
                                                 ),
                                             ],
                                           ),
@@ -370,16 +356,9 @@ class _ChromeState extends Equatable {
     required this.isConnected,
     required this.primaryTrack,
     required this.quantizeDiv,
-    required this.anyActive,
-    required this.transportEnabled,
-    required this.playStopEnabled,
   });
 
-  factory _ChromeState.of(LooperState state, TracksCommands commands) {
-    final anyActive = commands.anyActive(state);
-    // Both global transport buttons are no-ops with no recorded audio or a
-    // stopped engine; disabling them avoids dead-feeling controls.
-    final transportEnabled = state.status.isConnected && state.hasContent;
+  factory _ChromeState.of(LooperState state) {
     final loopBars = state.transport.loopBars;
     return _ChromeState(
       channels: [for (final track in state.tracks) track.channel],
@@ -389,14 +368,6 @@ class _ChromeState extends Equatable {
       isConnected: state.status.isConnected,
       primaryTrack: state.transport.primaryTrack,
       quantizeDiv: state.transport.quantizeDiv,
-      anyActive: anyActive,
-      transportEnabled: transportEnabled,
-      // The Play direction is additionally blocked when nothing would sound —
-      // every loaded track is muted (or none holds a loop). Stopping stays
-      // available whenever something is active.
-      playStopEnabled: anyActive
-          ? transportEnabled
-          : state.status.isConnected && commands.anyPlayable(state),
     );
   }
 
@@ -405,9 +376,6 @@ class _ChromeState extends Equatable {
   final bool isConnected;
   final int primaryTrack;
   final GridDivision quantizeDiv;
-  final bool anyActive;
-  final bool transportEnabled;
-  final bool playStopEnabled;
 
   @override
   List<Object?> get props => [
@@ -416,9 +384,6 @@ class _ChromeState extends Equatable {
     isConnected,
     primaryTrack,
     quantizeDiv,
-    anyActive,
-    transportEnabled,
-    playStopEnabled,
   ];
 }
 
@@ -445,7 +410,7 @@ class _TrackSlot extends StatelessWidget {
     required this.mode,
     required this.isPrimary,
     required this.bars,
-    required this.queueTiming,
+    required this.quantizeDiv,
   });
 
   final int channel;
@@ -454,7 +419,7 @@ class _TrackSlot extends StatelessWidget {
   final InteractionMode mode;
   final bool isPrimary;
   final int? bars;
-  final QueueTiming queueTiming;
+  final GridDivision quantizeDiv;
 
   @override
   Widget build(BuildContext context) {
@@ -479,7 +444,7 @@ class _TrackSlot extends StatelessWidget {
         mode: mode,
         isPrimary: isPrimary,
         bars: bars,
-        queueTiming: queueTiming,
+        quantizeDiv: quantizeDiv,
       ),
     );
   }

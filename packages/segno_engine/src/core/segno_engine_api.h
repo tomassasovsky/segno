@@ -703,6 +703,12 @@ typedef struct le_track_snapshot {
    * head instead (frames captured so far). 0 for an empty or never-played
    * track. Published once per block beside the level. */
   int32_t position_frames;
+  /* Trailing (accepted design, slice 1): what the arm reported by `pending`
+   * waits for — 0 = the quantize grid (next loop top / subdivision), 1 = a
+   * signal at the recording input (Sound start), 2 = a Band section toggle
+   * at the primary's loop top; -1 while nothing is pending. The stage names
+   * the boundary from this rather than guessing from the settings. */
+  int32_t pending_trigger;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================

@@ -413,6 +413,7 @@ class TrackSnapshot {
     this.settledTakeId = 0,
     this.restoreState = TrackRestoreState.idle,
     this.positionFrames = 0,
+    this.pendingTrigger = -1,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -437,6 +438,7 @@ class TrackSnapshot {
       settledTakeId = 0,
       restoreState = TrackRestoreState.idle,
       positionFrames = 0,
+      pendingTrigger = -1,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -467,6 +469,7 @@ class TrackSnapshot {
     settledTakeId: native.settled_take_id,
     restoreState: TrackRestoreState.fromCode(native.restore_state),
     positionFrames: native.position_frames,
+    pendingTrigger: native.pending_trigger,
     lanes: lanes,
   );
 
@@ -543,6 +546,11 @@ class TrackSnapshot {
   /// it is the write head instead. `0` for an empty or never-played track.
   final int positionFrames;
 
+  /// What the arm reported by [pending] waits for: `0` the quantize grid,
+  /// `1` a signal at the recording input (Sound start), `2` a Band section
+  /// toggle at the primary's loop top; `-1` while nothing is pending.
+  final int pendingTrigger;
+
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
 
@@ -590,6 +598,7 @@ class TrackSnapshot {
           settledTakeId == other.settledTakeId &&
           restoreState == other.restoreState &&
           positionFrames == other.positionFrames &&
+          pendingTrigger == other.pendingTrigger &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -612,6 +621,7 @@ class TrackSnapshot {
     settledTakeId,
     restoreState,
     positionFrames,
+    pendingTrigger,
     Object.hashAll(lanes),
   );
 }
@@ -898,9 +908,9 @@ class EngineSnapshot {
     required this.inputRms,
     required this.inputPeak,
     required this.outputRms,
-    this.outputPeak = 0,
     required this.latencyState,
     required this.measuredLatencyMs,
+    this.outputPeak = 0,
     this.devicePresent = false,
     this.inputChannels = 0,
     this.outputChannels = 0,

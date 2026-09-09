@@ -100,6 +100,34 @@ void main() {
       expect(find.byKey(const Key('meter_clip_cap')), findsNothing);
     });
 
+    testWidgets('retires after the hold with no further ticks', (
+      tester,
+    ) async {
+      // One hot block, then silence: nothing rebuilds the bar again, so the
+      // cap must retire on its own clock rather than on the next rebuild.
+      seed(const LooperState());
+      await pumpLeaf(tester, bar(peak: 1));
+      expect(find.byKey(const Key('meter_clip_cap')), findsOneWidget);
+
+      await tester.pump(PeakMeterBar.clipHold ~/ 2);
+      expect(find.byKey(const Key('meter_clip_cap')), findsOneWidget);
+
+      await tester.pump(PeakMeterBar.clipHold);
+      expect(find.byKey(const Key('meter_clip_cap')), findsNothing);
+    });
+
+    testWidgets('a fresh clip restarts the hold', (tester) async {
+      seed(const LooperState());
+      await pumpLeaf(tester, bar(peak: 1));
+      await tester.pump(PeakMeterBar.clipHold ~/ 2);
+      await pumpLeaf(tester, bar(peak: 1));
+      await tester.pump(PeakMeterBar.clipHold ~/ 2);
+      // Half a hold after the FIRST clip's retirement would have fallen.
+      expect(find.byKey(const Key('meter_clip_cap')), findsOneWidget);
+      await tester.pump(PeakMeterBar.clipHold);
+      expect(find.byKey(const Key('meter_clip_cap')), findsNothing);
+    });
+
     testWidgets('is absent without a clip colour', (tester) async {
       seed(const LooperState());
       await pumpLeaf(
