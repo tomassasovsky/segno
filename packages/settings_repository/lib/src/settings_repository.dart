@@ -652,16 +652,6 @@ class SettingsRepository {
     await _store.setInt(_timeSignatureDenKey, den);
   }
 
-  static const String _syncTempoKey = 'tempo.sync';
-
-  /// Whether loop↔grid sync is on. Defaults to `true` when unset.
-  Future<bool> loadSyncTempo() async =>
-      await _store.getBool(_syncTempoKey) ?? true;
-
-  /// Saves whether loop↔grid sync is on.
-  Future<void> saveSyncTempo({required bool value}) =>
-      _store.setBool(_syncTempoKey, value: value);
-
   static const String _quantizeDivKey = 'tempo.quantize_div';
 
   /// Loads the musical quantization granularity as the native `le_grid_div`

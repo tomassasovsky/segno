@@ -463,7 +463,6 @@
         }
     },
     "quantizeRecording": "Quantize recording",
-    "loopLength": "Loop length",
     "done": "Done",
     "defaultWithState": "Default ({state})",
     "@defaultWithState": {
@@ -509,8 +508,6 @@
     "defaultLabel": "Default",
     "tracksIntro": "Rename tracks.",
     "tracksGroupLabel": "TRACKS",
-    "lengthPresetLabel": "Length preset",
-    "lengthPresetAuto": "AUTO",
     "lengthPresetBars": "{bars, plural, one{1 bar} other{{bars} bars}}",
     "@lengthPresetBars": {
         "placeholders": {
@@ -1396,60 +1393,14 @@
     "@perfExportReExportFailed": {
         "description": "Error message shown when re-export fails."
     },
-    "tempoSettingsIntro": "Set the tempo grid, click, and count-in the looper aligns recordings to.",
-    "tempoGroupLabel": "TEMPO",
-    "currentTempoLabel": "{bpm} BPM",
-    "@currentTempoLabel": {
-        "description": "The live effective tempo readout (manual, tapped, or derived from a loop).",
-        "placeholders": {
-            "bpm": {
-                "type": "String"
-            }
-        }
-    },
-    "tempoNotSetLabel": "Not set",
-    "@tempoNotSetLabel": {
-        "description": "Shown in place of a BPM readout before any tempo has ever been established."
-    },
-    "bpmFieldLabel": "BPM",
-    "tapTempoButton": "Tap",
-    "tapTempoTooltip": "Tap to set the tempo",
-    "timeSignatureLabel": "Time signature",
     "timeSignatureNoteValueLabel": "Note value",
-    "timeSignatureQuarterNote": "Quarter note (/4)",
-    "timeSignatureEighthNote": "Eighth note (/8)",
-    "timeSignatureOption": "{num}/{den}",
-    "@timeSignatureOption": {
-        "description": "One selectable time-signature chip, e.g. \"7/8\".",
-        "placeholders": {
-            "num": {
-                "type": "int"
-            },
-            "den": {
-                "type": "int"
-            }
-        }
-    },
-    "syncTempoTitle": "Sync loop to tempo",
-    "syncTempoSubtitle": "Keep the loop length locked to the tempo grid; a fresh defining recording can derive the tempo from its length instead.",
-    "quantizeGroupLabel": "QUANTIZE",
-    "quantizeDivIntro": "Musical quantization — align recording start/stop to the beat, not just the loop top.",
-    "quantizeDivOffLabel": "Off",
-    "quantizeDivBarLabel": "1 bar",
-    "quantizeDivHalfLabel": "1/2",
-    "quantizeDivQuarterLabel": "1/4",
-    "quantizeDivEighthLabel": "1/8",
-    "quantizeDivSixteenthLabel": "1/16",
     "clickGroupLabel": "CLICK",
-    "clickModeIntro": "When the click (metronome) is audible.",
     "clickModeOffLabel": "Off",
     "clickModeRecLabel": "Recording",
     "clickModeRecFirstLabel": "First take",
     "clickModePlayRecLabel": "Always",
     "clickOutputLabel": "Click output",
     "clickVolumeLabel": "Click volume",
-    "countInGroupLabel": "COUNT-IN",
-    "countInIntro": "Measures counted in before a defining recording starts.",
     "countInOffLabel": "Off",
     "countInBarsLabel1": "1 bar",
     "countInBarsLabel2": "2 bars",
@@ -1479,8 +1430,6 @@
             }
         }
     },
-    "looperModeIntro": "Choose how the looper's tracks relate to each other and the tempo grid.",
-    "looperModeGroupLabel": "MODE",
     "looperModeMultiLabel": "Multi",
     "looperModeMultiSub": "Same length tracks",
     "looperModeSyncLabel": "Sync",
@@ -1505,58 +1454,18 @@
     "modeChangeBlockedCapturing": "Finish the take first.",
     "modeChangeBlockedQueued": "A queued action must fire or be cancelled first.",
     "modeChangeBlockedSpans": "The recorded loop lengths do not fit this mode.",
-    "oneShotGroupLabel": "ONE SHOT",
-    "oneShotIntro": "A one-shot track plays once and stops instead of looping (active in Free and Song modes).",
     "trayLoopLabel": "Loop",
     "@trayLoopLabel": {
         "description": "Navigation-rail caption for the console's Loop domain."
-    },
-    "loopTempoTab": "Tempo",
-    "loopClickTab": "Click",
-    "loopModeTab": "Mode",
-    "loopTempoGroup": "TEMPO",
-    "loopClickGroup": "CLICK",
-    "loopModeGroup": "MODE",
-    "loopDefaultsGroup": "DEFAULTS",
-    "loopTempoRow": "Tempo",
-    "loopTempoHint": "tap or type",
-    "loopTempoReadout": "{bpm} bpm",
-    "@loopTempoReadout": {
-        "description": "The live tempo at a Loop row's trailing edge.",
-        "placeholders": {
-            "bpm": {
-                "type": "String"
-            }
-        }
     },
     "loopTempoUnset": "not set",
     "@loopTempoUnset": {
         "description": "Shown where the tempo would be when none has been established. The console never draws an unknown fact as a zero."
     },
-    "loopLengthHint": "first take sets it",
     "loopLengthAuto": "Auto",
-    "loopLengthMultiple": "x{multiple}",
-    "@loopLengthMultiple": {
-        "description": "A fixed loop length, as a multiple of the base loop the first take defines.",
-        "placeholders": {
-            "multiple": {
-                "type": "int"
-            }
-        }
+    "@loopLengthAuto": {
+        "description": "Length choice."
     },
-    "loopSignatureQuarterGroup": "QUARTER NOTE",
-    "@loopSignatureQuarterGroup": {
-        "description": "Caption over the time signatures whose denominator is 4."
-    },
-    "loopSignatureEighthGroup": "EIGHTH NOTE",
-    "@loopSignatureEighthGroup": {
-        "description": "Caption over the time signatures whose denominator is 8."
-    },
-    "loopQuantiseRow": "Quantise",
-    "loopQuantiseHint": "when a switch takes effect",
-    "loopCountInRow": "Count-in",
-    "loopClickWhenRow": "When it plays",
-    "loopClickOutputRow": "Output",
     "loopClickOutputNone": "nowhere",
     "@loopClickOutputNone": {
         "description": "Click output readout when no hardware output is selected."
@@ -1581,17 +1490,7 @@
             }
         }
     },
-    "loopModeRow": "Looper mode",
-    "loopOneShotRow": "One-shot tracks",
-    "loopDefaultModeRow": "Default mode",
-    "loopDefaultModeRecord": "record",
-    "loopDefaultModeMute": "mute",
-    "loopTempoSheetUnit": "bpm",
-    "loopTempoSheetSet": "Set",
-    "loopTempoSheetBackspace": "Backspace",
-    "loopTempoSheetDecimal": "Decimal point",
     "a11yLoopClickVolume": "Click volume",
-    "a11yLoopTempoSheet": "Tempo keypad",
     "a11yTrackPrimary": "Primary track",
     "@a11yTrackPrimary": {
         "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
@@ -2511,7 +2410,6 @@
         "description": "Navigation-rail caption for the console's Tracks domain — names, lengths and routing as three tabs of one destination."
     },
     "tracksNamesTab": "Names",
-    "tracksLengthsTab": "Lengths",
     "tracksRoutingTab": "Routing",
     "tracksOrdinal": "track {number}",
     "@tracksOrdinal": {
@@ -2523,10 +2421,8 @@
         }
     },
     "tracksNamesFootnote": "Rename tracks. The name is what the stage, the pedal targets and the 7-inch readout all show.",
-    "tracksLengthsFootnote": "Auto takes its length from the first take; a preset records that many bars.",
     "tracksRoutingFootnote": "A track records any set of inputs — one dry lane each, sharing the loop — and is sent to any set of outputs. Quantize follows the global setting unless a track overrides it.",
     "tracksEmpty": "No tracks — the engine is not running.",
-    "tracksLengthAuto": "auto",
     "tracksNoInputs": "None (clean)",
     "@tracksNoInputs": {
         "description": "A track whose lanes record nothing, and the row that puts it in that state."
@@ -3577,14 +3473,6 @@
                 }
         }
     },
-    "loopModeReasonCapturing": "Finish recording first.",
-    "@loopModeReasonCapturing": {
-        "description": "Why every other mode is unavailable while capturing."
-    },
-    "loopModeReasonQueued": "A queued action must land first.",
-    "@loopModeReasonQueued": {
-        "description": "Why every other mode is unavailable while an action is queued."
-    },
     "loopRecordingStart": "Start recording",
     "@loopRecordingStart": {
         "description": "Recording page: how recording starts."
@@ -3698,10 +3586,6 @@
     "loopLengthLabel": "Loop length",
     "@loopLengthLabel": {
         "description": "Length field label."
-    },
-    "loopLengthAuto": "Auto",
-    "@loopLengthAuto": {
-        "description": "Length choice."
     },
     "loopLengthBars": "Bars",
     "@loopLengthBars": {

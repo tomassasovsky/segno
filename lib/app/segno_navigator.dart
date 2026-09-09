@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/settings_page.dart';
 import 'package:segno/theme/page_transitions.dart';

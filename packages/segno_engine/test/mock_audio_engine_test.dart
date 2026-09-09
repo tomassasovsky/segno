@@ -591,6 +591,19 @@ void main() {
         },
       );
 
+      test('setTrackLengthPreset rejects an out-of-range channel', () {
+        engine.start(engine.defaultConfig);
+        final outOfRange = engine.snapshot().tracks.length;
+        expect(
+          engine.setTrackLengthPreset(channel: outOfRange, bars: 4),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackLengthPreset(channel: -1, bars: 4),
+          EngineResult.invalid,
+        );
+      });
+
       test('setTrackLengthPreset is per-track', () {
         engine
           ..start(engine.defaultConfig)

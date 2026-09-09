@@ -305,7 +305,23 @@ class LoopUseDefaultButton extends StatelessWidget {
   );
 }
 
-/// The pen's outlined action button: 64 high, radius 7.
+/// How a [LoopOutlinedButton] is filled.
+enum LoopButtonTone {
+  /// Transparent with the strong border (the pen's plain action button).
+  outlined,
+
+  /// The raised card fill with the strong border (the top bar's Stage).
+  raised,
+
+  /// The card fill with the subtle border (the time signature chip).
+  card,
+
+  /// The accent fill and text (a dialog's confirming action).
+  accent,
+}
+
+/// The pen's 64-high action button in its four fills: a label with an
+/// optional trailing glyph, or a glyph alone.
 class LoopOutlinedButton extends StatelessWidget {
   /// Creates a [LoopOutlinedButton].
   const LoopOutlinedButton({
@@ -313,9 +329,13 @@ class LoopOutlinedButton extends StatelessWidget {
     required this.onTap,
     this.label,
     this.icon,
+    this.trailingIcon,
     this.semanticLabel,
+    this.semanticValue,
+    this.tone = LoopButtonTone.outlined,
     this.height = 64,
     this.fontSize = 24,
+    this.radius = 7,
     super.key,
   });
 
@@ -328,11 +348,21 @@ class LoopOutlinedButton extends StatelessWidget {
   /// The button text, when it has one.
   final String? label;
 
-  /// The button glyph, when it has one.
+  /// The button glyph, when it shows one instead of a label.
   final IconData? icon;
 
-  /// The accessible name when the button shows only a glyph.
+  /// A glyph after the label.
+  final IconData? trailingIcon;
+
+  /// The accessible name when the button shows only a glyph, or when the
+  /// label is a value rather than a name.
   final String? semanticLabel;
+
+  /// The accessible value, for a button whose label is the value it opens.
+  final String? semanticValue;
+
+  /// The fill.
+  final LoopButtonTone tone;
 
   /// The pen's height.
   final double height;
@@ -340,17 +370,36 @@ class LoopOutlinedButton extends StatelessWidget {
   /// The label size.
   final double fontSize;
 
+  /// The pen's corner radius.
+  final double radius;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final fill = switch (tone) {
+      LoopButtonTone.outlined => Colors.transparent,
+      LoopButtonTone.raised => surface.cardHigh,
+      LoopButtonTone.card => surface.card,
+      LoopButtonTone.accent => surface.accent,
+    };
+    final border = switch (tone) {
+      LoopButtonTone.card => surface.borderSubtle,
+      LoopButtonTone.accent => surface.accent,
+      _ => surface.borderStrong,
+    };
+    final foreground = tone == LoopButtonTone.accent
+        ? surface.onAccent
+        : surface.textPrimary;
+    final text = TextStyle(color: foreground, fontSize: fontSize, height: 1);
     return Semantics(
       button: true,
       label: semanticLabel ?? label,
+      value: semanticValue,
       child: Material(
-        color: Colors.transparent,
+        color: fill,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(7),
-          side: BorderSide(color: surface.borderStrong),
+          borderRadius: BorderRadius.circular(radius),
+          side: BorderSide(color: border),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -360,18 +409,20 @@ class LoopOutlinedButton extends StatelessWidget {
             height: height,
             child: Center(
               child: icon != null
-                  ? Icon(icon, size: 28, color: surface.textPrimary)
+                  ? Icon(icon, size: 28, color: foreground)
                   : Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
-                        child: AppText(
-                          label ?? '',
-                          style: TextStyle(
-                            color: surface.textPrimary,
-                            fontSize: fontSize,
-                            height: 1,
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AppText(label ?? '', style: text),
+                            if (trailingIcon != null) ...[
+                              const SizedBox(width: 12),
+                              Icon(trailingIcon, size: 28, color: foreground),
+                            ],
+                          ],
                         ),
                       ),
                     ),
@@ -381,6 +432,19 @@ class LoopOutlinedButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A scoped field's origin tag: `null` on the defaults scope, where every
+/// field is the default; on a track scope the shared default in Multi, the
+/// track's own value, or the default it follows.
+LoopFieldOrigin? scopedOrigin({
+  required bool scoped,
+  required bool custom,
+  bool shared = false,
+}) {
+  if (!scoped) return null;
+  if (shared) return LoopFieldOrigin.sharedInMulti;
+  return custom ? LoopFieldOrigin.custom : LoopFieldOrigin.isDefault;
 }
 
 /// The one-sentence note under a field (the pen's length-note).
@@ -638,7 +702,8 @@ class LoopStepper extends StatelessWidget {
 }
 
 /// The pen's 56 px slider: a rail with the filled part and its edge. Drag or
-/// tap sets the value in `0..1`.
+/// tap sets the value in `0..1`; [onChangeEnd] fires once when the pointer
+/// lifts, for the caller to commit what [onChanged] previewed.
 class LoopSlider extends StatelessWidget {
   /// Creates a [LoopSlider].
   const LoopSlider({
@@ -646,6 +711,7 @@ class LoopSlider extends StatelessWidget {
     required this.onChanged,
     required this.width,
     required this.semanticLabel,
+    this.onChangeEnd,
     this.enabled = true,
     super.key,
   });
@@ -656,6 +722,9 @@ class LoopSlider extends StatelessWidget {
   /// Called with the new position while dragging or on a tap.
   final ValueChanged<double> onChanged;
 
+  /// Called with the final position when a drag or tap ends.
+  final ValueChanged<double>? onChangeEnd;
+
   /// The pen's width.
   final double width;
 
@@ -665,9 +734,16 @@ class LoopSlider extends StatelessWidget {
   /// Whether the slider can be moved right now.
   final bool enabled;
 
+  double _fraction(double dx) => (dx / width).clamp(0.0, 1.0);
+
   void _set(double dx) {
     if (!enabled) return;
-    onChanged((dx / width).clamp(0.0, 1.0));
+    onChanged(_fraction(dx));
+  }
+
+  void _end(double dx) {
+    if (!enabled) return;
+    onChangeEnd?.call(_fraction(dx));
   }
 
   @override
@@ -682,8 +758,10 @@ class LoopSlider extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: (d) => _set(d.localPosition.dx),
+        onTapUp: (d) => _end(d.localPosition.dx),
         onHorizontalDragStart: (d) => _set(d.localPosition.dx),
         onHorizontalDragUpdate: (d) => _set(d.localPosition.dx),
+        onHorizontalDragEnd: (d) => _end(d.localPosition.dx),
         child: Opacity(
           opacity: enabled ? 1 : surface.disabledOpacity,
           child: Container(

@@ -477,13 +477,18 @@ branch until PR #1014 merges.
 - Undo, Redo and Clear All already reach the grouped edits of slice 2a
   from keys (`Z`, `Y`, `C`, `Shift+C`) and pedals (`LooperAction.undo` and
   `clear`); no new wiring was needed here.
-- Departures from the pen, to be written back into `segno-ui.pen`: the
-  pen's own icon glyphs are drawn with lucide equivalents (chevron, check,
-  arrow-left, repeat, arrow-right-to-line, minus, plus, timer, music); the
-  pen's hex colours map onto the console theme tokens as slice 1 did; the
-  Length page's lock banner sits under the scope selector with the sections
-  moved down by 92; the tempo steps are two labelled buttons (1 BPM /
-  0.01 BPM) rather than the pen's unlabelled pair.
+- Departures from the pen, written into `segno-ui.pen` as the note
+  `c/ Implementation · slice 2c` (section EYla4): the pen's own icon glyphs
+  are drawn with lucide equivalents (chevron, check, arrow-left, repeat,
+  arrow-right-to-line, minus, plus, timer, music); the pen's hex colours map
+  onto the console theme tokens as slice 1 did; the Length page's lock
+  banner sits under the scope selector with the sections moved down by 92;
+  the tempo steps are two labelled buttons (1 BPM / 0.01 BPM) rather than
+  the pen's unlabelled pair; the click output routing and level sit on the
+  Audio tray's Device tab (and the desktop Audio section) until the slice-3
+  Mixer owns them; the tray's Tracks domain lost its Lengths tab and the
+  desktop Tracks section its length and One Shot rows, so each setting has
+  one path.
 
 ### Checks
 
@@ -505,6 +510,67 @@ branch until PR #1014 merges.
   checked against the pen on the author's machine; the tray's Loop previews
   are gone with the tray domain, and the suite loads the lucide package
   font so the icons render as glyphs rather than tofu boxes.
+
+### Review round 1
+
+A review pass (eight finder angles, one verifier per candidate) confirmed
+ten findings and a set of cleanups, fixed in the second commit:
+
+- The deleted Click tab had carried the click output routing and level;
+  nothing else did, and a fresh unit's mask of 0 routes the click nowhere.
+  A `ClickOutputSection` / `ClickOutputCard` now sits on the Audio tray's
+  Device tab and the desktop Audio section until the Mixer (slice 3) owns
+  them, reusing the old strings. The loop-to-grid sync switch went with the
+  same tab; the design has no equivalent (sync is always on), so the
+  `tempo.sync` key and `TempoCubit.setSyncTempo` are gone and the engine's
+  default stands.
+- `RecordTimingCubit` keeps the last musical division while the gate is
+  off, so the two on/off switches no longer collapse a chosen quarter into
+  the loop top; `setTiming` leaves the division key alone when the gate is
+  off.
+- The session manifest carries the per-track length and Once OVERRIDES
+  (nullable, like record timing and decay) and the rig defaults, captured
+  from the repository's projection through `SessionLoopSettings`; the old
+  effective fields and `oneShotChannels` are gone, and `applySession`
+  writes overrides verbatim after putting every track on the default.
+- The legacy per-track rows (the tray's Tracks > Lengths tab, the desktop
+  Tracks section's length and One Shot rows) dispatched effective values as
+  overrides and could not express "follow the default"; they are retired
+  with `LooperOneShotToggled`, `LooperAllOneShotToggled` and
+  `LooperRepository.setOneShot`, so the Loop settings pages are the one
+  path.
+- A mode request the engine drops reverted the remembered mode without
+  re-pushing the presets the request had pushed; `_rememberLooperMode` now
+  re-pushes across the Multi boundary. `setLooperMode` pushes only the
+  length presets of override channels, and only when crossing Multi; Once
+  never depends on the mode.
+- The repository setters write the engine before re-projecting (one state
+  per tap, override and effective value together); the default setters
+  return early when unchanged, so the cubits' restore behind bootstrap is a
+  no-op; the track count comes from the last projection rather than a
+  second engine walk; the start replay's push is bounded to the engine's
+  tracks.
+- The mode cards rebuild on the state the gate reads (track states, queued
+  triggers, lengths), and their refusal wording is `looperModeRefusal`'s,
+  shared with the snackbar. The pen's stop dialog lives in
+  `looper_mode_change.dart` as the one confirm; the `confirm` callback and
+  the console-dialog fallback are gone.
+- `LoopSlider` gained `onChangeEnd`: the tempo drag applies live and
+  persists once at the end, the decay drag previews locally and commits at
+  the end.
+- Cleanups: `LoopSettingsPageId` is the hub's only enum; the hub reads the
+  defaults from the cubits like the pages; `scopedOrigin` replaces four
+  origin ternaries; `LoopOutlinedButton` carries the four fills (the top
+  bar, the dialog and the signature chip use it); the rail is built from
+  `TrayRailEntry` and the desktop rail's Loop row is an action, not a
+  section; 65 orphaned l10n keys and a duplicate `loopLengthAuto` are gone;
+  the screenshot suites share one font loader and the tracks goldens load
+  the lucide font (the settings gear was a tofu box).
+- Left as is: a `tempo.length_preset.N` of 0 saved by the previous build
+  reads as an explicit Auto override (the repo does not add migrations;
+  Use default clears it in one tap); the pen-width parameters on the Loop
+  widgets stay (the pages are pen-geometry canvases, as slice 1's
+  `PrimaryCrown(size:)`).
 
 ### Next step
 

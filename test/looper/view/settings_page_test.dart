@@ -305,81 +305,6 @@ void main() {
     expect(await settings.loadTrackName(0), 'DRUMS');
   });
 
-  testWidgets(
-    'the length preset row shows the current preset and dispatches a change',
-    (tester) async {
-      const seeded = LooperState(tracks: [Track(lengthPresetBars: 4)]);
-      when(() => looperBloc.state).thenReturn(seeded);
-      whenListen(
-        looperBloc,
-        const Stream<LooperState>.empty(),
-        initialState: seeded,
-      );
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('settings_tab_tracks')));
-      await tester.pumpAndSettle();
-
-      final row = find.byKey(const Key('settings_trackLengthPreset_0'));
-      await tester.ensureVisible(row);
-      expect(row, findsOneWidget);
-      expect(find.text('4 bars'), findsOneWidget);
-
-      await tester.tap(row);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('8 bars').last);
-      await tester.pumpAndSettle();
-
-      verify(
-        () => looperBloc.add(const LooperTrackLengthPresetChanged(0, 8)),
-      ).called(1);
-    },
-  );
-
-  testWidgets(
-    'the length preset row uses the singular "1 bar" for a 1-bar preset',
-    (tester) async {
-      // ICU plural coverage (code review): "{bars} bars" alone would render
-      // "1 bars" for the singular case — the ARB uses a plural rule instead.
-      const seeded = LooperState(tracks: [Track(lengthPresetBars: 1)]);
-      when(() => looperBloc.state).thenReturn(seeded);
-      whenListen(
-        looperBloc,
-        const Stream<LooperState>.empty(),
-        initialState: seeded,
-      );
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('settings_tab_tracks')));
-      await tester.pumpAndSettle();
-
-      final row = find.byKey(const Key('settings_trackLengthPreset_0'));
-      await tester.ensureVisible(row);
-      expect(row, findsOneWidget);
-      expect(find.text('1 bar'), findsOneWidget);
-      expect(find.text('1 bars'), findsNothing);
-    },
-  );
-
-  testWidgets('the length preset row shows AUTO by default', (tester) async {
-    const seeded = LooperState(tracks: [Track()]);
-    when(() => looperBloc.state).thenReturn(seeded);
-    whenListen(
-      looperBloc,
-      const Stream<LooperState>.empty(),
-      initialState: seeded,
-    );
-    await pump(tester);
-
-    await tester.tap(find.byKey(const Key('settings_tab_tracks')));
-    await tester.pumpAndSettle();
-
-    final row = find.byKey(const Key('settings_trackLengthPreset_0'));
-    await tester.ensureVisible(row);
-    expect(row, findsOneWidget);
-    expect(find.text('AUTO'), findsOneWidget);
-  });
-
   testWidgets('choosing a default mode persists it', (
     tester,
   ) async {
@@ -501,53 +426,6 @@ void main() {
     // There is no longer a Routing tab — the whole-system signal flow moved to
     // the Signal surface.
     expect(find.byKey(const Key('settings_tab_routing')), findsNothing);
-  });
-
-  testWidgets(
-    'the one-shot row shows the current flag and dispatches a change',
-    (tester) async {
-      const seeded = LooperState(tracks: [Track(oneShot: true)]);
-      when(() => looperBloc.state).thenReturn(seeded);
-      whenListen(
-        looperBloc,
-        const Stream<LooperState>.empty(),
-        initialState: seeded,
-      );
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('settings_tab_tracks')));
-      await tester.pumpAndSettle();
-
-      final row = find.byKey(const Key('settings_trackOneShot_0'));
-      await tester.ensureVisible(row);
-      expect(row, findsOneWidget);
-      expect(tester.widget<Switch>(row).value, isTrue);
-
-      await tester.tap(row);
-      await tester.pumpAndSettle();
-
-      verify(
-        () => looperBloc.add(const LooperOneShotToggled(0, oneShot: false)),
-      ).called(1);
-    },
-  );
-
-  testWidgets('the one-shot row is off by default', (tester) async {
-    const seeded = LooperState(tracks: [Track()]);
-    when(() => looperBloc.state).thenReturn(seeded);
-    whenListen(
-      looperBloc,
-      const Stream<LooperState>.empty(),
-      initialState: seeded,
-    );
-    await pump(tester);
-
-    await tester.tap(find.byKey(const Key('settings_tab_tracks')));
-    await tester.pumpAndSettle();
-
-    final row = find.byKey(const Key('settings_trackOneShot_0'));
-    await tester.ensureVisible(row);
-    expect(tester.widget<Switch>(row).value, isFalse);
   });
 
   testWidgets('Escape pops the settings page', (tester) async {

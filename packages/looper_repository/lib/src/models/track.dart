@@ -166,7 +166,7 @@ class Track extends Equatable {
 
   /// One Shot (song-mode-spec.md §2, B5c): `true` = this track plays once and
   /// then stops instead of looping. Settable in any looper mode, but only
-  /// behaviorally active in Free/Song. See `LooperRepository.setOneShot`.
+  /// behaviorally active in Free/Song. See `LooperRepository.setTrackOnce`.
   final bool oneShot;
 
   /// Lane 0's recorded input as a bitmask (`1 << inputChannel`, or `0` when

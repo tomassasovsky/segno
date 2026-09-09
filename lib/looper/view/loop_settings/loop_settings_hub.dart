@@ -5,26 +5,34 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_labels.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/looper_mode_change.dart';
 
-/// The six Loop settings submenus.
-enum LoopSettingsSubmenu {
+/// The pages of the Loop settings route: the hub and its six submenus plus
+/// the Time signature page the Tempo & click page opens.
+enum LoopSettingsPageId {
+  /// The six rows.
+  hub,
+
   /// The five mode cards.
   mode,
 
-  /// How recording starts and what the second press does.
+  /// Pedal or Sound; Play or Overdub.
   recording,
 
-  /// Tempo, signature, click and count-in.
+  /// Tempo, click and count-in.
   tempo,
 
-  /// Loop length and record timing, by default and per track.
+  /// The 17 time signatures.
+  signature,
+
+  /// Loop length and record timing.
   length,
 
-  /// Loop/Once and overdub decay, by default and per track.
+  /// Loop/Once and overdub decay.
   playback,
 
   /// Tempo following and pitch, as a readout.
@@ -37,10 +45,6 @@ typedef _HubValues = ({
   double bpm,
   int tsNum,
   int tsDen,
-  RecordTiming timing,
-  int lengthBars,
-  bool once,
-  int decay,
 });
 
 _HubValues _hubValues(LooperState state) => (
@@ -48,10 +52,6 @@ _HubValues _hubValues(LooperState state) => (
   bpm: state.transport.tempoBpm,
   tsNum: state.transport.tsNum,
   tsDen: state.transport.tsDen,
-  timing: state.transport.recordTiming,
-  lengthBars: state.transport.defaultLengthPresetBars,
-  once: state.transport.defaultOneShot,
-  decay: state.transport.overdubDecay,
 );
 
 /// The Loop settings hub: the six submenus, each with its current choice
@@ -62,7 +62,7 @@ class LoopSettingsHub extends StatelessWidget {
   const LoopSettingsHub({required this.onOpen, super.key});
 
   /// Opens a submenu.
-  final ValueChanged<LoopSettingsSubmenu> onOpen;
+  final ValueChanged<LoopSettingsPageId> onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -70,8 +70,12 @@ class LoopSettingsHub extends StatelessWidget {
     final values = context.select<LooperBloc, _HubValues>(
       (bloc) => _hubValues(bloc.state),
     );
+    // The defaults are the cubits' own intent (what they persist and push),
+    // the same source the pages read, so the hub and a page never show two
+    // numbers for one setting.
     final options = context.watch<RecordOptionsCubit>().state;
     final playback = context.watch<PlaybackOptionsCubit>().state;
+    final timing = context.watch<RecordTimingCubit>().state;
     // The tempo cubit's own intent, so the hub reads the same number the
     // Tempo page's slider holds; the live transport value only differs
     // while a tap or a derived tempo has moved the engine.
@@ -81,34 +85,34 @@ class LoopSettingsHub extends StatelessWidget {
     final order = options.recDub
         ? l10n.loopSummaryRecordOverdubPlay
         : l10n.loopSummaryRecordPlayOverdub;
-    final rows = <(LoopSettingsSubmenu, String, String)>[
+    final rows = <(LoopSettingsPageId, String, String)>[
       (
-        LoopSettingsSubmenu.mode,
+        LoopSettingsPageId.mode,
         l10n.loopHubMode,
         looperModeLabels(l10n)[values.mode]!.label,
       ),
       (
-        LoopSettingsSubmenu.recording,
+        LoopSettingsPageId.recording,
         l10n.loopHubRecording,
         options.autoRecord ? l10n.loopSummarySound(order) : order,
       ),
       (
-        LoopSettingsSubmenu.tempo,
+        LoopSettingsPageId.tempo,
         l10n.loopHubTempo,
         bpm > 0
             ? l10n.loopSummaryTempo(_bpmText(bpm), signature)
             : l10n.loopSummaryTempoUnset(signature),
       ),
       (
-        LoopSettingsSubmenu.length,
+        LoopSettingsPageId.length,
         l10n.loopHubLength,
         l10n.loopSummaryPair(
-          lengthPresetLabel(l10n, values.lengthBars),
-          recordTimingLabels(l10n)[values.timing]!,
+          lengthPresetLabel(l10n, options.defaultLengthBars),
+          recordTimingLabels(l10n)[timing]!,
         ),
       ),
       (
-        LoopSettingsSubmenu.playback,
+        LoopSettingsPageId.playback,
         l10n.loopHubPlayback,
         l10n.loopSummaryPair(
           playback.once ? l10n.loopPlaybackOnce : l10n.loopPlaybackLoop,
@@ -118,7 +122,7 @@ class LoopSettingsHub extends StatelessWidget {
         ),
       ),
       (
-        LoopSettingsSubmenu.audioTempo,
+        LoopSettingsPageId.audioTempo,
         l10n.loopHubAudioTempo,
         l10n.loopSummaryAudioTempo,
       ),

@@ -79,12 +79,3 @@ bool sameQuantize(List<Track> a, List<Track> b) {
   }
   return true;
 }
-
-/// Whether [a] and [b] carry the same length presets, track for track.
-bool sameLengths(List<Track> a, List<Track> b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i].lengthPresetBars != b[i].lengthPresetBars) return false;
-  }
-  return true;
-}

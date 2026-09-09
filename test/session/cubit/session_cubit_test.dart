@@ -31,11 +31,14 @@ void main() {
   setUpAll(() {
     registerFallbackValue(const SessionRig());
     registerFallbackValue(const SessionChains());
+    registerFallbackValue(const SessionLoopSettings());
   });
 
   setUp(() {
     repository = _MockSessionRepository();
     looper = _MockLooperRepository();
+    // The save path reads the rig's loop settings off the live state.
+    when(() => looper.state).thenReturn(const LooperState());
     performance = _MockPerformanceRepository();
     // Default chain getters so the save path's _captureChains() has something
     // to read; individual tests override as needed.
@@ -180,7 +183,11 @@ void main() {
       ).thenAnswer((inv) async => '/root/${inv.positionalArguments.first}');
       when(repository.listSessions).thenAnswer((_) async => list);
       when(
-        () => repository.save(any(), chains: any(named: 'chains')),
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          loopSettings: any(named: 'loopSettings'),
+        ),
       ).thenAnswer((_) async => _session);
     }
 
@@ -202,7 +209,11 @@ void main() {
             .having((s) => s.sessions, 'sessions', summaries),
       ],
       verify: (_) => verify(
-        () => repository.save('/root/New', chains: any(named: 'chains')),
+        () => repository.save(
+          '/root/New',
+          chains: any(named: 'chains'),
+          loopSettings: any(named: 'loopSettings'),
+        ),
       ).called(1),
     );
 
@@ -222,7 +233,11 @@ void main() {
             .having((s) => s.error, 'error', SessionError.nameCollision),
       ],
       verify: (_) => verifyNever(
-        () => repository.save(any(), chains: any(named: 'chains')),
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          loopSettings: any(named: 'loopSettings'),
+        ),
       ),
     );
 
@@ -242,7 +257,11 @@ void main() {
             .having((s) => s.currentSessionName, 'current', 'Open'),
       ],
       verify: (_) => verify(
-        () => repository.save('/root/Open', chains: any(named: 'chains')),
+        () => repository.save(
+          '/root/Open',
+          chains: any(named: 'chains'),
+          loopSettings: any(named: 'loopSettings'),
+        ),
       ).called(1),
     );
 
@@ -257,7 +276,11 @@ void main() {
             .having((s) => s.currentSessionName, 'current', isNull),
       ],
       verify: (_) => verifyNever(
-        () => repository.save(any(), chains: any(named: 'chains')),
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          loopSettings: any(named: 'loopSettings'),
+        ),
       ),
     );
 
@@ -438,7 +461,11 @@ void main() {
             .having((s) => s.error, 'error', SessionError.unknown),
       ],
       verify: (_) => verifyNever(
-        () => repository.save(any(), chains: any(named: 'chains')),
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          loopSettings: any(named: 'loopSettings'),
+        ),
       ),
     );
 
@@ -460,7 +487,11 @@ void main() {
           () => repository.bundlePath(any()),
         ).thenAnswer((_) async => '/root/Open');
         when(
-          () => repository.save(any(), chains: any(named: 'chains')),
+          () => repository.save(
+            any(),
+            chains: any(named: 'chains'),
+            loopSettings: any(named: 'loopSettings'),
+          ),
         ).thenAnswer((_) async => _session);
         // A write-back re-lists so an open Sessions dialog's date column
         // shows the save it just made.
@@ -668,6 +699,7 @@ void main() {
           any(),
           chains: any(named: 'chains'),
           pedalBindings: any(named: 'pedalBindings'),
+          loopSettings: any(named: 'loopSettings'),
         ),
       ).thenAnswer((_) async => _session);
 
@@ -687,6 +719,7 @@ void main() {
           any(),
           chains: any(named: 'chains'),
           pedalBindings: 'the-remap-in-force',
+          loopSettings: any(named: 'loopSettings'),
         ),
       ).called(1);
     });

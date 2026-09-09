@@ -45,6 +45,21 @@ class LoopPlaybackPage extends StatefulWidget {
 class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
   int? _scope;
 
+  /// The decay under the pointer while the slider is dragged; the drag
+  /// previews here and commits once when the pointer lifts, since a commit
+  /// persists and, on a track scope, re-projects the whole rig.
+  int? _dragDecay;
+
+  static int _percentOf(double fraction) => (fraction * 100).round();
+
+  void _previewDecay(double fraction) =>
+      setState(() => _dragDecay = _percentOf(fraction));
+
+  void _commitDecay(double fraction) {
+    setState(() => _dragDecay = null);
+    _setDecay(_percentOf(fraction));
+  }
+
   void _setOnce(bool? once) {
     final scope = _scope;
     if (scope == null) {
@@ -83,9 +98,11 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
         ? defaults.once
         : v.trackOnceOverride ?? defaults.once;
     final decayCustom = scope != null && v.trackDecayOverride != null;
-    final decay = scope == null
-        ? defaults.overdubDecay
-        : v.trackDecayOverride ?? defaults.overdubDecay;
+    final decay =
+        _dragDecay ??
+        (scope == null
+            ? defaults.overdubDecay
+            : v.trackDecayOverride ?? defaults.overdubDecay);
     const top = 342.0;
     return Positioned.fill(
       child: Stack(
@@ -106,11 +123,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
             child: LoopFieldLabel(
               title: l10n.loopPlaybackLabel,
               fontSize: 32,
-              origin: scope == null
-                  ? null
-                  : onceCustom
-                  ? LoopFieldOrigin.custom
-                  : LoopFieldOrigin.isDefault,
+              origin: scopedOrigin(scoped: scope != null, custom: onceCustom),
             ),
           ),
           Positioned(
@@ -154,11 +167,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
             child: LoopFieldLabel(
               title: l10n.loopDecayLabel,
               fontSize: 32,
-              origin: scope == null
-                  ? null
-                  : decayCustom
-                  ? LoopFieldOrigin.custom
-                  : LoopFieldOrigin.isDefault,
+              origin: scopedOrigin(scoped: scope != null, custom: decayCustom),
             ),
           ),
           Positioned(
@@ -189,7 +198,8 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
             child: LoopSlider(
               key: const Key('loop_decay_slider'),
               value: decay / 100,
-              onChanged: (fraction) => _setDecay((fraction * 100).round()),
+              onChanged: _previewDecay,
+              onChangeEnd: _commitDecay,
               width: 1392,
               semanticLabel: l10n.loopDecaySliderLabel,
             ),
