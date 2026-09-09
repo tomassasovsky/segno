@@ -1730,27 +1730,35 @@ void main() {
       expect(engine.finalizedTakes, [3, 3]);
     });
 
-    test('per-track quantize overrides are deferred then re-applied', () {
+    test('per-track record timing overrides are deferred then re-applied as '
+        'the engine gate and division', () {
       final repo = buildRepo()
-        ..setTrackQuantize(channel: 1, enabled: true)
-        ..setTrackQuantize(channel: 2, enabled: false);
+        ..setTrackRecordTiming(channel: 1, timing: RecordTiming.quarter)
+        ..setTrackRecordTiming(channel: 2, timing: RecordTiming.immediately)
+        ..setTrackRecordTiming(channel: 3, timing: RecordTiming.loopStart);
       expect(engine.trackQuantize, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
       expect(engine.trackQuantize[1], isTrue);
+      expect(engine.trackQuantizeDiv[1], GridDivision.quarter);
       expect(engine.trackQuantize[2], isFalse);
+      expect(engine.trackQuantizeDiv[2], GridDivision.off);
+      expect(engine.trackQuantize[3], isTrue);
+      expect(engine.trackQuantizeDiv[3], GridDivision.off);
     });
 
     test(
-      'clearing a per-track override (null) inherits the global default',
+      'clearing a per-track record timing (null) follows the default again',
       () {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
-          ..setTrackQuantize(channel: 1, enabled: true);
+          ..setTrackRecordTiming(channel: 1, timing: RecordTiming.bar);
         expect(engine.trackQuantize[1], isTrue);
+        expect(engine.trackQuantizeDiv[1], GridDivision.bar);
 
-        repo.setTrackQuantize(channel: 1, enabled: null);
+        repo.setTrackRecordTiming(channel: 1, timing: null);
         expect(engine.trackQuantize[1], isNull);
+        expect(engine.trackQuantizeDiv[1], isNull);
 
         // A later restart does not re-apply the cleared override.
         engine.trackQuantize.clear();
@@ -1758,6 +1766,78 @@ void main() {
         expect(engine.trackQuantize.containsKey(1), isFalse);
       },
     );
+
+    test('the default record timing sets the gate and division together, '
+        'division first, and is projected', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      engine.calls.clear();
+      expect(repo.setRecordTiming(RecordTiming.eighth), EngineResult.ok);
+      expect(engine.lastQuantizeDiv, GridDivision.eighth);
+      expect(engine.lastQuantize, isTrue);
+      expect(
+        engine.calls.indexOf('setQuantizeDiv'),
+        lessThan(engine.calls.indexOf('setQuantize')),
+      );
+      expect(repo.state.transport.quantize, isTrue);
+      expect(repo.state.transport.recordTiming, RecordTiming.eighth);
+
+      repo.setRecordTiming(RecordTiming.immediately);
+      expect(engine.lastQuantize, isFalse);
+      expect(repo.state.transport.recordTiming, RecordTiming.immediately);
+
+      // Re-applied on a restart.
+      repo
+        ..setRecordTiming(RecordTiming.loopStart)
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastQuantize, isTrue);
+      expect(engine.lastQuantizeDiv, GridDivision.off);
+    });
+
+    test('overdub decay reaches the engine as feedback, per track and by '
+        'default, and is re-applied', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      final repo = buildRepo()
+        ..setOverdubDecay(25)
+        ..setTrackOverdubDecay(channel: 1, percent: 100)
+        ..setTrackOverdubDecay(channel: 2, percent: 0);
+      expect(engine.lastOverdubFeedback, isNull); // not running yet
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastOverdubFeedback, closeTo(0.75, 1e-9));
+      expect(engine.trackOverdubFeedback[1], closeTo(0, 1e-9));
+      expect(engine.trackOverdubFeedback[2], closeTo(1, 1e-9));
+      expect(repo.state.transport.overdubDecay, 25);
+      expect(repo.state.tracks[1].overdubDecayOverride, 100);
+      expect(repo.state.tracks[0].overdubDecayOverride, isNull);
+
+      repo.setTrackOverdubDecay(channel: 1, percent: null);
+      expect(engine.trackOverdubFeedback[1], isNull);
+      expect(repo.state.tracks[1].overdubDecayOverride, isNull);
+
+      // Out-of-range values clamp.
+      repo.setOverdubDecay(140);
+      expect(engine.lastOverdubFeedback, closeTo(0, 1e-9));
+      expect(repo.state.transport.overdubDecay, 100);
+      expect(LooperRepository.feedbackOfDecay(25), closeTo(0.75, 1e-9));
+      expect(LooperRepository.decayOfFeedback(0.75), 25);
+    });
+
+    test('count-in and Sound start exclude each other in the remembered '
+        'settings, as they do in the engine', () {
+      final repo = buildRepo()
+        ..setAutoRecord(enabled: true)
+        ..setCountIn(2)
+        ..startEngine(const EngineConfig());
+      expect(engine.lastAutoRecord, isFalse); // the count-in won
+      expect(engine.lastCountIn, 2);
+
+      repo
+        ..setAutoRecord(enabled: true)
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastAutoRecord, isTrue);
+      expect(engine.lastCountIn, 0); // and Sound start won this time
+    });
 
     test('a per-track override is projected onto the track it names', () async {
       // The engine takes the override and never reports it back, so the
@@ -1788,21 +1868,25 @@ void main() {
         ],
       );
       final repo = buildRepo()..startEngine(const EngineConfig());
-      expect(repo.state.tracks.first.quantizeOverride, isNull);
+      expect(repo.state.tracks.first.recordTimingOverride, isNull);
 
       final emitted = repo.looperState.firstWhere(
-        (state) => state.tracks.first.quantizeOverride != null,
+        (state) => state.tracks.first.recordTimingOverride != null,
       );
-      repo.setTrackQuantize(channel: 0, enabled: false);
+      repo.setTrackRecordTiming(channel: 0, timing: RecordTiming.immediately);
 
-      expect((await emitted).tracks.first.quantizeOverride, isFalse);
+      expect(
+        (await emitted).tracks.first.recordTimingOverride,
+        RecordTiming.immediately,
+      );
       expect(repo.state.tracks.first.quantizeOverride, isFalse);
 
-      repo.setTrackQuantize(channel: 0, enabled: true);
+      repo.setTrackRecordTiming(channel: 0, timing: RecordTiming.half);
+      expect(repo.state.tracks.first.recordTimingOverride, RecordTiming.half);
       expect(repo.state.tracks.first.quantizeOverride, isTrue);
 
-      repo.setTrackQuantize(channel: 0, enabled: null);
-      expect(repo.state.tracks.first.quantizeOverride, isNull);
+      repo.setTrackRecordTiming(channel: 0, timing: null);
+      expect(repo.state.tracks.first.recordTimingOverride, isNull);
     });
 
     test('rec/dub is projected, and lands on the next frame', () async {

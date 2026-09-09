@@ -994,19 +994,49 @@ void main() {
     });
   });
 
-  group('track quantize override', () {
-    test('defaults to null (inherit) when unset', () async {
-      expect(await repository.loadTrackQuantize(0), isNull);
+  group('track record timing override', () {
+    test('defaults to null (follow the default) when unset', () async {
+      expect(await repository.loadTrackRecordTiming(0), isNull);
     });
 
-    test('round-trips force-on, force-off, and inherit', () async {
-      await repository.saveTrackQuantize(0, enabled: true);
-      await repository.saveTrackQuantize(1, enabled: false);
-      expect(await repository.loadTrackQuantize(0), isTrue);
-      expect(await repository.loadTrackQuantize(1), isFalse);
+    test('round-trips a code and the follow-the-default value', () async {
+      await repository.saveTrackRecordTiming(0, 4);
+      await repository.saveTrackRecordTiming(1, 0);
+      expect(await repository.loadTrackRecordTiming(0), 4);
+      expect(await repository.loadTrackRecordTiming(1), 0);
 
-      await repository.saveTrackQuantize(0, enabled: null);
-      expect(await repository.loadTrackQuantize(0), isNull);
+      await repository.saveTrackRecordTiming(0, null);
+      expect(await repository.loadTrackRecordTiming(0), isNull);
+    });
+
+    test('reads a pre-slice-2b quantize gate override as a timing', () async {
+      await store.setInt('track_quantize.0', 0); // forced off
+      await store.setInt('track_quantize.1', 1); // forced on, no division
+      await store.setInt('track_quantize.2', -1); // inherit
+      expect(await repository.loadTrackRecordTiming(0), 0);
+      expect(await repository.loadTrackRecordTiming(1), 1);
+      expect(await repository.loadTrackRecordTiming(2), isNull);
+
+      await repository.saveQuantizeDiv(3); // the global was a quarter
+      expect(await repository.loadTrackRecordTiming(1), 4);
+
+      // A save writes the new key and retires the old one.
+      await repository.saveTrackRecordTiming(1, 2);
+      expect(await repository.loadTrackRecordTiming(1), 2);
+      expect(await store.getInt('track_quantize.1'), isNull);
+    });
+  });
+
+  group('overdub decay', () {
+    test('defaults to 0 and round-trips, by default and per track', () async {
+      expect(await repository.loadOverdubDecay(), 0);
+      expect(await repository.loadTrackOverdubDecay(0), isNull);
+      await repository.saveOverdubDecay(25);
+      await repository.saveTrackOverdubDecay(0, 100);
+      expect(await repository.loadOverdubDecay(), 25);
+      expect(await repository.loadTrackOverdubDecay(0), 100);
+      await repository.saveTrackOverdubDecay(0, null);
+      expect(await repository.loadTrackOverdubDecay(0), isNull);
     });
   });
 

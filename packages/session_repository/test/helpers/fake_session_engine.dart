@@ -59,6 +59,17 @@ class FakeSessionEngine implements AudioEngine {
   /// channel; absent = `false`.
   final Map<int, bool> oneShot = {};
 
+  /// Per-track record timing and decay overrides reported by [snapshot]
+  /// (slice 2b), keyed by channel; absent = inherit.
+  final Map<int, bool> quantizeOverride = {};
+  final Map<int, GridDivision> quantizeDivOverride = {};
+  final Map<int, double> overdubFeedbackOverride = {};
+
+  /// The record start gate and the global overdub feedback reported by
+  /// [snapshot] (slice 2b).
+  bool quantize = false;
+  double overdubFeedback = 1;
+
   // ---- tempo grid + click + count-in (A1/A2, threaded to Session v4 by A7)
   // ----
   // Mutable so a test can seed non-default grid state before calling
@@ -181,6 +192,8 @@ class FakeSessionEngine implements AudioEngine {
     countInBars: countInBars,
     looperMode: looperMode,
     primaryTrack: primaryTrack,
+    quantize: quantize,
+    overdubFeedback: overdubFeedback,
     tracks: [
       for (final (i, t) in _tracks.indexed)
         TrackSnapshot(
@@ -194,6 +207,9 @@ class FakeSessionEngine implements AudioEngine {
           peak: 0,
           multiple: t.multiple,
           oneShot: oneShot[i] ?? false,
+          quantizeOverride: quantizeOverride[i],
+          quantizeDivOverride: quantizeDivOverride[i],
+          overdubFeedbackOverride: overdubFeedbackOverride[i],
           layerInFlight: i == 0 && _consumeInFlightPoll(),
           lanes: [
             for (final lane in t.lanes)
@@ -378,6 +394,16 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setTrackQuantize({
     required int channel,
     required bool? enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
   }) => EngineResult.ok;
   @override
   EngineResult setTrackMultiple({

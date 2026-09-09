@@ -323,6 +323,16 @@ class FakePerformanceEngine implements AudioEngine {
     required bool? enabled,
   }) => EngineResult.ok;
   @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) => EngineResult.ok;
+  @override
   EngineResult setTrackMultiple({
     required int channel,
     required int multiple,

@@ -272,6 +272,30 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-track division overrides passed to [setTrackQuantizeDiv].
+  final Map<int, GridDivision?> trackQuantizeDiv = {};
+
+  @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) {
+    trackQuantizeDiv[channel] = div;
+    return EngineResult.ok;
+  }
+
+  /// Per-track feedback overrides passed to [setTrackOverdubFeedback].
+  final Map<int, double?> trackOverdubFeedback = {};
+
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) {
+    trackOverdubFeedback[channel] = feedback;
+    return EngineResult.ok;
+  }
+
   /// Per-track forced multiples passed to [setTrackMultiple].
   final Map<int, int> trackMultiple = {};
 

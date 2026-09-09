@@ -28,8 +28,9 @@ static uint32_t le_lane_input_bits(le_lane* ln) {
 /* Fills a track snapshot from the track's transport plus lane 0's content (the
  * backward-compatible per-track view). When [active] is false the track index
  * is past track_count; report an empty track. */
-static void le_fill_track_snapshot(le_track* tr, int active,
-                                   le_track_snapshot* out) {
+static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
+                                   int active, le_track_snapshot* out) {
+  le_track* tr = &engine->tracks[ch];
   le_lane* l0 = &tr->lanes[0];
   out->state = active ? load_i32(&tr->a_state) : LE_TRACK_EMPTY;
   out->volume = load_f32(&l0->a_vol_bits);
@@ -57,6 +58,11 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->length_preset_bars = load_i32(&tr->a_length_preset_bars);
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);
+  /* Record timing and decay overrides (slice 2b): the quantize gate override
+   * is a control-side plain int, read on the thread that writes it. */
+  out->quantize_override = engine->track_quantize[ch];
+  out->quantize_div_override = load_i32(&tr->a_quantize_div_override);
+  out->overdub_feedback_override = load_f32(&tr->a_overdub_fb_bits);
   out->settled_take_id =
       active ? atomic_load_explicit(&tr->a_settled_take_id, memory_order_acquire)
              : 0;
@@ -213,7 +219,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       engine->perf.drain ? le_perf_drain_self_stopped(engine->perf.drain) : 0;
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
-    le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,
+    le_fill_track_snapshot(engine, t, t < engine->track_count,
                            &out->tracks[t]);
   }
   /* Tempo grid (trailing block; grid-off defaults read 0/4/4/1/0/0/0/0). */
@@ -255,6 +261,11 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   }
   out->input_cond_mask = cond_mask;
   out->output_peak = load_f32(&engine->a_out_peak_bits);
+  /* Record start settings (slice 2b; trailing block): control-side plain
+   * ints, read on the same thread that writes them. */
+  out->quantize = engine->quantize ? 1 : 0;
+  out->auto_record = engine->auto_record ? 1 : 0;
+  out->overdub_feedback = load_f32(&engine->a_overdub_fb_bits);
   /* The audio-callback telemetry (#722) is deliberately NOT read here — it has
    * its own entry point below. Anything on this struct is projected into the
    * app's render-rate state, whose equality drives the rebuild dedupe, and a
@@ -300,9 +311,12 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->restore_state = 0;
     out->position_frames = 0;
     out->pending_trigger = -1;
+    out->quantize_override = -1;
+    out->quantize_div_override = -1;
+    out->overdub_feedback_override = -1.0f;
     return;
   }
-  le_fill_track_snapshot(&engine->tracks[channel], 1, out);
+  le_fill_track_snapshot(engine, channel, 1, out);
 }
 
 void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,

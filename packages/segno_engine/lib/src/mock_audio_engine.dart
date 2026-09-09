@@ -536,6 +536,18 @@ class MockAudioEngine implements AudioEngine {
   }) => _requireRunning();
 
   @override
+  EngineResult setTrackQuantizeDiv({
+    required int channel,
+    required GridDivision? div,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackOverdubFeedback({
+    required int channel,
+    required double? feedback,
+  }) => _requireRunning();
+
+  @override
   EngineResult cancelArm({required int channel}) => _requireRunning();
 
   @override

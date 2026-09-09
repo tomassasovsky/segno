@@ -211,13 +211,24 @@ void main() {
         ..tsNum = 7
         ..tsDen = 8
         ..quantizeDiv = GridDivision.quarter
+        ..quantize = true
+        ..overdubFeedback = 0.75
         ..clickMode = ClickMode.playRec
         ..clickMask = 0x1
         ..clickVolume = 0.4
         ..countInBars = 3;
+      // Track 0 waits for its own eighth and keeps 60% per pass; the
+      // repository reads both back from the engine's own report.
+      source.quantizeOverride[0] = true;
+      source.quantizeDivOverride[0] = GridDivision.eighth;
+      source.overdubFeedbackOverride[0] = 0.6;
       final dir = '${tempDir.path}/tempo';
 
       final session = await repoFor(source).save(dir);
+      expect(session.recordTiming, RecordTiming.quarter);
+      expect(session.overdubDecay, 25);
+      expect(session.tracks.single.recordTiming, RecordTiming.eighth);
+      expect(session.tracks.single.overdubDecay, 40);
       expect(session.tempoBpm, 96.0);
       expect(session.tempoSource, TempoSource.tapped);
       expect(session.tsNum, 7);
@@ -238,6 +249,10 @@ void main() {
       expect(bundle.session.clickOutputMask, 0x1);
       expect(bundle.session.clickVolume, 0.4);
       expect(bundle.session.countInBars, 3);
+      expect(bundle.session.recordTiming, RecordTiming.quarter);
+      expect(bundle.session.overdubDecay, 25);
+      expect(bundle.session.tracks.single.recordTiming, RecordTiming.eighth);
+      expect(bundle.session.tracks.single.overdubDecay, 40);
     },
   );
 

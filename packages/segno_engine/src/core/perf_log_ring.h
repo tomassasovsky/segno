@@ -109,6 +109,10 @@ typedef enum le_perf_log_code {
                                         * index, type = enabled (0/1). */
   LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED = 313, /* generic arm: arg_i = input,
                                               * arg_f = enabled (0.0/1.0). */
+  LE_PLOG_SET_TRACK_OVERDUB_FEEDBACK = 315, /* generic arm: arg_i = channel,
+                                             * arg_f = feedback (0..1), or a
+                                             * negative value = inherit the
+                                             * global coefficient (309). */
   LE_PLOG_RECORD_ABORT = 314, /* a take died having captured NOTHING: either it
                                * left RECORDING (finalize_new_track's void
                                * branch: armed, then stopped before a single

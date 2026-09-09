@@ -16,6 +16,8 @@ void main() {
         lengthFrames: 96000,
         lengthPresetBars: 4,
         oneShot: true,
+        recordTiming: RecordTiming.bar,
+        overdubDecay: 30,
         lanes: [
           SessionLane(
             lane: 0,
@@ -84,6 +86,8 @@ void main() {
     tsNum: 6,
     tsDen: 8,
     quantizeDiv: GridDivision.eighth,
+    recordTiming: RecordTiming.eighth,
+    overdubDecay: 25,
     clickMode: ClickMode.rec,
     clickOutputMask: 0x3,
     clickVolume: 0.75,

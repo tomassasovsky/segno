@@ -139,9 +139,20 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
     setState(() => _openLane = null);
   }
 
-  void _setQuantize(bool? enabled) => context.read<LooperBloc>().add(
-    LooperTrackQuantizeChanged(widget.channel, enabled: enabled),
-  );
+  /// The three-way choice as a record timing override: follow is no
+  /// override, never is immediately, always is the default's own timing when
+  /// that waits (so the track keeps waiting for the same grid if the default
+  /// later turns off) and the loop top otherwise.
+  void _setQuantize(bool? enabled) {
+    final bloc = context.read<LooperBloc>();
+    final defaultTiming = bloc.state.transport.recordTiming;
+    final timing = switch (enabled) {
+      null => null,
+      false => RecordTiming.immediately,
+      true => defaultTiming.quantize ? defaultTiming : RecordTiming.loopStart,
+    };
+    bloc.add(LooperTrackRecordTimingChanged(widget.channel, timing: timing));
+  }
 
   @override
   Widget build(BuildContext context) {

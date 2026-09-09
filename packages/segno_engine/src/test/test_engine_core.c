@@ -4476,6 +4476,17 @@ static void tg_advance(le_engine* e, int total) {
   }
 }
 
+/* process_const with chunking: feeds `total` frames of `value` in 64-frame
+ * blocks (process_const itself holds a single 64-frame buffer). */
+static void tg_feed(le_engine* e, float value, int total) {
+  float out[64];
+  while (total > 0) {
+    const int n = total > 64 ? 64 : total;
+    process_const(e, value, n, out);
+    total -= n;
+  }
+}
+
 static le_engine* tg_make_engine(int sr) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, sr, 1, 1, 20000);
@@ -6531,6 +6542,179 @@ static void test_quantize_boolean_handoff_clears_pending_end(void) {
 
 /* Boolean quantize still GATES arming: with it off, a set division alone must
  * not defer anything — record starts and ends act immediately, mid-unit. */
+/* Slice 2b: a track's own division override fires its arm on its own
+ * boundaries while the global division says otherwise; inherit (-1) follows
+ * the global again. Same 3000-frame 2-bar grid as the D8 tests: a quarter
+ * boundary at 375, the loop top at 3000. */
+static void test_track_quantize_div_override_fires_on_own_boundary(void) {
+  printf("test_track_quantize_div_override_fires_on_own_boundary\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  /* Global OFF (loop top only), track 1 QUARTER: fires at 375. */
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
+  CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  qa_advance_to(e, 0.0f, 374);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  le_engine_clear(e, 1);
+  drain(e);
+
+  /* Global QUARTER, track 1 forced to the loop top (0): waits for 3000
+   * while a sibling on the global grid fires at 375. */
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_OFF) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  drain(e);
+  qa_advance_to(e, 0.0f, 375);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING); /* the global grid */
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);     /* its own: loop top */
+  qa_advance_to(e, 0.0f, 2999);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  le_engine_clear(e, 1);
+  le_engine_clear(e, 2);
+  drain(e);
+
+  /* Inherit again: the global QUARTER applies to track 1. */
+  CHECK(le_engine_set_track_quantize_div(e, 1, -1) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  qa_advance_to(e, 0.0f, 375);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  /* Bounds. */
+  CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_SIXTEENTH + 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_track_quantize_div(e, 99, 0) == LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
+/* Slice 2b: a track's own feedback override applies to its overdub passes,
+ * a sibling keeps the global, and inherit (-1) follows the global again. */
+static void test_track_overdub_feedback_override_and_inherit(void) {
+  printf("test_track_overdub_feedback_override_and_inherit\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  float pcm[2 * LOOP_N];
+
+  CHECK(le_engine_set_track_overdub_feedback(e, 99, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_overdub_feedback(e, 0, 0.5f) == LE_OK);
+  drain(e);
+
+  record_base_loop(e, 1.0f);              /* track 0: 1.0 */
+  le_engine_record(e, 1);                 /* track 1: 1.0 too */
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 1);
+  drain(e);
+
+  /* Overdub +1.0 on each in turn (one capturer at a time): track 0 keeps
+   * half (1.5), track 1 all (2.0). */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  settle_dub(e);
+  CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.5f) < 1e-6f);
+  le_engine_record(e, 1);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 1);
+  settle_dub(e);
+  CHECK(le_engine_export_track(e, 1, pcm, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 2.0f) < 1e-6f);
+
+  /* Inherit: the global 0.0 replaces the layer (2.0 * 0 + 1.0). */
+  CHECK(le_engine_set_track_overdub_feedback(e, 0, -1.0f) == LE_OK);
+  CHECK(le_engine_set_overdub_feedback(e, 0.0f) == LE_OK);
+  drain(e);
+  le_engine_record(e, 1);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 1);
+  settle_dub(e);
+  CHECK(le_engine_export_track(e, 1, pcm, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Slice 2b: a feedback change during a pass ramps at the write head over the
+ * punch fade (10 frames at sr 1000) instead of stepping. */
+static void test_track_overdub_feedback_change_mid_pass_ramps(void) {
+  printf("test_track_overdub_feedback_change_mid_pass_ramps\n");
+  le_engine* e = tg_make_engine(1000);
+  float pcm[300];
+  le_snapshot s;
+
+  le_engine_record(e, 0);
+  tg_feed(e, 1.0f, 300);
+  le_engine_record(e, 0);
+  tg_advance(e, 10); /* the seam crossfade */
+  qa_advance_to(e, 0.0f, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.master_position_frames == 0);
+
+  le_engine_record(e, 0); /* punch in at the top, feedback 1.0 */
+  tg_feed(e, 1.0f, 100);
+  CHECK(le_engine_set_track_overdub_feedback(e, 0, 0.0f) == LE_OK);
+  tg_feed(e, 1.0f, 200); /* the rest of the pass */
+  le_engine_record(e, 0); /* punch out at the top */
+  settle_layers(e);
+
+  CHECK(le_engine_export_track(e, 0, pcm, 300) == 300);
+  /* Before the change (past the punch-in fade): the layer added to 1.0. */
+  for (int i = 20; i < 100; ++i) CHECK(fabsf(pcm[i] - 2.0f) < 1e-4f);
+  /* The ramp: strictly between the two levels, never increasing. */
+  CHECK(pcm[100] < 2.0f && pcm[100] > 1.0f);
+  for (int i = 101; i <= 110; ++i) CHECK(pcm[i] <= pcm[i - 1] + 1e-6f);
+  /* After it settles: the pass replaced the old layer (1.0 * 0 + 1.0). */
+  for (int i = 120; i < 285; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-4f);
+
+  le_engine_destroy(e);
+}
+
+/* Slice 2b: the record start settings are published, including the D9
+ * exclusion each setter applies to the other. */
+static void test_snapshot_publishes_record_start_settings(void) {
+  printf("test_snapshot_publishes_record_start_settings\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.quantize == 0);
+  CHECK(s.auto_record == 0);
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.quantize == 1);
+  CHECK(s.auto_record == 1);
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK); /* clears sound start */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.auto_record == 0);
+  CHECK(s.count_in_bars == 1);
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK); /* clears the count-in */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.auto_record == 1);
+  CHECK(s.count_in_bars == 0);
+  le_engine_destroy(e);
+}
+
 static void test_quantize_div_requires_boolean_quantize(void) {
   printf("test_quantize_div_requires_boolean_quantize\n");
   le_engine* e = qa_make_grid_engine();
@@ -19718,15 +19902,11 @@ static void test_one_shot_off_track_keeps_looping_in_song_mode(void) {
   le_engine_destroy(e);
 }
 
-static void test_one_shot_dormant_in_multi_mode(void) {
-  printf("test_one_shot_dormant_in_multi_mode\n");
-  /* B4 design decision: One Shot only has a wrap event to hook in Free/
-   * Song (advance_track_clock_frame's free_clock check) -- in Multi/Sync/
-   * Band a track's own "lap" is a derived point on the ONE shared master
-   * clock, not an independent per-track event. The flag is still settable
-   * and published here (test_one_shot_setter_accepted_in_any_mode), but
-   * this proves it has ZERO effect on playback in Multi: several full
-   * master-loop laps with the flag set, still PLAYING throughout. */
+static void test_one_shot_stops_at_lap_in_multi_mode(void) {
+  printf("test_one_shot_stops_at_lap_in_multi_mode\n");
+  /* Accepted design (slice 2b): Once works in every mode. In Multi a 1x
+   * take's own lap is the master lap: the track stops at the wrap, the
+   * next launch from the held transport plays one full lap again. */
   le_engine* e = tg_make_engine(1000);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
@@ -19735,15 +19915,94 @@ static void test_one_shot_dormant_in_multi_mode(void) {
   CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
   drain(e);
 
-  tg_record_defining_loop(e, 300);
+  tg_record_defining_loop(e, 300); /* leaves the playhead at 10 */
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
-  CHECK(s.tracks[0].one_shot == 1); /* published, but... */
+  CHECK(s.tracks[0].one_shot == 1);
+  const int32_t to_wrap = 300 - s.master_position_frames;
 
-  tg_advance(e, 300 * 4); /* several master-loop laps */
+  tg_advance(e, to_wrap - 1);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* dormant: never stopped */
-  CHECK(e->loop_iteration >= 3);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* one frame early */
+
+  tg_advance(e, 1); /* the wrap: the lap ends, the track stops */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.master_position_frames == 0); /* held at the top */
+
+  /* A launch from the held transport plays one full lap and stops again. */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  tg_advance(e, 299);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_multiple_stops_after_its_own_laps(void) {
+  printf("test_one_shot_multiple_stops_after_its_own_laps\n");
+  /* A 2x track's lap is two master laps: enabled mid-lap, Once finishes the
+   * current pass of the WHOLE take (both segments) and stops there; the
+   * base track and the master clock keep going. */
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_base_loop(e, 1.0f);
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, 2 * LOOP_N, out);
+  le_engine_record(e, 1); /* finalize at a wrap -> a 2x take, segment 0 */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.master_position_frames == 0);
+
+  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out); /* segment 0 -> the wrap into 1 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* mid-take: no stop */
+  process_const(e, 0.0f, LOOP_N, out); /* segment 1 -> the take's own top */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* the base keeps looping */
+  CHECK(s.master_position_frames == 0);
+  process_const(e, 0.0f, LOOP_N / 2, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == LOOP_N / 2); /* the clock kept ticking */
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_not_stopped_by_a_finalize_at_the_wrap(void) {
+  printf("test_one_shot_not_stopped_by_a_finalize_at_the_wrap\n");
+  /* A one-shot take whose quantized finalize lands on the wrap plays its
+   * first lap: the lap check runs before the grid arms fire. */
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
+  drain(e);
+  le_engine_record(e, 1); /* armed for the loop top */
+  process_const(e, 0.0f, LOOP_N, out); /* fires at the wrap: RECORDING */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  process_const(e, 2.0f, LOOP_N / 2, out);
+  le_engine_record(e, 1); /* armed to finalize at the next wrap */
+  process_const(e, 2.0f, LOOP_N / 2, out); /* the wrap: finalize -> PLAYING */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  process_const(e, 0.0f, LOOP_N - 1, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* its first lap */
+  process_const(e, 0.0f, 1, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED); /* and no second */
 
   le_engine_destroy(e);
 }
@@ -21372,6 +21631,42 @@ static void test_sync_round_up_finalize_respects_max_loop_frames(void) {
  * all the way back to an ordinary 1x multiple rather than ever publish a
  * stuttering division. Captures ~1/4 of the base, which would otherwise
  * request a division. */
+static void test_one_shot_division_stops_after_its_own_lap(void) {
+  printf("test_one_shot_division_stops_after_its_own_lap\n");
+  /* A Sync division laps every base/n frames: within n frames of enabling
+   * Once it reaches its own top and stops; the primary keeps playing. */
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary_ex(e, 0, SB_BASE, 0.0f);
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, SB_BASE / 4, out);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].sync_divisor == 4);
+
+  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
+  drain(e);
+  int stopped_after = -1;
+  for (int i = 1; i <= SB_BASE / 4; ++i) {
+    tg_advance(e, 1);
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[1].state == LE_TRACK_STOPPED) {
+      stopped_after = i;
+      break;
+    }
+  }
+  CHECK(stopped_after >= 1); /* within one of its own laps */
+  CHECK(s.master_position_frames % (SB_BASE / 4) == 0); /* at its top */
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  le_engine_destroy(e);
+}
+
 static void test_sync_division_falls_back_on_indivisible_base(void) {
   printf("test_sync_division_falls_back_on_indivisible_base\n");
   const int32_t base = 17;
@@ -26906,6 +27201,10 @@ int main(void) {
   test_quantize_div_handoff_clears_pending_end();
   test_quantize_boolean_handoff_clears_pending_end();
   test_quantize_div_requires_boolean_quantize();
+  test_track_quantize_div_override_fires_on_own_boundary();
+  test_track_overdub_feedback_override_and_inherit();
+  test_track_overdub_feedback_change_mid_pass_ramps();
+  test_snapshot_publishes_record_start_settings();
   test_classify_capture_device();
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
@@ -27038,7 +27337,10 @@ int main(void) {
   test_one_shot_persists_through_clear_reset_by_configure();
   test_one_shot_stops_track_at_wrap_in_song_mode();
   test_one_shot_off_track_keeps_looping_in_song_mode();
-  test_one_shot_dormant_in_multi_mode();
+  test_one_shot_stops_at_lap_in_multi_mode();
+  test_one_shot_multiple_stops_after_its_own_laps();
+  test_one_shot_division_stops_after_its_own_lap();
+  test_one_shot_not_stopped_by_a_finalize_at_the_wrap();
   test_one_shot_overdubbing_track_stops_cleanly_at_wrap();
   test_one_shot_persists_across_mode_switch_fires_on_first_wrap();
   test_one_shot_wrap_logs_synthetic_stop();

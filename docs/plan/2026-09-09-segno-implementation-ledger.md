@@ -312,3 +312,102 @@ PR #1011 merges.
 Slice 2b: per-track record timing (Immediately / Loop start / grid) and
 overdub decay inheriting from defaults, Loop/Once in every mode, count-in and
 Sound start exclusivity at the engine boundary.
+
+## Slice 2b — Timing ownership (#1012)
+
+Branch: `claude/segno-slice2b-timing-1012`, stacked on slice 2a's branch
+until PR #1013 merges.
+
+### Decisions
+
+- Record timing is one product setting (`RecordTiming`: Immediately, Loop
+  start, bar, 1/2, 1/4, 1/8, 1/16) that the engine's quantize gate and
+  musical division pair into (`RecordTiming.of`). The default is the global
+  gate and division; a track's override sets the engine's per-track gate
+  (existing) and the new per-track division
+  (`le_engine_set_track_quantize_div`), which the audio thread reads live at
+  every boundary check, so two armed tracks can fire on different grids in
+  the same lap. `Track.recordTimingOverride` is the whole setting; the older
+  three-way `quantizeOverride` is a getter over it (the routing dialog's
+  "always" writes the default's own timing when that waits, else the loop
+  top).
+- Overdub decay is a percent (0 = Off keeps every layer whole; 100 replaces
+  the pass); the engine takes `1 - decay / 100` as feedback, by default
+  (existing global) and per track (`le_engine_set_track_overdub_feedback`,
+  negative = inherit). A change during a pass ramps at the write head over
+  the punch fade (about 10 ms) instead of stepping; playback never decays.
+- Once works in all five modes. Free and Song keep the track's own clock
+  wrap; in Multi, Sync and Band a track's lap ends on the shared clock: a
+  k-multiple when the master wraps back to its first segment, a Sync/Band
+  division every base/n frames, a 1x take at the wrap. The check runs before
+  the grid arms fire, so a take finalized at that boundary plays its first
+  lap. A track launched mid-lap in the shared-clock modes stays aligned to the
+  master and stops at the end of the lap it joined; from a held transport the
+  next launch starts at the top. Documented assumption: the accepted text's
+  "subsequent launch starts at the beginning" is read on the shared clock,
+  not as a private restart.
+- Count-in and Sound start already exclude each other in the engine (D9);
+  the repository mirrors it in its re-apply caches, the snapshot now
+  publishes `auto_record`, `quantize` and the feedback coefficients (global
+  and per track) so surfaces and the session capture read what the engine
+  holds, and the two cubits that own the settings persist each other's
+  cleared value and follow the engine's report.
+- Ownership: the defaults (record timing, decay) persist as app settings
+  (`looper.record_timing` is not a new key: the existing gate and division
+  keys stay the source, `looper.overdub_decay` is new); per-track overrides
+  persist per track (`track_record_timing.N`, migrated from the old
+  `track_quantize.N` gate on first read, and `track_overdub_decay.N`). The
+  session manifest captures the defaults like the tempo grid (saved, not
+  applied on load) and captures and restores the per-track overrides with
+  the track, like the length preset.
+- Left to slice 2c: the Length & quantize and Playback & overdub editors
+  (Tracks / Defaults / 1-8 selector), which will replace the boolean quantize
+  toggle and the division picker with one record timing chooser; the
+  existing surfaces keep working on the same engine setting meanwhile.
+
+### Changed ownership
+
+- Engine: `le_engine_set_track_quantize_div`,
+  `le_engine_set_track_overdub_feedback`, `le_live_subdiv_ratio` per track,
+  the per-track boundary loop, `le_one_shot_stop` shared by
+  `advance_track_clock_frame` and `le_shared_clock_one_shots`, the ramped
+  per-track feedback in `mix_tracks_frame`, snapshot fields `quantize`,
+  `auto_record`, `overdub_feedback` and the three per-track overrides.
+- Dart engine: `RecordTiming`, `setTrackQuantizeDiv`,
+  `setTrackOverdubFeedback`, the snapshot fields.
+- Repository: `setRecordTiming`, `setTrackRecordTiming`, `setOverdubDecay`,
+  `setTrackOverdubDecay`, `TransportState.recordTiming/quantize/autoRecord/
+  overdubDecay`, `Track.recordTimingOverride/overdubDecayOverride`, the
+  count-in and Sound start mirror, session apply of the overrides.
+- Session: `Session.recordTiming/overdubDecay`,
+  `SessionTrack.recordTiming/overdubDecay`. Settings: the keys above.
+- App: `LooperTrackRecordTimingChanged`, `LooperTrackOverdubDecayChanged`,
+  `PlaybackOptionsCubit`, the exclusivity in `RecordOptionsCubit` and
+  `TempoCubit`, the boot restore of the overrides and the default decay.
+
+### Checks
+
+- Native: `run_native_tests.sh` 5 suites ALL PASSED, also with
+  `-fsanitize=address` and `-DLE_CALLBACK_TELEMETRY=0`; new tests for the
+  per-track division (own boundary, forced loop top beside a sibling on the
+  global grid, inherit, bounds), the per-track feedback (override, sibling,
+  inherit, the mid-pass ramp), Once in Multi (1x, a 2x multiple enabled
+  mid-lap), a Sync division, and a finalize at the wrap, and the published
+  record start settings with the D9 exclusion.
+- `segno_engine` 242 (field golden extended), `looper_repository` 430,
+  `settings_repository` 138, `session_repository` 84,
+  `performance_repository` 111; root suite and coverage recorded in the PR;
+  analyzers clean in every touched package; `bloc lint` clean; pumped-native
+  and fuzz suites against a hand-built library.
+
+### Not verified here
+
+- Hardware timing of the per-track grids and of the Once stop on the
+  appliance; the design's smoothing wants a listening check on hardware.
+- The accepted editors are slice 2c; nothing in this part changes a screen
+  beyond the routing dialog's three-way now writing a timing override.
+
+### Next step
+
+Slice 2c: the Loop settings hub and its six submenus, Undo/Redo/Clear All
+wiring, goldens, and the pen write-back of any departure.

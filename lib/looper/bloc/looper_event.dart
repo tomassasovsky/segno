@@ -85,17 +85,32 @@ final class LooperVolumeChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, volume];
 }
 
-/// Track [channel]'s quantize override changed: `null` inherits the global
-/// default, `false` forces it off, `true` forces it on.
-final class LooperTrackQuantizeChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackQuantizeChanged].
-  const LooperTrackQuantizeChanged(super.channel, {required this.enabled});
+/// Track [channel]'s record timing override changed (accepted design, Length
+/// & quantize): `null` follows the default, else the timing this track's own
+/// record and overdub requests wait for.
+final class LooperTrackRecordTimingChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackRecordTimingChanged].
+  const LooperTrackRecordTimingChanged(super.channel, {required this.timing});
 
-  /// The override (`null` => inherit the global default).
-  final bool? enabled;
+  /// The override (`null` => follow the default).
+  final RecordTiming? timing;
 
   @override
-  List<Object?> get props => [channel, enabled];
+  List<Object?> get props => [channel, timing];
+}
+
+/// Track [channel]'s overdub decay override changed (accepted design,
+/// Playback & overdub): `null` follows the default, else a percent in
+/// `0..100`.
+final class LooperTrackOverdubDecayChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackOverdubDecayChanged].
+  const LooperTrackOverdubDecayChanged(super.channel, {required this.percent});
+
+  /// The override (`null` => follow the default).
+  final int? percent;
+
+  @override
+  List<Object?> get props => [channel, percent];
 }
 
 /// Track [channel]'s forced loop multiple changed (`0` = auto-round-up).

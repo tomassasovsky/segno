@@ -31,6 +31,10 @@ class TransportState extends Equatable {
     this.primaryTrack = -1,
     this.outputPeak = 0,
     this.recDub = false,
+    this.quantize = false,
+    this.autoRecord = false,
+    this.overdubDecay = 0,
+    this.recordTiming = RecordTiming.immediately,
   });
 
   /// Whether the audio device is open and processing.
@@ -109,6 +113,30 @@ class TransportState extends Equatable {
   /// than PLAYING — what a queued take-end will do.
   final bool recDub;
 
+  /// The default record quantize gate the repository holds and re-applies:
+  /// whether a record or overdub request over an existing loop waits for the
+  /// grid at all. With [quantizeDiv] it names the default [recordTiming].
+  final bool quantize;
+
+  /// Whether recording starts on sound at the input (Sound start) rather
+  /// than on the press. Read from the engine, which clears it when a
+  /// count-in is set and clears the count-in when it is set (D9), so this
+  /// and [countInBars] never both read on.
+  final bool autoRecord;
+
+  /// The default overdub decay in percent (`0..100`): what each overdub pass
+  /// removes from the existing layer before adding the new input; `0` keeps
+  /// it all. Tracks inherit it unless they carry
+  /// `Track.overdubDecayOverride`.
+  final int overdubDecay;
+
+  /// The default record timing the repository holds and re-applies
+  /// (accepted design, Length & quantize): the one setting [quantize] and the
+  /// division pair into. Held beside [quantizeDiv] (the engine's live
+  /// division) rather than derived from it, so it reads right while the
+  /// engine is stopped and has nothing to report.
+  final RecordTiming recordTiming;
+
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 
@@ -139,5 +167,9 @@ class TransportState extends Equatable {
     primaryTrack,
     outputPeak,
     recDub,
+    quantize,
+    autoRecord,
+    overdubDecay,
+    recordTiming,
   ];
 }

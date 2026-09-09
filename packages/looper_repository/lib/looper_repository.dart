@@ -20,6 +20,7 @@ export 'package:segno_engine/segno_engine.dart'
         LooperMode,
         LooperModeGate,
         PluginScanProgress,
+        RecordTiming,
         TempoSource,
         TrackState,
         kMaxLanes,

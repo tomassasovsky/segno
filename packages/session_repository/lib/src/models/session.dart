@@ -160,6 +160,8 @@ class SessionTrack {
     required this.lanes,
     this.lengthPresetBars = 0,
     this.oneShot = false,
+    this.recordTiming,
+    this.overdubDecay,
   });
 
   /// Projects a [SessionTrack] from a decoded JSON map.
@@ -218,6 +220,8 @@ class SessionTrack {
       lanes: lanes,
       lengthPresetBars: (json['lengthPresetBars'] as num?)?.toInt() ?? 0,
       oneShot: json['oneShot'] as bool? ?? false,
+      recordTiming: RecordTiming.fromName(json['recordTiming'] as String?),
+      overdubDecay: (json['overdubDecay'] as num?)?.toInt(),
     );
   }
 
@@ -250,6 +254,15 @@ class SessionTrack {
   /// Default `false` (today's only behavior pre-B5c).
   final bool oneShot;
 
+  /// This track's record timing override (accepted design, slice 2b) by
+  /// name; `null` (or absent, on an older manifest) = follows the session's
+  /// default. Restored on load like [lengthPresetBars].
+  final RecordTiming? recordTiming;
+
+  /// This track's overdub decay override in percent (`0..100`, slice 2b);
+  /// `null` (or absent) = follows the session's default. Restored on load.
+  final int? overdubDecay;
+
   /// Serializes this track to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
@@ -258,6 +271,8 @@ class SessionTrack {
     'lanes': [for (final l in lanes) l.toJson()],
     'lengthPresetBars': lengthPresetBars,
     'oneShot': oneShot,
+    if (recordTiming != null) 'recordTiming': recordTiming!.name,
+    if (overdubDecay != null) 'overdubDecay': overdubDecay,
   };
 
   @override
@@ -270,6 +285,8 @@ class SessionTrack {
           lengthFrames == other.lengthFrames &&
           lengthPresetBars == other.lengthPresetBars &&
           oneShot == other.oneShot &&
+          recordTiming == other.recordTiming &&
+          overdubDecay == other.overdubDecay &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -279,6 +296,8 @@ class SessionTrack {
     lengthFrames,
     lengthPresetBars,
     oneShot,
+    recordTiming,
+    overdubDecay,
     Object.hashAll(lanes),
   );
 }
@@ -554,6 +573,8 @@ class Session {
     this.tsNum = 4,
     this.tsDen = 4,
     this.quantizeDiv = GridDivision.off,
+    this.recordTiming = RecordTiming.immediately,
+    this.overdubDecay = 0,
     this.clickMode = ClickMode.off,
     this.clickOutputMask = 0,
     this.clickVolume = 1,
@@ -612,6 +633,10 @@ class Session {
       tsNum: (json['tsNum'] as num?)?.toInt() ?? 4,
       tsDen: (json['tsDen'] as num?)?.toInt() ?? 4,
       quantizeDiv: _gridDivisionFromJson(json['quantizeDiv'] as String?),
+      recordTiming:
+          RecordTiming.fromName(json['recordTiming'] as String?) ??
+          RecordTiming.immediately,
+      overdubDecay: (json['overdubDecay'] as num?)?.toInt() ?? 0,
       clickMode: _clickModeFromJson(json['clickMode'] as String?),
       clickOutputMask: (json['clickOutputMask'] as num?)?.toInt() ?? 0,
       clickVolume: (json['clickVolume'] as num?)?.toDouble() ?? 1,
@@ -699,6 +724,17 @@ class Session {
   /// [GridDivision.off]).
   final GridDivision quantizeDiv;
 
+  /// The session's default record timing (accepted design, slice 2b): the
+  /// engine's quantize gate and [quantizeDiv] as the one setting they pair
+  /// into. Captured on save like the tempo-grid fields; absent on an older
+  /// manifest reads [RecordTiming.immediately].
+  final RecordTiming recordTiming;
+
+  /// The session's default overdub decay in percent (`0..100`, slice 2b);
+  /// `0` keeps every layer whole. Captured on save like the tempo-grid
+  /// fields.
+  final int overdubDecay;
+
   /// Click audibility mode (schema v4, Phase A; default [ClickMode.off]).
   /// The richer 4-value replacement for the index plan ERD's `metronomeOn`
   /// sketch — see the class doc.
@@ -767,6 +803,8 @@ class Session {
     'tsNum': tsNum,
     'tsDen': tsDen,
     'quantizeDiv': quantizeDiv.name,
+    'recordTiming': recordTiming.name,
+    'overdubDecay': overdubDecay,
     'clickMode': clickMode.name,
     'clickOutputMask': clickOutputMask,
     'clickVolume': clickVolume,
@@ -790,6 +828,8 @@ class Session {
           tsNum == other.tsNum &&
           tsDen == other.tsDen &&
           quantizeDiv == other.quantizeDiv &&
+          recordTiming == other.recordTiming &&
+          overdubDecay == other.overdubDecay &&
           clickMode == other.clickMode &&
           clickOutputMask == other.clickOutputMask &&
           clickVolume == other.clickVolume &&
@@ -816,6 +856,8 @@ class Session {
     tsNum,
     tsDen,
     quantizeDiv,
+    recordTiming,
+    overdubDecay,
     clickMode,
     clickOutputMask,
     clickVolume,
