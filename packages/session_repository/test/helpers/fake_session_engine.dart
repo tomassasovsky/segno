@@ -7,6 +7,7 @@ class _FakeLane {
   int outputMask = 0x3;
   double volume = 1;
   bool muted = false;
+  double pan = 0;
 
   /// Ordinal-ordered layer buffers (undo… live … redo). Its length matches the
   /// owning track's `undoDepth + 1 + redoDepth`; a single-layer lane holds just
@@ -20,6 +21,7 @@ class _FakeTrack {
   int lengthFrames = 0;
   int undoDepth = 0;
   int redoDepth = 0;
+  bool solo = false;
   final List<_FakeLane> lanes = [_FakeLane()];
 
   int get liveIndex => undoDepth;
@@ -206,6 +208,7 @@ class FakeSessionEngine implements AudioEngine {
           quantizeDivOverride: quantizeDivOverride[i],
           overdubFeedbackOverride: overdubFeedbackOverride[i],
           layerInFlight: i == 0 && _consumeInFlightPoll(),
+          solo: t.solo,
           lanes: [
             for (final lane in t.lanes)
               LaneSnapshot(
@@ -213,6 +216,7 @@ class FakeSessionEngine implements AudioEngine {
                 outputMask: lane.outputMask,
                 volume: lane.volume,
                 muted: lane.muted,
+                pan: lane.pan,
                 lengthFrames: t.lengthFrames,
                 rms: 0,
                 peak: 0,
@@ -341,6 +345,30 @@ class FakeSessionEngine implements AudioEngine {
     _tracks[channel].muted = muted;
     return EngineResult.ok;
   }
+
+  @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    final track = _tracks[channel];
+    while (track.lanes.length <= lane) {
+      track.lanes.add(_FakeLane());
+    }
+    track.lanes[lane].pan = pan;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    _tracks[channel].solo = solo;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) =>
+      EngineResult.ok;
 
   // ---- unused by SessionRepository: inert defaults ----
   @override
@@ -578,6 +606,11 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setMonitorInputMute({
     required int input,
     required bool muted,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorInputPan({
+    required int input,
+    required double pan,
   }) => EngineResult.ok;
   @override
   EngineResult setInputConditioningEnabled({

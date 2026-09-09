@@ -226,6 +226,11 @@ Future<AutoStartResult> tryAutoStartEngine({
     if (once != null) {
       repository.setTrackOnce(channel: track.channel, once: once);
     }
+    // The track's Mixer pan (slice 3); centre needs no call.
+    final pan = await settings.loadTrackPan(track.channel);
+    if (pan != 0) {
+      repository.setTrackPan(pan, channel: track.channel);
+    }
     // Restore the saved lane count first so the engine allocates the added
     // lanes before they are configured below.
     final laneCount = await settings.loadLaneCount(track.channel);
@@ -367,6 +372,31 @@ Future<AutoStartResult> tryAutoStartEngine({
     if (enabled == false) {
       repository.setOutputEnabled(output: output, enabled: false);
     }
+  }
+
+  // Restore the per-input capture setup (slice 3): trims, pans and pairs.
+  // Keyed to the OPEN device like the output gate above. Pans first, then
+  // the pairs: linking keeps a member's own pan for a later unlink. The
+  // repository remembers each value and pushes it to the engine now, so a
+  // session load later replaces it wholesale the way it replaces the rest.
+  // Bounded by the device's input count; when the status does not report
+  // one, by the same ceiling the monitor reapply scans.
+  final inputSetup = await settings.loadInputSetup(
+    device: status.deviceName,
+    inputCount: status.inputChannels > 0
+        ? status.inputChannels
+        : kMaxMonitoredInputs,
+  );
+  for (final entry in inputSetup.trimDb.entries) {
+    repository.setInputTrimDb(input: entry.key, db: entry.value);
+  }
+  for (final entry in inputSetup.pan.entries) {
+    repository.setInputPan(input: entry.key, pan: entry.value);
+  }
+  for (final entry in inputSetup.pairs.entries) {
+    repository
+      ..setInputPair(input: entry.key, paired: true)
+      ..setPairBalance(input: entry.key, balance: entry.value);
   }
 
   // Per-input live monitors are restored by MonitorCubit.load() (the shell

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -402,6 +403,85 @@ void main() {
 
       expect(bundle.session.looperMode, LooperMode.sync);
       expect(bundle.session.primaryTrack, 1);
+    },
+  );
+
+  test(
+    'save then read round-trips the mix (slice 3): each lane persists its '
+    'recorded image with the track pan taken back out, the track pan rides '
+    'the track, and the input setup rides the session',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..seedLane(0, 1, Float32List.fromList([2, 2, 2, 2]), inputChannel: 2)
+        ..seedTrack(1, Float32List.fromList([1, 1, 1, 1]))
+        // What the engine holds is the image PLUS the track pan (clamped):
+        // lane 0 recorded hard left (-1) under a track pan of 0.25, lane 1
+        // recorded at -0.5 under the same track pan; track 1 is at centre.
+        ..setLanePan(pan: -0.75)
+        ..setLanePan(pan: -0.25, lane: 1)
+        ..setLanePan(pan: 0.5, channel: 1);
+      final dir = '${tempDir.path}/mix';
+      await repoFor(source).save(
+        dir,
+        loopSettings: const SessionLoopSettings(
+          trackPans: {0: 0.25},
+          inputSetup: SessionInputSetup(
+            trimDb: {0: -6},
+            pan: {2: -0.5},
+            pairs: {0: 0.2},
+          ),
+        ),
+      );
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      final track0 = bundle.session.tracks[0];
+      expect(track0.pan, 0.25);
+      expect(track0.lanes[0].pan, -1);
+      expect(track0.lanes[1].pan, -0.5);
+      final track1 = bundle.session.tracks[1];
+      expect(track1.pan, 0);
+      expect(track1.lanes[0].pan, 0.5);
+      expect(bundle.session.inputSetup.trimDb, {0: -6.0});
+      expect(bundle.session.inputSetup.pan, {2: -0.5});
+      expect(bundle.session.inputSetup.pairs, {0: 0.2});
+    },
+  );
+
+  test(
+    'a lane the track pan pushed into the clamp comes back as far from '
+    'centre as it still plays, and a rig with every pan at centre writes no '
+    'mix keys',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        // Image 0.5 plus a track pan of 0.8 clamps to 1 in the engine.
+        ..setLanePan(pan: 1);
+      final dir = '${tempDir.path}/clamped';
+      await repoFor(source).save(
+        dir,
+        loopSettings: const SessionLoopSettings(trackPans: {0: 0.8}),
+      );
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.tracks.single.lanes.single.pan, closeTo(0.2, 1e-9));
+
+      final plainDir = '${tempDir.path}/centred';
+      final plain = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      await repoFor(plain).save(plainDir);
+      final manifest =
+          jsonDecode(
+                await File(
+                  '$plainDir/${Session.manifestName}',
+                ).readAsString(),
+              )
+              as Map<String, dynamic>;
+      expect(manifest.containsKey('inputSetup'), isFalse);
+      final track = (manifest['tracks'] as List).single;
+      expect((track as Map<String, dynamic>).containsKey('pan'), isFalse);
+      final lane = (track['lanes'] as List).single;
+      expect((lane as Map<String, dynamic>).containsKey('pan'), isFalse);
     },
   );
 

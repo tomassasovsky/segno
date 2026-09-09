@@ -465,6 +465,18 @@ typedef enum le_command_code {
    * immediately (LE_CMD_REDO_FROM_EMPTY). LE_EVT_TAKE_CANCELLED carries the
    * finalized length back so the control thread can file the redo entry. */
   LE_CMD_CANCEL_TAKE = 57,
+  /* Lane pan (accepted design, slice 3). lanef arm: channel, lane, value in
+   * -1..1 (clamped). Placement of the lane's stereo pair across its first two
+   * masked outputs, applied after the lane's chain: a unity-centre balance
+   * law (see le_engine_set_lane_pan). Perf-logged like volume. */
+  LE_CMD_SET_LANE_PAN = 58,
+  /* Track solo. Generic arm: arg_i = channel, arg_f != 0 = soloed. While any
+   * track is soloed, only soloed tracks route (mute is untouched and still
+   * gates on its own). Perf-logged. */
+  LE_CMD_SET_TRACK_SOLO = 59,
+  /* Monitor pan. lanef arm: channel = input, value in -1..1. The monitor
+   * mirror of LE_CMD_SET_LANE_PAN. Perf-logged. */
+  LE_CMD_SET_MONITOR_INPUT_PAN = 60,
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -601,18 +613,13 @@ typedef struct le_config {
  * Bounds the per-input monitor array (le_engine_set_monitor_input and friends)
  * and the per-input capture rings beside it.
  *
- * A DISTINCT bound from LE_MAX_LANES, which is the reason this name exists: an
- * input past it can still be RECORDED (le_engine_set_lane_input accepts any
- * in-range channel), it simply cannot be monitored. A rig on an 18-in
- * interface records channel 18 exactly as well as channel 1; only the monitor
- * path stops short.
- *
- * Its own literal, not an alias: it merely HAPPENS to equal LE_MAX_LANES
- * today. As an alias, raising the lane ceiling would silently grow the monitor
- * array (each le_monitor_input embeds a whole le_fx_state) and every
- * per-buffer monitor array in le_engine_process — the one-number-two-meanings
- * this constant was split to end. */
-#define LE_MAX_MONITORED_INPUTS 8
+ * Every hardware input the engine can open can be monitored (accepted
+ * design, slice 3: an 18-input interface monitors channel 18 exactly as
+ * well as channel 1), so this is LE_MAX_CHANNELS. It stays a distinct name
+ * from LE_MAX_LANES, which bounds a different thing (lanes per track), and
+ * the monitor arrays are sized by it, never by the lane ceiling. Each
+ * le_monitor_input is about 3.3 KB, so 32 of them cost ~106 KB. */
+#define LE_MAX_MONITORED_INPUTS LE_MAX_CHANNELS
 
 /* ---- Input clip ("HOT") detector (input clip, S2) ---- *
  * Always on, no parameters, RAW path: LE_CLIP_RUN or more CONSECUTIVE samples
@@ -631,6 +638,10 @@ typedef struct le_config {
  * UI can boost a quiet take/input up to +6 dB rather than only attenuate from
  * unity (1.0 = 0 dB). The output limiter downstream still guards the bus. */
 #define LE_MAX_GAIN 2.0f
+
+/* Ceiling of le_engine_set_input_trim's linear capture gain: +12 dB. The
+ * accepted range is -24..+12 dB in half-decibel steps; the floor is 0. */
+#define LE_MAX_INPUT_TRIM 3.98107170553f
 
 /* Number of points in the loop visualization buffer (le_engine_read_visual):
  * one peak per loop position, spanning exactly one master loop. */
@@ -656,6 +667,9 @@ typedef struct le_lane_snapshot {
    * whether a specific lane's slot is safe to reclaim. Drops to 0 only once
    * nothing on the lane can come back. */
   int32_t recoverable;
+  /* Trailing (accepted design, slice 3): the lane's pan, -1 (left) .. 1
+   * (right), 0 centre — see le_engine_set_lane_pan. */
+  float pan;
 } le_lane_snapshot;
 
 /* Per-track state published in le_snapshot.tracks.
@@ -747,6 +761,14 @@ typedef struct le_track_snapshot {
                                   * (le_engine_set_track_quantize_div) */
   float overdub_feedback_override; /* negative = inherit, else 0..1
                                     * (le_engine_set_track_overdub_feedback) */
+  /* Trailing (accepted design, slice 3): the Mixer's per-track facts. */
+  int32_t solo; /* 0/1 — le_engine_set_track_solo; independent of muted */
+  /* The track's absolute peak per side over the most recent block, 0..1,
+   * read AFTER volume, pan and the track's chain (what the track sends to
+   * the outputs), before the master bus. 0 while nothing routes. Unlike
+   * `peak` above (the dry loop content), these follow the fader. */
+  float peak_l;
+  float peak_r;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1111,6 +1133,20 @@ typedef struct le_snapshot {
   int32_t quantize;    /* 0/1: the global loop-grid record quantize gate */
   int32_t auto_record; /* 0/1: sound-activated record start */
   float overdub_feedback; /* the global coefficient, 0..1 (default 1) */
+  /* ---- per-channel meters and capture trim (accepted design, slice 3;
+   * trailing). Peaks are absolute, 0..1, over the most recent block.
+   * input_peaks[c] is input c's RAW device level (before conditioning and
+   * trim, like input_clip_mask, so a hot ADC reads hot however the trim is
+   * set); monitor_peaks[c] is what input c's monitor sends to the outputs
+   * (after its chain, gain and pan; 0 while it is off or muted);
+   * output_peaks[c] is output c after the master gain and limiter.
+   * input_trim[c] is the capture gain le_engine_set_input_trim holds
+   * (linear, default 1). Indexed by hardware channel; entries past the
+   * device's channel count read 0 (trim 1). */
+  float input_peaks[LE_MAX_CHANNELS];
+  float monitor_peaks[LE_MAX_CHANNELS];
+  float output_peaks[LE_MAX_CHANNELS];
+  float input_trim[LE_MAX_CHANNELS];
   /* NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
    * le_callback_telemetry and le_engine_get_callback_telemetry. */
 } le_snapshot;
@@ -1567,6 +1603,42 @@ LE_EXPORT int32_t le_engine_set_lane_volume(le_engine* engine, int32_t channel,
 /* Mutes or unmutes lane [lane] of track [channel]. */
 LE_EXPORT int32_t le_engine_set_lane_mute(le_engine* engine, int32_t channel,
                                           int32_t lane, int32_t muted);
+
+/* Sets lane [lane] of track [channel]'s pan, -1 (left) .. 1 (right), 0 centre
+ * (accepted design, slice 3). A lane's output is a stereo pair (mono content
+ * reads as an equal pair until a stereo effect spreads it); the pan scales
+ * that pair before le_fx_route places it, with a unity-centre balance law:
+ * the near side stays at unity and the far side falls on a quarter-sine
+ * (left = cos(max(pan, 0) * pi/2), right = cos(max(-pan, 0) * pi/2)). Centre
+ * is therefore bit-identical to an unpanned lane, and hard left is the left
+ * output alone. A single masked output receives the (l + r) / 2 mid as
+ * before, so pan on a mono route is a plain attenuation. Applied on the
+ * legacy per-lane route and on the summed track bus alike; the loop-stage
+ * wet cache stores the unpanned render, so a pan change never invalidates
+ * it. Reset to centre by (re)configure, like volume; remembered and
+ * re-applied by the caller. */
+LE_EXPORT int32_t le_engine_set_lane_pan(le_engine* engine, int32_t channel,
+                                         int32_t lane, float pan);
+
+/* Solos or un-solos track [channel] (accepted design, slice 3). While any
+ * track is soloed, only soloed tracks route to the outputs; every other
+ * track's lanes keep playing (their chains keep running, their meters keep
+ * reading the dry content) but route nothing, exactly as a muted lane does.
+ * Independent of mute: a soloed muted track is still silent, and clearing
+ * every solo leaves the mutes as they were. Monitors are not tracks and are
+ * unaffected. Reset by (re)configure. */
+LE_EXPORT int32_t le_engine_set_track_solo(le_engine* engine, int32_t channel,
+                                           int32_t solo);
+
+/* Sets hardware input [input]'s capture trim (accepted design, slice 3):
+ * a linear gain, default 1, applied to the sample a lane RECORDS from that
+ * input and to nothing else — the monitor path, the input meters, the clip
+ * detector, the sound-activated trigger and the tuner all read the
+ * untrimmed conditioned input. Clamped to 0..LE_MAX_INPUT_TRIM. Takes
+ * effect on the next block (a direct store, so it works while stopped);
+ * reset to 1 by (re)configure. */
+LE_EXPORT int32_t le_engine_set_input_trim(le_engine* engine, int32_t input,
+                                           float gain);
 
 /* Copies lane [lane] of track [channel]'s snapshot into *out. Out-of-range
  * channels/lanes yield an empty lane. No-op if either pointer is NULL. */
@@ -2065,6 +2137,12 @@ LE_EXPORT int32_t le_engine_set_monitor_input_volume(le_engine* engine,
 /* Mutes or unmutes hardware input [input]'s monitor. */
 LE_EXPORT int32_t le_engine_set_monitor_input_mute(le_engine* engine,
                                                    int32_t input, int32_t muted);
+
+/* Sets hardware input [input]'s monitor pan, -1..1 (accepted design, slice
+ * 3): the same unity-centre balance law as le_engine_set_lane_pan, applied
+ * to the monitor's stereo pair after its chain and gain. */
+LE_EXPORT int32_t le_engine_set_monitor_input_pan(le_engine* engine,
+                                                  int32_t input, float pan);
 
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on hardware input [input]'s monitor
  * chain to [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY

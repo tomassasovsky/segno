@@ -212,6 +212,50 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-(channel, lane) pan passed to [setLanePan].
+  final Map<(int, int), double> lanePan = {};
+
+  @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    lanePan[(channel, lane)] = pan;
+    calls.add('setLanePan');
+    return EngineResult.ok;
+  }
+
+  /// Per-track solo passed to [setTrackSolo].
+  final Map<int, bool> trackSolo = {};
+
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    trackSolo[channel] = solo;
+    calls.add('setTrackSolo');
+    return EngineResult.ok;
+  }
+
+  /// Per-input capture trim passed to [setInputTrim].
+  final Map<int, double> inputTrim = {};
+
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) {
+    inputTrim[input] = gain;
+    calls.add('setInputTrim');
+    return EngineResult.ok;
+  }
+
+  /// Per-input monitor pan passed to [setMonitorInputPan].
+  final Map<int, double> monitorPan = {};
+
+  @override
+  EngineResult setMonitorInputPan({required int input, required double pan}) {
+    monitorPan[input] = pan;
+    calls.add('setMonitorInputPan');
+    return EngineResult.ok;
+  }
+
   /// Per-(channel, lane) recorded input channel passed to [setLaneInput].
   final Map<(int, int), int> laneInput = {};
 

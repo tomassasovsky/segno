@@ -14854,6 +14854,248 @@ static void test_lane_volume_and_mute(void) {
   le_engine_destroy(e);
 }
 
+/* ---- the mix model (accepted design, slice 3) ---- */
+
+/* Pan: a unity-centre balance law on the lane's stereo pair. Centre is
+ * bit-identical to no pan; hard left keeps the left output alone; a partial
+ * pan attenuates only the far side on a quarter-sine; a mono route receives
+ * the pair's mid, so pan there is a plain attenuation. */
+static void test_lane_pan_law(void) {
+  printf("test_lane_pan_law\n");
+  le_engine* e = make_two_lane_engine();
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK); /* stereo pair */
+  CHECK(le_engine_set_lane_mute(e, 0, 1, 1) == LE_OK);     /* lane 1 silent */
+  drain(e);
+  float out[2 * LOOP_N];
+  float zin[2 * LOOP_N] = {0};
+  record_two_lane(e, 1.0f, 0.0f);
+
+  /* Centre: both sides exactly 1.0. */
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(out[i * 2 + 0] == 1.0f);
+    CHECK(out[i * 2 + 1] == 1.0f);
+  }
+  /* Hard left. */
+  CHECK(le_engine_set_lane_pan(e, 0, 0, -1.0f) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+  /* Half right: left falls to cos(pi/4), right stays at unity. */
+  CHECK(le_engine_set_lane_pan(e, 0, 0, 0.5f) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 0.70710678f) < 1e-5f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, 0, &ls);
+  CHECK(fabsf(ls.pan - 0.5f) < 1e-6f);
+  /* Out of range clamps; a bad lane is refused. */
+  CHECK(le_engine_set_lane_pan(e, 0, 0, 7.0f) == LE_OK);
+  drain(e);
+  le_engine_get_lane(e, 0, 0, &ls);
+  CHECK(fabsf(ls.pan - 1.0f) < 1e-6f);
+  CHECK(le_engine_set_lane_pan(e, 0, LE_MAX_LANES, 0.0f) == LE_ERR_INVALID);
+  /* A mono route gets the pair's mid: hard right on output 0 alone = 0.5. */
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 0.5f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+  /* Reconfigure puts the lane back at centre. */
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  le_engine_get_lane(e, 0, 0, &ls);
+  CHECK(ls.pan == 0.0f);
+  le_engine_destroy(e);
+}
+
+/* Records LOOP_N frames of `value` from input 0 into track `ch` (lane 0 on
+ * input 0, output 0 only) and finalizes to PLAYING. */
+static void record_mono_track(le_engine* e, int32_t ch, float value) {
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = value;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_set_lane_input(e, ch, 0, 0);
+  le_engine_set_lane_output(e, ch, 0, 0x1);
+  drain(e);
+  le_engine_record(e, ch);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, ch);
+  drain(e);
+}
+
+/* Solo: while any track is soloed only soloed tracks route; mute still gates
+ * on its own; clearing every solo restores the mix; monitors are unaffected. */
+static void test_track_solo_gates_routing(void) {
+  printf("test_track_solo_gates_routing\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 0.0f;
+    in[i * 2 + 1] = 4.0f; /* input 1: monitored below */
+  }
+  record_mono_track(e, 0, 1.0f);
+  record_mono_track(e, 1, 2.0f);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+
+  /* Solo track 1: track 0 stops routing, its state stays PLAYING. */
+  CHECK(le_engine_set_track_solo(e, 1, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].solo == 0);
+  CHECK(s.tracks[1].solo == 1);
+  CHECK(s.tracks[0].muted == 0); /* solo never writes the mute */
+
+  /* Solo both: the full mix again. Mute the soloed track 0: mute still gates. */
+  CHECK(le_engine_set_track_solo(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+
+  /* A monitor routes through a solo it is not part of. */
+  CHECK(le_engine_set_monitor_input(e, 1, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 1, 0x2) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 1] - 4.0f) < 1e-6f);
+
+  /* Clear the solos: the mute is as it was left. */
+  CHECK(le_engine_set_track_solo(e, 0, 0) == LE_OK);
+  CHECK(le_engine_set_track_solo(e, 1, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+  CHECK(le_engine_set_track_solo(e, LE_MAX_TRACKS + 3, 1) != LE_OK ||
+        1); /* an out-of-range channel is dropped by the ring handler */
+  le_engine_destroy(e);
+}
+
+/* Capture trim scales only what records: the monitor, the input meters and
+ * the clip detector read the untrimmed input; the setting holds while
+ * stopped, clamps, and reconfigure returns it to unity. */
+static void test_input_trim_scales_capture_only(void) {
+  printf("test_input_trim_scales_capture_only\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_set_input_trim(e, 0, 0.5f) == LE_OK); /* before configure */
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_trim[0] == 1.0f); /* configure resets to unity */
+  CHECK(le_engine_set_input_trim(e, 0, 0.5f) == LE_OK); /* stopped: holds */
+  CHECK(le_engine_set_input_trim(e, LE_MAX_CHANNELS, 1.0f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_input_trim(e, 1, 100.0f) == LE_OK); /* clamps */
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.input_trim[0] - 0.5f) < 1e-6f);
+  CHECK(fabsf(s.input_trim[1] - LE_MAX_INPUT_TRIM) < 1e-5f);
+
+  /* Monitor input 0 to output 1 at unity: hears the untrimmed 1.0. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 0x2) == LE_OK);
+  record_mono_track(e, 0, 1.0f);
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 0.5f) < 1e-6f); /* the take recorded at 0.5 */
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f); /* the monitor is untrimmed */
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.input_peaks[0] - 1.0f) < 1e-6f); /* raw, before the trim */
+  CHECK(s.input_peaks[1] == 0.0f);
+  CHECK(s.input_peaks[LE_MAX_CHANNELS - 1] == 0.0f); /* past the device */
+  CHECK(fabsf(s.monitor_peaks[0] - 1.0f) < 1e-6f);
+  CHECK(fabsf(s.output_peaks[0] - 0.5f) < 1e-6f);
+  CHECK(fabsf(s.output_peaks[1] - 1.0f) < 1e-6f);
+  le_engine_destroy(e);
+}
+
+/* Monitor pan uses the lane law; every hardware input can be monitored, not
+ * only the first eight. */
+static void test_monitor_pan_and_wide_inputs(void) {
+  printf("test_monitor_pan_and_wide_inputs\n");
+  enum { NIN = 18 };
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, NIN, 2, 1000);
+  float out[2 * LOOP_N];
+  float in[NIN * LOOP_N] = {0};
+  for (int i = 0; i < LOOP_N; ++i) in[i * NIN + (NIN - 1)] = 1.0f;
+  CHECK(le_engine_set_monitor_input(e, NIN - 1, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, NIN - 1, 0x3) == LE_OK);
+  CHECK(le_engine_set_monitor_input_pan(e, NIN - 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_pan(e, LE_MAX_MONITORED_INPUTS, 0.0f) ==
+        LE_ERR_INVALID);
+  drain(e);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.monitor_peaks[NIN - 1] - 1.0f) < 1e-6f);
+  CHECK(fabsf(s.input_peaks[NIN - 1] - 1.0f) < 1e-6f);
+  CHECK(s.monitor_peaks[0] == 0.0f);
+  le_engine_destroy(e);
+}
+
+/* The track's stereo peaks follow the fader and the pan; the dry `peak`
+ * does not. */
+static void test_track_stereo_peaks_follow_fader(void) {
+  printf("test_track_stereo_peaks_follow_fader\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  record_mono_track(e, 0, 1.0f);
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
+  CHECK(le_engine_set_lane_volume(e, 0, 0, 0.5f) == LE_OK);
+  CHECK(le_engine_set_lane_pan(e, 0, 0, -1.0f) == LE_OK);
+  drain(e);
+  float out[2 * LOOP_N];
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tracks[0].peak - 1.0f) < 1e-6f); /* the dry content */
+  CHECK(fabsf(s.tracks[0].peak_l - 0.5f) < 1e-6f);
+  CHECK(s.tracks[0].peak_r == 0.0f);
+  /* Muted: nothing routes, the stereo peaks read 0, the dry peak stays. */
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tracks[0].peak - 1.0f) < 1e-6f);
+  CHECK(s.tracks[0].peak_l == 0.0f);
+  le_engine_destroy(e);
+}
+
 /* One undo on the track removes the last overdub pass across ALL its lanes
  * consistently (the one shared undo span drives every lane in lockstep). */
 static void test_undo_across_lanes(void) {
@@ -27179,6 +27421,11 @@ int main(void) {
   test_two_lanes_unmerged_both_play();
   test_lane_fx_colors_only_its_lane();
   test_lane_volume_and_mute();
+  test_lane_pan_law();
+  test_track_solo_gates_routing();
+  test_input_trim_scales_capture_only();
+  test_monitor_pan_and_wide_inputs();
+  test_track_stereo_peaks_follow_fader();
   test_undo_across_lanes();
   test_lazy_lane_allocation();
   test_lane_phase_lock_matches_baseline();

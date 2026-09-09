@@ -390,6 +390,143 @@ void main() {
       expect(lane.outputMask, 0x40);
     });
 
+    group('Mixer facts (slice 3)', () {
+      test('ring-backed setters require the engine to be running', () {
+        expect(engine.setLanePan(pan: 0.5), EngineResult.notRunning);
+        expect(
+          engine.setTrackSolo(channel: 0, solo: true),
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setMonitorInputPan(input: 0, pan: 0.5),
+          EngineResult.notRunning,
+        );
+      });
+
+      test('setLanePan surfaces per lane in the snapshot, clamped', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setLaneCount(channel: 1, count: 2)
+          ..setLanePan(pan: -0.5, channel: 1)
+          ..setLanePan(pan: 7, channel: 1, lane: 1);
+
+        final lanes = engine.snapshot().tracks[1].lanes;
+        expect(lanes[0].pan, closeTo(-0.5, 1e-9));
+        expect(lanes[1].pan, 1);
+        // Untouched lanes stay centred.
+        expect(engine.snapshot().tracks[0].lanes.first.pan, 0);
+      });
+
+      test('setLanePan rejects an out-of-range channel or lane', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.setLanePan(pan: 0, channel: -1), EngineResult.invalid);
+        expect(engine.setLanePan(pan: 0, channel: 99), EngineResult.invalid);
+        expect(engine.setLanePan(pan: 0, lane: -1), EngineResult.invalid);
+        expect(
+          engine.setLanePan(pan: 0, lane: kMaxLanes),
+          EngineResult.invalid,
+        );
+      });
+
+      test('setTrackSolo surfaces per track, independent of mute', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setLaneMute(muted: true, channel: 2)
+          ..setTrackSolo(channel: 2, solo: true);
+
+        var tracks = engine.snapshot().tracks;
+        expect(tracks[2].solo, isTrue);
+        expect(tracks[2].muted, isTrue);
+        expect(tracks[0].solo, isFalse);
+
+        engine.setTrackSolo(channel: 2, solo: false);
+        tracks = engine.snapshot().tracks;
+        expect(tracks[2].solo, isFalse);
+        expect(tracks[2].muted, isTrue, reason: 'un-solo leaves mute alone');
+      });
+
+      test('setTrackSolo rejects an out-of-range channel', () {
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setTrackSolo(channel: -1, solo: true),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackSolo(channel: 99, solo: true),
+          EngineResult.invalid,
+        );
+      });
+
+      test('setInputTrim works while stopped and surfaces in the snapshot', () {
+        // Direct-store contract: no start() needed.
+        expect(engine.setInputTrim(input: 3, gain: 2), EngineResult.ok);
+        expect(engine.snapshot().inputTrim[3], closeTo(2, 1e-9));
+        expect(engine.snapshot().inputTrim[0], 1, reason: 'default unity');
+        expect(engine.snapshot().inputTrim, hasLength(kMaxChannels));
+
+        // ...and it holds across a start.
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().inputTrim[3], closeTo(2, 1e-9));
+      });
+
+      test('setInputTrim clamps to 0..+12 dB and lands NaN on silence', () {
+        engine
+          ..setInputTrim(input: 0, gain: 100)
+          ..setInputTrim(input: 1, gain: -3)
+          ..setInputTrim(input: 2, gain: double.nan);
+        final trim = engine.snapshot().inputTrim;
+        expect(trim[0], closeTo(3.98107, 1e-4));
+        expect(trim[1], 0);
+        expect(trim[2], 0);
+      });
+
+      test('setInputTrim rejects an out-of-range input', () {
+        expect(
+          engine.setInputTrim(input: -1, gain: 1),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setInputTrim(input: kMaxChannels, gain: 1),
+          EngineResult.invalid,
+        );
+      });
+
+      test('setMonitorInputPan round-trips, clamped, per input', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setMonitorInputPan(input: 4, pan: 0.25)
+          ..setMonitorInputPan(input: 17, pan: -9);
+        expect(engine.monitorInputPan(input: 4), closeTo(0.25, 1e-9));
+        expect(engine.monitorInputPan(input: 17), -1);
+        expect(engine.monitorInputPan(input: 0), 0);
+      });
+
+      test('setMonitorInputPan rejects an out-of-range input', () {
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setMonitorInputPan(input: -1, pan: 0),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setMonitorInputPan(input: kMaxMonitoredInputs, pan: 0),
+          EngineResult.invalid,
+        );
+        expect(engine.monitorInputPan(input: -1), 0);
+      });
+
+      test('the mock meters nothing', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setTrackSolo(channel: 0, solo: true);
+        final snapshot = engine.snapshot();
+        expect(snapshot.inputPeaks, everyElement(0));
+        expect(snapshot.monitorPeaks, everyElement(0));
+        expect(snapshot.outputPeaks, everyElement(0));
+        expect(snapshot.tracks[0].peakL, 0);
+        expect(snapshot.tracks[0].peakR, 0);
+      });
+    });
+
     group('TempoControl', () {
       test('every setter requires the engine to be running', () {
         expect(engine.setTempo(120), EngineResult.notRunning);

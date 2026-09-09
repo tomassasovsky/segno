@@ -593,3 +593,91 @@ while the engine refused it; every path clamps to the limit now.
 ### Next step
 
 Slice 3 (inputs, outputs, Mixer and FX), per `implementation-map.md`.
+
+## Slice 3 — Inputs, outputs, Mixer and FX (#1016)
+
+Six parts, listed on the issue: 3a the mix model (engine + repository),
+3b output destinations, 3c the Audio routing and Output setup surfaces,
+3d the Mixer, 3e FX placement and printing, 3f the FX surfaces.
+
+### Slice 3a — the mix model
+
+Branch: `claude/segno-slice3-mixer-fx`, stacked on slice 2c's branch until
+PR #1015 merges.
+
+#### Decisions
+
+- **Pan** is a per-lane engine value (`le_engine_set_lane_pan`, -1..1)
+  applied to the lane's stereo pair after its chain and after the wet
+  cache, with a unity-centre balance law: the near side stays at unity and
+  the far side falls on a quarter-sine, exactly silent at the hard side.
+  Centre is bit-identical to the pre-slice engine, so every fingerprint and
+  cache invariant holds; a lane routed to one output receives the pair's
+  mid, so pan there is a plain attenuation. The accepted records leave the
+  pan law to engineering; this is it.
+- **Solo** is a per-track engine flag (`le_engine_set_track_solo`): while
+  any track is soloed, only soloed tracks route. It sits beside mute in the
+  audible gate and never writes it; chains keep running and the dry meters
+  keep reading; monitors are not tracks and are unaffected. Solo is
+  performance state: not saved with a session, cleared by a session load.
+- **Capture trim** (`le_engine_set_input_trim`, linear, 0..+12 dB) scales
+  only the sample a lane records; the monitor path, the input meters, the
+  clip detector, the sound-activated trigger and the tuner read the
+  untrimmed conditioned input. A direct store, so it holds while stopped.
+  The repository speaks dB (-24..+12, half-dB steps) and converts.
+- **Every hardware input can be monitored**: `LE_MAX_MONITORED_INPUTS` is
+  `LE_MAX_CHANNELS` (32). A monitor is about 3.3 KB, so the array costs
+  106 KB.
+- **The recorded image.** A lane's pan and balance gain are fixed from its
+  input's setup when the take starts (`_seedLaneImage`, beside the chain
+  snapshot): a pair member sits hard on its side, a mono input where its pan
+  put it. Later input edits move the live monitor and future takes only.
+  The engine is given each lane's EFFECTIVE pan (image plus the track's
+  pan, clamped) and volume (level times the balance gain), so a track's
+  fader and pan move every lane together and a stereo take keeps its image.
+- **Stereo pairs are two lanes.** Lane buffers stay mono; a pair records
+  as one lane per member with pans -1/1, and the pair's balance is a gain
+  the repository composes onto each side (the favoured side at unity, the
+  other on the pan law). No stereo lane type was added to the engine.
+- **Meters for the Mixer**: per-track post-fader stereo peaks (`peak_l`,
+  `peak_r`, after volume, pan and the track chain), per-input raw peaks,
+  per-monitor peaks (what it routes) and per-output-channel peaks after the
+  master gain and limiter, all trailing snapshot fields; the repository
+  projects them per channel the device has.
+- **Typed mix targets** (`MixTarget`: track level/pan, input level/pan,
+  pair balance) carry a byte-stable canonical string like `FxAddress`, the
+  identities slice 4's assignments bind to. Output buses join in 3b.
+- `InputSetup` (trims, pans, pairs with balance) is the repository's
+  remembered intent, projected on `LooperState`, saved with the session and
+  restored on load; input names stay appliance-wide as before.
+
+- Persistence: `track_pan.N` and the per-device input setup keys
+  (`input_trim/pan/pair/balance.<device>.N`) in settings, restored at boot
+  after the engine starts; the manifest carries `tracks[].pan`, each lane's
+  recorded image as `lanes[].pan` (the engine's pan minus the track pan, so
+  a lane the track pan pushed into the clamp comes back as far from centre
+  as it still plays: a known, small loss), the monitors' pans as a record
+  and a session-level `inputSetup`. Solo is not persisted anywhere.
+- Bloc events: `LooperTrackPanChanged`, `LooperTrackSoloToggled`,
+  `LooperSoloCleared`, `LooperMixerReset`, and the `LooperInputEvent`
+  family (trim, pan, pair, balance) persisting the whole input setup under
+  the device name.
+
+#### Checks
+
+- Native: the 5 suites plain, with ASan and with telemetry off; new tests
+  `test_lane_pan_law`, `test_track_solo_gates_routing`,
+  `test_input_trim_scales_capture_only`, `test_monitor_pan_and_wide_inputs`,
+  `test_track_stereo_peaks_follow_fader`. ffigen regenerated and formatted.
+- Dart: `segno_engine` 262, `looper_repository` 451 (the new
+  `mix_model_test`), `settings_repository` 146, `session_repository` 98,
+  `performance_repository` 111; root 2207; analyzers clean at the root and
+  in every touched package; `bloc lint` clean.
+
+#### Not verified here
+
+The pan law by ear and the meters on the appliance; the offline
+performance render replays neither pan nor solo (it renders lane 0 mono as
+before), which the stems export does not need and the master capture
+already contains.
+

@@ -53,7 +53,9 @@ class SessionChains {
 }
 
 /// The rig's loop settings a save persists (slice 2c): the length preset and
-/// Loop/Once defaults plus each channel's override of them.
+/// Loop/Once defaults plus each channel's override of them; and, since slice
+/// 3, the rig's mix the engine snapshot does not carry either: every track's
+/// pan ([trackPans]) and the per-input capture setup ([inputSetup]).
 ///
 /// Handed in by the bloc layer like [SessionChains], because the engine only
 /// holds the EFFECTIVE per-track values (`TrackSnapshot.lengthPresetBars`,
@@ -75,6 +77,8 @@ class SessionLoopSettings {
     this.defaultOnce = false,
     this.lengthPresetOverrides = const {},
     this.onceOverrides = const {},
+    this.trackPans = const {},
+    this.inputSetup = const SessionInputSetup(),
   });
 
   /// The rig's default length preset in bars; `0` = Auto.
@@ -90,6 +94,15 @@ class SessionLoopSettings {
   /// Per-channel Loop/Once overrides; a channel absent here follows the
   /// default.
   final Map<int, bool> onceOverrides;
+
+  /// Every track's Mixer pan (slice 3), keyed by channel; a channel absent
+  /// here is at centre. Looper repository state: the engine holds only each
+  /// lane's EFFECTIVE pan (the recorded image plus this), so the capture
+  /// subtracts it back out of every lane to persist the image on its own.
+  final Map<int, double> trackPans;
+
+  /// The per-input capture setup (slice 3), persisted session-level.
+  final SessionInputSetup inputSetup;
 }
 
 /// Saves Segno sessions, reads them back, and exports audio.
@@ -458,6 +471,7 @@ class SessionRepository {
       final undoCount = track.undoDepth;
       final redoCount = track.redoDepth;
       final total = undoCount + 1 + redoCount;
+      final trackPan = loopSettings.trackPans[i] ?? 0;
       final lanes = <SessionLane>[];
       for (var l = 0; l < track.lanes.length; l++) {
         // The live layer sits at ordinal `undoCount`; skip a lane whose live
@@ -487,6 +501,12 @@ class SessionRepository {
             outputMask: laneSnap.outputMask,
             inputChannel: laneSnap.inputChannel,
             layers: layerFiles,
+            // The lane's recorded image (slice 3): the engine holds the
+            // image PLUS the track's pan, clamped, so the track pan comes
+            // back out here. A lane the track pan pushed past hard left or
+            // right has lost the excess to that clamp and comes back that
+            // far from centre, which is also as far as it will ever play.
+            pan: (laneSnap.pan - trackPan).clamp(-1.0, 1.0),
             undoCount: undoCount,
             redoCount: redoCount,
           ),
@@ -498,6 +518,7 @@ class SessionRepository {
           channel: i,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
+          pan: trackPan,
           // Record timing and decay overrides (slice 2b): read back from
           // the engine, which reports what it holds for the track.
           recordTiming: track.recordTimingOverride(snapshot.quantizeDiv),
@@ -574,6 +595,10 @@ class SessionRepository {
       // save. Handed in by the bloc layer — see [SessionLoopSettings].
       lengthPresetOverrides: captured.loopSettings.lengthPresetOverrides,
       onceOverrides: captured.loopSettings.onceOverrides,
+      // The input setup (slice 3) is session-level for the same reason: an
+      // input's trim, pan or pair exists whether or not a take was recorded
+      // from it. Handed in by the bloc layer with the track pans.
+      inputSetup: captured.loopSettings.inputSetup,
       clickMode: snapshot.clickMode,
       clickOutputMask: snapshot.clickMask,
       clickVolume: snapshot.clickVolume,

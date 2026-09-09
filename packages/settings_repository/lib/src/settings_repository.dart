@@ -93,6 +93,18 @@ class StoredAudioConfig {
 
 /// Persists user/device settings via a [KeyValueStore].
 ///
+/// The per-input capture setup as this repository stores it (accepted
+/// design, Audio routing): capture trim per input in dB, pan per mono input,
+/// and every stereo pair's balance keyed by the pair's lower member. A plain
+/// record rather than the looper domain's `InputSetup`, so this repository
+/// holds no domain dependency; the app builds the model from it. Absent
+/// entries are unity, centre and unpaired.
+typedef StoredInputSetup = ({
+  Map<int, double> trimDb,
+  Map<int, double> pan,
+  Map<int, double> pairs,
+});
+
 /// Stores the per-device record-offset latency calibration, the last-used audio
 /// device configuration (so the engine can auto-start on launch), per-track
 /// display names, and big-picture view preferences.
@@ -1137,6 +1149,17 @@ class SettingsRepository {
   Future<void> clearConsoleName(String serial) =>
       _store.remove(_consoleNameKey(serial));
 
+  String _trackPanKey(int channel) => 'track_pan.$channel';
+
+  /// Loads track [channel]'s Mixer pan, `-1` (left) .. `1` (right); centre
+  /// (`0`) when unset.
+  Future<double> loadTrackPan(int channel) async =>
+      (await _store.getDouble(_trackPanKey(channel)) ?? 0).clamp(-1.0, 1.0);
+
+  /// Saves track [channel]'s Mixer [pan].
+  Future<void> saveTrackPan(int channel, double pan) =>
+      _store.setDouble(_trackPanKey(channel), pan.clamp(-1.0, 1.0));
+
   String _trackNameKey(int channel) => 'track_name.$channel';
 
   /// Loads the custom display name for track [channel], or `null` if unset.
@@ -1176,6 +1199,83 @@ class SettingsRepository {
     required String device,
     required int input,
   }) => _store.remove(_inputNameKey(device, input));
+
+  // The per-input capture setup (accepted design, Audio routing), keyed per
+  // DEVICE and socket like [saveInputName]: a trim dialed in for a
+  // condenser on a Scarlett's input 1 says nothing about the built-in pair's
+  // input 1. Every value is absent when it is at its default (unity trim,
+  // centre pan, unpaired), so a key present is a setting the user made.
+  String _inputTrimKey(String device, int input) => 'input_trim.$device.$input';
+  String _inputPanKey(String device, int input) => 'input_pan.$device.$input';
+  String _inputPairKey(String device, int input) => 'input_pair.$device.$input';
+  String _inputBalanceKey(String device, int input) =>
+      'input_balance.$device.$input';
+
+  /// Loads the capture setup of the first [inputCount] inputs on [device]:
+  /// trims in dB (absent = `0`), pans (absent = centre) and the balance of
+  /// every linked pair, keyed by its lower (even) member. A pair key is only
+  /// honoured on an even input whose partner is inside [inputCount].
+  Future<StoredInputSetup> loadInputSetup({
+    required String device,
+    required int inputCount,
+  }) async {
+    final trimDb = <int, double>{};
+    final pan = <int, double>{};
+    final pairs = <int, double>{};
+    for (var input = 0; input < inputCount; input++) {
+      final trim = await _store.getDouble(_inputTrimKey(device, input));
+      if (trim != null && trim != 0) trimDb[input] = trim;
+      final p = await _store.getDouble(_inputPanKey(device, input));
+      if (p != null && p != 0) pan[input] = p.clamp(-1.0, 1.0);
+      if (input.isOdd || input + 1 >= inputCount) continue;
+      final paired = await _store.getBool(_inputPairKey(device, input));
+      if (paired ?? false) {
+        final balance =
+            await _store.getDouble(_inputBalanceKey(device, input)) ?? 0;
+        pairs[input] = balance.clamp(-1.0, 1.0);
+      }
+    }
+    return (trimDb: trimDb, pan: pan, pairs: pairs);
+  }
+
+  /// Saves [setup] for [device]: every input in it is written, and the first
+  /// [inputCount] inputs it does not mention have their keys removed, so a
+  /// trim, pan or pair the user put back to its default does not come back
+  /// on the next launch.
+  Future<void> saveInputSetup({
+    required String device,
+    required int inputCount,
+    required StoredInputSetup setup,
+  }) async {
+    final inputs = <int>{
+      for (var input = 0; input < inputCount; input++) input,
+      ...setup.trimDb.keys,
+      ...setup.pan.keys,
+      ...setup.pairs.keys,
+    };
+    for (final input in inputs) {
+      final trim = setup.trimDb[input];
+      if (trim != null && trim != 0) {
+        await _store.setDouble(_inputTrimKey(device, input), trim);
+      } else {
+        await _store.remove(_inputTrimKey(device, input));
+      }
+      final pan = setup.pan[input];
+      if (pan != null && pan != 0) {
+        await _store.setDouble(_inputPanKey(device, input), pan);
+      } else {
+        await _store.remove(_inputPanKey(device, input));
+      }
+      final balance = setup.pairs[input];
+      if (balance != null) {
+        await _store.setBool(_inputPairKey(device, input), value: true);
+        await _store.setDouble(_inputBalanceKey(device, input), balance);
+      } else {
+        await _store.remove(_inputPairKey(device, input));
+        await _store.remove(_inputBalanceKey(device, input));
+      }
+    }
+  }
 
   String _trackQuantizeKey(int channel) => 'track_quantize.$channel';
   String _trackRecordTimingKey(int channel) => 'track_record_timing.$channel';
