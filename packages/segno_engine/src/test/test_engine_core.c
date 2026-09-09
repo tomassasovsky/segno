@@ -20131,6 +20131,84 @@ static void test_clear_restore_recrowns(void) {
   le_engine_destroy(e);
 }
 
+/* Reconfiguring empties every track, so it also drops the crown: the next
+ * completed take is a first take again, whichever channel it lands on. */
+static void test_configure_drops_the_crown(void) {
+  printf("test_configure_drops_the_crown\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  record_loop_on(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 1);
+
+  le_engine_configure(e, 48000, 1, 1, 1000); /* a device change */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.primary_track == -1);
+
+  record_loop_on(e, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 0); /* the reconfigured rig's first take */
+  le_engine_destroy(e);
+}
+
+/* A take that finishes over a master a sibling kept alive is a completed
+ * take too: if the crown went with that sibling's clear while this take was
+ * still recording, the finalize crowns this one. */
+static void test_non_defining_finalize_crowns(void) {
+  printf("test_non_defining_finalize_crowns\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_loop_on(e, 0);
+  le_engine_record(e, 1); /* non-defining: the master is track 0's */
+  process_const(e, 1.0f, SB_BASE / 2, out);
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.primary_track == -1); /* only a take in progress remains */
+
+  process_const(e, 1.0f, SB_BASE / 2, out);
+  le_engine_record(e, 1); /* finalize -> PLAYING */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.primary_track == 1);
+  le_engine_destroy(e);
+}
+
+/* The snapshot names what a pending arm waits for. */
+static void test_snapshot_pending_trigger(void) {
+  printf("test_snapshot_pending_trigger\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[1].pending_trigger == -1);
+
+  /* Sync with an established primary force-arms the next track's record
+   * press to the grid (D16). */
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  record_loop_on(e, 0);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+  CHECK(s.tracks[1].pending_trigger == 0);
+
+  /* Cancel: nothing pending, and the trigger reads none again. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[1].pending_trigger == -1);
+  process_const(e, 0.0f, 4, out);
+  le_engine_destroy(e);
+}
+
 /* The snapshot's per-track playhead and master-bus peak (accepted design,
  * slice 1): a playing track reports its own position, a recording track its
  * write head, an empty track 0; the output peak is the mixed bus after gain. */
@@ -26182,6 +26260,9 @@ int main(void) {
   test_undo_to_empty_uncrowns_and_redo_recrowns();
   test_clear_restore_recrowns();
   test_snapshot_track_position_and_output_peak();
+  test_configure_drops_the_crown();
+  test_non_defining_finalize_crowns();
+  test_snapshot_pending_trigger();
   test_crown_primary_re_crown_changes_it();
   test_crown_primary_inert_outside_sync_band();
   test_sync_first_completed_take_becomes_primary();

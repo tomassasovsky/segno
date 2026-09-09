@@ -14,7 +14,6 @@ class ReadoutTrack extends Equatable {
     this.defaultName = false,
     this.bars = 0,
     this.layers = 0,
-    this.lengthFrames = 0,
   });
 
   /// Rebuilds a track from [map] as pushed across the window channel.
@@ -28,7 +27,6 @@ class ReadoutTrack extends Equatable {
     defaultName: map['defaultName'] as bool? ?? false,
     bars: map['bars'] as int? ?? 0,
     layers: map['layers'] as int? ?? 0,
-    lengthFrames: map['lengthFrames'] as int? ?? 0,
   );
 
   /// The track's channel, `0`-based; the display shows `channel + 1`.
@@ -60,9 +58,6 @@ class ReadoutTrack extends Equatable {
   /// Layers: the base take plus every retired overdub pass; `0` when empty.
   final int layers;
 
-  /// Recorded length in frames, `0` when empty — the waveform's extent.
-  final int lengthFrames;
-
   /// Channel-encodable form.
   Map<String, Object?> toMap() => {
     'channel': channel,
@@ -74,7 +69,6 @@ class ReadoutTrack extends Equatable {
     'defaultName': defaultName,
     'bars': bars,
     'layers': layers,
-    'lengthFrames': lengthFrames,
   };
 
   @override
@@ -88,7 +82,6 @@ class ReadoutTrack extends Equatable {
     defaultName,
     bars,
     layers,
-    lengthFrames,
   ];
 }
 
@@ -126,7 +119,6 @@ class PerformanceReadout extends Equatable {
     this.hasTempo = false,
     this.tsNum = 4,
     this.tsDen = 4,
-    this.isRunning = false,
     this.mode = 'record',
     this.activeBank = 0,
     this.deviceLost = false,
@@ -147,7 +139,6 @@ class PerformanceReadout extends Equatable {
       hasTempo: map['hasTempo'] as bool? ?? tempoBpm > 0,
       tsNum: map['tsNum'] as int? ?? 4,
       tsDen: map['tsDen'] as int? ?? 4,
-      isRunning: map['isRunning'] as bool? ?? false,
       mode: map['mode'] as String? ?? 'record',
       activeBank: map['activeBank'] as int? ?? 0,
       deviceLost: map['deviceLost'] as bool? ?? false,
@@ -173,9 +164,6 @@ class PerformanceReadout extends Equatable {
   /// Time-signature denominator.
   final int tsDen;
 
-  /// Transport running.
-  final bool isRunning;
-
   /// `InteractionMode.token` — what a track press means right now, shown as
   /// the current function in the footer.
   final String mode;
@@ -200,7 +188,6 @@ class PerformanceReadout extends Equatable {
     'hasTempo': hasTempo,
     'tsNum': tsNum,
     'tsDen': tsDen,
-    'isRunning': isRunning,
     'mode': mode,
     'activeBank': activeBank,
     'deviceLost': deviceLost,
@@ -214,7 +201,6 @@ class PerformanceReadout extends Equatable {
     hasTempo,
     tsNum,
     tsDen,
-    isRunning,
     mode,
     activeBank,
     deviceLost,

@@ -40,10 +40,54 @@ enum QueueTiming {
   sound,
 }
 
-/// The [QueueTiming] a pending arm resolves to under [division], or
-/// [QueueTiming.sound] when a Sound start ([soundStart]) armed it.
-QueueTiming queueTimingOf(GridDivision division, {required bool soundStart}) {
-  if (soundStart) return QueueTiming.sound;
+/// What a queued (pending) action will do when its boundary comes.
+enum QueueAction {
+  /// Start the track's take.
+  record,
+
+  /// Start an overdub pass on the recorded track.
+  overdub,
+
+  /// Play: an overdub's punch-out, or a section arm on a stopped track.
+  play,
+
+  /// Stop: a section arm on a sounding track.
+  stop,
+}
+
+/// The [QueueAction] [track]'s pending arm fires — read off the engine's own
+/// facts (`pendingTrigger`, state, content), never guessed from settings.
+///
+/// A section arm (Band transport) plays a stopped track and stops a sounding
+/// one; a record arm ends an overdub pass, or starts one on a recorded track,
+/// or starts the take on an empty one.
+QueueAction queueActionOf(Track track) {
+  if (track.pendingTrigger == ArmTrigger.section) {
+    return track.state == TrackState.stopped
+        ? QueueAction.play
+        : QueueAction.stop;
+  }
+  if (track.state == TrackState.overdubbing) return QueueAction.play;
+  return track.hasContent ? QueueAction.overdub : QueueAction.record;
+}
+
+/// The boundary [track]'s pending arm waits for under the live quantize
+/// [division].
+///
+/// Sound start fires on signal; a section arm and an overdub's punch-out fire
+/// only at the loop top (the engine holds those to the primary's cycle and the
+/// layer boundary, never a subdivision); a grid arm follows the division.
+QueueTiming queueTimingOf(Track track, GridDivision division) {
+  switch (track.pendingTrigger) {
+    case ArmTrigger.sound:
+      return QueueTiming.sound;
+    case ArmTrigger.section:
+      return QueueTiming.loopStart;
+    case ArmTrigger.grid:
+    case null:
+      break;
+  }
+  if (track.state == TrackState.overdubbing) return QueueTiming.loopStart;
   return switch (division) {
     GridDivision.off => QueueTiming.loopStart,
     GridDivision.bar => QueueTiming.bar,
@@ -75,7 +119,7 @@ class TrackColumn extends StatelessWidget {
     required this.mode,
     this.isPrimary = false,
     this.bars,
-    this.queueTiming = QueueTiming.loopStart,
+    this.quantizeDiv = GridDivision.off,
     this.fxTarget,
     this.inputNames = const {},
     super.key,
@@ -141,9 +185,10 @@ class TrackColumn extends StatelessWidget {
   /// track, or a session without a tempo grid).
   final int? bars;
 
-  /// What a pending arm on this track is waiting for — drawn in the queued
-  /// cue beside its action.
-  final QueueTiming queueTiming;
+  /// The live quantize grid: with a grid arm pending, the queued cue names
+  /// the boundary it resolves to (the engine re-evaluates a pending arm on a
+  /// granularity change, so the cue follows the live division too).
+  final GridDivision quantizeDiv;
 
   /// The column's inset from its ring to its content — the pen's 18.
   static const double padding = 18;
@@ -261,7 +306,7 @@ class TrackColumn extends StatelessWidget {
     // Layers: the base take plus every retired overdub pass. The base loop is
     // not an engine undo layer (undo_depth counts retired passes only), but it
     // is a layer the performer hears, so it counts as the first.
-    final layers = track.undoDepth + (track.hasContent ? 1 : 0);
+    final layers = track.layers;
     final fxMarker = track.effects.isEmpty
         ? _FxMarker.absent
         : track.chainEnabled
@@ -388,10 +433,14 @@ class TrackColumn extends StatelessWidget {
                             fit: BoxFit.scaleDown,
                             child: _QueuedCue(
                               key: Key('tracks_queued_${track.channel}'),
-                              action: track.hasContent
-                                  ? l10n.stageQueueOverdub
-                                  : l10n.stageQueueRecord,
-                              timing: _queueTimingLabel(l10n, queueTiming),
+                              action: _queueActionLabel(
+                                l10n,
+                                queueActionOf(track),
+                              ),
+                              timing: _queueTimingLabel(
+                                l10n,
+                                queueTimingOf(track, quantizeDiv),
+                              ),
                             ),
                           ),
                         ),
@@ -412,6 +461,15 @@ class TrackColumn extends StatelessWidget {
     );
   }
 }
+
+/// The accepted stage's wording for a [QueueAction].
+String _queueActionLabel(AppLocalizations l10n, QueueAction action) =>
+    switch (action) {
+      QueueAction.record => l10n.stageQueueRecord,
+      QueueAction.overdub => l10n.stageQueueOverdub,
+      QueueAction.play => l10n.stageQueuePlay,
+      QueueAction.stop => l10n.stageQueueStop,
+    };
 
 /// The accepted stage's wording for a [QueueTiming].
 String _queueTimingLabel(AppLocalizations l10n, QueueTiming timing) =>

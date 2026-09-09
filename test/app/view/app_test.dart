@@ -948,6 +948,7 @@ void main() {
         bool muted = false,
         le.TrackState state = le.TrackState.playing,
         int inputChannel = 0,
+        int lengthFrames = 96000,
       }) => le.EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
@@ -969,7 +970,7 @@ void main() {
             state: state,
             volume: 0.8,
             muted: muted,
-            lengthFrames: 96000,
+            lengthFrames: lengthFrames,
             // The selected track's own playhead is what the second screen
             // follows; a plain track's equals the master's.
             positionFrames: position,
@@ -1042,6 +1043,89 @@ void main() {
           reason:
               'the readout was recomposed for a moving playhead and moving '
               'levels — the gate is comparing whole LooperStates again',
+        );
+      });
+
+      testWidgets('a growing take composes nothing either', (tester) async {
+        // While a take records, `lengthFrames` is the write head and grows
+        // every poll. The readout draws the state, not the length, so the
+        // gate must not reopen on it.
+        final rig = await pumpPlaying(tester);
+        engine.nextSnapshot = playing(
+          position: 0,
+          peak: 0.1,
+          state: le.TrackState.recording,
+          lengthFrames: 4000,
+        );
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        final composed = rig.window.readouts.length;
+        expect(rig.window.readouts.last.selected!.state, 'recording');
+
+        for (var i = 2; i <= 20; i++) {
+          engine.nextSnapshot = playing(
+            position: i * 4000,
+            peak: 0.2,
+            state: le.TrackState.recording,
+            lengthFrames: i * 4000,
+          );
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        expect(
+          rig.window.readouts.length,
+          composed,
+          reason: 'the readout was recomposed for a growing take',
+        );
+      });
+
+      testWidgets("the selected track's waveform is read once per content, "
+          'not once per poll', (tester) async {
+        final rig = await pumpPlaying(tester);
+        final frames = rig.window.pushCalls;
+        final reads = engine.trackVisualReads;
+
+        for (var i = 1; i <= 10; i++) {
+          engine.nextSnapshot = playing(position: i * 4000, peak: 0.2);
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        expect(rig.window.pushCalls, greaterThan(frames));
+        expect(
+          engine.trackVisualReads,
+          reads,
+          reason: 'a merely playing track was copied out of the engine again',
+        );
+
+        // A finalized pass changes the shape: one more read.
+        engine.nextSnapshot = playing(position: 0, peak: 0.2, lengthFrames: 8);
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(engine.trackVisualReads, reads + 1);
+      });
+
+      testWidgets('a cursor move between two tracks with the same name still '
+          'reaches the window', (tester) async {
+        final rig = await pumpPlaying(tester);
+        final tracks = tester
+            .element(find.byType(LooperPage))
+            .read<TracksCubit>();
+        await tracks.rename(1, tracks.state.nameOf(0));
+        await tester.pump(const Duration(milliseconds: 100));
+        final frames = rig.window.pushCalls;
+
+        tester
+            .element(find.byType(LooperPage))
+            .read<ControlCubit>()
+            .selectTrack(1);
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(
+          rig.window.pushCalls,
+          greaterThan(frames),
+          reason:
+              'the label matched, so the cursor move never reached the '
+              'second screen',
         );
       });
 

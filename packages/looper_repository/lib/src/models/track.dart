@@ -3,6 +3,27 @@ import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:segno_engine/segno_engine.dart' hide TrackEffect;
 
+/// What a pending arm waits for — the engine's own account of the boundary,
+/// so the stage names it instead of guessing from the settings.
+enum ArmTrigger {
+  /// The quantize grid: the next loop top, or the chosen subdivision.
+  grid,
+
+  /// A signal at the recording input (Sound start).
+  sound,
+
+  /// A Band section toggle at the primary's loop top.
+  section;
+
+  /// Decodes the snapshot's `pending_trigger` code; `null` for none.
+  static ArmTrigger? fromCode(int code) => switch (code) {
+    0 => ArmTrigger.grid,
+    1 => ArmTrigger.sound,
+    2 => ArmTrigger.section,
+    _ => null,
+  };
+}
+
 /// A single looper track: a multi-lane container that owns the transport
 /// (state, loop multiple, undo/redo depth) and its [lanes].
 ///
@@ -27,6 +48,7 @@ class Track extends Equatable {
     this.outputMask = 0x3,
     this.layerInFlight = false,
     this.pending = false,
+    this.pendingTrigger,
     this.positionFrames = 0,
     this.lengthPresetBars = 0,
     this.quantizeOverride,
@@ -75,6 +97,9 @@ class Track extends Equatable {
 
   /// Whether a quantized/signal-triggered record arm is waiting to fire.
   final bool pending;
+
+  /// What that arm waits for, or `null` while nothing is pending.
+  final ArmTrigger? pendingTrigger;
 
   /// This track's own playhead in frames within [lengthFrames] — the engine
   /// has already applied the mode's position rule (a multiple's segment, a
@@ -151,10 +176,17 @@ class Track extends Equatable {
   /// Whether an undone overdub layer can be redone.
   bool get canRedo => redoDepth > 0;
 
-  /// Normalized play position in `0..1`, or `0` while the track has no length
-  /// (empty, or still on its defining take).
-  double get progress =>
-      lengthFrames > 0 ? (positionFrames / lengthFrames).clamp(0.0, 1.0) : 0;
+  /// Normalized play position in `0..1`; `0` while the track has no length or
+  /// is still recording its take (the engine publishes the growing write head
+  /// as both position and length then, which is no position at all).
+  double get progress => lengthFrames > 0 && state != TrackState.recording
+      ? (positionFrames / lengthFrames).clamp(0.0, 1.0)
+      : 0;
+
+  /// Layers the performer hears: the base take plus every retired overdub
+  /// pass. The base loop is not an engine undo layer (`undoDepth` counts
+  /// retired passes only), but it is a layer, so it counts as the first.
+  int get layers => undoDepth + (hasContent ? 1 : 0);
 
   /// Everything in [props] EXCEPT the live [peak] level and [positionFrames].
   ///
@@ -203,6 +235,7 @@ class Track extends Equatable {
     outputMask,
     layerInFlight,
     pending,
+    pendingTrigger,
     lengthPresetBars,
     quantizeOverride,
     oneShot,
@@ -241,6 +274,7 @@ class Track extends Equatable {
     outputMask,
     layerInFlight,
     pending,
+    pendingTrigger,
     lengthPresetBars,
     quantizeOverride,
     oneShot,

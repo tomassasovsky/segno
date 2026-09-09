@@ -805,6 +805,7 @@ class LooperRepository {
           redoDepth: s.tracks[i].redoDepth,
           layerInFlight: s.tracks[i].layerInFlight,
           pending: s.tracks[i].pending,
+          pendingTrigger: ArmTrigger.fromCode(s.tracks[i].pendingTrigger),
           positionFrames: s.tracks[i].positionFrames,
           lengthPresetBars: s.tracks[i].lengthPresetBars,
           quantizeOverride: _trackQuantize[i],

@@ -41,6 +41,39 @@ import 'helpers/fake_audio_engine.dart';
 
 final EngineSnapshot _playingSnapshot = _playingAt(24000);
 
+/// One empty track with an arm as the engine publishes it: `pending` and the
+/// trailing `pending_trigger` code beside it.
+EngineSnapshot _pendingSnapshot({
+  required bool pending,
+  required int trigger,
+}) => EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  tracks: [
+    TrackSnapshot(
+      state: TrackState.empty,
+      volume: 0.8,
+      muted: false,
+      lengthFrames: 0,
+      undoDepth: 0,
+      rms: 0,
+      peak: 0,
+      pending: pending,
+      pendingTrigger: trigger,
+    ),
+  ],
+);
+
 /// One playing track with independently controlled transport and meter values.
 EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
     EngineSnapshot(
@@ -390,6 +423,14 @@ void main() {
       expect(state.status.inputChannels, 2);
       expect(state.status.outputChannels, 4);
       expect(state.status.isConnected, isTrue);
+    });
+
+    test("a pending arm carries the engine's trigger; none reads null", () {
+      engine.nextSnapshot = _pendingSnapshot(pending: true, trigger: 1);
+      expect(buildRepo().state.track.pendingTrigger, ArmTrigger.sound);
+
+      engine.nextSnapshot = _pendingSnapshot(pending: false, trigger: -1);
+      expect(buildRepo().state.track.pendingTrigger, isNull);
     });
 
     test('the master playhead moving does not change any track', () {
@@ -4391,8 +4432,9 @@ void main() {
     );
 
     test('a crown requested while stopped lands on the next start, once', () {
-      final repo = buildRepo()..crownPrimary(channel: 3);
-      repo.startEngine(const EngineConfig());
+      final repo = buildRepo()
+        ..crownPrimary(channel: 3)
+        ..startEngine(const EngineConfig());
       expect(engine.lastCrownedChannel, 3);
 
       engine.lastCrownedChannel = null;
@@ -4490,9 +4532,9 @@ void main() {
           // take (see `resolvedPrimaryTrack`), so give the designated
           // channel one.
           tracks: [
-            const TrackSnapshot.empty(),
-            const TrackSnapshot.empty(),
-            const TrackSnapshot(
+            TrackSnapshot.empty(),
+            TrackSnapshot.empty(),
+            TrackSnapshot(
               state: TrackState.playing,
               volume: 1,
               muted: false,

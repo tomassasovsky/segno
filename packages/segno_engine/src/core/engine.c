@@ -347,6 +347,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_i32(&tr->a_multiple, 1);
     store_i32(&tr->a_sync_divisor, 0); /* B3: per-track, resets like a_multiple */
     store_i32(&tr->a_pending, 0);
+    store_i32(&tr->a_pending_trigger, -1);
     store_i32(&tr->a_length_preset_bars, 0); /* AUTO */
     store_i32(&tr->a_one_shot, 0); /* B4: per-track setting, resets like the
                                     * length preset above (not by clear —
@@ -423,6 +424,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
       return LE_ERR_INVALID;
     }
   }
+  /* Every track is EMPTY now, and an empty rig has no crown: the first take
+   * completed on the reconfigured rig is crowned by le_primary_reconcile, and
+   * a designation left over from before the restart must not pre-empt it
+   * (it would also make le_is_reestablishing_primary force that track's next
+   * take to one base loop). Same rule the audio thread keeps live. */
+  store_i32(&engine->a_primary_track, -1);
 
   engine->sample_rate = sample_rate;
   engine->in_channels = input_channels;
@@ -824,12 +831,12 @@ le_engine* le_engine_create(void) {
    * kept explicit anyway, matching every sibling setting here, so the
    * default is legible at the seed site rather than implied by calloc. */
   store_i32(&engine->a_looper_mode, LE_LOOPER_MODE_MULTI);
-  /* Primary track SETTING (B3, D18 as revised): same seeded-once persistence
-   * as the looper mode above — -1 (none) until the first completed take or
-   * an explicit crown, surviving configure(); the audio thread's
-   * le_primary_reconcile clears it again only when every track is empty.
-   * Unlike a_looper_mode, -1 is NOT calloc's zero-fill, so this store is
-   * load-bearing, not just legibility. */
+  /* Primary track (B3, D18 as revised): -1 (none) until the first completed
+   * take or an explicit crown. Unlike a_looper_mode it does NOT survive
+   * configure(): configure empties every track, and an empty rig has no
+   * crown (le_engine_configure resets it alongside the tracks; the audio
+   * thread's le_primary_reconcile keeps that invariant afterwards). -1 is
+   * NOT calloc's zero-fill, so this store is load-bearing. */
   store_i32(&engine->a_primary_track, -1);
   /* MIDI clock mode SETTING (Phase C/E, D15): same seeded-once persistence as
    * the looper mode / primary track above. OFF (0) is both the enum's zero

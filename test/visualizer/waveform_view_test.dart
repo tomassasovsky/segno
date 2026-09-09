@@ -302,4 +302,56 @@ void main() {
       );
     });
   });
+
+  group('bar ruler', () {
+    Future<void> pumpBars(WidgetTester tester, int bars) => tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.neon,
+        home: Scaffold(
+          body: WaveformView(
+            samples: Float32List.fromList([0, 0.5, 1]),
+            state: LooperMeterState.playing,
+            progress: 0.3,
+            bars: bars,
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('is its own repaint layer under the wave, and absent '
+        'without bars', (tester) async {
+      await pumpBars(tester, 4);
+      final ruler = find.byKey(const Key('waveform_view_ruler'));
+      expect(ruler, findsOneWidget);
+      // The playhead repaints the wave every poll; the ruler's laid-out
+      // labels must not be re-shaped with it.
+      expect(
+        find.ancestor(of: ruler, matching: find.byType(RepaintBoundary)),
+        findsWidgets,
+      );
+      expect(
+        (tester.widget<CustomPaint>(ruler).painter! as BarRulerPainter).bars,
+        4,
+      );
+
+      await pumpBars(tester, 0);
+      expect(find.byKey(const Key('waveform_view_ruler')), findsNothing);
+    });
+
+    test('repaints only when the bars or the colour change', () {
+      const grey = Color(0xFF888888);
+      final four = BarRulerPainter(bars: 4, color: grey);
+      expect(
+        four.shouldRepaint(BarRulerPainter(bars: 4, color: grey)),
+        isFalse,
+      );
+      expect(four.shouldRepaint(BarRulerPainter(bars: 8, color: grey)), isTrue);
+      expect(
+        four.shouldRepaint(
+          BarRulerPainter(bars: 4, color: const Color(0xFFFFFFFF)),
+        ),
+        isTrue,
+      );
+    });
+  });
 }

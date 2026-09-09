@@ -804,6 +804,10 @@ typedef struct le_track {
    * every mode but an active Sync/Band division is byte-for-byte the
    * pre-B3 seg_base/multiple path (see mix_tracks_frame). */
   _Atomic int32_t a_sync_divisor;
+  /* What the published arm waits for (le_track_snapshot.pending_trigger):
+   * pending_trigger's value, stored beside a_pending at arm time. Read only
+   * while a_pending is 1; -1 before any arm. */
+  _Atomic int32_t a_pending_trigger;
   _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
                               * to fire a quantized record action); read by the
                               * control thread to reconcile arm vs. fired. */

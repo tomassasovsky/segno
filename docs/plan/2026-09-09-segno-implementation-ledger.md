@@ -42,7 +42,8 @@ Branch: `claude/segno-app-implementation-7c90a8`.
 - Engine: `le_track.a_play_pos`, `le_engine.a_out_peak_bits`, primary
   reconcile after every content change.
 - Repository: crown projected from the snapshot (resolved), not from the
-  re-apply cache; the cache follows the snapshot for restart re-apply.
+  re-apply cache; a crown is pushed once at the next start and never
+  re-applied after a restart (the reconfigured rig is empty and uncrowned).
 - Presentation: new Tracks layout, view menu, footer; second display shows
   the selected track.
 
@@ -76,6 +77,26 @@ Branch: `claude/segno-app-implementation-7c90a8`.
   exercised on hardware.
 - Desktop windows narrower than the pen shrink the readout rows uniformly
   (`ShrinkToWidth`) instead of overflowing; the pen size renders 1:1.
+
+### Review round 1 (2026-09-09, PR #1011)
+
+The code review reported ten findings; all ten are fixed on the branch:
+
+- Engine: `le_engine_configure` now drops the crown with the tracks it
+  empties; a non-defining `finalize_new_track` reconciles the crown too; the
+  snapshot publishes what an arm waits for (`pending_trigger`: grid / sound /
+  section) so the queued cue reads the engine's own fact instead of the
+  settings, and names the punch-out and section boundaries correctly.
+- Repository: `Track.pendingTrigger`, `Track.layers`; `progress` reads 0
+  while a take records (the write head is both position and length then).
+- Stage: the footer counts a count-in down in place of the signature; the
+  clip cap retires on a timer instead of on the next rebuild; the wave rows
+  and the second display read a track's waveform once per content change
+  (`WaveformKey`), not once per playhead tick; the bar ruler paints in its
+  own layer so the playhead never re-shapes its labels; the readout gate no
+  longer reopens on a growing take, and a cursor move between equally named
+  tracks still reaches the second display.
+- Dead chrome state (`anyActive`, transport enables) removed.
 
 ### Next step
 

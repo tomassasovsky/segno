@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -226,29 +228,69 @@ class _PeakMeterBarState extends State<PeakMeterBar> {
   /// stopped (frozen) phase. Recomputed every live tick; reset when emptied.
   double _fill = 0;
 
-  /// When the clip cap may retire, or `null` while nothing has clipped.
-  DateTime? _clipUntil;
+  /// Whether a clip cap is showing: set by a full-scale peak, retired by
+  /// [_clipTimer] after [PeakMeterBar.clipHold] — a timer, not a wall-clock
+  /// compare in [build], because a track that goes quiet after one hot block
+  /// stops rebuilding this bar, and a cap that only retires on the next
+  /// rebuild would then stay up for good.
+  bool _clipped = false;
+  Timer? _clipTimer;
 
   @override
-  Widget build(BuildContext context) {
+  void dispose() {
+    _clipTimer?.cancel();
+    super.dispose();
+  }
+
+  void _holdClip() {
+    _clipped = true;
+    _clipTimer?.cancel();
+    _clipTimer = Timer(PeakMeterBar.clipHold, () {
+      _clipTimer = null;
+      if (mounted) setState(() => _clipped = false);
+    });
+  }
+
+  void _dropClip() {
+    _clipTimer?.cancel();
+    _clipTimer = null;
+    _clipped = false;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _observe();
+  }
+
+  @override
+  void didUpdateWidget(PeakMeterBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _observe();
+  }
+
+  /// Reads the tick this widget carries. On a new WIDGET, not in [build]:
+  /// the retire timer's own rebuild must not re-read a stale full-scale peak
+  /// and hold the cap up again.
+  void _observe() {
     // A track with nothing recorded has no bar; a live track tracks its peak;
     // a frozen (stopped) track keeps the last live fill.
     if (!widget.hasContent) {
       _fill = 0;
-      _clipUntil = null;
+      _dropClip();
     } else if (!widget.frozen) {
       _fill = peakMeterFill(widget.peak);
-      if (widget.peak >= kClipPeak) {
-        _clipUntil = DateTime.now().add(PeakMeterBar.clipHold);
-      }
+      if (widget.peak >= kClipPeak) _holdClip();
     }
-    final clipUntil = _clipUntil;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final clipping =
         widget.clipColor != null &&
         widget.hasContent &&
         !widget.frozen &&
-        clipUntil != null &&
-        DateTime.now().isBefore(clipUntil);
+        _clipped;
     return Stack(
       fit: StackFit.expand,
       children: [

@@ -4895,11 +4895,21 @@ final class le_track_snapshot extends ffi.Struct {
   /// within its own length — a multiple's segment offset, a Sync division's
   /// folded phase and a Free/Song track's private clock are all already
   /// applied, so `position_frames / length_frames` is the track's progress
-  /// without the reader re-deriving the mode's position rule. While RECORDING
-  /// it is the write head instead (the growing take's extent). 0 for an empty
-  /// or never-played track. Published once per block beside the level.
+  /// without the reader re-deriving the mode's position rule. It is the read
+  /// index of the block's LAST frame (so one behind master_position_frames,
+  /// which is advanced after each frame); while RECORDING it is the write
+  /// head instead (frames captured so far). 0 for an empty or never-played
+  /// track. Published once per block beside the level.
   @ffi.Int32()
   external int position_frames;
+
+  /// Trailing (accepted design, slice 1): what the arm reported by `pending`
+  /// waits for — 0 = the quantize grid (next loop top / subdivision), 1 = a
+  /// signal at the recording input (Sound start), 2 = a Band section toggle
+  /// at the primary's loop top; -1 while nothing is pending. The stage names
+  /// the boundary from this rather than guessing from the settings.
+  @ffi.Int32()
+  external int pending_trigger;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct

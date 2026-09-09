@@ -55,13 +55,11 @@ void main() {
       primary: true,
       bars: 2,
       layers: 4,
-      lengthFrames: 96000,
     );
     const readout = PerformanceReadout(
       selected: selected,
       tempoBpm: 84,
       hasTempo: true,
-      isRunning: true,
     );
 
     Future<void> pump(
@@ -279,7 +277,6 @@ extension on PerformanceReadout {
         hasTempo: hasTempo,
         tsNum: tsNum,
         tsDen: tsDen,
-        isRunning: isRunning,
         mode: mode,
         activeBank: bank,
         deviceLost: deviceLost,
