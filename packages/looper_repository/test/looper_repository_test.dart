@@ -768,7 +768,7 @@ void main() {
         expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
         // The fake keeps reporting Multi: after enough polls of the running
         // engine the request is taken as dropped on the audio thread.
-        for (var i = 1; i <= 6; i++) {
+        for (var i = 1; i <= 12; i++) {
           engine.nextSnapshot = _playingAt(100 * i);
           ticker.add(null);
           await Future<void>.delayed(Duration.zero);
@@ -847,7 +847,8 @@ void main() {
       });
 
       test('a frozen member is a member from the clear: the grouped undo '
-          'taps it too, and the engine queues that tap', () {
+          'restores the others now and the frozen one when its point '
+          'lands', () {
         // Track 1 was capturing: its point is filed a block after the clear.
         engine
           ..undoRestoresClearChannels = {0, 2}
@@ -855,12 +856,33 @@ void main() {
         final repo = rigOfThree()..clearAll([0, 1, 2]);
         expect(repo.undoRestoresClearAll, isTrue);
         repo.undo();
-        expect(calls('undo'), 3); // all three, the frozen one queued
-        // Spent: the point landing later does not re-form the group.
+        expect(calls('undo'), 2); // the filed members; the frozen one waits
+        // The point lands: the next poll takes the waiting tap.
         engine
           ..undoRestoresClearChannels = {0, 1, 2}
           ..clearRestorePendingChannels = {};
+        expect(repo.undoRestoresClearAll, isFalse); // spent, not re-formed
+        expect(calls('undo'), 3);
+        expect(engine.lastChannel, 1);
+      });
+
+      test('a frozen member whose capture held nothing is forgotten by the '
+          'waiting tap, and leaves the restored group', () {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(calls('undo'), 2);
+        // Reported void: no point, no longer pending.
+        engine.clearRestorePendingChannels = {};
         expect(repo.undoRestoresClearAll, isFalse);
+        expect(calls('undo'), 2); // nothing to take
+        // The redo re-clears the two that came back, as one.
+        engine.redoReclearsChannels = {0, 2};
+        expect(repo.redo(channel: 2), EngineResult.ok);
+        expect(calls('redo'), 2);
       });
 
       test('a frozen member is a member once its point is filed', () {
@@ -890,8 +912,61 @@ void main() {
         repo.clear(channel: 1);
         expect(repo.laneEffects(1, 0), isEmpty);
         repo.undo(channel: 1);
+        expect(calls('undo'), 0); // held until the point lands
+        expect(repo.laneEffects(1, 0), isEmpty);
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {1};
+        expect(repo.undoRestoresClearAll, isFalse); // settles the tap
         expect(calls('undo'), 1);
         expect(repo.laneEffects(1, 0), hasLength(1));
+      });
+
+      test('a waiting tap on a capture that held nothing restores no chain '
+          'onto the empty track', () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          );
+        engine.clearRestorePendingChannels = {1};
+        repo
+          ..clear(channel: 1)
+          ..undo(channel: 1);
+        engine.clearRestorePendingChannels = {}; // void: no point filed
+        expect(repo.undoRestoresClearAll, isFalse);
+        expect(calls('undo'), 0);
+        expect(repo.laneEffects(1, 0), isEmpty);
+      });
+
+      test('a frozen capture is remembered audible: its lane mutes do not '
+          'come back with the take', () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          )
+          ..setLaneMute(channel: 1, lane: 0, muted: true);
+        engine.clearRestorePendingChannels = {1};
+        repo
+          ..clear(channel: 1)
+          ..undo(channel: 1);
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {1};
+        expect(repo.undoRestoresClearAll, isFalse);
+        expect(calls('undo'), 1);
+        engine.laneMute.clear();
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.laneMute[(1, 0)] ?? false, isFalse);
       });
 
       test('a frozen member whose capture held nothing leaves the group '

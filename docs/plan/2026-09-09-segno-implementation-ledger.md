@@ -255,6 +255,17 @@ PR #1011 merges.
   first callback can come later than two polls). Accepted as is: a frozen
   member retired by a fresh take in that same window leaves the group
   silently, the way a void capture does.
+- Review round 5 (same day, on the round-4 fixes): the round-4 native test
+  passed without its fix (the audio thread decides defining-or-not on its
+  own clock); it now arms with quantize on, which only a non-defining press
+  does. An undo tapped at a frozen clear is held by the repository
+  (`_pendingClearUndo`) and taken on the first poll after the engine files
+  the point, so a capture that held nothing is forgotten instead of having
+  its pre-clear chains restored onto an empty track (the F3 leftover-chain
+  rule), and a void member leaves the restored group's redo. A frozen
+  capture is remembered audible (the engine files its point unmuted). The
+  running-engine guard on the mode request was unreachable (both flags come
+  from the same snapshot bit) and is gone; the window is twelve polls.
 - The fuzz suite (`flutter test --tags fuzz`) and
   `pumped_native_engine_test` were run against a locally built engine
   library; `tool/build_test_lib.sh` itself does not build on this Mac (it
