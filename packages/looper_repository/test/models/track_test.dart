@@ -52,6 +52,8 @@ void main() {
         ...track.steadyProps,
         track.peak,
         track.positionFrames,
+        track.peakL,
+        track.peakR,
       ]);
     });
 

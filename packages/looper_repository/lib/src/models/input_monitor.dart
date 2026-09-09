@@ -54,6 +54,7 @@ class InputMonitor extends Equatable {
     this.mode = MonitorMode.off,
     this.outputMask = 0x3,
     this.volume = 1,
+    this.pan = 0,
     this.muted = false,
     this.effects = const [],
     this.chainEnabled = true,
@@ -72,6 +73,11 @@ class InputMonitor extends Equatable {
   /// Playback gain in `0..1`.
   final double volume;
 
+  /// The monitor's pan, `-1` (left) .. `1` (right): the input's own image
+  /// (a pair member sits hard on its side). Set through
+  /// `LooperRepository.setInputPan` and the pair setters, not directly.
+  final double pan;
+
   /// Whether the monitor is muted.
   final bool muted;
 
@@ -89,6 +95,7 @@ class InputMonitor extends Equatable {
     MonitorMode? mode,
     int? outputMask,
     double? volume,
+    double? pan,
     bool? muted,
     List<TrackEffect>? effects,
     bool? chainEnabled,
@@ -97,6 +104,7 @@ class InputMonitor extends Equatable {
     mode: mode ?? this.mode,
     outputMask: outputMask ?? this.outputMask,
     volume: volume ?? this.volume,
+    pan: pan ?? this.pan,
     muted: muted ?? this.muted,
     effects: effects ?? this.effects,
     chainEnabled: chainEnabled ?? this.chainEnabled,
@@ -108,6 +116,7 @@ class InputMonitor extends Equatable {
     mode,
     outputMask,
     volume,
+    pan,
     muted,
     effects,
     chainEnabled,

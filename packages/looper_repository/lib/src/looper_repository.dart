@@ -9,6 +9,7 @@ import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
+import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
@@ -347,6 +348,24 @@ class LooperRepository {
   final Map<(int, int), int> _laneOutput = {};
   final Map<(int, int), double> _laneVolume = {};
   final Map<(int, int), bool> _laneMute = {};
+
+  /// The mix model (accepted design, slice 3). A lane's image is fixed at
+  /// record time from its input's setup: [_laneBasePan] is where the input
+  /// sat (`-1`/`1` for a pair member, its pan otherwise) and [_laneBalance]
+  /// the gain the pair's balance gave its side. The engine is given the
+  /// lane's EFFECTIVE pan (base plus the track's [_trackPan], clamped) and
+  /// its effective volume (the level times the balance gain), so a track's
+  /// fader and pan move every lane together without rewriting what the
+  /// take recorded. Absent entries are centre and unity.
+  final Map<(int, int), double> _laneBasePan = {};
+  final Map<(int, int), double> _laneBalance = {};
+  final Map<int, double> _trackPan = {};
+  final Map<int, bool> _trackSolo = {};
+
+  /// The per-input capture setup (trim, pan, pairs): remembered, pushed as
+  /// the capture trim and the monitors' pan and gain, and seeded onto a
+  /// lane when it records. See [InputSetup].
+  InputSetup _inputSetup = const InputSetup();
   final Map<(int, int), List<TrackEffect>> _laneEffects = {};
 
   /// Per-(channel, lane) chain-enabled flags (R15; absent => enabled). Only
@@ -900,6 +919,10 @@ class LooperRepository {
           state: s.tracks[i].state,
           volume: s.tracks[i].volume,
           muted: s.tracks[i].muted,
+          pan: _trackPan[i] ?? 0,
+          solo: s.tracks[i].solo,
+          peakL: s.tracks[i].peakL,
+          peakR: s.tracks[i].peakR,
           lengthFrames: s.tracks[i].lengthFrames,
           peak: s.tracks[i].peak,
           undoDepth: s.tracks[i].undoDepth,
@@ -924,6 +947,7 @@ class LooperRepository {
                 inputChannel: s.tracks[i].lanes[l].inputChannel,
                 outputMask: s.tracks[i].lanes[l].outputMask,
                 volume: s.tracks[i].lanes[l].volume,
+                pan: s.tracks[i].lanes[l].pan,
                 muted: s.tracks[i].lanes[l].muted,
                 lengthFrames: s.tracks[i].lanes[l].lengthFrames,
                 effects: _laneEffects[(i, l)] ?? const [],
@@ -941,6 +965,12 @@ class LooperRepository {
     ],
     masterEffects: _masterEffects,
     masterChainEnabled: _masterChainEnabled,
+    inputSetup: _inputSetup,
+    // Only the channels the device has: a fixed-length array would make
+    // every state differ by the zeros past them.
+    inputPeaks: s.inputPeaks.take(s.inputChannels).toList(growable: false),
+    monitorPeaks: s.monitorPeaks.take(s.inputChannels).toList(growable: false),
+    outputPeaks: s.outputPeaks.take(s.outputChannels).toList(growable: false),
     status: EngineStatus(
       deviceName: _engine.deviceName,
       sampleRate: s.sampleRate,
@@ -1082,9 +1112,26 @@ class LooperRepository {
         (key, mask) =>
             _engine.setLaneOutput(channel: key.$1, lane: key.$2, mask: mask),
       );
-      _laneVolume.forEach(
-        (key, volume) =>
-            _engine.setLaneVolume(volume, channel: key.$1, lane: key.$2),
+      for (final key in {..._laneVolume.keys, ..._laneBalance.keys}) {
+        _pushLaneVolume(key.$1, key.$2);
+      }
+      for (final key in {
+        ..._laneBasePan.keys,
+        ..._trackPan.keys.expand(
+          (channel) => [
+            for (var lane = 0; lane < (_laneCount[channel] ?? 1); lane++)
+              (channel, lane),
+          ],
+        ),
+      }) {
+        _pushLanePan(key.$1, key.$2);
+      }
+      _trackSolo.forEach(
+        (channel, solo) => _engine.setTrackSolo(channel: channel, solo: solo),
+      );
+      _inputSetup.trimDb.forEach(
+        (input, db) =>
+            _engine.setInputTrim(input: input, gain: inputTrimGainOfDb(db)),
       );
       _laneMute.forEach(
         (key, muted) =>
@@ -1114,10 +1161,11 @@ class LooperRepository {
         (input, mask) =>
             _engine.setMonitorInputOutput(input: input, mask: mask),
       );
-      _monitorVolume.forEach(
-        (input, volume) =>
-            _engine.setMonitorInputVolume(input: input, volume: volume),
-      );
+      <int>{
+        ..._monitorVolume.keys,
+        ..._inputSetup.pan.keys,
+        for (final lower in _inputSetup.pairs.keys) ...[lower, lower + 1],
+      }.forEach(_pushMonitorMix);
       _monitorMute.forEach(
         (input, muted) =>
             _engine.setMonitorInputMute(input: input, muted: muted),
@@ -1404,6 +1452,7 @@ class LooperRepository {
     final count = _laneCount[channel] ?? 1;
     for (var lane = 0; lane < count; lane++) {
       _inheritMonitorChainOntoLane(channel, lane);
+      _seedLaneImage(channel, lane);
     }
   }
 
@@ -1968,6 +2017,14 @@ class LooperRepository {
     // must scrub it itself or a track this session declares AUTO would keep
     // whatever preset a PRIOR session/live session left armed.
     _trackLengthPreset.clear();
+    // The mix model (slice 3): every lane's image, the track pans and the
+    // solos go with the audio; the reset loop below puts the engine at
+    // centre and un-soloed, and the rig loop re-arms what it carries. The
+    // input setup is replaced wholesale by the rig's.
+    _laneBasePan.clear();
+    _laneBalance.clear();
+    _trackPan.clear();
+    _trackSolo.clear();
     // Same reasoning for One Shot (B4/B5c): `clear` deliberately leaves
     // a_one_shot untouched (it is a per-track SETTING, not content — see
     // `le_engine_set_one_shot`'s doc), so a track this session does not mark
@@ -2004,6 +2061,8 @@ class LooperRepository {
           ..setLaneInput(channel: channel, lane: 0, inputChannel: 0)
           ..setLaneOutput(channel: channel, lane: 0, mask: 0x3)
           ..setLaneVolume(1, channel: channel)
+          ..setLanePan(pan: 0, channel: channel)
+          ..setTrackSolo(channel: channel, solo: false)
           ..setLaneMute(muted: false, channel: channel)
           ..setLaneCount(channel: channel, count: 1)
           // a_length_preset_bars survives `clear` by design (see above) — a
@@ -2142,7 +2201,12 @@ class LooperRepository {
         );
         setLaneVolume(lane.volume, channel: track.channel, lane: lane.lane);
         setLaneMute(muted: lane.muted, channel: track.channel, lane: lane.lane);
+        // The lane's recorded image (slice 3): kept as the rig saved it; the
+        // track pan below lands on top of it.
+        _laneBasePan[(track.channel, lane.lane)] = lane.pan;
+        _pushLanePan(track.channel, lane.lane);
       }
+      setTrackPan(track.pan, channel: track.channel);
       // Record timing and decay overrides (slice 2b): the reset loop above
       // put every track back on the defaults; re-arm what the rig carries.
       final timing = track.recordTiming;
@@ -2272,6 +2336,24 @@ class LooperRepository {
         enabled: monitor.chainEnabled,
       );
     }
+    // The input setup (slice 3): trims to the engine, pans and balances onto
+    // the monitors. After the monitors above, so their gains compose with
+    // the pairs' balance; before the tracks' lanes are seeded by a later
+    // record, which reads it.
+    _inputSetup = rig.inputSetup;
+    if (_intendRunning) {
+      for (var input = 0; input < kMaxChannels; input++) {
+        _engine.setInputTrim(
+          input: input,
+          gain: inputTrimGainOfDb(_inputSetup.trimDbOf(input)),
+        );
+      }
+      <int>{
+        ..._monitorVolume.keys,
+        ..._inputSetup.pan.keys,
+        for (final lower in _inputSetup.pairs.keys) ...[lower, lower + 1],
+      }.forEach(_pushMonitorMix);
+    }
 
     // Last, after every import/commit that could throw: [rigReplaced]'s
     // contract is "a NEW rig is on the engine", not "a load was attempted".
@@ -2372,6 +2454,8 @@ class LooperRepository {
       ..._monitorMute.keys,
       ..._monitorEffects.keys,
       ..._monitorChainEnabled.keys,
+      ..._inputSetup.pan.keys,
+      for (final lower in _inputSetup.pairs.keys) ...[lower, lower + 1],
     };
     final result = <int, InputMonitor>{};
     for (final input in inputs) {
@@ -2380,6 +2464,7 @@ class LooperRepository {
         mode: monitorMode(input),
         outputMask: monitorOutput(input),
         volume: monitorVolume(input),
+        pan: _inputSetup.effectivePanOf(input),
         muted: monitorMuted(input),
         effects: monitorEffects(input),
         chainEnabled: monitorChainEnabled(input),
@@ -2638,7 +2723,189 @@ class LooperRepository {
     required int lane,
   }) {
     _laneVolume[(channel, lane)] = volume;
-    return _engine.setLaneVolume(volume, channel: channel, lane: lane);
+    return _pushLaneVolume(channel, lane);
+  }
+
+  /// Pushes lane [lane] of track [channel]'s effective volume: its level
+  /// times the balance gain its recorded image carries.
+  EngineResult _pushLaneVolume(int channel, int lane) {
+    final volume = _laneVolume[(channel, lane)] ?? 1;
+    final balance = _laneBalance[(channel, lane)] ?? 1;
+    return _engine.setLaneVolume(
+      volume * balance,
+      channel: channel,
+      lane: lane,
+    );
+  }
+
+  /// Pushes lane [lane] of track [channel]'s effective pan: its recorded
+  /// image plus the track's pan, clamped.
+  EngineResult _pushLanePan(int channel, int lane) {
+    final base = _laneBasePan[(channel, lane)] ?? 0;
+    final pan = (base + (_trackPan[channel] ?? 0)).clamp(-1.0, 1.0);
+    return _engine.setLanePan(pan: pan, channel: channel, lane: lane);
+  }
+
+  /// Track [channel]'s pan, `-1` (left) .. `1` (right); the repository's
+  /// remembered intent.
+  double trackPan(int channel) => _trackPan[channel] ?? 0;
+
+  /// Sets track [channel]'s pan (accepted design, Mixer): every lane's
+  /// recorded image moves by it. Remembered and re-applied on every
+  /// (re)start; re-projects, since the pan is projected from the cache.
+  EngineResult setTrackPan(double pan, {int channel = 0}) {
+    _trackPan[channel] = pan.clamp(-1.0, 1.0);
+    var result = EngineResult.ok;
+    if (_intendRunning) {
+      for (var lane = 0; lane < laneCount(channel); lane++) {
+        final r = _pushLanePan(channel, lane);
+        if (r != EngineResult.ok) result = r;
+      }
+    }
+    _reproject();
+    return result;
+  }
+
+  /// Whether track [channel] is soloed, per the remembered intent.
+  bool trackSoloed(int channel) => _trackSolo[channel] ?? false;
+
+  /// Solos or un-solos track [channel] (accepted design, Mixer): while any
+  /// track is soloed only soloed tracks route; mute is untouched. Remembered
+  /// and re-applied on every (re)start.
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    if (solo) {
+      _trackSolo[channel] = true;
+    } else {
+      _trackSolo.remove(channel);
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackSolo(channel: channel, solo: solo);
+  }
+
+  /// Un-solos every track (the Mixer's clear Solo).
+  EngineResult clearSolo() {
+    var result = EngineResult.ok;
+    for (final channel in _trackSolo.keys.toList()) {
+      final r = setTrackSolo(channel: channel, solo: false);
+      if (r != EngineResult.ok) result = r;
+    }
+    return result;
+  }
+
+  /// Reset mixer (accepted design): every track's level to unity and pan to
+  /// centre; mute, Solo, effects and audio stay as they are.
+  EngineResult resetMixer() {
+    var result = EngineResult.ok;
+    final count = _runningTrackCount;
+    for (var channel = 0; channel < count; channel++) {
+      final v = setVolume(1, channel: channel);
+      if (v != EngineResult.ok) result = v;
+      final p = setTrackPan(0, channel: channel);
+      if (p != EngineResult.ok) result = p;
+    }
+    return result;
+  }
+
+  /// The per-input capture setup, the repository's remembered intent.
+  InputSetup get inputSetup => _inputSetup;
+
+  /// Sets hardware [input]'s capture trim to [db] decibels (accepted
+  /// design, Audio routing): software gain on what a lane records from it,
+  /// clamped to `kMinInputTrimDb`..`kMaxInputTrimDb`; the monitor path and
+  /// the meters are untouched. Held by the engine while stopped and
+  /// re-applied on every (re)start.
+  EngineResult setInputTrimDb({required int input, required double db}) {
+    final clamped = db.clamp(kMinInputTrimDb, kMaxInputTrimDb);
+    final trims = Map<int, double>.of(_inputSetup.trimDb);
+    if (clamped == 0) {
+      trims.remove(input);
+    } else {
+      trims[input] = clamped;
+    }
+    _inputSetup = _inputSetup.copyWith(trimDb: trims);
+    final result = _engine.setInputTrim(
+      input: input,
+      gain: inputTrimGainOfDb(clamped),
+    );
+    _reproject();
+    return result;
+  }
+
+  /// Sets mono hardware [input]'s pan (accepted design, Audio routing): the
+  /// live monitor moves now, and the next take from it records that image;
+  /// existing loops keep theirs. Kept while the input is paired, so
+  /// unlinking brings it back.
+  EngineResult setInputPan({required int input, required double pan}) {
+    final pans = Map<int, double>.of(_inputSetup.pan);
+    final clamped = pan.clamp(-1.0, 1.0);
+    if (clamped == 0) {
+      pans.remove(input);
+    } else {
+      pans[input] = clamped;
+    }
+    _inputSetup = _inputSetup.copyWith(pan: pans);
+    final result = _pushMonitorMix(input);
+    _reproject();
+    return result;
+  }
+
+  /// Links or unlinks the stereo pair whose lower (Left) member is [input]
+  /// (an even channel; the odd one above it is Right). Linking centres the
+  /// pair's balance; unlinking restores both members' own pans. Existing
+  /// recordings and chains are never rewritten.
+  EngineResult setInputPair({required int input, required bool paired}) {
+    if (input.isOdd || input < 0) return EngineResult.invalid;
+    final pairs = Map<int, double>.of(_inputSetup.pairs);
+    if (paired) {
+      pairs.putIfAbsent(input, () => 0);
+    } else {
+      pairs.remove(input);
+    }
+    _inputSetup = _inputSetup.copyWith(pairs: pairs);
+    final left = _pushMonitorMix(input);
+    final right = _pushMonitorMix(input + 1);
+    _reproject();
+    return left != EngineResult.ok ? left : right;
+  }
+
+  /// Sets the balance of the pair whose lower member is [input], `-1`
+  /// (Left only) .. `1` (Right only); the favoured side stays at unity and
+  /// the other falls on the engine's pan law.
+  EngineResult setPairBalance({required int input, required double balance}) {
+    if (!_inputSetup.pairs.containsKey(input)) return EngineResult.invalid;
+    final pairs = Map<int, double>.of(_inputSetup.pairs);
+    pairs[input] = balance.clamp(-1.0, 1.0);
+    _inputSetup = _inputSetup.copyWith(pairs: pairs);
+    final left = _pushMonitorMix(input);
+    final right = _pushMonitorMix(input + 1);
+    _reproject();
+    return left != EngineResult.ok ? left : right;
+  }
+
+  /// Pushes hardware [input]'s monitor gain and pan as the input setup
+  /// places it: its level times the pair's balance gain, and its image.
+  EngineResult _pushMonitorMix(int input) {
+    if (!_intendRunning) return EngineResult.ok;
+    final volume =
+        (_monitorVolume[input] ?? 1) * _inputSetup.balanceGainOf(input);
+    final v = _engine.setMonitorInputVolume(input: input, volume: volume);
+    final p = _engine.setMonitorInputPan(
+      input: input,
+      pan: _inputSetup.effectivePanOf(input),
+    );
+    return v != EngineResult.ok ? v : p;
+  }
+
+  /// Fixes lane [lane] of track [channel]'s image from its input's setup as
+  /// the take starts: where the input sits and what its pair's balance gives
+  /// it. The lane keeps that image for good; later input edits change the
+  /// live sound and future takes only (accepted design, Audio routing).
+  void _seedLaneImage(int channel, int lane) {
+    final input = _laneInput[(channel, lane)] ?? lane;
+    _laneBasePan[(channel, lane)] = _inputSetup.effectivePanOf(input);
+    _laneBalance[(channel, lane)] = _inputSetup.balanceGainOf(input);
+    _pushLanePan(channel, lane);
+    _pushLaneVolume(channel, lane);
   }
 
   /// Mutes or unmutes lane [lane] of track [channel]. Remembered and re-applied
@@ -2698,8 +2965,7 @@ class LooperRepository {
   EngineResult setMonitorVolume({required int input, required double volume}) {
     _monitorVolume[input] = volume;
     _monitorChanged(input);
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorInputVolume(input: input, volume: volume);
+    return _pushMonitorMix(input);
   }
 
   /// Mutes or unmutes monitor [input]. Remembered and re-applied on every

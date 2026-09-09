@@ -490,6 +490,39 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _repository.setTrackOnce(channel: event.channel, once: event.once);
       unawaited(_settings?.saveTrackOnce(event.channel, once: event.once));
     });
+    on<LooperTrackPanChanged>((event, _) {
+      _repository.setTrackPan(event.pan, channel: event.channel);
+      unawaited(_settings?.saveTrackPan(event.channel, event.pan));
+    });
+    on<LooperTrackSoloToggled>(
+      (event, _) =>
+          _repository.setTrackSolo(channel: event.channel, solo: event.solo),
+    );
+    on<LooperSoloCleared>((_, _) => _repository.clearSolo());
+    on<LooperMixerReset>((_, _) {
+      _repository.resetMixer();
+      // The level is not persisted by this bloc (LooperVolumeChanged above);
+      // the pan is, so every track's saved pan goes back to centre with it.
+      for (final track in _repository.state.tracks) {
+        unawaited(_settings?.saveTrackPan(track.channel, 0));
+      }
+    });
+    on<LooperInputTrimChanged>((event, _) {
+      _repository.setInputTrimDb(input: event.input, db: event.db);
+      _persistInputSetup();
+    });
+    on<LooperInputPanChanged>((event, _) {
+      _repository.setInputPan(input: event.input, pan: event.pan);
+      _persistInputSetup();
+    });
+    on<LooperInputPairChanged>((event, _) {
+      _repository.setInputPair(input: event.input, paired: event.paired);
+      _persistInputSetup();
+    });
+    on<LooperInputBalanceChanged>((event, _) {
+      _repository.setPairBalance(input: event.input, balance: event.balance);
+      _persistInputSetup();
+    });
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
@@ -750,6 +783,24 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     // Unconditional: there is exactly one Master envelope and it always has a
     // value, so it is overwritten rather than cleared.
     _persistMasterChain();
+  }
+
+  /// Persists the whole input setup as the repository now holds it, keyed to
+  /// the open device (the input-name precedent): a trim on a Scarlett's
+  /// input 1 says nothing about the built-in pair's input 1. Written whole
+  /// rather than per key so a value put back to its default is cleared.
+  void _persistInputSetup() {
+    final settings = _settings;
+    if (settings == null) return;
+    final setup = _repository.inputSetup;
+    final status = _repository.state.status;
+    unawaited(
+      settings.saveInputSetup(
+        device: status.deviceName,
+        inputCount: status.inputChannels,
+        setup: (trimDb: setup.trimDb, pan: setup.pan, pairs: setup.pairs),
+      ),
+    );
   }
 
   /// Persists the Master insert chain envelope.

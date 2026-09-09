@@ -15,6 +15,7 @@ class Lane extends Equatable {
     this.inputChannel = -1,
     this.outputMask = 0x3,
     this.volume = 1,
+    this.pan = 0,
     this.muted = false,
     this.lengthFrames = 0,
     this.effects = const [],
@@ -32,6 +33,11 @@ class Lane extends Equatable {
 
   /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   final double volume;
+
+  /// The lane's pan as the engine holds it, `-1` (left) .. `1` (right): the
+  /// image its input had at record time plus the track's own pan (accepted
+  /// design, slice 3). See `LooperRepository.setTrackPan`.
+  final double pan;
 
   /// Whether the lane is muted.
   final bool muted;
@@ -78,6 +84,7 @@ class Lane extends Equatable {
     inputChannel,
     outputMask,
     volume,
+    pan,
     muted,
     lengthFrames,
     effects,

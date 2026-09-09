@@ -304,6 +304,18 @@ class FakePerformanceEngine implements AudioEngine {
     int lane = 0,
   }) => EngineResult.ok;
   @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) =>
+      EngineResult.ok;
+  @override
   EngineResult setLaneInput({
     required int channel,
     required int lane,
@@ -506,6 +518,9 @@ class FakePerformanceEngine implements AudioEngine {
   }) => EngineResult.ok;
   @override
   EngineResult setMonitorInputMute({required int input, required bool muted}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setMonitorInputPan({required int input, required double pan}) =>
       EngineResult.ok;
   @override
   EngineResult setInputConditioningEnabled({

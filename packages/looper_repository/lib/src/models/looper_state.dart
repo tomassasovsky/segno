@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
+import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
@@ -17,6 +18,10 @@ class LooperState extends Equatable {
     this.masterEffects = const [],
     this.masterChainEnabled = true,
     this.tuner = const TunerReading(),
+    this.inputSetup = const InputSetup(),
+    this.inputPeaks = const [],
+    this.monitorPeaks = const [],
+    this.outputPeaks = const [],
   });
 
   /// Master loop transport.
@@ -45,6 +50,22 @@ class LooperState extends Equatable {
   /// and disarmed costs nothing — the engine gates detection on the arm.
   final TunerReading tuner;
 
+  /// The per-input capture setup (trim, pan, pairs), the repository's own
+  /// remembered intent (accepted design, Audio routing).
+  final InputSetup inputSetup;
+
+  /// Each hardware input's raw block peak, `0..1`, one entry per channel the
+  /// device has (before conditioning and trim). Live.
+  final List<double> inputPeaks;
+
+  /// What each input's monitor sends to the outputs, per channel the device
+  /// has (`0` while it is off or muted). Live.
+  final List<double> monitorPeaks;
+
+  /// Each hardware output's block peak after the master gain and limiter,
+  /// per channel the device has. Live.
+  final List<double> outputPeaks;
+
   /// Whether hardware output [output] is currently enabled (a routing target).
   bool isOutputEnabled(int output) =>
       output < 0 || (outputEnabledMask & (1 << output)) != 0;
@@ -72,5 +93,9 @@ class LooperState extends Equatable {
     masterEffects,
     masterChainEnabled,
     tuner,
+    inputSetup,
+    inputPeaks,
+    monitorPeaks,
+    outputPeaks,
   ];
 }

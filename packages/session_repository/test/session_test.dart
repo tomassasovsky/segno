@@ -421,6 +421,172 @@ void main() {
       },
     );
 
+    group('the mix (slice 3)', () {
+      const mixed = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 4,
+        tracks: [
+          SessionTrack(
+            channel: 0,
+            multiple: 1,
+            lengthFrames: 4,
+            pan: 0.25,
+            lanes: [
+              SessionLane(
+                lane: 0,
+                volume: 1,
+                muted: false,
+                outputMask: 0x3,
+                inputChannel: 0,
+                pan: -1,
+                layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+              ),
+              SessionLane(
+                lane: 1,
+                volume: 1,
+                muted: false,
+                outputMask: 0x3,
+                inputChannel: 2,
+                layers: [SessionLayer(file: 'track0_lane1_L0.wav')],
+              ),
+            ],
+          ),
+        ],
+        monitors: [
+          SessionMonitor(
+            input: 0,
+            enabled: true,
+            outputMask: 0x3,
+            volume: 1,
+            muted: false,
+            encoded: '',
+            pan: -1,
+          ),
+        ],
+        inputSetup: SessionInputSetup(
+          trimDb: {0: -6},
+          pan: {2: -0.5},
+          pairs: {0: 0.2},
+        ),
+      );
+
+      test('round-trips every pan and the input setup through JSON', () {
+        final json = jsonDecode(jsonEncode(mixed.toJson()));
+        final loaded = Session.fromJson(json as Map<String, dynamic>);
+        expect(loaded, mixed);
+        expect(loaded.tracks.single.pan, 0.25);
+        expect(loaded.tracks.single.lanes[0].pan, -1);
+        expect(loaded.tracks.single.lanes[1].pan, 0);
+        expect(loaded.monitors.single.pan, -1);
+        expect(loaded.inputSetup.trimDb, {0: -6.0});
+        expect(loaded.inputSetup.pan, {2: -0.5});
+        expect(loaded.inputSetup.pairs, {0: 0.2});
+      });
+
+      test('writes the documented shape: a pan only where it is off centre, '
+          'and the input setup as channel-keyed objects', () {
+        final json = mixed.toJson();
+        final track = (json['tracks'] as List).single as Map<String, dynamic>;
+        expect(track['pan'], 0.25);
+        final lanes = track['lanes'] as List;
+        expect((lanes[0] as Map<String, dynamic>)['pan'], -1);
+        expect((lanes[1] as Map<String, dynamic>).containsKey('pan'), isFalse);
+        final monitor = (json['monitors'] as List).single;
+        expect((monitor as Map<String, dynamic>)['pan'], -1);
+        expect(json['inputSetup'], {
+          'trimDb': {'0': -6},
+          'pan': {'2': -0.5},
+          'pairs': {'0': 0.2},
+        });
+      });
+
+      test(
+        'a rig with every pan at centre and the default setup writes none of '
+        'the keys, and a manifest without them loads as centre / default',
+        () {
+          final json = session.toJson();
+          expect(json.containsKey('inputSetup'), isFalse);
+          for (final track in json['tracks'] as List) {
+            final map = track as Map<String, dynamic>;
+            expect(map.containsKey('pan'), isFalse);
+            for (final lane in map['lanes'] as List) {
+              expect(
+                (lane as Map<String, dynamic>).containsKey('pan'),
+                isFalse,
+              );
+            }
+          }
+          for (final monitor in json['monitors'] as List) {
+            expect(
+              (monitor as Map<String, dynamic>).containsKey('pan'),
+              isFalse,
+            );
+          }
+
+          final loaded = Session.fromJson(
+            jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+          );
+          expect(loaded.tracks[0].pan, 0);
+          expect(loaded.tracks[0].lanes[1].pan, 0);
+          expect(loaded.monitors.single.pan, 0);
+          expect(loaded.inputSetup, const SessionInputSetup());
+          expect(loaded.inputSetup.isEmpty, isTrue);
+        },
+      );
+
+      test('a partial input setup leaves its empty maps out and reads them '
+          'back empty', () {
+        const setup = SessionInputSetup(pairs: {2: -1});
+        expect(setup.toJson(), {
+          'pairs': {'2': -1},
+        });
+        final loaded = SessionInputSetup.fromJson(
+          jsonDecode(jsonEncode(setup.toJson())) as Map<String, dynamic>,
+        );
+        expect(loaded, setup);
+        expect(loaded.trimDb, isEmpty);
+        expect(loaded.pan, isEmpty);
+        expect(SessionInputSetup.fromJson(null), const SessionInputSetup());
+      });
+
+      test('the pans and the input setup take part in equality', () {
+        expect(
+          mixed,
+          isNot(equals(Session.fromJson(mixed.toJson()..remove('inputSetup')))),
+        );
+        const a = SessionInputSetup(trimDb: {0: -6, 1: 3});
+        const b = SessionInputSetup(trimDb: {1: 3, 0: -6});
+        expect(a, b);
+        expect(a.hashCode, b.hashCode);
+        expect(a, isNot(equals(const SessionInputSetup(trimDb: {0: -6}))));
+        const lane = SessionLane(
+          lane: 0,
+          volume: 1,
+          muted: false,
+          outputMask: 0x3,
+          inputChannel: 0,
+          layers: [],
+        );
+        expect(
+          lane,
+          isNot(
+            equals(
+              const SessionLane(
+                lane: 0,
+                volume: 1,
+                muted: false,
+                outputMask: 0x3,
+                inputChannel: 0,
+                pan: 0.5,
+                layers: [],
+              ),
+            ),
+          ),
+        );
+      });
+    });
+
     test('equality of the override maps ignores insertion order', () {
       const a = Session(
         sampleRate: 48000,

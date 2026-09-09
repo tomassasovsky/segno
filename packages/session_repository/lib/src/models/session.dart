@@ -55,6 +55,7 @@ class SessionLane {
     required this.outputMask,
     required this.inputChannel,
     required this.layers,
+    this.pan = 0,
     this.undoCount = 0,
     this.redoCount = 0,
   });
@@ -70,6 +71,7 @@ class SessionLane {
       for (final l in json['layers'] as List<dynamic>)
         SessionLayer.fromJson(l as Map<String, dynamic>),
     ],
+    pan: (json['pan'] as num?)?.toDouble() ?? 0,
     undoCount: (json['undoCount'] as num?)?.toInt() ?? 0,
     redoCount: (json['redoCount'] as num?)?.toInt() ?? 0,
   );
@@ -88,6 +90,13 @@ class SessionLane {
 
   /// Hardware input channel this lane records (`-1` = none).
   final int inputChannel;
+
+  /// The lane's recorded image (slice 3), `-1` (left) .. `1` (right): where
+  /// its input sat when the take was recorded, WITHOUT the track's own pan
+  /// ([SessionTrack.pan]), which the looper repository lands on top of it on
+  /// load. Written only when off centre; absent on an older manifest reads
+  /// `0`.
+  final double pan;
 
   /// The lane's audio buffers, oldest undo → live → newest redo.
   final List<SessionLayer> layers;
@@ -116,6 +125,7 @@ class SessionLane {
     'outputMask': outputMask,
     'inputChannel': inputChannel,
     'layers': [for (final l in layers) l.toJson()],
+    if (pan != 0) 'pan': pan,
     'undoCount': undoCount,
     'redoCount': redoCount,
   };
@@ -130,6 +140,7 @@ class SessionLane {
           muted == other.muted &&
           outputMask == other.outputMask &&
           inputChannel == other.inputChannel &&
+          pan == other.pan &&
           undoCount == other.undoCount &&
           redoCount == other.redoCount &&
           _listEquals(layers, other.layers);
@@ -141,6 +152,7 @@ class SessionLane {
     muted,
     outputMask,
     inputChannel,
+    pan,
     undoCount,
     redoCount,
     Object.hashAll(layers),
@@ -158,6 +170,7 @@ class SessionTrack {
     required this.multiple,
     required this.lengthFrames,
     required this.lanes,
+    this.pan = 0,
     this.recordTiming,
     this.overdubDecay,
   });
@@ -216,6 +229,7 @@ class SessionTrack {
       multiple: (json['multiple'] as num).toInt(),
       lengthFrames: (json['lengthFrames'] as num).toInt(),
       lanes: lanes,
+      pan: (json['pan'] as num?)?.toDouble() ?? 0,
       recordTiming: RecordTiming.fromName(json['recordTiming'] as String?),
       overdubDecay: (json['overdubDecay'] as num?)?.toInt(),
     );
@@ -232,6 +246,12 @@ class SessionTrack {
 
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
+
+  /// The track's Mixer pan (slice 3), `-1` (left) .. `1` (right): moves every
+  /// lane's recorded image ([SessionLane.pan]) together. Read from the looper
+  /// repository, not the engine, which only holds each lane's EFFECTIVE pan.
+  /// Written only when off centre; absent on an older manifest reads `0`.
+  final double pan;
 
   /// This track's record timing override (accepted design, slice 2b) by
   /// name; `null` (or absent, on an older manifest) = follows the session's
@@ -251,6 +271,7 @@ class SessionTrack {
     'multiple': multiple,
     'lengthFrames': lengthFrames,
     'lanes': [for (final l in lanes) l.toJson()],
+    if (pan != 0) 'pan': pan,
     if (recordTiming != null) 'recordTiming': recordTiming!.name,
     if (overdubDecay != null) 'overdubDecay': overdubDecay,
   };
@@ -263,6 +284,7 @@ class SessionTrack {
           channel == other.channel &&
           multiple == other.multiple &&
           lengthFrames == other.lengthFrames &&
+          pan == other.pan &&
           recordTiming == other.recordTiming &&
           overdubDecay == other.overdubDecay &&
           _listEquals(lanes, other.lanes);
@@ -272,6 +294,7 @@ class SessionTrack {
     channel,
     multiple,
     lengthFrames,
+    pan,
     recordTiming,
     overdubDecay,
     Object.hashAll(lanes),
@@ -390,6 +413,7 @@ class SessionMonitor {
     required this.muted,
     required this.encoded,
     this.mode = '',
+    this.pan = 0,
   });
 
   /// Projects a [SessionMonitor] from a decoded JSON map.
@@ -401,6 +425,7 @@ class SessionMonitor {
     muted: json['muted'] as bool,
     encoded: json['encoded'] as String,
     mode: json['mode'] as String? ?? '',
+    pan: (json['pan'] as num?)?.toDouble() ?? 0,
   );
 
   /// Hardware input index.
@@ -442,6 +467,13 @@ class SessionMonitor {
   /// every version before it used.
   final String mode;
 
+  /// The monitor's pan as the rig held it when the session was saved
+  /// (slice 3), `-1` (left) .. `1` (right); a pair member sits hard on its
+  /// side. A record of what was heard: on load the monitors' pans are
+  /// rebuilt from [Session.inputSetup], which is what produced them, so the
+  /// app does not read this field back. Written only when off centre.
+  final double pan;
+
   /// Serializes this monitor to a JSON map.
   Map<String, dynamic> toJson() => {
     'input': input,
@@ -451,6 +483,7 @@ class SessionMonitor {
     'muted': muted,
     'encoded': encoded,
     if (mode.isNotEmpty) 'mode': mode,
+    if (pan != 0) 'pan': pan,
   };
 
   @override
@@ -464,11 +497,88 @@ class SessionMonitor {
           volume == other.volume &&
           muted == other.muted &&
           encoded == other.encoded &&
-          mode == other.mode;
+          mode == other.mode &&
+          pan == other.pan;
+
+  @override
+  int get hashCode => Object.hash(
+    input,
+    enabled,
+    outputMask,
+    volume,
+    muted,
+    encoded,
+    mode,
+    pan,
+  );
+}
+
+/// The per-input capture setup a session was saved with (slice 3): capture
+/// trim per input in dB, pan per mono input, and the balance of every stereo
+/// pair keyed by the pair's lower (even) member. Every map is keyed by the
+/// hardware input and holds only the inputs that are off their default
+/// (unity, centre, unpaired), so an untouched rig serializes to nothing.
+///
+/// Plain maps rather than the looper domain's `InputSetup`: this package does
+/// not know that domain (the same rule the chain strings follow). The app
+/// maps between the two. Serialized as `{"trimDb": {"0": -6}, "pan":
+/// {"2": -0.5}, "pairs": {"0": 0.2}}` with each empty map left out and the
+/// whole object omitted from the manifest when all three are empty; absent
+/// on an older manifest reads as the default setup.
+@immutable
+class SessionInputSetup {
+  /// Creates a [SessionInputSetup].
+  const SessionInputSetup({
+    this.trimDb = const {},
+    this.pan = const {},
+    this.pairs = const {},
+  });
+
+  /// Projects a [SessionInputSetup] from a decoded JSON map; `null` (an
+  /// older manifest, or a rig with nothing set) reads as the default.
+  factory SessionInputSetup.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const SessionInputSetup();
+    double value(Object? raw) => (raw! as num).toDouble();
+    return SessionInputSetup(
+      trimDb: _channelMapFromJson(json['trimDb'], value),
+      pan: _channelMapFromJson(json['pan'], value),
+      pairs: _channelMapFromJson(json['pairs'], value),
+    );
+  }
+
+  /// Capture trim per input, in dB.
+  final Map<int, double> trimDb;
+
+  /// Pan per mono input, `-1` (left) .. `1` (right).
+  final Map<int, double> pan;
+
+  /// The balance of every stereo pair, keyed by its lower member: `-1`
+  /// favours Left, `1` favours Right.
+  final Map<int, double> pairs;
+
+  /// Whether every map is empty (the whole object is then left out of the
+  /// manifest).
+  bool get isEmpty => trimDb.isEmpty && pan.isEmpty && pairs.isEmpty;
+
+  /// Serializes this setup to a JSON map, each empty map left out.
+  Map<String, dynamic> toJson() => {
+    if (trimDb.isNotEmpty) 'trimDb': _channelMapToJson(trimDb),
+    if (pan.isNotEmpty) 'pan': _channelMapToJson(pan),
+    if (pairs.isNotEmpty) 'pairs': _channelMapToJson(pairs),
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionInputSetup &&
+          runtimeType == other.runtimeType &&
+          _mapEquals(trimDb, other.trimDb) &&
+          _mapEquals(pan, other.pan) &&
+          _mapEquals(pairs, other.pairs);
 
   @override
   int get hashCode =>
-      Object.hash(input, enabled, outputMask, volume, muted, encoded, mode);
+      Object.hash(_hashMap(trimDb), _hashMap(pan), _hashMap(pairs));
 }
 
 /// A saved Segno session: the transport/tempo settings, the tracks, and (schema
@@ -491,6 +601,14 @@ class SessionMonitor {
 /// `songSections`/`bandGroups` fields the index plan ERD originally sketched
 /// are DROPPED per the B1 spec (a Song/Band "section" is a track, nothing
 /// separate to persist).
+///
+/// Slice 3 (the Mixer and Audio routing pages) adds the mix: every track's
+/// pan ([SessionTrack.pan]), every lane's recorded image ([SessionLane.pan]),
+/// every monitor's pan ([SessionMonitor.pan]) and the session-level
+/// [inputSetup] the monitors' pans and future takes come from. All four are
+/// presence-keyed and default to centre / the default setup, so a manifest
+/// written before them loads unchanged and a rig with every pan at centre
+/// writes none of them.
 ///
 /// Slice 2c moves the per-track length preset and Loop/Once to the
 /// default-plus-override shape slice 2b introduced for record timing and
@@ -564,6 +682,7 @@ class Session {
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
     this.pedalBindings = '',
+    this.inputSetup = const SessionInputSetup(),
   });
 
   /// Projects a [Session] from a decoded JSON map.
@@ -636,6 +755,9 @@ class Session {
       looperMode: _looperModeFromJson(json['looperMode'] as String?),
       primaryTrack: (json['primaryTrack'] as num?)?.toInt() ?? -1,
       pedalBindings: json['pedalBindings'] as String? ?? '',
+      inputSetup: SessionInputSetup.fromJson(
+        json['inputSetup'] as Map<String, dynamic>?,
+      ),
     );
   }
 
@@ -798,6 +920,13 @@ class Session {
   /// with `''` defers to the globals entirely. There is no per-button merge.
   final String pedalBindings;
 
+  /// The per-input capture setup the session was saved with (slice 3):
+  /// trims, pans and pairs. Session-level like the override maps, because an
+  /// input's setup exists whether or not anything was recorded from it.
+  /// Omitted from the manifest when it is the default setup; absent on an
+  /// older manifest reads as the default.
+  final SessionInputSetup inputSetup;
+
   /// Serializes this session manifest to a JSON map. Always writes the
   /// current [formatVersion] (v7 — this code never writes an older schema).
   Map<String, dynamic> toJson() => {
@@ -830,6 +959,7 @@ class Session {
     'looperMode': looperMode.name,
     'primaryTrack': primaryTrack,
     'pedalBindings': pedalBindings,
+    if (!inputSetup.isEmpty) 'inputSetup': inputSetup.toJson(),
   };
 
   @override
@@ -857,6 +987,7 @@ class Session {
           primaryTrack == other.primaryTrack &&
           masterChain == other.masterChain &&
           pedalBindings == other.pedalBindings &&
+          inputSetup == other.inputSetup &&
           _mapEquals(lengthPresetOverrides, other.lengthPresetOverrides) &&
           _mapEquals(onceOverrides, other.onceOverrides) &&
           _listEquals(tracks, other.tracks) &&
@@ -888,6 +1019,7 @@ class Session {
     primaryTrack,
     masterChain,
     pedalBindings,
+    inputSetup,
     _hashMap(lengthPresetOverrides),
     _hashMap(onceOverrides),
     Object.hashAll(tracks),

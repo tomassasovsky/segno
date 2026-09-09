@@ -321,7 +321,9 @@ abstract interface class LooperTransport {
   EngineResult setAutoRecord({required bool enabled});
 }
 
-/// Per-lane channel routing, volume, and mute (a track's recordable lanes).
+/// Per-lane channel routing, volume, mute and pan (a track's recordable
+/// lanes), plus the per-track solo and the per-input capture trim beside them
+/// (accepted design, slice 3: the Mixer's facts).
 abstract interface class EngineRouting {
   /// Sets track [channel]'s active lane count to [count] (clamped by the engine
   /// to `1..` the native lane ceiling) on the control thread, lazily allocating
@@ -344,6 +346,39 @@ abstract interface class EngineRouting {
     int channel = 0,
     int lane = 0,
   });
+
+  /// Sets lane [lane] of track [channel]'s pan: `-1` is hard left, `1` hard
+  /// right, `0` centre (clamped by the engine). A lane's output is a stereo
+  /// pair; the pan scales that pair with a unity-centre balance law before it
+  /// is placed on the lane's first two masked outputs: the near side stays at
+  /// unity and the far side falls on a quarter-sine
+  /// (`left = cos(max(pan, 0) * pi/2)`, `right = cos(max(-pan, 0) * pi/2)`).
+  /// Centre therefore leaves the pair bit-identical to a lane that was never
+  /// panned, and hard left is the left output alone. On a single masked
+  /// output the pan is a plain attenuation of the mid. Reset to centre by a
+  /// (re)start, like volume; the caller remembers and re-applies it.
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  });
+
+  /// Solos or un-solos track [channel]. While any track is soloed, only
+  /// soloed tracks route to the outputs; every other track keeps playing (its
+  /// chain runs and its dry meters keep reading) but sends nothing, exactly as
+  /// a muted lane does. Independent of mute: a soloed muted track is still
+  /// silent, and clearing every solo leaves the mutes as they were. Monitors
+  /// are not tracks and are unaffected. Reset by a (re)start.
+  EngineResult setTrackSolo({required int channel, required bool solo});
+
+  /// Sets hardware input [input]'s capture trim: a linear [gain] (default
+  /// `1`, clamped by the engine to `0..LE_MAX_INPUT_TRIM`, +12 dB) applied to
+  /// the sample a lane RECORDS from that input and to nothing else. The
+  /// monitor path, the input meters, the clip detector, the sound-activated
+  /// trigger and the tuner all read the untrimmed input. A direct store, so it
+  /// works while stopped and takes effect on the next block; reset to `1` by
+  /// a (re)start.
+  EngineResult setInputTrim({required int input, required double gain});
 
   /// Routes lane [lane] of track [channel] to record from hardware input
   /// [inputChannel] (`-1` = record nothing). Each lane records exactly one
@@ -762,6 +797,11 @@ abstract interface class MonitorControl {
 
   /// Mutes or unmutes monitor input [input]'s chain.
   EngineResult setMonitorInputMute({required int input, required bool muted});
+
+  /// Sets monitor input [input]'s pan, `-1..1` (clamped by the engine): the
+  /// same unity-centre balance law as [EngineRouting.setLanePan], applied to
+  /// the monitor's stereo pair after its chain and gain.
+  EngineResult setMonitorInputPan({required int input, required double pan});
 
   /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on monitor input
   /// [input]'s chain to [type]. Changing the type resets that entry's DSP state

@@ -263,6 +263,14 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 3a (#1016, epic #1009):** the mix model: per-lane
+  pan with a unity-centre balance law, per-track Solo beside mute, a capture
+  trim per input on the recorded branch only, monitoring for every hardware
+  input, a recorded image fixed per lane from its input's setup (stereo
+  pairs as two lanes with a shared balance), the Mixer's meters (post-fader
+  stereo peaks per track, per-input, per-monitor and per-output peaks) and
+  typed mix targets; persisted in settings and the session manifest.
+  Ledger: `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Accepted design, slice 2c (#1012, epic #1009):** the Loop settings
   pages at the pen's size (hub, Loop mode cards with reasons and the stop
   dialog, Recording, Tempo & click with the signature grid, Length &

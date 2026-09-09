@@ -12,15 +12,43 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 /// `LE_MAX_LANES`. Referenced (not re-typed) so it can never drift from the C.
 const int kMaxLanes = LE_MAX_LANES;
 
+/// The number of hardware channels the engine can open per direction,
+/// mirroring the native `LE_MAX_CHANNELS`. Referenced (not re-typed) so it
+/// can never drift from the C. Sizes the per-channel meter and trim lists on
+/// [EngineSnapshot].
+const int kMaxChannels = LE_MAX_CHANNELS;
+
 /// The number of hardware inputs the live-monitor path covers, mirroring the
 /// native `LE_MAX_MONITORED_INPUTS`. Referenced (not re-typed) so it can never
 /// drift from the C.
 ///
-/// Not "the inputs the rig can use": an input past this can still be RECORDED
-/// into a lane, it simply cannot be monitored. The old name for this
-/// (`kMaxInputs`) read as the former, and was misread that way at least once
-/// (#558) — capping what a socket could be NAMED at eight.
+/// Every input the engine can open can be monitored (accepted design, slice
+/// 3), so this equals [kMaxChannels]. It stays a distinct name from
+/// [kMaxLanes], which bounds a different thing (lanes per track). The old
+/// name for this (`kMaxInputs`) was misread at least once (#558) as a cap on
+/// what a socket could be NAMED.
 const int kMaxMonitoredInputs = LE_MAX_MONITORED_INPUTS;
+
+/// One `0` per hardware channel: the default for the [EngineSnapshot] meter
+/// lists. A literal rather than a `List.filled` so the snapshot constructors
+/// stay `const`; its length is pinned to [kMaxChannels] by test.
+const List<double> _kEightZeros = [0, 0, 0, 0, 0, 0, 0, 0];
+const List<double> _kZeroPerChannel = [
+  ..._kEightZeros,
+  ..._kEightZeros,
+  ..._kEightZeros,
+  ..._kEightZeros,
+];
+
+/// One `1` (unity) per hardware channel: the default for
+/// [EngineSnapshot.inputTrim]. See [_kZeroPerChannel].
+const List<double> _kEightOnes = [1, 1, 1, 1, 1, 1, 1, 1];
+const List<double> _kUnityPerChannel = [
+  ..._kEightOnes,
+  ..._kEightOnes,
+  ..._kEightOnes,
+  ..._kEightOnes,
+];
 
 /// Phase of the loopback round-trip latency harness.
 ///
@@ -410,6 +438,7 @@ class LaneSnapshot {
     required this.rms,
     required this.peak,
     this.recoverable = false,
+    this.pan = 0,
   });
 
   /// An empty lane recording no input.
@@ -421,7 +450,8 @@ class LaneSnapshot {
       lengthFrames = 0,
       rms = 0,
       peak = 0,
-      recoverable = false;
+      recoverable = false,
+      pan = 0;
 
   /// Projects a native `le_lane_snapshot` into a [LaneSnapshot].
   factory LaneSnapshot.fromNative(le_lane_snapshot native) => LaneSnapshot(
@@ -433,6 +463,7 @@ class LaneSnapshot {
     rms: native.rms,
     peak: native.peak,
     recoverable: native.recoverable != 0,
+    pan: native.pan,
   );
 
   /// Hardware input channel this lane records (`-1` = none).
@@ -466,6 +497,10 @@ class LaneSnapshot {
   /// cleared-with-restore take reads `0` while its audio is one undo away.
   final bool recoverable;
 
+  /// The lane's pan, `-1` (left) .. `1` (right), `0` centre — see
+  /// `EngineRouting.setLanePan` for the balance law.
+  final double pan;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -478,7 +513,8 @@ class LaneSnapshot {
           lengthFrames == other.lengthFrames &&
           rms == other.rms &&
           peak == other.peak &&
-          recoverable == other.recoverable;
+          recoverable == other.recoverable &&
+          pan == other.pan;
 
   @override
   int get hashCode => Object.hash(
@@ -490,6 +526,7 @@ class LaneSnapshot {
     rms,
     peak,
     recoverable,
+    pan,
   );
 }
 
@@ -526,6 +563,9 @@ class TrackSnapshot {
     this.quantizeOverride,
     this.quantizeDivOverride,
     this.overdubFeedbackOverride,
+    this.solo = false,
+    this.peakL = 0,
+    this.peakR = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -554,6 +594,9 @@ class TrackSnapshot {
       quantizeOverride = null,
       quantizeDivOverride = null,
       overdubFeedbackOverride = null,
+      solo = false,
+      peakL = 0,
+      peakR = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -594,6 +637,9 @@ class TrackSnapshot {
     overdubFeedbackOverride: native.overdub_feedback_override < 0
         ? null
         : native.overdub_feedback_override,
+    solo: native.solo != 0,
+    peakL: native.peak_l,
+    peakR: native.peak_r,
     lanes: lanes,
   );
 
@@ -709,6 +755,19 @@ class TrackSnapshot {
   /// Peak level for the most recent block, in `0..1`.
   final double peak;
 
+  /// Whether this track is soloed (`EngineRouting.setTrackSolo`). While any
+  /// track is soloed only soloed tracks route; independent of [muted].
+  final bool solo;
+
+  /// The track's absolute peak on the left side over the most recent block,
+  /// `0..1`, read AFTER volume, pan and the track's chain (what the track
+  /// sends to the outputs), before the master bus. `0` while nothing routes.
+  /// Unlike [peak] (the dry loop content) this follows the fader.
+  final double peakL;
+
+  /// The right-side counterpart of [peakL].
+  final double peakR;
+
   /// Lane 0's recorded input as a bitmask (`1 << inputChannel`, or `0` when
   /// lane 0 records no input). Mirrors lane 0; per-lane inputs are in [lanes].
   final int inputMask;
@@ -754,6 +813,9 @@ class TrackSnapshot {
           quantizeOverride == other.quantizeOverride &&
           quantizeDivOverride == other.quantizeDivOverride &&
           overdubFeedbackOverride == other.overdubFeedbackOverride &&
+          solo == other.solo &&
+          peakL == other.peakL &&
+          peakR == other.peakR &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -780,6 +842,9 @@ class TrackSnapshot {
     quantizeOverride,
     quantizeDivOverride,
     overdubFeedbackOverride,
+    solo,
+    peakL,
+    peakR,
     Object.hashAll(lanes),
   ]);
 }
@@ -1109,6 +1174,10 @@ class EngineSnapshot {
     this.quantize = false,
     this.autoRecord = false,
     this.overdubFeedback = 1,
+    this.inputPeaks = _kZeroPerChannel,
+    this.monitorPeaks = _kZeroPerChannel,
+    this.outputPeaks = _kZeroPerChannel,
+    this.inputTrim = _kUnityPerChannel,
     this.tracks = const [],
   });
 
@@ -1165,6 +1234,10 @@ class EngineSnapshot {
       quantize = false,
       autoRecord = false,
       overdubFeedback = 1,
+      inputPeaks = _kZeroPerChannel,
+      monitorPeaks = _kZeroPerChannel,
+      outputPeaks = _kZeroPerChannel,
+      inputTrim = _kUnityPerChannel,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -1227,6 +1300,18 @@ class EngineSnapshot {
     quantize: native.quantize != 0,
     autoRecord: native.auto_record != 0,
     overdubFeedback: native.overdub_feedback,
+    inputPeaks: [
+      for (var i = 0; i < LE_MAX_CHANNELS; i++) native.input_peaks[i],
+    ],
+    monitorPeaks: [
+      for (var i = 0; i < LE_MAX_CHANNELS; i++) native.monitor_peaks[i],
+    ],
+    outputPeaks: [
+      for (var i = 0; i < LE_MAX_CHANNELS; i++) native.output_peaks[i],
+    ],
+    inputTrim: [
+      for (var i = 0; i < LE_MAX_CHANNELS; i++) native.input_trim[i],
+    ],
     tracks: tracks,
   );
 
@@ -1473,6 +1558,29 @@ class EngineSnapshot {
   /// [TrackSnapshot.overdubFeedbackOverride].
   final double overdubFeedback;
 
+  /// Per-input RAW device level over the most recent block, `0..1`, indexed
+  /// by hardware channel (length [kMaxChannels]; entries past the device's
+  /// channel count read `0`). Read before conditioning and trim, like
+  /// [inputClipMask], so a hot ADC reads hot however the trim is set. A block
+  /// peak like [outputPeak]: written once per block, not a per-callback
+  /// counter.
+  final List<double> inputPeaks;
+
+  /// Per-input level of what that input's monitor sends to the outputs over
+  /// the most recent block, `0..1`, after its chain, gain and pan; `0` while
+  /// the monitor is off or muted. Indexed like [inputPeaks].
+  final List<double> monitorPeaks;
+
+  /// Per-output level after the master gain and limiter over the most recent
+  /// block, `0..1`, indexed by hardware output channel (length
+  /// [kMaxChannels]).
+  final List<double> outputPeaks;
+
+  /// Per-input capture trim the engine holds (`EngineRouting.setInputTrim`):
+  /// linear, default `1`, indexed by hardware channel (length
+  /// [kMaxChannels]). Entries past the device's channel count read `1`.
+  final List<double> inputTrim;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -1559,6 +1667,10 @@ class EngineSnapshot {
           quantize == other.quantize &&
           autoRecord == other.autoRecord &&
           overdubFeedback == other.overdubFeedback &&
+          _listEquals(inputPeaks, other.inputPeaks) &&
+          _listEquals(monitorPeaks, other.monitorPeaks) &&
+          _listEquals(outputPeaks, other.outputPeaks) &&
+          _listEquals(inputTrim, other.inputTrim) &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -1614,6 +1726,10 @@ class EngineSnapshot {
     quantize,
     autoRecord,
     overdubFeedback,
+    Object.hashAll(inputPeaks),
+    Object.hashAll(monitorPeaks),
+    Object.hashAll(outputPeaks),
+    Object.hashAll(inputTrim),
     ...tracks,
   ]);
 

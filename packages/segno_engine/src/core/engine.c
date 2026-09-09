@@ -155,6 +155,7 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
                         memory_order_relaxed);
   atomic_store_explicit(&ln->a_output_mask, 0x3u, memory_order_relaxed);
   store_f32(&ln->a_vol_bits, 1.0f);
+  store_f32(&ln->a_pan_bits, 0.0f);
   store_i32(&ln->a_muted, 0);
   ln->pending_mute = 0;
   store_i32(&ln->a_live, 0);
@@ -199,7 +200,9 @@ static void le_monitor_input_reset(le_monitor_input* m) {
   store_i32(&m->a_enabled, 0);
   atomic_store_explicit(&m->a_output_mask, 0x3u, memory_order_relaxed);
   store_f32(&m->a_vol_bits, 1.0f);
+  store_f32(&m->a_pan_bits, 0.0f);
   store_i32(&m->a_muted, 0);
+  store_f32(&m->a_peak_bits, 0.0f);
   store_i32(&m->a_fx_count, 0);
   store_i32(&m->a_fx_chain_enabled, 1);
   m->fx_count_pushed = 0;
@@ -580,6 +583,18 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input_reset(&engine->monitors[c]);
   }
+  /* Capture trim, solo and the per-channel meters (slice 3): unity, off and
+   * silent on every (re)configure; the caller re-applies its intent. */
+  for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
+    store_f32(&engine->a_in_trim_bits[c], 1.0f);
+    store_f32(&engine->a_in_peak_ch_bits[c], 0.0f);
+    store_f32(&engine->a_out_peak_ch_bits[c], 0.0f);
+  }
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    store_i32(&engine->tracks[t].a_solo, 0);
+    store_f32(&engine->tracks[t].a_trk_peak_l_bits, 0.0f);
+    store_f32(&engine->tracks[t].a_trk_peak_r_bits, 0.0f);
+  }
 
   /* Per-input conditioning stages (input conditioning, S1): defaults (all
    * disabled) + the conditioned-copy scratch for the new channel count. The
@@ -848,6 +863,9 @@ le_engine* le_engine_create(void) {
    * reason as a_looper_mode's redundant store. */
   store_i32(&engine->a_clock_mode, LE_CLOCK_OFF);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
+  for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
+    store_f32(&engine->a_in_trim_bits[c], 1.0f); /* unity until set */
+  }
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
   engine->lim_gain = 1.0f;
