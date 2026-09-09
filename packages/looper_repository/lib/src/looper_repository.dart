@@ -276,6 +276,12 @@ class LooperRepository {
   bool _defaultOneShot = false;
   final Map<int, bool> _trackOneShot = {};
 
+  /// The engine's `LE_LENGTH_PRESET_MAX_BARS`: a preset above it is refused
+  /// natively, so the caches never hold one (a manifest can say anything).
+  static const int _maxLengthPresetBars = 64;
+
+  static int _clampPresetBars(int bars) => bars.clamp(0, _maxLengthPresetBars);
+
   /// Track [channel]'s effective length preset: its override, else the
   /// default; in Multi always the default (the shared length).
   int _effectiveLengthPreset(int channel) {
@@ -2160,7 +2166,7 @@ class LooperRepository {
     // the audio just imported.
     rig.lengthPresetOverrides.forEach((channel, bars) {
       if (channel < 0 || channel >= trackCount) return;
-      _trackLengthPreset[channel] = bars < 0 ? 0 : bars;
+      _trackLengthPreset[channel] = _clampPresetBars(bars);
       _engine.setTrackLengthPreset(
         channel: channel,
         bars: _effectiveLengthPreset(channel),
@@ -4390,7 +4396,7 @@ class LooperRepository {
     if (bars == null) {
       _trackLengthPreset.remove(channel);
     } else {
-      _trackLengthPreset[channel] = bars < 0 ? 0 : bars;
+      _trackLengthPreset[channel] = _clampPresetBars(bars);
     }
     // Engine first, then the projection, so the published override and the
     // engine's effective value move in the same state.
@@ -4421,7 +4427,7 @@ class LooperRepository {
   /// every track is given it (the shared length). Remembered and re-applied
   /// on every (re)start; re-projects so the published default moves.
   EngineResult setDefaultLengthPreset(int bars) {
-    final next = bars < 0 ? 0 : bars;
+    final next = _clampPresetBars(bars);
     if (next == _defaultLengthPreset) return EngineResult.ok;
     _defaultLengthPreset = next;
     var result = EngineResult.ok;

@@ -702,9 +702,9 @@ class LoopStepper extends StatelessWidget {
 }
 
 /// The pen's 56 px slider: a rail with the filled part and its edge. Drag or
-/// tap sets the value in `0..1`; [onChangeEnd] fires once when the pointer
-/// lifts, for the caller to commit what [onChanged] previewed.
-class LoopSlider extends StatelessWidget {
+/// tap sets the value in `0..1`; [onChangeEnd] fires once per touch, when
+/// the pointer lifts, for the caller to commit what [onChanged] previewed.
+class LoopSlider extends StatefulWidget {
   /// Creates a [LoopSlider].
   const LoopSlider({
     required this.value,
@@ -722,7 +722,8 @@ class LoopSlider extends StatelessWidget {
   /// Called with the new position while dragging or on a tap.
   final ValueChanged<double> onChanged;
 
-  /// Called with the final position when a drag or tap ends.
+  /// Called once per touch with the final position when the pointer lifts;
+  /// a cancelled touch ends at [value], so a preview never outlives it.
   final ValueChanged<double>? onChangeEnd;
 
   /// The pen's width.
@@ -734,72 +735,89 @@ class LoopSlider extends StatelessWidget {
   /// Whether the slider can be moved right now.
   final bool enabled;
 
-  double _fraction(double dx) => (dx / width).clamp(0.0, 1.0);
+  @override
+  State<LoopSlider> createState() => _LoopSliderState();
+}
+
+class _LoopSliderState extends State<LoopSlider> {
+  /// The last position previewed by the touch in progress; `null` between
+  /// touches.
+  double? _preview;
+
+  double _fraction(double dx) => (dx / widget.width).clamp(0.0, 1.0);
 
   void _set(double dx) {
-    if (!enabled) return;
-    onChanged(_fraction(dx));
+    if (!widget.enabled) return;
+    _preview = _fraction(dx);
+    widget.onChanged(_preview!);
   }
 
-  void _end(double dx) {
-    if (!enabled) return;
-    onChangeEnd?.call(_fraction(dx));
+  // The commit rides the raw pointer rather than the gesture callbacks: the
+  // tap and drag recognizers each cancel on the interactions the other
+  // wins, so a plain tap or a slow drag would end twice, once at a stale
+  // value. One pointer up is one commit.
+  void _pointerUp(PointerUpEvent event) {
+    if (!widget.enabled) return;
+    final fraction = _preview ?? _fraction(event.localPosition.dx);
+    _preview = null;
+    widget.onChangeEnd?.call(fraction);
   }
 
-  /// A cancelled gesture (another finger taking the arena, a route pushed
-  /// mid-drag) ends at the committed value, so a preview never outlives
-  /// its touch.
-  void _cancel() {
-    if (!enabled) return;
-    onChangeEnd?.call(value.clamp(0.0, 1.0));
+  void _pointerCancel(PointerCancelEvent event) {
+    if (!widget.enabled || _preview == null) return;
+    _preview = null;
+    widget.onChangeEnd?.call(widget.value.clamp(0.0, 1.0));
   }
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final value = widget.value;
+    final width = widget.width;
+    final enabled = widget.enabled;
     final clamped = value.clamp(0.0, 1.0);
     return Semantics(
       slider: true,
-      label: semanticLabel,
+      label: widget.semanticLabel,
       value: '${(clamped * 100).round()}',
       enabled: enabled,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (d) => _set(d.localPosition.dx),
-        onTapUp: (d) => _end(d.localPosition.dx),
-        onTapCancel: _cancel,
-        onHorizontalDragStart: (d) => _set(d.localPosition.dx),
-        onHorizontalDragUpdate: (d) => _set(d.localPosition.dx),
-        onHorizontalDragEnd: (d) => _end(d.localPosition.dx),
-        onHorizontalDragCancel: _cancel,
-        child: Opacity(
-          opacity: enabled ? 1 : surface.disabledOpacity,
-          child: Container(
-            width: width,
-            height: 56,
-            decoration: BoxDecoration(
-              color: surface.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: surface.borderHairline),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: (width - 2) * clamped,
-                  child: ColoredBox(color: surface.controlStrong),
-                ),
-                Positioned(
-                  left: (width - 2) * clamped,
-                  top: 0,
-                  bottom: 0,
-                  width: 2,
-                  child: ColoredBox(color: surface.textSecondary),
-                ),
-              ],
+      child: Listener(
+        onPointerUp: _pointerUp,
+        onPointerCancel: _pointerCancel,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (d) => _set(d.localPosition.dx),
+          onHorizontalDragStart: (d) => _set(d.localPosition.dx),
+          onHorizontalDragUpdate: (d) => _set(d.localPosition.dx),
+          child: Opacity(
+            opacity: enabled ? 1 : surface.disabledOpacity,
+            child: Container(
+              width: width,
+              height: 56,
+              decoration: BoxDecoration(
+                color: surface.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: surface.borderHairline),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: (width - 2) * clamped,
+                    child: ColoredBox(color: surface.controlStrong),
+                  ),
+                  Positioned(
+                    left: (width - 2) * clamped,
+                    top: 0,
+                    bottom: 0,
+                    width: 2,
+                    child: ColoredBox(color: surface.textSecondary),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

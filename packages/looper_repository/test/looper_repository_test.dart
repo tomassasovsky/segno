@@ -5950,9 +5950,10 @@ void main() {
           ..startEngine(const EngineConfig())
           ..setDefaultLengthPreset(4)
           ..setDefaultOnce(once: true)
-          // A live/prior session left overrides on track 2.
-          ..setTrackLengthPreset(channel: 2, bars: 16)
-          ..setTrackOnce(channel: 2, once: false);
+          // A live/prior session left overrides on track 1, which the rig
+          // below says nothing about.
+          ..setTrackLengthPreset(channel: 1, bars: 32)
+          ..setTrackOnce(channel: 1, once: false);
         addTearDown(repo.dispose);
 
         await repo.applySession(
@@ -5978,13 +5979,14 @@ void main() {
         expect(tracks[0].oneShotOverride, isFalse);
         expect(engine.trackLengthPreset[0], 8);
         expect(engine.trackOneShot[0], isFalse);
-        // Track 1: no override, so it follows the defaults.
+        // Track 1: the rig says nothing, so the stale overrides are gone
+        // and it follows the defaults.
         expect(tracks[1].lengthPresetOverride, isNull);
         expect(tracks[1].oneShotOverride, isNull);
         expect(engine.trackLengthPreset[1], 4);
         expect(engine.trackOneShot[1], isTrue);
-        // Track 2: no content, but the rig's overrides replace the stale
-        // ones all the same.
+        // Track 2: no content, but the rig's overrides restore all the
+        // same.
         expect(tracks[2].lengthPresetOverride, 16);
         expect(tracks[2].oneShotOverride, isTrue);
         expect(engine.trackLengthPreset[2], 16);
