@@ -216,6 +216,12 @@ abstract interface class LooperTransport {
   /// The redo twin of [undoRestoresClear], for the same host bookkeeping.
   bool redoReclears({int channel = 0});
 
+  /// Whether a user clear on a capturing [channel] froze the take and its
+  /// restore point is still to be filed: [undoRestoresClear] answers `true`
+  /// once the audio thread's report lands. A host grouping clears asks this
+  /// beside [undoRestoresClear] to know which tracks the clear can give back.
+  bool clearRestorePending({int channel = 0});
+
   /// Removes the most recent overdub layer on track [channel] (multi-level).
   ///
   /// Past the base layer the track empties (redo-ably); on a track cleared via

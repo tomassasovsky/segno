@@ -695,6 +695,11 @@ typedef struct le_track {
    * filed. A clear or a fresh capture in between supersedes the cancel, so
    * the late event must not file a redo slot the track no longer owns. */
   int cancel_pending;
+  /* control: the undo depth was held at 0 while a state command that gives
+   * the track content (a restore, a resurrect) was in flight — an EMPTY
+   * track never shows peelable layers on the wire — and is republished by
+   * the drain once the audio thread has applied that command. */
+  int depth_republish;
   /* #595: an explicit un-route since the last drain asked for a trailing-lane
    * reclaim. The immediate trim in le_engine_set_lane_input can only reclaim
    * the just-un-routed slot — a sibling un-route pushed in the same audio
@@ -714,6 +719,8 @@ typedef struct le_track {
    * pending_target. Deterministic (ring FIFO), no observation races. */
   int state_cmds_posted;   /* control: state-flip commands pushed */
   int32_t pending_target;  /* control: the last posted command's end state */
+  int32_t pending_len;     /* control: the length that command will publish
+                            * (0 for a command that empties the track) */
   _Atomic int32_t a_state_acks; /* audio: state-flip commands applied */
   uint32_t dub_generation; /* bumped on clear; audio mirrors it in handle_clear
                             * and tags retire events, so a stale event from

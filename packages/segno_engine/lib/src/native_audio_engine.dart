@@ -653,6 +653,12 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  bool clearRestorePending({int channel = 0}) {
+    _checkAlive();
+    return _bindings.le_engine_clear_restore_pending(_engine, channel) != 0;
+  }
+
+  @override
   bool redoReclears({int channel = 0}) {
     _checkAlive();
     return _bindings.le_engine_redo_reclears(_engine, channel) != 0;

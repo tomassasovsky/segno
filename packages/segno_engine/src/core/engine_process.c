@@ -2139,10 +2139,14 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       le_track* t = &e->tracks[ch];
       if (load_i32(&t->a_state) != LE_TRACK_RECORDING) {
         /* A count-in still running, or a take that already ended: nothing to
-         * cancel, but the control thread's state command wants its ack. */
+         * cancel, but the control thread's state command wants its ack and
+         * its report (a 0 length: nothing to redo, the flag clears). */
         if (e->count_in_total > 0 && e->count_in_channel == ch) {
           le_count_in_reset(e);
         }
+        const le_command none = {.code = LE_EVT_TAKE_CANCELLED,
+                                 .lanei = {ch, 0, 0}};
+        (void)le_ring_push(&e->evt_ring, none);
         atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
         break;
       }
@@ -2157,6 +2161,9 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
          * itself); a void later take just empties. */
         if (e->clock.length == 0) {
           handle_clear(e, ch, 0, frame);
+          const le_command none = {.code = LE_EVT_TAKE_CANCELLED,
+                                   .lanei = {ch, 0, 0}};
+          (void)le_ring_push(&e->evt_ring, none); /* clears the flag */
           break;
         }
         finalize_new_track(e, t, LE_TRACK_PLAYING, frame);

@@ -1480,6 +1480,14 @@ LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
  * exact the moment it returns. */
 LE_EXPORT int32_t le_engine_undo_restores_clear(le_engine* engine,
                                                 int32_t channel);
+/* Whether a user clear on a capturing track has frozen the take and its
+ * restore point is still to be filed (1) — the next le_engine_undo_restores_
+ * clear answer will be 1 once the audio thread's report lands. 0 otherwise,
+ * for an invalid channel or a stopped engine. A host grouping clears asks
+ * this beside le_engine_undo_restores_clear to know which tracks the clear
+ * can give back. */
+LE_EXPORT int32_t le_engine_clear_restore_pending(le_engine* engine,
+                                                  int32_t channel);
 /* Whether the NEXT le_engine_redo on `channel` re-applies a clear that an
  * undo took back (1) rather than re-stacking an overdub layer or
  * resurrecting an undone-to-empty track (0). The redo twin of
