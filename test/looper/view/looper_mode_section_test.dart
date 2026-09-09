@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -50,6 +48,9 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(() => repository.setLooperMode(any())).thenReturn(EngineResult.ok);
+    when(
+      () => repository.looperModeGate(any()),
+    ).thenReturn(LooperModeGate.open);
 
     settings = SettingsRepository(store: FakeKeyValueStore());
     performance = PerformanceRepository(
@@ -84,13 +85,16 @@ void main() {
       theme: AppTheme.neon,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: MultiBlocProvider(
-        providers: [
-          BlocProvider<LooperBloc>.value(value: bloc),
-          BlocProvider<ControlCubit>.value(value: control),
-        ],
-        child: const Scaffold(
-          body: SingleChildScrollView(child: LooperModeSection()),
+      home: RepositoryProvider<LooperRepository>.value(
+        value: repository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<ControlCubit>.value(value: control),
+          ],
+          child: const Scaffold(
+            body: SingleChildScrollView(child: LooperModeSection()),
+          ),
         ),
       ),
     ),
@@ -125,22 +129,18 @@ void main() {
     expect(sync.dx, multi.dx);
   });
 
-  testWidgets(
-    'selecting a different mode with NO track content applies '
-    'immediately, with no confirmation dialog',
-    (tester) async {
-      seed(const LooperState()); // no tracks => hasContent is false
-      await pump(tester);
+  testWidgets('an open gate dispatches the change at once, with no dialog', (
+    tester,
+  ) async {
+    seed(const LooperState());
+    await pump(tester);
 
-      await tester.tap(find.byKey(const Key('looperMode_option_sync')));
-      await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('looperMode_option_sync')));
+    await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
-      verify(
-        () => bloc.add(const LooperModeChanged(LooperMode.sync)),
-      ).called(1);
-    },
-  );
+    expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
+    verify(() => bloc.add(const LooperModeChanged(LooperMode.sync))).called(1);
+  });
 
   testWidgets('re-selecting the already-active mode is a no-op', (
     tester,
@@ -152,41 +152,52 @@ void main() {
     await tester.pumpAndSettle();
 
     verifyNever(() => bloc.add(any()));
+    verifyNever(() => repository.looperModeGate(any()));
   });
 
   testWidgets(
-    'selecting a different mode WHILE a track has content shows the D4 '
-    'confirmation dialog and does NOT dispatch the mode change until '
-    'confirmed — the engine would otherwise silently drop it',
+    'playing loops ask to stop and switch; confirming dispatches the change '
+    'and clears nothing',
     (tester) async {
-      const hasContent = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 4000),
-        ],
+      when(
+        () => repository.looperModeGate(LooperMode.sync),
+      ).thenReturn(LooperModeGate.playing);
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.playing, lengthFrames: 4000)],
+        ),
       );
-      seed(hasContent);
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('looperMode_option_sync')));
       await tester.pumpAndSettle();
 
-      // The confirmation is shown, and the mode change is NOT dispatched yet
-      // — this is the exact silent-no-op the D4 UX flow exists to prevent.
-      expect(
-        find.byKey(const Key('console_confirm_confirm')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('console_confirm_confirm')), findsOneWidget);
+      expect(find.text('Stop loops and switch'), findsOneWidget);
       verifyNever(() => bloc.add(any()));
+
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
+      await tester.pumpAndSettle();
+
+      verify(
+        () => bloc.add(const LooperModeChanged(LooperMode.sync)),
+      ).called(1);
+      // The engine stops the loops itself; no take is cleared for a switch.
+      verifyNever(() => repository.clear(channel: any(named: 'channel')));
     },
   );
 
-  testWidgets('cancelling the D4 confirmation leaves the mode unchanged', (
+  testWidgets('cancelling the stop-and-switch dialog changes nothing', (
     tester,
   ) async {
-    const hasContent = LooperState(
-      tracks: [Track(state: TrackState.playing, lengthFrames: 4000)],
+    when(
+      () => repository.looperModeGate(LooperMode.sync),
+    ).thenReturn(LooperModeGate.playing);
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 4000)],
+      ),
     );
-    seed(hasContent);
     await pump(tester);
 
     await tester.tap(find.byKey(const Key('looperMode_option_sync')));
@@ -194,110 +205,40 @@ void main() {
     await tester.tap(find.byKey(const Key('console_confirm_cancel')));
     await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const Key('console_confirm_confirm')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
     verifyNever(() => bloc.add(any()));
-    // Nothing was cleared either — a cancel is a true no-op.
     verifyNever(() => repository.clear(channel: any(named: 'channel')));
   });
 
-  testWidgets(
-    'confirming the D4 dialog clears every track then dispatches the mode '
-    'change — never a silent no-op',
-    (tester) async {
-      final controller = StreamController<LooperState>.broadcast();
-      addTearDown(controller.close);
-      const hasContent = LooperState(
-        tracks: [Track(state: TrackState.playing, lengthFrames: 4000)],
-      );
-      seed(hasContent, stream: controller.stream);
-      // ControlCubit.clearAll() reads the LIVE repository snapshot (not the
-      // bloc's cached state) to decide which tracks to clear.
-      when(() => repository.state).thenReturn(hasContent);
-      await pump(tester);
+  testWidgets('a refused change names its reason and dispatches nothing', (
+    tester,
+  ) async {
+    when(
+      () => repository.looperModeGate(LooperMode.multi),
+    ).thenReturn(LooperModeGate.spans);
+    seed(
+      const LooperState(
+        transport: TransportState(looperMode: LooperMode.sync),
+        tracks: [
+          Track(state: TrackState.stopped, lengthFrames: 4000),
+          Track(channel: 1, state: TrackState.stopped, lengthFrames: 8000),
+        ],
+      ),
+    );
+    await pump(tester);
 
-      await tester.tap(find.byKey(const Key('looperMode_option_sync')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
-      // Let the confirm handler's `clearAll()` await settle and reach the
-      // "await the bloc report cleared" point.
-      await tester.pump();
+    await tester.tap(find.byKey(const Key('looperMode_option_multi')));
+    await tester.pumpAndSettle();
 
-      // ControlCubit.clearAll() actually cleared the content-bearing track
-      // (channel 0, the interface default).
-      verify(() => repository.clear()).called(1);
-
-      // The mode change is still not dispatched — the flow is waiting for
-      // the bloc to report the clear before it will proceed (the race this
-      // whole mechanism exists to close).
-      verifyNever(() => bloc.add(any()));
-
-      // Simulate the repository's poll tick republishing the now-cleared
-      // state through the bloc's stream (what LooperRepository's real
-      // ticker does after a clear lands on the audio thread).
-      const cleared = LooperState();
-      when(() => bloc.state).thenReturn(cleared);
-      controller.add(cleared);
-      await tester.pumpAndSettle();
-
-      verify(
-        () => bloc.add(const LooperModeChanged(LooperMode.sync)),
-      ).called(1);
-    },
-  );
-
-  testWidgets(
-    'a clear that never settles within the bounded wait still does NOT '
-    'dispatch the mode change — the timeout path must re-check, not '
-    'dispatch unconditionally (that would recreate the exact silent D4 '
-    'no-op this flow exists to prevent) — and surfaces a visible SnackBar '
-    '(independent review of #295: the confirm dialog is already gone by '
-    'this point, so without the SnackBar the timeout looked identical to a '
-    'tap that never registered)',
-    (tester) async {
-      final controller = StreamController<LooperState>.broadcast();
-      addTearDown(controller.close);
-      const hasContent = LooperState(
-        tracks: [Track(state: TrackState.playing, lengthFrames: 4000)],
-      );
-      seed(hasContent, stream: controller.stream);
-      when(() => repository.state).thenReturn(hasContent);
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('looperMode_option_sync')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
-      await tester.pumpAndSettle();
-      verify(() => repository.clear()).called(1);
-
-      // The confirm dialog is already dismissed at this point (its pop
-      // animation has settled) — before the SnackBar fix, the screen here
-      // looked identical to before the user ever tapped anything.
-      expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
-      expect(
-        find.byKey(const Key('looperMode_timeout_snackbar')),
-        findsNothing,
-      );
-
-      // Never push a cleared state — the bloc keeps reporting content, so
-      // the bounded wait runs out its full timeout.
-      await tester.pump(const Duration(seconds: 3));
-
-      // The mode change must never have been dispatched — dispatching it
-      // while `bloc.state` still reports content would be silently dropped
-      // by the engine's D4 lock, the exact failure mode this whole
-      // confirm-then-clear-then-switch flow exists to prevent.
-      verifyNever(() => bloc.add(any()));
-
-      // But the timeout is no longer silent: a SnackBar tells the user to
-      // retry, instead of leaving them with zero information.
-      await tester.pump();
-      expect(
-        find.byKey(const Key('looperMode_timeout_snackbar')),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
+    expect(
+      find.byKey(const Key('looperMode_refused_snackbar')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('The recorded loop lengths do not fit this mode.'),
+      findsOneWidget,
+    );
+    verifyNever(() => bloc.add(any()));
+  });
 }

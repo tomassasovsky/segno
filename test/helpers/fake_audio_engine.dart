@@ -403,6 +403,12 @@ class FakeAudioEngine implements AudioEngine {
   /// The last value passed to [setLooperMode].
   LooperMode? lastLooperMode;
 
+  /// What [looperModeGate] answers; tests set it to exercise a refusal.
+  LooperModeGate nextLooperModeGate = LooperModeGate.open;
+
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) => nextLooperModeGate;
+
   @override
   EngineResult setLooperMode(LooperMode mode) {
     lastLooperMode = mode;

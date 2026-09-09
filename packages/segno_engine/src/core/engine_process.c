@@ -72,7 +72,10 @@ static void le_dub_session_start(le_engine* e, le_track* t);
  * review fix) reuses this full "return a track to EMPTY, and if the whole
  * rig is now empty, reset the master/grid too" reset rather than hand-
  * rolling a partial one. */
-static void handle_clear(le_engine* e, int32_t ch);
+static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame);
+static void le_primary_reconcile(le_engine* e);
+static void le_restore_multiple_or_divisor(le_track* t, int32_t base,
+                                           int32_t len);
 
 /* Performance event log (part 3, docs/design/performance-event-log-format.md):
  * pushes one entry into perf.log_ring, tagged with `frame` — the capture
@@ -280,25 +283,100 @@ static int le_tempo_locked(le_engine* e) {
          load_i32(&e->a_tempo_source) != LE_TEMPO_SOURCE_NONE;
 }
 
-/* The D4 looper-mode lock: a mode switch (LE_CMD_SET_LOOPER_MODE) is ignored
- * while ANY track has content (state != EMPTY) — deliberately a simpler
- * predicate than le_tempo_locked above: no grid check (loop_bars /
- * tempo_source), no count-in extension. Content on ANY track locks it, not
- * just a "selected" or track-0 one — the mode is a session-level choice, not
- * a per-track one. Only clearing every track releases the lock. */
-static int le_looper_mode_locked(le_engine* e) {
+/* Whether a looper-mode switch may land on the audio thread right now
+ * (accepted design, slice 2): never over a capture, a pending arm or a
+ * playing take. The control thread's le_engine_looper_mode_gate enforces the
+ * same with the effective state and stops playing loops ahead of the switch;
+ * this is the audio-thread re-check for the block in between. */
+static int le_looper_mode_switch_blocked(le_engine* e) {
+  if (e->count_in_total > 0) return 1;
   for (int32_t t = 0; t < e->track_count; ++t) {
-    if (load_i32(&e->tracks[t].a_state) != LE_TRACK_EMPTY) return 1;
+    le_track* tr = &e->tracks[t];
+    const int32_t st = load_i32(&tr->a_state);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) return 1;
+    if (tr->pending_record) return 1;
+    if (st == LE_TRACK_PLAYING && load_i32(&tr->lanes[0].a_len) > 0) return 1;
   }
   return 0;
+}
+
+/* The audio-thread primary for re-clocking a switch: the crowned track when
+ * it holds a take, else the lowest populated track — the control gate's
+ * le_mode_gate_primary, so both sides measure against the same span. */
+static int32_t le_switch_primary(le_engine* e) {
+  const int32_t crowned = load_i32(&e->a_primary_track);
+  if (crowned >= 0 && crowned < e->track_count &&
+      load_i32(&e->tracks[crowned].lanes[0].a_len) > 0) {
+    return crowned;
+  }
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    if (load_i32(&e->tracks[t].lanes[0].a_len) > 0) return t;
+  }
+  return -1;
+}
+
+/* Lands a looper-mode switch (LE_CMD_SET_LOOPER_MODE) on a stopped rig,
+ * re-clocking recorded takes for the target without touching their audio:
+ *   - into SONG/FREE: every take runs its own clock at its unchanged length
+ *     and the shared master goes dormant (those modes record and play on
+ *     per-track clocks — finalize_master's free-mode branch);
+ *   - into MULTI/SYNC/BAND: the shared master is (re)established from the
+ *     primary's span and each take's multiple or division is re-derived
+ *     from its length (le_restore_multiple_or_divisor), the per-track clocks
+ *     going dormant.
+ * Every playhead restarts from the top — the rig is stopped, as the gate
+ * guarantees. An empty rig only records the new mode. */
+static void le_apply_mode_switch(le_engine* e, int32_t m) {
+  const int32_t prev = load_i32(&e->a_looper_mode);
+  if (prev == m) return;
+  store_i32(&e->a_looper_mode, m);
+  const int32_t primary = le_switch_primary(e);
+  if (primary < 0) return; /* nothing recorded: nothing to re-clock */
+  const int to_free = m == LE_LOOPER_MODE_FREE || m == LE_LOOPER_MODE_SONG;
+  if (to_free) {
+    le_loop_clock_reset(&e->clock);
+    e->loop_iteration = 0;
+    store_i32(&e->a_master_len, 0);
+    store_i32(&e->a_master_pos, 0);
+    e->loop_viz_bucket = -1;
+  } else {
+    const int32_t base = load_i32(&e->tracks[primary].lanes[0].a_len);
+    le_loop_clock_set_length(&e->clock, base);
+    e->loop_iteration = 0;
+    store_i32(&e->a_master_len, base);
+    store_i32(&e->a_master_pos, 0);
+    e->loop_viz_bucket = -1;
+  }
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    le_track* tr = &e->tracks[t];
+    const int32_t len = load_i32(&tr->lanes[0].a_len);
+    tr->start_iter = 0;
+    tr->free_iteration = 0;
+    e->trk_play_pos[t] = 0;
+    e->track_viz_bucket[t] = -1;
+    if (len <= 0) {
+      le_loop_clock_reset(&tr->free_clock);
+      continue;
+    }
+    if (to_free) {
+      le_loop_clock_set_length(&tr->free_clock, len);
+      store_i32(&tr->a_multiple, 1);
+      store_i32(&tr->a_sync_divisor, 0);
+    } else {
+      le_loop_clock_reset(&tr->free_clock);
+      le_restore_multiple_or_divisor(
+          tr, load_i32(&e->tracks[primary].lanes[0].a_len), len);
+    }
+  }
+  le_primary_reconcile(e);
 }
 
 /* MIDI clock send gate (C1, D15): whether le_midi_clock_advance may emit
  * ANYTHING this block. Manual-verified (docs/plan/2026-07-22-song-mode-
  * spec.md, "MIDI clock" section): send is active only in Multi/Sync/Band —
  * Song and Free stay completely silent regardless of clock_mode. Unlike
- * le_looper_mode_locked above (a content check gating whether a MODE SWITCH
- * is accepted), this reads the CURRENT mode every block to gate whether
+ * le_looper_mode_switch_blocked above (gating whether a MODE SWITCH
+ * may land), this reads the CURRENT mode every block to gate whether
  * clock OUTPUT fires — the two are deliberately different predicates over
  * the same a_looper_mode field. */
 static int le_clock_send_gate_open(le_engine* e) {
@@ -1415,7 +1493,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
     e->count_in_grace_channel = -1;
     if (load_i32(&e->tracks[ch].a_state) == LE_TRACK_RECORDING &&
         e->clock.length == 0) {
-      handle_clear(e, ch);
+      handle_clear(e, ch, 0, frame);
       return;
     }
   }
@@ -1515,6 +1593,44 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
     default:
       break;
   }
+}
+
+/* The audio-thread body of an undo past the base take (LE_CMD_UNDO_TO_EMPTY,
+ * and the cancelled take of LE_CMD_CANCEL_TAKE): the track reads content-less
+ * while its live slot keeps the audio for redo, and the master grid survives
+ * because redo needs it. The caller acks the state command. */
+static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
+  le_track* t = &e->tracks[ch];
+  le_audio_rev_bump(t); /* [R1] undo to empty: content-less from here */
+  t->record_pos = 0;
+  t->start_iter = 0;
+  t->pending_record = 0;
+  t->od_gain = 0.0f;
+  t->xfade_capture = 0;
+  t->seam_capture = 0; /* #728 */
+  /* The capture (if any) is gone: a mute deferred during it must not
+   * ambush some future capture's end. */
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    t->lanes[l].pending_mute = 0;
+  }
+  store_i32(&t->a_pending, 0);
+  store_i32(&t->a_state, LE_TRACK_EMPTY);
+  le_track_set_len(t, 0);
+  store_i32(&t->a_multiple, 1);
+  store_i32(&t->a_sync_divisor, 0); /* B3: division state dies too */
+  /* Free mode (B2b): same invariant-preserving reset as handle_clear's —
+   * a track reading EMPTY must never carry an established free_clock.
+   * Cheap no-op outside Free mode (already dormant there). */
+  le_loop_clock_reset(&t->free_clock);
+  t->free_iteration = 0;
+  e->track_viz_bucket[ch] = -1;
+  e->trk_play_pos[ch] = 0;
+  /* The to-EMPTY edge case of undo (LE_PLOG_UNDO, not a raw copy of the
+   * command — every undo path, common in-track swap or this one, logs the
+   * same semantic code so a downstream consumer never needs to know which
+   * internal path fired). */
+  le_plog_push(e, frame, (le_command){.code = LE_PLOG_UNDO, .arg_i = ch});
+  le_primary_reconcile(e); /* undoing the last take uncrowns */
 }
 
 /* Applies LE_CMD_FINALIZE_TAKE (le_engine_finalize_take, #405): ends the
@@ -1627,9 +1743,40 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
   le_plog_push(e, frame, *cmd);
 }
 
-static void handle_clear(le_engine* e, int32_t ch) {
+static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
   le_track* t = &e->tracks[ch];
+  /* A user clear on a capturing track (accepted design, slice 2): freeze the
+   * take STOPPED at the clear boundary first — the same finalize a stop press
+   * runs, so a defining take still sets the grid and a later take keeps its
+   * whole-loop span with silence past what was captured — then report what
+   * the restore point needs (LE_EVT_CLEAR_FROZEN) and erase as usual. The
+   * capture is never resumed: undo brings the frozen take back STOPPED. */
+  if (freeze) {
+    const int32_t st = load_i32(&t->a_state);
+    if (st == LE_TRACK_RECORDING) {
+      if (e->clock.length == 0) {
+        if (t->xfade_capture > 0) {
+          t->record_pos = t->xfade_len; /* lock the intended length, no fade */
+          t->xfade_capture = 0;
+        }
+        finalize_master(e, t, LE_TRACK_STOPPED, frame);
+      } else {
+        finalize_new_track(e, t, LE_TRACK_STOPPED, frame);
+        t->seam_capture = 0; /* nothing to fold into an erased take */
+      }
+    } else if (st == LE_TRACK_OVERDUBBING) {
+      /* The pass ends here; its writes were in place, so the live slot holds
+       * base + layers + the partial pass, which is what comes back. */
+      store_i32(&t->a_state, LE_TRACK_STOPPED);
+      le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 0, frame);
+    }
+    const le_command evt = {
+        .code = LE_EVT_CLEAR_FROZEN,
+        .restore = {ch, load_i32(&t->lanes[0].a_len), LE_TRACK_STOPPED,
+                    load_i32(&e->a_master_len)}};
+    (void)le_ring_push(&e->evt_ring, evt); /* a full ring: no way back */
+  }
   le_audio_rev_bump(t); /* [R1] clear: the track's content is gone */
   t->record_pos = 0;
   t->start_iter = 0;
@@ -1979,8 +2126,57 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       break;
     case LE_CMD_CLEAR:
       le_plog_push(e, frame, *cmd);
-      handle_clear(e, cmd->arg_i);
+      /* arg_f = 1: a user clear on a capturing track freezes the take first
+       * (le_clear_track); internal clears and session load pass 0. */
+      handle_clear(e, cmd->arg_i, cmd->arg_f != 0.0f, frame);
       break;
+    case LE_CMD_CANCEL_TAKE: {
+      /* le_engine_undo while RECORDING (accepted design, slice 2): finalize
+       * the take exactly as a press would — grid, tempo derivation and loop
+       * span included — then empty the track around that content so redo
+       * plays it immediately. Not logged verbatim: RECORD_END and UNDO land
+       * where they happen. */
+      const int32_t ch = cmd->arg_i;
+      if (!valid_channel(e, ch)) break;
+      le_track* t = &e->tracks[ch];
+      if (load_i32(&t->a_state) != LE_TRACK_RECORDING) {
+        /* A count-in still running, or a take that already ended: nothing to
+         * cancel, but the control thread's state command wants its ack. */
+        if (e->count_in_total > 0 && e->count_in_channel == ch) {
+          le_count_in_reset(e);
+        }
+        atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
+        break;
+      }
+      if (t->xfade_capture > 0) {
+        t->record_pos = t->xfade_len; /* the intended length, no fade */
+        t->xfade_capture = 0;
+      }
+      int32_t len = 0;
+      if (t->record_pos <= 0) {
+        /* Nothing captured: a void defining take resets the rig like the
+         * count-in grace abort; a void later take just empties. */
+        if (e->clock.length == 0) {
+          handle_clear(e, ch, 0, frame);
+        } else {
+          finalize_new_track(e, t, LE_TRACK_PLAYING, frame);
+        }
+      } else {
+        if (e->clock.length == 0) {
+          finalize_master(e, t, LE_TRACK_PLAYING, frame);
+        } else {
+          finalize_new_track(e, t, LE_TRACK_PLAYING, frame);
+          t->seam_capture = 0; /* nothing to fold into a held take */
+        }
+        len = load_i32(&t->lanes[0].a_len);
+        apply_undo_to_empty(e, ch, frame);
+      }
+      const le_command evt = {.code = LE_EVT_TAKE_CANCELLED,
+                              .lanei = {ch, 0, len}};
+      (void)le_ring_push(&e->evt_ring, evt); /* a full ring: no redo */
+      atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
+      break;
+    }
     case LE_CMD_DUB_SHADOW: {
       /* A shadow slot for per-pass layer capture (buffers already allocated by
        * the control thread; visible via the ring's release/acquire). Arm it
@@ -2009,37 +2205,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
        * stays Clear's job (handle_clear's all-empty check). */
       if (!valid_channel(e, cmd->arg_i)) break;
       le_track* t = &e->tracks[cmd->arg_i];
-      le_audio_rev_bump(t); /* [R1] undo to empty: content-less from here */
-      t->record_pos = 0;
-      t->start_iter = 0;
-      t->pending_record = 0;
-      t->od_gain = 0.0f;
-      t->xfade_capture = 0;
-      t->seam_capture = 0; /* #728 */
-      /* The capture (if any) is gone: a mute deferred during it must not
-       * ambush some future capture's end. */
-      for (int l = 0; l < LE_MAX_LANES; ++l) {
-        t->lanes[l].pending_mute = 0;
-      }
-      store_i32(&t->a_pending, 0);
-      store_i32(&t->a_state, LE_TRACK_EMPTY);
-      le_track_set_len(t, 0);
-      store_i32(&t->a_multiple, 1);
-      store_i32(&t->a_sync_divisor, 0); /* B3: division state dies too */
-      /* Free mode (B2b): same invariant-preserving reset as handle_clear's —
-       * a track reading EMPTY must never carry an established free_clock.
-       * Cheap no-op outside Free mode (already dormant there). */
-      le_loop_clock_reset(&t->free_clock);
-      t->free_iteration = 0;
-      e->track_viz_bucket[cmd->arg_i] = -1;
-      e->trk_play_pos[cmd->arg_i] = 0;
-      /* The to-EMPTY edge case of undo (LE_PLOG_UNDO, not a raw copy of this
-       * command — every undo path, common in-track swap or this one, logs
-       * the same semantic code so a downstream consumer never needs to know
-       * which internal path fired). */
-      le_plog_push(e, frame,
-                  (le_command){.code = LE_PLOG_UNDO, .arg_i = cmd->arg_i});
-      le_primary_reconcile(e); /* undoing the last take uncrowns */
+      apply_undo_to_empty(e, cmd->arg_i, frame);
       atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
       break;
     }
@@ -2215,15 +2381,18 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       store_i32(&e->a_quantize_div, d);
       break;
     }
-    /* ---- looper mode (B2a, D4; see le_looper_mode_locked above). Not
+    /* ---- looper mode (B2a, D4; see le_looper_mode_switch_blocked above). Not
      * perf-logged: in this part a mode switch changes no audible output. */
     case LE_CMD_SET_LOOPER_MODE: {
-      if (le_looper_mode_locked(e)) break; /* D4: rejected (no-op) while locked */
       int32_t m = cmd->arg_i;
       if (m < LE_LOOPER_MODE_MULTI || m > LE_LOOPER_MODE_FREE) {
         break; /* re-validated here; the exported wrapper already rejects */
       }
-      store_i32(&e->a_looper_mode, m);
+      /* The control gate refused capture, queues and unfit spans, and stopped
+       * every playing loop ahead of this command; re-checked here so a state
+       * that moved in the one-block window never re-clocks a live rig. */
+      if (le_looper_mode_switch_blocked(e)) break;
+      le_apply_mode_switch(e, m);
       break;
     }
     /* ---- primary track (B3, D18; see LE_CMD_CROWN_PRIMARY's doc,

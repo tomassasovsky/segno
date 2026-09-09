@@ -1493,10 +1493,20 @@
     "looperModeBandSub": "Primary + sections",
     "looperModeFreeLabel": "Free",
     "looperModeFreeSub": "Un-synced tracks",
-    "modeChangeConfirmTitle": "Switch mode?",
-    "modeChangeConfirmBody": "Changing mode clears every track — there's no way to keep the current loops. Clear all tracks and switch?",
-    "modeChangeConfirmConfirm": "Clear & Switch",
-    "modeChangeTimedOut": "Mode switch timed out — the clear is still finishing. Try again in a moment.",
+    "modeChangeStopTitle": "Switch to {mode}?",
+    "@modeChangeStopTitle": {
+        "description": "Confirmation title when loops are playing and a mode change must stop them first",
+        "placeholders": {
+            "mode": {
+                "type": "String"
+            }
+        }
+    },
+    "modeChangeStopBody": "Loops are playing. Switching stops them where they are and keeps every recording; start them again from the stage.",
+    "modeChangeStopConfirm": "Stop loops and switch",
+    "modeChangeBlockedCapturing": "Finish the take first.",
+    "modeChangeBlockedQueued": "A queued action must fire or be cancelled first.",
+    "modeChangeBlockedSpans": "The recorded loop lengths do not fit this mode.",
     "oneShotGroupLabel": "ONE SHOT",
     "oneShotIntro": "A one-shot track plays once and stops instead of looping (active in Free and Song modes).",
     "trayLoopLabel": "Loop",

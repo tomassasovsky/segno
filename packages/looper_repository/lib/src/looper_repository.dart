@@ -1423,6 +1423,57 @@ class LooperRepository {
     return _engine.clearUndoable(channel: channel);
   }
 
+  /// Clears every track in [channels] as ONE grouped edit (accepted design,
+  /// slice 2): the next [undo] on any of them restores the whole group —
+  /// each take's content, layers, length and previous playing or stopped
+  /// state — and the next [redo] after that re-clears the group. A track
+  /// caught capturing is frozen stopped at the clear and comes back stopped,
+  /// never as a resumed capture; a cancelled arm stays idle.
+  ///
+  /// The group holds only while every member still offers its restore point:
+  /// a fresh take on a member retires that member's point (the engine's
+  /// rule), and the group with it — the per-track history then answers as
+  /// usual, and nothing newer is overwritten.
+  EngineResult clearAll(Iterable<int> channels) {
+    final group = <int>{};
+    var result = EngineResult.ok;
+    for (final channel in channels) {
+      final rc = clear(channel: channel);
+      if (rc.isOk) {
+        group.add(channel);
+      } else {
+        result = rc;
+      }
+    }
+    _clearAllGroup = group;
+    _clearAllRedoGroup = const {};
+    return result;
+  }
+
+  /// The channels the last [clearAll] erased, while every one of them still
+  /// holds its restore point.
+  Set<int> _clearAllGroup = const {};
+
+  /// The channels an undone [clearAll] restored, while every one of them can
+  /// still redo (re-clear).
+  Set<int> _clearAllRedoGroup = const {};
+
+  /// Whether the next [undo] would restore a whole cleared group.
+  bool get undoRestoresClearAll => _intactClearAllGroup().isNotEmpty;
+
+  /// The clear-all group when every member still restores a cleared take;
+  /// empty otherwise (and the group is forgotten).
+  Set<int> _intactClearAllGroup() {
+    if (_clearAllGroup.isEmpty) return const {};
+    for (final channel in _clearAllGroup) {
+      if (!_engine.undoRestoresClear(channel: channel)) {
+        _clearAllGroup = const {};
+        return const {};
+      }
+    }
+    return _clearAllGroup;
+  }
+
   /// The destructive clear: same erasure, no way back. Session load only.
   EngineResult _clearDestructive({int channel = 0}) {
     _clearRestore.remove(channel);
@@ -1497,6 +1548,22 @@ class LooperRepository {
   /// describes the next tap, and the snapshot it derives from does not flip
   /// until the audio thread applies the restore.
   EngineResult undo({int channel = 0}) {
+    // A grouped clear comes back as one operation, whichever member is asked.
+    final group = _intactClearAllGroup();
+    if (group.contains(channel)) {
+      var result = EngineResult.ok;
+      for (final member in group) {
+        final rc = _undoTrack(member);
+        if (!rc.isOk) result = rc;
+      }
+      _clearAllRedoGroup = group;
+      _clearAllGroup = const {};
+      return result;
+    }
+    return _undoTrack(channel);
+  }
+
+  EngineResult _undoTrack(int channel) {
     final restoresClear = _engine.undoRestoresClear(channel: channel);
     final result = _engine.undo(channel: channel);
     if (restoresClear && result == EngineResult.ok) {
@@ -1541,6 +1608,34 @@ class LooperRepository {
   /// A redo that resurrects an undone-to-empty track comes back unmuted
   /// engine-side; the remembered mutes are forgotten to match.
   EngineResult redo({int channel = 0}) {
+    // A restored group re-clears as one operation, whichever member is asked.
+    if (_clearAllRedoGroup.contains(channel)) {
+      final group = _clearAllRedoGroup;
+      final snapshot = _engine.snapshot();
+      var intact = true;
+      for (final member in group) {
+        if (member >= snapshot.tracks.length ||
+            snapshot.tracks[member].redoDepth <= 0) {
+          intact = false;
+        }
+      }
+      _clearAllRedoGroup = const {};
+      if (intact) {
+        var result = EngineResult.ok;
+        for (final member in group) {
+          _snapshotForClearRestore(member);
+          _dropTakeState(member);
+          final rc = _engine.redo(channel: member);
+          if (!rc.isOk) result = rc;
+        }
+        _clearAllGroup = group;
+        return result;
+      }
+    }
+    return _redoTrack(channel);
+  }
+
+  EngineResult _redoTrack(int channel) {
     final snapshot = _engine.snapshot();
     if (channel >= 0 &&
         channel < snapshot.tracks.length &&
@@ -3969,10 +4064,20 @@ class LooperRepository {
   /// there is no invalid value to clamp here — every [LooperMode] is
   /// in-range by construction).
   EngineResult setLooperMode(LooperMode mode) {
+    if (_intendRunning) {
+      final result = _engine.setLooperMode(mode);
+      if (!result.isOk) return result; /* refused: the setting stays */
+    }
     _looperMode = mode;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setLooperMode(mode);
+    return EngineResult.ok;
   }
+
+  /// What [setLooperMode] would do with [mode] right now (accepted design,
+  /// slice 2): open, or the reason it is refused, or `playing` — the answer a
+  /// "stop loops and switch" confirmation stands for. A stopped engine holds
+  /// no takes to measure, so every change is open.
+  LooperModeGate looperModeGate(LooperMode mode) =>
+      _intendRunning ? _engine.looperModeGate(mode) : LooperModeGate.open;
 
   /// Crowns [channel] the primary track — the explicit timing handoff (D18).
   /// Held until the next start when the engine is not running (see

@@ -376,11 +376,25 @@ class FakeAudioEngine implements AudioEngine {
 
   LooperMode? lastLooperMode;
 
+  /// What [looperModeGate] answers; tests set it to exercise a refusal.
+  LooperModeGate nextLooperModeGate = LooperModeGate.open;
+
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) {
+    calls.add('looperModeGate');
+    return nextLooperModeGate;
+  }
+
   @override
   EngineResult setLooperMode(LooperMode mode) {
     lastLooperMode = mode;
     calls.add('setLooperMode');
-    return EngineResult.ok;
+    return switch (nextLooperModeGate) {
+      LooperModeGate.capturing ||
+      LooperModeGate.queued ||
+      LooperModeGate.spans => EngineResult.invalid,
+      LooperModeGate.open || LooperModeGate.playing => EngineResult.ok,
+    };
   }
 
   /// The last channel passed to [crownPrimary].

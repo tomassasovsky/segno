@@ -147,6 +147,91 @@ rule (D8) is named in the view rather than published by the engine.
 
 ### Next step
 
-Slice 2 (`implementation-map.md`): per-track record options and the timing
-rules, starting with the explicit crown handoff in Loop settings (the
+Slice 2 (`implementation-map.md`), tracked as #1012 in three parts: 2a
+reversible audio edits and mode rules, 2b timing ownership, 2c the Loop
+settings surfaces (the explicit crown handoff lands there; the
 `LooperCrownPrimaryPressed` event and `crownPrimary` API are kept for it).
+
+## Slice 2a — Reversible audio edits and mode rules (#1012)
+
+Branch: `claude/segno-slice2-edits-1012`, stacked on slice 1's branch until
+PR #1011 merges.
+
+### Decisions
+
+- Mode changes with recorded audio follow the accepted contract
+  (`2026-09-07-loop-mode-transitions-ux.md`): the engine measures what a
+  change would do (`le_engine_looper_mode_gate`: open, capturing, queued,
+  spans, playing). Multi needs equal spans; Sync and Band need whole multiples
+  of the primary or the divisions the engine plays (a half or a quarter);
+  Song and Free take anything. A playing rig is stopped ahead of the switch
+  by the engine itself (`le_engine_set_looper_mode` posts the stops in ring
+  order), so the switch always lands on a stopped rig; the app asks "Stop
+  loops and switch" before calling. Captures, queued arms and unfit spans
+  refuse with their reason. No take is trimmed, repeated, stretched or
+  padded, and nothing is cleared for a switch: the old clear-then-switch
+  flow is gone with its strings.
+- Landing a switch re-clocks the takes: into Song/Free each take runs its own
+  clock at its length and the master goes dormant; into Multi/Sync/Band the
+  master is re-established from the primary's span and each take's multiple
+  or division is re-derived from its unchanged length.
+- Undo during an overdub pass punches out now (not at the grid) and peels the
+  pass once it retires; redo puts the partial pass back without resuming the
+  capture. A pass that wrote nothing peels the previous layer (the brainstorm's
+  recommendation for the exact-boundary case).
+- Undo during a take cancels it: the take is finalized at its captured length
+  exactly as a press would end it (a defining take still establishes the grid
+  and derives the tempo), the track reads empty, and redo plays the take
+  immediately (`LE_CMD_CANCEL_TAKE` / `LE_EVT_TAKE_CANCELLED`). A later take
+  keeps its whole-loop span with silence outside what was captured; the seam
+  crossfade is skipped for a cancelled take.
+- A user clear on a capturing track freezes the take stopped at the clear and
+  keeps it restorable (`LE_EVT_CLEAR_FROZEN` completes the restore point once
+  the finalize has decided the length); undo brings it back stopped, never as
+  a resumed capture. Clear All is one grouped edit in the repository
+  (`clearAll`, `undoRestoresClearAll`): the next undo on any member restores
+  every member, the next redo re-clears the group; the group dissolves when a
+  member loses its restore point (a fresh take), and the per-track history
+  answers as usual — nothing newer is overwritten.
+- The Undo pedal and key reach the group through the ordinary `undo`, so a
+  performer who clears everything and taps Undo gets the rig back.
+
+### Changed ownership
+
+- Engine: `le_engine_looper_mode_gate`, content rules in
+  `le_engine_set_looper_mode`, `le_apply_mode_switch` on the audio thread
+  (the D4 content lock is gone), `LE_CMD_CANCEL_TAKE`,
+  `LE_EVT_TAKE_CANCELLED`, `LE_EVT_CLEAR_FROZEN`, a freezing clear
+  (`LE_CMD_CLEAR` arg_f 1), undo during capture.
+- Dart engine: `LooperModeGate`, `LooperModeControl.looperModeGate`.
+- Repository: `looperModeGate`, `setLooperMode` keeps the remembered mode only
+  when the engine took the change, `clearAll` and the grouped undo/redo.
+- App: `requestLooperModeChange` drives the gate (dialog for playing,
+  refusal reason otherwise); `ControlCubit.clearAll` is one grouped edit;
+  `LooperModeChanged` persists only accepted changes; the console confirm
+  dialog wraps long button labels.
+
+### Checks
+
+- Native: `run_native_tests.sh` 5 suites ALL PASSED, also with
+  `-fsanitize=address` and `-DLE_CALLBACK_TELEMETRY=0`; 10 new or rewritten
+  tests (mode gate spans/queued/capturing/playing, Song/Free re-clocking,
+  undo during overdub, undo during a defining and a later take, clear during
+  recording and overdubbing).
+- `segno_engine` 242, `looper_repository` 414, `performance_repository` 111,
+  `session_repository` 84 tests passed; root suite and coverage recorded in
+  the PR; analyzers clean in every touched package; `bloc lint` clean.
+
+### Not verified here
+
+- Hardware timing of stop-and-switch and of the cancelled take on the
+  appliance; the accepted mode cards with per-card reasons are slice 2c (this
+  part surfaces the reason in a snackbar from the existing chooser).
+- A rec/dub take-end during a count-in and the zero-audio cancelled take are
+  handled (nothing to redo), not separately exercised on hardware.
+
+### Next step
+
+Slice 2b: per-track record timing (Immediately / Loop start / grid) and
+overdub decay inheriting from defaults, Loop/Once in every mode, count-in and
+Sound start exclusivity at the engine boundary.

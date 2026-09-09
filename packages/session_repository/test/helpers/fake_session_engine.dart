@@ -411,6 +411,8 @@ class FakeSessionEngine implements AudioEngine {
     required int bars,
   }) => EngineResult.ok;
   @override
+  LooperModeGate looperModeGate(LooperMode mode) => LooperModeGate.open;
+  @override
   EngineResult setLooperMode(LooperMode mode) => EngineResult.ok;
   @override
   EngineResult crownPrimary({required int channel}) => EngineResult.ok;

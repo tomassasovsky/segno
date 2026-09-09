@@ -41,6 +41,35 @@ import 'helpers/fake_audio_engine.dart';
 
 final EngineSnapshot _playingSnapshot = _playingAt(24000);
 
+/// [n] empty tracks that each hold one redo step (an undone clear, say).
+EngineSnapshot _redoableSnapshot(int n) => EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  tracks: [
+    for (var i = 0; i < n; i++)
+      const TrackSnapshot(
+        state: TrackState.empty,
+        volume: 0.8,
+        muted: false,
+        lengthFrames: 0,
+        undoDepth: 0,
+        redoDepth: 1,
+        rms: 0,
+        peak: 0,
+      ),
+  ],
+);
+
 /// One empty track with an arm as the engine publishes it: `pending` and the
 /// trailing `pending_trigger` code beside it.
 EngineSnapshot _pendingSnapshot({
@@ -674,6 +703,97 @@ void main() {
         engine.nextSnapshot = free(2000);
         expect(repo.readTrackWaveform(0), [0.125]);
         expect(reads(), swept + 1);
+      });
+    });
+
+    group('looper mode (accepted design, slice 2)', () {
+      test(
+        "the gate is the engine's answer while running, open otherwise",
+        () {
+          final repo = buildRepo();
+          engine.nextLooperModeGate = LooperModeGate.spans;
+          expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.open);
+          repo.startEngine(const EngineConfig());
+          expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.spans);
+        },
+      );
+
+      test('a refused change leaves the remembered mode alone', () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        engine.nextLooperModeGate = LooperModeGate.capturing;
+        expect(repo.setLooperMode(LooperMode.free), EngineResult.invalid);
+        // Re-applied on the next start: still the mode the engine accepted.
+        engine.nextLooperModeGate = LooperModeGate.open;
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastLooperMode, LooperMode.multi);
+      });
+
+      test('an accepted change is remembered and re-applied', () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        engine.nextLooperModeGate = LooperModeGate.playing;
+        expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastLooperMode, LooperMode.band);
+      });
+    });
+
+    group('clear all as one grouped edit (accepted design, slice 2)', () {
+      int calls(String name) => engine.calls.where((c) => c == name).length;
+
+      test('undo on any member restores every member once', () {
+        engine.nextSnapshot = _playingSnapshot;
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        expect(repo.clearAll([0, 1, 2]), EngineResult.ok);
+        expect(calls('clearUndoable'), 3);
+        engine.undoRestoresClearResult = true;
+        expect(repo.undoRestoresClearAll, isTrue);
+        expect(repo.undo(channel: 2), EngineResult.ok);
+        expect(calls('undo'), 3);
+        // The group is spent: the next undo is the track's own.
+        expect(repo.undoRestoresClearAll, isFalse);
+        repo.undo(channel: 1);
+        expect(calls('undo'), 4);
+      });
+
+      test('a member that lost its restore point dissolves the group', () {
+        engine.nextSnapshot = _playingSnapshot;
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..clearAll([0, 1]);
+        // The fake never restores a clear: a fresh take retired the point.
+        expect(repo.undoRestoresClearAll, isFalse);
+        repo.undo();
+        expect(calls('undo'), 1); // the track's own history only
+      });
+
+      test('redo after the grouped undo re-clears the group', () {
+        engine.nextSnapshot = _playingSnapshot;
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..clearAll([0, 1]);
+        engine.undoRestoresClearResult = true;
+        repo.undo();
+        // Every member can redo: the group re-clears as one.
+        engine.nextSnapshot = _redoableSnapshot(2);
+        expect(repo.redo(channel: 1), EngineResult.ok);
+        expect(calls('redo'), 2);
+        // And it is a group again: undo restores both.
+        expect(repo.undoRestoresClearAll, isTrue);
+      });
+
+      test('a fresh clear all replaces the group', () {
+        engine.nextSnapshot = _playingSnapshot;
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..clearAll([0])
+          ..clearAll([1, 2]);
+        engine.undoRestoresClearResult = true;
+        repo.undo(channel: 1);
+        expect(calls('undo'), 2);
       });
     });
 
