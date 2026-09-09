@@ -100,6 +100,11 @@ abstract final class EventLogReader {
     final soloed = {...initiallySoloed};
     bool audible() => !muted && (soloed.isEmpty || soloed.contains(channel));
     var lastAudible = audible();
+    // The activator's manual value is on: a track silent at arm (muted, or
+    // under another track's solo) needs its first breakpoint at the start.
+    if (!lastAudible) {
+      mute.add(const AutomationBreakpoint(beat: 0, value: 0));
+    }
 
     for (final e in sorted) {
       switch (e.code) {

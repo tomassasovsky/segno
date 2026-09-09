@@ -199,8 +199,11 @@ void main() {
           120,
           initiallyMuted: true,
         );
-        expect(result.mute, hasLength(1));
-        expect(result.mute.single.value, 1.0);
+        // Silent from arm: the activator starts off at the beginning.
+        expect(result.mute, hasLength(2));
+        expect(result.mute.first.beat, 0);
+        expect(result.mute.first.value, 0);
+        expect(result.mute.last.value, 1.0);
       });
 
       test('the soloed track itself stays 1', () {
@@ -235,10 +238,12 @@ void main() {
             120,
             initiallySoloed: {1},
           );
-          // Silenced from arm, so nothing to emit until it becomes audible.
-          expect(result.mute, hasLength(1));
-          expect(result.mute.single.beat, closeTo(300 / 48000 * 2, 1e-9));
-          expect(result.mute.single.value, 1.0);
+          // Silenced from arm: off at the start, on when the last solo clears.
+          expect(result.mute, hasLength(2));
+          expect(result.mute.first.beat, 0);
+          expect(result.mute.first.value, 0);
+          expect(result.mute.last.beat, closeTo(300 / 48000 * 2, 1e-9));
+          expect(result.mute.last.value, 1.0);
         },
       );
 

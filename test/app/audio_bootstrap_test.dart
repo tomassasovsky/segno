@@ -688,9 +688,9 @@ void main() {
         const InputSetup(trimDb: {0: -6}, pan: {2: -0.5}, pairs: {0: 0.2}),
       );
       expect(engine.inputTrim[0], closeTo(inputTrimGainOfDb(-6), 1e-9));
-      // The whole setup lands as one projection, so every input's trim is
-      // pushed: input 3 gets unity, not the other box's +12 dB.
-      expect(engine.inputTrim[3], closeTo(1, 1e-9));
+      // The whole setup lands as one projection; an input no setup names is
+      // never pushed, and the engine's own unity stands.
+      expect(engine.inputTrim[3], isNull);
       expect(engine.monitorPan[2], -0.5);
       // The pair's members sit hard on their sides.
       expect(engine.monitorPan[0], -1);

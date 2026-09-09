@@ -107,9 +107,9 @@ void main() {
   group('reset mixer', () {
     test('while stopped clears the remembered pans the start would replay', () {
       final repo = LooperRepository(engine: engine, ticker: ticker.stream)
-        ..setTrackPan(0.4, channel: 2)
-        ..resetMixer();
+        ..setTrackPan(0.4, channel: 2);
       addTearDown(repo.dispose);
+      expect(repo.resetMixer(), EngineResult.ok);
       expect(repo.trackPan(2), 0);
       repo.startEngine(const EngineConfig());
       expect(engine.lanePan[(2, 0)], isNull);
@@ -232,6 +232,24 @@ void main() {
       expect(repo.state.tracks[0].volume, 1.0);
     });
 
+    test('a fresh take from a balanced pair projects and saves the level', () {
+      final repo = start()
+        ..setInputPair(input: 0, paired: true)
+        ..setPairBalance(input: 0, balance: 0.5)
+        ..record();
+      expect(engine.laneVol[(0, 0)], closeTo(0.70710678, 1e-6));
+      // The projection shows the level the take was given, not the gain.
+      expect(repo.state.tracks[0].volume, 1.0);
+    });
+
+    test('a grown lane takes the track level too', () {
+      final repo = start()
+        ..setVolume(0.3)
+        ..setLaneCount(channel: 0, count: 2);
+      expect(engine.laneVol[(0, 1)], 0.3);
+      expect(repo.state.tracks[0].volume, 0.3);
+    });
+
     test(
       'a lane added after the take gets the track pan and its own image',
       () {
@@ -313,7 +331,7 @@ void main() {
         const InputSetup(trimDb: {0: -3}, pairs: {0: 0.5}),
       );
       expect(engine.inputTrim[0], closeTo(0.7079, 1e-3));
-      expect(engine.inputTrim[1], 1.0);
+      expect(engine.inputTrim[1], isNull); // named by neither setup
       expect(engine.monitorPan[0], -1.0);
       expect(engine.monitorPan[1], 1.0);
       expect(engine.monitorVolume[0], closeTo(0.70710678, 1e-6));

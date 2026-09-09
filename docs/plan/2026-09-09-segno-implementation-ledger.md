@@ -717,6 +717,19 @@ findings, fixed in the second commit:
   is gone; the dead dB-of-gain conversion is gone; the Dart balance law and
   the engine's pan law share pinned constants.
 
+#### Review round 2
+
+A check of the round-1 commit found the fresh-take path still projecting
+and saving the engine's gain as the level (a lane whose fader was never
+touched had no level of its own), a grown lane pushed at unity instead of
+the track's level, the wholesale setup push posting sixty-four ring
+commands on every load, and the DAW export leaving a track silent at arm
+with no breakpoint although the activator's manual value is on. Fixed in
+the third commit: the seed and the growth give a lane the track's level,
+`setInputSetup` pushes only the inputs either setup names, the export
+writes the seed audibility at the start, and a reset while stopped clears
+the caches without a refused engine call.
+
 #### Not verified here
 
 The pan law by ear and the meters on the appliance; the offline

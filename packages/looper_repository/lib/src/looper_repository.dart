@@ -2689,6 +2689,7 @@ class LooperRepository {
     // The engine's growth path resets a new lane to centre and unity; the
     // track's pan and level land on it here.
     for (var lane = previous; lane < count; lane++) {
+      _laneVolume.putIfAbsent((channel, lane), () => _trackLevel(channel));
       _pushLanePan(channel, lane);
       _pushLaneVolume(channel, lane);
     }
@@ -2828,8 +2829,12 @@ class LooperRepository {
       for (final key in _laneVolume.keys) key.$1,
     };
     for (final channel in channels) {
-      final v = setVolume(1, channel: channel);
-      if (v != EngineResult.ok) result = v;
+      for (var lane = 0; lane < laneCount(channel); lane++) {
+        _laneVolume[(channel, lane)] = 1;
+        if (!_intendRunning) continue; // replayed on start
+        final v = _pushLaneVolume(channel, lane);
+        if (v != EngineResult.ok) result = v;
+      }
       final p = _setTrackPan(0, channel);
       if (p != EngineResult.ok) result = p;
     }
@@ -2905,20 +2910,36 @@ class LooperRepository {
   /// including the ones only the old setup named, so nothing of it stays on
   /// a monitor. One projection.
   EngineResult setInputSetup(InputSetup setup) {
+    // Only the inputs either setup names ride the ring (a session load
+    // already posts a burst of its own): a trim the old setup had goes back
+    // to unity, a pan or pair it had goes back to centre.
+    final previous = _inputSetup;
     _inputSetup = setup;
     var result = EngineResult.ok;
-    for (var input = 0; input < kMaxChannels; input++) {
+    for (final input in <int>{...previous.trimDb.keys, ...setup.trimDb.keys}) {
       final t = _engine.setInputTrim(
         input: input,
         gain: inputTrimGainOfDb(setup.trimDbOf(input)),
       );
       if (t != EngineResult.ok) result = t;
+    }
+    for (final input in <int>{
+      ..._mixedInputsOf(previous),
+      ..._mixedMonitorInputs,
+    }) {
       final m = _pushMonitorMix(input);
       if (m != EngineResult.ok) result = m;
     }
     _reproject();
     return result;
   }
+
+  /// The inputs [setup] places: its panned ones and both members of its
+  /// pairs.
+  static Set<int> _mixedInputsOf(InputSetup setup) => <int>{
+    ...setup.pan.keys,
+    for (final lower in setup.pairs.keys) ...[lower, lower + 1],
+  };
 
   /// Makes [next] the input setup, pushes the monitors of [push] and
   /// re-projects once.
@@ -2937,8 +2958,7 @@ class LooperRepository {
   /// remember: the ones a (re)start pushes.
   Set<int> get _mixedMonitorInputs => <int>{
     ..._monitorVolume.keys,
-    ..._inputSetup.pan.keys,
-    for (final lower in _inputSetup.pairs.keys) ...[lower, lower + 1],
+    ..._mixedInputsOf(_inputSetup),
   };
 
   /// Pushes hardware [input]'s monitor gain and pan as the input setup
@@ -2963,8 +2983,23 @@ class LooperRepository {
     final input = _laneInput[(channel, lane)] ?? lane;
     _laneBasePan[(channel, lane)] = _inputSetup.effectivePanOf(input);
     _laneBalance[(channel, lane)] = _inputSetup.balanceGainOf(input);
+    // The level is the repository's own from here (the engine holds the
+    // product), so a lane whose fader was never touched has one to project
+    // and to save: the track's.
+    _laneVolume.putIfAbsent((channel, lane), () => _trackLevel(channel));
     _pushLanePan(channel, lane);
     _pushLaneVolume(channel, lane);
+  }
+
+  /// The track's level as the repository remembers it: lane 0's, else any
+  /// lane's, else unity.
+  double _trackLevel(int channel) {
+    final first = _laneVolume[(channel, 0)];
+    if (first != null) return first;
+    for (final entry in _laneVolume.entries) {
+      if (entry.key.$1 == channel) return entry.value;
+    }
+    return 1;
   }
 
   /// Mutes or unmutes lane [lane] of track [channel]. Remembered and re-applied

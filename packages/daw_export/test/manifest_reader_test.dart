@@ -419,13 +419,20 @@ void main() {
         final tracks = project!.tracks;
         expect(tracks, hasLength(3));
 
-        // Track 0: silenced by track 2's solo from arm, audible once it clears.
+        // Track 0: silenced by track 2's solo from arm (off at the start),
+        // audible once it clears.
         final lane0 = tracks[0].automationLanes.single;
         expect(lane0.target, AutomationTarget.activator);
-        expect(lane0.breakpoints.single.beat, 2.0);
-        expect(lane0.breakpoints.single.value, 1.0);
-        // Track 1: muted at arm, so the solo clear changes nothing.
-        expect(tracks[1].automationLanes, isEmpty);
+        expect(lane0.breakpoints, hasLength(2));
+        expect(lane0.breakpoints.first.beat, 0);
+        expect(lane0.breakpoints.first.value, 0);
+        expect(lane0.breakpoints.last.beat, 2.0);
+        expect(lane0.breakpoints.last.value, 1.0);
+        // Track 1: muted at arm, off from the start; the solo clear changes
+        // nothing.
+        final lane1 = tracks[1].automationLanes.single;
+        expect(lane1.breakpoints.single.beat, 0);
+        expect(lane1.breakpoints.single.value, 0);
         // Track 2: the soloed track itself was audible throughout.
         expect(tracks[2].automationLanes, isEmpty);
       },
