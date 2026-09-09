@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -249,7 +248,7 @@ class WaveTrackRow extends StatelessWidget {
                 child: TrackWaveform(
                   channel: track.channel,
                   state: meterState,
-                  contentKey: WaveformKey.of(track),
+                  hasContent: track.hasContent,
                   bars: barsCount ?? 0,
                   semanticLabel: l10n.a11ySelectedTrackWaveform(name),
                 ),
@@ -265,15 +264,16 @@ class WaveTrackRow extends StatelessWidget {
 /// One track's own recorded waveform with its playhead — the leaf that
 /// follows the moving position, like `TrackPeakMeter` follows the level.
 ///
-/// The peaks are read from the repository on each rebuild: the loop-indexed
-/// buffer stands still through playback, so the copy is cheap, and it changes
-/// exactly when the playhead does during a take.
-class TrackWaveform extends StatefulWidget {
+/// The peaks come from the repository on each rebuild; the repository keeps
+/// one copy per track and re-reads the engine only while the shape can still
+/// be changing (`LooperRepository.readTrackWaveform`), so a playhead tick
+/// costs a lookup, not a copy across the engine boundary.
+class TrackWaveform extends StatelessWidget {
   /// Creates a [TrackWaveform].
   const TrackWaveform({
     required this.channel,
     required this.state,
-    required this.contentKey,
+    required this.hasContent,
     this.bars = 0,
     this.semanticLabel,
     super.key,
@@ -285,10 +285,9 @@ class TrackWaveform extends StatefulWidget {
   /// The state the stroke colour speaks for.
   final LooperMeterState state;
 
-  /// The facts the track's recorded shape is a function of: the waveform is
-  /// re-read from the engine when these change, or on every rebuild while a
-  /// take or a pass is being captured — never on a mere playhead tick.
-  final WaveformKey contentKey;
+  /// Whether the track holds recorded audio; an empty track draws only the
+  /// baseline.
+  final bool hasContent;
 
   /// Whole bars across the loop, for the ruler.
   final int bars;
@@ -297,104 +296,20 @@ class TrackWaveform extends StatefulWidget {
   final String? semanticLabel;
 
   @override
-  State<TrackWaveform> createState() => _TrackWaveformState();
-}
-
-class _TrackWaveformState extends State<TrackWaveform> {
-  WaveformKey? _readUnder;
-  Float32List _samples = Float32List(0);
-
-  @override
   Widget build(BuildContext context) {
-    final hasContent = widget.contentKey.hasContent;
     final progress = context.select<LooperBloc, double>(
-      (bloc) => progressOf(bloc.state, widget.channel),
+      (bloc) => progressOf(bloc.state, channel),
     );
-    // The playhead moves this widget every poll while the track plays; the
-    // shape behind it only changes when the content does, so the copy across
-    // the engine boundary is taken once per content change (or per block
-    // while capturing, when the buffer grows under the reader).
-    final key = widget.contentKey;
-    if (!hasContent) {
-      _readUnder = null;
-      _samples = Float32List(0);
-    } else if (key.capturing || key != _readUnder) {
-      _samples = context.read<LooperRepository>().readTrackWaveform(
-        widget.channel,
-      );
-      _readUnder = key;
-    }
+    final samples = hasContent
+        ? context.read<LooperRepository>().readTrackWaveform(channel)
+        : Float32List(0);
     return WaveformView(
-      key: Key('wave_waveform_${widget.channel}'),
-      samples: _samples,
-      state: widget.state,
+      key: Key('wave_waveform_$channel'),
+      samples: samples,
+      state: state,
       progress: hasContent ? progress : 0,
-      bars: hasContent ? widget.bars : 0,
-      semanticLabel: widget.semanticLabel,
+      bars: hasContent ? bars : 0,
+      semanticLabel: semanticLabel,
     );
   }
-}
-
-/// The steady facts a track's recorded waveform is a function of.
-///
-/// Two equal keys mean the engine's peak buffer for the track has the same
-/// shape, so a cached read stands — except while [capturing], when the buffer
-/// grows under the reader every block and must be re-read each frame. A
-/// playhead tick, a level tick, a mute or a volume change move none of these.
-class WaveformKey extends Equatable {
-  /// Creates a [WaveformKey].
-  const WaveformKey({
-    required this.channel,
-    required this.state,
-    required this.lengthFrames,
-    required this.undoDepth,
-    required this.redoDepth,
-    required this.clearRestore,
-  });
-
-  /// [track]'s key.
-  factory WaveformKey.of(Track track) => WaveformKey(
-    channel: track.channel,
-    state: track.state,
-    lengthFrames: track.lengthFrames,
-    undoDepth: track.undoDepth,
-    redoDepth: track.redoDepth,
-    clearRestore: track.clearRestore,
-  );
-
-  /// The track's channel.
-  final int channel;
-
-  /// The track's transport state.
-  final TrackState state;
-
-  /// Recorded length: a finalize, a clear or a length change moves it.
-  final int lengthFrames;
-
-  /// Retired passes: an overdub finalize or an undo moves it.
-  final int undoDepth;
-
-  /// Undone passes: an undo or a redo moves it.
-  final int redoDepth;
-
-  /// Whether a cleared take is held for restore.
-  final bool clearRestore;
-
-  /// Whether the track holds recorded audio.
-  bool get hasContent => lengthFrames > 0;
-
-  /// Whether the engine is writing into the track right now, so the shape
-  /// changes every block.
-  bool get capturing =>
-      state == TrackState.recording || state == TrackState.overdubbing;
-
-  @override
-  List<Object?> get props => [
-    channel,
-    state,
-    lengthFrames,
-    undoDepth,
-    redoDepth,
-    clearRestore,
-  ];
 }

@@ -64,10 +64,11 @@ class WaveformView extends StatelessWidget {
       ),
       size: Size.infinite,
     );
-    // The ruler is its own layer under the wave: the playhead repaints the
-    // wave every poll, and the ruler's bar labels are laid-out text that
-    // must not be re-shaped at frame rate for a fact (the bar count) that
-    // changes once per take.
+    // The ruler is its own layer over the wave (its faint lines stay visible
+    // across the bars, as they were when one painter drew both): the
+    // playhead repaints the wave every poll, and the ruler's bar labels are
+    // laid-out text that must not be re-shaped at frame rate for a fact (the
+    // bar count) that changes once per take.
     final ruler = bars > 0
         ? RepaintBoundary(
             child: CustomPaint(
@@ -88,8 +89,8 @@ class WaveformView extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            ?ruler,
             RepaintBoundary(child: paint),
+            ?ruler,
           ],
         ),
       ),
@@ -115,7 +116,7 @@ class WaveformPainter extends CustomPainter {
   final double progress;
 
   /// Whole bars across the loop; `> 0` leaves [rulerHeight] free at the
-  /// bottom for the [BarRulerPainter] layer under this one.
+  /// bottom for the [BarRulerPainter] layer over this one.
   final int bars;
 
   /// Waveform color.
@@ -187,7 +188,7 @@ class WaveformPainter extends CustomPainter {
       oldDelegate.background != background;
 }
 
-/// The bar ruler under the wave: one faint line per bar across the full
+/// The bar ruler over the wave: one faint line per bar across the full
 /// height and the bar number in the strip the wave leaves free at the bottom
 /// ([WaveformPainter.rulerHeight]). Painted in its own layer, so the wave's
 /// per-poll playhead repaint never re-shapes these labels.

@@ -51,7 +51,9 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->lane_count = le_lanes_active(tr);
   out->layer_in_flight =
       atomic_load_explicit(&tr->a_layer_in_flight, memory_order_acquire);
-  out->pending = load_i32(&tr->a_pending);
+  /* Acquire pairs with the arm's release store, so the trigger read below
+   * is the one published with this arm. */
+  out->pending = atomic_load_explicit(&tr->a_pending, memory_order_acquire);
   out->length_preset_bars = load_i32(&tr->a_length_preset_bars);
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);

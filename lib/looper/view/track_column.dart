@@ -59,16 +59,21 @@ enum QueueAction {
 /// facts (`pendingTrigger`, state, content), never guessed from settings.
 ///
 /// A section arm (Band transport) plays a stopped track and stops a sounding
-/// one; a record arm ends an overdub pass, or starts one on a recorded track,
-/// or starts the take on an empty one.
-QueueAction queueActionOf(Track track) {
+/// one; a record arm ends an overdub pass, ends a take (landing it playing,
+/// or overdubbing under the rec/dub setting [recDub]), starts a pass on a
+/// recorded track, or starts the take on an empty one.
+QueueAction queueActionOf(Track track, {required bool recDub}) {
   if (track.pendingTrigger == ArmTrigger.section) {
     return track.state == TrackState.stopped
         ? QueueAction.play
         : QueueAction.stop;
   }
-  if (track.state == TrackState.overdubbing) return QueueAction.play;
-  return track.hasContent ? QueueAction.overdub : QueueAction.record;
+  return switch (track.state) {
+    TrackState.overdubbing => QueueAction.play,
+    TrackState.recording => recDub ? QueueAction.overdub : QueueAction.play,
+    TrackState.playing || TrackState.stopped => QueueAction.overdub,
+    TrackState.empty => QueueAction.record,
+  };
 }
 
 /// The boundary [track]'s pending arm waits for under the live quantize
@@ -120,6 +125,7 @@ class TrackColumn extends StatelessWidget {
     this.isPrimary = false,
     this.bars,
     this.quantizeDiv = GridDivision.off,
+    this.recDub = false,
     this.fxTarget,
     this.inputNames = const {},
     super.key,
@@ -189,6 +195,9 @@ class TrackColumn extends StatelessWidget {
   /// the boundary it resolves to (the engine re-evaluates a pending arm on a
   /// granularity change, so the cue follows the live division too).
   final GridDivision quantizeDiv;
+
+  /// The rec/dub second-press setting: what a queued take-end lands as.
+  final bool recDub;
 
   /// The column's inset from its ring to its content — the pen's 18.
   static const double padding = 18;
@@ -435,7 +444,7 @@ class TrackColumn extends StatelessWidget {
                               key: Key('tracks_queued_${track.channel}'),
                               action: _queueActionLabel(
                                 l10n,
-                                queueActionOf(track),
+                                queueActionOf(track, recDub: recDub),
                               ),
                               timing: _queueTimingLabel(
                                 l10n,

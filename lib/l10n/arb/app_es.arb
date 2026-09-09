@@ -2193,7 +2193,6 @@
     "stageQueueSound": "Sonido",
     "stageQueuePlay": "Reproducir",
     "stageQueueStop": "Detener",
-    "stageCountIn": "Preparación · {beats}",
     "a11yTrackQueued": "{action} en cola, {timing}",
     "readoutStateEmpty": "Vacía",
     "readoutStateRecording": "Grabando",

@@ -91,12 +91,41 @@ The code review reported ten findings; all ten are fixed on the branch:
   while a take records (the write head is both position and length then).
 - Stage: the footer counts a count-in down in place of the signature; the
   clip cap retires on a timer instead of on the next rebuild; the wave rows
-  and the second display read a track's waveform once per content change
-  (`WaveformKey`), not once per playhead tick; the bar ruler paints in its
-  own layer so the playhead never re-shapes its labels; the readout gate no
-  longer reopens on a growing take, and a cursor move between equally named
-  tracks still reaches the second display.
+  and the second display read a track's waveform once per content change,
+  not once per playhead tick (superseded in round 2 below); the bar ruler
+  paints in its own layer so the playhead never re-shapes its labels; the readout gate no longer
+  reopens on a growing take, and a cursor move between equally named tracks
+  still reaches the second display.
 - Dead chrome state (`anyActive`, transport enables) removed.
+
+### Review round 2 (2026-09-09, re-review of the round-1 commit)
+
+A second review of the fix commit found that the waveform cache was wrong:
+the engine's per-track visual buffer is a lazily swept tap (each bucket is
+rewritten as the playhead leaves it; nothing is written during a defining
+take, and a recording track contributes zeros), so a copy keyed on the
+track's steady facts froze a flat or stale shape after a take, an undo or a
+stop. Fixed:
+
+- The copy now lives in `LooperRepository.readTrackWaveform` (one place, both
+  consumers): it re-reads on every call until the playhead has swept a full
+  lap past a content change (that call included), on every call while
+  capturing, once per lap at the wrap while the track moves, and never while
+  the track stands still. A session load drops every copy. The stage row and
+  the second display read the repository on each rebuild again.
+- A queued take-end reads Play (or Overdub under rec/dub, which the
+  repository now projects as `TransportState.recDub`) instead of Overdub.
+- The arm's `a_pending` store is a release, the snapshot's load an acquire,
+  so a fresh arm is never paired with the previous arm's trigger.
+- The bar ruler layer sits over the wave again (its lines stay visible
+  across the bars); the footer count-in reuses `countingInLabel`; the clip
+  cap's state is the timer itself; a view test the round-1 commit had split
+  in two is whole again.
+
+Accepted as is: `Track.pending` and `Track.pendingTrigger` are two fields
+for one fact (the wire guarantees `pending == (pendingTrigger != null)`; the
+fixtures would all move for a getter), and the overdub punch-out boundary
+rule (D8) is named in the view rather than published by the engine.
 
 ### Next step
 

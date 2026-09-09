@@ -228,12 +228,11 @@ class _PeakMeterBarState extends State<PeakMeterBar> {
   /// stopped (frozen) phase. Recomputed every live tick; reset when emptied.
   double _fill = 0;
 
-  /// Whether a clip cap is showing: set by a full-scale peak, retired by
-  /// [_clipTimer] after [PeakMeterBar.clipHold] — a timer, not a wall-clock
-  /// compare in [build], because a track that goes quiet after one hot block
-  /// stops rebuilding this bar, and a cap that only retires on the next
-  /// rebuild would then stay up for good.
-  bool _clipped = false;
+  /// Live while the clip cap shows: armed by a full-scale peak, retiring the
+  /// cap after [PeakMeterBar.clipHold] — a timer, not a wall-clock compare in
+  /// [build], because a track that goes quiet after one hot block stops
+  /// rebuilding this bar, and a cap that only retires on the next rebuild
+  /// would then stay up for good.
   Timer? _clipTimer;
 
   @override
@@ -243,18 +242,15 @@ class _PeakMeterBarState extends State<PeakMeterBar> {
   }
 
   void _holdClip() {
-    _clipped = true;
     _clipTimer?.cancel();
     _clipTimer = Timer(PeakMeterBar.clipHold, () {
-      _clipTimer = null;
-      if (mounted) setState(() => _clipped = false);
+      if (mounted) setState(() => _clipTimer = null);
     });
   }
 
   void _dropClip() {
     _clipTimer?.cancel();
     _clipTimer = null;
-    _clipped = false;
   }
 
   @override
@@ -290,7 +286,7 @@ class _PeakMeterBarState extends State<PeakMeterBar> {
         widget.clipColor != null &&
         widget.hasContent &&
         !widget.frozen &&
-        _clipped;
+        _clipTimer != null;
     return Stack(
       fit: StackFit.expand,
       children: [

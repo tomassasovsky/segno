@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:equatable/equatable.dart';
+
 import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
@@ -790,6 +792,7 @@ class LooperRepository {
       // its re-record re-establishes it), and none for an empty session.
       primaryTrack: resolvedPrimaryTrack(s.primaryTrack, s.tracks),
       outputPeak: s.outputPeak,
+      recDub: _recDub,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -1598,6 +1601,9 @@ class LooperRepository {
     _laneInput.clear();
     _laneOutput.clear();
     _laneVolume.clear();
+    // The loaded rig may land on the same steady facts as the one it
+    // replaces; the shapes are not the same.
+    _waveforms.clear();
     _laneMute.clear();
     // Chain-enabled flags + inheritance meta (R15/F2): every remembered lane
     // flag resets to the enabled default — pushed to the engine too (the
@@ -2412,8 +2418,69 @@ class LooperRepository {
   Float32List readWaveform() => _engine.readVisual();
 
   /// Reads track [channel]'s loop waveform for a per-track thumbnail.
-  Float32List readTrackWaveform(int channel) =>
-      _engine.readTrackVisual(channel);
+  ///
+  /// The engine's buffer is a lazily swept tap, not a stored shape: each
+  /// bucket holds the peak of the most recent pass over its slice of the
+  /// loop, written as the playhead leaves it. So right after a content change
+  /// (a finalize, an undo, a stop-then-play) the buffer still shows the
+  /// previous pass until one full lap has rewritten it, and while a take or a
+  /// pass is captured it changes every block. Reading it across the engine
+  /// boundary on every poll for every visible track is the cost the stage
+  /// and the second display used to pay for that; this keeps one copy per
+  /// track and re-reads only while the shape can still be changing:
+  ///
+  /// - on every call while the track's steady facts just changed, until the
+  ///   playhead has swept a full lap past the change (that call included);
+  /// - on every call while the track is capturing;
+  /// - once per lap thereafter, at the wrap, while the track moves;
+  /// - never while the track stands still (its last shape is kept).
+  ///
+  /// The sweep is measured on the track's own [Track.progress], which is at
+  /// worst a multiple of the master lap the tap is bucketed on, so "one lap"
+  /// here is never shorter than the real re-sweep.
+  Float32List readTrackWaveform(int channel) {
+    Track? track;
+    for (final t in lastState.tracks) {
+      if (t.channel == channel) {
+        track = t;
+        break;
+      }
+    }
+    if (track == null || !track.hasContent) {
+      _waveforms.remove(channel);
+      return Float32List(0);
+    }
+    final key = _WaveformKey.of(track);
+    final progress = track.progress;
+    final entry = _waveforms[channel];
+    if (entry == null || entry.key != key) {
+      final samples = _engine.readTrackVisual(channel);
+      _waveforms[channel] = _WaveformRead(key, samples, sweepFrom: progress);
+      return samples;
+    }
+    final wrapped = progress < entry.lastProgress;
+    if (wrapped) entry.wraps++;
+    entry.lastProgress = progress;
+    final swept =
+        entry.wraps >= 2 || (entry.wraps == 1 && progress >= entry.sweepFrom);
+    // The call that completes the sweep reads too: the buckets between the
+    // previous call and here were the last ones still holding the old pass.
+    final justSwept = swept && !entry.swept;
+    entry.swept = swept;
+    final moving = switch (track.state) {
+      TrackState.playing ||
+      TrackState.overdubbing ||
+      TrackState.recording => true,
+      TrackState.empty || TrackState.stopped => false,
+    };
+    if (key.capturing || (moving && (!swept || justSwept || wrapped))) {
+      entry.samples = _engine.readTrackVisual(channel);
+    }
+    return entry.samples;
+  }
+
+  /// One copy of each track's waveform, see [readTrackWaveform].
+  final _waveforms = <int, _WaveformRead>{};
 
   /// Sets the record-offset latency compensation in frames. Remembered and
   /// re-applied on every (re)start (device change / reconnect) so the
@@ -3956,4 +4023,65 @@ int resolvedPrimaryTrack(int designation, List<TrackSnapshot> tracks) {
     if (completed(channel)) return channel;
   }
   return -1;
+}
+
+/// The steady facts a track's recorded shape is a function of — see
+/// [LooperRepository.readTrackWaveform]. Equal keys mean nothing about the
+/// content changed; a playhead tick, a level tick, a mute or a volume change
+/// move none of these.
+class _WaveformKey extends Equatable {
+  const _WaveformKey({
+    required this.state,
+    required this.lengthFrames,
+    required this.undoDepth,
+    required this.redoDepth,
+    required this.clearRestore,
+  });
+
+  factory _WaveformKey.of(Track track) => _WaveformKey(
+    state: track.state,
+    lengthFrames: track.lengthFrames,
+    undoDepth: track.undoDepth,
+    redoDepth: track.redoDepth,
+    clearRestore: track.clearRestore,
+  );
+
+  final TrackState state;
+  final int lengthFrames;
+  final int undoDepth;
+  final int redoDepth;
+  final bool clearRestore;
+
+  /// Whether the engine writes into the track every block, so the shape
+  /// changes under the reader.
+  bool get capturing =>
+      state == TrackState.recording || state == TrackState.overdubbing;
+
+  @override
+  List<Object?> get props => [
+    state,
+    lengthFrames,
+    undoDepth,
+    redoDepth,
+    clearRestore,
+  ];
+}
+
+/// One cached waveform read with the sweep it is waiting on.
+class _WaveformRead {
+  _WaveformRead(this.key, this.samples, {required this.sweepFrom})
+    : lastProgress = sweepFrom;
+
+  final _WaveformKey key;
+  Float32List samples;
+
+  /// The playhead position the last key change was read at, and how many
+  /// times the playhead has wrapped since: the buffer is fully rewritten
+  /// once the head has passed [sweepFrom] again on a later lap.
+  final double sweepFrom;
+  int wraps = 0;
+  double lastProgress;
+
+  /// Whether the sweep has completed since the key change.
+  bool swept = false;
 }

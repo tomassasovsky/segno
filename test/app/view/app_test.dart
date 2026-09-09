@@ -1079,14 +1079,26 @@ void main() {
         );
       });
 
-      testWidgets("the selected track's waveform is read once per content, "
+      testWidgets("the selected track's waveform is copied once per lap, "
           'not once per poll', (tester) async {
+        // The repository owns the copy (see `readTrackWaveform`): a merely
+        // playing track is re-read at each wrap, not at each frame the
+        // second display is sent.
         final rig = await pumpPlaying(tester);
+        // Sweep one full lap after the take was first seen at position 0.
+        for (var i = 1; i <= 11; i++) {
+          engine.nextSnapshot = playing(position: i * 8000, peak: 0.2);
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        engine.nextSnapshot = playing(position: 4000, peak: 0.2);
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+
         final frames = rig.window.pushCalls;
         final reads = engine.trackVisualReads;
-
         for (var i = 1; i <= 10; i++) {
-          engine.nextSnapshot = playing(position: i * 4000, peak: 0.2);
+          engine.nextSnapshot = playing(position: 4000 + i * 8000, peak: 0.2);
           rig.ticker.add(null);
           await tester.pump(const Duration(milliseconds: 40));
         }
@@ -1094,11 +1106,13 @@ void main() {
         expect(
           engine.trackVisualReads,
           reads,
-          reason: 'a merely playing track was copied out of the engine again',
+          reason:
+              'a swept, merely playing track was copied out of the engine '
+              'again mid-lap',
         );
 
-        // A finalized pass changes the shape: one more read.
-        engine.nextSnapshot = playing(position: 0, peak: 0.2, lengthFrames: 8);
+        // The wrap re-reads: the engine has rewritten the buffer once more.
+        engine.nextSnapshot = playing(position: 2000, peak: 0.2);
         rig.ticker.add(null);
         await tester.pump(const Duration(milliseconds: 40));
         expect(engine.trackVisualReads, reads + 1);

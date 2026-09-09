@@ -27,7 +27,6 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/looper/view/wave_track_row.dart' show WaveformKey;
 import 'package:segno/pedal/flashed_firmware.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
@@ -599,11 +598,6 @@ class _AppState extends State<App> {
 /// A record rather than a `List<Object?>`: the fields are compared one by one
 /// and each on its own terms (see `_pushReadoutIfChanged`), which a positional
 /// list made easy to get quietly wrong.
-/// The selected track's waveform with the [WaveformKey] it was read under —
-/// see [_AppViewState._selectedWaveform]. The stage's own per-row cache in
-/// `TrackWaveform` uses the same rule.
-typedef _WaveformCache = ({WaveformKey key, Float32List samples});
-
 typedef _ReadoutInputs = ({
   LooperState looper,
   TracksState tracks,
@@ -656,10 +650,6 @@ class _AppViewState extends State<_AppView> {
   /// two tracks may share a name, so the label alone cannot tell a cursor
   /// move apart from a rig standing still.
   int? _lastFrameCursor;
-
-  /// The selected track's waveform as last read, with the facts it was read
-  /// under. See [_selectedWaveform].
-  _WaveformCache? _waveformCache;
 
   /// The projection the last frame SENT carried, so a rejection that lands
   /// late can tell whether it has been superseded. See [_sendWaveformFrame].
@@ -814,7 +804,6 @@ class _AppViewState extends State<_AppView> {
       _pollSub = null;
       _lastFrameLabel = null;
       _lastFrameCursor = null;
-      _waveformCache = null;
       _lastSentFrame = null;
       _lastReadoutInputs = null;
       _readoutRevision++;
@@ -866,7 +855,11 @@ class _AppViewState extends State<_AppView> {
       (track) => track.channel == cursor,
       orElse: () => const Track(),
     );
-    final samples = _selectedWaveform(looper, selected);
+    // One copy per track lives in the repository; this is a lookup unless the
+    // shape can still be changing (see `readTrackWaveform`).
+    final samples = selected.hasContent
+        ? looper.readTrackWaveform(cursor)
+        : Float32List(0);
     unawaited(
       widget.waveformWindow
           .pushWaveform(samples, selected.progress, label)
@@ -890,29 +883,6 @@ class _AppViewState extends State<_AppView> {
             _armFrameGate();
           }),
     );
-  }
-
-  /// [selected]'s waveform, re-read from the engine only when its content
-  /// can have changed: while a take or an overdub pass is being captured, or
-  /// when a finalize, undo, redo or clear moved the track's steady facts.
-  ///
-  /// A playing rig sends a frame per poll, and each read copies the whole
-  /// peak buffer across the FFI boundary; a track that is merely playing has
-  /// the same shape every tick, so the copy is kept until a fact says
-  /// otherwise. An empty track sends an empty buffer, never a borrowed shape.
-  Float32List _selectedWaveform(LooperRepository looper, Track selected) {
-    if (!selected.hasContent) {
-      _waveformCache = null;
-      return Float32List(0);
-    }
-    final key = WaveformKey.of(selected);
-    final cached = _waveformCache;
-    if (cached != null && !key.capturing && cached.key == key) {
-      return cached.samples;
-    }
-    final samples = looper.readTrackWaveform(selected.channel);
-    _waveformCache = (key: key, samples: samples);
-    return samples;
   }
 
   void _armFrameGate() {

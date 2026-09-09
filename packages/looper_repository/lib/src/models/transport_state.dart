@@ -30,6 +30,7 @@ class TransportState extends Equatable {
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
     this.outputPeak = 0,
+    this.recDub = false,
   });
 
   /// Whether the audio device is open and processing.
@@ -103,6 +104,11 @@ class TransportState extends Equatable {
   /// rate while audio flows, like [masterPositionFrames].
   final double outputPeak;
 
+  /// The rec/dub second-press setting the repository holds and re-applies to
+  /// the engine: with it on, a take's end lands the track OVERDUBBING rather
+  /// than PLAYING — what a queued take-end will do.
+  final bool recDub;
+
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 
@@ -132,5 +138,6 @@ class TransportState extends Equatable {
     looperMode,
     primaryTrack,
     outputPeak,
+    recDub,
   ];
 }

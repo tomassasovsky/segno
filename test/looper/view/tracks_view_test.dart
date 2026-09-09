@@ -905,6 +905,41 @@ void main() {
       expect(find.text('Loop start'), findsOneWidget);
     });
 
+    const takeEnding = Track(
+      state: TrackState.recording,
+      lengthFrames: 500,
+      pending: true,
+      pendingTrigger: ArmTrigger.grid,
+    );
+
+    testWidgets('a queued take-end reads Play on the grid', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(quantizeDiv: GridDivision.bar),
+          tracks: [takeEnding],
+        ),
+      );
+      await pump(tester);
+      expect(find.text('Play'), findsOneWidget);
+      expect(find.text('Next bar'), findsOneWidget);
+    });
+
+    testWidgets('a queued take-end reads Overdub under rec/dub', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            quantizeDiv: GridDivision.bar,
+            recDub: true,
+          ),
+          tracks: [takeEnding],
+        ),
+      );
+      await pump(tester);
+      expect(find.text('Overdub'), findsOneWidget);
+    });
+
     testWidgets('a section arm plays a stopped track and stops a sounding '
         'one, at the loop start', (tester) async {
       seed(
@@ -1415,81 +1450,6 @@ void main() {
       expect(find.byKey(const Key('stage_track_run')), findsNothing);
       // Browsing views never touches playback or the selection.
       verifyNever(() => bloc.add(any()));
-    });
-
-    testWidgets('a Wave row reads its waveform once per content change, not '
-        'once per playhead tick', (tester) async {
-      const playing = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.5),
-        ],
-      );
-      final controller = StreamController<LooperState>();
-      addTearDown(controller.close);
-      var current = playing;
-      when(() => bloc.state).thenAnswer((_) => current);
-      when(() => repository.state).thenAnswer((_) => current);
-      whenListen(bloc, controller.stream, initialState: playing);
-      await pump(tester);
-      await tester.tap(find.byKey(const Key('stage_view_menu')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('stage_view_wave')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('wave_waveform_0')), findsOneWidget);
-      final reads = verify(() => repository.readTrackWaveform(0)).callCount;
-      expect(reads, greaterThan(0));
-
-      // Ten polls of the loop going round: the playhead moves the row, the
-      // shape behind it does not, so the engine buffer is not copied again.
-      for (var i = 1; i <= 10; i++) {
-        current = LooperState(
-          tracks: [
-            Track(
-              state: TrackState.playing,
-              lengthFrames: 1000,
-              positionFrames: i * 90,
-              peak: 0.5 + i / 100,
-            ),
-          ],
-        );
-        controller.add(current);
-        await tester.pumpAndSettle();
-      }
-      verifyNever(() => repository.readTrackWaveform(0));
-
-      // A finalized pass changes the shape: read again, once.
-      current = const LooperState(
-        tracks: [
-          Track(
-            state: TrackState.playing,
-            lengthFrames: 1000,
-            undoDepth: 1,
-            peak: 0.5,
-          ),
-        ],
-      );
-      controller.add(current);
-      await tester.pumpAndSettle();
-      verify(() => repository.readTrackWaveform(0)).called(1);
-
-      // While a pass is being captured the buffer grows under the reader:
-      // every rebuild reads.
-      for (var i = 1; i <= 3; i++) {
-        current = LooperState(
-          tracks: [
-            Track(
-              state: TrackState.overdubbing,
-              lengthFrames: 1000,
-              undoDepth: 1,
-              positionFrames: i * 90,
-              peak: 0.5,
-            ),
-          ],
-        );
-        controller.add(current);
-        await tester.pumpAndSettle();
-      }
-      verify(() => repository.readTrackWaveform(0)).called(3);
       expect(control.state.cursor, 0);
 
       await tester.tap(find.byKey(const Key('stage_view_menu')));
@@ -1537,7 +1497,7 @@ void main() {
       );
       await pump(tester);
 
-      expect(find.text('Count-in · 3'), findsOneWidget);
+      expect(find.text('Count-in 3'), findsOneWidget);
       expect(find.text('4/4'), findsNothing);
     });
 

@@ -3357,15 +3357,6 @@
     "stageQueueSound": "Sound",
     "stageQueuePlay": "Play",
     "stageQueueStop": "Stop",
-    "stageCountIn": "Count-in · {beats}",
-    "@stageCountIn": {
-        "description": "The footer tempo block while a count-in runs, with the beats left",
-        "placeholders": {
-            "beats": {
-                "type": "int"
-            }
-        }
-    },
     "a11yTrackQueued": "{action} queued, {timing}",
     "@a11yTrackQueued": {
         "placeholders": {
