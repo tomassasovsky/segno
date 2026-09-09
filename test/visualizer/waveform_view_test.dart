@@ -318,7 +318,7 @@ void main() {
       ),
     );
 
-    testWidgets('is its own repaint layer under the wave, and absent '
+    testWidgets('is its own repaint layer over the wave, and absent '
         'without bars', (tester) async {
       await pumpBars(tester, 4);
       final ruler = find.byKey(const Key('waveform_view_ruler'));

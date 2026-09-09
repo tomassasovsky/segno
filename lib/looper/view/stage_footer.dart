@@ -57,7 +57,7 @@ typedef _TempoFacts = ({
   int countInBeatsLeft,
 });
 
-/// `84.0 BPM  4/4`, or `84.0 BPM  Count-in · 3` while a count-in runs. The
+/// `84.0 BPM  4/4`, or `84.0 BPM  Count-in 3` while a count-in runs. The
 /// bpm figure reads `—` on the tempo-free path (`TempoSource.none`): drawing
 /// `0.0` over a grid that does not exist would state a wrong fact.
 class _TempoBlock extends StatelessWidget {
@@ -81,7 +81,7 @@ class _TempoBlock extends StatelessWidget {
     // A count-in replaces the signature for its beats: the one moment the
     // footer's tempo block says something the performer must act on.
     final signature = tempo.countInBeatsLeft > 0
-        ? l10n.stageCountIn(tempo.countInBeatsLeft)
+        ? l10n.countingInLabel(tempo.countInBeatsLeft)
         : '${tempo.tsNum}/${tempo.tsDen}';
     final secondary = TextStyle(
       fontFamily: SurfaceTheme.displayFont,

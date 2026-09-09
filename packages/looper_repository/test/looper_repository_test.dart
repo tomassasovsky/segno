@@ -433,6 +433,140 @@ void main() {
       expect(buildRepo().state.track.pendingTrigger, isNull);
     });
 
+    group('readTrackWaveform', () {
+      int reads() => engine.calls.where((c) => c == 'readTrackVisual').length;
+
+      /// One playing track of 96000 frames at [position], with the steady
+      /// facts a content change moves.
+      EngineSnapshot at(
+        int position, {
+        TrackState state = TrackState.playing,
+        int undoDepth = 1,
+      }) => EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 4,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: 96000,
+        masterPositionFrames: position,
+        tracks: [
+          TrackSnapshot(
+            state: state,
+            volume: 0.8,
+            muted: false,
+            lengthFrames: 96000,
+            positionFrames: position,
+            undoDepth: undoDepth,
+            rms: 0.3,
+            peak: 0.5,
+          ),
+        ],
+      );
+
+      test('re-reads every call until the playhead has swept a full lap past '
+          'a content change, then once per lap', () {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        engine.visual = Float32List.fromList([0.5]);
+        expect(repo.readTrackWaveform(0), [0.5]);
+        final first = reads();
+
+        // The engine's tap rewrites the buffer bucket by bucket as the head
+        // moves, so the shape read at the change is the previous pass's.
+        engine.nextSnapshot = at(48000);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(72000);
+        repo.readTrackWaveform(0);
+        expect(reads(), first + 2, reason: 'mid-sweep calls must re-read');
+
+        // The wrap, then past the change position: the lap is swept.
+        engine.nextSnapshot = at(8000);
+        repo.readTrackWaveform(0);
+        engine
+          ..nextSnapshot = at(30000)
+          ..visual = Float32List.fromList([0.75]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        final swept = reads();
+
+        engine
+          ..nextSnapshot = at(50000)
+          ..visual = Float32List.fromList([0.125]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        engine.nextSnapshot = at(90000);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), swept, reason: 'a swept lap is a lookup');
+
+        // The next wrap takes one more copy.
+        engine.nextSnapshot = at(4000);
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
+      });
+
+      test('a content change starts a new sweep', () {
+        engine.nextSnapshot = at(0);
+        final repo = buildRepo()..readTrackWaveform(0);
+        // Sweep a lap.
+        for (final p in [30000, 60000, 90000, 10000, 20000]) {
+          engine.nextSnapshot = at(p);
+          repo.readTrackWaveform(0);
+        }
+        final swept = reads();
+        engine.nextSnapshot = at(40000);
+        repo.readTrackWaveform(0);
+        expect(reads(), swept);
+
+        // An undo moves the steady facts: re-read now and on every call
+        // until the head passes this position again.
+        engine.nextSnapshot = at(50000, undoDepth: 0);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(70000, undoDepth: 0);
+        repo.readTrackWaveform(0);
+        expect(reads(), swept + 2);
+      });
+
+      test('a stopped track keeps its last shape without reading', () {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        engine.visual = Float32List.fromList([0.75]);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(24000, state: TrackState.stopped);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        final stopped = reads();
+        engine.visual = Float32List.fromList([0]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), stopped);
+      });
+
+      test('a capturing track is read on every call', () {
+        engine.nextSnapshot = at(1000, state: TrackState.overdubbing);
+        final repo = buildRepo()..readTrackWaveform(0);
+        engine.nextSnapshot = at(2000, state: TrackState.overdubbing);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(3000, state: TrackState.overdubbing);
+        repo.readTrackWaveform(0);
+        expect(reads(), 3);
+      });
+
+      test('an empty track reads nothing and forgets its copy', () {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        engine.visual = Float32List.fromList([0.75]);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = const EngineSnapshot.initial();
+        expect(repo.readTrackWaveform(0), isEmpty);
+        expect(repo.readTrackWaveform(3), isEmpty);
+      });
+    });
+
     test('the master playhead moving does not change any track', () {
       // The transport position belongs to the TRANSPORT. Copying it onto every
       // `Track` (as `playheadFrames` once did) made all eight tracks compare

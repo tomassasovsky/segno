@@ -1955,8 +1955,11 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         }
         t->pending_record = 1;
         t->pending_trigger = trig;
+        /* Trigger first, then the flag with release: the snapshot reads the
+         * flag with acquire and only then the trigger, so it never pairs a
+         * fresh arm with the previous arm's trigger. */
         store_i32(&t->a_pending_trigger, trig);
-        store_i32(&t->a_pending, 1);
+        atomic_store_explicit(&t->a_pending, 1, memory_order_release);
       }
       break;
     case LE_CMD_DISARM:

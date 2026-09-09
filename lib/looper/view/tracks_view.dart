@@ -286,6 +286,7 @@ class _TracksViewState extends State<TracksView> {
                                                   bars: barsOf(channel),
                                                   quantizeDiv:
                                                       chrome.quantizeDiv,
+                                                  recDub: chrome.recDub,
                                                 ),
                                             ],
                                           ),
@@ -356,6 +357,7 @@ class _ChromeState extends Equatable {
     required this.isConnected,
     required this.primaryTrack,
     required this.quantizeDiv,
+    required this.recDub,
   });
 
   factory _ChromeState.of(LooperState state) {
@@ -368,6 +370,7 @@ class _ChromeState extends Equatable {
       isConnected: state.status.isConnected,
       primaryTrack: state.transport.primaryTrack,
       quantizeDiv: state.transport.quantizeDiv,
+      recDub: state.transport.recDub,
     );
   }
 
@@ -376,6 +379,7 @@ class _ChromeState extends Equatable {
   final bool isConnected;
   final int primaryTrack;
   final GridDivision quantizeDiv;
+  final bool recDub;
 
   @override
   List<Object?> get props => [
@@ -384,6 +388,7 @@ class _ChromeState extends Equatable {
     isConnected,
     primaryTrack,
     quantizeDiv,
+    recDub,
   ];
 }
 
@@ -411,6 +416,7 @@ class _TrackSlot extends StatelessWidget {
     required this.isPrimary,
     required this.bars,
     required this.quantizeDiv,
+    required this.recDub,
   });
 
   final int channel;
@@ -420,6 +426,7 @@ class _TrackSlot extends StatelessWidget {
   final bool isPrimary;
   final int? bars;
   final GridDivision quantizeDiv;
+  final bool recDub;
 
   @override
   Widget build(BuildContext context) {
@@ -445,6 +452,7 @@ class _TrackSlot extends StatelessWidget {
         isPrimary: isPrimary,
         bars: bars,
         quantizeDiv: quantizeDiv,
+        recDub: recDub,
       ),
     );
   }
