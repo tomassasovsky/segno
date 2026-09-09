@@ -243,6 +243,18 @@ PR #1011 merges.
   remembered mode; only polls count as reports. Accepted as is: a second
   undo tap queued behind a freezing clear is a no-op once the first restores
   (as after an undo-to-empty), documented at the apply site.
+- Review round 4 (same day, on the round-3 fixes): a record pressed on a
+  sibling behind a queued restore of the only take read a master of 0 and
+  took the defining path; the press now reads the master any pending
+  restore re-establishes (`le_rig_effective_master_len`). The repository
+  counts a frozen clear-all member as a member from the clear (the engine
+  queues the tap and restores the take when its point lands) instead of
+  refusing to answer in that window, restores the chains for an undo tapped
+  at a frozen clear, and gives a mode request six polls of a running engine
+  before dropping it (the ring drains on the audio callback, and a device's
+  first callback can come later than two polls). Accepted as is: a frozen
+  member retired by a fresh take in that same window leaves the group
+  silently, the way a void capture does.
 - The fuzz suite (`flutter test --tags fuzz`) and
   `pumped_native_engine_test` were run against a locally built engine
   library; `tool/build_test_lib.sh` itself does not build on this Mac (it
