@@ -20754,33 +20754,32 @@ static void test_clear_behind_queued_restore_keeps_a_point(void) {
 }
 
 /* A record press on a sibling behind a queued restore of the only take
- * records over the grid that restore re-establishes: it is not a defining
- * take, so a half-loop capture rounds up to the base and the master survives.
- */
+ * records over the grid that restore re-establishes, not as a defining
+ * take: with quantize on, the press ARMS for the loop top (a defining press
+ * would record at once), and the arm fires at the restored loop's top. */
 static void test_record_behind_queued_restore_is_not_defining(void) {
   printf("test_record_behind_queued_restore_is_not_defining\n");
   le_engine* e = make_configured_engine();
   float out[64];
   le_snapshot s;
   record_base_loop(e, 1.0f);
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
   CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
   drain(e); /* the wire master reads 0: the only take is gone */
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_length_frames == 0);
   CHECK(le_engine_undo(e, 0) == LE_OK);   /* the restore is on the ring */
-  CHECK(le_engine_record(e, 1) == LE_OK); /* pressed behind it */
+  CHECK(le_engine_record(e, 1) == LE_OK); /* pressed behind it: an arm */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* back as it was cleared */
-  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
   CHECK(s.master_length_frames == LOOP_N);
-  process_const(e, 0.5f, LOOP_N / 2, out);
-  CHECK(le_engine_record(e, 1) == LE_OK); /* finalize: rounds up to the base */
-  drain(e);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].pending == 1); /* waiting for the restored loop's top */
+  process_const(e, 0.0f, LOOP_N - s.master_position_frames, out);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-  CHECK(s.tracks[1].length_frames == LOOP_N);
-  CHECK(s.master_length_frames == LOOP_N);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.master_position_frames == 0);
   le_engine_destroy(e);
 }
 
