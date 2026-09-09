@@ -3,22 +3,19 @@ import 'dart:async';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:segno/appliance/power_off/power_off_goodbye.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
-import 'package:segno/visualizer/console_volume_overlay.dart';
 import 'package:segno/visualizer/performance_readout.dart';
-import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
 import 'package:segno/visualizer/waveform_window_channel.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 import 'package:segno/window/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Where the output-waveform window should sit: **full-bleed on a secondary
+/// Where the selected-track window should sit: **full-bleed on a secondary
 /// display** when one is present (the intended second-screen setup), else the
 /// windowed fallback from [args]. Pure over the screen list so it can be
 /// unit-tested without a real multi-monitor desktop.
@@ -152,7 +149,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final args = WaveformWindowArgs.parse(controller.arguments);
-  final title = args.title ?? 'Segno — Output';
+  final title = args.title ?? 'Segno — Track';
   final frame = ValueNotifier<WaveformFrame>(
     (samples: Float32List(0), progress: 0, selectedTrack: ''),
   );
@@ -224,48 +221,8 @@ Future<void> runWaveformWindow(WindowController controller) async {
     },
   );
 
-  runApp(
-    WaveformWindowApp(
-      frame: frame,
-      readout: readout,
-      title: title,
-      // The overlay's commands go straight back over the shared channel —
-      // fire-and-forget like every push in the other direction, because a
-      // dropped fader move is corrected by the next one.
-      onControl: (control) => unawaited(
-        waveformWindowChannel
-            .invokeMethod(waveformWindowControlMethod, control.toMap())
-            .catchError((Object _) => null),
-      ),
-    ),
-  );
+  runApp(WaveformWindowApp(frame: frame, readout: readout, title: title));
 }
-
-/// The waveform's colour state for [readout]: the cursor track's transport
-/// state, with muted overlaying it — the same legend the meters use, keyed off
-/// the same track whose name the waveform already labels itself with.
-///
-/// Pure so the second screen's colouring can be tested without a window. Falls
-/// back to [LooperMeterState.empty] when no track is selected, or when the
-/// state token is one this build does not know: the readout crosses an engine
-/// boundary as strings, and an unrecognised one must degrade to the quiet
-/// "nothing to show" tone rather than throw on a render.
-@visibleForTesting
-LooperMeterState waveformStateOf(PerformanceReadout readout) {
-  for (final track in readout.tracks) {
-    if (!track.selected) continue;
-    final state = _trackStatesByName[track.state];
-    if (state == null) return LooperMeterState.empty;
-    return LooperMeterState.of(state, muted: track.muted);
-  }
-  return LooperMeterState.empty;
-}
-
-/// [TrackState] by its wire token. Hoisted out of [waveformStateOf] because
-/// that runs once per pushed frame — rebuilding the map there would allocate at
-/// frame rate to answer a five-entry lookup.
-final Map<String, TrackState> _trackStatesByName = TrackState.values
-    .asNameMap();
 
 /// Coerces a method-channel payload (a [Float32List], or a `List` of numbers
 /// after the plugin re-serializes across engines) into a [Float32List].
@@ -282,24 +239,18 @@ Float32List _toFloat32List(Object? raw) {
   return Float32List(0);
 }
 
-/// The root widget of the waveform window: a full-screen [WaveformView] driven
-/// by frames pushed from the main window.
-///
-/// The waveform fills the fixed 7" panel with the pen's `STAGE / readout`
-/// ([ConsoleReadoutView]) — stage-sized type legible from the floor,
-/// full-bleed because the panel is a panel, not a window.
+/// The root widget of the waveform window: the selected-track readout
+/// ([ConsoleReadoutView]) over a [WaveformView] driven by frames pushed from
+/// the main window — stage-sized type legible from the floor, full-bleed
+/// because the 7" panel is a panel, not a window.
 class WaveformWindowApp extends StatelessWidget {
   /// Creates a [WaveformWindowApp] rendering [frame].
   const WaveformWindowApp({
     required this.frame,
     required this.readout,
     required this.title,
-    this.onControl = _dropControl,
     super.key,
   });
-
-  /// Default [onControl]: drops the command, for hosts that wire nothing.
-  static void _dropControl(ReadoutControl control) {}
 
   /// The latest waveform frame, updated as the main window pushes new data.
   final ValueListenable<WaveformFrame> frame;
@@ -309,10 +260,6 @@ class WaveformWindowApp extends StatelessWidget {
 
   /// OS window title.
   final String title;
-
-  /// Sends a volume-overlay control command back to the main window (#698).
-  /// The entrypoint wires this to the window channel; tests capture it.
-  final ValueChanged<ReadoutControl> onControl;
 
   @override
   Widget build(BuildContext context) {
@@ -337,39 +284,33 @@ class WaveformWindowApp extends StatelessWidget {
           body: ValueListenableBuilder<PerformanceReadout>(
             valueListenable: readout,
             builder: (context, readoutData, _) {
+              final selected = readoutData.selected;
               final waveform = ValueListenableBuilder<WaveformFrame>(
                 valueListenable: frame,
                 builder: (context, data, _) => WaveformView(
-                  selectedTrack: data.selectedTrack,
                   samples: data.samples,
                   progress: data.progress,
-                  state: waveformStateOf(readoutData),
-                  semanticLabel: context.l10n.a11yWaveform,
+                  bars: selected?.bars ?? 0,
+                  state: readoutMeterStateOf(selected),
+                  semanticLabel: selected == null
+                      ? context.l10n.a11yReadoutNoTrack
+                      : context.l10n.a11ySelectedTrackWaveform(
+                          data.selectedTrack,
+                        ),
                 ),
               );
-              // Full-bleed: the console view carries the pen's own inset.
-              // The overlay owns the pages; the readout face's MIX pill is the
-              // only way into it (#698, entry reworked in #707).
-              return ConsoleVolumeOverlay(
+              // Full-bleed: the console view carries its own inset.
+              final face = ConsoleReadoutView(
                 readout: readoutData,
-                onControl: onControl,
-                builder: (context, openMixer) {
-                  final readout = ConsoleReadoutView(
-                    readout: readoutData,
-                    waveform: waveform,
-                    onMix: openMixer,
-                  );
-                  if (readoutData.goodbye != ReadoutGoodbye.mark) {
-                    return readout;
-                  }
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      readout,
-                      const PowerOffGoodbye(face: ReadoutGoodbye.mark),
-                    ],
-                  );
-                },
+                waveform: waveform,
+              );
+              if (readoutData.goodbye != ReadoutGoodbye.mark) return face;
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  face,
+                  const PowerOffGoodbye(face: ReadoutGoodbye.mark),
+                ],
               );
             },
           ),

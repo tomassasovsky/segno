@@ -3,6 +3,27 @@ import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:segno_engine/segno_engine.dart' hide TrackEffect;
 
+/// What a pending arm waits for — the engine's own account of the boundary,
+/// so the stage names it instead of guessing from the settings.
+enum ArmTrigger {
+  /// The quantize grid: the next loop top, or the chosen subdivision.
+  grid,
+
+  /// A signal at the recording input (Sound start).
+  sound,
+
+  /// A Band section toggle at the primary's loop top.
+  section;
+
+  /// Decodes the snapshot's `pending_trigger` code; `null` for none.
+  static ArmTrigger? fromCode(int code) => switch (code) {
+    0 => ArmTrigger.grid,
+    1 => ArmTrigger.sound,
+    2 => ArmTrigger.section,
+    _ => null,
+  };
+}
+
 /// A single looper track: a multi-lane container that owns the transport
 /// (state, loop multiple, undo/redo depth) and its [lanes].
 ///
@@ -27,6 +48,8 @@ class Track extends Equatable {
     this.outputMask = 0x3,
     this.layerInFlight = false,
     this.pending = false,
+    this.pendingTrigger,
+    this.positionFrames = 0,
     this.lengthPresetBars = 0,
     this.quantizeOverride,
     this.oneShot = false,
@@ -74,6 +97,20 @@ class Track extends Equatable {
 
   /// Whether a quantized/signal-triggered record arm is waiting to fire.
   final bool pending;
+
+  /// What that arm waits for, or `null` while nothing is pending.
+  final ArmTrigger? pendingTrigger;
+
+  /// This track's own playhead in frames within [lengthFrames] — the engine
+  /// has already applied the mode's position rule (a multiple's segment, a
+  /// Sync division's folded phase, a Free/Song track's private clock), so
+  /// [progress] is the track's own progress. While recording it is the write
+  /// head instead. `0` for an empty track.
+  ///
+  /// Moves at the poll rate while the track plays, like [peak], and is kept
+  /// out of [steadyProps] for the same reason: the progress bar subscribes
+  /// to it in its own leaf.
+  final int positionFrames;
 
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
@@ -139,11 +176,24 @@ class Track extends Equatable {
   /// Whether an undone overdub layer can be redone.
   bool get canRedo => redoDepth > 0;
 
-  /// Everything in [props] EXCEPT the live [peak] level.
+  /// Normalized play position in `0..1`; `0` while the track has no length or
+  /// is still recording its take (the engine publishes the growing write head
+  /// as both position and length then, which is no position at all).
+  double get progress => lengthFrames > 0 && state != TrackState.recording
+      ? (positionFrames / lengthFrames).clamp(0.0, 1.0)
+      : 0;
+
+  /// Layers the performer hears: the base take plus every retired overdub
+  /// pass. The base loop is not an engine undo layer (`undoDepth` counts
+  /// retired passes only), but it is a layer, so it counts as the first.
+  int get layers => undoDepth + (hasContent ? 1 : 0);
+
+  /// Everything in [props] EXCEPT the live [peak] level and [positionFrames].
   ///
-  /// [peak] is the only field that changes at the poll rate on a track that is
-  /// merely playing, so it is the only one that has to be subscribed at meter
-  /// granularity. A surface that draws the tile AROUND a meter compares on
+  /// Those two are the fields that change at the poll rate on a track that is
+  /// merely playing, so they are the only ones that have to be subscribed at
+  /// meter granularity. A surface that draws the tile AROUND a meter compares
+  /// on
   /// this, and subscribes to [peak] separately in the meter leaf itself, so a
   /// moving level rebuilds the bar and nothing else (#646/#654/#832).
   ///
@@ -155,7 +205,8 @@ class Track extends Equatable {
   /// Listed out rather than derived from [props] so neither list is built
   /// twice per comparison (a `Track ==` is on the console's hot path). The
   /// two are locked to each other by a test — `props` is exactly this list
-  /// plus [peak] — so a field added to one cannot silently miss the other.
+  /// plus [peak] and [positionFrames] — so a field added to one cannot
+  /// silently miss the other.
   ///
   /// "Steady" means steady against a moving LEVEL, and nothing more — two
   /// other fields here move on their own, both deliberately left in:
@@ -184,6 +235,7 @@ class Track extends Equatable {
     outputMask,
     layerInFlight,
     pending,
+    pendingTrigger,
     lengthPresetBars,
     quantizeOverride,
     oneShot,
@@ -192,10 +244,11 @@ class Track extends Equatable {
     chainEnabled,
   ];
 
-  /// Value equality over every field, [peak] INCLUDED — deliberately, and
-  /// load-bearing.
+  /// Value equality over every field, [peak] and [positionFrames] INCLUDED —
+  /// deliberately, and load-bearing.
   ///
-  /// **Do not remove [peak] from this list.** The meters are fed through
+  /// **Do not remove [peak] (or [positionFrames]) from this list.** The meters
+  /// are fed through
   /// `LooperState ==`: `LooperRepository`'s poll drops a projection equal to
   /// the one before it (`if (next == _last) return`), so a field outside
   /// equality is a field that never reaches the UI at all. Taking [peak] out
@@ -221,6 +274,7 @@ class Track extends Equatable {
     outputMask,
     layerInFlight,
     pending,
+    pendingTrigger,
     lengthPresetBars,
     quantizeOverride,
     oneShot,
@@ -228,5 +282,6 @@ class Track extends Equatable {
     effects,
     chainEnabled,
     peak,
+    positionFrames,
   ];
 }

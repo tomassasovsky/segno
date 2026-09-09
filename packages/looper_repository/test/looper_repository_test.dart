@@ -41,6 +41,39 @@ import 'helpers/fake_audio_engine.dart';
 
 final EngineSnapshot _playingSnapshot = _playingAt(24000);
 
+/// One empty track with an arm as the engine publishes it: `pending` and the
+/// trailing `pending_trigger` code beside it.
+EngineSnapshot _pendingSnapshot({
+  required bool pending,
+  required int trigger,
+}) => EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  tracks: [
+    TrackSnapshot(
+      state: TrackState.empty,
+      volume: 0.8,
+      muted: false,
+      lengthFrames: 0,
+      undoDepth: 0,
+      rms: 0,
+      peak: 0,
+      pending: pending,
+      pendingTrigger: trigger,
+    ),
+  ],
+);
+
 /// One playing track with independently controlled transport and meter values.
 EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
     EngineSnapshot(
@@ -390,6 +423,258 @@ void main() {
       expect(state.status.inputChannels, 2);
       expect(state.status.outputChannels, 4);
       expect(state.status.isConnected, isTrue);
+    });
+
+    test("a pending arm carries the engine's trigger; none reads null", () {
+      engine.nextSnapshot = _pendingSnapshot(pending: true, trigger: 1);
+      expect(buildRepo().state.track.pendingTrigger, ArmTrigger.sound);
+
+      engine.nextSnapshot = _pendingSnapshot(pending: false, trigger: -1);
+      expect(buildRepo().state.track.pendingTrigger, isNull);
+    });
+
+    group('readTrackWaveform', () {
+      int reads() => engine.calls.where((c) => c == 'readTrackVisual').length;
+
+      /// One playing track of 96000 frames at [position], with the steady
+      /// facts a content change moves.
+      EngineSnapshot at(
+        int position, {
+        TrackState state = TrackState.playing,
+        int undoDepth = 1,
+        int trackLength = 96000,
+        int? trackPosition,
+        int masterLength = 96000,
+        LooperMode mode = LooperMode.multi,
+      }) => EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 4,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: masterLength,
+        masterPositionFrames: position,
+        looperMode: mode,
+        tracks: [
+          TrackSnapshot(
+            state: state,
+            volume: 0.8,
+            muted: false,
+            lengthFrames: trackLength,
+            positionFrames: trackPosition ?? position,
+            undoDepth: undoDepth,
+            rms: 0.3,
+            peak: 0.5,
+          ),
+        ],
+      );
+
+      test('re-reads every call until the playhead has swept a full lap past '
+          'a content change, then once per lap', () {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        engine.visual = Float32List.fromList([0.5]);
+        expect(repo.readTrackWaveform(0), [0.5]);
+        final first = reads();
+
+        // The engine's tap rewrites the buffer bucket by bucket as the head
+        // moves, so the shape read at the change is the previous pass's.
+        engine.nextSnapshot = at(48000);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(72000);
+        repo.readTrackWaveform(0);
+        expect(reads(), first + 2, reason: 'mid-sweep calls must re-read');
+
+        // The wrap, then past the change position: the lap is swept.
+        engine.nextSnapshot = at(8000);
+        repo.readTrackWaveform(0);
+        engine
+          ..nextSnapshot = at(30000)
+          ..visual = Float32List.fromList([0.75]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        final swept = reads();
+
+        engine
+          ..nextSnapshot = at(50000)
+          ..visual = Float32List.fromList([0.125]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        engine.nextSnapshot = at(90000);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), swept, reason: 'a swept lap is a lookup');
+
+        // The next wrap takes one more copy.
+        engine.nextSnapshot = at(4000);
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
+      });
+
+      test('a content change starts a new sweep', () {
+        engine.nextSnapshot = at(0);
+        final repo = buildRepo()..readTrackWaveform(0);
+        // Sweep a lap.
+        for (final p in [30000, 60000, 90000, 10000, 20000]) {
+          engine.nextSnapshot = at(p);
+          repo.readTrackWaveform(0);
+        }
+        final swept = reads();
+        engine.nextSnapshot = at(40000);
+        repo.readTrackWaveform(0);
+        expect(reads(), swept);
+
+        // An undo moves the steady facts: re-read now and on every call
+        // until the head passes this position again.
+        engine.nextSnapshot = at(50000, undoDepth: 0);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(70000, undoDepth: 0);
+        repo.readTrackWaveform(0);
+        expect(reads(), swept + 2);
+      });
+
+      test('a stopped track keeps its last shape without reading', () {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        engine.visual = Float32List.fromList([0.75]);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(24000, state: TrackState.stopped);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        final stopped = reads();
+        engine.visual = Float32List.fromList([0]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), stopped);
+      });
+
+      test('a capturing track is read on every call', () {
+        engine.nextSnapshot = at(1000, state: TrackState.overdubbing);
+        final repo = buildRepo()..readTrackWaveform(0);
+        engine.nextSnapshot = at(2000, state: TrackState.overdubbing);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(3000, state: TrackState.overdubbing);
+        repo.readTrackWaveform(0);
+        expect(reads(), 3);
+      });
+
+      test('an empty track reads nothing and forgets its copy', () {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        engine.visual = Float32List.fromList([0.75]);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = const EngineSnapshot.initial();
+        expect(repo.readTrackWaveform(0), isEmpty);
+        expect(repo.readTrackWaveform(3), isEmpty);
+
+        // A take recorded later under the same steady facts is a new shape:
+        // it starts its own sweep instead of inheriting the finished one.
+        final before = reads();
+        engine
+          ..nextSnapshot = at(24000)
+          ..visual = Float32List.fromList([0.25]);
+        expect(repo.readTrackWaveform(0), [0.25]);
+        expect(reads(), before + 1);
+      });
+
+      test('the poll forgets a track that lost its content, so the readers '
+          'never have to ask for an empty one', () async {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine.visual = Float32List.fromList([0.75]);
+        repo.readTrackWaveform(0);
+        // Sweep a lap so the copy would otherwise be held.
+        for (final p in [60000, 90000, 10000, 30000]) {
+          engine.nextSnapshot = at(p);
+          ticker.add(null);
+          await Future<void>.delayed(Duration.zero);
+          repo.readTrackWaveform(0);
+        }
+        final swept = reads();
+
+        // Cleared, then a take of the same length again: the readers only
+        // ask while there is content, so the poll must do the forgetting.
+        engine.nextSnapshot = const EngineSnapshot.initial();
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..nextSnapshot = at(40000)
+          ..visual = Float32List.fromList([0.25]);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.readTrackWaveform(0), [0.25]);
+        expect(reads(), swept + 1);
+      });
+
+      test("a multiple's copy follows the master lap, not the track's", () {
+        // The tap is bucketed on the master clock and holds whichever base
+        // lap is sounding; a 2x track wraps once per two master laps.
+        engine.nextSnapshot = at(24000, trackLength: 192000);
+        final repo = buildRepo()..readTrackWaveform(0);
+        for (final p in [60000, 90000]) {
+          engine.nextSnapshot = at(p, trackLength: 192000);
+          repo.readTrackWaveform(0);
+        }
+        // The master wraps into the second base lap; the track does not.
+        engine.nextSnapshot = at(
+          8000,
+          trackLength: 192000,
+          trackPosition: 104000,
+        );
+        repo.readTrackWaveform(0);
+        engine
+          ..nextSnapshot = at(30000, trackLength: 192000, trackPosition: 126000)
+          ..visual = Float32List.fromList([0.75]);
+        expect(repo.readTrackWaveform(0), [0.75], reason: 'sweep complete');
+        final swept = reads();
+        engine
+          ..nextSnapshot = at(70000, trackLength: 192000, trackPosition: 166000)
+          ..visual = Float32List.fromList([0.125]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), swept);
+        // The next master wrap brings the first base lap back: re-read.
+        engine.nextSnapshot = at(
+          4000,
+          trackLength: 192000,
+          trackPosition: 4000,
+        );
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
+      });
+
+      test("in Free mode the sweep is the track's own lap", () {
+        // No master loop at all: the transport's progress is 0 throughout,
+        // and the track's own clock is what the tap follows.
+        EngineSnapshot free(int p) =>
+            at(0, masterLength: 0, trackPosition: p, mode: LooperMode.free);
+        engine.nextSnapshot = free(24000);
+        final repo = buildRepo()..readTrackWaveform(0);
+        for (final p in [60000, 90000, 8000]) {
+          engine.nextSnapshot = free(p);
+          repo.readTrackWaveform(0);
+        }
+        engine
+          ..nextSnapshot = free(30000)
+          ..visual = Float32List.fromList([0.75]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        final swept = reads();
+        engine
+          ..nextSnapshot = free(60000)
+          ..visual = Float32List.fromList([0.125]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), swept);
+        engine.nextSnapshot = free(2000);
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
+      });
     });
 
     test('the master playhead moving does not change any track', () {
@@ -1109,6 +1394,25 @@ void main() {
 
       repo.setTrackQuantize(channel: 0, enabled: null);
       expect(repo.state.tracks.first.quantizeOverride, isNull);
+    });
+
+    test('rec/dub is projected, and lands on the next frame', () async {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final seen = <bool>[];
+      final sub = repo.looperState.listen(
+        (state) => seen.add(state.transport.recDub),
+      );
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, [false]);
+
+      // No tick in between: the setting re-projects on its own.
+      repo.setRecDub(enabled: true);
+      expect(repo.state.transport.recDub, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, [false, true]);
     });
 
     test('rec/dub, auto-record and multiples re-apply on start', () {
@@ -4374,9 +4678,8 @@ void main() {
     });
 
     test(
-      'the crown re-applies on every restart (device change), like looper '
-      'mode — D18, no un-crown call means the cache never has a "default" '
-      'to fall back to, only a remembered channel',
+      'a crown is pushed once and never re-applied on restart — the engine '
+      'owns it, and a restarted rig is empty, so it has no crown',
       () {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
@@ -4387,9 +4690,22 @@ void main() {
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.lastCrownedChannel, 4);
+        expect(engine.lastCrownedChannel, isNull);
       },
     );
+
+    test('a crown requested while stopped lands on the next start, once', () {
+      final repo = buildRepo()
+        ..crownPrimary(channel: 3)
+        ..startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, 3);
+
+      engine.lastCrownedChannel = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, isNull);
+    });
 
     test('a never-crowned track does not push crownPrimary on start', () {
       buildRepo().startEngine(const EngineConfig());
@@ -4474,15 +4790,26 @@ void main() {
           countInBeatsLeft: 3,
           looperMode: LooperMode.band,
           primaryTrack: 2,
+          outputPeak: 0.5,
+          // The crown only projects onto a track that holds a completed
+          // take (see `resolvedPrimaryTrack`), so give the designated
+          // channel one.
+          tracks: [
+            TrackSnapshot.empty(),
+            TrackSnapshot.empty(),
+            TrackSnapshot(
+              state: TrackState.playing,
+              volume: 1,
+              muted: false,
+              lengthFrames: 4,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+            ),
+          ],
         );
 
-        // primaryTrack now projects from the repository's own re-apply
-        // cache, not the raw snapshot field (independent review of #295,
-        // D18 stale-crown fix — see `_project`'s doc) — crown through the
-        // real API so the cache agrees with the snapshot fixture above,
-        // matching how a genuinely-crowned engine is reached in practice.
-        final transport =
-            (buildRepo()..crownPrimary(channel: 2)).state.transport;
+        final transport = buildRepo().state.transport;
         expect(transport.tempoBpm, 128);
         expect(transport.tempoSource, TempoSource.manual);
         expect(transport.tsNum, 3);
@@ -4499,8 +4826,71 @@ void main() {
         expect(transport.countInBeatsLeft, 3);
         expect(transport.looperMode, LooperMode.band);
         expect(transport.primaryTrack, 2);
+        expect(transport.outputPeak, closeTo(0.5, 1e-9));
       },
     );
+
+    group('resolvedPrimaryTrack', () {
+      const playing = TrackSnapshot(
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        lengthFrames: 4,
+        undoDepth: 0,
+        rms: 0,
+        peak: 0,
+      );
+      const recording = TrackSnapshot(
+        state: TrackState.recording,
+        volume: 1,
+        muted: false,
+        lengthFrames: 2,
+        undoDepth: 0,
+        rms: 0,
+        peak: 0,
+      );
+      const empty = TrackSnapshot.empty();
+
+      test('is the designation when that track holds a completed take', () {
+        expect(resolvedPrimaryTrack(2, [playing, empty, playing]), 2);
+      });
+
+      test(
+        'falls onto the lowest recorded track while the designated one is '
+        'empty (its clear kept the designation, D18)',
+        () {
+          expect(resolvedPrimaryTrack(2, [empty, playing, empty, playing]), 1);
+        },
+      );
+
+      test('is none for an empty session, or one still on its first take', () {
+        expect(resolvedPrimaryTrack(-1, [empty, empty]), -1);
+        expect(resolvedPrimaryTrack(0, [recording, empty]), -1);
+        expect(resolvedPrimaryTrack(-1, const []), -1);
+      });
+
+      test('never trusts an out-of-range designation', () {
+        expect(resolvedPrimaryTrack(7, [empty, playing]), 1);
+      });
+
+      test('projects onto TransportState.primaryTrack', () {
+        engine.nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          primaryTrack: 3,
+          tracks: [empty, playing, empty, empty],
+        );
+        expect(buildRepo().state.transport.primaryTrack, 1);
+      });
+    });
 
     test(
       'TransportState defaults to the tempo-free grid-off values',

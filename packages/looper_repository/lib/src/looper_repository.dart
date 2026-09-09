@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:equatable/equatable.dart';
+
 import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
@@ -238,15 +240,13 @@ class LooperRepository {
   /// way it persists across a device restart.
   LooperMode _looperMode = LooperMode.multi;
 
-  /// The crowned primary track (B3/B5c, D18): `null` = never crowned.
-  /// Remembered and re-applied on every successful (re)start, exactly like
-  /// [_looperMode] — the native engine seeds `a_primary_track` once in
-  /// `le_engine_create` and never resets it in `le_engine_configure`, so this
-  /// field only matters for re-establishing state on a genuinely fresh engine
-  /// instance. Unlike [_looperMode], there is no "reset" value to always push
-  /// (no un-crown call exists) — a (re)start only re-crowns when this is
-  /// non-null.
-  int? _primaryTrack;
+  /// An explicit crown ([crownPrimary]) requested while the engine was not
+  /// running, held until the next start pushes it; `null` when nothing is
+  /// pending. The ENGINE owns the crown itself (it crowns the first completed
+  /// take and clears the crown when the session empties), so unlike
+  /// [_looperMode] nothing is re-applied on a later restart: a restart empties
+  /// the rig, and an empty rig has no crown.
+  int? _pendingCrown;
 
   /// Per-track length presets (A6, D17; absent => AUTO). Remembered and
   /// re-applied on every successful (re)start, mirroring [_trackMultiple] —
@@ -258,7 +258,7 @@ class LooperRepository {
   /// Remembered and re-applied on every successful (re)start, mirroring
   /// [_trackLengthPreset] — the native engine resets every track's
   /// `a_one_shot` to `false` in `le_engine_configure`, run on every (re)start
-  /// (unlike [_primaryTrack]/[_looperMode] above, which persist across it).
+  /// (unlike [_looperMode] above, which persists across it).
   final Map<int, bool> _trackOneShot = {};
 
   /// Per-track active lane count (absent => 1). Remembered and re-applied on
@@ -654,6 +654,7 @@ class LooperRepository {
     final next = _project(snapshot);
     if (next == _last) return;
     _last = next;
+    _forgetEmptyWaveforms(next);
     // Before listeners see it: `auto` monitors resolve against the arm state
     // this projection just moved, and the gate should open on the same frame
     // the track arms rather than one behind it.
@@ -669,6 +670,7 @@ class LooperRepository {
     final next = _project(_engine.snapshot());
     if (next == _last) return;
     _last = next;
+    _forgetEmptyWaveforms(next);
     _reconcileAutoMonitors();
     _controller.add(next);
   }
@@ -786,17 +788,13 @@ class LooperRepository {
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
       looperMode: s.looperMode,
-      // Project from the repository's own re-apply CACHE, not the raw
-      // `s.primaryTrack` (independent review of #295, D18): the native
-      // engine has no "un-crown" call, so a channel crowned by a prior/live
-      // session stays crowned on `s.primaryTrack` through an `applySession`
-      // load that defines no crown of its own — but `applySession` DOES
-      // correctly reset `_primaryTrack` to `null` in that case (see its
-      // doc). The cache is therefore the accurate "what does THIS session
-      // intend" answer; the raw snapshot is not. `crownPrimary` is the only
-      // way `_primaryTrack` is ever set to a non-null value, so the two stay
-      // in lockstep everywhere except this one documented gap.
-      primaryTrack: _primaryTrack ?? -1,
+      // The crown every surface draws: the engine's designation when that
+      // track holds a completed take, otherwise the lowest track that does
+      // (the designation survives its own clear while a sibling plays, so
+      // its re-record re-establishes it), and none for an empty session.
+      primaryTrack: resolvedPrimaryTrack(s.primaryTrack, s.tracks),
+      outputPeak: s.outputPeak,
+      recDub: _recDub,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -812,6 +810,8 @@ class LooperRepository {
           redoDepth: s.tracks[i].redoDepth,
           layerInFlight: s.tracks[i].layerInFlight,
           pending: s.tracks[i].pending,
+          pendingTrigger: ArmTrigger.fromCode(s.tracks[i].pendingTrigger),
+          positionFrames: s.tracks[i].positionFrames,
           lengthPresetBars: s.tracks[i].lengthPresetBars,
           quantizeOverride: _trackQuantize[i],
           oneShot: s.tracks[i].oneShot,
@@ -942,11 +942,13 @@ class LooperRepository {
         ..setClickVolume(_clickVolume)
         ..setCountIn(_countInBars)
         ..setLooperMode(_looperMode);
-      // Re-crown the primary track only when one was ever set — there is no
-      // "un-crown" call to push the null/-1 default with (see
-      // [_primaryTrack]'s doc).
-      final primary = _primaryTrack;
-      if (primary != null) _engine.crownPrimary(channel: primary);
+      // A crown requested while stopped lands now, once. The engine owns the
+      // crown from here (see [_pendingCrown]).
+      final pendingCrown = _pendingCrown;
+      if (pendingCrown != null) {
+        _pendingCrown = null;
+        _engine.crownPrimary(channel: pendingCrown);
+      }
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
@@ -1601,6 +1603,9 @@ class LooperRepository {
     _laneInput.clear();
     _laneOutput.clear();
     _laneVolume.clear();
+    // The loaded rig may land on the same steady facts as the one it
+    // replaces; the shapes are not the same.
+    _waveforms.clear();
     _laneMute.clear();
     // Chain-enabled flags + inheritance meta (R15/F2): every remembered lane
     // flag resets to the enabled default — pushed to the engine too (the
@@ -1625,17 +1630,11 @@ class LooperRepository {
     // One Shot must be explicitly turned off below or a prior session/live
     // flag would bleed into the freshly loaded one.
     _trackOneShot.clear();
-    // The crowned primary track (D18) is the one B5c field this reset CANNOT
-    // fully undo on the live engine: there is no "un-crown" native call (see
-    // `LooperModeControl.crownPrimary`'s doc), so a channel crowned by a
-    // PRIOR session/live session stays crowned on the live engine through
-    // this load unless the loaded rig crowns a (possibly different) channel
-    // itself below. What this DOES fix is the re-apply CACHE (`_primaryTrack`)
-    // — without resetting it here, a session with no crown would still
-    // resurrect the prior session's crown on the NEXT engine (re)start
-    // (device reconnect / backend switch), which is the bleed this load path
-    // can actually prevent.
-    _primaryTrack = null;
+    // The crown dies with the last take: the clear awaited below empties
+    // every track, and the engine uncrowns itself on that (its own rule, not
+    // a call from here). A crown requested while stopped for a rig that is
+    // now being replaced must not land on the new one either.
+    _pendingCrown = null;
     if (!await _awaitCleared(clearPollInterval, clearPollAttempts)) {
       throw StateError('engine did not clear before applying the session');
     }
@@ -1679,14 +1678,13 @@ class LooperRepository {
     // IS the default), mirroring how the tempo grid's SETTINGS push
     // unconditionally elsewhere in this method. The crown is NOT gated by
     // content (D18) so its ordering here is only for symmetry; it is pushed
-    // only when the rig actually defines one — see the reset comment above
-    // `_primaryTrack = null` for why an undefined crown cannot be un-set on
-    // the live engine.
+    // only when the rig actually defines one — a rig without a crown gets the
+    // engine's own: its lowest recorded track, once the import commits.
     setLooperMode(rig.looperMode);
     // Bounded to `trackCount` — same rationale as `rig.oneShotChannels` below:
     // a manifest saved on a build with more physical tracks than this engine
-    // must not push an out-of-range channel, nor poison `_primaryTrack` with
-    // a value this engine can never actually crown.
+    // must not push an out-of-range channel, nor hold one as a pending crown
+    // this engine can never actually apply.
     if (rig.primaryTrack >= 0 && rig.primaryTrack < trackCount) {
       crownPrimary(channel: rig.primaryTrack);
     }
@@ -2422,8 +2420,83 @@ class LooperRepository {
   Float32List readWaveform() => _engine.readVisual();
 
   /// Reads track [channel]'s loop waveform for a per-track thumbnail.
-  Float32List readTrackWaveform(int channel) =>
-      _engine.readTrackVisual(channel);
+  ///
+  /// The engine's buffer is a lazily swept tap, not a stored shape: each
+  /// bucket holds the peak of the most recent pass over its slice of the
+  /// loop, written as the sweeping playhead leaves it. So right after a
+  /// content change (a finalize, an undo, a stop-then-play) the buffer still
+  /// shows the previous pass until one full sweep has rewritten it, and while
+  /// a take or a pass is captured it changes every block. Reading it across
+  /// the engine boundary on every poll for every visible track is the cost
+  /// the stage and the second display used to pay for that; this keeps one
+  /// copy per track and re-reads only while the shape can still be changing:
+  ///
+  /// - on every call while the track's steady facts just changed, until the
+  ///   sweep has passed a full lap beyond the change (that call included);
+  /// - on every call while the track is capturing;
+  /// - once per sweep lap thereafter, at the wrap, while the track plays (a
+  ///   multiple's buffer holds whichever base lap is sounding, so this is
+  ///   what keeps the drawn segment the audible one);
+  /// - never while the track stands still (its last shape is kept).
+  ///
+  /// The sweep is measured on the clock the engine buckets the tap on: the
+  /// master loop, except in Free and Song mode where each track sweeps its
+  /// own loop. A track's own progress would be the wrong lap for a multiple
+  /// (N master laps) and a Sync division (a fraction of one).
+  Float32List readTrackWaveform(int channel) {
+    final rig = lastState;
+    final track = channel >= 0 && channel < rig.tracks.length
+        ? rig.tracks[channel]
+        : null;
+    if (track == null || !track.hasContent) {
+      _waveforms.remove(channel);
+      return Float32List(0);
+    }
+    final key = _WaveformKey.of(track);
+    final progress = switch (rig.transport.looperMode) {
+      LooperMode.free || LooperMode.song => track.progress,
+      LooperMode.multi ||
+      LooperMode.sync ||
+      LooperMode.band => rig.transport.progress,
+    };
+    final entry = _waveforms[channel];
+    if (entry == null || entry.key != key) {
+      final samples = _engine.readTrackVisual(channel);
+      _waveforms[channel] = _WaveformRead(key, samples, sweepFrom: progress);
+      return samples;
+    }
+    final wrapped = progress < entry.lastProgress;
+    if (wrapped) entry.wraps++;
+    entry.lastProgress = progress;
+    final swept =
+        entry.wraps >= 2 || (entry.wraps == 1 && progress >= entry.sweepFrom);
+    // The call that completes the sweep reads too: the buckets between the
+    // previous call and here were the last ones still holding the old pass.
+    final justSwept = swept && !entry.swept;
+    entry.swept = swept;
+    final playing = track.state == TrackState.playing;
+    if (track.isCapturing || (playing && (!swept || justSwept || wrapped))) {
+      entry.samples = _engine.readTrackVisual(channel);
+    }
+    return entry.samples;
+  }
+
+  /// One copy of each track's waveform, see [readTrackWaveform].
+  final _waveforms = <int, _WaveformRead>{};
+
+  /// Drops the copies of tracks that lost their content, so a take recorded
+  /// or restored later under the same steady facts starts its own sweep
+  /// rather than inheriting a finished one. Called per projection; the
+  /// readers only ask for tracks with content, so they never see the empty
+  /// branch above themselves.
+  void _forgetEmptyWaveforms(LooperState next) {
+    if (_waveforms.isEmpty) return;
+    // A stopped engine reports no tracks at all: those copies go too.
+    _waveforms.removeWhere(
+      (channel, _) =>
+          channel >= next.tracks.length || !next.tracks[channel].hasContent,
+    );
+  }
 
   /// Sets the record-offset latency compensation in frames. Remembered and
   /// re-applied on every (re)start (device change / reconnect) so the
@@ -3730,6 +3803,9 @@ class LooperRepository {
   /// every (re)start.
   EngineResult setRecDub({required bool enabled}) {
     _recDub = enabled;
+    // Projected as `TransportState.recDub`: the queued take-end cue reads it,
+    // so it lands on the next frame, not the next poll.
+    _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setRecDub(enabled: enabled);
   }
@@ -3898,13 +3974,17 @@ class LooperRepository {
     return _engine.setLooperMode(mode);
   }
 
-  /// Crowns [channel] the primary track (Sync/Band, D18). Remembered and
-  /// re-applied on every (re)start (see [_primaryTrack]'s doc); there is no
-  /// "un-crown" call — the only way to move the crown is to crown a different
-  /// channel.
+  /// Crowns [channel] the primary track — the explicit timing handoff (D18).
+  /// Held until the next start when the engine is not running (see
+  /// [_pendingCrown]). There is no "un-crown" call: the engine crowns the
+  /// first completed take by itself and clears the crown when the session
+  /// empties, so moving it explicitly means crowning a different channel.
   EngineResult crownPrimary({required int channel}) {
-    _primaryTrack = channel;
-    if (!_intendRunning) return EngineResult.ok;
+    if (!_intendRunning) {
+      _pendingCrown = channel;
+      return EngineResult.ok;
+    }
+    _pendingCrown = null;
     return _engine.crownPrimary(channel: channel);
   }
 
@@ -3940,4 +4020,82 @@ class LooperRepository {
     await _rigReplaced.close();
     await _controller.close();
   }
+}
+
+/// The crown the screens draw for an engine whose designation is
+/// [designation] over [tracks]: the designated track when it holds a
+/// completed take, else the lowest track that does, else `-1`.
+///
+/// The engine keeps the designation through the primary's own clear while a
+/// sibling still holds audio (its re-record re-establishes it — D18), so the
+/// raw field can name an empty track; a completed take is any state but
+/// empty and recording — a take still being defined is not a recording yet.
+int resolvedPrimaryTrack(int designation, List<TrackSnapshot> tracks) {
+  bool completed(int channel) {
+    if (channel < 0 || channel >= tracks.length) return false;
+    final state = tracks[channel].state;
+    return state != TrackState.empty && state != TrackState.recording;
+  }
+
+  if (completed(designation)) return designation;
+  for (var channel = 0; channel < tracks.length; channel++) {
+    if (completed(channel)) return channel;
+  }
+  return -1;
+}
+
+/// The steady facts a track's recorded shape is a function of — see
+/// [LooperRepository.readTrackWaveform]. Equal keys mean nothing about the
+/// content changed; a playhead tick, a level tick, a mute or a volume change
+/// move none of these.
+class _WaveformKey extends Equatable {
+  const _WaveformKey({
+    required this.state,
+    required this.lengthFrames,
+    required this.undoDepth,
+    required this.redoDepth,
+    required this.clearRestore,
+  });
+
+  factory _WaveformKey.of(Track track) => _WaveformKey(
+    state: track.state,
+    lengthFrames: track.lengthFrames,
+    undoDepth: track.undoDepth,
+    redoDepth: track.redoDepth,
+    clearRestore: track.clearRestore,
+  );
+
+  final TrackState state;
+  final int lengthFrames;
+  final int undoDepth;
+  final int redoDepth;
+  final bool clearRestore;
+
+  @override
+  List<Object?> get props => [
+    state,
+    lengthFrames,
+    undoDepth,
+    redoDepth,
+    clearRestore,
+  ];
+}
+
+/// One cached waveform read with the sweep it is waiting on.
+class _WaveformRead {
+  _WaveformRead(this.key, this.samples, {required this.sweepFrom})
+    : lastProgress = sweepFrom;
+
+  final _WaveformKey key;
+  Float32List samples;
+
+  /// The playhead position the last key change was read at, and how many
+  /// times the playhead has wrapped since: the buffer is fully rewritten
+  /// once the head has passed [sweepFrom] again on a later lap.
+  final double sweepFrom;
+  int wraps = 0;
+  double lastProgress;
+
+  /// Whether the sweep has completed since the key change.
+  bool swept = false;
 }

@@ -29,6 +29,8 @@ class TransportState extends Equatable {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.outputPeak = 0,
+    this.recDub = false,
   });
 
   /// Whether the audio device is open and processing.
@@ -88,10 +90,24 @@ class TransportState extends Equatable {
   /// exist yet for the non-multi values (B2a — see [LooperMode]'s class doc).
   final LooperMode looperMode;
 
-  /// The crowned primary track's channel index (Sync/Band, D18), or `-1`
-  /// when none has ever been crowned (default). See
-  /// [EngineSnapshot.primaryTrack]'s doc.
+  /// The crowned track every surface draws, or `-1` for an empty session.
+  ///
+  /// The first completed recording is crowned; a later, lower-numbered take
+  /// or a selection never moves it, an explicit handoff does. Resolved from
+  /// the engine's designation ([EngineSnapshot.primaryTrack]) so it always
+  /// names a track that holds a completed take — see
+  /// `resolvedPrimaryTrack`.
   final int primaryTrack;
+
+  /// Master-bus absolute peak for the most recent block, in `0..1`, after the
+  /// master gain and limiter — what reaches the outputs. Moves at the poll
+  /// rate while audio flows, like [masterPositionFrames].
+  final double outputPeak;
+
+  /// The rec/dub second-press setting the repository holds and re-applies to
+  /// the engine: with it on, a take's end lands the track OVERDUBBING rather
+  /// than PLAYING — what a queued take-end will do.
+  final bool recDub;
 
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
@@ -121,5 +137,7 @@ class TransportState extends Equatable {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    outputPeak,
+    recDub,
   ];
 }

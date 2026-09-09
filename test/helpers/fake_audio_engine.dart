@@ -838,8 +838,16 @@ class FakeAudioEngine implements AudioEngine {
   @override
   Float32List readVisual() => Float32List(0);
 
+  /// How many times [readTrackVisual] was called — the copy across the
+  /// engine boundary the waveform readers are meant to take once per
+  /// content change, not once per poll.
+  int trackVisualReads = 0;
+
   @override
-  Float32List readTrackVisual(int channel) => Float32List(0);
+  Float32List readTrackVisual(int channel) {
+    trackVisualReads++;
+    return Float32List(0);
+  }
 
   @override
   Float32List exportTrack(int channel) => Float32List(0);

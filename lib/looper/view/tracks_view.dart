@@ -18,25 +18,28 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/cache_telemetry_scope.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/settings_tray.dart';
-import 'package:segno/looper/view/stage_status_bar.dart';
+import 'package:segno/looper/view/stage_db_scale.dart';
+import 'package:segno/looper/view/stage_footer.dart';
+import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
+import 'package:segno/looper/view/wave_track_row.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-/// The full-screen Tracks view (Chewie-Monsta style): a row
-/// of tall colored track columns, each a level meter with an editable name.
-/// Tapping a column selects it (white highlight) and toggles record/overdub;
-/// long-press stops. The master output waveform is in a separate window.
+/// The main display's Tracks view (the accepted stage): the top bar, then
+/// the active bank's four tracks — tall level columns between the shared dBFS
+/// scales, or one waveform row each in the Wave view — and the session strip
+/// under them. The smaller display follows the selected track on its own.
 ///
-/// The chrome ([StageStatusBar], [AudioNotRunningBanner]) and each
-/// [TrackColumn] are their own widgets; the tracks keyboard map and the
-/// shared dispatch/announce helpers live in [TracksCommands]. This view is
-/// just the layout that wires them together.
+/// The chrome ([StageTopBar], [StageFooter], [AudioNotRunningBanner]) and each
+/// [TrackColumn] / [WaveTrackRow] are their own widgets; the tracks keyboard
+/// map and the shared dispatch/announce helpers live in [TracksCommands]. This
+/// view is just the layout that wires them together.
 class TracksView extends StatefulWidget {
   /// Creates a [TracksView].
   const TracksView({super.key});
@@ -84,19 +87,18 @@ class _TracksViewState extends State<TracksView> {
     // every surface (keyboard, tiles, pedal) reads and writes.
     final overlay = context.watch<ControlCubit>().state;
     final mode = overlay.mode;
-    final commands = TracksCommands(context);
     // NOT `context.watch<LooperBloc>()`: `LooperState` carries live audio —
-    // per-track `peak` and `transport.masterPositionFrames` — so it changes on
-    // every poll tick while audio flows, and watching it here rebuilt this
-    // whole method: the theme, the listeners, the tray provider, the Scaffold,
-    // the tray, and all eight columns. Measured at 10.98ms p50 in the build
-    // phase on the Pi against a 16.7ms frame (#638). This selector holds only
-    // values a moving meter cannot change, so a level tick no longer reaches
-    // the chrome; the per-track data is subscribed one level down, in
-    // [_TrackSlot], and the moving level one level below THAT, in
-    // [TrackPeakMeter].
+    // per-track `peak` / `positionFrames` and the transport's position and
+    // output peak — so it changes on every poll tick while audio flows, and
+    // watching it here rebuilt this whole method: the theme, the listeners,
+    // the tray provider, the Scaffold, the tray, and all eight columns.
+    // Measured at 10.98ms p50 in the build phase on the Pi against a 16.7ms
+    // frame (#638). This selector holds only values a moving meter cannot
+    // change, so a level tick no longer reaches the chrome; the per-track
+    // data is subscribed one level down, in [_TrackSlot], and the moving
+    // level one level below THAT, in [TrackPeakMeter].
     final chrome = context.select<LooperBloc, _ChromeState>(
-      (bloc) => _ChromeState.of(bloc.state, commands),
+      (bloc) => _ChromeState.of(bloc.state),
     );
 
     // When the engine is stopped *because* the pinned interface is gone, the
@@ -108,9 +110,15 @@ class _TracksViewState extends State<TracksView> {
       (cubit) => cubit.state.deviceConnectivity == DeviceConnectivity.lost,
     );
 
-    // Settings are reachable from the Tracks view by right-clicking
-    // anywhere or pressing `S` (and from the macOS menu bar). Kept chromeless
-    // and minimal otherwise.
+    final bankTracks = [
+      for (final channel in chrome.channels)
+        if (overlay.bankContains(channel)) channel,
+    ];
+    int? barsOf(int channel) => chrome.bars[channel];
+
+    // Settings are reachable from the top bar's gear and the tray handle,
+    // and on the desktop by right-clicking anywhere or pressing `S` (and from
+    // the macOS menu bar).
     return LooperScreenTheme(
       child: MultiBlocListener(
         listeners: [
@@ -199,74 +207,102 @@ class _TracksViewState extends State<TracksView> {
                             ? context.surface.fxSurface
                             : null,
                         body: SafeArea(
-                          child: Padding(
-                            // Console/kiosk mode hides the on-screen toolbar
-                            // (the foot pedals drive transport/mode/clear) and
-                            // tightens the layout for the fixed panel; desktop
-                            // builds keep the full chrome.
-                            // The pen's `STAGE / stage` insets the run 10 from
-                            // the left, right and bottom. The status bar's own
-                            // 8 from the top now sits on the shadow Container
-                            // below, so the shadow is cast from the stage edge
-                            // rather than from 8 inside it.
-                            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Container(
-                                  // `dropShadow`, not the hex it happens to
-                                  // equal in neon: the high-contrast variant
-                                  // deepens it to 0xCC so the status bar keeps
-                                  // separating from the stage, exactly as the
-                                  // tray sheet's shadow does.
-                                  decoration: BoxDecoration(
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: context.surface.dropShadow,
-                                        offset: const Offset(0, -19),
-                                        blurRadius: 48,
-                                      ),
-                                    ],
-                                  ),
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: const StageStatusBar(),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const StageTopBar(),
+                              // Standing loss conditions hold the stage for
+                              // as long as they are true — the pen's
+                              // `STAGE / device-lost`, at the run's top. The
+                              // widget carries its own bottom gap, so an
+                              // empty stack adds no space here.
+                              const Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  StageTopBar.sideInset,
+                                  10,
+                                  StageTopBar.sideInset,
+                                  0,
                                 ),
-                                const SizedBox(height: 10),
-                                // Standing loss conditions hold the stage
-                                // for as long as they are true — the pen's
-                                // `STAGE / device-lost`, at the run's top. The
-                                // widget
-                                // carries its own bottom gap, so an empty
-                                // stack adds no space here.
-                                const ConnectivityBanners(),
-                                // With no first-run gate, a stopped engine
-                                // lands here; a full-width affordance opens
-                                // settings to (re)start it. Suppressed while
-                                // the device-lost banner above already states
-                                // the stop, so the two never stack (#453).
-                                if (!chrome.isConnected && !deviceLost) ...[
-                                  const AudioNotRunningBanner(),
-                                  const SizedBox(height: 14),
-                                ],
-                                Expanded(
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    // The pen's four columns sit 10 apart, and
-                                    // the run's own inset holds it off the
-                                    // screen edges. Padding each column instead
-                                    // doubled the inner gap to 16 and put half
-                                    // of it outside the run as well.
-                                    spacing: 10,
-                                    children: [
-                                      // _TrackSlot supplies its own Expanded,
-                                      // so a slot with no track takes no flex
-                                      // and its siblings widen -- matching what
-                                      // the old `for (track in state.tracks)`
-                                      // did by simply emitting fewer children.
-                                      for (final channel in chrome.channels)
-                                        if (overlay.bankContains(channel))
-                                          _TrackSlot(
+                                child: ConnectivityBanners(),
+                              ),
+                              // With no first-run gate, a stopped engine
+                              // lands here; a full-width affordance opens
+                              // settings to (re)start it. Suppressed while
+                              // the device-lost banner above already states
+                              // the stop, so the two never stack (#453).
+                              if (!chrome.isConnected && !deviceLost)
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                    StageTopBar.sideInset,
+                                    10,
+                                    StageTopBar.sideInset,
+                                    4,
+                                  ),
+                                  child: AudioNotRunningBanner(),
+                                ),
+                              Expanded(
+                                child: Padding(
+                                  // The pen's instrument: 24 under the bar,
+                                  // 60 off each edge.
+                                  padding: const EdgeInsets.fromLTRB(
+                                    StageTopBar.sideInset,
+                                    24,
+                                    StageTopBar.sideInset,
+                                    0,
+                                  ),
+                                  child: switch (tracksState.stageView) {
+                                    StageView.track => Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        const StageDbScale(trailing: false),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Row(
+                                            key: const Key('stage_track_run'),
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.stretch,
+                                            // The pen's four columns sit 22
+                                            // apart.
+                                            spacing: 22,
+                                            children: [
+                                              // _TrackSlot supplies its own
+                                              // Expanded, so a slot with no
+                                              // track takes no flex and its
+                                              // siblings widen.
+                                              for (final channel in bankTracks)
+                                                _TrackSlot(
+                                                  channel: channel,
+                                                  name: l10n.displayTrackName(
+                                                    tracksState.nameOf(channel),
+                                                    channel,
+                                                  ),
+                                                  selected:
+                                                      channel == overlay.cursor,
+                                                  mode: mode,
+                                                  isPrimary:
+                                                      channel ==
+                                                      chrome.primaryTrack,
+                                                  bars: barsOf(channel),
+                                                  quantizeDiv:
+                                                      chrome.quantizeDiv,
+                                                  recDub: chrome.recDub,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        const StageDbScale(trailing: true),
+                                      ],
+                                    ),
+                                    StageView.wave => Column(
+                                      key: const Key('stage_wave_run'),
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      spacing: 22,
+                                      children: [
+                                        for (final channel in bankTracks)
+                                          _WaveSlot(
                                             channel: channel,
                                             name: l10n.displayTrackName(
                                               tracksState.nameOf(channel),
@@ -274,17 +310,18 @@ class _TracksViewState extends State<TracksView> {
                                             ),
                                             selected: channel == overlay.cursor,
                                             mode: mode,
-                                            looperMode: chrome.looperMode,
                                             isPrimary:
                                                 channel == chrome.primaryTrack,
-                                            onCrownPrimary:
-                                                commands.crownPrimary,
+                                            bars: barsOf(channel),
                                           ),
-                                    ],
-                                  ),
+                                      ],
+                                    ),
+                                  },
                                 ),
-                              ],
-                            ),
+                              ),
+                              const StageFooter(),
+                              const SizedBox(height: 22),
+                            ],
                           ),
                         ),
                       ),
@@ -303,10 +340,11 @@ class _TracksViewState extends State<TracksView> {
 
 /// The slice of [LooperState] that [TracksView]'s own chrome depends on.
 ///
-/// Deliberately excludes everything a moving meter touches — per-track `peak`
-/// and `masterPositionFrames`. Those change on every poll tick while audio
-/// flows, and including either here would put the whole console back on the
-/// rebuild path this class exists to keep it off (#646).
+/// Deliberately excludes everything a moving meter touches — per-track
+/// `peak` and `positionFrames`, the master position and the output peak.
+/// Those change on every poll tick while audio flows, and including any here
+/// would put the whole console back on the rebuild path this class exists to
+/// keep it off (#646).
 ///
 /// [channels] is every track's channel, not just the active bank's: the bank
 /// filter lives on [ControlCubit], so filtering here would rebuild the chrome
@@ -315,54 +353,49 @@ class _TracksViewState extends State<TracksView> {
 class _ChromeState extends Equatable {
   const _ChromeState({
     required this.channels,
+    required this.bars,
     required this.isConnected,
-    required this.looperMode,
     required this.primaryTrack,
-    required this.anyActive,
-    required this.transportEnabled,
-    required this.playStopEnabled,
+    required this.quantizeDiv,
+    required this.recDub,
   });
 
-  factory _ChromeState.of(LooperState state, TracksCommands commands) {
-    final anyActive = commands.anyActive(state);
-    // Both global transport buttons are no-ops with no recorded audio or a
-    // stopped engine; disabling them avoids dead-feeling controls.
-    final transportEnabled = state.status.isConnected && state.hasContent;
+  factory _ChromeState.of(LooperState state) {
+    final loopBars = state.transport.loopBars;
     return _ChromeState(
       channels: [for (final track in state.tracks) track.channel],
+      // A track's bars: the master loop's whole bars times its multiple —
+      // only once a take exists and a tempo grid counts bars at all.
+      bars: [for (final track in state.tracks) _barsOf(track, loopBars)],
       isConnected: state.status.isConnected,
-      looperMode: state.transport.looperMode,
       primaryTrack: state.transport.primaryTrack,
-      anyActive: anyActive,
-      transportEnabled: transportEnabled,
-      // The Play direction is additionally blocked when nothing would sound —
-      // every loaded track is muted (or none holds a loop). Stopping stays
-      // available whenever something is active.
-      playStopEnabled: anyActive
-          ? transportEnabled
-          : state.status.isConnected && commands.anyPlayable(state),
+      quantizeDiv: state.transport.quantizeDiv,
+      recDub: state.transport.recDub,
     );
   }
 
   final List<int> channels;
+  final List<int?> bars;
   final bool isConnected;
-  final LooperMode looperMode;
   final int primaryTrack;
-  final bool anyActive;
-  final bool transportEnabled;
-  final bool playStopEnabled;
+  final GridDivision quantizeDiv;
+  final bool recDub;
 
   @override
   List<Object?> get props => [
     channels,
+    bars,
     isConnected,
-    looperMode,
     primaryTrack,
-    anyActive,
-    transportEnabled,
-    playStopEnabled,
+    quantizeDiv,
+    recDub,
   ];
 }
+
+/// [track]'s length in bars under a master loop of [loopBars] whole bars, or
+/// `null` while nothing counts them (no take, or no tempo grid).
+int? _barsOf(Track track, int loopBars) =>
+    track.hasContent && loopBars > 0 ? loopBars * track.multiple : null;
 
 /// One [TrackColumn], subscribed to nothing but its own [channel]'s [Track] —
 /// and to that track's STEADY fields only ([Track.steadyProps]).
@@ -380,18 +413,20 @@ class _TrackSlot extends StatelessWidget {
     required this.name,
     required this.selected,
     required this.mode,
-    required this.looperMode,
     required this.isPrimary,
-    required this.onCrownPrimary,
+    required this.bars,
+    required this.quantizeDiv,
+    required this.recDub,
   });
 
   final int channel;
   final String name;
   final bool selected;
   final InteractionMode mode;
-  final LooperMode looperMode;
   final bool isPrimary;
-  final void Function(int channel)? onCrownPrimary;
+  final int? bars;
+  final GridDivision quantizeDiv;
+  final bool recDub;
 
   @override
   Widget build(BuildContext context) {
@@ -409,17 +444,54 @@ class _TrackSlot extends StatelessWidget {
     // The Expanded lives here, not at the call site, so the null case above can
     // opt out of the row's flex entirely.
     return Expanded(
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: TrackColumn(
-          track: track,
-          name: name,
-          selected: selected,
-          mode: mode,
-          looperMode: looperMode,
-          isPrimary: isPrimary,
-          onCrownPrimary: onCrownPrimary,
-        ),
+      child: TrackColumn(
+        track: track,
+        name: name,
+        selected: selected,
+        mode: mode,
+        isPrimary: isPrimary,
+        bars: bars,
+        quantizeDiv: quantizeDiv,
+        recDub: recDub,
+      ),
+    );
+  }
+}
+
+/// [_TrackSlot]'s twin for the Wave view: one [WaveTrackRow] per channel, on
+/// the same steady-slice subscription.
+class _WaveSlot extends StatelessWidget {
+  const _WaveSlot({
+    required this.channel,
+    required this.name,
+    required this.selected,
+    required this.mode,
+    required this.isPrimary,
+    required this.bars,
+  });
+
+  final int channel;
+  final String name;
+  final bool selected;
+  final InteractionMode mode;
+  final bool isPrimary;
+  final int? bars;
+
+  @override
+  Widget build(BuildContext context) {
+    final steady = context.select<LooperBloc, SteadyTrack?>(
+      (bloc) => steadyTrackOf(bloc.state, channel),
+    );
+    final track = steady?.track;
+    if (track == null) return const SizedBox.shrink();
+    return Expanded(
+      child: WaveTrackRow(
+        track: track,
+        name: name,
+        selected: selected,
+        mode: mode,
+        isPrimary: isPrimary,
+        bars: bars,
       ),
     );
   }

@@ -40,12 +40,18 @@ void main() {
         outputMask: 0x5,
         layerInFlight: true,
         pending: true,
+        pendingTrigger: ArmTrigger.sound,
         lengthPresetBars: 4,
         quantizeOverride: true,
         oneShot: true,
         chainEnabled: false,
+        positionFrames: 4800,
       );
-      expect(track.props, [...track.steadyProps, track.peak]);
+      expect(track.props, [
+        ...track.steadyProps,
+        track.peak,
+        track.positionFrames,
+      ]);
     });
 
     test('a moving peak leaves steadyProps unchanged', () {
@@ -53,6 +59,63 @@ void main() {
       const loud = Track(channel: 1, state: TrackState.playing, peak: 0.9);
       expect(loud.steadyProps, still.steadyProps);
       expect(loud, isNot(still));
+    });
+
+    test('a moving playhead leaves steadyProps unchanged too', () {
+      const still = Track(channel: 1, state: TrackState.playing);
+      const later = Track(
+        channel: 1,
+        state: TrackState.playing,
+        positionFrames: 960,
+      );
+      expect(later.steadyProps, still.steadyProps);
+      expect(later, isNot(still));
+    });
+
+    test('progress is the playhead over the length, 0 without a length', () {
+      const playing = Track(
+        state: TrackState.playing,
+        lengthFrames: 1000,
+        positionFrames: 250,
+      );
+      expect(playing.progress, 0.25);
+      // The engine publishes the growing write head as both position and
+      // length while recording, so a take in progress reads 0, not 100%.
+      const recording = Track(
+        state: TrackState.recording,
+        lengthFrames: 250,
+        positionFrames: 250,
+      );
+      expect(recording.progress, 0);
+    });
+
+    test('layers count the base take plus every retired pass', () {
+      expect(const Track().layers, 0);
+      expect(
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 10,
+        ).layers,
+        1,
+      );
+      expect(
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 10,
+          undoDepth: 2,
+        ).layers,
+        3,
+      );
+    });
+  });
+
+  group('ArmTrigger', () {
+    test("decodes the snapshot's pending_trigger codes", () {
+      expect(ArmTrigger.fromCode(0), ArmTrigger.grid);
+      expect(ArmTrigger.fromCode(1), ArmTrigger.sound);
+      expect(ArmTrigger.fromCode(2), ArmTrigger.section);
+      expect(ArmTrigger.fromCode(-1), isNull);
+      expect(ArmTrigger.fromCode(7), isNull);
     });
   });
 }

@@ -114,18 +114,10 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
       >();
 
-  /// Enumerates the installed ASIO drivers into `out` (room for `max`), writing the
-  /// count into *count. Each entry is one duplex driver: `id` and `name` are the
-  /// driver name and `input_channels`/`output_channels` are probed from the driver
-  /// (so the picker can show "18 in / 20 out" before opening). A driver that fails
-  /// to probe is omitted; the call degrades to *count = 0 rather than erroring.
-  ///
-  /// Only the SEGNO_ENABLE_ASIO Windows build enumerates real drivers; every other
-  /// build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
-  /// loads a single process-global driver, so this MUST NOT be called while an ASIO
-  /// device is open (it would tear down the live stream) — the Dart layer only
-  /// enumerates while stopped or running on the miniaudio backend. Returns LE_OK,
-  /// or LE_ERR_INVALID for a null argument / non-positive `max`.
+  /// Reserved: always writes *count = 0 and returns LE_OK. ASIO was the Windows
+  /// duplex backend and went with the desktop targets; the symbol stays exported so
+  /// the Dart layer can keep calling it unconditionally. Returns LE_ERR_INVALID for
+  /// a null argument / non-positive `max`.
   int le_enumerate_asio_drivers(
     ffi.Pointer<le_device_info> out,
     int max,
@@ -1852,10 +1844,12 @@ class SegnoEngineBindings {
   late final _le_engine_set_looper_mode = _le_engine_set_looper_modePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
-  /// Crowns [channel] the primary track (D18). Rejects only an out-of-range
-  /// channel; accepted in every looper mode (the crown persists regardless of
-  /// mode, per D18) though it is inert outside Sync/Band. No "un-crown" call
-  /// exists — re-crowning a different channel is the only way to change it.
+  /// Crowns [channel] the primary track — the explicit timing handoff (D18).
+  /// Rejects only an out-of-range channel; accepted in every looper mode (the
+  /// crown persists regardless of mode) though it only gates timing in
+  /// Sync/Band. There is no "un-crown" call: the engine crowns the first
+  /// completed take on its own and clears the crown when the session empties
+  /// (LE_CMD_CROWN_PRIMARY's doc).
   int le_engine_crown_primary(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -4724,15 +4718,12 @@ final class le_config extends ffi.Struct {
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> capture_device_id;
 
-  /// le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
-  /// miniaudio path, LE_BACKEND_ASIO the Windows ASIO backend. Honored at start
-  /// via le_select_backend (a SEGNO_ENABLE_ASIO Windows build); elsewhere every
-  /// value resolves to miniaudio.
+  /// le_audio_backend to open. Every value resolves to miniaudio via
+  /// le_select_backend; the field stays so persisted configs still round-trip.
   @ffi.Int32()
   external int backend;
 
-  /// Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
-  /// ignored on the default path.
+  /// Reserved, alongside LE_BACKEND_ASIO. Always empty and ignored.
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> asio_driver;
 }
@@ -4899,6 +4890,26 @@ final class le_track_snapshot extends ffi.Struct {
   /// le_engine_restore_track.
   @ffi.Int32()
   external int restore_state;
+
+  /// Trailing (accepted design, slice 1): this track's OWN playhead in frames
+  /// within its own length — a multiple's segment offset, a Sync division's
+  /// folded phase and a Free/Song track's private clock are all already
+  /// applied, so `position_frames / length_frames` is the track's progress
+  /// without the reader re-deriving the mode's position rule. It is the read
+  /// index of the block's LAST frame (so one behind master_position_frames,
+  /// which is advanced after each frame); while RECORDING it is the write
+  /// head instead (frames captured so far). 0 for an empty or never-played
+  /// track. Published once per block beside the level.
+  @ffi.Int32()
+  external int position_frames;
+
+  /// Trailing (accepted design, slice 1): what the arm reported by `pending`
+  /// waits for — 0 = the quantize grid (next loop top / subdivision), 1 = a
+  /// signal at the recording input (Sound start), 2 = a Band section toggle
+  /// at the primary's loop top; -1 while nothing is pending. The stage names
+  /// the boundary from this rather than guessing from the settings.
+  @ffi.Int32()
+  external int pending_trigger;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -5284,12 +5295,15 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int looper_mode;
 
-  /// ---- primary track (B3, D18; trailing for the same offset-stability
-  /// reason as the blocks above). -1 = none (default). Persists through the
-  /// primary track being cleared/undone-to-empty; only an explicit re-crown
-  /// (le_engine_crown_primary) changes it — see LE_CMD_CROWN_PRIMARY's doc.
-  /// Meaningful only in Sync/Band mode (see le_sync_quantize_active); a
-  /// nonzero value in any other mode is inert.
+  /// ---- primary track (B3, D18 as revised by the accepted design; trailing
+  /// for the same offset-stability reason as the blocks above). -1 = none
+  /// (default, and again whenever every track is empty). The engine crowns
+  /// the FIRST COMPLETED TAKE while nothing is crowned; an explicit re-crown
+  /// (le_engine_crown_primary) is the timing handoff. The designation
+  /// survives the primary alone being cleared/undone-to-empty while a sibling
+  /// still holds audio (so its re-record re-establishes it), and dies with
+  /// the last take. Every mode publishes it; it only GATES timing in
+  /// Sync/Band (see le_sync_quantize_active).
   @ffi.Int32()
   external int primary_track;
 
@@ -5317,6 +5331,14 @@ final class le_snapshot extends ffi.Struct {
   /// excluded channel reads 0 here because it never runs).
   @ffi.Uint32()
   external int input_cond_mask;
+
+  /// Trailing (accepted design, slice 1): the master bus's absolute peak over
+  /// the most recent block, 0..1 (1.0 = full scale), read AFTER the master
+  /// gain and limiter — what actually reaches the outputs. Sums can clip when
+  /// no single track does, so the stage footer meters this rather than the
+  /// per-track peaks. Sibling of output_rms above.
+  @ffi.Float()
+  external double output_peak;
 }
 
 /// The plugin format a descriptor was discovered in.
