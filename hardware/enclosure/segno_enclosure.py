@@ -109,7 +109,13 @@ CORNER_RO = 8.0      # rivet offset from the BRACKET's bend centre line, in its 
 BASE_CORNER_RELIEF_D = 6.5  # developed corner cut, verified against the native flat
 BASE_REAR_SEAM_GAP = 0.05   # fine riveted joint line; dry-fit 0.00-0.10 before coating
 BASE_FRONT_END_CLEAR = 0.15  # trim each end of the short front wall, mm
-CORNER_LEG = 12.0    # bracket leg width (along the wall)
+CORNER_LEG = 15.0    # bracket leg width (along the wall). The leg carries the rivet's
+                     # bend-side clearance (CORNER_RO, 8) AND its free-edge distance
+                     # (CORNER_LEG - CORNER_RO), and at the original 12 the free edge
+                     # was 4.0 mm -- 1.25 x the rivet diameter, against the 2 x rule of
+                     # thumb, and barely enough to seat a blind rivet's set head. 15
+                     # makes it 7.0 (2.19 D) while CORNER_RO, and therefore every hole
+                     # in the BASE, stays exactly where it was.
 # REAR-corner rivets are STAGGERED between the two legs so a wall-leg rivet and a side-leg
 # rivet never sit at the same height (their tips would meet at the corner). Heights are from
 # the bottom-plate top.
@@ -1152,16 +1158,16 @@ assert not (set(CORNER_ZR_WALL) & set(CORNER_ZR_SIDE)), (
     "corner rivets are not staggered: a rear-wall and a side-wall rivet share a height")
 # Rivet edge distance on the BRACKET. The hole sits CORNER_RO from the bend line
 # and CORNER_LEG - CORNER_RO from the leg's free edge, so the leg has to carry
-# both. The bend side needs to clear the deformation zone (RI + T); the free-edge
-# side is the one under the usual 2 x diameter rule of thumb at the current
-# 4.0 mm (1.25 D), which is why MANUFACTURING.md puts "4 mm edge distance" on the
-# list the shop has to qualify. On the BASE the same rivets have 8.2 mm of metal
-# to the blank edge, so only the bracket is tight.
+# both. The bend side must clear the deformation zone (RI + T plus the hole's own
+# radius); the free-edge side owes the 2 x diameter rule of thumb, which is what
+# took CORNER_LEG from 12 to 15 on 2026-09-10 -- at 12 the free edge was 4.0 mm,
+# 1.25 D, and a blind rivet's set head is about 4.5 mm across. On the BASE the
+# same rivets have 8.2 mm of metal to the blank edge and were never the problem.
 assert CORNER_RO >= RI + T + D_RIVET/2.0, (
     f"corner rivet is {CORNER_RO} from its bend line, inside the RI+T bend zone")
-assert CORNER_LEG - CORNER_RO >= D_RIVET/2.0 + 2.0, (
-    f"corner rivet leaves only {CORNER_LEG-CORNER_RO-D_RIVET/2.0:.2f} mm of metal "
-    f"to the bracket leg's free edge")
+assert CORNER_LEG - CORNER_RO >= 2.0 * D_RIVET, (
+    f"corner rivet is {CORNER_LEG-CORNER_RO:.1f} mm from the bracket leg's free "
+    f"edge, under the 2 x diameter ({2*D_RIVET:.1f} mm) rule of thumb")
 
 def lid_top_z(v):
     """Z of the Top-plate surface at control-area depth v (0..FP_V).

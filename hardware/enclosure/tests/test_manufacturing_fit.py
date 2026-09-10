@@ -246,18 +246,20 @@ class ManufacturingFitTest(unittest.TestCase):
         # and no rivet from one leg shares a height with one from the other
         self.assertFalse(set(enclosure.CORNER_ZR_WALL) & set(enclosure.CORNER_ZR_SIDE))
 
-    def test_rivet_edge_distances_are_the_ones_the_shop_was_asked_to_qualify(self):
-        """The base is comfortable; the bracket leg is the tight part.
+    def test_rivet_edge_distances_clear_the_two_diameter_rule_on_both_parts(self):
+        """The bracket leg is the part that has to carry both clearances.
 
-        Recorded rather than silently tolerated: 4.0 mm to the leg's free edge
-        is 1.25 x rivet diameter, under the usual 2 x rule of thumb, which is why
-        MANUFACTURING.md asks the shop to qualify it. If the leg or the offset
-        ever moves, this says which way it moved.
+        CORNER_RO holds the rivet off its own bend and CORNER_LEG - CORNER_RO
+        holds it off the leg's free edge. At the original 12 mm leg the free edge
+        was 4.0 mm, 1.25 x rivet diameter, which is under the 2 x rule of thumb
+        and barely enough metal to seat a blind rivet's set head. The 15 mm leg
+        makes it 7.0 without moving a single hole in the base.
         """
         radius = enclosure.D_RIVET/2.0
         free_edge = enclosure.CORNER_LEG - enclosure.CORNER_RO
-        self.assertAlmostEqual(free_edge, 4.0, places=6)
-        self.assertAlmostEqual(free_edge - radius, 2.35, places=6)
+        self.assertAlmostEqual(free_edge, 7.0, places=6)
+        self.assertGreaterEqual(free_edge, 2*enclosure.D_RIVET)
+        self.assertAlmostEqual(free_edge - radius, 5.35, places=6)
         # the bend side has to clear the deformation zone, and does
         self.assertGreaterEqual(enclosure.CORNER_RO,
                                 enclosure.RI + enclosure.T + radius)
@@ -601,7 +603,7 @@ class ManufacturingFitTest(unittest.TestCase):
         brackets = sorted((s for s in solids if len(self._cylinder_axes(s,1.65)) == 5),
                           key=lambda s:s.BoundingBox().xmin)
         self.assertEqual(len(brackets),2)
-        for bracket, xmin in zip(brackets,(.1,831.989159)):
+        for bracket, xmin in zip(brackets,(.1,828.989159)):
             bb = bracket.BoundingBox()
             self.assertAlmostEqual(bb.xmin,xmin,places=4)
             self.assertAlmostEqual(bb.ymax,418.900841,places=4)

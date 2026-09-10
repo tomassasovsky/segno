@@ -684,7 +684,10 @@ negative-controlled.
 - Aluminium folds use R2 andK0.33; the steel support beam uses 1.6 mm stock andR1.6.
   Confirm actual temper/gauge, tools and trial-bend development before the set.
 - Use only the two handed rear brackets, five Ø3.2 rivets each, with Ø3.3 holes.
-  Qualify the actual 4 mm grip,4 mm edge distance and setting-tool access.
+  Qualify the actual 4 mm grip and setting-tool access. The rivets sit 7.0 mm
+  from the bracket leg's free edge and 8.0 mm from its bend, both over 2x the
+  rivet diameter; the leg went 12 -> 15 mm on 2026-09-10 to get there, and no
+  hole in the base moved.
 - The eighteen M3 lid joints use Ø2.5 body pilots, precoat Ø4.5 lid clearance
   bores and OD 7 head washers; no clinch nuts. The owner cleans and taps the
   18 lid pilots and 14 screen-support pilots after coating. All other drilling

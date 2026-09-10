@@ -122,7 +122,7 @@ corner reliefs, **0.30–0.40 mm bare normal ridge clearance** and
    K 0.33 development, deep-wall/segmented-punch access and the acute post bend.
    Make a trial bend. Confirm rear guided-punch access and all machining in
    the one visit. Select ten Ø3.2 rivets for the actual approximately 4 mm grip,
-   4 mm centre-to-edge distance and available setting-tool access.
+   7 mm centre-to-edge distance and available setting-tool access.
 3. Verify actual purchased components with a finished-profile gauge/coupon:
    both CTRL caps and 1.20–1.50 mm finished panel thickness, USB profile/nuts,
    PD/MIDI complete fixing patterns and local material, power/fuse hardware,

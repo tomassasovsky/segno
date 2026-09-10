@@ -155,7 +155,7 @@
         ]
       ]
     },
-    "step_sha256": "1aff97db1aacbdb3af486cda75fd524d4fa34ec9f5f4eb9942c4379d16bfa686",
+    "step_sha256": "1435ba4d3d2b09400c31c5f276fb0e178c5223ea39e86627009fe4b890e2d534",
     "placements_mm": [
       [
         [
@@ -184,7 +184,7 @@
         ]
       ]
     ],
-    "volume_mm3": 945154.8699243406,
+    "volume_mm3": 945154.869924341,
     "bounds_mm": [
       [
         -1.9108414917313385,
@@ -197,7 +197,7 @@
         97.51987163183323
       ]
     ],
-    "flat_pattern_sha256": "0961b14dada81255dc621f0131561fdcca18d428c5c506e0fd523be93a683a62",
+    "flat_pattern_sha256": "f30679d6dd9cfa085c150cafbebe0ed165c64f0f9c63cb7e10494bee118c234e",
     "flat_pattern_drawn_face": "same"
   },
   "segno_faceplate": {
@@ -308,7 +308,7 @@
         ]
       ]
     },
-    "step_sha256": "b6cb5fb433830fc2f73f265e7a48d908e7113d6922cbdb32a5a59516ea562f9f",
+    "step_sha256": "5d8018ee731e93089d90427c544cea68ff652f4f4e6aa269c6ca94eff3529eee",
     "placements_mm": [
       [
         [
@@ -337,7 +337,7 @@
         ]
       ]
     ],
-    "volume_mm3": 402948.88330144476,
+    "volume_mm3": 402948.8833014434,
     "bounds_mm": [
       [
         0.0,
@@ -350,11 +350,11 @@
         0.0
       ]
     ],
-    "flat_pattern_sha256": "8220debc924400a03b0e338cbe6a2189380d63b2b146d6771bc1032606f29147",
+    "flat_pattern_sha256": "0dd155273d40ea751a729cc5316ae0b28e3579d94aa537fae1b53604ffdd6bef",
     "flat_pattern_drawn_face": "opposite"
   },
   "segno_corner_bracket_rear": {
-    "flat_sha256": "e97aef1f0e7f076cfec9a57c875ac656db30620e2f07d2245eec6de2078a5c13",
+    "flat_sha256": "fae6da936c80d98942a569982df2c7e573f8a723c32178b50bc9fe342e7b7cdd",
     "forming": {
       "rule": {
         "thickness_mm": 2.0,
@@ -367,11 +367,11 @@
             "L",
             [
               [
-                12.0,
+                15.0,
                 0.0
               ],
               [
-                12.0,
+                15.0,
                 83.0
               ]
             ]
@@ -381,14 +381,14 @@
       ],
       "front_drill": []
     },
-    "step_sha256": "698a294870aa26b18f5e4acc61881755127e10ba7a8ffcd32e88b2215cd37e3a",
+    "step_sha256": "05a57b1f81fb94dab51cf687e962adf1f193687d497374a30d72e5333c6cac38",
     "placements_mm": [
       [
         [
           1.0,
           0.0,
           0.0,
-          831.9891591146371
+          828.9891591146372
         ],
         [
           0.0,
@@ -410,7 +410,7 @@
         ]
       ]
     ],
-    "volume_mm3": 3950.5221077736924,
+    "volume_mm3": 4936.562126495497,
     "bounds_mm": [
       [
         0.0,
@@ -418,16 +418,16 @@
         -2.0
       ],
       [
-        13.910840885362788,
+        16.91084088536279,
         83.0,
-        11.910840885362786
+        14.910840885362786
       ]
     ],
-    "flat_pattern_sha256": "c9ee459c9527f569886d60ec3ffeb764ffb6817817265add42304e9b03296a46",
+    "flat_pattern_sha256": "b6c2593df3666e0e071b6ad89a9a1cfbc2ba16ce4f03386cd75d2248a2115400",
     "flat_pattern_drawn_face": "same"
   },
   "segno_corner_bracket_rear_mirrored": {
-    "flat_sha256": "2a88ed84ab61c3c2a6f5b774400224bef957211defdbb72cd30383c5ce668c17",
+    "flat_sha256": "f5c516e71a753e70db85fb92dbb04cfcd76226c496c426e4d00094c85b34343e",
     "forming": {
       "rule": {
         "thickness_mm": 2.0,
@@ -440,11 +440,11 @@
             "L",
             [
               [
-                12.0,
+                15.0,
                 -3.0
               ],
               [
-                12.0,
+                15.0,
                 80.0
               ]
             ]
@@ -454,14 +454,14 @@
       ],
       "front_drill": []
     },
-    "step_sha256": "a53b8e2aa477746451acb0f8650fea10673d31ddde6a3c4eb3a785481a654d21",
+    "step_sha256": "4ff96021aeba8ee29eb661b589b3c9403cb6eb471a402fd5d38e98237c5a82d8",
     "placements_mm": [
       [
         [
           -1.0,
           0.0,
           0.0,
-          14.010840885362796
+          17.010840885362796
         ],
         [
           0.0,
@@ -483,7 +483,7 @@
         ]
       ]
     ],
-    "volume_mm3": 3950.5221077736924,
+    "volume_mm3": 4936.562126495497,
     "bounds_mm": [
       [
         0.0,
@@ -491,12 +491,12 @@
         -2.0
       ],
       [
-        13.910840885362791,
+        16.91084088536279,
         80.0,
-        11.910840885362786
+        14.910840885362786
       ]
     ],
-    "flat_pattern_sha256": "1018b05d18121eb476200abb0a69cd1cd2c829727a85596eb10c4fe5a741ef35",
+    "flat_pattern_sha256": "a8460f6d917f7e2bbd7dd4bc3c63271a72e991284aa7a92707c5577e760592a3",
     "flat_pattern_drawn_face": "same"
   }
 }
