@@ -488,6 +488,38 @@ void main() {
     });
   });
 
+  group('destination masks (slice 3c)', () {
+    test('a destination is the pair of jacks it drives', () {
+      expect(outputBusMask(0, channels: 4), 0x3);
+      expect(outputBusMask(1, channels: 4), 0xC);
+      expect(outputBusMask(2, channels: 8), 0x30);
+    });
+
+    test('an odd-channel device ends on a single jack', () {
+      // A five-out interface has no output 6, and a mask that claimed one
+      // would ask the engine to drive a socket the rig has not got.
+      expect(outputBusMask(2, channels: 5), 0x10);
+      expect(outputBusMask(2, channels: 4), 0);
+    });
+
+    test('a destination past the rig drives nothing', () {
+      expect(outputBusMask(9, channels: 4), 0);
+      expect(outputBusMask(-1, channels: 4), 0);
+    });
+
+    test('EITHER jack of a pair means the destination is reached', () {
+      // A mask that reaches half a pair still reaches the destination; read
+      // as unselected, a card would offer to switch on what is already on.
+      expect(outputMaskDrivesBus(0x1, 0), isTrue);
+      expect(outputMaskDrivesBus(0x2, 0), isTrue);
+      expect(outputMaskDrivesBus(0x3, 0), isTrue);
+      expect(outputMaskDrivesBus(0x4, 0), isFalse);
+      expect(outputMaskDrivesBus(0x8, 1), isTrue);
+      expect(outputMaskDrivesBus(0x3, 1), isFalse);
+      expect(outputMaskDrivesBus(0x3, -1), isFalse);
+    });
+  });
+
   group('OutputSetup maps (slice 3b)', () {
     test('round-trip through the one-map-per-fact form drops the '
         'destinations at their defaults', () {

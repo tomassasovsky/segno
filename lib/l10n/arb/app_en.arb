@@ -3922,5 +3922,70 @@
                     }
             },
             "description": "A destination holding one jack, on an odd-channel device."
+    },
+    "routingKindLive": "Live inputs",
+    "@routingKindLive": {
+            "description": "The source kind: what the jacks are hearing now."
+    },
+    "routingKindTracks": "Recorded tracks",
+    "@routingKindTracks": {
+            "description": "The source kind: what the tracks play back."
+    },
+    "routingKindPlayers": "Backing & click",
+    "@routingKindPlayers": {
+            "description": "The source kind: the click and the backing player."
+    },
+    "routingSourceClick": "Click",
+    "@routingSourceClick": {
+            "description": "The metronome, as a routable source."
+    },
+    "routingInputOrdinal": "Input {number}",
+    "@routingInputOrdinal": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            },
+            "description": "The ordinal line on an input source card."
+    },
+    "routingHearLive": "Hear live",
+    "@routingHearLive": {
+            "description": "Heading over the live-monitoring choice."
+    },
+    "routingHearOff": "Off",
+    "@routingHearOff": {
+            "description": "Never hear this input live."
+    },
+    "routingHearAuto": "Auto",
+    "@routingHearAuto": {
+            "description": "Hear this input while a track that records it is armed."
+    },
+    "routingHearOn": "On",
+    "@routingHearOn": {
+            "description": "Always hear this input live."
+    },
+    "routingHearAutoOff": "Live off · follows armed or recording tracks",
+    "@routingHearAutoOff": {
+            "description": "Auto is chosen and nothing is armed, so the input is not heard."
+    },
+    "routingHearAutoOn": "Live on · follows armed or recording tracks",
+    "@routingHearAutoOn": {
+            "description": "Auto is chosen and a track that records this input is armed."
+    },
+    "routingHearMuted": "Muted in Mixer · nothing is heard",
+    "@routingHearMuted": {
+            "description": "The input monitor is muted, so the choice above changes nothing."
+    },
+    "routingSendTo": "Send to",
+    "@routingSendTo": {
+            "description": "Heading over the destinations a source reaches."
+    },
+    "routingNoDestinations": "No outputs selected. This source reaches nothing.",
+    "@routingNoDestinations": {
+            "description": "Shown when the chosen source drives no destination."
+    },
+    "routingNoDestinationsYet": "No outputs until an interface is open.",
+    "@routingNoDestinationsYet": {
+            "description": "Shown when no device has been opened yet."
     }
 }

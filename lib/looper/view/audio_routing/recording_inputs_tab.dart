@@ -93,7 +93,8 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
         Positioned(
           left: 100,
           top: 257,
-          child: _TrackScopeRow(
+          child: RoutingTrackScope(
+            heading: l10n.loopScopeTracks,
             count: values.trackCount,
             selected: _channel,
             names: trackNames,
@@ -141,74 +142,6 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
               : const SizedBox.shrink(),
         ),
       ],
-    );
-  }
-}
-
-/// The pen's `scope-controls`: the eight tracks as numbered buttons, with the
-/// chosen one's name beside them.
-class _TrackScopeRow extends StatelessWidget {
-  const _TrackScopeRow({
-    required this.count,
-    required this.selected,
-    required this.names,
-    required this.onSelected,
-  });
-
-  final int count;
-  final int selected;
-  final List<String> names;
-  final ValueChanged<int> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    return SizedBox(
-      width: 1720,
-      height: 76,
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            top: 22,
-            child: LoopSectionLabel(l10n.loopScopeTracks),
-          ),
-          for (var i = 0; i < count; i++)
-            Positioned(
-              left: 328 + 76.0 * i,
-              top: 6,
-              child: Semantics(
-                label: l10n.loopScopeTrack(i + 1),
-                child: LoopChoiceButton(
-                  key: Key('routing_track_$i'),
-                  label: '${i + 1}',
-                  selected: i == selected,
-                  onTap: () => onSelected(i),
-                  width: 64,
-                  height: 64,
-                ),
-              ),
-            ),
-          if (selected < names.length)
-            Positioned(
-              left: 1320,
-              top: 22,
-              width: 400,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: AppText(
-                  names[selected],
-                  key: const Key('routing_track_name'),
-                  style: TextStyle(
-                    color: context.surface.textSecondary,
-                    fontSize: 28,
-                    height: 1,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

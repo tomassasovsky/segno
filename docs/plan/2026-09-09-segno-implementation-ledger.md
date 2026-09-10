@@ -1120,10 +1120,60 @@ PR #1018.
   freeing the wrong lane, drawing nothing as recorded, and never showing the
   empty note each fail exactly one test and no other.
 
+### Destination names
+
+- **The unit is the destination, not the jack.** A destination is a stereo
+  pair (bus `k` = outputs `2k` and `2k+1`), which is what a player patches and
+  names; naming the jacks separately would ask for two names for one cable
+  pair and leave every routing surface to guess which to show. The per-jack
+  output gate keeps its own key, because a name and a gate are different facts
+  about different units.
+- **Names are per device**, like input names, and an unnamed destination falls
+  back to its jack numbers in a short form so a card can carry the full label
+  above the name without both lines saying the same words.
+- An odd-channel device leaves the last destination holding a single jack; it
+  is labelled and masked as one rather than promising a socket the interface
+  has not got.
+
+### Output routing
+
+- **Each source kind carries its own destinations**, per the accepted rule
+  that a recording-only track route never implicitly becomes a live input
+  route. Live inputs route through their monitor, tracks through their lanes,
+  the click through its own output mask.
+- **A track's route is the whole track's.** Every lane is written, because
+  writing lane 0 alone would leave the rest going elsewhere while the card
+  claimed a route half the track has. Lane 0 is read back as the track's
+  answer; lanes can only disagree by way of a session saved before this
+  surface owned the route, and writing every lane is what puts them in step.
+  This is the track-wide route `setLaneCount` deferred to this slice.
+- **Either jack of a pair means the destination is reached**, so a card never
+  offers to switch on something already partly on.
+- **Hear live belongs to the live inputs** and to no other kind. Auto says
+  whether it is hearing anything right now, and a monitor muted in Mixer says
+  so rather than looking switched on.
+
+#### Deviation from the pen
+
+The accepted design's third source kind is "Backing & click". This console has
+no backing player: there is no engine, repository or bloc seam for one
+anywhere. The kind ships with the accepted label and the click alone, because
+a card for a source that routes nothing would be a control that does nothing.
+The backing card lands with the backing player.
+
+#### Checks
+
+- Dart: root 2254 passing and 35 skipped, `looper_repository` 468 passing,
+  `dart analyze` clean over both packages, `bloc lint` clean over 239 files,
+  both arb files at 1099 keys with no key in one and missing from the other.
+- Mutation-checked: ignoring what is armed in the Auto note, routing lane 0
+  only, reading the monitor's route for the click, a destination that can only
+  be added, Hear live shown for every kind, a half-driven pair reading as
+  unreached, and an odd-channel device claiming the jack it has not got each
+  fail exactly the tests that name them.
+
 #### Not verified here
 
-The other two tasks (Output routing, Output setup) and the input and output
-name pages land next, and the Signal-era routing surfaces and the interim
-click card retire with them. Output names have no settings key, cubit or
-fallback label yet; that whole triple is new work.
+Output setup and the input and output name pages land next, and the
+Signal-era routing surfaces and the interim click card retire with them.
 

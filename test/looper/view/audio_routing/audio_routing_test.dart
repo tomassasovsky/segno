@@ -7,10 +7,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
+import 'package:segno/looper/view/audio_routing/output_routing_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -32,6 +36,8 @@ const _rig = LooperState(
     outputChannels: 4,
   ),
   inputPeaks: [0, 0, 0, 0],
+  // Two destinations: outputs 1-2 and outputs 3-4.
+  outputBusCount: 2,
 );
 
 void main() {
@@ -41,9 +47,15 @@ void main() {
   late StreamController<LooperState> states;
   late InputsCubit inputs;
   late TracksCubit tracks;
+  late OutputsCubit outputs;
+  late MonitorCubit monitors;
+  late TempoCubit tempo;
+  late StreamController<int> monitorChanges;
+  late StreamController<int> monitorParams;
 
   setUpAll(() {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
+    registerFallbackValue(MonitorMode.off);
   });
 
   setUp(() {
@@ -51,8 +63,32 @@ void main() {
     repository = _MockLooperRepository();
     settings = SettingsRepository(store: FakeKeyValueStore());
     states = StreamController<LooperState>.broadcast();
+    monitorChanges = StreamController<int>.broadcast();
+    monitorParams = StreamController<int>.broadcast();
+    addTearDown(monitorChanges.close);
+    addTearDown(monitorParams.close);
     when(() => repository.looperState).thenAnswer((_) => states.stream);
     when(() => repository.state).thenReturn(_rig);
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => monitorChanges.stream,
+    );
+    when(() => repository.monitorParamChanges).thenAnswer(
+      (_) => monitorParams.stream,
+    );
+    when(() => repository.allMonitors()).thenReturn(const {});
+    when(
+      () => repository.setMonitorOutput(
+        input: any(named: 'input'),
+        mask: any(named: 'mask'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorInputMode(
+        input: any(named: 'input'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => states.close());
@@ -69,6 +105,12 @@ void main() {
     addTearDown(() => unawaited(inputs.close()));
     tracks = TracksCubit(settings: settings);
     addTearDown(() => unawaited(tracks.close()));
+    outputs = OutputsCubit(repository: repository, settings: settings);
+    addTearDown(() => unawaited(outputs.close()));
+    monitors = MonitorCubit(repository: repository, settings: settings);
+    addTearDown(() => unawaited(monitors.close()));
+    tempo = TempoCubit(repository: repository, settings: settings);
+    addTearDown(() => unawaited(tempo.close()));
     await tester.pumpWidget(
       MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -81,12 +123,22 @@ void main() {
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider.value(value: inputs),
               BlocProvider.value(value: tracks),
+              BlocProvider.value(value: outputs),
+              BlocProvider.value(value: monitors),
+              BlocProvider.value(value: tempo),
             ],
             child: const AudioRoutingPage(),
           ),
         ),
       ),
     );
+    await tester.pump();
+  }
+
+  /// Moves the projection on without rebuilding the page from scratch.
+  Future<void> push(WidgetTester tester, LooperState state) async {
+    when(() => bloc.state).thenReturn(state);
+    states.add(state);
     await tester.pump();
   }
 
@@ -296,6 +348,149 @@ void main() {
     await openRecord(tester);
     expect(find.text(l10nOf(tester).routingNoInputs), findsOneWidget);
   });
+
+  testWidgets('Output routing offers three source kinds and one destination '
+      'card per stereo pair', (tester) async {
+    await pump(tester);
+    await openOutputs(tester);
+    final l10n = l10nOf(tester);
+
+    for (final kind in RoutingSourceKind.values) {
+      expect(find.byKey(Key('routing_kind_${kind.name}')), findsOneWidget);
+    }
+    // Four hardware outputs are two destinations, and no third.
+    expect(find.byKey(const Key('routing_destination_0')), findsOneWidget);
+    expect(find.byKey(const Key('routing_destination_1')), findsOneWidget);
+    expect(find.byKey(const Key('routing_destination_2')), findsNothing);
+    // A card names the jacks and the destination, not one or the other.
+    expect(find.text(l10n.outputBusLabel(1, channels: 4)), findsOneWidget);
+    expect(
+      find.text(l10n.outputName(const {}, 1, channels: 4)),
+      findsOneWidget,
+    );
+    expect(find.text(l10n.routingSendTo), findsOneWidget);
+  });
+
+  testWidgets('a live input reaches a destination through its own monitor', (
+    tester,
+  ) async {
+    await pump(tester);
+    await openOutputs(tester);
+
+    // A monitor starts on outputs 1-2, so this ADDS outputs 3-4.
+    await tester.tap(find.byKey(const Key('routing_destination_1')));
+    await tester.pump();
+    verify(() => repository.setMonitorOutput(input: 0, mask: 0xF)).called(1);
+
+    // And tapping a destination that is already on takes it away again.
+    await tester.tap(find.byKey(const Key('routing_destination_0')));
+    await tester.pump();
+    verify(() => repository.setMonitorOutput(input: 0, mask: 0xC)).called(1);
+  });
+
+  testWidgets('a source that reaches nothing says so', (tester) async {
+    await pump(tester);
+    await openOutputs(tester);
+    final l10n = l10nOf(tester);
+    expect(find.text(l10n.routingNoDestinations), findsNothing);
+
+    await tester.tap(find.byKey(const Key('routing_destination_0')));
+    await tester.pump();
+    expect(find.text(l10n.routingNoDestinations), findsOneWidget);
+  });
+
+  testWidgets("a track's route is the whole track's: every lane is written", (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      state: _rig.copyWithLanes(
+        const [Lane(inputChannel: 0), Lane(inputChannel: 1)],
+      ),
+    );
+    await openOutputs(tester);
+    await tester.tap(find.byKey(const Key('routing_kind_tracks')));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('routing_destination_1')));
+    await tester.pump();
+    // Writing lane 0 alone would leave the track's second lane going
+    // somewhere else, and the card would claim a route half the track has.
+    verify(() => bloc.add(const LooperLaneOutputChanged(0, 0, 0xF))).called(1);
+    verify(() => bloc.add(const LooperLaneOutputChanged(0, 1, 0xF))).called(1);
+  });
+
+  testWidgets('each source kind carries its own destinations', (tester) async {
+    // The accepted rule: a recording-only track route never implicitly
+    // becomes a live input route.
+    await pump(tester);
+    await openOutputs(tester);
+
+    expect(destinationSelected(tester, 0), isTrue, reason: 'the monitor');
+    await tester.tap(find.byKey(const Key('routing_kind_players')));
+    await tester.pump();
+    // The click starts routed nowhere, and reading the monitor's mask here
+    // would show it already on.
+    expect(destinationSelected(tester, 0), isFalse);
+
+    await tester.tap(find.byKey(const Key('routing_destination_0')));
+    await tester.pump();
+    verify(() => repository.setClickOutput(0x3)).called(1);
+  });
+
+  testWidgets('Hear live belongs to the live inputs and to no other kind', (
+    tester,
+  ) async {
+    await pump(tester);
+    await openOutputs(tester);
+    final l10n = l10nOf(tester);
+    expect(find.text(l10n.routingHearLive), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('routing_kind_tracks')));
+    await tester.pump();
+    expect(find.text(l10n.routingHearLive), findsNothing);
+
+    await tester.tap(find.byKey(const Key('routing_kind_players')));
+    await tester.pump();
+    expect(find.text(l10n.routingHearLive), findsNothing);
+  });
+
+  testWidgets('Auto says whether the input is live right now', (tester) async {
+    await pump(tester);
+    await openOutputs(tester);
+    final l10n = l10nOf(tester);
+
+    await tester.tap(find.byKey(const Key('routing_monitor_auto')));
+    await tester.pump();
+    verify(
+      () => repository.setMonitorInputMode(input: 0, mode: MonitorMode.auto),
+    ).called(1);
+    // Nothing is armed, so Auto is not hearing anything yet.
+    expect(find.text(l10n.routingHearAutoOff), findsOneWidget);
+
+    // Track 0 records input 0 and starts capturing: the same choice is live.
+    await push(tester, _rig.copyWithCapturing());
+    expect(find.text(l10n.routingHearAutoOn), findsOneWidget);
+    expect(find.text(l10n.routingHearAutoOff), findsNothing);
+  });
+}
+
+/// Whether destination [bus] is drawn as reached.
+bool destinationSelected(WidgetTester tester, int bus) => tester
+    .widgetList<Semantics>(
+      find.descendant(
+        of: find.byKey(Key('routing_destination_$bus')),
+        matching: find.byType(Semantics),
+      ),
+    )
+    .first
+    .properties
+    .selected!;
+
+/// Switches to the Output routing task.
+Future<void> openOutputs(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('routing_tab_outputs')));
+  await tester.pump();
 }
 
 /// Whether the Recording inputs card for [input] is drawn as recorded.
@@ -325,6 +520,7 @@ extension on LooperState {
     ],
     status: status,
     inputPeaks: inputPeaks,
+    outputBusCount: outputBusCount,
   );
 
   /// [_rig] with [setup] applied.
@@ -332,6 +528,7 @@ extension on LooperState {
     tracks: tracks,
     status: status,
     inputPeaks: inputPeaks,
+    outputBusCount: outputBusCount,
     inputSetup: setup,
   );
 
@@ -346,6 +543,7 @@ extension on LooperState {
     ],
     status: status,
     inputPeaks: inputPeaks,
+    outputBusCount: outputBusCount,
   );
 
   /// [_rig] with input [input] held as clipping.
