@@ -1293,6 +1293,27 @@ What they found in 3c, and what it cost:
 - Six goldens added for the four tasks and the two name pages, which had none;
   the console Device tab's golden regenerated for the new row.
 
+### What the same round found beneath this slice
+
+The two engine pull requests under this one had never been reviewed. Two of
+their findings were verified and fixed on slice 2b, and the stack was rebased
+onto the fix:
+
+- **A perf-log wire code collided.** The per-track decay code reused 315,
+  which the performance-arm fact already had further down the same enum.
+  Duplicate enumerator values are legal C, so it compiled silently, and the
+  two codes carry different arms of the union: a decay set during a capture
+  could hand the offline renderer a position, a master length and an iteration
+  read out of a float. It is 317 now, in the wire-format table, and a test
+  walks every code so the next one cannot collide silently.
+- **The session's own record timing and overdub decay were write-only.** Only
+  the per-track overrides reached the rig, so a track that follows the default
+  came back on whatever the app was last set to.
+
+Three further findings are recorded on that pull request and not fixed: each
+is a control-write against audio-read ordering question rather than a typo,
+and they want a change of their own.
+
 #### What did NOT retire, and why
 
 The Signal face's per-jack output gate stays. It is a different fact from
