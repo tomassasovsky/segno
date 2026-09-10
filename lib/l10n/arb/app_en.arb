@@ -3877,5 +3877,17 @@
     "settingsSectionRouting": "Routing",
     "@settingsSectionRouting": {
             "description": "Settings rail row that opens Audio routing."
+    },
+    "routingRecordFrom": "Record from",
+    "@routingRecordFrom": {
+            "description": "Heading over the inputs a track records."
+    },
+    "routingLockedInputs": "Finish recording to change inputs.",
+    "@routingLockedInputs": {
+            "description": "Why a capturing track cannot change its sources."
+    },
+    "routingNoInputs": "No inputs selected for this track.",
+    "@routingNoInputs": {
+            "description": "Shown when a track records nothing."
     }
 }

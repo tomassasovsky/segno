@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_tabs.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart';
+import 'package:segno/looper/view/audio_routing/recording_inputs_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 
 /// Which Audio routing task the page is showing.
@@ -70,9 +71,9 @@ class _AudioRoutingPageState extends State<AudioRoutingPage> {
               key: ValueKey(_tab),
               child: switch (_tab) {
                 AudioRoutingTab.setup => const InputSetupTab(),
+                AudioRoutingTab.record => const RecordingInputsTab(),
                 // The remaining tasks land with their own slices of 3c;
                 // an unfinished pill must not draw a blank page.
-                AudioRoutingTab.record ||
                 AudioRoutingTab.outputs ||
                 AudioRoutingTab.outputSetup => const SizedBox.shrink(),
               },

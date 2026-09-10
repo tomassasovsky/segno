@@ -2244,5 +2244,8 @@
     "routingSignal": "Señal de grabación",
     "routingClipNote": "La entrada satura. Baja el nivel de la fuente.",
     "routingLockedFormat": "Termina la grabación para cambiar entre mono y estéreo.",
-    "settingsSectionRouting": "Enrutamiento"
+    "settingsSectionRouting": "Enrutamiento",
+    "routingRecordFrom": "Grabar desde",
+    "routingLockedInputs": "Termina la grabación para cambiar las entradas.",
+    "routingNoInputs": "No hay entradas seleccionadas para esta pista."
 }

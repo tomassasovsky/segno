@@ -9,6 +9,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -39,6 +40,7 @@ void main() {
   late SettingsRepository settings;
   late StreamController<LooperState> states;
   late InputsCubit inputs;
+  late TracksCubit tracks;
 
   setUpAll(() {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
@@ -65,6 +67,8 @@ void main() {
     whenListen(bloc, states.stream, initialState: state);
     inputs = InputsCubit(repository: repository, settings: settings);
     addTearDown(() => unawaited(inputs.close()));
+    tracks = TracksCubit(settings: settings);
+    addTearDown(() => unawaited(tracks.close()));
     await tester.pumpWidget(
       MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -76,6 +80,7 @@ void main() {
             providers: [
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider.value(value: inputs),
+              BlocProvider.value(value: tracks),
             ],
             child: const AudioRoutingPage(),
           ),
@@ -190,9 +195,138 @@ void main() {
     expect(find.text(l10n.routingTitle), findsOneWidget);
     expect(find.byType(LoopSlider), findsNothing);
   });
+
+  testWidgets('Recording inputs checks the jacks the scoped track records, '
+      'and scoping to another track shows that track instead', (tester) async {
+    await pump(
+      tester,
+      state: _rig.copyWithLanes(const [Lane(inputChannel: 1)]),
+    );
+    await openRecord(tester);
+
+    // Four inputs on the device, so four cards and no fifth.
+    expect(find.byKey(const Key('routing_record_card_0')), findsOneWidget);
+    expect(find.byKey(const Key('routing_record_card_3')), findsOneWidget);
+    expect(find.byKey(const Key('routing_record_card_4')), findsNothing);
+    // Track 0 records input 1; track 1's input 3 is not this track's.
+    expect(cardSelected(tester, 1), isTrue);
+    expect(cardSelected(tester, 3), isFalse);
+
+    await tester.tap(find.byKey(const Key('routing_track_1')));
+    await tester.pump();
+    expect(cardSelected(tester, 3), isTrue);
+    expect(cardSelected(tester, 1), isFalse);
+  });
+
+  testWidgets('a free lane takes the new jack; the track does not grow', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      state: _rig.copyWithLanes(
+        const [Lane(inputChannel: 1), Lane()],
+      ),
+    );
+    await openRecord(tester);
+    await tester.tap(find.byKey(const Key('routing_record_card_2')));
+    await tester.pump();
+
+    verify(() => bloc.add(const LooperLaneInputChanged(0, 1, 2))).called(1);
+    verifyNever(() => bloc.add(any(that: isA<LooperLaneCountChanged>())));
+  });
+
+  testWidgets('with every lane taken the track grows before it is routed', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      state: _rig.copyWithLanes(const [Lane(inputChannel: 1)]),
+    );
+    await openRecord(tester);
+    await tester.tap(find.byKey(const Key('routing_record_card_2')));
+    await tester.pump();
+
+    // Growing second would route a lane the track does not have yet.
+    verifyInOrder([
+      () => bloc.add(const LooperLaneCountChanged(0, 2)),
+      () => bloc.add(const LooperLaneInputChanged(0, 1, 2)),
+    ]);
+  });
+
+  testWidgets('unchecking a jack frees its own lane and leaves the rest where '
+      'they are', (tester) async {
+    await pump(
+      tester,
+      state: _rig.copyWithLanes(
+        const [Lane(inputChannel: 1), Lane(inputChannel: 2)],
+      ),
+    );
+    await openRecord(tester);
+    await tester.tap(find.byKey(const Key('routing_record_card_1')));
+    await tester.pump();
+
+    // Lane 0 is freed in place. Compacting would move lane 1's recorded take
+    // onto input 2's slot and renumber it.
+    verify(() => bloc.add(const LooperLaneInputChanged(0, 0, -1))).called(1);
+    verifyNever(() => bloc.add(const LooperLaneInputChanged(0, 0, 2)));
+    verifyNever(() => bloc.add(any(that: isA<LooperLaneCountChanged>())));
+  });
+
+  testWidgets('a capturing track cannot change its jacks, and only that '
+      'track is held', (tester) async {
+    await pump(tester, state: _rig.copyWithCapturing());
+    await openRecord(tester);
+    final l10n = l10nOf(tester);
+
+    expect(find.text(l10n.routingLockedInputs), findsOneWidget);
+    await tester.tap(find.byKey(const Key('routing_record_card_2')));
+    await tester.pump();
+    verifyNever(() => bloc.add(any(that: isA<LooperLaneInputChanged>())));
+
+    await tester.tap(find.byKey(const Key('routing_track_1')));
+    await tester.pump();
+    expect(find.text(l10n.routingLockedInputs), findsNothing);
+    await tester.tap(find.byKey(const Key('routing_record_card_2')));
+    await tester.pump();
+    verify(() => bloc.add(const LooperLaneInputChanged(1, 0, 2))).called(1);
+  });
+
+  testWidgets('a track that records nothing says so', (tester) async {
+    await pump(tester);
+    await openRecord(tester);
+    expect(find.text(l10nOf(tester).routingNoInputs), findsOneWidget);
+  });
+}
+
+/// Whether the Recording inputs card for [input] is drawn as recorded.
+bool cardSelected(WidgetTester tester, int input) => tester
+    .widgetList<Semantics>(
+      find.descendant(
+        of: find.byKey(Key('routing_record_card_$input')),
+        matching: find.byType(Semantics),
+      ),
+    )
+    .first
+    .properties
+    .selected!;
+
+/// Switches to the Recording inputs task.
+Future<void> openRecord(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('routing_tab_record')));
+  await tester.pump();
 }
 
 extension on LooperState {
+  /// [_rig] with track 0 holding [lanes] and track 1 recording input 3.
+  LooperState copyWithLanes(List<Lane> lanes) => LooperState(
+    tracks: [
+      Track(lanes: lanes),
+      const Track(channel: 1, lanes: [Lane(inputChannel: 3)]),
+    ],
+    status: status,
+    inputPeaks: inputPeaks,
+  );
+
   /// [_rig] with [setup] applied.
   LooperState copyWithInputSetup(InputSetup setup) => LooperState(
     tracks: tracks,
