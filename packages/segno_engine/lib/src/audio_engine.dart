@@ -675,6 +675,49 @@ abstract interface class MasterBusControl {
     required int bus,
     required bool enabled,
   });
+
+  // ---- the All tracks recorded-mix chain (slice 3e) ----
+  //
+  // The chain applied after the loop tracks are combined, and only them: live
+  // monitoring, the click and the output chains all join after it, which is
+  // what makes this stage different from an output chain. Its entries are
+  // always Post — the stage processes a sum computed live, so it has no dry
+  // original to print from.
+  //
+  // One chain, one DSP instance per output destination: since output
+  // selection is per source, a track on Main and a track on Monitor are two
+  // different recorded mixes, and one shared instance would send each track's
+  // audio to the other's jacks.
+
+  /// Sets the All tracks chain entry [index] (`0..kTrackEffectMax-1`) to
+  /// [type], resetting that entry on every destination's instance.
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  });
+
+  /// Sets the All tracks chain's active length to [count]
+  /// (`0..kTrackEffectMax`). Count 0 (empty) restores bit-identical output.
+  EngineResult setAllTracksFxCount({required int count});
+
+  /// Sets parameter [param] of the All tracks chain entry [index] to [value]
+  /// (clamped to `0..1`). A direct atomic publish.
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  });
+
+  /// Enables/disables the All tracks chain entry [index] — the usual
+  /// per-entry contract.
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  });
+
+  /// Enables/disables the WHOLE All tracks chain, leaving the per-entry flags
+  /// intact. Default enabled.
+  EngineResult setAllTracksFxChainEnabled({required bool enabled});
 }
 
 /// Per-lane (record-route) effect chains.

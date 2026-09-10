@@ -24880,6 +24880,195 @@ static void test_output_fx_ch_out_4_is_bus_0(void) {
   le_engine_destroy(e);
 }
 
+/* ---- the All tracks recorded-mix chain (slice 3e) ---- */
+
+/* An empty All tracks chain is bit-identical to the pre-slice-3e engine:
+ * topology keys off emptiness, exactly like the track bus, so the stage costs
+ * nothing until something is put on it. */
+static void test_all_tracks_empty_is_bit_identical(void) {
+  printf("test_all_tracks_empty_is_bit_identical\n");
+  static float a[4 * 64];
+  static float b[4 * 64];
+  float in[64];
+  float zin[64] = {0};
+  for (int i = 0; i < LOOP_N; ++i) in[i] = 0.5f;
+
+  for (int pass = 0; pass < 2; ++pass) {
+    le_engine* e = le_engine_create();
+    le_engine_configure(e, 48000, 1, 4, 1000);
+    CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
+    drain(e);
+    le_engine_record(e, 0);
+    le_engine_process(e, pass == 0 ? a : b, in, LOOP_N);
+    le_engine_record(e, 0);
+    if (pass == 1) {
+      /* A chain of NONE entries is still empty: emptiness is what gates the
+       * topology, and a count with nothing typed in it must not engage it. */
+      CHECK(le_engine_set_all_tracks_fx_count(e, 2) == LE_OK);
+    }
+    drain(e);
+    le_engine_process(e, pass == 0 ? a : b, zin, LOOP_N);
+    le_engine_destroy(e);
+  }
+  for (int i = 0; i < 4 * LOOP_N; ++i) CHECK(a[i] == b[i]);
+}
+
+/* All tracks processes the recorded tracks and NOTHING else: a live monitor
+ * summed onto the same jacks passes through it untouched. That is the whole
+ * difference between this stage and an output chain, which processes every
+ * source routed there. */
+static void test_all_tracks_leaves_live_monitoring_alone(void) {
+  printf("test_all_tracks_leaves_live_monitoring_alone\n");
+  static float cap[4 * 64];
+  float in[64];
+  float zin[64] = {0};
+  for (int i = 0; i < LOOP_N; ++i) in[i] = 0.5f;
+
+  /* The recorded track alone, through the chain. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 4, 1000);
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  le_engine_process(e, cap, in, LOOP_N);
+  le_engine_record(e, 0);
+  CHECK(le_engine_set_all_tracks_fx(e, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_all_tracks_fx_count(e, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, cap, zin, LOOP_N);
+  const float driven_track = cap[4 * (LOOP_N - 1)];
+  /* It really is being processed. */
+  CHECK(fabsf(driven_track - 0.5f) > 1e-4f);
+
+  /* The live monitor alone, with the same chain: unchanged by it. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 0x3) == LE_OK);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, cap, in, LOOP_N);
+  const float monitored = cap[4 * (LOOP_N - 1)];
+  CHECK(fabsf(monitored - 0.5f) < 1e-4f);
+
+  /* Both together: the processed track plus the untouched monitor. */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, cap, in, LOOP_N);
+  CHECK(fabsf(cap[4 * (LOOP_N - 1)] - (driven_track + monitored)) < 1e-4f);
+
+  le_engine_destroy(e);
+}
+
+/* One chain, one instance per destination. Two tracks on two different buses
+ * each get the chain over THEIR OWN mix: with a non-linear effect on it, bus 0
+ * carries f(track 0), not f(track 0 + track 1) — which is what a single shared
+ * instance would have to produce, and would mean sending each track's audio to
+ * the other's jacks. */
+static void test_all_tracks_runs_per_destination(void) {
+  printf("test_all_tracks_runs_per_destination\n");
+  static float cap[4 * 64];
+  float in[64];
+  float zin[64] = {0};
+  for (int i = 0; i < LOOP_N; ++i) in[i] = 0.5f;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 4, 1000);
+  /* Track 0 to bus 0, track 1 to bus 1. */
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
+  CHECK(le_engine_set_lane_output(e, 1, 0, 0xC) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  le_engine_process(e, cap, in, LOOP_N);
+  le_engine_record(e, 0);
+  drain(e);
+  le_engine_record(e, 1);
+  le_engine_process(e, cap, in, LOOP_N);
+  le_engine_record(e, 1);
+  CHECK(le_engine_set_all_tracks_fx(e, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_all_tracks_fx_count(e, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, cap, zin, LOOP_N);
+  const float bus0 = cap[4 * (LOOP_N - 1)];
+  const float bus1 = cap[4 * (LOOP_N - 1) + 2];
+
+  /* Each bus carries the same function of the same input, independently. */
+  CHECK(fabsf(bus0 - bus1) < 1e-4f);
+
+  /* And it is NOT the function of the sum: mute track 1 and bus 0 does not
+   * move. A single shared instance would have summed both tracks, so bus 0
+   * would change the moment track 1 stopped feeding it. */
+  CHECK(le_engine_set_lane_mute(e, 1, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, cap, zin, LOOP_N);
+  CHECK(fabsf(cap[4 * (LOOP_N - 1)] - bus0) < 1e-4f);
+  CHECK(fabsf(cap[4 * (LOOP_N - 1) + 2]) < 1e-4f);
+
+  le_engine_destroy(e);
+}
+
+/* The instances are independent, not one shared filter memory. An echo on the
+ * All tracks chain, two tracks on two destinations carrying different levels:
+ * each bus must sound exactly as it does with the other track absent. One
+ * shared instance would interleave both buses' samples through one delay
+ * ring, and each bus would start hearing the other's audio.
+ *
+ * Twin-compared rather than reasoned about: the reference engine is the same
+ * engine with the second track never recorded. */
+static void test_all_tracks_instances_are_independent(void) {
+  printf("test_all_tracks_instances_are_independent\n");
+  static float solo[4 * 64];
+  static float both[4 * 64];
+  float loud[64];
+  float quiet[64];
+  float zin[64] = {0};
+  for (int i = 0; i < 64; ++i) {
+    loud[i] = 0.5f;
+    quiet[i] = 0.25f;
+  }
+
+  for (int pass = 0; pass < 2; ++pass) {
+    float* cap = pass == 0 ? solo : both;
+    le_engine* e = le_engine_create();
+    le_engine_configure(e, 48000, 1, 4, 1000);
+    CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
+    CHECK(le_engine_set_lane_output(e, 1, 0, 0xC) == LE_OK);
+    drain(e);
+    le_engine_record(e, 0);
+    le_engine_process(e, cap, loud, LOOP_N);
+    le_engine_record(e, 0);
+    drain(e);
+    if (pass == 1) {
+      le_engine_record(e, 1);
+      le_engine_process(e, cap, quiet, LOOP_N);
+      le_engine_record(e, 1);
+      drain(e);
+    }
+    /* Full wet, so every sample out of the stage came through the ring. */
+    CHECK(le_engine_set_all_tracks_fx(e, 0, LE_FX_ECHO) == LE_OK);
+    CHECK(le_engine_set_all_tracks_fx_count(e, 1) == LE_OK);
+    CHECK(le_engine_set_all_tracks_fx_param(e, 0, 0, 0.01f) == LE_OK);
+    CHECK(le_engine_set_all_tracks_fx_param(e, 0, 1, 0.6f) == LE_OK);
+    CHECK(le_engine_set_all_tracks_fx_param(e, 0, 2, 1.0f) == LE_OK);
+    drain(e);
+    /* Past the enable ramp and a long way into the delay ring, so what the
+     * comparison reads is ring content rather than the ramp-in. The engine is
+     * four-channel, so the chunking is by hand (process_n is mono-out). */
+    for (int k = 0; k < 64; ++k) le_engine_process(e, cap, zin, 64);
+    le_engine_destroy(e);
+  }
+
+  /* Bus 0 is sample-for-sample what it was with track 1 absent. */
+  for (int i = 0; i < 64; ++i) {
+    CHECK(fabsf(both[4 * i] - solo[4 * i]) < 1e-5f);
+    CHECK(fabsf(both[4 * i + 1] - solo[4 * i + 1]) < 1e-5f);
+  }
+  /* And it really was sounding, so the comparison is not two silences. */
+  float peak = 0.0f;
+  for (int i = 0; i < 64; ++i) {
+    if (fabsf(solo[4 * i]) > peak) peak = fabsf(solo[4 * i]);
+  }
+  CHECK(peak > 1e-3f);
+}
+
 /* Output bus facts (slice 3b): level, mute (level retained), Mono (the
  * averaged mix to both jacks, balance disabled) and balance (the lane pan
  * law: far side exactly silent at full), per bus, independent of the other
@@ -28919,6 +29108,10 @@ int main(void) {
   test_output_fx_empty_set_then_empty_bit_identity();
   test_output_fx_ch_out_2_wet_pair();
   test_output_fx_ch_out_4_is_bus_0();
+  test_all_tracks_empty_is_bit_identical();
+  test_all_tracks_leaves_live_monitoring_alone();
+  test_all_tracks_runs_per_destination();
+  test_all_tracks_instances_are_independent();
   test_output_bus_level_mute_mono_balance();
   test_output_setters_reject_invalid_and_clamp();
   test_cut_sound_silences_full_wet_chain_at_once();

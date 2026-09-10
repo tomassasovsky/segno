@@ -926,6 +926,70 @@ final class LooperMasterChainEnabledToggled extends LooperEvent {
   List<Object?> get props => [enabled];
 }
 
+/// The All tracks recorded-mix chain was replaced with [effects] (slice 3e).
+///
+/// The chain applied after the loop tracks are combined, and only them: live
+/// monitoring, the click and the output chains all join after it.
+final class LooperAllTracksEffectsChanged extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectsChanged].
+  const LooperAllTracksEffectsChanged(this.effects);
+
+  /// The new chain, in processing order.
+  final List<TrackEffect> effects;
+
+  @override
+  List<Object?> get props => [effects];
+}
+
+/// Entry [index] of the All tracks chain was toggled to [enabled].
+final class LooperAllTracksEffectEnabledToggled extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectEnabledToggled].
+  const LooperAllTracksEffectEnabledToggled(
+    this.index, {
+    required this.enabled,
+  });
+
+  /// The chain entry index (`0..kTrackEffectMax-1`).
+  final int index;
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [index, enabled];
+}
+
+/// The WHOLE All tracks chain was toggled to [enabled] in one atomic flip.
+final class LooperAllTracksChainEnabledToggled extends LooperEvent {
+  /// Creates a [LooperAllTracksChainEnabledToggled].
+  const LooperAllTracksChainEnabledToggled({required this.enabled});
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [enabled];
+}
+
+/// Parameter [param] of All tracks chain entry [index] changed to [value]
+/// (`0..1`). A live tweak — does not reset DSP state.
+final class LooperAllTracksEffectParamChanged extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectParamChanged].
+  const LooperAllTracksEffectParamChanged(this.index, this.param, this.value);
+
+  /// The chain entry index.
+  final int index;
+
+  /// The parameter index (`0..kTrackEffectParams-1`).
+  final int param;
+
+  /// The new normalized value.
+  final double value;
+
+  @override
+  List<Object?> get props => [index, param, value];
+}
+
 /// Play every track that has content.
 final class LooperPlayAllPressed extends LooperEvent {
   /// Creates a [LooperPlayAllPressed].

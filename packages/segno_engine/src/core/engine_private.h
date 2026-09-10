@@ -1269,6 +1269,27 @@ struct le_engine {
    * le_fx_bus's doc for the chain's place in the frame. Bus 0's chain is
    * what the app calls the Master insert. */
   le_output_bus outputs[LE_MAX_OUTPUT_BUSES];
+
+  /* The All tracks recorded-mix chain (slice 3e). The accepted design: "the
+   * single shared chain applied after the loop tracks are combined", ahead of
+   * live monitoring and the click, and NOT the output bus — an output chain
+   * processes every source routed to it, this one processes the recorded
+   * tracks alone.
+   *
+   * One published config, N DSP instances. Since slice 3b every source picks
+   * its own destinations, so "the combined recorded mix" is a per-destination
+   * quantity: track 1 on Main and track 2 on Monitor are two different mixes,
+   * and one shared instance would have to send each track's audio to the
+   * other's jacks. So the chain the player edits is `all_tracks`, and it runs
+   * once per output bus over the recorded contribution to THAT bus, on
+   * `all_tracks_fx[bus]`. `all_tracks.fx` is unused: the config is shared,
+   * the filter memory cannot be.
+   *
+   * Topology keys off EMPTINESS, exactly like the track bus: an empty chain
+   * leaves the per-track routing path bit-identical to the pre-slice-3e
+   * engine, so this stage costs nothing until something is put on it. */
+  le_fx_bus all_tracks;
+  le_fx_state all_tracks_fx[LE_MAX_OUTPUT_BUSES];
   /* Advances on every applied LE_CMD_CUT_SOUND; published as
    * le_snapshot.tail_reset_rev. */
   _Atomic uint32_t a_tail_reset_rev;

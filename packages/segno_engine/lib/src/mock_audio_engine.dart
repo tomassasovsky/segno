@@ -1041,6 +1041,52 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Recorded [setAllTracksFx] calls, in order, for test assertions.
+  final allTracksFxCalls = <({int index, TrackEffectType type})>[];
+
+  /// Recorded [setAllTracksFxCount] calls, in order.
+  final allTracksFxCountCalls = <int>[];
+
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    allTracksFxCalls.add((index: index, type: type));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) {
+    allTracksFxCountCalls.add(count);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    if (param < 0 || param >= kTrackEffectParams) return EngineResult.invalid;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) =>
+      EngineResult.ok;
+
   @override
   EngineResult setMonitorInputEnabled({
     required int input,

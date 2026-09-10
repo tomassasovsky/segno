@@ -7191,6 +7191,89 @@ void main() {
     });
   });
 
+  group('the All tracks recorded-mix chain (slice 3e)', () {
+    test('a chain write pushes types, params, count and every enabled bit', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksEffects(
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            params: const [0.1, 0.2, 0.3, 0.4],
+          ),
+          BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+        ],
+      );
+
+      expect(engine.allTracksFx[0]?.code, TrackEffectType.reverb.code);
+      expect(engine.allTracksFx[1]?.code, TrackEffectType.drive.code);
+      expect(engine.allTracksFxParam[(0, 2)], 0.3);
+      expect(engine.allTracksFxCount, 2);
+      // Strictly after the count, so a disabled entry stays disabled through
+      // the engine's D-ENSEED re-seed (R16 ordering).
+      expect(engine.allTracksFxEnabled[1], isFalse);
+      expect(
+        engine.calls.indexOf('setAllTracksFxCount') <
+            engine.calls.lastIndexOf('setAllTracksFxEnabled'),
+        isTrue,
+      );
+    });
+
+    test('is stored wholly post — the stage has no dry original', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksEffects(
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            placement: FxPlacement.pre,
+          ),
+        ],
+      );
+
+      expect(repo.allTracksEffects.single.placement, FxPlacement.post);
+      expect(fxPreCount(repo.allTracksEffects), 0);
+    });
+
+    test('re-applies on restart, chain flag included', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setAllTracksEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        )
+        ..setAllTracksChainEnabled(enabled: false)
+        ..stopEngine();
+      engine.calls.clear();
+      engine.allTracksFxCount = 0;
+      repo.startEngine(const EngineConfig());
+
+      expect(engine.allTracksFx[0]?.code, TrackEffectType.echo.code);
+      expect(engine.allTracksFxCount, 1);
+      expect(engine.allTracksFxChainEnabled, isFalse);
+    });
+
+    test(
+      'a session that describes no such chain resets the live one',
+      () async {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        repo.setAllTracksEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        );
+        await repo.applySession(const SessionRig());
+
+        // R17: a stage the session does not describe is reset on apply, never
+        // left carrying the previous session's chain.
+        expect(repo.allTracksEffects, isEmpty);
+      },
+    );
+  });
+
   group('per-instance placement (slice 3e)', () {
     BuiltInEffect at(TrackEffectType type, FxPlacement placement) =>
         BuiltInEffect(type: type, placement: placement);

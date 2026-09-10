@@ -116,11 +116,33 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the manifest version (v7)', () {
+    test('serializes the manifest version (v8)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 7);
+      expect(json['version'], 8);
       expect(json['baseLengthFrames'], 96000);
+    });
+
+    group('the All tracks chain (schema v8)', () {
+      test('round-trips as an opaque envelope string', () {
+        const encoded = '{"chainEnabled":true,"entries":[{"type":1}]}';
+        final json = Session(
+          sampleRate: session.sampleRate,
+          channels: session.channels,
+          baseLengthFrames: session.baseLengthFrames,
+          tracks: session.tracks,
+          allTracksChain: encoded,
+        ).toJson();
+        expect(json['allTracksChain'], encoded);
+        expect(Session.fromJson(json).allTracksChain, encoded);
+      });
+
+      test('a v7-or-earlier manifest loads with no such chain', () {
+        // Presence-keyed like every rung before it: an older bundle simply
+        // has no key, and the rig it produces resets whatever was live.
+        final json = session.toJson()..remove('allTracksChain');
+        expect(Session.fromJson(json).allTracksChain, '');
+      });
     });
 
     group('monitor gate (schema v7)', () {
@@ -1001,11 +1023,11 @@ void main() {
     });
 
     test(
-      'rejects a hypothetical v8 manifest (an extra unknown field does not '
+      'rejects a hypothetical v9 manifest (an extra unknown field does not '
       'change the outcome) via the existing version-gate check',
       () {
         final json = session.toJson()
-          ..['version'] = 8
+          ..['version'] = 9
           // A field a hypothetical future schema might add — proves the
           // rejection is purely the version-number gate, not incidentally
           // triggered by an unparseable shape.
@@ -1016,7 +1038,7 @@ void main() {
           () => Session.fromJson(json),
           throwsA(
             isA<SessionUnsupportedVersion>()
-                .having((e) => e.version, 'version', 8)
+                .having((e) => e.version, 'version', 9)
                 .having((e) => e.supported, 'supported', Session.formatVersion),
           ),
         );

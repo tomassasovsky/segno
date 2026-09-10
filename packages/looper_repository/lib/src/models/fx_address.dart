@@ -2,21 +2,28 @@ import 'dart:convert';
 
 import 'package:equatable/equatable.dart';
 
-/// The four FX stages of the v3 signal path (#351), in signal order.
+/// The FX stages of the signal path, in signal order.
 ///
 /// Every effects chain in the app lives at exactly one stage; an [FxAddress]
 /// names one chain by stage + coordinates.
 enum FxStage {
-  /// A hardware input's live-monitor chain (pre-record, never recorded).
+  /// A hardware input's live-monitor chain. Its Pre entries are what a take
+  /// records; its Post entries are copied onto the lane at record.
   input,
 
-  /// A lane's record-route (loop playback) chain.
+  /// A lane's record-route (loop playback) chain — one recorded part.
   loop,
+  // The All tracks recorded-mix chain is deliberately NOT a stage yet: the
+  // engine and the repository own it from slice 3e, and it becomes an
+  // addressable destination when slice 3f rebuilds these surfaces around one
+  // chain per destination. An address is what a pedal binding persists, so it
+  // arrives with the surface that can show what a binding points at.
 
   /// A track's stereo-bus chain, downstream of its lanes.
   track,
 
-  /// The Master insert on the summed track mix, before gain/limiter.
+  /// The Master insert — output bus 0's chain, until slice 3f rebuilds the FX
+  /// surfaces around one chain per destination.
   master;
 
   /// Maps a canonical wire [name] back to a stage, or `null` when unknown.

@@ -747,6 +747,7 @@ class Session {
     this.monitors = const [],
     this.trackChains = const [],
     this.masterChain = '',
+    this.allTracksChain = '',
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -812,6 +813,7 @@ class Session {
           SessionTrackChain.fromJson(c as Map<String, dynamic>),
       ],
       masterChain: json['masterChain'] as String? ?? '',
+      allTracksChain: json['allTracksChain'] as String? ?? '',
       tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
       tempoSource: _tempoSourceFromJson(json['tempoSource'] as String?),
       tsNum: (json['tsNum'] as num?)?.toInt() ?? 4,
@@ -852,7 +854,9 @@ class Session {
   /// monitor's gate by NAME ([SessionMonitor.mode]) beside the boolean it has
   /// always carried, because the gate grew a third state: a monitor left on
   /// `auto` — follow the record arm — saved and reloaded as `on`, monitoring
-  /// unconditionally. Presence-keyed like every rung before it, so a v6 bundle
+  /// unconditionally. v8 adds the All tracks recorded-mix chain, presence-keyed
+  /// like every rung before it, so a v7 bundle loads with no such chain.
+  /// Presence-keyed like every rung before it, so a v6 bundle
   /// loads with the boolean's answer and nothing else changes. v6 adds the
   /// opaque [pedalBindings] blob — presence-keyed like every rung before it,
   /// so a v5 bundle loads with `''` (no session remap, globals apply). v5 adds
@@ -866,7 +870,7 @@ class Session {
   /// audio layers); v2 added the lane + monitor effect chains. v1 through v5
   /// bundles all still load — a legacy track migrates to one lane-0 live
   /// layer, and a v1 bundle loads with empty chains.
-  static const int formatVersion = 7;
+  static const int formatVersion = 8;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -900,6 +904,11 @@ class Session {
   /// v5); `''` when the session defines none — the same "no chain" state a
   /// v4-or-earlier bundle loads with.
   final String masterChain;
+
+  /// The single All tracks recorded-mix chain as an opaque chain-envelope
+  /// string (schema v8); `''` when the session defines none — the same "no
+  /// chain" state a v7-or-earlier bundle loads with.
+  final String allTracksChain;
 
   /// Denominator-note beats per minute (schema v4, Phase A); `0` = unset (no
   /// tempo was ever set — mirrors `TransportState.tempoBpm`/
@@ -1033,6 +1042,7 @@ class Session {
     'monitors': [for (final m in monitors) m.toJson()],
     'trackChains': [for (final c in trackChains) c.toJson()],
     'masterChain': masterChain,
+    'allTracksChain': allTracksChain,
     'tempoBpm': tempoBpm,
     'tempoSource': tempoSource.name,
     'tsNum': tsNum,
@@ -1081,6 +1091,7 @@ class Session {
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
           masterChain == other.masterChain &&
+          allTracksChain == other.allTracksChain &&
           pedalBindings == other.pedalBindings &&
           inputSetup == other.inputSetup &&
           outputSetup == other.outputSetup &&
@@ -1114,6 +1125,7 @@ class Session {
     looperMode,
     primaryTrack,
     masterChain,
+    allTracksChain,
     pedalBindings,
     inputSetup,
     outputSetup,

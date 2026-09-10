@@ -506,6 +506,7 @@ class FakeSessionEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) => EngineResult.ok;
   @override
   EngineResult setLaneFxParam({
@@ -598,6 +599,32 @@ class FakeSessionEngine implements AudioEngine {
     required int bus,
     required bool enabled,
   }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) =>
+      EngineResult.ok;
 
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
   /// test can assert that a closed face leaves nothing running.

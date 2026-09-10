@@ -360,6 +360,26 @@ Future<AutoStartResult> tryAutoStartEngine({
     repository.setMasterChainEnabled(enabled: false);
   }
 
+  // Restore the All tracks recorded-mix chain envelope (slice 3e).
+  final allTracksChain = decodeFxChain(await settings.loadAllTracksFxChain());
+  if (allTracksChain.entries.isNotEmpty) {
+    repository.setAllTracksEffects(effects: allTracksChain.entries);
+    // Mint-once (A9) — see the lane restore above.
+    if (allTracksChain.entries.any((e) => e.slotId == null)) {
+      await settings.saveAllTracksFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: allTracksChain.chainEnabled,
+            entries: repository.allTracksEffects,
+          ),
+        ),
+      );
+    }
+  }
+  if (!allTracksChain.chainEnabled) {
+    repository.setAllTracksChainEnabled(enabled: false);
+  }
+
   // Restore the structural output gate. Only explicitly-disabled outputs were
   // persisted (default-on), so a missing key means enabled and needs no call.
   // Keyed to the OPEN device, the way the latency offset above is: a socket

@@ -831,6 +831,71 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Chain entry types passed to [setAllTracksFx], by index.
+  final Map<int, TrackEffectType> allTracksFx = {};
+
+  /// The active chain length passed to [setAllTracksFxCount].
+  int allTracksFxCount = 0;
+
+  /// Params passed to [setAllTracksFxParam], by (index, param).
+  final Map<(int, int), double> allTracksFxParam = {};
+
+  /// Per-entry flags passed to [setAllTracksFxEnabled].
+  final Map<int, bool> allTracksFxEnabled = {};
+
+  /// The flag passed to [setAllTracksFxChainEnabled].
+  bool? allTracksFxChainEnabled;
+
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    // D-ENSEED re-seed on type change — see [setLaneFx].
+    if (allTracksFx[index] != type) allTracksFxEnabled[index] = true;
+    allTracksFx[index] = type;
+    calls.add('setAllTracksFx');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) {
+    for (var s = allTracksFxCount; s < count; s++) {
+      allTracksFxEnabled[s] = true;
+    }
+    allTracksFxCount = count;
+    calls.add('setAllTracksFxCount');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    allTracksFxParam[(index, param)] = value;
+    calls.add('setAllTracksFxParam');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    allTracksFxEnabled[index] = enabled;
+    calls.add('setAllTracksFxEnabled');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) {
+    allTracksFxChainEnabled = enabled;
+    calls.add('setAllTracksFxChainEnabled');
+    return EngineResult.ok;
+  }
+
   /// Per-input enabled flag passed to [setMonitorInputEnabled].
   final Map<int, bool> monitorInputEnabled = {};
 

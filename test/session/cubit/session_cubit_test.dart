@@ -45,6 +45,7 @@ void main() {
     when(looper.allLaneChains).thenReturn(const {});
     when(looper.allTrackChains).thenReturn(const {});
     when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+    when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
     when(looper.allMonitors).thenReturn(const {});
     // loadNamed's auto-disarm-before-load orchestration; a no-op success by
     // default since nothing is armed in these tests.
