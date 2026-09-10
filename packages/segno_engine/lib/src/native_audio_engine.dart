@@ -1000,45 +1000,58 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
-  // ---- Master insert chain (FX v3 part 1b) ----
+  // ---- Output bus chains (slice 3b) ----
 
   @override
-  EngineResult setMasterFx({
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx(_engine, index, type.code),
+      _bindings.le_engine_set_output_fx(_engine, bus, index, type.code),
     );
   }
 
   @override
-  EngineResult setMasterFxCount({required int count}) {
+  EngineResult setOutputFxCount({required int bus, required int count}) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx_count(_engine, count),
+      _bindings.le_engine_set_output_fx_count(_engine, bus, count),
     );
   }
 
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx_param(_engine, index, param, value),
+      _bindings.le_engine_set_output_fx_param(
+        _engine,
+        bus,
+        index,
+        param,
+        value,
+      ),
     );
   }
 
   @override
-  EngineResult setMasterFxEnabled({required int index, required bool enabled}) {
+  EngineResult setOutputFxEnabled({
+    required int bus,
+    required int index,
+    required bool enabled,
+  }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx_enabled(
+      _bindings.le_engine_set_output_fx_enabled(
         _engine,
+        bus,
         index,
         enabled ? 1 : 0,
       ),
@@ -1046,10 +1059,17 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) {
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_master_fx_chain_enabled(_engine, enabled ? 1 : 0),
+      _bindings.le_engine_set_output_fx_chain_enabled(
+        _engine,
+        bus,
+        enabled ? 1 : 0,
+      ),
     );
   }
 
@@ -1848,49 +1868,10 @@ class PumpedNativeEngine extends NativeAudioEngine {
   @override
   EngineSnapshot snapshot() {
     final s = super.snapshot();
-    return EngineSnapshot(
+    return s.copyWith(
       isRunning: true,
       devicePresent: true,
       sampleRate: s.sampleRate > 0 ? s.sampleRate : _sampleRate,
-      bufferFrames: s.bufferFrames,
-      framesProcessed: s.framesProcessed,
-      xrunCount: s.xrunCount,
-      inputRms: s.inputRms,
-      inputPeak: s.inputPeak,
-      outputRms: s.outputRms,
-      outputPeak: s.outputPeak,
-      latencyState: s.latencyState,
-      measuredLatencyMs: s.measuredLatencyMs,
-      inputChannels: s.inputChannels,
-      outputChannels: s.outputChannels,
-      excludedInputMask: s.excludedInputMask,
-      outputEnabledMask: s.outputEnabledMask,
-      masterLengthFrames: s.masterLengthFrames,
-      masterPositionFrames: s.masterPositionFrames,
-      recordOffsetFrames: s.recordOffsetFrames,
-      fxAddedLatencyFrames: s.fxAddedLatencyFrames,
-      masterGain: s.masterGain,
-      activeBackend: s.activeBackend,
-      isPerfArmed: s.isPerfArmed,
-      perfFrames: s.perfFrames,
-      perfOverruns: s.perfOverruns,
-      perfZeroFilledFrames: s.perfZeroFilledFrames,
-      tempoBpm: s.tempoBpm,
-      tempoSource: s.tempoSource,
-      tsNum: s.tsNum,
-      tsDen: s.tsDen,
-      syncTempo: s.syncTempo,
-      quantizeDiv: s.quantizeDiv,
-      loopBars: s.loopBars,
-      currentBeat: s.currentBeat,
-      clickMode: s.clickMode,
-      clickMask: s.clickMask,
-      clickVolume: s.clickVolume,
-      countInBars: s.countInBars,
-      countingIn: s.countingIn,
-      countInBeatsLeft: s.countInBeatsLeft,
-      looperMode: s.looperMode,
-      tracks: s.tracks,
     );
   }
 }

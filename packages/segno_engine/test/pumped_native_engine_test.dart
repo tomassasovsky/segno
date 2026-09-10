@@ -728,30 +728,33 @@ void main() {
 
     test('master chain setters pass through with native validation', () {
       expect(
-        engine.setMasterFx(index: 0, type: TrackEffectType.reverb),
+        engine.setOutputFx(bus: 0, index: 0, type: TrackEffectType.reverb),
         EngineResult.ok,
       );
-      expect(engine.setMasterFxCount(count: 1), EngineResult.ok);
+      expect(engine.setOutputFxCount(bus: 0, count: 1), EngineResult.ok);
       expect(
-        engine.setMasterFxParam(index: 0, param: 0, value: 0.5),
+        engine.setOutputFxParam(bus: 0, index: 0, param: 0, value: 0.5),
         EngineResult.ok,
       );
       expect(
-        engine.setMasterFxEnabled(index: 0, enabled: false),
+        engine.setOutputFxEnabled(bus: 0, index: 0, enabled: false),
         EngineResult.ok,
       );
-      expect(engine.setMasterFxChainEnabled(enabled: false), EngineResult.ok);
+      expect(
+        engine.setOutputFxChainEnabled(bus: 0, enabled: false),
+        EngineResult.ok,
+      );
 
       expect(
-        engine.setMasterFx(index: -1, type: TrackEffectType.reverb),
+        engine.setOutputFx(bus: 0, index: -1, type: TrackEffectType.reverb),
         EngineResult.invalid,
       );
       expect(
-        engine.setMasterFxParam(index: 99, param: 0, value: 0.5),
+        engine.setOutputFxParam(bus: 0, index: 99, param: 0, value: 0.5),
         EngineResult.invalid,
       );
       expect(
-        engine.setMasterFxEnabled(index: 99, enabled: true),
+        engine.setOutputFxEnabled(bus: 0, index: 99, enabled: true),
         EngineResult.invalid,
       );
     });

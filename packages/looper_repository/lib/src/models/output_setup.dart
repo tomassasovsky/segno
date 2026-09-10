@@ -1,5 +1,10 @@
 import 'package:equatable/equatable.dart';
 
+/// The output destination whose chain the app calls the Master insert
+/// (`FxStage.master`): the first pair. Slice 3f rebuilds the FX surfaces
+/// around one chain per destination, and this pin goes with it.
+const int kMasterOutputBus = 0;
+
 /// One output destination's facts (accepted design, Output setup): its level,
 /// mute, Stereo/Mono and balance. A destination is a stereo pair of hardware
 /// outputs, bus `k` being outputs `2k` and `2k + 1`.
@@ -53,11 +58,69 @@ class OutputSetup extends Equatable {
   /// Creates an [OutputSetup].
   const OutputSetup({this.buses = const {}});
 
+  /// An [OutputSetup] from one map per fact, each holding only the
+  /// destinations off that fact's default — the shape settings and the
+  /// session manifest persist. A destination any map names is rebuilt whole,
+  /// the rest of its facts at their defaults.
+  factory OutputSetup.fromMaps({
+    Map<int, double> level = const {},
+    Map<int, bool> muted = const {},
+    Map<int, bool> mono = const {},
+    Map<int, double> balance = const {},
+  }) {
+    var result = const OutputSetup();
+    for (final bus in <int>{
+      ...level.keys,
+      ...muted.keys,
+      ...mono.keys,
+      ...balance.keys,
+    }) {
+      result = result.withBus(
+        bus,
+        OutputBus(
+          level: level[bus] ?? 1,
+          muted: muted[bus] ?? false,
+          mono: mono[bus] ?? false,
+          balance: balance[bus] ?? 0,
+        ),
+      );
+    }
+    return result;
+  }
+
   /// The destinations off their defaults, keyed by bus.
   final Map<int, OutputBus> buses;
 
   /// Bus [bus]'s facts, the defaults when unset.
   OutputBus of(int bus) => buses[bus] ?? const OutputBus();
+
+  /// This setup as one map per fact, the inverse of [OutputSetup.fromMaps]:
+  /// each map holds only the destinations off that fact's default, so an
+  /// untouched rig yields four empty maps.
+  ({
+    Map<int, double> level,
+    Map<int, bool> muted,
+    Map<int, bool> mono,
+    Map<int, double> balance,
+  })
+  toMaps() => (
+    level: {
+      for (final e in buses.entries)
+        if (e.value.level != 1) e.key: e.value.level,
+    },
+    muted: {
+      for (final e in buses.entries)
+        if (e.value.muted) e.key: true,
+    },
+    mono: {
+      for (final e in buses.entries)
+        if (e.value.mono) e.key: true,
+    },
+    balance: {
+      for (final e in buses.entries)
+        if (e.value.balance != 0) e.key: e.value.balance,
+    },
+  );
 
   /// A copy with [bus] set to [value]; a default value drops the entry.
   OutputSetup withBus(int bus, OutputBus value) {
@@ -69,24 +132,6 @@ class OutputSetup extends Equatable {
     }
     return OutputSetup(buses: next);
   }
-
-  /// The bus hardware output [output] belongs to.
-  static int busOfOutput(int output) => output ~/ 2;
-
-  /// The output channel mask that routes to every bus in [buses].
-  static int maskOfBuses(Iterable<int> buses) {
-    var mask = 0;
-    for (final bus in buses) {
-      mask |= 0x3 << (2 * bus);
-    }
-    return mask;
-  }
-
-  /// The buses an output channel [mask] touches.
-  static Set<int> busesOfMask(int mask) => {
-    for (var output = 0; output < 32; output++)
-      if (mask & (1 << output) != 0) output ~/ 2,
-  };
 
   @override
   List<Object?> get props => [buses];

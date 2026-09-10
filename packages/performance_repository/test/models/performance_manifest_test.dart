@@ -150,34 +150,57 @@ void main() {
       expect(decoded.trackChains, isEmpty);
       expect(decoded.masterEffects, isEmpty);
       expect(decoded.masterChainEnabled, isTrue);
-      // The default capture policy (slice 3b) writes none of its keys.
-      expect(snapshot.toJson().containsKey('followOutput'), isFalse);
+      // The capture policy (slice 3b) is always written: an absent key is a
+      // pre-policy take, which reads the other way.
+      expect(snapshot.toJson()['followOutput'], isFalse);
+      expect(snapshot.toJson().containsKey('captureBus'), isFalse);
       expect(snapshot.toJson().containsKey('outputLevel'), isFalse);
       expect(snapshot.toJson().containsKey('outputMuted'), isFalse);
       expect(decoded.followOutput, isFalse);
+      expect(decoded.captureBus, 0);
       expect(decoded.outputLevel, 1);
       expect(decoded.outputMuted, isFalse);
     });
 
-    test('round-trips the capture policy and destination 0 facts (slice 3b) '
-        'as the keys the renderer reads', () {
+    test('round-trips the capture policy and the captured destination and '
+        'its facts (slice 3b) as the keys the renderer reads', () {
       const snapshot = PerformanceArmSnapshot(
         masterGain: 1,
         limiterEnabled: false,
         limiterCeiling: 0.99,
         latencyOffsetFrames: 0,
         followOutput: true,
+        captureBus: 1,
         outputLevel: 0.5,
         outputMuted: true,
       );
       final json = snapshot.toJson();
       expect(json['followOutput'], isTrue);
+      expect(json['captureBus'], 1);
       expect(json['outputLevel'], 0.5);
       expect(json['outputMuted'], isTrue);
       final decoded = PerformanceArmSnapshot.fromJson(json);
       expect(decoded.followOutput, isTrue);
+      expect(decoded.captureBus, 1);
       expect(decoded.outputLevel, 0.5);
       expect(decoded.outputMuted, isTrue);
+    });
+
+    test('a manifest from before the capture policy existed reads as Follow '
+        'output: it was captured after the master gain and limiter', () {
+      const snapshot = PerformanceArmSnapshot(
+        masterGain: 0.5,
+        limiterEnabled: true,
+        limiterCeiling: 0.9,
+        latencyOffsetFrames: 0,
+      );
+      final legacy = Map<String, dynamic>.from(snapshot.toJson())
+        ..remove('followOutput');
+      final decoded = PerformanceArmSnapshot.fromJson(legacy);
+      expect(decoded.followOutput, isTrue);
+      expect(decoded.captureBus, 0);
+      expect(decoded.outputLevel, 1);
+      expect(decoded.outputMuted, isFalse);
     });
 
     test(

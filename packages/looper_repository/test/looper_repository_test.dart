@@ -6235,7 +6235,7 @@ void main() {
         ..setMasterChainEnabled(enabled: false);
       addTearDown(repo.dispose);
       expect(engine.trackFxCount[0], 1);
-      expect(engine.masterFxCount, 1);
+      expect(engine.outputFxCount[0], 1);
 
       // Session B defines neither bus stage.
       await repo.applySession(
@@ -6245,9 +6245,9 @@ void main() {
 
       // Engine chain lengths zeroed and every chain flag back to enabled.
       expect(engine.trackFxCount[0], 0);
-      expect(engine.masterFxCount, 0);
+      expect(engine.outputFxCount[0], 0);
       expect(engine.trackFxChainEnabled[1], isTrue);
-      expect(engine.masterFxChainEnabled, isTrue);
+      expect(engine.outputFxChainEnabled[0], isTrue);
       // Repository caches clean.
       expect(repo.trackEffects(0), isEmpty);
       expect(repo.masterEffects, isEmpty);
@@ -6258,12 +6258,12 @@ void main() {
 
       // And a restart replays nothing stale.
       engine.trackFx.clear();
-      engine.masterFx.clear();
+      engine.outputFx.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
       expect(engine.trackFx, isEmpty);
-      expect(engine.masterFx, isEmpty);
+      expect(engine.outputFx, isEmpty);
     });
 
     test('applies the rig BUS stages, chain flags included (R17)', () async {
@@ -6290,19 +6290,19 @@ void main() {
       expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
       expect(engine.trackFxCount[0], 1);
       expect(engine.trackFxChainEnabled[1], isFalse);
-      expect(engine.masterFx[0]?.code, TrackEffectType.filter.code);
-      expect(engine.masterFxChainEnabled, isFalse);
+      expect(engine.outputFx[(0, 0)]?.code, TrackEffectType.filter.code);
+      expect(engine.outputFxChainEnabled[0], isFalse);
       expect(repo.trackChainEnabled(1), isFalse);
       expect(repo.masterChainEnabled, isFalse);
 
       // The caches are truthful: a restart reproduces the loaded bus chains.
       engine.trackFx.clear();
-      engine.masterFx.clear();
+      engine.outputFx.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
       expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.masterFx[0]?.code, TrackEffectType.filter.code);
+      expect(engine.outputFx[(0, 0)]?.code, TrackEffectType.filter.code);
     });
 
     test('resets a remembered bus chain on a channel this engine cannot own, '
@@ -7225,9 +7225,9 @@ void main() {
       );
 
       expect(repo.masterEffects, hasLength(1));
-      expect(engine.masterFx[0]?.name, 'echo');
-      expect(engine.masterFxEnabled[0], isFalse);
-      expect(engine.masterFxCount, 1);
+      expect(engine.outputFx[(0, 0)]?.name, 'echo');
+      expect(engine.outputFxEnabled[(0, 0)], isFalse);
+      expect(engine.outputFxCount[0], 1);
     });
 
     test('a hosted plugin at a bus stage publishes as passthrough (no bus '
@@ -7263,7 +7263,7 @@ void main() {
       expect(masterPlugin.unsupported, isTrue);
       expect(engine.trackFx[(0, 0)]?.name, 'none');
       expect(engine.trackFxCount[0], 1);
-      expect(engine.masterFx[0]?.name, 'none');
+      expect(engine.outputFx[(0, 0)]?.name, 'none');
     });
 
     test('track/master chains and flags are projected onto LooperState', () {
@@ -7345,7 +7345,7 @@ void main() {
       expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
       expect(engine.monitorFxEnabled[(2, 0)], isFalse);
       expect(engine.trackFxEnabled[(1, 0)], isFalse);
-      expect(engine.masterFxEnabled[0], isFalse);
+      expect(engine.outputFxEnabled[(0, 0)], isFalse);
     });
 
     test('per-slot setters reject an out-of-range index', () {
@@ -7402,11 +7402,11 @@ void main() {
       expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
       expect(engine.monitorFxEnabled[(1, 0)], isFalse);
       expect(engine.trackFxEnabled[(0, 0)], isFalse);
-      expect(engine.masterFxEnabled[0], isFalse);
+      expect(engine.outputFxEnabled[(0, 0)], isFalse);
       expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
       expect(engine.monitorFxChainEnabled[1], isFalse);
       expect(engine.trackFxChainEnabled[0], isFalse);
-      expect(engine.masterFxChainEnabled, isFalse);
+      expect(engine.outputFxChainEnabled[0], isFalse);
     });
 
     test('per-chain setters update the remembered flag + engine on all four '
@@ -7427,7 +7427,7 @@ void main() {
       expect(engine.laneFxChainEnabled[(0, 1)], isFalse);
       expect(engine.monitorFxChainEnabled[3], isFalse);
       expect(engine.trackFxChainEnabled[2], isFalse);
-      expect(engine.masterFxChainEnabled, isFalse);
+      expect(engine.outputFxChainEnabled[0], isFalse);
 
       // Flags default to enabled and re-enable restores the default.
       repo.setLaneChainEnabled(channel: 0, lane: 1, enabled: true);
@@ -7523,23 +7523,23 @@ void main() {
       // Wipe the fake's records so only the restart replay repopulates them.
       engine.trackFx.clear();
       engine.trackFxCount.clear();
-      engine.masterFx.clear();
-      engine.masterFxCount = null;
+      engine.outputFx.clear();
+      engine.outputFxCount.remove(0);
       engine.laneFxChainEnabled.clear();
       engine.monitorFxChainEnabled.clear();
       engine.trackFxChainEnabled.clear();
-      engine.masterFxChainEnabled = null;
+      engine.outputFxChainEnabled.remove(0);
 
       repo.startEngine(const EngineConfig());
 
       expect(engine.trackFx[(0, 0)]?.name, 'delay');
       expect(engine.trackFxCount[0], 1);
-      expect(engine.masterFx[0]?.name, 'reverb');
-      expect(engine.masterFxCount, 1);
+      expect(engine.outputFx[(0, 0)]?.name, 'reverb');
+      expect(engine.outputFxCount[0], 1);
       expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
       expect(engine.monitorFxChainEnabled[1], isFalse);
       expect(engine.trackFxChainEnabled[0], isFalse);
-      expect(engine.masterFxChainEnabled, isFalse);
+      expect(engine.outputFxChainEnabled[0], isFalse);
     });
   });
 
@@ -7597,8 +7597,8 @@ void main() {
         EngineResult.ok,
       );
 
-      expect(engine.calls, contains('setMasterFxParam'));
-      expect(engine.calls, isNot(contains('setMasterFx')));
+      expect(engine.calls, contains('setOutputFxParam'));
+      expect(engine.calls, isNot(contains('setOutputFx')));
       expect((repo.masterEffects.single as BuiltInEffect).params[0], 0.4);
     });
 
@@ -7671,7 +7671,8 @@ void main() {
         EngineResult.ok,
       );
 
-      expect(engine.calls, isNot(contains('setMasterFx')));
+      expect(engine.calls, isNot(contains('setOutputFx')));
+      expect(engine.calls, isNot(contains('setOutputFxParam')));
       expect(engine.pluginParamSets, isEmpty);
       expect((repo.masterEffects.single as PluginEffect).paramValues[7], 0.9);
     });

@@ -757,52 +757,67 @@ Same branch, stacked on slice 3a's PR #1017 until it merges.
   (`output_bus_count`, `output_level[]`, `output_muted[]`,
   `output_mono[]`, `output_balance[]`, `tail_reset_rev`,
   `perf_follow_output`, trailing fields).
-- **The Master insert is bus 0's chain.** `le_engine_set_master_fx*` are
-  one-line wrappers onto bus 0; `le_engine.master_fx` is gone. The chain
-  therefore colours everything summed onto the first pair, live monitors
-  and the click included, which the accepted design asks of an output
-  chain and the old D-MASTER rule (monitors uncoloured, first ENABLED
-  pair) forbade; both tests flipped. The Dart `FxStage.master` keeps
-  addressing that chain until slice 3f rebuilds the FX surfaces around
-  per-destination chains: no owner exists yet for a chain on bus 1 and up,
-  so the engine's output family is not mirrored into Dart for them.
-- **The click rides the bus.** It sums in before the buses, so a
-  destination's chain, level and mute process it like every other source
-  routed there (accepted: "Click is included if routed there"), and it
-  now reaches the output meter and the master gain. The output-enabled
-  mask still gates it structurally.
+- **The Master insert is bus 0's chain.** `le_engine.master_fx`, the
+  `le_engine_set_master_fx*` family and ring codes 51 and 52 are gone; the
+  engine and the Dart engine interface speak output buses only, and the
+  repository maps `FxStage.master` to bus 0 (`kMasterOutputBus`) until
+  slice 3f rebuilds the FX surfaces around one chain per destination. The
+  chain now colors everything summed onto the first pair, live monitors and
+  the click included, which the accepted design asks of an output chain and
+  the old D-MASTER rule (monitors uncolored, first ENABLED pair) forbade;
+  both tests flipped.
+- **The click is processed by its destination.** It sums in before the
+  buses, so a destination's chain, level and mute process it like every
+  other source routed there (accepted: "Click is included if routed
+  there"), and it now reaches the output meter and the master gain. The
+  output-enabled mask still gates it structurally.
 - **The performance capture tap** defaults to the captured bus after its
   chain and before its level, Mono, balance, mute, the master gain and the
   limiter (Output setup, "Performance capture boundary"; accepted: "Final
   output volume/mute is excluded by default"). `le_perf_set_follow_output`
-  sets the policy the next arm freezes into `perf.follow_output`; a
-  running take keeps its policy. The captured bus is the first one with an
-  enabled channel (mono when only one is), so a disabled left jack
-  captures the right one. The arm snapshot records `followOutput`,
-  `outputLevel` and `outputMuted` (bus 0 at arm); `perf_render` skips the
-  master stage for a default take and, under Follow, replays bus 0's level
-  and mute from the log (commands 61 and 62 are perf-logged) before the
-  master gain and limiter. The golden parity test runs both policies.
+  sets the policy the next arm freezes into `perf.follow_output`; a running
+  take keeps its policy, and the flag survives a (re)configure because it is
+  a preference, not device state. The captured bus is the first one with an
+  enabled channel (mono when only one is), so a disabled left jack captures
+  the right one; the snapshot publishes it as `perf_capture_bus`. The
+  capture is a DESTINATION now, not the first two enabled channels
+  anywhere: a rig with its two jacks on different pairs captures one of
+  them in mono, which is what a destination means. The arm
+  snapshot records `followOutput`, `captureBus` and that destination's
+  `outputLevel` and `outputMuted`; `perf_render` skips the master stage for
+  a default take and, under Follow, replays the captured bus's level and
+  mute from the log (commands 61 and 62 are perf-logged) before the master
+  gain and limiter. A manifest with no `followOutput` key is a take from
+  before the policy existed, captured post-gain, so it reads as Follow. The
+  golden parity test runs both policies.
 - **Cut all sound** (`le_engine_cut_sound`, command 67): every playing,
   recording or overdubbing track goes through the Stop handler (a take in
-  progress finalizes), a running count-in is cancelled, and every chain on
-  every stage has its DSP state and delay rings cleared while its type,
-  count, params and enables stay; `a_tail_reset_rev` advances and the
-  snapshot carries it. Monitors keep their preferences. The clear is a
-  bounded burst of memsets on one discrete event, like a type change.
+  progress finalizes, and the stop is perf-logged per track so a log replay
+  does not hear it past the cut), a running count-in is cancelled, and every
+  built-in chain on every stage has its DSP state cleared at once while its
+  type, count, params and enables stay; `a_tail_reset_rev` advances and the
+  snapshot carries it. The delay rings are cleared through
+  `fx_apply_chain`'s existing spaced path (`clear_pending`, one slot per
+  chain per 128 samples, the slot dry until its turn), so a Cut never zeroes
+  every ring of the rig inside one callback. A hosted plugin has no reset
+  seam and keeps its own tail. Monitors keep their preferences.
 - **Bypass drains the tail** (accepted: "bypass sends new audio dry and
-  drains old wet tails"). `enable_mix` now scales the slot's FEED: the
-  output is `dry * (1 - mix) + effect(dry * mix)`, so a settled enabled
-  slot is the effect verbatim, the 5 ms ramp hands the new audio from the
-  effect to the dry path, and once the feed is silent the slot keeps
-  running on silence with its tail summed onto the dry signal until the
-  tail has stayed under 1e-4 for 50 ms or 8 s have passed; then it settles
-  and is skipped (bit-exact passthrough, D-BITEXACT intact). A re-enable
-  mid-drain keeps the state; a re-enable from a settled bypass still
-  resets and clears the rings. A latency-bearing slot (the octaver) holds
-  a delayed copy of the dry signal rather than a tail, so it keeps the old
-  crossfade and settles with no drain: summing its delayed dry onto the
-  direct path would double the audio for the latency window.
+  drains old wet tails"), for the types that have one. `le_fx_type_drains`
+  is true for a ring-owning type with no reported latency (delay, echo,
+  reverb): those are linear, so `enable_mix` scales the slot's FEED — the
+  output is `dry * (1 - mix) + effect(dry * mix)`, the 5 ms ramp moves the
+  new audio from the effect to the dry path, and once the feed is silent
+  the slot keeps running on silence with its tail summed onto the dry
+  signal until the tail has stayed under 1e-4 for 50 ms or 8 s have passed;
+  then it settles and is skipped (bit-exact passthrough, D-BITEXACT
+  intact). Everything else keeps the old crossfade and settles with no
+  drain: a kernel with no memory has no tail, and its small-signal gain would
+  make a scaled feed overshoot both endpoints (a drive at 15x reads +2 dB
+  above wet at mix 0.2); the octaver holds a delayed copy of the dry signal,
+  which summed onto the direct path would double the audio for the latency
+  window; a hosted plugin owns its tail and has no reset seam. A re-enable
+  mid-drain keeps the state; a re-enable from a settled bypass, and any
+  retype, still resets and clears the rings.
 - **Stop drains Post tails; Mute gates them.** The lane body now has two
   gates: `fed` (playing and not gated) feeds the chain, `gate_ok` (not
   muted, not soloed away) lets its output through. A Stop or Clear cuts
@@ -824,11 +839,14 @@ Same branch, stacked on slice 3a's PR #1017 until it merges.
   Bloc events `LooperOutputLevelChanged/MuteChanged/MonoChanged/
   BalanceChanged` and `LooperCutSoundPressed`;
   `PerformanceRepository.setFollowOutput`.
-- **Per-source output selection.** Lanes, monitors and the click already
-  chose output channels; `LooperRepository.setTrackOutput` routes every
-  lane of a track as one source, and `OutputSetup.maskOfBuses /
-  busesOfMask / busOfOutput` translate destinations to channel masks for
-  the surfaces. There is no backing track source in the engine to route.
+- **Per-source output selection** is already the engine's model: every
+  lane, every monitor and the click carry their own output mask, and a
+  destination is a pair of those channels. Nothing was added for it here.
+  A track-wide route (one choice for every lane of a take) is a
+  convenience the Audio routing surface owns in 3c, together with
+  persisting it and clearing it on a session load; a repository cache
+  without those outlives both. There is no backing track source in the
+  engine to route.
 - **Kept as is.** The global master gain and limiter stay as the final
   stage after the buses; retiring the global gain in favour of bus 0's
   level is a surface decision for slice 3c (the Mixer's master fader). Bus
@@ -848,8 +866,9 @@ the seven trailing fields; four fake engines updated.
 #### Checks
 
 - Native: the 5 suites plain, with ASan and with telemetry off; flipped
-  `test_click_rides_output_bus`, `test_count_in_click_captured_when_routed`,
-  `test_output_fx_colors_monitors`, `test_master_fx_ch_out_4_is_bus_0`,
+  `test_click_processed_by_output_bus`,
+  `test_count_in_click_captured_when_routed`,
+  `test_output_fx_colors_monitors`, `test_output_fx_ch_out_4_is_bus_0`,
   `test_fx_bypass_drains_tail_then_settles`; new
   `test_perf_master_tap_pre_level_by_default`,
   `test_perf_master_tap_follow_output_post_gain`,
@@ -858,23 +877,120 @@ the seven trailing fields; four fake engines updated.
   `test_output_setters_reject_invalid_and_clamp`,
   `test_cut_sound_stops_tracks_and_clears_tails`,
   `test_fx_bypass_new_audio_dry`,
-  `test_stop_drains_lane_tail_and_mute_gates_it`; the golden parity test
-  runs both capture policies; `test_fx_enable_ramp_continuity`'s bound
-  follows the feed ramp. ffigen regenerated and formatted.
-- Dart: `segno_engine` 269, `looper_repository` 464, `settings_repository`
-  152, `session_repository` 103, `performance_repository` 115; root 2217;
-  analyzers clean at the root and in every touched package; `bloc lint`
-  clean.
+  `test_stop_drains_lane_tail_and_mute_gates_it`, and from the review round
+  `test_output_bus_honours_disabled_channels`,
+  `test_fx_retype_mid_drain_starts_clean` and
+  `test_perf_follow_survives_configure_and_capture_bus`; the golden parity
+  test runs both capture policies. ffigen regenerated and formatted.
+- Dart: `segno_engine` 274, `looper_repository` 464, `settings_repository`
+  152, `session_repository` 103, `performance_repository` 117,
+  `daw_export` 100; root 2217; analyzers clean at the root and in every
+  touched package; `bloc lint` clean; cspell clean on the changed markdown
+  against the repository's dictionary.
+
+#### Review round 1 (2026-09-09, on the first commit)
+
+Eight finder angles, then a verify pass. Fixed in the second commit:
+
+- **A disabled output channel carried audio.** The bus stage read and wrote
+  both channels of its pair regardless of the structural gate, so a
+  decorrelating chain on the bus put its right-hand output onto a disabled
+  jack, and Mono halved a pair with one jack disabled. The per-block bus
+  snapshot now carries the pair's enabled bits: a disabled channel feeds the
+  chain as silence, is never written, and Mono averages the enabled channels
+  only.
+- **A retype mid-drain replayed the old effect's ring.** The re-enable edge
+  skips its clean reset while a drain is in flight, and nothing cleared the
+  drain budget on a type change, so an echo bypassed and then retyped to a
+  delay read the echo's repeats out of the ring. `le_fx_entry_reset` now
+  clears the budget, which is the same edge every retype goes through.
+- **The bypass drain overshot for a kernel with no memory and doubled the
+  dry for the octaver.** The feed ramp is only sound for a linear,
+  ring-owning effect; `le_fx_type_drains` now picks those, and every other
+  type keeps the crossfade (see the Decisions entry).
+- **Cut all sound is perf-logged per track**, like `le_one_shot_stop`'s
+  synthetic stop, so a log replay does not hear a track past the cut. The
+  ring clear was moved to `fx_apply_chain`'s spaced path first and then moved
+  back: deferring a slot's clear means passing it DRY until its turn, and dry
+  is the wrong output for a fully wet effect — a verifier showed a full-wet
+  delay on a live monitor bursting the raw input at full level for the
+  deferral window, at the instant the user asked for silence. The stagger
+  exists for a chain stomp, which repeats and can be held down; Cut is one
+  deliberate event, and one callback carrying a few hundred microseconds of
+  memset is the cheaper of the two failures. Pinned by a test with two
+  ring-owning slots on one chain, which a per-chain stagger would show on the
+  second.
+- **The Follow-output render assumed bus 0.** The engine captures the first
+  bus with an enabled channel, so a rig on the second pair rendered with the
+  wrong destination's level. The snapshot publishes `perf_capture_bus`, the
+  arm manifest records `captureBus`, and the render replays that bus.
+- **A jack's structural gate is not a bus mute, and the tests now say so.**
+  A verifier read the bus stage's new gating as silencing a take when an
+  output is disabled mid-record. It does — but not because of this slice:
+  every source already masks by the enabled mask before summing, so a
+  disabled channel carries nothing to capture, and it did not before either.
+  That is `le_engine_set_output_enabled`'s stated contract (the routing
+  graph, not a gain), and the bus mute deliberately differs (it is a gain
+  after the tap). The bus now reads its pair without that gate, which is
+  equivalent and simpler, and a test pins the two side by side.
+- **A pre-3b take rendered without the master gain.** `followOutput` absent
+  meant "pre-level", but every take on disk was captured post-gain; it now
+  reads as Follow, and the key is always written so the two cannot be
+  confused.
+- **The capture policy reverted on every device change.** `configure` reset
+  `a_perf_follow_output`; it is a preference, not device state, and now
+  survives.
+- **The pumped test engine dropped every new snapshot field.** It rebuilt
+  the snapshot from an explicit field list; `EngineSnapshot.copyWith`
+  replaces that. A verifier then showed the guarantee was only moved, not
+  made: the constructor's parameters are optional with defaults, so a field
+  added later without a `copyWith` parameter still compiles and silently
+  yields the default. A source-level golden now pins the `copyWith`
+  parameter names to the declared field list, and it was mutation-checked
+  (drop one parameter, the suite fails; restore it, it passes).
+- **One edit posted four ring commands and four preference writes.** A level
+  ride re-posted the mute, Mono and balance behind it and could delete a
+  mute set between two of its ticks. Each setter now pushes its own fact,
+  and settings has one writer per fact like the input setup's.
+- **The compatibility layer went.** `le_engine_set_master_fx*`, ring codes
+  51 and 52 and the Dart `setMasterFx*` family are deleted; the engine
+  interface speaks buses and the repository owns the `FxStage.master` to bus
+  0 mapping (AGENTS.md: remove obsolete paths).
+- Cleanups: one `le_store_pan` for the three pan/balance handlers, one
+  `perf_push_master` for the two taps, one `le_fx_entry_clear_rings` for the
+  two ring clears, one snapshot struct per bus instead of eleven parallel
+  arrays and seventeen parameters, `OutputSetup.fromMaps`/`toMaps` instead
+  of four hand-written conversions, `kMaxChannels` instead of a literal 32,
+  and the stale D-MASTER / D-MASTERCH / "click is excluded from the capture"
+  comments rewritten to what the code does.
+- Contracts that had drifted from the code: `engine_fx.h`'s `fx_apply_chain`
+  block (it still promised "NO tail spill on bypass"), `le_fx_entry_reset`'s
+  doc (it now touches the drain half deliberately), the capture-policy
+  setter's doc in both the C header and the Dart interface (it is a
+  preference and survives a reconfigure), `performance-event-log-format.md`
+  (codes 51 and 52 retired, 61 to 67 added with their replay verdicts) and
+  `performance-manifest-format.md` (the four new `armSnapshot` fields and the
+  absent-key rule). The plugin install path publishes a type change the ring
+  handlers never see, so it clears the drain state too.
+- Three tests were mutation-checked after a verifier showed they passed
+  against the reverted fix: the retype-mid-drain test now pre-rolls past the
+  ring length (its silence assertion was reading calloc zeros), the legacy
+  render default got a third golden-parity run whose manifest omits the key,
+  and the `copyWith` golden is pinned to the field list.
 
 #### Not verified here
 
 The bus stage and the tail drain by ear on the appliance; the drain floor
 and window (1e-4 for 50 ms, 8 s cap) are engineering values the listen
-check may move. The offline render replays bus 0's level and mute but not
-its Mono, balance or chain (the accumulator is mono and the arm manifest
-carries no bus chain yet). The Follow output preference has no surface or
-setting yet: the repository setter exists for the Performance recording
-page.
+check may move. The offline render replays the captured bus's level and mute
+but not its Mono, balance or chain (the accumulator is mono and the arm
+manifest carries no bus chain yet). The Follow output preference has no
+surface or setting yet: the repository setter exists for the Performance
+recording page. The output setup is kept per device in settings as well as
+in the session, following slice 3a's input-setup precedent, so loading a
+session replaces the device's stored destinations; whether the boot restore
+should come from the last session instead is a question for slice 3c's
+surfaces.
 
 #### Next step
 

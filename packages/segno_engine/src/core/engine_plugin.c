@@ -137,6 +137,14 @@ static int32_t install(le_engine* e, le_fx_state* fx, _Atomic int32_t* type,
    * the first time the audio thread dispatches it the slot is live. Ordering is
    * not load-bearing for safety: a weak observer that sees PLUGIN before the
    * pointer loads NULL and renders one dry sample — never a crash. */
+  /* This is a type change the SET_*_FX ring handlers never see, so the
+   * clearing le_fx_entry_reset does on that path happens here instead. Only
+   * the drain half matters: a plugin has no reset seam of its own, but a
+   * drain budget left over from the built-in that was in this slot would
+   * let a later retype BACK to a built-in skip its clean re-enable edge and
+   * read the stale ring (slice 3b review). */
+  fx->enable_drain[index] = 0;
+  fx->enable_quiet[index] = 0;
   atomic_store_explicit(&fx->plugin[index], slot, memory_order_release);
   le_plugin_slot_set_ready(slot, 1);
   atomic_store_explicit(type, LE_FX_PLUGIN, memory_order_release);

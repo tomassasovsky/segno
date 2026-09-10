@@ -399,15 +399,15 @@ void main() {
   });
 
   group('output setup (slice 3b)', () {
-    test('pushes the four facts of the edited destination, clamps and '
-        'projects', () {
+    test('pushes only the edited fact, clamps and projects', () {
       final repo = start()
         ..setOutputLevel(bus: 1, level: 2)
         ..setOutputBalance(bus: 1, balance: -3);
       expect(engine.outputLevel[1], 1.0);
       expect(engine.outputBalance[1], -1.0);
-      expect(engine.outputMuted[1], isFalse);
-      expect(engine.outputMono[1], isFalse);
+      // A level ride must not re-post the mute and Mono behind it.
+      expect(engine.outputMuted.containsKey(1), isFalse);
+      expect(engine.outputMono.containsKey(1), isFalse);
       expect(engine.outputLevel.containsKey(0), isFalse);
       expect(repo.state.outputSetup.of(1), const OutputBus(balance: -1));
       repo
@@ -455,7 +455,9 @@ void main() {
       repo.setOutputSetup(const OutputSetup(buses: {1: OutputBus(level: 0.5)}));
       expect(engine.outputLevel[1], 0.5);
       expect(engine.outputMono[2], isFalse);
-      expect(engine.outputLevel.containsKey(0), isFalse);
+      // The whole-setup path pushes every fact of both setups' destinations,
+      // so the one the new setup drops goes back to its defaults.
+      expect(engine.outputLevel[2], 1.0);
       expect(engine.calls.where((c) => c == 'setOutputLevel'), hasLength(2));
       expect(repo.state.outputSetup.buses.keys, {1});
     });
@@ -484,19 +486,33 @@ void main() {
       expect(repo.state.outputBusCount, 2);
       expect(repo.state.tailResetRev, 3);
     });
+  });
 
-    test('setTrackOutput routes every lane of the track', () {
-      final repo = start()
-        ..setLaneCount(channel: 0, count: 3)
-        ..setTrackOutput(channel: 0, mask: 0xC);
-      expect(engine.laneOutput[(0, 0)], 0xC);
-      expect(engine.laneOutput[(0, 1)], 0xC);
-      expect(engine.laneOutput[(0, 2)], 0xC);
-      expect(engine.laneOutput.containsKey((1, 0)), isFalse);
-      expect(repo, isNotNull);
-      expect(OutputSetup.busesOfMask(0xC), {1});
-      expect(OutputSetup.maskOfBuses([0, 2]), 0x33);
-      expect(OutputSetup.busOfOutput(5), 2);
+  group('OutputSetup maps (slice 3b)', () {
+    test('round-trip through the one-map-per-fact form drops the '
+        'destinations at their defaults', () {
+      const setup = OutputSetup(
+        buses: {
+          1: OutputBus(level: 0.5, muted: true),
+          0: OutputBus(mono: true, balance: -0.25),
+        },
+      );
+      final maps = setup.toMaps();
+      expect(maps.level, {1: 0.5});
+      expect(maps.muted, {1: true});
+      expect(maps.mono, {0: true});
+      expect(maps.balance, {0: -0.25});
+      expect(
+        OutputSetup.fromMaps(
+          level: maps.level,
+          muted: maps.muted,
+          mono: maps.mono,
+          balance: maps.balance,
+        ),
+        setup,
+      );
+      expect(const OutputSetup().toMaps().level, isEmpty);
+      expect(OutputSetup.fromMaps(), const OutputSetup());
     });
   });
 

@@ -1368,50 +1368,56 @@ class SettingsRepository {
     return (level: level, muted: muted, mono: mono, balance: balance);
   }
 
-  /// Saves destination [bus]'s four facts on [device]; a fact at its default
-  /// (`null`, unity, `false`, centre) removes its key, so a destination put
-  /// back to its defaults does not come back on the next launch.
-  Future<void> saveOutputBus({
+  // One writer per fact, like the input setup's: an edit persists the fact
+  // it changed and nothing else, so a level ride cannot delete a mute the
+  // user set between two of its ticks. A fact at its default (`null`,
+  // unity, `false`, centre) removes its key, so a destination put back to
+  // its defaults does not come back on the next launch.
+
+  /// Saves destination [bus]'s level on [device], `0..1`.
+  Future<void> saveOutputLevel({
     required String device,
     required int bus,
-    double? level,
-    bool muted = false,
-    bool mono = false,
-    double? balance,
-  }) async {
-    if (level == null || level == 1) {
-      await _store.remove(_outputLevelKey(device, bus));
-    } else {
-      await _store.setDouble(
-        _outputLevelKey(device, bus),
-        level.clamp(0.0, 1.0),
-      );
-    }
-    if (muted) {
-      await _store.setBool(_outputMuteKey(device, bus), value: true);
-    } else {
-      await _store.remove(_outputMuteKey(device, bus));
-    }
-    if (mono) {
-      await _store.setBool(_outputMonoKey(device, bus), value: true);
-    } else {
-      await _store.remove(_outputMonoKey(device, bus));
-    }
-    if (balance == null || balance == 0) {
-      await _store.remove(_outputBalanceKey(device, bus));
-    } else {
-      await _store.setDouble(
-        _outputBalanceKey(device, bus),
-        balance.clamp(-1.0, 1.0),
-      );
-    }
-  }
+    required double? level,
+  }) => level == null || level == 1
+      ? _store.remove(_outputLevelKey(device, bus))
+      : _store.setDouble(_outputLevelKey(device, bus), level.clamp(0.0, 1.0));
+
+  /// Saves destination [bus]'s mute on [device].
+  Future<void> saveOutputMute({
+    required String device,
+    required int bus,
+    required bool muted,
+  }) => muted
+      ? _store.setBool(_outputMuteKey(device, bus), value: true)
+      : _store.remove(_outputMuteKey(device, bus));
+
+  /// Saves destination [bus]'s Mono on [device].
+  Future<void> saveOutputMono({
+    required String device,
+    required int bus,
+    required bool mono,
+  }) => mono
+      ? _store.setBool(_outputMonoKey(device, bus), value: true)
+      : _store.remove(_outputMonoKey(device, bus));
+
+  /// Saves destination [bus]'s balance on [device], `-1..1`.
+  Future<void> saveOutputBalance({
+    required String device,
+    required int bus,
+    required double? balance,
+  }) => balance == null || balance == 0
+      ? _store.remove(_outputBalanceKey(device, bus))
+      : _store.setDouble(
+          _outputBalanceKey(device, bus),
+          balance.clamp(-1.0, 1.0),
+        );
 
   /// Replaces the whole output setup of [device] with [setup] — a session
   /// load re-persisting what it applied. Every destination in [setup] is
-  /// written through [saveOutputBus], and the first [busCount] destinations
-  /// it does not mention have their keys removed. An edit persists only its
-  /// own destination ([saveOutputBus]); this is the one whole-setup writer.
+  /// written through the per-fact writers above, and the first [busCount]
+  /// destinations it does not mention have their keys removed. This is the
+  /// one whole-setup writer.
   Future<void> replaceOutputSetup({
     required String device,
     required int busCount,
@@ -1425,12 +1431,20 @@ class SettingsRepository {
       ...setup.balance.keys,
     };
     for (final bus in buses) {
-      await saveOutputBus(
+      await saveOutputLevel(device: device, bus: bus, level: setup.level[bus]);
+      await saveOutputMute(
         device: device,
         bus: bus,
-        level: setup.level[bus],
         muted: setup.muted[bus] ?? false,
+      );
+      await saveOutputMono(
+        device: device,
+        bus: bus,
         mono: setup.mono[bus] ?? false,
+      );
+      await saveOutputBalance(
+        device: device,
+        bus: bus,
         balance: setup.balance[bus],
       );
     }

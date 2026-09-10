@@ -180,8 +180,26 @@ void main() {
           jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
               as Map<String, dynamic>;
       expect(armJson['followOutput'], isTrue);
+      expect(armJson.containsKey('captureBus'), isFalse);
       expect(armJson['outputLevel'], 0.5);
       expect(armJson['outputMuted'], isTrue);
+    });
+
+    test('the arm snapshot records the destination the engine captures and '
+        "that destination's facts, not the first one's", () async {
+      engine
+        ..perfCaptureBus = 1
+        ..outputLevels = [1, 0.25]
+        ..outputMuted = [true, false];
+
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      final armJson =
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(armJson['captureBus'], 1);
+      expect(armJson['outputLevel'], 0.25);
+      expect(armJson.containsKey('outputMuted'), isFalse);
     });
 
     test('writes the arm-time snapshot for every settled lane', () async {

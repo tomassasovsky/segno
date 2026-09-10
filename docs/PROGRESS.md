@@ -265,12 +265,14 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 
 - **Accepted design, slice 3b (#1016, epic #1009):** output destinations:
   output buses over stereo pairs with level, mute, Stereo/Mono and balance
-  and a post-sum chain each (the Master insert is bus 0's chain; the click
-  rides the bus), the performance capture tap before the destination's
-  level by default with a per-take Follow output policy the offline render
-  mirrors, Cut all sound, bypass draining its tail into the dry signal,
-  Stop draining Post tails while Mute gates them; the output setup
-  persisted in settings and the session manifest. Ledger:
+  and a post-sum chain each (the Master insert is bus 0's chain, and the
+  click is processed by its destination), the performance capture tap
+  before the destination's level by default with a per-take Follow output
+  policy the offline render mirrors, Cut all sound, bypass draining its
+  tail into the dry signal, Stop draining Post tails while Mute gates them;
+  the output setup persisted in settings and the session manifest; a
+  track-wide output route waits for slice 3c's surface, which owns
+  persisting it. Ledger:
   `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Accepted design, slice 3a (#1016, epic #1009):** the mix model: per-lane
   pan with a unity-centre balance law, per-track Solo beside mute, a capture

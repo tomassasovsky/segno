@@ -567,6 +567,7 @@ void main() {
         ptr.ref.output_level[2] = 0.1;
         ptr.ref.tail_reset_rev = 7;
         ptr.ref.perf_follow_output = 1;
+        ptr.ref.perf_capture_bus = 1;
 
         const tracks = [
           TrackSnapshot(
@@ -645,6 +646,7 @@ void main() {
         expect(snapshot.outputBalances[1], closeTo(-0.25, 1e-6));
         expect(snapshot.tailResetRev, 7);
         expect(snapshot.perfFollowOutput, isTrue);
+        expect(snapshot.perfCaptureBus, 1);
       } finally {
         calloc.free(ptr);
       }
@@ -849,6 +851,7 @@ void main() {
       List<double>? outputBalances,
       int tailResetRev = 0,
       bool perfFollowOutput = false,
+      int perfCaptureBus = -1,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -898,6 +901,7 @@ void main() {
       outputBalances: outputBalances ?? List<double>.filled(2, 0),
       tailResetRev: tailResetRev,
       perfFollowOutput: perfFollowOutput,
+      perfCaptureBus: perfCaptureBus,
     );
 
     /// [channels] zeros with [value] at [index].
@@ -921,6 +925,69 @@ void main() {
       expect(build(), isNot(equals(build(outputBalances: [0, -1]))));
       expect(build(), isNot(equals(build(tailResetRev: 1))));
       expect(build(), isNot(equals(build(perfFollowOutput: true))));
+      expect(build(), isNot(equals(build(perfCaptureBus: 0))));
+    });
+
+    test('copyWith replaces only the named facts and carries every other '
+        'one through', () {
+      final original = build(
+        outputLevels: [1, 0.5],
+        tailResetRev: 4,
+        perfCaptureBus: 1,
+      );
+      final copy = original.copyWith(isRunning: false, sampleRate: 96000);
+      expect(copy.isRunning, isFalse);
+      expect(copy.sampleRate, 96000);
+      expect(copy.outputLevels, [1, 0.5]);
+      expect(copy.tailResetRev, 4);
+      expect(copy.perfCaptureBus, 1);
+      // A named fact that round-trips back to its original value restores
+      // the original snapshot: this catches a MIS-WIRED parameter (one
+      // assigning the wrong field). A MISSING one is caught by the golden
+      // below, which is the guard that matters — this test cannot see it,
+      // because a field neither `build()` nor `copyWith` knows about sits
+      // at its default on both sides.
+      expect(
+        copy.copyWith(isRunning: true, sampleRate: original.sampleRate),
+        original,
+      );
+    });
+
+    test('copyWith names every declared field', () {
+      // The constructor's parameters are almost all optional with a
+      // default, so a field added later WITHOUT a copyWith parameter still
+      // compiles: copyWith would silently pass the default instead of the
+      // instance's value, and every decorator built on it (the pumped test
+      // engine) would report that default to its callers. Nothing else
+      // fails then — not the analyzer, not the field-set golden below,
+      // which asks a different question and is satisfied by adding one
+      // string to a set. So the parameter list is pinned to the field list
+      // at the source level, which is the only place the two can be
+      // compared.
+      final fields = _declaredFinalFields(
+        'lib/src/engine_snapshot.dart',
+        'EngineSnapshot',
+      );
+      final source = _packageFile(
+        'lib/src/engine_snapshot.dart',
+      ).readAsStringSync();
+      final start = source.indexOf('  EngineSnapshot copyWith({');
+      expect(start, isNot(-1), reason: 'copyWith not found');
+      final end = source.indexOf('  }) => EngineSnapshot(', start);
+      expect(end, isNot(-1), reason: 'copyWith has no parameter list end');
+      final body = source.substring(start, end);
+      final named = RegExp(
+        r'^    (?:[^;=\n]+?\s)?(\w+),$',
+        multiLine: true,
+      ).allMatches(body).map((m) => m.group(1)!).toSet();
+      expect(
+        named,
+        fields,
+        reason:
+            'EngineSnapshot.copyWith must name every field. A field it does '
+            'not name is silently replaced by its constructor default '
+            'whenever copyWith runs.',
+      );
     });
 
     test('activeBackend participates in equality', () {
@@ -1351,6 +1418,7 @@ void main() {
         'outputBalances',
         'tailResetRev',
         'perfFollowOutput',
+        'perfCaptureBus',
         'tracks',
       };
 

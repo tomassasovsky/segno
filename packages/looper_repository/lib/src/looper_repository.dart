@@ -1213,7 +1213,7 @@ class LooperRepository {
       );
       if (_masterEffects.isNotEmpty) _applyMasterEffects();
       if (!_masterChainEnabled) {
-        _engine.setMasterFxChainEnabled(enabled: false);
+        _engine.setOutputFxChainEnabled(bus: kMasterOutputBus, enabled: false);
       }
       // Re-apply the structural output gate. A fresh start enables every
       // output, so only the stored OFF entries need re-asserting (default-on).
@@ -2678,19 +2678,6 @@ class LooperRepository {
   EngineResult setOutputMask({required int channel, required int mask}) =>
       setLaneOutput(channel: channel, lane: 0, mask: mask);
 
-  /// Routes every lane of track [channel] to the output channels in [mask]
-  /// (accepted design, Audio routing: a recorded track chooses its output
-  /// destinations as one source). Remembered per lane and re-applied on
-  /// every (re)start; a lane added later takes the engine's default route.
-  EngineResult setTrackOutput({required int channel, required int mask}) {
-    var result = EngineResult.ok;
-    for (var lane = 0; lane < laneCount(channel); lane++) {
-      final r = setLaneOutput(channel: channel, lane: lane, mask: mask);
-      if (r != EngineResult.ok) result = r;
-    }
-    return result;
-  }
-
   /// Sets track [channel]'s active lane count (`>= 1`), lazily allocating the
   /// buffers for any newly added lanes. Remembered and re-applied on every
   /// (re)start; takes effect immediately only while running.
@@ -2713,7 +2700,10 @@ class LooperRepository {
     if (!_intendRunning) return EngineResult.ok;
     final result = _engine.setLaneCount(channel: channel, count: count);
     // The engine's growth path resets a new lane to centre and unity; the
-    // track's pan and level land on it here.
+    // track's pan and level land on it here. Its ROUTE is deliberately the
+    // engine's default: a track-wide route belongs to slice 3c's Audio
+    // routing surface, which owns persisting it and clearing it on a
+    // session load, and a cache here without those would outlive both.
     for (var lane = previous; lane < count; lane++) {
       _laneVolume.putIfAbsent((channel, lane), () => _trackLevel(channel));
       _pushLanePan(channel, lane);
@@ -2874,29 +2864,43 @@ class LooperRepository {
   /// Sets output destination [bus]'s level, `0..1` (accepted design, Output
   /// setup). Retained behind a mute. Held while stopped and re-applied on
   /// every (re)start.
-  EngineResult setOutputLevel({required int bus, required double level}) =>
-      _applyOutputBus(
-        bus,
-        _outputSetup.of(bus).copyWith(level: level.clamp(0.0, 1.0)),
-      );
+  EngineResult setOutputLevel({required int bus, required double level}) {
+    final value = level.clamp(0.0, 1.0);
+    return _applyOutputBus(
+      bus,
+      _outputSetup.of(bus).copyWith(level: value),
+      () => _engine.setOutputLevel(bus: bus, level: value),
+    );
+  }
 
   /// Mutes or unmutes output destination [bus]; the level and balance are
   /// retained.
   EngineResult setOutputMute({required int bus, required bool muted}) =>
-      _applyOutputBus(bus, _outputSetup.of(bus).copyWith(muted: muted));
+      _applyOutputBus(
+        bus,
+        _outputSetup.of(bus).copyWith(muted: muted),
+        () => _engine.setOutputMute(bus: bus, muted: muted),
+      );
 
   /// Puts output destination [bus] in Mono (the averaged mix on both jacks,
   /// balance disabled) or back in Stereo (the retained balance applies).
   EngineResult setOutputMono({required int bus, required bool mono}) =>
-      _applyOutputBus(bus, _outputSetup.of(bus).copyWith(mono: mono));
+      _applyOutputBus(
+        bus,
+        _outputSetup.of(bus).copyWith(mono: mono),
+        () => _engine.setOutputMono(bus: bus, mono: mono),
+      );
 
   /// Sets output destination [bus]'s balance, `-1` (left only) .. `1`
   /// (right only); retained while Mono.
-  EngineResult setOutputBalance({required int bus, required double balance}) =>
-      _applyOutputBus(
-        bus,
-        _outputSetup.of(bus).copyWith(balance: balance.clamp(-1.0, 1.0)),
-      );
+  EngineResult setOutputBalance({required int bus, required double balance}) {
+    final value = balance.clamp(-1.0, 1.0);
+    return _applyOutputBus(
+      bus,
+      _outputSetup.of(bus).copyWith(balance: value),
+      () => _engine.setOutputBalance(bus: bus, balance: value),
+    );
+  }
 
   /// Replaces the whole output setup (a boot restore, a session load): every
   /// bus either setup names goes to the engine, so a bus the old setup had
@@ -2923,11 +2927,17 @@ class LooperRepository {
     return _engine.cutSound();
   }
 
-  /// Makes [value] bus [bus]'s facts, pushes them and re-projects once.
-  EngineResult _applyOutputBus(int bus, OutputBus value) {
+  /// Makes [value] bus [bus]'s facts, pushes the one fact that changed
+  /// ([push], skipped while stopped) and re-projects once. One command per
+  /// edit: a level ride must not re-post the mute and balance behind it.
+  EngineResult _applyOutputBus(
+    int bus,
+    OutputBus value,
+    EngineResult Function() push,
+  ) {
     if (bus < 0 || bus >= kMaxOutputBuses) return EngineResult.invalid;
     _outputSetup = _outputSetup.withBus(bus, value);
-    final result = _pushOutputBus(bus);
+    final result = _intendRunning ? push() : EngineResult.ok;
     _reproject();
     return result;
   }
@@ -4167,7 +4177,12 @@ class LooperRepository {
       ..[index] = fx.copyWith(params: params);
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMasterFxParam(index: index, param: param, value: value);
+    return _engine.setOutputFxParam(
+      bus: kMasterOutputBus,
+      index: index,
+      param: param,
+      value: value,
+    );
   }
 
   /// Sets hosted-plugin parameter [paramId] of Master insert entry [index]
@@ -4196,7 +4211,8 @@ class LooperRepository {
     final effects = _masterEffects;
     for (var i = 0; i < effects.length; i++) {
       final fx = effects[i];
-      _engine.setMasterFx(
+      _engine.setOutputFx(
+        bus: kMasterOutputBus,
         index: i,
         type: fx is BuiltInEffect
             ? trackEffectTypeToEngine(fx.type)
@@ -4204,15 +4220,27 @@ class LooperRepository {
       );
       if (fx is BuiltInEffect) {
         for (var p = 0; p < fx.params.length; p++) {
-          _engine.setMasterFxParam(index: i, param: p, value: fx.params[p]);
+          _engine.setOutputFxParam(
+            bus: kMasterOutputBus,
+            index: i,
+            param: p,
+            value: fx.params[p],
+          );
         }
       }
     }
-    final result = _engine.setMasterFxCount(count: effects.length);
+    final result = _engine.setOutputFxCount(
+      bus: kMasterOutputBus,
+      count: effects.length,
+    );
     // Per-slot enabled bits strictly AFTER the count push — see
     // [_applyLaneEffects] for the D-ENSEED ordering rationale.
     for (var i = 0; i < effects.length; i++) {
-      _engine.setMasterFxEnabled(index: i, enabled: effects[i].enabled);
+      _engine.setOutputFxEnabled(
+        bus: kMasterOutputBus,
+        index: i,
+        enabled: effects[i].enabled,
+      );
     }
     return result;
   }
@@ -4301,7 +4329,11 @@ class LooperRepository {
     _masterEffects = List<TrackEffect>.of(_masterEffects)
       ..[index] = _withEnabled(_masterEffects[index], enabled);
     _reproject();
-    return _engine.setMasterFxEnabled(index: index, enabled: enabled);
+    return _engine.setOutputFxEnabled(
+      bus: kMasterOutputBus,
+      index: index,
+      enabled: enabled,
+    );
   }
 
   /// Enables/disables lane [lane] of track [channel]'s WHOLE chain in one
@@ -4374,7 +4406,10 @@ class LooperRepository {
   EngineResult setMasterChainEnabled({required bool enabled}) {
     _masterChainEnabled = enabled;
     _reproject();
-    return _engine.setMasterFxChainEnabled(enabled: enabled);
+    return _engine.setOutputFxChainEnabled(
+      bus: kMasterOutputBus,
+      enabled: enabled,
+    );
   }
 
   /// Whether the Master insert chain is engaged.

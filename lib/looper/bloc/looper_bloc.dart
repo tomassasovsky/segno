@@ -525,19 +525,43 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     });
     on<LooperOutputLevelChanged>((event, _) {
       _repository.setOutputLevel(bus: event.bus, level: event.level);
-      _persistOutputBus(event.bus);
+      _persistOutput(
+        (settings, device) => settings.saveOutputLevel(
+          device: device,
+          bus: event.bus,
+          level: _repository.outputSetup.of(event.bus).level,
+        ),
+      );
     });
     on<LooperOutputMuteChanged>((event, _) {
       _repository.setOutputMute(bus: event.bus, muted: event.muted);
-      _persistOutputBus(event.bus);
+      _persistOutput(
+        (settings, device) => settings.saveOutputMute(
+          device: device,
+          bus: event.bus,
+          muted: _repository.outputSetup.of(event.bus).muted,
+        ),
+      );
     });
     on<LooperOutputMonoChanged>((event, _) {
       _repository.setOutputMono(bus: event.bus, mono: event.mono);
-      _persistOutputBus(event.bus);
+      _persistOutput(
+        (settings, device) => settings.saveOutputMono(
+          device: device,
+          bus: event.bus,
+          mono: _repository.outputSetup.of(event.bus).mono,
+        ),
+      );
     });
     on<LooperOutputBalanceChanged>((event, _) {
       _repository.setOutputBalance(bus: event.bus, balance: event.balance);
-      _persistOutputBus(event.bus);
+      _persistOutput(
+        (settings, device) => settings.saveOutputBalance(
+          device: device,
+          bus: event.bus,
+          balance: _repository.outputSetup.of(event.bus).balance,
+        ),
+      );
     });
     on<LooperCutSoundPressed>((_, _) => _repository.cutSound());
     on<LooperCrownPrimaryPressed>(
@@ -833,50 +857,21 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         busCount: status.outputChannels > 0
             ? (status.outputChannels + 1) ~/ 2
             : kMaxOutputBuses,
-        setup: _storedOutputSetup(_repository.outputSetup),
+        setup: _repository.outputSetup.toMaps(),
       ),
     );
   }
 
-  /// The settings record of [setup]: one map per fact, each holding only
-  /// the destinations off that fact's default.
-  static StoredOutputSetup _storedOutputSetup(OutputSetup setup) => (
-    level: {
-      for (final entry in setup.buses.entries)
-        if (entry.value.level != 1) entry.key: entry.value.level,
-    },
-    muted: {
-      for (final entry in setup.buses.entries)
-        if (entry.value.muted) entry.key: true,
-    },
-    mono: {
-      for (final entry in setup.buses.entries)
-        if (entry.value.mono) entry.key: true,
-    },
-    balance: {
-      for (final entry in setup.buses.entries)
-        if (entry.value.balance != 0) entry.key: entry.value.balance,
-    },
-  );
-
-  /// Persists destination [bus]'s facts as the repository now holds them
-  /// (the repository clamps, so its values are written, not the event's);
-  /// the defaults clear the keys.
-  void _persistOutputBus(int bus) {
+  /// Runs [write] against the settings repository and the open device, if
+  /// there are both. The repository clamps, so what it holds is written,
+  /// never the event's value; a fact back at its default clears its key.
+  void _persistOutput(
+    Future<void> Function(SettingsRepository settings, String device) write,
+  ) {
     final settings = _settings;
     final device = _inputSetupDevice;
     if (settings == null || device == null) return;
-    final value = _repository.outputSetup.of(bus);
-    unawaited(
-      settings.saveOutputBus(
-        device: device,
-        bus: bus,
-        level: value.level,
-        muted: value.muted,
-        mono: value.mono,
-        balance: value.balance,
-      ),
-    );
+    unawaited(write(settings, device));
   }
 
   /// The device the input setup is keyed to (the input-name precedent: a

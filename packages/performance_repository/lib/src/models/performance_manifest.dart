@@ -193,6 +193,7 @@ class PerformanceArmSnapshot {
     this.masterChainEnabled = true,
     this.fxStagesVersion = currentFxStagesVersion,
     this.followOutput = false,
+    this.captureBus = 0,
     this.outputLevel = 1,
     this.outputMuted = false,
   });
@@ -213,7 +214,11 @@ class PerformanceArmSnapshot {
         limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
         latencyOffsetFrames: (json['latencyOffsetFrames'] as num).toInt(),
         tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
-        followOutput: json['followOutput'] as bool? ?? false,
+        // Absent: a take recorded before the policy existed, which the
+        // engine captured after the master gain and limiter — that is
+        // Follow output volume, so the render replays them.
+        followOutput: json['followOutput'] as bool? ?? true,
+        captureBus: (json['captureBus'] as num?)?.toInt() ?? 0,
         outputLevel: (json['outputLevel'] as num?)?.toDouble() ?? 1,
         outputMuted: json['outputMuted'] as bool? ?? false,
         fxStagesVersion:
@@ -259,18 +264,25 @@ class PerformanceArmSnapshot {
   final int latencyOffsetFrames;
 
   /// The take's capture policy (slice 3b), frozen at arm: `false` (the
-  /// default) captured the first output destination after its chain and
-  /// before its level, mute, the master gain and the limiter, so the
-  /// offline render stops there too; `true` (Follow output volume) captured
-  /// the final output, so the render replays the destination's level and
-  /// mute, then the master gain and limiter.
+  /// default) captured [captureBus] after its chain and before its level,
+  /// mute, the master gain and the limiter, so the offline render stops
+  /// there too; `true` (Follow output volume) captured the final output, so
+  /// the render replays that destination's level and mute, then the master
+  /// gain and limiter. A manifest without the key is a take from before the
+  /// policy existed, captured post-gain: it reads as `true`.
   final bool followOutput;
 
-  /// Output destination 0's level at arm time, the starting point of the
-  /// render's replay under [followOutput].
+  /// The output destination the take captured — the first one with an
+  /// enabled channel at arm, which need not be destination 0. The render
+  /// replays this destination's level and mute, so a rig on the second pair
+  /// is rendered with the level the performer actually rode.
+  final int captureBus;
+
+  /// [captureBus]'s level at arm time, the starting point of the render's
+  /// replay under [followOutput].
   final double outputLevel;
 
-  /// Whether output destination 0 was muted at arm time.
+  /// Whether [captureBus] was muted at arm time.
   final bool outputMuted;
 
   /// Denominator-note beats per minute the engine read at the arm instant;
@@ -319,7 +331,10 @@ class PerformanceArmSnapshot {
     'limiterCeiling': limiterCeiling,
     'latencyOffsetFrames': latencyOffsetFrames,
     'tempoBpm': tempoBpm,
-    if (followOutput) 'followOutput': true,
+    // Always written: an absent key means a pre-policy take, which is the
+    // opposite default, so the two must never be confused.
+    'followOutput': followOutput,
+    if (captureBus != 0) 'captureBus': captureBus,
     if (outputLevel != 1) 'outputLevel': outputLevel,
     if (outputMuted) 'outputMuted': true,
     if (fxStagesVersion != legacyFxStagesVersion)
