@@ -1449,9 +1449,9 @@ POST_RI = POST_T                   # inside radius for the 1.6 mm steel post (= 
 
 # --- mid-field lid prop (issue #1019, printed) --------------------------------
 # The seven posts prop the band in front of the screens. Two ligaments deeper in
-# the panel are still bare: the strip between the BANK slot and the 16in aperture
-# (dents at 11 kg of point load) and its mirror left of CLEAR (14 kg). Only the
-# right one can be propped -- on the left the 7in tower's right leg ends at
+# the panel are still bare: the strip between the BANK slot and the 16in module
+# body (dents at 8 kg of point load) and its mirror left of CLEAR (11 kg). Only
+# the right one can be propped -- on the left the 7in tower's right leg ends at
 # u=213.6 and the CLEAR pedestal starts at 226.9, and 13.3 mm is not a column.
 # So: ONE prop here, and the left ligament is a documented residual.
 #

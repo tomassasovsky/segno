@@ -151,6 +151,27 @@ at every `FRONT_SCREW_U` station without touching the pill geometry.
   busiest foot drops to a few hundred newtons.
 - **M3 bearing in the plate.** 250 N per screw over 3 × 2 mm = 42 MPa. Fine.
 
+## What landed
+
+All three recommendations are in the package as of this branch.
+
+| change | where | effect |
+|---|---|---|
+| A foot on each of a pedestal's four chassis screws | `pedestal_foot_xy()`, 40 feet, **no new bores** | 353 → 89 MPa, 23.0 → 1.4 mm |
+| `POST_U` spread to the seven interior pedal gaps | 5 more steel posts, +10 M4 floor bores | band before the screens 7-11 kg → 49-398 kg |
+| `segno_lid_prop`, printed | the one clear lane beside BANK, +2 M4 bores | strip beside BANK 8 kg → 131 kg |
+| 1050 → 1100-H14 on every callout | generator, drawings, shop message | design value 95 MPa, not the lot's 127 |
+
+Both Fusion documents were synced to match: 12 new M4 bores and 4 moved ones in
+each base, 21 stale vent slots removed (the generator drops any slot under a
+foot), feet 15 → 60, posts 2 → 7, and the prop placed. The native formed export
+re-verified all four sheet-metal parts against the current cut files.
+
+**One residual, recorded rather than fixed.** The ligament left of CLEAR still
+dents at 11 kg. The 7 in tower's right leg ends at u 213.6 and the CLEAR
+pedestal starts at 226.9; 13.3 mm is not a column, and closing it means moving
+the tower or the pedestal.
+
 ## Limits of this model
 
 - Plate bending only. Membrane stiffening at large deflection is ignored, which

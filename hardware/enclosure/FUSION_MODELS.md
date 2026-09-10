@@ -126,6 +126,11 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   is not centred on the bore. Delete those curves with the timeline marker rolled
   back to just after the sketch; deleting them with the marker at the end
   recomputes the whole model once per curve and takes tens of minutes.
+  **Type coordinates at full precision.** Rounding a bore centre to four
+  decimals is a 40-80 nm error, which sounds like nothing and is not:
+  seventeen of them put 0.0036 mm² into `compare_flat_pattern`, and the
+  pipeline test asserts an exact zero, not the module's own 0.01 mm²
+  tolerance. Read the numbers out of the DXF with `repr()`, do not retype.
 
 - **FRONT_WALL_KNUCKLE_TRIM**: both base comps carry a cut (sketch of that
   name, offset plane at local z=0.8094) matching the generator's shortened
