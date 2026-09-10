@@ -1368,3 +1368,66 @@ answer before it can move.
 - Five goldens regenerated and eyeballed (the Tracks tray with no strip, the
   Device tab with no click card), five deleted with their surfaces.
 
+## Slice 3d — the Mixer view (#1016 part 3d)
+
+Part 3d has two surfaces and they are not the same size of work. The MAIN
+Mixer view is app-only over owners that all exist. The FOOT Mixer needs a
+fourth interaction mode, which the survey found costs a pedal protocol
+version and a firmware change and touches ten sites. They ship separately;
+this is the first.
+
+### The Mixer view
+
+- **A third stage view, not a page.** `StageView` gains `mixer` and the two
+  exhaustive switches over it — the view menu and the instrument area — point
+  at every site that had to change. The chrome, the two dB scales and the
+  session strip are the stage's own.
+- **One owner, two surfaces.** Mute, Solo, pan and level dispatch the events
+  slice 3a built and nothing else: the accepted design is explicit that a
+  Mixer edit must not create a second mixer state.
+- **The level's marker rides the meter.** The pen draws one control over the
+  thing it governs rather than a fader beside it. Dragging anywhere in the
+  meter's height sets the level; the lanes keep metering underneath; a double
+  tap returns the track to unity, as the pan returns to centre.
+- **Both sides meter separately**, from `peakL` and `peakR` — the fields
+  slice 3a added for exactly this and which nothing drew until now. They are
+  subscribed in their own leaf, so a level tick redraws two bars rather than
+  the strip.
+- **The dB scale follows the view.** It aligned to the Track column's meter
+  by construction; it now takes the insets of whichever view is showing, so
+  it lines up with the meter beside it either way.
+- **Reset mixer** appears only in the Mixer, and clearing every Solo is a
+  long press on a Solo button. Both events existed with handlers and no UI.
+
+#### Deviations from the pen
+
+- **No FX edit button.** The pen draws a pair — edit and bypass. The FX
+  editor is slice 3f and does not exist, so that button would open nothing.
+  The bypass ships; the edit button lands with the surface it opens.
+- **No Backing & click sheet.** The pen draws it as a modal over the Mixer
+  with four controls. Only the click's volume has an owner in this product:
+  there is no backing player anywhere, and the engine has no click pan. The
+  same call slice 3c made for the routing source, made once for both.
+- **The strip scales below the pen's height.** The pen's strip is 858 tall
+  with every part fixed, which is right at 1080p and impossible in a desktop
+  window a third of that. Below its minimum the whole strip scales as one
+  piece rather than silently sacrificing a part.
+
+#### Checks
+
+- Dart: root 2253 passing and 35 skipped, `dart analyze` clean over `lib` and
+  `test`, `bloc lint` clean over 239 files, both arb files at 1107 keys.
+- Mutation-checked: a pan that writes on every drag tick, a Solo long press
+  that does nothing, two lanes reading one side, Reset mixer drawn in every
+  view, and a level double tap that does not return to unity each fail
+  exactly the test that names them.
+- One golden added for the view, with a panned track, a soloed one, a muted
+  one and an empty one.
+
+#### Not verified here
+
+The foot Mixer. It is a fourth interaction mode: a new member of the mode
+enum, the mode cycle, the entry switch, the press matrix, the LED and caption
+projection, the invariants, the pedal protocol and the firmware. That is its
+own change and its own risk.
+

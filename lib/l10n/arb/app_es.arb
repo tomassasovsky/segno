@@ -2250,5 +2250,21 @@
     "routingInputOrdinalSide": "Entrada {number} · {side}",
     "routingTrimSide": "Ganancia de grabación · {side}",
     "routingClip": "SATURA",
-    "routingTrackFull": "Una pista graba como máximo {count} entradas. Libera una para añadir otra."
+    "routingTrackFull": "Una pista graba como máximo {count} entradas. Libera una para añadir otra.",
+    "stageViewMixer": "Mezclador",
+    "mixerMute": "Silencio",
+    "mixerSolo": "Solo",
+    "mixerLevel": "Nivel",
+    "mixerReset": "Restablecer mezclador",
+    "a11yMixerMute": "Silenciar la pista {number}",
+    "a11yMixerUnmute": "Quitar el silencio de la pista {number}",
+    "a11yMixerSolo": "Solo en la pista {number}",
+    "a11yMixerUnsolo": "Quitar el solo de la pista {number}",
+    "a11yMixerClearSolo": "Quitar todos los solos",
+    "a11yMixerEditFx": "Editar los efectos de la pista {number}",
+    "a11yMixerBypassFx": "Puentear los efectos de la pista {number}",
+    "a11yMixerEnableFx": "Activar los efectos de la pista {number}",
+    "a11yMixerPan": "Panorama de la pista {number}",
+    "a11yMixerLevel": "Nivel de la pista {number}",
+    "a11yMixerReset": "Restablecer todos los niveles a la unidad y los panoramas al centro"
 }
