@@ -1967,6 +1967,12 @@ class LooperRepository {
     // only when the rig actually defines one — a rig without a crown gets the
     // engine's own: its lowest recorded track, once the import commits.
     setLooperMode(rig.looperMode);
+    // The session's own defaults (slice 2b), before the per-track overrides
+    // land with the tracks below: a track whose override is null follows
+    // these, so restoring the overrides without them would leave that track
+    // on whatever the app was last set to.
+    if (rig.recordTiming case final timing?) setRecordTiming(timing);
+    if (rig.overdubDecay case final decay?) setOverdubDecay(decay);
     // Bounded to `trackCount` — same rationale as `rig.oneShotChannels` below:
     // a manifest saved on a build with more physical tracks than this engine
     // must not push an out-of-range channel, nor hold one as a pending crown
@@ -2868,8 +2874,7 @@ class LooperRepository {
 
   /// The engine's feedback coefficient for a decay in percent: each overdub
   /// pass keeps `1 - percent / 100` of the existing layer.
-  static double feedbackOfDecay(int percent) =>
-      1 - percent.clamp(0, 100) / 100;
+  static double feedbackOfDecay(int percent) => 1 - percent.clamp(0, 100) / 100;
 
   /// The decay in percent a feedback coefficient means (the inverse of
   /// [feedbackOfDecay], rounded to a whole percent).

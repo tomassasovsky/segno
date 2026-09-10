@@ -161,6 +161,11 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   // no `_rigTracks` entry) still restores; see `SessionRig.oneShotChannels`'s
   // doc.
   oneShotChannels: bundle.session.oneShotChannels.toSet(),
+  // The session's own defaults (slice 2b), beside the per-track overrides in
+  // `_rigTracks`: a track that follows the default has to find the default
+  // the session was saved with, not whatever the app was last set to.
+  recordTiming: bundle.session.recordTiming,
+  overdubDecay: bundle.session.overdubDecay,
 );
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
