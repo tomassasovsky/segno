@@ -2900,9 +2900,15 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     case LE_CMD_SET_TRACK_FX_COUNT: {
       const int32_t ch = cmd->fxcount.channel;
       int32_t count = cmd->fxcount.count;
+      int32_t pre = cmd->fxcount.pre_count;
       if (!valid_channel(e, ch)) break;
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
+      if (pre < 0) pre = 0;
+      if (pre > count) pre = count;
+      /* Every reader clamps pre to the count it read alongside it — see the
+       * lane handler for why neither store order is tear-safe. */
+      store_i32(&e->tracks[ch].bus.a_fx_pre_count, pre);
       store_i32(&e->tracks[ch].bus.a_fx_count, count);
       break;
     }
@@ -4701,9 +4707,16 @@ static inline void mix_tracks_frame(
       }
     }
     e->tracks[t].proc_prev_state = st[t];
+    /* trk_has_fx keeps a track with a TRACK-stage chain out of the skip. The
+     * chain itself runs outside this loop either way, but bus_mask is built
+     * INSIDE it — so a skipped track routes its own tail to nothing, and a
+     * Stop would silence a Post reverb that the accepted tail contract says
+     * drains. The lane-chain clause below covers a track whose PARTS carry
+     * chains; this covers the canonical whole-track case, where the parts are
+     * plain and every effect sits on the track. */
     idle[t] = (st[t] == LE_TRACK_EMPTY || st[t] == LE_TRACK_STOPPED) &&
-              !lane_fx_any[t] && e->tracks[t].seam_capture == 0 &&
-              e->tracks[t].od_gain == 0.0f;
+              !lane_fx_any[t] && !trk_has_fx[t] &&
+              e->tracks[t].seam_capture == 0 && e->tracks[t].od_gain == 0.0f;
     if (idle[t]) continue;
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];

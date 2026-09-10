@@ -259,6 +259,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
  * fresh engine and an old session behave bit-identically. Used at configure. */
 static void le_fx_bus_reset(le_fx_bus* b) {
   store_i32(&b->a_fx_count, 0);
+  store_i32(&b->a_fx_pre_count, 0);
   store_i32(&b->a_fx_chain_enabled, 1);
   b->fx_count_pushed = 0;
   b->fx.enable_clear_cooldown = 0;

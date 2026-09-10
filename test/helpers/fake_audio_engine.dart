@@ -643,6 +643,9 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-channel active chain length passed to [setTrackFxCount].
   final Map<int, int> trackFxCount = {};
 
+  /// Per-channel leading Pre run passed to [setTrackFxCount].
+  final Map<int, int> trackFxPreCount = {};
+
   /// Per-(channel, index, param) value passed to [setTrackFxParam].
   final Map<(int, int, int), double> trackFxParam = {};
 
@@ -682,12 +685,19 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTrackFxCount({required int channel, required int count}) {
+  EngineResult setTrackFxCount({
+    required int channel,
+    required int count,
+    int preCount = 0,
+  }) {
     // D-ENSEED entering-slot seed — see [setLaneFxCount].
     for (var s = trackFxCount[channel] ?? 0; s < count; s++) {
       trackFxEnabled[(channel, s)] = true;
     }
     trackFxCount[channel] = count;
+    trackFxPreCount[channel] = preCount < 0
+        ? 0
+        : (preCount > count ? count : preCount);
     return EngineResult.ok;
   }
 
