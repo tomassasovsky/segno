@@ -30,7 +30,8 @@ u along the 850 width from the left wall, v along the 423 depth from the front).
 
 Populated-doc browser hygiene: root holds only the chassis (`VAMP sheet
 metal`, `base`, `faceplate`, `rear_panel`, `vent_foam`) plus identity-placed
-grouping components — `pedals` (10), `platforms` (20), `feet` (15),
+grouping components — `pedals` (10), `platforms` (20), `feet` (60 since #1019: 20 floor supports plus
+the 40 pedestal feet, all one `foot_uxcell_18x15x5` component),
 `fasteners` (18 native ISO 7380-1 screws and 18 M3 Ø7 washers), `lid_stack` (screens, the
 switched-off legacy `encoder`, texts (switched off), logo, support posts, and
 `diffusers` = the ten `led_diffuser_*` pills; the old `led_strips` bar
@@ -89,11 +90,17 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   moved +7.5 mm along the plate on 2026-09-04 (219.66 -> 227.16, #930) and a
   further +2.0 mm for the LED_GAP 16 trial (-> 229.16); a plate move of d is a
   world delta of (0, c*d, s*d) in populated and (0, s*d, c*d) in VSM.
-- **Support posts** (`faceplate_support_post:1` and `:2`, root): imported
+- **Support posts** (`faceplate_support_post:1`..`:7`, root): imported
   `out/segno_post.step`, with real concentric R1.6/R3.2 bends in 1.6 mm steel,
   converted to native sheet metal using T1.6/R1.6/K0.33. Place at
   `[1,0,0,(POST_U-POST_PW/2)/10 | 0,1,0,(_POST_VP-POST_FOOTL)/10 | 0,0,1,0.2]`.
-  Current x = 60.992857 / 71.092857 cm, y = 13.899694 cm. The two foot holes
+  Since #1019 there is one per interior pedal gap, x = 10.45 / 20.564286 /
+  30.678571 / 40.792857 / 50.907143 / 61.021429 / 71.135714 cm, y = 13.899694 cm.
+  The last two moved 0.29 and 0.43 mm when `POST_U` stopped being two literals
+  and became `FRONT_SCREW_U[1:-1]`. **`addExistingComponent` applies its matrix
+  RELATIVE to the source component's own placement**, so a new post lands at
+  x + 61.021429 unless you set `transform2` absolutely afterwards; do that, then
+  `snapshots.add()`. The two foot holes
   per post are at world v = **148.996937 mm**, matching the base anchors.
   The top pad has **1.2 mm nominal normal bare clearance** to the lid, with
   approximately 0.925–1.163 mm after 60–100 µm coating on the floor, post foot/top
@@ -101,6 +108,25 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   without lifting the lid off its seats. Regenerated
   `post_felt:1` / `:2` use the same placements and model the bare 1.2 mm space.
   Native unfold gives **81.161489 ×30.142857 ×1.6 mm**, matching the DXF.
+- **Mid-field lid prop** (`lid_prop:1`, root, populated only — it is a printed
+  part, not a sheet-metal source): imported `out/segno_lid_prop.step`. Its local
+  frame is x = depth, y = width, z = up with the origin on the floor TOP under
+  the column axis, so it needs a real +90 deg rotation about z, not a swap —
+  `[0,-1,0,PROP_U/10 | 1,0,0,_PROP_VP/10 | 0,0,1,0.2]`, det +1. Current
+  x = 43.25, y = 23.2219636 cm. The STEP lands about 0.01 mm proud of z = 0.2;
+  that is import tolerance, not a clash.
+- **Base support bores** (`ISSUE_1019_SUPPORT_BORES` in both base components):
+  the twelve M4 post/prop foot bolts and five floor-foot bores that #1019 added
+  live in the `CUT` sketch, but are cut by their own extrude rather than added to
+  `Extrude1`'s profile set. Four existing post-foot circles were moved in place,
+  so `Extrude1` carries them as before. **The `VENT` sketch has to follow**: the
+  generator drops any slot under a foot, so spreading the posts removed 21 slots
+  from the bottom field (127 -> 106 on this flat). Leaving them makes the new
+  bores break into open slots — visible as cylindrical faces whose bounding box
+  is not centred on the bore. Delete those curves with the timeline marker rolled
+  back to just after the sketch; deleting them with the marker at the end
+  recomputes the whole model once per curve and takes tens of minutes.
+
 - **FRONT_WALL_KNUCKLE_TRIM**: both base comps carry a cut (sketch of that
   name, offset plane at local z=0.8094) matching the generator's shortened
   front flap — the wall's square top corner cannot clear the lip-fold roll
