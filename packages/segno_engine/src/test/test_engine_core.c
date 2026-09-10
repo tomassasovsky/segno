@@ -27025,6 +27025,41 @@ static void test_lane_count_shrink_evicts_wet_cache(void) {
 /* Session load re-latches recoverable on every lane it fills — the load half
  * of the save/load round-trip (export only covers lanes that captured) — so
  * imported takes are trim-protected exactly like recorded ones. */
+/* Every perf-log wire code is distinct.
+ *
+ * Duplicate enumerator VALUES are legal C, so a code that reuses a number
+ * already taken further down the enum compiles silently and only shows up as
+ * an offline render reading one arm of the union as another. These are
+ * on-disk values: a collision mis-decodes every file already written. */
+static void test_plog_codes_are_distinct(void) {
+  const int32_t codes[] = {
+      LE_PLOG_RECORD_START,
+      LE_PLOG_RECORD_END,
+      LE_PLOG_LOOP_LENGTH_LOCKED,
+      LE_PLOG_LAYER_RETIRED,
+      LE_PLOG_UNDO,
+      LE_PLOG_REDO,
+      LE_PLOG_SET_LANE_FX_PARAM,
+      LE_PLOG_SET_MONITOR_FX_PARAM,
+      LE_PLOG_SET_LIMITER,
+      LE_PLOG_SET_OVERDUB_FEEDBACK,
+      LE_PLOG_SET_LANE_FX_ENABLED,
+      LE_PLOG_SET_LANE_FX_CHAIN_ENABLED,
+      LE_PLOG_SET_MONITOR_FX_ENABLED,
+      LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED,
+      LE_PLOG_SET_TRACK_OVERDUB_FEEDBACK,
+      LE_PLOG_RECORD_ABORT,
+      LE_PLOG_PERF_ARMED,
+      LE_PLOG_TRANSPORT_HELD,
+  };
+  const int n = (int)(sizeof(codes) / sizeof(codes[0]));
+  for (int i = 0; i < n; ++i) {
+    for (int j = i + 1; j < n; ++j) {
+      CHECK(codes[i] != codes[j]);
+    }
+  }
+}
+
 static void test_session_import_round_trips_recoverable(void) {
   printf("test_session_import_round_trips_recoverable\n");
   le_engine* e = le_engine_create();
@@ -27625,6 +27660,7 @@ int main(void) {
   test_unroute_never_trims_recoverable_lane();
   test_unroute_trim_declines_while_capturing();
   test_lane_count_shrink_evicts_wet_cache();
+  test_plog_codes_are_distinct();
   test_session_import_round_trips_recoverable();
 
   test_cond_setters_validate();

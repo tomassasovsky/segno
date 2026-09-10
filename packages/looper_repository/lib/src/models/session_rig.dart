@@ -166,7 +166,22 @@ class SessionRig {
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
     this.oneShotChannels = const {},
+    this.recordTiming,
+    this.overdubDecay,
   });
+
+  /// The session's DEFAULT record timing (slice 2b); `null` leaves the live
+  /// default alone.
+  ///
+  /// Session-level, beside [SessionRigTrack.recordTiming], which overrides it
+  /// per track. Restoring the overrides without the default they override
+  /// would leave a track that follows the default on whatever the app was
+  /// last set to.
+  final RecordTiming? recordTiming;
+
+  /// The session's DEFAULT overdub decay in percent (slice 2b); `null` leaves
+  /// the live default alone. Session-level, like [recordTiming].
+  final int? overdubDecay;
 
   /// The base (master) loop length in frames; `0` for an empty session.
   final int baseLengthFrames;

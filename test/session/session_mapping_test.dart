@@ -414,6 +414,45 @@ void main() {
       );
     });
 
+    test('the session\'s own defaults reach the rig, not just the per-track '
+        'overrides', () {
+      // A track whose override is null follows the DEFAULT. Carrying the
+      // overrides across a load without the default they override leaves that
+      // track on whatever the app was last set to.
+      final rig = rigFromBundle((
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [],
+          recordTiming: RecordTiming.quarter,
+          overdubDecay: 40,
+        ),
+        laneStems: const {},
+      ));
+
+      expect(rig.recordTiming, RecordTiming.quarter);
+      expect(rig.overdubDecay, 40);
+    });
+
+    test('a manifest that names no defaults still carries the model\'s own, '
+        'so a load RESETS rather than inherits', () {
+      // The same posture the FX stages take: a fact the manifest does not
+      // describe is reset on apply, never left as whatever the live rig had.
+      final rig = rigFromBundle((
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [],
+        ),
+        laneStems: const {},
+      ));
+
+      expect(rig.recordTiming, RecordTiming.immediately);
+      expect(rig.overdubDecay, 0);
+    });
+
     Session sessionWithMonitor(SessionMonitor monitor) => Session(
       sampleRate: 48000,
       channels: 1,
