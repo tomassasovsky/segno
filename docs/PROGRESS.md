@@ -8,6 +8,222 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## Enclosure release corrections — local, 2026-09-05
+
+Prepared from `fix/drawing-legibility-1001` at `1d14d701` on
+`codex/sheetmetal-release-fixes`. Earlier converter, monitor support, post,
+rear-panel gauge and corner corrections remain in place. The owner confirmed
+no shop work has started, separate metal/painting suppliers, short text messages,
+and **smooth matte black RAL 9005**, with no texture.
+
+A full review corrected intersecting corner cutting paths, USB corner geometry,
+an encoder bushing-root clash, coating-sensitive drilling/bore requirements,
+hardware quantities and unsafe partial/failed archive publication. A repeat
+review then found and corrected the installed Ring24 pin-strip stack's clash
+with its printed holder, the disc's finished outer-diameter allowance, lid
+centering before drilling, stale bend/post-gap notes and acceptance of retraced
+laser slits hidden by CAD healing.
+
+Fusion is saved and reopened as **sheet metal 131 / populated 344**. The repeat
+pass changed only the existing ring holder with two cuts and eight support ribs;
+all 414 other populated occurrences and all 18 sheet-metal occurrences retain
+identity, geometry, placement, visibility and appearance. There are no empty
+leaf components. The selected Ø80 board/pin strip and visible encoder positions
+remain fixed. Its 73-body interface and bottom-up insertion clear the new
+one-piece holder; nominal PCB axial clearance is 0.1346 mm and still needs the
+actual print-fit check. Align the holder to the board before gluing.
+
+The complete generator and **26 regressions pass**. All six metal laser profiles
+pass topology checks; native base/bracket flats have zero missing/extra area,
+and lid difference remains 0.008358 mm² each way within the 0.01 mm² gate. The
+expanded printed-part sweep completes 1,056 candidate pairs without Boolean
+failures; residual physical contacts are measured 0.000139–0.007803 mm
+seat/compliant-rubber fits. The five changed PDFs / ten pages were rendered and
+inspected. Final archive hashes and independent repeat-review results are in
+[the repeat-pass evidence](reviews/sheetmetal-release-fixes/round2-verification.json).
+The selected Ø80 ring-board revision must not be confused with this checkout's
+Ø68 Gerber package.
+
+**Seam corrections completed locally; Fusion saved and reopened at132/345.** The base side profile now follows the
+lid ridge at 0.30 mm nominal clearance; fit to 0.30–0.40 mm before coating. Two
+handed rear brackets back the upper straight seam with approximately 0.22–0.30 mm
+vertical relief, fitted to 0.20–0.40 mm. Nine purchased stainless shim packs
+support the front M3 stations; their actual thickness is fitted before painting
+between hidden bearing lands, subsequently masked (September 6 sequence correction). Nominal 0.50 mm CAD packs are reference only.
+The selected electronics, ring stack and all visible controls remain in place.
+
+The seven fabricated stems make eight pieces, plus nine purchased reference
+solids in the assembly. All 28 manufacturing regressions pass and six final
+archives contain 90 matching members. Base and both handed bracket flats match
+source exactly in both Fusion documents; unchanged lid parity remains within
+0.01 mm². See [current seam evidence](reviews/sheetmetal-release-fixes/seam-fix-verification.json)
+and [the correction review](reviews/sheetmetal-release-fixes/seam-review.md).
+Earlier 131/344 and 26-test records above are historical.
+
+**September 6 sled/screen corrections completed locally.** Populated Fusion
+is saved and reopened at **346**; the separate mini console is synchronized to
+the current source and saved/reopened at **13**. Each mini sled has two underside
+retention fixings at 60 mm pitch, with matching tray access. Both sleds now
+appear in the assembly STEP. A toe relief and revised rear lid bosses/locating
+tabs remove the closed-lid and LED-insert clashes found during integration.
+All 27 native mini interface checks are clear. The seven-inch module and four
+mounting bosses move 0.50 mm toward the front along the faceplate; its six floor
+anchors and aperture stay fixed. All 50 screen-area native checks succeed,
+with only the unchanged tab-seat contact. **33 manufacturing regressions pass.**
+Printed mini/tower/jig files are current; the console print ZIP carries the new
+tower. Metal DXFs, PDFs and the five other supplier ZIPs are byte-identical to
+the preceding reviewed package. No new PDF was authored. See
+[the sled/screen evidence](reviews/sheetmetal-release-fixes/sled-screen-verification.json).
+
+**Not released for fabrication.** Shop stock/tooling, rivet choice and final
+pre-coating fitting and the coated fit coupon must be accepted; purchased-part fit, insert/screw lengths,
+knob relief and coating sample still require physical checks. First-piece dry
+and finished assembly and load/retention qualification remain necessary. See
+[the release review](../hardware/enclosure/RELEASE_REVIEW.md),
+[verification](reviews/sheetmetal-release-fixes/full-review-verification.json)
+and [short supplier drafts](../hardware/enclosure/SHOP_REVIEW.md).
+No package or supplier message was sent; no commit, push or remote issue/PR state
+was changed by this review.
+
+The subsequent rear-joint correction removes the remaining 0.610842 mm straight
+seam opening: both rear/side joints now measure 0.050001 mm in both native
+models. Source, actual native flat, formed STEP and shop packages were regenerated.
+The owner retained rivets and a visible fine joint, with 0.00–0.10 mm dry fit
+before riveting/coating. All 34 enclosure regressions pass; independent geometry
+and preservation checks found no new interference or unrelated movement.
+Final saves **sheet metal135 / populated348** reopened with unchanged geometry.
+The source base was rebuilt from its DXF to repair an unreadable derived flat;
+all five source flat products now load. See
+[the rear-joint verification](reviews/sheetmetal-release-fixes/rear-closure-review.md).
+
+
+**September 6 coating-scope correction — local checks complete.** The owner
+retired the full-face overlay; labels remain on individual pedal tiles. Extra
+machining PDF pages are removed in favor of text instructions. All metalwork
+remains before the separate painting shop. All enclosure surfaces and clearance
+bores are coated smooth matte black RAL 9005, without texture; only threads and
+identified ground contacts are protected. Source/native clearances, printed
+supports, screen setback and lid washers account for the stated coating range.
+All 40 enclosure tests pass, the full generator reports ALL PASS, and the five
+archives contain 88 verified members. Eight changed PDFs (11 pages) were
+rendered and visually reviewed. Earlier masked-seat/prepaint evidence is
+superseded for this coating process. Final native save versions are recorded
+in [the current verification](reviews/sheetmetal-release-fixes/full-coat-verification.json).
+The standalone mini geometry remains unchanged. Nothing has been sent to either
+supplier. Physical shop/tooling, coated-coupon and assembled retention checks
+remain open; local CAD checks do not grant production release.
+
+**September 7 owner finishing decision.** The owner will install the ten corner
+rivets before painting, retaining the existing Ø3.3 rivet holes, and manually
+tap the eighteen M3 body holes after painting. The shop delivers matched parts
+with Ø2.5 body pilots untapped and Ø4.5 lid clearances finished. Paint-narrowed
+body pilots are cleaned back to Ø2.5 before tapping; no other post-paint hole
+changes are planned. This supersedes the earlier all-machining-before-paint
+sequence and protection of already-cut body threads. Ground contacts remain
+protected. Only process notes change; native geometry and poses are unchanged.
+The base drawing and painting notes were refreshed, all five pages visually
+checked, and changed archive members verified. The proposed straight Ø8.5 disc
+hole clears the modeled encoder root with paint allowance, but is not applied:
+actual retaining nut/washer coverage must be checked before removing the chamfer.
+
+**September 7 straight encoder-disc hole completed.** Owner measurements are
+washer ID7.25/OD11.85. The disc now has a laser-cut straight Ø8.50±0.05 bore,
+without chamfer; the outer diameter, thickness and all placements stay fixed.
+Finished bore8.25–8.43 clears the modeled root when centered; conservative
+opposing clearances leave0.87 mm minimum washer coverage. Both native documents
+were saved/reopened (sheet-metal138/populated351), with no unrelated changes
+or new warnings. All40 enclosure tests pass; five changed output files and
+matching archive members were updated; two PDFs/five pages were visually checked.
+See [the current disc verification](reviews/sheetmetal-release-fixes/straight-disc-verification.json).
+No supplier message or package was sent. Physical fit/retention acceptance remains.
+
+**September 8 thread-count and structural-comment correction.** The current
+source and the supplied base DXF contain 32 M3 tap pilots: 18 lid fixings plus
+14 screen-support anchors (six for the 7-inch tower and four per 15.6-inch
+stand). The earlier September 7 process note counted only the lid fixings.
+The owner cleans any paint-narrowed Ø2.5 pilots and manually taps all 32 after
+painting; the shop delivers them untapped. The 18 lid clearance holes and
+18 head washers retain their existing quantities. Current process prose and
+the generated base note now distinguish those counts. Unsupported fixed
+1050 strength, fold-stiffness and dent-load claims were removed from source
+comments: actual temper, assembled support conditions and physical loading
+remain to be qualified. These prose corrections do not establish structural
+capacity or change the joint hardware. Historical verification records remain
+unchanged.
+
+**September 8 floor support update completed locally.** Four original rubber
+feet are retained and eleven are added: four front, four rear and three
+staggered near CLEAR/BANK and the steel posts. Both native bases were rebuilt
+from the generated flat and saved/reopened as sheet-metal139/populated352.
+The populated group has15 real feet; no unrelated components moved and no
+warnings were added. All45 enclosure regressions pass, both final flats agree
+with source contours, and the current sheet-metal-only archive has14 verified
+STEP/DXF members. Base drawing inspected; older supplier packs are not the
+current handoff. [Evidence](reviews/extra-feet/verification.json).
+
+The owner's sustained scale reading was15–20kg and displayed maximum35kg; body
+mass70kg. The provisional200N/700N static cases are not impact ratings. A
+published-temper comparison and bare-sheet-strip sensitivity screen leave
+assembled bending unresolved. Actual foot contact and printed-support load
+spreading must be assessed before physical load qualification or cutting
+release. [Temper analysis](reviews/extra-feet/temper-screening.json).
+
+**September 9 console collar print correction completed locally.** Front/rear
+light-baffle walls grow from 0.85 to 2.4 mm, increasing collar depth to 118.47 mm.
+The bore, sleds, insert pockets, screw axes and pedal heights are unchanged.
+Both native documents are saved/reopened at sheet-metal 140/populated 353 and
+their collar solids match source exactly by bidirectional volume comparison.
+The sheet-metal document's older collar references also receive the current
+source geometry and mirrored populated-model placement. All 442 unrelated
+populated occurrences and 35 unrelated sheet-metal occurrences are unchanged.
+All 49 enclosure tests pass, including four new collar regressions. The two
+collars' STEP/STL files and 36-member printing archive are current; all other
+output files, including the metal-shop archive and sled files, are byte-identical.
+[Evidence](reviews/collar-thickness/verification.json). First-print insert fit
+and assembled structural qualification remain physical checks.
+
+September 9 cable-opening follow-up completed locally: both console collars
+now have an 8.6 mm centred open-top exit, with its bottom 6.95 mm above the
+bare pedal underside. This clears the measured 7.6 ×11.45 mm feature with
+0.5 mm side clearance and covers the 1.05 mm vertical measurement discrepancy.
+All 50 enclosure tests pass. Native sheet-metal 141/populated 355 were saved,
+reopened and matched to source; other geometry and placements remain fixed.
+The user's three visibility changes during inspection are preserved. Updated
+collar STEP/STL pairs and the printing archive agree; other outputs, including
+the metal-shop archive, are unchanged. [Evidence](reviews/cable-opening/verification.json).
+
+Closed stadium update, September 9: the console cable opening is now
+8.6 ×13.5 mm with R4.3 ends and 4.9 mm straight sides, closed at the top.
+Thread the cable before seating the pedal/sled. This supersedes the prior
+open-top version. The 0.5 mm fitting allowance assumes the reported cable
+feature has a stadium profile. Both models are saved/reopened at sheet-metal
+143/populated 358, with exact native/source parity and 50 passing tests.
+Other geometry/placements and the user's visibility choices are preserved.
+The two print pairs and printing archive are updated; the metal-shop archive
+and all other outputs are unchanged. [Evidence](reviews/cable-hole/verification.json).
+
+Short-screw CLEAR/BANK mounting, September 9: the two tall collars now anchor
+independently to the bottom base with M3×6 screws and M3 Ø5 ×5 inserts. Their
+new dedicated sleds attach through the 8 mm deck with four M3×12 screws per
+module. Front sled/collar, all metal geometry, mini-console and cable stadium
+are preserved. Bench-assemble and remove the complete module for service.
+Both native documents are saved/reopened at sheet-metal v144 and populated
+v360; native/source differences are zero, with 448 other populated and 43 other
+sheet-metal occurrences unchanged. The first-print ZIP now contains four STLs
+(one collar and matching sled for each row). All 56 enclosure tests pass.
+Physical insert fit and loaded PETG
+performance remain unqualified. [Evidence](reviews/mid-platform-mount/final-verification.json).
+
+September 9 material certificate received: Dinacut corrected the offered stock
+from 1050 to 1100-H14. The Alcast certificate covers 2.00 mm lot 26E0269, with
+127 MPa reported yield against a 95 MPa specified minimum. Use the minimum as
+a material reference with separate design margins; the lot result is not a
+universal allowance. Job-stock traceability and the 1.2 mm rear-panel material
+remain unconfirmed. The previous strip screen still does not qualify assembled
+stomp strength. Generator/drawing material callouts await controlled reissue;
+no output/CAD geometry changed for this evidence review.
+[Certificate assessment](reviews/material-certificate/review.md).
+
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
@@ -742,3 +958,16 @@ stacking, contextual dock**, session menu, **performance recorder UI +
 pedal arm/disarm**, **DAW device-chain export**). `flutter analyze` clean;
 macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
 `LE_FX_MAX = 8`, `kMaxOutputs = 8`.
+
+### 2026-09-07 — Supplier handoff packaging
+
+Prepared `hardware/enclosure/out/segno_dinacut_2026-09-07.zip` with 22 unchanged,
+previously reviewed CAD/drawing files plus Spanish text instructions and a hash
+manifest. Eight fabricated pieces use seven distinct designs; the assembly STEP
+is reference only. Added the request to qualify laser cutting of the lid
+fastener holes; DRILL geometry and its current post-bend meaning are unchanged.
+The complete enclosure stack is grouped separately by supplier in
+`segno_archivos_completos_2026-09-07.zip`. Verified all five original archive
+hashes and all 88 members against loose files, then checked the new packages.
+Nothing was sent; supplier and physical acceptance remain open. Evidence:
+`docs/reviews/sheetmetal-release-fixes/dinacut-handoff-verification.json`.

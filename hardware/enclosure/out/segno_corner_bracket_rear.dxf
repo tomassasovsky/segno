@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.6338194446
+2461290.138738426
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.6338194446
+2461290.138738426
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-A2
+A7
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{51248A8C-D417-4124-839F-954DA71A9023}
+{C004F37A-8D49-4F72-A3D5-D7529D6B6D2F}
   9
 $VERSIONGUID
   2
-{E3DF2B1D-C762-450F-891E-D93E1E095387}
+{355A3CCD-A135-4EB2-BEF9-09CD3E5E2D91}
   9
 $EXTNAMES
 290
@@ -2291,7 +2291,7 @@ Continuous
   0
 LAYER
   5
-8B
+8A
 330
 1
 100
@@ -2315,7 +2315,7 @@ Continuous
   0
 LAYER
   5
-8C
+8B
 330
 1
 100
@@ -2330,6 +2330,30 @@ BEND
 4
   6
 DASHED
+370
+-3
+390
+13
+347
+21
+  0
+LAYER
+  5
+8C
+330
+1
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+DRILL
+ 70
+0
+ 62
+6
+  6
+DASHDOT
 370
 -3
 390
@@ -2419,30 +2443,6 @@ AcDbSymbolTableRecord
 100
 AcDbLayerTableRecord
   2
-SILK
- 70
-0
- 62
-5
-  6
-Continuous
-370
--3
-390
-13
-347
-21
-  0
-LAYER
-  5
-91
-330
-1
-100
-AcDbSymbolTableRecord
-100
-AcDbLayerTableRecord
-  2
 MASK
  70
 0
@@ -2469,7 +2469,7 @@ STYLE
 100
 AcDbSymbolTable
  70
-27
+26
   0
 STYLE
   5
@@ -3199,34 +3199,6 @@ LiberationMono-Italic.ttf
   4
 
   0
-STYLE
-  5
-8A
-330
-5
-100
-AcDbSymbolTableRecord
-100
-AcDbTextStyleTableRecord
-  2
-SILKBOLD
- 70
-0
- 40
-0.0
- 41
-1.0
- 50
-0.0
- 71
-0
- 42
-2.5
-  3
-arialbd.ttf
-  4
-
-  0
 ENDTAB
   0
 TABLE
@@ -3285,7 +3257,7 @@ ACAD
   0
 APPID
   5
-9F
+A4
 330
 3
 100
@@ -3299,7 +3271,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-A0
+A5
 330
 3
 100
@@ -5411,7 +5383,7 @@ ENTITIES
   0
 LWPOLYLINE
   5
-92
+91
 330
 17
 100
@@ -5421,7 +5393,7 @@ CUT
 100
 AcDbPolyline
  90
-4
+6
  70
 1
  10
@@ -5435,15 +5407,23 @@ AcDbPolyline
  10
 24.0
  20
-80.0
+83.0
+ 10
+11.88703136155326
+ 20
+83.0
+ 10
+9.910840885362788
+ 20
+81.34
  10
 0.0
  20
-80.0
+81.34
   0
 LWPOLYLINE
   5
-93
+92
 330
 17
 100
@@ -5463,11 +5443,11 @@ AcDbPolyline
  10
 12.0
  20
-80.0
+83.0
   0
 CIRCLE
   5
-94
+93
 330
 17
 100
@@ -5487,7 +5467,7 @@ AcDbCircle
   0
 CIRCLE
   5
-95
+94
 330
 17
 100
@@ -5507,7 +5487,7 @@ AcDbCircle
   0
 CIRCLE
   5
-96
+95
 330
 17
 100
@@ -5527,7 +5507,7 @@ AcDbCircle
   0
 CIRCLE
   5
-97
+96
 330
 17
 100
@@ -5547,7 +5527,7 @@ AcDbCircle
   0
 CIRCLE
   5
-98
+97
 330
 17
 100
@@ -5567,6 +5547,36 @@ AcDbCircle
   0
 TEXT
   5
+98
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+133.8143396430813
+ 30
+0.0
+ 40
+2.5462692979023465
+  1
+Segno ÁNGULO DE ESQUINA DERECHO, derecho
+ 11
+0.0
+ 21
+133.8143396430813
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
 99
 330
 17
@@ -5579,17 +5589,17 @@ AcDbText
  10
 0.0
  20
-117.60493827160494
+129.74030876643755
  30
 0.0
  40
-3.950617283950617
+2.5462692979023465
   1
-Segno ÁNGULO DE ESQUINA
+(segno_corner_bracket_rear)  chapa 2.0 mm
  11
 0.0
  21
-117.60493827160494
+129.74030876643755
  31
 0.0
 100
@@ -5609,17 +5619,17 @@ AcDbText
  10
 0.0
  20
-111.28395061728395
+125.66627788979379
  30
 0.0
  40
-3.950617283950617
+2.5462692979023465
   1
-(segno_corner_bracket_rear,
+CANT. 1  unión sin soldadura; remachar a
  11
 0.0
  21
-111.28395061728395
+125.66627788979379
  31
 0.0
 100
@@ -5639,17 +5649,17 @@ AcDbText
  10
 0.0
  20
-104.96296296296296
+121.59224701315003
  30
 0.0
  40
-3.950617283950617
+2.5462692979023465
   1
-REAR x2)  chapa 2.0 mm
+las dos paredes antes de pintar. No
  11
 0.0
  21
-104.96296296296296
+121.59224701315003
  31
 0.0
 100
@@ -5669,17 +5679,17 @@ AcDbText
  10
 0.0
  20
-98.64197530864197
+117.51821613650628
  30
 0.0
  40
-3.950617283950617
+2.5462692979023465
   1
-CANT. 2  unión de esquina
+intercambiar las dos manos: los cinco
  11
 0.0
  21
-98.64197530864197
+117.51821613650628
  31
 0.0
 100
@@ -5699,17 +5709,17 @@ AcDbText
  10
 0.0
  20
-92.32098765432099
+113.44418525986252
  30
 0.0
  40
-3.950617283950617
+2.5462692979023465
   1
-sin soldadura; remachar a
+agujeros conservan su referencia de 80 mm.
  11
 0.0
  21
-92.32098765432099
+113.44418525986252
  31
 0.0
 100
@@ -5729,17 +5739,167 @@ AcDbText
  10
 0.0
  20
-86.0
+109.37015438321878
  30
 0.0
  40
-3.950617283950617
+2.5462692979023465
   1
-las dos paredes
+Ajustar el borde superior ANTES de
  11
 0.0
  21
-86.0
+109.37015438321878
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+9F
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+105.29612350657501
+ 30
+0.0
+ 40
+2.5462692979023465
+  1
+remachar/pintar: luz VERTICAL 0.20-0.40 mm
+ 11
+0.0
+ 21
+105.29612350657501
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A0
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+101.22209262993127
+ 30
+0.0
+ 40
+2.5462692979023465
+  1
+bajo el radio interior, en la zona que
+ 11
+0.0
+ 21
+101.22209262993127
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A1
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+97.14806175328751
+ 30
+0.0
+ 40
+2.5462692979023465
+  1
+respalda la junta trasera. Prevalece sobre
+ 11
+0.0
+ 21
+97.14806175328751
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A2
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+93.07403087664376
+ 30
+0.0
+ 40
+2.5462692979023465
+  1
+tolerancias generales. Comprobar la junta
+ 11
+0.0
+ 21
+93.07403087664376
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+A3
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+0.0
+ 20
+89.0
+ 30
+0.0
+ 40
+2.5462692979023465
+  1
+visible con la tapa asentada, sin forzarla.
+ 11
+0.0
+ 21
+89.0
  31
 0.0
 100
@@ -6835,7 +6995,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-A1
+A6
   0
 DICTIONARYVAR
   5
@@ -6847,7 +7007,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T18:12:42.147180+00:00
+1.4.4 @ 2026-09-06T06:19:47.980141+00:00
   0
 VISUALSTYLE
   5
@@ -13401,7 +13561,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-A1
+A6
 330
 2D
 100
@@ -13409,7 +13569,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T18:12:42.150763+00:00
+1.4.4 @ 2026-09-06T06:19:47.987145+00:00
   0
 ENDSEC
   0

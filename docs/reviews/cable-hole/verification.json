@@ -1,0 +1,141 @@
+{
+  "date": "2026-09-09",
+  "scope": "Closed stadium cable hole in console collars",
+  "dimensions_mm": {
+    "width": 8.6,
+    "height": 13.5,
+    "end_radius": 4.3,
+    "straight_length": 4.9,
+    "bottom_above_bare_case": 6.95,
+    "top_above_bare_case": 20.45
+  },
+  "fitting_assumption": "Reported 7.6 x 11.45 mm fitting has a stadium profile; actual fitting/connector must be checked before batching.",
+  "tests": {
+    "passed": 50,
+    "elapsed_seconds": 71.192,
+    "command": "python -m unittest discover -s hardware/enclosure/tests"
+  },
+  "geometry": [
+    {
+      "part": "front",
+      "removed_mm3": 0.0,
+      "added_mm3": 92.80971796049987,
+      "added_only_inside_old_slot": true,
+      "stl_closed": true,
+      "triangles": 2608
+    },
+    {
+      "part": "mid",
+      "removed_mm3": 0.0,
+      "added_mm3": 92.80971796045266,
+      "added_only_inside_old_slot": true,
+      "stl_closed": true,
+      "triangles": 4640
+    }
+  ],
+  "native": [
+    {
+      "document": "VAMP console (populated)",
+      "version": 358,
+      "modified": false,
+      "unchanged_occurrences": 442,
+      "total_occurrences": 452,
+      "warnings_unchanged": true,
+      "source_checks": [
+        {
+          "part": "front",
+          "instances": 8,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 53550.48356482021
+        },
+        {
+          "part": "mid",
+          "instances": 2,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 164984.7912975732
+        }
+      ]
+    },
+    {
+      "document": "VAMP sheet metal",
+      "version": 143,
+      "modified": false,
+      "unchanged_occurrences": 35,
+      "total_occurrences": 45,
+      "warnings_unchanged": true,
+      "source_checks": [
+        {
+          "part": "front",
+          "instances": 8,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 53550.48356482021
+        },
+        {
+          "part": "mid",
+          "instances": 2,
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 164984.7912975732
+        }
+      ]
+    }
+  ],
+  "artifacts": {
+    "changed_output_files": [
+      "segno_3dprint.zip",
+      "segno_platform_front_ring.step",
+      "segno_platform_front_ring.stl",
+      "segno_platform_mid_ring.step",
+      "segno_platform_mid_ring.stl"
+    ],
+    "print_zip_members": 36,
+    "zip_matches_current_files": true,
+    "other_output_files_unchanged": true,
+    "sheetmetal_zip_sha256": "d2329edf667586356f759a7ce9282a4ffc76195bff03da4c540ad787232829d9"
+  },
+  "user_visibility_changes_preserved": [
+    "pedals:1 false to true",
+    "tile_REC_PLAY:1 false to true",
+    "base:1 false to true"
+  ],
+  "connector_fit": {
+    "source": "https://www.jst-mfg.com/product/pdf/eng/eXH.pdf#page=4",
+    "conditional_on_actual_XHP_2_housing": true,
+    "measurements": [
+      {
+        "collar": "front",
+        "assumed_housing": "JST XHP-2",
+        "rectangular_envelope_mm": [
+          7.3,
+          5.7
+        ],
+        "interference_mm3": 0.0,
+        "minimum_nominal_clearance_mm": 0.6281476064525687
+      },
+      {
+        "collar": "mid",
+        "assumed_housing": "JST XHP-2",
+        "rectangular_envelope_mm": [
+          7.3,
+          5.7
+        ],
+        "interference_mm3": 0.0,
+        "minimum_nominal_clearance_mm": 0.6281476064525678
+      }
+    ]
+  },
+  "review": {
+    "roles_completed": [
+      "vgv",
+      "architecture",
+      "test-quality",
+      "simplicity",
+      "readiness"
+    ],
+    "independent_reviewers": 2,
+    "unresolved_findings": 0
+  }
+}

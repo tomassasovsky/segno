@@ -1,0 +1,3808 @@
+{
+  "native_verification": {
+    "snapshot_sha256": {
+      "final-pop.json": "3f043e39e19c67f3c51573cd4872b7d58fc81576bc9662281cd71e2c9f9b9a91",
+      "final-vsm.json": "cbb7aef084e03a8d8d23a5334ea522e50199ef79f8ea47c98ee6ae20b0b0d001"
+    },
+    "documents": {
+      "pop": {
+        "snapshot_version": 349,
+        "snapshot_modified": false,
+        "normalization_to_populated_mm": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "occurrences_before": 423,
+        "occurrences_after": 441,
+        "added_occurrences": [
+          "fasteners:1+lid_washer_M3_OD7:1",
+          "fasteners:1+lid_washer_M3_OD7:10",
+          "fasteners:1+lid_washer_M3_OD7:11",
+          "fasteners:1+lid_washer_M3_OD7:12",
+          "fasteners:1+lid_washer_M3_OD7:13",
+          "fasteners:1+lid_washer_M3_OD7:14",
+          "fasteners:1+lid_washer_M3_OD7:15",
+          "fasteners:1+lid_washer_M3_OD7:16",
+          "fasteners:1+lid_washer_M3_OD7:17",
+          "fasteners:1+lid_washer_M3_OD7:18",
+          "fasteners:1+lid_washer_M3_OD7:2",
+          "fasteners:1+lid_washer_M3_OD7:3",
+          "fasteners:1+lid_washer_M3_OD7:4",
+          "fasteners:1+lid_washer_M3_OD7:5",
+          "fasteners:1+lid_washer_M3_OD7:6",
+          "fasteners:1+lid_washer_M3_OD7:7",
+          "fasteners:1+lid_washer_M3_OD7:8",
+          "fasteners:1+lid_washer_M3_OD7:9"
+        ],
+        "removed_occurrences": [],
+        "warnings_identical": true,
+        "changed_occurrences": [
+          {
+            "path": "platforms:1+platform_sled_v375:1",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_front_v375:1",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_sled_v375:2",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_front_v375:2",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_sled_v375:3",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_front_v375:3",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_sled_v375:4",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_front_v375:4",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_sled_v375:5",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_front_v375:5",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_sled_v375:6",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_front_v375:6",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_sled_v375:7",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_front_v375:7",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_sled_v375:8",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_front_v375:8",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_sled_v375:9",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_sled_v375:10",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_mid_ring:1",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "platforms:1+platform_mid_ring:2",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:2",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:3",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:4",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:5",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:6",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:7",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:8",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:9",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:10",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:11",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:12",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:13",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:14",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:15",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:16",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:17",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:18",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "fasteners:1",
+            "changed_keys": [
+              "children"
+            ]
+          },
+          {
+            "path": "lid_stack:1+segno_logo:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "lid_stack:1+screen16_monitor:1+screen16_display:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "lid_stack:1+screen16_monitor:1+screen16_case:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "lid_stack:1+screen16_monitor:1+screen16_block:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "lid_stack:1+screen16_monitor:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "electronics:1+raspberry_pi_5_real:1+2xUSB_2.0_PORT:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "electronics:1+raspberry_pi_5_real:1+GIGABIT_ETHERNET_TRANSCEIVER:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "electronics:1+raspberry_pi_5_real:1+SLOT_CARD_ASM:1+CARD_SLOT_METAL_PIN:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "electronics:1+raspberry_pi_5_real:1+BROADCOM_1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "screen7_module:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "screen7_tower:1",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_disc_51_5:1",
+            "changed_keys": [
+              "matrix",
+              "bodies",
+              "features"
+            ]
+          },
+          {
+            "path": "ring_comet:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_REC_PLAY:1+Open CASCADE STEP translator 7.9 3.1 (4):1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_REC_PLAY:1+Open CASCADE STEP translator 7.9 3.2 (4):1+Open CASCADE STEP translator 7.9 3.2.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_REC_PLAY:1+Open CASCADE STEP translator 7.9 3.2 (4):1+Open CASCADE STEP translator 7.9 3.2.2:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_REC_PLAY:1+Open CASCADE STEP translator 7.9 3.2 (4):1+Open CASCADE STEP translator 7.9 3.2.3:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_REC_PLAY:1+Open CASCADE STEP translator 7.9 3.2 (4):1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_REC_PLAY:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_STOP:1+Open CASCADE STEP translator 7.9 4.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_STOP:1+Open CASCADE STEP translator 7.9 4.2:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_STOP:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_UNDO:1+Open CASCADE STEP translator 7.9 5.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_UNDO:1+Open CASCADE STEP translator 7.9 5.2:1+Open CASCADE STEP translator 7.9 5.2.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_UNDO:1+Open CASCADE STEP translator 7.9 5.2:1+Open CASCADE STEP translator 7.9 5.2.2:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_UNDO:1+Open CASCADE STEP translator 7.9 5.2:1+Open CASCADE STEP translator 7.9 5.2.3:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_UNDO:1+Open CASCADE STEP translator 7.9 5.2:1+Open CASCADE STEP translator 7.9 5.2.4:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_UNDO:1+Open CASCADE STEP translator 7.9 5.2:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_UNDO:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_MODE:1+Open CASCADE STEP translator 7.9 6.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_MODE:1+Open CASCADE STEP translator 7.9 6.2:1+Open CASCADE STEP translator 7.9 6.2.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_MODE:1+Open CASCADE STEP translator 7.9 6.2:1+Open CASCADE STEP translator 7.9 6.2.2:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_MODE:1+Open CASCADE STEP translator 7.9 6.2:1+Open CASCADE STEP translator 7.9 6.2.3:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_MODE:1+Open CASCADE STEP translator 7.9 6.2:1+Open CASCADE STEP translator 7.9 6.2.4:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_MODE:1+Open CASCADE STEP translator 7.9 6.2:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_MODE:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_TRACK1:1+Open CASCADE STEP translator 7.9 7.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_TRACK1:1+Open CASCADE STEP translator 7.9 7.2:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_TRACK1:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_TRACK2:1+Open CASCADE STEP translator 7.9 8.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_TRACK2:1+Open CASCADE STEP translator 7.9 8.2:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_TRACK2:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_TRACK3:1+Open CASCADE STEP translator 7.9 9.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_TRACK3:1+Open CASCADE STEP translator 7.9 9.2:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_TRACK3:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "tile_TRACK4:1+Open CASCADE STEP translator 7.9 10.1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_TRACK4:1+Open CASCADE STEP translator 7.9 10.2:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "tile_TRACK4:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+RotaryEncoder_EC11:1+SW-TH_EC11XXXXXXXX-L11.7-W12.0-H24.5-P2.5-LS14.5:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+RotaryEncoder_EC11:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+Board:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:2",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:3",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:4",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:5",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:6",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:7",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:8",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:9",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:10",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:11",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:12",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:13",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:14",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:15",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:16",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:17",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:18",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:19",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:20",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:21",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:22",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:23",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+WS2812B-NARROW:24",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:2",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:3",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:4",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:5",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:6",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:7",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:8",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:9",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:10",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:11",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:12",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:13",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:14",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+C0603:15",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1+0603-NO:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1+PCB Component:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1+Adafruit NeoPixel Ring 24 B v3:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+NeoPixel_Ring24:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+C_Disc_D5.0mm_W2.5mm_P5.00mm:1+C_Disc_D50mm_W25mm_P500mm:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+C_Disc_D5.0mm_W2.5mm_P5.00mm:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal (1):1+R_Axial_DIN0207_L63mm_D25mm_P1016mm_Horizontal (1):1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal (1):1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+DIP-14_W7.62mm (3):1+DIP-14_W7.62mm (2):1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+DIP-14_W7.62mm (3):1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+C_Disc_D5.0mm_W2.5mm_P5.00mm:2+C_Disc_D50mm_W25mm_P500mm:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+C_Disc_D5.0mm_W2.5mm_P5.00mm:2",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal (1):2+R_Axial_DIN0207_L63mm_D25mm_P1016mm_Horizontal (1):1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal (1):2",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+CP_Radial_D8.0mm_P3.50mm:1+CP_Radial_D80mm_P350mm:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+CP_Radial_D8.0mm_P3.50mm:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+XIAO_Module:1+Seeeduino Xiao v1:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+XIAO_Module:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical (1):1+JST_B4B_XH_A (1):1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical (1):1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+D_DO-41_SOD81_P10.16mm_Horizontal (1):1+D_DO-41_SOD81_P10.16mm_Horizontal:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+D_DO-41_SOD81_P10.16mm_Horizontal (1):1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal (1):3+R_Axial_DIN0207_L63mm_D25mm_P1016mm_Horizontal (1):1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal (1):3",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal (1):4+R_Axial_DIN0207_L63mm_D25mm_P1016mm_Horizontal (1):1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal (1):4",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+C_Disc_D5.0mm_W2.5mm_P5.00mm:3+C_Disc_D50mm_W25mm_P500mm:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+C_Disc_D5.0mm_W2.5mm_P5.00mm:3",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+C_Disc_D5.0mm_W2.5mm_P5.00mm:4+C_Disc_D50mm_W25mm_P500mm:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+C_Disc_D5.0mm_W2.5mm_P5.00mm:4",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1+segno_pedal_ring_PCB:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "ring_board_asm:1",
+            "changed_keys": [
+              "matrix"
+            ]
+          },
+          {
+            "path": "rear_panel:1",
+            "changed_keys": [
+              "bodies",
+              "features"
+            ]
+          },
+          {
+            "path": "ring_holder24:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "faceplate_support_post:1",
+            "changed_keys": [
+              "bodies",
+              "features"
+            ]
+          },
+          {
+            "path": "faceplate_support_post:2",
+            "changed_keys": [
+              "bodies",
+              "features"
+            ]
+          },
+          {
+            "path": "base:1",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "screen16_stand_L:1",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "screen16_stand_R:1",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:2",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:3",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:4",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:5",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:6",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:7",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:8",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:9",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "faceplate:1",
+            "changed_keys": [
+              "id",
+              "bodies",
+              "features"
+            ]
+          }
+        ],
+        "front_base_axis_height_mm": [
+          6.455420442681392,
+          6.455420442681392,
+          6.455420442681392,
+          6.455420442681392,
+          6.455420442681392,
+          6.455420442681392,
+          6.455420442681392,
+          6.455420442681392,
+          6.455420442681392
+        ],
+        "front_lid_axis_height_mm": [
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057
+        ],
+        "front_axis_max_offset_mm": 0.00027298387405920595,
+        "rear_joint_gaps_mm": [
+          0.05000114246382786,
+          0.05000114246382786
+        ],
+        "washer_max_source_pose_error_mm": 1.1368683772161603e-13,
+        "washer_max_source_volume_error_mm3": 6.448175327022909e-13,
+        "shim_rows": [
+          {
+            "path": "front_shim_pack:1",
+            "center_mm": [
+              18.42857142857143,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 0.0,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:2",
+            "center_mm": [
+              119.57142857142857,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 0.0,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:3",
+            "center_mm": [
+              220.71428571428572,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 0.0,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:4",
+            "center_mm": [
+              321.8571428571429,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 0.0,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:5",
+            "center_mm": [
+              423.0,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 0.0,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:6",
+            "center_mm": [
+              524.1428571428571,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 0.0,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:7",
+            "center_mm": [
+              625.2857142857143,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 0.0,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:8",
+            "center_mm": [
+              726.4285714285713,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 0.0,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:9",
+            "center_mm": [
+              827.5714285714286,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 0.0,
+            "volume_mm3": 12.640983439882469
+          }
+        ],
+        "post_foot_bores_diameter_mm": 4.6,
+        "post_foot_bores_each": [
+          2,
+          2
+        ],
+        "disc_diameter_mm": 51.2,
+        "disc_bore_mm": 7.5,
+        "disc_straight_bore_length_mm": 1.3999999999999986,
+        "disc_thickness_mm": 2.000000000000014,
+        "disc_chamfer_axial_depth_mm": 0.6000000000000156,
+        "screw_rows": [
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:1",
+            "head_face_error_mm": 8.881784197001252e-16,
+            "axis_vector_error": 1.1102230246251585e-16,
+            "head_mm": [
+              321.857142857143,
+              -4.910842357182403,
+              6.455147370051972
+            ],
+            "tip_mm": [
+              321.857142857143,
+              3.0891576428175904,
+              6.4551477183412675
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:2",
+            "head_face_error_mm": 1.1369030711563004e-13,
+            "axis_vector_error": 1.1102230246251585e-16,
+            "head_mm": [
+              524.1428571428569,
+              -4.910842357182403,
+              6.455147370051972
+            ],
+            "tip_mm": [
+              524.1428571428569,
+              3.0891576428175904,
+              6.4551477183412675
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:3",
+            "head_face_error_mm": 1.7763568394002505e-15,
+            "axis_vector_error": 1.1102230246251585e-16,
+            "head_mm": [
+              726.428571428571,
+              -4.910842357182403,
+              6.4551473700519715
+            ],
+            "tip_mm": [
+              726.428571428571,
+              3.0891576428175904,
+              6.455147718341267
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:4",
+            "head_face_error_mm": 1.7763568394002505e-15,
+            "axis_vector_error": 1.1102230246251585e-16,
+            "head_mm": [
+              827.5714285714289,
+              -4.910842357182403,
+              6.4551473700519715
+            ],
+            "tip_mm": [
+              827.5714285714289,
+              3.0891576428175904,
+              6.455147718341267
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:5",
+            "head_face_error_mm": 3.972054645195637e-15,
+            "axis_vector_error": 1.1102230246251585e-16,
+            "head_mm": [
+              18.428571428571395,
+              -4.910842357182403,
+              6.4551473700519715
+            ],
+            "tip_mm": [
+              18.428571428571395,
+              3.0891576428175904,
+              6.455147718341267
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:6",
+            "head_face_error_mm": 1.1369030711563004e-13,
+            "axis_vector_error": 1.1102230246251585e-16,
+            "head_mm": [
+              625.285714285714,
+              -4.910842357182403,
+              6.455147370051972
+            ],
+            "tip_mm": [
+              625.285714285714,
+              3.0891576428175904,
+              6.4551477183412675
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:7",
+            "head_face_error_mm": 8.881784197001252e-16,
+            "axis_vector_error": 1.1102230246251585e-16,
+            "head_mm": [
+              423.0,
+              -4.910842357182403,
+              6.455147370051972
+            ],
+            "tip_mm": [
+              423.0,
+              3.0891576428175904,
+              6.4551477183412675
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:8",
+            "head_face_error_mm": 8.881784197001252e-16,
+            "axis_vector_error": 1.1102230246251585e-16,
+            "head_mm": [
+              220.714285714286,
+              -4.910842357182403,
+              6.455147370051972
+            ],
+            "tip_mm": [
+              220.714285714286,
+              3.0891576428175904,
+              6.4551477183412675
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:9",
+            "head_face_error_mm": 1.7763568394002505e-15,
+            "axis_vector_error": 1.1102230246251585e-16,
+            "head_mm": [
+              119.571428571429,
+              -4.910842357182403,
+              6.4551473700519715
+            ],
+            "tip_mm": [
+              119.571428571429,
+              3.0891576428175904,
+              6.455147718341267
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:10",
+            "head_face_error_mm": 4.263256414560601e-14,
+            "axis_vector_error": 1.2412670766236366e-16,
+            "head_mm": [
+              18.428571428571402,
+              407.8605360162179,
+              96.68766301255783
+            ],
+            "tip_mm": [
+              18.428571428571402,
+              404.550112195675,
+              89.40473131382676
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:11",
+            "head_face_error_mm": 4.263256414560601e-14,
+            "axis_vector_error": 1.2412670766236366e-16,
+            "head_mm": [
+              119.571428571429,
+              407.8605360162179,
+              96.68766301255783
+            ],
+            "tip_mm": [
+              119.571428571429,
+              404.550112195675,
+              89.40473131382676
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:12",
+            "head_face_error_mm": 4.263256414560601e-14,
+            "axis_vector_error": 1.2412670766236366e-16,
+            "head_mm": [
+              220.714285714286,
+              407.8605360162179,
+              96.68766301255783
+            ],
+            "tip_mm": [
+              220.714285714286,
+              404.550112195675,
+              89.40473131382676
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:13",
+            "head_face_error_mm": 4.263256414560601e-14,
+            "axis_vector_error": 1.2412670766236366e-16,
+            "head_mm": [
+              321.857142857143,
+              407.8605360162179,
+              96.68766301255783
+            ],
+            "tip_mm": [
+              321.857142857143,
+              404.550112195675,
+              89.40473131382676
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:14",
+            "head_face_error_mm": 4.263256414560601e-14,
+            "axis_vector_error": 1.2412670766236366e-16,
+            "head_mm": [
+              423.0,
+              407.8605360162179,
+              96.68766301255783
+            ],
+            "tip_mm": [
+              423.0,
+              404.550112195675,
+              89.40473131382676
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:15",
+            "head_face_error_mm": 4.263256414560601e-14,
+            "axis_vector_error": 1.2412670766236366e-16,
+            "head_mm": [
+              524.142857142857,
+              407.8605360162179,
+              96.68766301255783
+            ],
+            "tip_mm": [
+              524.142857142857,
+              404.550112195675,
+              89.40473131382676
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:16",
+            "head_face_error_mm": 4.263256414560601e-14,
+            "axis_vector_error": 1.2412670766236366e-16,
+            "head_mm": [
+              625.285714285714,
+              407.8605360162179,
+              96.68766301255783
+            ],
+            "tip_mm": [
+              625.285714285714,
+              404.550112195675,
+              89.40473131382676
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:17",
+            "head_face_error_mm": 4.263256414560601e-14,
+            "axis_vector_error": 1.2412670766236366e-16,
+            "head_mm": [
+              726.428571428571,
+              407.8605360162179,
+              96.68766301255783
+            ],
+            "tip_mm": [
+              726.428571428571,
+              404.550112195675,
+              89.40473131382676
+            ]
+          },
+          {
+            "path": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:18",
+            "head_face_error_mm": 1.1457157353758233e-13,
+            "axis_vector_error": 0.0,
+            "head_mm": [
+              827.5714285714291,
+              407.8605360162179,
+              96.68766301255783
+            ],
+            "tip_mm": [
+              827.5714285714291,
+              404.550112195675,
+              89.40473131382676
+            ]
+          }
+        ]
+      },
+      "vsm": {
+        "snapshot_version": 137,
+        "snapshot_modified": false,
+        "normalization_to_populated_mm": [
+          [
+            -1.0,
+            0.0,
+            0.0,
+            848.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "occurrences_before": 27,
+        "occurrences_after": 45,
+        "added_occurrences": [
+          "lid_washer_M3_OD7:1",
+          "lid_washer_M3_OD7:10",
+          "lid_washer_M3_OD7:11",
+          "lid_washer_M3_OD7:12",
+          "lid_washer_M3_OD7:13",
+          "lid_washer_M3_OD7:14",
+          "lid_washer_M3_OD7:15",
+          "lid_washer_M3_OD7:16",
+          "lid_washer_M3_OD7:17",
+          "lid_washer_M3_OD7:18",
+          "lid_washer_M3_OD7:2",
+          "lid_washer_M3_OD7:3",
+          "lid_washer_M3_OD7:4",
+          "lid_washer_M3_OD7:5",
+          "lid_washer_M3_OD7:6",
+          "lid_washer_M3_OD7:7",
+          "lid_washer_M3_OD7:8",
+          "lid_washer_M3_OD7:9"
+        ],
+        "removed_occurrences": [],
+        "warnings_identical": true,
+        "changed_occurrences": [
+          {
+            "path": "ring_disc_51_5:1",
+            "changed_keys": [
+              "matrix",
+              "bodies",
+              "features"
+            ]
+          },
+          {
+            "path": "rear_panel:1",
+            "changed_keys": [
+              "bodies",
+              "features"
+            ]
+          },
+          {
+            "path": "faceplate_support_post:1",
+            "changed_keys": [
+              "bodies",
+              "features"
+            ]
+          },
+          {
+            "path": "faceplate_support_post:2",
+            "changed_keys": [
+              "bodies",
+              "features"
+            ]
+          },
+          {
+            "path": "front_shim_pack:1",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:2",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:3",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:4",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:5",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:6",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:7",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:8",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "front_shim_pack:9",
+            "changed_keys": [
+              "matrix",
+              "bodies"
+            ]
+          },
+          {
+            "path": "base:1",
+            "changed_keys": [
+              "bodies"
+            ]
+          },
+          {
+            "path": "faceplate:1",
+            "changed_keys": [
+              "id",
+              "bodies",
+              "features"
+            ]
+          }
+        ],
+        "front_base_axis_height_mm": [
+          6.455420456078841,
+          6.455420456078841,
+          6.455420456078841,
+          6.455420456078841,
+          6.455420456078841,
+          6.455420456078841,
+          6.455420456078841,
+          6.455420456078841,
+          6.455420456078841
+        ],
+        "front_lid_axis_height_mm": [
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057,
+          6.455147391820057
+        ],
+        "front_axis_max_offset_mm": 0.00027299727150726494,
+        "rear_joint_gaps_mm": [
+          0.050001142463870454,
+          0.050001142463870454
+        ],
+        "washer_max_source_pose_error_mm": 4.618527782440651e-14,
+        "washer_max_source_volume_error_mm3": 6.448175327022909e-13,
+        "shim_rows": [
+          {
+            "path": "front_shim_pack:1",
+            "center_mm": [
+              18.428571428571445,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 1.3397448483942753e-08,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:2",
+            "center_mm": [
+              119.57142857142856,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 1.3397448483942753e-08,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:3",
+            "center_mm": [
+              220.71428571428578,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 1.3397448483942753e-08,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:4",
+            "center_mm": [
+              321.8571428571429,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 1.3397448483942753e-08,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:5",
+            "center_mm": [
+              423.0,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 1.3397448483942753e-08,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:6",
+            "center_mm": [
+              524.1428571428571,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 1.3397448483942753e-08,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:7",
+            "center_mm": [
+              625.2857142857143,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 1.3397448483942753e-08,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:8",
+            "center_mm": [
+              726.4285714285714,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 1.3397448483942753e-08,
+            "volume_mm3": 12.640983439882469
+          },
+          {
+            "path": "front_shim_pack:9",
+            "center_mm": [
+              827.5714285714286,
+              -2.410840885362787,
+              6.455420442681392
+            ],
+            "base_bore_axis_offset_mm": 1.3397448483942753e-08,
+            "volume_mm3": 12.640983439882469
+          }
+        ],
+        "post_foot_bores_diameter_mm": 4.6,
+        "post_foot_bores_each": [
+          2,
+          2
+        ],
+        "disc_diameter_mm": 51.2,
+        "disc_bore_mm": 7.5,
+        "disc_straight_bore_length_mm": 1.3999999999999844,
+        "disc_thickness_mm": 1.999999999999993,
+        "disc_chamfer_axial_depth_mm": 0.6000000000000085,
+        "screw_rows": []
+      }
+    },
+    "expected_washer_source_volume_mm3": 15.221016406642551,
+    "expected_shim_source_volume_mm3": 12.640983439881932
+  },
+  "scope": "Fully coated sheet-metal seating, prepaint clearance bores, fitted front shim and M3 washer interfaces. Root separately verifies live-document preservation and complete packaging.",
+  "source_files_sha256": {
+    "hardware/enclosure/segno_enclosure.py": "a459e831512a7a1985507dbfc7fd1854393752122aa82a8f5016a5f6a8f3f6c6",
+    "hardware/enclosure/tests/test_manufacturing_fit.py": "3caf2ec7cb7d734101d8e06cf8730d6022744fd41c535caeb377d2e5f55c6292",
+    "hardware/enclosure/reference/coated_seat_datums.json": "08fbef53f27c5368d87be2281d1ebf006620955c710fc75bd439c944e712b875",
+    "hardware/enclosure/formed/manifest.json": "2cb6d5c29af4737ccc48162a7ab21c90d07db1595d8ca6d61b7fcd9693664fe3"
+  },
+  "geometry_status": "No unresolved actionable finding in this bounded source/formed-cache review; physical process acceptance remains required.",
+  "seat_translation": [
+    {
+      "side_pair_mm": 0.12,
+      "rear_pair_mm": 0.12,
+      "dy_mm": 0.013165094752166614,
+      "dz_mm": 0.1258309130064105,
+      "rear_tangent_mm": -0.04008414135116746,
+      "top_tangent_mm": 0.040084141351167474
+    },
+    {
+      "side_pair_mm": 0.12,
+      "rear_pair_mm": 0.2,
+      "dy_mm": 0.1431202387147009,
+      "dz_mm": 0.1546370910132191,
+      "rear_tangent_mm": 0.06630258401286915,
+      "top_tangent_mm": 0.1731936276159824
+    },
+    {
+      "side_pair_mm": 0.2,
+      "rear_pair_mm": 0.12,
+      "dy_mm": -0.10801331937558992,
+      "dz_mm": 0.1809120103372089,
+      "rear_tangent_mm": -0.1731936276159824,
+      "top_tangent_mm": -0.06630258401286913
+    },
+    {
+      "side_pair_mm": 0.2,
+      "rear_pair_mm": 0.2,
+      "dy_mm": 0.02194182458694435,
+      "dz_mm": 0.2097181883440175,
+      "rear_tangent_mm": -0.06680690225194579,
+      "top_tangent_mm": 0.06680690225194577
+    }
+  ],
+  "seat_pitch": [
+    {
+      "seat_pairs": [
+        0.12,
+        0.12,
+        0.12
+      ],
+      "rear_pivot_translation": [
+        0.013165094752166607,
+        0.1258309130064105
+      ],
+      "pitch_rad": -3.481980975294541e-20,
+      "front_displacement": [
+        0.013165094752166604,
+        0.1258309130064105
+      ],
+      "rear_hole_tangent": -0.04008414135116747
+    },
+    {
+      "seat_pairs": [
+        0.12,
+        0.12,
+        0.2
+      ],
+      "rear_pivot_translation": [
+        0.14312023871470095,
+        0.15463709101321907
+      ],
+      "pitch_rad": -1.0445942925883623e-19,
+      "front_displacement": [
+        0.14312023871470095,
+        0.1546370910132191
+      ],
+      "rear_hole_tangent": 0.06630258401286922
+    },
+    {
+      "seat_pairs": [
+        0.12,
+        0.2,
+        0.12
+      ],
+      "rear_pivot_translation": [
+        -0.11321830037031339,
+        0.17975826140135082
+      ],
+      "pitch_rad": 0.0002007225372524499,
+      "front_displacement": [
+        -0.09470335674668165,
+        0.1004975638715152
+      ],
+      "rear_hole_tangent": -0.17765536601869958
+    },
+    {
+      "seat_pairs": [
+        0.12,
+        0.2,
+        0.2
+      ],
+      "rear_pivot_translation": [
+        0.016736843592220958,
+        0.20856443940815939
+      ],
+      "pitch_rad": 0.00020072253725244977,
+      "front_displacement": [
+        0.03525178721585269,
+        0.12930374187832383
+      ],
+      "rear_hole_tangent": -0.07126864065466292
+    },
+    {
+      "seat_pairs": [
+        0.2,
+        0.12,
+        0.12
+      ],
+      "rear_pivot_translation": [
+        0.018370075746890074,
+        0.1269846619422686
+      ],
+      "pitch_rad": -0.00020072253725245001,
+      "front_displacement": [
+        -0.00014486787674167917,
+        0.20624535947210426
+      ],
+      "rear_hole_tangent": -0.03562240294845027
+    },
+    {
+      "seat_pairs": [
+        0.2,
+        0.12,
+        0.2
+      ],
+      "rear_pivot_translation": [
+        0.14832521970942444,
+        0.15579083994907716
+      ],
+      "pitch_rad": -0.0002007225372524501,
+      "front_displacement": [
+        0.12981027608579268,
+        0.23505153747891283
+      ],
+      "rear_hole_tangent": 0.07076432241558644
+    },
+    {
+      "seat_pairs": [
+        0.2,
+        0.2,
+        0.12
+      ],
+      "rear_pivot_translation": [
+        -0.10801331937558994,
+        0.1809120103372089
+      ],
+      "pitch_rad": -6.963961950589082e-20,
+      "front_displacement": [
+        -0.10801331937558994,
+        0.18091201033720894
+      ],
+      "rear_hole_tangent": -0.1731936276159824
+    },
+    {
+      "seat_pairs": [
+        0.2,
+        0.2,
+        0.2
+      ],
+      "rear_pivot_translation": [
+        0.021941824586944457,
+        0.20971818834401748
+      ],
+      "pitch_rad": -2.0891885851767247e-19,
+      "front_displacement": [
+        0.021941824586944436,
+        0.20971818834401756
+      ],
+      "rear_hole_tangent": -0.06680690225194567
+    }
+  ],
+  "bearing": {
+    "method": "Exact circular interval integration;10degree angular sweep is a sampled lower-area search, not analytic optimization",
+    "shaft_major_diameter_assumed_minimum_mm": 2.874,
+    "shim_float_max_mm": 0.663,
+    "washer_float_max_mm": 0.2529999999999999,
+    "front_axis_height_nominal_mm": 6.455420469476287,
+    "bearing_area_results_mm2": {
+      "shim_body": [
+        16.65752138226608,
+        {
+          "hole_height": 6.355420469476288,
+          "float_angle": 270,
+          "float_mm": [
+            -1.2179112417520428e-16,
+            -0.663
+          ]
+        }
+      ],
+      "shim_lid": [
+        17.316353551163758,
+        {
+          "hole_height": 6.355420469476288,
+          "float_angle": 220,
+          "float_mm": [
+            -0.5078874657878825,
+            -0.42616818522217553
+          ],
+          "seat_pairs": [
+            0.2,
+            0.12,
+            0.2
+          ],
+          "lid_dz": 0.23505153747891283,
+          "hole_xy": [
+            0.45,
+            0.3350515374789128
+          ]
+        }
+      ],
+      "head_washer_lid": [
+        18.308001485874794,
+        {
+          "hole_height": 6.355420469476288,
+          "float_angle": 220,
+          "float_mm": [
+            -0.19380924410910136,
+            -0.16262526525069437
+          ],
+          "seat_pairs": [
+            0.2,
+            0.12,
+            0.2
+          ],
+          "lid_dz": 0.23505153747891283,
+          "hole_xy": [
+            0.45,
+            0.3350515374789128
+          ]
+        }
+      ]
+    },
+    "geometry": {
+      "body_straight_z_mm": [
+        3.99999989282041,
+        10.09477977206156
+      ],
+      "lid_straight_z_mm": [
+        -0.00027313793368932693,
+        10.283675413510247
+      ]
+    },
+    "front_alignment_radial_budget_mm": 0.5610343418784404,
+    "rear_alignment_radial_budget_mm": 0.52876507286221,
+    "finished_lid_bore_mm": [
+      4.3,
+      4.4799999999999995
+    ],
+    "conservative_bearing_area_bounds_mm2": {
+      "shim_body": 16.657521033704302,
+      "shim_lid": 16.790493558667336,
+      "head_washer_lid": 18.307166878535675
+    },
+    "bound_method": "Circle/stripe cap loss and maximum eccentric circle-to-annulus overlap subtracted separately; more conservative than sampled simultaneous placements."
+  },
+  "m3x8_screw_clearance": {
+    "scope": "Actual pre-change populated348 visible solid bboxes; proposed washers and lower front axes. Bounding boxes certify separation; base/lid and their existing M3 screws intentionally excluded. Added shims/washer are intended contacts. Printed screen/collar changes under0.2mm are covered by0.6mm inflation. Not a cable-routing or torque proof.",
+    "screw_length_assumption_mm": [
+      7.8,
+      8.3
+    ],
+    "washer_thickness_mm": [
+      0.4,
+      0.55
+    ],
+    "extra_pose_inflation_mm": 0.6,
+    "shaft_radius_mm": 1.5,
+    "minimum_bbox_clearance_mm": 2.3177305432080857,
+    "rows": [
+      {
+        "name": "PURCHASED_M3_WASHER_FRONT_1",
+        "bare_bearing_point_mm": [
+          18.428571428571402,
+          -4.4108423571942925,
+          6.4554204426813895
+        ],
+        "nominal_underhead_point_mm": [
+          18.428571428571402,
+          -4.9108423571942925,
+          6.455420420913309
+        ],
+        "nominal8mm_tip_mm": [
+          18.428571428571402,
+          3.0891576428057004,
+          6.455420769202603
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            16.3285714285714,
+            -6.9108423571942925,
+            4.355420425266924
+          ],
+          [
+            20.528571428571404,
+            5.5891576428057,
+            8.555420786617068
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            5.032188262288665,
+            "platforms:1+platform_front_v375:1",
+            "Body1",
+            [
+              [
+                24.6227581863981,
+                8.515000000000006,
+                2.0
+              ],
+              [
+                113.3727581863981,
+                123.885,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            9.925298747921438,
+            "platforms:1+platform_sled_v375:1",
+            "Body1",
+            [
+              [
+                29.6227581863981,
+                9.56500000000001,
+                4.043000000000001
+              ],
+              [
+                108.3727581863981,
+                122.83500000000001,
+                16.676000000000002
+              ]
+            ]
+          ],
+          [
+            14.302080624681672,
+            "pedals:1+Cherub WTB-006 Footswitch:1+Case Body:1",
+            "Case Body",
+            [
+              [
+                30.825000000000003,
+                11.265000000000018,
+                16.698999999999998
+              ],
+              [
+                107.17500000000001,
+                121.135,
+                41.599
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_FRONT_2",
+        "bare_bearing_point_mm": [
+          119.57142857142898,
+          -4.4108423571942925,
+          6.4554204426813895
+        ],
+        "nominal_underhead_point_mm": [
+          119.57142857142898,
+          -4.9108423571942925,
+          6.455420420913309
+        ],
+        "nominal8mm_tip_mm": [
+          119.57142857142898,
+          3.0891576428057004,
+          6.455420769202603
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            117.47142857142899,
+            -6.9108423571942925,
+            4.355420425266924
+          ],
+          [
+            121.67142857142898,
+            5.5891576428057,
+            8.555420786617068
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            5.029863966100254,
+            "platforms:1+platform_front_v375:2",
+            "Body1",
+            [
+              [
+                125.76275818639786,
+                8.515000000000006,
+                2.0
+              ],
+              [
+                214.51275818639786,
+                123.885,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            5.035836814699376,
+            "platforms:1+platform_front_v375:1",
+            "Body1",
+            [
+              [
+                24.6227581863981,
+                8.515000000000006,
+                2.0
+              ],
+              [
+                113.3727581863981,
+                123.885,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            9.922680918848027,
+            "platforms:1+platform_sled_v375:3",
+            "Body1",
+            [
+              [
+                130.76275818639786,
+                9.56500000000001,
+                4.043000000000001
+              ],
+              [
+                209.51275818639786,
+                122.83500000000001,
+                16.676000000000002
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_FRONT_3",
+        "bare_bearing_point_mm": [
+          220.714285714286,
+          -4.4108423571942925,
+          6.4554204426813895
+        ],
+        "nominal_underhead_point_mm": [
+          220.714285714286,
+          -4.9108423571942925,
+          6.455420420913309
+        ],
+        "nominal8mm_tip_mm": [
+          220.714285714286,
+          3.0891576428057004,
+          6.455420769202603
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            218.614285714286,
+            -6.9108423571942925,
+            4.355420425266924
+          ],
+          [
+            222.814285714286,
+            5.5891576428057,
+            8.555420786617068
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            5.0356757345774135,
+            "platforms:1+platform_front_v375:3",
+            "Body1",
+            [
+              [
+                226.91275818639795,
+                8.515000000000006,
+                2.0
+              ],
+              [
+                315.6627581863979,
+                123.885,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            5.03816251833708,
+            "platforms:1+platform_front_v375:2",
+            "Body1",
+            [
+              [
+                125.76275818639786,
+                8.515000000000006,
+                2.0
+              ],
+              [
+                214.51275818639786,
+                123.885,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            9.929225738950613,
+            "platforms:1+platform_sled_v375:4",
+            "Body1",
+            [
+              [
+                231.91275818639795,
+                9.56500000000001,
+                4.043000000000001
+              ],
+              [
+                310.6627581863979,
+                122.83500000000001,
+                16.676000000000002
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_FRONT_4",
+        "bare_bearing_point_mm": [
+          321.857142857143,
+          -4.4108423571942925,
+          6.4554204426813895
+        ],
+        "nominal_underhead_point_mm": [
+          321.857142857143,
+          -4.9108423571942925,
+          6.455420420913309
+        ],
+        "nominal8mm_tip_mm": [
+          321.857142857143,
+          3.0891576428057004,
+          6.455420769202603
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            319.757142857143,
+            -6.9108423571942925,
+            4.355420425266924
+          ],
+          [
+            323.957142857143,
+            5.5891576428057,
+            8.555420786617068
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            5.032349285491264,
+            "platforms:1+platform_front_v375:3",
+            "Body1",
+            [
+              [
+                226.91275818639795,
+                8.515000000000006,
+                2.0
+              ],
+              [
+                315.6627581863979,
+                123.885,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            5.033350616078802,
+            "platforms:1+platform_front_v375:4",
+            "Body1",
+            [
+              [
+                328.052758186398,
+                8.515000000000006,
+                2.0
+              ],
+              [
+                416.802758186398,
+                123.885,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            9.925480088577233,
+            "platforms:1+platform_sled_v375:4",
+            "Body1",
+            [
+              [
+                231.91275818639795,
+                9.56500000000001,
+                4.043000000000001
+              ],
+              [
+                310.6627581863979,
+                122.83500000000001,
+                16.676000000000002
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_FRONT_5",
+        "bare_bearing_point_mm": [
+          423.0,
+          -4.4108423571942925,
+          6.4554204426813895
+        ],
+        "nominal_underhead_point_mm": [
+          423.0,
+          -4.9108423571942925,
+          6.455420420913309
+        ],
+        "nominal8mm_tip_mm": [
+          423.0,
+          3.0891576428057004,
+          6.455420769202603
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            420.9,
+            -6.9108423571942925,
+            4.355420425266924
+          ],
+          [
+            425.1,
+            5.5891576428057,
+            8.555420786617068
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            5.031026045597393,
+            "platforms:1+platform_front_v375:5",
+            "Body1",
+            [
+              [
+                429.1927581863979,
+                8.515000000000041,
+                2.0
+              ],
+              [
+                517.9427581863979,
+                123.88500000000005,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            5.034674168035163,
+            "platforms:1+platform_front_v375:4",
+            "Body1",
+            [
+              [
+                328.052758186398,
+                8.515000000000006,
+                2.0
+              ],
+              [
+                416.802758186398,
+                123.885,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            9.923989816881425,
+            "platforms:1+platform_sled_v375:6",
+            "Body1",
+            [
+              [
+                434.1927581863979,
+                9.565000000000046,
+                4.043000000000001
+              ],
+              [
+                512.9427581863979,
+                122.83500000000004,
+                16.676000000000002
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_FRONT_6",
+        "bare_bearing_point_mm": [
+          524.142857142857,
+          -4.4108423571942925,
+          6.4554204426813895
+        ],
+        "nominal_underhead_point_mm": [
+          524.142857142857,
+          -4.9108423571942925,
+          6.455420420913309
+        ],
+        "nominal8mm_tip_mm": [
+          524.142857142857,
+          3.0891576428057004,
+          6.455420769202603
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            522.042857142857,
+            -6.9108423571942925,
+            4.355420425266924
+          ],
+          [
+            526.242857142857,
+            5.5891576428057,
+            8.555420786617068
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            5.028702023893545,
+            "platforms:1+platform_front_v375:6",
+            "Body1",
+            [
+              [
+                530.3327581863981,
+                8.515000000000041,
+                2.0
+              ],
+              [
+                619.0827581863981,
+                123.88500000000005,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            5.036999598164503,
+            "platforms:1+platform_front_v375:5",
+            "Body1",
+            [
+              [
+                429.1927581863979,
+                8.515000000000041,
+                2.0
+              ],
+              [
+                517.9427581863979,
+                123.88500000000005,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            9.921372053835603,
+            "platforms:1+platform_sled_v375:7",
+            "Body1",
+            [
+              [
+                535.3327581863981,
+                9.565000000000046,
+                4.043000000000001
+              ],
+              [
+                614.0827581863981,
+                122.83500000000004,
+                16.676000000000002
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_FRONT_7",
+        "bare_bearing_point_mm": [
+          625.285714285714,
+          -4.4108423571942925,
+          6.4554204426813895
+        ],
+        "nominal_underhead_point_mm": [
+          625.285714285714,
+          -4.9108423571942925,
+          6.455420420913309
+        ],
+        "nominal8mm_tip_mm": [
+          625.285714285714,
+          3.0891576428057004,
+          6.455420769202603
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            623.185714285714,
+            -6.9108423571942925,
+            4.355420425266924
+          ],
+          [
+            627.385714285714,
+            5.5891576428057,
+            8.555420786617068
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            5.0345131068738995,
+            "platforms:1+platform_front_v375:7",
+            "Body1",
+            [
+              [
+                631.4827581863981,
+                8.515000000000041,
+                2.0
+              ],
+              [
+                720.2327581863981,
+                123.88500000000005,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            5.039325575120719,
+            "platforms:1+platform_front_v375:6",
+            "Body1",
+            [
+              [
+                530.3327581863981,
+                8.515000000000041,
+                2.0
+              ],
+              [
+                619.0827581863981,
+                123.88500000000005,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            9.927916708969406,
+            "platforms:1+platform_sled_v375:8",
+            "Body1",
+            [
+              [
+                636.4827581863981,
+                9.565000000000046,
+                4.043000000000001
+              ],
+              [
+                715.2327581863981,
+                122.83500000000004,
+                16.676000000000002
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_FRONT_8",
+        "bare_bearing_point_mm": [
+          726.428571428571,
+          -4.4108423571942925,
+          6.4554204426813895
+        ],
+        "nominal_underhead_point_mm": [
+          726.428571428571,
+          -4.9108423571942925,
+          6.455420420913309
+        ],
+        "nominal8mm_tip_mm": [
+          726.428571428571,
+          3.0891576428057004,
+          6.455420769202603
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            724.328571428571,
+            -6.9108423571942925,
+            4.355420425266924
+          ],
+          [
+            728.528571428571,
+            5.5891576428057,
+            8.555420786617068
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            5.032188262288889,
+            "platforms:1+platform_front_v375:8",
+            "Body1",
+            [
+              [
+                732.622758186398,
+                8.515000000000041,
+                2.0
+              ],
+              [
+                821.372758186398,
+                123.88500000000005,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            5.033511658267145,
+            "platforms:1+platform_front_v375:7",
+            "Body1",
+            [
+              [
+                631.4827581863981,
+                8.515000000000041,
+                2.0
+              ],
+              [
+                720.2327581863981,
+                123.88500000000005,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            9.92529874792168,
+            "platforms:1+platform_sled_v375:9",
+            "Body1",
+            [
+              [
+                737.622758186398,
+                9.565000000000046,
+                4.043000000000001
+              ],
+              [
+                816.372758186398,
+                122.83500000000004,
+                16.676000000000002
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_FRONT_9",
+        "bare_bearing_point_mm": [
+          827.571428571429,
+          -4.4108423571942925,
+          6.4554204426813895
+        ],
+        "nominal_underhead_point_mm": [
+          827.571428571429,
+          -4.9108423571942925,
+          6.455420420913309
+        ],
+        "nominal8mm_tip_mm": [
+          827.571428571429,
+          3.0891576428057004,
+          6.455420769202603
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            825.471428571429,
+            -6.9108423571942925,
+            4.355420425266924
+          ],
+          [
+            829.671428571429,
+            5.5891576428057,
+            8.555420786617068
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            5.035836814699513,
+            "platforms:1+platform_front_v375:8",
+            "Body1",
+            [
+              [
+                732.622758186398,
+                8.515000000000041,
+                2.0
+              ],
+              [
+                821.372758186398,
+                123.88500000000005,
+                39.853217457328
+              ]
+            ]
+          ],
+          [
+            9.929407093311331,
+            "platforms:1+platform_sled_v375:9",
+            "Body1",
+            [
+              [
+                737.622758186398,
+                9.565000000000046,
+                4.043000000000001
+              ],
+              [
+                816.372758186398,
+                122.83500000000004,
+                16.676000000000002
+              ]
+            ]
+          ],
+          [
+            14.302080624681984,
+            "pedals:1+Cherub WTB-006 Footswitch:8+Case Body:1",
+            "Case Body",
+            [
+              [
+                738.825,
+                11.265000000000018,
+                16.698999999999998
+              ],
+              [
+                815.175,
+                121.135,
+                41.599
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_REAR_1",
+        "bare_bearing_point_mm": [
+          18.428571428571402,
+          407.65363452743395,
+          96.23247978138707
+        ],
+        "nominal_underhead_point_mm": [
+          18.428571428571402,
+          407.8605360162179,
+          96.68766301255776
+        ],
+        "nominal8mm_tip_mm": [
+          18.428571428571402,
+          404.55011219567496,
+          89.40473131382669
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            16.3285714285714,
+            402.2845910046478,
+            86.94058472889013
+          ],
+          [
+            20.528571428571404,
+            409.9191557184611,
+            98.69662636632361
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            2.3177305432086044,
+            "corner_bracket_mirrored:1",
+            "Body1",
+            [
+              [
+                0.10000000000000453,
+                404.99,
+                4.0000000000000036
+              ],
+              [
+                14.010840885362796,
+                418.90084088536287,
+                87.00000000000001
+              ]
+            ]
+          ],
+          [
+            3.4403892264387537,
+            "screen7_tower:1",
+            "Body1",
+            [
+              [
+                19.7964,
+                240.11443630416,
+                2.0
+              ],
+              [
+                223.7964,
+                398.844201778209,
+                88.69269324877413
+              ]
+            ]
+          ],
+          [
+            12.437809832413407,
+            "vent_foam:1",
+            "foam_rear",
+            [
+              [
+                25.0,
+                415.9100000000001,
+                17.0
+              ],
+              [
+                399.0,
+                418.9100000000001,
+                77.0
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_REAR_2",
+        "bare_bearing_point_mm": [
+          119.571428571429,
+          407.65363452743395,
+          96.23247978138707
+        ],
+        "nominal_underhead_point_mm": [
+          119.571428571429,
+          407.8605360162179,
+          96.68766301255776
+        ],
+        "nominal8mm_tip_mm": [
+          119.571428571429,
+          404.55011219567496,
+          89.40473131382669
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            117.471428571429,
+            402.2845910046478,
+            86.94058472889013
+          ],
+          [
+            121.67142857142899,
+            409.9191557184611,
+            98.69662636632361
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            3.4403892264387537,
+            "screen7_tower:1",
+            "Body1",
+            [
+              [
+                19.7964,
+                240.11443630416,
+                2.0
+              ],
+              [
+                223.7964,
+                398.844201778209,
+                88.69269324877413
+              ]
+            ]
+          ],
+          [
+            11.60626727065561,
+            "vent_foam:1",
+            "foam_rear",
+            [
+              [
+                25.0,
+                415.9100000000001,
+                17.0
+              ],
+              [
+                399.0,
+                418.9100000000001,
+                77.0
+              ]
+            ]
+          ],
+          [
+            24.34110200366024,
+            "screen7_module:1",
+            "Body1",
+            [
+              [
+                38.77142857142857,
+                256.22117339591705,
+                61.82222814489073
+              ],
+              [
+                204.82142857142858,
+                377.94348900098754,
+                93.77142491248117
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_REAR_3",
+        "bare_bearing_point_mm": [
+          220.71428571428604,
+          407.65363452743395,
+          96.23247978138707
+        ],
+        "nominal_underhead_point_mm": [
+          220.71428571428604,
+          407.8605360162179,
+          96.68766301255776
+        ],
+        "nominal8mm_tip_mm": [
+          220.71428571428604,
+          404.55011219567496,
+          89.40473131382669
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            218.61428571428604,
+            402.2845910046478,
+            86.94058472889013
+          ],
+          [
+            222.81428571428603,
+            409.9191557184611,
+            98.69662636632361
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            3.4403892264387537,
+            "screen7_tower:1",
+            "Body1",
+            [
+              [
+                19.7964,
+                240.11443630416,
+                2.0
+              ],
+              [
+                223.7964,
+                398.844201778209,
+                88.69269324877413
+              ]
+            ]
+          ],
+          [
+            11.60626727065561,
+            "vent_foam:1",
+            "foam_rear",
+            [
+              [
+                25.0,
+                415.9100000000001,
+                17.0
+              ],
+              [
+                399.0,
+                418.9100000000001,
+                77.0
+              ]
+            ]
+          ],
+          [
+            27.977350748701465,
+            "screen7_module:1",
+            "Body1",
+            [
+              [
+                38.77142857142857,
+                256.22117339591705,
+                61.82222814489073
+              ],
+              [
+                204.82142857142858,
+                377.94348900098754,
+                93.77142491248117
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_REAR_4",
+        "bare_bearing_point_mm": [
+          321.857142857143,
+          407.65363452743395,
+          96.23247978138707
+        ],
+        "nominal_underhead_point_mm": [
+          321.857142857143,
+          407.8605360162179,
+          96.68766301255776
+        ],
+        "nominal8mm_tip_mm": [
+          321.857142857143,
+          404.55011219567496,
+          89.40473131382669
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            319.757142857143,
+            402.2845910046478,
+            86.94058472889013
+          ],
+          [
+            323.957142857143,
+            409.9191557184611,
+            98.69662636632361
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            11.60626727065561,
+            "vent_foam:1",
+            "foam_rear",
+            [
+              [
+                25.0,
+                415.9100000000001,
+                17.0
+              ],
+              [
+                399.0,
+                418.9100000000001,
+                77.0
+              ]
+            ]
+          ],
+          [
+            59.36633268354558,
+            "lid_stack:1+segno_logo:1",
+            "segno_word (2)",
+            [
+              [
+                310.87028483443686,
+                323.4112287554095,
+                86.24523787940385
+              ],
+              [
+                323.78221223763546,
+                342.9182583211022,
+                90.64346592997127
+              ]
+            ]
+          ],
+          [
+            59.62319474521553,
+            "lid_stack:1+segno_logo:1",
+            "segno_word (1)",
+            [
+              [
+                320.8988648934571,
+                307.33202381954345,
+                82.68109393204894
+              ],
+              [
+                343.2562219683285,
+                342.66139625943225,
+                90.58652944797123
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_REAR_5",
+        "bare_bearing_point_mm": [
+          422.99999999999994,
+          407.65363452743395,
+          96.23247978138707
+        ],
+        "nominal_underhead_point_mm": [
+          422.99999999999994,
+          407.8605360162179,
+          96.68766301255776
+        ],
+        "nominal8mm_tip_mm": [
+          422.99999999999994,
+          404.55011219567496,
+          89.40473131382669
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            420.8999999999999,
+            402.2845910046478,
+            86.94058472889013
+          ],
+          [
+            425.09999999999997,
+            409.9191557184611,
+            98.69662636632361
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            8.053647661461675,
+            "rear_panel:1",
+            "rear_panel",
+            [
+              [
+                424.28599999999994,
+                417.71000000000004,
+                8.900000000000002
+              ],
+              [
+                826.2860000000001,
+                418.90999999999997,
+                84.9
+              ]
+            ]
+          ],
+          [
+            24.78538762976864,
+            "vent_foam:1",
+            "foam_rear",
+            [
+              [
+                25.0,
+                415.9100000000001,
+                17.0
+              ],
+              [
+                399.0,
+                418.9100000000001,
+                77.0
+              ]
+            ]
+          ],
+          [
+            41.75044777560805,
+            "lid_stack:1+screen16_monitor:1+screen16_case:1",
+            "screen16_case",
+            [
+              [
+                448.28571428571,
+                162.02347518976,
+                41.601324243142344
+              ],
+              [
+                802.28571428571,
+                367.56395531742,
+                93.56743042285635
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_REAR_6",
+        "bare_bearing_point_mm": [
+          524.142857142857,
+          407.65363452743395,
+          96.23247978138707
+        ],
+        "nominal_underhead_point_mm": [
+          524.142857142857,
+          407.8605360162179,
+          96.68766301255776
+        ],
+        "nominal8mm_tip_mm": [
+          524.142857142857,
+          404.55011219567496,
+          89.40473131382669
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            522.042857142857,
+            402.2845910046478,
+            86.94058472889013
+          ],
+          [
+            526.242857142857,
+            409.9191557184611,
+            98.69662636632361
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            8.053647661461675,
+            "rear_panel:1",
+            "rear_panel",
+            [
+              [
+                424.28599999999994,
+                417.71000000000004,
+                8.900000000000002
+              ],
+              [
+                826.2860000000001,
+                418.90999999999997,
+                84.9
+              ]
+            ]
+          ],
+          [
+            34.7206356872278,
+            "lid_stack:1+screen16_monitor:1+screen16_case:1",
+            "screen16_case",
+            [
+              [
+                448.28571428571,
+                162.02347518976,
+                41.601324243142344
+              ],
+              [
+                802.28571428571,
+                367.56395531742,
+                93.56743042285635
+              ]
+            ]
+          ],
+          [
+            41.36662537790778,
+            "lid_stack:1+screen16_monitor:1+screen16_display:1",
+            "screen16_display",
+            [
+              [
+                453.58571428571,
+                172.76280432175,
+                50.620688457588344
+              ],
+              [
+                796.98571428571,
+                360.91796562674,
+                92.42045925107735
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_REAR_7",
+        "bare_bearing_point_mm": [
+          625.285714285714,
+          407.65363452743395,
+          96.23247978138707
+        ],
+        "nominal_underhead_point_mm": [
+          625.285714285714,
+          407.8605360162179,
+          96.68766301255776
+        ],
+        "nominal8mm_tip_mm": [
+          625.285714285714,
+          404.55011219567496,
+          89.40473131382669
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            623.185714285714,
+            402.2845910046478,
+            86.94058472889013
+          ],
+          [
+            627.385714285714,
+            409.9191557184611,
+            98.69662636632361
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            8.053647661461675,
+            "rear_panel:1",
+            "rear_panel",
+            [
+              [
+                424.28599999999994,
+                417.71000000000004,
+                8.900000000000002
+              ],
+              [
+                826.2860000000001,
+                418.90999999999997,
+                84.9
+              ]
+            ]
+          ],
+          [
+            34.7206356872278,
+            "lid_stack:1+screen16_monitor:1+screen16_case:1",
+            "screen16_case",
+            [
+              [
+                448.28571428571,
+                162.02347518976,
+                41.601324243142344
+              ],
+              [
+                802.28571428571,
+                367.56395531742,
+                93.56743042285635
+              ]
+            ]
+          ],
+          [
+            41.36662537790778,
+            "lid_stack:1+screen16_monitor:1+screen16_display:1",
+            "screen16_display",
+            [
+              [
+                453.58571428571,
+                172.76280432175,
+                50.620688457588344
+              ],
+              [
+                796.98571428571,
+                360.91796562674,
+                92.42045925107735
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_REAR_8",
+        "bare_bearing_point_mm": [
+          726.428571428571,
+          407.65363452743395,
+          96.23247978138707
+        ],
+        "nominal_underhead_point_mm": [
+          726.428571428571,
+          407.8605360162179,
+          96.68766301255776
+        ],
+        "nominal8mm_tip_mm": [
+          726.428571428571,
+          404.55011219567496,
+          89.40473131382669
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            724.328571428571,
+            402.2845910046478,
+            86.94058472889013
+          ],
+          [
+            728.528571428571,
+            409.9191557184611,
+            98.69662636632361
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            8.053647661461675,
+            "rear_panel:1",
+            "rear_panel",
+            [
+              [
+                424.28599999999994,
+                417.71000000000004,
+                8.900000000000002
+              ],
+              [
+                826.2860000000001,
+                418.90999999999997,
+                84.9
+              ]
+            ]
+          ],
+          [
+            34.7206356872278,
+            "lid_stack:1+screen16_monitor:1+screen16_case:1",
+            "screen16_case",
+            [
+              [
+                448.28571428571,
+                162.02347518976,
+                41.601324243142344
+              ],
+              [
+                802.28571428571,
+                367.56395531742,
+                93.56743042285635
+              ]
+            ]
+          ],
+          [
+            41.36662537790778,
+            "lid_stack:1+screen16_monitor:1+screen16_display:1",
+            "screen16_display",
+            [
+              [
+                453.58571428571,
+                172.76280432175,
+                50.620688457588344
+              ],
+              [
+                796.98571428571,
+                360.91796562674,
+                92.42045925107735
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "name": "PURCHASED_M3_WASHER_REAR_9",
+        "bare_bearing_point_mm": [
+          827.571428571429,
+          407.65363452743395,
+          96.23247978138707
+        ],
+        "nominal_underhead_point_mm": [
+          827.571428571429,
+          407.8605360162179,
+          96.68766301255776
+        ],
+        "nominal8mm_tip_mm": [
+          827.571428571429,
+          404.55011219567496,
+          89.40473131382669
+        ],
+        "conservative_shaft_bbox_mm": [
+          [
+            825.471428571429,
+            402.2845910046478,
+            86.94058472889013
+          ],
+          [
+            829.671428571429,
+            409.9191557184611,
+            98.69662636632361
+          ]
+        ],
+        "nearest_nonjoint_body_bbox": [
+          [
+            2.3177305432080857,
+            "corner_bracket:1",
+            "Body1",
+            [
+              [
+                831.9891591146371,
+                404.99,
+                4.0
+              ],
+              [
+                845.8999999999999,
+                418.90084088536287,
+                87.00000000000001
+              ]
+            ]
+          ],
+          [
+            8.053647661461675,
+            "rear_panel:1",
+            "rear_panel",
+            [
+              [
+                424.28599999999994,
+                417.71000000000004,
+                8.900000000000002
+              ],
+              [
+                826.2860000000001,
+                418.90999999999997,
+                84.9
+              ]
+            ]
+          ],
+          [
+            30.22226895012904,
+            "vent_foam:1",
+            "foam_right",
+            [
+              [
+                842.91,
+                245.0,
+                7.000000000000002
+              ],
+              [
+                845.91,
+                377.0,
+                77.0
+              ]
+            ]
+          ]
+        ]
+      }
+    ]
+  },
+  "verified_geometry": {
+    "lid_clearance_raw_mm": {
+      "nominal": 4.5,
+      "tolerance": [
+        0,
+        0.1
+      ],
+      "quantity": 18
+    },
+    "lid_clearance_finished_mm": [
+      4.3,
+      4.48
+    ],
+    "front_axis_floor_bottom_mm": 6.455420442681393,
+    "native_front_axis_kernel_correction_mm": -0.000273,
+    "front_radial_clearance_margin_mm": 0.088965658122,
+    "rear_radial_clearance_margin_mm": 0.121234927138,
+    "predicted_finished_front_gap_mm": [
+      0.156879761285,
+      0.588013319376
+    ],
+    "minimum_lid_front_straight_ligament_mm": 1.428254944034,
+    "minimum_body_front_thread_ligament_mm": 0.855420576681,
+    "minimum_rear_lid_bend_ligament_mm": 10.235444829,
+    "minimum_rear_lid_edge_ligament_mm": 9.571582874,
+    "shim_od_mm": [
+      6.9,
+      7.0
+    ],
+    "shim_id_mm": [
+      4.0,
+      4.2
+    ],
+    "shim_fitted_residual_gap_mm": [
+      0,
+      0.02
+    ],
+    "pill_raw_mm": [
+      60.4,
+      6.4,
+      3.2
+    ],
+    "ring_aperture_raw_diameter_mm": 67.4,
+    "minimum_printed_lens_radial_clearance_mm": 0.1,
+    "minimum_pill_flange_overlap_mm": 3.81,
+    "post_felt_gap_after_local_film_extremes_mm": [
+      0.924739470327,
+      1.162843682196
+    ]
+  },
+  "verification": {
+    "command": "python -m unittest test_manufacturing_fit -v (from hardware/enclosure/tests using project CAD environment)",
+    "tests_passed": 17,
+    "elapsed_seconds": 28.604,
+    "assembly_solids": 35,
+    "made_parts": 8,
+    "fitted_shim_references": 9,
+    "washer_references": 18,
+    "test_log_sha256": "fe174c897f1e3685f4782d092a21cfdc26d40f5588ca6c072765cde8911dab46",
+    "actual_cache_assembly_checks": [
+      "All18 washer axes on actual formed bores; actual bearing planes; no washer/lid intersection",
+      "Nine front packs seated between actual base/lid faces with at least16mm2 supported bearing per face",
+      "Negative displaced shim and bracket cases rejected",
+      "Strict current native-flat parity, hole signatures and changed/altered native-cache rejection",
+      "Former too-small apertures and straight disc bore fail independent supplier/native fit scenarios"
+    ]
+  },
+  "limits": [
+    "60\u2013100um cured film locally, clearance bore walls included; completed M3 threads must remain functional under root-approved process",
+    "Stock and position tolerances, bare match-fit, both-end centering and all18 screws started loosely are required",
+    "Actual printed lens size, film build at edges, painting-cycle distortion, shim thickness and felt compression must be checked on actual parts",
+    "Geometric bearing area does not qualify preload, thin aluminum tapped-thread strength, coating creep or repeated foot-load performance",
+    "No planned drilling, tapping or reaming after coating; screw length range7.8\u20138.3mm checked geometrically, actual wire routing remains an owner assembly check"
+  ],
+  "sources": [
+    "https://www.accu.co.uk/metric-flat-washers/415470-HPW-M3-V1-A2",
+    "https://www.nord-lock.com/tr-tr/learnings/bolting-tips/2022/washers-offshore-painted-surfaces/"
+  ]
+}

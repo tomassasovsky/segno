@@ -1,0 +1,23 @@
+{
+  "encoder_description": "Elumiled EC11-E15,20pulses,switch,5pins,6x15mm serrated shaft",
+  "washer": {
+    "inside_diameter_mm": 7.25,
+    "outside_diameter_mm": 11.85,
+    "evidence": "Owner measurements supplied2026-09-07"
+  },
+  "modeled_mount": {
+    "bushing_diameter_mm": 7.0,
+    "root_max_diameter_mm": 8.0,
+    "root_blend_radius_mm": 0.5,
+    "evidence": "Existing EC11 modeled interface; physical fit remains an assembly acceptance check"
+  },
+  "disc_bore": {
+    "raw_diameter_mm": 8.5,
+    "raw_tolerance_mm": 0.05,
+    "local_coating_per_wall_mm": [
+      0.06,
+      0.1
+    ],
+    "chamfer": false
+  }
+}

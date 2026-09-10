@@ -422,16 +422,19 @@ def build(explode=0.0):
     # stand-in is the WTB-006 too, not the ASP-1 placeholder this carried.
     cs = math.cos(math.radians(V.SLOPE_ANGLE))   # slot at slope-distance v lands at horizontal v*cos
     rings = {}
+    sleds = {}
     for v in (V.PEDAL_ROW1_V, V.PEDAL_ROW2_V):
-        rings[v] = (V._platform_printed(cq, V.platform_h(v), v, sled=V.CONSOLE_SLED_T)
+        rings[v] = (V._platform_printed(cq, V.platform_h(v), v,
+                                       baffle_t=V.CONSOLE_BAFFLE_T, sled=V.CONSOLE_SLED_T)
                     .val().rotate((0, 0, 0), (0, 0, 1), 90),
                     V.platform_h(v) - V.T - (V.CONSOLE_SLED_T - (V.PEDAL_PAD_T - V.POCKET_DEPTH)))
-    sled = V.pedal_console_sled(cq).val().rotate((0, 0, 0), (0, 0, 1), 90)
+        sleds[v] = (V.pedal_console_sled(cq, mid=v == V.PEDAL_ROW2_V)
+                    .val().rotate((0, 0, 0), (0, 0, 1), 90))
     for i, (label, u, v) in enumerate(V.PEDALS):
         vh = v * cs
         ring, seat = rings[v]
         parts.append((f"ring{i}", ring.translate((u, vh, V.T + explode))))
-        parts.append((f"sled{i}", sled.translate((u, vh, V.T + seat + explode))))
+        parts.append((f"sled{i}", sleds[v].translate((u, vh, V.T + seat + explode))))
         # The pedal stand-in is a BOX in the PEDESTAL FRAME -- local +X = depth
         # (toward the case back), local +Y = width -- and it gets the SAME 90 deg
         # spin as the ring and the sled under it, because it is the same frame.

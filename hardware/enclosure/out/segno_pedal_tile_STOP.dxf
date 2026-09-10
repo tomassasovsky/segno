@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.6338194446
+2461290.13875
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.6338194446
+2461290.13875
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-A6
+A5
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{91E03881-DAC4-488E-AAC2-0D51596D893F}
+{D076B9FA-8DF8-4FC2-A3E6-9D83344E0665}
   9
 $VERSIONGUID
   2
-{EB78D158-8DD1-47F9-898D-46F7A0AFA0A0}
+{AC9792B5-4926-402F-838F-C1C4D5CE78CC}
   9
 $EXTNAMES
 290
@@ -2291,7 +2291,7 @@ Continuous
   0
 LAYER
   5
-8B
+8A
 330
 1
 100
@@ -2315,7 +2315,7 @@ Continuous
   0
 LAYER
   5
-8C
+8B
 330
 1
 100
@@ -2330,6 +2330,30 @@ BEND
 4
   6
 DASHED
+370
+-3
+390
+13
+347
+21
+  0
+LAYER
+  5
+8C
+330
+1
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+DRILL
+ 70
+0
+ 62
+6
+  6
+DASHDOT
 370
 -3
 390
@@ -2419,30 +2443,6 @@ AcDbSymbolTableRecord
 100
 AcDbLayerTableRecord
   2
-SILK
- 70
-0
- 62
-5
-  6
-Continuous
-370
--3
-390
-13
-347
-21
-  0
-LAYER
-  5
-91
-330
-1
-100
-AcDbSymbolTableRecord
-100
-AcDbLayerTableRecord
-  2
 MASK
  70
 0
@@ -2469,7 +2469,7 @@ STYLE
 100
 AcDbSymbolTable
  70
-27
+26
   0
 STYLE
   5
@@ -3199,34 +3199,6 @@ LiberationMono-Italic.ttf
   4
 
   0
-STYLE
-  5
-8A
-330
-5
-100
-AcDbSymbolTableRecord
-100
-AcDbTextStyleTableRecord
-  2
-SILKBOLD
- 70
-0
- 40
-0.0
- 41
-1.0
- 50
-0.0
- 71
-0
- 42
-2.5
-  3
-arialbd.ttf
-  4
-
-  0
 ENDTAB
   0
 TABLE
@@ -3285,7 +3257,7 @@ ACAD
   0
 APPID
   5
-A3
+A2
 330
 3
 100
@@ -3299,7 +3271,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-A4
+A3
 330
 3
 100
@@ -5411,7 +5383,7 @@ ENTITIES
   0
 LWPOLYLINE
   5
-92
+91
 330
 17
 100
@@ -5447,7 +5419,7 @@ AcDbPolyline
   0
 LWPOLYLINE
   5
-93
+92
 330
 17
 100
@@ -5639,7 +5611,7 @@ AcDbPolyline
   0
 HATCH
   5
-94
+93
 330
 17
 100
@@ -5863,7 +5835,7 @@ SOLID
   0
 LWPOLYLINE
   5
-95
+94
 330
 17
 100
@@ -5895,7 +5867,7 @@ AcDbPolyline
   0
 TEXT
   5
-96
+95
 330
 17
 100
@@ -5927,7 +5899,7 @@ AcDbText
   0
 LWPOLYLINE
   5
-97
+96
 330
 17
 100
@@ -5959,7 +5931,7 @@ AcDbPolyline
   0
 TEXT
   5
-98
+97
 330
 17
 100
@@ -5991,7 +5963,7 @@ AcDbText
   0
 LWPOLYLINE
   5
-99
+98
 330
 17
 100
@@ -6023,7 +5995,7 @@ AcDbPolyline
   0
 TEXT
   5
-9A
+99
 330
 17
 100
@@ -6053,7 +6025,7 @@ AcDbText
   0
 TEXT
   5
-9B
+9A
 330
 17
 100
@@ -6083,7 +6055,7 @@ AcDbText
   0
 TEXT
   5
-9C
+9B
 330
 17
 100
@@ -6113,7 +6085,7 @@ AcDbText
   0
 TEXT
   5
-9D
+9C
 330
 17
 100
@@ -6143,7 +6115,7 @@ AcDbText
   0
 TEXT
   5
-9E
+9D
 330
 17
 100
@@ -6173,7 +6145,7 @@ AcDbText
   0
 TEXT
   5
-9F
+9E
 330
 17
 100
@@ -6203,7 +6175,7 @@ AcDbText
   0
 TEXT
   5
-A0
+9F
 330
 17
 100
@@ -6233,7 +6205,7 @@ AcDbText
   0
 TEXT
   5
-A1
+A0
 330
 17
 100
@@ -6263,7 +6235,7 @@ AcDbText
   0
 TEXT
   5
-A2
+A1
 330
 17
 100
@@ -7381,7 +7353,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-A5
+A4
   0
 DICTIONARYVAR
   5
@@ -7393,7 +7365,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T18:12:42.505762+00:00
+1.4.4 @ 2026-09-06T06:19:48.857775+00:00
   0
 VISUALSTYLE
   5
@@ -13947,7 +13919,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-A5
+A4
 330
 2D
 100
@@ -13955,7 +13927,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T18:12:42.507847+00:00
+1.4.4 @ 2026-09-06T06:19:48.860533+00:00
   0
 ENDSEC
   0

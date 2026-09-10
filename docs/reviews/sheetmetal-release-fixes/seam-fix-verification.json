@@ -1,0 +1,1674 @@
+{
+  "source_sha256": {
+    "hardware/enclosure/segno_enclosure.py": "0c8af20a0fc956c85cc13b7ca9e09a94876ba6ba0ddf431d10b72a9055bf59c6",
+    "hardware/enclosure/flat_pattern_check.py": "76c041bb51fc30c94c531e95bec2e250eaf0cd85be10176054fba186469d0ff1",
+    "hardware/enclosure/fusion_export_formed.py": "71904b34710928c657c9d7394a0b81499f95e6f7d065e0d03f37fdef2e4fc21a",
+    "hardware/enclosure/tests/test_manufacturing_fit.py": "3f973824aff6a5840579250b9191132523506b6f78e3ae0c95a7196f879179e1",
+    "hardware/enclosure/tests/test_manufacturing_pipeline.py": "04a05c501b2345f0e5f097eec95b5d1f487d587d16f37dca2335bc3ae6807fdf",
+    "hardware/enclosure/reference/ring24_interface.json": "4e8306a6598b7aa3ba80dfe26cb6af241999183f24fe0fbb22b7b351d2609174"
+  },
+  "formed_sha256": {
+    "manifest.json": "e319fa44217e9baa4a4d69b25db852b32f2e09f1cbfd704c9e236a0a98e66725",
+    "segno_base.step": "2668641e2ebed4f0e9ec495015133400d343d0b40894e9586f1a9c6a18dad615",
+    "segno_base_flat.dxf": "6bdaef1a98f54fb8cd8928d3b8ef1886c7b056b23a5133e9d513711f70ae8b93",
+    "segno_corner_bracket_rear.step": "69e878582085c4c89c1fd50e779d5005c447d59ea5b0d4d83deb3d4847bbb9a1",
+    "segno_corner_bracket_rear_flat.dxf": "d85eaa4cb6d4d4c89ac974211728ede2eb029f8dbfa31cac92d38a69173722ca",
+    "segno_corner_bracket_rear_mirrored.step": "12dcbd799e6500a6c0a90499f087099e79969381e5de84c9a515a4d43143031f",
+    "segno_corner_bracket_rear_mirrored_flat.dxf": "a45c1b96d632d8ee10b3af52074c36e062766dad5942811078f23b6c9d67be9c",
+    "segno_faceplate.step": "38bbde2afa694603959f92965159318a2c098ae5d8e6f7f127f1a5e2e7251e25",
+    "segno_faceplate_flat.dxf": "466bee92ab1238cc4e2bf678e1635819212d5530ead63d0ab70496c489a1a797"
+  },
+  "archives": {
+    "segno_3dprint.zip": {
+      "sha256": "17f781047f84d33068965f85bf638ab10772450be77d461291599df5052023d7",
+      "members": {
+        "segno_platform_front_ring.step": "2b50c5366ab2f60189a01b2c8b1fb3b439b119c9574270a4377fac1cec4fd9d0",
+        "segno_platform_front_ring.stl": "8594fb6942ad088b3747378e1f42471ea7674e0be5741979c4a8fb1a64581381",
+        "segno_platform_mid_ring.step": "203f37cb635a4ee896a9dc0eee0f70ba4c066c3382444b29db9f18c42608c2c7",
+        "segno_platform_mid_ring.stl": "a3240f0b00e86e9bbb3ed3b4e3dfae97af5cf3306705fe1dc672e6bb989e661c",
+        "segno_platform_sled.step": "0ab1dfa63cd067f56649dcdf8a3a3b8967be9720331ce8811f3a83ff0d1d48b5",
+        "segno_platform_sled.stl": "9b9f25a4ce3965ae0412574f323b7e2bf3635b9f5e2bec3de55517509064eb57",
+        "segno_led_diffuser.step": "7f90b48ed349fd00dd18e193c976b90728d338a667ff588999de05ff3349e415",
+        "segno_led_diffuser.stl": "3ae2ec3fbfaf7bd567ab2cb7338d4b9c7045fe5dee23baa3ef28c7916f901a8a",
+        "segno_ring_diffuser.step": "4e8b793dbd60e2cc70a83f441c120963d84054e894d6b884e6c205d9a9ed602f",
+        "segno_ring_diffuser.stl": "9a8f876a82764a605308d55d01c38b5e0b46c5fa4757e0ff8a4a97bae57ea6f1",
+        "segno_pedal_tile_REC_PLAY.step": "9dd54a0a9b93e3bea3e7e6d212520d819951cbe98400da49b1a53c3246aab85f",
+        "segno_pedal_tile_REC_PLAY.stl": "3d9b740a1d1e7e74b6b95403e2cd2ab57dcf26398bd0eb4b34d0e05b6da74927",
+        "segno_pedal_tile_STOP.step": "8f1b7496053eb6c9e0896ff79e709c8f49e106e77c87665c31c9812e5849767b",
+        "segno_pedal_tile_STOP.stl": "4cce4a0c000d8e982531f5fa6b7d46b03af7ec496cdf20f213bdeed2c92f4fca",
+        "segno_pedal_tile_UNDO.step": "9a31de05fae7fa8d8087078a280cd1a2c17b2673c649317f4f79bcd581e5d678",
+        "segno_pedal_tile_UNDO.stl": "032d22216f4b5063a01968904d352c2a8e4829cf1850e2f333ef3c9c5b861a2c",
+        "segno_pedal_tile_MODE.step": "dd44d7f6711946060c1a5c9802b8676123e58d8e6881a4e9cb72f77aae79fd2b",
+        "segno_pedal_tile_MODE.stl": "ff14d241f2baf3fce6083cd3decf3844b437fe38aee9cc4658542407354b3ee0",
+        "segno_pedal_tile_TRACK1.step": "764c7319ad4c7b54655f8ab343286d977b6851d57a3057294317c0f00c323424",
+        "segno_pedal_tile_TRACK1.stl": "44e4fada2cd23494a486b320f9cf7fc287ad05affde2d133e9667f42335803b7",
+        "segno_pedal_tile_TRACK2.step": "33d10f39109778be123a00c6daef30c0d4d7fdfc1327c89b196baa6316c5b915",
+        "segno_pedal_tile_TRACK2.stl": "d72b0b9fe0129f6a5cb444185fcbb65d49d846dbceeadd2bcc7da7332c6a7e7f",
+        "segno_pedal_tile_TRACK3.step": "48fc696b9228ee2ac51b665e2e4826fb27eaa8c02344a1645930556bcf6bb2b4",
+        "segno_pedal_tile_TRACK3.stl": "ab678d5fdf3f0c5a08094c3a26f23a5ee5316a994ea01591af0c7504b98655cf",
+        "segno_pedal_tile_TRACK4.step": "d693cdb6460050d67fcb0ed0921c77ec7814db93a466eb5be04920e43d913097",
+        "segno_pedal_tile_TRACK4.stl": "f48860f032752d17dca734911c2bbc9565c8f300d9d8344a80ddd52957189f3d",
+        "segno_pedal_tile_CLEAR.step": "172f0473f7af4f261944957ea6deb9d5143ebfbaf52aaf6c9552c04bd5411630",
+        "segno_pedal_tile_CLEAR.stl": "b81e970c8e060bd10f749b62ac87917c382d64f9cf6be8cad04285336d790c1c",
+        "segno_pedal_tile_BANK.step": "53dd21e49ce33772831945880666e918c7ff758bb6abcd8d59c0bfa8cf5ca5b3",
+        "segno_pedal_tile_BANK.stl": "01e9224c8df659c6de1bda41a57610fdf95247b39fbc11b5bc9a87d4ec304f9e",
+        "segno_screen7_tower.step": "90087908941dd772f965f62ce1feb25bb864b1740718ebae7534bfd768aeda40",
+        "segno_screen7_tower.stl": "6734a26b76f6256f46cbdda6c34caff2df1429fe279d6f4c48ca205da4ca9128",
+        "segno_screen16_stand_L.step": "bb5539cc27fe32f7ddc4bf213af25e5eac02c999e26f3d652af36b94a16af075",
+        "segno_screen16_stand_L.stl": "4a1070fe04d297fd97169a7ab4d94590526804c4eefdb3fd1b45e7c134264257",
+        "segno_screen16_stand_R.step": "cdd0d5049e9c7ee12be96c0e13285fcbbe6474df31c5dbaef199e7315375bd2d",
+        "segno_screen16_stand_R.stl": "eba82d79ee95c3f01ba5a64d34f214403b154400792132ec1c03cb32efe4a5e5"
+      },
+      "member_count": 36
+    },
+    "segno_overlay.zip": {
+      "sha256": "41190d890eb456199673f09ed3b3130394d543a768c27d3c1084965b193cf0fb",
+      "members": {
+        "segno_overlay.dxf": "fd08066d8500c735cf7403d9c7cbd5c0ca545de0e6a001c0047cc474fd02733e",
+        "segno_overlay.pdf": "ff599a2d2f2ba6fef093d3f7d50419210d9212e18a25fa9bc78aa02450f052f6"
+      },
+      "member_count": 2
+    },
+    "segno_pedal_tiles.zip": {
+      "sha256": "88ef78c0bf05a8adb7cd7bdf2cf502ae5b416a6abf14eaa4e8573276de94bce9",
+      "members": {
+        "segno_pedal_tiles.pdf": "848523d420d491a6879a99294f99666f4ff3d5965581889450bb52bee6d31eea",
+        "segno_pedal_tiles.dxf": "360936bad34bf1db51fde8c751edbbb58d6459eb3e2c6e51f7b75cd69c27a211",
+        "segno_pedal_tile_REC_PLAY.dxf": "58f6832e7511c1300743cf184140be6295a0009a9deacc6778f3db6a489ade80",
+        "segno_pedal_tile_STOP.dxf": "40df9805c75b66cd221c4c989767ac5d554d612981c8fcdc4860317963b3fd82",
+        "segno_pedal_tile_UNDO.dxf": "0758c194a8231d760779d4c2c39d3df2d027eff9ae40be0fb86345953ca4147e",
+        "segno_pedal_tile_MODE.dxf": "7673fc1c5fe330865997bcf5b220e92c05dc822fa49e2ab59be66b8211f6682b",
+        "segno_pedal_tile_TRACK1.dxf": "45a9cdce9b736909b82bb20d177c419917676eba544f580412779ed4911b713f",
+        "segno_pedal_tile_TRACK2.dxf": "42148f4d38f3493b2997a38461fd71ec7c323613b9d12301993813d3a56e8b75",
+        "segno_pedal_tile_TRACK3.dxf": "dd41701e6bc90af1c40ea60f074be68cbc30b65675ce0e3ad50b06f3a00fa643",
+        "segno_pedal_tile_TRACK4.dxf": "17dc981e75b305b784101ef9b3695a513ec6f7316266693efdf430e13a6d30ac",
+        "segno_pedal_tile_CLEAR.dxf": "9f06653bab4ce9a87401c276bb06cfd173eea351907de4d74c27a527bbd563db",
+        "segno_pedal_tile_BANK.dxf": "ad8d1453a50cfc84b39ae2433c3efaf8472100db52d4ad017963aaf9fc988856",
+        "segno_pedal_tile_REC_PLAY.pdf": "390d3df75b73725b1138c9bf7ac8a0c24021dbf52cb29f3a40cfdf784b0abbb7",
+        "segno_pedal_tile_STOP.pdf": "65f4cf48d0118fcd4a4731953466fa32c8982acd4163cbed6cc20b6458896617",
+        "segno_pedal_tile_UNDO.pdf": "7119d069e4f9e7a6715bed7ece9deaf36f75fca9b742b2ab418661170594da21",
+        "segno_pedal_tile_MODE.pdf": "385b5975d31629725ac4771d509b61732274f3c78a26883d4e73ac6c3a1c5c9f",
+        "segno_pedal_tile_TRACK1.pdf": "e714f205467715d01865d536b44650ad60b05d2d7014b57d1b71ee6a4d323406",
+        "segno_pedal_tile_TRACK2.pdf": "926c688d77cf9370fd232ac63d3e9fa997d2beeedca10d43cc89dcef1295388f",
+        "segno_pedal_tile_TRACK3.pdf": "1751ad761f606a4a1c3660c58391edf7eef5d6ac5939c0d2a9eed4d76cde5b39",
+        "segno_pedal_tile_TRACK4.pdf": "dbfa85c526483686e15c7ae1de2a72e90212fb79b55fb3d693a339aa4b2fd869",
+        "segno_pedal_tile_CLEAR.pdf": "063d8741b920e9c0238b13242c39522efcef5c325f4a997d48b1fe4e43bc5dc5",
+        "segno_pedal_tile_BANK.pdf": "47cdb41a5f991b06161f09725b2b69fdeb91b8f685649952c79ecec9fcb806e7"
+      },
+      "member_count": 22
+    },
+    "segno_pintura.zip": {
+      "sha256": "98c3cb82d57e5a9b0eee95e22e813a588b27d8fbc2b21bc7925f0b87cbb4b6a6",
+      "members": {
+        "segno_paint_quote.pdf": "3c785ed6593528e77d0c16cb79ba8ac4408768ae632a1dc944b97a77c1578a0f",
+        "segno_base.pdf": "557173d7d1ee2635cf5c1fa66035587bbc16f3c0d9162346e8bdb1d802de4384",
+        "segno_faceplate.pdf": "0690f5a4da0e82c7ac56e61dde645fa91d1f04829adb27266181338f493c32fe",
+        "segno_rear_panel.pdf": "23037350ba2fddefca64a15eda32215ce734b6a72dae5f4165c2aa7d38b77d45",
+        "segno_corner_bracket_rear.pdf": "73d59a82f8f41fc82b77de3de675f96476830a6ba2e4f01ba3d9d2a1b5791f1f",
+        "segno_corner_bracket_rear_mirrored.pdf": "46a800caf03fa5d513944174aa28b23d24686c987dc25ee26fc8dd59c7c31daf",
+        "segno_ring_disc.pdf": "0f4d0a3616d2d752ded3319c2ff4bda63ab6dd3bb89b80a388da0eaa1a43ed0f",
+        "segno_post.pdf": "8a13fb191d86019cdc9bde5c5e6e626ade8c84c15fc2d9ba6b6d7244e355a41c"
+      },
+      "member_count": 8
+    },
+    "segno_sheetmetal.zip": {
+      "sha256": "0378ac7c274f2482f1bea9a484272c22ddc1cdaeed987f8ba0bd538bb1b9d4f7",
+      "members": {
+        "segno_faceplate.dxf": "13846dd5b47d6d6467e8dd4ee937f294c6a2e10ae29fff49510d8a8410939ee8",
+        "segno_faceplate.pdf": "0690f5a4da0e82c7ac56e61dde645fa91d1f04829adb27266181338f493c32fe",
+        "segno_base.dxf": "9f622135a56c01b6fa6ae9a5d3aa21d8ff056ca4f51f65d973774a0d133fbaef",
+        "segno_base.pdf": "557173d7d1ee2635cf5c1fa66035587bbc16f3c0d9162346e8bdb1d802de4384",
+        "segno_rear_panel.dxf": "29f98d6803bf939321ee9a248c035933a01ff9b1da5c102a487e62a0f259dd13",
+        "segno_rear_panel.pdf": "23037350ba2fddefca64a15eda32215ce734b6a72dae5f4165c2aa7d38b77d45",
+        "segno_ring_disc.dxf": "5f60f5d8ffadf67ccd1e4f24bfd84378e689ff6fa8c48305277dfc6885bd01f6",
+        "segno_ring_disc.pdf": "0f4d0a3616d2d752ded3319c2ff4bda63ab6dd3bb89b80a388da0eaa1a43ed0f",
+        "segno_corner_bracket_rear.dxf": "f57de9b31701309db9790209ea7b5af3e5d6310fde51557f210ae73995c5c8db",
+        "segno_corner_bracket_rear.pdf": "73d59a82f8f41fc82b77de3de675f96476830a6ba2e4f01ba3d9d2a1b5791f1f",
+        "segno_corner_bracket_rear_mirrored.dxf": "fb9e5e876efcad6af8391f5a80b0ec6e591e4ed26267789fccfc7b22d12303f9",
+        "segno_corner_bracket_rear_mirrored.pdf": "46a800caf03fa5d513944174aa28b23d24686c987dc25ee26fc8dd59c7c31daf",
+        "segno_post.dxf": "879ec98f37f62d804e4e7e9d40a1dda52292b84072c1b08f67544410dfd23e92",
+        "segno_post.pdf": "8a13fb191d86019cdc9bde5c5e6e626ade8c84c15fc2d9ba6b6d7244e355a41c"
+      },
+      "member_count": 14
+    },
+    "segno_sheetmetal_step.zip": {
+      "sha256": "45d9c549de846f11ca511b55312f1ac5f28e2bcf6bb866b611855178764edb96",
+      "members": {
+        "segno_assembly.step": "824052b822574d3f91d77f4291955feb70c0d71a6a8cdecd6cf1704dd0690874",
+        "segno_faceplate.step": "38bbde2afa694603959f92965159318a2c098ae5d8e6f7f127f1a5e2e7251e25",
+        "segno_base.step": "2668641e2ebed4f0e9ec495015133400d343d0b40894e9586f1a9c6a18dad615",
+        "segno_rear_panel.step": "814b4649fdc4769e212d113a6ce6866f9d83493413f4b7cacd096d36a72df27c",
+        "segno_ring_disc.step": "24247bc8edd8eadbd3dfc3ee3bc6659dd030a82dc1b8322e2e53081596e28d4f",
+        "segno_corner_bracket_rear.step": "69e878582085c4c89c1fd50e779d5005c447d59ea5b0d4d83deb3d4847bbb9a1",
+        "segno_corner_bracket_rear_mirrored.step": "12dcbd799e6500a6c0a90499f087099e79969381e5de84c9a515a4d43143031f",
+        "segno_post.step": "5b774f77d0849900c35cc3c5cc4051d5a68b4cc94332c41d0263eff5bdb23479"
+      },
+      "member_count": 8
+    }
+  },
+  "flat_parity": {
+    "segno_faceplate": {
+      "matched_reference_holes": 10,
+      "missing_area_mm2": 0.008358020637356134,
+      "extra_area_mm2": 0.00835802063552915,
+      "area_tolerance_mm2": 0.01
+    },
+    "segno_base": {
+      "matched_reference_holes": 107,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "segno_corner_bracket_rear": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "segno_corner_bracket_rear_mirrored": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    }
+  },
+  "pdf_pages": {
+    "segno_base.pdf": 2,
+    "segno_corner_bracket_rear.pdf": 1,
+    "segno_corner_bracket_rear_mirrored.pdf": 1,
+    "segno_faceplate.pdf": 2,
+    "segno_overlay.pdf": 1,
+    "segno_paint_quote.pdf": 4,
+    "segno_pedal_base_gauge.pdf": 1,
+    "segno_pedal_tile_BANK.pdf": 1,
+    "segno_pedal_tile_CLEAR.pdf": 1,
+    "segno_pedal_tile_MODE.pdf": 1,
+    "segno_pedal_tile_REC_PLAY.pdf": 1,
+    "segno_pedal_tile_STOP.pdf": 1,
+    "segno_pedal_tile_TRACK1.pdf": 1,
+    "segno_pedal_tile_TRACK2.pdf": 1,
+    "segno_pedal_tile_TRACK3.pdf": 1,
+    "segno_pedal_tile_TRACK4.pdf": 1,
+    "segno_pedal_tile_UNDO.pdf": 1,
+    "segno_pedal_tiles.pdf": 1,
+    "segno_post.pdf": 1,
+    "segno_rear_panel.pdf": 1,
+    "segno_ring_disc.pdf": 1
+  },
+  "contours": {
+    "segno_faceplate": "pass",
+    "segno_base": "pass",
+    "segno_rear_panel": "pass",
+    "segno_ring_disc": "pass",
+    "segno_corner_bracket_rear": "pass",
+    "segno_corner_bracket_rear_mirrored": "pass",
+    "segno_post": "pass"
+  },
+  "fresh_source_parity": {
+    "segno_faceplate": "pass",
+    "segno_base": "pass",
+    "segno_rear_panel": "pass",
+    "segno_ring_disc": "pass",
+    "segno_corner_bracket_rear": "pass",
+    "segno_corner_bracket_rear_mirrored": "pass",
+    "segno_post": "pass"
+  },
+  "review_scope": "Rear ridge/handed backers and fitted front supports; local uncommitted seam correction",
+  "git": {
+    "head": "1d14d701ee9f6c3ad304a63fc60a79e3681afbd1",
+    "branch": "codex/sheetmetal-release-fixes",
+    "upstream_work": "fix/drawing-legibility-1001",
+    "publication": "No commit, push, merge or supplier message"
+  },
+  "native": {
+    "pop": {
+      "document": "VAMP console (populated)",
+      "file_id": "urn:adsk.wipprod:dm.lineage:WizJK7naTDWaH8cn-Gsc-g",
+      "before_version": 344,
+      "saved_and_reopened_version": 345,
+      "modified": false,
+      "occurrences": 423,
+      "bodies": 973,
+      "empty_leaf_components": 0,
+      "unchanged_other_occurrences": 411,
+      "preservation_numeric_tolerance": 1e-08,
+      "existing_warning_rows": 41,
+      "warning_rows_unchanged": true,
+      "reopened_snapshot_sha256": "651bfa9a9d1f9968ac0c919319f7dc6300bd8d827a3a5eac04b1c2c6bc3db589",
+      "changed_parts": [
+        {
+          "path": "base:1",
+          "component": "base",
+          "id": "d331f54f-d4e5-45f3-89cf-6d27de235173",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.2,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            936698.5962066884
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                -1.910840885362787,
+                -1.9108409209999992,
+                0.0
+              ],
+              [
+                847.9108408853629,
+                420.91084092100004,
+                99.51987164978577
+              ]
+            ]
+          ],
+          "features": [
+            {
+              "name": "Extrude1",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "Extrude2",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "ConvertToSheetMetal1",
+              "type": "adsk::fusion::Feature",
+              "health": 0
+            },
+            {
+              "name": "Extrude3",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold1",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold2",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold3",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold4",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold5",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "OffsetFaces1",
+              "type": "adsk::fusion::OffsetFacesFeature",
+              "health": 0
+            },
+            {
+              "name": "OffsetFaces2",
+              "type": "adsk::fusion::OffsetFacesFeature",
+              "health": 0
+            },
+            {
+              "name": "Extrude4",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "SOURCE_RIDGE_CONTOUR_LEFT",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "SOURCE_RIDGE_CONTOUR_RIGHT",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            }
+          ]
+        },
+        {
+          "path": "front_shim_pack:1",
+          "component": "front_shim_pack",
+          "id": "874f4497-5f89-46a9-b16c-6a5c7c79248d",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            1.842857142857143,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                15.428571428571429,
+                -2.410840885362787,
+                3.9554204426813926
+              ],
+              [
+                21.428571428571427,
+                -1.9108408853627867,
+                9.955420442681394
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "corner_bracket_mirrored:1",
+          "component": "corner_bracket_mirrored",
+          "id": "33489fbd-024e-4c18-9312-0db292fb2718",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            1.4010840885362796,
+            0.0,
+            0.0,
+            -1.0,
+            41.69008408853628,
+            0.0,
+            -1.0,
+            0.0,
+            8.4,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            3950.5221077736924
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                0.10000000000000453,
+                404.99,
+                4.0000000000000036
+              ],
+              [
+                14.010840885362796,
+                418.90084088536287,
+                87.00000000000001
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:2",
+          "component": "front_shim_pack",
+          "id": "874f4497-5f89-46a9-b16c-6a5c7c79248d",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            11.957142857142857,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                116.57142857142857,
+                -2.410840885362787,
+                3.9554204426813926
+              ],
+              [
+                122.57142857142858,
+                -1.9108408853627867,
+                9.955420442681394
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:3",
+          "component": "front_shim_pack",
+          "id": "874f4497-5f89-46a9-b16c-6a5c7c79248d",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            22.071428571428573,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                217.71428571428572,
+                -2.410840885362787,
+                3.9554204426813926
+              ],
+              [
+                223.71428571428572,
+                -1.9108408853627867,
+                9.955420442681394
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:4",
+          "component": "front_shim_pack",
+          "id": "874f4497-5f89-46a9-b16c-6a5c7c79248d",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            32.18571428571429,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                318.8571428571429,
+                -2.410840885362787,
+                3.9554204426813926
+              ],
+              [
+                324.8571428571429,
+                -1.9108408853627867,
+                9.955420442681394
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:5",
+          "component": "front_shim_pack",
+          "id": "874f4497-5f89-46a9-b16c-6a5c7c79248d",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            42.3,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                420.0,
+                -2.410840885362787,
+                3.9554204426813926
+              ],
+              [
+                425.99999999999994,
+                -1.9108408853627867,
+                9.955420442681394
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:6",
+          "component": "front_shim_pack",
+          "id": "874f4497-5f89-46a9-b16c-6a5c7c79248d",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            52.41428571428571,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                521.1428571428571,
+                -2.410840885362787,
+                3.9554204426813926
+              ],
+              [
+                527.1428571428571,
+                -1.9108408853627867,
+                9.955420442681394
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:7",
+          "component": "front_shim_pack",
+          "id": "874f4497-5f89-46a9-b16c-6a5c7c79248d",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            62.52857142857143,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                622.2857142857143,
+                -2.410840885362787,
+                3.9554204426813926
+              ],
+              [
+                628.2857142857143,
+                -1.9108408853627867,
+                9.955420442681394
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:8",
+          "component": "front_shim_pack",
+          "id": "874f4497-5f89-46a9-b16c-6a5c7c79248d",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            72.64285714285714,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                723.4285714285714,
+                -2.410840885362787,
+                3.9554204426813926
+              ],
+              [
+                729.4285714285713,
+                -1.9108408853627867,
+                9.955420442681394
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:9",
+          "component": "front_shim_pack",
+          "id": "874f4497-5f89-46a9-b16c-6a5c7c79248d",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            82.75714285714285,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                824.5714285714286,
+                -2.410840885362787,
+                3.9554204426813926
+              ],
+              [
+                830.5714285714284,
+                -1.9108408853627867,
+                9.955420442681394
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "corner_bracket:1",
+          "component": "corner_bracket",
+          "id": "09c07514-2dd1-45d0-9204-3cc7303bf916",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            83.19891591146371,
+            0.0,
+            0.0,
+            -1.0,
+            41.69008408853628,
+            0.0,
+            1.0,
+            0.0,
+            0.4,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            3950.5221077736924
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                831.9891591146371,
+                404.99,
+                4.0
+              ],
+              [
+                845.8999999999999,
+                418.90084088536287,
+                87.00000000000001
+              ]
+            ]
+          ],
+          "features": [
+            {
+              "name": "Extrude1",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "ConvertToSheetMetal1",
+              "type": "adsk::fusion::Feature",
+              "health": 0
+            },
+            {
+              "name": "Fold1",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            }
+          ]
+        }
+      ]
+    },
+    "vsm": {
+      "document": "VAMP sheet metal",
+      "file_id": "urn:adsk.wipprod:dm.lineage:XYSgF_YHTbOhvHPolf5yDA",
+      "before_version": 131,
+      "saved_and_reopened_version": 132,
+      "modified": false,
+      "occurrences": 27,
+      "bodies": 27,
+      "empty_leaf_components": 0,
+      "unchanged_other_occurrences": 15,
+      "preservation_numeric_tolerance": 1e-08,
+      "existing_warning_rows": 0,
+      "warning_rows_unchanged": true,
+      "reopened_snapshot_sha256": "0d6c3198445548ccfbb81c734c4aff34377e6c43bbbd18e62bbdfa0166e3e671",
+      "changed_parts": [
+        {
+          "path": "corner_bracket:2",
+          "component": "corner_bracket",
+          "id": "7c90fea8-9929-4e52-b2fc-d53736471ae9",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            1.6010840885362825,
+            0.0,
+            1.0,
+            0.0,
+            0.4,
+            0.0,
+            0.0,
+            -1.0,
+            41.69008408853628,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            3950.5221077736924
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                2.1000000000000374,
+                4.0,
+                404.99
+              ],
+              [
+                16.010840885362825,
+                87.00000000000001,
+                418.90084088536287
+              ]
+            ]
+          ],
+          "features": [
+            {
+              "name": "Extrude1",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "ConvertToSheetMetal1",
+              "type": "adsk::fusion::Feature",
+              "health": 0
+            },
+            {
+              "name": "Fold1",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            }
+          ]
+        },
+        {
+          "path": "base:1",
+          "component": "base",
+          "id": "08bdda9a-c23d-40b7-920b-789071902d63",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            84.8,
+            0.0,
+            0.0,
+            1.0,
+            0.2,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            936698.5962066764
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                0.08915911463716952,
+                0.0,
+                -1.9108409209999992
+              ],
+              [
+                849.9108408853626,
+                99.51987164978577,
+                420.91084092100004
+              ]
+            ]
+          ],
+          "features": [
+            {
+              "name": "Extrude1",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "Extrude2",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "ConvertToSheetMetal1",
+              "type": "adsk::fusion::Feature",
+              "health": 0
+            },
+            {
+              "name": "Extrude3",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold1",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold2",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold3",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold4",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "Fold5",
+              "type": "adsk::fusion::FoldFeature",
+              "health": 0
+            },
+            {
+              "name": "OffsetFaces1",
+              "type": "adsk::fusion::OffsetFacesFeature",
+              "health": 0
+            },
+            {
+              "name": "OffsetFaces2",
+              "type": "adsk::fusion::OffsetFacesFeature",
+              "health": 0
+            },
+            {
+              "name": "Extrude4",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "SOURCE_RIDGE_CONTOUR_LEFT",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            },
+            {
+              "name": "SOURCE_RIDGE_CONTOUR_RIGHT",
+              "type": "adsk::fusion::ExtrudeFeature",
+              "health": 0
+            }
+          ]
+        },
+        {
+          "path": "front_shim_pack:1",
+          "component": "front_shim_pack",
+          "id": "97a159ee-9a08-47e2-b2b7-4f1baf381f6c",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            82.95714285714286,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                826.5714285714286,
+                3.9554204426813926,
+                -2.410840885362787
+              ],
+              [
+                832.5714285714286,
+                9.955420442681394,
+                -1.9108408853627867
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:2",
+          "component": "front_shim_pack",
+          "id": "97a159ee-9a08-47e2-b2b7-4f1baf381f6c",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            72.84285714285714,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                725.4285714285714,
+                3.9554204426813926,
+                -2.410840885362787
+              ],
+              [
+                731.4285714285713,
+                9.955420442681394,
+                -1.9108408853627867
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:3",
+          "component": "front_shim_pack",
+          "id": "97a159ee-9a08-47e2-b2b7-4f1baf381f6c",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            62.72857142857143,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                624.2857142857143,
+                3.9554204426813926,
+                -2.410840885362787
+              ],
+              [
+                630.2857142857142,
+                9.955420442681394,
+                -1.9108408853627867
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:4",
+          "component": "front_shim_pack",
+          "id": "97a159ee-9a08-47e2-b2b7-4f1baf381f6c",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            52.61428571428571,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                523.1428571428571,
+                3.9554204426813926,
+                -2.410840885362787
+              ],
+              [
+                529.142857142857,
+                9.955420442681394,
+                -1.9108408853627867
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:5",
+          "component": "front_shim_pack",
+          "id": "97a159ee-9a08-47e2-b2b7-4f1baf381f6c",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            42.5,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                422.0,
+                3.9554204426813926,
+                -2.410840885362787
+              ],
+              [
+                428.0,
+                9.955420442681394,
+                -1.9108408853627867
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:6",
+          "component": "front_shim_pack",
+          "id": "97a159ee-9a08-47e2-b2b7-4f1baf381f6c",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            32.385714285714286,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                320.8571428571429,
+                3.9554204426813926,
+                -2.410840885362787
+              ],
+              [
+                326.85714285714283,
+                9.955420442681394,
+                -1.9108408853627867
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:7",
+          "component": "front_shim_pack",
+          "id": "97a159ee-9a08-47e2-b2b7-4f1baf381f6c",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            22.271428571428565,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                219.71428571428564,
+                3.9554204426813926,
+                -2.410840885362787
+              ],
+              [
+                225.71428571428567,
+                9.955420442681394,
+                -1.9108408853627867
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:8",
+          "component": "front_shim_pack",
+          "id": "97a159ee-9a08-47e2-b2b7-4f1baf381f6c",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            12.157142857142858,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                118.57142857142858,
+                3.9554204426813926,
+                -2.410840885362787
+              ],
+              [
+                124.57142857142858,
+                9.955420442681394,
+                -1.9108408853627867
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "front_shim_pack:9",
+          "component": "front_shim_pack",
+          "id": "97a159ee-9a08-47e2-b2b7-4f1baf381f6c",
+          "matrix_cm": [
+            -1.0,
+            0.0,
+            0.0,
+            2.0428571428571445,
+            0.0,
+            -1.0,
+            0.0,
+            0.6955420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.2410840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            9.3266031903451
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                17.428571428571445,
+                3.9554204426813926,
+                -2.410840885362787
+              ],
+              [
+                23.428571428571445,
+                9.955420442681394,
+                -1.9108408853627867
+              ]
+            ]
+          ],
+          "features": []
+        },
+        {
+          "path": "corner_bracket_mirrored:1",
+          "component": "corner_bracket_mirrored",
+          "id": "1d52b056-89ee-4a2d-8b3a-e480cc339aab",
+          "matrix_cm": [
+            1.0,
+            0.0,
+            0.0,
+            83.39891591146372,
+            0.0,
+            -1.0,
+            0.0,
+            8.4,
+            0.0,
+            0.0,
+            -1.0,
+            41.69008408853628,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "body_volumes_mm3": [
+            3950.5221077736924
+          ],
+          "body_bounds_mm": [
+            [
+              [
+                833.9891591146372,
+                4.0000000000000036,
+                404.99
+              ],
+              [
+                847.8999999999999,
+                87.00000000000001,
+                418.90084088536287
+              ]
+            ]
+          ],
+          "features": []
+        }
+      ]
+    }
+  },
+  "native_recovery": "Fusion crashed during close/reopen verification after both saves completed. Restarted, dismissed old recovery-list dialog without deleting recovery files, then opened cloud versions132/345 and verified complete geometry/placement preservation.",
+  "base_flat_both_documents": {
+    "pop": {
+      "matched_reference_holes": 107,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "vsm": {
+      "matched_reference_holes": 107,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    }
+  },
+  "bracket_flat_both_documents": {
+    "pop_corner_bracket": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "pop_corner_bracket_mirrored": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "vsm_corner_bracket": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "vsm_corner_bracket_mirrored": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    }
+  },
+  "native_front_intersections": [
+    {
+      "a": "front_shim_pack:1/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:5/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:1/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:1/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:2/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:9/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:2/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:2/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:3/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:8/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:3/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:3/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:4/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:4/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:4/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:5/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:7/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:5/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:5/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:6/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:2/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:6/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:6/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:7/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:6/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:7/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:7/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:8/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:3/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:8/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:8/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:9/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:4/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:9/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "front_shim_pack:9/PURCHASED_FITTED_FRONT_SHIM_PACK",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    }
+  ],
+  "native_bracket_intersections": [
+    {
+      "a": "corner_bracket_mirrored:1/Body1",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "corner_bracket_mirrored:1/Body1",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "corner_bracket:1/Body1",
+      "b": "faceplate:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "corner_bracket:1/Body1",
+      "b": "base:1/Body1",
+      "success": true,
+      "volume_mm3": 0.0
+    }
+  ],
+  "regressions": {
+    "count": 28,
+    "exit_code": 0,
+    "seconds": 37.904,
+    "test_log_sha256": "e477a0a9d77a4dc18f1f3e9e1aba349c7bc85a7bf320b48f757dfb5b71e873cd",
+    "final_layout_only_change": "Paint cover row spacing + overlap assertion; full generator and archive/parity checks repeated; overflow negative experiment passed."
+  },
+  "visual_review": {
+    "pdfs": [
+      "segno_base.pdf",
+      "segno_faceplate.pdf",
+      "segno_corner_bracket_rear.pdf",
+      "segno_corner_bracket_rear_mirrored.pdf",
+      "segno_paint_quote.pdf"
+    ],
+    "pages": 10,
+    "all_passed": true,
+    "native_screenshot": "seam-fusion.png"
+  },
+  "remaining_acceptance": [
+    "Shop material/tooling/trial bend and rivet selection",
+    "Physical purchased-part fits, screw lengths and knob relief",
+    "Bare ridge and bracket-edge fitting before riveting/coating",
+    "Smooth matte black RAL9005 coupon and60\u2013100micron coating per face",
+    "After paint: front shim packs fitted individually to bare hidden lands, torque/removal and actual load/retention qualification"
+  ]
+}

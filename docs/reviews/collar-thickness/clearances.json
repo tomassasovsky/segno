@@ -1,0 +1,655 @@
+{
+  "selected": {
+    "thickness": 2.4,
+    "shapes": {
+      "front": {
+        "valid": true,
+        "bounds": [
+          -59.235000000000014,
+          -44.375,
+          0.0,
+          59.23500000000003,
+          44.375,
+          38.04315340151756
+        ],
+        "volume": 52761.89113119349
+      },
+      "mid": {
+        "valid": true,
+        "bounds": [
+          -59.235000000000014,
+          -44.375,
+          0.0,
+          59.23500000000003,
+          44.375,
+          74.34502289623741
+        ],
+        "volume": 164196.19886396284
+      }
+    },
+    "clearances": [
+      {
+        "name": "platforms:1+platform_front_v375:1",
+        "tag": "front",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.018941063127295,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_REC_PLAY:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 114.67943630415998,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 342.5971429581838,
+            "name": "screen16_stand_L:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 496.740980591738,
+            "name": "steel post 0",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.6986703850304679,
+            "name": "foot head 4",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 147.75918174103896,
+            "name": "vent 0",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.17999836683889286,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10236810200262024,
+            "overlap": 0.0
+          }
+        }
+      },
+      {
+        "name": "platforms:1+platform_front_v375:2",
+        "tag": "front",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.018941063127295,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_STOP:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 114.67943630415998,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 244.77275887862788,
+            "name": "screen16_stand_L:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 395.6483179499374,
+            "name": "steel post 0",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.6913296149692911,
+            "name": "foot head 4",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 46.90455110888508,
+            "name": "vent 0",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.17999836683889286,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10236810200262024,
+            "overlap": 0.0
+          }
+        }
+      },
+      {
+        "name": "platforms:1+platform_front_v375:3",
+        "tag": "front",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.018941063127295,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_UNDO:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 114.72177125282636,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 151.362336696297,
+            "name": "screen16_stand_L:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 294.5781644618673,
+            "name": "steel post 0",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.6943846707449666,
+            "name": "foot head 5",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 6.242856981358258,
+            "name": "vent 0",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.17999836683889286,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10236810200262024,
+            "overlap": 0.0
+          }
+        }
+      },
+      {
+        "name": "platforms:1+platform_front_v375:4",
+        "tag": "front",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.018941063127295,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_MODE:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 154.98632627857984,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 79.81653522991174,
+            "name": "screen16_stand_L:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 193.60140979625137,
+            "name": "steel post 0",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.6956153292551335,
+            "name": "foot head 5",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 6.242856981358258,
+            "name": "vent 1",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.17999836683889286,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10236810200262024,
+            "overlap": 0.0
+          }
+        }
+      },
+      {
+        "name": "platforms:1+platform_front_v375:5",
+        "tag": "front",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.018941063127268,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_TRACK1:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 235.24250693119842,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 73.46707697554994,
+            "name": "screen16_stand_L:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 92.98019129077564,
+            "name": "steel post 0",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.7000989564592146,
+            "name": "foot head 6",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 6.24285698135823,
+            "name": "vent 3",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.1799983668388998,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10236810200262718,
+            "overlap": 0.0
+          }
+        }
+      },
+      {
+        "name": "platforms:1+platform_front_v375:6",
+        "tag": "front",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.018941063127268,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_TRACK2:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 327.28567338216874,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 79.4826246328459,
+            "name": "screen16_stand_L:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 13.561936979841775,
+            "name": "steel post 0",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.6899010435409991,
+            "name": "foot head 6",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 6.24285698135823,
+            "name": "vent 5",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.1799983668388998,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10236810200262718,
+            "overlap": 0.0
+          }
+        }
+      },
+      {
+        "name": "platforms:1+platform_front_v375:7",
+        "tag": "front",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.018941063127268,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_TRACK3:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 423.5086064796416,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 74.56818264419728,
+            "name": "screen16_stand_R:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 13.561936979841775,
+            "name": "steel post 0",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.695813242173358,
+            "name": "foot head 7",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 60.80408950986766,
+            "name": "vent 5",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.1799983668388998,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10236810200262718,
+            "overlap": 0.0
+          }
+        }
+      },
+      {
+        "name": "platforms:1+platform_front_v375:8",
+        "tag": "front",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.018941063127268,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_TRACK4:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 521.5895281696829,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 73.46707697554994,
+            "name": "screen16_stand_R:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 13.561936979841775,
+            "name": "steel post 1",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.6941867578265146,
+            "name": "foot head 7",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 161.74328186069602,
+            "name": "vent 5",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.1799983668388998,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10236810200262718,
+            "overlap": 0.0
+          }
+        }
+      },
+      {
+        "name": "platforms:1+platform_mid_ring:1",
+        "tag": "mid",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.020869940023397,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_CLEAR:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 3.114314285714272,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 132.33928571428572,
+            "name": "screen16_stand_L:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 294.4424069191922,
+            "name": "steel post 0",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.696428571428612,
+            "name": "foot head 12",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 3.056103472765983,
+            "name": "vent 26",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.17957127884132157,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10194101400504585,
+            "overlap": 0.0
+          }
+        }
+      },
+      {
+        "name": "platforms:1+platform_mid_ring:2",
+        "tag": "mid",
+        "minimums": {
+          "lid_stack": {
+            "distance": 4.020869940023397,
+            "name": "lid_stack:1+diffusers:1+led_diffuser_BANK:1",
+            "overlap": 0.0
+          },
+          "screen7": {
+            "distance": 104.25717142857144,
+            "name": "screen7_tower:1",
+            "overlap": 0.0
+          },
+          "screen16": {
+            "distance": 31.196428571428555,
+            "name": "screen16_stand_L:1",
+            "overlap": 0.0
+          },
+          "steel": {
+            "distance": 193.39086035776913,
+            "name": "steel post 0",
+            "overlap": 0.0
+          },
+          "foot": {
+            "distance": 1.6964285714285552,
+            "name": "foot head 12",
+            "overlap": 0.0
+          },
+          "vent": {
+            "distance": 3.056103472765983,
+            "name": "vent 27",
+            "overlap": 0.0
+          },
+          "bare lid": {
+            "distance": 0.17957127884132157,
+            "overlap": 0.0
+          },
+          "painted lid": {
+            "distance": 0.10194101400504585,
+            "overlap": 0.0
+          }
+        }
+      }
+    ]
+  },
+  "additional_obstacles": {
+    "platforms:1+platform_front_v375:1": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 4.939078568015063,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 337.0074264649515,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 132.59791633789746,
+        "overlap": 0.0
+      }
+    },
+    "platforms:1+platform_front_v375:2": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 4.939078568015063,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 236.7638324000543,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 132.59791633789746,
+        "overlap": 0.0
+      }
+    },
+    "platforms:1+platform_front_v375:3": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 4.939078568015063,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 137.82657876429394,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 134.42557145613804,
+        "overlap": 0.0
+      }
+    },
+    "platforms:1+platform_front_v375:4": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 4.939078568015063,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 48.974420405975906,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 181.01980006569806,
+        "overlap": 0.0
+      }
+    },
+    "platforms:1+platform_front_v375:5": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 4.939078568015091,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 37.514228358718256,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 260.6236769181596,
+        "overlap": 0.0
+      }
+    },
+    "platforms:1+platform_front_v375:6": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 4.939078568015091,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 37.514228358718256,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 351.4823368604138,
+        "overlap": 0.0
+      }
+    },
+    "platforms:1+platform_front_v375:7": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 4.939078568015091,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 37.514228358718256,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 446.79088800686804,
+        "overlap": 0.0
+      }
+    },
+    "platforms:1+platform_front_v375:8": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 4.939078568015091,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 37.514228358718256,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 544.2025826477504,
+        "overlap": 0.0
+      }
+    },
+    "platforms:1+platform_mid_ring:1": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 168.7080390221393,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 132.62499999999574,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 22.089285714285694,
+        "overlap": 0.0
+      }
+    },
+    "platforms:1+platform_mid_ring:2": {
+      "base": {
+        "distance": 0.0,
+        "overlap": 0.0
+      },
+      "front native above floor": {
+        "distance": 168.7080390221393,
+        "overlap": 0.0
+      },
+      "monitor": {
+        "distance": 31.48214285713857,
+        "overlap": 0.0
+      },
+      "screen7 bounding envelope": {
+        "distance": 123.23214285714286,
+        "overlap": 0.0
+      }
+    }
+  }
+}

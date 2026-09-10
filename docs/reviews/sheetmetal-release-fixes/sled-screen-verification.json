@@ -1,0 +1,263 @@
+{
+  "date": "2026-09-06",
+  "base_head": "1d14d701ee9f6c3ad304a63fc60a79e3681afbd1",
+  "scope": "Standalone mini sled two-point retention, integrated lid clearances, and seven-inch module 0.50 mm forward correction; local work only",
+  "source_before_this_turn_sha256": "0c8af20a0fc956c85cc13b7ca9e09a94876ba6ba0ddf431d10b72a9055bf59c6",
+  "source_after_sha256": "79746013b1053ddadfc4724188c9739eea239a29976a7f8b97c43948d20f3fb2",
+  "tests": {
+    "count": 33,
+    "result": "PASS",
+    "log_sha256": "bb853fd26aafd68b8d503d24ac34cc91a017609304f254bded1d507aad95c2b3"
+  },
+  "saved_reopened": {
+    "populated": {
+      "version": 346,
+      "occurrences": 423,
+      "bodies": 973,
+      "empty_leaves": 0,
+      "preexisting_warning_rows": 41
+    },
+    "mini": {
+      "version": 13,
+      "occurrences": 18,
+      "bodies": 16,
+      "empty_leaves": 0,
+      "preexisting_warning_rows": 10
+    },
+    "numeric_preservation_tolerance": 1e-07
+  },
+  "screen": {
+    "changed_occurrences": [
+      "screen7_module:1",
+      "screen7_tower:1"
+    ],
+    "module_delta_mm": [
+      0.0,
+      -0.48815132418127405,
+      -0.10820482752634142
+    ],
+    "tower_native_source_missing_mm3": 0.0,
+    "tower_native_source_extra_mm3": 0.0,
+    "old_module_tower_contact_mm3": 0.8593145106256945,
+    "new_module_tower_contact_mm3": 0.8593145105635387
+  },
+  "mini_native_source": [
+    {
+      "part": "mini_console_tray",
+      "native_volume_mm3": 371267.6707142487,
+      "source_volume_mm3": 371267.6708317166,
+      "max_bounds_delta_mm": 9.056597332743674e-15,
+      "both_valid_one_solid": true
+    },
+    {
+      "part": "mini_console_lid",
+      "native_volume_mm3": 27811.88701940968,
+      "source_volume_mm3": 27811.886731607778,
+      "max_bounds_delta_mm": 0.0,
+      "both_valid_one_solid": true
+    },
+    {
+      "part": "mini_console_sled",
+      "native_volume_mm3": 60921.89586303576,
+      "source_volume_mm3": 60921.89586156342,
+      "max_bounds_delta_mm": 1.2434497875801753e-14,
+      "both_valid_one_solid": true
+    },
+    {
+      "part": "led_diffuser_1",
+      "native_volume_mm3": 2237.7822528350753,
+      "source_volume_mm3": 2237.782252834983,
+      "max_bounds_delta_mm": 0.0,
+      "both_valid_one_solid": true
+    }
+  ],
+  "mini_reopened_intersections": [
+    {
+      "a": "Cherub WTB-006 Footswitch:1+Case Body:1",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:1+Case Body:1",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:1+Case Body:1",
+      "b": "mini_console_sled:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:1+Top Pad:1",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:1+Top Pad:1",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:1+Screw Assembly:1",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:1+Screw Assembly:1",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:1+Screw Assembly:2",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:1+Screw Assembly:2",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "led_diffuser_1:1",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "led_diffuser_1:1",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:2+Case Body:1",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:2+Case Body:1",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:2+Case Body:1",
+      "b": "mini_console_sled:2",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:2+Top Pad:1",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:2+Top Pad:1",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:2+Screw Assembly:1",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:2+Screw Assembly:1",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:2+Screw Assembly:2",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "Cherub WTB-006 Footswitch:2+Screw Assembly:2",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "led_diffuser_2:1",
+      "b": "mini_console_tray:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "led_diffuser_2:1",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "mini_console_tray:1",
+      "b": "mini_console_lid:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "mini_console_tray:1",
+      "b": "mini_console_sled:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "mini_console_tray:1",
+      "b": "mini_console_sled:2",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "mini_console_lid:1",
+      "b": "mini_console_sled:1",
+      "success": true,
+      "volume_mm3": 0.0
+    },
+    {
+      "a": "mini_console_lid:1",
+      "b": "mini_console_sled:2",
+      "success": true,
+      "volume_mm3": 0.0
+    }
+  ],
+  "changed_outputs": {
+    "segno_3dprint.zip": "e6d14a981022c773a7ffd81506df522387b0925b5faabd5d0e494edc1e1d6086",
+    "segno_mini_console_assembly.step": "1866b5b07202b6af4c2bebccf82d2035ce38fc2a5943a4f620b6ae135a6d3587",
+    "segno_mini_console_lid.step": "e420d283311f08f9b83177714db10cb192c631ddda7f1ffbc49c31cdbbddeeaf",
+    "segno_mini_console_lid.stl": "ca0b58791d4f508806123a80277faf542b6c89e94cc5fb7f7162c5714bfec872",
+    "segno_mini_console_sled.step": "5d1f798df6bfca35441feaddd90c0316a5b13fa4a11c304a4be7580147eb30fc",
+    "segno_mini_console_sled.stl": "9aabfef4ea285b3a776867780786aecd2ac8f75dda2b504dfe5d920010f7778d",
+    "segno_mini_console_tray.step": "39cd6db56167b82137130f2652921622dd7c045e2838fd1d94f409ba2f423426",
+    "segno_mini_console_tray.stl": "b08fd06ab12a2af9aead7894894e8301761ec17e2bd0eadfcc72df34fd607d4b",
+    "segno_screen7_fit_test.step": "76bf62e8d9356b2a0e3d5936676d93ffa73dd9532b567838d02b95aaab1469b1",
+    "segno_screen7_fit_test.stl": "d59e7a852942c0f40232f84361939cb3210863df70dea63a3502e79b9117a976",
+    "segno_screen7_tower.step": "1c9cff4438a73a99d5d20fc99e90d5b284a61b3bd64d11424a39eadc978c71cf",
+    "segno_screen7_tower.stl": "7a0331724073013a3a2a23ec4c14e8bdd9c5a77e69663e24ed9ae72b01896398"
+  },
+  "limits": [
+    "Powered-screen pixel reveal and printed jig fit require physical confirmation.",
+    "Insert fit, final screw length, torque and retention require physical qualification.",
+    "Earlier supplier/tooling/coating/first-piece release conditions remain open."
+  ],
+  "review": {
+    "result": "clean",
+    "report": "sled-screen-review.md",
+    "independent_geometry": "sled-screen-geometry-verification.json",
+    "independent_files": "sled-screen-final-files-verification.json"
+  }
+}

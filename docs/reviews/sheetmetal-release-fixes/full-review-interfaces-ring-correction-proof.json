@@ -1,0 +1,85 @@
+{
+  "source_sha256": "46ccdff9c8d36624937bf6d3a983f0a6184dd903800f9c4a06810f2eedfaf8d0",
+  "source": {
+    "volume_mm3": 4081.7561430786836,
+    "valid": true,
+    "solid_count": 1,
+    "extra_against_independent_mm3": 0.0,
+    "missing_against_independent_mm3": 0.0,
+    "removed_by_chamfer_mm3": 2.9583330820332776,
+    "faces": [
+      {
+        "type": "CYLINDER",
+        "zmin_mm": 0.0,
+        "zmax_mm": 2.0,
+        "radius_mm": 25.75
+      },
+      {
+        "type": "PLANE",
+        "zmin_mm": 0.0,
+        "zmax_mm": 0.0
+      },
+      {
+        "type": "PLANE",
+        "zmin_mm": 2.0,
+        "zmax_mm": 2.0
+      },
+      {
+        "type": "CONE",
+        "zmin_mm": 0.0,
+        "zmax_mm": 0.5,
+        "semi_angle_degrees": 44.999999999974314
+      },
+      {
+        "type": "CYLINDER",
+        "zmin_mm": 0.5,
+        "zmax_mm": 2.0,
+        "radius_mm": 3.6
+      }
+    ]
+  },
+  "native": {
+    "vsm": {
+      "volume_mm3": 4081.7561430785863,
+      "valid": true,
+      "solid_count": 1,
+      "extra_against_fresh_mm3": 0.0,
+      "missing_against_fresh_mm3": 0.0
+    },
+    "pop": {
+      "volume_mm3": 4081.7561430785863,
+      "valid": true,
+      "solid_count": 1,
+      "extra_against_fresh_mm3": 0.0,
+      "missing_against_fresh_mm3": 0.0
+    }
+  },
+  "contacts": {
+    "Body2": {
+      "unchanged_native_seat_overlap_mm3": 0.2990274047391118,
+      "overlap_z_interval_in_encoder_mm": [
+        4.494729791763071,
+        4.5
+      ],
+      "overlap_after_catalog_seating_mm3": 0.0
+    },
+    "Body4": {
+      "unchanged_native_seat_overlap_mm3": 0.04707313393803574,
+      "overlap_z_interval_in_encoder_mm": [
+        4.494729791763071,
+        4.5
+      ],
+      "overlap_after_catalog_seating_mm3": 0.0
+    }
+  },
+  "test": "test_ring_disc_chamfer_clears_encoder_bushing_root passed independently",
+  "dxf_cut_diameters_mm": [
+    51.5,
+    7.2
+  ],
+  "dxf_note": "Segno DISCO CENTRAL DEL ARO DE LEDS (segno_ring_disc)  chapa 2.0 mm CANT. 1. L\u00e1ser \u00d87.2; despu\u00e9s mecanizar bisel C0.5 (+0.10/-0.00) x 45\u00b0 s\u00f3lo en CARA INFERIOR, hacia cuerpo del encoder; boca nominal \u00d88.2. Quedan 1.5 mm de paso recto. Cara superior hacia tuerca. Enmascarar paso y bisel; tama\u00f1o FINAL despu\u00e9s de pintar. SIN PLEGADOS.",
+  "catalog_seating_registration_mm": 0.0052702082369293635,
+  "fillet_contact_above_shoulder_mm3": 0.0,
+  "minimum_finished_chamfer_mm": 0.5,
+  "maximum_finished_chamfer_mm": 0.6
+}

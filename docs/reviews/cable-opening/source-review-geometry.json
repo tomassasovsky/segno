@@ -1,0 +1,65 @@
+{
+  "front": {
+    "valid": true,
+    "solids": 1,
+    "removed_mm3": 0.0,
+    "added_mm3": 695.7827155917415,
+    "bbox": {
+      "x": 118.47000000000004,
+      "y": 88.75,
+      "z": 38.04315340151755
+    },
+    "delta_outside_old_slot_mm3": 0.0,
+    "slot_bottom_mm": 21.626139371685998,
+    "envelopes": [
+      {
+        "lower_offset_mm": 7.45,
+        "padded_intersection_mm3": 0.0,
+        "installation_sweep_intersection_mm3": 0.0
+      },
+      {
+        "lower_offset_mm": 8.5,
+        "padded_intersection_mm3": 0.0,
+        "installation_sweep_intersection_mm3": 0.0
+      }
+    ],
+    "sled_intersection_mm3": 0.0
+  },
+  "mid": {
+    "valid": true,
+    "solids": 1,
+    "removed_mm3": 0.0,
+    "added_mm3": 695.7827155917413,
+    "bbox": {
+      "x": 118.47000000000004,
+      "y": 88.75,
+      "z": 74.34502289623741
+    },
+    "delta_outside_old_slot_mm3": 0.0,
+    "slot_bottom_mm": 57.92800886640501,
+    "envelopes": [
+      {
+        "lower_offset_mm": 7.45,
+        "padded_intersection_mm3": 0.0,
+        "installation_sweep_intersection_mm3": 0.0
+      },
+      {
+        "lower_offset_mm": 8.5,
+        "padded_intersection_mm3": 0.0,
+        "installation_sweep_intersection_mm3": 0.0
+      }
+    ],
+    "sled_intersection_mm3": 0.0
+  },
+  "mini": {
+    "valid": true,
+    "solids": 1,
+    "removed_mm3": 0.0,
+    "added_mm3": 0.0,
+    "bbox": {
+      "x": 116.87000000000003,
+      "y": 88.75,
+      "z": 38.019464308713246
+    }
+  }
+}

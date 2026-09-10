@@ -1,0 +1,34 @@
+{
+  "date": "2026-09-05",
+  "finish": "Smooth matte black powder coating, RAL 9005; confirm against a sample coupon",
+  "changed_outputs": {
+    "segno_paint_quote.pdf": {
+      "before_sha256": "bd651bb02873d1e8393fef33df4e3f2f153056ace0df348b89b8f9bced9a4184",
+      "sha256": "49cace81b14bd77e2f659b92325cd2a0c59bbbf4d7d550f5ce2fbd1fd7926173"
+    },
+    "segno_pintura.zip": {
+      "before_sha256": "b50082894df8ee7693e18b0831391fb02eb4887dccf6febd6d058eae4e965939",
+      "sha256": "ecfc9930ead1882066b1f43cff057ac02aae7f12de895f3fbe6d14f99030811d"
+    }
+  },
+  "all_other_output_bytes_unchanged": true,
+  "pdf_pages_visually_inspected": 4,
+  "mask_pages_pixel_identical": [
+    2,
+    3,
+    4
+  ],
+  "pdf_text_only_change": "Negro texturado mate -> Negro liso mate",
+  "painting_zip_members": [
+    "segno_paint_quote.pdf",
+    "segno_base.pdf",
+    "segno_faceplate.pdf",
+    "segno_rear_panel.pdf",
+    "segno_corner_bracket_rear.pdf",
+    "segno_ring_disc.pdf",
+    "segno_post.pdf"
+  ],
+  "member_bytes_match_final_files": true,
+  "supersedes": "The paint PDF and painting ZIP hashes in corner-package-verification.json only; all other hashes remain current.",
+  "supplier_message_sent": false
+}

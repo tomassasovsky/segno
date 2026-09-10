@@ -1,0 +1,287 @@
+{
+  "status": "No unresolved actionable findings in this bounded final support/preservation review. Manufacturing stock, coating and purchased-part physical fit still follow the release acceptance process.",
+  "final_documents": {
+    "pop": {
+      "version": 350,
+      "modified": false,
+      "snapshot_sha256": "661c539b6408b516da8a3cd0f92073175d06d8a1114347ed4828710da5064d57"
+    },
+    "vsm": {
+      "version": 137,
+      "modified": false,
+      "snapshot_sha256": "cbb7aef084e03a8d8d23a5334ea522e50199ef79f8ea47c98ee6ae20b0b0d001"
+    }
+  },
+  "preservation": {
+    "pop": {
+      "old_occurrences": 423,
+      "new_occurrences": 441,
+      "old_bodies": 973,
+      "new_bodies": 991,
+      "only_additions": [
+        "fasteners:1+lid_washer_M3_OD7:1",
+        "fasteners:1+lid_washer_M3_OD7:10",
+        "fasteners:1+lid_washer_M3_OD7:11",
+        "fasteners:1+lid_washer_M3_OD7:12",
+        "fasteners:1+lid_washer_M3_OD7:13",
+        "fasteners:1+lid_washer_M3_OD7:14",
+        "fasteners:1+lid_washer_M3_OD7:15",
+        "fasteners:1+lid_washer_M3_OD7:16",
+        "fasteners:1+lid_washer_M3_OD7:17",
+        "fasteners:1+lid_washer_M3_OD7:18",
+        "fasteners:1+lid_washer_M3_OD7:2",
+        "fasteners:1+lid_washer_M3_OD7:3",
+        "fasteners:1+lid_washer_M3_OD7:4",
+        "fasteners:1+lid_washer_M3_OD7:5",
+        "fasteners:1+lid_washer_M3_OD7:6",
+        "fasteners:1+lid_washer_M3_OD7:7",
+        "fasteners:1+lid_washer_M3_OD7:8",
+        "fasteners:1+lid_washer_M3_OD7:9"
+      ],
+      "no_removed_occurrences": true,
+      "names_appearances_visibility_rules_preserved": true,
+      "warnings_exactly_preserved": true,
+      "warning_feature_count": 82,
+      "all_unrelated_geometry_metadata_preserved": true,
+      "unchanged_pose_body_count": 912,
+      "max_unrelated_world_bounds_change_mm": 1.9895196601282805e-13,
+      "authorized_moved_occurrences": [
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:1",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:10",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:11",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:12",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:13",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:14",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:15",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:16",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:17",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:18",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:2",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:3",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:4",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:5",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:6",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:7",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:8",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:9",
+        "front_shim_pack:1",
+        "front_shim_pack:2",
+        "front_shim_pack:3",
+        "front_shim_pack:4",
+        "front_shim_pack:5",
+        "front_shim_pack:6",
+        "front_shim_pack:7",
+        "front_shim_pack:8",
+        "front_shim_pack:9",
+        "lid_stack:1+screen16_monitor:1",
+        "lid_stack:1+screen16_monitor:1+screen16_block:1",
+        "lid_stack:1+screen16_monitor:1+screen16_case:1",
+        "lid_stack:1+screen16_monitor:1+screen16_display:1",
+        "screen7_module:1"
+      ],
+      "washer_axes_to_actual_18_lid_bores_max_mm": 5.016085174830713e-13,
+      "lid_replaced_same_pose": true,
+      "all_other_component_ids_preserved": true
+    },
+    "vsm": {
+      "old_occurrences": 27,
+      "new_occurrences": 45,
+      "old_bodies": 27,
+      "new_bodies": 45,
+      "only_additions": [
+        "lid_washer_M3_OD7:1",
+        "lid_washer_M3_OD7:10",
+        "lid_washer_M3_OD7:11",
+        "lid_washer_M3_OD7:12",
+        "lid_washer_M3_OD7:13",
+        "lid_washer_M3_OD7:14",
+        "lid_washer_M3_OD7:15",
+        "lid_washer_M3_OD7:16",
+        "lid_washer_M3_OD7:17",
+        "lid_washer_M3_OD7:18",
+        "lid_washer_M3_OD7:2",
+        "lid_washer_M3_OD7:3",
+        "lid_washer_M3_OD7:4",
+        "lid_washer_M3_OD7:5",
+        "lid_washer_M3_OD7:6",
+        "lid_washer_M3_OD7:7",
+        "lid_washer_M3_OD7:8",
+        "lid_washer_M3_OD7:9"
+      ],
+      "no_removed_occurrences": true,
+      "names_appearances_visibility_rules_preserved": true,
+      "warnings_exactly_preserved": true,
+      "warning_feature_count": 0,
+      "all_unrelated_geometry_metadata_preserved": true,
+      "unchanged_pose_body_count": 12,
+      "max_unrelated_world_bounds_change_mm": 0.0,
+      "authorized_moved_occurrences": [
+        "front_shim_pack:1",
+        "front_shim_pack:2",
+        "front_shim_pack:3",
+        "front_shim_pack:4",
+        "front_shim_pack:5",
+        "front_shim_pack:6",
+        "front_shim_pack:7",
+        "front_shim_pack:8",
+        "front_shim_pack:9"
+      ],
+      "washer_axes_to_actual_18_lid_bores_max_mm": 4.648611064127264e-13,
+      "lid_replaced_same_pose": true,
+      "all_other_component_ids_preserved": true
+    }
+  },
+  "screen_final_moves": {
+    "screen7_module:1": {
+      "delta_mm": [
+        0.0,
+        0.04328193101049038,
+        -0.19526052967253626
+      ],
+      "pure_normal_setback_mm": 0.2,
+      "rotations_preserved": true
+    },
+    "lid_stack:1+screen16_monitor:1": {
+      "delta_mm": [
+        0.0,
+        0.043281931010536845,
+        -0.19526052967253554
+      ],
+      "pure_normal_setback_mm": 0.2,
+      "rotations_preserved": true
+    }
+  },
+  "screen16_fit": {
+    "screen16_parent_correction": {
+      "source_solids": 3,
+      "native_solids": 3,
+      "source_volume_mm3": 726907.9035526892,
+      "native_volume_mm3": 726907.903552573,
+      "difference_valid": [
+        true,
+        true
+      ],
+      "source_minus_native_mm3": 0.0,
+      "native_minus_source_mm3": 0.0,
+      "boolean_fuzzy_tolerance_mm": 0.0,
+      "method": "valid bidirectional solid subtraction",
+      "accepted": true
+    },
+    "stand_L": {
+      "intersection_mm3": 0.0,
+      "distance_mm": 9.927276321703277e-13
+    },
+    "stand_R": {
+      "intersection_mm3": 0.0,
+      "distance_mm": 9.927276321703277e-13
+    }
+  },
+  "mid_collar": {
+    "native_direct_brep_area_mm2": 71784.43472063392,
+    "native_direct_brep_volume_mm3": 155805.12259646392,
+    "native_direct_brep_faces": 44,
+    "source_brep_area_mm2": 71784.43472063351,
+    "source_equivalent_overlap_candidate": {
+      "before_volume": 155805.12259626668,
+      "after_volume": 155805.12259626656,
+      "before_area": 71784.43472063351,
+      "after_area": 71784.43472063351,
+      "before_faces": 45,
+      "after_faces": 45,
+      "valid": [
+        true,
+        true
+      ],
+      "differences_valid": [
+        true,
+        true
+      ],
+      "difference_volumes": [
+        0.0,
+        0.0
+      ]
+    },
+    "native_scratch_import": {
+      "volume_mm3": 155805.12259646392,
+      "area_mm2": 71784.43472063392,
+      "faces": 44,
+      "solid": true
+    },
+    "interpretation": "CadQuery re-import of Fusion-exported STEP creates three doubled zero-thickness cap regions at the boss/deck junction, adding678.584013 mm2 of reported face area and invalidating Boolean differences. The live Fusion BRep is valid and has the correct71784.434721 mm2 area, before and after the equivalent replacement. This is a readback artifact, not a missing wall in the live model or source-generated manufacturing part. No source change was made for it.",
+    "initial_diagnosis_corrected": true
+  },
+  "other_native_parity": {
+    "screen7_module.step": {
+      "source_solids": 2,
+      "native_solids": 2,
+      "source_volume_mm3": 127885.10265489551,
+      "native_volume_mm3": 127885.10265489551,
+      "difference_valid": [
+        false,
+        false
+      ],
+      "boolean_fuzzy_tolerance_mm": 1e-05,
+      "method": "independent tessellated boundary and exact sampled BRep surfaces",
+      "boundary_vertex_counts": [
+        16794,
+        16794
+      ],
+      "bidirectional_mesh_vertex_distance_mm": [
+        0.0,
+        0.0
+      ],
+      "bidirectional_exact_surface_sample_distance_mm": [
+        1.4210854715202004e-14,
+        1.4210854715202004e-14
+      ],
+      "source_area_mm2": 71765.71550796005,
+      "native_area_mm2": 71765.71550796005,
+      "accepted": true
+    },
+    "front_shim_pack.step": {
+      "source_solids": 1,
+      "native_solids": 1,
+      "source_volume_mm3": 12.640983439881932,
+      "native_volume_mm3": 12.640983439881932,
+      "difference_valid": [
+        true,
+        true
+      ],
+      "source_minus_native_mm3": 0.0,
+      "native_minus_source_mm3": 0.0,
+      "boolean_fuzzy_tolerance_mm": 0.0,
+      "method": "valid bidirectional solid subtraction",
+      "accepted": true
+    },
+    "lid_washer.step": {
+      "source_solids": 1,
+      "native_solids": 1,
+      "source_volume_mm3": 15.221016406642551,
+      "native_volume_mm3": 15.221016406642548,
+      "difference_valid": [
+        true,
+        true
+      ],
+      "source_minus_native_mm3": 0.0,
+      "native_minus_source_mm3": 0.0,
+      "boolean_fuzzy_tolerance_mm": 0.0,
+      "method": "valid bidirectional solid subtraction",
+      "accepted": true
+    }
+  },
+  "remaining_print_parity": {
+    "parts": [
+      "segno_platform_front_ring",
+      "segno_platform_sled",
+      "segno_screen7_tower",
+      "segno_screen16_stand_L",
+      "segno_screen16_stand_R"
+    ],
+    "result": "Both directions of source/native solid subtraction valid with0mm3 difference for each part."
+  },
+  "limits": [
+    "Native STEP reader artifact is explicitly separated from direct Fusion geometry; no invalid Boolean volume was accepted.",
+    "The existing four7-inch tower/tab contact films were unchanged:0.85931451056mm3 total before and after the.20mm normal move.",
+    "No additional source or delivery file changes followed the passed support tests and final generation."
+  ]
+}
