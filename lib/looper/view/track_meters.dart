@@ -62,6 +62,92 @@ class TrackPeakMeter extends StatelessWidget {
   }
 }
 
+/// [channel]'s per-side peaks, or `(0, 0)` when [state] has no such channel —
+/// the same emit-time tolerance as [peakOf].
+///
+/// A record, so one selector delivers both sides: subscribing to them
+/// separately would rebuild each lane on the other's tick.
+({double left, double right}) stereoPeakOf(LooperState state, int channel) {
+  for (final track in state.tracks) {
+    if (track.channel == channel) {
+      return (left: track.peakL, right: track.peakR);
+    }
+  }
+  return (left: 0, right: 0);
+}
+
+/// One track's two-lane level meter, following [channel]'s own per-side peaks
+/// ([Track.peakL] / [Track.peakR]) — the Mixer's meter.
+///
+/// Its own leaf on the live values, for the reason [TrackPeakMeter] is one:
+/// a level tick must redraw two bars, not the strip around them.
+///
+/// The sides are the peaks AFTER volume, pan and the track's chain, which is
+/// what makes the pan audible on the meter and the level's own marker
+/// meaningful over it.
+class TrackStereoMeter extends StatelessWidget {
+  /// Creates a [TrackStereoMeter].
+  const TrackStereoMeter({
+    required this.channel,
+    required this.color,
+    required this.hasContent,
+    required this.frozen,
+    this.clipColor,
+    this.gap = 8,
+    super.key,
+  });
+
+  /// The channel whose levels these bars follow.
+  final int channel;
+
+  /// The bar fill colour (the track's meter-state colour).
+  final Color color;
+
+  /// Whether the track holds recorded audio (an empty track shows no bars).
+  final bool hasContent;
+
+  /// Whether the track is stopped, so the last live fills are held.
+  final bool frozen;
+
+  /// The clip cap's colour; `null` draws no cap.
+  final Color? clipColor;
+
+  /// The pen's gutter between the two lanes.
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) {
+    final peaks = context.select<LooperBloc, ({double left, double right})>(
+      (bloc) => stereoPeakOf(bloc.state, channel),
+    );
+    return Row(
+      children: [
+        Expanded(
+          child: PeakMeterBar(
+            key: Key('mixer_meter_l_$channel'),
+            peak: peaks.left,
+            color: color,
+            hasContent: hasContent,
+            frozen: frozen,
+            clipColor: clipColor,
+          ),
+        ),
+        SizedBox(width: gap),
+        Expanded(
+          child: PeakMeterBar(
+            key: Key('mixer_meter_r_$channel'),
+            peak: peaks.right,
+            color: color,
+            hasContent: hasContent,
+            frozen: frozen,
+            clipColor: clipColor,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// One track's thin bottom progress bar, following [channel]'s own playhead
 /// ([Track.positionFrames] over its length) — the second moving value a
 /// playing track publishes, subscribed in its own leaf for the same reason

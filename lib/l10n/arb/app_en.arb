@@ -4024,5 +4024,105 @@
                     }
             },
             "description": "Why a track can take no more recording inputs."
+    },
+    "stageViewMixer": "Mixer",
+    "@stageViewMixer": {
+            "description": "The third stage view: level, pan and mute per track."
+    },
+    "mixerMute": "Mute",
+    "@mixerMute": {
+            "description": "Silences a track without changing its level."
+    },
+    "mixerSolo": "Solo",
+    "@mixerSolo": {
+            "description": "While any track is soloed, only soloed tracks are heard."
+    },
+    "mixerLevel": "Level",
+    "@mixerLevel": {
+            "description": "A track’s playback level."
+    },
+    "mixerReset": "Reset mixer",
+    "@mixerReset": {
+            "description": "Every level back to unity and every pan to centre."
+    },
+    "a11yMixerMute": "Mute track {number}",
+    "@a11yMixerMute": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
+    "a11yMixerUnmute": "Unmute track {number}",
+    "@a11yMixerUnmute": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
+    "a11yMixerSolo": "Solo track {number}",
+    "@a11yMixerSolo": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
+    "a11yMixerUnsolo": "Stop soloing track {number}",
+    "@a11yMixerUnsolo": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
+    "a11yMixerClearSolo": "Clear every solo",
+    "@a11yMixerClearSolo": {
+            "description": "The long press on a Solo button."
+    },
+    "a11yMixerEditFx": "Edit track {number} effects",
+    "@a11yMixerEditFx": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
+    "a11yMixerBypassFx": "Bypass track {number} effects",
+    "@a11yMixerBypassFx": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
+    "a11yMixerEnableFx": "Enable track {number} effects",
+    "@a11yMixerEnableFx": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
+    "a11yMixerPan": "Track {number} pan",
+    "@a11yMixerPan": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
+    "a11yMixerLevel": "Track {number} level",
+    "@a11yMixerLevel": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
+    "a11yMixerReset": "Reset every level to unity and every pan to centre",
+    "@a11yMixerReset": {
+            "description": "The top bar’s Reset mixer action."
     }
 }
