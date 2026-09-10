@@ -165,6 +165,7 @@ class SessionRig {
     this.laneChains = const {},
     this.trackChains = const {},
     this.masterChain = const FxChainEnvelope(),
+    this.allTracksChain = const FxChainEnvelope(),
     this.monitors = const [],
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
@@ -217,6 +218,10 @@ class SessionRig {
   /// The session's single Master insert chain; the empty enabled envelope when
   /// it defines none (a v4-or-earlier manifest always does).
   final FxChainEnvelope masterChain;
+
+  /// The session's single All tracks recorded-mix chain (slice 3e); the empty
+  /// enabled envelope when it defines none (every v7-or-earlier manifest).
+  final FxChainEnvelope allTracksChain;
 
   /// The per-input live monitors (Input stage) the session defines.
   final List<SessionRigMonitor> monitors;

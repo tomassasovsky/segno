@@ -489,6 +489,12 @@ typedef enum le_command_code {
    * tail_reset_rev advances. Monitors keep their preferences: new live
    * input sounds again at once. Perf-logged. */
   LE_CMD_CUT_SOUND = 67,
+  /* All tracks recorded-mix chain entry type / active length (slice 3e): the
+   * fx / fxcount arms with channel = 0 (there is one such chain). One shared
+   * config; the audio thread runs it once per output bus over the recorded
+   * contribution to that bus. */
+  LE_CMD_SET_ALL_TRACKS_FX = 68,
+  LE_CMD_SET_ALL_TRACKS_FX_COUNT = 69,
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -2519,6 +2525,41 @@ LE_EXPORT int32_t le_engine_get_all_lane_caches(le_engine* engine,
  * thread — no ring command (no heap pointer crosses to the audio thread
  * here; entries publish through their own atomic seam). The default is
  * appliance-tuned (LE_CACHE_DEFAULT_CAP_BYTES, 64 MiB). */
+/* ---- the All tracks recorded-mix chain (slice 3e) ----
+ *
+ * The accepted design's third FX destination, beside the live inputs and the
+ * per-track chains: "the single shared chain applied after the loop tracks are
+ * combined". It is NOT the output bus — an output chain processes every source
+ * routed to it (live monitoring, the click, backing), where this one processes
+ * the recorded tracks alone, and runs before those other sources join.
+ *
+ * Its entries are always Post: the stage has no dry original of its own,
+ * because it processes a sum computed live from lanes that each own their own
+ * recording. There is no Pre count here.
+ *
+ * ONE config, N instances. Since slice 3b every source picks its own output
+ * destinations, so the combined recorded mix is a per-destination quantity —
+ * a track on Main and a track on Monitor are two different mixes. The chain
+ * runs once per output bus, over the recorded contribution to that bus, on
+ * that bus's own filter memory. Setting a type prepares every bus of the
+ * configured device; le_engine_configure re-prepares them.
+ *
+ * An EMPTY chain (the default) leaves the per-track routing path bit-identical
+ * to the pre-slice-3e engine — topology keys off emptiness, exactly like the
+ * track bus. */
+LE_EXPORT int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
+                                              int32_t type);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_count(le_engine* engine,
+                                                    int32_t count);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_param(le_engine* engine,
+                                                    int32_t index,
+                                                    int32_t param, float value);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_enabled(le_engine* engine,
+                                                      int32_t index,
+                                                      int32_t enabled);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_chain_enabled(le_engine* engine,
+                                                            int32_t enabled);
+
 LE_EXPORT int32_t le_engine_set_fx_cache_cap(le_engine* engine, int64_t bytes);
 
 /* Current wet-cache memory accounting in bytes (entries + in-flight copies).

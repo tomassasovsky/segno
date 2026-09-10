@@ -2623,6 +2623,99 @@ int32_t le_engine_set_output_fx_chain_enabled(le_engine* engine, int32_t bus,
   return LE_OK;
 }
 
+/* ---- the All tracks recorded-mix chain (slice 3e) ----
+ *
+ * The output-bus setters' twin with one config and no bus argument. The only
+ * real difference is the prepare: one shared chain drives one DSP instance
+ * per output bus, so a type set has to allocate for every bus the configured
+ * device has, and a failure on any of them leaves the type unpushed. */
+
+/* Buses the configured device actually has. A type set prepares exactly
+ * these, so a stereo interface allocates one instance's rings rather than
+ * sixteen. A configure resets the chain (le_fx_bus_reset), and the repository
+ * re-pushes it on the next start, so the instances are always prepared
+ * against the device that is actually open. */
+static int32_t le_all_tracks_bus_count(le_engine* engine) {
+  int32_t n = (engine->out_channels + 1) / 2;
+  if (n < 1) n = 1; /* an unconfigured engine still owns bus 0's instance */
+  if (n > LE_MAX_OUTPUT_BUSES) n = LE_MAX_OUTPUT_BUSES;
+  return n;
+}
+
+int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
+                                    int32_t type) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  le_fx_bus* b = &engine->all_tracks;
+  const int32_t cap =
+      engine->fx_delay_frames > 0 ? engine->fx_delay_frames : 48000;
+  const int32_t buses = le_all_tracks_bus_count(engine);
+  /* Every instance first: a half-prepared type would have one destination
+   * play the effect and another play dry. */
+  for (int32_t k = 0; k < buses; ++k) {
+    if (le_fx_prepare(&engine->all_tracks_fx[k], index, type, cap) != LE_OK) {
+      return LE_ERR_INVALID;
+    }
+  }
+  const int32_t changed = b->fx_type_pushed[index] != type;
+  if (changed) {
+    float defaults[LE_FX_PARAMS];
+    le_fx_defaults(type, defaults);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&b->a_fx_param[index][p], defaults[p]);
+    }
+  }
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_ALL_TRACKS_FX,
+                                       .fx = {0, 0, index, type}});
+  if (rc == LE_OK) {
+    b->fx_type_pushed[index] = type;
+    if (changed) store_i32(&b->a_fx_enabled[index], 1);
+  }
+  return rc;
+}
+
+int32_t le_engine_set_all_tracks_fx_count(le_engine* engine, int32_t count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  const int32_t rc = le_push_cmd(
+      engine, (le_command){.code = LE_CMD_SET_ALL_TRACKS_FX_COUNT,
+                           .fxcount = {0, 0, count, 0}});
+  if (rc == LE_OK) {
+    le_fx_seed_entering_slots(&engine->all_tracks.fx_count_pushed,
+                              engine->all_tracks.a_fx_enabled, count);
+  }
+  return rc;
+}
+
+int32_t le_engine_set_all_tracks_fx_param(le_engine* engine, int32_t index,
+                                          int32_t param, float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  store_f32(&engine->all_tracks.a_fx_param[index][param], value);
+  return LE_OK;
+}
+
+int32_t le_engine_set_all_tracks_fx_enabled(le_engine* engine, int32_t index,
+                                            int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  store_i32(&engine->all_tracks.a_fx_enabled[index], enabled ? 1 : 0);
+  return LE_OK;
+}
+
+int32_t le_engine_set_all_tracks_fx_chain_enabled(le_engine* engine,
+                                                  int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  store_i32(&engine->all_tracks.a_fx_chain_enabled, enabled ? 1 : 0);
+  return LE_OK;
+}
+
 int32_t le_engine_set_output_level(le_engine* engine, int32_t bus,
                                    float level) {
   if (!le_output_bus_valid(bus)) return LE_ERR_INVALID;

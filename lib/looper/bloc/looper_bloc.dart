@@ -436,6 +436,31 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _repository.setMasterEffects(effects: event.effects);
       _persistMasterChain();
     });
+    on<LooperAllTracksEffectsChanged>((event, _) {
+      _repository.setAllTracksEffects(effects: event.effects);
+      _persistAllTracksChain();
+    });
+    on<LooperAllTracksEffectEnabledToggled>((event, _) {
+      _repository.setAllTracksEffectEnabled(
+        index: event.index,
+        enabled: event.enabled,
+      );
+      _persistAllTracksChain();
+    });
+    on<LooperAllTracksChainEnabledToggled>((event, _) {
+      _repository.setAllTracksChainEnabled(enabled: event.enabled);
+      _persistAllTracksChain();
+    });
+    on<LooperAllTracksEffectParamChanged>((event, _) {
+      // Granular, NOT a whole-chain push — see the bus param handler: a
+      // re-push would reset every slot's DSP state at pointer-move rate.
+      _repository.setAllTracksEffectParam(
+        index: event.index,
+        param: event.param,
+        value: event.value,
+      );
+      _persistAllTracksChain();
+    });
     on<LooperMasterEffectEnabledToggled>((event, _) {
       _repository.setMasterEffectEnabled(
         index: event.index,
@@ -975,6 +1000,20 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
           FxChainEnvelope(
             chainEnabled: _repository.masterChainEnabled,
             entries: _repository.masterEffects,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Persists the All tracks recorded-mix chain envelope.
+  void _persistAllTracksChain() {
+    unawaited(
+      _settings?.saveAllTracksFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: _repository.allTracksChainEnabled,
+            entries: _repository.allTracksEffects,
           ),
         ),
       ),

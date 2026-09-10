@@ -644,6 +644,24 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
     le_output_bus_reset(&engine->outputs[k]);
   }
+  /* The All tracks recorded-mix chain (slice 3e): one config, one DSP
+   * instance per output bus. The config resets like any other bus-stage
+   * chain; every instance's own state is cleared beside it, because a
+   * configure can change how many buses the device has and a stale instance
+   * would carry the previous device's filter memory into the new one. */
+  le_fx_bus_reset(&engine->all_tracks);
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      le_fx_entry_reset(&engine->all_tracks_fx[k], s);
+      le_fx_enable_seed_settled(&engine->all_tracks_fx[k], s);
+      free(engine->all_tracks_fx[k].delay[s][0]);
+      engine->all_tracks_fx[k].delay[s][0] = NULL;
+      free(engine->all_tracks_fx[k].delay[s][1]);
+      engine->all_tracks_fx[k].delay[s][1] = NULL;
+      le_fx_free_octaver(&engine->all_tracks_fx[k], s);
+    }
+    engine->all_tracks_fx[k].enable_clear_cooldown = 0;
+  }
   /* a_perf_follow_output is a preference, not device state: it survives a
    * (re)configure and is zero only from le_engine_create's calloc. */
 
@@ -950,12 +968,15 @@ void le_engine_destroy(le_engine* engine) {
           &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
     }
   }
-  /* Output bus chains (slice 3b). */
+  /* Output bus chains (slice 3b) and the All tracks instances (slice 3e). */
   for (int s = 0; s < LE_FX_MAX; ++s) {
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
       free(engine->outputs[k].fx.fx.delay[s][0]);
       free(engine->outputs[k].fx.fx.delay[s][1]);
       le_fx_free_octaver(&engine->outputs[k].fx.fx, s);
+      free(engine->all_tracks_fx[k].delay[s][0]);
+      free(engine->all_tracks_fx[k].delay[s][1]);
+      le_fx_free_octaver(&engine->all_tracks_fx[k], s);
     }
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
       le_plugin_slot_destroy(atomic_load_explicit(
@@ -1121,6 +1142,16 @@ int32_t le_engine_stop(le_engine* engine) {
   }
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
     le_fx_bus_settle_bypass(&engine->outputs[k].fx);
+  }
+  /* The All tracks instances share one config's flags (slice 3e). */
+  {
+    const int32_t chain_on = load_i32(&engine->all_tracks.a_fx_chain_enabled);
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      if (chain_on && load_i32(&engine->all_tracks.a_fx_enabled[s])) continue;
+      for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+        le_fx_enable_force_bypass(&engine->all_tracks_fx[k], s);
+      }
+    }
   }
   /* Loop-stage wet cache (part 2, [R2](d)): the device (and its callback) is
    * stopped, so join the render worker and release every cache allocation

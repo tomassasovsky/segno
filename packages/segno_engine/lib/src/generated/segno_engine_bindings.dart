@@ -3666,7 +3666,141 @@ class SegnoEngineBindings {
   /// clamped to 0. Direct store + an immediate eviction pass on the control
   /// thread — no ring command (no heap pointer crosses to the audio thread
   /// here; entries publish through their own atomic seam). The default is
-  /// appliance-tuned (LE_CACHE_DEFAULT_CAP_BYTES, 64 MiB).
+  /// appliance-tuned (LE_CACHE_DEFAULT_CAP_BYTES, 64 MiB). */
+  /// /* ---- the All tracks recorded-mix chain (slice 3e) ----
+  ///
+  /// The accepted design's third FX destination, beside the live inputs and the
+  /// per-track chains: "the single shared chain applied after the loop tracks are
+  /// combined". It is NOT the output bus — an output chain processes every source
+  /// routed to it (live monitoring, the click, backing), where this one processes
+  /// the recorded tracks alone, and runs before those other sources join.
+  ///
+  /// Its entries are always Post: the stage has no dry original of its own,
+  /// because it processes a sum computed live from lanes that each own their own
+  /// recording. There is no Pre count here.
+  ///
+  /// ONE config, N instances. Since slice 3b every source picks its own output
+  /// destinations, so the combined recorded mix is a per-destination quantity —
+  /// a track on Main and a track on Monitor are two different mixes. The chain
+  /// runs once per output bus, over the recorded contribution to that bus, on
+  /// that bus's own filter memory. Setting a type prepares every bus of the
+  /// configured device; le_engine_configure re-prepares them.
+  ///
+  /// An EMPTY chain (the default) leaves the per-track routing path bit-identical
+  /// to the pre-slice-3e engine — topology keys off emptiness, exactly like the
+  /// track bus.
+  int le_engine_set_all_tracks_fx(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int type,
+  ) {
+    return _le_engine_set_all_tracks_fx(
+      engine,
+      index,
+      type,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fxPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_all_tracks_fx');
+  late final _le_engine_set_all_tracks_fx = _le_engine_set_all_tracks_fxPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  int le_engine_set_all_tracks_fx_count(
+    ffi.Pointer<le_engine> engine,
+    int count,
+  ) {
+    return _le_engine_set_all_tracks_fx_count(
+      engine,
+      count,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_all_tracks_fx_count');
+  late final _le_engine_set_all_tracks_fx_count =
+      _le_engine_set_all_tracks_fx_countPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  int le_engine_set_all_tracks_fx_param(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int param,
+    double value,
+  ) {
+    return _le_engine_set_all_tracks_fx_param(
+      engine,
+      index,
+      param,
+      value,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_all_tracks_fx_param');
+  late final _le_engine_set_all_tracks_fx_param =
+      _le_engine_set_all_tracks_fx_paramPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+
+  int le_engine_set_all_tracks_fx_enabled(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int enabled,
+  ) {
+    return _le_engine_set_all_tracks_fx_enabled(
+      engine,
+      index,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_all_tracks_fx_enabled');
+  late final _le_engine_set_all_tracks_fx_enabled =
+      _le_engine_set_all_tracks_fx_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  int le_engine_set_all_tracks_fx_chain_enabled(
+    ffi.Pointer<le_engine> engine,
+    int enabled,
+  ) {
+    return _le_engine_set_all_tracks_fx_chain_enabled(
+      engine,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_chain_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_all_tracks_fx_chain_enabled');
+  late final _le_engine_set_all_tracks_fx_chain_enabled =
+      _le_engine_set_all_tracks_fx_chain_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   int le_engine_set_fx_cache_cap(
     ffi.Pointer<le_engine> engine,
     int bytes,
@@ -5055,6 +5189,13 @@ enum le_command_code {
   /// input sounds again at once. Perf-logged.
   LE_CMD_CUT_SOUND(67),
 
+  /// All tracks recorded-mix chain entry type / active length (slice 3e): the
+  /// fx / fxcount arms with channel = 0 (there is one such chain). One shared
+  /// config; the audio thread runs it once per output bus over the recorded
+  /// contribution to that bus.
+  LE_CMD_SET_ALL_TRACKS_FX(68),
+  LE_CMD_SET_ALL_TRACKS_FX_COUNT(69),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100),
@@ -5143,6 +5284,8 @@ enum le_command_code {
     65 => LE_CMD_SET_OUTPUT_FX,
     66 => LE_CMD_SET_OUTPUT_FX_COUNT,
     67 => LE_CMD_CUT_SOUND,
+    68 => LE_CMD_SET_ALL_TRACKS_FX,
+    69 => LE_CMD_SET_ALL_TRACKS_FX_COUNT,
     100 => LE_EVT_LAYER_RETIRED,
     101 => LE_EVT_TAKE_CANCELLED,
     102 => LE_EVT_CLEAR_FROZEN,

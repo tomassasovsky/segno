@@ -394,6 +394,12 @@ class LooperRepository {
   final Map<int, List<TrackEffect>> _trackEffects = {};
   List<TrackEffect> _masterEffects = const [];
 
+  /// The All tracks recorded-mix chain (slice 3e), remembered and re-applied
+  /// on every (re)start like the others. One chain for every destination: the
+  /// engine runs it once per output bus over that bus's recorded mix.
+  List<TrackEffect> _allTracksEffects = const [];
+  bool _allTracksChainEnabled = true;
+
   /// Track/monitor/master chain-enabled flags (absent / `true` => enabled),
   /// stored like [_laneChainEnabled].
   final Map<int, bool> _trackChainEnabled = {};
@@ -1216,6 +1222,10 @@ class LooperRepository {
       if (_masterEffects.isNotEmpty) _applyMasterEffects();
       if (!_masterChainEnabled) {
         _engine.setOutputFxChainEnabled(bus: kMasterOutputBus, enabled: false);
+      }
+      if (_allTracksEffects.isNotEmpty) _applyAllTracksEffects();
+      if (!_allTracksChainEnabled) {
+        _engine.setAllTracksFxChainEnabled(enabled: false);
       }
       // Re-apply the structural output gate. A fresh start enables every
       // output, so only the stored OFF entries need re-asserting (default-on).
@@ -2326,6 +2336,8 @@ class LooperRepository {
     // envelope and wipes whatever the previous session left on the bus.
     setMasterEffects(effects: rig.masterChain.entries);
     setMasterChainEnabled(enabled: rig.masterChain.chainEnabled);
+    setAllTracksEffects(effects: rig.allTracksChain.entries);
+    setAllTracksChainEnabled(enabled: rig.allTracksChain.chainEnabled);
     // Monitors: fully reset every remembered monitor the rig does not define —
     // not just its chain but its enable / routing / mix too, or an input
     // enabled under session A would keep monitoring under session B (the F2
@@ -4263,6 +4275,112 @@ class LooperRepository {
         index: i,
         enabled: effects[i].enabled,
       );
+    }
+    return result;
+  }
+
+  /// Replaces the All tracks recorded-mix chain with [effects] (clamped to
+  /// [kTrackEffectMax]). Empty == the tracks route straight to their outputs,
+  /// bit-identically. Remembered and re-applied on every (re)start.
+  ///
+  /// Wholly Post, like an output chain: this stage processes a sum computed
+  /// live from the tracks, so it has no dry original to print a Pre entry
+  /// from.
+  EngineResult setAllTracksEffects({required List<TrackEffect> effects}) {
+    _allTracksEffects = _markBusUnsupportedPlugins(
+      _clampAndMint([for (final fx in effects) _placed(fx, FxPlacement.post)]),
+    );
+    _recoverUnnamedBusPlugins();
+    if (!_intendRunning) return EngineResult.ok;
+    return _applyAllTracksEffects();
+  }
+
+  /// The remembered All tracks chain (empty if none), in processing order.
+  List<TrackEffect> get allTracksEffects =>
+      List<TrackEffect>.unmodifiable(_allTracksEffects);
+
+  /// Whether the All tracks chain is engaged as a whole (R15).
+  bool get allTracksChainEnabled => _allTracksChainEnabled;
+
+  /// The All tracks chain as a persisted envelope.
+  FxChainEnvelope allTracksChainEnvelope() => FxChainEnvelope(
+    chainEnabled: _allTracksChainEnabled,
+    entries: _allTracksEffects,
+  );
+
+  /// Sets parameter [param] of All tracks chain entry [index] to [value]
+  /// (`0..1`) without resetting DSP state.
+  EngineResult setAllTracksEffectParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    if (index < 0 || index >= _allTracksEffects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = _allTracksEffects[index];
+    if (fx is! BuiltInEffect) return EngineResult.invalid;
+    final next = List<TrackEffect>.of(_allTracksEffects)
+      ..[index] = fx.copyWith(params: [...fx.params]..[param] = value);
+    _allTracksEffects = next;
+    return _engine.setAllTracksFxParam(
+      index: index,
+      param: param,
+      value: value,
+    );
+  }
+
+  /// Enables/disables All tracks chain entry [index].
+  EngineResult setAllTracksEffectEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    if (index < 0 || index >= _allTracksEffects.length) {
+      return EngineResult.invalid;
+    }
+    _allTracksEffects = List<TrackEffect>.of(_allTracksEffects)
+      ..[index] = _withEnabled(_allTracksEffects[index], enabled);
+    return _engine.setAllTracksFxEnabled(index: index, enabled: enabled);
+  }
+
+  /// Enables/disables the whole All tracks chain, leaving the per-entry flags
+  /// intact.
+  EngineResult setAllTracksChainEnabled({required bool enabled}) {
+    _allTracksChainEnabled = enabled;
+    return _engine.setAllTracksFxChainEnabled(enabled: enabled);
+  }
+
+  /// The All tracks chain's fingerprint, for divergence detection.
+  int allTracksFxChainFingerprint() => fxChainFingerprint(
+    _allTracksEffects,
+    chainEnabled: _allTracksChainEnabled,
+  );
+
+  /// Pushes the remembered All tracks chain to the engine — the master twin:
+  /// each entry's type + params, the count, then every per-slot enabled bit
+  /// (R16 ordering, see [_applyLaneEffects]).
+  EngineResult _applyAllTracksEffects() {
+    final effects = _allTracksEffects;
+    for (var i = 0; i < effects.length; i++) {
+      final fx = effects[i];
+      _engine.setAllTracksFx(
+        index: i,
+        // A hosted plugin publishes as passthrough here for the same reason
+        // it does at the other bus stages: the engine has no bus-stage slot
+        // ABI (see the section comment above the bus setters).
+        type: fx is BuiltInEffect
+            ? trackEffectTypeToEngine(fx.type)
+            : trackEffectTypeToEngine(TrackEffectType.none),
+      );
+      if (fx is BuiltInEffect) {
+        for (var p = 0; p < fx.params.length; p++) {
+          _engine.setAllTracksFxParam(index: i, param: p, value: fx.params[p]);
+        }
+      }
+    }
+    final result = _engine.setAllTracksFxCount(count: effects.length);
+    for (var i = 0; i < effects.length; i++) {
+      _engine.setAllTracksFxEnabled(index: i, enabled: effects[i].enabled);
     }
     return result;
   }

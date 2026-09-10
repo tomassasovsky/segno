@@ -1073,6 +1073,63 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx(_engine, index, type.code),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_count(_engine, count),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_param(_engine, index, param, value),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_enabled(
+        _engine,
+        index,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_chain_enabled(
+        _engine,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
   // ---- Output buses (slice 3b) ----
 
   @override

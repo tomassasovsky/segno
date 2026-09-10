@@ -23,6 +23,7 @@ void main() {
       when(looper.allLaneChains).thenReturn(const {});
       when(looper.allTrackChains).thenReturn(const {});
       when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+      when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
       when(looper.allMonitors).thenReturn(const {});
     });
 
@@ -131,6 +132,25 @@ void main() {
       expect(decodeFxChain(chains.monitors.single.encoded).chainEnabled, false);
     });
 
+    test('the All tracks chain round-trips as an envelope, and a rig with '
+        'none writes the empty-string spelling (slice 3e)', () {
+      when(looper.allTracksChainEnvelope).thenReturn(
+        FxChainEnvelope(entries: [BuiltInEffect(type: TrackEffectType.reverb)]),
+      );
+
+      final chains = chainsFromLooper(looper);
+      expect(chains.allTracksChain, isNotEmpty);
+      expect(
+        decodeFxChain(chains.allTracksChain).entries.single,
+        BuiltInEffect(type: TrackEffectType.reverb),
+      );
+
+      // A rig with no All tracks state writes the manifest's one way to say
+      // "empty", the Master rule exactly.
+      when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
+      expect(chainsFromLooper(looper).allTracksChain, '');
+    });
+
     test('captures the two BUS stages (Track + Master) as envelopes', () {
       when(looper.allTrackChains).thenReturn({
         1: FxChainEnvelope(
@@ -180,6 +200,7 @@ void main() {
       when(looper.allLaneChains).thenReturn(const {});
       when(looper.allTrackChains).thenReturn(const {});
       when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+      when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
       when(looper.allMonitors).thenReturn(const {});
       when(() => looper.limiterEnabled).thenReturn(true);
       when(() => looper.limiterCeiling).thenReturn(0.99);

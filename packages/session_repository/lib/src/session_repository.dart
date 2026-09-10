@@ -36,6 +36,7 @@ class SessionChains {
     this.monitors = const [],
     this.trackChains = const [],
     this.masterChain = '',
+    this.allTracksChain = '',
   });
 
   /// The Loop-stage (per-lane) effect chains to persist.
@@ -50,6 +51,10 @@ class SessionChains {
   /// The Master insert chain to persist as an opaque envelope string; `''`
   /// when the rig has none.
   final String masterChain;
+
+  /// The All tracks recorded-mix chain to persist as an opaque envelope
+  /// string; `''` when the rig has none.
+  final String allTracksChain;
 }
 
 /// One lane's mix as the looper repository holds it (slice 3): its `level`
@@ -587,6 +592,7 @@ class SessionRepository {
       // the looper domain's business, not this package's.
       trackChains: chains.trackChains,
       masterChain: chains.masterChain,
+      allTracksChain: chains.allTracksChain,
       // Tempo/signature/quantize/click/count-in are session-level settings,
       // not derived-from-track-content state, so — unlike baseLengthFrames
       // above — they persist regardless of whether any track has content.

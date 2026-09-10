@@ -779,6 +779,59 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Chain entry types passed to [setAllTracksFx], by index.
+  final Map<int, TrackEffectType> allTracksFx = {};
+
+  /// The active chain length passed to [setAllTracksFxCount].
+  int allTracksFxCount = 0;
+
+  /// Per-entry flags passed to [setAllTracksFxEnabled].
+  final Map<int, bool> allTracksFxEnabled = {};
+
+  /// The flag passed to [setAllTracksFxChainEnabled].
+  bool? allTracksFxChainEnabled;
+
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    if (allTracksFx[index] != type) allTracksFxEnabled[index] = true;
+    allTracksFx[index] = type;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) {
+    for (var s = allTracksFxCount; s < count; s++) {
+      allTracksFxEnabled[s] = true;
+    }
+    allTracksFxCount = count;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    allTracksFxEnabled[index] = enabled;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) {
+    allTracksFxChainEnabled = enabled;
+    return EngineResult.ok;
+  }
+
   /// Per-input enabled flag passed to [setMonitorInputEnabled].
   final Map<int, bool> monitorInputEnabled = {};
 

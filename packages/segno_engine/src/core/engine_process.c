@@ -1791,6 +1791,10 @@ static void handle_cut_sound(le_engine* e, uint64_t frame) {
   for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
     le_fx_state_clear_tails(&e->outputs[k].fx.fx, e->outputs[k].fx.a_fx_type,
                             fx_cap);
+    /* The All tracks instance on the same destination (slice 3e): one config,
+     * so every instance reads the same types. */
+    le_fx_state_clear_tails(&e->all_tracks_fx[k], e->all_tracks.a_fx_type,
+                            fx_cap);
   }
   atomic_fetch_add_explicit(&e->a_tail_reset_rev, 1u, memory_order_relaxed);
 }
@@ -2047,9 +2051,16 @@ static inline void le_store_pan(_Atomic uint32_t* pan_bits,
   store_f32(pan_bits, v);
 }
 
-static void le_fx_route(float* out, int f, int ch_out, uint32_t mask, float l,
-                        float r) {
-  float* o = out + (size_t)f * (size_t)ch_out;
+/* Adds a stereo pair into the channels named by [mask] of ONE frame's channel
+ * slice [o]: a single routed channel gets the mono mid, a pair gets left and
+ * right, and any third or later channel gets the mid again.
+ *
+ * Split out of le_fx_route (slice 3e) so the recorded tracks can be routed
+ * into a scratch frame instead of the output buffer when the All tracks chain
+ * has something on it — the stage runs on the recorded mix per destination,
+ * which is exactly this array. */
+static void le_fx_route_frame(float* o, int ch_out, uint32_t mask, float l,
+                              float r) {
   const float mid = 0.5f * (l + r);
   int n = 0;
   for (int c = 0; c < ch_out; ++c) {
@@ -2062,6 +2073,11 @@ static void le_fx_route(float* out, int f, int ch_out, uint32_t mask, float l,
     o[c] += (n == 1) ? mid : (idx == 0) ? l : (idx == 1) ? r : mid;
     idx++;
   }
+}
+
+static void le_fx_route(float* out, int f, int ch_out, uint32_t mask, float l,
+                        float r) {
+  le_fx_route_frame(out + (size_t)f * (size_t)ch_out, ch_out, mask, l, r);
 }
 
 /* Drops the last `drop` captured frames of a RECORDING non-defining track
@@ -2907,6 +2923,24 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
       store_i32(&e->tracks[ch].bus.a_fx_count, count);
+      break;
+    }
+    case LE_CMD_SET_ALL_TRACKS_FX: {
+      const int32_t index = cmd->fx.index;
+      if (index < 0 || index >= LE_FX_MAX) break;
+      store_i32(&e->all_tracks.a_fx_type[index], cmd->fx.type);
+      /* One config, one instance per bus: every instance's DSP state resets,
+       * or a destination would keep the previous effect's filter memory. */
+      for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+        le_fx_entry_reset(&e->all_tracks_fx[k], index);
+      }
+      break;
+    }
+    case LE_CMD_SET_ALL_TRACKS_FX_COUNT: {
+      int32_t count = cmd->fxcount.count;
+      if (count < 0) count = 0;
+      if (count > LE_FX_MAX) count = LE_FX_MAX;
+      store_i32(&e->all_tracks.a_fx_count, count);
       break;
     }
     case LE_CMD_SET_OUTPUT_FX: {
@@ -4542,12 +4576,29 @@ static inline void mix_tracks_frame(
     int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], const int* trk_has_fx,
     const int32_t* trk_fx_count, int32_t trk_fx_type[][LE_FX_MAX],
     float trk_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
-    int32_t trk_fx_enabled[][LE_FX_MAX],
+    int32_t trk_fx_enabled[][LE_FX_MAX], int at_has_fx, int32_t at_fx_count,
+    const int32_t* at_fx_type,
+    const float at_fx_params[LE_FX_MAX][LE_FX_PARAMS],
+    const int32_t* at_fx_enabled,
     const le_wet_entry* cache_ent[][LE_MAX_LANES],
     float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
     int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
     float* trk_lpeak, float* trk_rpeak, const float* in_trim, const int* solo,
     int any_solo, uint64_t perf_frame_base) {
+  /* The All tracks recorded-mix stage (slice 3e). While the chain has
+   * something on it the tracks route HERE instead of straight to `out`, and
+   * the loop after the track loop runs the chain once per output bus over
+   * that bus's recorded contribution before adding it in. An empty chain
+   * skips all of it and the routing path stays bit-identical to the
+   * pre-slice-3e engine (topology keys off emptiness, like the track bus).
+   *
+   * The scratch is per FRAME, not per block: the stage runs inside this
+   * frame, so nothing needs to outlive it. */
+  float rec[LE_MAX_CHANNELS];
+  if (at_has_fx) {
+    for (int c = 0; c < ch_out && c < LE_MAX_CHANNELS; ++c) rec[c] = 0.0f;
+  }
+
   /* Snapshot per-lane playback state once per frame. The track state can flip
    * only between blocks; re-reading per frame is cheap and keeps undo's
    * control-thread a_live swap visible at frame granularity. */
@@ -4996,7 +5047,11 @@ static inline void mix_tracks_frame(
          * engine (D-TRACKROUTE's fingerprint invariant). */
         if (routes) {
           const uint32_t routed = out_mask[t][l] & out_enabled;
-          le_fx_route(out, f, ch_out, routed, wl, wr);
+          if (at_has_fx) {
+            le_fx_route_frame(rec, ch_out, routed, wl, wr);
+          } else {
+            le_fx_route(out, f, ch_out, routed, wl, wr);
+          }
           /* The meter reads what reaches an output: a lane routed to
            * nothing (or only to disabled outputs) sends nothing. */
           if (routed) {
@@ -5054,7 +5109,11 @@ static inline void mix_tracks_frame(
     if (trk_has_fx[t]) {
       fx_apply_chain(&tr->bus.fx, sr, fx_cap, &bus_l, &bus_r, trk_fx_count[t],
                      trk_fx_type[t], trk_fx_params[t], trk_fx_enabled[t]);
-      le_fx_route(out, f, ch_out, bus_mask, bus_l, bus_r);
+      if (at_has_fx) {
+        le_fx_route_frame(rec, ch_out, bus_mask, bus_l, bus_r);
+      } else {
+        le_fx_route(out, f, ch_out, bus_mask, bus_l, bus_r);
+      }
       if (bus_mask) {
         trk_l = bus_l;
         trk_r = bus_r;
@@ -5095,6 +5154,36 @@ static inline void mix_tracks_frame(
        * publish torn content, and one completing just before it would replay
        * exactly the click this fold removes. */
       le_audio_rev_bump(tr);
+    }
+  }
+
+  /* The All tracks stage: one chain, one instance per destination. The
+   * accepted design's "single shared chain applied after the loop tracks are
+   * combined" — and only them: live monitoring, the click and the output
+   * chains all join after this, which is what makes this stage different from
+   * an output chain.
+   *
+   * Per bus because slice 3b made output selection per source: a track on
+   * Main and a track on Monitor are two different recorded mixes, and one
+   * shared instance would have to send each track's audio to the other's
+   * jacks. Every bus of the device runs, fed or not, so a tail that started
+   * on one keeps draining while nothing new arrives — the same run-on-silence
+   * rule the lane and track chains follow.
+   *
+   * A single-channel last bus processes its channel as l == r and writes only
+   * that channel, exactly as output_bus_frame does. */
+  if (at_has_fx) {
+    float* o = out + (size_t)f * (size_t)ch_out;
+    const int bus_n = (ch_out + 1) / 2;
+    for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
+      const int c0 = 2 * k;
+      const int c1 = c0 + 1 < ch_out ? c0 + 1 : -1;
+      float l = rec[c0];
+      float r = c1 >= 0 ? rec[c1] : l;
+      fx_apply_chain(&e->all_tracks_fx[k], sr, fx_cap, &l, &r, at_fx_count,
+                     at_fx_type, at_fx_params, at_fx_enabled);
+      o[c0] += l;
+      if (c1 >= 0) o[c1] += r;
     }
   }
 }
@@ -5341,6 +5430,18 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   snapshot_track_fx(e, tc, trk_fx_count, trk_fx_type, trk_fx_params,
                     trk_fx_enabled, trk_has_fx);
 
+  /* The All tracks recorded-mix chain (slice 3e), one config for every
+   * destination. at_has_fx is this stage's topology gate, the track bus's
+   * rule exactly: false (empty chain) leaves the tracks routing straight to
+   * the outputs as before. */
+  int32_t at_fx_count;
+  int32_t at_fx_type[LE_FX_MAX];
+  float at_fx_params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t at_fx_enabled[LE_FX_MAX];
+  int at_has_fx;
+  snapshot_bus_fx(&e->all_tracks, &at_fx_count, at_fx_type, at_fx_params,
+                  at_fx_enabled, &at_has_fx);
+
   /* Loop-stage wet cache (part 2), snapshotted once per buffer (see
    * snapshot_lane_cache): the per-lane published-entry pointer + full key
    * verdict. NULL everywhere until a render publishes — one relaxed load per
@@ -5441,7 +5542,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                      lane_n, lane_fx_any, has_fx, fx_count, fx_pre_count,
                      fx_type, fx_params, fx_enabled,
                      trk_has_fx, trk_fx_count, trk_fx_type, trk_fx_params,
-                     trk_fx_enabled, cache_ent, lane_sumsq, lane_peak, st,
+                     trk_fx_enabled, at_has_fx, at_fx_count, at_fx_type,
+                     at_fx_params, at_fx_enabled, cache_ent, lane_sumsq,
+                     lane_peak, st,
                      frame_trk_peak, trk_sumsq, trk_peak, trk_lpeak, trk_rpeak,
                      in_trim, solo, any_solo, perf_frame_base);
 
