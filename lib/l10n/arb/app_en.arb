@@ -3986,5 +3986,43 @@
     "routingNoPortsYet": "No ports until an interface is open.",
     "@routingNoPortsYet": {
             "description": "Shown on a names page with no device open."
+    },
+    "routingRowSubtitle": "Inputs, recording, destinations and output setup",
+    "@routingRowSubtitle": {
+            "description": "What the Audio routing row leads to."
+    },
+    "routingInputOrdinalSide": "Input {number} · {side}",
+    "@routingInputOrdinalSide": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    },
+                    "side": {
+                            "type": "String"
+                    }
+            },
+            "description": "A jack that is one half of a linked stereo pair."
+    },
+    "routingTrimSide": "Recording trim · {side}",
+    "@routingTrimSide": {
+            "placeholders": {
+                    "side": {
+                            "type": "String"
+                    }
+            },
+            "description": "The recording trim of one half of a linked pair."
+    },
+    "routingClip": "CLIP",
+    "@routingClip": {
+            "description": "The meter reading when the engine holds a clip on this input."
+    },
+    "routingTrackFull": "A track records at most {count} inputs. Free one to add another.",
+    "@routingTrackFull": {
+            "placeholders": {
+                    "count": {
+                            "type": "int"
+                    }
+            },
+            "description": "Why a track can take no more recording inputs."
     }
 }

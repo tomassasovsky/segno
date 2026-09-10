@@ -425,8 +425,17 @@ void main() {
 
     // Routing is a row here again (slice 3c): the Signal surface owns the
     // whole-system signal flow, and Audio routing owns the input and output
-    // setup the accepted design puts under Settings.
+    // setup the accepted design puts under Settings. Like Loop, it opens its
+    // own route, so tapping it here leaves the page where it was. That the
+    // route itself opens is covered where the route lives, in
+    // test/looper/view/audio_routing/audio_routing_test.dart.
     expect(find.byKey(const Key('settings_tab_routing')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('settings_tab_routing')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('audioSettings_playbackDevice_picker')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Escape pops the settings page', (tester) async {

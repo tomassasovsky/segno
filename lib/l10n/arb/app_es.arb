@@ -2245,5 +2245,10 @@
     "routingRename": "Renombrar",
     "routingRenameTitle": "Renombrar",
     "routingRenameField": "Nombre de {port}",
-    "routingNoPortsYet": "No hay puertos hasta que se abra una interfaz."
+    "routingNoPortsYet": "No hay puertos hasta que se abra una interfaz.",
+    "routingRowSubtitle": "Entradas, grabación, destinos y configuración de salida",
+    "routingInputOrdinalSide": "Entrada {number} · {side}",
+    "routingTrimSide": "Ganancia de grabación · {side}",
+    "routingClip": "SATURA",
+    "routingTrackFull": "Una pista graba como máximo {count} entradas. Libera una para añadir otra."
 }

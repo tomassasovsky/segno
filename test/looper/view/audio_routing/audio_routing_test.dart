@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
@@ -16,6 +17,7 @@ import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
+import 'package:segno/looper/view/audio_routing/input_setup_tab.dart';
 import 'package:segno/looper/view/audio_routing/output_routing_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -90,12 +92,22 @@ void main() {
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorMute(
+        input: any(named: 'input'),
+        muted: any(named: 'muted'),
+      ),
+    ).thenReturn(EngineResult.ok);
     when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => states.close());
 
-  Future<void> pump(WidgetTester tester, {LooperState state = _rig}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    LooperState state = _rig,
+    Widget home = const AudioRoutingPage(),
+  }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -113,28 +125,31 @@ void main() {
     addTearDown(() => unawaited(monitors.close()));
     tempo = TempoCubit(repository: repository, settings: settings);
     addTearDown(() => unawaited(tempo.close()));
+    // Providers ABOVE the app, so a route pushed onto the root navigator can
+    // read them: the navigator builds its routes outside `home`'s subtree.
     await tester.pumpWidget(
-      MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        theme: ThemeData(
-          extensions: [
-            SurfaceTheme.dark,
-            routingGraphThemeFromSurface(SurfaceTheme.dark),
+      RepositoryProvider<LooperRepository>.value(
+        value: repository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider.value(value: inputs),
+            BlocProvider.value(value: tracks),
+            BlocProvider.value(value: outputs),
+            BlocProvider.value(value: monitors),
+            BlocProvider.value(value: tempo),
           ],
-        ),
-        home: RepositoryProvider<LooperRepository>.value(
-          value: repository,
-          child: MultiBlocProvider(
-            providers: [
-              BlocProvider<LooperBloc>.value(value: bloc),
-              BlocProvider.value(value: inputs),
-              BlocProvider.value(value: tracks),
-              BlocProvider.value(value: outputs),
-              BlocProvider.value(value: monitors),
-              BlocProvider.value(value: tempo),
-            ],
-            child: const AudioRoutingPage(),
+          child: MaterialApp(
+            navigatorKey: segnoNavigatorKey,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            theme: ThemeData(
+              extensions: [
+                SurfaceTheme.dark,
+                routingGraphThemeFromSurface(SurfaceTheme.dark),
+              ],
+            ),
+            home: home,
           ),
         ),
       ),
@@ -146,6 +161,9 @@ void main() {
   Future<void> push(WidgetTester tester, LooperState state) async {
     when(() => bloc.state).thenReturn(state);
     states.add(state);
+    // Two frames: the first delivers the stream event to the providers, the
+    // second builds what the new value changed.
+    await tester.pump();
     await tester.pump();
   }
 
@@ -230,13 +248,20 @@ void main() {
     );
   });
 
-  testWidgets('a clipping input says so instead of the trim note', (
-    tester,
-  ) async {
-    await pump(tester, state: _rig.copyWithClip(0));
+  testWidgets('a clipping input says so beside the trim note, and the meter '
+      'reads CLIP', (tester) async {
+    await pump(tester);
     final l10n = l10nOf(tester);
+    expect(find.text(l10n.routingClipNote), findsNothing);
+    expect(find.text(l10n.routingClip), findsNothing);
+    expect(find.text(l10n.routingTrimNote), findsOneWidget);
+
+    await push(tester, _rig.copyWithClip(0));
+    // The clip is a line of its own: the trim note says what the control
+    // below does, which is still true while the jack is clipping.
     expect(find.text(l10n.routingClipNote), findsOneWidget);
-    expect(find.text(l10n.routingTrimNote), findsNothing);
+    expect(find.text(l10n.routingTrimNote), findsOneWidget);
+    expect(find.text(l10n.routingClip), findsOneWidget);
   });
 
   testWidgets('the four tasks are pills and switching keeps the route', (
@@ -696,6 +721,290 @@ void main() {
     );
   });
 
+  testWidgets('the format lock covers BOTH members of a pair, not just the '
+      'jack on screen', (tester) async {
+    // The repository refuses the pair change while EITHER member feeds an
+    // armed track. A lock that asked only about the shown jack would draw a
+    // live control that is then silently refused.
+    await pump(tester, state: _rig.copyWithCapturing());
+    final l10n = l10nOf(tester);
+    expect(find.text(l10n.routingLockedFormat), findsOneWidget);
+
+    // Track 0 records input 0; input 1 is its pair partner and is held too.
+    await tester.tap(find.byKey(const Key('routing_input_card_1')));
+    await tester.pump();
+    expect(find.text(l10n.routingLockedFormat), findsOneWidget);
+    await tester.tap(find.byKey(const Key('routing_format_stereo')));
+    await tester.pump();
+    verifyNever(() => bloc.add(any(that: isA<LooperInputPairChanged>())));
+
+    // Input 2 is nobody's partner here, so its format is free.
+    await tester.tap(find.byKey(const Key('routing_input_card_2')));
+    await tester.pump();
+    expect(find.text(l10n.routingLockedFormat), findsNothing);
+  });
+
+  testWidgets('a narrower device does not leave the page editing a jack it '
+      'no longer has', (tester) async {
+    // Track 0 records input 0 and is capturing, so on the wide rig input 3 is
+    // free and input 0 is held.
+    await pump(tester, state: _rig.copyWithCapturing());
+    await tester.tap(find.byKey(const Key('routing_input_card_3')));
+    await tester.pump();
+    final l10n = l10nOf(tester);
+    expect(find.text(l10n.routingLockedFormat), findsNothing);
+
+    // The interface is swapped for a two-in one. The page falls back to input
+    // 0, and everything it draws has to describe THAT jack: a lock computed
+    // for the jack the finger last touched would freeze a control that the
+    // repository would happily accept, or free one it refuses.
+    await push(tester, _rig.copyWithCapturingChannels(inputs: 2));
+    expect(find.byKey(const Key('routing_input_card_3')), findsNothing);
+    expect(find.text(l10n.routingLockedFormat), findsOneWidget);
+
+    final slider = find.byKey(const Key('routing_trim_slider'));
+    await tester.tapAt(tester.getTopLeft(slider) + const Offset(400, 20));
+    await tester.pump();
+    final captured = verify(
+      () => bloc.add(captureAny(that: isA<LooperInputTrimChanged>())),
+    ).captured.cast<LooperInputTrimChanged>();
+    expect(captured.single.input, 0);
+  });
+
+  testWidgets('a narrower device does not leave Output setup editing a '
+      'destination it no longer has', (tester) async {
+    await pump(tester);
+    await openOutputSetup(tester);
+    await tester.tap(find.byKey(const Key('output_card_1')));
+    await tester.pump();
+
+    await push(tester, _rig.copyWithChannels(inputs: 2, outputs: 2));
+    expect(find.byKey(const Key('output_card_1')), findsNothing);
+    await tester.tap(find.byKey(const Key('output_mute')));
+    await tester.pump();
+    verify(
+      () => bloc.add(
+        const LooperOutputMuteChanged(kMasterOutputBus, muted: true),
+      ),
+    ).called(1);
+  });
+
+  testWidgets('a jack this track records that the rig has not got keeps its '
+      'own card', (tester) async {
+    // Reopen an eight-in session on a four-in rig: without a card, the lane
+    // recording In 7 is invisible, unclearable, and survives every restart.
+    await pump(
+      tester,
+      state: _rig.copyWithLanes(const [Lane(inputChannel: 6)]),
+    );
+    await openRecord(tester);
+
+    expect(find.byKey(const Key('routing_record_card_6')), findsOneWidget);
+    expect(cardSelected(tester, 6), isTrue);
+    await tester.tap(find.byKey(const Key('routing_record_card_6')));
+    await tester.pump();
+    verify(() => bloc.add(const LooperLaneInputChanged(0, 0, -1))).called(1);
+  });
+
+  testWidgets('a full track says so and stops offering more jacks', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      state: _rig.copyWithLanes([
+        for (var lane = 0; lane < kMaxLanes; lane++)
+          const Lane(inputChannel: 0),
+      ], inputs: 18),
+    );
+    await openRecord(tester);
+    final l10n = l10nOf(tester);
+
+    expect(find.text(l10n.routingTrackFull(kMaxLanes)), findsOneWidget);
+    // A card that cannot be taken is drawn inert, not left looking live with
+    // a tap that quietly does nothing.
+    expect(cardEnabled(tester, 3), isFalse);
+    // The jack this track already records stays live, so it can be freed.
+    expect(cardEnabled(tester, 0), isTrue);
+    await tester.tap(find.byKey(const Key('routing_record_card_3')));
+    await tester.pump();
+    verifyNever(() => bloc.add(any(that: isA<LooperLaneCountChanged>())));
+    verifyNever(() => bloc.add(any(that: isA<LooperLaneInputChanged>())));
+  });
+
+  testWidgets('a destination the rig has not got can still be switched off', (
+    tester,
+  ) async {
+    // A session routed to Outputs 5-6 reopened on a four-out rig: the card is
+    // drawn beyond the device so the route has somewhere to be cleared.
+    await pump(
+      tester,
+      state: _rig.copyWithLanes(const [Lane(outputMask: 0x30)]),
+    );
+    await openOutputs(tester);
+    await tester.tap(find.byKey(const Key('routing_kind_tracks')));
+    await tester.pump();
+
+    // The third card is past the pen's two, so the row scrolls to it.
+    await tester.dragUntilVisible(
+      find.byKey(const Key('routing_destination_2')),
+      find.byKey(const Key('routing_destination_0')),
+      const Offset(-300, 0),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('routing_destination_2')), findsOneWidget);
+    expect(destinationSelected(tester, 2), isTrue);
+    // Both jacks are cleared, not only the ones this device has: clearing
+    // half would leave the card lit and every later tap a no-op.
+    await tester.tap(find.byKey(const Key('routing_destination_2')));
+    await tester.pump();
+    verify(() => bloc.add(const LooperLaneOutputChanged(0, 0, 0))).called(1);
+  });
+
+  testWidgets('a source that only reaches jacks the rig has not got says it '
+      'reaches nothing', (tester) async {
+    await pump(
+      tester,
+      state: _rig.copyWithLanes(const [Lane(outputMask: 0x30)]),
+    );
+    await openOutputs(tester);
+    await tester.tap(find.byKey(const Key('routing_kind_tracks')));
+    await tester.pump();
+
+    // Outputs 5-6 on a four-out rig is silence, and the note says so rather
+    // than leaving an inaudible source looking routed.
+    expect(
+      find.text(l10nOf(tester).routingNoDestinations),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('with no interface open every task says so instead of drawing '
+      'controls for a rig that is not there', (tester) async {
+    await pump(tester, state: const LooperState());
+    final l10n = l10nOf(tester);
+
+    await openOutputs(tester);
+    expect(find.text(l10n.routingNoDestinationsYet), findsOneWidget);
+    await openOutputSetup(tester);
+    expect(find.text(l10n.routingNoDestinationsYet), findsOneWidget);
+    expect(find.byKey(const Key('output_mute')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('routing_names_action')));
+    await tester.pump();
+    expect(find.text(l10n.routingNoPortsYet), findsOneWidget);
+  });
+
+  testWidgets('Hear live follows the jack that is picked', (tester) async {
+    await pump(tester);
+    await openOutputs(tester);
+
+    await tester.tap(find.byKey(const Key('routing_source_input_2')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('routing_monitor_on')));
+    await tester.pump();
+    verify(
+      () => repository.setMonitorInputMode(input: 2, mode: MonitorMode.on),
+    ).called(1);
+
+    // And Send to now writes that jack's monitor, not the first one's.
+    await tester.tap(find.byKey(const Key('routing_destination_1')));
+    await tester.pump();
+    verify(() => repository.setMonitorOutput(input: 2, mask: 0xF)).called(1);
+  });
+
+  testWidgets('a monitor muted in Mixer says so rather than looking switched '
+      'on', (tester) async {
+    await pump(tester);
+    await openOutputs(tester);
+    final l10n = l10nOf(tester);
+    expect(find.text(l10n.routingHearMuted), findsNothing);
+
+    await monitors.setMute(0, muted: true);
+    await tester.pump();
+    expect(find.text(l10n.routingHearMuted), findsOneWidget);
+  });
+
+  testWidgets('a slider previews under the finger and commits once on '
+      'release', (tester) async {
+    await pump(tester);
+    final l10n = l10nOf(tester);
+    expect(find.text(l10n.routingTrimDb('0.0')), findsOneWidget);
+
+    final slider = find.byKey(const Key('routing_trim_slider'));
+    final start = tester.getTopLeft(slider) + const Offset(700, 20);
+    final gesture = await tester.startGesture(start);
+    await gesture.moveTo(tester.getTopLeft(slider) + const Offset(300, 20));
+    await tester.pump();
+
+    // The readout follows the finger; nothing is written yet.
+    expect(find.text(l10n.routingTrimDb('0.0')), findsNothing);
+    verifyNever(() => bloc.add(any(that: isA<LooperInputTrimChanged>())));
+
+    await gesture.up();
+    await tester.pump();
+    verify(
+      () => bloc.add(any(that: isA<LooperInputTrimChanged>())),
+    ).called(1);
+  });
+
+  testWidgets('the route opens once, on the task it is asked for', (
+    tester,
+  ) async {
+    // The console reaches Audio routing through a row that calls
+    // `openAudioRouting`; a second call while it is open must not stack a
+    // duplicate behind the first.
+    resetSegnoNavigatorForTest();
+    await pump(tester, home: const SizedBox.shrink());
+
+    unawaited(openAudioRouting(initial: AudioRoutingTab.outputs));
+    await tester.pumpAndSettle();
+    expect(find.byType(AudioRoutingPage), findsOneWidget);
+    expect(find.text(l10nOf(tester).routingSendTo), findsOneWidget);
+
+    unawaited(openAudioRouting());
+    await tester.pumpAndSettle();
+    expect(find.byType(AudioRoutingPage), findsOneWidget);
+
+    // And Back leaves it, so the guard is cleared rather than stuck on.
+    await tester.tap(find.byKey(const Key('loop_settings_back')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AudioRoutingPage), findsNothing);
+    unawaited(openAudioRouting());
+    await tester.pumpAndSettle();
+    expect(find.byType(AudioRoutingPage), findsOneWidget);
+  });
+
+  group('routingPlacementLabel', () {
+    late AppLocalizations l10n;
+
+    setUpAll(() async {
+      l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    });
+
+    test('names the side and how far, and has a word for the middle', () {
+      expect(routingPlacementLabel(l10n, 0), l10n.routingPanCenter);
+      expect(routingPlacementLabel(l10n, -0.5), l10n.routingPanLeftAmount(50));
+      expect(routingPlacementLabel(l10n, 1), l10n.routingPanRightAmount(100));
+      // Rounding to nothing is the middle, not a 0% side.
+      expect(routingPlacementLabel(l10n, 0.001), l10n.routingPanCenter);
+    });
+  });
+
+  group('routingDbfsLabel', () {
+    late AppLocalizations l10n;
+
+    setUpAll(() async {
+      l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    });
+
+    test('reads the peak, and says nothing is coming out below the floor', () {
+      expect(routingDbfsLabel(l10n, 1), l10n.routingOutputDbfs('0.0'));
+      expect(routingDbfsLabel(l10n, 0.5), l10n.routingOutputDbfs('-6.0'));
+      expect(routingDbfsLabel(l10n, 0), l10n.routingOutputSilent);
+      expect(routingDbfsLabel(l10n, 0.0001), l10n.routingOutputSilent);
+    });
+  });
+
   group('routingMeterPosition', () {
     test('lights cells where the scale under them says they belong', () {
       // The scale prints -60, -24, -12 and 0 dBFS at four evenly spaced
@@ -729,6 +1038,18 @@ bool destinationSelected(WidgetTester tester, int bus) => tester
     .first
     .properties
     .selected!;
+
+/// Whether the Recording inputs card for [input] can be taken.
+bool cardEnabled(WidgetTester tester, int input) => tester
+    .widgetList<Semantics>(
+      find.descendant(
+        of: find.byKey(Key('routing_record_card_$input')),
+        matching: find.byType(Semantics),
+      ),
+    )
+    .first
+    .properties
+    .enabled!;
 
 /// Switches to the Output setup task.
 Future<void> openOutputSetup(WidgetTester tester) async {
@@ -775,16 +1096,36 @@ extension on LooperState {
     outputSetup: OutputSetup(buses: {kMasterOutputBus: bus}),
   );
 
-  /// [_rig] with track 0 holding [lanes] and track 1 recording input 3.
-  LooperState copyWithLanes(List<Lane> lanes) => LooperState(
+  /// [_rig] with track 0 holding [lanes] and track 1 recording input 3,
+  /// optionally on a wider interface.
+  LooperState copyWithLanes(List<Lane> lanes, {int? inputs}) => LooperState(
     tracks: [
       Track(lanes: lanes),
       const Track(channel: 1, lanes: [Lane(inputChannel: 3)]),
     ],
-    status: status,
+    status: inputs == null
+        ? status
+        : EngineStatus(
+            deviceName: status.deviceName,
+            inputChannels: inputs,
+            outputChannels: status.outputChannels,
+          ),
     inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
   );
+
+  /// [_rig] on an interface with [inputs] in and [outputs] out.
+  LooperState copyWithChannels({required int inputs, required int outputs}) =>
+      LooperState(
+        tracks: tracks,
+        status: EngineStatus(
+          deviceName: status.deviceName,
+          inputChannels: inputs,
+          outputChannels: outputs,
+        ),
+        inputPeaks: inputPeaks,
+        outputBusCount: (outputs + 1) ~/ 2,
+      );
 
   /// [_rig] with [setup] applied.
   LooperState copyWithInputSetup(InputSetup setup) => LooperState(
@@ -793,6 +1134,18 @@ extension on LooperState {
     inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
     inputSetup: setup,
+  );
+
+  /// [_rig] capturing input 0 on an interface with [inputs] in.
+  LooperState copyWithCapturingChannels({required int inputs}) => LooperState(
+    tracks: copyWithCapturing().tracks,
+    status: EngineStatus(
+      deviceName: status.deviceName,
+      inputChannels: inputs,
+      outputChannels: status.outputChannels,
+    ),
+    inputPeaks: inputPeaks,
+    outputBusCount: outputBusCount,
   );
 
   /// [_rig] with track 0 capturing input 0.

@@ -153,57 +153,79 @@ class _NameRow extends StatelessWidget {
     final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.only(left: 6, right: 6, bottom: 12),
-      child: Container(
-        height: 108,
-        decoration: BoxDecoration(
-          color: surface.card,
-          border: Border.all(color: surface.borderSubtle),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              left: 33,
-              top: 38,
-              child: AppText(
-                port,
-                style: TextStyle(
-                  color: surface.textTertiary,
-                  fontSize: 26,
-                  height: 1,
+      // The whole row is the button, as the pen draws it: a 1708 x 108 target
+      // beats a pill inside it on a screen driven by fingers.
+      child: Semantics(
+        button: true,
+        label: l10n.routingRenameField(port),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onRename,
+          child: Container(
+            height: 108,
+            decoration: BoxDecoration(
+              color: surface.card,
+              border: Border.all(color: surface.borderSubtle),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 33,
+                  top: 38,
+                  child: AppText(
+                    port,
+                    style: TextStyle(
+                      color: surface.textTertiary,
+                      fontSize: 26,
+                      height: 1,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            Positioned(
-              left: 245,
-              top: 36,
-              width: 1238,
-              child: AppText(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  // An unnamed port shows its fallback, which is a label
-                  // rather than a name and reads as one.
-                  color: named ? surface.textPrimary : surface.textTertiary,
-                  fontSize: 30,
-                  height: 1,
+                Positioned(
+                  left: 245,
+                  top: 36,
+                  width: 1238,
+                  child: AppText(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      // An unnamed port shows its fallback, which is a label
+                      // rather than a name and reads as one.
+                      color: named ? surface.textPrimary : surface.textTertiary,
+                      fontSize: 30,
+                      height: 1,
+                    ),
+                  ),
                 ),
-              ),
+                Positioned(
+                  right: 27,
+                  top: 40,
+                  child: Row(
+                    key: const Key('routing_rename'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppText(
+                        l10n.routingRename,
+                        style: TextStyle(
+                          color: surface.textSecondary,
+                          fontSize: 24,
+                          height: 1,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Icon(
+                        LucideIcons.pencil,
+                        size: 28,
+                        color: surface.textSecondary,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            Positioned(
-              right: 27,
-              top: 22,
-              child: LoopOutlinedButton(
-                key: const Key('routing_rename'),
-                width: 200,
-                label: l10n.routingRename,
-                trailingIcon: LucideIcons.pencil,
-                semanticLabel: l10n.routingRenameField(port),
-                onTap: onRename,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

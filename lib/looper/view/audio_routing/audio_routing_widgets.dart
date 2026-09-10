@@ -191,6 +191,18 @@ class RoutingSliderEnds extends StatelessWidget {
   }
 }
 
+/// The reading beside a routing meter: the peak in dBFS, or a word for
+/// silence below the meter's floor.
+///
+/// Below the floor there is no reading to give, and a large negative number
+/// would read as a level rather than as nothing coming out.
+String routingDbfsLabel(AppLocalizations l10n, double peak) {
+  if (peak <= 0) return l10n.routingOutputSilent;
+  final db = 20 * (math.log(peak) / math.ln10);
+  if (db < kMeterFloorDb) return l10n.routingOutputSilent;
+  return l10n.routingOutputDbfs(db.toStringAsFixed(1));
+}
+
 /// Where a level sits on a routing meter, `0..1`.
 ///
 /// NOT [peakMeterFill]. The two meters print different scales: the stage's is
@@ -219,6 +231,8 @@ class RoutingInputMeter extends StatelessWidget {
     required this.width,
     required this.semanticLabel,
     this.segments = 41,
+    this.tail = 2,
+    this.height = 28,
     super.key,
   });
 
@@ -237,6 +251,12 @@ class RoutingInputMeter extends StatelessWidget {
   /// How many cells the pen draws.
   final int segments;
 
+  /// How many cells at the end are the clip tail.
+  final int tail;
+
+  /// The pen's cell height.
+  final double height;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -248,7 +268,7 @@ class RoutingInputMeter extends StatelessWidget {
       value: '${(routingMeterPosition(level) * 100).round()}%',
       child: SizedBox(
         width: width,
-        height: 28,
+        height: height,
         child: Stack(
           children: [
             for (var i = 0; i < segments; i++)
@@ -257,7 +277,7 @@ class RoutingInputMeter extends StatelessWidget {
                 top: 0,
                 child: Container(
                   width: cell,
-                  height: 28,
+                  height: height,
                   color: _cellColor(surface, i, lit),
                 ),
               ),
@@ -268,10 +288,10 @@ class RoutingInputMeter extends StatelessWidget {
   }
 
   Color _cellColor(SurfaceTheme surface, int index, int lit) {
-    // The last four cells are the clip tail: they light on the engine's held
-    // clip flag, not on the level, because a clip is a fact about the source
-    // that a decayed meter would hide.
-    final isTail = index >= segments - 4;
+    // The last cells are the clip tail: they light on the engine's held clip
+    // flag, not on the level, because a clip is a fact about the source that a
+    // decayed meter would hide.
+    final isTail = index >= segments - tail;
     if (isTail && clipping) return surface.rec;
     if (index < lit) return surface.accent;
     return surface.card;

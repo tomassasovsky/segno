@@ -9,6 +9,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/routing_facts.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/theme/theme.dart';
 
 /// What the Input setup tab draws, read in one `select` so a meter tick does
 /// not rebuild the page unless a value it draws moved.
@@ -20,16 +21,26 @@ typedef _SetupValues = ({
   bool locked,
 });
 
-_SetupValues _setupValues(LooperState state, int input) => (
-  setup: state.inputSetup,
-  inputCount: state.status.inputChannels,
-  clipMask: state.status.inputClipMask,
-  peaks: state.inputPeaks,
-  // The accepted lock: pairing and format cannot change while a track fed by
-  // this jack is armed or capturing. Derived from the projection because the
-  // repository keeps its own predicate private.
-  locked: inputBusy(state, input),
-);
+_SetupValues _setupValues(LooperState state, int selected) {
+  final count = math.max(state.status.inputChannels, 1);
+  // A device can narrow under a chosen jack. Everything below reads the jack
+  // the page can actually show, so the lock cannot end up describing one jack
+  // while the controls edit another.
+  final input = selected < count ? selected : 0;
+  final setup = state.inputSetup;
+  final lower = setup.pairOf(input) ?? (input.isEven ? input : input - 1);
+  return (
+    setup: setup,
+    inputCount: state.status.inputChannels,
+    clipMask: state.status.inputClipMask,
+    peaks: state.inputPeaks,
+    // The accepted lock: pairing and format cannot change while a track fed by
+    // EITHER member of the pair is armed or capturing. Both members, because
+    // that is the rule `setInputPair` enforces — asking about the shown jack
+    // alone would draw a live control the repository then refuses.
+    locked: inputBusy(state, lower) || inputBusy(state, lower + 1),
+  );
+}
 
 /// Input setup (accepted design, Audio routing): pick a jack, record it on
 /// its own or as one half of a stereo pair, place it, and set the gain the
@@ -56,6 +67,12 @@ class _InputSetupTabState extends State<InputSetupTab> {
   static const double _cardWidth = 264;
   static const double _cardStep = 280;
   static const double _columnWidth = 828;
+
+  /// Where the pan and trim columns sit.
+  ///
+  /// The lock note is a line of its own between the format row and these
+  /// columns, so they move down by its height rather than sitting under it.
+  static double _columnsTop({required bool locked}) => locked ? 636 : 563;
 
   void _select(int input) => setState(() {
     _input = input;
@@ -86,17 +103,18 @@ class _InputSetupTabState extends State<InputSetupTab> {
       children: [
         Positioned(
           left: 100,
-          top: 359,
+          top: 263,
           child: _InputCards(
             count: count,
             selected: input,
             names: names,
+            setup: setup,
             onSelected: _select,
           ),
         ),
         Positioned(
           left: 100,
-          top: 527,
+          top: 431,
           child: _FormatRow(
             input: input,
             paired: paired,
@@ -107,7 +125,7 @@ class _InputSetupTabState extends State<InputSetupTab> {
         ),
         Positioned(
           left: 100,
-          top: 659,
+          top: _columnsTop(locked: values.locked),
           child: _PlacementColumn(
             label: paired ? l10n.routingBalance : l10n.routingPan,
             value: placement,
@@ -125,8 +143,13 @@ class _InputSetupTabState extends State<InputSetupTab> {
         ),
         Positioned(
           left: 992,
-          top: 659,
+          top: _columnsTop(locked: values.locked),
           child: _TrimColumn(
+            side: paired
+                ? (input == lower
+                      ? l10n.routingPairLeft
+                      : l10n.routingPairRight)
+                : null,
             trimDb: trimDb,
             peak: peak,
             clipping: clipping,
@@ -149,13 +172,25 @@ class _InputCards extends StatelessWidget {
     required this.count,
     required this.selected,
     required this.names,
+    required this.setup,
     required this.onSelected,
   });
 
   final int count;
   final int selected;
   final InputsState names;
+  final InputSetup setup;
   final ValueChanged<int> onSelected;
+
+  /// The pen's ordinal line: the jack, and which half of a linked pair it is.
+  String _ordinal(AppLocalizations l10n, int input) {
+    final pair = setup.pairOf(input);
+    if (pair == null) return l10n.routingInputOrdinal(input + 1);
+    return l10n.routingInputOrdinalSide(
+      input + 1,
+      setup.isPairLeft(input) ? l10n.routingPairLeft : l10n.routingPairRight,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -173,7 +208,7 @@ class _InputCards extends StatelessWidget {
         ),
         itemBuilder: (context, index) => RoutingSourceCard(
           key: Key('routing_input_card_$index'),
-          ordinal: l10n.inputChannelLabel(index + 1),
+          ordinal: _ordinal(l10n, index),
           name: l10n.inputName(names.names, index),
           selected: index == selected,
           onTap: () => onSelected(index),
@@ -232,10 +267,8 @@ class _FormatRow extends StatelessWidget {
           ),
           Positioned(
             left: 713,
-            top: locked ? 21 : 22,
-            child: locked
-                ? LoopNote(l10n.routingLockedFormat)
-                : paired
+            top: 22,
+            child: paired
                 ? RoutingPairMembers(
                     leftName: l10n.inputName(names.names, lower),
                     rightName: l10n.inputName(names.names, lower + 1),
@@ -244,6 +277,15 @@ class _FormatRow extends StatelessWidget {
                   )
                 : LoopNote(l10n.routingFormatMonoNote),
           ),
+          // The lock is a line of its own under the row, as the pen draws it:
+          // it says why the choice is frozen without taking away the sentence
+          // that says what the choice currently means.
+          if (locked)
+            Positioned(
+              left: 328,
+              top: 116,
+              child: LoopNote(l10n.routingLockedFormat),
+            ),
         ],
       ),
     );
@@ -314,12 +356,16 @@ class _PlacementColumn extends StatelessWidget {
 
 class _TrimColumn extends StatelessWidget {
   const _TrimColumn({
+    required this.side,
     required this.trimDb,
     required this.peak,
     required this.clipping,
     required this.onChanged,
     required this.onCommit,
   });
+
+  /// Which half of a linked pair this jack is, or null for a mono jack.
+  final String? side;
 
   final double trimDb;
   final double peak;
@@ -353,7 +399,9 @@ class _TrimColumn extends StatelessWidget {
             left: 0,
             top: 0,
             child: RoutingInlineLabel(
-              label: l10n.routingTrim,
+              label: side == null
+                  ? l10n.routingTrim
+                  : l10n.routingTrimSide(side!),
               value: l10n.routingTrimDb(trimDb.toStringAsFixed(1)),
               width: width,
             ),
@@ -381,6 +429,28 @@ class _TrimColumn extends StatelessWidget {
               semanticLabel: l10n.routingSignal,
             ),
           ),
+          // The reading beside the meter. A held clip says so in words: the
+          // number would be the peak that clipped, which is the same 0.0 dBFS
+          // the meter is already pinned at.
+          Positioned(
+            left: 683,
+            top: 124,
+            width: 145,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: AppText(
+                clipping ? l10n.routingClip : routingDbfsLabel(l10n, peak),
+                key: const Key('routing_input_meter_readout'),
+                style: TextStyle(
+                  color: clipping
+                      ? context.surface.rec
+                      : context.surface.textSecondary,
+                  fontSize: 22,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
           const Positioned(
             left: 0,
             top: 162,
@@ -389,12 +459,21 @@ class _TrimColumn extends StatelessWidget {
               width: _meterWidth,
             ),
           ),
+          // Clipping adds a line rather than replacing one: the trim note says
+          // what the control below does, which is still true while clipping.
+          if (clipping)
+            Positioned(
+              left: 0,
+              top: 183,
+              child: LoopNote(
+                l10n.routingClipNote,
+                tone: LoopNoteTone.error,
+              ),
+            ),
           Positioned(
             left: 0,
-            top: 207,
-            child: LoopNote(
-              clipping ? l10n.routingClipNote : l10n.routingTrimNote,
-            ),
+            top: clipping ? 234 : 207,
+            child: LoopNote(l10n.routingTrimNote),
           ),
         ],
       ),

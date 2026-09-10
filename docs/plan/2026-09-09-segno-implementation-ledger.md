@@ -1236,6 +1236,63 @@ The backing card lands with the backing player.
   body chooses nothing.
 - Twenty-nine strings and five goldens went with those surfaces.
 
+### Review round 1
+
+Six reviews ran over the slice: correctness, removed behaviour, pen geometry,
+test quality, and one each over the two engine pull requests beneath it that no review
+had covered.
+What they found in 3c, and what it cost:
+
+- **Audio routing was unreachable on the appliance.** The accepted design
+  reaches it from Settings; on the console the tray IS Settings, and the
+  desktop settings page is behind a right-click, a key and a menu bar. A row
+  on the Audio face's Device tab opens the route, and the click's level rides
+  with it — the console had lost that too when the interim card retired.
+- **The format lock asked about one jack**, while the repository refuses the
+  pair change when EITHER member is armed. The control was drawn live and
+  silently refused. It now asks about both, from one predicate.
+- **Nothing clamped a chosen source or destination to the open device.** After
+  an interface narrows, the page fell back to the first card while the
+  controls went on editing the old one: the trim wrote a jack with no card,
+  the level wrote a bus with no jack, and the lock described a third thing.
+  Each projection now clamps, and everything below reads the clamped value.
+- **A route saved on a wider rig could not be switched off.** Setting a
+  destination must not claim a socket the interface has not got; clearing must
+  reach both jacks. They are now different masks, and a stale route keeps a
+  card of its own so it can be cleared at all.
+- **"Reaches nothing" tested the raw mask**, so a source driving only jacks
+  the device has not got looked routed while being silent.
+- **A jack a track records beyond the device had no card**, so a lane from a
+  wider rig was invisible, could not be switched off, and survived every
+  restart. Those jacks
+  now get their own cards.
+- **A full track's cards looked live** and did nothing when tapped. They are
+  drawn inert, with a sentence saying why.
+- **Input setup was 96 px too low**, the whole tab: it used the pen's screen
+  origin where its siblings used the main-area one. With that corrected the
+  tab's internals line up. The tab also gained the meter readout it was
+  missing, the clip line the pen puts beside the trim note rather than in
+  place of it, the pen's own card ordinals, and the pair member's side on both
+  the card and the trim label.
+- **The clip tail was four cells, the pen draws two**, and the output meter's
+  cells are 24 high, not the input meter's 28.
+- **The name rows were a pill inside a row**; the pen makes the whole
+  1708 x 108 row the button.
+- **Two tests were vacuous**: the rename guard's real value is the store write
+  it avoids, and the Routing rail row asserted a widget rather than a route.
+  Both now test what the code does, and the route's own guard is covered where
+  it lives.
+
+#### Checks
+
+- Dart: root 2243 passing and 35 skipped, `looper_repository` 469 passing,
+  `dart analyze` clean, `bloc lint` clean over 238 files, both arb files at
+  1091 keys.
+- Every fix above is mutation-checked, and two of the first tests written for
+  them were themselves vacuous under mutation and were rewritten.
+- Six goldens added for the four tasks and the two name pages, which had none;
+  the console Device tab's golden regenerated for the new row.
+
 #### What did NOT retire, and why
 
 The Signal face's per-jack output gate stays. It is a different fact from

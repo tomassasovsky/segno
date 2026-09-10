@@ -450,20 +450,38 @@ LoopFieldOrigin? scopedOrigin({
 /// The one-sentence note under a field (the pen's length-note).
 class LoopNote extends StatelessWidget {
   /// Creates a [LoopNote].
-  const LoopNote(this.text, {super.key});
+  const LoopNote(this.text, {this.tone = LoopNoteTone.plain, super.key});
 
   /// The sentence.
   final String text;
 
+  /// How the sentence reads.
+  final LoopNoteTone tone;
+
   @override
-  Widget build(BuildContext context) => AppText(
-    text,
-    style: TextStyle(
-      color: context.surface.textSecondary,
-      fontSize: 24,
-      height: 1.2,
-    ),
-  );
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return AppText(
+      text,
+      style: TextStyle(
+        color: switch (tone) {
+          LoopNoteTone.plain => surface.textSecondary,
+          LoopNoteTone.error => surface.rec,
+        },
+        fontSize: 24,
+        height: 1.2,
+      ),
+    );
+  }
+}
+
+/// What a [LoopNote] is saying.
+enum LoopNoteTone {
+  /// A statement about the control beside it.
+  plain,
+
+  /// Something is wrong with the rig, and the sentence says what to do.
+  error,
 }
 
 /// The lock banner a capture puts over a page whose settings it freezes:

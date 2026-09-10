@@ -126,14 +126,23 @@ void main() {
       },
     );
 
-    test('renaming to the same name changes nothing', () async {
+    test('renaming to the same name writes nothing', () async {
+      // The guard is worth having for the store round-trip it avoids, not for
+      // the emit: bloc drops an equal state either way, so asserting on the
+      // state alone would pass with no guard at all.
       final cubit = build();
       await settle();
       await cubit.rename(2, 'wedge');
 
-      final before = cubit.state;
+      // Clear the key behind the cubit's back. A rename to the same name must
+      // not put it back.
+      await settings.clearOutputName(device: 'Scarlett 18i20', bus: 2);
       await cubit.rename(2, 'wedge');
-      expect(cubit.state, same(before));
+      expect(
+        await settings.loadOutputName(device: 'Scarlett 18i20', bus: 2),
+        isNull,
+      );
+      expect(cubit.state.nameOf(2), 'wedge');
     });
 
     test('a rename with no device open is refused', () async {
