@@ -201,7 +201,8 @@ FSW_SLOT_CLR_D = 3.0          # HORIZONTAL front+rear clearance target around th
 # front pedestals as a bonus (more insert depth).
 PLATFORM_MARGIN = 2.0         # platform shelf overhang past the pedal footprint (stay within the slot)
 PLATFORM_FOOT   = 18.0        # base screw inset band (holes ff/2 from the platform edge)
-# Printed platform collars and removable sleds use PETG/ASA and >=40% infill.
+# Printed platform collars and removable sleds are BLACK PETG at >=40% infill,
+# the one filament every printed part in this console uses (see PRINT_FILAMENT).
 # The console collar has chassis-screw clearances; its sled takes four M3
 # heat-set inserts from each face. The pedal bolts to the sled on the bench.
 INSERT_PILOT_D  = 4.5         # heat-set pilot bore -- sized for M3 5x5 inserts
@@ -273,7 +274,7 @@ RING_FLOOR = 1.6 + RESEAT_CAL  # front-row ring floor (+#760 reseat recal). The 
 # ~1mm under the sloped faceplate with their INNER faces set back SKIRT_SETBACK
 # behind the slot cut line -- from above you see ONLY faceplate, and the reveal
 # reads as the slot continuing down a dark channel (the wall face), not as a
-# ledge or the enclosure interior. Print BLACK (PETG/ASA).
+# ledge or the enclosure interior. Print BLACK PETG.
 # The side screw bosses (span 83.25) would cross the wall line, so each side
 # wall gets a full-height vertical CHANNEL the boss slides down at drop-in --
 # it also guides the pedal into the pad pocket.
@@ -884,7 +885,7 @@ FOOT_HEAD_D = 9.0    # maximum assumed top screw/washer envelope; verify hardwar
 # on a screw row that already exists, so they add nothing to the cut file, and a
 # continuous strip cannot be out of plane with itself the way sixty feet can.
 #
-# Each rail is a printed PETG body with a channel in its floor face holding a
+# Each rail is a printed BLACK PETG body with a channel in its floor face holding a
 # self-adhesive SOLID neoprene strip. The strip is the LSGCQ 1" x 1/8", chosen
 # because it is smooth -- this thing gets dragged across stages, and every tape
 # stocked locally is mineral grit that would score a floor. It is also the only
@@ -1622,7 +1623,7 @@ BEAM_LEAN = (BEAM_BARE_GAP + BEAM_T) * math.tan(math.radians(SLOPE_ANGLE))
 # u=213.6 and the CLEAR pedestal starts at 226.9, and 13.3 mm is not a column.
 # So: ONE prop here, and the left ligament is a documented residual.
 #
-# Printed, not folded steel. It is a pure compression member and a PETG column
+# Printed, not folded steel. It is a pure compression member and a BLACK PETG column
 # this short is an order of magnitude stiffer than it needs to be, so it costs a
 # print rather than another shop part number.
 PROP_U       = 432.5   # centred in the only clear lane: BANK's pedestal ends at
@@ -5450,7 +5451,7 @@ def build_screen16_portclear_step():
 
 
 def build_screen16_stand_steps():
-    """15.6" monitor stand, LEFT + RIGHT prints (PETG, #762).
+    """15.6" monitor stand, LEFT + RIGHT prints (BLACK PETG, #762).
     Every monitor number here is caliper-measured (2026-09-01).
     World-mm coordinates: floor BOTTOM at z=0, feet at z=T. Place
     in Fusion at identity. Lid underside (measured): z(y) = LID_UNDER_Z0 +
@@ -5888,7 +5889,7 @@ def build_beam_step():
 
 
 def build_screen7_tower_step():
-    """7" screen support TOWER (3D print in PETG, x1, #762): the one-piece
+    """7" screen support TOWER (3D print in BLACK PETG, x1, #762): the one-piece
     replacement for the frame+legs cradle ("more beefy", user call). A closed
     wedge box in WORLD coordinates (x = console x, y = depth, z = up; origin =
     the base-floor point under the display-window centre):
@@ -6294,6 +6295,19 @@ AL_SHEET  = f"aluminio {ALLOY_2MM} de {T:.1f} mm"
 AL_REAR_PANEL = (f"aluminio de {REAR_PANEL_T:.1f} mm "
                  f"(aleación y temple {ALLOY_REAR})")
 STEEL_CR  = f"acero laminado en frío de {BEAM_T:.1f} mm"
+
+# EVERY printed part in this console is BLACK PETG at >=40% infill (owner call
+# 2026-09-10), with exactly three exceptions, and all three are optical rather
+# than a second material choice:
+#   - segno_led_diffuser  x10  WHITE, translucent. It is the lens the pedal LEDs
+#                              shine through; black is the one colour it cannot be.
+#   - segno_ring_diffuser  x1  WHITE, translucent, same reason for the encoder ring.
+#   - segno_pedal_tile_*  x10  BLACK body with WHITE lettering, printed with one
+#                              filament change. All black and the legend vanishes.
+# ASA used to be offered as an alternative on the structural prints. It is not
+# any more: one filament, one colour, so a reprint of any part matches the rest.
+PRINT_FILAMENT = "PETG negro, relleno >=40%"
+PRINT_FILAMENT_CLEAR = "PETG/PLA BLANCO translúcido"
 PLY_2MM   = (f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
              "(capa negra / núcleo blanco) - NO ES METAL")
 
@@ -7815,7 +7829,25 @@ def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
                    "segno_led_diffuser","segno_ring_diffuser"]
         printed += [_tile_stem(label) for label,_,_ in PEDALS]
         printed += ["segno_screen7_tower","segno_screen16_stand_L","segno_screen16_stand_R"]
+        # The floor rails and the mid-field prop are printed parts too. They
+        # arrived after this list was written and shipped in no package at all
+        # until 2026-09-10: twelve rail segments and the prop, generated into
+        # out/ and never handed to anyone. The gate below is what keeps the next
+        # printed part from doing the same.
+        printed += [f"segno_floor_rail_{r}_{i}" for r, i, *_ in floor_rail_segments()]
+        printed += ["segno_lid_prop"]
         # Calibration jigs and the purchased encoder knob are not manufactured parts.
+        _not_a_console_part = {"segno_encoder_knob",            # purchased
+                               "segno_pedal_base_fit_test",     # jig
+                               "segno_screen7_fit_test",        # jig
+                               "segno_mini_console_tray",       # a different product
+                               "segno_mini_console_lid",
+                               "segno_mini_console_sled"}
+        _emitted = {os.path.splitext(n)[0] for n in os.listdir(OUT) if n.endswith(".stl")}
+        _missing = _emitted - set(printed) - _not_a_console_part
+        assert not _missing, (
+            f"3D-print package is missing printed parts the generator emits: "
+            f"{sorted(_missing)}")
         packages["segno_3dprint.zip"] = [n+ext for n in printed for ext in (".step",".stl")]
         if with_pdf:
             # Separate painter: PDFs and masking instructions, never cutting DXFs.

@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import shutil
 import sys
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -219,11 +220,26 @@ class ManufacturingPipelineTest(unittest.TestCase):
             self.assertEqual({name:len(members) for name,members in packages.items()}, {
                 'segno_sheetmetal.zip':14, 'segno_sheetmetal_step.zip':8,
                 'segno_pintura.zip':8, 'segno_pedal_tiles.zip':22,
-                'segno_3dprint.zip':38,
+                # 38 until 2026-09-10, when the twelve floor rail segments and
+                # the mid-field prop were added. They had been generated into
+                # out/ and shipped in no package at all since #1019 created them.
+                'segno_3dprint.zip':64,
             })
-            for part in ('segno_platform_sled', 'segno_platform_mid_sled'):
+            for part in ('segno_platform_sled', 'segno_platform_mid_sled',
+                         'segno_lid_prop', 'segno_floor_rail_front_a_1',
+                         'segno_floor_rail_rear_4'):
                 for extension in ('.step', '.stl'):
                     self.assertIn(part+extension, packages['segno_3dprint.zip'])
+            # and nothing printed is left out again
+            printed = {n[:-4] for n in os.listdir(enclosure.OUT) if n.endswith('.stl')}
+            packaged = {n[:-5] for n in packages['segno_3dprint.zip'] if n.endswith('.step')}
+            self.assertLessEqual(printed - packaged, {
+                'segno_encoder_knob',                 # purchased, not made
+                'segno_pedal_base_fit_test',          # jig
+                'segno_screen7_fit_test',             # jig
+                'segno_mini_console_tray',            # a different product
+                'segno_mini_console_lid',
+                'segno_mini_console_sled'})
             members = [name for names in packages.values() for name in names]
             self.assertFalse(any('overlay' in name for name in members))
             self.assertIn('segno_assembly.step',packages['segno_sheetmetal_step.zip'])
