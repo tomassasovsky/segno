@@ -113,6 +113,9 @@ void main() {
       () => repository.crownPrimary(channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
     when(() => repository.setLooperMode(any())).thenReturn(EngineResult.ok);
+    // What the repository HOLDS after a set — the value the bloc persists.
+    // Tests that care about a refusal or a closed engine override it.
+    when(() => repository.intendedLooperMode).thenReturn(LooperMode.multi);
     when(
       () => repository.setLaneCount(
         channel: any(named: 'channel'),
@@ -1749,15 +1752,65 @@ void main() {
     });
 
     blocTest<LooperBloc, LooperState>(
-      'LooperModeChanged persists the mode code (B5c)',
+      'LooperModeChanged persists what the REPOSITORY holds, not the event',
       build: () {
         when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
+        // The engine refused it, so the repository still holds the old mode.
+        when(() => repository.intendedLooperMode).thenReturn(LooperMode.multi);
         return LooperBloc(repository: repository, settings: settings);
       },
       act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.free)),
       verify: (_) {
         verify(() => repository.setLooperMode(LooperMode.free)).called(1);
+        // A refused change writes the mode that is still standing, never the
+        // one the event asked for.
+        verify(
+          () => settings.saveLooperMode(LooperMode.multi.code),
+        ).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'a mode chosen while the engine is closed is persisted anyway',
+      build: () {
+        when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
+        // A stopped repository caches the choice and replays it at the next
+        // start, so the engine never reports it and the reported-state guard
+        // below would write nothing at all.
+        when(() => repository.intendedLooperMode).thenReturn(LooperMode.free);
+        return LooperBloc(repository: repository, settings: settings);
+      },
+      act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.free)),
+      verify: (_) {
         verify(() => settings.saveLooperMode(LooperMode.free.code)).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'the mode the engine reports is what gets persisted',
+      build: () {
+        when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
+        return LooperBloc(repository: repository, settings: settings);
+      },
+      act: (bloc) => bloc
+        ..add(
+          const LooperStateUpdated(
+            LooperState(transport: TransportState(looperMode: LooperMode.band)),
+          ),
+        )
+        ..add(
+          const LooperStateUpdated(
+            LooperState(
+              transport: TransportState(
+                looperMode: LooperMode.band,
+                masterPositionFrames: 10,
+              ),
+            ),
+          ),
+        ),
+      verify: (_) {
+        // Once for the change, not again for a tick that keeps the mode.
+        verify(() => settings.saveLooperMode(LooperMode.band.code)).called(1);
       },
     );
   });

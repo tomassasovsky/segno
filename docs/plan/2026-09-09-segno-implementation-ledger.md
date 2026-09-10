@@ -147,6 +147,168 @@ rule (D8) is named in the view rather than published by the engine.
 
 ### Next step
 
-Slice 2 (`implementation-map.md`): per-track record options and the timing
-rules, starting with the explicit crown handoff in Loop settings (the
+Slice 2 (`implementation-map.md`), tracked as #1012 in three parts: 2a
+reversible audio edits and mode rules, 2b timing ownership, 2c the Loop
+settings surfaces (the explicit crown handoff lands there; the
 `LooperCrownPrimaryPressed` event and `crownPrimary` API are kept for it).
+
+## Slice 2a — Reversible audio edits and mode rules (#1012)
+
+Branch: `claude/segno-slice2-edits-1012`, stacked on slice 1's branch until
+PR #1011 merges.
+
+### Decisions
+
+- Mode changes with recorded audio follow the accepted contract
+  (`2026-09-07-loop-mode-transitions-ux.md`): the engine measures what a
+  change would do (`le_engine_looper_mode_gate`: open, capturing, queued,
+  spans, playing). Multi needs equal spans; Sync and Band need whole multiples
+  of the primary or the divisions the engine plays (a half or a quarter);
+  Song and Free take anything. A playing rig is stopped ahead of the switch
+  by the engine itself (`le_engine_set_looper_mode` posts the stops in ring
+  order), so the switch always lands on a stopped rig; the app asks "Stop
+  loops and switch" before calling. Captures, queued arms and unfit spans
+  refuse with their reason. No take is trimmed, repeated, stretched or
+  padded, and nothing is cleared for a switch: the old clear-then-switch
+  flow is gone with its strings.
+- Landing a switch re-clocks the takes: into Song/Free each take runs its own
+  clock at its length and the master goes dormant; into Multi/Sync/Band the
+  master is re-established from the primary's span and each take's multiple
+  or division is re-derived from its unchanged length.
+- Undo during an overdub pass punches out now (not at the grid) and peels the
+  pass once it retires; redo puts the partial pass back without resuming the
+  capture. A pass that wrote nothing peels the previous layer (the brainstorm's
+  recommendation for the exact-boundary case).
+- Undo during a take cancels it: the take is finalized at its captured length
+  exactly as a press would end it (a defining take still establishes the grid
+  and derives the tempo), the track reads empty, and redo plays the take
+  immediately (`LE_CMD_CANCEL_TAKE` / `LE_EVT_TAKE_CANCELLED`). A later take
+  keeps its whole-loop span with silence outside what was captured; the seam
+  crossfade is skipped for a cancelled take.
+- A user clear on a capturing track freezes the take stopped at the clear and
+  keeps it restorable (`LE_EVT_CLEAR_FROZEN` completes the restore point once
+  the finalize has decided the length); undo brings it back stopped, never as
+  a resumed capture. Clear All is one grouped edit in the repository
+  (`clearAll`, `undoRestoresClearAll`, `undoClearAll`): the next undo on any
+  member restores every member, the next redo re-clears the group (each
+  member's next redo must be that re-clear, `le_engine_redo_reclears`); while
+  a member has lost its restore point (a fresh take) the group stands down
+  and the per-track history answers — nothing newer is overwritten. The
+  frozen-capture and cancelled-arm treatment implements the capture-recovery
+  proposal (`2026-09-08-capture-recovery-ux.md`, accepted for the established
+  Multi cycle; the Clear All cases are the proposal's own choices), which the
+  handoff contract lists under the settled history rules.
+- The Undo pedal and key reach the group through the ordinary `undo`, so a
+  performer who clears everything and taps Undo gets the rig back.
+- The remembered looper mode (re-applied on start, persisted in settings)
+  follows what the engine reports, not what was asked: a switch the gate let
+  through can still be dropped on the audio thread when a record press lands
+  in the same block, and that drop is silent to the caller.
+- Review round 1 (same day): a cancelled take that captured nothing
+  acknowledges its state command once; the cancel's control side no longer pre-zeroes the
+  published length (the audio thread may decline a cancel that races a
+  finalize); a late cancel report is ignored after a clear or a fresh take;
+  an undo queued behind a freezing clear restores the frozen take instead of
+  peeling a layer; a freezing clear on a take with nothing captured keeps
+  nothing; Multi's gate measures whole multiples of the shortest take (what
+  Multi itself records), Sync/Band the primary's multiples and divisions;
+  the switch into a shared-clock mode re-establishes the tempo grid.
+- Review round 2 (same day, on the round-1 fixes): a record pressed behind
+  a cancel in flight resets the grid the cancel would have set, so it
+  defines its own; an undo tapped behind a freezing clear on a recording
+  take waits for the restore point (queued taps wait while the point is
+  pending); a clear right behind a queued restore measures the length the
+  restore will publish (`le_effective_len`) and keeps a restore point; a
+  declined or void cancel still reports, so the cancel flag never lingers;
+  an empty track never shows peelable layers on the wire (the depth is held
+  at 0 while a frozen point is pending or a restore is in flight, and
+  republished by the drain once the audio thread applied it — the fuzz
+  suite's depths-sane invariant); the frozen take's layers go with its
+  pending point when a fresh capture records over it. The repository takes
+  group membership from the engine (`le_engine_clear_restore_pending`
+  beside `undo_restores_clear`), ends a group when the engine retired a
+  member's point or a single clear happens, and drops a mode request the
+  reports never confirm (two polls) in favour of the reported mode.
+- Review round 3 (same day, on the round-2 fixes): a clear right behind a
+  queued restore records the master grid that restore re-establishes
+  (`pending_master_len`), not the wire's 0, so its own restore brings the
+  grid back; a cancel of a take that captured nothing empties the track
+  without the clear handler's layer-generation bump (which only a
+  control-side clear matches — a mismatch dropped every later retired layer
+  on that track); the count-in grace abort had the same pre-existing bump
+  and takes the same path now; the repository keeps unconfirmed frozen
+  members apart from the group and drops one whose capture held nothing
+  instead of ending the group; the restart replay of the looper mode is
+  armed as a request so the first report after a start cannot overwrite the
+  remembered mode; only polls count as reports. Accepted as is: a second
+  undo tap queued behind a freezing clear is a no-op once the first restores
+  (as after an undo-to-empty), documented at the apply site.
+- Review round 4 (same day, on the round-3 fixes): a record pressed on a
+  sibling behind a queued restore of the only take read a master of 0 and
+  took the defining path; the press now reads the master any pending
+  restore re-establishes (`le_rig_effective_master_len`). The repository
+  counts a frozen clear-all member as a member from the clear (the engine
+  queues the tap and restores the take when its point lands) instead of
+  refusing to answer in that window, restores the chains for an undo tapped
+  at a frozen clear, and gives a mode request six polls of a running engine
+  before dropping it (the ring drains on the audio callback, and a device's
+  first callback can come later than two polls). Accepted as is: a frozen
+  member retired by a fresh take in that same window leaves the group
+  silently, the way a void capture does.
+- Review round 5 (same day, on the round-4 fixes): the round-4 native test
+  passed without its fix (the audio thread decides defining-or-not on its
+  own clock); it now arms with quantize on, which only a non-defining press
+  does. An undo tapped at a frozen clear is held by the repository
+  (`_pendingClearUndo`) and taken on the first poll after the engine files
+  the point, so a capture that held nothing is forgotten instead of having
+  its pre-clear chains restored onto an empty track (the F3 leftover-chain
+  rule), and a void member leaves the restored group's redo. A frozen
+  capture is remembered audible (the engine files its point unmuted). The
+  running-engine guard on the mode request was unreachable (both flags come
+  from the same snapshot bit) and is gone; the window is twelve polls.
+- The fuzz suite (`flutter test --tags fuzz`) and
+  `pumped_native_engine_test` were run against a locally built engine
+  library; `tool/build_test_lib.sh` itself does not build on this Mac (it
+  lacks the rnnoise include and source list the native test script has), so
+  the library was built by hand with that list.
+
+### Changed ownership
+
+- Engine: `le_engine_looper_mode_gate`, content rules in
+  `le_engine_set_looper_mode`, `le_apply_mode_switch` on the audio thread
+  (the D4 content lock is gone), `LE_CMD_CANCEL_TAKE`,
+  `LE_EVT_TAKE_CANCELLED`, `LE_EVT_CLEAR_FROZEN`, a freezing clear
+  (`LE_CMD_CLEAR` arg_f 1), undo during capture.
+- Dart engine: `LooperModeGate`, `LooperModeControl.looperModeGate`.
+- Repository: `looperModeGate`, `setLooperMode` keeps the remembered mode only
+  when the engine took the change, `clearAll` and the grouped undo/redo.
+- App: `requestLooperModeChange` drives the gate (dialog for playing,
+  refusal reason otherwise); `ControlCubit.clearAll` is one grouped edit;
+  `LooperModeChanged` persists only accepted changes; the console confirm
+  dialog wraps long button labels.
+
+### Checks
+
+- Native: `run_native_tests.sh` 5 suites ALL PASSED, also with
+  `-fsanitize=address` and `-DLE_CALLBACK_TELEMETRY=0`; 22 new or rewritten
+  tests (mode gate spans/multiples/divisions/queued/capturing/playing,
+  Song/Free re-clocking, undo during overdub, undo during a defining and a
+  later take, clear during recording and overdubbing, the cancel and freeze
+  races, `redo_reclears`, the round-2 one-block races).
+- `segno_engine` 242, `looper_repository` 414, `performance_repository` 111,
+  `session_repository` 84 tests passed; root suite and coverage recorded in
+  the PR; analyzers clean in every touched package; `bloc lint` clean.
+
+### Not verified here
+
+- Hardware timing of stop-and-switch and of the cancelled take on the
+  appliance; the accepted mode cards with per-card reasons are slice 2c (this
+  part surfaces the reason in a snackbar from the existing chooser).
+- A rec/dub take-end during a count-in and the zero-audio cancelled take are
+  handled (nothing to redo), not separately exercised on hardware.
+
+### Next step
+
+Slice 2b: per-track record timing (Immediately / Loop start / grid) and
+overdub decay inheriting from defaults, Loop/Once in every mode, count-in and
+Sound start exclusivity at the engine boundary.

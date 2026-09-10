@@ -940,9 +940,9 @@ class ControlCubit extends Cubit<ControlState> {
   ///
   /// While performance recording is armed (D-CLEAR), awaits
   /// [PerformanceRepository.persistLiveLanes] first: a track mid-capture is
-  /// skipped by the engine clear below (the audio thread still owns its
-  /// buffer), so its performance-recording bundle would otherwise lose that
-  /// pass entirely rather than the persisted-then-cleared PCM the repository
+  /// frozen and erased by the engine clear below (its take stays restorable),
+  /// so its performance-recording bundle would otherwise lose that pass
+  /// entirely rather than the persisted-then-cleared PCM the repository
   /// itself already knows how to skip.
   Future<void> clearAll() async {
     if (_performanceArmed) await _performance.persistLiveLanes();
@@ -950,12 +950,18 @@ class ControlCubit extends Cubit<ControlState> {
     // restore point behind (an undone-to-empty redo-only track's does not), so
     // this is the gate on offering whole-rig undo below.
     var restorable = false;
+    final cleared = <int>[];
     for (final track in _tracks) {
       if (!track.hasContent && !track.canRedo) continue;
       if (track.hasContent) restorable = true;
-      _looper
-        ..clear(channel: track.channel)
-        ..setMute(muted: false, channel: track.channel);
+      cleared.add(track.channel);
+    }
+    // One grouped edit (accepted design, slice 2): the repository remembers
+    // the group, so the next Undo on any member restores every member.
+    _looper.clearAll(cleared);
+    for (final track in _tracks) {
+      if (!cleared.contains(track.channel)) continue;
+      _looper.setMute(muted: false, channel: track.channel);
       final lanes = track.lanes.isEmpty ? 1 : track.lanes.length;
       for (var lane = 0; lane < lanes; lane++) {
         unawaited(
@@ -1003,11 +1009,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// Emits nothing mode-related: unlike [clearAll] it does not re-home the
   /// overlay — the user is recovering the rig they had, cursor and mode
   /// included.
-  void undoClearAll() {
-    for (final track in _tracks) {
-      if (track.clearRestore) _looper.undo(channel: track.channel);
-    }
-  }
+  void undoClearAll() => _looper.undoClearAll();
 
   /// Undoes the latest overdub pass on [channel] (per-layer all the way
   /// down; past the base recording the track empties, redo-ably).

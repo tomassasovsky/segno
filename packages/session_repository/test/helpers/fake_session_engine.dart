@@ -307,6 +307,11 @@ class FakeSessionEngine implements AudioEngine {
   bool undoRestoresClear({int channel = 0}) => false;
 
   @override
+  bool redoReclears({int channel = 0}) => false;
+
+  @override
+  bool clearRestorePending({int channel = 0}) => false;
+  @override
   EngineResult setLaneCount({required int channel, required int count}) =>
       EngineResult.ok;
 
@@ -410,6 +415,8 @@ class FakeSessionEngine implements AudioEngine {
     required int channel,
     required int bars,
   }) => EngineResult.ok;
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) => LooperModeGate.open;
   @override
   EngineResult setLooperMode(LooperMode mode) => EngineResult.ok;
   @override

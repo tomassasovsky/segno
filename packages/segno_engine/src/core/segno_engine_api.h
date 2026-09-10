@@ -100,7 +100,7 @@ typedef enum le_click_mode {
  * default. Sync/Band (primary-track sync + multiples/divisions, B3/B3b),
  * Free (independent per-track clocks, B2b), and Song (independent per-track
  * sections, B4) all have their full behavior as of this part; B2a itself was
- * only the field plus D4's content-lock gate (le_looper_mode_locked,
+ * only the field plus a content gate; the accepted content rules (slice 2)
  * engine_process.c) that guards switching it, with every value's audio path
  * staying MULTI behavior until its own part landed. This is a DIFFERENT axis
  * from InteractionMode (Dart-only: record/mute, what a track press does) —
@@ -126,6 +126,21 @@ typedef enum le_looper_mode {
                              * (B3) */
   LE_LOOPER_MODE_FREE = 4,  /* independent per-track clocks (B2b) */
 } le_looper_mode;
+
+/* Why a looper-mode change is refused, or what it will do first — the answer
+ * of le_engine_looper_mode_gate. Codes are >= 0 so they never collide with
+ * the LE_ERR_* results that function can also return. */
+typedef enum le_mode_gate {
+  LE_MODE_GATE_OPEN = 0,      /* the change applies as posted */
+  LE_MODE_GATE_CAPTURING = 1, /* a take or an overdub pass is being captured
+                               * (or a count-in runs): finish it first */
+  LE_MODE_GATE_QUEUED = 2,    /* an armed action has neither fired nor been
+                               * cancelled: let it land or cancel it first */
+  LE_MODE_GATE_SPANS = 3,     /* the recorded spans do not fit the target
+                               * mode (see le_engine_looper_mode_gate) */
+  LE_MODE_GATE_PLAYING = 4,   /* loops are playing: le_engine_set_looper_mode
+                               * stops every playing track before switching */
+} le_mode_gate;
 
 /* MIDI clock tri-state (Phase C/E, D15), mirrored in le_snapshot.clock_mode.
  * `off` and `send` are fully implemented by this part (C1): a native 24-PPQN
@@ -335,12 +350,9 @@ typedef enum le_command_code {
 
   /* ---- looper mode (B2a, D4) ----
    * The five-mode axis (le_looper_mode). LOCKED (silently rejected, no-op)
-   * whenever ANY track has content (state != EMPTY) — le_looper_mode_locked,
-   * engine_process.c. Simpler than the D6 tempo lock: content alone, no grid
-   * or count-in check. Only clearing every track releases the lock. Mode
-   * semantics beyond the field itself land in B2b onward; this part accepts
-   * any of the 5 values unconditionally once unlocked. Not perf-logged (a
-   * mode switch changes no audible output in this part). */
+   * over a capture, a pending arm or a playing take — le_looper_mode_switch_blocked,
+   * the audio-thread twin of le_engine_looper_mode_gate. See the looper-mode
+   * section of the control API for the content rules. */
   LE_CMD_SET_LOOPER_MODE = 45, /* arg_i = le_looper_mode (0..4) */
 
   /* ---- primary track / Sync + Band (B3, D16/D18) ----
@@ -446,11 +458,28 @@ typedef enum le_command_code {
    * itself perf-logged (like LE_CMD_ARM/DISARM: the transport fact it causes
    * — LE_PLOG_RECORD_END / LE_PLOG_RECORD_ABORT — is what is logged). */
   LE_CMD_FINALIZE_TAKE = 56,
+  /* Cancel a take in progress on arg_i (le_engine_undo while RECORDING): the
+   * take is finalized at its captured length exactly as a press would end
+   * it — grid, tempo derivation and loop span included — and the track then
+   * reads EMPTY with that finalized content held for redo, which plays it
+   * immediately (LE_CMD_REDO_FROM_EMPTY). LE_EVT_TAKE_CANCELLED carries the
+   * finalized length back so the control thread can file the redo entry. */
+  LE_CMD_CANCEL_TAKE = 57,
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
                                * channel, slot, generation. */
+  LE_EVT_TAKE_CANCELLED = 101, /* LE_CMD_CANCEL_TAKE landed: lanei arm —
+                                * channel, value = the finalized length the
+                                * emptied track holds for redo (0: nothing
+                                * was captured, nothing to redo). */
+  LE_EVT_CLEAR_FROZEN = 102,   /* a user clear landed on a capturing track:
+                                * the take was finalized STOPPED first and
+                                * then erased. restore arm — channel, len,
+                                * state (STOPPED), master_len — completes
+                                * the restore point the control thread left
+                                * pending (0 len: a void take, no way back). */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -1423,6 +1452,21 @@ LE_EXPORT int32_t le_engine_clear(le_engine* engine, int32_t channel);
  * recording on this track overwrites the live slot it names, or when the pool
  * runs out of room for it. `undo` is never a promise, only an offer. */
 LE_EXPORT int32_t le_engine_clear_undoable(le_engine* engine, int32_t channel);
+/* Undo on track [channel]: peels the most recent overdub pass, restores a
+ * cleared take, or empties the track past its base take (redo-ably). During
+ * a capture (accepted design, slice 2):
+ *   - OVERDUBBING: the pass punches out now (not at the grid) and the layer
+ *     it was writing is peeled as soon as it retires, so the track plays its
+ *     pre-pass audio; redo puts the partial pass back without resuming the
+ *     capture. A pass that had written nothing peels the previous layer.
+ *   - RECORDING: the take is cancelled — finalized at its captured length
+ *     (a defining take still establishes the grid it would have) and held
+ *     for redo while the track reads EMPTY; redo plays it immediately
+ *     (LE_CMD_CANCEL_TAKE / LE_EVT_TAKE_CANCELLED).
+ * A user clear (le_engine_clear_undoable) on a capturing track freezes the
+ * take STOPPED at the clear and keeps it restorable the same way. An undo
+ * that reaches the engine while the take is already ending (a finalize that
+ * landed in the same block) is declined: the take stays as it finalized. */
 LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
 /* Whether the NEXT le_engine_undo on `channel` would restore a cleared take
  * (1) rather than peel an overdub layer or empty the track (0). Also 0 for an
@@ -1436,6 +1480,19 @@ LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
  * exact the moment it returns. */
 LE_EXPORT int32_t le_engine_undo_restores_clear(le_engine* engine,
                                                 int32_t channel);
+/* Whether a user clear on a capturing track has frozen the take and its
+ * restore point is still to be filed (1) — the next le_engine_undo_restores_
+ * clear answer will be 1 once the audio thread's report lands. 0 otherwise,
+ * for an invalid channel or a stopped engine. A host grouping clears asks
+ * this beside le_engine_undo_restores_clear to know which tracks the clear
+ * can give back. */
+LE_EXPORT int32_t le_engine_clear_restore_pending(le_engine* engine,
+                                                  int32_t channel);
+/* Whether the NEXT le_engine_redo on `channel` re-applies a clear that an
+ * undo took back (1) rather than re-stacking an overdub layer or
+ * resurrecting an undone-to-empty track (0). The redo twin of
+ * le_engine_undo_restores_clear, for the same host bookkeeping. */
+LE_EXPORT int32_t le_engine_redo_reclears(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_redo(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                              float volume);
@@ -1613,26 +1670,42 @@ LE_EXPORT int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on);
  * consumed by the musical arm machinery in a later part). */
 LE_EXPORT int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div);
 
-/* ---- looper mode (B2a, decision D4) ----
+/* ---- looper mode (B2a; content rules per the accepted design, slice 2) ----
  * The five architectural looper modes (le_looper_mode). Mode is a
- * session-level choice, LOCKED while any track has content (state != EMPTY):
- * a switch attempted then is silently rejected (no-op) — a simpler predicate
- * than the D6 tempo lock (content alone, no grid or count-in check; see
- * le_looper_mode_locked, engine_process.c). Only clearing every track
- * releases the lock. Mode switching is NOT a pedal action (D4) and has no UI
- * in this part (that lands in B5c). Semantics beyond the field itself
- * (Sync/Song/Band/Free behavior) land in B2b onward — this part accepts any
- * of the 5 values unconditionally once unlocked, with the engine's audio path
- * staying today's MULTI behavior regardless of the published value. Persists
- * across configure() exactly like tempo_source: seeded once in
- * le_engine_create, never reset by configure (same 2f0513a persistence
- * pattern) — and untouched by clear-all, since no engine-side "revert to
- * Multi" event is specified anywhere in the plan; the mode simply stays at
- * whatever it was last explicitly set to. */
+ * session-level choice. With recorded audio it changes only when the takes
+ * fit the target and the rig is not capturing or waiting on an armed action:
+ *   - MULTI needs every populated track to span the same length;
+ *   - SYNC and BAND need every populated track to be a whole multiple of the
+ *     primary's span, or one of the divisions the engine plays (a half or a
+ *     quarter of it); the primary is the crowned track when it holds a take,
+ *     else the lowest populated track;
+ *   - SONG and FREE take independent spans as they are.
+ * No take is trimmed, repeated, stretched or padded to fit: an unfit set is
+ * refused (LE_MODE_GATE_SPANS). Playing loops are stopped first — the
+ * switch itself lands on a stopped rig, so every playhead restarts from the
+ * top — and stopped loops stay stopped: the performer starts them again.
+ * Mode switching is NOT a pedal action (D4). Persists across configure()
+ * exactly like tempo_source: seeded once in le_engine_create, never reset by
+ * configure — and untouched by clear-all. */
+
+/* What le_engine_set_looper_mode would do with [mode] right now: one of
+ * le_mode_gate (>= 0), or LE_ERR_INVALID for a bad handle/mode and
+ * LE_ERR_NOT_RUNNING for an unconfigured engine. Selecting the current mode
+ * is always LE_MODE_GATE_OPEN (a no-op). Ask before offering the choice: an
+ * LE_MODE_GATE_PLAYING answer is what a "stop loops and switch"
+ * confirmation stands for. */
+LE_EXPORT int32_t le_engine_looper_mode_gate(le_engine* engine, int32_t mode);
 
 /* Sets the looper mode (le_looper_mode, 0..4). Values outside the enum
- * return LE_ERR_INVALID without posting. Ignored (no-op) while the mode is
- * locked (see the class doc) — the audio thread silently drops it. */
+ * return LE_ERR_INVALID without posting. Refused with LE_ERR_INVALID while
+ * the gate above reads CAPTURING, QUEUED or SPANS; with PLAYING every
+ * playing track is stopped ahead of the switch in the same ring order; a
+ * no-op (LE_OK) for the current mode. Landing on the audio thread, a switch
+ * over recorded audio re-clocks the takes for the target: the shared master
+ * is established from the primary's span (or goes dormant for SONG/FREE,
+ * whose tracks run their own clocks), and each take's multiple or division
+ * is re-derived from its unchanged length. Content, layers, history, mutes
+ * and lane settings are untouched. */
 LE_EXPORT int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode);
 
 /* ---- primary track / Sync + Band (B3/B3b, decisions D16/D18) ----

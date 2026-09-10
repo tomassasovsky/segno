@@ -170,6 +170,11 @@ class FakeAudioEngine implements AudioEngine {
   bool undoRestoresClear({int channel = 0}) => undoRestoresClearResult;
 
   @override
+  bool redoReclears({int channel = 0}) => false;
+
+  @override
+  bool clearRestorePending({int channel = 0}) => false;
+  @override
   EngineResult undo({int channel = 0}) {
     undoCalls++;
     return EngineResult.ok;
@@ -402,6 +407,12 @@ class FakeAudioEngine implements AudioEngine {
 
   /// The last value passed to [setLooperMode].
   LooperMode? lastLooperMode;
+
+  /// What [looperModeGate] answers; tests set it to exercise a refusal.
+  LooperModeGate nextLooperModeGate = LooperModeGate.open;
+
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) => nextLooperModeGate;
 
   @override
   EngineResult setLooperMode(LooperMode mode) {

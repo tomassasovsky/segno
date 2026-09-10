@@ -49,14 +49,17 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(const LooperRecordPressed(0));
+    registerFallbackValue(LooperMode.multi);
     registerFallbackValue(GridDivision.off);
     registerFallbackValue(ClickMode.off);
-    registerFallbackValue(LooperMode.multi);
   });
 
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
+    when(
+      () => repository.looperModeGate(any()),
+    ).thenReturn(LooperModeGate.open);
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
@@ -905,9 +908,12 @@ void main() {
     });
 
     testWidgets(
-      'switching mode with content raises the D4 confirm and dispatches '
-      'nothing until it is answered',
+      'switching mode over playing loops asks to stop and switch, and '
+      'dispatches nothing until it is answered',
       (tester) async {
+        when(
+          () => repository.looperModeGate(LooperMode.song),
+        ).thenReturn(LooperModeGate.playing);
         seed(_withContent);
         await pump(tester, tab: LoopTab.mode);
 

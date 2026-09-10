@@ -284,6 +284,36 @@ enum LooperMode {
   };
 }
 
+/// What a looper-mode change would do right now — the engine's answer to
+/// `LooperModeControl.looperModeGate` (accepted design, slice 2).
+enum LooperModeGate {
+  /// The change applies as posted (also the answer for the current mode).
+  open,
+
+  /// A take or an overdub pass is being captured, or a count-in runs.
+  capturing,
+
+  /// An armed action has neither fired nor been cancelled.
+  queued,
+
+  /// The recorded spans do not fit the target mode: Multi needs equal spans,
+  /// Sync and Band whole multiples or the played divisions of the primary.
+  spans,
+
+  /// Loops are playing: the change stops every playing track first.
+  playing;
+
+  /// Decodes the native `le_mode_gate` code.
+  static LooperModeGate fromCode(int code) => switch (code) {
+    0 => LooperModeGate.open,
+    1 => LooperModeGate.capturing,
+    2 => LooperModeGate.queued,
+    3 => LooperModeGate.spans,
+    4 => LooperModeGate.playing,
+    _ => LooperModeGate.spans,
+  };
+}
+
 /// An immutable per-lane projection of the native `le_lane_snapshot`.
 ///
 /// A lane is a track's fundamental recordable unit: it records one hardware

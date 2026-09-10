@@ -130,11 +130,34 @@ class FakeAudioEngine implements AudioEngine {
   /// restore-point bookkeeping, which the real engine owns.
   bool undoRestoresClearResult = false;
 
+  /// Per-channel override of [undoRestoresClearResult]: when set, only these
+  /// channels restore a clear on their next undo.
+  Set<int>? undoRestoresClearChannels;
+
+  /// The channels whose next redo re-applies a clear.
+  Set<int> redoReclearsChannels = {};
+
+  /// The channels whose frozen restore point is still to be filed.
+  Set<int> clearRestorePendingChannels = {};
+
+  @override
+  bool clearRestorePending({int channel = 0}) =>
+      clearRestorePendingChannels.contains(channel);
+
+  @override
+  bool redoReclears({int channel = 0}) {
+    calls.add('redoReclears');
+    return redoReclearsChannels.contains(channel);
+  }
+
   @override
   bool undoRestoresClear({int channel = 0}) {
     lastChannel = channel;
     calls.add('undoRestoresClear');
-    return undoRestoresClearResult;
+    final channels = undoRestoresClearChannels;
+    return channels == null
+        ? undoRestoresClearResult
+        : channels.contains(channel);
   }
 
   @override
@@ -376,11 +399,25 @@ class FakeAudioEngine implements AudioEngine {
 
   LooperMode? lastLooperMode;
 
+  /// What [looperModeGate] answers; tests set it to exercise a refusal.
+  LooperModeGate nextLooperModeGate = LooperModeGate.open;
+
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) {
+    calls.add('looperModeGate');
+    return nextLooperModeGate;
+  }
+
   @override
   EngineResult setLooperMode(LooperMode mode) {
     lastLooperMode = mode;
     calls.add('setLooperMode');
-    return EngineResult.ok;
+    return switch (nextLooperModeGate) {
+      LooperModeGate.capturing ||
+      LooperModeGate.queued ||
+      LooperModeGate.spans => EngineResult.invalid,
+      LooperModeGate.open || LooperModeGate.playing => EngineResult.ok,
+    };
   }
 
   /// The last channel passed to [crownPrimary].

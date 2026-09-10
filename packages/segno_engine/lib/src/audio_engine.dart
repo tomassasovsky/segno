@@ -211,6 +211,17 @@ abstract interface class LooperTransport {
   /// before/after inference races. This answer is exact when it returns.
   bool undoRestoresClear({int channel = 0});
 
+  /// Whether the next [redo] on [channel] re-applies a clear an undo took
+  /// back, rather than re-stacking a layer or resurrecting an emptied track.
+  /// The redo twin of [undoRestoresClear], for the same host bookkeeping.
+  bool redoReclears({int channel = 0});
+
+  /// Whether a user clear on a capturing [channel] froze the take and its
+  /// restore point is still to be filed: [undoRestoresClear] answers `true`
+  /// once the audio thread's report lands. A host grouping clears asks this
+  /// beside [undoRestoresClear] to know which tracks the clear can give back.
+  bool clearRestorePending({int channel = 0});
+
   /// Removes the most recent overdub layer on track [channel] (multi-level).
   ///
   /// Past the base layer the track empties (redo-ably); on a track cleared via
@@ -449,18 +460,17 @@ abstract interface class TempoControl {
 /// tempo/click/quantize state), matching this file's interface-segregation
 /// convention.
 ///
-/// MODE LOCK (D4): while any track has content (state != `TrackState.empty`),
-/// [setLooperMode] is accepted by the engine but IGNORED (a no-op on the
-/// published state) — a simpler predicate than [TempoControl]'s D6 tempo
-/// lock (content alone; no grid or count-in check). Only clearing every
-/// track releases the lock.
+/// MODE CHANGES WITH CONTENT (accepted design, slice 2): a change applies
+/// when the recorded spans fit the target — Multi needs equal spans, Sync and
+/// Band whole multiples or the played divisions of the primary, Song and Free
+/// take anything — and nothing is capturing or waiting on an armed action.
+/// Playing loops are stopped ahead of the switch; stopped loops stay stopped.
+/// No take is trimmed, repeated, stretched or padded to fit. Ask
+/// [looperModeGate] first: [LooperModeGate.playing] is what a "stop loops
+/// and switch" confirmation stands for, the other refusals name their reason.
 ///
-/// This part (B2a) ships only the field and the lock gate: [LooperMode]'s
-/// non-multi values have no engine SEMANTICS yet (Sync/Song/Band/Free land in
-/// B2b onward) — setting one changes only what [EngineSnapshot.looperMode]
-/// reports, not the engine's audio path. This is a DIFFERENT axis from the
-/// looper feature's own `InteractionMode` (record/mute — what a track press
-/// does); the two must never be confused.
+/// This is a DIFFERENT axis from the looper feature's own `InteractionMode`
+/// (record/mute — what a track press does); the two must never be confused.
 ///
 /// Grew in B5c (as anticipated) to also carry [crownPrimary] and
 /// [setOneShot]: both are persistent, mode-adjacent per-session/per-track
@@ -468,9 +478,13 @@ abstract interface class TempoControl {
 /// tempo-grid state, so they belong here alongside [setLooperMode] rather
 /// than in [TempoControl].
 abstract interface class LooperModeControl {
-  /// Sets the looper mode. Ignored while the mode is locked (see the class
-  /// doc). Values outside [LooperMode] are rejected with
-  /// [EngineResult.invalid] without applying.
+  /// What [setLooperMode] would do with [mode] right now (see the class doc).
+  /// [LooperModeGate.open] for the current mode.
+  LooperModeGate looperModeGate(LooperMode mode);
+
+  /// Sets the looper mode. Refused with [EngineResult.invalid] while
+  /// [looperModeGate] reads capturing, queued or spans; stops every playing
+  /// track first when it reads playing; a no-op for the current mode.
   EngineResult setLooperMode(LooperMode mode);
 
   /// Crowns [channel] the primary track (Sync/Band, D18). Accepted in every

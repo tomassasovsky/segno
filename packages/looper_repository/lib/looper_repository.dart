@@ -18,6 +18,7 @@ export 'package:segno_engine/segno_engine.dart'
         InputConditioningParam,
         LaneCacheState,
         LooperMode,
+        LooperModeGate,
         PluginScanProgress,
         TempoSource,
         TrackState,

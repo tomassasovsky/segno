@@ -653,6 +653,18 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  bool clearRestorePending({int channel = 0}) {
+    _checkAlive();
+    return _bindings.le_engine_clear_restore_pending(_engine, channel) != 0;
+  }
+
+  @override
+  bool redoReclears({int channel = 0}) {
+    _checkAlive();
+    return _bindings.le_engine_redo_reclears(_engine, channel) != 0;
+  }
+
+  @override
   bool undoRestoresClear({int channel = 0}) {
     _checkAlive();
     return _bindings.le_engine_undo_restores_clear(_engine, channel) != 0;
@@ -1106,6 +1118,15 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   // ---- looper mode (LooperModeControl, B2a) ----
+
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) {
+    _checkAlive();
+    final code = _bindings.le_engine_looper_mode_gate(_engine, mode.code);
+    // A stopped engine has nothing to refuse: the switch is remembered and
+    // re-applied on start, like every other mode-adjacent setting.
+    return code < 0 ? LooperModeGate.open : LooperModeGate.fromCode(code);
+  }
 
   @override
   EngineResult setLooperMode(LooperMode mode) {

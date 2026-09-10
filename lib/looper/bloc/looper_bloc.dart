@@ -31,7 +31,16 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
        _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
        super(const LooperState()) {
-    on<LooperStateUpdated>((event, emit) => emit(event.state));
+    on<LooperStateUpdated>((event, emit) {
+      // The looper mode the rig boots into is the one the engine REPORTS: a
+      // switch the audio thread dropped (a record press landing in the same
+      // block) never reaches the setting, and one it took always does.
+      final mode = event.state.transport.looperMode;
+      if (mode != state.transport.looperMode) {
+        unawaited(_settings?.saveLooperMode(mode.code));
+      }
+      emit(event.state);
+    });
     on<LooperRecordPressed>((event, _) {
       if (_takeLocked()) return;
       _repository.record(channel: event.channel);
@@ -484,7 +493,17 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     );
     on<LooperModeChanged>((event, _) {
       _repository.setLooperMode(event.mode);
-      unawaited(_settings?.saveLooperMode(event.mode.code));
+      // Persisted from what the REPOSITORY holds, never from the event: a
+      // refused change leaves the old mode standing there and writes it back
+      // unchanged, and a change the audio thread later drops is corrected by
+      // the reported-state guard above.
+      //
+      // Written here as well as there because a mode chosen while the engine
+      // is closed never reaches the engine at all — it is replayed at the next
+      // start — so the report can never carry it, and the guard above, which
+      // fires on a CHANGE in the report, would write nothing. The choice
+      // worked for the session and reverted on the next launch.
+      unawaited(_settings?.saveLooperMode(_repository.intendedLooperMode.code));
     });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
