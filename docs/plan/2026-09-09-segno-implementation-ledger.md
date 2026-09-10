@@ -1172,8 +1172,35 @@ The backing card lands with the backing player.
   unreached, and an odd-channel device claiming the jack it has not got each
   fail exactly the tests that name them.
 
+### Output setup
+
+- **Every fact is the chosen destination's own**: format, level, balance and
+  mute are per destination, and the page opens on the master because that is
+  the destination a player meets first.
+- **The meters read that destination's own jacks**, outputs `2k` and `2k+1`,
+  and a muted destination meters silence whatever the engine's last block
+  said. Below the meter's floor the readout says nothing is coming out rather
+  than printing a large negative number that would read as a level.
+- **The routing meter's fill was wrong and is fixed here.** It lit cells in
+  proportion to amplitude while the scale under it prints four evenly spaced
+  ticks, so a signal at -24 dBFS lit a sixteenth of the meter under a label
+  that says a third. It is not the stage's `peakMeterFill` either: the two
+  surfaces print different scales, and each meter has to agree with the one
+  drawn under it.
+
+#### Checks
+
+- Dart: root 2263 passing and 35 skipped, `dart analyze` clean over `lib` and
+  `test`, `bloc lint` clean over 240 files, both arb files at 1109 keys with
+  no key in one and missing from the other.
+- Mutation-checked: editing the master whatever card is chosen, metering the
+  first pair whatever destination is chosen, metering a muted destination's
+  last block, reading the balance slider as a level, a mute that never says it
+  is muted, a Mono note that always shows, and a decibel-linear meter fill
+  each fail exactly the tests that name them.
+
 #### Not verified here
 
-Output setup and the input and output name pages land next, and the
-Signal-era routing surfaces and the interim click card retire with them.
+The input and output name pages land next, and the Signal-era routing surfaces
+and the interim click card retire with them.
 

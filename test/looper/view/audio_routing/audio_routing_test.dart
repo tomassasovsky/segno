@@ -14,6 +14,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
+import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/output_routing_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -473,6 +474,164 @@ void main() {
     expect(find.text(l10n.routingHearAutoOn), findsOneWidget);
     expect(find.text(l10n.routingHearAutoOff), findsNothing);
   });
+
+  testWidgets('Output setup opens on the master destination and edits one '
+      'card per stereo pair', (tester) async {
+    await pump(tester);
+    await openOutputSetup(tester);
+    final l10n = l10nOf(tester);
+
+    expect(find.byKey(const Key('output_card_0')), findsOneWidget);
+    expect(find.byKey(const Key('output_card_1')), findsOneWidget);
+    expect(find.byKey(const Key('output_card_2')), findsNothing);
+    expect(find.text(l10n.routingOutputAppliesNote), findsOneWidget);
+    expect(find.text(l10n.routingOutputLevel), findsOneWidget);
+    expect(find.text(l10n.routingBalance), findsOneWidget);
+
+    // The master is the destination a player meets first.
+    await tester.tap(find.byKey(const Key('output_format_mono')));
+    await tester.pump();
+    verify(
+      () =>
+          bloc.add(const LooperOutputMonoChanged(kMasterOutputBus, mono: true)),
+    ).called(1);
+  });
+
+  testWidgets("every fact is the chosen destination's own", (tester) async {
+    await pump(tester);
+    await openOutputSetup(tester);
+
+    await tester.tap(find.byKey(const Key('output_card_1')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('output_format_mono')));
+    await tester.tap(find.byKey(const Key('output_mute')));
+    await tester.pump();
+
+    verify(
+      () => bloc.add(const LooperOutputMonoChanged(1, mono: true)),
+    ).called(1);
+    verify(
+      () => bloc.add(const LooperOutputMuteChanged(1, muted: true)),
+    ).called(1);
+  });
+
+  testWidgets('Mono says what it does, and Stereo says nothing', (
+    tester,
+  ) async {
+    await pump(tester);
+    await openOutputSetup(tester);
+    final l10n = l10nOf(tester);
+    expect(find.text(l10n.routingOutputMonoNote), findsNothing);
+
+    await push(tester, _rig.copyWithOutput(const OutputBus(mono: true)));
+    expect(find.text(l10n.routingOutputMonoNote), findsOneWidget);
+  });
+
+  testWidgets('the mute reads out its own state and switches back', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      state: _rig.copyWithOutput(const OutputBus(muted: true)),
+    );
+    await openOutputSetup(tester);
+    final l10n = l10nOf(tester);
+
+    expect(find.text(l10n.routingOutputMuted), findsOneWidget);
+    expect(find.text(l10n.routingOutputMute), findsNothing);
+    await tester.tap(find.byKey(const Key('output_mute')));
+    await tester.pump();
+    verify(
+      () => bloc.add(
+        const LooperOutputMuteChanged(kMasterOutputBus, muted: false),
+      ),
+    ).called(1);
+  });
+
+  testWidgets('the level and balance sliders commit once each', (tester) async {
+    await pump(tester);
+    await openOutputSetup(tester);
+
+    final level = find.byKey(const Key('output_level_slider'));
+    await tester.tapAt(tester.getTopLeft(level) + const Offset(414, 20));
+    await tester.pump();
+    final levels = verify(
+      () => bloc.add(captureAny(that: isA<LooperOutputLevelChanged>())),
+    ).captured.cast<LooperOutputLevelChanged>();
+    expect(levels, hasLength(1));
+    expect(levels.single.level, closeTo(0.5, 0.02));
+
+    final balance = find.byKey(const Key('output_balance_slider'));
+    await tester.tapAt(tester.getTopLeft(balance) + const Offset(100, 20));
+    await tester.pump();
+    final balances = verify(
+      () => bloc.add(captureAny(that: isA<LooperOutputBalanceChanged>())),
+    ).captured.cast<LooperOutputBalanceChanged>();
+    expect(balances, hasLength(1));
+    // The slider's full width is left to right, so a tap near its left end is
+    // a balance to the left rather than a level near zero.
+    expect(balances.single.balance, lessThan(0));
+    expect(balances.single.balance, greaterThanOrEqualTo(-1));
+  });
+
+  testWidgets("the meters read the destination's own jacks", (tester) async {
+    // Outputs 1-4 at four different peaks: the master hears the first pair
+    // and the second destination the second.
+    await pump(
+      tester,
+      state: _rig.copyWithOutput(
+        const OutputBus(),
+        peaks: const [1, 0.5, 0.25, 0.125],
+      ),
+    );
+    await openOutputSetup(tester);
+    final l10n = l10nOf(tester);
+
+    expect(find.text(l10n.routingOutputDbfs('0.0')), findsOneWidget);
+    expect(find.text(l10n.routingOutputDbfs('-6.0')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('output_card_1')));
+    await tester.pump();
+    expect(find.text(l10n.routingOutputDbfs('-12.0')), findsOneWidget);
+    expect(find.text(l10n.routingOutputDbfs('-18.1')), findsOneWidget);
+  });
+
+  testWidgets('a muted destination meters silence, whatever the engine last '
+      'reported', (tester) async {
+    await pump(
+      tester,
+      state: _rig.copyWithOutput(
+        const OutputBus(muted: true),
+        peaks: const [1, 1, 0, 0],
+      ),
+    );
+    await openOutputSetup(tester);
+    final l10n = l10nOf(tester);
+
+    expect(find.text(l10n.routingOutputSilent), findsNWidgets(2));
+    expect(find.text(l10n.routingOutputDbfs('0.0')), findsNothing);
+  });
+
+  group('routingMeterPosition', () {
+    test('lights cells where the scale under them says they belong', () {
+      // The scale prints -60, -24, -12 and 0 dBFS at four evenly spaced
+      // ticks, so a meter filled linearly in decibels would disagree with it.
+      expect(routingMeterPosition(1), 1);
+      expect(routingMeterPosition(0), 0);
+      // -24 dBFS is a third of the way along, -12 two thirds.
+      expect(routingMeterPosition(0.0630957), closeTo(1 / 3, 0.001));
+      expect(routingMeterPosition(0.2511886), closeTo(2 / 3, 0.001));
+      // -6 dBFS sits halfway between -12 and full scale.
+      expect(routingMeterPosition(0.5011872), closeTo(5 / 6, 0.001));
+    });
+
+    test('anything under the floor is off the bottom, not a small fill', () {
+      // -60 dBFS is the floor itself, and lands on it to within rounding.
+      expect(routingMeterPosition(0.001), closeTo(0, 1e-9));
+      expect(routingMeterPosition(0.0001), 0);
+      expect(routingMeterPosition(-1), 0);
+    });
+  });
 }
 
 /// Whether destination [bus] is drawn as reached.
@@ -486,6 +645,12 @@ bool destinationSelected(WidgetTester tester, int bus) => tester
     .first
     .properties
     .selected!;
+
+/// Switches to the Output setup task.
+Future<void> openOutputSetup(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('routing_tab_outputSetup')));
+  await tester.pump();
+}
 
 /// Switches to the Output routing task.
 Future<void> openOutputs(WidgetTester tester) async {
@@ -512,6 +677,20 @@ Future<void> openRecord(WidgetTester tester) async {
 }
 
 extension on LooperState {
+  /// [_rig] with the master destination set to [bus] and the given jack
+  /// [peaks].
+  LooperState copyWithOutput(
+    OutputBus bus, {
+    List<double> peaks = const [0, 0, 0, 0],
+  }) => LooperState(
+    tracks: tracks,
+    status: status,
+    inputPeaks: inputPeaks,
+    outputBusCount: outputBusCount,
+    outputPeaks: peaks,
+    outputSetup: OutputSetup(buses: {kMasterOutputBus: bus}),
+  );
+
   /// [_rig] with track 0 holding [lanes] and track 1 recording input 3.
   LooperState copyWithLanes(List<Lane> lanes) => LooperState(
     tracks: [
