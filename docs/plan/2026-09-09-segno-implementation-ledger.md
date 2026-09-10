@@ -1221,9 +1221,34 @@ The backing card lands with the backing player.
   leaves the route from the list, an output list drawn per jack, and a rename
   that is dropped each fail exactly the tests that name them.
 
-#### Not verified here
+### What retired with it
 
-The Signal-era routing surfaces and the interim click card still stand; they
-retire next, and the new surfaces take over as the only dispatchers of the
-lane-routing and output-gate events.
+- **The Tracks routing tab and its per-track routing dialog.** They were the
+  only dispatchers of the lane routing events, which the two new tasks now
+  own. Their per-track quantize group is not lost: slice 2's Length & quantize
+  page already writes the same override, and the dialog's three-way control
+  was reading a derived view of it.
+- **The interim click output card**, on the console's Device tab, and the
+  output chips of the desktop settings' click section. Where the click goes is
+  Output routing's; how loud it is has nowhere else to live until the Mixer
+  holds it, so the section keeps the level and was renamed for what it is.
+- **The Tracks tray panel lost its strip**, because a lone pill over a single
+  body chooses nothing.
+- Twenty-nine strings and five goldens went with those surfaces.
+
+#### What did NOT retire, and why
+
+The Signal face's per-jack output gate stays. It is a different fact from
+anything the accepted routing design offers: a structural switch per hardware
+output, with the last-live-output guard (#569) behind it, where Output setup's
+mute is a per-destination mix fact that retains its level. Retiring it would
+drop a shipped feature the accepted design does not replace. It needs a design
+answer before it can move.
+
+#### Checks
+
+- Dart: root 2223 passing and 35 skipped, `dart analyze` clean over `lib` and
+  `test`, `bloc lint` clean over 237 files, both arb files at 1086 keys.
+- Five goldens regenerated and eyeballed (the Tracks tray with no strip, the
+  Device tab with no click card), five deleted with their surfaces.
 

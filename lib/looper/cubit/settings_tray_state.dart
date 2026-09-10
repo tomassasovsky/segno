@@ -103,7 +103,6 @@ class SettingsTrayState extends Equatable {
     this.signalEffectSlot,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
-    this.tracksTab = TracksTab.names,
     this.audioTab = AudioTab.device,
     this.systemTab = SystemTab.display,
   });
@@ -169,9 +168,6 @@ class SettingsTrayState extends Equatable {
   /// Which tab the Control domain shows. Same rule as [networkTab].
   final ControlTab controlTab;
 
-  /// Which tab the Tracks domain shows. Same rule as [networkTab].
-  final TracksTab tracksTab;
-
   /// Which tab the Audio domain shows. Same rule as [networkTab].
   final AudioTab audioTab;
 
@@ -190,7 +186,6 @@ class SettingsTrayState extends Equatable {
     bool clearSignalEffect = false,
     NetworkTab? networkTab,
     ControlTab? controlTab,
-    TracksTab? tracksTab,
     AudioTab? audioTab,
     SystemTab? systemTab,
   }) => SettingsTrayState(
@@ -208,7 +203,6 @@ class SettingsTrayState extends Equatable {
         : signalEffectSlot ?? this.signalEffectSlot,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
-    tracksTab: tracksTab ?? this.tracksTab,
     audioTab: audioTab ?? this.audioTab,
     systemTab: systemTab ?? this.systemTab,
   );
@@ -223,7 +217,6 @@ class SettingsTrayState extends Equatable {
     signalEffectSlot,
     networkTab,
     controlTab,
-    tracksTab,
     audioTab,
     systemTab,
   ];
