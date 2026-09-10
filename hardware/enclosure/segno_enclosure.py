@@ -567,14 +567,14 @@ LED_WALL_MIN  = 0.6       # channel wall floor; the flange edge caps the outside
 # shoulder can come out 0.2 over, and with a glue bead that eats most of the 0.39
 # to the post pad. Check the first printed diffuser against a post before gluing
 # ten of them.
-LED_POST_MIN  = 0.3       # gap from the shoulder's REAR edge to the support-post
-                          # top pad, checked only where the two share u. Since
-                          # POST_PW is derived to fit BETWEEN the pill shoulders
-                          # (2026-09-04) they share none, and this gate is a
-                          # tripwire that stays armed for whoever widens the post
-                          # or the flange again. Before that, at POST_PW = 40, it
-                          # held a 0.39 mm gap and pinned LED_GAP to a 0.09 mm
-                          # window.
+LED_BEAM_MIN  = 0.3       # gap from the shoulder's REAR edge to the support BEAM's
+                          # top pad, measured where the two actually come closest
+                          # rather than in plan -- see BEAM_LEAN. While this was
+                          # seven posts the pads sat in the gaps between pills and
+                          # shared no u with any shoulder, so the gate sat armed but
+                          # idle. The beam spans every u, so it is live at every pill
+                          # and BEAM_PAD is set from it: 1.47 mm of real air, against
+                          # the 0.39 the posts would have held had they overlapped.
 LED_LAND_MIN  = 2.4       # faceplate metal left between the shoulder's front edge
                           # and the pedal aperture behind it -- the land the flange
                           # is glued to, MEASURED OFF THE EMITTED CUTS (the aperture
@@ -1028,6 +1028,19 @@ DEV90 = dev_deduct(90.0)              # = 1.911 for T2/RI2/K0.33 (issue #237: th
 # it centres the hole on the developed 9 mm front wall. Was written twice, once
 # as (H_FRONT-bdd)*0.5 and once as (H_FRONT-DEV90)/2.0 (bdd == DEV90, so bit-
 # identical); the assert pins it so the next H_FRONT change is a conscious one.
+
+
+def wall_flat_z(h):
+    """Side/rear WALL height -> offset from that wall's bend centre line in the flat.
+
+    h is measured from the base floor's TOP face, which is the datum every part
+    standing on the floor uses. A hole drawn `s` from the bend centre line lands
+    s + DEV90 above the floor's BOTTOM face, so s = h + T - DEV90. The corner
+    brackets' own _zf() is this with h = RI + z, z being that bracket's height
+    above where its leg bottoms out on the fold radius.
+    """
+    return T + h - DEV90
+
 FRONT_SCREW_Z = (H_FRONT - DEV90) / 2.0 - 0.50
 assert abs(FRONT_SCREW_Z - 4.545) <= 0.01, \
     f"FRONT_SCREW_Z {FRONT_SCREW_Z:.4f} drifted from the frozen 4.545 mm"
@@ -1158,7 +1171,7 @@ LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear): pill
                          # same day -- the pill's bottom edge sits 13 mm behind
                          # the slot instead of 9. Everything downstream follows
                          # (legends, ring line, mini console); the support posts
-                         # no longer care, see POST_PW.
+                         # no longer care, see BEAM_PAD.
 PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
 # The platform stack (platform_foot_holes and everything on it) converts lid-v
 # to plan as v*cos(SLOPE) -- but the DEVELOPED lid's content v=0 does NOT land
@@ -1427,75 +1440,144 @@ LID_UNDER_NORMAL = 12.12889  # mm above floor bottom; rear-seam solver datum
 LID_UNDER_Z0 = LID_UNDER_NORMAL / math.cos(math.radians(SLOPE_ANGLE))
 
 # ---------------------------------------------------------------------------
-# FACEPLATE SUPPORT POSTS  (base-anchored props -- issue #292)
+# FACEPLATE SUPPORT BEAM  (one full-width base-anchored member -- issues #292/#1019)
 # ---------------------------------------------------------------------------
-# Two base-anchored steel posts support the faceplate strip ahead of the large
-# display opening. The lid bears on fitted felt caps and remains removable.
-# Load passes through faceplate -> felt -> post -> base sheet -> rubber feet
-# -> floor. The base is suspended above the floor between those supports.
-# The supplied stock is certified 1100-H14 (lot 26E0269). Issue #1019 rates the
-# assembled support layout: away from a post the lid dents at 7-11 kg of point
-# load, over one it takes 170 kg, so the posts work and there were two of them
-# on an 850 mm panel. POST_U now covers the whole band.
-POST_V     = 165.0                 # web depth (user call 2026-08-19: "move the screws back, make the
-                                   # posts taller"): the pad now sits 13mm in front of the 16in aperture
-                                   # edge (178) -- the actual dent zone -- instead of jammed at 146.5
-                                   # against the OLD panel's fictitious connector strip. Rear limit is
-                                   # the measured UPERFECT body's front edge; the intake vent field below yields instead (slots
-                                   # the bottom plate carries no vents at all).
-# One post per PEDAL GAP (issue #1019). Two of these existed, at the TRACK
-# T2-T3 and T3-T4 gaps, propping the band in front of the 16in aperture -- the
-# zone #292 identified. The FE check found that band dents at 7-11 kg of point
-# load everywhere the pads do NOT reach and takes 170 kg where they do, so the
-# answer was never two posts, it was the whole band: a missed stomp lands here.
-# The stations are the FRONT_SCREW_U interior gaps, which is why POST_PW below
-# derives from the pedal pitch -- every station sits between two pill shoulders
-# by construction. The two END stations are left out: the lid's own skirt ledge
-# already carries its edges, and a post there would crowd the corner feet.
-POST_U     = FRONT_SCREW_U[1:-1]   # 7 stations, the interior pedal gaps
-POST_U_CLR = 1.5                   # u clearance, pad edge to the neighbouring pill
-                                   # shoulder (LED_SLOT_W + 2*LED_INS_FLANGE), each side
-POST_PW    = ((_row1_u(1) - _row1_u(0)) - LED_SLOT_W - 2*LED_INS_FLANGE
-              - 2*POST_U_CLR)      # post width (u): 30.1, DERIVED so the pad sits
-                                   # BETWEEN the two pill shoulders it lands among and
-                                   # shares no u with either. At the old literal 40 it
-                                   # overlapped each shoulder by ~3.7 mm in u, so the
-                                   # shoulder-rear-vs-pad-front gate pinned LED_GAP to a
-                                   # 0.09 mm window; decoupled, the pill depth is free
-                                   # and the post stays where the dent zone wants it.
-POST_PAD   = 20.0                  # top pad length (v) -- bears on the faceplate underside
-POST_FOOTL = 20.0                  # foot flange length (v) -- bolts to the base floor
-                                   # (briefly 17 while the post was wedged against the v375 platforms
-                                   # at POST_V=146.5; restored to 20 when POST_V moved to 165 -- the
-                                   # foot front now clears the platform rear wall by ~17 mm)
-POST_FELT  = 1.0                   # reference stock; fit the actual coated gap, not a fixed spacer.
+# ONE folded steel beam runs wall to wall under the faceplate strip ahead of the
+# large display opening, replacing the seven separate posts that stood here
+# until 2026-09-10 (owner call: "a whole support beam in that line that is also
+# supported, that also attaches to the sides, the walls of the base"). Load
+# passes through faceplate -> felt -> beam -> base sheet -> rubber feet -> floor.
+# The lid still bears on fitted felt and remains removable; nothing shows on the
+# top face.
+#
+# WHY A BEAM AND NOT POSTS. Seven 30 mm pads cover 211 mm of an 850 mm panel --
+# 25%. The nonlinear shell model behind issue #1019 rates the band between pads
+# at 47 kg of point load to dent and the band over one at 232 kg. A continuous
+# pad backs every u, and the weakest point on the band becomes 475 kg. The beam
+# costs the BOTTOM plate margin, because fourteen bolts concentrate the in-plane
+# restraint the plate used to spread: at a 1 kN stomp the floor goes from 96 MPa
+# (util 1.01) with no beam to 135 MPa (util 1.42) bolted through slotted holes,
+# or 147 MPa (util 1.54) through plain ones. Both stay inside the RC-600
+# calibration point (util 2.00 against yield, a shipping product), so the trade
+# is 0.4 units of floor margin for a tenfold gain on the faceplate. The fixing
+# holes are SLOTTED in depth for that reason -- see BEAM_BOLT_SLOT.
+#
+# The beam is 1.6 mm cold-rolled STEEL, not the shell's 2.0 aluminium, and it
+# bolts on AFTER painting: steel takes a different pretreatment and cannot go
+# through the body's paint line (which is also why the wall tie is bolted and
+# not riveted like the aluminium corner brackets).
+BEAM_V     = 165.0                 # web depth (user call 2026-08-19: "move the screws back, make the
+                                   # posts taller"): the pad sits in front of the 16in aperture edge
+                                   # (179.9) and, more tightly, in front of the measured UPERFECT
+                                   # module BODY, whose front face is 11.8 mm forward of the aperture.
+                                   # That body is what pins BEAM_V, not the aperture: the web's rear
+                                   # face clears it by 1.43 mm and the gate below holds that.
+# The bolt STATIONS are unchanged from the seven posts: the FRONT_SCREW_U
+# interior pedal gaps, two M4 each, fourteen holes already in the base flat.
+# Keeping them means the floor pattern, the FE model and the rails all still
+# describe the same hardware; only the metal above them became continuous.
+BEAM_BOLT_U   = FRONT_SCREW_U[1:-1]   # 7 stations, the interior pedal gaps
+BEAM_U_CLR    = 1.5                   # u clearance that used to set the post pad width; kept
+                                      # because the bolt spacing derives from it
+_BEAM_BOLT_PW = ((_row1_u(1) - _row1_u(0)) - LED_SLOT_W - 2*LED_INS_FLANGE
+                 - 2*BEAM_U_CLR)      # 30.14: the old post width, now only a bolt-spacing datum
+BEAM_BOLT_DU  = _BEAM_BOLT_PW / 2.0 - 5.0   # M4 at +/- this in u about each station
+BEAM_BOLT_SLOT = 2.0               # the fixing holes are SLOTTED in DEPTH (v) by this much
+                                   # beyond the M4 clearance. A slot lets the bottom plate
+                                   # stretch under the beam instead of being pinned at
+                                   # fourteen points: 135 MPa instead of 147 at a 1 kN stomp.
+                                   # Slotted in v only -- u is what locates the beam.
+BEAM_PAD   = 14.3                  # top pad length (v) -- bears on the faceplate underside.
+                                   # 20 while this was seven posts, which dodged the LED
+                                   # diffuser shoulders in u because each pad sat in a gap.
+                                   # A continuous pad cannot dodge, so it clears them in v
+                                   # instead: the shoulders end at v=148.61 and the pad starts
+                                   # at 150.70, and after the lean correction below that is
+                                   # 1.47 mm of real air. Measured 1.474 in the assembled
+                                   # Fusion model against every one of the eight front pills.
+BEAM_FOOTL = 20.0                  # foot flange length (v) -- bolts to the base floor
+BEAM_FELT  = 1.0                   # reference stock; fit the actual coated gap, not a fixed spacer.
                                    # Measure the coated assembly and fit a felt/foam cap that
                                    # supports the lid without lifting it off its side/rear seats.
-POST_TILT  = SLOPE_ANGLE           # pad tilt (deg) so it beds FLUSH on the sloped faceplate underside
-POST_BOLT_DU = POST_PW / 2.0 - 5.0 # M4 foot bolts at +/- this in u: 5.0 in from the foot's
-                                   # side edge (2.85 mm of web past the O4.3, an M4 head
-                                   # inside the foot). Was a literal 12 for the 40 mm post;
-                                   # the base anchors derive from it, so both move together
-# The posts use 1.6 mm cold-rolled steel. Formed geometry, fitted cap contact
-# and support beneath the base determine the assembled stiffness. Felt separates
-# the painted steel pad from the painted aluminium lid.
-POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), NOT the shell's 2.0 Al
+BEAM_TILT  = SLOPE_ANGLE           # pad tilt (deg) so it beds FLUSH on the sloped faceplate underside
+BEAM_T     = 1.6                   # beam sheet thickness (cold-rolled steel), NOT the shell's 2.0 Al
+# The side walls fold up from the flat's own edges, and a centre bend line lands
+# each wall's INNER face BA90/2 - RI inboard of that edge -- 0.0892 mm, the same
+# term the corner brackets' rivet mapping uses. So the clear span is not the
+# 846.0 of the flat.
+BEAM_WALL_GAP = FP_W - 2*(BA90/2.0 - RI)   # 845.8216 clear, wall inner face to wall inner face
+BEAM_LEN   = 844.8                 # overall, ear OUTER face to ear OUTER face. A round cut
+                                   # length for an 845 mm part; the fit clearance falls out
+                                   # of it rather than the other way round.
+BEAM_U0    = (FP_W - BEAM_LEN)/2.0 # 0.6: the beam is centred, so both ends get the same air
+BEAM_END_CLR = (BEAM_WALL_GAP - BEAM_LEN)/2.0      # 0.511 each side
+
+# --- cable windows -----------------------------------------------------------
+# The seven posts left 71 mm gaps between them, so every cable in the front half
+# of the console walked past them. A continuous web is a wall, so it is holed:
+# one window per FRONT-ROW pedal, on that pedal's centreline (owner call: "an
+# opening at the middle of each front row pedal so that a cable for each one of
+# these goes in"), plus one near each side wall for the LED strip feed ("an
+# opening at the sites so that the cable for the LED strips goes in as well").
+# The windows sit at the pedal centrelines, which is exactly where the bolts are
+# NOT -- the stations are the gaps between pedals -- so no window comes closer
+# than 30 mm to a fixing.
+BEAM_CABLE_W = 24.0                # window width (u)
+BEAM_CABLE_H = 12.0                # window height (z); leaves 15.4 mm of web above and below
+BEAM_CABLE_R = 3.0                 # corner radius; a square corner in a loaded web is a crack start
+BEAM_CABLE_U = tuple(_row1_u(i) for i in range(8))   # the 8 front-row pedal centrelines
+BEAM_LED_U   = (30.0, FP_W - 30.0) # LED strip feed, one per side. Outboard of the outermost
+                                   # pedal window (which ends at u=81) and 18 mm off the wall.
+BEAM_WEB_MIN = 8.0                 # floor on the web left above/below any window, and on the
+                                   # web left between two windows
+
+# --- wall tie ----------------------------------------------------------------
+# Each end turns a 90 deg EAR rearward that lies on the side wall's inner face
+# and takes one M4 through the wall. The ear folds REARWARD because the foot and
+# the pad both run forward of the web -- an ear folded forward would land in
+# their end faces. Structurally the tie is a bonus, not a support: the C section
+# is stiff enough that its 109 mm end overhangs past the outermost bolts deflect
+# 0.06 mm at 1 kN and see 58 MPa. What the tie buys is that the beam braces the
+# two side walls against each other, and that the owner asked for it.
+BEAM_EAR_V   = 18.0                # ear depth, rearward from the web's REAR face
+BEAM_EAR_H   = 30.0                # ear height
+BEAM_EAR_Z0  = 6.0                 # ear bottom, above the base floor TOP
+BEAM_EAR_BOLT_Z = BEAM_EAR_Z0 + BEAM_EAR_H/2.0     # 21.0: bolt height above the floor top
+BEAM_EAR_BOLT_V = BEAM_EAR_V/2.0                   # bolt depth, from the web's rear face
+BEAM_EAR_SLOT = 1.5                # the ear's hole is slotted in DEPTH by this much beyond the
+                                   # M4 clearance, so the cut-to-length tolerance of an 846 mm
+                                   # part does not have to hit two holes in the shell
+# Formed geometry, fitted cap contact and support beneath the base determine the
+# assembled stiffness. Felt separates the painted steel pad from the painted
+# aluminium lid.
 # foot + pad both extend FORWARD of the web (a C, all in the clear strip in front of the
 # aperture); nothing sits under the display.
-# All heights use the base floor BOTTOM as world z=0. The imported post's
+# All heights use the base floor BOTTOM as world z=0. The imported beam's
 # foot bottom is local z=0 and is placed at world z=T. Use normal distances
 # for the sloping pad: subtracting pad thickness vertically made it too tall.
-# Keep the nominal 1.2 mm bare gap. Coating raises the post at its foot and
+# Keep the nominal 1.2 mm bare gap. Coating raises the beam at its foot and
 # reduces its pad clearance while coated lid seats also shift the lid pose.
 # The calculated finished range is about 0.925-1.163 mm; measure before fitting felt.
-POST_BARE_GAP = 1.2  # frozen bare support height; select felt after coating
-_POST_VP = POST_V * math.cos(math.radians(SLOPE_ANGLE)) - 2.093
-_POST_REAR_Y = _POST_VP + POST_T
-POST_H = ((LID_UNDER_NORMAL - POST_BARE_GAP - POST_T
-           + math.sin(math.radians(SLOPE_ANGLE)) * _POST_VP)
+BEAM_BARE_GAP = 1.2  # frozen bare support height; select felt after coating
+_BEAM_VP = BEAM_V * math.cos(math.radians(SLOPE_ANGLE)) - 2.093
+_BEAM_REAR_Y = _BEAM_VP + BEAM_T
+BEAM_H = ((LID_UNDER_NORMAL - BEAM_BARE_GAP - BEAM_T
+           + math.sin(math.radians(SLOPE_ANGLE)) * _BEAM_VP)
           / math.cos(math.radians(SLOPE_ANGLE)) - T)
 
-POST_RI = POST_T                   # inside radius for the 1.6 mm steel post (= T, as its sheet says)
+BEAM_RI = BEAM_T                   # inside radius for the 1.6 mm steel beam (= T, as its sheet says)
+
+# THE PAD IS NOT WHERE ITS v SAYS IT IS. Two leans push its bearing corner
+# forward of the nominal line, and both matter because the beam now shares u
+# with the LED diffuser shoulders everywhere instead of sitting in the gaps:
+#   - the pad bears BEAM_BARE_GAP below the faceplate underside, and the
+#     shoulder's rear face is perpendicular to the faceplate, so that face has
+#     already leaned BEAM_BARE_GAP*tan rearward by the time it reaches the pad;
+#   - the pad's free end is cut square, so its TOP (bearing) face reaches
+#     BEAM_T*tan further forward than the mould line BEAM_PAD measures.
+# Together they eat 0.62 mm that a plan view does not show. Checking the plan
+# separation alone said 1.39 where the assembly measures 0.78.
+BEAM_LEAN = (BEAM_BARE_GAP + BEAM_T) * math.tan(math.radians(SLOPE_ANGLE))
 
 # --- mid-field lid prop (issue #1019, printed) --------------------------------
 # The seven posts prop the band in front of the screens. Two ligaments deeper in
@@ -1517,35 +1599,71 @@ PROP_D       = 30.0    # column depth (v)
 PROP_FOOTL   = 22.0    # foot tongue, forward of the column
 PROP_FOOT_T  = 4.0
 PROP_BOLT_DU = PROP_W/2.0 - 6.0    # 2x M4 to the floor, spaced in u like the post's
-PROP_BARE_GAP = POST_BARE_GAP      # same felt rule: bare gap now, select felt after coating
+PROP_BARE_GAP = BEAM_BARE_GAP      # same felt rule: bare gap now, select felt after coating
 _PROP_VP      = PROP_V * math.cos(math.radians(SLOPE_ANGLE)) - 2.093
 _PROP_FOOT_VP = _PROP_VP - PROP_D/2.0 - PROP_FOOTL/2.0
 PROP_H        = lid_under_z(PROP_V) - T - PROP_BARE_GAP   # top-face centre above the floor top
 
-def post_deduct(angle_deg):
-    """Per-flap development deduction for the STEEL post (its own T/Ri, same
-    K): flap flat = outer length - post_deduct(rotation). Until 2026-09-04 the
-    post flat was nominal segments with NO deduction (the sheet said so), which
+def beam_deduct(angle_deg):
+    """Per-flap development deduction for the STEEL beam (its own T/Ri, same
+    K): flap flat = outer length - beam_deduct(rotation). Until 2026-09-04 the
+    flat was nominal segments with NO deduction (the sheet said so), which
     would have folded ~1.5 mm taller per bend and eaten the felt's 1 mm."""
     a = math.radians(angle_deg)
-    return (POST_RI + POST_T) * math.tan(a / 2.0) - a * (POST_RI + KF * POST_T) / 2.0
+    return (BEAM_RI + BEAM_T) * math.tan(a / 2.0) - a * (BEAM_RI + KF * BEAM_T) / 2.0
 
-POST_DD_PAD  = post_deduct(90.0 + POST_TILT)   # apoyo -> alma, 102.5 deg
-POST_DD_FOOT = post_deduct(90.0)               # alma -> pie
-# OUTER mold-line lengths of the folded C, read off build_post_step's solid:
+BEAM_DD_PAD  = beam_deduct(90.0 + BEAM_TILT)   # apoyo -> alma, 102.5 deg
+BEAM_DD_FOOT = beam_deduct(90.0)               # alma -> pie
+# OUTER mold-line lengths of the folded C, read off build_beam_step's solid:
 # the foot runs from its free end to the web's OUTER (rear) face = foot + t;
 # the web from the floor to where the tilted pad's TOP face meets the web's
-# rear plane = POST_H + t*tan(theta/2); the pad from that point to its free
+# rear plane = BEAM_H + t*tan(theta/2); the pad from that point to its free
 # end = pad + t*tan(theta/2). Deducting from the nominal legs (re-review
-# 2026-09-04) folded the post 2 mm short and left the felt unloaded.
-_POST_TP     = POST_T * math.tan(math.radians(90.0 + POST_TILT) / 2.0)
-POST_FOOT_OUT = POST_FOOTL + POST_T
-POST_WEB_OUT  = POST_H + _POST_TP
-POST_PAD_OUT  = POST_PAD + _POST_TP
-POST_PAD_F   = POST_PAD_OUT - POST_DD_PAD                   # flat flap lengths, from the bend centre lines
-POST_WEB_F   = POST_WEB_OUT - POST_DD_PAD - POST_DD_FOOT
-POST_FOOT_F  = POST_FOOT_OUT - POST_DD_FOOT
-_POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (forward of the web)
+# 2026-09-04) folded it 2 mm short and left the felt unloaded.
+_BEAM_TP     = BEAM_T * math.tan(math.radians(90.0 + BEAM_TILT) / 2.0)
+BEAM_FOOT_OUT = BEAM_FOOTL + BEAM_T
+BEAM_WEB_OUT  = BEAM_H + _BEAM_TP
+BEAM_PAD_OUT  = BEAM_PAD + _BEAM_TP
+BEAM_PAD_F   = BEAM_PAD_OUT - BEAM_DD_PAD                   # flat flap lengths, from the bend centre lines
+BEAM_WEB_F   = BEAM_WEB_OUT - BEAM_DD_PAD - BEAM_DD_FOOT
+BEAM_FOOT_F  = BEAM_FOOT_OUT - BEAM_DD_FOOT
+_BEAM_FOOT_VP = _BEAM_VP - BEAM_FOOTL/2.0                   # foot-bolt depth (forward of the web)
+# The wall EARS fold 90 deg about a VERTICAL line at each end of the web, so
+# they develop with the same deduction the foot does. Their outer mold length is
+# measured from the outer corner -- where the web's FRONT face meets the ear's
+# outer face -- to the ear's free edge, which is BEAM_EAR_V behind the web's rear
+# face. The web's own outer length along the console is BEAM_LEN, corner to
+# corner, and it loses a deduction at each end.
+BEAM_EAR_OUT = BEAM_T + BEAM_EAR_V
+BEAM_EAR_F   = BEAM_EAR_OUT - BEAM_DD_FOOT
+BEAM_WEB_XF  = BEAM_LEN - 2*BEAM_DD_FOOT           # web band length in the flat
+# An ear fold crosses the pad's and the foot's bend lines, so both flanges are
+# RELIEVED at the ends -- without it the fold tears. Measured in the flat from
+# the ear's bend line; it has to clear the bend's deformation zone, Ri + t.
+BEAM_EAR_RELIEF = 3.5
+assert BEAM_EAR_RELIEF >= BEAM_RI + BEAM_T, "the ear relief does not clear its own bend"
+_BEAM_REL = BEAM_DD_FOOT + BEAM_EAR_RELIEF         # folded: how far the pad and foot
+                                                   # stop short of each wall face
+
+
+def beam_bolt_u():
+    """The fourteen u where the beam bolts to the base floor, left to right.
+
+    Two M4 either side of each of the seven interior pedal gaps -- the same
+    stations the seven posts used, so the holes already in the base flat did not
+    move when the posts became one beam.
+    """
+    return [u + du for u in BEAM_BOLT_U for du in (-BEAM_BOLT_DU, BEAM_BOLT_DU)]
+
+
+def beam_cable_u():
+    """Every cable window in the beam web, left to right.
+
+    Eight on the front-row pedal centrelines and one per side for the LED strip
+    feed. The seven posts left 71 mm gaps for all of this; a continuous web has
+    to be holed for it instead.
+    """
+    return sorted(list(BEAM_CABLE_U) + list(BEAM_LED_U))
 
 def faceplate_holes():
     """All faceplate features. Pedal slots have NO mounting holes (the pedals
@@ -1882,46 +2000,77 @@ def _check(strict_board_mount=True):
         assert v-BUCK_BODY[1]/2-stand_rear >= 3.0, f"{name}: stand flange clearance <3 mm"
         assert v+BUCK_BODY[1]/2 < D-3*T+DEV90-3.0, f"{name}: rear wall clearance"
 
-    # 2b. support posts (issue #292): bear on the panel JUST in front of the 16in
-    # aperture (v<178), under the aperture width, tall enough to reach the underside.
+    # 2b. the faceplate support BEAM (issues #292/#1019): bears on the panel JUST
+    # in front of the 16in aperture, wall to wall, tall enough to reach the underside.
     _aperture_edge_v = SCREEN_TOP_V - BIG_H
-    assert POST_V < _aperture_edge_v, \
-        f"POST_V {POST_V:.0f} not in front of the aperture edge ({_aperture_edge_v:.0f})"
-    assert POST_H > 10.0, f"POST height {POST_H:.1f} mm too short at v={POST_V:.0f}"
-    # Every pad must land on SOLID faceplate metal. This replaces the old "post is
-    # under the 16in aperture" rule, which encoded #292's two-post scope rather
-    # than the requirement; with a post at every pedal gap the real gate is that
-    # nothing the pad bears on has been cut away.
-    _pad_v0, _pad_v1 = POST_V - POST_PAD, POST_V
-    for u in POST_U:
-        pu0, pu1 = u - POST_PW/2.0, u + POST_PW/2.0
-        for c in cuts:
-            b = _bbox(c)
-            assert not (b[0] < pu1 and pu0 < b[2] and b[1] < _pad_v1 and _pad_v0 < b[3]), (
-                f"POST pad at u={u:.0f} bears on the {c.get('ref','?')} cutout "
-                f"(u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f}) -- there is no metal there")
-    # COMPACT post sits in the band between the front pedals and the 15.6in BODY, and in the
-    # TRACK LED-slot GAPS (in u) so the pad also clears the slots.
-    assert POST_V - POST_PAD > PEDAL_ROW1_V + FSW_SLOT_D/2.0, \
-        f"POST pad reaches back over the front pedals (v{POST_V-POST_PAD:.0f} vs {PEDAL_ROW1_V+FSW_SLOT_D/2:.0f})"
+    assert BEAM_V < _aperture_edge_v, \
+        f"BEAM_V {BEAM_V:.0f} not in front of the aperture edge ({_aperture_edge_v:.0f})"
+    assert BEAM_H > 10.0, f"BEAM height {BEAM_H:.1f} mm too short at v={BEAM_V:.0f}"
+    # Every part of the pad must land on SOLID faceplate metal. The seven posts
+    # were checked station by station because they only bore in seven places;
+    # the beam bears everywhere, so the band is checked as one strip.
+    _pad_v0, _pad_v1 = BEAM_V - BEAM_PAD, BEAM_V
+    for c in cuts:
+        b = _bbox(c)
+        assert not (b[1] < _pad_v1 and _pad_v0 < b[3]), (
+            f"BEAM pad (v {_pad_v0:.1f}..{_pad_v1:.1f}) bears on the {c.get('ref','?')} cutout "
+            f"(u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f}) -- there is no metal there")
+    # The pad sits in the band between the front pedals and the 15.6in BODY.
+    assert BEAM_V - BEAM_PAD > PEDAL_ROW1_V + FSW_SLOT_D/2.0, \
+        f"BEAM pad reaches back over the front pedals (v{BEAM_V-BEAM_PAD:.0f} vs {PEDAL_ROW1_V+FSW_SLOT_D/2:.0f})"
     # the printed pedal platforms stand on the FLAT base: their ring rear wall (world
-    # depth) ends at PEDAL_ROW1_V*cos + CONSOLE_PLATFORM_D/2. The post's forwardmost metal
-    # (foot AND pad front, both at _POST_VP - POST_FOOTL) must clear it -- the 20 mm C
+    # depth) ends at PEDAL_ROW1_V*cos + CONSOLE_PLATFORM_D/2. The beam's forwardmost metal
+    # (foot AND pad front, both at _BEAM_VP - BEAM_FOOTL) must clear it -- the 20 mm C
     # overhung this by ~1 mm and collided in the populated doc (user-caught 2026-08-19).
     _plat_rear_w = PEDAL_ROW1_V * math.cos(math.radians(SLOPE_ANGLE)) + CONSOLE_PLATFORM_D / 2.0
-    assert _POST_VP - POST_FOOTL > _plat_rear_w + 1.5, \
-        f"POST front (w{_POST_VP-POST_FOOTL:.1f}) hits the pedal platform rear (w{_plat_rear_w:.1f} + 1.5 margin)"
-    # Compare real rear metal against the measured panel front in world y.
+    assert _BEAM_VP - BEAM_FOOTL > _plat_rear_w + 1.5, \
+        f"BEAM front (w{_BEAM_VP-BEAM_FOOTL:.1f}) hits the pedal platform rear (w{_plat_rear_w:.1f} + 1.5 margin)"
+    # Compare real rear metal against the measured panel front in world y. This,
+    # not the aperture edge, is what pins BEAM_V.
     body_front = SCREEN_TOP_V - BIG_H - BIG_LIP - BIG_BORDER_B
     body_front_y = math.cos(math.radians(SLOPE_ANGLE)) * body_front - 2.093
-    assert body_front_y - _POST_REAR_Y > 1.0, (
-        f"POST/PANEL: only {body_front_y - _POST_REAR_Y:.3f} mm clearance")
-    # posts in the LED-slot gaps: no TRACK LED slot overlaps a post's pad (u +/- POST_PW/2)
-    led = [_bbox(c) for c in cuts if c.get("ref","").endswith("_LEDSLOT")]
-    for u in POST_U:
-        for lb in led:
-            assert not (lb[0] < u+POST_PW/2 and u-POST_PW/2 < lb[2]), \
-                f"POST at u={u:.0f} overlaps an LED slot (u {lb[0]:.0f}..{lb[2]:.0f}) -- move to a gap"
+    assert body_front_y - _BEAM_REAR_Y > 1.0, (
+        f"BEAM/PANEL: only {body_front_y - _BEAM_REAR_Y:.3f} mm clearance")
+    # 2c. the beam fits BETWEEN the side walls, and its wall EARS reach rearward
+    # into clear air. The ears fold rearward (the foot and pad both run forward),
+    # so they are the only beam metal behind the web -- and the 16in module body
+    # is behind the web too, which is why the ears have to stay out of its u band.
+    assert 0.4 <= BEAM_END_CLR <= 1.0, (
+        f"BEAM_LEN {BEAM_LEN} leaves {BEAM_END_CLR:.3f} mm at each end of the "
+        f"{BEAM_WALL_GAP:.4f} clear span -- too tight to paint or too loose to locate")
+    _body_u0 = SCREEN_16_U - S16_BODY_W/2.0
+    _body_u1 = SCREEN_16_U + S16_BODY_W/2.0
+    for _eu in (BEAM_U0 + BEAM_T, FP_W - BEAM_U0 - BEAM_T):
+        assert _eu < _body_u0 - 2.0 or _eu > _body_u1 + 2.0, (
+            f"BEAM ear at u={_eu:.1f} folds rearward into the 16in module body "
+            f"(u {_body_u0:.0f}..{_body_u1:.0f})")
+    assert BEAM_EAR_Z0 >= RI, "BEAM ear bottom sits inside the floor/wall fold radius"
+    assert BEAM_EAR_Z0 + BEAM_EAR_H < BEAM_H, (
+        f"BEAM ear ({BEAM_EAR_Z0}..{BEAM_EAR_Z0+BEAM_EAR_H}) is taller than the web ({BEAM_H:.1f})")
+    # 2d. cable windows. One per front-row pedal plus one per side for the LED
+    # feed; the web has to survive them. Checked in u against each other and the
+    # fixings, and in z against the web's own height.
+    _wins = sorted([(u, BEAM_CABLE_W) for u in BEAM_CABLE_U]
+                   + [(u, BEAM_CABLE_W) for u in BEAM_LED_U])
+    _wz0 = (BEAM_H - BEAM_CABLE_H) / 2.0
+    assert _wz0 >= BEAM_WEB_MIN + BEAM_T, (
+        f"BEAM cable window leaves {_wz0 - BEAM_T:.1f} mm of web under it, "
+        f"below the {BEAM_WEB_MIN} floor")
+    assert BEAM_H - (_wz0 + BEAM_CABLE_H) >= BEAM_WEB_MIN, (
+        f"BEAM cable window leaves {BEAM_H - _wz0 - BEAM_CABLE_H:.1f} mm of web over it")
+    assert 2*BEAM_CABLE_R <= min(BEAM_CABLE_W, BEAM_CABLE_H), "BEAM_CABLE_R too big for the window"
+    for (ua, wa), (ub, wb) in zip(_wins, _wins[1:]):
+        assert (ub - wb/2.0) - (ua + wa/2.0) >= BEAM_WEB_MIN, (
+            f"BEAM cable windows at u={ua:.0f} and u={ub:.0f} leave "
+            f"{(ub-wb/2.0)-(ua+wa/2.0):.1f} mm of web between them")
+    assert _wins[0][0] - _wins[0][1]/2.0 >= BEAM_U0 + BEAM_T + BEAM_WEB_MIN, \
+        "the left LED window runs into the beam's end ear"
+    assert _wins[-1][0] + _wins[-1][1]/2.0 <= FP_W - BEAM_U0 - BEAM_T - BEAM_WEB_MIN, \
+        "the right LED window runs into the beam's end ear"
+    for _bu in beam_bolt_u():                      # no window over a fixing
+        for _wu, _ww in _wins:
+            assert abs(_bu - _wu) > _ww/2.0 + D_M4, (
+                f"BEAM fixing at u={_bu:.1f} falls in the cable window at u={_wu:.0f}")
     # 2f. the printed mid-field prop (issue #1019) lives in ONE narrow lane: right
     # of BANK's pedestal and left of the 16in MODULE BODY, which is wider than its
     # aperture. Both walls of that lane are gated here, in u.
@@ -1991,24 +2140,24 @@ def _check(strict_board_mount=True):
             f"LED_DIFFUSER {lb}: only {land:.2f} mm of faceplate between the "
             f"shoulder edge and the pedal aperture, under the {LED_LAND_MIN} "
             f"floor; move the pill back (LED_GAP) or narrow LED_INS_FLANGE")
-    # ...and behind the pill, the same shoulder must not reach the support post's
-    # top pad -- both bear on the faceplate underside, and the existing post gate
-    # (above) tests the LED SLOT (+-30 in u), not the shoulder (+-34), so it does
-    # not see this. Going 3 -> 4 halved the gap here too: 1.39 -> 0.39.
+    # ...and behind the pill, the same shoulder must not reach the support BEAM's
+    # top pad -- both bear on the faceplate underside. While this was seven posts
+    # the test only bit where a pad and a shoulder shared u, and the derived post
+    # width meant they never did, so it sat armed but idle. The beam spans every
+    # u, so it now bites at every pill: the pad front is the only thing keeping
+    # the two apart, and BEAM_PAD is set from this.
     for lb, _u, _v in PEDALS:
         if not _has_led(lb):
             continue
         ls = next(c for c in cuts if c.get("ref") == lb + "_LEDSLOT")
-        f_u0, f_u1 = ls["u"] - LED_INS_FLANGE, ls["u"] + ls["w"] + LED_INS_FLANGE
         f_v1 = ls["v"] + ls["h"] + LED_INS_FLANGE
-        for u in POST_U:
-            if f_u1 <= u - POST_PW/2 or u + POST_PW/2 <= f_u0:
-                continue                              # no overlap in u, no issue
-            gap = (POST_V - POST_PAD) - f_v1
-            assert gap >= LED_POST_MIN, (
-                f"LED_DIFFUSER {lb}: shoulder rear edge is {gap:.2f} mm from the "
-                f"post pad at u={u:.0f}, under the {LED_POST_MIN} floor -- both "
-                f"bear on the faceplate underside")
+        if f_v1 > BEAM_V:
+            continue                    # this pill is behind the beam entirely (CLEAR/BANK)
+        gap = (BEAM_V - BEAM_PAD) - f_v1 - BEAM_LEAN
+        assert gap >= LED_BEAM_MIN, (
+            f"LED_DIFFUSER {lb}: shoulder rear edge is {gap:.2f} mm from the "
+            f"beam pad, under the {LED_BEAM_MIN} floor -- both bear on the "
+            f"faceplate underside; shorten BEAM_PAD or move the pill forward")
 
     # ...and the strip channel has to survive inside that shoulder.
     assert LED_INS_FLANGE * 2 + LED_SLOT_H - LED_STRIP_W - 2 * LED_STRIP_CLR >= 2 * LED_WALL_MIN, (
@@ -2194,8 +2343,8 @@ def _check(strict_board_mount=True):
     pitch = min(b - a for a, b in zip(row1, row1[1:]))
     assert pitch - SKIRT_OUT_W >= 4.0, f"SKIRT: outer {SKIRT_OUT_W:.1f} vs pitch {pitch:.1f}"
     skirt_rear = PEDAL_ROW1_V + CONSOLE_PLATFORM_D / 2.0
-    assert POST_V - POST_PAD - skirt_rear >= 0.8, \
-        f"SKIRT: row-1 skirt rear v{skirt_rear:.1f} hits the post pad (front v{POST_V-POST_PAD:.1f})"
+    assert BEAM_V - BEAM_PAD - skirt_rear >= 0.8, \
+        f"SKIRT: row-1 skirt rear v{skirt_rear:.1f} hits the post pad (front v{BEAM_V-BEAM_PAD:.1f})"
 
     # 4. screen depth: each module clears the interior under the lid (read positions)
     for ref, dep in (("SCREEN_16IN", BIG_DEPTH), ("SCREEN_7IN", SMALL_DEPTH)):
@@ -3351,7 +3500,7 @@ def dxf_base(path):
     # first correction put the bracket ON the floor and the rivets 2.0 mm low).
     RO_WALL = CORNER_RO + T                   # 10.0: rivet offset along the wall, flat
     def _zf(z):                               # bracket height z -> wall flat offset
-        return T + RI + z - DEV90
+        return wall_flat_z(RI + z)
     for sgn, xc in ((+1, 0.0), (-1, BW)):     # +1 left (side flap -x) | -1 right (side flap +x)
         for z in CORNER_ZR_WALL:               # rear-wall leg (3 rivets)
             _circle(msp, xc + sgn*RO_WALL, BD + _zf(z), RV)     # rear-wall face
@@ -3385,11 +3534,17 @@ def dxf_base(path):
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
     for (au, av) in STAND_ANCHORS:                 # screen-stand feet: M3 tap pilots (#762)
         _circle(msp, au, av, 2.5)
-    for u in POST_U:                               # 2 base-anchored support-post feet (issue #292)
-        for du in (-POST_BOLT_DU, POST_BOLT_DU):   # foot forward of the web, clear of vent + display
-            _circle(msp, u+du, _POST_FOOT_VP, D_M4)
-    _text(msp, POST_U[0]-24, _POST_FOOT_VP + 8, 5,
-          f"Pies del POSTE DE APOYO, CANT. {len(POST_U)} (M4; issues #292/#1019)", "NOTE")
+    for bu in beam_bolt_u():                       # the support BEAM's 14 floor bolts (issues #292/#1019)
+        _circle(msp, bu, _BEAM_FOOT_VP, D_M4)      # foot forward of the web, clear of the display
+    _text(msp, beam_bolt_u()[0]-24, _BEAM_FOOT_VP + 8, 5,
+          f"Pies de la VIGA DE APOYO, {len(beam_bolt_u())} pasos M4 (issues #292/#1019); "
+          "la viga los toma por agujeros ovalados en profundidad", "NOTE")
+    for _wu, _sgn in ((0.0, +1), (BW, -1)):        # the beam's wall ties, one M4 per side wall
+        _circle(msp, _wu - _sgn*wall_flat_z(BEAM_EAR_BOLT_Z),
+                _BEAM_REAR_Y + BEAM_EAR_BOLT_V, D_M4)
+    _text(msp, BW/2 - 60, _BEAM_FOOT_VP - 9, 5,
+          f"Tirantes de la VIGA a las paredes laterales: 1 paso M4 por lado, a "
+          f"{BEAM_EAR_BOLT_Z:.0f} mm sobre la cara superior del piso", "NOTE")
     for du in (-PROP_BOLT_DU, PROP_BOLT_DU):       # printed mid-field prop (#1019)
         _circle(msp, PROP_U + du, _PROP_FOOT_VP, D_M4)
     _text(msp, PROP_U - 24, _PROP_FOOT_VP - 9, 5,
@@ -3501,33 +3656,80 @@ def dxf_rear_panel(path):
 # screen_bracket REMOVED (#760): the screens are bonded to the shell; the
 # bracket fallback was dropped entirely (user call 2026-08-18).
 
-def dxf_post(path):
-    """Base-anchored faceplate support post (issue #292), one per POST_U station:
-    a folded C -- foot (bolts to the base floor, M4 x2) + vertical web + top pad,
-    foot and pad both forward of the web (all in the clear strip behind the front
-    pedal slots, nothing under a display). A felt cap on the pad bears on the
-    faceplate underside. #292 put two of these in front of the 16in aperture;
-    #1019 measured the rest of that band denting at 7-11 kg of point load against
-    170 kg over a pad, so there is now one at every pedal gap. Load runs to the base, not
-    the lid, so nothing shows on the top face and the lid still lifts off. The
-    pad->web fold is 90 + POST_TILT deg so the pad beds FLUSH on the sloped underside;
-    the foot->web fold is 90. Flat DEVELOPED with post_deduct (K 0.33, Ri = T)."""
+def dxf_beam(path):
+    """The faceplate support BEAM (issues #292/#1019), x1: a folded C that runs
+    the full inside width -- foot (bolts to the base floor, M4 x 14, slotted in
+    depth) + vertical web + top pad, foot and pad both forward of the web, all in
+    the clear strip behind the front pedal slots and nothing under a display. A
+    felt cap on the pad bears on the faceplate underside.
+
+    This was seven separate posts until 2026-09-10. Seven 30 mm pads reach a
+    quarter of an 850 mm panel and the band between them dents at 47 kg of point
+    load; continuous, the weakest point on it takes 475 kg. Load runs to the
+    base, not the lid, so nothing shows on the top face and the lid still lifts
+    off.
+
+    The pad->web fold is 90 + BEAM_TILT deg so the pad beds FLUSH on the sloped
+    underside; the foot->web fold is 90; each end turns a rearward EAR onto its
+    side wall, also 90, about a vertical line. Both flanges are RELIEVED at the
+    ends so those ear folds do not tear. The web carries a cable window on every
+    front-row pedal centreline plus one per side for the LED strip feed. Flat
+    DEVELOPED with beam_deduct (K 0.33, Ri = T) on all four folds.
+    """
     doc = _doc(); msp = doc.modelspace()
-    pw, pad, web, foot = POST_PW, POST_PAD, POST_H, POST_FOOTL
-    pad_f, web_f, foot_f = POST_PAD_F, POST_WEB_F, POST_FOOT_F
+    pad, web, foot = BEAM_PAD, BEAM_H, BEAM_FOOTL
+    pad_f, web_f, foot_f = BEAM_PAD_F, BEAM_WEB_F, BEAM_FOOT_F
     Wd = pad_f + web_f + foot_f
-    _poly(msp, [(0, 0), (pw, 0), (pw, Wd), (0, Wd)], "CUT")
-    _poly(msp, [(0, pad_f), (pw, pad_f)], "BEND", closed=False)             # pad -> web (fold 90 + tilt)
-    _poly(msp, [(0, pad_f+web_f), (pw, pad_f+web_f)], "BEND", closed=False) # web -> foot (fold 90)
-    for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot, foot/2 from its free end
-        _circle(msp, pw/2.0 + du, Wd - foot/2.0, D_M4)
-    _note(msp, 5, Wd+6,
-          f"Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de {POST_T:.1f} mm "
-          f"(NO es el aluminio del gabinete)  CANT. {len(POST_U)}  plegado en C; medidas EXTERIORES apoyo {POST_PAD_OUT:.2f} / "
-          f"alma {POST_WEB_OUT:.2f} / pie {POST_FOOT_OUT:.2f} mm (interiores {pad:.0f} / {web:.1f} / {foot:.0f}); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
-          f"de {POST_TILT:.1f}°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), "
-          f"fieltro sobre el apoyo; holgura perpendicular nominal SIN PINTAR {POST_BARE_GAP:.1f} mm, medir nuevamente después de pintar con todos los asientos de tapa pintados. Medir la holgura final montada y ajustar el fieltro sin levantar la tapa de sus asientos; deducción aplicada (K {KF}, Ri {POST_RI:.1f}): {POST_DD_PAD:.2f} mm en el plegado del apoyo, "
-          f"{POST_DD_FOOT:.2f} mm en el del pie; desarrollo {Wd:.2f} mm")
+    ear, rel = BEAM_EAR_F, BEAM_EAR_RELIEF
+    x_w0, x_w1 = ear, ear + BEAM_WEB_XF               # the two ear bend lines
+    x_a, x_b = x_w0 + rel, x_w1 - rel                 # where the pad and foot start/stop
+    y_p, y_f = pad_f, pad_f + web_f                   # the two long bend lines
+
+    def _z2y(z):
+        """Height above the base floor TOP -> flat Y on the web band."""
+        return y_f - (z - BEAM_DD_FOOT)
+
+    def _u2x(u):
+        """Console u -> flat X (the web band and both flanges share this)."""
+        return x_w0 + (u - BEAM_U0 - BEAM_DD_FOOT)
+
+    y_e0, y_e1 = _z2y(BEAM_EAR_Z0 + BEAM_EAR_H), _z2y(BEAM_EAR_Z0)
+    _poly(msp, [(x_a, 0), (x_b, 0), (x_b, y_p),
+                (x_w1, y_p), (x_w1, y_e0), (x_w1 + ear, y_e0),
+                (x_w1 + ear, y_e1), (x_w1, y_e1), (x_w1, y_f),
+                (x_b, y_f), (x_b, Wd), (x_a, Wd), (x_a, y_f),
+                (x_w0, y_f), (x_w0, y_e1), (0.0, y_e1),
+                (0.0, y_e0), (x_w0, y_e0), (x_w0, y_p), (x_a, y_p)], "CUT")
+    _poly(msp, [(x_a, y_p), (x_b, y_p)], "BEND", closed=False)   # pad -> web (fold 90 + tilt)
+    _poly(msp, [(x_a, y_f), (x_b, y_f)], "BEND", closed=False)   # web -> foot (fold 90)
+    _poly(msp, [(x_w0, y_e0), (x_w0, y_e1)], "BEND", closed=False)   # left ear (fold 90)
+    _poly(msp, [(x_w1, y_e0), (x_w1, y_e1)], "BEND", closed=False)   # right ear (fold 90)
+    for bu in beam_bolt_u():                          # 14 M4 in the foot, slotted in DEPTH
+        _rrect(msp, _u2x(bu) - D_M4/2.0, Wd - foot/2.0 - (D_M4 + BEAM_BOLT_SLOT)/2.0,
+               D_M4, D_M4 + BEAM_BOLT_SLOT, r=D_M4/2.0)
+    for wu in beam_cable_u():                         # cable windows through the web
+        _rrect(msp, _u2x(wu) - BEAM_CABLE_W/2.0, _z2y(BEAM_H/2.0) - BEAM_CABLE_H/2.0,
+               BEAM_CABLE_W, BEAM_CABLE_H, r=BEAM_CABLE_R)
+    _ear_dx = (BEAM_T + BEAM_EAR_BOLT_V) - BEAM_DD_FOOT     # from the ear's bend line
+    for _x, _s in ((x_w0, -1), (x_w1, +1)):           # 1 M4 per ear, slotted VERTICALLY
+        _rrect(msp, _x + _s*_ear_dx - D_M4/2.0,
+               (y_e0 + y_e1)/2.0 - (D_M4 + BEAM_EAR_SLOT)/2.0,
+               D_M4, D_M4 + BEAM_EAR_SLOT, r=D_M4/2.0)
+    _note(msp, x_a, Wd+6,
+          f"Segno VIGA DE APOYO DE LA TAPA (segno_beam)  ACERO LAMINADO EN FRÍO de {BEAM_T:.1f} mm "
+          f"(NO es el aluminio del gabinete)  CANT. 1  plegado en C de {BEAM_LEN:.1f} mm entre caras exteriores de orejas; "
+          f"medidas EXTERIORES apoyo {BEAM_PAD_OUT:.2f} / alma {BEAM_WEB_OUT:.2f} / pie {BEAM_FOOT_OUT:.2f} / "
+          f"oreja {BEAM_EAR_OUT:.2f} mm (interiores {pad:.0f} / {web:.1f} / {foot:.0f} / {BEAM_EAR_V:.0f}); "
+          f"plegado del apoyo {90+BEAM_TILT:.1f}° (asienta al ras sobre la pendiente de {BEAM_TILT:.1f}°), "
+          f"plegados del pie y de las dos orejas 90°; las orejas pliegan HACIA ATRÁS y llevan alivio de {rel:.1f} mm "
+          f"en apoyo y pie. El pie se abulona al piso del cuerpo ({len(beam_bolt_u())} M4 en agujeros ovalados de "
+          f"{D_M4 + BEAM_BOLT_SLOT:.1f} mm en profundidad: el ovalado deja que la chapa del piso trabaje) y cada oreja "
+          f"lleva 1 M4 a su pared lateral (ovalado vertical de {D_M4 + BEAM_EAR_SLOT:.1f} mm: el tirante arriostra las "
+          f"paredes, no sostiene la viga). Fieltro sobre el apoyo; holgura perpendicular nominal SIN PINTAR "
+          f"{BEAM_BARE_GAP:.1f} mm, medir nuevamente después de pintar con todos los asientos de tapa pintados. "
+          f"Medir la holgura final montada y ajustar el fieltro sin levantar la tapa de sus asientos; deducción "
+          f"aplicada (K {KF}, Ri {BEAM_RI:.1f}): {BEAM_DD_PAD:.2f} mm en el plegado del apoyo, {BEAM_DD_FOOT:.2f} mm "
+          f"en el del pie y en cada oreja; desarrollo {Wd:.2f} x {x_w1 + ear:.2f} mm")
     _save(doc, path); return {}
 
 # ===========================================================================
@@ -3665,9 +3867,7 @@ def dxf_base_bores():
     out = [{"u": u, "v": v, "ref": "FOOT"} for u, v in base_foot_xy()]
     out += [{"u": c["u"], "v": c["v"], "ref": "PLAT_SCR"} for c in platform_foot_holes()]
     out += [{"u": au, "v": av, "ref": "STAND"} for au, av in STAND_ANCHORS]
-    for u in POST_U:
-        out += [{"u": u + du, "v": _POST_FOOT_VP, "ref": "POST_FOOT"}
-                for du in (-POST_BOLT_DU, POST_BOLT_DU)]
+    out += [{"u": bu, "v": _BEAM_FOOT_VP, "ref": "BEAM_FOOT"} for bu in beam_bolt_u()]
     out += [{"u": PROP_U + du, "v": _PROP_FOOT_VP, "ref": "PROP_FOOT"}
             for du in (-PROP_BOLT_DU, PROP_BOLT_DU)]
     # The board standoffs were missing from this list, which is how a rail came to
@@ -5406,34 +5606,89 @@ def build_screen16_stand_steps():
     return out
 
 
-def _post_solid():
-    """Constant-thickness formed C section, including both inside bend radii.
+def _beam_solid():
+    """The full-width faceplate support beam: a formed C with two wall ears.
 
-    Local foot bottom is z=0; place at (u-width/2, web_y-foot, T).
-    The sharp profile uses mold-line intersections. Filleting each inside
-    corner by Ri and its outside corner by Ri+t preserves sheet thickness.
+    Local frame: x runs along the console width and is 0 at the beam's LEFT
+    OUTER face, y is depth with 0 at the foot's free (front) edge, z is up from
+    the base floor TOP. Place at (BEAM_U0, _BEAM_VP - BEAM_FOOTL, T).
+
+    The C profile is the one the seven posts used -- foot, web, tilted pad, both
+    inside bend radii modelled, mold-line intersections filleted so the sheet
+    keeps its thickness. What is new is that it runs wall to wall, that the web
+    is holed for cables, that the foot's fixings are slotted in depth, and that
+    each end turns a rearward EAR onto the side wall.
     """
     import cadquery as cq
-    a = math.radians(POST_TILT)
+    a = math.radians(BEAM_TILT)
     c, sn = math.cos(a), math.sin(a)
-    f, h, t, pad = POST_FOOTL, POST_H, POST_T, POST_PAD
-    points = [(0, 0), (f+t, 0), (f+t, h+_POST_TP),
+    f, h, t, pad = BEAM_FOOTL, BEAM_H, BEAM_T, BEAM_PAD
+    points = [(0, 0), (f+t, 0), (f+t, h+_BEAM_TP),
               (f-pad*c-t*sn, h-pad*sn+t*c),
               (f-pad*c, h-pad*sn), (f, h), (f, t), (0, t)]
     wire = cq.Workplane("YZ").polyline(points).close().val()
-    for radius, corners in [(POST_RI, [(f, h), (f, t)]),
-                            (POST_RI+t, [(f+t, 0), (f+t, h+_POST_TP)])]:
+    for radius, corners in [(BEAM_RI, [(f, h), (f, t)]),
+                            (BEAM_RI+t, [(f+t, 0), (f+t, h+_BEAM_TP)])]:
         vertices = [v for v in wire.Vertices()
                     if any(abs(v.Center().y-y) < 1e-6 and
                            abs(v.Center().z-z) < 1e-6 for y, z in corners)]
-        assert len(vertices) == 2, "post bend corners missing"
+        assert len(vertices) == 2, "beam bend corners missing"
         wire = wire.fillet2D(radius, vertices)
-    body = cq.Workplane("YZ").add(wire).toPending().extrude(POST_PW)
-    for du in (-POST_BOLT_DU, POST_BOLT_DU):
-        body = body.cut(cq.Workplane("XY").center(POST_PW/2+du, f/2)
-                        .circle(D_M4/2).extrude(2*t))
-    assert body.val().isValid() and len(body.solids().vals()) == 1
-    return body.val()
+    # The web runs the full outer width; the ears sit on its two ends.
+    body = cq.Workplane("YZ").add(wire).toPending().extrude(BEAM_LEN)
+    # --- bend relief: the pad and the foot stop short of each end ------------
+    # An ear folds about a vertical line that crosses both long bend lines, so
+    # both flanges are cut back. Everything forward of the web's front face goes.
+    for x0 in (-1.0, BEAM_LEN - _BEAM_REL):
+        body = body.cut(cq.Workplane("XY")
+                        .box(_BEAM_REL + 1.0, f, 4*h, centered=False)
+                        .translate((x0, 0.0, -h)))
+    # --- wall ears: each end folds a plate REARWARD onto its side wall --------
+    # Rearward because the foot and the pad both run forward of the web. Drawn as
+    # a real L in PLAN with its own concentric radii, so the ear is a bend and not
+    # a butted plate: Fusion can then convert the import to native sheet metal and
+    # unfold it, which is the independent check on the development below.
+    run = 8*(BEAM_RI + t)               # web leg, long enough to carry the fillet
+    for x_out, sgn in ((0.0, +1.0), (BEAM_LEN, -1.0)):
+        x_in = x_out + sgn*t            # ear's inside face
+        x_far = x_out + sgn*run
+        outer = (x_out, f)              # the two outer planes meet here
+        inner = (x_in, f + t)
+        plan = [(x_far, f), outer, (x_out, f + BEAM_EAR_OUT),
+                (x_in, f + BEAM_EAR_OUT), inner, (x_far, f + t)]
+        w = cq.Workplane("XY").polyline(plan).close().val()
+        for radius, corner in ((BEAM_RI, inner), (BEAM_RI + t, outer)):
+            vs = [v for v in w.Vertices()
+                  if abs(v.Center().x - corner[0]) < 1e-6
+                  and abs(v.Center().y - corner[1]) < 1e-6]
+            assert len(vs) == 1, "beam ear bend corner missing"
+            w = w.fillet2D(radius, vs)
+        body = body.union(cq.Workplane("XY").add(w).toPending()
+                          .extrude(BEAM_EAR_H).translate((0, 0, BEAM_EAR_Z0)))
+        # One M4 through the side wall, slotted VERTICALLY: the tie braces the
+        # two walls against each other and is not asked to carry the beam, which
+        # its fourteen floor bolts already do.
+        body = body.cut(cq.Workplane("YZ")
+                        .slot2D(D_M4 + BEAM_EAR_SLOT, D_M4, 90.0).extrude(4*t)
+                        .translate((x_out - 2*t, f + t + BEAM_EAR_BOLT_V,
+                                    BEAM_EAR_Z0 + BEAM_EAR_H/2.0)))
+    # --- fourteen M4 to the floor, slotted in DEPTH (v) ----------------------
+    # See BEAM_BOLT_SLOT: pinning the bottom plate at fourteen points is what
+    # costs it margin, and a slot in v hands most of that back.
+    for bu in beam_bolt_u():
+        body = body.cut(cq.Workplane("XY")
+                        .slot2D(D_M4 + BEAM_BOLT_SLOT, D_M4, 90.0).extrude(3*t)
+                        .translate((bu - BEAM_U0, f/2.0, -t)))
+    # --- cable windows through the web ---------------------------------------
+    wz = (h - BEAM_CABLE_H) / 2.0
+    for wu in beam_cable_u():
+        body = body.cut(cq.Workplane("XY")
+                        .box(BEAM_CABLE_W, 4*t, BEAM_CABLE_H, centered=False)
+                        .edges("|Y").fillet(BEAM_CABLE_R)
+                        .translate((wu - BEAM_U0 - BEAM_CABLE_W/2.0, f - t, wz)))
+    solid = body.val()
+    assert solid.isValid() and len(body.solids().vals()) == 1, "beam is not one valid solid"
+    return solid
 
 
 def _prop_solid():
@@ -5584,16 +5839,16 @@ def build_prop_step():
     return step
 
 
-def build_post_step():
+def build_beam_step():
     import cadquery as cq
-    step = os.path.join(OUT, "segno_post.step")
-    solid = _post_solid()
+    step = os.path.join(OUT, "segno_beam.step")
+    solid = _beam_solid()
     cq.exporters.export(solid, step)
-    n = cq.Vector(0, -math.sin(math.radians(POST_TILT)), math.cos(math.radians(POST_TILT)))
+    n = cq.Vector(0, -math.sin(math.radians(BEAM_TILT)), math.cos(math.radians(BEAM_TILT)))
     face = max((f for f in solid.Faces() if f.geomType() == "PLANE"
                 and f.normalAt().dot(n) > .99999), key=lambda f:f.Area())
-    felt = cq.Solid.extrudeLinear(face.outerWire(), [], n * POST_BARE_GAP)
-    cq.exporters.export(felt, os.path.join(OUT,"segno_post_felt.step"))
+    felt = cq.Solid.extrudeLinear(face.outerWire(), [], n * BEAM_BARE_GAP)
+    cq.exporters.export(felt, os.path.join(OUT,"segno_beam_felt.step"))
     return step
 
 
@@ -5961,9 +6216,8 @@ def build_step():
     matrix = [[1,0,0,x0+w/2], [0,0,-1,D-3*T+DEV90-REAR_PANEL_T],
               [0,1,0,z0+h/2+DEV90], [0,0,0,1]]
     asm.add(panel, loc=_metal_location(matrix), name="segno_rear_panel")
-    for i, u in enumerate(POST_U, 1):
-        asm.add(_post_solid().translate((u-POST_PW/2,_POST_VP-POST_FOOTL,T)),
-                name=f"segno_post_{i}")
+    asm.add(_beam_solid().translate((BEAM_U0, _BEAM_VP-BEAM_FOOTL, T)),
+            name="segno_beam")
     ring = cq.importers.importStep(os.path.join(OUT,"segno_ring_disc.step")).val()
     c, sn = math.cos(_ra), math.sin(_ra)
     # Ring STEP is centred on its shaft, plate bottom at z=0, seated on the lid underside plane.
@@ -6004,7 +6258,7 @@ def build_step():
 AL_SHEET  = f"aluminio {ALLOY_2MM} de {T:.1f} mm"
 AL_REAR_PANEL = (f"aluminio de {REAR_PANEL_T:.1f} mm "
                  f"(aleación y temple {ALLOY_REAR})")
-STEEL_CR  = f"acero laminado en frío de {POST_T:.1f} mm"
+STEEL_CR  = f"acero laminado en frío de {BEAM_T:.1f} mm"
 PLY_2MM   = (f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
              "(capa negra / núcleo blanco) - NO ES METAL")
 
@@ -6022,7 +6276,7 @@ PART_SPECS = {
     "segno_ring_disc":           (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_corner_bracket_rear": (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_corner_bracket_rear_mirrored": (AL_SHEET, 1, PKG_SHEETMETAL),
-    "segno_post":                (STEEL_CR, len(POST_U), PKG_SHEETMETAL),
+    "segno_beam":                (STEEL_CR, 1, PKG_SHEETMETAL),
     "segno_pedal_tiles":         (PLY_2MM, 10, PKG_TILES),
 }
 
@@ -6036,7 +6290,7 @@ PART_TITLES_ES = {
     "segno_ring_disc":           "DISCO CENTRAL DEL ARO DE LEDS",
     "segno_corner_bracket_rear": "ÁNGULO TRASERO DERECHO",
     "segno_corner_bracket_rear_mirrored": "ÁNGULO TRASERO IZQUIERDO",
-    "segno_post":                "POSTE DE APOYO DE LA TAPA",
+    "segno_beam":                "VIGA DE APOYO DE LA TAPA",
     "segno_pedal_tiles":         "AZULEJOS DE PEDAL (plástico bicapa grabado)",
 }
 
@@ -6146,16 +6400,30 @@ def _bend_tables():
         tabs[stem] = [
             (1, "ala / ala", "x", CORNER_LEG, max(ys)-min(ys), 90.0, UP_TOWARD, RI, DEV90),
         ]
-    tabs["segno_post"] = [
-        (1, "apoyo -> alma", "y", POST_PAD_F,              POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_RI, POST_DD_PAD),
-        (2, "alma -> pie",   "y", POST_PAD_F + POST_WEB_F, POST_PW, 90.0,             UP_TOWARD, POST_RI, POST_DD_FOOT),
+    # The two EARS fold FIRST: they are small flaps at the ends of the web band,
+    # and both long bend lines stop short of them, so the C's tooling never has
+    # to reach past a standing ear. Folded the other way round, an ear would have
+    # to be reached with the C already closed around it. The ears also fold the
+    # OPPOSITE way to the pad and the foot -- the C opens forward, the ears turn
+    # back onto the side walls.
+    _beam_flange_len = BEAM_WEB_XF - 2*BEAM_EAR_RELIEF
+    tabs["segno_beam"] = [
+        (1, "oreja izquierda", "x", BEAM_EAR_F,                 BEAM_EAR_H, 90.0, DN_AWAY, BEAM_RI, BEAM_DD_FOOT),
+        (2, "oreja derecha",   "x", BEAM_EAR_F + BEAM_WEB_XF,   BEAM_EAR_H, 90.0, DN_AWAY, BEAM_RI, BEAM_DD_FOOT),
+        (3, "apoyo -> alma",   "y", BEAM_PAD_F,              _beam_flange_len, 90.0 + BEAM_TILT, UP_TOWARD, BEAM_RI, BEAM_DD_PAD),
+        (4, "alma -> pie",     "y", BEAM_PAD_F + BEAM_WEB_F, _beam_flange_len, 90.0,             UP_TOWARD, BEAM_RI, BEAM_DD_FOOT),
     ]
     return tabs
 
 BEND_TABLES = _bend_tables()
 
+
+def _beam_flange_len_mm():
+    """Length of the beam's two long bend lines -- the web band less its two ear reliefs."""
+    return BEAM_WEB_XF - 2*BEAM_EAR_RELIEF
+
 # Per-part footnote printed under the bend table. The post has its own T/Ri
-# (1.6 mm steel) and is developed with post_deduct -- its sheet states the
+# (1.6 mm steel) and is developed with beam_deduct -- its sheet states the
 # numbers so the shop can check them against its own tooling.
 _front_pedal_bend_land = min(c["v"] + LID_FRONT_EXTRA for c in faceplate_holes()
                              if c["ref"] in {label for label, _u, _v in PEDALS})
@@ -6189,10 +6457,14 @@ BEND_FOOTNOTES = {
                          "Pintar pasos. Cotas SIN PINTAR: CTRL/FUSE Ø12.30 ±0.10; POWER Ø19.80 ±0.10; MIDI Ø15.50 y PD Ø24.40 (+0.10/-0.00); fijaciones M3 Ø3.60 (+0.10/-0.00). USB: cuatro planos 22.80 x22.80 limitados por círculo concéntrico Ø24.80, ambos ±0.10. Ligamentos PD/MIDI medidos >=1.20 mm. CTRL: espesor FINAL 1.20-1.50 mm. Verificar patrón y retención con piezas reales y probeta pintada. "
                          "El Ø24 es el punzón D de Neutrik: redondo, sin plano."),
     "segno_ring_disc": ("PIEZA PLANA. Cotas SIN PINTAR: Ø exterior 51.20 ±0.05; paso Ø8.50 ±0.05 pasante recto por láser; SIN BISEL. Pintar todas las superficies. Final Ø51.27-51.45 y paso Ø8.25-8.43. Tuerca/arandela arriba; centrar disco antes de apretar y comprobar giro/sujeción."),
-    "segno_post": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {POST_T:.1f} mm (1.0 x T). "
-                   f"Deducción aplicada con K {KF} y Ri {POST_RI:.1f} mm (= T): {POST_DD_PAD:.2f} mm en apoyo->alma (102.5°), "
-                   f"{POST_DD_FOOT:.2f} mm en alma->pie; verificar la longitud desarrollada contra el herramental propio antes de cortar. "
-                   f"El plegado del apoyo es AGUDO (incluido {90.0 - POST_TILT:.1f}°): punzón de 30° y matriz aguda, no el juego de 88°."),
+    "segno_beam": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {BEAM_T:.1f} mm (1.0 x T). "
+                   f"Deducción aplicada con K {KF} y Ri {BEAM_RI:.1f} mm (= T): {BEAM_DD_PAD:.2f} mm en apoyo->alma (102.5°), "
+                   f"{BEAM_DD_FOOT:.2f} mm en alma->pie y en cada oreja; verificar la longitud desarrollada contra el herramental propio antes de cortar. "
+                   f"LAS FILAS ESTÁN EN ORDEN DE PLEGADO: las dos orejas PRIMERO, con la chapa aún plana; después el apoyo y el pie, "
+                   f"cuyas líneas de plegado terminan {BEAM_EAR_RELIEF:.1f} mm antes de cada oreja (alivio de plegado) para que el herramental "
+                   f"de {_beam_flange_len_mm():.0f} mm no tenga que pasar por encima de una oreja ya levantada. Las orejas pliegan HACIA EL LADO "
+                   f"OPUESTO al apoyo y al pie. "
+                   f"El plegado del apoyo es AGUDO (incluido {90.0 - BEAM_TILT:.1f}°): punzón de 30° y matriz aguda, no el juego de 88°."),
 }
 
 def _bend_table_lines(stem):
@@ -6280,7 +6552,7 @@ SEALED_EXPECTED = {
     "segno_rear_panel":           1,
     "segno_corner_bracket_rear":  1,
     "segno_corner_bracket_rear_mirrored": 1,
-    "segno_post":                 1,
+    "segno_beam":                 1,
     "segno_ring_disc":            0,   # two circles, no straight-sided loop
 }
 
@@ -6573,7 +6845,7 @@ PAINT_BOM = [
     ("segno_corner_bracket_rear","Ángulo trasero derecho",                      1, AL_2MM, "Interno; perfil derecho"),
     ("segno_corner_bracket_rear_mirrored","Ángulo trasero izquierdo",           1, AL_2MM, "Interno; perfil izquierdo"),
     ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM, "Pintar canto y paso recto; sin bisel: Ø final 51,27-51,45; paso 8,25-8,43 mm"),
-    ("segno_post",               "Poste de apoyo de la tapa",         len(POST_U), ST_16,  "ACERO: otro pretratamiento"),
+    ("segno_beam",               "Viga de apoyo de la tapa",          1,           ST_16,  "ACERO: otro pretratamiento"),
 ]
 
 def _verify_paint_bom():
@@ -7421,7 +7693,7 @@ DXF_PARTS = [
     ("segno_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
     ("segno_corner_bracket_rear", dxf_corner_bracket),
     ("segno_corner_bracket_rear_mirrored", lambda p: dxf_corner_bracket(p, mirrored=True)),
-    ("segno_post",             dxf_post),  # base-anchored faceplate support post, one per
+    ("segno_beam",             dxf_beam),  # base-anchored faceplate support post, one per
                                            # pedal gap (issue #292 sized it, #1019 spread it)
 ]
 NO_PDF = set()   # every sheet part ships with a PDF drawing
@@ -7887,9 +8159,9 @@ def _verify_drawing_package(with_pdf=True, *, check_archives=True):
         mat, qty, pkg = PART_SPECS[stem]
         assert mat and isinstance(qty, int) and qty >= 1, f"{stem}: bad material/qty {mat!r}/{qty!r}"
         assert pkg in (PKG_SHEETMETAL, PKG_TILES), f"{stem}: unknown package {pkg!r}"
-    assert PART_SPECS["segno_post"][0] == STEEL_CR and \
-           PART_SPECS["segno_post"][1] == len(POST_U), (
-        "the support post is 1.6 mm cold-rolled steel, one per POST_U station, "
+    assert PART_SPECS["segno_beam"][0] == STEEL_CR and \
+           PART_SPECS["segno_beam"][1] == 1, (
+        "the support beam is 1.6 mm cold-rolled steel, one part, "
         "per MANUFACTURING.md section 1")
     assert all(PART_SPECS[stem][1] == 1 for stem in
                ("segno_corner_bracket_rear","segno_corner_bracket_rear_mirrored")), (
@@ -8127,8 +8399,8 @@ def main(argv):
             print("Ring centre disc (2.0 Al, x1): out/" + os.path.basename(rd))
             kb = build_encoder_knob_step()
             print("Encoder knob (PURCHASED O50x18x6 alu -- reference model only,\n  deliberately not in the 3D-print pack): out/" + os.path.basename(kb))
-            s = build_post_step()
-            print(f"Faceplate support post (base-anchored, x{len(POST_U)}): out/"
+            s = build_beam_step()
+            print(f"Faceplate support beam (base-anchored, full width, x1): out/"
                   + os.path.basename(s))
             pr = build_prop_step()
             print("Mid-field lid prop (3D print, x1, issue #1019): out/"

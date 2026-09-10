@@ -35,8 +35,13 @@ class ManufacturingPipelineTest(unittest.TestCase):
             result = compare_flat_pattern(
                 Path(tmp)/'segno_base.dxf',
                 Path(enclosure.HERE)/'formed/segno_base_flat.dxf')
-            self.assertEqual(result['missing_area_mm2'], 0)
-            self.assertEqual(result['extra_area_mm2'], 0)
+            # Not exact zero: Fusion's flat export writes a circle as arc
+            # segments, so a hole cut after the folds (the beam's two wall ties)
+            # lands a few tenths of a micron of area off a true circle. The
+            # comparator's own 0.01 mm2 floor is the meaningful gate; anything
+            # real is orders of magnitude above this.
+            self.assertLess(result['missing_area_mm2'], 1e-3)
+            self.assertLess(result['extra_area_mm2'], 1e-3)
 
     @staticmethod
     def _drawing():
@@ -250,7 +255,7 @@ class ManufacturingPipelineTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure,'OUT',tmp):
             out = Path(tmp); archives = self._previous_archives(out)
             self._generated_drawings(out)
-            path = out/'segno_post.dxf'; doc = ezdxf.readfile(path)
+            path = out/'segno_beam.dxf'; doc = ezdxf.readfile(path)
             outer = next(e for e in doc.modelspace().query('LWPOLYLINE')
                          if e.dxf.layer == 'CUT')
             points = list(outer.get_points('xyb'))

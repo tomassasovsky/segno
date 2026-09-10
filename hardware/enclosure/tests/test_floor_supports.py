@@ -82,7 +82,7 @@ class FloorSupportTest(unittest.TestCase):
             enclosure.build_platform_steps()
             enclosure.build_screen7_tower_step()
             enclosure.build_screen16_stand_steps()
-            enclosure.build_post_step()
+            enclosure.build_beam_step()
         parts = {path.stem: cq.importers.importStep(str(path)).val()
                  for path in output.glob('*.step')}
         cls.reference = json.loads((Path(enclosure.HERE)/
@@ -99,11 +99,10 @@ class FloorSupportTest(unittest.TestCase):
         cls.obstacles['7-inch tower'] = cls.tower
         for side in ('L', 'R'):
             cls.obstacles['16-inch stand '+side] = parts['segno_screen16_stand_'+side]
-        # one steel post per POST_U station (#1019); the placement follows the
-        # generator so the obstacle set cannot drift from the shipped geometry
-        for index, u in enumerate(enclosure.POST_U):
-            cls.obstacles['steel post '+str(index)] = parts['segno_post'].translate(
-                (u - enclosure.POST_PW/2.0, 138.99693697984182, 2.0))
+        # the one full-width steel support beam (#1019); the placement follows
+        # the generator so the obstacle set cannot drift from the shipped geometry
+        cls.obstacles['steel support beam'] = parts['segno_beam'].translate(
+            (enclosure.BEAM_U0, 138.99693697984182, 2.0))
         # Supplier image envelope at the two recorded floor placements. Using
         # its full rectangular volume is conservative around the mounting ears.
         for name, x in (('left converter', 372.15), ('right converter', 447.85)):

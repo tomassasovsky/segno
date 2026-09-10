@@ -176,21 +176,25 @@ class ManufacturingFitTest(unittest.TestCase):
                   .extrude(2).translate(offset).val())
         self.assertGreater(coated.intersect(holder).Volume(),.3)
 
-    def test_formed_post_clears_measured_lid_with_coating_allowance(self):
-        post = enclosure._post_solid().translate((
-            625-enclosure.POST_PW/2,
-            enclosure._POST_VP-enclosure.POST_FOOTL, 2.0))
+    def test_formed_beam_clears_measured_lid_with_coating_allowance(self):
+        beam = enclosure._beam_solid().translate((
+            enclosure.BEAM_U0,
+            enclosure._BEAM_VP-enclosure.BEAM_FOOTL, 2.0))
         # Independent live Fusion probe, September 4: actual underside plane.
         normal = cq.Vector(0, -0.21640965505268422, 0.9763026483626777)
         point = cq.Vector(423, 196.8595704517108, 56.059667385991496)
-        pad = max((f for f in post.Faces() if f.geomType() == 'PLANE'
+        pad = max((f for f in beam.Faces() if f.geomType() == 'PLANE'
                    and f.normalAt().dot(normal) > .999999), key=lambda f:f.Area())
         gap = normal.dot(point-pad.Center())
         self.assertAlmostEqual(gap, 1.2, places=6)
-        self.assertAlmostEqual(post.BoundingBox().zmin, 2.0, places=6)
+        self.assertAlmostEqual(beam.BoundingBox().zmin, 2.0, places=6)
         # Both bends must have real concentric inner/outer radii, not a joining cube.
-        bends = [f for f in post.Faces() if f.geomType() == 'CYLINDER'
-                 and abs(f._geomAdaptor().Axis().Direction().X()) > .999]
+        # The two LONG bends must have real concentric inner/outer radii, not a
+        # joining cube. (The two wall ears bend about vertical axes and are
+        # filtered out here; the assembly test counts all four.)
+        bends = [f for f in beam.Faces() if f.geomType() == 'CYLINDER'
+                 and abs(f._geomAdaptor().Axis().Direction().X()) > .999
+                 and round(f._geomAdaptor().Radius(), 6) in (1.6, 3.2)]
         self.assertEqual(len(bends), 4)
         self.assertEqual(sorted(round(f._geomAdaptor().Radius(), 6) for f in bends),
                          [1.6, 1.6, 3.2, 3.2])
@@ -376,8 +380,7 @@ class ManufacturingFitTest(unittest.TestCase):
             assembly = cq.importers.importStep(path).val()
             self.assertTrue(assembly.isValid())
             solids = assembly.Solids()
-            posts = len(enclosure.POST_U)          # one per pedal gap since #1019
-            self.assertEqual(len(solids),33+posts)
+            self.assertEqual(len(solids),34)       # 33 + the one support beam (#1019)
             names = re.findall(r"NEXT_ASSEMBLY_USAGE_OCCURRENCE\('[^']*',\s*'([^']*)'",
                                Path(path).read_text())
             purchased = {f'PURCHASED_FITTED_FRONT_SHIM_PACK_{i}' for i in range(1,10)}
@@ -386,22 +389,25 @@ class ManufacturingFitTest(unittest.TestCase):
             self.assertEqual(set(names),purchased | {
                 'segno_base_1','segno_faceplate_1','segno_corner_bracket_rear_1',
                 'segno_corner_bracket_rear_mirrored_1','segno_rear_panel',
-                'segno_ring_disc'} | {f'segno_post_{i}' for i in range(1,posts+1)})
-            self.assertEqual(len(names),33+posts)
+                'segno_ring_disc', 'segno_beam'})
+            self.assertEqual(len(names),34)
             shims = [s for s in solids if len(self._cylinder_axes(s,2.05)) == 1
                      and s.BoundingBox().xlen < 10]
             washers = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 1
                        and len(self._cylinder_axes(s,3.5)) == 1]
             self.assertEqual(len(shims),9)
             self.assertEqual(len(washers),18)
-            self.assertEqual(len(solids)-len(shims)-len(washers),6+posts)
+            self.assertEqual(len(solids)-len(shims)-len(washers),7)
             base, lid = sorted(solids,key=lambda s:s.Volume(),reverse=True)[:2]
             self.assertAlmostEqual(base.BoundingBox().zmin,0.0,places=5)
             self.assertAlmostEqual(lid.BoundingBox().ymin,-4.4108425,places=4)
             self.assertLess(abs(lid.BoundingBox().zmin),.001)
-            post_solids = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 2
-                           and len(self._cylinder_axes(s,3.2)) == 2]
-            self.assertEqual(len(post_solids),posts)
+            # the support beam is the only part with the steel bend radii: four
+            # inside (1.6) and four outside (3.2) -- the two long folds and the
+            # two wall ears
+            beam_solids = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 4
+                           and len(self._cylinder_axes(s,3.2)) == 4]
+            self.assertEqual(len(beam_solids),1)
             self._assert_remaining_seats(solids,base,lid)
             self._assert_front_shim_seats(shims,base,lid)
             self._assert_lid_washer_seats(washers,lid)
@@ -412,11 +418,18 @@ class ManufacturingFitTest(unittest.TestCase):
                          else s for s in solids]
             with self.assertRaises(AssertionError):
                 self._assert_remaining_seats(displaced,base,lid)
-            for post in post_solids:
-                self.assertAlmostEqual(post.BoundingBox().zmin,2.0,places=5)
-                self.assertLess(post.intersect(lid).Volume(),.001)
-                self.assertLess(post.intersect(base).Volume(),.001)
-                self.assertAlmostEqual(post.BoundingBox().ymin,138.996937,places=5)
+            for solid in beam_solids:
+                self.assertAlmostEqual(solid.BoundingBox().zmin,2.0,places=5)
+                self.assertLess(solid.intersect(lid).Volume(),.001)
+                # The foot lies ON the floor top over its whole 845 mm, and a
+                # coincident-face intersection leaves a sliver that grows with
+                # contact length (the seven 30 mm posts left almost none). A real
+                # clash even 0.01 mm deep would be 183 mm3 here, so 0.05 still
+                # separates the two by three orders of magnitude.
+                self.assertLess(solid.intersect(base).Volume(),.05)
+                self.assertAlmostEqual(solid.BoundingBox().ymin,138.996937,places=5)
+                # wall to wall, not seven pads over a quarter of the panel
+                self.assertGreater(solid.BoundingBox().xlen,800.0)
 
 
     @staticmethod

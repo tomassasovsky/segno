@@ -159,6 +159,7 @@ All three recommendations are in the package as of this branch.
 |---|---|---|
 | Three printed floor rails on a neoprene strip | `floor_rail_lines()`, 12 segments in 2 parts | 96 MPa, 3.3 mm at 1 kN |
 | `POST_U` spread to the seven interior pedal gaps | 5 more steel posts, +10 M4 floor bores | band before the screens 7-11 kg → 49-398 kg |
+| Those seven posts became ONE full-width beam | `segno_beam`, same 14 M4, + 2 M4 wall ties | weakest point on the band 47 kg → 475 kg |
 | `segno_lid_prop`, printed | the one clear lane beside BANK, +2 M4 bores | strip beside BANK 8 kg → 131 kg |
 | 1050 → 1100-H14 on every callout | generator, drawings, shop message | design value 95 MPa, not the lot's 127 |
 
@@ -233,6 +234,54 @@ is that the deflection stays small and the zone stays local.
 
 Keep `_stomp_fea.py`: its rankings are sound and its element is validated. Do not
 quote its absolute numbers.
+
+## The seven posts became one beam (2026-09-10)
+
+Seven 30 mm pads cover 211 mm of an 850 mm panel. The nonlinear model rates the
+band **between** pads at 47 kg of point load and the band **over** one at 232 kg,
+so spreading the posts moved the failure rather than removing it. One folded
+steel beam wall to wall makes the pad continuous: the weakest point on the band
+becomes 475 kg.
+
+What it costs is the **bottom plate**, and not in the direction I first guessed.
+Fourteen bolts concentrate in-plane restraint that the plate used to spread, so
+the discrete-bolt model came out **worse** than a smeared one, not milder. At a
+1 kN stomp:
+
+| model | peak | deflection | util vs 95 MPa |
+|---|---|---|---|
+| three rails, no beam | 96 MPa | 3.28 mm | 1.01 |
+| beam smeared along the plate | 129 MPa | 2.88 mm | 1.36 |
+| beam on fourteen slotted bolts | 135 MPa | 2.95 mm | 1.42 |
+| beam on fourteen plain bolts | 147 MPa | 2.83 mm | 1.54 |
+
+All of them sit under the RC-600 calibration point of util 2.00 — a shipping
+product that computes past yield and survives — so this is a question of how much
+margin to spend, not whether it works. The trade is about 0.4 units of floor
+margin for a tenfold gain on the faceplate, and **the fixing holes are slotted in
+depth** because that is worth 12 MPa for nothing.
+
+The beam's own ends need no help: the C section carries its 109 mm of overhang
+past the outermost bolts at 0.06 mm of deflection and 58 MPa at 1 kN. The wall
+ties the owner asked for are a brace between the two side walls, and that is how
+they are drawn — one M4 per end through a vertically slotted ear.
+
+Two errors worth recording, both caught by putting the part into the assembled
+Fusion model rather than by any gate I had written:
+
+- **The pad clearance to the LED diffuser shoulders was measured in plan and was
+  wrong by 0.62 mm.** The pad bears 1.2 mm below the faceplate, where the
+  shoulder's perpendicular rear face has already leaned back, and the pad's
+  square-cut end reaches `T·tan` further forward than the mould line the
+  clearance was computed from. The gate read 1.39 mm where the assembly measured
+  0.78. `BEAM_LEAN` now states the correction and `BEAM_PAD` is set from it.
+  While this was seven posts the gate never bit at all, because a post pad and a
+  pill shoulder shared no u by construction.
+- **Two cutters were built facing the wrong way** — the cable windows extruded
+  away from the web and the right ear's slot landed past the end of its own ear.
+  The solid was still valid, still one piece, and still exactly the right
+  bounding box, so every test I had passed. Counting cylindrical faces by radius
+  is what catches this, and there is now a test that does.
 
 ## Limits of this model
 

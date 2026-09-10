@@ -1,6 +1,6 @@
 {
   "segno_base": {
-    "flat_sha256": "81f3d8f6d829f3061f82770a90e16c12cf5eac07a283e3f68def4770c6c86b63",
+    "flat_sha256": "f913c529f7b64ad1206bfdf8fcfa1816f9a8f25d57e3775041b0a93f50be4b32",
     "forming": {
       "rule": {
         "thickness_mm": 2.0,
@@ -155,7 +155,7 @@
         ]
       ]
     },
-    "step_sha256": "ad9237d3e36d67859b1ca6d5e7ba51e40c42f2622eb04aa2821fe0918b89316e",
+    "step_sha256": "1aff97db1aacbdb3af486cda75fd524d4fa34ec9f5f4eb9942c4379d16bfa686",
     "placements_mm": [
       [
         [
@@ -184,20 +184,20 @@
         ]
       ]
     ],
-    "volume_mm3": 945221.346024887,
+    "volume_mm3": 945154.8699243406,
     "bounds_mm": [
       [
-        -1.9108411865599562,
+        -1.9108414917313385,
         -1.9108409209999992,
         -2.0
       ],
       [
-        847.910840921,
+        847.9108414917318,
         420.91084092100004,
         97.51987163183323
       ]
     ],
-    "flat_pattern_sha256": "4a46e285af44ff130d47082389ac8c1d21bfc29a2824cdb955f6b785b9d5467d",
+    "flat_pattern_sha256": "0961b14dada81255dc621f0131561fdcca18d428c5c506e0fd523be93a683a62",
     "flat_pattern_drawn_face": "same"
   },
   "segno_faceplate": {
@@ -308,7 +308,7 @@
         ]
       ]
     },
-    "step_sha256": "8e4292a6b77a1680a362d7f1fb803e2795d0ae2741d2cebb70a32a43f40aa4ba",
+    "step_sha256": "b6cb5fb433830fc2f73f265e7a48d908e7113d6922cbdb32a5a59516ea562f9f",
     "placements_mm": [
       [
         [
@@ -350,7 +350,7 @@
         0.0
       ]
     ],
-    "flat_pattern_sha256": "cbe975f02389cfb8473bdb611ebef71387d53f120fb8d8002bc63f11cdbca95f",
+    "flat_pattern_sha256": "8220debc924400a03b0e338cbe6a2189380d63b2b146d6771bc1032606f29147",
     "flat_pattern_drawn_face": "opposite"
   },
   "segno_corner_bracket_rear": {
@@ -381,7 +381,7 @@
       ],
       "front_drill": []
     },
-    "step_sha256": "bd8eca2482e1dd94ec10a04c503c81e94d9a4d42b7ba36076b9555072d9b982f",
+    "step_sha256": "698a294870aa26b18f5e4acc61881755127e10ba7a8ffcd32e88b2215cd37e3a",
     "placements_mm": [
       [
         [
@@ -423,7 +423,7 @@
         11.910840885362786
       ]
     ],
-    "flat_pattern_sha256": "5f2f9e53282b3fdbb63b8b73c9d8a3063e2d50bcd5231e403be7008d89bea5df",
+    "flat_pattern_sha256": "c9ee459c9527f569886d60ec3ffeb764ffb6817817265add42304e9b03296a46",
     "flat_pattern_drawn_face": "same"
   },
   "segno_corner_bracket_rear_mirrored": {
@@ -454,7 +454,7 @@
       ],
       "front_drill": []
     },
-    "step_sha256": "ef3c7a5a35ea15fa8409b0b0fc4110f6c98f788317c5157881065b7e3ca5506b",
+    "step_sha256": "a53b8e2aa477746451acb0f8650fea10673d31ddde6a3c4eb3a785481a654d21",
     "placements_mm": [
       [
         [
@@ -496,7 +496,7 @@
         11.910840885362786
       ]
     ],
-    "flat_pattern_sha256": "753bac2e7f5ce3b55a409db4055a395967b4a31dfb4782059aae43ee72623d21",
+    "flat_pattern_sha256": "1018b05d18121eb476200abb0a69cd1cd2c829727a85596eb10c4fe5a741ef35",
     "flat_pattern_drawn_face": "same"
   }
 }

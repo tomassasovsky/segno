@@ -36,7 +36,7 @@ Labels are carried by the individual pedal tiles; there is no faceplate overlay.
 | `segno_corner_bracket_rear` | 1 | 2.0 Al | Right rear internal L-bracket; use its handed upper profile and STEP placement. |
 | `segno_corner_bracket_rear_mirrored` | 1 | 2.0 Al | Left rear internal L-bracket; cut its separate file and mount inverted as shown in STEP. |
 | `segno_ring_disc` | 1 | 2.0 Al | Encoder LED-ring centre disc. |
-| `segno_post` | 7 | **1.6 CR steel** | Faceplate support posts — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. |
+| `segno_beam` | 1 | **1.6 CR steel** | Faceplate support beam, wall to wall — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. Blank 877.9 × 75.5 mm; four folds, the two wall ears FIRST. |
 
 (The old `segno_screen_bracket` ×8 row is gone deliberately: the screens mount
 on printed stands anchored to the base floor (#762), not on sheet brackets.)
@@ -44,7 +44,7 @@ on printed stands anchored to the base floor (#762), not on sheet brackets.)
 This table is the source of truth for quantity and material: `PART_SPECS` in
 `segno_enclosure.py` carries the same numbers onto every PDF title block, and the
 generator asserts it. Before #775 the drawing writer defaulted both, so every
-sheet claimed "2.0 mm 5052-H32 Al, qty 1" — including the steel post, ×2.
+sheet claimed "2.0 mm 5052-H32 Al, qty 1" — including the steel support, ×2.
 
 ### Reading the drawings
 
@@ -86,8 +86,8 @@ The bottom plate carries **no vents**; the openings are in the side and rear wal
 Material: **2.0 mm 1100-H14 aluminium** for base, lid, brackets and ring disc
 (Alcast certificate, lot 26E0269 -- the stock was ordered as 1050 and is not);
 **1.2 mm aluminium, alloy and temper to be confirmed by the shop**, for the flat
-rear panel; **1.6 mm cold-rolled steel** for the posts. The development assumes K=0.33, R2 for folded aluminium and
-R1.6 for the posts. The shop must confirm stock temper, gauge and actual bend
+rear panel; **1.6 mm cold-rolled steel** for the support beam. The development assumes K=0.33, R2 for folded aluminium and
+R1.6 for the beam. The shop must confirm stock temper, gauge and actual bend
 development with its tools.
 **Current source, exports and native metal models have passed local checks.**
 The fully coated fit revision supersedes the earlier broad masking scheme.
@@ -231,7 +231,7 @@ removal/re-seating with no forced deformation. The fully coated front gap must
 be **0.15–0.60 mm**; fit each shim to that measured gap. Seat the current printed
 collars and screen supports on the coated floor; their revised relief/setback
 accounts for the paint instead of preserving bare contact patches. Fit felt
-at the post pads and the selected seals only after measuring finished gaps;
+at the beam pad and the selected seals only after measuring finished gaps;
 none may lift the lid from its seats. Owner cleanup includes restoring paint-narrowed body pilots to Ø2.5 and cutting
 all 32 M3 body threads (18 lid and 14 screen-support fixings). No other planned hole enlargement or paint removal from
 functional seats follows coating. Fit/coupon failure returns for correction
@@ -250,10 +250,17 @@ Both converter bodies are centred at v=365 mm, 6 mm rearward of the former
 position, clearing the screen stand flange. Their Ø6.5 ±0.3 mm ears use M4 hardware with Ø12 mm washers; the base holes
 remain M4 clearance. The dimension source is `enclosure/reference/buck_dimensions.png`.
 
-**Support posts and monitor.** The posts use true R1.6 bends in 1.6 mm steel,
+**Support beam and monitor.** The beam uses true R1.6 bends in 1.6 mm steel,
 with 1.2 mm nominal normal clearance to the bare lid and a calculated
 0.925–1.163 mm after the specified coating on all relevant surfaces. Measure the finished assembled gap and fit the felt without lifting
-the lid off its coated seats. Their foot-hole row is at v=148.997 mm. The 15.6-inch monitor
+the lid off its coated seats. Its foot-hole row is at v=148.997 mm, the same
+fourteen stations the seven posts used before 2026-09-10; the beam takes them
+through holes **slotted 2.0 mm in depth**, which is what keeps the bottom plate
+at 135 MPa instead of 147 under a 1 kN stomp. One M4 per end ties the beam to
+its side wall through a vertically slotted ear — a brace between the walls, not
+a support for the beam. Fold the two ears first, with the blank still flat: both
+long bend lines stop 3.5 mm short of them so the tooling never has to pass over
+a standing ear. The 15.6-inch monitor
 reference uses the measured 354 ×209 mm body, 14.7 mm maximum depth and the
 75 mm pair of mounting holes; use the regenerated left/right stands with it.
 
@@ -291,7 +298,7 @@ unchanged by these console paint allowances.
 | `segno_pedal_tile_*` | 10 | **BLACK + WHITE** PLA/PETG | Pedal name tiles, one per pedal, dropping into the WTB-006 top pad's window. **TRAPEZOID**, 54.36 (back) / 53.76 (toe) × 19.90 × 2.20 — the pad is a wedge in plan, and the window keeps a 5 mm wall each side at every station, so the tile's sides run parallel to the pad's. Both widths are derived from the pad measured in the Cherub Fusion doc (window 54.46 / 53.86, less 0.05/side). **Fit the WIDE edge toward the cable end**; it carries the top of the glyphs, so the wrong way round reads upside down. The pad is a uniform 2.2 slab on a case top tilted to match, so the window is a parallel-sided pocket in depth and the tile is flat in Z. **Print FACE-DOWN with a filament change at z = 0.4**: the glyphs stand proud of the body, so face-down they are the first 0.4 mm off the bed — print that in white, swap to black, flip. One extruder. The letters finish flush with the pad and the black field sits 0.4 mm below it, out of the scuff line. Text is generated from the same `PEDALS`/`SILK_SYMBOLS` pedal-label schedule, so REC/PLAY and STOP carry the dot+plus+triangle and square rather than words. |
 | `segno_floor_rail_front` | 8 | **BLACK** PETG/ASA, ≥40% infill | Front floor rails (issue #1019), 201.79 mm, four screws. **Every segment of a rail is the same part** — eight of this one and four of the rear — because the rail span comes from the pedal pitch, so each segment is exactly two pedals wide and the screw pattern repeats. **Print flat, channel side up**: the channel needs no support and the floor face is the bed face. Each carries a 19.05 × 3.2 mm self-adhesive SOLID neoprene strip (3/4" × 1/8") pressed into its 18.85 × 1.5 mm channel — 0.2 mm under size on purpose, so the walls hold it and the adhesive is not in the load path. **Not grit tape**: this gets dragged across floors. The strip stands 1.7 mm proud and is the only thing touching the ground. Ends are **square** with a 1 mm corner break and the segments **butt**, so the strip is a plain scissors cut that fills the channel corner to corner. **Fit the rails first, then press the strip in** — the M3 heads sink into counterbores inside the PETG, above the channel roof, so the strip runs over them unbroken and never needs punching. 2,385 mm of strip for the set. |
 | `segno_floor_rail_rear` | 4 | as above | Rear floor rails, 201.79 mm, two screws at 63.5 and 109.5 mm from the low-u end — **not** a symmetric pair, so all four go on the same way round. The rail sits at v 343.25, **not** where the rubber feet were: the buck converters bolt through v 367.5 with a floor-side washer and nut, so hardware protrudes there. At 21 mm wide it clears the screen-stand pilots by 3.5 mm each side. |
-| `segno_lid_prop` | 1 | **BLACK** PETG/ASA, ≥40% infill | Mid-field lid prop (issue #1019). A pure compression column, which is why it is printed rather than another shop part number. It stands in the one clear lane between BANK's pedestal and the 16in module body — 31.5 mm wide, so the 24 mm column has 3.7 mm each side and there is no room to improvise on the bench. Two M4 into the floor through the tongue; the top face is already cut to the 12.5° slope, so print it **tongue-down, flat on the bed** and let the sloped face be the top surface. Fit felt on that face to the measured gap after coating, the same rule as the steel posts. It carries the strip beside the BANK slot from 8 kg of point load to 131 kg. |
+| `segno_lid_prop` | 1 | **BLACK** PETG/ASA, ≥40% infill | Mid-field lid prop (issue #1019). A pure compression column, which is why it is printed rather than another shop part number. It stands in the one clear lane between BANK's pedestal and the 16in module body — 31.5 mm wide, so the 24 mm column has 3.7 mm each side and there is no room to improvise on the bench. Two M4 into the floor through the tongue; the top face is already cut to the 12.5° slope, so print it **tongue-down, flat on the bed** and let the sloped face be the top surface. Fit felt on that face to the measured gap after coating, the same rule as the steel beam. It carries the strip beside the BANK slot from 8 kg of point load to 131 kg. |
 | `segno_ring_diffuser` | 1 | **White PLA** | Ø67-window lens and disc holder for the selected PR #990 Ring 24 on its 2.54 mm pin strip. The open-bottom cavity has eight 1.2 mm ribs in verified component gaps, a 0.25 mm shelf and a 1.05 mm lens roof. Nominal minimum PCB clearance is **0.135 mm**, LED clearance 0.332 mm; qualify one actual print and its light diffusion before ordering a set. Orient and dry-fit it as described below before gluing. |
 
 **Ring-holder orientation and fit.** The ribs make this part rotationally
@@ -429,7 +436,8 @@ finished stack, actual insert depth and screw-tip clearance. Rows marked
 | Lid → base | **18 M3×8 ISO 7380-1 button-head screws and 18 OD 7 mm M3 washers**, screw length nominal | Nine front plus nine rear, into the base's tapped M3 pilots. Verify the final coated fit, thread engagement and screw-tip clearance. No clinch nuts. |
 | Front lid lip → base, between painted bearing faces | **9 fitted solid-metal shim packs**, individual-layer quantity depends on finished gaps | Flat stainless, OD 6.90–7.00 mm, ID 4.0–4.2 mm. Fit after coating to 0.00–0.02 mm residual with the lid seated; nominal 0.50 mm STEP thickness is reference only. Record thicknesses and stations 1–9; edge-only retention, no coating removal or adhesive in the bearing stack. |
 | Rear corner brackets → base | **10 Ø3.2 mm blind rivets** | Five per bracket. Select material, head and grip range with the shop for the approximately **4 mm bare stack** of two 2 mm aluminium sheets. Owner installs before coating; shop supplies matched holes and checks setting-tool access. |
-| Support-post feet → base | **4 M4 screws, 4 nuts and washer sets; measure before ordering** | Two per post. Bare metal stack is **3.6 mm**; add both parts' coating, washers and the selected nut. Nuts are under the floor. Check that the ends and hardware remain above the feet's floor-contact plane. |
+| Support-beam foot → base | **14 M4 screws, 14 nuts and washer sets; measure before ordering** | The beam's foot, through depth-slotted holes at the fourteen stations the seven posts used. Bare metal stack is **3.6 mm**; add both parts' coating, washers and the selected nut. Nuts are under the floor. Check that the ends and hardware remain above the feet's floor-contact plane. |
+| Support-beam ears → side walls | **2 M4 screws, 2 nuts and washer sets; measure before ordering** | One per end, from outside the wall into the beam's rearward ear, whose hole is slotted vertically. Bare stack is 2.0 Al + 1.6 steel = **3.6 mm**. Fit after coating: the beam is steel and takes a different pretreatment, so it cannot go through the body's paint line and cannot be riveted in like the aluminium corner brackets. |
 | Screen stands → base | **14 M3 screws and 14 bearing washers; confirm length before ordering** | Six for the 7-inch tower and four for each 15.6-inch stand. All flange holes pass through **5 mm of printed material** into M3 threads in the 2 mm base. M3×8 is a candidate with a thin washer; verify full engagement after coating without the tips touching the supporting surface. |
 | 15.6-inch stand splice | **2 M3 screws, 2 nuts and bearing washers; measure before ordering** | The two printed halves have clearance holes and need nuts, not heat-set inserts. Measure the actual lap and washer stack and verify access below the bridge. |
 | 15.6-inch monitor → stands | **2 M4 screws and 2 Ø12 mm bearing washers; measure before ordering** | One horizontal pair at 75 mm pitch. The stand has Ø9.3 float holes. Measure the monitor's real blind-thread depth and allowed insertion, plus the printed bearing stack; the reference model's 6 mm blind holes do not establish the purchased monitor's limit. Verify washer support at the chosen adjusted position. |
@@ -440,7 +448,7 @@ finished stack, actual insert depth and screw-tip clearance. Rows marked
 | Rear I/O panel → base | **4 M3 screws, 4 nuts and washer sets; measure before ordering** | Bare sheet stack is **3.2 mm**, plus coating and washers. One specified PANEL_BOND joint must make electrical contact at its masked land; preserve that joint when selecting hardware. |
 | PD and MIDI connectors → rear panel | **6 M3 fixing sets**, each screw plus matching nut as required by the purchased part | Two for the PD coupler and two for each of the two MIDI sockets. Confirm the real flange thickness, screw-head style, washers and whether matching fasteners are supplied before choosing lengths. |
 | Other rear connectors | **2 NJ6FD-V caps; 2 USB bulkhead retaining nuts; 1 power-button nut; 1 fuse-holder nut** | Use the matching hardware supplied for each purchased connector. The USB apertures must follow the owner's verified four-flat profile; verify all finished openings against the purchased parts. The CTRL caps require the specified finished panel thickness. |
-| Rubber feet → base | **15 mechanical foot-fixing sets; measure before ordering** | Four original corner feet plus eleven additions: four front, four rear and three staggered near CLEAR/BANK and the steel posts. Screws enter from inside through Ø4.80 pre-coating floor holes. The clearance review assumes Ø18 ×5 mm feet and top screw/washer envelopes no larger than Ø9 ×5 mm. Check the actual retention method and screw-tip recess; the modeled washer insert does not establish a thread. Fit before installing the screen supports, check access, and verify loaded floor contact. This count does not imply equal load sharing or a strength rating. |
+| Rubber feet → base | **15 mechanical foot-fixing sets; measure before ordering** | Four original corner feet plus eleven additions: four front, four rear and three staggered near CLEAR/BANK and the steel beam. Screws enter from inside through Ø4.80 pre-coating floor holes. The clearance review assumes Ø18 ×5 mm feet and top screw/washer envelopes no larger than Ø9 ×5 mm. Check the actual retention method and screw-tip recess; the modeled washer insert does not establish a thread. Fit before installing the screen supports, check access, and verify loaded floor contact. This count does not imply equal load sharing or a strength rating. |
 | Encoder / ring assembly | **1 matching EC11 bushing nut and washer; supplied knob retaining hardware** | The EC11 nut clamps the centre disc into the holder; the holder's outer land is glued to the faceplate underside. Verify this assembled retention and the knob's underside relief. Fusion deliberately uses the owner's PR #990 Ø80 board without mounting holes, as recorded in `enclosure/FUSION_MODELS.md`; the checked-in Ø68/three-hole PCB is a different revision. Reconcile the electronics order with that chosen revision; no three-M3-screw set is implied for the native assembly. |
 | Chassis bonding | **1 M6 stud fixing set**, with the nuts, locking washers, lugs and straps required by the agreed bonding arrangement | Select the complete stack and its length against the actual lug arrangement and verify continuity. Keep the defined rear-panel bond; do not add parallel grounding connections by assumption. |
 

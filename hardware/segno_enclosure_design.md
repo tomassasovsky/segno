@@ -577,15 +577,54 @@ rail layout twice.
 An earlier note in this file about the posts shadowing 21 of 32 intake slots is
 kept for the record in git history only; the field it described no longer exists.
 
-**Lid supports (issue #1019).** Away from a support pad the 2.0 mm faceplate
+**Lid support (issue #1019).** Away from a support pad the 2.0 mm faceplate
 dents at 7-11 kg of point load; over one it takes 170 kg. #292 sized that
-correctly and then covered 100 mm of an 850 mm panel with two posts. `POST_U`
-is now the seven interior `FRONT_SCREW_U` gaps, which is what `POST_PW` was
-always derived for: every station sits between two LED pill shoulders by
-construction. The band in front of the screens — where a missed stomp lands —
-goes from 7-11 kg to 49-398 kg. The old "post must be under the 16in aperture"
-assertion encoded #292's scope rather than the requirement, and is replaced by
-one proving each pad bears on metal that has not been cut away.
+correctly and then covered 100 mm of an 850 mm panel with two posts. Seven posts
+covered 211 of 850 — a quarter — and the band between them still failed at 47 kg.
+
+On 2026-09-10 the seven became **one folded steel beam that runs wall to wall**
+(owner call: "a whole support beam in that line that is also supported, that also
+attaches to the sides, the walls of the base"). Same C section, same 1.6 mm
+cold-rolled steel, same fourteen M4 into the floor at the same stations; what
+changed is that the pad is continuous, so the weakest point on the band goes from
+47 kg to 475 kg.
+
+The beam costs the **bottom plate** margin, because fourteen bolts concentrate
+in-plane restraint the plate used to spread. At a 1 kN stomp the floor reads:
+
+| | peak | deflection | vs the 95 MPa spec minimum |
+|---|---|---|---|
+| three rails, no beam | 96 MPa | 3.28 mm | 1.01 |
+| beam on slotted holes | 135 MPa | 2.95 mm | 1.42 |
+| beam on plain holes | 147 MPa | 2.83 mm | 1.54 |
+
+Both stay inside the RC-600 calibration point (util 2.00 against yield, on a
+shipping product), so the trade is roughly 0.4 units of floor margin for a
+tenfold gain on the faceplate. **The fixing holes are slotted in depth** for that
+reason — the slot is what buys back the 12 MPa between the last two rows.
+
+Three things the posts never had to answer:
+
+- **The pad cannot dodge the LED pill shoulders in u any more.** `BEAM_PAD` is
+  set from that clearance instead: the shoulders end at v 148.61, the pad starts
+  at 150.70. Measure it where the two actually come closest, not in plan — the
+  pad bears 1.2 mm below the faceplate where the shoulder's perpendicular rear
+  face has already leaned back, and the pad's square-cut end reaches `T·tan`
+  further forward than its mould line. Together those eat 0.62 mm. The plan
+  figure said 1.39 where the assembled model measured 0.78; `BEAM_LEAN` states
+  the correction once and the gate applies it.
+- **A continuous web is a wall**, and every cable in the front half used to walk
+  through the 71 mm gaps between posts. It carries a 24 × 12 window on each
+  front-row pedal centreline plus one per side for the LED strip feed, ten in
+  all, with 15.4 mm of web left above and below.
+- **Each end folds a rearward ear onto its side wall**, one M4 through the wall,
+  slotted vertically. The tie braces the two walls against each other; it is not
+  asked to carry the beam. The C section is stiff enough that the 109 mm of
+  overhang past the outermost bolts deflects 0.06 mm at 1 kN and sees 58 MPa.
+
+The old "post must be under the 16in aperture" assertion encoded #292's scope
+rather than the requirement, and is replaced by one proving the whole pad band
+bears on metal that has not been cut away.
 
 Two ligaments deeper in the panel stay bare, and only one of them can be fixed.
 `segno_lid_prop` is a **printed** PETG column — a pure compression member, so a
@@ -594,7 +633,7 @@ pedestal (ends u 416.8) and the 16in **module body**, which is wider than its
 aperture and starts at u 448.3. That 31.5 mm lane takes a 24 mm column at
 u 432.5 with 3.7 mm each side, and lifts the strip beside BANK from 8 kg to
 131 kg. Two M4 into the floor; the height derives from `lid_under_z(PROP_V)`
-with the same bare-gap-then-felt rule as the posts.
+with the same bare-gap-then-felt rule as the beam.
 
 **The ligament left of CLEAR has no lane and remains at 11 kg.** The 7in tower's
 right leg ends at u 213.6 and the CLEAR pedestal starts at 226.9; 13.3 mm is not
@@ -642,7 +681,7 @@ negative-controlled.
 
 ## 6. Sheet-metal notes
 
-- Aluminium folds use R2 andK0.33; the seven steel posts use 1.6 mm stock andR1.6.
+- Aluminium folds use R2 andK0.33; the steel support beam uses 1.6 mm stock andR1.6.
   Confirm actual temper/gauge, tools and trial-bend development before the set.
 - Use only the two handed rear brackets, five Ø3.2 rivets each, with Ø3.3 holes.
   Qualify the actual 4 mm grip,4 mm edge distance and setting-tool access.
@@ -666,7 +705,7 @@ negative-controlled.
 
 Current materials are 2.0 mm aluminium **1100-H14** for the base, lid, two rear
 brackets and encoder disc; 1.2 mm aluminium of unconfirmed alloy for the I/O
-panel; and 1.6 mm cold-rolled steel for the **seven** support posts.
+panel; and 1.6 mm cold-rolled steel for the **one** full-width support beam.
 
 The 2.0 mm stock was ordered as 1050 and is not. Alcast's certificate for lot
 26E0269 (2026-04-01) reports 1100-H14 at Rp0.2 127 MPa, Rm 145 MPa and 10%

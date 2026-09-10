@@ -33,7 +33,7 @@ metal`, `base`, `faceplate`, `rear_panel`, `vent_foam`) plus identity-placed
 grouping components — `pedals` (10), `platforms` (20), `floor_rails` (10 bodies since #1019 — the
 `feet` group and its 60 occurrences are gone),
 `fasteners` (18 native ISO 7380-1 screws and 18 M3 Ø7 washers), `lid_stack` (screens, the
-switched-off legacy `encoder`, texts (switched off), logo, support posts, and
+switched-off legacy `encoder`, texts (switched off), logo, and
 `diffusers` = the ten `led_diffuser_*` pills; the old `led_strips` bar
 component was deleted 2026-09-04), `electronics`
 (Pi, NVMe, console board, bucks, standoffs). Groups are at identity, so
@@ -90,24 +90,47 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   moved +7.5 mm along the plate on 2026-09-04 (219.66 -> 227.16, #930) and a
   further +2.0 mm for the LED_GAP 16 trial (-> 229.16); a plate move of d is a
   world delta of (0, c*d, s*d) in populated and (0, s*d, c*d) in VSM.
-- **Support posts** (`faceplate_support_post:1`..`:7`, root): imported
-  `out/segno_post.step`, with real concentric R1.6/R3.2 bends in 1.6 mm steel,
-  converted to native sheet metal using T1.6/R1.6/K0.33. Place at
-  `[1,0,0,(POST_U-POST_PW/2)/10 | 0,1,0,(_POST_VP-POST_FOOTL)/10 | 0,0,1,0.2]`.
-  Since #1019 there is one per interior pedal gap, x = 10.45 / 20.564286 /
-  30.678571 / 40.792857 / 50.907143 / 61.021429 / 71.135714 cm, y = 13.899694 cm.
-  The last two moved 0.29 and 0.43 mm when `POST_U` stopped being two literals
-  and became `FRONT_SCREW_U[1:-1]`. **`addExistingComponent` applies its matrix
-  RELATIVE to the source component's own placement**, so a new post lands at
-  x + 61.021429 unless you set `transform2` absolutely afterwards; do that, then
-  `snapshots.add()`. The two foot holes
-  per post are at world v = **148.996937 mm**, matching the base anchors.
-  The top pad has **1.2 mm nominal normal bare clearance** to the lid, with
-  approximately 0.925–1.163 mm after 60–100 µm coating on the floor, post foot/top
-  and lid underside. The painted lid seats change the fitted pose: measure the finished gap and fit the felt
-  without lifting the lid off its seats. Regenerated
-  `post_felt:1` / `:2` use the same placements and model the bare 1.2 mm space.
-  Native unfold gives **81.161489 ×30.142857 ×1.6 mm**, matching the DXF.
+- **Support beam** (`faceplate_support_beam:1`, root, BOTH documents): imported
+  `out/segno_beam.step`, one part, wall to wall, with real concentric R1.6/R3.2
+  bends in 1.6 mm steel on all four folds. It replaced
+  `faceplate_support_post:1`..`:7` on 2026-09-10 — see the design doc for why
+  seven pads over a quarter of the panel was not enough.
+
+  Place at `[1,0,0,BEAM_U0/10 | 0,1,0,(_BEAM_VP-BEAM_FOOTL)/10 | 0,0,1,0.2]` in
+  **populated** = x 0.06, y 13.8996937798418, z 0.2 cm; in **VSM** the world is
+  mirrored in u and swaps height/depth, so it is
+  `[-1,0,0,84.74 | 0,0,1,0.2 | 0,1,0,13.8996937798418]` (det +1). The beam is
+  mirror-symmetric in u, so the flip costs nothing. **`importToTarget2` lands the
+  new occurrence at identity and `addExistingComponent` applies its matrix
+  RELATIVE to the source's own placement**, so set `transform2` absolutely and
+  then `snapshots.add()`.
+
+  World check after placement: populated x 0.600..845.400, y 138.997..178.597,
+  z 2.000..46.006. The wall inner faces sit at x 0.0892 and 845.9108 (a centre
+  bend line lands each wall `BA90/2 - RI` inboard of the flat's edge), so the
+  beam has 0.511 mm of air at each end.
+
+  The fourteen foot fixings are at world v = **148.996937 mm**, the same stations
+  the posts used, but **slotted 2.0 mm in depth**; each ear takes one M4 through
+  its side wall, slotted 1.5 mm vertically. The top pad keeps the **1.2 mm
+  nominal normal bare clearance** to the lid, about 0.925–1.163 mm after 60–100 µm
+  coating on the floor, beam foot/top and lid underside; measure the finished gap
+  and fit the felt without lifting the lid off its seats. `beam_felt:1` uses the
+  same placement and models the bare 1.2 mm space.
+
+  **Two checks worth running after any beam rebuild**, because both caught a real
+  defect the first time round:
+
+  1. `measureMinimumDistance` from the beam to every `led_diffuser_*` body.
+     It must read **1.477 mm**, not the 1.39 a plan view predicts. The
+     difference is `BEAM_LEAN`; getting it wrong once put the pad 0.78 mm off a
+     glued FDM flange that can print 0.2 over.
+  2. Count the beam body's cylindrical faces by radius: **40 at r3.0** (ten
+     cable windows × four corners), **32 at r2.3** (sixteen slotted fixings ×
+     two ends), **4 at r1.6** and **4 at r3.2** (four folds). The first import
+     had 0 windows and 15 slots — both cutters had been built facing the wrong
+     way, and the solid was still valid, still the right size, and still passed
+     every bounding-box test.
 - **Floor rails** (`floor_rails`, root, populated only — printed parts, not sheet
   metal): the REAL geometry, 24 bodies in one non-parametric base feature named
   `ISSUE_1019_FLOOR_ROWS` — the 12 printed PETG segments with their square ends,
@@ -147,7 +170,7 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   x = 43.25, y = 23.2219636 cm. The STEP lands about 0.01 mm proud of z = 0.2;
   that is import tolerance, not a clash.
 - **Base support bores** (`ISSUE_1019_SUPPORT_BORES` in both base components):
-  the twelve M4 post/prop foot bolts that #1019 added live in the `CUT` sketch,
+  the twelve M4 support/prop foot bolts that #1019 added live in the `CUT` sketch,
   but are cut by their own extrude rather than added to `Extrude1`'s profile set.
   Four existing post-foot circles were moved in place, so `Extrude1` carries them
   as before. The rear rail's eight anchors are the same story under
@@ -168,6 +191,28 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   alone is not enough: that feature keeps cutting from cached geometry and reports
   itself unhealthy while the volume never moves. Both bases went 937.7062 to
   945.2213 cm³, which is exactly the 3,757 mm² of slot at 2 mm.
+
+- **Base wall ties** (`ISSUE_1019_BEAM_WALL_TIES` in both base components): the
+  beam's two M4 through the SIDE WALLS. These cannot come from the `CUT` sketch
+  the way the floor bores do — that sketch is in the flat plane and the walls
+  have since folded up, so a hole drawn there would land in mid-air. They are a
+  post-fold cut instead: a construction plane offset 42.3 cm from the base
+  component's YZ, one Ø4.6 circle at component (y 169.5969, z 21.0), extruded
+  **symmetric, 45 cm each side** (`setSymmetricExtent(45, isFullLength=False)`
+  — passing `True` there makes 45 the TOTAL and the cut silently reaches
+  neither wall), participants limited to the base body. Result: faces at
+  component x −0.9108 and 846.9108, and both bases 945.2213 → **945.1549 cm³**,
+  exactly 2 × π × 2.3² × 2 mm³.
+
+  Two traps here. `base.features.extrudeFeatures.add()` parents the feature to
+  the **active** component, not to the one whose collection you called, so
+  activate the base occurrence first and check `feature.parentComponent.name`
+  afterwards. And a post-fold cut still reaches the exported flat, because
+  `createFlatPattern` unfolds the body rather than replaying the sketch — which
+  is why the base's `CUT` layer is excluded from sketch validation and
+  `compare_flat_pattern` is what actually holds it. Fusion writes those two
+  circles as arc segments, so the comparison lands ~0.0006 mm² off a true
+  circle rather than at exact zero.
 
   **A re-export is not a change.** Running `fusion_export_formed.py` again rewrites
   every flat with a different polyline START VERTEX and coordinates that differ in
@@ -473,7 +518,7 @@ same pass: the seam is M3 x 8, all 18 in the `fasteners` group.
 180° turn about the (0,1,1) axis, NOT a mirror — the x flip comes with the
 y/z swap). Check: F applied to the populated faceplate row gives the VSM
 canonical row in the table above. Use it instead of re-deriving VSM
-placements by hand; the corner brackets, posts and mid collars in VSM were
+placements by hand; the corner brackets, beam and mid collars in VSM were
 placed this way on 2026-09-04.
 
 ## Hard-won API rules (each one cost a debugging session)
@@ -699,7 +744,7 @@ native documents. Shop tooling acceptance remains separate from digital parity.
 1. Run `segno_enclosure.py --no-step` to generate the new flats and
    `out/fusion_formed_input.json`.
 2. Synchronize BOTH Fusion documents. Check native rules, all feature health,
-   post/lid normal gap, front-lip gap, hole registration and relevant component
+   beam/lid normal gap, front-lip gap, hole registration and relevant component
    intersections. Rebuild in the target document if imported features lose refs.
 3. With **VAMP console (populated)** active, run `fusion_export_formed.py` as a
    Fusion script. It compares operation sketches against the current handoff;
@@ -718,8 +763,8 @@ native documents. Shop tooling acceptance remains separate from digital parity.
    compares all four checksummed native flats with complete CUT/VENT/DRILL geometry
    by planar Boolean subtraction, validates solids and bounds in OpenCascade,
    then builds the fabrication reference assembly: eight made metal pieces plus
-   nine purchased shim packs and eighteen purchased head washers (**35 solids;
-   seven unique fabricated part stems**). The post, flat rear panel, ring disc,
+   nine purchased shim packs and eighteen purchased head washers (**34 solids;
+   seven unique fabricated part stems**). The beam, flat rear panel, ring disc,
    nominal shim packs and washer references are generated directly. Shims and
    washers appear in the assembly only; neither standalone reference STEP is
    an additional laser, printing or painting archive member. The full package
