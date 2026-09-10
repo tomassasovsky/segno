@@ -344,6 +344,57 @@ void main() {
     });
   });
 
+  group('output names', () {
+    test('round-trips a saved name, keyed per device', () async {
+      await repository.saveOutputName(
+        device: 'Scarlett',
+        bus: 1,
+        name: 'monitors',
+      );
+      expect(
+        await repository.loadOutputName(device: 'Scarlett', bus: 1),
+        'monitors',
+      );
+      expect(await repository.loadOutputName(device: 'Scarlett', bus: 0), null);
+      expect(await repository.loadOutputName(device: 'Built-in', bus: 1), null);
+    });
+
+    test('the unit is the DESTINATION, not the jack', () async {
+      // Bus 1 is outputs 3 and 4. Its name must not collide with bus 3's, and
+      // it must not collide with the per-jack output GATE either: a name and a
+      // gate are different facts about different units.
+      await repository.saveOutputName(
+        device: 'Scarlett',
+        bus: 1,
+        name: 'monitors',
+      );
+      await repository.saveOutputEnabled(
+        device: 'Scarlett',
+        output: 1,
+        enabled: false,
+      );
+      expect(await repository.loadOutputName(device: 'Scarlett', bus: 3), null);
+      expect(
+        await repository.loadOutputName(device: 'Scarlett', bus: 1),
+        'monitors',
+      );
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 1),
+        isFalse,
+      );
+    });
+
+    test('clearing REMOVES the key, never stores an empty name', () async {
+      await repository.saveOutputName(
+        device: 'Scarlett',
+        bus: 2,
+        name: 'wedge',
+      );
+      await repository.clearOutputName(device: 'Scarlett', bus: 2);
+      expect(await repository.loadOutputName(device: 'Scarlett', bus: 2), null);
+    });
+  });
+
   group('lane routing', () {
     test('returns sensible defaults when nothing is stored', () async {
       expect(await repository.loadLaneCount(0), 1);

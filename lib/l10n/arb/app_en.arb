@@ -3889,5 +3889,38 @@
     "routingNoInputs": "No inputs selected for this track.",
     "@routingNoInputs": {
             "description": "Shown when a track records nothing."
+    },
+    "outputPairLabel": "Outputs {first}–{second}",
+    "@outputPairLabel": {
+            "placeholders": {
+                    "first": {
+                            "type": "int"
+                    },
+                    "second": {
+                            "type": "int"
+                    }
+            },
+            "description": "The pair of jacks one destination drives."
+    },
+    "outputPairShort": "Out {first}–{second}",
+    "@outputPairShort": {
+            "placeholders": {
+                    "first": {
+                            "type": "int"
+                    },
+                    "second": {
+                            "type": "int"
+                    }
+            },
+            "description": "The short form of a destination, used where a name would go."
+    },
+    "outputSingleLabel": "Output {channelNumber}",
+    "@outputSingleLabel": {
+            "placeholders": {
+                    "channelNumber": {
+                            "type": "int"
+                    }
+            },
+            "description": "A destination holding one jack, on an odd-channel device."
     }
 }
