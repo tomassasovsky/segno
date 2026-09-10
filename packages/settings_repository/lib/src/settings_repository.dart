@@ -105,6 +105,18 @@ typedef StoredInputSetup = ({
   Map<int, double> pairs,
 });
 
+/// The output setup as this repository stores it (accepted design, Output
+/// setup): per destination (bus, one per stereo pair of outputs) its level,
+/// mute, Mono and balance, each map holding only the destinations off that
+/// fact's default (unity, unmuted, Stereo, centre). A plain record like
+/// [StoredInputSetup].
+typedef StoredOutputSetup = ({
+  Map<int, double> level,
+  Map<int, bool> muted,
+  Map<int, bool> mono,
+  Map<int, double> balance,
+});
+
 /// Stores the per-device record-offset latency calibration, the last-used audio
 /// device configuration (so the engine can auto-start on launch), per-track
 /// display names, and big-picture view preferences.
@@ -1314,6 +1326,126 @@ class SettingsRepository {
         device: device,
         input: input,
         balance: setup.pairs[input],
+      );
+    }
+  }
+
+  // The output setup (accepted design, Output setup), keyed per DEVICE and
+  // destination like the input setup above: a level dialed in for a PA on
+  // one interface's first pair says nothing about another's. Every value
+  // is absent when it is at its default, so a key present is a setting the
+  // user made. Session-owned as well: a session load re-persists it
+  // ([replaceOutputSetup]) so the next boot matches the loaded session.
+  String _outputLevelKey(String device, int bus) => 'output_level.$device.$bus';
+  String _outputMuteKey(String device, int bus) => 'output_mute.$device.$bus';
+  String _outputMonoKey(String device, int bus) => 'output_mono.$device.$bus';
+  String _outputBalanceKey(String device, int bus) =>
+      'output_balance.$device.$bus';
+
+  /// Loads the output setup of the first [busCount] destinations on
+  /// [device]: levels (absent = unity), mutes and Monos (absent = off) and
+  /// balances (absent = centre).
+  Future<StoredOutputSetup> loadOutputSetup({
+    required String device,
+    required int busCount,
+  }) async {
+    final level = <int, double>{};
+    final muted = <int, bool>{};
+    final mono = <int, bool>{};
+    final balance = <int, double>{};
+    for (var bus = 0; bus < busCount; bus++) {
+      final l = await _store.getDouble(_outputLevelKey(device, bus));
+      if (l != null && l != 1) level[bus] = l.clamp(0.0, 1.0);
+      if (await _store.getBool(_outputMuteKey(device, bus)) ?? false) {
+        muted[bus] = true;
+      }
+      if (await _store.getBool(_outputMonoKey(device, bus)) ?? false) {
+        mono[bus] = true;
+      }
+      final b = await _store.getDouble(_outputBalanceKey(device, bus));
+      if (b != null && b != 0) balance[bus] = b.clamp(-1.0, 1.0);
+    }
+    return (level: level, muted: muted, mono: mono, balance: balance);
+  }
+
+  // One writer per fact, like the input setup's: an edit persists the fact
+  // it changed and nothing else, so a level ride cannot delete a mute the
+  // user set between two of its ticks. A fact at its default (`null`,
+  // unity, `false`, centre) removes its key, so a destination put back to
+  // its defaults does not come back on the next launch.
+
+  /// Saves destination [bus]'s level on [device], `0..1`.
+  Future<void> saveOutputLevel({
+    required String device,
+    required int bus,
+    required double? level,
+  }) => level == null || level == 1
+      ? _store.remove(_outputLevelKey(device, bus))
+      : _store.setDouble(_outputLevelKey(device, bus), level.clamp(0.0, 1.0));
+
+  /// Saves destination [bus]'s mute on [device].
+  Future<void> saveOutputMute({
+    required String device,
+    required int bus,
+    required bool muted,
+  }) => muted
+      ? _store.setBool(_outputMuteKey(device, bus), value: true)
+      : _store.remove(_outputMuteKey(device, bus));
+
+  /// Saves destination [bus]'s Mono on [device].
+  Future<void> saveOutputMono({
+    required String device,
+    required int bus,
+    required bool mono,
+  }) => mono
+      ? _store.setBool(_outputMonoKey(device, bus), value: true)
+      : _store.remove(_outputMonoKey(device, bus));
+
+  /// Saves destination [bus]'s balance on [device], `-1..1`.
+  Future<void> saveOutputBalance({
+    required String device,
+    required int bus,
+    required double? balance,
+  }) => balance == null || balance == 0
+      ? _store.remove(_outputBalanceKey(device, bus))
+      : _store.setDouble(
+          _outputBalanceKey(device, bus),
+          balance.clamp(-1.0, 1.0),
+        );
+
+  /// Replaces the whole output setup of [device] with [setup] — a session
+  /// load re-persisting what it applied. Every destination in [setup] is
+  /// written through the per-fact writers above, and the first [busCount]
+  /// destinations it does not mention have their keys removed. This is the
+  /// one whole-setup writer.
+  Future<void> replaceOutputSetup({
+    required String device,
+    required int busCount,
+    required StoredOutputSetup setup,
+  }) async {
+    final buses = <int>{
+      for (var bus = 0; bus < busCount; bus++) bus,
+      ...setup.level.keys,
+      ...setup.muted.keys,
+      ...setup.mono.keys,
+      ...setup.balance.keys,
+    };
+    for (final bus in buses) {
+      await saveOutputLevel(device: device, bus: bus, level: setup.level[bus]);
+      await saveOutputMute(
+        device: device,
+        bus: bus,
+        muted: setup.muted[bus] ?? false,
+      );
+      await saveOutputMono(
+        device: device,
+        bus: bus,
+        mono: setup.mono[bus] ?? false,
+      );
+      await saveOutputBalance(
+        device: device,
+        bus: bus,
+        balance: setup.balance[bus],
       );
     }
   }

@@ -192,10 +192,12 @@ class PerformanceArmSnapshot {
     this.masterEffects = const [],
     this.masterChainEnabled = true,
     this.fxStagesVersion = currentFxStagesVersion,
+    this.followOutput = false,
+    this.captureBus = 0,
+    this.outputLevel = 1,
+    this.outputMuted = false,
   });
 
-  /// Rebuilds a [PerformanceArmSnapshot] from a decoded JSON map.
-  ///
   /// Presence-keyed, matching the session manifest's own migration style (no
   /// version `switch`): an absent `fxStagesVersion` marks a LEGACY snapshot —
   /// bus stages empty, every chain enabled — and the two bus fields are simply
@@ -210,6 +212,13 @@ class PerformanceArmSnapshot {
         limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
         latencyOffsetFrames: (json['latencyOffsetFrames'] as num).toInt(),
         tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
+        // Absent: a take recorded before the policy existed, which the
+        // engine captured after the master gain and limiter — that is
+        // Follow output volume, so the render replays them.
+        followOutput: json['followOutput'] as bool? ?? true,
+        captureBus: (json['captureBus'] as num?)?.toInt() ?? 0,
+        outputLevel: (json['outputLevel'] as num?)?.toDouble() ?? 1,
+        outputMuted: json['outputMuted'] as bool? ?? false,
         fxStagesVersion:
             (json['fxStagesVersion'] as num?)?.toInt() ?? legacyFxStagesVersion,
         tracks: [
@@ -231,6 +240,34 @@ class PerformanceArmSnapshot {
         masterChainEnabled: json['masterChainEnabled'] as bool? ?? true,
       );
 
+  /// This snapshot with the captured destination's facts filled in — the
+  /// three the engine only settles inside `le_perf_arm`, so the caller
+  /// records them after arming rather than from a pre-arm snapshot.
+  PerformanceArmSnapshot withCapture({
+    required int captureBus,
+    required double outputLevel,
+    required bool outputMuted,
+  }) => PerformanceArmSnapshot(
+    masterGain: masterGain,
+    limiterEnabled: limiterEnabled,
+    limiterCeiling: limiterCeiling,
+    latencyOffsetFrames: latencyOffsetFrames,
+    tempoBpm: tempoBpm,
+    tracks: tracks,
+    monitors: monitors,
+    trackChains: trackChains,
+    masterEffects: masterEffects,
+    masterChainEnabled: masterChainEnabled,
+    fxStagesVersion: fxStagesVersion,
+    followOutput: followOutput,
+    captureBus: captureBus,
+    outputLevel: outputLevel,
+    outputMuted: outputMuted,
+  );
+
+  /// Rebuilds a [PerformanceArmSnapshot] from a decoded JSON map.
+  ///
+
   /// The FX-stage schema revision this code writes (R20): the four-stage model
   /// with per-chain + per-slot enabled flags.
   static const int currentFxStagesVersion = 1;
@@ -251,6 +288,28 @@ class PerformanceArmSnapshot {
 
   /// The active device profile's latency offset in frames at arm time.
   final int latencyOffsetFrames;
+
+  /// The take's capture policy (slice 3b), frozen at arm: `false` (the
+  /// default) captured [captureBus] after its chain and before its level,
+  /// mute, the master gain and the limiter, so the offline render stops
+  /// there too; `true` (Follow output volume) captured the final output, so
+  /// the render replays that destination's level and mute, then the master
+  /// gain and limiter. A manifest without the key is a take from before the
+  /// policy existed, captured post-gain: it reads as `true`.
+  final bool followOutput;
+
+  /// The output destination the take captured — the first one with an
+  /// enabled channel at arm, which need not be destination 0. The render
+  /// replays this destination's level and mute, so a rig on the second pair
+  /// is rendered with the level the performer actually rode.
+  final int captureBus;
+
+  /// [captureBus]'s level at arm time, the starting point of the render's
+  /// replay under [followOutput].
+  final double outputLevel;
+
+  /// Whether [captureBus] was muted at arm time.
+  final bool outputMuted;
 
   /// Denominator-note beats per minute the engine read at the arm instant;
   /// `0` = unset, stored verbatim exactly like `Session.tempoBpm` (the same
@@ -298,6 +357,12 @@ class PerformanceArmSnapshot {
     'limiterCeiling': limiterCeiling,
     'latencyOffsetFrames': latencyOffsetFrames,
     'tempoBpm': tempoBpm,
+    // Always written: an absent key means a pre-policy take, which is the
+    // opposite default, so the two must never be confused.
+    'followOutput': followOutput,
+    if (captureBus != 0) 'captureBus': captureBus,
+    if (outputLevel != 1) 'outputLevel': outputLevel,
+    if (outputMuted) 'outputMuted': true,
     if (fxStagesVersion != legacyFxStagesVersion)
       'fxStagesVersion': fxStagesVersion,
     'tracks': [for (final t in tracks) t.toJson()],

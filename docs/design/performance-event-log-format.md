@@ -140,16 +140,22 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_SET_ONE_SHOT`                 | 47    | —           | No      | The setter changes no output at the moment it applies. Its audible consequence — the auto-stop at the track's own loop wrap (Free/Song, `advance_track_clock_frame`) — logs a **synthetic `LE_CMD_STOP`** (`arg_i` = channel) at the exact wrap frame (#420), so a replay stops the track where a listener heard it stop. No `LE_PLOG_RECORD_END` accompanies a wrap mid-overdub, matching a manual Stop on an OVERDUBBING track — `RECORD_END` means "left RECORDING", and the dub pass's end is logged by its `LE_PLOG_LAYER_RETIRED`. |
 | `LE_CMD_SET_TRACK_FX`                 | 49    | fx          | No      | No replay — manifest-only; stems stay per-stage dry-of-downstream (part 9), arm manifest carries track/master chains (part 3) |
 | `LE_CMD_SET_TRACK_FX_COUNT`           | 50    | fxcount     | No      | ” (same manifest-only verdict) |
-| `LE_CMD_SET_MASTER_FX`                | 51    | fx          | No      | ” |
-| `LE_CMD_SET_MASTER_FX_COUNT`          | 52    | fxcount     | No      | ” |
+| 51, 52 — *retired*                    | 51/52 | —           | —       | The Master insert family; slice 3b made the Master insert output bus 0's chain, so these were deleted and the codes left unallocated |
 | `LE_CMD_FINALIZE_TAKE`                | 56    | —           | No      | The `ARM`/`DISARM` rationale from the other side: finalize *intent*, and the transport fact it causes is what's logged — `LE_PLOG_RECORD_END` from the finalize it triggers, or `LE_PLOG_RECORD_ABORT` (unpaired, header version 3) when it cancels a count-in. A refused/no-op apply logs nothing: nothing audible happened. |
 | `LE_CMD_SET_LANE_PAN`                 | 58    | lanef       | Yes     | Lane pan (slice 3): the lane's recorded image plus the track's pan, as the engine holds it |
 | `LE_CMD_SET_TRACK_SOLO`               | 59    | generic     | Yes     | Track solo: an audibility gate, like mute — the offline render and the DAW export honour it |
 | `LE_CMD_SET_MONITOR_INPUT_PAN`        | 60    | lanef       | Yes     | Monitor pan (slice 3); the monitor tap is already post-pan, so the logged value is what was heard |
+| `LE_CMD_SET_OUTPUT_LEVEL`             | 61    | lanef       | Yes     | Output destination level (slice 3b). The capture tap is BEFORE it by default, so it changes nothing a default take contains; a Follow output take is captured after it, and `le_pr_render_master` replays it (filtered on the take's captured destination) so the render matches |
+| `LE_CMD_SET_OUTPUT_MUTE`              | 62    | lanef       | Yes     | Output destination mute — same rule as 61 |
+| `LE_CMD_SET_OUTPUT_MONO`              | 63    | lanef       | Yes     | Output destination Stereo/Mono. Logged for the record; the offline master accumulator is mono, so nothing replays it yet |
+| `LE_CMD_SET_OUTPUT_BALANCE`           | 64    | lanef       | Yes     | Output destination balance — same as 63 |
+| `LE_CMD_SET_OUTPUT_FX`                | 65    | fx          | No      | ” (the same manifest-only verdict as the track chains: an output chain is arm-manifest state, and `perf_render` replays nothing from this family) |
+| `LE_CMD_SET_OUTPUT_FX_COUNT`          | 66    | fxcount     | No      | ” |
+| `LE_CMD_CUT_SOUND`                    | 67    | —           | Yes     | Cut all sound (slice 3b). Logged for the record, and every track it stops ALSO logs a **synthetic `LE_CMD_STOP`** per channel (the `LE_CMD_SET_ONE_SHOT` precedent above), so a replay stops each track where the listener heard it stop without teaching the renderer this code |
 
-The track/master FX **param and enabled setters** (direct-atomic, no ring
+The track/output FX **param and enabled setters** (direct-atomic, no ring
 command) push nothing either — deliberately NOT mirroring the lane family's
-306/310/311 control-side events: the whole track/master chain state is
+306/310/311 control-side events: the whole track/output chain state is
 manifest-only per the same part-9 stems decision, so `perf_render` replays
 nothing from this family.
 

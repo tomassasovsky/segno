@@ -42,6 +42,13 @@ extern "C" {
  * transition, in milliseconds. Short enough to feel instant on a pedal stomp,
  * long enough to be click-free. */
 #define LE_FX_ENABLE_RAMP_MS 5
+/* Bypass tail drain bounds (le_fx_type_drains slots only): such a bypassed
+ * slot keeps running on a silent feed for at most LE_FX_DRAIN_MAX_S seconds,
+ * and settles as soon as its tail has stayed under LE_FX_DRAIN_FLOOR for
+ * LE_FX_DRAIN_QUIET_MS. */
+#define LE_FX_DRAIN_MAX_S 8
+#define LE_FX_DRAIN_QUIET_MS 50
+#define LE_FX_DRAIN_FLOOR 1e-4f
 
 /* Applies a lane/monitor chain to one stereo sample in place, in chain order.
  * Stageless: every active entry processes both channels on the lane's own `fx`
@@ -49,14 +56,27 @@ extern "C" {
  * per-buffer snapshot — [enabled] carries one EFFECTIVE bit per slot
  * (chain-enabled && slot-enabled; NULL = all enabled).
  *
- * An enabled transition crossfades dry/wet over ~LE_FX_ENABLE_RAMP_MS per
- * slot. Disable fades the slot's wet output — tail included — to dry, then
- * skips the slot entirely once settled (bit-exact passthrough, NO tail spill
- * on bypass [B7]: the tail never keeps ringing into the dry signal).
- * Re-enable resets a built-in slot's DSP state (le_fx_entry_reset + a
- * ring-content clear) at the edge, then ramps in from dry — stale tails
- * never sound. A hosted plugin slot keeps its own internal state (no flush
- * seam yet); its frozen tail fades back in. Audio thread
+ * An enabled transition ramps over ~LE_FX_ENABLE_RAMP_MS per slot, and how
+ * a disable behaves depends on whether the type carries a tail
+ * (le_fx_type_drains):
+ *  - A draining type (a ring-owning type with no reported latency: delay,
+ *    echo, reverb) has the ramp scale its FEED, so new audio moves to the
+ *    dry path while the tail already in its rings keeps sounding on a silent
+ *    feed. It drains until quiet (LE_FX_DRAIN_FLOOR for
+ *    LE_FX_DRAIN_QUIET_MS) or LE_FX_DRAIN_MAX_S, then is skipped entirely
+ *    (bit-exact passthrough). This is the accepted "bypass sends new audio
+ *    dry and drains old wet tails".
+ *  - Every other type crossfades dry/wet on the full feed and settles with
+ *    no drain: a kernel with no memory has no tail and a scaled feed would
+ *    overshoot both endpoints through its own nonlinearity; a
+ *    latency-bearing type (the octaver) holds a delayed copy of the dry
+ *    signal, which summed onto the direct path would double the audio for
+ *    the latency window; a hosted plugin owns its tail and has no flush
+ *    seam, so its frozen tail fades back in on re-enable.
+ * Re-enable from a SETTLED bypass resets a built-in slot's DSP state
+ * (le_fx_entry_reset + le_fx_entry_clear_rings) at the edge, then ramps in —
+ * stale tails never sound; a re-enable that lands mid-ramp or mid-drain keeps
+ * the state, because the slot never stopped sounding. Audio thread
  * (le_engine_process), the offline render (perf_render), and the FX chain
  * test. */
 void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
@@ -67,11 +87,25 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
  * phase, delay heads, one-pole memory, octaver runtime, reverb lines) so a
  * freshly engaged effect starts clean. Does NOT allocate/free the delay ring or
- * octaver heap buffers (the control thread owns those), and does NOT touch the
- * enable-crossfade runtime (a type change must not disturb an in-flight enable
- * ramp — see le_fx_enable_seed_settled). Runs on the audio thread
- * (SET_*_FX ring handlers) and the control thread (lane/monitor reset). */
+ * octaver heap buffers (the control thread owns those). Of the
+ * enable-crossfade runtime it clears only the DRAIN state: a retyped slot has
+ * no tail to drain, and a stale budget would let the next re-enable edge skip
+ * its clean reset and read the previous type's ring. The ramp itself is left
+ * alone (a type change must not disturb one in flight — see
+ * le_fx_enable_seed_settled). Runs on the audio thread (SET_*_FX ring
+ * handlers) and the control thread (lane/monitor reset). */
 void le_fx_entry_reset(le_fx_state* fx, int slot);
+
+/* Zeroes chain slot [slot]'s delay rings (both channels, [cap] floats each)
+ * when allocated: the audio-thread half of "start clean" that
+ * le_fx_entry_reset deliberately leaves out. One ring is cap floats, so
+ * callers space these (see LE_FX_ENABLE_CLEAR_SPACING). */
+void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap);
+
+/* Whether a bypassed slot of [type] drains its tail (a ring-owning type with
+ * no reported latency: delay, echo, reverb) rather than crossfading out
+ * (memoryless or latency-bearing types, and hosted plugins). */
+int le_fx_type_drains(int32_t type);
 
 /* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled so a
  * freshly created (zeroed) le_fx_state does not fade in on first use. Call

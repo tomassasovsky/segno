@@ -225,7 +225,7 @@ void main() {
       });
     });
 
-    group('Track-stage + Master insert chains (FX v3 part 1b)', () {
+    group('Track-stage + output bus chains', () {
       test('ring-backed setters require the engine to be running', () {
         expect(
           engine.setTrackFx(channel: 0, index: 0, type: TrackEffectType.drive),
@@ -240,12 +240,15 @@ void main() {
           EngineResult.notRunning,
         );
         expect(
-          engine.setMasterFx(index: 0, type: TrackEffectType.reverb),
+          engine.setOutputFx(bus: 0, index: 0, type: TrackEffectType.reverb),
           EngineResult.notRunning,
         );
-        expect(engine.setMasterFxCount(count: 1), EngineResult.notRunning);
         expect(
-          engine.setMasterFxParam(index: 0, param: 0, value: 0.5),
+          engine.setOutputFxCount(bus: 0, count: 1),
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setOutputFxParam(bus: 0, index: 0, param: 0, value: 0.5),
           EngineResult.notRunning,
         );
 
@@ -256,10 +259,10 @@ void main() {
         );
         expect(engine.setTrackFxCount(channel: 0, count: 1), EngineResult.ok);
         expect(
-          engine.setMasterFx(index: 0, type: TrackEffectType.reverb),
+          engine.setOutputFx(bus: 0, index: 0, type: TrackEffectType.reverb),
           EngineResult.ok,
         );
-        expect(engine.setMasterFxCount(count: 1), EngineResult.ok);
+        expect(engine.setOutputFxCount(bus: 0, count: 1), EngineResult.ok);
       });
 
       test('records enable calls, working while stopped', () {
@@ -273,11 +276,11 @@ void main() {
           EngineResult.ok,
         );
         expect(
-          engine.setMasterFxEnabled(index: 3, enabled: false),
+          engine.setOutputFxEnabled(bus: 0, index: 3, enabled: false),
           EngineResult.ok,
         );
         expect(
-          engine.setMasterFxChainEnabled(enabled: true),
+          engine.setOutputFxChainEnabled(bus: 0, enabled: true),
           EngineResult.ok,
         );
 
@@ -287,8 +290,10 @@ void main() {
         expect(engine.trackFxChainEnabledCalls, [
           (channel: 1, enabled: false),
         ]);
-        expect(engine.masterFxEnabledCalls, [(index: 3, enabled: false)]);
-        expect(engine.masterFxChainEnabledCalls, [true]);
+        expect(engine.outputFxEnabledCalls, [
+          (bus: 0, index: 3, enabled: false),
+        ]);
+        expect(engine.outputFxChainEnabledCalls, [(bus: 0, enabled: true)]);
       });
 
       test('rejects out-of-range enable arguments, recording nothing', () {
@@ -305,12 +310,12 @@ void main() {
           EngineResult.invalid,
         );
         expect(
-          engine.setMasterFxEnabled(index: -1, enabled: false),
+          engine.setOutputFxEnabled(bus: 0, index: -1, enabled: false),
           EngineResult.invalid,
         );
         expect(engine.trackFxEnabledCalls, isEmpty);
         expect(engine.trackFxChainEnabledCalls, isEmpty);
-        expect(engine.masterFxEnabledCalls, isEmpty);
+        expect(engine.outputFxEnabledCalls, isEmpty);
       });
     });
 
@@ -532,6 +537,117 @@ void main() {
         expect(snapshot.outputPeaks, everyElement(0));
         expect(snapshot.tracks[0].peakL, 0);
         expect(snapshot.tracks[0].peakR, 0);
+      });
+
+      test('the output bus setters are direct stores that clamp, and the '
+          'snapshot publishes one entry per destination (slice 3b)', () {
+        // Direct stores: they answer while stopped. The values themselves do
+        // not survive the start — a (re)start resets every destination, like
+        // the native configure, and the repository is what replays them.
+        expect(engine.setOutputLevel(bus: 1, level: 2), EngineResult.ok);
+        expect(engine.snapshot().outputBusCount, 0, reason: 'no device');
+        expect(engine.snapshot().outputLevels, isEmpty);
+
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().outputLevels[1], 1, reason: 'reset by start');
+
+        engine
+          ..setOutputLevel(bus: 1, level: 2)
+          ..setOutputMute(bus: 0, muted: true)
+          ..setOutputMono(bus: 1, mono: true)
+          ..setOutputBalance(bus: 0, balance: -3)
+          ..setOutputLevel(bus: 0, level: double.nan);
+        final snapshot = engine.snapshot();
+        expect(snapshot.outputBusCount, (snapshot.outputChannels + 1) ~/ 2);
+        expect(snapshot.outputLevels[1], 1, reason: 'clamped from 2');
+        expect(snapshot.outputLevels[0], 0, reason: 'NaN lands on silence');
+        expect(snapshot.outputMuted[0], isTrue);
+        expect(snapshot.outputMono[1], isTrue);
+        expect(snapshot.outputBalances[0], -1, reason: 'clamped from -3');
+      });
+
+      test('the output bus setters reject a bus the engine cannot address', () {
+        expect(
+          engine.setOutputLevel(bus: -1, level: 1),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setOutputMute(bus: kMaxOutputBuses, muted: true),
+          EngineResult.invalid,
+        );
+        expect(engine.setOutputMono(bus: 99, mono: true), EngineResult.invalid);
+        expect(
+          engine.setOutputBalance(bus: -5, balance: 0),
+          EngineResult.invalid,
+        );
+      });
+
+      test('cutSound needs a running engine and advances tailResetRev', () {
+        expect(engine.cutSound(), EngineResult.notRunning);
+        engine.start(engine.defaultConfig);
+        final before = engine.snapshot().tailResetRev;
+        expect(engine.cutSound(), EngineResult.ok);
+        expect(engine.cutSoundCalls, 1);
+        expect(engine.snapshot().tailResetRev, before + 1);
+      });
+
+      test('the snapshot names the destination a capture would read', () {
+        expect(engine.snapshot().perfCaptureBus, -1, reason: 'no device');
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().perfCaptureBus, 0);
+      });
+
+      test('the output chain setters are per destination and reject a bus '
+          'the engine cannot address', () {
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setOutputFxEnabled(bus: 1, index: 0, enabled: false),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setOutputFxEnabled(
+            bus: kMaxOutputBuses,
+            index: 0,
+            enabled: false,
+          ),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setOutputFxChainEnabled(bus: -1, enabled: false),
+          EngineResult.invalid,
+        );
+        expect(engine.outputFxEnabledCalls, [
+          (bus: 1, index: 0, enabled: false),
+        ]);
+      });
+
+      test('the capture policy is frozen per take: the snapshot reports the '
+          "armed take's policy while armed and the pending one otherwise", () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().perfFollowOutput, isFalse);
+        expect(engine.setPerfFollowOutput(follow: true), EngineResult.ok);
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        expect(engine.perfArm('take'), EngineResult.ok);
+        engine.setPerfFollowOutput(follow: false); // too late for this take
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        engine.perfDisarm();
+        expect(engine.snapshot().perfFollowOutput, isFalse);
+      });
+
+      test('the capture policy is a preference: it survives a restart, '
+          'unlike the destinations a (re)start resets', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setPerfFollowOutput(follow: true)
+          ..setOutputLevel(bus: 0, level: 0.5)
+          ..setOutputMute(bus: 0, muted: true);
+        expect(engine.snapshot().outputLevels[0], 0.5);
+        engine
+          ..stop()
+          ..start(engine.defaultConfig);
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        expect(engine.snapshot().outputLevels[0], 1);
+        expect(engine.snapshot().outputMuted[0], isFalse);
       });
     });
 

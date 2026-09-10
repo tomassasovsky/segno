@@ -471,6 +471,12 @@ void main() {
           pan: {2: -0.5},
           pairs: {0: 0.2},
         ),
+        outputSetup: SessionOutputSetup(
+          level: {1: 0.5},
+          muted: {0: true},
+          mono: {1: true},
+          balance: {0: -0.25},
+        ),
       );
 
       test('round-trips every pan, a lane balance of 0 and the input setup '
@@ -486,6 +492,10 @@ void main() {
         expect(loaded.inputSetup.trimDb, {0: -6.0});
         expect(loaded.inputSetup.pan, {2: -0.5});
         expect(loaded.inputSetup.pairs, {0: 0.2});
+        expect(loaded.outputSetup.level, {1: 0.5});
+        expect(loaded.outputSetup.muted, {0: true});
+        expect(loaded.outputSetup.mono, {1: true});
+        expect(loaded.outputSetup.balance, {0: -0.25});
       });
 
       test('writes the documented shape: a pan only where it is off centre, '
@@ -509,6 +519,12 @@ void main() {
           'pan': {'2': -0.5},
           'pairs': {'0': 0.2},
         });
+        expect(json['outputSetup'], {
+          'level': {'1': 0.5},
+          'muted': {'0': true},
+          'mono': {'1': true},
+          'balance': {'0': -0.25},
+        });
       });
 
       test('a monitor pan an earlier slice-3 build wrote is ignored on '
@@ -529,6 +545,7 @@ void main() {
         () {
           final json = session.toJson();
           expect(json.containsKey('inputSetup'), isFalse);
+          expect(json.containsKey('outputSetup'), isFalse);
           for (final track in json['tracks'] as List) {
             final map = track as Map<String, dynamic>;
             expect(map.containsKey('pan'), isFalse);
@@ -556,8 +573,44 @@ void main() {
           expect(loaded.tracks[0].lanes[1].balance, 1);
           expect(loaded.inputSetup, const SessionInputSetup());
           expect(loaded.inputSetup.isEmpty, isTrue);
+          expect(loaded.outputSetup, const SessionOutputSetup());
+          expect(loaded.outputSetup.isEmpty, isTrue);
         },
       );
+
+      test('a partial output setup (slice 3b) leaves its empty maps out, '
+          'reads them back empty, and takes part in equality', () {
+        const setup = SessionOutputSetup(muted: {1: true});
+        expect(setup.toJson(), {
+          'muted': {'1': true},
+        });
+        final loaded = SessionOutputSetup.fromJson(
+          jsonDecode(jsonEncode(setup.toJson())) as Map<String, dynamic>,
+        );
+        expect(loaded, setup);
+        expect(loaded.level, isEmpty);
+        expect(loaded.mono, isEmpty);
+        expect(loaded.balance, isEmpty);
+        expect(SessionOutputSetup.fromJson(null), const SessionOutputSetup());
+        // A flag written as anything but `true` reads as off.
+        expect(
+          SessionOutputSetup.fromJson(const {
+            'muted': {'0': 'yes'},
+          }).muted,
+          {0: false},
+        );
+        expect(
+          mixed,
+          isNot(
+            equals(Session.fromJson(mixed.toJson()..remove('outputSetup'))),
+          ),
+        );
+        const a = SessionOutputSetup(level: {0: 0.5, 1: 0.25});
+        const b = SessionOutputSetup(level: {1: 0.25, 0: 0.5});
+        expect(a, b);
+        expect(a.hashCode, b.hashCode);
+        expect(a, isNot(equals(const SessionOutputSetup(level: {0: 0.5}))));
+      });
 
       test('a partial input setup leaves its empty maps out and reads them '
           'back empty', () {

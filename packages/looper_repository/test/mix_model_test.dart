@@ -292,7 +292,8 @@ void main() {
       final repo = start()
         ..setTrackPan(0.9, channel: 1)
         ..setTrackSolo(channel: 1, solo: true)
-        ..setInputPan(input: 1, pan: 0.2);
+        ..setInputPan(input: 1, pan: 0.2)
+        ..setOutputMute(bus: 0, muted: true);
       await repo.applySession(
         const SessionRig(
           baseLengthFrames: 4,
@@ -314,8 +315,16 @@ void main() {
             ),
           ],
           inputSetup: InputSetup(trimDb: {0: -3}, pairs: {0: 0.5}),
+          outputSetup: OutputSetup(buses: {1: OutputBus(level: 0.5)}),
         ),
         clearPollInterval: Duration.zero,
+      );
+      // The output setup is the rig's: bus 1's level in, the old mute gone.
+      expect(engine.outputLevel[1], 0.5);
+      expect(engine.outputMuted[0], isFalse);
+      expect(
+        repo.outputSetup,
+        const OutputSetup(buses: {1: OutputBus(level: 0.5)}),
       );
       // The lane's saved image plus the restored track pan.
       expect(engine.lanePan[(0, 0)], -0.75);
@@ -386,6 +395,136 @@ void main() {
         MixTarget.fromJson({'target': 'trackPan', 'index': 2, 'extra': 1}),
         const MixTarget.trackPan(2),
       );
+    });
+  });
+
+  group('output setup (slice 3b)', () {
+    test('pushes only the edited fact, clamps and projects', () {
+      final repo = start()
+        ..setOutputLevel(bus: 1, level: 2)
+        ..setOutputBalance(bus: 1, balance: -3);
+      expect(engine.outputLevel[1], 1.0);
+      expect(engine.outputBalance[1], -1.0);
+      // A level ride must not re-post the mute and Mono behind it.
+      expect(engine.outputMuted.containsKey(1), isFalse);
+      expect(engine.outputMono.containsKey(1), isFalse);
+      expect(engine.outputLevel.containsKey(0), isFalse);
+      expect(repo.state.outputSetup.of(1), const OutputBus(balance: -1));
+      repo
+        ..setOutputMute(bus: 0, muted: true)
+        ..setOutputMono(bus: 0, mono: true);
+      expect(engine.outputMuted[0], isTrue);
+      expect(engine.outputMono[0], isTrue);
+      expect(repo.outputSetup.buses.keys, {0, 1});
+      // Back to the defaults: the entry goes.
+      repo
+        ..setOutputBalance(bus: 1, balance: 0)
+        ..setOutputMute(bus: 0, muted: false)
+        ..setOutputMono(bus: 0, mono: false);
+      expect(repo.outputSetup, const OutputSetup());
+      expect(engine.outputBalance[1], 0.0);
+    });
+
+    test('rejects a destination the engine cannot address', () {
+      final repo = start();
+      expect(
+        repo.setOutputLevel(bus: kMaxOutputBuses, level: 0.5),
+        EngineResult.invalid,
+      );
+      expect(repo.setOutputMute(bus: -1, muted: true), EngineResult.invalid);
+      expect(engine.outputLevel, isEmpty);
+    });
+
+    test('is held while stopped and replayed on start', () {
+      final repo = LooperRepository(engine: engine, ticker: ticker.stream)
+        ..setOutputLevel(bus: 1, level: 0.5)
+        ..setOutputMute(bus: 0, muted: true);
+      addTearDown(repo.dispose);
+      expect(engine.outputLevel, isEmpty);
+      expect(repo.outputSetup.of(1).level, 0.5);
+      repo.startEngine(const EngineConfig());
+      expect(engine.outputLevel[1], 0.5);
+      expect(engine.outputMuted[0], isTrue);
+      expect(engine.outputMuted[1], isFalse);
+    });
+
+    test('setOutputSetup replaces the whole setup, resetting the '
+        'destinations only the old one named', () {
+      final repo = start()..setOutputMono(bus: 2, mono: true);
+      engine.calls.clear();
+      repo.setOutputSetup(const OutputSetup(buses: {1: OutputBus(level: 0.5)}));
+      expect(engine.outputLevel[1], 0.5);
+      expect(engine.outputMono[2], isFalse);
+      // The whole-setup path pushes every fact of both setups' destinations,
+      // so the one the new setup drops goes back to its defaults.
+      expect(engine.outputLevel[2], 1.0);
+      expect(engine.calls.where((c) => c == 'setOutputLevel'), hasLength(2));
+      expect(repo.state.outputSetup.buses.keys, {1});
+    });
+
+    test('projects the destination count and the tail revision from the '
+        'engine', () {
+      final repo = start();
+      engine.nextSnapshot = EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 3,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        outputBusCount: 2,
+        tailResetRev: 3,
+        tracks: [for (var i = 0; i < 2; i++) const TrackSnapshot.empty()],
+      );
+      ticker.add(null);
+      expect(repo.state.outputBusCount, 2);
+      expect(repo.state.tailResetRev, 3);
+    });
+  });
+
+  group('OutputSetup maps (slice 3b)', () {
+    test('round-trip through the one-map-per-fact form drops the '
+        'destinations at their defaults', () {
+      const setup = OutputSetup(
+        buses: {
+          1: OutputBus(level: 0.5, muted: true),
+          0: OutputBus(mono: true, balance: -0.25),
+        },
+      );
+      final maps = setup.toMaps();
+      expect(maps.level, {1: 0.5});
+      expect(maps.muted, {1: true});
+      expect(maps.mono, {0: true});
+      expect(maps.balance, {0: -0.25});
+      expect(
+        OutputSetup.fromMaps(
+          level: maps.level,
+          muted: maps.muted,
+          mono: maps.mono,
+          balance: maps.balance,
+        ),
+        setup,
+      );
+      expect(const OutputSetup().toMaps().level, isEmpty);
+      expect(OutputSetup.fromMaps(), const OutputSetup());
+    });
+  });
+
+  group('cut all sound (slice 3b)', () {
+    test('reaches the engine while running and is a no-op while stopped', () {
+      final stopped = LooperRepository(engine: engine, ticker: ticker.stream);
+      addTearDown(stopped.dispose);
+      expect(stopped.cutSound(), EngineResult.ok);
+      expect(engine.cutSoundCalls, 0);
+      final repo = start();
+      expect(repo.cutSound(), EngineResult.ok);
+      expect(engine.cutSoundCalls, 1);
     });
   });
 

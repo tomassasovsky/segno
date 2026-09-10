@@ -121,6 +121,10 @@ for session saves).
   "limiterCeiling": 0.99,
   "latencyOffsetFrames": 128,
   "tempoBpm": 96.0,
+  "followOutput": false,
+  "captureBus": 0,
+  "outputLevel": 1.0,
+  "outputMuted": false,
   "fxStagesVersion": 1,
   "tracks": [ /* see below */ ],
   "monitors": [
@@ -141,20 +145,24 @@ for session saves).
 | `masterGain` | Master output gain at arm time. |
 | `limiterOn` / `limiterCeiling` | Master peak limiter state at arm time. |
 | `latencyOffsetFrames` | The active device profile's record-offset latency compensation. |
+| `followOutput` | The take's capture policy (slice 3b), frozen at arm. `false`: the capture was tapped after the captured destination's chain and BEFORE its level, Mono/balance, mute, the master gain and the limiter, so the render stops there too. `true` (Follow output volume): the capture was the final output, so the render replays that destination's level and mute, then the master gain and limiter. **Always written.** **Absent = a take from before the policy existed**, which was captured post-gain: it reads as `true`, or every such bundle on disk would render without its gain. |
+| `captureBus` | The output destination the take captured — the first one with an enabled channel at arm, which need not be destination 0. Written only when non-zero. The render replays THIS destination's level and mute, so a rig on the second pair is rendered with the level the performer rode. |
+| `outputLevel` / `outputMuted` | `captureBus`'s level and mute at arm time, the starting point of that replay. Written only when off their defaults (unity, unmuted). |
 | `tempoBpm` | The engine tempo at the arm instant, verbatim (`0` = unset, the same sentinel `session.json`'s `tempoBpm` uses; absent = written before the field existed — both read as "no tempo evidence"). The **crash-salvage fallback** for a DAW export's tempo, not the authoritative value: D6's tempo lock only engages once grid content exists, so a tempo dialed in (or derived by the first loop) after an arm-over-empty-grid is only knowable at disarm — see `disarmSnapshot.tempoBpm`. |
 | `fxStagesVersion` | FX-stage schema revision (FX v3, R20): `1` = the four-stage model below. **Absent = a legacy snapshot** written before those fields existed; see "FX stages" below. |
 | `tracks` | One entry per **non-empty** track (empty tracks are omitted); carries the **Loop** stage, per lane. |
 | `monitors` | The **Input** stage: one entry per hardware input the caller supplied chain/routing state for. Each entry's `chainEnabled` is that monitor chain's bypass flag, written only when `false` (absent = engaged, or legacy — see the marker below); `enabled` beside it is the input's own monitor gate, not an FX flag. |
 | `trackChains` | The **Track** stage: one entry per track channel with bus FX or a non-default chain flag. Omitted when there are none. |
-| `masterEffects` / `masterChainEnabled` | The **Master** insert's entries and chain flag. `masterEffects` is omitted when empty; `masterChainEnabled` is omitted while engaged (i.e. absent = `true`). |
+| `masterEffects` / `masterChainEnabled` | The **Master** insert's entries and chain flag — since slice 3b that insert is output destination 0's chain, and the field names are kept as the manifest's wire form. `masterEffects` is omitted when empty; `masterChainEnabled` is omitted while engaged (i.e. absent = `true`). Chains on the other destinations are not recorded yet; the offline render replays no output chain. |
 
 ### FX stages and the presence-keyed version marker
 
 The snapshot records all four FX stages of the v3 model, each with its
 chain-level bypass flag alongside its entries (which carry their own `enabled`
 bits): Input (`monitors[]`), Loop (`tracks[].lanes[]`), Track (`trackChains[]`)
-and Master (`masterEffects`/`masterChainEnabled`). A replay seeds arm-time
-bypass state from these rather than assuming everything was audible (R3).
+and Master (`masterEffects`/`masterChainEnabled`, output destination 0's
+chain since slice 3b). A replay seeds arm-time bypass state from these rather
+than assuming everything was audible (R3).
 
 Every flag is written **only when disabled**, so a rig with no bypassed chain
 produces the same bytes a pre-FX-v3 build did. `fxStagesVersion` is what makes

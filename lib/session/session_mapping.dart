@@ -112,8 +112,32 @@ SessionLoopSettings loopSettingsFromLooper(LooperRepository looper) {
       pan: setup.pan,
       pairs: setup.pairs,
     ),
+    // The output setup (slice 3b): the same one-map-per-fact shape the
+    // settings layer stores, so the domain owns the projection both ways.
+    outputSetup: _sessionOutputSetup(state.outputSetup),
   );
 }
+
+/// The manifest form of the looper domain's [setup].
+SessionOutputSetup _sessionOutputSetup(OutputSetup setup) {
+  final maps = setup.toMaps();
+  return SessionOutputSetup(
+    level: maps.level,
+    muted: maps.muted,
+    mono: maps.mono,
+    balance: maps.balance,
+  );
+}
+
+/// The looper-domain output setup of a manifest's [setup]: one [OutputBus]
+/// per destination any of its four maps names.
+OutputSetup outputSetupFromSession(SessionOutputSetup setup) =>
+    OutputSetup.fromMaps(
+      level: setup.level,
+      muted: setup.muted,
+      mono: setup.mono,
+      balance: setup.balance,
+    );
 
 /// The Master insert as an envelope string, or the manifest's own "no chain"
 /// spelling (`''`) when the rig has no Master state at all — so a default rig
@@ -227,6 +251,8 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
     pan: bundle.session.inputSetup.pan,
     pairs: bundle.session.inputSetup.pairs,
   ),
+  // The output setup (slice 3b), session-owned like the input setup.
+  outputSetup: outputSetupFromSession(bundle.session.outputSetup),
 );
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage

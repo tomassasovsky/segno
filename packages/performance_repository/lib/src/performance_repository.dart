@@ -250,6 +250,14 @@ class PerformanceRepository {
     if (!_statusController.isClosed) _statusController.add(status);
   }
 
+  /// Sets the capture policy the next [arm] freezes for its take (accepted
+  /// design, Performance recording): `false` (the default) leaves the final
+  /// output volume and mute out of the take; `true` (Follow output volume)
+  /// records what the output jacks carry. A running take keeps the policy it
+  /// was armed with.
+  EngineResult setFollowOutput({required bool follow}) =>
+      _engine.setPerfFollowOutput(follow: follow);
+
   /// Arms performance-recording capture: resolves a new collision-free
   /// `{exportsRoot}/perf-YYYYMMDD-HHMMSS/` bundle directory, takes the
   /// arm-time settled-lane snapshot (mid-overdub lanes marked deferred, never
@@ -310,6 +318,10 @@ class PerformanceRepository {
       limiterEnabled: chains.limiterEnabled,
       limiterCeiling: chains.limiterCeiling,
       latencyOffsetFrames: snapshot.recordOffsetFrames,
+      // The capture policy (slice 3b) the engine freezes for this take. The
+      // destination it captures and that destination's facts are filled in
+      // after the arm below, from the engine's own frozen choice.
+      followOutput: snapshot.perfFollowOutput,
       // The engine tempo at the arm instant, verbatim (0 = unset, matching
       // the session manifest's own sentinel). The crash-salvage fallback
       // only — the disarm snapshot re-reads it authoritatively, because
@@ -351,8 +363,33 @@ class PerformanceRepository {
       return result;
     }
 
+    // The captured destination and its facts, read AFTER the arm: the
+    // engine picks the destination inside le_perf_arm from the output gate
+    // as it stands then, and everything above ran before that — lane export
+    // and manifest I/O, the same unbounded gap that made the old
+    // `clockFrame` anchor race-stale (#262). Taking it from the pre-arm
+    // snapshot would let the manifest name one destination while the take
+    // captured another, and the offline render replays the level rides of
+    // whichever the manifest names.
+    final armed = _engine.snapshot();
+    final captureBus = armed.perfCaptureBus < 0 ? 0 : armed.perfCaptureBus;
+    final finalArm = armSnapshot.withCapture(
+      captureBus: captureBus,
+      outputLevel: captureBus < armed.outputLevels.length
+          ? armed.outputLevels[captureBus]
+          : 1,
+      outputMuted:
+          captureBus < armed.outputMuted.length &&
+          armed.outputMuted[captureBus],
+    );
+    // Rewritten so the crash-salvage copy on disk carries them too; the
+    // pre-arm write above is what survives a crash between the two.
+    await File(
+      '$dir/$_armSnapshotFileName',
+    ).writeAsString(jsonEncode(finalArm.toJson()));
+
     _armedDir = dir;
-    _armSnapshot = armSnapshot;
+    _armSnapshot = finalArm;
     _armedAt = _now();
     _setStatus(PerformanceCaptureStatus.armed);
     return EngineResult.ok;

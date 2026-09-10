@@ -314,6 +314,18 @@ typedef struct le_pr_manifest {
   float arm_master_gain;
   int32_t arm_limiter_on;
   float arm_limiter_ceiling;
+  /* armSnapshot.followOutput (slice 3b): the take's capture policy. 0
+   * captured the capture bus after its chain and before its level, mute,
+   * the master gain and the limiter, so the render stops there too; 1
+   * replays that bus's level and mute, then the master gain and limiter. A
+   * manifest without the key is a take captured before the policy existed,
+   * post-gain: it reads as 1. */
+  int32_t arm_follow_output;
+  /* armSnapshot.captureBus (default 0) and its outputLevel / outputMuted at
+   * arm, the replay's starting point under followOutput. */
+  int32_t arm_capture_bus;
+  float arm_output_level;
+  int32_t arm_output_muted;
 } le_pr_manifest;
 
 static int le_pr_load_manifest(const char* dir, char** out_text,
@@ -363,6 +375,14 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
       arm != NULL ? le_json_get(arm, "limiterOn") : NULL, 0);
   out->arm_limiter_ceiling = (float)le_json_number(
       arm != NULL ? le_json_get(arm, "limiterCeiling") : NULL, 0.99);
+  out->arm_follow_output = le_json_bool(
+      arm != NULL ? le_json_get(arm, "followOutput") : NULL, 1);
+  out->arm_capture_bus = (int32_t)le_json_number(
+      arm != NULL ? le_json_get(arm, "captureBus") : NULL, 0);
+  out->arm_output_level = (float)le_json_number(
+      arm != NULL ? le_json_get(arm, "outputLevel") : NULL, 1.0);
+  out->arm_output_muted = le_json_bool(
+      arm != NULL ? le_json_get(arm, "outputMuted") : NULL, 0);
 
   *out_text = text;
   *out_root = root;
@@ -1233,6 +1253,12 @@ static void le_pr_render_master(const le_pr_manifest* m,
   float gain = m->arm_master_gain;
   int limiter_on = m->arm_limiter_on;
   float ceiling = m->arm_limiter_ceiling;
+  /* The capture bus's level and mute (slice 3b) sit before the master
+   * gain, exactly as output_bus_frame orders them, from the arm facts
+   * onward. Mono and balance have no meaning over this mono accumulator. */
+  const int32_t bus = m->arm_capture_bus;
+  float bus_level = m->arm_output_level;
+  int bus_muted = m->arm_output_muted;
   float lim_gain = 1.0f;
   const int sr = m->sample_rate > 0 ? m->sample_rate : 48000;
   float lim_release = 1.0f / (0.05f * (float)sr);
@@ -1247,11 +1273,17 @@ static void le_pr_render_master(const le_pr_manifest* m,
       } else if (cmd->code == LE_PLOG_SET_LIMITER) {
         limiter_on = cmd->arg_i != 0;
         ceiling = cmd->arg_f;
+      } else if (cmd->code == LE_CMD_SET_OUTPUT_LEVEL &&
+                 cmd->lanef.channel == bus) {
+        bus_level = cmd->lanef.value;
+      } else if (cmd->code == LE_CMD_SET_OUTPUT_MUTE &&
+                 cmd->lanef.channel == bus) {
+        bus_muted = cmd->lanef.value != 0.0f;
       }
       log_index++;
     }
 
-    float s = master[f] * gain;
+    float s = bus_muted ? 0.0f : master[f] * bus_level * gain;
     if (limiter_on) {
       const float peak = fabsf(s);
       float target = 1.0f;
@@ -1394,7 +1426,10 @@ static void le_pr_worker_main(void* arg) {
 
     if (master_accum != NULL &&
         atomic_load_explicit(&r->running, memory_order_acquire)) {
-      le_pr_render_master(&manifest, log, log_count, master_accum);
+      /* The default take stops at the pre-level tap: nothing to replay. */
+      if (manifest.arm_follow_output) {
+        le_pr_render_master(&manifest, log, log_count, master_accum);
+      }
       char master_path[LE_PR_FULL_PATH_MAX];
       snprintf(master_path, sizeof(master_path), "%s/master.wav", wet_dir);
       le_pr_write_wav_mono(master_path, master_accum,

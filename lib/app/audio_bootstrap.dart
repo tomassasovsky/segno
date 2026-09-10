@@ -395,6 +395,24 @@ Future<AutoStartResult> tryAutoStartEngine({
     ),
   );
 
+  // Restore the output setup (slice 3b) the same way: one projection, keyed
+  // to the open device, bounded by its destinations (one per stereo pair of
+  // outputs) or the engine's ceiling when the status reports none.
+  final outputSetup = await settings.loadOutputSetup(
+    device: status.deviceName,
+    busCount: status.outputChannels > 0
+        ? (status.outputChannels + 1) ~/ 2
+        : kMaxOutputBuses,
+  );
+  repository.setOutputSetup(
+    OutputSetup.fromMaps(
+      level: outputSetup.level,
+      muted: outputSetup.muted,
+      mono: outputSetup.mono,
+      balance: outputSetup.balance,
+    ),
+  );
+
   // Per-input live monitors are restored by MonitorCubit.load() (the shell
   // creates and loads it on every launch), so they are not re-applied here.
   final pinned = playbackId.isNotEmpty || captureId.isNotEmpty;

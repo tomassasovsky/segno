@@ -587,44 +587,94 @@ abstract interface class MasterBusControl {
   /// default; the current gate is in [EngineSnapshot.outputEnabledMask].
   EngineResult setOutputEnabled({required int output, required bool enabled});
 
-  // ---- Master insert chain (FX v3 part 1b) ----
+  // ---- Output buses (slice 3b) ----
   //
-  // One engine-level chain on the summed track mix, before master
-  // gain/limiter. Live monitor signals are summed AFTER it and stay uncolored
-  // (live-through sound stays predictable); gain + limiter still apply to
-  // both, unchanged. While EMPTY (the default) the output is bit-identical to
-  // the chain never having existed. FX kernels are strict stereo: with more
-  // than two outputs the chain processes the first ENABLED output pair and
-  // passes the rest through bit-exact dry; a mono output processes as l == r.
+  // Output bus [bus] is the stereo pair of hardware outputs `2 * bus` and
+  // `2 * bus + 1` (a device with an odd channel count has a single-channel
+  // last bus). Every source routed to those outputs (tracks, monitors, the
+  // click) sums in first; then the bus runs its chain, its level, Mono or
+  // balance, and its mute, before the global master gain and limiter. The
+  // facts are published in [EngineSnapshot.outputLevels] and siblings, one
+  // entry per bus the open device has ([EngineSnapshot.outputBusCount]).
+  // Every setter takes effect on the next block, works while stopped, and
+  // is reset to its default by a (re)start. [EngineResult.invalid] for a bus
+  // outside `0..kMaxOutputBuses-1`.
 
-  /// Sets Master insert chain entry [index] (`0..kTrackEffectMax-1`) to
+  /// Sets output bus [bus]'s level (`0..1`, clamped, default `1`). Retained
+  /// behind a mute.
+  EngineResult setOutputLevel({required int bus, required double level});
+
+  /// Mutes/unmutes output bus [bus] (default unmuted). The level and
+  /// balance are retained.
+  EngineResult setOutputMute({required int bus, required bool muted});
+
+  /// Puts output bus [bus] in Mono (the averaged mix on both jacks, balance
+  /// ignored while Mono) or back in Stereo (the retained balance applies).
+  EngineResult setOutputMono({required int bus, required bool mono});
+
+  /// Sets output bus [bus]'s balance (`-1..1`, clamped, default centre):
+  /// the unity-centre law of [EngineRouting.setLanePan], the far jack exactly
+  /// silent at full.
+  EngineResult setOutputBalance({required int bus, required double balance});
+
+  /// Cut all sound: every playing, recording or overdubbing track stops (a
+  /// take in progress finalizes as a Stop would), a running count-in is
+  /// cancelled, and every built-in chain's tail on every stage is cleared
+  /// while the chain settings stay (a hosted plugin owns its own tail and
+  /// keeps it). Monitors keep their preferences. Bumps
+  /// [EngineSnapshot.tailResetRev].
+  EngineResult cutSound();
+
+  // ---- Output bus chains (slice 3b) ----
+  //
+  // One chain per destination, on everything summed onto that pair (tracks,
+  // monitors and the click), run before the bus's level and the global
+  // gain/limiter. Bus 0's chain is what the app calls the Master insert.
+  // While EMPTY (the default) a bus is bit-identical to its chain never
+  // having existed. FX kernels are strict stereo; a single-jack last bus
+  // processes as l == r.
+
+  /// Sets output bus [bus]'s chain entry [index] (`0..kTrackEffectMax-1`) to
   /// [type]. Changing the type resets that entry's DSP state and seeds the
-  /// type's default parameters; use [setMasterFxCount] to control how many
+  /// type's default parameters; use [setOutputFxCount] to control how many
   /// entries are active.
-  EngineResult setMasterFx({required int index, required TrackEffectType type});
+  EngineResult setOutputFx({
+    required int bus,
+    required int index,
+    required TrackEffectType type,
+  });
 
-  /// Sets the Master insert active chain length to [count]
+  /// Sets output bus [bus]'s active chain length to [count]
   /// (`0..kTrackEffectMax`). Count 0 (empty) restores bit-identical output.
-  EngineResult setMasterFxCount({required int count});
+  EngineResult setOutputFxCount({required int bus, required int count});
 
-  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of Master insert chain
-  /// entry [index] to [value] (clamped to `0..1`). A direct atomic publish —
-  /// works whether or not the device is running.
-  EngineResult setMasterFxParam({
+  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of output bus [bus]'s
+  /// chain entry [index] to [value] (clamped to `0..1`). A direct atomic
+  /// publish — works whether or not the device is running.
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   });
 
-  /// Enables/disables Master insert chain entry [index] — same contract as
-  /// [EffectsControl.setTrackFxEnabled] (works while stopped, click-free
-  /// ramp, no tail spill, DSP reset on re-enable, default enabled).
-  EngineResult setMasterFxEnabled({required int index, required bool enabled});
+  /// Enables/disables output bus [bus]'s chain entry [index] — same contract
+  /// as [EffectsControl.setTrackFxEnabled] (works while stopped, click-free
+  /// ramp, the tail drains rather than cutting, DSP reset on re-enable from
+  /// a settled bypass, default enabled).
+  EngineResult setOutputFxEnabled({
+    required int bus,
+    required int index,
+    required bool enabled,
+  });
 
-  /// Enables/disables the WHOLE Master insert chain in one atomic flip
+  /// Enables/disables the WHOLE chain of output bus [bus] in one atomic flip
   /// without touching the per-entry flags — same contract as
   /// [EffectsControl.setTrackFxChainEnabled]. Default enabled.
-  EngineResult setMasterFxChainEnabled({required bool enabled});
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  });
 }
 
 /// Per-lane (record-route) effect chains.
@@ -1081,6 +1131,18 @@ abstract interface class EnginePerformanceCapture {
   /// started (e.g. the directory could not be created) or a previous
   /// disarm's quiescent wait bailed out and left a stale drain session live.
   EngineResult perfArm(String captureDir);
+
+  /// Sets the capture policy the NEXT [perfArm] freezes for its take (slice
+  /// 3b). `false` (the initial value) taps the captured destination after
+  /// its chain and before its level, Mono/balance, mute, the master gain and
+  /// the limiter, so adjusting the PA during a performance does not reach the
+  /// take; `true` (Follow output volume) taps the final output. A running
+  /// take keeps the policy it was armed with; the frozen policy of the armed
+  /// take, or the pending one while disarmed, is in
+  /// [EngineSnapshot.perfFollowOutput]. Unlike the mix settings this is a
+  /// PREFERENCE and survives a device change: it is not re-applied on a
+  /// (re)start because a (re)start does not clear it.
+  EngineResult setPerfFollowOutput({required bool follow});
 
   /// Disarms performance-recording capture: signals the audio thread to stop
   /// writing, waits for a quiescent handshake to confirm it has (never a

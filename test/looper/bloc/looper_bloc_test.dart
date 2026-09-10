@@ -155,6 +155,32 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(() => repository.inputSetup).thenReturn(const InputSetup());
+    when(
+      () => repository.setOutputLevel(
+        bus: any(named: 'bus'),
+        level: any(named: 'level'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setOutputMute(
+        bus: any(named: 'bus'),
+        muted: any(named: 'muted'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setOutputMono(
+        bus: any(named: 'bus'),
+        mono: any(named: 'mono'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setOutputBalance(
+        bus: any(named: 'bus'),
+        balance: any(named: 'balance'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(repository.cutSound).thenReturn(EngineResult.ok);
+    when(() => repository.outputSetup).thenReturn(const OutputSetup());
     when(() => repository.setLooperMode(any())).thenReturn(EngineResult.ok);
     // What the repository HOLDS after a set — the value the bloc persists.
     // Tests that care about a refusal or a closed engine override it.
@@ -688,6 +714,131 @@ void main() {
         verify(
           () => repository.setPairBalance(input: 2, balance: -1),
         ).called(1);
+      },
+    );
+  });
+
+  group('the output setup (slice 3b)', () {
+    // Persisted per touched destination under the OPEN device, like the
+    // input setup: the repository's remembered facts are what is written.
+    const setup = OutputSetup(
+      buses: {
+        1: OutputBus(level: 0.5, muted: true),
+        0: OutputBus(mono: true, balance: -0.25),
+      },
+    );
+
+    LooperBloc buildWithDevice() {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett 18i20',
+            outputChannels: 4,
+          ),
+        ),
+      );
+      when(() => repository.outputSetup).thenReturn(setup);
+      return buildBlocWithSettings();
+    }
+
+    Future<StoredOutputSetup> stored() => trackSettings.loadOutputSetup(
+      device: 'Scarlett 18i20',
+      busCount: 2,
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperOutputLevelChanged forwards the level and persists that fact '
+      'only',
+      build: buildWithDevice,
+      act: (bloc) => bloc.add(const LooperOutputLevelChanged(1, level: 0.5)),
+      verify: (_) async {
+        verify(() => repository.setOutputLevel(bus: 1, level: 0.5)).called(1);
+        final s = await stored();
+        expect(s.level, {1: 0.5});
+        // The mute the repository also holds is that destination's other
+        // fact: this event does not write it, and cannot clobber it.
+        expect(s.muted, isEmpty);
+        expect(s.mono, isEmpty);
+        expect(s.balance, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperOutputMuteChanged, LooperOutputMonoChanged and '
+      'LooperOutputBalanceChanged forward and persist their destination',
+      build: buildWithDevice,
+      act: (bloc) => bloc
+        ..add(const LooperOutputMuteChanged(1, muted: true))
+        ..add(const LooperOutputMonoChanged(0, mono: true))
+        ..add(const LooperOutputBalanceChanged(0, balance: -0.25)),
+      verify: (_) async {
+        verify(() => repository.setOutputMute(bus: 1, muted: true)).called(1);
+        verify(() => repository.setOutputMono(bus: 0, mono: true)).called(1);
+        verify(
+          () => repository.setOutputBalance(bus: 0, balance: -0.25),
+        ).called(1);
+        final s = await stored();
+        expect(s.muted, {1: true});
+        expect(s.mono, {0: true});
+        expect(s.balance, {0: -0.25});
+        // No level event fired, so no level key was written.
+        expect(s.level, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'a fact put back to its default clears its own key and leaves the '
+      "destination's other facts alone",
+      build: () {
+        final bloc = buildWithDevice();
+        // The repository now reports that destination at unity but still
+        // muted: a level ride must not carry the mute away with it.
+        when(
+          () => repository.outputSetup,
+        ).thenReturn(const OutputSetup(buses: {1: OutputBus(muted: true)}));
+        return bloc;
+      },
+      act: (bloc) async {
+        await trackSettings.replaceOutputSetup(
+          device: 'Scarlett 18i20',
+          busCount: 2,
+          setup: (
+            level: {1: 0.5},
+            muted: {1: true},
+            mono: {0: true},
+            balance: {},
+          ),
+        );
+        bloc.add(const LooperOutputLevelChanged(1, level: 1));
+      },
+      verify: (_) async {
+        final s = await stored();
+        expect(s.level, isEmpty);
+        expect(s.muted, {1: true});
+        expect(s.mono, {0: true}); // bus 0 untouched
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperCutSoundPressed cuts through the repository',
+      build: buildBloc,
+      act: (bloc) => bloc.add(const LooperCutSoundPressed()),
+      verify: (_) => verify(repository.cutSound).called(1),
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'with no device open the edit reaches the repository but nothing is '
+      'persisted',
+      build: () {
+        when(() => repository.state).thenReturn(const LooperState());
+        when(() => repository.outputSetup).thenReturn(setup);
+        return buildBlocWithSettings();
+      },
+      act: (bloc) => bloc.add(const LooperOutputMuteChanged(1, muted: true)),
+      verify: (_) async {
+        verify(() => repository.setOutputMute(bus: 1, muted: true)).called(1);
+        final s = await trackSettings.loadOutputSetup(device: '', busCount: 2);
+        expect(s.muted, isEmpty);
       },
     );
   });
@@ -2748,10 +2899,18 @@ void main() {
           inputCount: 4,
           setup: (trimDb: {3: 12}, pan: {1: 1}, pairs: {}),
         );
+        await settings.replaceOutputSetup(
+          device: 'Fake Device',
+          busCount: 2,
+          setup: (level: {}, muted: {0: true}, mono: {}, balance: {}),
+        );
         looper
           ..setTrackPan(0.25)
           ..setInputSetup(
             const InputSetup(trimDb: {0: -6}, pan: {2: -0.5}, pairs: {0: 0.2}),
+          )
+          ..setOutputSetup(
+            const OutputSetup(buses: {1: OutputBus(level: 0.5, mono: true)}),
           );
 
         await resync();
@@ -2765,6 +2924,15 @@ void main() {
         expect(stored.trimDb, {0: -6.0});
         expect(stored.pan, {2: -0.5});
         expect(stored.pairs, {0: 0.2});
+        // The output setup (slice 3b) the same way: the loaded one in, the
+        // pre-load mute gone.
+        final outputs = await settings.loadOutputSetup(
+          device: 'Fake Device',
+          busCount: 2,
+        );
+        expect(outputs.level, {1: 0.5});
+        expect(outputs.mono, {1: true});
+        expect(outputs.muted, isEmpty);
       },
     );
 

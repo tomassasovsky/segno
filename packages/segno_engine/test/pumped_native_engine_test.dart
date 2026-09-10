@@ -334,6 +334,28 @@ void main() {
     });
     tearDown(() => engine.dispose());
 
+    test('the presented snapshot carries the facts it does not override', () {
+      // The pump presents a configured-but-undriven engine as running. It
+      // used to rebuild the snapshot from a hand-written field list, which
+      // silently dropped every field added after that list was written;
+      // these are facts from the real one, off their defaults, that the
+      // rebuild would have lost.
+      engine
+        ..pump(frames: 0)
+        ..setOutputLevel(bus: 0, level: 0.5)
+        ..setOutputMute(bus: 0, muted: true)
+        ..cutSound()
+        ..pump(frames: 64);
+      final s = engine.snapshot();
+      expect(s.isRunning, isTrue, reason: 'the override still applies');
+      expect(s.outputBusCount, greaterThan(0));
+      expect(s.outputLevels[0], 0.5);
+      expect(s.outputMuted[0], isTrue);
+      expect(s.tailResetRev, greaterThan(0));
+      expect(s.perfCaptureBus, isNot(-1));
+      expect(s.inputPeaks, hasLength(s.inputChannels));
+    });
+
     test('a fresh engine reads the grid-off defaults', () {
       engine.pump(frames: 0);
       final s = engine.snapshot();
@@ -728,30 +750,33 @@ void main() {
 
     test('master chain setters pass through with native validation', () {
       expect(
-        engine.setMasterFx(index: 0, type: TrackEffectType.reverb),
+        engine.setOutputFx(bus: 0, index: 0, type: TrackEffectType.reverb),
         EngineResult.ok,
       );
-      expect(engine.setMasterFxCount(count: 1), EngineResult.ok);
+      expect(engine.setOutputFxCount(bus: 0, count: 1), EngineResult.ok);
       expect(
-        engine.setMasterFxParam(index: 0, param: 0, value: 0.5),
+        engine.setOutputFxParam(bus: 0, index: 0, param: 0, value: 0.5),
         EngineResult.ok,
       );
       expect(
-        engine.setMasterFxEnabled(index: 0, enabled: false),
+        engine.setOutputFxEnabled(bus: 0, index: 0, enabled: false),
         EngineResult.ok,
       );
-      expect(engine.setMasterFxChainEnabled(enabled: false), EngineResult.ok);
+      expect(
+        engine.setOutputFxChainEnabled(bus: 0, enabled: false),
+        EngineResult.ok,
+      );
 
       expect(
-        engine.setMasterFx(index: -1, type: TrackEffectType.reverb),
+        engine.setOutputFx(bus: 0, index: -1, type: TrackEffectType.reverb),
         EngineResult.invalid,
       );
       expect(
-        engine.setMasterFxParam(index: 99, param: 0, value: 0.5),
+        engine.setOutputFxParam(bus: 0, index: 99, param: 0, value: 0.5),
         EngineResult.invalid,
       );
       expect(
-        engine.setMasterFxEnabled(index: 99, enabled: true),
+        engine.setOutputFxEnabled(bus: 0, index: 99, enabled: true),
         EngineResult.invalid,
       );
     });

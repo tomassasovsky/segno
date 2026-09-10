@@ -156,6 +156,29 @@ class MockAudioEngine implements AudioEngine {
   /// Per-input monitor pan (`setMonitorInputPan`), `-1..1`, default centre.
   final List<double> _monitorPan = List<double>.filled(LE_MAX_CHANNELS, 0);
 
+  /// Output bus facts (slice 3b), one slot per bus the engine can address;
+  /// the snapshot publishes the first `(outputs + 1) ~/ 2`. Reset to their
+  /// defaults by every (re)start like the native engine.
+  final List<double> _outputLevel = List<double>.filled(LE_MAX_OUTPUT_BUSES, 1);
+  final List<bool> _outputMuted = List<bool>.filled(LE_MAX_OUTPUT_BUSES, false);
+  final List<bool> _outputMono = List<bool>.filled(LE_MAX_OUTPUT_BUSES, false);
+  final List<double> _outputBalance = List<double>.filled(
+    LE_MAX_OUTPUT_BUSES,
+    0,
+  );
+
+  /// How many times [cutSound] ran; published as the snapshot's
+  /// `tailResetRev` like the native counter.
+  int _tailResetRev = 0;
+
+  /// The pending capture policy ([setPerfFollowOutput]) and the one frozen
+  /// by the current arm.
+  bool _perfFollowPending = false;
+  bool _perfFollowArmed = false;
+
+  /// Recorded [cutSound] calls, for test assertions.
+  int cutSoundCalls = 0;
+
   /// The monitor pan the mock holds for [input] (`-1..1`), or `0` for an
   /// out-of-range input. A read-back seam: the engine snapshot carries no
   /// per-monitor pan, so tests read the mock directly.
@@ -189,6 +212,13 @@ class MockAudioEngine implements AudioEngine {
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
     _perfFrames = 0;
+    // The output destinations go back to their defaults on a fresh start,
+    // like the native engine's configure. The capture policy deliberately
+    // does NOT: it is a preference, not device state.
+    _outputLevel.fillRange(0, _outputLevel.length, 1);
+    _outputMuted.fillRange(0, _outputMuted.length, false);
+    _outputMono.fillRange(0, _outputMono.length, false);
+    _outputBalance.fillRange(0, _outputBalance.length, 0);
     // The tap-tempo pair state is transient (per-session), unlike the tempo
     // grid/click SETTINGS above it, which persist across start/stop —
     // mirrors engine.c:371-372 (has_tap/last_tap_frame reset on configure).
@@ -247,6 +277,16 @@ class MockAudioEngine implements AudioEngine {
           : AudioBackend.miniaudio,
       isPerfArmed: _perfArmed,
       perfFrames: _perfFrames,
+      outputBusCount: (outputs + 1) ~/ 2,
+      outputLevels: _outputLevel.sublist(0, (outputs + 1) ~/ 2),
+      outputMuted: _outputMuted.sublist(0, (outputs + 1) ~/ 2),
+      outputMono: _outputMono.sublist(0, (outputs + 1) ~/ 2),
+      outputBalances: _outputBalance.sublist(0, (outputs + 1) ~/ 2),
+      tailResetRev: _tailResetRev,
+      perfFollowOutput: _perfArmed ? _perfFollowArmed : _perfFollowPending,
+      // The mock models no structural output gate, so the first destination
+      // is always the one a capture would read.
+      perfCaptureBus: outputs > 0 ? 0 : -1,
       // perfOverruns / perfZeroFilledFrames default to 0: the mock models no
       // ring capacity and no drain thread, so nothing ever overflows and no
       // silence is ever substituted.
@@ -544,6 +584,47 @@ class MockAudioEngine implements AudioEngine {
     if (!result.isOk) return result;
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     _tracks[channel].solo = solo;
+    return EngineResult.ok;
+  }
+
+  // ---- Output buses (slice 3b): direct stores, no running gate. ----
+
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    _outputLevel[bus] = level.isNaN ? 0 : level.clamp(0.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    _outputMuted[bus] = muted;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    _outputMono[bus] = mono;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    _outputBalance[bus] = balance.isNaN ? 0 : balance.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  /// The mock runs no transport and holds no chain DSP state, so the call
+  /// count and the revision bump are the observables.
+  @override
+  EngineResult cutSound() {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    cutSoundCalls++;
+    _tailResetRev++;
     return EngineResult.ok;
   }
 
@@ -909,41 +990,53 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  // ---- Master insert chain (FX v3 part 1b): same split as the track
+  // ---- Output bus chains (slice 3b): same split as the track
   // family above. ----
 
   @override
-  EngineResult setMasterFx({
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) => _requireRunning();
 
   @override
-  EngineResult setMasterFxCount({required int count}) => _requireRunning();
+  EngineResult setOutputFxCount({required int bus, required int count}) =>
+      _requireRunning();
 
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) => _requireRunning();
 
-  /// Recorded [setMasterFxEnabled] calls, in order, for test assertions.
-  final masterFxEnabledCalls = <({int index, bool enabled})>[];
+  /// Recorded [setOutputFxEnabled] calls, in order, for test assertions.
+  final outputFxEnabledCalls = <({int bus, int index, bool enabled})>[];
 
-  /// Recorded [setMasterFxChainEnabled] calls, in order, for test assertions.
-  final masterFxChainEnabledCalls = <bool>[];
+  /// Recorded [setOutputFxChainEnabled] calls, in order, for test assertions.
+  final outputFxChainEnabledCalls = <({int bus, bool enabled})>[];
 
   @override
-  EngineResult setMasterFxEnabled({required int index, required bool enabled}) {
+  EngineResult setOutputFxEnabled({
+    required int bus,
+    required int index,
+    required bool enabled,
+  }) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
-    masterFxEnabledCalls.add((index: index, enabled: enabled));
+    outputFxEnabledCalls.add((bus: bus, index: index, enabled: enabled));
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) {
-    masterFxChainEnabledCalls.add(enabled);
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    outputFxChainEnabledCalls.add((bus: bus, enabled: enabled));
     return EngineResult.ok;
   }
 
@@ -1152,8 +1245,15 @@ class MockAudioEngine implements AudioEngine {
     if (captureDir.isEmpty) return EngineResult.invalid;
     final result = _requireRunning();
     if (!result.isOk) return result;
+    if (!_perfArmed) _perfFollowArmed = _perfFollowPending; // frozen per take
     _perfArmed = true; // idempotent: re-arming just keeps it armed
     lastPerfCaptureDir = captureDir;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    _perfFollowPending = follow;
     return EngineResult.ok;
   }
 
