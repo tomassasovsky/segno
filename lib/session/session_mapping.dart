@@ -112,52 +112,32 @@ SessionLoopSettings loopSettingsFromLooper(LooperRepository looper) {
       pan: setup.pan,
       pairs: setup.pairs,
     ),
-    // The output setup (slice 3b), one map per fact, each holding only the
-    // destinations off that fact's default.
-    outputSetup: SessionOutputSetup(
-      level: {
-        for (final entry in state.outputSetup.buses.entries)
-          if (entry.value.level != 1) entry.key: entry.value.level,
-      },
-      muted: {
-        for (final entry in state.outputSetup.buses.entries)
-          if (entry.value.muted) entry.key: true,
-      },
-      mono: {
-        for (final entry in state.outputSetup.buses.entries)
-          if (entry.value.mono) entry.key: true,
-      },
-      balance: {
-        for (final entry in state.outputSetup.buses.entries)
-          if (entry.value.balance != 0) entry.key: entry.value.balance,
-      },
-    ),
+    // The output setup (slice 3b): the same one-map-per-fact shape the
+    // settings layer stores, so the domain owns the projection both ways.
+    outputSetup: _sessionOutputSetup(state.outputSetup),
+  );
+}
+
+/// The manifest form of the looper domain's [setup].
+SessionOutputSetup _sessionOutputSetup(OutputSetup setup) {
+  final maps = setup.toMaps();
+  return SessionOutputSetup(
+    level: maps.level,
+    muted: maps.muted,
+    mono: maps.mono,
+    balance: maps.balance,
   );
 }
 
 /// The looper-domain output setup of a manifest's [setup]: one [OutputBus]
 /// per destination any of its four maps names.
-OutputSetup outputSetupFromSession(SessionOutputSetup setup) {
-  final buses = <int>{
-    ...setup.level.keys,
-    ...setup.muted.keys,
-    ...setup.mono.keys,
-    ...setup.balance.keys,
-  };
-  var result = const OutputSetup();
-  for (final bus in buses) {
-    result = result.withBus(
-      bus,
-      OutputBus(
-        level: setup.level[bus] ?? 1,
-        muted: setup.muted[bus] ?? false,
-        mono: setup.mono[bus] ?? false,
-        balance: setup.balance[bus] ?? 0,
-      ),
+OutputSetup outputSetupFromSession(SessionOutputSetup setup) =>
+    OutputSetup.fromMaps(
+      level: setup.level,
+      muted: setup.muted,
+      mono: setup.mono,
+      balance: setup.balance,
     );
-  }
-  return result;
-}
 
 /// The Master insert as an envelope string, or the manifest's own "no chain"
 /// spelling (`''`) when the rig has no Master state at all — so a default rig

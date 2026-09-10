@@ -644,7 +644,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
     le_output_bus_reset(&engine->outputs[k]);
   }
-  store_i32(&engine->a_perf_follow_output, 0);
+  /* a_perf_follow_output is a preference, not device state: it survives a
+   * (re)configure and is zero only from le_engine_create's calloc. */
 
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);

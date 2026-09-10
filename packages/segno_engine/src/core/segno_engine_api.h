@@ -406,16 +406,7 @@ typedef enum le_command_code {
   LE_CMD_SET_TRACK_FX_COUNT = 50, /* set a track's Track-stage active chain
                                    * length. fxcount arm: channel, count
                                    * (lane unused). */
-  LE_CMD_SET_MASTER_FX = 51, /* set the Master insert chain entry type (and
-                              * reset its DSP state). fx arm: index, type
-                              * (channel + lane unused). */
-  LE_CMD_SET_MASTER_FX_COUNT = 52, /* set the Master insert active chain
-                                    * length. fxcount arm: count (channel +
-                                    * lane unused). */
-  /* Arm the chromatic tuner on one hardware input, or -1 to disarm. arg_i =
-   * channel. Gating is the contract, not an optimization: detection runs only
-   * while an input is armed, so a console that never opens the Tuner face
-   * pays one atomic load per block. */
+
   LE_CMD_SET_TUNER_INPUT = 53,
 
   /* ---- per-input conditioning stage (input conditioning, S1) ----
@@ -1184,6 +1175,11 @@ typedef struct le_snapshot {
   /* The capture policy of the armed take (1 = Follow output volume), or the
    * policy the next arm would freeze while not armed. */
   int32_t perf_follow_output;
+  /* The output bus the armed take captures (the first bus with an enabled
+   * channel at arm), or the one the next arm would capture; -1 when no
+   * output is enabled. The offline render replays this bus's level and
+   * mute under Follow output volume. */
+  int32_t perf_capture_bus;
   /* NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
    * le_callback_telemetry and le_engine_get_callback_telemetry. */
 } le_snapshot;
@@ -2374,24 +2370,6 @@ LE_EXPORT int32_t le_engine_set_track_fx_chain_enabled(le_engine* engine,
                                                        int32_t channel,
                                                        int32_t enabled);
 
-/* ---- Master insert chain (FX v3 part 1b) ---- *
- * ONE engine-level chain inserted on the summed track mix, before master
- * gain/limiter. Live monitor signals are summed AFTER it and stay uncolored
- * (live-through sound stays predictable); master gain + limiter still apply
- * to both, unchanged. While the chain is EMPTY the output is bit-identical
- * to the chain never having existed. FX kernels are strict stereo, so for
- * ch_out != 2 the chain processes the FIRST ENABLED output pair and passes
- * every other channel through bit-exact dry; ch_out == 1 processes mono as
- * l == r. Like the Track stage, this sits post-capture and leaves
- * fx_added_latency_frames untouched. */
-
-/* Sets Master insert chain entry [index] (0..LE_FX_MAX-1) to [type]. Same
- * contract as le_engine_set_track_fx (type change resets DSP state, buffers
- * allocate on this calling thread, defaults seeded on an actual change). Use
- * le_engine_set_master_fx_count to make entries active. */
-LE_EXPORT int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
-                                          int32_t type);
-
 /* ---- output buses (accepted design, slice 3b) ----
  * Bus [bus] is the hardware pair (2 bus, 2 bus + 1). After every source has
  * summed onto the outputs (tracks, monitors, the click), each bus runs its
@@ -2399,9 +2377,9 @@ LE_EXPORT int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
  * pair averaged onto both channels; balance then disabled), balance (-1..1,
  * the unity-centre law of le_engine_set_lane_pan: it attenuates one side)
  * and mute (silence; the level is kept). The global master gain and limiter
- * follow. A bus a source is not routed to is untouched by that source. The
- * Master insert API (le_engine_set_master_fx and friends) is bus 0's chain.
- * All remembered by the caller and reset by (re)configure. */
+ * follow. A bus a source is not routed to is untouched by that source.
+ * Bus 0's chain is what the app calls the Master insert. All remembered by
+ * the caller and reset by (re)configure. */
 LE_EXPORT int32_t le_engine_set_output_level(le_engine* engine, int32_t bus,
                                              float level);
 LE_EXPORT int32_t le_engine_set_output_mute(le_engine* engine, int32_t bus,
@@ -2410,7 +2388,13 @@ LE_EXPORT int32_t le_engine_set_output_mono(le_engine* engine, int32_t bus,
                                             int32_t mono);
 LE_EXPORT int32_t le_engine_set_output_balance(le_engine* engine, int32_t bus,
                                                float balance);
-/* Bus [bus]'s chain: the same five calls as the Master insert, per bus. */
+/* Bus [bus]'s chain, the bus twin of the Track-stage family: the type
+ * change resets that entry's DSP state, buffers allocate on this calling
+ * thread, defaults are seeded on an actual change; count clamps to
+ * 0..LE_FX_MAX; params and the enable flags are direct stores that work
+ * while stopped. While a chain is EMPTY its bus passes bit-identical. FX
+ * kernels are strict stereo; a single-channel last bus processes l == r.
+ * Post-capture: leaves fx_added_latency_frames untouched. */
 LE_EXPORT int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus,
                                           int32_t index, int32_t type);
 LE_EXPORT int32_t le_engine_set_output_fx_count(le_engine* engine, int32_t bus,
@@ -2427,41 +2411,22 @@ LE_EXPORT int32_t le_engine_set_output_fx_chain_enabled(le_engine* engine,
 
 /* Cut all sound (accepted design, slice 3b): see LE_CMD_CUT_SOUND. Posted
  * through the ring; returns LE_ERR_NOT_RUNNING while stopped (nothing
- * sounds then). */
+ * sounds then). Built-in chains clear their state at once and their delay
+ * rings within a few ms (spaced like a chain stomp's re-enable clears); a
+ * hosted plugin has no reset seam, so its own tail is not cut. */
 LE_EXPORT int32_t le_engine_cut_sound(le_engine* engine);
 
 /* Whether the performance capture follows the output bus's level, balance,
  * Mono and mute (1) or is tapped after the bus's chain and before them (0,
  * the default: adjusting the PA during a performance does not alter the
  * saved performance; accepted design, "Follow output volume"). A direct
- * store read once per block; frozen per take by the caller. */
+ * store, frozen into the take at le_perf_arm, so a running take keeps the
+ * policy it was armed with; le_snapshot.perf_follow_output publishes the
+ * armed take's policy, or the pending one while disarmed. This is a
+ * PREFERENCE, not device state: unlike the mix settings it is NOT reset by
+ * (re)configure, so a device change or reconnect leaves it as the player
+ * set it. */
 LE_EXPORT int32_t le_perf_set_follow_output(le_engine* engine, int32_t follow);
-
-/* Sets the Master insert active chain length to [count] (0..LE_FX_MAX).
- * Count 0 (empty) restores bit-identical output. */
-LE_EXPORT int32_t le_engine_set_master_fx_count(le_engine* engine,
-                                                int32_t count);
-
-/* Sets parameter [param] (0..LE_FX_PARAMS-1) of Master insert chain entry
- * [index] to [value] (clamped to 0..1). Direct atomic publish — works
- * whether or not the device is running. */
-LE_EXPORT int32_t le_engine_set_master_fx_param(le_engine* engine,
-                                                int32_t index, int32_t param,
-                                                float value);
-
-/* Enables/disables Master insert chain entry [index] — same contract as
- * le_engine_set_track_fx_enabled (direct store, works while stopped,
- * click-free ramp, no tail spill, re-enable reset, default enabled, type
- * change re-seeds to 1). */
-LE_EXPORT int32_t le_engine_set_master_fx_enabled(le_engine* engine,
-                                                  int32_t index,
-                                                  int32_t enabled);
-
-/* Enables/disables the WHOLE Master insert chain in one atomic flip without
- * touching the per-entry flags — same contract as
- * le_engine_set_track_fx_chain_enabled. Default enabled. */
-LE_EXPORT int32_t le_engine_set_master_fx_chain_enabled(le_engine* engine,
-                                                        int32_t enabled);
 
 /* ---- Loop-stage wet cache (FX v3 part 2) ---- *
  * A background worker renders a stable lane chain's whole loop offline; the

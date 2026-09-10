@@ -404,24 +404,14 @@ Future<AutoStartResult> tryAutoStartEngine({
         ? (status.outputChannels + 1) ~/ 2
         : kMaxOutputBuses,
   );
-  var restoredOutputs = const OutputSetup();
-  for (final bus in <int>{
-    ...outputSetup.level.keys,
-    ...outputSetup.muted.keys,
-    ...outputSetup.mono.keys,
-    ...outputSetup.balance.keys,
-  }) {
-    restoredOutputs = restoredOutputs.withBus(
-      bus,
-      OutputBus(
-        level: outputSetup.level[bus] ?? 1,
-        muted: outputSetup.muted[bus] ?? false,
-        mono: outputSetup.mono[bus] ?? false,
-        balance: outputSetup.balance[bus] ?? 0,
-      ),
-    );
-  }
-  repository.setOutputSetup(restoredOutputs);
+  repository.setOutputSetup(
+    OutputSetup.fromMaps(
+      level: outputSetup.level,
+      muted: outputSetup.muted,
+      mono: outputSetup.mono,
+      balance: outputSetup.balance,
+    ),
+  );
 
   // Per-input live monitors are restored by MonitorCubit.load() (the shell
   // creates and loads it on every launch), so they are not re-applied here.

@@ -9305,6 +9305,40 @@ static void test_perf_capture_first_bus_with_enabled_channel(void) {
   }
   CHECK(le_perf_disarm(e) == LE_OK);
 
+  /* Mute versus disable, mid-take. The bus mute is a GAIN after the tap, so
+   * the take is untouched by it; the output-enabled gate is the ROUTING
+   * GRAPH (le_engine_set_output_enabled's contract), so nothing is summed
+   * onto that channel at all and the take loses it with the jack. The two
+   * PA-side controls differ on purpose, and this pins which is which. */
+  CHECK(le_engine_set_output_enabled(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_enabled(e, 1, 1) == LE_OK);
+  CHECK(le_engine_set_output_balance(e, 0, 0.0f) == LE_OK);
+  drain(e);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(le_engine_perf_master_channels_for_test(e) == 2);
+  CHECK(le_engine_set_output_mute(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out4, zin, LOOP_N);
+  CHECK(le_engine_perf_master_pop_for_test(e, captured, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(out4[4 * i + 0] == 0.0f);     /* the jacks are silent... */
+    CHECK(out4[4 * i + 1] == 0.0f);
+    CHECK(captured[2 * i + 0] == 1.0f); /* ...the take is not */
+    CHECK(captured[2 * i + 1] == 1.0f);
+  }
+  CHECK(le_engine_set_output_mute(e, 0, 0) == LE_OK);
+  CHECK(le_engine_set_output_enabled(e, 0, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, out4, zin, LOOP_N);
+  CHECK(le_engine_perf_master_pop_for_test(e, captured, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(out4[4 * i + 0] == 0.0f);
+    CHECK(captured[2 * i + 0] == 0.0f); /* nothing was routed there */
+    CHECK(captured[2 * i + 1] == 1.0f);
+  }
+  CHECK(le_perf_disarm(e) == LE_OK);
+
   /* Only the right channel of bus 0 enabled: a mono capture of channel 1,
    * before the bus balance that silences it on the jack. */
   CHECK(le_engine_set_output_enabled(e, 1, 1) == LE_OK);
@@ -12556,8 +12590,8 @@ static void test_click_masked_channels_and_volume(void) {
 /* Slice 3b: the click sums in before the output buses, so a bus's level and
  * mute process it like every other source routed there (accepted design),
  * the master gain follows, and the output meter sees it. */
-static void test_click_rides_output_bus(void) {
-  printf("test_click_rides_output_bus\n");
+static void test_click_processed_by_output_bus(void) {
+  printf("test_click_processed_by_output_bus\n");
   le_engine* e = ck_make_engine(1);
   le_snapshot s;
 
@@ -18599,9 +18633,11 @@ static void test_finalize_take_aborts_count_in(void) {
  * rather than a hand-typed approximation. Compares the offline-reconstructed
  * master (stems/wet/master.wav) against the live-captured master
  * (master.pcm) sample-by-sample. */
-static void run_perf_render_golden_master_parity(int follow) {
-  printf("test_perf_render_golden_master_parity follow=%d\n", follow);
-  const char* dir = render_test_dir(follow ? "golden-follow" : "golden");
+static void run_perf_render_golden_master_parity(int follow, int omit_key) {
+  printf("test_perf_render_golden_master_parity follow=%d omit_key=%d\n",
+         follow, omit_key);
+  const char* dir = render_test_dir(
+      omit_key ? "golden-legacy" : (follow ? "golden-follow" : "golden"));
   const int32_t sr = 4800;
   const int32_t loop_len = 4;
 
@@ -18682,13 +18718,15 @@ static void run_perf_render_golden_master_parity(int follow) {
   snprintf(manifest, sizeof(manifest),
           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
-          "\"limiterCeiling\": 0.99, \"followOutput\": %s, \"tracks\": []}, "
+          "\"limiterCeiling\": 0.99, %s\"tracks\": []}, "
           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 0, \"volume\": "
           "1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, \"deferred\": "
           "false, \"takeId\": %d, \"pcmRef\": \"track0-lane0.wav\", "
           "\"effects\": []}]}]}, "
           "\"layers\": []}",
-          sr, (unsigned long long)capture_frames, follow ? "true" : "false",
+          sr, (unsigned long long)capture_frames,
+          omit_key ? "" : (follow ? "\"followOutput\": true, "
+                                  : "\"followOutput\": false, "),
           snap.tracks[0].settled_take_id);
   test_write_manifest(dir, manifest);
 
@@ -18745,10 +18783,16 @@ static void run_perf_render_golden_master_parity(int follow) {
 
 /* The default take (capture before bus level, mute, master gain and
  * limiter) and the Follow output take (after them) each replay bit-parity
- * with their own live capture. */
+ * with their own live capture — and a manifest with NO followOutput key at
+ * all is a take from before the policy existed, which was captured after
+ * the master gain and limiter: it must render like Follow, or every such
+ * bundle on disk renders without its gain. The third run captures under
+ * Follow and then omits the key, so parity holds only if absent reads as
+ * Follow. */
 static void test_perf_render_golden_master_parity(void) {
-  run_perf_render_golden_master_parity(0);
-  run_perf_render_golden_master_parity(1);
+  run_perf_render_golden_master_parity(0, 0);
+  run_perf_render_golden_master_parity(1, 0);
+  run_perf_render_golden_master_parity(1, 1);
 }
 
 /* Code-review fix (A3 follow-up): a quantized record-END round-down
@@ -23359,12 +23403,10 @@ static void test_fx_enable_ramp_continuity(void) {
   const float wet = cap[FX_EN_SETTLE - 1];
   const float dry = 0.5f;
   CHECK(fabsf(wet - tanhf(0.5f)) < 1e-5f);
-  /* The ramp scales the slot's FEED (slice 3b): per sample the feed moves
-   * by dry * step and the drive's slope is at most 1, so the output moves
-   * by at most 2 * dry * step — still an order of magnitude under the
-   * |wet - dry| a click would be. */
-  const float bound = 2.0f * dry * FX_EN_RAMP_STEP * 1.5f + 1e-7f;
-  CHECK(bound < fabsf(wet - dry));
+  /* A memoryless drive crossfades (slice 3b: only ring-owning types drain),
+   * so every ramp sample lies between dry and wet and the ideal delta is
+   * |wet - dry| * step. */
+  const float bound = fabsf(wet - dry) * FX_EN_RAMP_STEP * 1.5f + 1e-7f;
 
   /* One toggle leg: flip, render across the transition, and bound every
    * sample-to-sample delta including the seam from the pre-toggle value. */
@@ -23583,11 +23625,11 @@ static void test_stop_drains_lane_tail_and_mute_gates_it(void) {
   /* A shared tail: an ECHO on the output bus already holds the track's
    * audio. Mute the lane: the output chain's repeats keep draining. */
   CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0) == LE_OK);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_ECHO) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 0, 0.01f) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 1, 0.6f) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 2, 1.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 1, 0.6f) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
   drain(e);
   process_n(e, 0.0f, 1024, cap);
   CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
@@ -24159,15 +24201,15 @@ static void test_perf_render_replays_fx_chain_enable(void) {
                                  LE_PLOG_SET_LANE_FX_CHAIN_ENABLED);
 }
 
-/* ---- Track-stage stereo bus + Master insert (FX v3 part 1b): D-TRACKROUTE
- * (empty-chain bit-identity, union-mask routing, audible-only summing,
- * topology-keys-off-emptiness, tail continuity), D-MASTER (monitors
- * uncolored, placement before gain/limiter, empty-chain bit-identity),
- * D-MASTERCH (ch_out 2/4/1 channel mapping), and the setter/lifecycle
- * contracts. ---- */
+/* ---- Track-stage stereo bus + output bus chains: D-TRACKROUTE
+ * (empty-chain bit-identity, union-mask routing, gate-open summing,
+ * topology-keys-off-emptiness, tail continuity), the output chain's place
+ * (it colors the monitors and the click too, and sits before the master
+ * gain and limiter; empty-chain bit-identity), its channel mapping for
+ * ch_out 2/4/1, and the setter/lifecycle contracts. ---- */
 
 /* Records a LOOP_N constant loop of `value` on track 0 and leaves it
- * PLAYING (the track/master chains color playback only). */
+ * PLAYING (the track and output chains color playback only). */
 static void bus_fx_record_loop(le_engine* e, float value) {
   float out[64];
   CHECK(le_engine_record(e, 0) == LE_OK);
@@ -24525,10 +24567,10 @@ static void test_output_fx_colors_monitors(void) {
 
   CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
   CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 0, 0.2f) == LE_OK); /* 6.8x */
-  CHECK(le_engine_set_master_fx_param(e, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 0, 0.2f) == LE_OK); /* 6.8x */
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   drain(e);
 
   process_n(e, 0.5f, FX_EN_SETTLE, cap);
@@ -24538,7 +24580,7 @@ static void test_output_fx_colors_monitors(void) {
   CHECK(fabsf(cap[FX_EN_SETTLE - 1] - 0.75f) > 0.1f);
 
   /* Empty the chain: back to the plain sum. */
-  CHECK(le_engine_set_master_fx_count(e, 0) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 0) == LE_OK);
   drain(e);
   process_n(e, 0.5f, FX_EN_SETTLE, cap);
   CHECK(fabsf(cap[FX_EN_SETTLE - 1] - 0.75f) < 1e-6f);
@@ -24546,11 +24588,11 @@ static void test_output_fx_colors_monitors(void) {
   le_engine_destroy(e);
 }
 
-/* D-MASTER placement: the insert sits BEFORE master gain + limiter — a
- * master-chain boost drives the limiter (post-insert level above the
+/* Placement: the output chain sits BEFORE the master gain and limiter — a
+ * chain boost drives the limiter (post-chain level above the
  * ceiling engages the clamp), which an after-limiter insert could not. */
-static void test_master_fx_before_gain_limiter(void) {
-  printf("test_master_fx_before_gain_limiter\n");
+static void test_output_fx_before_gain_limiter(void) {
+  printf("test_output_fx_before_gain_limiter\n");
   le_engine* e = make_configured_engine();
   bus_fx_record_loop(e, 0.3f);
   static float cap[FX_EN_SETTLE];
@@ -24563,10 +24605,10 @@ static void test_master_fx_before_gain_limiter(void) {
   /* Boosting chain: tanh(0.3 * 6.8) = 0.967 > 0.5 -> the limiter clamps the
    * INSERT'S output to the ceiling. If the insert ran after the limiter the
    * output would be the unclamped 0.967. */
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 0, 0.2f) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 0, 0.2f) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   drain(e);
   process_n(e, 0.0f, FX_EN_SETTLE, cap);
   CHECK(fabsf(cap[FX_EN_SETTLE - 1] - 0.5f) < 1e-4f);
@@ -24574,10 +24616,10 @@ static void test_master_fx_before_gain_limiter(void) {
   le_engine_destroy(e);
 }
 
-/* D-MASTER bit-identity (empty): set-then-emptied Master chain vs never
+/* Bit-identity (empty): a set-then-emptied output chain vs never
  * touched — memcmp-identical output, with a live monitor in the mix. */
-static void test_master_fx_empty_set_then_empty_bit_identity(void) {
-  printf("test_master_fx_empty_set_then_empty_bit_identity\n");
+static void test_output_fx_empty_set_then_empty_bit_identity(void) {
+  printf("test_output_fx_empty_set_then_empty_bit_identity\n");
   static const float pat[LOOP_N] = {0.3f, -0.4f, 0.7f, -0.2f};
   float out[64];
   static float cap_a[256];
@@ -24596,12 +24638,12 @@ static void test_master_fx_empty_set_then_empty_bit_identity(void) {
     CHECK(le_engine_record(e, 0) == LE_OK);
     drain(e);
   }
-  CHECK(le_engine_set_master_fx(a, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(a, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(a, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx(a, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(a, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(a, 0, 0, 1, 1.0f) == LE_OK);
   drain(a);
   process_n(a, 0.1f, FX_EN_SETTLE, scratch);
-  CHECK(le_engine_set_master_fx_count(a, 0) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(a, 0, 0) == LE_OK);
   drain(a);
 
   process_n(a, 0.1f, FX_EN_SETTLE, scratch);
@@ -24614,9 +24656,9 @@ static void test_master_fx_empty_set_then_empty_bit_identity(void) {
   le_engine_destroy(b);
 }
 
-/* D-MASTERCH ch_out == 2: both channels of the pair are processed wet. */
-static void test_master_fx_ch_out_2_wet_pair(void) {
-  printf("test_master_fx_ch_out_2_wet_pair\n");
+/* ch_out == 2: both channels of the pair are processed wet. */
+static void test_output_fx_ch_out_2_wet_pair(void) {
+  printf("test_output_fx_ch_out_2_wet_pair\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 2, 1000);
   float out2[2 * 64];
@@ -24627,10 +24669,10 @@ static void test_master_fx_ch_out_2_wet_pair(void) {
   le_engine_record(e, 0);
   drain(e);
 
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 0, 0.0f) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   drain(e);
   static float cap[2 * FX_EN_SETTLE];
   process_stereo_n(e, FX_EN_SETTLE, cap);
@@ -24644,8 +24686,8 @@ static void test_master_fx_ch_out_2_wet_pair(void) {
 /* Slice 3b, ch_out == 4: the Master insert is bus 0's chain, so the pair
  * (0, 1) is processed wet and bus 1 (channels 2 and 3) passes bit-exact dry.
  * Disabling channel 0 does not move the chain: it stays on bus 0. */
-static void test_master_fx_ch_out_4_is_bus_0(void) {
-  printf("test_master_fx_ch_out_4_is_bus_0\n");
+static void test_output_fx_ch_out_4_is_bus_0(void) {
+  printf("test_output_fx_ch_out_4_is_bus_0\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 4, 1000);
   CHECK(le_engine_set_lane_output(e, 0, 0, 0xF) == LE_OK);
@@ -24658,10 +24700,10 @@ static void test_master_fx_ch_out_4_is_bus_0(void) {
   le_engine_record(e, 0);
   drain(e);
 
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 0, 0.0f) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   drain(e);
 
   const float wet = tanhf(0.5f);
@@ -24837,6 +24879,154 @@ static void test_output_setters_reject_invalid_and_clamp(void) {
   le_engine_destroy(e);
 }
 
+/* Cut all sound silences a FULL-WET effect from the next frame (slice 3b
+ * review): the rings are cleared at once, so no slot passes its input dry
+ * while waiting for a spaced clear. Two ring-owning slots on one chain, so
+ * a per-chain clear stagger would show up on the second. */
+static void test_cut_sound_silences_full_wet_chain_at_once(void) {
+  printf("test_cut_sound_silences_full_wet_chain_at_once\n");
+  le_engine* e = make_configured_engine();
+  static float cap[1024];
+
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  for (int s = 0; s < 2; ++s) {
+    CHECK(le_engine_set_monitor_input_fx(e, 0, s, LE_FX_DELAY) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx_param(e, 0, s, 0, 0.01f) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx_param(e, 0, s, 1, 0.0f) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx_param(e, 0, s, 2, 1.0f) == LE_OK);
+  }
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 2) == LE_OK);
+  drain(e);
+
+  /* Fill both rings, then hold the input high through the cut: fully wet,
+   * so the live input must NOT come through. */
+  process_n(e, 1.0f, 1024, cap);
+  CHECK(fabsf(cap[1023]) > 0.5f); /* the delayed input is sounding */
+  CHECK(le_engine_cut_sound(e) == LE_OK);
+  drain(e);
+  process_n(e, 1.0f, 256, cap);
+  for (int i = 0; i < 256; ++i) CHECK(fabsf(cap[i]) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* A bus honours the structural output gate (slice 3b review): a disabled
+ * channel of the pair is neither read nor written, and Mono averages the
+ * enabled channels only, so a pair with one jack disabled keeps its level. */
+static void test_output_bus_honours_disabled_channels(void) {
+  printf("test_output_bus_honours_disabled_channels\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  float out2[2 * 64];
+  float in[64];
+  for (int i = 0; i < LOOP_N; ++i) in[i] = 0.5f;
+  le_engine_record(e, 0);
+  le_engine_process(e, out2, in, LOOP_N);
+  le_engine_record(e, 0);
+  drain(e);
+  float zin[64] = {0};
+
+  /* Channel 1 disabled, a decorrelating REVERB on bus 0: the disabled jack
+   * stays exactly silent. */
+  CHECK(le_engine_set_output_enabled(e, 1, 0) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_REVERB) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
+  drain(e);
+  for (int blk = 0; blk < 16; ++blk) {
+    le_engine_process(e, out2, zin, 64);
+    for (int i = 0; i < 64; ++i) CHECK(out2[2 * i + 1] == 0.0f);
+  }
+  CHECK(fabsf(out2[2 * 63]) > 1e-4f); /* the enabled jack carries the wet */
+
+  /* Mono with one jack disabled: the enabled jack keeps the full level. */
+  CHECK(le_engine_set_output_fx_count(e, 0, 0) == LE_OK);
+  CHECK(le_engine_set_output_mono(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out2, zin, LOOP_N);
+  CHECK(out2[0] == 0.5f);
+  CHECK(out2[1] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* A retype mid-drain (slice 3b review): the bypassed ECHO's ring holds
+ * repeats; retyping the slot to DELAY seeds it enabled, and that re-enable
+ * must still start clean, never read the old type's ring. */
+static void test_fx_retype_mid_drain_starts_clean(void) {
+  printf("test_fx_retype_mid_drain_starts_clean\n");
+  le_engine* e = make_configured_engine();
+  static float cap[4096];
+
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 0.6f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
+  drain(e);
+  /* Run the echo past the whole ring (fx_delay_frames == sample_rate), so
+   * every position the retyped DELAY's read head visits first holds echo
+   * content rather than the calloc zeros a short run would leave: without
+   * that pre-roll the silence assertion below passes even unfixed. */
+  process_n(e, 1.0f, 4096, cap);
+  for (int blk = 0; blk < 48000 / 4096 + 1; ++blk) {
+    process_n(e, 1.0f, 4096, cap);
+  }
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  process_n(e, 0.0f, 300, cap); /* past the ramp, draining */
+  CHECK(e->monitors[0].fx.enable_drain[0] > 0);
+
+  /* Retype to a full-wet DELAY with no feedback: exact silence over silence
+   * is only possible if the ring was cleared on the edge. */
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 0.0f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
+  drain(e);
+  CHECK(e->monitors[0].fx.enable_drain[0] == 0);
+  process_n(e, 0.0f, 1024, cap);
+  for (int i = 0; i < 1024; ++i) CHECK(cap[i] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* The capture policy survives a reconfigure (a preference, not device
+ * state), and the snapshot names the bus the next arm would capture. */
+static void test_perf_follow_survives_configure_and_capture_bus(void) {
+  printf("test_perf_follow_survives_configure_and_capture_bus\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 4, 1000);
+  le_snapshot s;
+  CHECK(le_perf_set_follow_output(e, 1) == LE_OK);
+  le_engine_configure(e, 48000, 1, 4, 1000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_follow_output == 1);
+  CHECK(s.perf_capture_bus == 0);
+  CHECK(le_engine_set_output_enabled(e, 0, 0) == LE_OK);
+  CHECK(le_engine_set_output_enabled(e, 1, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_capture_bus == 1);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  /* Re-enabling bus 0 does not move the armed take's bus. */
+  CHECK(le_engine_set_output_enabled(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_capture_bus == 1);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_capture_bus == 0);
+  for (int c = 0; c < 4; ++c) CHECK(le_engine_set_output_enabled(e, c, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_capture_bus == -1);
+  le_engine_destroy(e);
+}
+
 /* Cut all sound (slice 3b): every playing track stops, a running count-in is
  * cancelled, every chain's tail (delay rings included) is cleared while the
  * chain settings stay, and the snapshot's tail_reset_rev advances. */
@@ -24848,8 +25038,8 @@ static void test_cut_sound_stops_tracks_and_clears_tails(void) {
 
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DELAY) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
   drain(e);
   process_n(e, 0.0f, 2048, cap);
 
@@ -24904,16 +25094,16 @@ static void test_cut_sound_stops_tracks_and_clears_tails(void) {
   le_engine_destroy(e);
 }
 
-/* D-MASTERCH ch_out == 1: mono is processed as l == r and matches the
+/* ch_out == 1: mono is processed as l == r and matches the
  * stereo run's left channel for a symmetric chain. */
-static void test_master_fx_ch_out_1_mono(void) {
-  printf("test_master_fx_ch_out_1_mono\n");
+static void test_output_fx_ch_out_1_mono(void) {
+  printf("test_output_fx_ch_out_1_mono\n");
   le_engine* e = make_configured_engine(); /* mono out */
   bus_fx_record_loop(e, 0.5f);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 0, 0.0f) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   drain(e);
   static float cap[FX_EN_SETTLE];
   process_n(e, 0.0f, FX_EN_SETTLE, cap);
@@ -24925,8 +25115,8 @@ static void test_master_fx_ch_out_1_mono(void) {
 /* Setter validation: out-of-range channel/index/type/param ->
  * LE_ERR_INVALID with published state untouched; counts clamp like the lane
  * family. */
-static void test_track_master_fx_setters_reject_invalid(void) {
-  printf("test_track_master_fx_setters_reject_invalid\n");
+static void test_track_output_fx_setters_reject_invalid(void) {
+  printf("test_track_output_fx_setters_reject_invalid\n");
   le_engine* e = make_configured_engine();
 
   CHECK(le_engine_set_track_fx(NULL, 0, 0, LE_FX_DRIVE) == LE_ERR_INVALID);
@@ -24946,15 +25136,15 @@ static void test_track_master_fx_setters_reject_invalid(void) {
   CHECK(le_engine_set_track_fx_enabled(e, 0, LE_FX_MAX, 0) == LE_ERR_INVALID);
   CHECK(le_engine_set_track_fx_chain_enabled(e, -1, 0) == LE_ERR_INVALID);
 
-  CHECK(le_engine_set_master_fx(NULL, 0, LE_FX_DRIVE) == LE_ERR_INVALID);
-  CHECK(le_engine_set_master_fx(e, -1, LE_FX_DRIVE) == LE_ERR_INVALID);
-  CHECK(le_engine_set_master_fx(e, LE_FX_MAX, LE_FX_DRIVE) == LE_ERR_INVALID);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_REVERB + 1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_master_fx_param(e, LE_FX_MAX, 0, 0.5f) ==
+  CHECK(le_engine_set_output_fx(NULL, 0, 0, LE_FX_DRIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_output_fx(e, 0, -1, LE_FX_DRIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_output_fx(e, 0, LE_FX_MAX, LE_FX_DRIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_REVERB + 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_output_fx_param(e, 0, LE_FX_MAX, 0, 0.5f) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_set_master_fx_param(e, 0, -1, 0.5f) == LE_ERR_INVALID);
-  CHECK(le_engine_set_master_fx_enabled(e, -1, 0) == LE_ERR_INVALID);
-  CHECK(le_engine_set_master_fx_chain_enabled(NULL, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, -1, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_output_fx_enabled(e, 0, -1, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_set_output_fx_chain_enabled(NULL, 0, 0) == LE_ERR_INVALID);
 
   /* Every rejection above left the published chains untouched. */
   drain(e);
@@ -24970,8 +25160,8 @@ static void test_track_master_fx_setters_reject_invalid(void) {
   /* Counts CLAMP (lane-family contract), never reject in range issues. */
   CHECK(le_engine_set_track_fx_count(e, 0, -5) == LE_OK);
   CHECK(le_engine_set_track_fx_count(e, 0, LE_FX_MAX + 5) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, -5) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, LE_FX_MAX + 5) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, -5) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, LE_FX_MAX + 5) == LE_OK);
   drain(e);
   CHECK(atomic_load_explicit(&e->tracks[0].bus.a_fx_count,
                              memory_order_relaxed) == LE_FX_MAX);
@@ -24984,8 +25174,8 @@ static void test_track_master_fx_setters_reject_invalid(void) {
 /* Enable + chain-enable flips are direct stores that work while nothing is
  * processing ("stopped") and take effect on the next process call —
  * settling to bit-exact dry through the bus. */
-static void test_track_master_fx_enable_works_while_stopped(void) {
-  printf("test_track_master_fx_enable_works_while_stopped\n");
+static void test_track_output_fx_enable_works_while_stopped(void) {
+  printf("test_track_output_fx_enable_works_while_stopped\n");
   le_engine* e = make_configured_engine();
   bus_fx_record_loop(e, 0.5f);
   static float cap[FX_EN_SETTLE];
@@ -24994,13 +25184,13 @@ static void test_track_master_fx_enable_works_while_stopped(void) {
   CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK); /* 1x */
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 0, 0.0f) == LE_OK); /* 1x */
-  CHECK(le_engine_set_master_fx_param(e, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 0, 0.0f) == LE_OK); /* 1x */
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   /* Both flips land BEFORE any processing touches the new chains. */
   CHECK(le_engine_set_track_fx_chain_enabled(e, 0, 0) == LE_OK);
-  CHECK(le_engine_set_master_fx_enabled(e, 0, 0) == LE_OK);
+  CHECK(le_engine_set_output_fx_enabled(e, 0, 0, 0) == LE_OK);
   drain(e);
 
   /* Both chains are disabled -> after any ramp settles the loop's 0.5 is
@@ -25010,7 +25200,7 @@ static void test_track_master_fx_enable_works_while_stopped(void) {
 
   /* Re-enable both (still no ring traffic needed): wet again. */
   CHECK(le_engine_set_track_fx_chain_enabled(e, 0, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_enabled(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_enabled(e, 0, 0, 1) == LE_OK);
   process_n(e, 0.0f, FX_EN_SETTLE, cap);
   CHECK(fabsf(cap[FX_EN_SETTLE - 1] - tanhf(tanhf(0.5f))) < 1e-5f);
 
@@ -25021,8 +25211,8 @@ static void test_track_master_fx_enable_works_while_stopped(void) {
  * CONTROL thread at set time (before any audio-thread processing); a
  * same-type re-set preserves tweaked params; an actual type change re-seeds
  * defaults. */
-static void test_track_master_fx_prepare_entry_reuse(void) {
-  printf("test_track_master_fx_prepare_entry_reuse\n");
+static void test_track_output_fx_prepare_entry_reuse(void) {
+  printf("test_track_output_fx_prepare_entry_reuse\n");
   le_engine* e = make_configured_engine();
 
   /* Control-side allocation: the ring exists the moment the setter returns,
@@ -25030,7 +25220,7 @@ static void test_track_master_fx_prepare_entry_reuse(void) {
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   CHECK(e->tracks[0].bus.fx.delay[0][0] != NULL);
   CHECK(e->tracks[0].bus.fx.delay[0][1] != NULL);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   CHECK(e->outputs[0].fx.fx.delay[0][0] != NULL);
   CHECK(e->outputs[0].fx.fx.delay[0][1] != NULL);
   drain(e);
@@ -25040,8 +25230,8 @@ static void test_track_master_fx_prepare_entry_reuse(void) {
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   drain(e);
   CHECK(fabsf(load_f32(&e->tracks[0].bus.a_fx_param[0][1]) - 0.33f) < 1e-6f);
-  CHECK(le_engine_set_master_fx_param(e, 0, 1, 0.44f) == LE_OK);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 1, 0.44f) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   drain(e);
   CHECK(fabsf(load_f32(&e->outputs[0].fx.a_fx_param[0][1]) - 0.44f) < 1e-6f);
 
@@ -25061,8 +25251,8 @@ static void test_track_master_fx_prepare_entry_reuse(void) {
  * driven while a perf capture is armed and applied on the audio thread,
  * must leave the event log completely EMPTY. Guards the pinned decision
  * against a future symmetry edit mirroring the lane family's plog events. */
-static void test_track_master_fx_setters_push_no_plog(void) {
-  printf("test_track_master_fx_setters_push_no_plog\n");
+static void test_track_output_fx_setters_push_no_plog(void) {
+  printf("test_track_output_fx_setters_push_no_plog\n");
   le_engine* e = make_configured_engine();
   float out[64];
 
@@ -25074,11 +25264,11 @@ static void test_track_master_fx_setters_push_no_plog(void) {
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.5f) == LE_OK);
   CHECK(le_engine_set_track_fx_enabled(e, 0, 0, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_chain_enabled(e, 0, 0) == LE_OK);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx_param(e, 0, 0, 0.5f) == LE_OK);
-  CHECK(le_engine_set_master_fx_enabled(e, 0, 0) == LE_OK);
-  CHECK(le_engine_set_master_fx_chain_enabled(e, 0) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_param(e, 0, 0, 0, 0.5f) == LE_OK);
+  CHECK(le_engine_set_output_fx_enabled(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_output_fx_chain_enabled(e, 0, 0) == LE_OK);
   /* Apply the ring-backed commands on the audio thread — the lane twins
    * push their plog entries exactly there (apply_command). */
   process_const(e, 0.0f, LOOP_N, out);
@@ -25107,8 +25297,8 @@ static void test_track_master_fx_setters_push_no_plog(void) {
 /* Lifecycle: configure/reconfigure/destroy with populated Track + Master
  * chains (delay + reverb entries) frees every buffer — the ASan suite run
  * proves leak-freedom; this test drives the paths. */
-static void test_track_master_fx_lifecycle(void) {
-  printf("test_track_master_fx_lifecycle\n");
+static void test_track_output_fx_lifecycle(void) {
+  printf("test_track_output_fx_lifecycle\n");
   le_engine* e = make_configured_engine();
   bus_fx_record_loop(e, 0.5f);
   static float cap[256];
@@ -25116,9 +25306,9 @@ static void test_track_master_fx_lifecycle(void) {
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   CHECK(le_engine_set_track_fx(e, 0, 1, LE_FX_REVERB) == LE_OK);
   CHECK(le_engine_set_track_fx_count(e, 0, 2) == LE_OK);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_REVERB) == LE_OK);
-  CHECK(le_engine_set_master_fx(e, 1, LE_FX_DELAY) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 2) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_REVERB) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 1, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 2) == LE_OK);
   drain(e);
   process_n(e, 0.0f, 256, cap);
 
@@ -25138,8 +25328,8 @@ static void test_track_master_fx_lifecycle(void) {
   /* Repopulate, then destroy with the chains still live (ASan-clean). */
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
-  CHECK(le_engine_set_master_fx(e, 0, LE_FX_REVERB) == LE_OK);
-  CHECK(le_engine_set_master_fx_count(e, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_REVERB) == LE_OK);
+  CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
   drain(e);
   le_engine_destroy(e);
 }
@@ -27978,7 +28168,7 @@ int main(void) {
   test_deferred_arm_first_wrap_shadow_fits_loop();
   test_click_defaults_and_validation();
   test_click_masked_channels_and_volume();
-  test_click_rides_output_bus();
+  test_click_processed_by_output_bus();
   test_click_respects_output_enabled_gate();
   test_click_mode_rec_semantics();
   test_click_punch_in_overdub_no_off_grid_click();
@@ -28491,19 +28681,23 @@ int main(void) {
   test_track_fx_disabled_chain_keeps_bus_topology();
   test_track_fx_tail_continuity();
   test_output_fx_colors_monitors();
-  test_master_fx_before_gain_limiter();
-  test_master_fx_empty_set_then_empty_bit_identity();
-  test_master_fx_ch_out_2_wet_pair();
-  test_master_fx_ch_out_4_is_bus_0();
+  test_output_fx_before_gain_limiter();
+  test_output_fx_empty_set_then_empty_bit_identity();
+  test_output_fx_ch_out_2_wet_pair();
+  test_output_fx_ch_out_4_is_bus_0();
   test_output_bus_level_mute_mono_balance();
   test_output_setters_reject_invalid_and_clamp();
+  test_cut_sound_silences_full_wet_chain_at_once();
+  test_output_bus_honours_disabled_channels();
+  test_fx_retype_mid_drain_starts_clean();
+  test_perf_follow_survives_configure_and_capture_bus();
   test_cut_sound_stops_tracks_and_clears_tails();
-  test_master_fx_ch_out_1_mono();
-  test_track_master_fx_setters_reject_invalid();
-  test_track_master_fx_enable_works_while_stopped();
-  test_track_master_fx_prepare_entry_reuse();
-  test_track_master_fx_setters_push_no_plog();
-  test_track_master_fx_lifecycle();
+  test_output_fx_ch_out_1_mono();
+  test_track_output_fx_setters_reject_invalid();
+  test_track_output_fx_enable_works_while_stopped();
+  test_track_output_fx_prepare_entry_reuse();
+  test_track_output_fx_setters_push_no_plog();
+  test_track_output_fx_lifecycle();
 
   test_cache_cached_matches_live_every_builtin();
   test_cache_cached_matches_live_multi_slot_chain();

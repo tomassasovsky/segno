@@ -1090,16 +1090,16 @@ void main() {
       expect(setup.balance, isEmpty);
     });
 
-    test('the per-bus writer sets a key per fact off its default and removes '
-        'the others, keyed per device', () async {
-      await repository.saveOutputBus(
+    test('each per-fact writer sets a key for a value off its default and '
+        'removes it for the default, touching nothing else', () async {
+      await repository.saveOutputLevel(device: 'Scarlett', bus: 1, level: 0.5);
+      await repository.saveOutputMute(device: 'Scarlett', bus: 1, muted: true);
+      await repository.saveOutputBalance(
         device: 'Scarlett',
         bus: 1,
-        level: 0.5,
-        muted: true,
         balance: -0.25,
       );
-      await repository.saveOutputBus(device: 'Scarlett', bus: 0, mono: true);
+      await repository.saveOutputMono(device: 'Scarlett', bus: 0, mono: true);
 
       expect(store.values['output_level.Scarlett.1'], 0.5);
       expect(store.values['output_mute.Scarlett.1'], isTrue);
@@ -1124,20 +1124,22 @@ void main() {
       expect(other.level, isEmpty);
       expect(other.mono, isEmpty);
 
-      // Back to the defaults: every key of that bus goes.
-      await repository.saveOutputBus(device: 'Scarlett', bus: 1, level: 1);
-      expect(
-        store.values.keys.where((k) => k.endsWith('.Scarlett.1')),
-        isEmpty,
-      );
+      // A level put back to unity clears its own key and leaves the mute
+      // and balance of that destination alone — the point of one writer per
+      // fact: a level ride cannot delete a mute set between two of its
+      // ticks.
+      await repository.saveOutputLevel(device: 'Scarlett', bus: 1, level: 1);
+      expect(store.values.containsKey('output_level.Scarlett.1'), isFalse);
+      expect(store.values['output_mute.Scarlett.1'], isTrue);
+      expect(store.values['output_balance.Scarlett.1'], -0.25);
     });
 
     test('clamps on both sides of the store and reads only the first '
         'busCount destinations', () async {
-      await repository.saveOutputBus(
+      await repository.saveOutputLevel(device: 'Scarlett', bus: 0, level: 3);
+      await repository.saveOutputBalance(
         device: 'Scarlett',
         bus: 0,
-        level: 3,
         balance: -7,
       );
       expect(store.values['output_level.Scarlett.0'], 1.0);
@@ -1154,8 +1156,8 @@ void main() {
 
     test('replaceOutputSetup writes the given buses and clears the first '
         'busCount destinations it does not name', () async {
-      await repository.saveOutputBus(device: 'Scarlett', bus: 0, muted: true);
-      await repository.saveOutputBus(device: 'Scarlett', bus: 5, mono: true);
+      await repository.saveOutputMute(device: 'Scarlett', bus: 0, muted: true);
+      await repository.saveOutputMono(device: 'Scarlett', bus: 5, mono: true);
       await repository.replaceOutputSetup(
         device: 'Scarlett',
         busCount: 2,

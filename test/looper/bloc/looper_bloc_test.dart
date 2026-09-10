@@ -747,16 +747,18 @@ void main() {
     );
 
     blocTest<LooperBloc, LooperState>(
-      'LooperOutputLevelChanged forwards the level and persists that '
-      "destination's facts only",
+      'LooperOutputLevelChanged forwards the level and persists that fact '
+      'only',
       build: buildWithDevice,
       act: (bloc) => bloc.add(const LooperOutputLevelChanged(1, level: 0.5)),
       verify: (_) async {
         verify(() => repository.setOutputLevel(bus: 1, level: 0.5)).called(1);
         final s = await stored();
         expect(s.level, {1: 0.5});
-        expect(s.muted, {1: true});
-        expect(s.mono, isEmpty); // bus 0 was not touched
+        // The mute the repository also holds is that destination's other
+        // fact: this event does not write it, and cannot clobber it.
+        expect(s.muted, isEmpty);
+        expect(s.mono, isEmpty);
         expect(s.balance, isEmpty);
       },
     );
@@ -776,18 +778,24 @@ void main() {
           () => repository.setOutputBalance(bus: 0, balance: -0.25),
         ).called(1);
         final s = await stored();
-        expect(s.level, {1: 0.5});
         expect(s.muted, {1: true});
         expect(s.mono, {0: true});
         expect(s.balance, {0: -0.25});
+        // No level event fired, so no level key was written.
+        expect(s.level, isEmpty);
       },
     );
 
     blocTest<LooperBloc, LooperState>(
-      'a destination put back to its defaults is cleared from the store',
+      'a fact put back to its default clears its own key and leaves the '
+      "destination's other facts alone",
       build: () {
         final bloc = buildWithDevice();
-        when(() => repository.outputSetup).thenReturn(const OutputSetup());
+        // The repository now reports that destination at unity but still
+        // muted: a level ride must not carry the mute away with it.
+        when(
+          () => repository.outputSetup,
+        ).thenReturn(const OutputSetup(buses: {1: OutputBus(muted: true)}));
         return bloc;
       },
       act: (bloc) async {
@@ -806,7 +814,7 @@ void main() {
       verify: (_) async {
         final s = await stored();
         expect(s.level, isEmpty);
-        expect(s.muted, isEmpty);
+        expect(s.muted, {1: true});
         expect(s.mono, {0: true}); // bus 0 untouched
       },
     );

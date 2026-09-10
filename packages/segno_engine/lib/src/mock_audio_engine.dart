@@ -212,6 +212,13 @@ class MockAudioEngine implements AudioEngine {
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
     _perfFrames = 0;
+    // The output destinations go back to their defaults on a fresh start,
+    // like the native engine's configure. The capture policy deliberately
+    // does NOT: it is a preference, not device state.
+    _outputLevel.fillRange(0, _outputLevel.length, 1);
+    _outputMuted.fillRange(0, _outputMuted.length, false);
+    _outputMono.fillRange(0, _outputMono.length, false);
+    _outputBalance.fillRange(0, _outputBalance.length, 0);
     // The tap-tempo pair state is transient (per-session), unlike the tempo
     // grid/click SETTINGS above it, which persist across start/stop —
     // mirrors engine.c:371-372 (has_tap/last_tap_frame reset on configure).
@@ -277,6 +284,9 @@ class MockAudioEngine implements AudioEngine {
       outputBalances: _outputBalance.sublist(0, (outputs + 1) ~/ 2),
       tailResetRev: _tailResetRev,
       perfFollowOutput: _perfArmed ? _perfFollowArmed : _perfFollowPending,
+      // The mock models no structural output gate, so the first destination
+      // is always the one a capture would read.
+      perfCaptureBus: outputs > 0 ? 0 : -1,
       // perfOverruns / perfZeroFilledFrames default to 0: the mock models no
       // ring capacity and no drain thread, so nothing ever overflows and no
       // silence is ever substituted.
@@ -984,37 +994,49 @@ class MockAudioEngine implements AudioEngine {
   // family above. ----
 
   @override
-  EngineResult setMasterFx({
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) => _requireRunning();
 
   @override
-  EngineResult setMasterFxCount({required int count}) => _requireRunning();
+  EngineResult setOutputFxCount({required int bus, required int count}) =>
+      _requireRunning();
 
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) => _requireRunning();
 
-  /// Recorded [setMasterFxEnabled] calls, in order, for test assertions.
-  final masterFxEnabledCalls = <({int index, bool enabled})>[];
+  /// Recorded [setOutputFxEnabled] calls, in order, for test assertions.
+  final outputFxEnabledCalls = <({int bus, int index, bool enabled})>[];
 
-  /// Recorded [setMasterFxChainEnabled] calls, in order, for test assertions.
-  final masterFxChainEnabledCalls = <bool>[];
+  /// Recorded [setOutputFxChainEnabled] calls, in order, for test assertions.
+  final outputFxChainEnabledCalls = <({int bus, bool enabled})>[];
 
   @override
-  EngineResult setMasterFxEnabled({required int index, required bool enabled}) {
+  EngineResult setOutputFxEnabled({
+    required int bus,
+    required int index,
+    required bool enabled,
+  }) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
-    masterFxEnabledCalls.add((index: index, enabled: enabled));
+    outputFxEnabledCalls.add((bus: bus, index: index, enabled: enabled));
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) {
-    masterFxChainEnabledCalls.add(enabled);
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    outputFxChainEnabledCalls.add((bus: bus, enabled: enabled));
     return EngineResult.ok;
   }
 

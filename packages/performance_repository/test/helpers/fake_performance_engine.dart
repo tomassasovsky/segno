@@ -125,6 +125,7 @@ class FakePerformanceEngine implements AudioEngine {
     perfZeroFilledFrames: perfZeroFilledFrames,
     perfStopped: perfStopped,
     perfFollowOutput: perfFollowOutput ?? false,
+    perfCaptureBus: perfCaptureBus,
     outputBusCount: outputLevels.length,
     outputLevels: outputLevels,
     outputMuted: outputMuted,
@@ -342,9 +343,11 @@ class FakePerformanceEngine implements AudioEngine {
   /// [snapshot] as the policy the next arm freezes.
   bool? perfFollowOutput;
 
-  /// The output bus facts [snapshot] reports (slice 3b).
+  /// The output bus facts [snapshot] reports (slice 3b), and the
+  /// destination a capture would read.
   List<double> outputLevels = const [];
   List<bool> outputMuted = const [];
+  int perfCaptureBus = 0;
 
   @override
   EngineResult setPerfFollowOutput({required bool follow}) {
@@ -509,26 +512,32 @@ class FakePerformanceEngine implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFx({
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxCount({required int count}) => EngineResult.ok;
+  EngineResult setOutputFxCount({required int bus, required int count}) =>
+      EngineResult.ok;
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxEnabled({
+  EngineResult setOutputFxEnabled({
+    required int bus,
     required int index,
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) =>
-      EngineResult.ok;
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) => EngineResult.ok;
 
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
   /// test can assert that a closed face leaves nothing running.

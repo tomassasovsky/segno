@@ -572,26 +572,32 @@ class FakeSessionEngine implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFx({
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxCount({required int count}) => EngineResult.ok;
+  EngineResult setOutputFxCount({required int bus, required int count}) =>
+      EngineResult.ok;
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxEnabled({
+  EngineResult setOutputFxEnabled({
+    required int bus,
     required int index,
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) =>
-      EngineResult.ok;
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) => EngineResult.ok;
 
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
   /// test can assert that a closed face leaves nothing running.

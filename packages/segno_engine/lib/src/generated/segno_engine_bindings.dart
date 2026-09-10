@@ -3279,31 +3279,6 @@ class SegnoEngineBindings {
       _le_engine_set_track_fx_chain_enabledPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Sets Master insert chain entry [index] (0..LE_FX_MAX-1) to [type]. Same
-  /// contract as le_engine_set_track_fx (type change resets DSP state, buffers
-  /// allocate on this calling thread, defaults seeded on an actual change). Use
-  /// le_engine_set_master_fx_count to make entries active.
-  int le_engine_set_master_fx(
-    ffi.Pointer<le_engine> engine,
-    int index,
-    int type,
-  ) {
-    return _le_engine_set_master_fx(
-      engine,
-      index,
-      type,
-    );
-  }
-
-  late final _le_engine_set_master_fxPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
-        >
-      >('le_engine_set_master_fx');
-  late final _le_engine_set_master_fx = _le_engine_set_master_fxPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
-
   /// ---- output buses (accepted design, slice 3b) ----
   /// Bus [bus] is the hardware pair (2 bus, 2 bus + 1). After every source has
   /// summed onto the outputs (tracks, monitors, the click), each bus runs its
@@ -3311,9 +3286,9 @@ class SegnoEngineBindings {
   /// pair averaged onto both channels; balance then disabled), balance (-1..1,
   /// the unity-centre law of le_engine_set_lane_pan: it attenuates one side)
   /// and mute (silence; the level is kept). The global master gain and limiter
-  /// follow. A bus a source is not routed to is untouched by that source. The
-  /// Master insert API (le_engine_set_master_fx and friends) is bus 0's chain.
-  /// All remembered by the caller and reset by (re)configure.
+  /// follow. A bus a source is not routed to is untouched by that source.
+  /// Bus 0's chain is what the app calls the Master insert. All remembered by
+  /// the caller and reset by (re)configure.
   int le_engine_set_output_level(
     ffi.Pointer<le_engine> engine,
     int bus,
@@ -3398,7 +3373,13 @@ class SegnoEngineBindings {
   late final _le_engine_set_output_balance = _le_engine_set_output_balancePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
 
-  /// Bus [bus]'s chain: the same five calls as the Master insert, per bus.
+  /// Bus [bus]'s chain, the bus twin of the Track-stage family: the type
+  /// change resets that entry's DSP state, buffers allocate on this calling
+  /// thread, defaults are seeded on an actual change; count clamps to
+  /// 0..LE_FX_MAX; params and the enable flags are direct stores that work
+  /// while stopped. While a chain is EMPTY its bus passes bit-identical. FX
+  /// kernels are strict stereo; a single-channel last bus processes l == r.
+  /// Post-capture: leaves fx_added_latency_frames untouched.
   int le_engine_set_output_fx(
     ffi.Pointer<le_engine> engine,
     int bus,
@@ -3534,7 +3515,9 @@ class SegnoEngineBindings {
 
   /// Cut all sound (accepted design, slice 3b): see LE_CMD_CUT_SOUND. Posted
   /// through the ring; returns LE_ERR_NOT_RUNNING while stopped (nothing
-  /// sounds then).
+  /// sounds then). Built-in chains clear their state at once and their delay
+  /// rings within a few ms (spaced like a chain stomp's re-enable clears); a
+  /// hosted plugin has no reset seam, so its own tail is not cut.
   int le_engine_cut_sound(
     ffi.Pointer<le_engine> engine,
   ) {
@@ -3573,107 +3556,6 @@ class SegnoEngineBindings {
       >('le_perf_set_follow_output');
   late final _le_perf_set_follow_output = _le_perf_set_follow_outputPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
-
-  /// Sets the Master insert active chain length to [count] (0..LE_FX_MAX).
-  /// Count 0 (empty) restores bit-identical output.
-  int le_engine_set_master_fx_count(
-    ffi.Pointer<le_engine> engine,
-    int count,
-  ) {
-    return _le_engine_set_master_fx_count(
-      engine,
-      count,
-    );
-  }
-
-  late final _le_engine_set_master_fx_countPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
-        >
-      >('le_engine_set_master_fx_count');
-  late final _le_engine_set_master_fx_count = _le_engine_set_master_fx_countPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
-
-  /// Sets parameter [param] (0..LE_FX_PARAMS-1) of Master insert chain entry
-  /// [index] to [value] (clamped to 0..1). Direct atomic publish — works
-  /// whether or not the device is running.
-  int le_engine_set_master_fx_param(
-    ffi.Pointer<le_engine> engine,
-    int index,
-    int param,
-    double value,
-  ) {
-    return _le_engine_set_master_fx_param(
-      engine,
-      index,
-      param,
-      value,
-    );
-  }
-
-  late final _le_engine_set_master_fx_paramPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_engine>,
-            ffi.Int32,
-            ffi.Int32,
-            ffi.Float,
-          )
-        >
-      >('le_engine_set_master_fx_param');
-  late final _le_engine_set_master_fx_param = _le_engine_set_master_fx_paramPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
-
-  /// Enables/disables Master insert chain entry [index] — same contract as
-  /// le_engine_set_track_fx_enabled (direct store, works while stopped,
-  /// click-free ramp, no tail spill, re-enable reset, default enabled, type
-  /// change re-seeds to 1).
-  int le_engine_set_master_fx_enabled(
-    ffi.Pointer<le_engine> engine,
-    int index,
-    int enabled,
-  ) {
-    return _le_engine_set_master_fx_enabled(
-      engine,
-      index,
-      enabled,
-    );
-  }
-
-  late final _le_engine_set_master_fx_enabledPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
-        >
-      >('le_engine_set_master_fx_enabled');
-  late final _le_engine_set_master_fx_enabled =
-      _le_engine_set_master_fx_enabledPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
-
-  /// Enables/disables the WHOLE Master insert chain in one atomic flip without
-  /// touching the per-entry flags — same contract as
-  /// le_engine_set_track_fx_chain_enabled. Default enabled.
-  int le_engine_set_master_fx_chain_enabled(
-    ffi.Pointer<le_engine> engine,
-    int enabled,
-  ) {
-    return _le_engine_set_master_fx_chain_enabled(
-      engine,
-      enabled,
-    );
-  }
-
-  late final _le_engine_set_master_fx_chain_enabledPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
-        >
-      >('le_engine_set_master_fx_chain_enabled');
-  late final _le_engine_set_master_fx_chain_enabled =
-      _le_engine_set_master_fx_chain_enabledPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Fills [out] with lane [lane] of track [channel]'s cache telemetry. Control
   /// thread; also drains events / runs a scheduler tick first, so polling this is
@@ -5071,21 +4953,6 @@ enum le_command_code {
   /// length. fxcount arm: channel, count
   /// (lane unused).
   LE_CMD_SET_TRACK_FX_COUNT(50),
-
-  /// set the Master insert chain entry type (and
-  /// reset its DSP state). fx arm: index, type
-  /// (channel + lane unused).
-  LE_CMD_SET_MASTER_FX(51),
-
-  /// set the Master insert active chain
-  /// length. fxcount arm: count (channel +
-  /// lane unused).
-  LE_CMD_SET_MASTER_FX_COUNT(52),
-
-  /// Arm the chromatic tuner on one hardware input, or -1 to disarm. arg_i =
-  /// channel. Gating is the contract, not an optimization: detection runs only
-  /// while an input is armed, so a console that never opens the Tuner face
-  /// pays one atomic load per block.
   LE_CMD_SET_TUNER_INPUT(53),
 
   /// enable/disable input conditioning.
@@ -5229,8 +5096,6 @@ enum le_command_code {
     48 => LE_CMD_SET_CLOCK_MODE,
     49 => LE_CMD_SET_TRACK_FX,
     50 => LE_CMD_SET_TRACK_FX_COUNT,
-    51 => LE_CMD_SET_MASTER_FX,
-    52 => LE_CMD_SET_MASTER_FX_COUNT,
     53 => LE_CMD_SET_TUNER_INPUT,
     54 => LE_CMD_SET_INPUT_COND,
     55 => LE_CMD_SET_INPUT_COND_PARAM,
@@ -6055,6 +5920,13 @@ final class le_snapshot extends ffi.Struct {
   /// policy the next arm would freeze while not armed.
   @ffi.Int32()
   external int perf_follow_output;
+
+  /// The output bus the armed take captures (the first bus with an enabled
+  /// channel at arm), or the one the next arm would capture; -1 when no
+  /// output is enabled. The offline render replays this bus's level and
+  /// mute under Follow output volume.
+  @ffi.Int32()
+  external int perf_capture_bus;
 }
 
 /// The plugin format a descriptor was discovered in.

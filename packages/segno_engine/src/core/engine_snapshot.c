@@ -283,10 +283,19 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   }
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
-  out->perf_follow_output =
-      atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)
-          ? engine->perf.follow_output
-          : load_i32(&engine->a_perf_follow_output);
+  const int perf_armed =
+      atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire);
+  out->perf_follow_output = perf_armed ? engine->perf.follow_output
+                                       : load_i32(&engine->a_perf_follow_output);
+  if (perf_armed) {
+    out->perf_capture_bus = engine->perf.master_out_ch[0] >= 0
+                                ? engine->perf.master_out_ch[0] / 2
+                                : -1;
+  } else {
+    int32_t out_ch[2];
+    out->perf_capture_bus =
+        le_perf_first_enabled_pair(engine, out_ch) > 0 ? out_ch[0] / 2 : -1;
+  }
   /* Per-channel meters and trim (slice 3; trailing block). */
   for (int32_t c = 0; c < LE_MAX_CHANNELS; ++c) {
     out->input_peaks[c] = load_f32(&engine->a_in_peak_ch_bits[c]);

@@ -2616,31 +2616,6 @@ int32_t le_engine_set_output_fx_chain_enabled(le_engine* engine, int32_t bus,
   return LE_OK;
 }
 
-/* The Master insert API is bus 0's chain (slice 3b). */
-int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
-                                int32_t type) {
-  return le_engine_set_output_fx(engine, 0, index, type);
-}
-
-int32_t le_engine_set_master_fx_count(le_engine* engine, int32_t count) {
-  return le_engine_set_output_fx_count(engine, 0, count);
-}
-
-int32_t le_engine_set_master_fx_param(le_engine* engine, int32_t index,
-                                      int32_t param, float value) {
-  return le_engine_set_output_fx_param(engine, 0, index, param, value);
-}
-
-int32_t le_engine_set_master_fx_enabled(le_engine* engine, int32_t index,
-                                        int32_t enabled) {
-  return le_engine_set_output_fx_enabled(engine, 0, index, enabled);
-}
-
-int32_t le_engine_set_master_fx_chain_enabled(le_engine* engine,
-                                              int32_t enabled) {
-  return le_engine_set_output_fx_chain_enabled(engine, 0, enabled);
-}
-
 int32_t le_engine_set_output_level(le_engine* engine, int32_t bus,
                                    float level) {
   if (!le_output_bus_valid(bus)) return LE_ERR_INVALID;
@@ -2911,7 +2886,7 @@ static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate) {
 /* The first one or two ENABLED output channels, in ascending index order — the
  * master capture pair (mono when only one is enabled). Returns the count found
  * (0, 1, or 2); out_ch[1] is left at -1 when only one is found. */
-static int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
+int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
   out_ch[0] = -1;
   out_ch[1] = -1;
   const uint32_t mask =

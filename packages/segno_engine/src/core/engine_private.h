@@ -547,13 +547,11 @@ typedef struct le_input_cond {
  *   bus topology (part 1a's bypass makes it dry), so a stomp toggles DSP,
  *   never routing.
  *
- * - le_engine.master_fx — the engine-level Master insert (D-MASTER): runs on
- *   the summed track mix between mix_tracks_frame and mix_monitors_frame, so
- *   live monitor signals — summed after it — stay uncolored, and master
- *   gain/limiter (master_bus_frame, unchanged) still applies to both.
- *   D-MASTERCH: FX kernels are strict stereo, so for ch_out != 2 the chain
- *   processes the FIRST ENABLED output pair and passes other channels through
- *   bit-exact dry; ch_out == 1 processes mono as l == r.
+ * - le_engine.outputs[k].fx — output bus k's chain (slice 3b): runs on
+ *   everything summed onto the pair (2k, 2k + 1), tracks, monitors and the
+ *   click alike, after mix_monitors_frame and click_frame and before the
+ *   bus's level, Mono/balance and mute; the global master gain and limiter
+ *   (master_bus_frame) follow. Bus 0's chain is the app's Master insert.
  *
  * Both default empty with every enable flag 1, so old sessions and fresh
  * engines behave identically (dry). Enable flips are direct atomic stores
@@ -581,6 +579,11 @@ typedef struct le_output_bus {
   _Atomic uint32_t a_bal_gr_bits;
   le_fx_bus fx;
 } le_output_bus;
+
+/* The output bus a performance capture reads (engine_commands.c): the first
+ * bus with an enabled channel, out_ch = its enabled channel(s) ([1] == -1
+ * for one). Returns the channel count (0: nothing enabled). */
+int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]);
 
 /* What one history entry represents. */
 typedef enum {
@@ -1244,13 +1247,9 @@ struct le_engine {
   uint64_t clip_hold_until[LE_MAX_MONITORED_INPUTS];
   _Atomic uint32_t a_input_clip_mask;
 
-  /* Master insert chain (FX v3 part 1b): runs on the summed track mix between
-   * mix_tracks_frame and mix_monitors_frame — see le_fx_bus's doc for the
-   * full D-MASTER / D-MASTERCH semantics. Live monitors (summed after it)
-   * stay uncolored; master gain/limiter (master_bus_frame) is unchanged and
-   * still applies to both. */
-  /* Output buses (slice 3b): bus k is the pair (2k, 2k + 1). Bus 0's chain
-   * is the Master insert of the older API. */
+  /* Output buses (slice 3b): bus k is the pair (2k, 2k + 1); see
+   * le_fx_bus's doc for the chain's place in the frame. Bus 0's chain is
+   * what the app calls the Master insert. */
   le_output_bus outputs[LE_MAX_OUTPUT_BUSES];
   /* Advances on every applied LE_CMD_CUT_SOUND; published as
    * le_snapshot.tail_reset_rev. */

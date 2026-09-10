@@ -307,6 +307,11 @@ class PerformanceRepository {
     await Directory(dir).create(recursive: true);
 
     final snapshot = _engine.snapshot();
+    // The destination this arm captures; -1 (no output enabled) would fail
+    // the arm below, and destination 0 is the honest record either way.
+    final captureBus = snapshot.perfCaptureBus < 0
+        ? 0
+        : snapshot.perfCaptureBus;
     final tracks = _captureSettledLanes(dir, chains: chains, writeChains: true);
     final armSnapshot = PerformanceArmSnapshot(
       // The master loop phase at arm is no longer recorded here: it was
@@ -319,10 +324,16 @@ class PerformanceRepository {
       limiterCeiling: chains.limiterCeiling,
       latencyOffsetFrames: snapshot.recordOffsetFrames,
       // The capture policy (slice 3b) the engine freezes for this take,
-      // and destination 0's facts the render's replay starts from.
+      // the destination it captures, and that destination's facts the
+      // render's replay starts from.
       followOutput: snapshot.perfFollowOutput,
-      outputLevel: snapshot.outputLevels.isEmpty ? 1 : snapshot.outputLevels[0],
-      outputMuted: snapshot.outputMuted.isNotEmpty && snapshot.outputMuted[0],
+      captureBus: captureBus,
+      outputLevel: captureBus < snapshot.outputLevels.length
+          ? snapshot.outputLevels[captureBus]
+          : 1,
+      outputMuted:
+          captureBus < snapshot.outputMuted.length &&
+          snapshot.outputMuted[captureBus],
       // The engine tempo at the arm instant, verbatim (0 = unset, matching
       // the session manifest's own sentinel). The crash-salvage fallback
       // only — the disarm snapshot re-reads it authoritatively, because
