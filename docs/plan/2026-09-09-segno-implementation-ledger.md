@@ -1199,8 +1199,31 @@ The backing card lands with the backing player.
   is muted, a Mono note that always shows, and a decibel-linear meter fill
   each fail exactly the tests that name them.
 
+### The name pages
+
+- **The header action names the side of the rig the task is on**: the two
+  input tasks offer Input names, the two output tasks Output names, exactly
+  as the pen draws them.
+- **They are page state, not routes.** The pen draws them behind the same
+  frame, so Back returns to the task they were opened from rather than out to
+  Settings, and the tab pills give way to the list.
+- **The output list is one row per destination**, not per jack, because that
+  is the unit a name belongs to.
+- Renaming reuses the console's one rename sheet, with an empty name allowed:
+  emptying the field is how a port is handed back its numbers.
+
+#### Checks
+
+- Dart: root 2267 passing and 35 skipped, `dart analyze` clean over `lib` and
+  `test`, `bloc lint` clean over 241 files, both arb files at 1115 keys with
+  no key in one and missing from the other.
+- Mutation-checked: a header action that always names the inputs, a Back that
+  leaves the route from the list, an output list drawn per jack, and a rename
+  that is dropped each fail exactly the tests that name them.
+
 #### Not verified here
 
-The input and output name pages land next, and the Signal-era routing surfaces
-and the interim click card retire with them.
+The Signal-era routing surfaces and the interim click card still stand; they
+retire next, and the new surfaces take over as the only dispatchers of the
+lane-routing and output-gate events.
 

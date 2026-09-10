@@ -4037,5 +4037,34 @@
     "routingOutputAppliesNote": "Applies to everything routed here.",
     "@routingOutputAppliesNote": {
             "description": "That these settings are the destination\\u2019s, not one source\\u2019s."
+    },
+    "routingInputNames": "Input names",
+    "@routingInputNames": {
+            "description": "The page that names the hardware inputs."
+    },
+    "routingOutputNames": "Output names",
+    "@routingOutputNames": {
+            "description": "The page that names the destinations."
+    },
+    "routingRename": "Rename",
+    "@routingRename": {
+            "description": "Changes what a port is called."
+    },
+    "routingRenameTitle": "Rename",
+    "@routingRenameTitle": {
+            "description": "Title of the rename sheet."
+    },
+    "routingRenameField": "{port} name",
+    "@routingRenameField": {
+            "placeholders": {
+                    "port": {
+                            "type": "String"
+                    }
+            },
+            "description": "The rename field, named after the port it renames."
+    },
+    "routingNoPortsYet": "No ports until an interface is open.",
+    "@routingNoPortsYet": {
+            "description": "Shown on a names page with no device open."
     }
 }
