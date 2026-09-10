@@ -741,6 +741,13 @@ void le_engine_drain_events(le_engine* engine) {
       t->depth_republish = 0;
       le_publish_undo_depth(t);
     }
+    /* The punch-out latch lives only for the unapplied window: once the
+     * track has actually left OVERDUBBING, a later tap must be free to post
+     * its own punch-out again. */
+    if (t->dub_punch_out_posted &&
+        load_i32(&t->a_state) != LE_TRACK_OVERDUBBING) {
+      t->dub_punch_out_posted = 0;
+    }
     const int in_flight =
         atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire);
     /* Effective state, not raw a_state: a CLEAR / undo-to-empty pushed but not
@@ -1125,6 +1132,10 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
   if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
     le_begin_punch_in(engine, channel);
   }
+  /* A deliberate press re-opens the punch-out latch: whatever an undo posted
+   * before it, THIS command is the one the user means, and the next undo on
+   * the pass it starts must be free to punch out again. */
+  t->dub_punch_out_posted = 0;
   const int32_t rc = le_push(engine, LE_CMD_RECORD, channel, 0.0f);
   /* Pre-arm ONE shadow slot for a fresh capture that is bound to run straight
    * into overdub (rec/dub, or a non-defining fixed multiple). Posted AFTER the
@@ -1400,8 +1411,16 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
      * leaves it on the redo stack. A pass that wrote nothing still retires
      * (the pre-pass image) and the tap then peels the previous layer. */
     (void)le_cancel_arm(engine, channel);
-    const int32_t rc = le_push(engine, LE_CMD_RECORD, channel, 0.0f);
-    if (rc != LE_OK) return rc;
+    /* Once per punch-out. A second tap before the audio thread drains the
+     * first would post a second RECORD, and the audio thread applies the
+     * pair as punch-out then punch-IN: asking to remove two passes would
+     * leave the track recording input again. The peel still queues, because
+     * that is what the tap asked for. */
+    if (!t->dub_punch_out_posted) {
+      const int32_t rc = le_push(engine, LE_CMD_RECORD, channel, 0.0f);
+      if (rc != LE_OK) return rc;
+      t->dub_punch_out_posted = 1;
+    }
     t->queued_undo++;
     return LE_OK;
   }
@@ -1725,13 +1744,61 @@ int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div) {
  * multiples of the shortest take; SYNC/BAND need whole multiples of the
  * primary or the divisions the engine plays (1/2, 1/4); SONG/FREE take
  * anything. */
+/* The control thread's base pick, and the span it picked, from ONE read each.
+ *
+ * Two things separate it from [le_mode_base_channel], which the audio thread
+ * shares. It measures [le_effective_len], so a restore or an emptying that is
+ * posted but not yet applied is measured as the audio thread will find it —
+ * the gate and the switch then agree instead of one accepting spans the other
+ * re-clocks. And it hands back the length it chose, so the caller cannot
+ * re-read a field the audio thread may have zeroed in between: that second
+ * read is what made `len % base` a division by zero during the two writes
+ * handle_clear's freeze path does in one block.
+ *
+ * Returns the channel, or -1 when nothing is recorded; *out_len carries its
+ * length and is 0 in that case. */
+static int32_t le_ctl_mode_base(le_engine* engine, int32_t mode,
+                                int32_t* out_len) {
+  *out_len = 0;
+  if (mode == LE_LOOPER_MODE_MULTI) {
+    int32_t best = -1;
+    int32_t best_len = 0;
+    for (int32_t c = 0; c < engine->track_count; ++c) {
+      const int32_t len = le_effective_len(&engine->tracks[c]);
+      if (len <= 0) continue;
+      if (best < 0 || len < best_len) {
+        best = c;
+        best_len = len;
+      }
+    }
+    *out_len = best_len;
+    return best;
+  }
+  const int32_t crowned = load_i32(&engine->a_primary_track);
+  if (crowned >= 0 && crowned < engine->track_count) {
+    const int32_t len = le_effective_len(&engine->tracks[crowned]);
+    if (len > 0) {
+      *out_len = len;
+      return crowned;
+    }
+  }
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    const int32_t len = le_effective_len(&engine->tracks[c]);
+    if (len > 0) {
+      *out_len = len;
+      return c;
+    }
+  }
+  return -1;
+}
+
 static int le_spans_fit_mode(le_engine* engine, int32_t mode) {
   if (mode == LE_LOOPER_MODE_SONG || mode == LE_LOOPER_MODE_FREE) return 1;
-  const int32_t base_ch = le_mode_base_channel(engine, mode);
-  if (base_ch < 0) return 1; /* an empty rig fits every mode */
-  const int32_t base = load_i32(&engine->tracks[base_ch].lanes[0].a_len);
+  int32_t base = 0;
+  const int32_t base_ch = le_ctl_mode_base(engine, mode, &base);
+  if (base_ch < 0 || base <= 0) return 1; /* an empty rig fits every mode */
   for (int32_t c = 0; c < engine->track_count; ++c) {
-    const int32_t len = load_i32(&engine->tracks[c].lanes[0].a_len);
+    const int32_t len = le_effective_len(&engine->tracks[c]);
     if (len <= 0) continue;
     if (len >= base) {
       if (len % base != 0) return 0;
@@ -1763,15 +1830,23 @@ int32_t le_engine_looper_mode_gate(le_engine* engine, int32_t mode) {
     }
   }
   for (int32_t c = 0; c < engine->track_count; ++c) {
-    if (engine->armed[c] && load_i32(&engine->tracks[c].a_pending)) {
+    /* EITHER, not both. The audio thread blocks the switch on pending_record
+     * alone, so an arm posted but not yet applied — armed here, not yet
+     * published there — would pass a both-sides test and then be dropped on
+     * the audio thread with the caller already told LE_OK. The reverse pair
+     * (a disarm posted but not applied) reports QUEUED for the length of one
+     * block; a refusal the next poll clears beats a switch that vanishes. */
+    if (engine->armed[c] || load_i32(&engine->tracks[c].a_pending)) {
       return LE_MODE_GATE_QUEUED;
     }
   }
   if (!le_spans_fit_mode(engine, mode)) return LE_MODE_GATE_SPANS;
   for (int32_t c = 0; c < engine->track_count; ++c) {
     le_track* t = &engine->tracks[c];
-    if (le_effective_state(t) == LE_TRACK_PLAYING &&
-        load_i32(&t->lanes[0].a_len) > 0) {
+    /* Effective on BOTH halves: le_restore_clear does not publish the length
+     * it restores, so a raw read here reports a restored-but-unapplied track
+     * as empty and the switch lands on spans this gate never measured. */
+    if (le_effective_state(t) == LE_TRACK_PLAYING && le_effective_len(t) > 0) {
       return LE_MODE_GATE_PLAYING;
     }
   }
@@ -1796,7 +1871,7 @@ int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode) {
     for (int32_t c = 0; c < engine->track_count; ++c) {
       le_track* t = &engine->tracks[c];
       if (le_effective_state(t) != LE_TRACK_PLAYING) continue;
-      if (load_i32(&t->lanes[0].a_len) <= 0) continue;
+      if (le_effective_len(t) <= 0) continue;
       const int32_t rc = le_push(engine, LE_CMD_STOP, c, 0.0f);
       if (rc != LE_OK) return rc;
     }

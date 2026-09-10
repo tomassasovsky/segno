@@ -682,6 +682,15 @@ typedef struct le_track {
   int32_t outstanding_slots[4]; /* shadow slots posted, not yet retired */
   int outstanding_count;
   int queued_undo;   /* undo taps deferred until the in-flight layer retires */
+  /* An undo's overdub punch-out has been posted and not yet applied.
+   *
+   * LE_CMD_RECORD does not bump a_state_acks, so le_effective_state cannot
+   * see it: a second tap inside the same audio block would read OVERDUBBING
+   * again and post a second RECORD, which the audio thread applies as a
+   * punch back IN. This latch makes the punch-out idempotent for the length
+   * of that window. Cleared by the event drain once the track is no longer
+   * overdubbing, and by a deliberate punch-in. */
+  int dub_punch_out_posted;
   int32_t empty_len; /* len to restore on redo-from-empty (0 = none) */
   /* control: a user clear posted on a CAPTURING track. The restore point
    * needs the length the finalize decides, so it is filed when

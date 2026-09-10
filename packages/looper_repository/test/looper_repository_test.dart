@@ -885,6 +885,33 @@ void main() {
         expect(calls('redo'), 2);
       });
 
+      test('a member still waiting keeps the group whole on redo', () {
+        // Its undo never reached the engine, so the clear it would have
+        // lifted is still in force: the group's re-clear has nothing to do
+        // for it, and cancelling the parked tap IS its re-clear. Reading the
+        // engine's redo history for such a member answers about a history the
+        // engine has not moved, which stood the whole group down and left one
+        // track restored and one re-cleared out of a single undo and redo.
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(calls('undo'), 2); // 0 and 2; 1 is parked
+
+        // The redo arrives before the poll that would settle the parked tap.
+        engine.redoReclearsChannels = {0, 2};
+        expect(repo.redo(channel: 2), EngineResult.ok);
+        expect(calls('redo'), 2); // both restored members re-cleared as one
+
+        // And the parked tap is gone, so the later poll cannot restore
+        // track 1 behind the redo's back.
+        engine.clearRestorePendingChannels = {};
+        expect(repo.undoRestoresClearAll, isFalse);
+        expect(calls('undo'), 2);
+      });
+
       test('a frozen member is a member once its point is filed', () {
         engine
           ..undoRestoresClearChannels = {0, 2}

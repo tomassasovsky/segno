@@ -656,7 +656,7 @@ class LooperRepository {
     if (next == _last) return;
     _last = next;
     _forgetEmptyWaveforms(next);
-    _rememberLooperMode(next, poll: true);
+    _rememberLooperMode(next, snapshot.looperMode, poll: true);
     // Before listeners see it: `auto` monitors resolve against the arm state
     // this projection just moved, and the gate should open on the same frame
     // the track arms rather than one behind it.
@@ -669,11 +669,12 @@ class LooperRepository {
   /// param the UI drives — reflects on the next frame rather than waiting for
   /// the next poll tick (which would make a dragged knob feel a tick behind).
   void _reproject() {
-    final next = _project(_engine.snapshot());
+    final snapshot = _engine.snapshot();
+    final next = _project(snapshot);
     if (next == _last) return;
     _last = next;
     _forgetEmptyWaveforms(next);
-    _rememberLooperMode(next, poll: false);
+    _rememberLooperMode(next, snapshot.looperMode, poll: false);
     _reconcileAutoMonitors();
     _controller.add(next);
   }
@@ -1745,19 +1746,35 @@ class LooperRepository {
     // stand down; the track's own redo answers.
     if (_clearAllRedoGroup.contains(channel)) {
       final group = _clearAllRedoGroup;
+      // A member still PARKED is intact by construction: its undo never
+      // reached the engine, so the clear it would have lifted is still in
+      // force and there is nothing for the group's re-clear to redo on it.
+      // Reading `redoReclears` for such a member answers about a history the
+      // engine has not moved yet — false — which stood the whole group down
+      // and left one track restored and one re-cleared out of what the user
+      // performed as a single undo and redo.
       final intact = group.every(
-        (member) => _engine.redoReclears(channel: member),
+        (member) =>
+            _pendingClearUndo.contains(member) ||
+            _engine.redoReclears(channel: member),
       );
-      _clearAllRedoGroup = const {};
       if (intact) {
+        _clearAllRedoGroup = const {};
         var result = EngineResult.ok;
         for (final member in group) {
+          // Cancelling the parked tap IS this member's re-clear: the tap is
+          // the only thing that would have restored it a poll later.
+          if (_pendingClearUndo.remove(member)) {
+            _clearRestore.remove(member);
+            continue;
+          }
           final rc = _redoTrack(member);
           if (!rc.isOk) result = rc;
         }
         _clearAllGroup = group;
         return result;
       }
+      _clearAllRedoGroup = const {};
     }
     return _redoTrack(channel);
   }
@@ -4191,6 +4208,17 @@ class LooperRepository {
     );
   }
 
+  /// The mode the rig is set to, INCLUDING one chosen while the engine is
+  /// closed and so not yet reported by it.
+  ///
+  /// The projection carries the engine's report, because the sweep policy and
+  /// every other consumer of a running rig need what the audio thread is
+  /// actually doing. This is the other half: what the user chose. Persistence
+  /// reads it so a mode picked with the interface unplugged survives the next
+  /// launch — it reaches the engine only at the next start, so the report
+  /// would never carry it and the choice would silently revert.
+  LooperMode get intendedLooperMode => _looperMode;
+
   /// Sets the looper mode (B2a, D4). Remembered and re-applied on every
   /// (re)start. Ignored by the engine while any track has content (see
   /// [LooperModeControl]'s class doc) — locked, not queued: a rejected
@@ -4231,9 +4259,12 @@ class LooperRepository {
   /// Keeps [_looperMode] equal to what the engine runs: a reported change
   /// (the switch landing, a session load) is taken as is; a request the
   /// reports never confirm is dropped in favour of the reported mode.
-  void _rememberLooperMode(LooperState next, {required bool poll}) {
+  void _rememberLooperMode(
+    LooperState next,
+    LooperMode reported, {
+    required bool poll,
+  }) {
     if (!_intendRunning || !next.status.isConnected) return;
-    final reported = next.transport.looperMode;
     final requested = _requestedLooperMode;
     if (requested == null) {
       _looperMode = reported;
