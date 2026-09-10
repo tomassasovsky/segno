@@ -587,4 +587,63 @@ void main() {
       );
     });
   });
+
+  group('FxChannels', () {
+    test(
+      'an entry defaults to stereo/stereo/centre/unity and omits the key',
+      () {
+        final fx = BuiltInEffect(type: TrackEffectType.drive);
+        expect(fx.channels, FxChannels.defaults);
+        expect(fx.channels.isDefault, isTrue);
+        expect(fx.toJson().containsKey('channels'), isFalse);
+      },
+    );
+
+    test('round-trips through the wire in both arms', () {
+      const channels = FxChannels(
+        input: FxChannelInput.monoSum,
+        output: FxChannelOutput.mono,
+        placement: -0.5,
+        level: 0.25,
+      );
+      final chain = <TrackEffect>[
+        BuiltInEffect(type: TrackEffectType.reverb, channels: channels),
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
+          channels: channels,
+        ),
+      ];
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+      expect(decoded, chain);
+      expect(decoded.map((e) => e.channels), [channels, channels]);
+    });
+
+    test('a malformed channels block decodes as the defaults', () {
+      // This decoder runs uncaught on the boot path.
+      expect(
+        BuiltInEffect.fromJson(const {
+          'type': 1,
+          'channels': 'sideways',
+        }).channels,
+        FxChannels.defaults,
+      );
+      expect(
+        BuiltInEffect.fromJson(const {
+          'type': 1,
+          'channels': {'input': 'nope', 'level': 'loud'},
+        }).channels,
+        FxChannels.defaults,
+      );
+    });
+
+    test('channel handling separates two otherwise identical entries', () {
+      final a = BuiltInEffect(type: TrackEffectType.echo);
+      final b = BuiltInEffect(
+        type: TrackEffectType.echo,
+        channels: const FxChannels(level: 0.5),
+      );
+      expect(a, isNot(b));
+      expect(b.copyWith(channels: FxChannels.defaults), a);
+    });
+  });
 }

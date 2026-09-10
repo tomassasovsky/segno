@@ -18,6 +18,128 @@ const int kTrackEffectMax = 8;
 /// the native `LE_FX_PARAMS`.
 const int kTrackEffectParams = 4;
 
+/// How one chain entry takes the pair it is handed (slice 3e) — the accepted
+/// design's rack input choice, and a single effect's "Effect input".
+enum FxChannelInput {
+  /// The default: left and right as they arrive.
+  stereo,
+
+  /// The incoming left on both sides.
+  left,
+
+  /// The incoming right on both sides.
+  right,
+
+  /// Their average on both sides.
+  monoSum;
+
+  /// Maps a persisted wire name back; anything unrecognized is [stereo].
+  static FxChannelInput fromWireName(Object? raw) {
+    for (final v in values) {
+      if (v.name == raw) return v;
+    }
+    return FxChannelInput.stereo;
+  }
+}
+
+/// How one chain entry hands its result on. [stereo] keeps what the effects
+/// made and the placement is a Balance; [mono] averages them and the placement
+/// is a Pan.
+enum FxChannelOutput {
+  /// The default.
+  stereo,
+
+  /// Averaged to mono and placed.
+  mono;
+
+  /// Maps a persisted wire name back; anything unrecognized is [stereo].
+  static FxChannelOutput fromWireName(Object? raw) =>
+      raw == 'mono' ? FxChannelOutput.mono : FxChannelOutput.stereo;
+}
+
+/// One chain entry's channel handling and level (slice 3e).
+///
+/// The accepted design puts these around each instance: the [input] choice
+/// before its effects, the [output] choice and then the [level] after them.
+/// [placement] is a Balance when [output] is stereo and a Pan when it is mono,
+/// on the one unity-centre law the lanes, monitors and output buses use — so
+/// [defaults] is bit-identical to no channel handling at all, and is omitted
+/// from a persisted entry.
+@immutable
+final class FxChannels {
+  /// Creates an [FxChannels].
+  const FxChannels({
+    this.input = FxChannelInput.stereo,
+    this.output = FxChannelOutput.stereo,
+    this.placement = 0,
+    this.level = 1,
+  });
+
+  /// Rebuilds an [FxChannels] from its [toJson] map. Wrong-typed and missing
+  /// fields decode to the default — this runs on the boot path.
+  factory FxChannels.fromJson(Map<String, dynamic> json) {
+    final placement = json['placement'];
+    final level = json['level'];
+    return FxChannels(
+      input: FxChannelInput.fromWireName(json['input']),
+      output: FxChannelOutput.fromWireName(json['output']),
+      placement: placement is num ? placement.toDouble() : 0,
+      level: level is num ? level.toDouble() : 1,
+    );
+  }
+
+  /// Stereo in, stereo out, centre, unity — what an untouched entry carries.
+  static const FxChannels defaults = FxChannels();
+
+  /// What the entry's effects are handed.
+  final FxChannelInput input;
+
+  /// How the entry hands its result on.
+  final FxChannelOutput output;
+
+  /// Balance (stereo out) or Pan (mono out), `-1..1`, centre `0`.
+  final double placement;
+
+  /// The entry's own level, applied last. Unity `1`.
+  final double level;
+
+  /// Whether this is [defaults] — the shape the engine reads as "nothing to
+  /// do" and the wire omits.
+  bool get isDefault => this == defaults;
+
+  /// Returns a copy with the given fields replaced.
+  FxChannels copyWith({
+    FxChannelInput? input,
+    FxChannelOutput? output,
+    double? placement,
+    double? level,
+  }) => FxChannels(
+    input: input ?? this.input,
+    output: output ?? this.output,
+    placement: placement ?? this.placement,
+    level: level ?? this.level,
+  );
+
+  /// A JSON-friendly map for persistence.
+  Map<String, dynamic> toJson() => {
+    'input': input.name,
+    'output': output.name,
+    'placement': placement,
+    'level': level,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is FxChannels &&
+      other.input == input &&
+      other.output == output &&
+      other.placement == placement &&
+      other.level == level;
+
+  @override
+  int get hashCode => Object.hash(input, output, placement, level);
+}
+
 /// Where one chain entry sits relative to the loop player.
 ///
 /// The chain is ordered [pre] entries first, then [post] entries, so the split
@@ -297,6 +419,9 @@ sealed class TrackEffect {
   /// Where this entry sits relative to the loop player.
   FxPlacement get placement;
 
+  /// This entry's channel handling and level.
+  FxChannels get channels;
+
   /// A JSON-friendly map for persistence (codes, not enum names).
   Map<String, dynamic> toJson();
 }
@@ -312,6 +437,7 @@ final class BuiltInEffect extends TrackEffect {
     this.enabled = true,
     this.slotId,
     this.placement = FxPlacement.post,
+    this.channels = FxChannels.defaults,
   }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
 
   /// Rebuilds a [BuiltInEffect] from [toJson] output; unknown codes fall back
@@ -335,6 +461,10 @@ final class BuiltInEffect extends TrackEffect {
     final rawSlotId = json['slotId'];
     final slotId = rawSlotId is String ? rawSlotId : null;
     final placement = FxPlacement.fromWireName(json['placement']);
+    final rawChannels = json['channels'];
+    final channels = rawChannels is Map<String, dynamic>
+        ? FxChannels.fromJson(rawChannels)
+        : FxChannels.defaults;
     final rawParams = json['params'];
     if (rawParams is! List) {
       return BuiltInEffect(
@@ -342,6 +472,7 @@ final class BuiltInEffect extends TrackEffect {
         enabled: enabled,
         slotId: slotId,
         placement: placement,
+        channels: channels,
       );
     }
     final decoded = [for (final v in rawParams) (v as num).toDouble()];
@@ -355,6 +486,7 @@ final class BuiltInEffect extends TrackEffect {
       enabled: enabled,
       slotId: slotId,
       placement: placement,
+      channels: channels,
     );
   }
 
@@ -379,6 +511,9 @@ final class BuiltInEffect extends TrackEffect {
   final FxPlacement placement;
 
   @override
+  final FxChannels channels;
+
+  @override
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
@@ -388,12 +523,14 @@ final class BuiltInEffect extends TrackEffect {
     bool? enabled,
     String? slotId,
     FxPlacement? placement,
+    FxChannels? channels,
   }) => BuiltInEffect(
     type: type ?? this.type,
     params: params ?? this.params,
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
     placement: placement ?? this.placement,
+    channels: channels ?? this.channels,
   );
 
   @override
@@ -404,6 +541,7 @@ final class BuiltInEffect extends TrackEffect {
     if (!enabled) 'enabled': false,
     if (slotId != null) 'slotId': slotId,
     if (placement != FxPlacement.post) 'placement': placement.wireName,
+    if (!channels.isDefault) 'channels': channels.toJson(),
   };
 
   @override
@@ -413,11 +551,18 @@ final class BuiltInEffect extends TrackEffect {
       other.enabled == enabled &&
       other.slotId == slotId &&
       other.placement == placement &&
+      other.channels == channels &&
       _listEquals(other.params, params);
 
   @override
-  int get hashCode =>
-      Object.hash(type, enabled, slotId, placement, Object.hashAll(params));
+  int get hashCode => Object.hash(
+    type,
+    enabled,
+    slotId,
+    placement,
+    channels,
+    Object.hashAll(params),
+  );
 
   static bool _listEquals(List<double> a, List<double> b) {
     if (a.length != b.length) return false;
@@ -448,6 +593,7 @@ final class PluginEffect extends TrackEffect {
     this.enabled = true,
     this.slotId,
     this.placement = FxPlacement.post,
+    this.channels = FxChannels.defaults,
   });
 
   /// Rebuilds a [PluginEffect] from a persisted `{type, plugin, paramValues,
@@ -475,6 +621,9 @@ final class PluginEffect extends TrackEffect {
       enabled: rawEnabled is! bool || rawEnabled,
       slotId: rawSlotId is String ? rawSlotId : null,
       placement: FxPlacement.fromWireName(json['placement']),
+      channels: json['channels'] is Map<String, dynamic>
+          ? FxChannels.fromJson(json['channels'] as Map<String, dynamic>)
+          : FxChannels.defaults,
     );
   }
 
@@ -513,6 +662,9 @@ final class PluginEffect extends TrackEffect {
   final FxPlacement placement;
 
   @override
+  final FxChannels channels;
+
+  @override
   int get typeCode => kPluginFxCode;
 
   /// Returns a copy with the given fields replaced.
@@ -525,6 +677,7 @@ final class PluginEffect extends TrackEffect {
     bool? enabled,
     String? slotId,
     FxPlacement? placement,
+    FxChannels? channels,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -534,6 +687,7 @@ final class PluginEffect extends TrackEffect {
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
     placement: placement ?? this.placement,
+    channels: channels ?? this.channels,
   );
 
   @override
@@ -550,6 +704,7 @@ final class PluginEffect extends TrackEffect {
     if (!enabled) 'enabled': false,
     if (slotId != null) 'slotId': slotId,
     if (placement != FxPlacement.post) 'placement': placement.wireName,
+    if (!channels.isDefault) 'channels': channels.toJson(),
   };
 
   @override
@@ -561,6 +716,7 @@ final class PluginEffect extends TrackEffect {
       other.enabled == enabled &&
       other.slotId == slotId &&
       other.placement == placement &&
+      other.channels == channels &&
       _mapEquals(other.paramValues, paramValues);
 
   @override
@@ -571,6 +727,7 @@ final class PluginEffect extends TrackEffect {
     enabled,
     slotId,
     placement,
+    channels,
     Object.hashAllUnordered([
       for (final e in paramValues.entries) Object.hash(e.key, e.value),
     ]),

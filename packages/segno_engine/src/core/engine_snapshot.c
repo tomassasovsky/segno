@@ -180,8 +180,20 @@ uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
   int32_t pre = load_i32(&ln->a_fx_pre_count);
   const int32_t count = load_i32(&ln->a_fx_count);
   if (pre > count) pre = count; /* a torn read is a live fallback, never a lie */
-  return le_fx_chain_fingerprint(pre, ln->a_fx_type, ln->a_fx_param,
-                                 ln->a_fx_enabled, &ln->a_fx_chain_enabled);
+  uint64_t h = le_fx_chain_fingerprint(pre, ln->a_fx_type, ln->a_fx_param,
+                                       ln->a_fx_enabled,
+                                       &ln->a_fx_chain_enabled);
+  /* The channel handling too (slice 3e): the render applies it, so a change
+   * to an input choice, a placement or a level makes the published print as
+   * stale as a param change does. */
+  le_fx_chan chan[LE_FX_MAX];
+  int32_t chan_any = 0;
+  memset(chan, 0, sizeof(chan));
+  le_fx_chan_snapshot(chan, &chan_any, pre, ln->a_fx_chan_in,
+                      ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
+                      ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
+  for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
+  return h;
 }
 
 uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine, int32_t input) {

@@ -3801,6 +3801,265 @@ class SegnoEngineBindings {
       _le_engine_set_all_tracks_fx_chain_enabledPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// ---- per-entry channel handling and level (slice 3e) ----
+  ///
+  /// The accepted design puts an input choice, an output choice and a level
+  /// around each instance in a chain: the input choice before its effects, the
+  /// output choice and then the level after them.
+  ///
+  /// in_mode   0 Stereo (default, left and right as they arrive)
+  /// 1 Left only   — the incoming left on both sides
+  /// 2 Right only  — the incoming right on both sides
+  /// 3 Mono sum    — their average on both sides
+  /// out_mode  0 Stereo (default) — keeps what the effects made; [placement]
+  /// is a BALANCE over the two sides
+  /// 1 Mono            — averages them; [placement] is a PAN
+  /// placement -1..1, centre 0 (default). One unity-centre law, the same the
+  /// lanes, monitors and output buses use, so centre is exactly
+  /// unity and a hard side is exactly silent.
+  /// level     0..LE_MAX_GAIN, unity 1 (default). Applied last.
+  ///
+  /// Set as one call, because the four values are one control surface and a
+  /// half-applied change would be audible. Direct atomic publishes: they change
+  /// gain within an entry, never its DSP state, so nothing resets and there is
+  /// no ring command to order against. An entry left at its defaults is
+  /// bit-identical to one with no channel handling at all.
+  ///
+  /// A BYPASSED entry passes the signal through exactly as it arrived — the
+  /// choices belong to the entry, so they leave with it.
+  int le_engine_set_lane_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_lane_fx_channels(
+      engine,
+      channel,
+      lane,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_lane_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_lane_fx_channels');
+  late final _le_engine_set_lane_fx_channels =
+      _le_engine_set_lane_fx_channelsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              int,
+              int,
+              int,
+              int,
+              double,
+              double,
+            )
+          >();
+
+  int le_engine_set_monitor_input_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_monitor_input_fx_channels(
+      engine,
+      input,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_monitor_input_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_monitor_input_fx_channels');
+  late final _le_engine_set_monitor_input_fx_channels =
+      _le_engine_set_monitor_input_fx_channelsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              int,
+              int,
+              int,
+              double,
+              double,
+            )
+          >();
+
+  int le_engine_set_track_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_track_fx_channels(
+      engine,
+      channel,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_track_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_track_fx_channels');
+  late final _le_engine_set_track_fx_channels =
+      _le_engine_set_track_fx_channelsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              int,
+              int,
+              int,
+              double,
+              double,
+            )
+          >();
+
+  int le_engine_set_output_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int bus,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_output_fx_channels(
+      engine,
+      bus,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_output_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_output_fx_channels');
+  late final _le_engine_set_output_fx_channels =
+      _le_engine_set_output_fx_channelsPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              int,
+              int,
+              int,
+              double,
+              double,
+            )
+          >();
+
+  int le_engine_set_all_tracks_fx_channels(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int in_mode,
+    int out_mode,
+    double placement,
+    double level,
+  ) {
+    return _le_engine_set_all_tracks_fx_channels(
+      engine,
+      index,
+      in_mode,
+      out_mode,
+      placement,
+      level,
+    );
+  }
+
+  late final _le_engine_set_all_tracks_fx_channelsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_all_tracks_fx_channels');
+  late final _le_engine_set_all_tracks_fx_channels =
+      _le_engine_set_all_tracks_fx_channelsPtr
+          .asFunction<
+            int Function(ffi.Pointer<le_engine>, int, int, int, double, double)
+          >();
+
   int le_engine_set_fx_cache_cap(
     ffi.Pointer<le_engine> engine,
     int bytes,

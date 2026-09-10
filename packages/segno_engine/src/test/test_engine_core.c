@@ -24880,6 +24880,146 @@ static void test_output_fx_ch_out_4_is_bus_0(void) {
   le_engine_destroy(e);
 }
 
+/* ---- per-entry channel handling and level (slice 3e) ---- */
+
+/* Every choice, on one entry, measured. A unity DRIVE (p0 = 0 -> 1x pre-gain,
+ * p1 = 1 -> unity level) passes tanhf(x), so the wet value is hand-computable
+ * and the channel arithmetic around it is the only thing under test.
+ *
+ * Stereo out with a hard balance uses the engine's one pan law, so the far
+ * side is exactly silent — the same law a lane's pan and an output bus's
+ * balance use, which is why centre is exactly unity and an untouched entry is
+ * bit-identical. */
+static void test_fx_entry_channels_and_level(void) {
+  printf("test_fx_entry_channels_and_level\n");
+  static float cap[4 * 64];
+  float zin[64] = {0};
+  float in[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.5f;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 4, 1000);
+  le_engine_set_fx_cache_cap(e, 0); /* the live path, not a print */
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  le_engine_process(e, cap, in, LOOP_N);
+  le_engine_record(e, 0);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f) == LE_OK);
+  drain(e);
+  /* Past the enable ramp. */
+  for (int k = 0; k < 8; ++k) le_engine_process(e, cap, zin, 64);
+  const float wet = cap[4 * 63];
+  CHECK(fabsf(wet - tanhf(0.5f)) < 1e-4f);
+
+  /* Level halves both sides, after the effects. */
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 0, 0, 0.0f, 0.5f) == LE_OK);
+  le_engine_process(e, cap, zin, 64);
+  CHECK(fabsf(cap[4 * 63] - wet * 0.5f) < 1e-4f);
+  CHECK(fabsf(cap[4 * 63 + 1] - wet * 0.5f) < 1e-4f);
+
+  /* Stereo out, balance hard right: the left jack exactly silent. */
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 0, 0, 1.0f, 1.0f) == LE_OK);
+  le_engine_process(e, cap, zin, 64);
+  CHECK(cap[4 * 63] == 0.0f);
+  CHECK(fabsf(cap[4 * 63 + 1] - wet) < 1e-4f);
+
+  /* Back to centre: bit-identical to no channel handling at all. */
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 0, 0, 0.0f, 1.0f) == LE_OK);
+  le_engine_process(e, cap, zin, 64);
+  CHECK(fabsf(cap[4 * 63] - wet) < 1e-4f);
+
+  /* Mono out, panned hard left: the right jack exactly silent. The source is
+   * mono here, so the average is the same value — what this pins is the pan,
+   * and that Mono ignores nothing it should not. */
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 0, 1, -1.0f, 1.0f) == LE_OK);
+  le_engine_process(e, cap, zin, 64);
+  CHECK(fabsf(cap[4 * 63] - wet) < 1e-4f);
+  CHECK(cap[4 * 63 + 1] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* The input choice decides what the entry's effects are handed, and a BYPASSED
+ * entry passes the signal through exactly as it arrived — choice, placement
+ * and level all leave with it. Proven on a stereo pair the entry can tell
+ * apart: a REVERB placed hard right is the only thing on the chain, so with
+ * "Right only" its input is the right side and its output lands right.
+ */
+static void test_fx_entry_channels_leave_with_a_bypass(void) {
+  printf("test_fx_entry_channels_leave_with_a_bypass\n");
+  static float cap[4 * 64];
+  float zin[64] = {0};
+  float in[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.5f;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 4, 1000);
+  le_engine_set_fx_cache_cap(e, 0);
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  le_engine_process(e, cap, in, LOOP_N);
+  le_engine_record(e, 0);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f) == LE_OK);
+  /* Half level and hard left, so a bypass that kept them would be obvious. */
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 3, 0, -1.0f, 0.5f) == LE_OK);
+  drain(e);
+  for (int k = 0; k < 8; ++k) le_engine_process(e, cap, zin, 64);
+  CHECK(cap[4 * 63 + 1] == 0.0f); /* the entry really is placed hard left */
+
+  /* Bypass it. The very first block is INSIDE the ~5 ms crossfade, and the
+   * dry side of that fade must be the pair as it arrived: the right jack is
+   * already coming back, where a placement applied to the dry as well as the
+   * wet would hold it at silence for the whole fade. */
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, cap, zin, 64);
+  CHECK(cap[4 * 63 + 1] > 1e-3f);
+
+  /* Settled: the dry pair, untouched — full level, both jacks. The drive has
+   * no tail, so nothing drains past the fade. */
+  for (int k = 0; k < 8; ++k) le_engine_process(e, cap, zin, 64);
+  CHECK(fabsf(cap[4 * 63] - 0.5f) < 1e-4f);
+  CHECK(fabsf(cap[4 * 63 + 1] - 0.5f) < 1e-4f);
+
+  le_engine_destroy(e);
+}
+
+/* The setters reject what they cannot honour and clamp what they can, and the
+ * five owners all accept the same call. */
+static void test_fx_entry_channel_setter_guards(void) {
+  printf("test_fx_entry_channel_setter_guards\n");
+  le_engine* e = make_configured_engine();
+
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, -1, 0, 0, 0, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, LE_FX_MAX, 0, 0, 0, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 4, 0, 0, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 0, 2, 0, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 0, 0, 0, 1) == LE_OK);
+  /* Out-of-range placement and level clamp rather than fail. */
+  CHECK(le_engine_set_lane_fx_channels(e, 0, 0, 0, 0, 0, 9.0f, 99.0f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_channels(e, 0, 0, 3, 1, 0.5f, 1) ==
+        LE_OK);
+  CHECK(le_engine_set_track_fx_channels(e, 0, 0, 0, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_output_fx_channels(e, 0, 0, 0, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_all_tracks_fx_channels(e, 0, 0, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_all_tracks_fx_channels(NULL, 0, 0, 0, 0, 1) ==
+        LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
 /* ---- the All tracks recorded-mix chain (slice 3e) ---- */
 
 /* An empty All tracks chain is bit-identical to the pre-slice-3e engine:
@@ -25923,6 +26063,31 @@ static void test_a_post_edit_leaves_the_print_standing(void) {
   drain(a);
   pump_frames(a, 0.0f, 256);
   CHECK(cache_engaged(a, 0, 0) == 0); /* same-buffer live fallback */
+  le_engine_destroy(a);
+}
+
+/* A Pre entry's CHANNEL handling is rendered into the print too (slice 3e),
+ * so changing it drops the print exactly as changing a parameter does — the
+ * failure this catches is a stale render that keeps playing the old level or
+ * the old placement. */
+static void test_a_pre_channel_edit_drops_the_print(void) {
+  printf("test_a_pre_channel_edit_drops_the_print\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  CHECK(cache_engaged(a, 0, 0) == 1);
+
+  CHECK(le_engine_set_lane_fx_channels(a, 0, 0, 0, 0, 0, 0.0f, 0.5f) == LE_OK);
+  drain(a);
+  pump_frames(a, 0.0f, 256);
+  CHECK(cache_engaged(a, 0, 0) == 0);
   le_engine_destroy(a);
 }
 
@@ -29108,6 +29273,9 @@ int main(void) {
   test_output_fx_empty_set_then_empty_bit_identity();
   test_output_fx_ch_out_2_wet_pair();
   test_output_fx_ch_out_4_is_bus_0();
+  test_fx_entry_channels_and_level();
+  test_fx_entry_channels_leave_with_a_bypass();
+  test_fx_entry_channel_setter_guards();
   test_all_tracks_empty_is_bit_identical();
   test_all_tracks_leaves_live_monitoring_alone();
   test_all_tracks_runs_per_destination();
@@ -29128,6 +29296,7 @@ int main(void) {
 
   test_only_a_pre_chain_is_printed();
   test_a_post_edit_leaves_the_print_standing();
+  test_a_pre_channel_edit_drops_the_print();
   test_cache_cached_matches_live_every_builtin();
   test_cache_cached_matches_live_multi_slot_chain();
   test_cache_volume_move_invalidates();

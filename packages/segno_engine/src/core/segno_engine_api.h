@@ -2560,6 +2560,57 @@ LE_EXPORT int32_t le_engine_set_all_tracks_fx_enabled(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_all_tracks_fx_chain_enabled(le_engine* engine,
                                                             int32_t enabled);
 
+/* ---- per-entry channel handling and level (slice 3e) ----
+ *
+ * The accepted design puts an input choice, an output choice and a level
+ * around each instance in a chain: the input choice before its effects, the
+ * output choice and then the level after them.
+ *
+ *   in_mode   0 Stereo (default, left and right as they arrive)
+ *             1 Left only   — the incoming left on both sides
+ *             2 Right only  — the incoming right on both sides
+ *             3 Mono sum    — their average on both sides
+ *   out_mode  0 Stereo (default) — keeps what the effects made; [placement]
+ *                                  is a BALANCE over the two sides
+ *             1 Mono            — averages them; [placement] is a PAN
+ *   placement -1..1, centre 0 (default). One unity-centre law, the same the
+ *             lanes, monitors and output buses use, so centre is exactly
+ *             unity and a hard side is exactly silent.
+ *   level     0..LE_MAX_GAIN, unity 1 (default). Applied last.
+ *
+ * Set as one call, because the four values are one control surface and a
+ * half-applied change would be audible. Direct atomic publishes: they change
+ * gain within an entry, never its DSP state, so nothing resets and there is
+ * no ring command to order against. An entry left at its defaults is
+ * bit-identical to one with no channel handling at all.
+ *
+ * A BYPASSED entry passes the signal through exactly as it arrived — the
+ * choices belong to the entry, so they leave with it. */
+LE_EXPORT int32_t le_engine_set_lane_fx_channels(le_engine* engine,
+                                                 int32_t channel, int32_t lane,
+                                                 int32_t index,
+                                                 int32_t in_mode,
+                                                 int32_t out_mode,
+                                                 float placement, float level);
+LE_EXPORT int32_t le_engine_set_monitor_input_fx_channels(
+    le_engine* engine, int32_t input, int32_t index, int32_t in_mode,
+    int32_t out_mode, float placement, float level);
+LE_EXPORT int32_t le_engine_set_track_fx_channels(le_engine* engine,
+                                                  int32_t channel,
+                                                  int32_t index,
+                                                  int32_t in_mode,
+                                                  int32_t out_mode,
+                                                  float placement, float level);
+LE_EXPORT int32_t le_engine_set_output_fx_channels(le_engine* engine,
+                                                   int32_t bus, int32_t index,
+                                                   int32_t in_mode,
+                                                   int32_t out_mode,
+                                                   float placement,
+                                                   float level);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_channels(
+    le_engine* engine, int32_t index, int32_t in_mode, int32_t out_mode,
+    float placement, float level);
+
 LE_EXPORT int32_t le_engine_set_fx_cache_cap(le_engine* engine, int64_t bytes);
 
 /* Current wet-cache memory accounting in bytes (entries + in-flight copies).

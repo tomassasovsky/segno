@@ -67,6 +67,22 @@ static inline uint64_t le_fx_fp_u32(uint64_t h, uint32_t v) {
   return h;
 }
 
+/* Folds one entry's channel handling into a chain fingerprint (slice 3e).
+ *
+ * The PRINT key needs it: the wet cache renders the entries WITH their channel
+ * handling, so a change to an input choice, a placement or a level makes the
+ * published render stale exactly as a param change does. Kept out of
+ * le_engine_lane_fx_fingerprint, which is the Dart-divergence hash over the
+ * chain the repository mirrors. */
+static inline uint64_t le_fx_chan_fold(uint64_t h, const le_fx_chan* c) {
+  h = le_fx_fp_u32(h, (uint32_t)c->in_mode);
+  h = le_fx_fp_u32(h, (uint32_t)c->out_mode);
+  h = le_fx_fp_u32(h, f32_to_bits(c->gl));
+  h = le_fx_fp_u32(h, f32_to_bits(c->gr));
+  return le_fx_fp_u32(h, f32_to_bits(c->level));
+}
+
+
 /* The control thread's view of a track's state: the target of a
  * posted-but-unapplied state-flip command (UNDO_TO_EMPTY / REDO_FROM_EMPTY /
  * CLEAR), or the published a_state once everything posted has been acked.

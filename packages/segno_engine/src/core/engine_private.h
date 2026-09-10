@@ -19,6 +19,7 @@
 /* The struct holds atomic_* fields; pull in <stdatomic.h> explicitly rather than
  * relying on it arriving transitively via lockfree_ring.h. <string.h> backs the
  * memcpy-based float<->bits helpers below. */
+#include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
@@ -165,6 +166,35 @@ extern "C" {
  * overdubbing). All undo/redo bookkeeping — the pool, the stacks, and a_live
  * (whose sole writer is the control thread) — lives on the control thread, so
  * undo/redo never races the audio callback. */
+/* How one chain entry takes the pair it is handed (slice 3e). The accepted
+ * design's rack input choice, and a single effect's "Effect input". */
+typedef enum {
+  LE_FX_CHAN_IN_STEREO = 0, /* the default: left and right as they arrive */
+  LE_FX_CHAN_IN_LEFT = 1,   /* the incoming left on both sides */
+  LE_FX_CHAN_IN_RIGHT = 2,  /* the incoming right on both sides */
+  LE_FX_CHAN_IN_MONO = 3,   /* their average on both sides */
+} le_fx_chan_in;
+
+/* How one chain entry hands its result on. Stereo keeps what the effects made
+ * and Balance changes the relative level of the two sides; Mono averages them
+ * and Pan places the result. Both use the engine's one unity-centre pan law,
+ * so centre is bit-identical to no placement at all. */
+typedef enum {
+  LE_FX_CHAN_OUT_STEREO = 0, /* the default */
+  LE_FX_CHAN_OUT_MONO = 1,
+} le_fx_chan_out;
+
+/* One entry's channel handling and level, as the audio thread reads it. The
+ * gains are precomputed by the setter (le_pan_gains), exactly as a lane's pan
+ * gains are, so the per-sample path is two multiplies. */
+typedef struct le_fx_chan {
+  int32_t in_mode;  /* le_fx_chan_in */
+  int32_t out_mode; /* le_fx_chan_out */
+  float gl;         /* the balance's (or pan's) gains */
+  float gr;
+  float level; /* applied after the effects and after the output choice */
+} le_fx_chan;
+
 /* Audio-thread-owned DSP state for one effects chain (LE_FX_MAX entries), reset
  * per entry when its type changes. svf_* are the state-variable filter
  * integrators; lfo is an LFO phase (0..1, TREMOLO depth / ECHO wow); delay is a
@@ -268,7 +298,46 @@ typedef struct le_fx_state {
    * the MSVC-C++ `#define _Atomic` shim above collapses it cleanly. Identical
    * C11 semantics: an atomic array of pointers to le_plugin_slot. */
   le_plugin_slot *_Atomic plugin[LE_FX_MAX];
+
+  /* Per-entry channel handling and level (slice 3e), cached from the owner's
+   * published atomics ONCE PER BUFFER by le_fx_chan_snapshot and read per
+   * sample from here — the same two-tier arrangement the enable bits use, and
+   * the reason fx_apply_chain needs no extra parameter and no per-lane stack
+   * array for it.
+   *
+   * The accepted design puts these around each instance: the input choice
+   * before its effects, the output choice and then the level after them.
+   *
+   * chan_any is the topology gate: 0 (a zeroed state, and every chain at its
+   * defaults) means fx_apply_chain does not look at `chan` at all, so an
+   * untouched chain is bit-identical to the pre-slice-3e engine. A fresh
+   * le_fx_state is therefore SAFE zeroed — nothing has to remember to seed a
+   * unity level — and any renderer that wants the channel handling seeds
+   * `chan` and sets the flag explicitly. */
+  int32_t chan_any;
+  le_fx_chan chan[LE_FX_MAX];
 } le_fx_state;
+
+/* The unity-centre pan/balance law (accepted design, slice 3; documented on
+ * le_engine_set_lane_pan): the near side stays at unity and the far side falls
+ * on a quarter-sine. Centre is bit-identical to no pan.
+ *
+ * In the header because both threads need it: the audio thread's ring handlers
+ * store a lane's pan gains with it, and the control thread precomputes an FX
+ * entry's channel gains with it (slice 3e). */
+static inline void le_pan_gains(float pan, float* gl, float* gr) {
+  if (pan > 1.0f) pan = 1.0f;
+  if (pan < -1.0f) pan = -1.0f;
+  if (pan == 0.0f) {
+    *gl = 1.0f;
+    *gr = 1.0f;
+    return;
+  }
+  /* Exactly silent at the hard side (cosf(pi/2) is not quite 0). */
+  const float far = fabsf(pan) >= 1.0f ? 0.0f : cosf(fabsf(pan) * 1.57079632679f);
+  *gl = pan > 0.0f ? far : 1.0f;
+  *gr = pan < 0.0f ? far : 1.0f;
+}
 
 /* One rendered Loop-stage wet-cache entry (FX v3 part 2): a lane's full loop,
  * pre-rendered through its record-route chain at the volume baked into the key,
@@ -389,6 +458,16 @@ typedef struct le_lane {
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Per-entry channel handling and level (slice 3e), published like the
+   * params: plain atomics the audio thread caches once per buffer. Defaults
+   * are stereo in, stereo out, unity gains and unity level, which the audio
+   * thread reads as "nothing to do" (le_fx_state.chan_any). */
+  _Atomic int32_t a_fx_chan_in[LE_FX_MAX];
+  _Atomic int32_t a_fx_chan_out[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
+  _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
+  _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
   /* Control-thread-owned shadows of the last successfully PUSHED count/types.
    * a_fx_count / a_fx_type are published by the AUDIO thread when it drains
    * the ring, so the control thread must not read them to decide D-ENSEED
@@ -473,6 +552,16 @@ typedef struct le_monitor_input {
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Per-entry channel handling and level (slice 3e), published like the
+   * params: plain atomics the audio thread caches once per buffer. Defaults
+   * are stereo in, stereo out, unity gains and unity level, which the audio
+   * thread reads as "nothing to do" (le_fx_state.chan_any). */
+  _Atomic int32_t a_fx_chan_in[LE_FX_MAX];
+  _Atomic int32_t a_fx_chan_out[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
+  _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
+  _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
@@ -571,6 +660,16 @@ typedef struct le_fx_bus {
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Per-entry channel handling and level (slice 3e), published like the
+   * params: plain atomics the audio thread caches once per buffer. Defaults
+   * are stereo in, stereo out, unity gains and unity level, which the audio
+   * thread reads as "nothing to do" (le_fx_state.chan_any). */
+  _Atomic int32_t a_fx_chan_in[LE_FX_MAX];
+  _Atomic int32_t a_fx_chan_out[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
+  _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
+  _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
@@ -1824,6 +1923,36 @@ static inline void store_f32(_Atomic uint32_t* slot, float v) {
 static inline float load_f32(_Atomic uint32_t* slot) {
   return bits_to_f32(atomic_load_explicit(slot, memory_order_relaxed));
 }
+
+/* Caches one chain's published channel handling into its DSP state, once per
+ * buffer (slice 3e). Sets chan_any when any ACTIVE entry asks for something
+ * other than stereo in, stereo out and unity level, so a chain at its defaults
+ * costs one flag and fx_apply_chain never looks further. */
+static inline void le_fx_chan_snapshot(le_fx_chan* chan, int32_t* out_any,
+                                       int32_t count, _Atomic int32_t* a_in,
+                                       _Atomic int32_t* a_out,
+                                       _Atomic uint32_t* a_gl,
+                                       _Atomic uint32_t* a_gr,
+                                       _Atomic uint32_t* a_level) {
+  int32_t any = 0;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  for (int32_t s = 0; s < count; ++s) {
+    le_fx_chan* c = &chan[s];
+    c->in_mode = load_i32(&a_in[s]);
+    c->out_mode = load_i32(&a_out[s]);
+    c->gl = load_f32(&a_gl[s]);
+    c->gr = load_f32(&a_gr[s]);
+    c->level = load_f32(&a_level[s]);
+    if (c->in_mode != LE_FX_CHAN_IN_STEREO ||
+        c->out_mode != LE_FX_CHAN_OUT_STEREO || c->gl != 1.0f ||
+        c->gr != 1.0f || c->level != 1.0f) {
+      any = 1;
+    }
+  }
+  *out_any = any;
+}
+
 
 #ifdef __cplusplus
 }

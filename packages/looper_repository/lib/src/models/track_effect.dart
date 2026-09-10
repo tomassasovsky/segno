@@ -2,6 +2,82 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart';
 import 'package:segno_engine/segno_engine.dart' as engine;
 
+/// How one chain entry takes the pair it is handed (slice 3e). Domain mirror
+/// of the engine's `FxChannelInput`.
+enum FxChannelInput {
+  /// The default: left and right as they arrive.
+  stereo,
+
+  /// The incoming left on both sides.
+  left,
+
+  /// The incoming right on both sides.
+  right,
+
+  /// Their average on both sides.
+  monoSum,
+}
+
+/// How one chain entry hands its result on. Domain mirror of the engine's
+/// `FxChannelOutput`.
+enum FxChannelOutput {
+  /// The default: what the effects made, with the placement as a Balance.
+  stereo,
+
+  /// Averaged to mono, with the placement as a Pan.
+  mono,
+}
+
+/// One chain entry's channel handling and level. Domain mirror of the
+/// engine's `FxChannels`.
+///
+/// The accepted design puts these around each instance: the [input] choice
+/// before its effects, the [output] choice and then the [level] after them.
+/// [defaults] is bit-identical to no channel handling at all.
+class FxChannels extends Equatable {
+  /// Creates an [FxChannels].
+  const FxChannels({
+    this.input = FxChannelInput.stereo,
+    this.output = FxChannelOutput.stereo,
+    this.placement = 0,
+    this.level = 1,
+  });
+
+  /// Stereo in, stereo out, centre, unity.
+  static const FxChannels defaults = FxChannels();
+
+  /// What the entry's effects are handed.
+  final FxChannelInput input;
+
+  /// How the entry hands its result on.
+  final FxChannelOutput output;
+
+  /// Balance (stereo out) or Pan (mono out), `-1..1`, centre `0`.
+  final double placement;
+
+  /// The entry's own level, applied last. Unity `1`.
+  final double level;
+
+  /// Whether this is [defaults].
+  bool get isDefault => this == defaults;
+
+  /// Returns a copy with the given fields replaced.
+  FxChannels copyWith({
+    FxChannelInput? input,
+    FxChannelOutput? output,
+    double? placement,
+    double? level,
+  }) => FxChannels(
+    input: input ?? this.input,
+    output: output ?? this.output,
+    placement: placement ?? this.placement,
+    level: level ?? this.level,
+  );
+
+  @override
+  List<Object?> get props => [input, output, placement, level];
+}
+
 /// Where one chain entry sits relative to the loop player. Domain mirror of
 /// the engine's `FxPlacement`.
 ///
@@ -205,6 +281,9 @@ sealed class TrackEffect extends Equatable {
   /// recorded into the loop, [FxPlacement.post] runs downstream of the player
   /// and can ring after Stop.
   FxPlacement get placement;
+
+  /// This entry's channel handling and level.
+  FxChannels get channels;
 }
 
 /// A built-in DSP effect: a [type] with its normalized [params].
@@ -217,6 +296,7 @@ class BuiltInEffect extends TrackEffect {
     this.enabled = true,
     this.slotId,
     this.placement = FxPlacement.post,
+    this.channels = FxChannels.defaults,
   }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
 
   /// The effect type.
@@ -235,6 +315,9 @@ class BuiltInEffect extends TrackEffect {
   final FxPlacement placement;
 
   @override
+  final FxChannels channels;
+
+  @override
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
@@ -244,16 +327,25 @@ class BuiltInEffect extends TrackEffect {
     bool? enabled,
     String? slotId,
     FxPlacement? placement,
+    FxChannels? channels,
   }) => BuiltInEffect(
     type: type ?? this.type,
     params: params ?? this.params,
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
     placement: placement ?? this.placement,
+    channels: channels ?? this.channels,
   );
 
   @override
-  List<Object?> get props => [type, params, enabled, slotId, placement];
+  List<Object?> get props => [
+    type,
+    params,
+    enabled,
+    slotId,
+    placement,
+    channels,
+  ];
 }
 
 /// A hosted VST3/CLAP plugin in a chain entry, identified by its [ref]. Carries
@@ -276,6 +368,7 @@ class PluginEffect extends TrackEffect {
     this.enabled = true,
     this.slotId,
     this.placement = FxPlacement.post,
+    this.channels = FxChannels.defaults,
   });
 
   /// The hosted plugin's identity.
@@ -340,6 +433,9 @@ class PluginEffect extends TrackEffect {
   final FxPlacement placement;
 
   @override
+  final FxChannels channels;
+
+  @override
   int get typeCode => engine.kPluginFxCode;
 
   /// Returns a copy with the given fields replaced.
@@ -356,6 +452,7 @@ class PluginEffect extends TrackEffect {
     bool? enabled,
     String? slotId,
     FxPlacement? placement,
+    FxChannels? channels,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -369,6 +466,7 @@ class PluginEffect extends TrackEffect {
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
     placement: placement ?? this.placement,
+    channels: channels ?? this.channels,
   );
 
   @override
@@ -385,6 +483,7 @@ class PluginEffect extends TrackEffect {
     enabled,
     slotId,
     placement,
+    channels,
   ];
 }
 
@@ -395,6 +494,42 @@ ParamReadout _readoutFromEngine(engine.ParamReadout readout) =>
       engine.ParamReadout.pitchShift => ParamReadout.pitchShift,
       engine.ParamReadout.octaverMode => ParamReadout.octaverMode,
     };
+
+/// Maps a domain [FxChannels] to the engine value at the boundary.
+///
+/// Public because the repository hands it straight to the engine's per-entry
+/// channel setters; every other domain-to-engine conversion stays private
+/// behind the chain codecs.
+engine.FxChannels fxChannelsToEngine(FxChannels c) => engine.FxChannels(
+  input: switch (c.input) {
+    FxChannelInput.stereo => engine.FxChannelInput.stereo,
+    FxChannelInput.left => engine.FxChannelInput.left,
+    FxChannelInput.right => engine.FxChannelInput.right,
+    FxChannelInput.monoSum => engine.FxChannelInput.monoSum,
+  },
+  output: switch (c.output) {
+    FxChannelOutput.stereo => engine.FxChannelOutput.stereo,
+    FxChannelOutput.mono => engine.FxChannelOutput.mono,
+  },
+  placement: c.placement,
+  level: c.level,
+);
+
+/// Maps an engine `FxChannels` to its domain mirror.
+FxChannels _channelsFromEngine(engine.FxChannels c) => FxChannels(
+  input: switch (c.input) {
+    engine.FxChannelInput.stereo => FxChannelInput.stereo,
+    engine.FxChannelInput.left => FxChannelInput.left,
+    engine.FxChannelInput.right => FxChannelInput.right,
+    engine.FxChannelInput.monoSum => FxChannelInput.monoSum,
+  },
+  output: switch (c.output) {
+    engine.FxChannelOutput.stereo => FxChannelOutput.stereo,
+    engine.FxChannelOutput.mono => FxChannelOutput.mono,
+  },
+  placement: c.placement,
+  level: c.level,
+);
 
 /// Maps a domain [FxPlacement] to the engine enum at the boundary.
 engine.FxPlacement _placementToEngine(FxPlacement placement) =>
@@ -426,6 +561,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     :final enabled,
     :final slotId,
     :final placement,
+    :final channels,
   ) =>
     engine.BuiltInEffect(
       type: trackEffectTypeToEngine(type),
@@ -433,6 +569,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       enabled: enabled,
       slotId: slotId,
       placement: _placementToEngine(placement),
+      channels: fxChannelsToEngine(channels),
     ),
   PluginEffect(
     :final ref,
@@ -442,6 +579,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     :final enabled,
     :final slotId,
     :final placement,
+    :final channels,
   ) =>
     engine.PluginEffect(
       ref: engine.PluginRef(
@@ -455,6 +593,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       enabled: enabled,
       slotId: slotId,
       placement: _placementToEngine(placement),
+      channels: fxChannelsToEngine(channels),
     ),
 };
 
@@ -483,6 +622,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final enabled,
         :final slotId,
         :final placement,
+        :final channels,
       ) =>
         BuiltInEffect(
           type: TrackEffectType.fromCode(type.code),
@@ -490,6 +630,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           enabled: enabled,
           slotId: slotId,
           placement: _placementFromEngine(placement),
+          channels: _channelsFromEngine(channels),
         ),
       engine.PluginEffect(
         :final ref,
@@ -499,6 +640,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final enabled,
         :final slotId,
         :final placement,
+        :final channels,
       ) =>
         PluginEffect(
           ref: PluginRef(
@@ -512,6 +654,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           enabled: enabled,
           slotId: slotId,
           placement: _placementFromEngine(placement),
+          channels: _channelsFromEngine(channels),
         ),
     };
 

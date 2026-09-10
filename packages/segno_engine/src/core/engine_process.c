@@ -2013,29 +2013,6 @@ static void finalize_master_xfade(le_engine* e, le_track* t, uint64_t frame) {
   finalize_master(e, t, t->xfade_end_state, frame);
 }
 
-/* Sums a lane/monitor's processed (l, r) pair into the masked output channels:
- * the left on the first masked channel and the right on the second; any further
- * masked channels — and the lone channel when only one is masked — get the
- * (l + r)/2 sum, so no routed output is ever dropped. A mono source has l == r,
- * so a single masked channel gets l, two get (l, r) == (l, l), and extras get the
- * mid == l: identical to plain mono routing. */
-/* The unity-centre balance law (accepted design, slice 3; documented on
- * le_engine_set_lane_pan): the near side stays at unity and the far side
- * falls on a quarter-sine. Centre is bit-identical to no pan. */
-static inline void le_pan_gains(float pan, float* gl, float* gr) {
-  if (pan > 1.0f) pan = 1.0f;
-  if (pan < -1.0f) pan = -1.0f;
-  if (pan == 0.0f) {
-    *gl = 1.0f;
-    *gr = 1.0f;
-    return;
-  }
-  /* Exactly silent at the hard side (cosf(pi/2) is not quite 0). */
-  const float far = fabsf(pan) >= 1.0f ? 0.0f : cosf(fabsf(pan) * 1.57079632679f);
-  *gl = pan > 0.0f ? far : 1.0f;
-  *gr = pan < 0.0f ? far : 1.0f;
-}
-
 /* Stores a pan or balance [v] (NaN reads as centre; clamped to -1..1) with
  * its precomputed gains, for the lane, monitor and output bus handlers. */
 static inline void le_store_pan(_Atomic uint32_t* pan_bits,
@@ -2051,9 +2028,13 @@ static inline void le_store_pan(_Atomic uint32_t* pan_bits,
   store_f32(pan_bits, v);
 }
 
-/* Adds a stereo pair into the channels named by [mask] of ONE frame's channel
- * slice [o]: a single routed channel gets the mono mid, a pair gets left and
- * right, and any third or later channel gets the mid again.
+/* Sums a lane/monitor's processed (l, r) pair into the masked channels of ONE
+ * frame's channel slice [o]: the left on the first masked channel and the
+ * right on the second; any further masked channels — and the lone channel
+ * when only one is masked — get the (l + r)/2 sum, so no routed output is
+ * ever dropped. A mono source has l == r, so a single masked channel gets l,
+ * two get (l, r) == (l, l), and extras get the mid == l: identical to plain
+ * mono routing.
  *
  * Split out of le_fx_route (slice 3e) so the recorded tracks can be routed
  * into a scratch frame instead of the output buffer when the All tracks chain
@@ -4027,6 +4008,9 @@ static inline void snapshot_lane_fx(
           fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
         }
       }
+      le_fx_chan_snapshot(ln->fx.chan, &ln->fx.chan_any, n, ln->a_fx_chan_in,
+                          ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
+                          ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
       /* A slot the chain will NOT process this buffer (chain skipped, beyond
        * the active count, or LE_FX_NONE) cannot advance its enable ramp; if
        * its effective bit is 0, settle it to bypass now so a processing gap
@@ -4079,6 +4063,9 @@ static inline void snapshot_monitor_fx(
         mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
       }
     }
+    le_fx_chan_snapshot(m->fx.chan, &m->fx.chan_any, n, m->a_fx_chan_in,
+                        m->a_fx_chan_out, m->a_fx_chan_gl_bits,
+                        m->a_fx_chan_gr_bits, m->a_fx_chan_level_bits);
     /* Settle unprocessed disabled slots (see snapshot_lane_fx). The monitor
      * chain additionally stops running while the input is off or muted
      * (mix_monitors_frame), so those gaps are covered here too. */
@@ -4121,6 +4108,9 @@ static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
       bus_fx_params[s][p] = load_f32(&b->a_fx_param[s][p]);
     }
   }
+  le_fx_chan_snapshot(b->fx.chan, &b->fx.chan_any, n, b->a_fx_chan_in,
+                      b->a_fx_chan_out, b->a_fx_chan_gl_bits,
+                      b->a_fx_chan_gr_bits, b->a_fx_chan_level_bits);
   /* Settle unprocessed disabled slots (see snapshot_lane_fx): an empty bus
    * chain runs nothing at all, so every disabled slot's ramp settles here. */
   for (int s = 0; s < LE_FX_MAX; ++s) {
@@ -4128,6 +4118,32 @@ static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
         !*bus_has_fx || s >= n || bus_fx_type[s] == LE_FX_NONE;
     if (unprocessed && !(chain_on && load_i32(&b->a_fx_enabled[s]))) {
       le_fx_enable_force_bypass(&b->fx, s);
+    }
+  }
+}
+
+/* The All tracks chain's DSP state is NOT its config block's `fx` — one
+ * config drives one instance per output bus (slice 3e) — so its per-buffer
+ * cache and its settled bypasses are applied to every instance here, after
+ * snapshot_bus_fx has read the shared config. */
+static inline void snapshot_all_tracks_instances(le_engine* e, int ch_out,
+                                                 int32_t count, int has_fx,
+                                                 const int32_t* fx_type) {
+  le_fx_bus* b = &e->all_tracks;
+  const int32_t chain_on = load_i32(&b->a_fx_chain_enabled);
+  int bus_n = (ch_out + 1) / 2;
+  if (bus_n > LE_MAX_OUTPUT_BUSES) bus_n = LE_MAX_OUTPUT_BUSES;
+  for (int k = 0; k < bus_n; ++k) {
+    le_fx_chan_snapshot(e->all_tracks_fx[k].chan, &e->all_tracks_fx[k].chan_any,
+                        count, b->a_fx_chan_in, b->a_fx_chan_out,
+                        b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
+                        b->a_fx_chan_level_bits);
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      const int unprocessed =
+          !has_fx || s >= count || fx_type[s] == LE_FX_NONE;
+      if (unprocessed && !(chain_on && load_i32(&b->a_fx_enabled[s]))) {
+        le_fx_enable_force_bypass(&e->all_tracks_fx[k], s);
+      }
     }
   }
 }
@@ -5441,6 +5457,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int at_has_fx;
   snapshot_bus_fx(&e->all_tracks, &at_fx_count, at_fx_type, at_fx_params,
                   at_fx_enabled, &at_has_fx);
+  snapshot_all_tracks_instances(e, ch_out, at_fx_count, at_has_fx, at_fx_type);
 
   /* Loop-stage wet cache (part 2), snapshotted once per buffer (see
    * snapshot_lane_cache): the per-lane published-entry pointer + full key

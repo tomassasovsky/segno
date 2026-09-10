@@ -1130,6 +1130,106 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_lane_fx_channels(
+        _engine,
+        channel,
+        lane,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_input_fx_channels(
+        _engine,
+        input,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_channels(
+        _engine,
+        channel,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_fx_channels(
+        _engine,
+        bus,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_all_tracks_fx_channels(
+        _engine,
+        index,
+        channels.input.index,
+        channels.output.index,
+        channels.placement,
+        channels.level,
+      ),
+    );
+  }
+
   // ---- Output buses (slice 3b) ----
 
   @override
