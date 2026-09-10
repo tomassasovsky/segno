@@ -2509,15 +2509,20 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
 }
 
 int32_t le_engine_set_track_fx_count(le_engine* engine, int32_t channel,
-                                     int32_t count) {
+                                     int32_t count, int32_t pre_count) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
+  /* Clamped against the count it travels with, for the reason the lane's is:
+   * a Pre run longer than its chain would have the render cover entries that
+   * are not there. */
+  if (pre_count < 0) pre_count = 0;
+  if (pre_count > count) pre_count = count;
   le_fx_bus* b = &engine->tracks[channel].bus;
-  const int32_t rc =
-      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_TRACK_FX_COUNT,
-                                       .fxcount = {channel, 0, count, 0}});
+  const int32_t rc = le_push_cmd(
+      engine, (le_command){.code = LE_CMD_SET_TRACK_FX_COUNT,
+                           .fxcount = {channel, 0, count, pre_count}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&b->fx_count_pushed, b->a_fx_enabled, count);
   }

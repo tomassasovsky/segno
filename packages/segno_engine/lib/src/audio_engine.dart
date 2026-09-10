@@ -883,7 +883,19 @@ abstract interface class EffectsControl {
   /// Sets track [channel]'s Track-stage active chain length to [count]
   /// (`0..kTrackEffectMax`). Count 0 (empty) restores the bit-identical
   /// per-lane routing path.
-  EngineResult setTrackFxCount({required int channel, required int count});
+  ///
+  /// [preCount] (`0..count`, clamped) splits that order the way a lane's
+  /// does. Entries `[0, preCount)` are Pre: the engine renders them over the
+  /// COMBINED material of the track's parts — each part's dry recording
+  /// through that part's own chain, at its level, pan and mute, summed — and
+  /// swaps the result in at the track's loop top. Entries `[preCount, count)`
+  /// are Post: always live, tails draining past a Stop. The recordings stay
+  /// dry; the render is a copy.
+  EngineResult setTrackFxCount({
+    required int channel,
+    required int count,
+    int preCount = 0,
+  });
 
   /// Sets parameter [param] (`0..kTrackEffectParams-1`) of track [channel]'s
   /// Track-stage chain entry [index] to [value] (clamped to `0..1`). A direct

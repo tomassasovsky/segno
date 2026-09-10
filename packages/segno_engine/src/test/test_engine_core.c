@@ -15288,7 +15288,7 @@ static void test_meters_read_only_what_routes(void) {
   CHECK(s.output_peaks[1] == 0.0f);
   /* With a track chain the summed bus route meters the same way. */
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
   drain(e);
   le_engine_process(e, out, in, LOOP_N);
   le_engine_get_snapshot(e, &s);
@@ -24468,11 +24468,11 @@ static void test_track_fx_empty_set_then_empty_bit_identity(void) {
   }
   /* Only A ever had a Track chain: set, run a little, then empty it. */
   CHECK(le_engine_set_track_fx(a, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(a, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(a, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_param(a, 0, 0, 1, 1.0f) == LE_OK);
   drain(a);
   process_n(a, 0.0f, FX_EN_SETTLE, scratch);
-  CHECK(le_engine_set_track_fx_count(a, 0, 0) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(a, 0, 0, 0) == LE_OK);
   drain(a);
 
   process_n(a, 0.0f, FX_EN_SETTLE, scratch);
@@ -24540,7 +24540,7 @@ static void test_track_fx_union_routing(void) {
    * lands on the union {out0, out1} — equal on both, per-lane placement
    * gone. */
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   drain(e);
@@ -24572,7 +24572,7 @@ static void test_track_fx_audible_only_summing(void) {
   static float cap[2 * FX_EN_SETTLE];
 
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   drain(e);
@@ -24612,7 +24612,7 @@ static void test_track_fx_disabled_chain_keeps_bus_topology(void) {
   static float cap[2 * FX_EN_SETTLE];
 
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   CHECK(le_engine_set_track_fx_chain_enabled(e, 0, 0) == LE_OK);
   drain(e);
@@ -24625,7 +24625,7 @@ static void test_track_fx_disabled_chain_keeps_bus_topology(void) {
   CHECK(cap[2 * (FX_EN_SETTLE - 1) + 1] == 3.0f);
 
   /* Emptying the chain (count = 0) is what restores per-lane routing. */
-  CHECK(le_engine_set_track_fx_count(e, 0, 0) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 0, 0) == LE_OK);
   drain(e);
   process_stereo_n(e, FX_EN_SETTLE, cap);
   CHECK(fabsf(cap[2 * (FX_EN_SETTLE - 1) + 0] - 1.0f) < 1e-6f);
@@ -24648,7 +24648,7 @@ static void test_track_fx_tail_continuity(void) {
   /* Full-wet delay, no feedback: out(t) = bus_in(t - D), D = 480. */
   const float p_time = 480.0f / 47999.0f;
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, p_time) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 0.0f) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
@@ -24876,6 +24876,42 @@ static void test_output_fx_ch_out_4_is_bus_0(void) {
   }
   CHECK(fabsf(cap4[4 * 63 + 2] - wet) < 1e-5f);
   CHECK(fabsf(cap4[4 * 63 + 3] - wet) < 1e-5f);
+
+  le_engine_destroy(e);
+}
+
+/* A Stop drains a TRACK-stage Post tail even when the track's parts carry no
+ * chains of their own — the canonical whole-track case, where every effect
+ * sits on the track.
+ *
+ * The idle-track lane skip (#897) leaves such a track out of the lane loop
+ * once it stops, and bus_mask is built INSIDE that loop, so the chain kept
+ * running while its output was routed to nothing: the accepted "Stop drains
+ * Post tails" held for a track whose parts had chains and silently did not
+ * for one whose parts were plain. */
+static void test_stop_drains_a_track_tail_with_plain_parts(void) {
+  printf("test_stop_drains_a_track_tail_with_plain_parts\n");
+  le_engine* e = make_configured_engine();
+  static float cap[4096];
+  bus_fx_record_loop(e, 0.5f);
+
+  /* Everything on the TRACK; the lane chain stays empty. */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 0.6f) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 1024, cap);
+
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 1024, cap);
+  float peak = 0.0f;
+  for (int i = 0; i < 1024; ++i) {
+    if (fabsf(cap[i]) > peak) peak = fabsf(cap[i]);
+  }
+  CHECK(peak > 1e-3f); /* the repeats still reach an output */
 
   le_engine_destroy(e);
 }
@@ -25508,7 +25544,7 @@ static void test_cut_sound_stops_tracks_and_clears_tails(void) {
   static float cap[4096];
 
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
   drain(e);
@@ -25622,7 +25658,7 @@ static void test_track_output_fx_setters_reject_invalid(void) {
         LE_ERR_INVALID);
   CHECK(le_engine_set_track_fx(e, 0, 0, -1) == LE_ERR_INVALID);
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_REVERB + 1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_track_fx_count(e, -1, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_fx_count(e, -1, 1, 0) == LE_ERR_INVALID);
   CHECK(le_engine_set_track_fx_param(e, 0, LE_FX_MAX, 0, 0.5f) ==
         LE_ERR_INVALID);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, LE_FX_PARAMS, 0.5f) ==
@@ -25652,8 +25688,8 @@ static void test_track_output_fx_setters_reject_invalid(void) {
                              memory_order_relaxed) == LE_FX_NONE);
 
   /* Counts CLAMP (lane-family contract), never reject in range issues. */
-  CHECK(le_engine_set_track_fx_count(e, 0, -5) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, LE_FX_MAX + 5) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, -5, 0) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, LE_FX_MAX + 5, 0) == LE_OK);
   CHECK(le_engine_set_output_fx_count(e, 0, -5) == LE_OK);
   CHECK(le_engine_set_output_fx_count(e, 0, LE_FX_MAX + 5) == LE_OK);
   drain(e);
@@ -25675,7 +25711,7 @@ static void test_track_output_fx_enable_works_while_stopped(void) {
   static float cap[FX_EN_SETTLE];
 
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK); /* 1x */
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
   CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
@@ -25754,7 +25790,7 @@ static void test_track_output_fx_setters_push_no_plog(void) {
   drain(e);
 
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.5f) == LE_OK);
   CHECK(le_engine_set_track_fx_enabled(e, 0, 0, 0) == LE_OK);
   CHECK(le_engine_set_track_fx_chain_enabled(e, 0, 0) == LE_OK);
@@ -25799,7 +25835,7 @@ static void test_track_output_fx_lifecycle(void) {
 
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
   CHECK(le_engine_set_track_fx(e, 0, 1, LE_FX_REVERB) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 2) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 2, 0) == LE_OK);
   CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_REVERB) == LE_OK);
   CHECK(le_engine_set_output_fx(e, 0, 1, LE_FX_DELAY) == LE_OK);
   CHECK(le_engine_set_output_fx_count(e, 0, 2) == LE_OK);
@@ -25821,7 +25857,7 @@ static void test_track_output_fx_lifecycle(void) {
 
   /* Repopulate, then destroy with the chains still live (ASan-clean). */
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
-  CHECK(le_engine_set_track_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_REVERB) == LE_OK);
   CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
   drain(e);
@@ -29273,6 +29309,7 @@ int main(void) {
   test_output_fx_empty_set_then_empty_bit_identity();
   test_output_fx_ch_out_2_wet_pair();
   test_output_fx_ch_out_4_is_bus_0();
+  test_stop_drains_a_track_tail_with_plain_parts();
   test_fx_entry_channels_and_level();
   test_fx_entry_channels_leave_with_a_bypass();
   test_fx_entry_channel_setter_guards();

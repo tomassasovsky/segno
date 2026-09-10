@@ -656,6 +656,14 @@ typedef struct le_input_cond {
  * (work while stopped), exactly like the lane/monitor owners'. */
 typedef struct le_fx_bus {
   _Atomic int32_t a_fx_count;
+  /* Leading Pre entries (slice 3e), the le_lane split at bus scope. Only the
+   * TRACK instance uses it: a whole track's Pre run is rendered over the
+   * combined material of its parts and swapped in at the track's loop top,
+   * exactly as a lane's is over its own dry pool. The output-bus and All
+   * tracks instances keep 0 — those stages process a sum computed live and
+   * have no dry original to render from, so the accepted design omits the
+   * control there. */
+  _Atomic int32_t a_fx_pre_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */

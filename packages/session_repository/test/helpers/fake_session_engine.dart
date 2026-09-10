@@ -553,6 +553,7 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setTrackFxCount({
     required int channel,
     required int count,
+    int preCount = 0,
   }) => EngineResult.ok;
   @override
   EngineResult setTrackFxParam({

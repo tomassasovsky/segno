@@ -1559,10 +1559,19 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTrackFxCount({required int channel, required int count}) {
+  EngineResult setTrackFxCount({
+    required int channel,
+    required int count,
+    int preCount = 0,
+  }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_track_fx_count(_engine, channel, count),
+      _bindings.le_engine_set_track_fx_count(
+        _engine,
+        channel,
+        count,
+        preCount,
+      ),
     );
   }
 

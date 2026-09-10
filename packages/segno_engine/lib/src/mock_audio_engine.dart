@@ -951,6 +951,7 @@ class MockAudioEngine implements AudioEngine {
   EngineResult setTrackFxCount({
     required int channel,
     required int count,
+    int preCount = 0,
   }) => _requireRunning();
 
   @override

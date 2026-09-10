@@ -3175,26 +3175,47 @@ class SegnoEngineBindings {
   /// Sets track [channel]'s Track-stage active chain length to [count]
   /// (0..LE_FX_MAX): only entries [0, count) are processed, in order. Count 0
   /// (empty) restores the bit-identical per-lane routing path.
+  ///
+  /// [pre_count] (0..count, clamped) splits that order the way a lane's does.
+  /// Entries [0, pre_count) are PRE: the engine renders them over the COMBINED
+  /// material of the track's parts — each part's dry recording through that
+  /// part's own chain, at its level, pan and mute, summed — and swaps the result
+  /// in at the track's loop top, so they are heard as part of the take. Entries
+  /// [pre_count, count) are POST: always live over whatever is playing, and
+  /// their tails drain past a Stop. The recordings themselves stay dry; the
+  /// render is a copy, and every part, overdub layer and undo step survives it.
+  ///
+  /// A part's own Post entries are INSIDE that render, because they are upstream
+  /// of the track's chain — a Pre stage commits everything upstream of it — so
+  /// while a track carries a Pre run its parts' tails stop with the recording
+  /// rather than draining, live or printed alike.
   int le_engine_set_track_fx_count(
     ffi.Pointer<le_engine> engine,
     int channel,
     int count,
+    int pre_count,
   ) {
     return _le_engine_set_track_fx_count(
       engine,
       channel,
       count,
+      pre_count,
     );
   }
 
   late final _le_engine_set_track_fx_countPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
         >
       >('le_engine_set_track_fx_count');
   late final _le_engine_set_track_fx_count = _le_engine_set_track_fx_countPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
   /// Sets parameter [param] (0..LE_FX_PARAMS-1) of track [channel]'s Track-stage
   /// chain entry [index] to [value] (clamped to 0..1). Direct atomic publish —

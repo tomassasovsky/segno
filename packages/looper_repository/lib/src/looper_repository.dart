@@ -4123,6 +4123,9 @@ class LooperRepository {
     final result = _engine.setTrackFxCount(
       channel: channel,
       count: effects.length,
+      // The chain is stored Pre-first, so the leading Pre run is the whole
+      // split — see [_applyLaneEffects].
+      preCount: fxPreCount(effects),
     );
     // Per-slot enabled bits strictly AFTER the count push — see
     // [_applyLaneEffects] for the D-ENSEED ordering rationale.
