@@ -2516,6 +2516,15 @@ typedef struct le_lane_cache_info {
 /* Fills [out] with lane [lane] of track [channel]'s cache telemetry. Control
  * thread; also drains events / runs a scheduler tick first, so polling this is
  * enough to drive the cache forward in a device-free test. */
+/* The whole-track Pre print's telemetry (slice 3e): the lane query's twin,
+ * one per track. `reason` is where the engine says WHY a track's Pre run is
+ * running live rather than printed — a part carrying a Post entry (the print
+ * would have to bake it, and a baked tail cannot drain past a Stop), a hosted
+ * plugin, a budget that does not fit, a render that failed. Log/test-only in
+ * v3, like the lane query. */
+LE_EXPORT int32_t le_engine_get_track_cache(le_engine* engine, int32_t channel,
+                                            le_lane_cache_info* out);
+
 LE_EXPORT int32_t le_engine_get_lane_cache(le_engine* engine, int32_t channel,
                                            int32_t lane,
                                            le_lane_cache_info* out);

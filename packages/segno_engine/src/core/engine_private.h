@@ -787,6 +787,26 @@ typedef struct le_track {
    * summed stereo bus. */
   le_fx_bus bus;
 
+  /* The whole-track Pre print (slice 3e). a_wet is the published render of
+   * this track's COMBINED material — every part's own printed material at its
+   * level, mute and pan, summed, through the track's Pre run — or NULL. Same
+   * discipline as le_lane.a_wet in every respect: control-thread
+   * single-writer, audio-thread loaded once per buffer (acquire) and
+   * key-checked before any read, a_cache_active written only by the audio
+   * thread, engaged only at the track's loop top.
+   *
+   * There is deliberately NO generation memo here, unlike a lane's. This
+   * key covers the whole combination — every part's chain, level, pan and
+   * mute, the part count, and the track's own Pre run — so a memo would need
+   * a bump on some fifteen setters, and a single missed one would let the
+   * audio thread keep a stale verdict and play a render that no longer
+   * describes the track (a muted part still sounding is the shape of that
+   * bug). The key is refolded every buffer instead, and the refold is gated
+   * on a_track_wet being non-NULL: a track with no published print — every
+   * track until something is put on its Pre run — costs one relaxed load. */
+  le_wet_entry* _Atomic a_track_wet;
+  _Atomic int32_t a_track_cache_active;
+
   /* Control-thread-owned undo/redo stacks, shared by all lanes (the same slot
    * index names the snapshot in every lane). Layers arrive on the undo stack via
    * LE_EVT_LAYER_RETIRED events the audio thread emits at each completed overdub
@@ -1125,7 +1145,6 @@ typedef struct le_track {
    * Once stops it at a lap end. */
   uint64_t sounding_frames;
 } le_track;
-
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
  * segno_engine_api.h). Rings are allocated CONTROL-side at arm and freed
  * CONTROL-side only after the quiescent handshake in le_perf_disarm; the audio

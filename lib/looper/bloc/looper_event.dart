@@ -926,6 +926,30 @@ final class LooperMasterChainEnabledToggled extends LooperEvent {
   List<Object?> get props => [enabled];
 }
 
+/// Entry [index] of track [channel]'s Track-stage chain moved to [placement]
+/// — Pre (recorded into the loop) or Post (can ring after Stop).
+///
+/// A whole track's Pre run processes the combination of its parts as one
+/// signal, which is why it is not the same as putting the effect on each
+/// part.
+final class LooperTrackEffectPlacementChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackEffectPlacementChanged].
+  const LooperTrackEffectPlacementChanged(
+    super.channel,
+    this.index,
+    this.placement,
+  );
+
+  /// The entry's current index in the chain.
+  final int index;
+
+  /// Where the entry should sit relative to the loop player.
+  final FxPlacement placement;
+
+  @override
+  List<Object?> get props => [channel, index, placement];
+}
+
 /// The All tracks recorded-mix chain was replaced with [effects] (slice 3e).
 ///
 /// The chain applied after the loop tracks are combined, and only them: live

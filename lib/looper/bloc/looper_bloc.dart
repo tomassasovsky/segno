@@ -436,6 +436,21 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _repository.setMasterEffects(effects: event.effects);
       _persistMasterChain();
     });
+    on<LooperTrackEffectPlacementChanged>((event, _) {
+      final chain = _busChain(
+        FxAddress(stage: FxStage.track, index: event.channel),
+      );
+      if (event.index < 0 || event.index >= chain.length) return;
+      final slotId = chain[event.index].slotId;
+      if (slotId == null) return;
+      // By identity, not index — see the lane handler.
+      _repository.setTrackEffectPlacement(
+        channel: event.channel,
+        slotId: slotId,
+        placement: event.placement,
+      );
+      _persistTrackChain(event.channel);
+    });
     on<LooperAllTracksEffectsChanged>((event, _) {
       _repository.setAllTracksEffects(effects: event.effects);
       _persistAllTracksChain();
