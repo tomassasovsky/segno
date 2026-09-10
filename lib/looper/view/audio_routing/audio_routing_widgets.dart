@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The pen's `source-grid` card: an ordinal over a name, 264 x 112, used to
 /// pick the input being set up and the source being routed.
+///
+/// A source with no ordinal — the click, which is one thing rather than one of
+/// several numbered jacks — draws the pen's shorter 264 x 64 card instead of
+/// leaving a gap where the number would be.
 class RoutingSourceCard extends StatelessWidget {
   /// Creates a [RoutingSourceCard].
   const RoutingSourceCard({
@@ -15,8 +21,9 @@ class RoutingSourceCard extends StatelessWidget {
     super.key,
   });
 
-  /// The line above the name ("Input 3", "Outputs 1–2").
-  final String ordinal;
+  /// The line above the name ("Input 3", "Outputs 1–2"), or null for a source
+  /// that has no number.
+  final String? ordinal;
 
   /// The alias or the fallback label.
   final String name;
@@ -37,13 +44,13 @@ class RoutingSourceCard extends StatelessWidget {
       button: true,
       selected: selected,
       label: name,
-      value: ordinal,
+      value: ordinal ?? '',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
           width: width,
-          height: 112,
+          height: ordinal == null ? 64 : 112,
           decoration: BoxDecoration(
             color: selected ? surface.accentSurface : null,
             border: Border.all(
@@ -54,17 +61,19 @@ class RoutingSourceCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AppText(
-                ordinal,
-                style: TextStyle(
-                  color: selected
-                      ? surface.textSecondary
-                      : surface.textTertiary,
-                  fontSize: 18,
-                  height: 1,
+              if (ordinal case final ordinal?) ...[
+                AppText(
+                  ordinal,
+                  style: TextStyle(
+                    color: selected
+                        ? surface.textSecondary
+                        : surface.textTertiary,
+                    fontSize: 18,
+                    height: 1,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 13),
                 child: FittedBox(
@@ -387,6 +396,172 @@ class RoutingCheck extends StatelessWidget {
       child: selected
           ? Icon(LucideIcons.check, size: 23, color: surface.onAccent)
           : null,
+    );
+  }
+}
+
+/// The pen's `route:output:*` card: a destination's jacks over its name, with
+/// a check that says whether the chosen source reaches it. 684 x 144.
+class RoutingDestinationCard extends StatelessWidget {
+  /// Creates a [RoutingDestinationCard].
+  const RoutingDestinationCard({
+    required this.jacks,
+    required this.name,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  /// The jacks this destination drives ("Outputs 1-2").
+  final String jacks;
+
+  /// The name the player gave it, or its short jack form.
+  final String name;
+
+  /// Whether the chosen source reaches it.
+  final bool selected;
+
+  /// Adds or removes this destination.
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: name,
+      value: jacks,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 684,
+          height: 144,
+          padding: const EdgeInsets.symmetric(horizontal: 31),
+          decoration: BoxDecoration(
+            color: selected ? surface.accentSurface : surface.card,
+            border: Border.all(
+              color: selected ? surface.borderStrong : surface.borderSubtle,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    AppText(
+                      jacks,
+                      style: TextStyle(
+                        color: surface.textTertiary,
+                        fontSize: 22,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: AppText(
+                        name,
+                        style: TextStyle(
+                          color: selected
+                              ? surface.textPrimary
+                              : surface.textSecondary,
+                          fontSize: 33,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+              RoutingCheck(selected: selected),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The pen's `scope-controls`: the tracks as numbered buttons with the chosen
+/// one's name beside them, shared by the two track-scoped routing tasks.
+class RoutingTrackScope extends StatelessWidget {
+  /// Creates a [RoutingTrackScope].
+  const RoutingTrackScope({
+    required this.heading,
+    required this.count,
+    required this.selected,
+    required this.names,
+    required this.onSelected,
+    super.key,
+  });
+
+  /// The row's h2.
+  final String heading;
+
+  /// How many tracks the rig has.
+  final int count;
+
+  /// The track in scope.
+  final int selected;
+
+  /// Every track's display name.
+  final List<String> names;
+
+  /// Called with the track tapped.
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return SizedBox(
+      width: 1720,
+      height: 76,
+      child: Stack(
+        children: [
+          Positioned(left: 0, top: 22, child: LoopSectionLabel(heading)),
+          for (var i = 0; i < count; i++)
+            Positioned(
+              left: 328 + 76.0 * i,
+              top: 6,
+              child: Semantics(
+                label: l10n.loopScopeTrack(i + 1),
+                child: LoopChoiceButton(
+                  key: Key('routing_track_$i'),
+                  label: '${i + 1}',
+                  selected: i == selected,
+                  onTap: () => onSelected(i),
+                  width: 64,
+                  height: 64,
+                ),
+              ),
+            ),
+          if (selected < names.length)
+            Positioned(
+              left: 1320,
+              top: 22,
+              width: 400,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: AppText(
+                  names[selected],
+                  key: const Key('routing_track_name'),
+                  style: TextStyle(
+                    color: context.surface.textSecondary,
+                    fontSize: 28,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

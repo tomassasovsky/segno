@@ -7,6 +7,7 @@ import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
+import 'package:segno/looper/view/audio_routing/routing_facts.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 
 /// What the Input setup tab draws, read in one `select` so a meter tick does
@@ -27,19 +28,8 @@ _SetupValues _setupValues(LooperState state, int input) => (
   // The accepted lock: pairing and format cannot change while a track fed by
   // this jack is armed or capturing. Derived from the projection because the
   // repository keeps its own predicate private.
-  locked: _inputBusy(state, input),
+  locked: inputBusy(state, input),
 );
-
-/// Whether any track that records [input] is armed or capturing.
-bool _inputBusy(LooperState state, int input) {
-  for (final track in state.tracks) {
-    if (!track.pending && !track.isCapturing) continue;
-    for (final lane in track.lanes) {
-      if (lane.inputChannel == input) return true;
-    }
-  }
-  return false;
-}
 
 /// Input setup (accepted design, Audio routing): pick a jack, record it on
 /// its own or as one half of a stereo pair, place it, and set the gain the
@@ -216,11 +206,6 @@ class _FormatRow extends StatelessWidget {
       height: 74,
       child: Stack(
         children: [
-          const Positioned(
-            left: 0,
-            top: 21,
-            child: LoopSectionLabel(''),
-          ),
           Positioned(
             left: 0,
             top: 21,
