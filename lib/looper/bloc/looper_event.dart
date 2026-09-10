@@ -482,6 +482,30 @@ final class LooperLaneEffectMoved extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, from, to];
 }
 
+/// Chain entry [index] on lane [lane] of track [channel] moved to
+/// [placement] — Pre (recorded into the loop) or Post (can ring after Stop).
+///
+/// The entry keeps its identity, parameters and enable state and lands at the
+/// end of the destination stage's run.
+final class LooperLaneEffectPlacementChanged extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectPlacementChanged].
+  const LooperLaneEffectPlacementChanged(
+    super.channel,
+    super.lane,
+    this.index,
+    this.placement,
+  );
+
+  /// The entry's current index in the chain.
+  final int index;
+
+  /// Where the entry should sit relative to the loop player.
+  final FxPlacement placement;
+
+  @override
+  List<Object?> get props => [channel, lane, index, placement];
+}
+
 /// Parameter [param] of chain entry [index] on lane [lane] of track [channel]
 /// changed to [value] (`0..1`). A live tweak — does not reset DSP state.
 final class LooperLaneEffectParamChanged extends LooperLaneEvent {

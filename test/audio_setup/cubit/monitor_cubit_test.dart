@@ -1085,6 +1085,92 @@ void main() {
       );
 
       blocTest<MonitorCubit, MonitorState>(
+        "a live input's new instances are Pre",
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.filter)
+            ..insertPlugin(
+              0,
+              const PluginRef(format: PluginFormat.vst3, id: 'p'),
+            );
+        },
+        verify: (cubit) {
+          // An input's Pre entries are what a take records; its Post entries
+          // are copied onto the lane and run after that take's player. The
+          // accepted design makes Pre the default here, and the model's own
+          // default is Post — so a surface that forgets to say leaves an
+          // input's effects out of every take it records.
+          final chain = cubit.state.forInput(0).effects;
+          expect(chain.map((e) => e.placement), [
+            FxPlacement.pre,
+            FxPlacement.pre,
+          ]);
+          expect((chain[0] as BuiltInEffect).type, TrackEffectType.filter);
+          expect(chain[1], isA<PluginEffect>());
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'a reorder across the Pre/Post boundary is refused',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.drive)
+            ..addEffect(0, type: TrackEffectType.delay)
+            // Send the delay to Post, then try to drag the drive past it.
+            ..setEffectPlacement(0, 1, FxPlacement.post)
+            ..moveEffect(0, 0, 1);
+        },
+        verify: (cubit) => expect(
+          cubit.state.forInput(0).effects.map((e) => (e as BuiltInEffect).type),
+          [TrackEffectType.drive, TrackEffectType.delay],
+        ),
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'setEffectPlacement moves an instance to the end of its new stage',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.drive)
+            ..addEffect(0, type: TrackEffectType.delay)
+            ..addEffect(0, type: TrackEffectType.reverb)
+            // The first of three Pre entries goes Post; the two behind it
+            // close up, and it lands last.
+            ..setEffectPlacement(0, 0, FxPlacement.post);
+        },
+        verify: (cubit) {
+          final chain = cubit.state.forInput(0).effects;
+          expect(chain.map((e) => (e as BuiltInEffect).type), [
+            TrackEffectType.delay,
+            TrackEffectType.reverb,
+            TrackEffectType.drive,
+          ]);
+          expect(chain.map((e) => e.placement), [
+            FxPlacement.pre,
+            FxPlacement.pre,
+            FxPlacement.post,
+          ]);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'a retype keeps the entry where the player put it',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.drive)
+            ..setEffectType(0, 0, TrackEffectType.reverb);
+        },
+        verify: (cubit) {
+          final fx = cubit.state.forInput(0).effects.single;
+          expect((fx as BuiltInEffect).type, TrackEffectType.reverb);
+          expect(fx.placement, FxPlacement.pre);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
         'setEffectParam tweaks an entry without a structural reset',
         build: build,
         act: (cubit) {
