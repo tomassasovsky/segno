@@ -819,6 +819,7 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_ts_den, 4);
   store_i32(&engine->a_sync_tempo, 1);
   store_i32(&engine->a_quantize_div, LE_GRID_DIV_OFF);
+  engine->quantize_div = LE_GRID_DIV_OFF; /* the snapshot's half of the pair */
   store_i32(&engine->a_tempo_source, LE_TEMPO_SOURCE_NONE);
   engine->grid_prev_beat = -1;
   /* Click + count-in SETTINGS (A2): same seeded-once persistence as the tempo

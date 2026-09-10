@@ -4934,12 +4934,45 @@ static void test_quantize_div_setter(void) {
   CHECK(le_engine_set_quantize_div(e, -1) == LE_ERR_INVALID);
   CHECK(le_engine_set_quantize_div(e, 6) == LE_ERR_INVALID);
 
-  /* A raw ring push clamps rather than publishing an out-of-range value. */
+  /* A raw ring push clamps rather than handing the audio thread an
+   * out-of-range value. Checked on the WIRE field the audio thread reads, not
+   * through the snapshot: the snapshot publishes the control thread's mirror
+   * so that it and the quantize GATE beside it — which has no wire form at
+   * all — always come from one thread at one instant. */
   CHECK(le_push(e, LE_CMD_SET_QUANTIZE_DIV, 9, 0.0f) == LE_OK);
   tg_advance(e, 1);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.quantize_div == LE_GRID_DIV_SIXTEENTH);
+  CHECK(load_i32(&e->a_quantize_div) == LE_GRID_DIV_SIXTEENTH);
 
+  le_engine_destroy(e);
+}
+
+/* The gate and its division are published together, with no pump between.
+ *
+ * The gate is a plain control-side int the setter writes at once; the
+ * division reaches the audio thread through the ring. Publishing one of each
+ * let a reader see the gate move without its division, and a session saved in
+ * that window recorded a different record timing from the one chosen — the
+ * gate on with no division reads as "at the loop start", not "every quarter".
+ */
+static void test_quantize_gate_and_division_publish_together(void) {
+  printf("test_quantize_gate_and_division_publish_together\n");
+  le_engine* e = tg_make_engine(48000);
+  le_snapshot s;
+
+  /* The order the repository writes them in, and NO block between: this is
+   * the window a save can land in. */
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.quantize == 1);
+  CHECK(s.quantize_div == LE_GRID_DIV_QUARTER);
+
+  /* And still true once the audio thread has drained the command. */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.quantize == 1);
+  CHECK(s.quantize_div == LE_GRID_DIV_QUARTER);
+  CHECK(load_i32(&e->a_quantize_div) == LE_GRID_DIV_QUARTER);
   le_engine_destroy(e);
 }
 
@@ -22432,6 +22465,63 @@ test_band_section_pending_toggle_survives_immediate_record_press(void) {
  * 4/4, and a 2000-frame (exactly 1-bar) primary -- frames-per-beat 500,
  * so a HALF-note division boundary sits at the exact midpoint, frame
  * 1000. */
+/* A Sync force-armed DEFINING take begins at the primary's loop top, even
+ * when a division would offer an earlier boundary.
+ *
+ * Sync force-arms an empty non-primary track whatever the quantize setting
+ * says, because finalize_new_track's division-playback formula reads a phase
+ * locked to the primary's top and only holds if the take began there. Slice
+ * 2b's per-track division made a mid-loop boundary reachable on a rig whose
+ * GLOBAL division is off, which would start the take a quarter in and play
+ * the sub-loop rotated by that much. */
+static void test_sync_force_arm_ignores_a_per_track_division(void) {
+  printf("test_sync_force_arm_ignores_a_per_track_division\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  drain(e);
+  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
+  drain(e);
+
+  /* A 3000-frame primary at sr 1000, 120 BPM 4/4: 500 frames a beat. */
+  le_engine_record(e, 0);
+  tg_advance(e, 3000);
+  le_engine_record(e, 0);
+  tg_advance(e, e->sample_rate / 100);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 3000);
+
+  /* The GLOBAL division stays off; only this track carries one. */
+  CHECK(le_engine_set_track_quantize_div(e, 1, LE_GRID_DIV_QUARTER) == LE_OK);
+  drain(e);
+
+  /* Press mid-loop, well clear of the top. */
+  tg_advance(e, 1200);
+  le_engine_get_snapshot(e, &s);
+  const int32_t at_press = s.master_position_frames;
+  CHECK(at_press > 0);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+
+  /* Past the next quarter boundary: a subdivision fire would have started the
+   * take here. It must still be waiting. */
+  tg_advance(e, 600);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].pending == 1);
+
+  /* At the primary's top it starts. */
+  tg_advance(e, 3000 - at_press - 600 + 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.master_position_frames <= 2);
+  le_engine_destroy(e);
+}
+
 static void test_band_section_toggle_ignores_subdivision_boundary(void) {
   printf("test_band_section_toggle_ignores_subdivision_boundary\n");
   le_engine* e = tg_make_engine(1000);
@@ -27333,6 +27423,7 @@ int main(void) {
   test_manual_vs_tap_last_writer();
   test_time_signature_validation();
   test_quantize_div_setter();
+  test_quantize_gate_and_division_publish_together();
   test_loop_syncs_tempo();
   test_loop_rounds_to_bar_keeps_tempo();
   test_sync_off_keeps_free_form();
@@ -27587,6 +27678,7 @@ int main(void) {
   test_band_section_pending_toggle_survives_record_press();
   test_band_section_pending_record_survives_toggle_press();
   test_band_section_pending_toggle_survives_immediate_record_press();
+  test_sync_force_arm_ignores_a_per_track_division();
   test_band_section_toggle_ignores_subdivision_boundary();
   test_band_section_toggle_reacts_to_state_at_fire_time_not_arm_time();
 

@@ -227,7 +227,10 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->ts_num = load_i32(&engine->a_ts_num);
   out->ts_den = load_i32(&engine->a_ts_den);
   out->sync_tempo = load_i32(&engine->a_sync_tempo);
-  out->quantize_div = load_i32(&engine->a_quantize_div);
+  /* The control thread's mirror, not the wire value: the gate beside it is a
+   * plain control-side int, and publishing one of each let a reader see the
+   * gate move without its division. */
+  out->quantize_div = engine->quantize_div;
   out->tempo_source = load_i32(&engine->a_tempo_source);
   out->loop_bars = load_i32(&engine->a_loop_bars);
   out->current_beat = load_i32(&engine->a_current_beat);

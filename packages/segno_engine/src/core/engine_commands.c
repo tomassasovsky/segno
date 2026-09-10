@@ -1743,6 +1743,10 @@ int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div) {
   if (div < LE_GRID_DIV_OFF || div > LE_GRID_DIV_SIXTEENTH) {
     return LE_ERR_INVALID;
   }
+  /* Mirrored before the push, the way the gate's own setter writes: the
+   * snapshot publishes the pair from here, so they can never disagree in the
+   * block the command is still travelling in. */
+  engine->quantize_div = div;
   return le_push(engine, LE_CMD_SET_QUANTIZE_DIV, div, 0.0f);
 }
 
