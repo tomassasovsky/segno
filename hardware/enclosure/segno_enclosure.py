@@ -869,35 +869,51 @@ FOOT_FLOOR_D = 15.0  # purchased foot, floor contact diameter
 FOOT_H = 5.0
 FOOT_HEAD_D = 9.0    # maximum assumed top screw/washer envelope; verify hardware
 
-# --- pedestal floor supports (issue #1019) ------------------------------------
-# The fifteen feet above sit in the gaps BETWEEN pedals, never under one, so a
-# stomp is carried by the 2.0 mm floor spanning out to them. A plate-bending FE
-# check (_stomp_fea.py; docs/research/2026-09-09-enclosure-stomp-load-analysis.md)
-# put that at 353 MPa and 23 mm of travel under 1 kN on one pedal -- first yield
-# at ~360 N, which is about half a player's weight. Even a rigidly pinned
-# perimeter, more than a 12 mm front wall and a screwed-down lid can deliver,
-# only reaches 914 N, so stiffening the shell cannot fix it.
+# --- floor rails (issue #1019) ------------------------------------------------
+# The stomp fix. Forty pedestal feet plus twenty floor feet carried the load
+# correctly and looked like a rash, so the supports are five continuous rails
+# instead: three full-width and two short ones under CLEAR/BANK. Every rail sits
+# on a screw row that already exists, so they add nothing to the cut file, and a
+# continuous strip cannot be out of plane with itself the way sixty feet can.
 #
-# The cure is to stop the plate carrying the stomp at all. Every pedestal's four
-# chassis screws already come UP through the floor from below, so their heads are
-# already on the underside: put a foot on each one and the load goes straight to
-# the ground. 89 MPa and 1.4 mm at 1 kN, first yield ~1425 N, and still 86 MPa
-# with any one of a pedal's four feet not touching. NO new bores -- base_foot_xy()
-# and segno_base.dxf are untouched; only the screw length and the BOM change.
-PEDESTAL_FOOT_H = FOOT_H   # MUST equal the purchased floor foot or the case rocks
-PEDESTAL_FOOT_BODY_D = 18.0   # chassis face. Fits inside the collar footprint at
-                              # every station: _check() proves it rather than
-                              # trusting this comment.
-PEDESTAL_FOOT_FLOOR_D = 15.0
-PEDESTAL_FOOT_BORE = 3.4      # through bore; the M3 chassis screw passes through
-PEDESTAL_FOOT_CBORE_D = 6.5   # counterbore that swallows the M3 head...
-PEDESTAL_FOOT_CBORE_H = 2.5   # ...so the head does not stand on the floor
-# PROVISIONAL, exactly as the fifteen purchased feet are: envelope and bore are a
-# design intent, not a sourced part. Same Ø18 x Ø15 x 5 envelope as those feet so
-# the console stands on ONE foot height; this variant is through-bored and
-# counterbored instead of carrying a washer insert. Verify the real part, and
-# check that a 0.5 mm height spread does not unload one -- at the ~400 N/mm
-# assumed in the check that error is worth 200 N.
+# Each rail is a printed PETG body with a channel in its floor face holding a
+# self-adhesive SOLID neoprene strip. The strip is the LSGCQ 1" x 1/8", chosen
+# because it is smooth -- this thing gets dragged across stages, and every tape
+# stocked locally is mineral grit that would score a floor. It is also the only
+# one thick enough to matter: at 0.5-1 mm a bonded rubber layer is stiff in
+# compression and contributes nothing but friction. At 3.2 mm it does the work.
+#
+#   as drawn          353 MPa, 23.0 mm at a 1 kN stomp, first yield  360 N
+#   60 rubber feet     89 MPa,  1.4 mm                              1428 N
+#   these rails        52 MPa,  0.23 mm                             2465 N
+TAPE_W, TAPE_T = 25.4, 3.2    # LSGCQ 1" x 1/8" self-adhesive solid neoprene
+RAIL_W    = 27.0              # channel plus a wall each side
+RAIL_T    = 6.0               # PETG body; thick enough to bury the screw head
+RAIL_CH_W = TAPE_W - 0.2      # UNDER the strip on purpose: gripped, not just glued
+RAIL_CH_D = 1.5               # shallower than the strip, so 1.7 mm reaches the floor
+RAIL_CBORE_D  = 6.2           # the M3 head sinks inside the PETG, above the channel,
+RAIL_CBORE_H  = 2.3           # so the strip runs over it unbroken -- no punching
+RAIL_JOINT     = 3.0          # gap at a segment joint
+RAIL_END_INSET = 1.5          # channel stops short of each end
+RAIL_MAXLEN    = 215.0        # Ender 3 V3 bed, less a margin
+RAIL_EDGE_MIN  = 4.5          # keep the rail off the wall bend relief (RI + T)
+RAIL_MARGIN    = 8.0          # rail ends inset from the side walls
+VENT_RAIL_CLR  = 2.0          # intake slot to rail edge; the old block left 0.11
+VENT_INTAKE_MIN = 3000.0      # mm2 of INTAKE alone. VENT_FREE_AREA_MIN sums intake
+                              # and exhaust, and the exhaust is 4x the intake, so it
+                              # cleared while the intake collapsed to 1328. Gate both.
+
+
+def _rail_v(row_v, side):
+    """Depth of a floor rail: the pedestal screw row, nudged clear of the bend.
+
+    Defined up here because the intake vent field has to know where the rails
+    are, and it is built long before floor_rail_lines() exists.
+    """
+    dv = SKIRT_OUT_D / 2.0 - PLATFORM_FOOT / 2.0        # platform_foot_xy()'s depth offset
+    v = row_v * math.cos(math.radians(SLOPE_ANGLE)) + side * dv
+    return max(v, RAIL_EDGE_MIN + RAIL_W / 2.0)
+RIDE_H = RAIL_T + (TAPE_T - RAIL_CH_D)   # 7.7 mm; the feet it replaces were 5.0
 
 # --- fasteners ----------------------------------------------------------------
 D_M3_METAL = 3.6     # bare +0.10/-0.00; fully coated M3 clearance
@@ -2063,40 +2079,56 @@ def _check(strict_board_mount=True):
             f"CONSOLE_SLED: chassis station ({fx:.1f}, {fy:.1f}) is {clear:.2f} mm "
             "from a pedal insert -- the two bores crowd")
 
-    # 2d. PEDESTAL FEET (issue #1019): a foot on every chassis screw, so the stomp
-    # reaches the ground without bending the floor. These carry the load, so their
-    # geometry is gated, not assumed.
-    assert abs(PEDESTAL_FOOT_H - FOOT_H) < 1e-9, (
-        f"PED_FOOT: {PEDESTAL_FOOT_H} mm against {FOOT_H} mm floor feet -- the "
-        "console would stand on whichever set is taller and rock on the other")
-    assert PEDESTAL_FOOT_BORE > D_M3_METAL - 0.5, (
-        f"PED_FOOT: Ø{PEDESTAL_FOOT_BORE} bore will not pass the M3 that goes "
-        f"through the Ø{D_M3_METAL} plate clearance")
-    assert PEDESTAL_FOOT_CBORE_H < PEDESTAL_FOOT_H - 1.0, (
-        f"PED_FOOT: Ø{PEDESTAL_FOOT_CBORE_D} x {PEDESTAL_FOOT_CBORE_H} counterbore "
-        f"leaves under 1 mm of rubber below the screw head")
-    _pfr = PEDESTAL_FOOT_BODY_D / 2.0
-    for fx, fy in platform_foot_xy():       # x = depth, y = width, pedestal-local
-        assert abs(fx) + _pfr <= CONSOLE_PLATFORM_D / 2.0 and \
-               abs(fy) + _pfr <= SKIRT_OUT_W / 2.0, (
-            f"PED_FOOT: Ø{PEDESTAL_FOOT_BODY_D} foot at ({fx:.1f}, {fy:.1f}) "
-            "spills outside the pedestal footprint")
-    _ped = pedestal_foot_xy()
-    for i, (au, av) in enumerate(_ped):     # no two feet fight for the same floor
-        for bu, bv in _ped[i+1:]:
-            assert math.hypot(au-bu, av-bv) > PEDESTAL_FOOT_BODY_D, (
-                f"PED_FOOT: feet at ({au:.1f}, {av:.1f}) and ({bu:.1f}, {bv:.1f}) overlap")
-        for bu, bv in base_foot_xy():
-            assert math.hypot(au-bu, av-bv) > (PEDESTAL_FOOT_BODY_D + FOOT_BODY_D)/2.0, (
-                f"PED_FOOT: foot at ({au:.1f}, {av:.1f}) overlaps the floor foot "
-                f"at ({bu:.1f}, {bv:.1f})")
+    # 2d. FLOOR RAILS (issue #1019). These carry every stomp, so the geometry is
+    # gated rather than assumed: the strip has to fit its channel, reach the floor,
+    # sit clear of the bend relief and the vents, and no segment may hold one screw.
+    assert RAIL_CH_D < TAPE_T - 0.5, (
+        f"RAIL: a {TAPE_T} mm strip in a {RAIL_CH_D} mm channel stands only "
+        f"{TAPE_T-RAIL_CH_D:.1f} mm proud -- the rubber has to reach the floor")
+    assert RAIL_CH_W < TAPE_W, (
+        f"RAIL: channel {RAIL_CH_W} is not under the {TAPE_W} strip -- it would rely "
+        "on the adhesive alone, and glue lets go on a thing that gets kicked")
+    assert (RAIL_W - RAIL_CH_W) / 2.0 >= 0.8, (
+        f"RAIL: {(RAIL_W-RAIL_CH_W)/2.0:.2f} mm channel wall will not print")
+    assert RAIL_CBORE_H + 1.5 <= RAIL_T - RAIL_CH_D, (
+        f"RAIL: the M3 head leaves {RAIL_T-RAIL_CH_D-RAIL_CBORE_H:.1f} mm of PETG "
+        "over it; the strip runs unbroken over that face")
+    assert RAIL_CBORE_D > D_M3_METAL, "RAIL: counterbore smaller than the clearance"
     _vent_bb = [_bbox(c) for c in _bottom_vents_local(W-2*T, D-2*T)
                 if c.get("kind") == "rect"]
-    for au, av in _ped:                     # a foot over a vent slot has no floor
+    _BDl = D - 2*T
+    for name, v, u0, u1, screws in floor_rail_lines():
+        assert v - RAIL_W/2.0 >= RAIL_EDGE_MIN and v + RAIL_W/2.0 <= _BDl - RAIL_EDGE_MIN, (
+            f"RAIL {name}: v {v:.1f} puts an edge on the bend relief")
+        on = [x for x in screws if u0 <= x <= u1]
+        assert len(on) >= 2, f"RAIL {name}: only {len(on)} screws on it"
         for b in _vent_bb:
-            assert not (b[0] < au+_pfr and au-_pfr < b[2] and
-                        b[1] < av+_pfr and av-_pfr < b[3]), (
-                f"PED_FOOT: foot at ({au:.1f}, {av:.1f}) sits over an intake vent slot")
+            assert not (b[0] < u1 and u0 < b[2] and
+                        b[1] < v + RAIL_W/2.0 and v - RAIL_W/2.0 < b[3]), (
+                f"RAIL {name} crosses an intake vent slot "
+                f"(u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f})")
+    for name, k, a, b, on in floor_rail_segments():
+        assert b - a <= RAIL_MAXLEN, (
+            f"RAIL {name} segment {k} is {b-a:.0f} mm; the bed takes {RAIL_MAXLEN:.0f}")
+        assert len(on) >= 2, (
+            f"RAIL {name} segment {k} holds {len(on)} screw -- it would pivot about it")
+    _rails = floor_rail_lines()
+    for i, (na, va, a0, a1, _s) in enumerate(_rails):   # rails must not touch
+        for nb, vb, b0, b1, _t in _rails[i+1:]:
+            assert abs(va - vb) > RAIL_W or a1 < b0 or b1 < a0, (
+                f"RAIL {na} and {nb} overlap")
+    # 2e. INTAKE (issue #1019). The rails freed the floor, but the seven posts sit
+    # in the intake band and ate 72% of it before the columns moved onto the pedal
+    # centrelines. Gate the intake on its own: the all-vents gate cannot see this.
+    _intake = _vent_free_area(_bottom_vents())
+    assert _intake >= VENT_INTAKE_MIN, (
+        f"VENT_INTAKE: {_intake:.0f} mm2 of intake, floor is {VENT_INTAKE_MIN:.0f}. "
+        "The exhaust is four times this, so VENT_FREE_AREA will not catch it")
+    _raw = 4 * (len(_ROW1) - 2)          # rows x interior pedal columns, before keep-out
+    assert len([c for c in _bottom_vents_local(W-2*T, D-2*T)
+                if c.get("kind") == "rect"]) == _raw, (
+        "VENT_INTAKE: the post keep-out is dropping slots again -- the columns are "
+        "supposed to sit in the gaps BETWEEN post feet, so it should drop none")
 
     # 3c. the front gap absorbed the deeper Cherub slot; keep it usable
     assert FRONT_GAP >= 40.0, f"FRONT_GAP: {FRONT_GAP:.1f} mm < 40 -- pedals crowd the screen block"
@@ -2455,31 +2487,39 @@ def side_vents(flap, bw):
 
 
 def _bottom_vents_local(bw, bd):
-    """Intake-vent block in the clear gap between the front and CLEAR/BANK platform
-    rows (air enters here, crosses the boards, exits the rear-wall vents). Same
-    brick bond as every other vent field -- nobody sees the underside, but the
-    stagger costs nothing and the floor takes the machine's weight."""
+    """Intake vents, sitting in the gaps the support posts leave (#1019).
+
+    Air enters here, crosses the boards and leaves through the rear wall. This
+    used to be a plain brick-bond block centred on the plate, and spreading the
+    posts across the whole band (#1019) shadowed 21 of its 32 slots -- 72% of the
+    console's INTAKE. The VENT_FREE_AREA gate did not catch it because it sums
+    intake and exhaust, and the exhaust is four times the intake, so the total
+    still cleared the minimum while the intake quietly collapsed.
+
+    The columns now sit on the interior pedal centrelines, which is exactly where
+    the gaps between post feet are, since the posts sit in the pedal GAPS. The
+    rows fit between the front and mid floor rails with a real clearance instead
+    of the 0.11 mm the old block happened to leave.
+    """
     sl, sw = VENT_SLOT
-    cols, rows = 6, 5
-    gap_y = (PEDAL_ROW1_V + FSW_SLOT_D/2 + PLATFORM_MARGIN +
-             PEDAL_ROW2_V - FSW_SLOT_D/2 - PLATFORM_MARGIN) / 2.0
-    u0, v0 = bw/2 - (cols*(sl+14))/2, gap_y - (rows*VENT_PITCH)/2
-    cuts = _vent_array(u0=u0, z0=v0, cols=cols, rows=rows, cp=sl + 14)
-    # SUPPORT-POST KEEP-OUT (POST_V=165 sits over this field): drop any slot that
-    # would land under a post foot/pad footprint (+4 mm margin) so the feet bolt
-    # to solid floor. The free-area gate still enforces VENT_FREE_AREA_MIN --
-    # currently ~16k mm^2 total, so the dropped slots cost nothing that matters.
+    lo = _rail_v(PEDAL_ROW1_V,  1) + RAIL_W / 2.0 + VENT_RAIL_CLR
+    hi = _rail_v(PEDAL_ROW2_V, -1) - RAIL_W / 2.0 - VENT_RAIL_CLR
+    rows = int((hi - lo - sw) // VENT_PITCH) + 1
+    assert rows >= 3, f"only {rows} intake rows fit between the rails"
+    span = sw + (rows - 1) * VENT_PITCH
+    v0 = lo + (hi - lo - span) / 2.0
+    cuts = [{"kind": "rect", "u": u - sl / 2.0, "v": v0 + r * VENT_PITCH,
+             "w": sl, "h": sw, "ref": "VENT", "layer": "VENT"}
+            for r in range(rows)
+            for u in (_row1_u(i) for i in range(1, len(_ROW1) - 1))]
+    # Safety net, not a workhorse: with the columns on the pedal centrelines this
+    # should drop nothing. _check() asserts that it does.
     keep = []
     for c in cuts:
         b = _bbox(c)
-        hit = False
-        for u in POST_U:
-            fu0, fu1 = u - POST_PW/2 - 4, u + POST_PW/2 + 4
-            fv0 = _POST_VP - POST_FOOTL - 4
-            fv1 = _POST_VP + POST_T + 4
-            if b[0] < fu1 and fu0 < b[2] and b[1] < fv1 and fv0 < b[3]:
-                hit = True
-        if not hit:
+        if not any(b[0] < u + POST_PW/2 + 4 and u - POST_PW/2 - 4 < b[2] and
+                   b[1] < _POST_VP + POST_T + 4 and _POST_VP - POST_FOOTL - 4 < b[3]
+                   for u in POST_U):
             keep.append(c)
     return keep
 
@@ -3430,18 +3470,6 @@ def platform_foot_holes():
                         "d": D_M3_METAL, "ref": "PLAT_SCR"})
     return out
 
-def pedestal_foot_xy():
-    """Forty floor supports, one on each chassis screw (issue #1019).
-
-    The same stations platform_foot_holes() already bores, read in bottom-plate
-    (u, v). These carry the stomp straight from the pedestal to the ground
-    instead of through the sheet, and they add NO holes: the screws are there.
-    """
-    cs = math.cos(math.radians(SLOPE_ANGLE))
-    return [(u + fy, v * cs + fx)
-            for _label, u, v in PEDALS
-            for fx, fy in platform_foot_xy()]
-
 def dxf_rear_panel(path):
     """The dismountable rear I/O panel: a flat plate that closes the rear WINDOW with
     a bolt-on overlap and carries all nine connector stations. Its separate
@@ -3539,27 +3567,100 @@ def _transition_face(cq):
     return box.val().moved(loc)
 
 def base_foot_xy():
-    """Fifteen rubber-foot fixings in bottom-plate (u, v) coordinates.
+    """Floor fixings in bottom-plate (u, v): the rear rail's six anchors.
 
-    Retain the four corner feet; add four front and four rear supports at
-    every second pedal gap, plus one beside CLEAR/BANK and two by the steel
-    posts. Stagger the middle supports around vents and existing hardware.
-    These positions establish nominal fit, not equal load sharing or strength.
+    This was fifteen rubber feet, then twenty. The rails replaced them (#1019):
+    three full-width rails carry the console, so the only bores the floor still
+    needs are the ones holding the REAR rail down -- the other fourteen went, and
+    the intake vent field grew back into the room they were taking. The stations
+    are unchanged, so those six bores are the same holes the drawing already had.
     """
-    BW, BD = W - 2*T, D - 2*T
-    feet = [(x, y) for x in (FOOT_INSET_X, BW - FOOT_INSET_X)
-            for y in (FOOT_INSET_Y, BD - FOOT_INSET_Y)]
-    cs = math.cos(math.radians(SLOPE_ANGLE))
+    BWl, BDl = W - 2*T, D - 2*T
     front = sorted(u for _label, u, v in PEDALS if v == PEDAL_ROW1_V)
-    paired = [(front[i]+front[i+1])/2 for i in range(0, len(front), 2)]
-    feet.extend((u, PEDAL_ROW1_V*cs) for u in paired)
-    feet.extend((u, BD-FOOT_INSET_Y) for u in paired)
-    middle = [u for _label, u, v in PEDALS if v != PEDAL_ROW1_V]
-    feet.append((sum(middle)/len(middle), PEDAL_ROW2_V*cs))
-    # Frozen fit station between the front pedestal's rear edge and post feet.
-    gaps = [(a+b)/2 for a, b in zip(front, front[1:])]
-    feet.extend((min(gaps, key=lambda gap: abs(gap-u)), 131.440) for u in POST_U)
-    return feet
+    paired = [(front[i] + front[i+1]) / 2 for i in range(0, len(front), 2)]
+    return [(u, BDl - FOOT_INSET_Y)
+            for u in [FOOT_INSET_X] + paired + [BWl - FOOT_INSET_X]]
+
+
+def floor_rail_lines():
+    """The five rails: (name, v, u0, u1, screw stations).
+
+    Each one lies on a row of screws that already passes through the floor, so
+    no rail adds a bore. The front pair and the mid pair ride the pedestals'
+    chassis screws; the rear rides base_foot_xy(). The front rail is nudged
+    rearward off its screw line where the wall bend relief would otherwise clip
+    it -- the screw does not have to sit on the rail's centreline.
+    """
+    du = max(abs(y) for _x, y in platform_foot_xy())
+    BWl, BDl = W - 2*T, D - 2*T
+    out = []
+    for tag, row_v, u0, u1 in (
+            ("front", PEDAL_ROW1_V, RAIL_MARGIN, BWl - RAIL_MARGIN),
+            ("mid", PEDAL_ROW2_V,
+             min(u for _l, u, v in PEDALS if v != PEDAL_ROW1_V) - SKIRT_OUT_W/2.0,
+             max(u for _l, u, v in PEDALS if v != PEDAL_ROW1_V) + SKIRT_OUT_W/2.0)):
+        row = sorted(u for _l, u, v in PEDALS
+                     if (v == PEDAL_ROW1_V) == (tag == "front"))
+        screws = sorted(u + sgn*du for u in row for sgn in (-1, 1))
+        for side, sfx in ((-1, "a"), (1, "b")):
+            out.append((f"{tag}_{sfx}", _rail_v(row_v, side), u0, u1, screws))
+    out.append(("rear", BDl - FOOT_INSET_Y, RAIL_MARGIN, BWl - RAIL_MARGIN,
+                sorted(u for u, _v in base_foot_xy())))
+    return out
+
+
+def _rail_split(u0, u1, screws):
+    """Joints land ON screws, so one screw clamps both segment ends.
+
+    That is the whole point: an equal-length split leaves segments holding a
+    single screw, and a segment on one screw pivots about it. The objective is
+    the FEWEST segments that fit the bed, and only then the shortest longest one
+    -- optimising length alone chops the rail into forty-millimetre confetti.
+    Every segment must carry at least two screws.
+    """
+    n = len(screws)
+    assert n >= 2, "a rail needs at least two screws"
+    if u1 - u0 <= RAIL_MAXLEN:
+        return [(u0, u1)]
+    INF = (10**9, float("inf"))
+    best = [INF] * n                      # (segments so far, longest so far)
+    prev = [None] * n
+    for i in range(1, n):                 # first segment u0..screws[i], holds 0..i
+        if screws[i] - u0 <= RAIL_MAXLEN:
+            best[i] = (1, screws[i] - u0)
+    for i in range(1, n):
+        for j in range(1, i):             # segment screws[j]..screws[i], both ends on it
+            if best[j] == INF or screws[i] - screws[j] > RAIL_MAXLEN:
+                continue
+            cand = (best[j][0] + 1, max(best[j][1], screws[i] - screws[j]))
+            if cand < best[i]:
+                best[i], prev[i] = cand, j
+    end, score = None, INF
+    for j in range(1, n - 1):             # last segment screws[j]..u1, holds j..n-1
+        if best[j] == INF or u1 - screws[j] > RAIL_MAXLEN:
+            continue
+        cand = (best[j][0] + 1, max(best[j][1], u1 - screws[j]))
+        if cand < score:
+            score, end = cand, j
+    assert end is not None, (
+        f"no split of {u1-u0:.0f} mm keeps every segment under {RAIL_MAXLEN:.0f} mm "
+        "with two screws on it")
+    cuts, k = [], end
+    while k is not None:
+        cuts.append(screws[k]); k = prev[k]
+    edges = [u0] + sorted(cuts) + [u1]
+    return list(zip(edges, edges[1:]))
+
+
+def floor_rail_segments():
+    """Every printed segment: (rail, index, u0, u1, screw u's on it)."""
+    out = []
+    for name, _v, u0, u1, screws in floor_rail_lines():
+        on = [s for s in screws if u0 <= s <= u1]
+        for k, (a, b) in enumerate(_rail_split(u0, u1, on), 1):
+            out.append((name, k, a, b, [s for s in on if a - 1e-6 <= s <= b + 1e-6]))
+    return out
+
 
 def platform_foot_xy():
     """Four unchanged chassis-screw stations in the pedestal frame.
@@ -5334,6 +5435,83 @@ def _prop_solid():
     return solid
 
 
+def _rail_solid(length, screws_local):
+    """One printed floor-rail segment (issue #1019).
+
+    Local frame: x along the rail, 0 at its low-u end; y across it, 0 on the
+    channel centreline; z up from the FLOOR face. So z=0 is the plane the rubber
+    would touch if the channel were full depth, and the strip stands proud of it.
+
+    The screw head sinks into a counterbore that stops inside the PETG, above the
+    channel roof, so the neoprene runs over it unbroken and never needs punching.
+    That does fix the assembly order: rails on first, strip in afterwards.
+    """
+    import cadquery as cq
+    body = (cq.Workplane("XY").box(length, RAIL_W, RAIL_T,
+                                   centered=(False, True, False)))
+    body = body.cut(cq.Workplane("XY")                       # the strip channel
+                    .box(length - 2*RAIL_END_INSET, RAIL_CH_W, RAIL_CH_D,
+                         centered=(False, True, False))
+                    .translate((RAIL_END_INSET, 0, 0)))
+    for x, y in screws_local:
+        body = body.cut(cq.Workplane("XY").center(x, y)      # M3 clearance, through
+                        .circle(D_M3_METAL/2.0).extrude(RAIL_T + 1))
+        body = body.cut(cq.Workplane("XY").center(x, y)      # head, buried in the PETG
+                        .circle(RAIL_CBORE_D/2.0)
+                        .extrude(RAIL_CBORE_H).translate((0, 0, RAIL_CH_D)))
+    solid = body.val()
+    assert solid.isValid() and len(body.solids().vals()) == 1, "rail is not one solid"
+    return solid
+
+
+def build_floor_rail_steps():
+    """Every rail segment as STEP + STL, named so the plate order is obvious.
+
+    A segment loses half a joint gap at each end it shares with a neighbour, so
+    the printed run is continuous to within RAIL_JOINT and the joints land in
+    the pedal gaps where no screw sits.
+    """
+    import cadquery as cq
+    made = []
+    for name, k, a, b, on in floor_rail_segments():
+        u0, u1 = _rail_extent(name)
+        trim = (0.0 if a <= u0 + 1e-6 else RAIL_JOINT/2.0) \
+             + (0.0 if b >= u1 - 1e-6 else RAIL_JOINT/2.0)
+        length = (b - a) - trim
+        start = a + (0.0 if a <= u0 + 1e-6 else RAIL_JOINT/2.0)
+        dy = _rail_screw_dy(name)
+        solid = _rail_solid(length, [(x - start, dy) for x in on])
+        stem = f"segno_floor_rail_{name}_{k}"
+        cq.exporters.export(solid, os.path.join(OUT, stem + ".step"))
+        cq.exporters.export(solid, os.path.join(OUT, stem + ".stl"))
+        made.append((stem, length, len(on)))
+    return made
+
+
+def _rail_extent(name):
+    for n, _v, u0, u1, _s in floor_rail_lines():
+        if n == name:
+            return u0, u1
+    raise KeyError(name)
+
+
+def _rail_screw_dy(name):
+    """Offset of the screw row from the rail centreline (only the front rail)."""
+    cs = math.cos(math.radians(SLOPE_ANGLE))
+    dv = max(abs(x) for x, _y in platform_foot_xy())
+    for n, v, _u0, _u1, _s in floor_rail_lines():
+        if n != name:
+            continue
+        if name.startswith("front"):
+            row = PEDAL_ROW1_V * cs + (-dv if name.endswith("a") else dv)
+        elif name.startswith("mid"):
+            row = PEDAL_ROW2_V * cs + (-dv if name.endswith("a") else dv)
+        else:
+            row = v
+        return row - v
+    raise KeyError(name)
+
+
 def build_prop_step():
     import cadquery as cq
     step = os.path.join(OUT, "segno_lid_prop.step")
@@ -6660,6 +6838,14 @@ def report():
     _bwv = W - 2*T
     _sv = side_vents('R', _bwv) + side_vents('L', _bwv)
     _sv_area = sum(c["w"] * c["h"] for c in _sv)
+    _seg = floor_rail_segments()
+    _tape = sum((b - a) - 2*RAIL_END_INSET for _n, _k, a, b, _o in _seg)
+    P(f"Floor rails     : 5 rails, {len(_seg)} printed segments, {RAIL_W:.0f} mm wide, "
+      f"ride height {RIDE_H:.1f} mm")
+    P(f"  strip         : {TAPE_W} x {TAPE_T} self-adhesive SOLID neoprene, "
+      f"{_tape:.0f} mm needed (a 20 ft roll is 6096)")
+    P(f"  floor bores   : {len(base_foot_xy())} (the rear rail's anchors; the other "
+      f"fourteen went with the feet)")
     P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents())+_sv_area*FOAM_OPEN_FRACTION:.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
     P(f"  side louvres  : {len(_sv)} slots ({_sv_area:.0f} mm^2 geometric, counted at "
       f"{FOAM_OPEN_FRACTION:.0%} through foam), v {SIDE_VENT_V[0]:.0f}..{SIDE_VENT_V[1]:.0f}")
@@ -6783,18 +6969,23 @@ def _render_parts(cq, explode=0.0):
         bx,by,bz,col=blk[name]; add(cq.Workplane("XY").box(bx,by,bz,centered=(True,True,False)).translate((cy+T,cx+T,STANDOFF_H)).val(), col)
     # --- fasteners (show how it bolts together; visible from the underside) ----
     bw,bd=W-2*T,D-2*T; SCR=(0.70,0.71,0.76); FEET=(0.10,0.10,0.12); BRASS=(0.74,0.62,0.34)
+    RAIL_PETG=(0.16,0.17,0.19)
     gx=lambda yd: yd+T; gy=lambda xw: xw+T          # bottom-plate (width,depth) -> global (X=depth,Y=width)
     perim=[(x,12) for x in (25,bw/2,bw-25)]+[(x,bd-12) for x in (25,bw/2,bw-25)]
     perim+=[(12,y) for y in (bd*0.33,bd*0.66)]+[(bw-12,y) for y in (bd*0.33,bd*0.66)]
     for x,y in perim:                               # M4 bottom-plate screw heads
         add(cq.Workplane("XY").circle(4).extrude(2.6).translate((gx(y),gy(x),-2.6)).val(), SCR)
-    for x, y in base_foot_xy():
-        add(cq.Solid.makeCone(FOOT_FLOOR_D/2, FOOT_BODY_D/2, FOOT_H,
-                             cq.Vector(gx(y), gy(x), -FOOT_H)), FEET)
-    for x, y in pedestal_foot_xy():                 # 40x on the chassis screws (#1019)
-        add(cq.Solid.makeCone(PEDESTAL_FOOT_FLOOR_D/2, PEDESTAL_FOOT_BODY_D/2,
-                              PEDESTAL_FOOT_H,
-                              cq.Vector(gx(y), gy(x), -PEDESTAL_FOOT_H)), FEET)
+    for name, k, a, b, _on in floor_rail_segments():   # printed rails (#1019)
+        u0, u1 = _rail_extent(name)
+        a2 = a + (0.0 if a <= u0 + 1e-6 else RAIL_JOINT/2.0)
+        b2 = b - (0.0 if b >= u1 - 1e-6 else RAIL_JOINT/2.0)
+        v = dict((r[0], r[1]) for r in floor_rail_lines())[name]
+        add(cq.Workplane("XY").box(b2 - a2, RAIL_W, RAIL_T, centered=False)
+            .translate((gx(v - RAIL_W/2.0), gy(a2), -RAIL_T)).val(), RAIL_PETG)
+        add(cq.Workplane("XY")                        # the neoprene strip, standing proud
+            .box(b2 - a2 - 2*RAIL_END_INSET, TAPE_W, TAPE_T, centered=False)
+            .translate((gx(v - TAPE_W/2.0), gy(a2 + RAIL_END_INSET),
+                        -RAIL_T - (TAPE_T - RAIL_CH_D))).val(), FEET)
     for name,cx,cy,(sx,sy) in board_mounts():       # M3 standoffs under Pi + board
         for dx in (-sx/2,sx/2):
             for dy in (-sy/2,sy/2):
@@ -7877,6 +8068,11 @@ def main(argv):
             pr = build_prop_step()
             print("Mid-field lid prop (3D print, x1, issue #1019): out/"
                   + os.path.basename(pr) + " (+ .stl)")
+            rails = build_floor_rail_steps()
+            print(f"Floor rails (3D print PETG, {len(rails)} segments, issue #1019): "
+                  f"out/segno_floor_rail_*.step (+ .stl)")
+            for stem, length, nscrew in rails:
+                print(f"   {stem:34s} {length:6.1f} mm, {nscrew} screws")
             tw = build_screen7_tower_step()
             print("7in screen support tower (3D print, x1): out/" + os.path.basename(tw) + " (+ .stl)")
             for sp16 in build_screen16_stand_steps():

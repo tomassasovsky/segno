@@ -465,42 +465,64 @@ standoff holes in the rear; an **intake-vent block** in the clear gap between th
 two platform rows (air crosses the boards to the rear-wall exhaust); and 15 rubber
 feet. The electronics are reached from the **open top** once the lid is lifted.
 
-**Rubber feet.** Twenty mechanical fixing sets pass down from inside the case
-through Ø4.80(+0.10/−0.00) bare floor holes. The reference uxcell foot is
-Ø18 at the chassis, Ø15 at the floor and 5 mm tall, with a metal washer insert.
-That washer does not establish its screw thread or retention method. Verify
-the actual feet, choose matching hardware and check screw-tip recess; do not
-order the former guessed 12 mm self-tapper. Retain the four corner stations;
-add four front feet at every second pedal gap, four rear feet aligned with them,
-one beside CLEAR/BANK and one immediately forward of each steel-post foot — that
-last set follows `POST_U`, so it grew from two to seven with the posts.
-`base_foot_xy()` drives the cutting holes and preview. The clearance review
-assumes top screw/washer envelopes no larger than Ø9 ×5 mm. Install before the
-screen supports, and verify access and loaded floor contact with the actual feet.
-
-**Pedestal feet (issue #1019) — the ones that carry the playing.** The twenty
-above sit in the gaps *between* pedals, so a stomp reaches them only by bending
-the 2.0 mm floor: 353 MPa and 23 mm of travel under 1 kN on one pedal, first
-yield at about 360 N. Even a rigidly pinned perimeter, more than a 12 mm front
-wall and a screwed-down lid can deliver, tops out at 914 N, so no amount of shell
-stiffening fixes it. `_stomp_fea.py` and
+**Floor rails (issue #1019) — the supports that carry the playing.** There are no
+rubber feet any more. Twenty of them sat in the gaps *between* pedals, so a stomp
+reached them only by bending the 2.0 mm floor: 353 MPa and 23 mm of travel under
+1 kN on one pedal, first yield at about 360 N. Even a rigidly pinned perimeter,
+more than a 12 mm front wall and a screwed-down lid can deliver, tops out at
+914 N, so no amount of shell stiffening fixes it. `_stomp_fea.py` and
 [the rated-load analysis](../docs/research/2026-09-09-enclosure-stomp-load-analysis.md)
 have the model and its validation.
 
-The cure is to keep the stomp out of the sheet. Every pedestal's four chassis
-screws already come **up** through the floor from below, so a foot on each screw
-head puts the load on the ground: 89 MPa and 1.4 mm at 1 kN, first yield about
-1425 N, and still 86 MPa with any one of a pedal's four feet not touching. Forty
-feet, on the stations `pedestal_foot_xy()` returns — the same ones
-`platform_foot_holes()` already bores. **No new holes; `segno_base.dxf` does not
-change.** They must share the Ø18 × Ø15 × 5 envelope of the twenty floor feet so
-the console stands on one foot height, and they are through-bored Ø3.4 with a
-Ø6.5 × 2.5 counterbore so the screw head does not stand on the floor. `_check()`
-gates the envelope, the overlaps and the vent clearances; the part itself is as
-PROVISIONAL as the floor feet, so verify the real one. Feed the counterbore into
-the screw length, and check that a 0.5 mm height spread across the sixty feet
-does not unload one — at the ~400 N/mm the analysis assumed, that error is worth
-200 N.
+Forty more feet on the pedestals' own chassis screws did fix the load path
+(89 MPa, 1.4 mm) and looked like a rash — sixty parts on the underside, none of
+them lining up with anything, and sixty heights to keep coplanar. Five
+**continuous rails** do the same job better on every count:
+
+| | 60 feet | 5 rails |
+|---|---|---|
+| peak stress at 1 kN | 89 MPa | **52 MPa** |
+| deflection | 1.39 mm | **0.23 mm** |
+| first yield | 1428 N | **2465 N** |
+| parts on the floor | 60 | 5, in 17 printed segments |
+| rubber on the ground | 15,268 mm² | 58,360 mm² |
+
+`floor_rail_lines()` puts three full-width rails on the front pedestal screw
+rows and the rear anchor row, and two short ones under CLEAR/BANK. **Every rail
+lies on a row of screws the floor already had, so no rail adds a bore** — the
+other fourteen foot bores went, leaving the six that hold the rear rail down.
+
+Each rail is a printed PETG body, 27 mm wide and 6 mm thick, with a 25.2 × 1.5 mm
+channel in its floor face holding a **25.4 × 3.2 mm self-adhesive solid neoprene
+strip** (LSGCQ 1" × 1/8"). Two things about that strip are not negotiable. It is
+**smooth**: every adhesive tape stocked locally is mineral grit, which grips
+beautifully and would score a stage floor. And it is **3.2 mm**: at the 0.5–1 mm
+of a grip tape a bonded rubber layer is stiff in compression and contributes
+nothing but friction, which costs 11 MPa. The channel is deliberately 0.2 mm
+under the strip and shallower than it, so the rubber is captured between two
+walls and still stands 1.7 mm proud to reach the floor. Adhesive holds it during
+handling; it is not in the load path, which is the same rule the feet were
+screw-on for. Ride height is 7.7 mm against the 5.0 mm the feet set.
+
+`_rail_split()` cuts each rail into bed-sized segments **with the joints on screw
+stations**, so one screw clamps two segment ends. That is not cosmetic: an
+equal-length split leaves segments holding a single screw, and a segment on one
+screw pivots about it. It optimises for the fewest segments and only then the
+shortest longest one — optimising length alone chops the rail into 40 mm
+confetti. Seventeen segments, longest 202.3 mm, every one on at least two screws.
+The set needs 2,819 mm of strip; a 10 ft roll leaves 229 mm of margin and a 20 ft
+roll leaves 3,277 mm, which is the one to buy.
+
+**The intake vents, and a mistake worth recording.** Spreading the posts across
+the whole band (below) put seven post feet in the intake vent field and shadowed
+21 of its 32 slots — **72% of the console's intake**, from 4,688 mm² down to
+1,328. Nothing caught it, because `VENT_FREE_AREA_MIN` sums intake and exhaust
+and the exhaust is four times the intake, so the total still cleared while the
+intake collapsed. The columns now sit on the interior pedal centrelines, which is
+exactly where the gaps between post feet are, recovering 3,840 mm². There is a
+`VENT_INTAKE_MIN` gate on the intake alone now, and an assertion that the post
+keep-out drops nothing. The rails were never the cause and removing the feet
+never restored anything; earlier notes in this file saying so were wrong.
 
 **Lid supports (issue #1019).** Away from a support pad the 2.0 mm faceplate
 dents at 7-11 kg of point load; over one it takes 170 kg. #292 sized that

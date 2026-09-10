@@ -1,7 +1,7 @@
-"""Twenty floor supports: cutting and nominal assembly-clearance regressions.
+"""The rear rail's six floor anchors: cutting and clearance regressions.
 
 These checks do not establish strength or load sharing; the rated-load
-answer lives in _stomp_fea.py and test_pedestal_feet.py. The purchased foot is
+answer lives in _stomp_fea.py and test_floor_rails.py. The purchased foot is
 modelled as Ø18 x 5 mm; Ø9 x 5 mm top hardware and Ø9 existing underside hardware
 are conservative design envelopes, not verified measurements of every screw.
 The converter washers use the separately specified Ø12 mm envelope.
@@ -28,18 +28,13 @@ import segno_enclosure as enclosure
 # Selected floor coordinates, frozen independently of base_foot_xy(). The
 # original four locations remain; every front pair gains one support, and the
 # rear row matches it. The other three follow CLEAR/BANK and the steel posts.
-ORIGINAL = ((14.3, 45.0), (14.3, 374.0),
-            (831.7, 45.0), (831.7, 374.0))
-ADDED = ((119.571429, 66.198026), (321.857143, 66.198026),
-         (524.142857, 66.198026), (726.428571, 66.198026),
-         (119.571429, 374.0), (321.857143, 374.0),
-         (524.142857, 374.0), (726.428571, 374.0),
-         (321.857143, 229.968960),
-         # one forward of every steel-post foot -- this row follows POST_U, so
-         # it went from two to seven when the posts spread across the band (#1019)
-         (119.571429, 131.44), (220.714286, 131.44), (321.857143, 131.44),
-         (423.0, 131.44), (524.142857, 131.44),
-         (625.285714, 131.44), (726.428571, 131.44))
+# The rear rail's anchors, frozen independently of base_foot_xy(). Twenty rubber
+# feet became five printed rails (#1019); three full-width rails carry the
+# console, so the only bores the floor still needs are these six, and they are
+# the same stations the drawing already had.
+ORIGINAL = ((14.3, 374.0), (831.7, 374.0))
+ADDED = ((119.571429, 374.0), (321.857143, 374.0),
+         (524.142857, 374.0), (726.428571, 374.0))
 FOOT_RADIUS = 9.0
 HEAD_RADIUS = 4.5
 HEAD_HEIGHT = 5.0
@@ -152,9 +147,9 @@ class FloorSupportTest(unittest.TestCase):
         self.assertGreater(self.underside_clearance(point), .25,
                            'Foot overlaps existing underside hardware')
 
-    def test_fresh_cut_dxf_contains_all_twenty_unique_clearance_holes(self):
-        self.assertEqual(len(self.feet), 20)
-        self.assertEqual(len(set(map(rounded, self.feet))), 20)
+    def test_fresh_cut_dxf_contains_the_six_rear_rail_anchors(self):
+        self.assertEqual(len(self.feet), 6)
+        self.assertEqual(len(set(map(rounded, self.feet))), 6)
         self.assertCountEqual(list(map(rounded, self.feet)),
                               list(map(rounded, ORIGINAL+ADDED)))
         self.assertTrue(set(map(rounded, ORIGINAL)).issubset(map(rounded, self.feet)))
