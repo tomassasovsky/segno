@@ -12,7 +12,7 @@ tations unchanged.'),
 
 FILE_NAME(
 /* name */ 'segno_corner_bracket_rear_mirrored.step',
-/* time_stamp */ '2026-09-10T00:37:35-03:00',
+/* time_stamp */ '2026-09-10T05:43:11-03:00',
 /* author */ (''),
 /* organization */ (''),
 /* preprocessor_version */ 'ST-DEVELOPER v20.1',
@@ -685,7 +685,7 @@ SOLID_ANGLE_UNIT()
 #627=PRODUCT_DEFINITION_SHAPE('',$,#630);
 #628=SHAPE_REPRESENTATION('',(#370),#620);
 #629=PRODUCT_DEFINITION_CONTEXT('part definition',#634,'design');
-#630=PRODUCT_DEFINITION('2026-09-10-00-37-35-588',
+#630=PRODUCT_DEFINITION('2026-09-10-05-43-11-058',
 'corner_bracket_mirrored',#631,#629);
 #631=PRODUCT_DEFINITION_FORMATION('',$,#636);
 #632=PRODUCT_RELATED_PRODUCT_CATEGORY('corner_bracket_mirrored',
@@ -695,7 +695,7 @@ SOLID_ANGLE_UNIT()
 #634=APPLICATION_CONTEXT(
 'Core Data for Automotive Mechanical Design Process');
 #635=PRODUCT_CONTEXT('part definition',#634,'mechanical');
-#636=PRODUCT('2026-09-10-00-37-35-588','corner_bracket_mirrored',
+#636=PRODUCT('2026-09-10-05-43-11-058','corner_bracket_mirrored',
 'Left rear corner bracket, handed upper closure. Existing five rivet s
 tations unchanged.',(#635));
 #637=PRESENTATION_STYLE_ASSIGNMENT((#639));

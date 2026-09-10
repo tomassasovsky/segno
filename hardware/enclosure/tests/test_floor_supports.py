@@ -163,13 +163,13 @@ class FloorSupportTest(unittest.TestCase):
             with self.subTest(point=point):
                 self.assert_head_clear(point)
 
-    def test_feet_clear_vents_other_feet_and_existing_underfloor_hardware(self):
-        self.assertGreater(len(self.vents), 0)
+    def test_anchors_clear_each_other_and_existing_underfloor_hardware(self):
+        """The vent arm of this check is gone with the bottom vent field: the floor
+        is solid now, and tests/test_floor_rails.py asserts that from the DXF."""
+        self.assertEqual(self.vents, [], 'the bottom plate is meant to be solid')
         for point in self.feet:
             with self.subTest(point=point):
                 self.assert_underside_clear(point)
-                for vent in self.vents:
-                    self.assertGreater(point_rectangle_distance(*point, vent)-FOOT_RADIUS, .25)
         for first, second in itertools.combinations(self.feet, 2):
             self.assertGreater(math.dist(first, second)-2*FOOT_RADIUS, .25)
 

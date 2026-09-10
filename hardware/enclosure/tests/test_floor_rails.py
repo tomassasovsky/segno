@@ -1,9 +1,14 @@
 """Floor rails — the supports that carry a stomp (issue #1019).
 
-Five printed PETG rails, each holding a self-adhesive solid neoprene strip, on
-screw rows the floor already had. 52 MPa and 0.23 mm at a 1 kN stomp against
-353 MPa and 23 mm for the plate as drawn. `_stomp_fea.py` is the model; these
-are the regressions that keep the fix intact.
+THREE printed PETG rails, each holding a self-adhesive solid neoprene strip, on
+screw rows the floor already had. 96 MPa and 3.3 mm at a 1 kN stomp, against a
+Boss RC-600's 401 MPa and 1.8 mm measured in the same model.
+
+Those numbers come from a LARGE-DEFLECTION shell model, not from `_stomp_fea.py`.
+The linear model in that file is right to 0.3% against Timoshenko while a plate
+stays inside small-deflection theory and useless outside it: at w/t = 10 it
+overstates deflection sixfold, which is why it once said an RC-600 yields at
+42 kg. Treat its absolute numbers as superseded and its rankings as sound.
 
 Three of these guard mistakes that were actually made and caught here: the rear
 anchors sat inside the buck converters, which no plan view shows; and the intake
@@ -28,12 +33,54 @@ class RailLayout(unittest.TestCase):
         self.rails = enclosure.floor_rail_lines()
         self.segments = enclosure.floor_rail_segments()
 
-    def test_five_rails_on_rows_the_floor_already_had(self):
-        self.assertEqual([r[0] for r in self.rails],
-                         ['front_a', 'front_b', 'mid_a', 'mid_b', 'rear'])
+    def test_three_rails_on_rows_the_floor_already_had(self):
+        self.assertEqual([r[0] for r in self.rails], ['front_a', 'front_b', 'rear'])
         for name, _v, u0, u1, screws in self.rails:
             with self.subTest(rail=name):
                 self.assertGreaterEqual(len([s for s in screws if u0 <= s <= u1]), 2)
+
+    def test_every_row_clears_every_bore_that_is_not_its_own(self):
+        """The check that was missing. dxf_base_bores() listed 82 of the plate's
+        114 bores -- it never included board_mounts() -- and a middle row was
+        proposed straight over the console board's rear standoffs on the strength
+        of it. Assert the bore list is complete, then assert the rows clear it."""
+        bores = enclosure.dxf_base_bores()
+        self.assertTrue(any(c['ref'] == 'BOARD' for c in bores),
+                        'the board standoffs are missing from the bore list again')
+        half = enclosure.RAIL_W / 2.0
+        own = {(round(x, 3), round(v + enclosure._rail_screw_dy(n), 3))
+               for n, v, u0, u1, sc in self.rails for x in sc if u0 <= x <= u1}
+        for name, v, u0, u1, _s in self.rails:
+            for c in bores:
+                if not (u0 <= c['u'] <= u1):
+                    continue
+                if (round(c['u'], 3), round(c['v'], 3)) in own:
+                    continue
+                with self.subTest(rail=name, bore=c['ref']):
+                    self.assertGreater(abs(c['v'] - v), half + 1.8,
+                                       f"{name} sits on the {c['ref']} bore at "
+                                       f"({c['u']:.1f}, {c['v']:.1f})")
+
+    def test_the_middle_of_the_plate_has_only_two_narrow_lanes(self):
+        """Why there are three rows and not more. Recorded rather than forbidden:
+        a fourth row IS geometrically possible at v 162.3-167.9 or v 259.5-265.3,
+        both about 5 mm wide, and both would need new bores whose heads have to
+        clear whatever stands on the floor above them. Everything between them is
+        blocked by pedestal screws, stand anchors, the lid prop and the board."""
+        bores = enclosure.dxf_base_bores()
+        half = enclosure.RAIL_W / 2.0
+        free = [v/10.0 for v in range(1500, 3200)
+                if all(abs(c['v'] - v/10.0) > half + 2.8 for c in bores)]
+        runs, start = [], free[0]
+        for a, b in zip(free, free[1:]):
+            if b - a > 0.15:
+                runs.append((start, a))
+                start = b
+        runs.append((start, free[-1]))
+        wide = [r for r in runs if r[1] - r[0] > 0.4]
+        self.assertEqual(len(wide), 2, f'the lane map changed: {wide}')
+        for a, b in wide:
+            self.assertLess(b - a, 8.0, 'a lane widened; re-check the bore list')
 
     def test_no_rail_adds_a_bore_to_the_cut_file(self):
         """The whole economy of this fix. Read it back out of a fresh DXF."""
@@ -94,7 +141,7 @@ class RailLayout(unittest.TestCase):
         """Even segments, as many as the bed needs. Cutting on screw stations
         instead gave five uneven ones per rail to fix a problem three of the
         five rails did not have."""
-        self.assertEqual(len(self.segments), 14)
+        self.assertEqual(len(self.segments), 12)
         for name in ("front_a", "front_b", "rear"):
             lengths = [round(b - a, 6) for n, _k, a, b, _o in self.segments if n == name]
             self.assertEqual(len(set(lengths)), 1, f"{name} segments are uneven")
@@ -131,41 +178,51 @@ class Strip(unittest.TestCase):
         self.assertGreater(enclosure.RAIL_CBORE_D, enclosure.D_M3_METAL)
 
     def test_one_twenty_foot_roll_covers_the_set(self):
-        need = sum((b - a) - 2 * enclosure.RAIL_END_INSET
+        """Quoted to the CHANNEL, not to the segment's span: the span over-orders
+        by one joint per segment."""
+        need = sum(enclosure._rail_print(a, b)[1] - 2 * enclosure.RAIL_END_INSET
                    for _n, _k, a, b, _o in enclosure.floor_rail_segments())
         self.assertLess(need, 20 * 304.8)
-        self.assertGreater(need, 10 * 304.8 * 0.9,
-                           'a 10 ft roll would be uncomfortably tight; keep this honest')
+        self.assertGreater(need, 6 * 304.8,
+                           'this got much shorter when the rails went to three rows; '
+                           'check the roll length is still the right thing to buy')
 
 
-class Intake(unittest.TestCase):
-    """The posts ate 72% of the intake and the all-vents gate did not notice."""
+class NoBottomVents(unittest.TestCase):
+    """The bottom plate is solid (owner call). It carried 3,840 mm2 of intake at
+    v 134..162, which sat 112 mm forward of the console board and breathed through
+    the 7.7 mm under-plate gap. The openings are in the side and rear WALLS now."""
 
-    def test_intake_is_gated_on_its_own(self):
-        area = enclosure._vent_free_area(enclosure._bottom_vents())
-        self.assertGreaterEqual(area, enclosure.VENT_INTAKE_MIN)
+    def test_the_generator_has_no_bottom_vent_field_left(self):
+        for gone in ('_bottom_vents', '_bottom_vents_local',
+                     'VENT_INTAKE_MIN', 'VENT_RAIL_CLR'):
+            self.assertFalse(hasattr(enclosure, gone),
+                             f'{gone} came back; the floor is meant to be solid')
 
-    def test_columns_sit_in_the_gaps_between_post_feet(self):
-        raw = 4 * (len(enclosure._ROW1) - 2)
-        kept = [c for c in enclosure._bottom_vents_local(
-            enclosure.W - 2 * enclosure.T, enclosure.D - 2 * enclosure.T)
-            if c.get('kind') == 'rect']
-        self.assertEqual(len(kept), raw,
-                         'the post keep-out is dropping slots again')
-
-    def test_intake_clears_the_rails_with_a_real_margin(self):
-        """It used to clear by 0.11 mm, which is a coincidence, not a clearance."""
-        slots = [enclosure._bbox(c) for c in enclosure._bottom_vents_local(
-            enclosure.W - 2 * enclosure.T, enclosure.D - 2 * enclosure.T)
-            if c.get('kind') == 'rect']
-        half = enclosure.RAIL_W / 2.0
-        for name, v, u0, u1, _s in enclosure.floor_rail_lines():
-            for b in slots:
-                if not (b[0] < u1 and u0 < b[2]):
+    def test_the_cut_file_puts_no_vent_inside_the_floor(self):
+        """Read it out of a fresh DXF: the side and rear walls are part of the same
+        flat pattern, so it is not enough to check that VENT geometry exists."""
+        bw, bd = enclosure.W - 2*enclosure.T, enclosure.D - 2*enclosure.T
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'segno_base.dxf'
+            enclosure.dxf_base(str(path))
+            inside = []
+            for e in ezdxf.readfile(path).modelspace():
+                if e.dxf.layer != 'VENT':
                     continue
-                gap = min(abs((v - half) - b[3]), abs(b[1] - (v + half)))
-                with self.subTest(rail=name):
-                    self.assertGreaterEqual(gap, enclosure.VENT_RAIL_CLR - 1e-6)
+                pts = ([(p[0], p[1]) for p in e.get_points()]
+                       if e.dxftype() == 'LWPOLYLINE' else [])
+                if pts and all(0 <= x <= bw and 0 <= y <= bd for x, y in pts):
+                    inside.append(pts[0])
+        self.assertEqual(inside, [], 'vent geometry is back inside the floor')
+
+    def test_the_air_still_has_a_way_out(self):
+        sv = sum(c['w'] * c['h'] for f in ('L', 'R')
+                 for c in enclosure.side_vents(f, enclosure.W - 2*enclosure.T)
+                 if c.get('kind') == 'rect')
+        free = (enclosure._vent_free_area(enclosure.rear_holes())
+                + sv * enclosure.FOAM_OPEN_FRACTION)
+        self.assertGreaterEqual(free, enclosure.VENT_FREE_AREA_MIN)
 
 
 class Solid(unittest.TestCase):
@@ -183,18 +240,23 @@ class Solid(unittest.TestCase):
                 self.assertAlmostEqual(box.ylen, enclosure.RAIL_W, places=6)
                 self.assertAlmostEqual(box.xlen, b - a, places=6)
 
-    def test_the_ends_are_round_and_the_joint_shows(self):
-        """Owner call: rounded ends and a visible gap. They are geometry, not a
-        drawing style -- an early version answered the ask with a rendering."""
+    def test_the_ends_are_square_and_the_segments_butt(self):
+        """Reversing an earlier call: full-round stadium ends became square with a
+        corner break, and the 3 mm joint became print tolerance, because a row of
+        four gapped lozenges read as sixteen objects rather than four lines."""
         name, _k, a, b, on = enclosure.floor_rail_segments()[0]
-        solid = enclosure._rail_solid(b - a, [(x - a, enclosure._rail_screw_dy(name))
-                                              for x in on])
-        stadium = ((b - a) - enclosure.RAIL_W) * enclosure.RAIL_W \
-            + math.pi * (enclosure.RAIL_W/2.0)**2
-        gross = stadium * enclosure.RAIL_T
-        self.assertLess(solid.Volume(), gross)
-        self.assertGreater(solid.Volume(), gross * 0.75)
-        self.assertGreater(enclosure.RAIL_JOINT, 1.0)
+        start, length = enclosure._rail_print(a, b)
+        solid = enclosure._rail_solid(length, [(x - start, enclosure._rail_screw_dy(name))
+                                               for x in on])
+        gross = length * enclosure.RAIL_W * enclosure.RAIL_T
+        corners = (4 - math.pi) * enclosure.RAIL_END_R**2 * enclosure.RAIL_T
+        self.assertLess(solid.Volume(), gross - corners)
+        self.assertGreater(solid.Volume(), gross * 0.70,
+                           'a square end should lose its corner break and the '
+                           'channel, and nothing else')
+        self.assertLessEqual(enclosure.RAIL_END_R, 2.0)
+        self.assertLessEqual(enclosure.RAIL_JOINT, 1.0,
+                             'the joint is print tolerance, not a design feature')
 
     def test_every_segment_of_a_rail_is_the_same_printed_part(self):
         """The owner asked for four identical strips, not four that tile. Taking

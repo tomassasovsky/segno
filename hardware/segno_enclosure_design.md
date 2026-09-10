@@ -487,81 +487,95 @@ them lining up with anything, and sixty heights to keep coplanar. Five
 | parts on the floor | 60 | 5, in 17 printed segments |
 | rubber on the ground | 15,268 mm² | 58,360 mm² |
 
-`floor_rail_lines()` puts three full-width rails on the front pedestal screw
-rows and the rear anchor row, and two short ones under CLEAR/BANK. **Every rail
-lies on a row of screws the floor already had, so no rail adds a bore** — the
-other fourteen foot bores went, leaving the six that hold the rear rail down.
+`floor_rail_lines()` puts **three full-width rails** on the two front pedestal
+screw rows and the rear anchor row. The front pair ride screws the floor already
+had, so between them the rails add eight bores and no more.
 
-Each rail is a printed PETG body, 27 mm wide and 6 mm thick, with a 25.2 × 1.5 mm
-channel in its floor face holding a **25.4 × 3.2 mm self-adhesive solid neoprene
-strip** (LSGCQ 1" × 1/8"). Two things about that strip are not negotiable. It is
-**smooth**: every adhesive tape stocked locally is mineral grit, which grips
-beautifully and would score a stage floor. And it is **3.2 mm**: at the 0.5–1 mm
-of a grip tape a bonded rubber layer is stiff in compression and contributes
-nothing but friction, which costs 11 MPa. The channel is deliberately 0.2 mm
-under the strip and shallower than it, so the rubber is captured between two
-walls and still stands 1.7 mm proud to reach the floor. Adhesive holds it during
-handling; it is not in the load path, which is the same rule the feet were
-screw-on for. Ride height is 7.7 mm against the 5.0 mm the feet set.
+Each rail is a printed PETG body, **21 mm wide** and 6 mm thick, with an
+18.85 × 1.5 mm channel in its floor face holding a **19.05 × 3.2 mm self-adhesive
+solid neoprene strip** (3/4" × 1/8"). Two things about that strip are not
+negotiable. It is **smooth**: every adhesive tape stocked locally is mineral grit,
+which grips beautifully and would score a stage floor. And it is **3.2 mm**: at
+the 0.5–1 mm of a grip tape a bonded rubber layer is stiff in compression and
+contributes nothing but friction. The channel is 0.2 mm under the strip and
+shallower than it, so the rubber is captured between two walls and still stands
+1.7 mm proud to reach the floor. Adhesive holds it during handling; it is not in
+the load path. Ride height is 7.7 mm.
 
-**Every segment of a rail is the same printed part.** Three parts in all: the
-front one ×8, the rear ×4 and the mid ×2. That falls out of taking the rail span
-from the pedal pitch rather than the plate edges — each segment is exactly two
-pedals wide, 202.29 mm, so the screw pattern repeats instead of drifting 5.2 mm a
-segment as it did across an 830 mm span. Ends are rounded to a full stadium and
-the joints keep a 3 mm gap. The set needs 2,765 mm of strip; a 20 ft roll is the
-one to buy.
+**Width is set by the floor, not by the strip.** `dxf_base_bores()` used to list
+82 of the plate's 114 bores — it never knew about `board_mounts()` — so every
+clearance figure derived from it was wrong, and a middle row was once proposed
+straight over the console board's rear standoffs on the strength of it. With the
+real list the rear row clears its nearest screen-stand bore by 3.5 mm at 21 mm
+wide, 2.0 at 24 and 0.5 at 27. The strip drops from 1" to 3/4" to suit.
 
-Sameness is measured on the **printed** part, not the span it occupies. Taking
-the joint gap off only the ends a segment shares with a neighbour reads as the
-obvious way to leave a 3 mm gap, and it makes the first and last segment of each
-rail 1.5 mm longer than the middle two. Every segment loses half a gap at both
-ends, so a rail now stops 1.5 mm short of its span at each outer end.
+**There are three rows because there is no room for a fourth.** The middle of the
+plate is occupied at v = 181.28, 205, 206.22, 229.25, 236, 246.10 and 252.75 —
+pedestal screws, screen-stand anchors, the lid prop's bolts and the board's
+standoffs. Two lanes survive, at v 162.3–167.9 and v 259.5–265.3, both about 5 mm
+wide, and both would need new bores whose heads have to clear whatever stands on
+the floor above them. A row at v 262.4 measures 91 MPa and 1.43 mm against three
+rows' 96 MPa and 3.28 mm, so it is available if the deflection ever matters.
+
+What three rows costs is worth stating plainly: CLEAR and BANK span 228 mm
+between the rear front rail and the rear rail, and the plate deflects **3.28 mm**
+under a 1 kN stomp there. Peak stress is 96 MPa. For scale, a Boss RC-600's top
+panel measures 401 MPa and 1.77 mm in the same model, so this is half an RC-600's
+stress and about twice its deflection.
+
+**Every segment of a rail is the same printed part.** Two parts in all: the front
+one ×8 and the rear ×4. That falls out of taking the rail span from the pedal
+pitch rather than the plate edges — each segment is exactly two pedals wide, so
+the screw pattern repeats instead of drifting 5.2 mm a segment as it did across an
+830 mm span. Ends are **square** with a 1 mm corner break, and segments **butt**:
+`RAIL_JOINT` is 0.5 mm of print tolerance, not a visible gap. Both reverse earlier
+calls — full-round stadium ends and a 3 mm gap made each row read as sixteen
+lozenges rather than three lines. Square ends also let the strip be a plain
+scissors cut that fills the channel corner to corner; the stadium left a 12.6 mm
+radius unfilled at every end. The set needs 2,385 mm of strip.
+
+Sameness is measured on the **printed** part, not the span it occupies. Taking the
+joint off only the ends a segment shares with a neighbour reads as the obvious way
+to leave a gap, and it makes the first and last segment of each rail longer than
+the middle two. Every segment loses half a joint at both ends.
 
 The rear rail's anchors are ours to place, and there are only 53 mm of segment
 where they may go. Two of the eight are the whole story: the buck converters are
 22 mm bricks bolted flat to the floor across u 340–480, a segment boundary falls
 at u 423, and a screw's **head** stands up inside the console. So the left brick
 rules out the far end of segment 2 and the right brick rules out the near end of
-segment 3 — and because all four segments are one part, an offset ruled out in
-one is ruled out in all. What survives is 61.5–114.8 mm from a segment's near
-end; the anchors sit at 65 and 111, 3.5 mm inside each edge of that window.
+segment 3 — and because all four segments are one part, an offset ruled out in one
+is ruled out in all. What survives is 61.5–114.8 mm from a segment's near end; the
+anchors sit at 65 and 111, 3.5 mm inside each edge of that window.
 
 The pair is therefore not symmetric about the segment centre, and the two screws
 are 46 mm apart on a 202 mm segment. Neither costs anything: a rail works in
 compression between the plate and the floor, so an unscrewed tail still carries
-its load, and two screws already fix a segment against turning. What the offsets
-must not be is small — an even split of the old plate-to-plate span put a screw
-5 mm from a rounded tip with about 3 mm of wall behind the counterbore.
+its load, and two screws already fix a segment against turning.
 
-**The rear rail has exactly one lane, and it is not where the feet were.** Behind
-the mid rail the floor is occupied at v = 278.65, 279.5, 296, 327, 359.5, 367.5
-and 392.8, and only the 327–359.5 gap takes 27 mm. It cannot sit at v 374: the
-buck converters bolt through v 367.5 with a **floor-side washer and nut**, so
-hardware protrudes there and the rail would perch on it. It sits at 343.25 with
-1.5 mm clear of each screen-stand row — thin, and worth checking on the first
-set. Moving forward costs nothing measurable: the stomp case is unchanged at
-49 MPa and a 3g set-down improves from 8.5 to 6.4 MPa. The rear overhang grows
-from 45 mm to 76 mm; the plate is fine, but tipping has not been checked and
-needs a real mass distribution.
+**The rear rail sits at v 343.25, not where the feet were.** The buck converters
+bolt through v 367.5 with a **floor-side washer and nut**, so hardware protrudes
+there and the rail would perch on it. At 21 mm wide it clears the screen-stand
+rows at 327 and 359.5 by 3.5 mm, where the 27 mm version cleared by 0.95.
 
-`_check()` gates the three properties learned the hard way here: that every
-segment of a rail is one printed shape; that **nothing but a rail's own screws
-sits under it**, the bore that gate first caught being the buck converter's; and
-that no anchor's head lands inside a converter body. The last one is the reason
-to distrust a plan view of the floor — the bores looked perfectly placed, and
-four of eight were under a brick.
+`_check()` gates what was learned the hard way here: that every segment of a rail
+is one printed shape; that **nothing but a rail's own screws sits under it**; that
+no anchor's head lands inside a converter body; and that the bottom plate carries
+no vents. The bore-list bug is why the second of those was not enough on its own —
+a gate is only as good as the list it checks against.
 
-**The intake vents, and a mistake worth recording.** Spreading the posts across
-the whole band (below) put seven post feet in the intake vent field and shadowed
-21 of its 32 slots — **72% of the console's intake**, from 4,688 mm² down to
-1,328. Nothing caught it, because `VENT_FREE_AREA_MIN` sums intake and exhaust
-and the exhaust is four times the intake, so the total still cleared while the
-intake collapsed. The columns now sit on the interior pedal centrelines, which is
-exactly where the gaps between post feet are, recovering 3,840 mm². There is a
-`VENT_INTAKE_MIN` gate on the intake alone now, and an assertion that the post
-keep-out drops nothing. The rails were never the cause and removing the feet
-never restored anything; earlier notes in this file saying so were wrong.
+**The bottom plate has no vents.** It carried 24 slots, 3,840 mm², at v 134–162,
+and they are gone (owner call). That field sat 112 mm forward of the console board
+and 200 mm forward of the converters, and it breathed through the 7.7 mm gap the
+rails leave under the plate — a gap entered only at the two side edges, and worth
+nothing on the carpet this thing spends its life on. The openings that matter are
+already beside the electronics: the side-wall band at v 250–372 and the rear wall,
+11,529 mm² of free area between them against a 4,000 mm² floor. Deleting it also
+freed the underside, which is what it was really costing: the field dictated the
+rail layout twice.
+
+An earlier note in this file about the posts shadowing 21 of 32 intake slots is
+kept for the record in git history only; the field it described no longer exists.
 
 **Lid supports (issue #1019).** Away from a support pad the 2.0 mm faceplate
 dents at 7-11 kg of point load; over one it takes 170 kg. #292 sized that

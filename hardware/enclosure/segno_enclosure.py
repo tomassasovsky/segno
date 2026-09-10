@@ -804,7 +804,9 @@ MASK_BOND_D         = 12.0  # bare bonding land around ONE panel bolt, both face
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
 VENT_PITCH  = 8.0             # slot row pitch (web = pitch - slot = 4mm = 2T)
-VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
+VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (side + rear), ~40 cm^2.
+                              # The bottom plate contributed 3840 of this until the
+                              # field was deleted; side + rear alone give 11529.
 STANDOFF_H  = 15.0            # under-board gap: the THT leads + buck-module header pins
                               # hang ~4.5mm below the PCB, so 10mm left ~5mm of real
                               # airflow; 15mm (standard M3 brass) restores the margin
@@ -886,18 +888,27 @@ FOOT_HEAD_D = 9.0    # maximum assumed top screw/washer envelope; verify hardwar
 #   as drawn          353 MPa, 23.0 mm at a 1 kN stomp, first yield  360 N
 #   60 rubber feet     89 MPa,  1.4 mm                              1428 N
 #   these rails        52 MPa,  0.23 mm                             2465 N
-TAPE_W, TAPE_T = 25.4, 3.2    # LSGCQ 1" x 1/8" self-adhesive solid neoprene
-RAIL_W    = 27.0              # channel plus a wall each side
+TAPE_W, TAPE_T = 19.05, 3.2   # 3/4" x 1/8" self-adhesive solid neoprene
+RAIL_W    = 21.0              # channel plus a wall each side. NOT wider: see below
 RAIL_T    = 6.0               # PETG body; thick enough to bury the screw head
 RAIL_CH_W = TAPE_W - 0.2      # UNDER the strip on purpose: gripped, not just glued
 RAIL_CH_D = 1.5               # shallower than the strip, so 1.7 mm reaches the floor
 RAIL_CBORE_D  = 6.2           # the M3 head sinks inside the PETG, above the channel,
 RAIL_CBORE_H  = 2.3           # so the strip runs over it unbroken -- no punching
-RAIL_JOINT     = 3.0          # visible gap at a segment joint (owner call)
+RAIL_JOINT     = 0.5          # segments BUTT. A 3 mm gap made each row read as four
+                              # rectangles rather than one line (owner call); 0.5 is
+                              # print tolerance, not a design feature
+RAIL_END_R     = 1.0          # corner break only. Full-round stadium ends were the
+                              # earlier call and were reversed: square (owner call)
 RAIL_END_INSET = 1.5          # channel stops short of each end
 RAIL_MAXLEN    = 215.0        # Ender 3 V3 bed, less a margin
 RAIL_EDGE_MIN  = 4.5          # keep the rail off the wall bend relief (RI + T)
 RAIL_SEGMENTS  = 4            # per full-width rail; two pedals each
+# WIDTH IS SET BY THE FLOOR, NOT BY THE STRIP. dxf_base_bores() used to list 82 of
+# the plate's 114 bores -- it never knew about board_mounts() -- so every clearance
+# figure derived from it was wrong. With the real list the rear row clears its
+# nearest screen-stand bore by 3.5 mm at 21 mm wide, 2.0 at 24 and 0.5 at 27. 21 it
+# is, and the strip drops from 1" to 3/4" to suit.
 # The rear rail has exactly ONE lane. Behind the mid rail the floor is occupied at
 # v = 278.65, 279.5, 296, 327, 359.5, 367.5 and 392.8, and only the 327..359.5 gap
 # takes 27 mm. It cannot sit where the feet used to (v 374): the buck converters
@@ -918,10 +929,13 @@ RAIL_REAR_V    = (327.0 + 359.5) / 2.0   # 343.25, 1.5 mm clear of each stand ro
 RAIL_REAR_ANCHORS = (65.0, 111.0)   # offsets from each segment's near end
 RAIL_HEAD_D = 9.0             # conservative envelope for the nut/washer stack that
                               # stands on the floor at an anchor, inside the console
-VENT_RAIL_CLR  = 2.0          # intake slot to rail edge; the old block left 0.11
-VENT_INTAKE_MIN = 3000.0      # mm2 of INTAKE alone. VENT_FREE_AREA_MIN sums intake
-                              # and exhaust, and the exhaust is 4x the intake, so it
-                              # cleared while the intake collapsed to 1328. Gate both.
+# The bottom plate has NO vents. It used to carry 3,840 mm2 of intake at v 134..162,
+# and that field is gone (owner call). It sat 112 mm forward of the console board and
+# 200 mm forward of the converters, breathing through the 7.7 mm under-plate gap,
+# which is entered only at the two side edges and is worth nothing at all on carpet.
+# The openings that matter are already beside the electronics: the side-wall band at
+# v 250..372 and the rear wall. Deleting it frees the whole underside, which is what
+# it was really costing -- it dictated the rail layout twice.
 
 
 def _rail_v(row_v, side):
@@ -1428,7 +1442,7 @@ POST_V     = 165.0                 # web depth (user call 2026-08-19: "move the 
                                    # edge (178) -- the actual dent zone -- instead of jammed at 146.5
                                    # against the OLD panel's fictitious connector strip. Rear limit is
                                    # the measured UPERFECT body's front edge; the intake vent field below yields instead (slots
-                                   # under the feet are skipped, see _bottom_vents_local).
+                                   # the bottom plate carries no vents at all).
 # One post per PEDAL GAP (issue #1019). Two of these existed, at the TRACK
 # T2-T3 and T3-T4 gaps, propping the band in front of the 16in aperture -- the
 # zone #292 identified. The FE check found that band dents at 7-11 kg of point
@@ -1908,17 +1922,6 @@ def _check(strict_board_mount=True):
         for lb in led:
             assert not (lb[0] < u+POST_PW/2 and u-POST_PW/2 < lb[2]), \
                 f"POST at u={u:.0f} overlaps an LED slot (u {lb[0]:.0f}..{lb[2]:.0f}) -- move to a gap"
-    # post feet on the base must clear the intake vent SLOTS (the field now skips
-    # slots under the feet -- see _bottom_vents_local -- so check slot-by-slot,
-    # not against the field's bounding box)
-    vent_bb = [_bbox(c) for c in _bottom_vents_local(W-2*T, D-2*T) if c.get("kind") == "rect"]
-    for u in POST_U:
-        fu0, fu1 = u - POST_PW/2 - 2, u + POST_PW/2 + 2
-        fv0, fv1 = _POST_VP - POST_FOOTL - 2, _POST_VP + POST_T + 2
-        for b in vent_bb:
-            assert not (b[0] < fu1 and fu0 < b[2] and b[1] < fv1 and fv0 < b[3]), \
-                f"POST foot at u={u:.0f} overlaps intake vent slot (u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f})"
-
     # 2f. the printed mid-field prop (issue #1019) lives in ONE narrow lane: right
     # of BANK's pedestal and left of the 16in MODULE BODY, which is wider than its
     # aperture. Both walls of that lane are gated here, in u.
@@ -1936,11 +1939,6 @@ def _check(strict_board_mount=True):
         assert not (b[0] < _prop_pad[1] and _prop_pad[0] < b[2] and
                     b[1] < _prop_pad[3] and _prop_pad[2] < b[3]), (
             f"PROP pad bears on the {c.get('ref','?')} cutout -- there is no metal there")
-    _pf = (PROP_U - PROP_W/2.0 - 2, PROP_U + PROP_W/2.0 + 2,
-           _PROP_FOOT_VP - PROP_FOOTL/2.0 - 2, _PROP_VP + PROP_D/2.0 + 2)
-    for b in vent_bb:
-        assert not (b[0] < _pf[1] and _pf[0] < b[2] and b[1] < _pf[3] and _pf[2] < b[3]), (
-            f"PROP foot overlaps intake vent slot (u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f})")
     for du in (-PROP_BOLT_DU, PROP_BOLT_DU):
         for fu, fv in base_foot_xy():
             assert math.hypot(PROP_U + du - fu, _PROP_FOOT_VP - fv) > (D_M4 + D_FOOT)/2.0 + 2.0, (
@@ -2114,19 +2112,12 @@ def _check(strict_board_mount=True):
         f"RAIL: the M3 head leaves {RAIL_T-RAIL_CH_D-RAIL_CBORE_H:.1f} mm of PETG "
         "over it; the strip runs unbroken over that face")
     assert RAIL_CBORE_D > D_M3_METAL, "RAIL: counterbore smaller than the clearance"
-    _vent_bb = [_bbox(c) for c in _bottom_vents_local(W-2*T, D-2*T)
-                if c.get("kind") == "rect"]
     _BDl = D - 2*T
     for name, v, u0, u1, screws in floor_rail_lines():
         assert v - RAIL_W/2.0 >= RAIL_EDGE_MIN and v + RAIL_W/2.0 <= _BDl - RAIL_EDGE_MIN, (
             f"RAIL {name}: v {v:.1f} puts an edge on the bend relief")
         on = [x for x in screws if u0 <= x <= u1]
         assert len(on) >= 2, f"RAIL {name}: only {len(on)} screws on it"
-        for b in _vent_bb:
-            assert not (b[0] < u1 and u0 < b[2] and
-                        b[1] < v + RAIL_W/2.0 and v - RAIL_W/2.0 < b[3]), (
-                f"RAIL {name} crosses an intake vent slot "
-                f"(u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f})")
     # Every segment of a rail must be the SAME PART: same length, same screw
     # offsets. Spanning plate-edge to plate-edge drifted them 5.2 mm apart.
     for name, _v, u0, u1, _s in floor_rail_lines():
@@ -2179,19 +2170,16 @@ def _check(strict_board_mount=True):
         for nb, vb, b0, b1, _t in _rails[i+1:]:
             assert abs(va - vb) > RAIL_W or a1 < b0 or b1 < a0, (
                 f"RAIL {na} and {nb} overlap")
-    # 2e. INTAKE (issue #1019). The rails freed the floor, but the seven posts sit
-    # in the intake band and ate 72% of it before the columns moved onto the pedal
-    # centrelines. Gate the intake on its own: the all-vents gate cannot see this.
-    _intake = _vent_free_area(_bottom_vents())
-    assert _intake >= VENT_INTAKE_MIN, (
-        f"VENT_INTAKE: {_intake:.0f} mm2 of intake, floor is {VENT_INTAKE_MIN:.0f}. "
-        "The exhaust is four times this, so VENT_FREE_AREA will not catch it")
-    _raw = 4 * (len(_ROW1) - 2)          # rows x interior pedal columns, before keep-out
-    assert len([c for c in _bottom_vents_local(W-2*T, D-2*T)
-                if c.get("kind") == "rect"]) == _raw, (
-        "VENT_INTAKE: the post keep-out is dropping slots again -- the columns are "
-        "supposed to sit in the gaps BETWEEN post feet, so it should drop none")
-
+    # 2e. THE FLOOR IS BLANK, AND THE AIR STILL HAS A WAY OUT. The bottom plate's
+    # intake field is gone (owner call), so the free area is now side + rear only.
+    # tests/ asserts the stronger form -- zero VENT entities inside the floor
+    # rectangle of the generated DXF -- because that reads the cut file itself.
+    _sv = sum(c["w"] * c["h"] for f in ("L", "R")
+              for c in side_vents(f, W - 2*T) if c.get("kind") == "rect")
+    _free = _vent_free_area(rear_holes()) + _sv * FOAM_OPEN_FRACTION
+    assert _free >= VENT_FREE_AREA_MIN, (
+        f"VENT_FREE_AREA: {_free:.0f} mm2 from the side and rear walls, floor is "
+        f"{VENT_FREE_AREA_MIN:.0f}. The bottom plate no longer contributes any.")
     # 3c. the front gap absorbed the deeper Cherub slot; keep it usable
     assert FRONT_GAP >= 40.0, f"FRONT_GAP: {FRONT_GAP:.1f} mm < 40 -- pedals crowd the screen block"
 
@@ -2231,7 +2219,7 @@ def _check(strict_board_mount=True):
     _side = sum(c["w"] * c["h"]
                 for c in side_vents('R', _bw_v) + side_vents('L', _bw_v))
     # the side louvres are foam-backed and only count for what gets through it
-    area = (_vent_free_area(rear) + _vent_free_area(_bottom_vents())
+    area = (_vent_free_area(rear)
             + _side * FOAM_OPEN_FRACTION)
     assert area >= VENT_FREE_AREA_MIN, (
         f"VENT_FREE_AREA: {area:.0f} mm^2 < target {VENT_FREE_AREA_MIN:.0f}")
@@ -2548,46 +2536,13 @@ def side_vents(flap, bw):
     return out
 
 
-def _bottom_vents_local(bw, bd):
-    """Intake vents, sitting in the gaps the support posts leave (#1019).
-
-    Air enters here, crosses the boards and leaves through the rear wall. This
-    used to be a plain brick-bond block centred on the plate, and spreading the
-    posts across the whole band (#1019) shadowed 21 of its 32 slots -- 72% of the
-    console's INTAKE. The VENT_FREE_AREA gate did not catch it because it sums
-    intake and exhaust, and the exhaust is four times the intake, so the total
-    still cleared the minimum while the intake quietly collapsed.
-
-    The columns now sit on the interior pedal centrelines, which is exactly where
-    the gaps between post feet are, since the posts sit in the pedal GAPS. The
-    rows fit between the front and mid floor rails with a real clearance instead
-    of the 0.11 mm the old block happened to leave.
-    """
-    sl, sw = VENT_SLOT
-    lo = _rail_v(PEDAL_ROW1_V,  1) + RAIL_W / 2.0 + VENT_RAIL_CLR
-    hi = _rail_v(PEDAL_ROW2_V, -1) - RAIL_W / 2.0 - VENT_RAIL_CLR
-    rows = int((hi - lo - sw) // VENT_PITCH) + 1
-    assert rows >= 3, f"only {rows} intake rows fit between the rails"
-    span = sw + (rows - 1) * VENT_PITCH
-    v0 = lo + (hi - lo - span) / 2.0
-    cuts = [{"kind": "rect", "u": u - sl / 2.0, "v": v0 + r * VENT_PITCH,
-             "w": sl, "h": sw, "ref": "VENT", "layer": "VENT"}
-            for r in range(rows)
-            for u in (_row1_u(i) for i in range(1, len(_ROW1) - 1))]
-    # Safety net, not a workhorse: with the columns on the pedal centrelines this
-    # should drop nothing. _check() asserts that it does.
-    keep = []
-    for c in cuts:
-        b = _bbox(c)
-        if not any(b[0] < u + POST_PW/2 + 4 and u - POST_PW/2 - 4 < b[2] and
-                   b[1] < _POST_VP + POST_T + 4 and _POST_VP - POST_FOOTL - 4 < b[3]
-                   for u in POST_U):
-            keep.append(c)
-    return keep
-
-
-def _bottom_vents():
-    return _bottom_vents_local(W - 2*T, D - 2*T)
+# The bottom plate used to carry an intake field here: 24 slots, 3,840 mm2, at
+# v 134..162. It is gone (owner call). It sat 112 mm forward of the console board
+# and 200 mm forward of the converters, and it breathed through the 7.7 mm gap the
+# supports leave under the plate -- a gap entered only at the two side edges, and
+# worth nothing on the carpet this thing spends its life on. The side-wall band at
+# v 250..372 and the rear wall sit directly over the electronics and do the work.
+# Deleting it also freed the floor: the field dictated the support layout twice.
 
 # --- internal board mounting -------------------------------------------------
 # Bottom-plate frame: x = width (0..W-2T), y = depth (0..D-2T, 0 = front).
@@ -2668,15 +2623,6 @@ def _check_stand_anchor_pattern(computed, frozen, who, tol=STAND_ANCHOR_TOL):
                 f"vs frozen STAND_ANCHORS ({fd[0]:+.2f}, {fd[1]:+.2f}), tol {tol} mm. "
                 "Re-probe the doc's flange holes and update STAND_ANCHORS before cutting the base.")
 
-
-# stand anchors: each station must clear the ACTUAL bottom vent slots (derived,
-# not a frozen field box -- the old hardcoded 256..576 x 145..191 window would
-# have silently stopped covering the real field on any vent/pedal-row change)
-for (_au, _av) in STAND_ANCHORS:
-    for _vc in _bottom_vents_local(W - 2*T, D - 2*T):
-        _vb = _bbox(_vc)
-        assert not (_vb[0] - 3.0 < _au < _vb[2] + 3.0 and _vb[1] - 3.0 < _av < _vb[3] + 3.0), \
-            f"STAND_ANCHOR ({_au},{_av}) lands in vent slot (u {_vb[0]:.0f}..{_vb[2]:.0f}, v {_vb[1]:.0f}..{_vb[3]:.0f})"
 
 BOARD_U = 560.0   # +48 from 512 (user call 2026-08-19: centre the cluster under
                   # the 16" screen; the Pi moved +48 WITH it -- PI_PCB_U0=670.5,
@@ -3412,8 +3358,9 @@ def dxf_base(path):
         for z in CORNER_ZR_SIDE:               # side-wall leg (2 rivets, staggered)
             _circle(msp, xc - sgn*_zf(z), BD - RO_WALL, RV)     # side-wall face
 
-    # ---- bottom features: vents + Pi/board M3 standoffs + rubber feet -------------
-    _emit(msp, _bottom_vents_local(BW, BD))
+    # ---- bottom features: Pi/board M3 standoffs + the rear rail's anchors ---------
+    # No vents in this face. The openings are in the side and rear WALLS, which are
+    # part of this same flat pattern -- side_vents() below emits into the side flaps.
     _emit(msp, side_vents('R', BW))          # exhaust beside the electronics bay,
     _emit(msp, side_vents('L', BW))          # foam-backed -- see SIDE_VENT_V
     for name, cx, cy, (sx, sy) in board_mounts():
@@ -3664,29 +3611,33 @@ def _rail_span():
 
 
 def floor_rail_lines():
-    """The five rails: (name, v, u0, u1, screw stations).
+    """THREE rails, each running the full width: (name, v, u0, u1, screw stations).
 
-    Each one lies on a row of screws that already passes through the floor, so
-    no rail adds a bore. The front pair and the mid pair ride the pedestals'
-    chassis screws; the rear rides base_foot_xy(). The front rail is nudged
-    rearward off its screw line where the wall bend relief would otherwise clip
-    it -- the screw does not have to sit on the rail's centreline.
+    ROWS ONLY, and only these three (owner call). The two front rails ride the
+    front pedestals' chassis screws and the rear rides base_foot_xy(), so between
+    them they add eight bores and no more.
+
+    There is no fourth row and there cannot be one. The middle of the plate is
+    already occupied at v = 181.28, 205, 206.22, 229.25, 236, 246.10 and 252.75 --
+    pedestal screws, screen-stand anchors, the lid prop's bolts and the console
+    board's standoffs -- and the widest clear lane between them is 2.8 mm. The
+    board standoffs are the ones that were missed for a while, because
+    dxf_base_bores() did not list them; see the note there.
+
+    What that costs is honest and worth stating: CLEAR and BANK then span 228 mm
+    between the rear front rail and the rear rail, and the plate deflects 3.28 mm
+    under a 1 kN stomp there against 0.72 mm when a middle row existed. Peak stress
+    is 96 MPa, still half a Boss RC-600's, which is measured at 401 MPa in the same
+    model. It is the deflection that is the trade, not the strength.
     """
     du = max(abs(y) for _x, y in platform_foot_xy())
-    BWl, BDl = W - 2*T, D - 2*T
-    out = []
-    for tag, row_v, u0, u1 in (
-            ("front", PEDAL_ROW1_V) + _rail_span(),
-            ("mid", PEDAL_ROW2_V,
-             min(u for _l, u, v in PEDALS if v != PEDAL_ROW1_V) - SKIRT_OUT_W/2.0,
-             max(u for _l, u, v in PEDALS if v != PEDAL_ROW1_V) + SKIRT_OUT_W/2.0)):
-        row = sorted(u for _l, u, v in PEDALS
-                     if (v == PEDAL_ROW1_V) == (tag == "front"))
-        screws = sorted(u + sgn*du for u in row for sgn in (-1, 1))
-        for side, sfx in ((-1, "a"), (1, "b")):
-            out.append((f"{tag}_{sfx}", _rail_v(row_v, side), u0, u1, screws))
-    out.append(("rear", RAIL_REAR_V) + _rail_span()
-               + (sorted(u for u, _v in base_foot_xy()),))
+    u0, u1 = _rail_span()
+    row = sorted(u for _l, u, v in PEDALS if v == PEDAL_ROW1_V)
+    screws = sorted(u + sgn*du for u in row for sgn in (-1, 1))
+    out = [(f"front_{sfx}", _rail_v(PEDAL_ROW1_V, side), u0, u1, screws)
+           for side, sfx in ((-1, "a"), (1, "b"))]
+    out.append(("rear", RAIL_REAR_V, u0, u1,
+                sorted(u for u, _v in base_foot_xy())))
     return out
 
 
@@ -3719,6 +3670,12 @@ def dxf_base_bores():
                 for du in (-POST_BOLT_DU, POST_BOLT_DU)]
     out += [{"u": PROP_U + du, "v": _PROP_FOOT_VP, "ref": "PROP_FOOT"}
             for du in (-PROP_BOLT_DU, PROP_BOLT_DU)]
+    # The board standoffs were missing from this list, which is how a rail came to
+    # be proposed straight over the console board's rear pair. Every consumer of
+    # this function was under-reporting by 32 bores.
+    for _bn, _bu, _bv, (_sx, _sy) in board_mounts():
+        out += [{"u": _bu + dx, "v": _bv + dy, "ref": "BOARD"}
+                for dx in (-_sx/2.0, _sx/2.0) for dy in (-_sy/2.0, _sy/2.0)]
     for _bn, bkx, _bky, bsp in buck_mounts():
         out += [{"u": bkx + dx, "v": buck_mounts()[0][2] + BUCK_HOLE_OFFSET_V,
                  "ref": "BUCK"} for dx in (-bsp/2.0, bsp/2.0)]
@@ -5508,19 +5465,24 @@ def _prop_solid():
     return solid
 
 
-def _rail_stadium(cq, length, width, height):
-    """A stadium prism: rectangle plus a full round at each end, spanning 0..length.
+def _rail_rrect(cq, length, width, height, r=None):
+    """A rounded-rectangle prism spanning 0..length, corners broken by r.
 
-    Built from primitives rather than arcs -- a radiusArc of half the width picks
-    its own direction and quietly returns a concave profile, which reads as valid
-    and is 40% short on volume.
+    Built from primitives rather than arcs -- a radiusArc picks its own direction
+    and quietly returns a concave profile, which reads as valid and is 40% short
+    on volume. At r = width/2 this is the stadium the rails used to have; at
+    RAIL_END_R it is a square end with the sharp corner taken off.
     """
-    r = width / 2.0
-    body = (cq.Workplane("XY").box(length - width, width, height,
+    r = RAIL_END_R if r is None else r
+    r = min(r, width / 2.0, length / 2.0)
+    body = (cq.Workplane("XY").box(length - 2*r, width, height,
                                    centered=(False, True, False))
             .translate((r, 0, 0)))
+    body = body.union(cq.Workplane("XY").box(length, width - 2*r, height,
+                                             centered=(False, True, False)))
     for x in (r, length - r):
-        body = body.union(cq.Workplane("XY").center(x, 0).circle(r).extrude(height))
+        for y in (-(width/2.0 - r), width/2.0 - r):
+            body = body.union(cq.Workplane("XY").center(x, y).circle(r).extrude(height))
     return body
 
 
@@ -5543,19 +5505,20 @@ def _rail_solid(length, screws_local):
     channel centreline; z up from the FLOOR face, so z=0 is the plane the rubber
     would touch if the channel were full depth and the strip stands proud of it.
 
-    Both ends are ROUNDED to a stadium (owner call) and the channel follows. A
-    square-cut strip cannot reach into a rounded end -- its corners stop at the
-    tangent, 12.6 mm short -- so the installer rounds the two corners with the
-    same scissors that cut the strip. That is a two-second cut, not a template
-    job, and it is the reason the strip length below is quoted to the channel.
+    Ends are SQUARE with a 1 mm corner break (owner call, reversing an earlier
+    full-round stadium). Segments butt: RAIL_JOINT is print tolerance now, not a
+    visible gap, because a 3 mm gap made each row read as four rectangles rather
+    than one line. Square ends also let the strip be a plain scissors cut that
+    fills the channel corner to corner -- the stadium version left a 12.6 mm
+    radius unfilled at every end and needed the corners trimmed by hand.
 
     The screw head sinks into a counterbore that stops inside the PETG, above the
     channel roof, so the neoprene runs over it unbroken and never needs punching.
     That fixes the assembly order: rails on first, strip in afterwards.
     """
     import cadquery as cq
-    body = _rail_stadium(cq, length, RAIL_W, RAIL_T)
-    body = body.cut(_rail_stadium(cq, length - 2*RAIL_END_INSET, RAIL_CH_W, RAIL_CH_D)
+    body = _rail_rrect(cq, length, RAIL_W, RAIL_T)
+    body = body.cut(_rail_rrect(cq, length - 2*RAIL_END_INSET, RAIL_CH_W, RAIL_CH_D)
                     .translate((RAIL_END_INSET, 0, 0)))
     for x, y in screws_local:
         body = body.cut(cq.Workplane("XY").center(x, y)      # M3 clearance, through
@@ -6939,14 +6902,18 @@ def report():
     _sv = side_vents('R', _bwv) + side_vents('L', _bwv)
     _sv_area = sum(c["w"] * c["h"] for c in _sv)
     _seg = floor_rail_segments()
-    _tape = sum((b - a) - 2*RAIL_END_INSET for _n, _k, a, b, _o in _seg)
-    P(f"Floor rails     : 5 rails, {len(_seg)} printed segments, {RAIL_W:.0f} mm wide, "
-      f"ride height {RIDE_H:.1f} mm")
+    # the strip fills the CHANNEL, which is what actually gets covered, not the
+    # segment's span -- quoting the span over-ordered by RAIL_JOINT per segment
+    _tape = sum(_rail_print(a, b)[1] - 2*RAIL_END_INSET for _n, _k, a, b, _o in _seg)
+    P(f"Floor rails     : {len(floor_rail_lines())} rails, {len(_seg)} printed "
+      f"segments, {RAIL_W:.0f} mm wide, ride height {RIDE_H:.1f} mm")
     P(f"  strip         : {TAPE_W} x {TAPE_T} self-adhesive SOLID neoprene, "
       f"{_tape:.0f} mm needed (a 20 ft roll is 6096)")
-    P(f"  floor bores   : {len(base_foot_xy())} (the rear rail's anchors; twenty feet's "
-      f"worth of bores went, two came back to kill the pivot)")
-    P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents())+_sv_area*FOAM_OPEN_FRACTION:.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
+    P(f"  floor bores   : {len(base_foot_xy())} (the rear rail's anchors -- the front "
+      f"pair ride the pedestals' own chassis screws and add none)")
+    P(f"  bottom vents  : none. The floor is solid; the openings are in the side "
+      f"and rear walls")
+    P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_sv_area*FOAM_OPEN_FRACTION:.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
     P(f"  side louvres  : {len(_sv)} slots ({_sv_area:.0f} mm^2 geometric, counted at "
       f"{FOAM_OPEN_FRACTION:.0%} through foam), v {SIDE_VENT_V[0]:.0f}..{SIDE_VENT_V[1]:.0f}")
     P(f"  FOAM REQUIRED : open-cell filter foam on the INSIDE face of both side "

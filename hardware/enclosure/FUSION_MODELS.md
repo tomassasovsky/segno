@@ -109,35 +109,29 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   `post_felt:1` / `:2` use the same placements and model the bare 1.2 mm space.
   Native unfold gives **81.161489 ×30.142857 ×1.6 mm**, matching the DXF.
 - **Floor rails** (`floor_rails`, root, populated only — printed parts, not sheet
-  metal): the REAL geometry, 28 bodies in one non-parametric base feature named
-  `ISSUE_1019_FLOOR_RAIL_SEGMENTS` — the 14 printed PETG segments with their
-  stadium ends, channel and buried counterbores, plus the 14 neoprene strips.
-  This replaced five envelope bars, which could not show the thing the owner
-  actually approved: four identical segments per rail with a visible joint gap.
-  World datum: the base underside is z = 0, so PETG spans 0 to −6 mm and the
-  strip −7.7 to −4.5 (1.5 buried in the channel, 1.7 proud). Plate (u, v) maps
-  straight to world (u/10, v/10), the same mapping `base_foot_xy()` had when it
-  drove the feet. Depths: front 18.0 / 114.883, mid 181.284 / 278.654, rear
-  **343.25** — the rear one is not where the feet were, because the buck
-  converters' floor-side nuts are.
+  metal): the REAL geometry, 24 bodies in one non-parametric base feature named
+  `ISSUE_1019_FLOOR_ROWS` — the 12 printed PETG segments with their square ends,
+  channel and buried counterbores, plus the 12 neoprene strips. THREE rows at
+  v = 18.0, 114.883 and 343.25, 21 mm wide, segments butted. World datum: the base
+  underside is z = 0, so PETG spans 0 to −6 mm and the strip −7.7 to −4.5.
+  Plate (u, v) maps straight to world (u/10, v/10).
 
-  **Build it from primitives in ONE base feature, not 14 STEP imports and not a
-  sketch-and-extrude per body.** A base feature is a single timeline entry and a
-  single recompute; the placeholder version cost 31 entries for a tenth of the
-  geometry, and per-body parametric operations are what froze this document
-  before. `TemporaryBRepManager` boxes and cylinders reproduce `_rail_solid()`
-  exactly — verified at 3e−11 mm³ on volume and 1e−13 mm on bounding box against
-  CadQuery, over all 14. Rename and colour the bodies AFTER `finishEdit()`; names
-  assigned to the proxies inside the edit are silently dropped.
-  `scratchpad/rails.json`-style handoff (stem, u0, v, printed length, screw
-  offsets, reference volume and bbox) comes straight out of the generator, so the
-  rebuild is mechanical. The PETG is shown grey purely so the segmentation reads
-  on screen; the part is black.
+  **Build it from primitives in ONE base feature**, not 12 STEP imports and not a
+  sketch-and-extrude per body: one timeline entry and one recompute. It reproduces
+  `_rail_solid()` exactly — verified at 3e−11 mm³ on volume and 1e−13 mm on
+  bounding box, over all 12 — but only if the channel cut lands EXACTLY on
+  −T + RAIL_CH_D. Overshooting it by 0.1 mm to avoid a coincident face costs
+  368 mm³ a segment and is the one error that has actually happened here; overshoot
+  downward, into air, instead. Rename and colour the bodies AFTER `finishEdit()`;
+  names assigned to the proxies inside the edit are silently dropped.
 
-  The check worth running after any rebuild: every rail screw station must land
-  on a bore that already exists in the base's `CUT` sketch. All 48 do. That is
-  what this model is for — the generator gates its own arithmetic, and this
-  catches the case where the two have drifted apart.
+  **The check worth running after any rebuild** is not the volume, it is this:
+  every bore in the base's `CUT` sketch that falls inside a rail's footprint must
+  have a matching Ø3.6 clearance hole in that rail, and every hole in the rail must
+  land on such a bore. Read the holes off the SOLID's cylindrical faces, not off
+  whatever list you fed the builder. That check found a row with 8 orphan holes and
+  2 bores it would have sat on, at a point when everything else looked right.
+
 - **Rolling back is not free for feature creation.** The marker has to sit at or
   past the base's `Extrude1` for `comp.bRepBodies.item(0)` to exist, so a script
   that rolls back to edit sketch curves must roll forward again before it adds a
@@ -167,6 +161,14 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   is not centred on the bore. Delete those curves with the timeline marker rolled
   back to just after the sketch; deleting them with the marker at the end
   recomputes the whole model once per curve and takes tens of minutes.
+  **The bottom plate has no vents.** The base's `VENT` sketch still carries the
+  side and rear wall louvres — they are part of the same flat pattern — but the
+  144 curves that lay inside the floor rectangle (0..846 x 0..419) are deleted,
+  and so is the `ISSUE_1019_VENT_SLOTS` cut that fed on them. Deleting the curves
+  alone is not enough: that feature keeps cutting from cached geometry and reports
+  itself unhealthy while the volume never moves. Both bases went 937.7062 to
+  945.2213 cm³, which is exactly the 3,757 mm² of slot at 2 mm.
+
   **A re-export is not a change.** Running `fusion_export_formed.py` again rewrites
   every flat with a different polyline START VERTEX and coordinates that differ in
   the 13th decimal, so `git diff` shows thousands of changed lines for identical
