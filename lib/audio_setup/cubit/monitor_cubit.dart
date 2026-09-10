@@ -422,21 +422,30 @@ class MonitorCubit extends Cubit<MonitorState> {
     await _settings.saveMonitorMute(input, muted: muted);
   }
 
-  /// Appends a default effect (drive) to monitor [input]'s chain.
+  /// Appends a default effect (drive) to monitor [input]'s chain, Pre.
+  ///
+  /// A live input's new instances default to Pre (slice 3e): the accepted
+  /// design's own default, and the one that matches what this chain is for —
+  /// an input's Pre entries are what a take records, its Post entries are
+  /// copied onto the lane and run after that take's player.
   void addEffect(int input, {TrackEffectType? type}) {
     final effects = state.forInput(input).effects;
     _pushEffects(input, [
       ...effects,
-      BuiltInEffect(type: type ?? TrackEffectType.drive),
+      BuiltInEffect(
+        type: type ?? TrackEffectType.drive,
+        placement: FxPlacement.pre,
+      ),
     ]);
   }
 
-  /// Appends a hosted plugin (identified by [ref]) to monitor [input]'s chain.
-  /// The repository loads it through the slot ABI on the next chain apply.
+  /// Appends a hosted plugin (identified by [ref]) to monitor [input]'s chain,
+  /// Pre — see [addEffect]. The repository loads it through the slot ABI on
+  /// the next chain apply.
   void insertPlugin(int input, PluginRef ref) {
     _pushEffects(input, [
       ...state.forInput(input).effects,
-      PluginEffect(ref: ref),
+      PluginEffect(ref: ref, placement: FxPlacement.pre),
     ]);
   }
 
@@ -470,9 +479,40 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (target < 0) target = 0;
     if (target > effects.length - 1) target = effects.length - 1;
     if (from == target) return;
+    // Reorder stays within a stage (slice 3e). A drag across the Pre/Post
+    // boundary is refused rather than honoured, because the chain is stored
+    // Pre-first: honouring it would re-partition the result straight back and
+    // the entry would appear to snap to somewhere nobody asked for. Placement
+    // moves through the placement control, which says where it lands.
+    if (effects[from].placement != effects[target].placement) return;
     final next = [...effects];
     next.insert(target, next.removeAt(from));
     _pushEffects(input, next);
+  }
+
+  /// Moves monitor [input]'s chain entry [index] to [placement] (slice 3e).
+  ///
+  /// The entry keeps its identity, parameters and enable state and lands at
+  /// the end of the destination stage's run. A live input's Pre entries are
+  /// what a take records; its Post entries are copied onto the lane and run
+  /// after that take's player.
+  void setEffectPlacement(int input, int index, FxPlacement placement) {
+    final effects = state.forInput(input).effects;
+    if (index < 0 || index >= effects.length) return;
+    final fx = effects[index];
+    if (fx.placement == placement) return;
+    final moved = switch (fx) {
+      BuiltInEffect() => fx.copyWith(placement: placement),
+      PluginEffect() => fx.copyWith(placement: placement),
+    };
+    // Removed and appended, not edited in place: the accepted design puts a
+    // re-placed instance at the end of its destination stage, and the stable
+    // partition in _pushEffects keeps it there.
+    _pushEffects(input, [
+      for (var i = 0; i < effects.length; i++)
+        if (i != index) effects[i],
+      moved,
+    ]);
   }
 
   /// Sets the type of monitor [input]'s chain entry [index] (resets its DSP
@@ -480,7 +520,14 @@ class MonitorCubit extends Cubit<MonitorState> {
   void setEffectType(int input, int index, TrackEffectType type) {
     final effects = state.forInput(input).effects;
     if (index < 0 || index >= effects.length) return;
-    final next = [...effects]..[index] = BuiltInEffect(type: type);
+    // A retype is a different sound in the same place: it resets the entry's
+    // params and (D-ENSEED) its enable flag, but its placement is where the
+    // player put it, not part of what was retyped.
+    final next = [...effects]
+      ..[index] = BuiltInEffect(
+        type: type,
+        placement: effects[index].placement,
+      );
     _pushEffects(input, next);
   }
 
@@ -614,11 +661,17 @@ class MonitorCubit extends Cubit<MonitorState> {
     emit(state.withInput(next));
   }
 
-  void _pushEffects(int input, List<TrackEffect> effects) {
+  void _pushEffects(int input, List<TrackEffect> rawEffects) {
     // A structural edit reseats the input's slots, so cancel any editor-sync
     // poll keyed by a now-stale chain index (a reorder would otherwise rebind
     // the poll to a different plugin).
     _cancelEditorTimers(input);
+    // Partition Pre-first here as well as at the repository write boundary
+    // (slice 3e), so the optimistic emit below is never an order the
+    // repository is about to change under it: adding a Pre entry to a chain
+    // that ends in Post ones would otherwise draw it last for one frame and
+    // then jump.
+    final effects = partitionByPlacement(rawEffects);
     emit(state.withInput(state.forInput(input).copyWith(effects: effects)));
     _repository.setMonitorEffects(input: input, effects: effects);
     // The repository enriches plugin entries with their enumerated params

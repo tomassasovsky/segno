@@ -42,6 +42,7 @@ void main() {
     registerFallbackValue(const PluginRef(format: PluginFormat.vst3, id: ''));
     registerFallbackValue(ClickMode.off);
     registerFallbackValue(LooperMode.multi);
+    registerFallbackValue(FxPlacement.post);
   });
 
   setUp(() {
@@ -224,6 +225,14 @@ void main() {
         channel: any(named: 'channel'),
         lane: any(named: 'lane'),
         effects: any(named: 'effects'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setLaneEffectPlacement(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        slotId: any(named: 'slotId'),
+        placement: any(named: 'placement'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -1032,6 +1041,80 @@ void main() {
           TrackEffectType.reverb,
           TrackEffectType.delay,
         ]),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'a lane retype keeps the entry identity, power and placement (slice 3e)',
+    build: () {
+      when(() => repository.laneEffects(1, 2)).thenReturn([
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          enabled: false,
+          slotId: 'keep-me',
+          placement: FxPlacement.pre,
+        ),
+      ]);
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(
+      const LooperLaneEffectTypeChanged(1, 2, 0, TrackEffectType.reverb),
+    ),
+    verify: (_) {
+      final fx = capturePushedChain().single as BuiltInEffect;
+      expect(fx.type, TrackEffectType.reverb);
+      // A retype that drops these silently re-mints the entry (dangling every
+      // binding on it), powers a bypassed device back on, and moves a printed
+      // entry downstream of the player.
+      expect(fx.slotId, 'keep-me');
+      expect(fx.enabled, isFalse);
+      expect(fx.placement, FxPlacement.pre);
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneEffectPlacementChanged moves the instance by identity',
+    build: () {
+      when(() => repository.laneEffects(1, 2)).thenReturn([
+        BuiltInEffect(type: TrackEffectType.delay, slotId: 'a'),
+        BuiltInEffect(type: TrackEffectType.reverb, slotId: 'b'),
+      ]);
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(
+      const LooperLaneEffectPlacementChanged(1, 2, 1, FxPlacement.pre),
+    ),
+    verify: (_) => verify(
+      () => repository.setLaneEffectPlacement(
+        channel: 1,
+        lane: 2,
+        // By identity, never index: the move is the one operation that
+        // changes the index.
+        slotId: 'b',
+        placement: FxPlacement.pre,
+      ),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'a lane reorder across the Pre/Post boundary is refused (slice 3e)',
+    build: () {
+      when(() => repository.laneEffects(1, 2)).thenReturn([
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          placement: FxPlacement.pre,
+        ),
+        BuiltInEffect(type: TrackEffectType.reverb),
+      ]);
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(const LooperLaneEffectMoved(1, 2, 0, 1)),
+    verify: (_) => verifyNever(
+      () => repository.setLaneEffects(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        effects: any(named: 'effects'),
+      ),
+    ),
   );
 
   blocTest<LooperBloc, LooperState>(

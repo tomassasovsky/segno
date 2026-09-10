@@ -141,10 +141,20 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperLaneEffectTypeChanged>((event, _) {
       final effects = _repository.laneEffects(event.channel, event.lane);
       if (event.index < 0 || event.index >= effects.length) return;
+      final old = effects[event.index];
       _pushLaneEffects(
         event.channel,
         event.lane,
-        [...effects]..[event.index] = BuiltInEffect(type: event.type),
+        [...effects]
+          ..[event.index] = BuiltInEffect(
+            type: event.type,
+            // The bus handler's rule, which this stage was missing: a retype
+            // changes the device, not the user's power decision, the slot's
+            // identity, or where in the signal the player put it.
+            enabled: old.enabled,
+            slotId: old.slotId,
+            placement: old.placement,
+          ),
       );
     });
     on<LooperLaneEffectMoved>((event, _) {
@@ -154,9 +164,30 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       if (target < 0) target = 0;
       if (target > effects.length - 1) target = effects.length - 1;
       if (event.from == target) return;
+      // Reorder stays within a stage (slice 3e): the chain is stored
+      // Pre-first, so a move across the boundary would be re-partitioned back
+      // and land somewhere nobody asked for. Placement moves through the
+      // placement control, which says where it lands.
+      if (effects[event.from].placement != effects[target].placement) return;
       final next = [...effects];
       next.insert(target, next.removeAt(event.from));
       _pushLaneEffects(event.channel, event.lane, next);
+    });
+    on<LooperLaneEffectPlacementChanged>((event, _) {
+      final effects = _repository.laneEffects(event.channel, event.lane);
+      if (event.index < 0 || event.index >= effects.length) return;
+      final slotId = effects[event.index].slotId;
+      if (slotId == null) return;
+      // By identity, not index: the move is the one operation that changes
+      // the index, and the repository is the layer that owns where a
+      // re-placed instance lands.
+      _repository.setLaneEffectPlacement(
+        channel: event.channel,
+        lane: event.lane,
+        slotId: slotId,
+        placement: event.placement,
+      );
+      _persistLaneChain(event.channel, event.lane);
     });
     on<LooperLaneEffectParamChanged>((event, _) {
       _repository.setLaneEffectParam(
@@ -259,6 +290,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       if (event.from < 0 || event.from >= chain.length) return;
       final to = event.to.clamp(0, chain.length - 1);
       if (event.from == to) return;
+      // Reorder stays within a stage — see the lane handler. An output chain
+      // is wholly Post, so this only ever refuses anything on the Track
+      // stage.
+      if (chain[event.from].placement != chain[to].placement) return;
       final next = [...chain];
       next.insert(to, next.removeAt(event.from));
       _pushBusChain(event.address, next);
@@ -272,11 +307,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         [...chain]
           ..[event.index] = BuiltInEffect(
             type: event.type,
-            // A retype changes the DEVICE, not the user's power decision or the
-            // slot's identity: keeping both means a powered-off device stays
-            // off (D-POWER/R23) and bindings targeting the slot survive (A9).
+            // A retype changes the DEVICE, not the user's power decision, the
+            // slot's identity, or its placement: keeping them means a
+            // powered-off device stays off (D-POWER/R23), bindings targeting
+            // the slot survive (A9), and the entry stays where it sat.
             enabled: old.enabled,
             slotId: old.slotId,
+            placement: old.placement,
           ),
       );
     });
