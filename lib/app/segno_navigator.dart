@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/settings_page.dart';
@@ -15,7 +16,32 @@ const String segnoSettingsRouteName = 'segno/settings';
 /// Route name for the Loop settings pages.
 const String segnoLoopSettingsRouteName = 'segno/loop-settings';
 
+/// Route name for the Audio routing pages.
+const String segnoAudioRoutingRouteName = 'segno/audio-routing';
+
 bool _loopSettingsOpen = false;
+bool _audioRoutingOpen = false;
+
+/// Pushes the Audio routing route (the accepted input and output setup
+/// tasks) onto the root navigator, opened on [initial]; guarded against
+/// stacking duplicates like [openLoopSettings].
+Future<void> openAudioRouting({
+  AudioRoutingTab initial = AudioRoutingTab.setup,
+}) async {
+  final navigator = segnoNavigatorKey.currentState;
+  if (navigator == null || _audioRoutingOpen) return;
+  _audioRoutingOpen = true;
+  try {
+    await navigator.push(
+      desktopPageRoute<void>(
+        (_) => AudioRoutingPage(initial: initial),
+        settings: const RouteSettings(name: segnoAudioRoutingRouteName),
+      ),
+    );
+  } finally {
+    _audioRoutingOpen = false;
+  }
+}
 
 /// Pushes the Loop settings route (the accepted hub and its submenus) onto
 /// the root navigator, opened at [initial]; guarded against stacking
@@ -50,6 +76,7 @@ void resetSegnoNavigatorForTest() {
   _settingsOpen = false;
   _openSettingsSection = null;
   _loopSettingsOpen = false;
+  _audioRoutingOpen = false;
 }
 
 SettingsSection? _openSettingsSection;

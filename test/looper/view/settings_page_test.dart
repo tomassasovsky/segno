@@ -423,9 +423,10 @@ void main() {
     expect(find.byKey(const Key('settings_tab_tempo')), findsNothing);
     expect(find.byKey(const Key('settings_tab_mode')), findsNothing);
 
-    // There is no longer a Routing tab — the whole-system signal flow moved to
-    // the Signal surface.
-    expect(find.byKey(const Key('settings_tab_routing')), findsNothing);
+    // Routing is a row here again (slice 3c): the Signal surface owns the
+    // whole-system signal flow, and Audio routing owns the input and output
+    // setup the accepted design puts under Settings.
+    expect(find.byKey(const Key('settings_tab_routing')), findsOneWidget);
   });
 
   testWidgets('Escape pops the settings page', (tester) async {
