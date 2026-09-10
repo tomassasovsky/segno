@@ -3987,5 +3987,55 @@
     "routingNoDestinationsYet": "No outputs until an interface is open.",
     "@routingNoDestinationsYet": {
             "description": "Shown when no device has been opened yet."
+    },
+    "routingOutputStereo": "Stereo",
+    "@routingOutputStereo": {
+            "description": "The destination carries a stereo pair."
+    },
+    "routingOutputMono": "Mono",
+    "@routingOutputMono": {
+            "description": "The destination carries one mix on both jacks."
+    },
+    "routingOutputMonoNote": "Same mix on both jacks.",
+    "@routingOutputMonoNote": {
+            "description": "What Mono does to a destination."
+    },
+    "routingOutputMute": "Mute output",
+    "@routingOutputMute": {
+            "description": "Silences everything routed to this destination."
+    },
+    "routingOutputMuted": "Muted",
+    "@routingOutputMuted": {
+            "description": "The destination is silenced."
+    },
+    "routingOutputLevel": "Level",
+    "@routingOutputLevel": {
+            "description": "How loud a destination is."
+    },
+    "routingOutputLevelPercent": "{percent}%",
+    "@routingOutputLevelPercent": {
+            "placeholders": {
+                    "percent": {
+                            "type": "int"
+                    }
+            },
+            "description": "A destination level as a percentage."
+    },
+    "routingOutputDbfs": "{db} dBFS",
+    "@routingOutputDbfs": {
+            "placeholders": {
+                    "db": {
+                            "type": "String"
+                    }
+            },
+            "description": "A meter reading in dBFS."
+    },
+    "routingOutputSilent": "−∞",
+    "@routingOutputSilent": {
+            "description": "A meter reading below the scale: nothing is coming out."
+    },
+    "routingOutputAppliesNote": "Applies to everything routed here.",
+    "@routingOutputAppliesNote": {
+            "description": "That these settings are the destination\\u2019s, not one source\\u2019s."
     }
 }

@@ -3,6 +3,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_tabs.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart';
 import 'package:segno/looper/view/audio_routing/output_routing_tab.dart';
+import 'package:segno/looper/view/audio_routing/output_setup_tab.dart';
 import 'package:segno/looper/view/audio_routing/recording_inputs_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 
@@ -74,9 +75,7 @@ class _AudioRoutingPageState extends State<AudioRoutingPage> {
                 AudioRoutingTab.setup => const InputSetupTab(),
                 AudioRoutingTab.record => const RecordingInputsTab(),
                 AudioRoutingTab.outputs => const OutputRoutingTab(),
-                // Output setup lands with its own slice of 3c; an unfinished
-                // pill must not draw a blank page.
-                AudioRoutingTab.outputSetup => const SizedBox.shrink(),
+                AudioRoutingTab.outputSetup => const OutputSetupTab(),
               },
             ),
           ),

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -189,6 +191,22 @@ class RoutingSliderEnds extends StatelessWidget {
   }
 }
 
+/// Where a level sits on a routing meter, `0..1`.
+///
+/// NOT [peakMeterFill]. The two meters print different scales: the stage's is
+/// linear in decibels over [kMeterFloorDb]..0, while [RoutingMeterScale]
+/// spaces its four ticks evenly, which puts -24 a third of the way along and
+/// -12 two thirds. A routing meter filled by the stage's map would light
+/// cells that disagree with the scale drawn directly under them.
+double routingMeterPosition(double level) {
+  if (level <= 0) return 0;
+  final db = 20 * (math.log(level) / math.ln10);
+  if (db <= kMeterFloorDb) return 0;
+  if (db >= 0) return 1;
+  if (db <= -24) return (db - kMeterFloorDb) / (-24 - kMeterFloorDb) / 3;
+  return (1 + (db + 24) / 12) / 3;
+}
+
 /// The pen's `input-meter-segments`: a segmented level meter over a dBFS
 /// scale. [level] is the block peak in `0..1`; [clipping] lights the tail
 /// whatever the level, so a clip that has already decayed is still visible
@@ -224,10 +242,10 @@ class RoutingInputMeter extends StatelessWidget {
     final surface = context.surface;
     final step = width / segments;
     final cell = step - 2.4;
-    final lit = (level.clamp(0.0, 1.0) * segments).round();
+    final lit = (routingMeterPosition(level) * segments).round();
     return Semantics(
       label: semanticLabel,
-      value: '${(level.clamp(0.0, 1.0) * 100).round()}%',
+      value: '${(routingMeterPosition(level) * 100).round()}%',
       child: SizedBox(
         width: width,
         height: 28,

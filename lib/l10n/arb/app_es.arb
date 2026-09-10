@@ -2265,5 +2265,15 @@
     "routingHearMuted": "Silenciada en el mezclador · no se escucha nada",
     "routingSendTo": "Enviar a",
     "routingNoDestinations": "No hay salidas seleccionadas. Esta fuente no llega a ninguna parte.",
-    "routingNoDestinationsYet": "No hay salidas hasta que se abra una interfaz."
+    "routingNoDestinationsYet": "No hay salidas hasta que se abra una interfaz.",
+    "routingOutputStereo": "Estéreo",
+    "routingOutputMono": "Mono",
+    "routingOutputMonoNote": "La misma mezcla en ambas salidas.",
+    "routingOutputMute": "Silenciar salida",
+    "routingOutputMuted": "Silenciada",
+    "routingOutputLevel": "Nivel",
+    "routingOutputLevelPercent": "{percent}%",
+    "routingOutputDbfs": "{db} dBFS",
+    "routingOutputSilent": "−∞",
+    "routingOutputAppliesNote": "Se aplica a todo lo enviado aquí."
 }
