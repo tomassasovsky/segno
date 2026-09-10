@@ -255,30 +255,14 @@ void main() {
       expect(find.byKey(const Key('audio_buffer_128')), findsNothing);
     });
 
-    testWidgets('the click routing rides the Device tab, below the device', (
+    testWidgets('the click is no longer routed from the Device tab', (
       tester,
     ) async {
-      // Output routing and click gain are facts about the rig's outputs, so
-      // they live here rather than on the Loop pages that decide WHEN the
-      // click sounds — and a fresh unit's saved mask is 0, which the engine
-      // reads as no output at all, so this is the one route to an audible
-      // click until the Mixer lands.
+      // Where the click goes left with the accepted design (slice 3c): Audio
+      // routing's Output routing task owns every source's destinations, and a
+      // second surface for one of them is a second answer.
       await pump(tester);
-      final device = find.byKey(const Key('audio_device_row'));
-      final click = find.byKey(const Key('audio_click_card'));
-      expect(click, findsOneWidget);
-      expect(
-        tester.getTopLeft(click).dy,
-        greaterThan(tester.getBottomLeft(device).dy),
-      );
-
-      await tester.tap(find.byKey(const Key('audio_click_output_row')));
-      await tester.pumpAndSettle();
-      // The open Scarlett has twenty outputs, and the grid lists them all.
-      expect(find.byKey(const Key('audio_click_output_19')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('audio_click_output_0')));
-      await tester.pumpAndSettle();
-      verify(() => repository.setClickOutput(0x1)).called(1);
+      expect(find.byKey(const Key('audio_click_card')), findsNothing);
     });
 
     testWidgets('the device list GROWS open rather than appearing', (

@@ -205,28 +205,22 @@ void main() {
     expect(find.text('456 frames'), findsOneWidget);
   });
 
-  testWidgets('the click routing and level sit under the output device', (
-    tester,
-  ) async {
-    // WHEN the click sounds is a Loop setting; where it goes and how loud are
-    // facts about the outputs, so they stay on this page beside the device.
+  testWidgets('the click level sits under the output device, and its routing '
+      'is not here', (tester) async {
+    // WHEN the click sounds is a Loop setting and WHERE it goes is Audio
+    // routing's; how loud it is has nowhere else to live until the Mixer
+    // holds it, so it stays beside the device.
     seed(runningState);
     await pumpSection(tester);
 
     final picker = find.byKey(const Key('audioSettings_playbackDevice_picker'));
-    final section = find.byKey(const Key('audioSettings_clickOutput_section'));
+    final section = find.byKey(const Key('audioSettings_clickVolume_section'));
     expect(section, findsOneWidget);
     expect(
       tester.getTopLeft(section).dy,
       greaterThan(tester.getBottomLeft(picker).dy),
     );
-
-    final chip = find.byKey(const Key('audioSettings_clickOutput_1'));
-    await tester.ensureVisible(chip);
-    await tester.tap(chip);
-    await tester.pumpAndSettle();
-    expect(tempo.state.clickOutputMask, 0x2);
-    verify(() => looper.setClickOutput(0x2)).called(1);
+    expect(find.byKey(const Key('audioSettings_clickOutput_1')), findsNothing);
   });
 
   testWidgets('a setup option card is a focusable, selectable button (a11y)', (

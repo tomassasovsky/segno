@@ -28,7 +28,6 @@ import 'package:segno/control/control_tab.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
@@ -994,13 +993,12 @@ void main() {
     ),
   );
 
-  Future<void> pumpTracks(WidgetTester tester, TracksTab tab) async {
+  Future<void> pumpTracks(WidgetTester tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     final cubit = SettingsTrayCubit(settings: settings)
       ..open()
-      ..showDestination(SettingsTrayDestination.tracks)
-      ..showTracksTab(tab);
+      ..showDestination(SettingsTrayDestination.tracks);
     addTearDown(cubit.close);
 
     final providers = controlProviders(tester, looperState: tracksRig);
@@ -1012,18 +1010,10 @@ void main() {
   }
 
   testWidgets('tracks domain, names tab', (tester) async {
-    await pumpTracks(tester, TracksTab.names);
+    await pumpTracks(tester);
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_tracks_names.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('tracks domain, routing tab', (tester) async {
-    await pumpTracks(tester, TracksTab.routing);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_tracks_routing.png'),
     );
   }, skip: !hasFonts);
 
@@ -1047,92 +1037,8 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('tracks domain, the routing panel on an 8-input rig', (
-    tester,
-  ) async {
-    // The case the 4-input drawing never showed: the lane list runs past the
-    // panel, so it scrolls under its pinned caption while QUANTIZE RECORDING
-    // and Done stay where they are.
-    await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
-      ..open()
-      ..showDestination(SettingsTrayDestination.tracks)
-      ..showTracksTab(TracksTab.routing);
-    addTearDown(cubit.close);
-    final providers = controlProviders(
-      tester,
-      looperState: const LooperState(
-        tracks: [
-          Track(lanes: [Lane(inputChannel: 0)]),
-        ],
-        status: EngineStatus(
-          sampleRate: 48000,
-          inputChannels: 8,
-          outputChannels: 8,
-        ),
-      ),
-    );
-    await providers.tracks.rename(0, 'drums');
-    await pumpTray(tester, cubit: cubit, control: providers);
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('track_routing_input_0')));
-    await tester.pumpAndSettle();
-
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/control_center_track_routing_tall.png'),
-    );
-
-    // Scrolled into the middle of the lane list: the LANES caption is still
-    // overhead, and QUANTIZE RECORDING has not moved.
-    await tester.drag(
-      find.byKey(const Key('track_routing_input_2')),
-      const Offset(0, -260),
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/control_center_track_routing_scrolled.png'),
-    );
-
-    // Scrolled to the end: QUANTIZE RECORDING has taken the pinned slot and
-    // pushed LANES out — the handover that makes both captions sticky.
-    // Dragged from a row that is actually on screen: a drag on an off-screen
-    // finder warps the pointer and never reaches the scrollable.
-    await tester.drag(
-      find.byKey(const Key('track_routing_input_5')),
-      const Offset(0, -2000),
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/control_center_track_routing_handover.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets("tracks domain, a track's own routing panel", (tester) async {
-    await pumpTracks(tester, TracksTab.routing);
-    await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
-    await tester.pumpAndSettle();
-    // The open lane is what the panel is FOR: a checked input is a lane row,
-    // and it carries that lane's own outputs.
-    await tester.tap(find.byKey(const Key('track_routing_input_1')));
-    await tester.pumpAndSettle();
-
-    // MaterialApp, not Scaffold: a dialog route lives in the navigator's
-    // overlay, above the Scaffold that opened it.
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/control_center_track_routing.png'),
-    );
-  }, skip: !hasFonts);
-
   testWidgets('tracks domain, the console rename sheet', (tester) async {
-    await pumpTracks(tester, TracksTab.names);
+    await pumpTracks(tester);
     await tester.tap(find.byKey(const Key('tracks_names_row_2')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
