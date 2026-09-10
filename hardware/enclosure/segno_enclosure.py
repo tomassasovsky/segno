@@ -1447,6 +1447,31 @@ POST_H = ((LID_UNDER_NORMAL - POST_BARE_GAP - POST_T
 
 POST_RI = POST_T                   # inside radius for the 1.6 mm steel post (= T, as its sheet says)
 
+# --- mid-field lid prop (issue #1019, printed) --------------------------------
+# The seven posts prop the band in front of the screens. Two ligaments deeper in
+# the panel are still bare: the strip between the BANK slot and the 16in aperture
+# (dents at 11 kg of point load) and its mirror left of CLEAR (14 kg). Only the
+# right one can be propped -- on the left the 7in tower's right leg ends at
+# u=213.6 and the CLEAR pedestal starts at 226.9, and 13.3 mm is not a column.
+# So: ONE prop here, and the left ligament is a documented residual.
+#
+# Printed, not folded steel. It is a pure compression member and a PETG column
+# this short is an order of magnitude stiffer than it needs to be, so it costs a
+# print rather than another shop part number.
+PROP_U       = 432.5   # centred in the only clear lane: BANK's pedestal ends at
+                       # 416.8 and the 16in MODULE BODY (not its aperture) starts
+                       # at 448.3, so the lane is 31.5 mm wide and this splits it
+PROP_V       = 240.0   # faceplate v the pad bears on
+PROP_W       = 24.0    # column width (u) -- 3.7 mm each side inside that lane
+PROP_D       = 30.0    # column depth (v)
+PROP_FOOTL   = 22.0    # foot tongue, forward of the column
+PROP_FOOT_T  = 4.0
+PROP_BOLT_DU = PROP_W/2.0 - 6.0    # 2x M4 to the floor, spaced in u like the post's
+PROP_BARE_GAP = POST_BARE_GAP      # same felt rule: bare gap now, select felt after coating
+_PROP_VP      = PROP_V * math.cos(math.radians(SLOPE_ANGLE)) - 2.093
+_PROP_FOOT_VP = _PROP_VP - PROP_D/2.0 - PROP_FOOTL/2.0
+PROP_H        = lid_under_z(PROP_V) - T - PROP_BARE_GAP   # top-face centre above the floor top
+
 def post_deduct(angle_deg):
     """Per-flap development deduction for the STEEL post (its own T/Ri, same
     K): flap flat = outer length - post_deduct(rotation). Until 2026-09-04 the
@@ -1857,6 +1882,33 @@ def _check(strict_board_mount=True):
         for b in vent_bb:
             assert not (b[0] < fu1 and fu0 < b[2] and b[1] < fv1 and fv0 < b[3]), \
                 f"POST foot at u={u:.0f} overlaps intake vent slot (u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f})"
+
+    # 2f. the printed mid-field prop (issue #1019) lives in ONE narrow lane: right
+    # of BANK's pedestal and left of the 16in MODULE BODY, which is wider than its
+    # aperture. Both walls of that lane are gated here, in u.
+    assert PROP_H > 10.0, f"PROP height {PROP_H:.1f} mm too short at v={PROP_V:.0f}"
+    _bank_u = max(u for _l, u, v in PEDALS if v != PEDAL_ROW1_V) + SKIRT_OUT_W/2.0
+    _mod_u = SCREEN_16_U - BIG_BEZEL[0]/2.0
+    assert PROP_U - PROP_W/2.0 - _bank_u >= 2.0, (
+        f"PROP at u={PROP_U} is {PROP_U-PROP_W/2.0-_bank_u:.2f} mm off the BANK pedestal")
+    assert _mod_u - (PROP_U + PROP_W/2.0) >= 2.0, (
+        f"PROP at u={PROP_U} is {_mod_u-PROP_U-PROP_W/2.0:.2f} mm off the 16in module body")
+    _prop_pad = (PROP_U - PROP_W/2.0, PROP_U + PROP_W/2.0,
+                 PROP_V - PROP_D/2.0, PROP_V + PROP_D/2.0)
+    for c in cuts:
+        b = _bbox(c)
+        assert not (b[0] < _prop_pad[1] and _prop_pad[0] < b[2] and
+                    b[1] < _prop_pad[3] and _prop_pad[2] < b[3]), (
+            f"PROP pad bears on the {c.get('ref','?')} cutout -- there is no metal there")
+    _pf = (PROP_U - PROP_W/2.0 - 2, PROP_U + PROP_W/2.0 + 2,
+           _PROP_FOOT_VP - PROP_FOOTL/2.0 - 2, _PROP_VP + PROP_D/2.0 + 2)
+    for b in vent_bb:
+        assert not (b[0] < _pf[1] and _pf[0] < b[2] and b[1] < _pf[3] and _pf[2] < b[3]), (
+            f"PROP foot overlaps intake vent slot (u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f})")
+    for du in (-PROP_BOLT_DU, PROP_BOLT_DU):
+        for fu, fv in base_foot_xy():
+            assert math.hypot(PROP_U + du - fu, _PROP_FOOT_VP - fv) > (D_M4 + D_FOOT)/2.0 + 2.0, (
+                f"PROP foot bolt at u={PROP_U+du:.1f} crowds the floor foot at ({fu:.1f}, {fv:.1f})")
 
     # 3. platform head-room for BOTH rows: top pad flush+proud at each depth
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
@@ -3288,7 +3340,11 @@ def dxf_base(path):
         for du in (-POST_BOLT_DU, POST_BOLT_DU):   # foot forward of the web, clear of vent + display
             _circle(msp, u+du, _POST_FOOT_VP, D_M4)
     _text(msp, POST_U[0]-24, _POST_FOOT_VP + 8, 5,
-          "Pies del POSTE DE APOYO, CANT. 2 (M4; issue #292)", "NOTE")
+          f"Pies del POSTE DE APOYO, CANT. {len(POST_U)} (M4; issues #292/#1019)", "NOTE")
+    for du in (-PROP_BOLT_DU, PROP_BOLT_DU):       # printed mid-field prop (#1019)
+        _circle(msp, PROP_U + du, _PROP_FOOT_VP, D_M4)
+    _text(msp, PROP_U - 24, _PROP_FOOT_VP - 9, 5,
+          "Pie del APOYO IMPRESO central, CANT. 1 (M4; issue #1019)", "NOTE")
 
     # ---- front wall: lid front-lip screws | rear wall: I/O + transition taps ------
     for u in FRONT_SCREW_U:
@@ -5247,6 +5303,44 @@ def _post_solid():
                         .circle(D_M4/2).extrude(2*t))
     assert body.val().isValid() and len(body.solids().vals()) == 1
     return body.val()
+
+
+def _prop_solid():
+    """Printed mid-field lid prop (issue #1019), x1.
+
+    Local frame: x = depth (+x rearward), y = width, z = up, origin on the base
+    floor TOP under the column axis. A column whose top face is cut to the
+    faceplate slope so it beds flush, on a foot tongue that reaches forward to
+    two M4 into the floor. Everything above the bed plane is simply not there --
+    the profile is drawn as the trapezoid it is rather than trimmed after.
+    """
+    import cadquery as cq
+    tan = math.tan(math.radians(SLOPE_ANGLE))
+    half = PROP_D / 2.0
+    profile = [(-half, 0.0), (half, 0.0),
+               (half, PROP_H + half * tan), (-half, PROP_H - half * tan)]
+    column = (cq.Workplane("XZ").polyline(profile).close()
+              .extrude(PROP_W).translate((0, PROP_W / 2.0, 0)))
+    foot = cq.Workplane("XY").box(PROP_FOOTL, PROP_W, PROP_FOOT_T,
+                                  centered=(False, True, False)) \
+             .translate((-half - PROP_FOOTL, 0, 0))
+    body = column.union(foot)
+    for du in (-PROP_BOLT_DU, PROP_BOLT_DU):
+        body = body.cut(cq.Workplane("XY")
+                        .center(-half - PROP_FOOTL / 2.0, du)
+                        .circle(D_M4 / 2.0).extrude(2 * PROP_FOOT_T))
+    solid = body.val()
+    assert solid.isValid() and len(body.solids().vals()) == 1, "prop is not one valid solid"
+    return solid
+
+
+def build_prop_step():
+    import cadquery as cq
+    step = os.path.join(OUT, "segno_lid_prop.step")
+    solid = _prop_solid()
+    cq.exporters.export(solid, step)
+    cq.exporters.export(solid, os.path.join(OUT, "segno_lid_prop.stl"))
+    return step
 
 
 def build_post_step():
@@ -7778,7 +7872,11 @@ def main(argv):
             kb = build_encoder_knob_step()
             print("Encoder knob (PURCHASED O50x18x6 alu -- reference model only,\n  deliberately not in the 3D-print pack): out/" + os.path.basename(kb))
             s = build_post_step()
-            print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
+            print(f"Faceplate support post (base-anchored, x{len(POST_U)}): out/"
+                  + os.path.basename(s))
+            pr = build_prop_step()
+            print("Mid-field lid prop (3D print, x1, issue #1019): out/"
+                  + os.path.basename(pr) + " (+ .stl)")
             tw = build_screen7_tower_step()
             print("7in screen support tower (3D print, x1): out/" + os.path.basename(tw) + " (+ .stl)")
             for sp16 in build_screen16_stand_steps():

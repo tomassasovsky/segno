@@ -502,6 +502,30 @@ the screw length, and check that a 0.5 mm height spread across the sixty feet
 does not unload one — at the ~400 N/mm the analysis assumed, that error is worth
 200 N.
 
+**Lid supports (issue #1019).** Away from a support pad the 2.0 mm faceplate
+dents at 7-11 kg of point load; over one it takes 170 kg. #292 sized that
+correctly and then covered 100 mm of an 850 mm panel with two posts. `POST_U`
+is now the seven interior `FRONT_SCREW_U` gaps, which is what `POST_PW` was
+always derived for: every station sits between two LED pill shoulders by
+construction. The band in front of the screens — where a missed stomp lands —
+goes from 7-11 kg to 49-398 kg. The old "post must be under the 16in aperture"
+assertion encoded #292's scope rather than the requirement, and is replaced by
+one proving each pad bears on metal that has not been cut away.
+
+Two ligaments deeper in the panel stay bare, and only one of them can be fixed.
+`segno_lid_prop` is a **printed** PETG column — a pure compression member, so a
+shop part number would be waste — in the single clear lane between BANK's
+pedestal (ends u 416.8) and the 16in **module body**, which is wider than its
+aperture and starts at u 448.3. That 31.5 mm lane takes a 24 mm column at
+u 432.5 with 3.7 mm each side, and lifts the strip beside BANK from 8 kg to
+131 kg. Two M4 into the floor; the height derives from `lid_under_z(PROP_V)`
+with the same bare-gap-then-felt rule as the posts.
+
+**The ligament left of CLEAR has no lane and remains at 11 kg.** The 7in tower's
+right leg ends at u 213.6 and the CLEAR pedestal starts at 226.9; 13.3 mm is not
+a column. Closing it means moving the tower or the pedestal, which reopens the
+layout, so it is recorded here rather than fixed.
+
 ---
 
 ### The slope convention — `v` is along the plate, so height is `v·sin` (#742)
@@ -543,7 +567,7 @@ negative-controlled.
 
 ## 6. Sheet-metal notes
 
-- Aluminium folds use R2 andK0.33; the two steel posts use 1.6 mm stock andR1.6.
+- Aluminium folds use R2 andK0.33; the seven steel posts use 1.6 mm stock andR1.6.
   Confirm actual temper/gauge, tools and trial-bend development before the set.
 - Use only the two handed rear brackets, five Ø3.2 rivets each, with Ø3.3 holes.
   Qualify the actual 4 mm grip,4 mm edge distance and setting-tool access.
