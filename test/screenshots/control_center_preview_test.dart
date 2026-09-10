@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -11,7 +10,6 @@ import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -29,7 +27,6 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/looper/view/settings_tray.dart';
@@ -141,47 +138,6 @@ ThemeData _theme() => ThemeData(
     routingGraphThemeFromSurface(SurfaceTheme.dark),
   ],
 );
-
-/// An asset inside a pub package, resolved through the package config rather
-/// than a guessed pub-cache path — the version is in that path, so hard-coding
-/// it would silently stop loading on the next bump and put the tofu back.
-/// Read from `package_config.json` rather than `Isolate.resolvePackageUri`,
-/// which the test runtime does not implement.
-///
-/// Throws rather than returning null when it cannot find the asset. A silent
-/// skip here is a golden full of tofu boxes that still passes, which is the
-/// exact failure this function exists to prevent.
-String _packageAsset(String package, String asset) {
-  final config = File('.dart_tool/package_config.json');
-  final packages =
-      (jsonDecode(config.readAsStringSync())
-              as Map<String, dynamic>)['packages']
-          as List<dynamic>;
-  for (final entry in packages.cast<Map<String, dynamic>>()) {
-    if (entry['name'] != package) continue;
-    // The trailing slash matters: without it `resolve` treats the package
-    // directory as a FILE and replaces it, so the asset lands one level up in
-    // `pub.dev/` and nothing is there.
-    final root = entry['rootUri']! as String;
-    final path = config.uri
-        .resolve(root.endsWith('/') ? root : '$root/')
-        .resolve(asset)
-        .toFilePath();
-    if (File(path).existsSync()) return path;
-    throw StateError('$package has no $asset (looked in $path)');
-  }
-  throw StateError('$package is not in the package config');
-}
-
-Future<void> _loadFont(String family, List<String> paths) async {
-  final loader = FontLoader(family);
-  for (final p in paths) {
-    loader.addFont(
-      File(p).readAsBytes().then((b) => ByteData.view(b.buffer)),
-    );
-  }
-  await loader.load();
-}
 
 /// Home-tray preview: radio on, not associated — proves tile "on" ≠ connected.
 class _PreviewWifiHomeClient implements WifiClient {
@@ -370,18 +326,18 @@ void main() {
 
   setUpAll(() async {
     if (!hasFonts) return;
-    await _loadFont('Roboto', [
+    await loadScreenshotFont('Roboto', [
       '$fontDir/Roboto-Regular.ttf',
       '$fontDir/Roboto-Medium.ttf',
       '$fontDir/Roboto-Bold.ttf',
     ]);
-    await _loadFont('MaterialIcons', [
+    await loadScreenshotFont('MaterialIcons', [
       '$fontDir/MaterialIcons-Regular.otf',
     ]);
     // The console's own faces set state words and disclosure markers in the
     // bundled mono face. Without it they render as tofu and the golden is
     // useless for the eyeballing it exists to support.
-    await _loadFont(SurfaceTheme.monoFont, [
+    await loadScreenshotFont(SurfaceTheme.monoFont, [
       'assets/fonts/JetBrainsMono-Regular.ttf',
       'assets/fonts/JetBrainsMono-Medium.ttf',
     ]);
@@ -392,7 +348,7 @@ void main() {
     // Roboto's cache subset has no `→`, so Signal's routing lines came out as
     // tofu boxes. A preview that draws a different typeface than the product
     // cannot be eyeballed against the mockups, which is its whole job.
-    await _loadFont(SurfaceTheme.displayFont, [
+    await loadScreenshotFont(SurfaceTheme.displayFont, [
       'assets/fonts/Inter-Regular.ttf',
       'assets/fonts/Inter-Medium.ttf',
       'assets/fonts/Inter-SemiBold.ttf',
@@ -406,8 +362,8 @@ void main() {
     //
     // Registered under the name Flutter resolves a package font by, since
     // that is what `IconData(fontPackage:)` asks the engine for.
-    await _loadFont('packages/lucide_icons_flutter/Lucide', [
-      _packageAsset('lucide_icons_flutter', 'assets/lucide.ttf'),
+    await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
+      packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
     ]);
   });
 
@@ -428,7 +384,7 @@ void main() {
     LooperRepository looper,
     LooperBloc bloc,
     TracksCubit tracks,
-    QuantizeCubit quantize,
+    RecordTimingCubit quantize,
     InputsCubit inputs,
     AudioSetupCubit audio,
     TempoCubit tempo,
@@ -531,7 +487,7 @@ void main() {
     final options = RecordOptionsCubit(repository: looper, settings: settings);
     final tracks = TracksCubit(settings: settings);
     final inputs = InputsCubit(settings: settings, repository: looper);
-    final quantize = QuantizeCubit(repository: looper, settings: settings);
+    final quantize = RecordTimingCubit(repository: looper, settings: settings);
     final monitor = MonitorCubit(repository: looper, settings: settings);
     final audio = AudioSetupCubit(
       repository: looper,
@@ -641,7 +597,7 @@ void main() {
       LooperRepository looper,
       LooperBloc bloc,
       TracksCubit tracks,
-      QuantizeCubit quantize,
+      RecordTimingCubit quantize,
       InputsCubit inputs,
       AudioSetupCubit audio,
       TempoCubit tempo,
@@ -1015,106 +971,6 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  /// The rig the Loop previews draw: a live 120 bpm grid, the click on while
-  /// recording out of the first pair of outputs, and four tracks.
-  const loopRig = LooperState(
-    tracks: [
-      Track(state: TrackState.playing, lengthFrames: 96000),
-      Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
-      Track(channel: 2),
-      Track(channel: 3),
-    ],
-    status: EngineStatus(sampleRate: 48000, outputChannels: 4),
-    transport: TransportState(
-      isRunning: true,
-      tempoBpm: 120,
-      tempoSource: TempoSource.manual,
-      quantizeDiv: GridDivision.bar,
-      countInBars: 1,
-      clickMode: ClickMode.rec,
-      clickMask: 0x3,
-      clickVolume: 1.4,
-      masterLengthFrames: 96000,
-    ),
-  );
-
-  Future<void> pumpLoop(WidgetTester tester, LoopTab tab) async {
-    await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
-      ..open()
-      ..showDestination(SettingsTrayDestination.loop)
-      ..showLoopTab(tab);
-    addTearDown(cubit.close);
-
-    await pumpTray(
-      tester,
-      cubit: cubit,
-      control: controlProviders(tester, looperState: loopRig),
-    );
-    await tester.pumpAndSettle();
-  }
-
-  testWidgets('loop domain, tempo tab', (tester) async {
-    await pumpLoop(tester, LoopTab.tempo);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_loop_tempo.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('loop domain, the time signature grid open', (tester) async {
-    await pumpLoop(tester, LoopTab.tempo);
-    // Seventeen options. As a column of rows this is a 1,200px scroll inside
-    // an 830px sheet, each row spending its whole width on four characters.
-    await tester.tap(find.byKey(const Key('loop_signature_row')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_loop_signature.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('loop domain, click tab', (tester) async {
-    await pumpLoop(tester, LoopTab.click);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_loop_click.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('loop domain, mode tab with the mode chooser open', (
-    tester,
-  ) async {
-    await pumpLoop(tester, LoopTab.mode);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_loop_mode.png'),
-    );
-
-    // Opens in place, under the row — the shape `LOOP / settings-mode-confirm`
-    // draws, and the same one `AUDIO / settings-rate` draws for its own pick.
-    await tester.tap(find.byKey(const Key('loop_mode_row')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_loop_mode_chooser.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('loop domain, the tempo keypad sheet', (tester) async {
-    await pumpLoop(tester, LoopTab.tempo);
-    await tester.tap(find.byKey(const Key('loop_tempo_row')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('tempo_keypad_sheet')), findsOneWidget);
-    // MaterialApp, not Scaffold: a modal route lives in the navigator's
-    // overlay, above the Scaffold that opened it.
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/control_center_loop_tempo_sheet.png'),
-    );
-  }, skip: !hasFonts);
-
   /// The rig the Tracks previews draw, as `TRACKS / tracks-routing` sets it:
   /// a track on two inputs, one on one, one sent three ways, and one that
   /// records nothing and reaches nothing.
@@ -1160,23 +1016,6 @@ void main() {
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_tracks_names.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('tracks domain, lengths tab with a preset grid open', (
-    tester,
-  ) async {
-    await pumpTracks(tester, TracksTab.lengths);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_tracks_lengths.png'),
-    );
-
-    await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_tracks_length_pick.png'),
     );
   }, skip: !hasFonts);
 
@@ -1442,7 +1281,7 @@ void main() {
       LooperRepository looper,
       LooperBloc bloc,
       TracksCubit tracks,
-      QuantizeCubit quantize,
+      RecordTimingCubit quantize,
       InputsCubit inputs,
       AudioSetupCubit audio,
       TempoCubit tempo,

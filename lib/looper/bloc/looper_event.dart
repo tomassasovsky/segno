@@ -125,7 +125,8 @@ final class LooperTrackMultipleChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, multiple];
 }
 
-/// Track [channel]'s length preset changed (A6, D17; `0` = AUTO).
+/// Track [channel]'s length preset override changed (A6, D17): `null`
+/// follows the default, `0` is an explicit Auto, else a fixed bar count.
 ///
 /// Governs the DEFINING (first/master) recording only — orthogonal to
 /// [LooperTrackMultipleChanged], which governs a non-defining track once a
@@ -134,43 +135,26 @@ final class LooperTrackLengthPresetChanged extends LooperChannelEvent {
   /// Creates a [LooperTrackLengthPresetChanged].
   const LooperTrackLengthPresetChanged(super.channel, this.bars);
 
-  /// The fixed bar count, or `0` for AUTO.
-  final int bars;
+  /// The fixed bar count, `0` for an explicit Auto, or `null` to follow the
+  /// default.
+  final int? bars;
 
   @override
   List<Object?> get props => [channel, bars];
 }
 
-/// Track [channel]'s One Shot flag changed (song-mode-spec.md §2, B5c):
-/// `true` = the track plays once and then stops instead of looping.
-/// Settable in any looper mode, but only behaviorally active in Free/Song.
-final class LooperOneShotToggled extends LooperChannelEvent {
-  /// Creates a [LooperOneShotToggled].
-  const LooperOneShotToggled(super.channel, {required this.oneShot});
+/// Track [channel]'s Loop/Once override changed (accepted design, Playback
+/// & overdub): `null` follows the default, `true` plays once then stops,
+/// `false` loops.
+final class LooperTrackOnceChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackOnceChanged].
+  const LooperTrackOnceChanged(super.channel, {required this.once});
 
-  /// The new flag value.
-  final bool oneShot;
-
-  @override
-  List<Object?> get props => [channel, oneShot];
-}
-
-/// Every track's one-shot flag was set to [oneShot] at once — the rig-wide
-/// switch on the console's Mode face.
-///
-/// One event rather than the UI fanning out a [LooperOneShotToggled] per
-/// track: the rig-wide rule is then written down once, where it can be tested
-/// without a widget, and a half-applied sweep cannot be observed between two
-/// dispatches.
-final class LooperAllOneShotToggled extends LooperEvent {
-  /// Creates a [LooperAllOneShotToggled].
-  const LooperAllOneShotToggled({required this.oneShot});
-
-  /// The new flag, applied to every track.
-  final bool oneShot;
+  /// The override (`null` => follow the default).
+  final bool? once;
 
   @override
-  List<Object?> get props => [oneShot];
+  List<Object?> get props => [channel, once];
 }
 
 /// [channel] was crowned the primary track (Sync/Band, D18;

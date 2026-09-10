@@ -32,12 +32,6 @@ void main() {
         () => repository.setTimeSignature(any(), any()),
       ).thenReturn(EngineResult.ok),
       () => when(
-        () => repository.setSyncTempo(on: any(named: 'on')),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setQuantizeDiv(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
         () => repository.setClickMode(any()),
       ).thenReturn(EngineResult.ok),
       () => when(
@@ -67,8 +61,6 @@ void main() {
       setUp: () async {
         await settings.saveTempoBpm(140);
         await settings.saveTimeSignature(7, 8);
-        await settings.saveSyncTempo(value: false);
-        await settings.saveQuantizeDiv(GridDivision.quarter.code);
         await settings.saveClickMode(ClickMode.playRec.code);
         await settings.saveClickOutputMask(0x3);
         await settings.saveClickVolume(0.5);
@@ -81,8 +73,6 @@ void main() {
           bpm: 140,
           tsNum: 7,
           tsDen: 8,
-          syncTempo: false,
-          quantizeDiv: GridDivision.quarter,
           clickMode: ClickMode.playRec,
           clickOutputMask: 0x3,
           clickVolume: 0.5,
@@ -92,10 +82,6 @@ void main() {
       verify: (_) {
         verify(() => repository.setTempo(140)).called(1);
         verify(() => repository.setTimeSignature(7, 8)).called(1);
-        verify(() => repository.setSyncTempo(on: false)).called(1);
-        verify(
-          () => repository.setQuantizeDiv(GridDivision.quarter),
-        ).called(1);
         verify(() => repository.setClickMode(ClickMode.playRec)).called(1);
         verify(() => repository.setClickOutput(0x3)).called(1);
         verify(() => repository.setClickVolume(0.5)).called(1);
@@ -179,24 +165,13 @@ void main() {
     );
 
     blocTest<TempoCubit, TempoSettings>(
-      'setSyncTempo emits, persists, and applies the new value',
+      'setTempo without persist applies the tempo and leaves the key alone',
       build: () => TempoCubit(repository: repository, settings: settings),
-      act: (cubit) => cubit.setSyncTempo(value: false),
-      expect: () => [const TempoSettings(syncTempo: false)],
+      act: (cubit) => cubit.setTempo(132, persist: false),
+      expect: () => [const TempoSettings(bpm: 132)],
       verify: (_) async {
-        expect(await settings.loadSyncTempo(), isFalse);
-        verify(() => repository.setSyncTempo(on: false)).called(1);
-      },
-    );
-
-    blocTest<TempoCubit, TempoSettings>(
-      'setQuantizeDiv emits, persists, and applies the new granularity',
-      build: () => TempoCubit(repository: repository, settings: settings),
-      act: (cubit) => cubit.setQuantizeDiv(GridDivision.bar),
-      expect: () => [const TempoSettings(quantizeDiv: GridDivision.bar)],
-      verify: (_) async {
-        expect(await settings.loadQuantizeDiv(), GridDivision.bar.code);
-        verify(() => repository.setQuantizeDiv(GridDivision.bar)).called(1);
+        expect(await settings.loadTempoBpm(), 0);
+        verify(() => repository.setTempo(132)).called(1);
       },
     );
 

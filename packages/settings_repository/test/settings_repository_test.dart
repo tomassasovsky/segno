@@ -1027,6 +1027,38 @@ void main() {
     });
   });
 
+  group('length and Once defaults', () {
+    test('the default length preset and Once default and round-trip', () async {
+      expect(await repository.loadDefaultLengthPreset(), 0);
+      expect(await repository.loadDefaultOnce(), isFalse);
+      await repository.saveDefaultLengthPreset(8);
+      await repository.saveDefaultOnce(value: true);
+      expect(await repository.loadDefaultLengthPreset(), 8);
+      expect(await repository.loadDefaultOnce(), isTrue);
+    });
+
+    test('a track length preset override tells inherit, Auto and bars '
+        'apart', () async {
+      expect(await repository.loadTrackLengthPreset(0), isNull);
+      await repository.saveTrackLengthPreset(0, 0);
+      await repository.saveTrackLengthPreset(1, 16);
+      expect(await repository.loadTrackLengthPreset(0), 0);
+      expect(await repository.loadTrackLengthPreset(1), 16);
+      await repository.saveTrackLengthPreset(1, null);
+      expect(await repository.loadTrackLengthPreset(1), isNull);
+    });
+
+    test('a track Once override tells inherit, Loop and Once apart', () async {
+      expect(await repository.loadTrackOnce(0), isNull);
+      await repository.saveTrackOnce(0, once: true);
+      await repository.saveTrackOnce(1, once: false);
+      expect(await repository.loadTrackOnce(0), isTrue);
+      expect(await repository.loadTrackOnce(1), isFalse);
+      await repository.saveTrackOnce(0, once: null);
+      expect(await repository.loadTrackOnce(0), isNull);
+    });
+  });
+
   group('overdub decay', () {
     test('defaults to 0 and round-trips, by default and per track', () async {
       expect(await repository.loadOverdubDecay(), 0);
@@ -1059,17 +1091,6 @@ void main() {
     test('round-trips a saved signature', () async {
       await repository.saveTimeSignature(7, 8);
       expect(await repository.loadTimeSignature(), (7, 8));
-    });
-  });
-
-  group('sync tempo', () {
-    test('defaults to on when unset', () async {
-      expect(await repository.loadSyncTempo(), isTrue);
-    });
-
-    test('round-trips a saved preference', () async {
-      await repository.saveSyncTempo(value: false);
-      expect(await repository.loadSyncTempo(), isFalse);
     });
   });
 
@@ -1141,8 +1162,9 @@ void main() {
   });
 
   group('track length preset', () {
-    test('defaults to 0 (AUTO) and round-trips a fixed value', () async {
-      expect(await repository.loadTrackLengthPreset(0), 0);
+    test('defaults to null (follow the default) and round-trips a fixed '
+        'value', () async {
+      expect(await repository.loadTrackLengthPreset(0), isNull);
       await repository.saveTrackLengthPreset(0, 8);
       expect(await repository.loadTrackLengthPreset(0), 8);
     });
@@ -1152,7 +1174,7 @@ void main() {
       await repository.saveTrackLengthPreset(1, 16);
       expect(await repository.loadTrackLengthPreset(0), 4);
       expect(await repository.loadTrackLengthPreset(1), 16);
-      expect(await repository.loadTrackLengthPreset(2), 0);
+      expect(await repository.loadTrackLengthPreset(2), isNull);
     });
   });
 

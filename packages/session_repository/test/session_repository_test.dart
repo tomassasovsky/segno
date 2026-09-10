@@ -388,15 +388,13 @@ void main() {
   );
 
   test(
-    'save then read round-trips looperMode, primaryTrack, and per-track '
-    'oneShot (B5c)',
+    'save then read round-trips looperMode and primaryTrack (B5c)',
     () async {
       final source = FakeSessionEngine()
         ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
         ..seedTrack(1, Float32List.fromList([2, 2, 2, 2]))
         ..looperMode = LooperMode.sync
-        ..primaryTrack = 1
-        ..oneShot[0] = true;
+        ..primaryTrack = 1;
       final dir = '${tempDir.path}/mode';
       await repoFor(source).save(dir);
 
@@ -404,49 +402,97 @@ void main() {
 
       expect(bundle.session.looperMode, LooperMode.sync);
       expect(bundle.session.primaryTrack, 1);
-      final track0 = bundle.session.tracks.firstWhere((t) => t.channel == 0);
-      final track1 = bundle.session.tracks.firstWhere((t) => t.channel == 1);
-      expect(track0.oneShot, isTrue);
-      expect(track1.oneShot, isFalse);
-      // Session-level mirror also carries channel 0, matching the per-track
-      // flag for a content-bearing channel.
-      expect(bundle.session.oneShotChannels, contains(0));
-      expect(bundle.session.oneShotChannels, isNot(contains(1)));
     },
   );
 
   test(
-    'save then read round-trips a One Shot flag pre-armed on a channel with '
-    'NO content (independent review of #295): SessionTrack.oneShot has no '
-    'home for a content-less channel (_capture only builds a SessionTrack '
-    'for a channel with lanes), so it must round-trip through the '
-    'session-level Session.oneShotChannels instead',
+    'save then read round-trips the loop settings (slice 2c): the rig '
+    'defaults, and per channel a following (absent), an explicit-Auto (0), '
+    'a fixed-bars, a Once, and a Loop override',
     () async {
-      final source = FakeSessionEngine()
-        // Channel 1 is left empty on purpose — never seeded — while its One
-        // Shot flag is armed, mirroring a user pre-arming Settings > One
-        // Shot before ever recording onto the track.
-        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
-        ..oneShot[0] = true
-        ..oneShot[1] = true;
-      final dir = '${tempDir.path}/oneShotEmpty';
-      await repoFor(source).save(dir);
+      final source = FakeSessionEngine();
+      for (var channel = 0; channel < 4; channel++) {
+        source.seedTrack(channel, Float32List.fromList([1, 1, 1, 1]));
+      }
+      final dir = '${tempDir.path}/loop';
+      await repoFor(source).save(
+        dir,
+        loopSettings: const SessionLoopSettings(
+          defaultLengthPresetBars: 4,
+          defaultOnce: true,
+          // Channel 3 follows the defaults (no entry in either map).
+          lengthPresetOverrides: {0: 8, 1: 0},
+          onceOverrides: {0: false, 2: true},
+        ),
+      );
 
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
 
-      // Channel 1 never got a SessionTrack at all (no content) — the old,
-      // pre-fix gap.
-      expect(bundle.session.tracks.any((t) => t.channel == 1), isFalse);
-      // But its flag survived through the content-independent session-level
-      // set, alongside channel 0's (which also has content).
-      expect(bundle.session.oneShotChannels, containsAll([0, 1]));
+      expect(bundle.session.defaultLengthPresetBars, 4);
+      expect(bundle.session.defaultOnce, isTrue);
+      expect(bundle.session.lengthPresetOverrides, {0: 8, 1: 0});
+      expect(bundle.session.onceOverrides, {0: false, 2: true});
+      expect(bundle.session.lengthPresetOverrides.containsKey(3), isFalse);
+      expect(bundle.session.onceOverrides.containsKey(3), isFalse);
     },
   );
 
   test(
-    'save then read defaults looperMode/primaryTrack/oneShot when the '
-    'engine reports the tempo-free/grid-off values (no data loss for a '
-    'plain Multi session)',
+    'save then read keeps a Once override and a length override on a '
+    'channel with NO content: such a channel gets no SessionTrack '
+    '(_capture only builds one for a channel with lanes), so the overrides '
+    'must ride the session-level maps instead',
+    () async {
+      final source = FakeSessionEngine()
+        // Channel 1 is left empty on purpose — never seeded — while its
+        // overrides are set, mirroring a user dialing in Once and a bar
+        // count on a track before ever recording onto it.
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/overrideEmpty';
+      await repoFor(source).save(
+        dir,
+        loopSettings: const SessionLoopSettings(
+          lengthPresetOverrides: {0: 2, 1: 16},
+          onceOverrides: {0: true, 1: true},
+        ),
+      );
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      // Channel 1 never got a SessionTrack at all (no content) — the gap
+      // the per-track shape fell into.
+      expect(bundle.session.tracks.any((t) => t.channel == 1), isFalse);
+      // But both its overrides survived through the content-independent
+      // session-level maps, alongside channel 0's (which also has content).
+      expect(bundle.session.lengthPresetOverrides, {0: 2, 1: 16});
+      expect(bundle.session.onceOverrides, {0: true, 1: true});
+    },
+  );
+
+  test(
+    'save with overrides on a session with NO content at all still persists '
+    'them (the maps do not depend on any track existing)',
+    () async {
+      final dir = '${tempDir.path}/overrideNoTracks';
+      await repoFor(FakeSessionEngine()).save(
+        dir,
+        loopSettings: const SessionLoopSettings(
+          lengthPresetOverrides: {2: 4},
+          onceOverrides: {2: true},
+        ),
+      );
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      expect(bundle.session.tracks, isEmpty);
+      expect(bundle.session.lengthPresetOverrides, {2: 4});
+      expect(bundle.session.onceOverrides, {2: true});
+    },
+  );
+
+  test(
+    'save then read defaults looperMode/primaryTrack and the loop settings '
+    'when nothing is handed in (no data loss for a plain Multi session)',
     () async {
       final source = FakeSessionEngine()
         ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
@@ -457,8 +503,10 @@ void main() {
 
       expect(bundle.session.looperMode, LooperMode.multi);
       expect(bundle.session.primaryTrack, -1);
-      expect(bundle.session.tracks.single.oneShot, isFalse);
-      expect(bundle.session.oneShotChannels, isEmpty);
+      expect(bundle.session.defaultLengthPresetBars, 0);
+      expect(bundle.session.defaultOnce, isFalse);
+      expect(bundle.session.lengthPresetOverrides, isEmpty);
+      expect(bundle.session.onceOverrides, isEmpty);
     },
   );
 

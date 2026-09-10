@@ -14,8 +14,6 @@ void main() {
         channel: 0,
         multiple: 1,
         lengthFrames: 96000,
-        lengthPresetBars: 4,
-        oneShot: true,
         recordTiming: RecordTiming.bar,
         overdubDecay: 30,
         lanes: [
@@ -88,16 +86,22 @@ void main() {
     quantizeDiv: GridDivision.eighth,
     recordTiming: RecordTiming.eighth,
     overdubDecay: 25,
+    defaultLengthPresetBars: 2,
+    defaultOnce: true,
+    // Session-level, keyed by channel. Channel 0 has a fixed-bars + Once
+    // override; channel 1 an explicit Auto (0) + explicit Loop (false), both
+    // of which differ from "follows the default" (absent) and must survive
+    // as written; channel 5 has NO track entry at all (nothing recorded) and
+    // its overrides must survive anyway — the reason the maps are
+    // session-level.
+    lengthPresetOverrides: {0: 4, 1: 0, 5: 16},
+    onceOverrides: {0: true, 1: false, 5: true},
     clickMode: ClickMode.rec,
     clickOutputMask: 0x3,
     clickVolume: 0.75,
     countInBars: 2,
     looperMode: LooperMode.band,
     primaryTrack: 1,
-    // Channel 2 has NO SessionTrack entry (content-less) — its One Shot flag
-    // only round-trips through this session-level set, alongside channel 0's
-    // (which also has a per-track `oneShot: true` above; both should agree).
-    oneShotChannels: [0, 2],
     // The pedal remap (schema v6) — opaque here exactly like the chain
     // strings above; a binding-set shape stands in for the real
     // `PedalBindingSet.encode()` output the control layer produces.
@@ -342,16 +346,119 @@ void main() {
       expect(json['countInBars'], 2);
       expect(json['looperMode'], 'band');
       expect(json['primaryTrack'], 1);
-      expect(json['oneShotChannels'], [0, 2]);
-      final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
-      expect(track0['lengthPresetBars'], 4);
-      expect(track0['oneShot'], isTrue);
+      expect(json['defaultLengthPresetBars'], 2);
+      expect(json['defaultOnce'], isTrue);
+      // The override maps are session-level JSON objects keyed by the
+      // channel as a decimal string — never per-track keys.
+      expect(json['lengthPresetOverrides'], {'0': 4, '1': 0, '5': 16});
+      expect(json['onceOverrides'], {'0': true, '1': false, '5': true});
+      for (final track in json['tracks'] as List) {
+        final map = track as Map<String, dynamic>;
+        expect(map.containsKey('lengthPresetOverride'), isFalse);
+        expect(map.containsKey('onceOverride'), isFalse);
+      }
+    });
+
+    test(
+      'a channel with NO track entry (nothing recorded) still round-trips '
+      'its Once and length overrides through JSON',
+      () {
+        expect(session.tracks.any((t) => t.channel == 5), isFalse);
+        final json = jsonDecode(jsonEncode(session.toJson()));
+        final loaded = Session.fromJson(json as Map<String, dynamic>);
+        expect(loaded.lengthPresetOverrides[5], 16);
+        expect(loaded.onceOverrides[5], isTrue);
+      },
+    );
+
+    test(
+      'a following channel serializes nothing: a session with no overrides '
+      'omits both map keys and reads back with both maps empty',
+      () {
+        const following = Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [
+            SessionTrack(channel: 0, multiple: 1, lengthFrames: 4, lanes: []),
+          ],
+          defaultLengthPresetBars: 4,
+          defaultOnce: true,
+        );
+        final json = following.toJson();
+        expect(json.containsKey('lengthPresetOverrides'), isFalse);
+        expect(json.containsKey('onceOverrides'), isFalse);
+        final loaded = Session.fromJson(
+          jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+        );
+        expect(loaded.lengthPresetOverrides, isEmpty);
+        expect(loaded.onceOverrides, isEmpty);
+        expect(loaded.defaultLengthPresetBars, 4);
+        expect(loaded.defaultOnce, isTrue);
+        expect(loaded, following);
+      },
+    );
+
+    test(
+      'a channel present in one override map and absent from the other '
+      'stays that way (the two maps are independent)',
+      () {
+        const partial = Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 0,
+          tracks: [],
+          lengthPresetOverrides: {2: 8},
+          onceOverrides: {3: true},
+        );
+        final json = jsonDecode(jsonEncode(partial.toJson()));
+        final loaded = Session.fromJson(json as Map<String, dynamic>);
+        expect(loaded.lengthPresetOverrides, {2: 8});
+        expect(loaded.onceOverrides, {3: true});
+        expect(loaded.lengthPresetOverrides.containsKey(3), isFalse);
+        expect(loaded.onceOverrides.containsKey(2), isFalse);
+        expect(loaded, partial);
+      },
+    );
+
+    test('equality of the override maps ignores insertion order', () {
+      const a = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+        lengthPresetOverrides: {0: 4, 1: 8},
+        onceOverrides: {0: true, 1: false},
+      );
+      const b = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+        lengthPresetOverrides: {1: 8, 0: 4},
+        onceOverrides: {1: false, 0: true},
+      );
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(
+        a,
+        isNot(
+          const Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 0,
+            tracks: [],
+            lengthPresetOverrides: {0: 4, 1: 8},
+            onceOverrides: {0: true, 1: true},
+          ),
+        ),
+      );
     });
 
     test(
       'v4 round-trips every new field (tempo/signature/quantize/click/ '
-      'count-in, looperMode/primaryTrack, per-track '
-      'lengthPresetBars/oneShot, and the session-level oneShotChannels set)',
+      'count-in, looperMode/primaryTrack, the loop-setting defaults, and '
+      'the session-level lengthPresetOverrides/onceOverrides maps)',
       () {
         final json = jsonDecode(jsonEncode(session.toJson()));
         final loaded = Session.fromJson(json as Map<String, dynamic>);
@@ -366,14 +473,15 @@ void main() {
         expect(loaded.countInBars, 2);
         expect(loaded.looperMode, LooperMode.band);
         expect(loaded.primaryTrack, 1);
-        expect(loaded.tracks[0].lengthPresetBars, 4);
-        expect(loaded.tracks[0].oneShot, isTrue);
-        // AUTO (0) / off round-trip too — not just non-default values.
-        expect(loaded.tracks[1].lengthPresetBars, 0);
-        expect(loaded.tracks[1].oneShot, isFalse);
-        // Channel 2's flag has no SessionTrack to live on (no content) — it
-        // only survives through this session-level set.
-        expect(loaded.oneShotChannels, [0, 2]);
+        expect(loaded.defaultLengthPresetBars, 2);
+        expect(loaded.defaultOnce, isTrue);
+        // Keys come back as ints, not the decimal strings JSON carried.
+        expect(loaded.lengthPresetOverrides, {0: 4, 1: 0, 5: 16});
+        expect(loaded.onceOverrides, {0: true, 1: false, 5: true});
+        // An explicit Auto (0) and an explicit Loop (false) round-trip as
+        // themselves, not as "follows the default".
+        expect(loaded.lengthPresetOverrides[1], 0);
+        expect(loaded.onceOverrides[1], isFalse);
         expect(loaded, session);
       },
     );
@@ -419,8 +527,10 @@ void main() {
         expect(loaded.clickOutputMask, 0);
         expect(loaded.clickVolume, 1);
         expect(loaded.countInBars, 0);
-        expect(loaded.tracks.single.lengthPresetBars, 0);
-        expect(loaded.oneShotChannels, isEmpty);
+        expect(loaded.defaultLengthPresetBars, 0);
+        expect(loaded.defaultOnce, isFalse);
+        expect(loaded.lengthPresetOverrides, isEmpty);
+        expect(loaded.onceOverrides, isEmpty);
         // The rest of the v3 manifest still loads intact.
         expect(loaded.baseLengthFrames, 96000);
         expect(loaded.tracks.single.lanes.single.volume, 1.0);
@@ -436,7 +546,7 @@ void main() {
         // written by a build that HAS: extra top-level and per-track fields
         // this code has never heard of (session_repository.dart:8-9 doesn't
         // read any of these keys, so they should simply be ignored). B5c
-        // (looperMode/primaryTrack/oneShot) is EXCLUDED from this list — this
+        // (looperMode/primaryTrack) is EXCLUDED from this list — this
         // code understands those now, see the test below.
         json['clockMode'] = 'send';
         json['syncAudioToTempo'] = true;
@@ -450,25 +560,47 @@ void main() {
     );
 
     test(
-      'reads looperMode, primaryTrack, per-track oneShot, and the '
-      'session-level oneShotChannels set when present (B5c + independent '
-      'review of #295) — unlike the still-future C/D fields above, these '
-      'ARE understood by this code',
+      'reads looperMode and primaryTrack when present (B5c) — unlike the '
+      'still-future C/D fields above, these ARE understood by this code',
       () {
         final json = session.toJson();
         json['looperMode'] = 'sync';
         json['primaryTrack'] = 0;
-        json['oneShotChannels'] = [3];
-        final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
-        track0['oneShot'] = true;
 
         final loaded = Session.fromJson(json);
         expect(loaded.looperMode, LooperMode.sync);
         expect(loaded.primaryTrack, 0);
-        expect(loaded.tracks[0].oneShot, isTrue);
-        // Track 1 (not touched above) still defaults to off.
-        expect(loaded.tracks[1].oneShot, isFalse);
-        expect(loaded.oneShotChannels, [3]);
+      },
+    );
+
+    test(
+      'ignores the superseded keys (per-track effective '
+      'lengthPresetBars/oneShot, the per-track '
+      'lengthPresetOverride/onceOverride of the first slice-2c cut, and the '
+      'session-level '
+      'oneShotChannels set): none is migrated into the override maps',
+      () {
+        final json = session.toJson()
+          ..remove('lengthPresetOverrides')
+          ..remove('onceOverrides')
+          ..['oneShotChannels'] = [0, 3];
+        ((json['tracks'] as List).first as Map<String, dynamic>)
+          ..['lengthPresetBars'] = 4
+          ..['oneShot'] = true
+          ..['lengthPresetOverride'] = 8
+          ..['onceOverride'] = true;
+
+        final loaded = Session.fromJson(json);
+        expect(loaded.lengthPresetOverrides, isEmpty);
+        expect(loaded.onceOverrides, isEmpty);
+        final resaved = loaded.toJson();
+        expect(resaved.containsKey('oneShotChannels'), isFalse);
+        expect(resaved.containsKey('lengthPresetOverrides'), isFalse);
+        expect(resaved.containsKey('onceOverrides'), isFalse);
+        final track0 =
+            (resaved['tracks'] as List).first as Map<String, dynamic>;
+        expect(track0.containsKey('lengthPresetOverride'), isFalse);
+        expect(track0.containsKey('onceOverride'), isFalse);
       },
     );
 

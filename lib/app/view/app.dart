@@ -382,7 +382,7 @@ class _AppState extends State<App> {
           ),
           BlocProvider(
             create: (context) {
-              final cubit = QuantizeCubit(
+              final cubit = RecordTimingCubit(
                 repository: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
               );

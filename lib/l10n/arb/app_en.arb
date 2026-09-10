@@ -463,7 +463,6 @@
         }
     },
     "quantizeRecording": "Quantize recording",
-    "loopLength": "Loop length",
     "done": "Done",
     "defaultWithState": "Default ({state})",
     "@defaultWithState": {
@@ -509,8 +508,6 @@
     "defaultLabel": "Default",
     "tracksIntro": "Rename tracks.",
     "tracksGroupLabel": "TRACKS",
-    "lengthPresetLabel": "Length preset",
-    "lengthPresetAuto": "AUTO",
     "lengthPresetBars": "{bars, plural, one{1 bar} other{{bars} bars}}",
     "@lengthPresetBars": {
         "placeholders": {
@@ -1396,61 +1393,14 @@
     "@perfExportReExportFailed": {
         "description": "Error message shown when re-export fails."
     },
-    "settingsSectionTempo": "Tempo",
-    "tempoSettingsIntro": "Set the tempo grid, click, and count-in the looper aligns recordings to.",
-    "tempoGroupLabel": "TEMPO",
-    "currentTempoLabel": "{bpm} BPM",
-    "@currentTempoLabel": {
-        "description": "The live effective tempo readout (manual, tapped, or derived from a loop).",
-        "placeholders": {
-            "bpm": {
-                "type": "String"
-            }
-        }
-    },
-    "tempoNotSetLabel": "Not set",
-    "@tempoNotSetLabel": {
-        "description": "Shown in place of a BPM readout before any tempo has ever been established."
-    },
-    "bpmFieldLabel": "BPM",
-    "tapTempoButton": "Tap",
-    "tapTempoTooltip": "Tap to set the tempo",
-    "timeSignatureLabel": "Time signature",
     "timeSignatureNoteValueLabel": "Note value",
-    "timeSignatureQuarterNote": "Quarter note (/4)",
-    "timeSignatureEighthNote": "Eighth note (/8)",
-    "timeSignatureOption": "{num}/{den}",
-    "@timeSignatureOption": {
-        "description": "One selectable time-signature chip, e.g. \"7/8\".",
-        "placeholders": {
-            "num": {
-                "type": "int"
-            },
-            "den": {
-                "type": "int"
-            }
-        }
-    },
-    "syncTempoTitle": "Sync loop to tempo",
-    "syncTempoSubtitle": "Keep the loop length locked to the tempo grid; a fresh defining recording can derive the tempo from its length instead.",
-    "quantizeGroupLabel": "QUANTIZE",
-    "quantizeDivIntro": "Musical quantization — align recording start/stop to the beat, not just the loop top.",
-    "quantizeDivOffLabel": "Off",
-    "quantizeDivBarLabel": "1 bar",
-    "quantizeDivHalfLabel": "1/2",
-    "quantizeDivQuarterLabel": "1/4",
-    "quantizeDivEighthLabel": "1/8",
-    "quantizeDivSixteenthLabel": "1/16",
     "clickGroupLabel": "CLICK",
-    "clickModeIntro": "When the click (metronome) is audible.",
     "clickModeOffLabel": "Off",
     "clickModeRecLabel": "Recording",
     "clickModeRecFirstLabel": "First take",
     "clickModePlayRecLabel": "Always",
     "clickOutputLabel": "Click output",
     "clickVolumeLabel": "Click volume",
-    "countInGroupLabel": "COUNT-IN",
-    "countInIntro": "Measures counted in before a defining recording starts.",
     "countInOffLabel": "Off",
     "countInBarsLabel1": "1 bar",
     "countInBarsLabel2": "2 bars",
@@ -1480,9 +1430,6 @@
             }
         }
     },
-    "settingsSectionMode": "Mode",
-    "looperModeIntro": "Choose how the looper's tracks relate to each other and the tempo grid.",
-    "looperModeGroupLabel": "MODE",
     "looperModeMultiLabel": "Multi",
     "looperModeMultiSub": "Same length tracks",
     "looperModeSyncLabel": "Sync",
@@ -1502,63 +1449,23 @@
             }
         }
     },
-    "modeChangeStopBody": "Loops are playing. Switching stops them where they are and keeps every recording; start them again from the stage.",
+    "modeChangeStopBody": "Playing loops will stop. Recordings stay intact.",
     "modeChangeStopConfirm": "Stop loops and switch",
     "modeChangeBlockedCapturing": "Finish the take first.",
     "modeChangeBlockedQueued": "A queued action must fire or be cancelled first.",
     "modeChangeBlockedSpans": "The recorded loop lengths do not fit this mode.",
-    "oneShotGroupLabel": "ONE SHOT",
-    "oneShotIntro": "A one-shot track plays once and stops instead of looping (active in Free and Song modes).",
     "trayLoopLabel": "Loop",
     "@trayLoopLabel": {
         "description": "Navigation-rail caption for the console's Loop domain."
-    },
-    "loopTempoTab": "Tempo",
-    "loopClickTab": "Click",
-    "loopModeTab": "Mode",
-    "loopTempoGroup": "TEMPO",
-    "loopClickGroup": "CLICK",
-    "loopModeGroup": "MODE",
-    "loopDefaultsGroup": "DEFAULTS",
-    "loopTempoRow": "Tempo",
-    "loopTempoHint": "tap or type",
-    "loopTempoReadout": "{bpm} bpm",
-    "@loopTempoReadout": {
-        "description": "The live tempo at a Loop row's trailing edge.",
-        "placeholders": {
-            "bpm": {
-                "type": "String"
-            }
-        }
     },
     "loopTempoUnset": "not set",
     "@loopTempoUnset": {
         "description": "Shown where the tempo would be when none has been established. The console never draws an unknown fact as a zero."
     },
-    "loopLengthHint": "first take sets it",
     "loopLengthAuto": "Auto",
-    "loopLengthMultiple": "x{multiple}",
-    "@loopLengthMultiple": {
-        "description": "A fixed loop length, as a multiple of the base loop the first take defines.",
-        "placeholders": {
-            "multiple": {
-                "type": "int"
-            }
-        }
+    "@loopLengthAuto": {
+        "description": "Length choice."
     },
-    "loopSignatureQuarterGroup": "QUARTER NOTE",
-    "@loopSignatureQuarterGroup": {
-        "description": "Caption over the time signatures whose denominator is 4."
-    },
-    "loopSignatureEighthGroup": "EIGHTH NOTE",
-    "@loopSignatureEighthGroup": {
-        "description": "Caption over the time signatures whose denominator is 8."
-    },
-    "loopQuantiseRow": "Quantise",
-    "loopQuantiseHint": "when a switch takes effect",
-    "loopCountInRow": "Count-in",
-    "loopClickWhenRow": "When it plays",
-    "loopClickOutputRow": "Output",
     "loopClickOutputNone": "nowhere",
     "@loopClickOutputNone": {
         "description": "Click output readout when no hardware output is selected."
@@ -1583,17 +1490,7 @@
             }
         }
     },
-    "loopModeRow": "Looper mode",
-    "loopOneShotRow": "One-shot tracks",
-    "loopDefaultModeRow": "Default mode",
-    "loopDefaultModeRecord": "record",
-    "loopDefaultModeMute": "mute",
-    "loopTempoSheetUnit": "bpm",
-    "loopTempoSheetSet": "Set",
-    "loopTempoSheetBackspace": "Backspace",
-    "loopTempoSheetDecimal": "Decimal point",
     "a11yLoopClickVolume": "Click volume",
-    "a11yLoopTempoSheet": "Tempo keypad",
     "a11yTrackPrimary": "Primary track",
     "@a11yTrackPrimary": {
         "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
@@ -2513,7 +2410,6 @@
         "description": "Navigation-rail caption for the console's Tracks domain — names, lengths and routing as three tabs of one destination."
     },
     "tracksNamesTab": "Names",
-    "tracksLengthsTab": "Lengths",
     "tracksRoutingTab": "Routing",
     "tracksOrdinal": "track {number}",
     "@tracksOrdinal": {
@@ -2525,10 +2421,8 @@
         }
     },
     "tracksNamesFootnote": "Rename tracks. The name is what the stage, the pedal targets and the 7-inch readout all show.",
-    "tracksLengthsFootnote": "Auto takes its length from the first take; a preset records that many bars.",
     "tracksRoutingFootnote": "A track records any set of inputs — one dry lane each, sharing the loop — and is sent to any set of outputs. Quantize follows the global setting unless a track overrides it.",
     "tracksEmpty": "No tracks — the engine is not running.",
-    "tracksLengthAuto": "auto",
     "tracksNoInputs": "None (clean)",
     "@tracksNoInputs": {
         "description": "A track whose lanes record nothing, and the row that puts it in that state."
@@ -3406,5 +3300,467 @@
             }
         }
     },
-    "a11yReadoutNoTrack": "No track selected"
+    "a11yReadoutNoTrack": "No track selected",
+    "loopSettingsTitle": "Loop settings",
+    "@loopSettingsTitle": {
+        "description": "Title of the Loop settings hub."
+    },
+    "loopSettingsCrumb": "SETTINGS",
+    "@loopSettingsCrumb": {
+        "description": "Breadcrumb over the Loop settings hub."
+    },
+    "loopSettingsCrumbNested": "SETTINGS / Loop settings",
+    "@loopSettingsCrumbNested": {
+        "description": "Breadcrumb over a Loop settings submenu."
+    },
+    "loopSettingsStage": "Stage",
+    "@loopSettingsStage": {
+        "description": "Top-bar button that returns to the stage."
+    },
+    "loopSettingsBack": "Back",
+    "@loopSettingsBack": {
+        "description": "Accessible name of the top-bar Back button."
+    },
+    "loopHubMode": "Loop mode",
+    "@loopHubMode": {
+        "description": "Hub row: the looper mode."
+    },
+    "loopHubRecording": "Recording",
+    "@loopHubRecording": {
+        "description": "Hub row: how recording starts and what the second press does."
+    },
+    "loopHubTempo": "Tempo & click",
+    "@loopHubTempo": {
+        "description": "Hub row: tempo, signature, click and count-in."
+    },
+    "loopHubLength": "Length & quantize",
+    "@loopHubLength": {
+        "description": "Hub row: loop length and record timing."
+    },
+    "loopHubPlayback": "Playback & overdub",
+    "@loopHubPlayback": {
+        "description": "Hub row: Loop/Once and overdub decay."
+    },
+    "loopHubAudioTempo": "Audio & tempo",
+    "@loopHubAudioTempo": {
+        "description": "Hub row: tempo following and pitch."
+    },
+    "loopSummaryRecordPlayOverdub": "Record · Play · Overdub",
+    "@loopSummaryRecordPlayOverdub": {
+        "description": "Hub summary when the second press plays."
+    },
+    "loopSummaryRecordOverdubPlay": "Record · Overdub · Play",
+    "@loopSummaryRecordOverdubPlay": {
+        "description": "Hub summary when the second press overdubs."
+    },
+    "loopSummarySound": "Sound · {rest}",
+    "@loopSummarySound": {
+        "description": "Hub summary prefix when recording starts on sound.",
+        "placeholders": {
+                "rest": {
+                        "type": "String"
+                }
+        }
+    },
+    "loopSummaryTempo": "{bpm} BPM · {signature}",
+    "@loopSummaryTempo": {
+        "description": "Hub summary of the tempo and signature.",
+        "placeholders": {
+                "bpm": {
+                        "type": "String"
+                },
+                "signature": {
+                        "type": "String"
+                }
+        }
+    },
+    "loopSummaryTempoUnset": "Tempo not set · {signature}",
+    "@loopSummaryTempoUnset": {
+        "description": "Hub summary when no tempo is set.",
+        "placeholders": {
+                "signature": {
+                        "type": "String"
+                }
+        }
+    },
+    "loopSummaryPair": "{first} · {second}",
+    "@loopSummaryPair": {
+        "description": "Two hub summary parts joined.",
+        "placeholders": {
+                "first": {
+                        "type": "String"
+                },
+                "second": {
+                        "type": "String"
+                }
+        }
+    },
+    "loopSummaryNoDecay": "No decay",
+    "@loopSummaryNoDecay": {
+        "description": "Hub summary part when the default decay is off."
+    },
+    "loopSummaryDecay": "{percent}% decay",
+    "@loopSummaryDecay": {
+        "description": "Hub summary part for a default decay.",
+        "placeholders": {
+                "percent": {
+                        "type": "int"
+                }
+        }
+    },
+    "loopSummaryAudioTempo": "Recorded speed · Same pitch",
+    "@loopSummaryAudioTempo": {
+        "description": "Hub summary of the audio and tempo readout."
+    },
+    "loopTimingImmediately": "Immediately",
+    "@loopTimingImmediately": {
+        "description": "Record timing choice."
+    },
+    "loopTimingLoopStart": "Loop start",
+    "@loopTimingLoopStart": {
+        "description": "Record timing choice."
+    },
+    "loopTimingBar": "1 bar",
+    "@loopTimingBar": {
+        "description": "Record timing choice."
+    },
+    "loopTimingHalf": "1/2 note",
+    "@loopTimingHalf": {
+        "description": "Record timing choice."
+    },
+    "loopTimingQuarter": "1/4 note",
+    "@loopTimingQuarter": {
+        "description": "Record timing choice."
+    },
+    "loopTimingEighth": "1/8 note",
+    "@loopTimingEighth": {
+        "description": "Record timing choice."
+    },
+    "loopTimingSixteenth": "1/16 note",
+    "@loopTimingSixteenth": {
+        "description": "Record timing choice."
+    },
+    "loopModeMultiDesc": "Tracks share one loop length.",
+    "@loopModeMultiDesc": {
+        "description": "Mode card description."
+    },
+    "loopModeSyncDesc": "Different lengths, in time.",
+    "@loopModeSyncDesc": {
+        "description": "Mode card description."
+    },
+    "loopModeSongDesc": "One section at a time.",
+    "@loopModeSongDesc": {
+        "description": "Mode card description."
+    },
+    "loopModeBandDesc": "Rhythm beneath changing sections.",
+    "@loopModeBandDesc": {
+        "description": "Mode card description."
+    },
+    "loopModeFreeDesc": "Each track loops independently.",
+    "@loopModeFreeDesc": {
+        "description": "Mode card description."
+    },
+    "loopModeReasonEqualLengths": "Tracks need equal lengths.",
+    "@loopModeReasonEqualLengths": {
+        "description": "Why Multi is unavailable."
+    },
+    "loopModeReasonFollowPrimary": "Lengths must follow Track {track}.",
+    "@loopModeReasonFollowPrimary": {
+        "description": "Why Sync or Band is unavailable.",
+        "placeholders": {
+                "track": {
+                        "type": "int"
+                }
+        }
+    },
+    "loopRecordingStart": "Start recording",
+    "@loopRecordingStart": {
+        "description": "Recording page: how recording starts."
+    },
+    "loopRecordingStartPedal": "Pedal",
+    "@loopRecordingStartPedal": {
+        "description": "Recording starts on the pedal press."
+    },
+    "loopRecordingStartSound": "Sound",
+    "@loopRecordingStartSound": {
+        "description": "Recording starts on sound after arming."
+    },
+    "loopRecordingSecondPress": "Second pedal press",
+    "@loopRecordingSecondPress": {
+        "description": "Recording page: what the second press does."
+    },
+    "loopRecordingSecondPlay": "Play",
+    "@loopRecordingSecondPlay": {
+        "description": "Second press plays."
+    },
+    "loopRecordingSecondOverdub": "Overdub",
+    "@loopRecordingSecondOverdub": {
+        "description": "Second press overdubs."
+    },
+    "loopRecordingNotePedal": "Starts on the pedal press.",
+    "@loopRecordingNotePedal": {
+        "description": "Recording note without a count-in."
+    },
+    "loopRecordingNoteCountIn": "{bars, plural, one{Starts after the 1-bar count-in.} other{Starts after the {bars}-bar count-in.}}",
+    "@loopRecordingNoteCountIn": {
+        "description": "Recording note with a count-in.",
+        "placeholders": {
+                "bars": {
+                        "type": "int"
+                }
+        }
+    },
+    "loopRecordingNoteSound": "Waits for sound after you arm the track.",
+    "@loopRecordingNoteSound": {
+        "description": "Recording note for a Sound start."
+    },
+    "loopRecordingLocked": "Finish recording to change recording behavior.",
+    "@loopRecordingLocked": {
+        "description": "Lock banner on the Recording page."
+    },
+    "loopTempoBpmUnit": "BPM",
+    "@loopTempoBpmUnit": {
+        "description": "Unit under the tempo readout."
+    },
+    "loopTempoStepWhole": "1 BPM",
+    "@loopTempoStepWhole": {
+        "description": "Tempo step: whole beats."
+    },
+    "loopTempoStepFine": "0.01 BPM",
+    "@loopTempoStepFine": {
+        "description": "Tempo step: hundredths."
+    },
+    "loopTempoTap": "Tap tempo",
+    "@loopTempoTap": {
+        "description": "Tap tempo button."
+    },
+    "loopTempoSignature": "Time signature",
+    "@loopTempoSignature": {
+        "description": "Time signature label and page title."
+    },
+    "loopTempoHearClick": "Hear click",
+    "@loopTempoHearClick": {
+        "description": "Click policy row."
+    },
+    "loopClickOff": "Off",
+    "@loopClickOff": {
+        "description": "Click policy choice."
+    },
+    "loopClickFirst": "First recording",
+    "@loopClickFirst": {
+        "description": "Click policy choice."
+    },
+    "loopClickRecording": "Recording",
+    "@loopClickRecording": {
+        "description": "Click policy choice."
+    },
+    "loopClickAlways": "Play & record",
+    "@loopClickAlways": {
+        "description": "Click policy choice."
+    },
+    "loopTempoCountIn": "Count-in",
+    "@loopTempoCountIn": {
+        "description": "Count-in row."
+    },
+    "loopTempoSliderLabel": "Tempo",
+    "@loopTempoSliderLabel": {
+        "description": "Accessible name of the tempo slider."
+    },
+    "loopScopeTracks": "Tracks",
+    "@loopScopeTracks": {
+        "description": "Scope selector label."
+    },
+    "loopScopeDefaults": "Defaults",
+    "@loopScopeDefaults": {
+        "description": "Scope selector: the defaults."
+    },
+    "loopScopeTrack": "Track {track}",
+    "@loopScopeTrack": {
+        "description": "Accessible name of a scope selector track button.",
+        "placeholders": {
+                "track": {
+                        "type": "int"
+                }
+        }
+    },
+    "loopLengthLabel": "Loop length",
+    "@loopLengthLabel": {
+        "description": "Length field label."
+    },
+    "loopLengthBars": "Bars",
+    "@loopLengthBars": {
+        "description": "Length choice."
+    },
+    "loopLengthUnit": "bars",
+    "@loopLengthUnit": {
+        "description": "Unit beside the bar count."
+    },
+    "loopLengthShorter": "Shorter loop",
+    "@loopLengthShorter": {
+        "description": "Accessible name of the bars minus button."
+    },
+    "loopLengthLonger": "Longer loop",
+    "@loopLengthLonger": {
+        "description": "Accessible name of the bars plus button."
+    },
+    "loopUseDefault": "Use default",
+    "@loopUseDefault": {
+        "description": "Removes a field's override."
+    },
+    "loopOriginDefault": "Default",
+    "@loopOriginDefault": {
+        "description": "Field origin tag: follows the default."
+    },
+    "loopOriginCustom": "Custom",
+    "@loopOriginCustom": {
+        "description": "Field origin tag: overridden."
+    },
+    "loopSharedInMulti": "Shared in Multi",
+    "@loopSharedInMulti": {
+        "description": "Length field tag in Multi: tracks share the default length."
+    },
+    "loopLengthNoteAuto": "Press the pedal again to set the length.",
+    "@loopLengthNoteAuto": {
+        "description": "Length note for Auto."
+    },
+    "loopLengthNoteBars": "{bars, plural, one{Ends after 1 bar, then plays.} other{Ends after {bars} bars, then plays.}}",
+    "@loopLengthNoteBars": {
+        "description": "Length note for a fixed bar count.",
+        "placeholders": {
+                "bars": {
+                        "type": "int"
+                }
+        }
+    },
+    "loopTimingLabel": "Record timing",
+    "@loopTimingLabel": {
+        "description": "Record timing field label."
+    },
+    "loopTimingNoteImmediately": "Record and overdub respond as soon as you press.",
+    "@loopTimingNoteImmediately": {
+        "description": "Timing note."
+    },
+    "loopTimingNoteLoopStart": "Record and overdub wait for the next loop start. The first loop follows Recording.",
+    "@loopTimingNoteLoopStart": {
+        "description": "Timing note."
+    },
+    "loopTimingNoteGrid": "Record and overdub wait for the next {unit}. The first loop follows Recording.",
+    "@loopTimingNoteGrid": {
+        "description": "Timing note for a grid division.",
+        "placeholders": {
+                "unit": {
+                        "type": "String"
+                }
+        }
+    },
+    "loopLengthLocked": "Finish recording to change length or timing.",
+    "@loopLengthLocked": {
+        "description": "Lock banner on the Length page."
+    },
+    "loopPlaybackLabel": "Playback",
+    "@loopPlaybackLabel": {
+        "description": "Playback field label."
+    },
+    "loopPlaybackLoop": "Loop",
+    "@loopPlaybackLoop": {
+        "description": "Playback choice."
+    },
+    "loopPlaybackOnce": "Once",
+    "@loopPlaybackOnce": {
+        "description": "Playback choice."
+    },
+    "loopPlaybackNoteLoop": "Repeats until you stop it.",
+    "@loopPlaybackNoteLoop": {
+        "description": "Playback note."
+    },
+    "loopPlaybackNoteOnce": "Plays to the end, then stops.",
+    "@loopPlaybackNoteOnce": {
+        "description": "Playback note."
+    },
+    "loopDecayLabel": "Overdub decay",
+    "@loopDecayLabel": {
+        "description": "Decay field label."
+    },
+    "loopDecayOff": "Off",
+    "@loopDecayOff": {
+        "description": "Decay readout at zero."
+    },
+    "loopDecayPercent": "{percent}%",
+    "@loopDecayPercent": {
+        "description": "Decay readout.",
+        "placeholders": {
+                "percent": {
+                        "type": "int"
+                }
+        }
+    },
+    "loopDecayKeep": "Keep layers",
+    "@loopDecayKeep": {
+        "description": "Left end of the decay slider."
+    },
+    "loopDecayReplace": "Replace layers",
+    "@loopDecayReplace": {
+        "description": "Right end of the decay slider."
+    },
+    "loopDecayNoteOff": "Earlier layers stay at full volume. Playback is unchanged.",
+    "@loopDecayNoteOff": {
+        "description": "Decay note at zero."
+    },
+    "loopDecayNote": "Keeps {percent}% of earlier audio each overdub pass. Playback is unchanged.",
+    "@loopDecayNote": {
+        "description": "Decay note.",
+        "placeholders": {
+                "percent": {
+                        "type": "int"
+                }
+        }
+    },
+    "loopDecayNoteReplace": "Each overdub pass replaces the earlier audio. Playback is unchanged.",
+    "@loopDecayNoteReplace": {
+        "description": "Decay note at 100%."
+    },
+    "loopDecaySliderLabel": "Overdub decay",
+    "@loopDecaySliderLabel": {
+        "description": "Accessible name of the decay slider."
+    },
+    "loopAudioFollowLabel": "Follow tempo",
+    "@loopAudioFollowLabel": {
+        "description": "Audio & tempo field label."
+    },
+    "loopAudioFollowOff": "Off",
+    "@loopAudioFollowOff": {
+        "description": "Follow tempo choice."
+    },
+    "loopAudioFollowOn": "On",
+    "@loopAudioFollowOn": {
+        "description": "Follow tempo choice."
+    },
+    "loopAudioPitchLabel": "Pitch",
+    "@loopAudioPitchLabel": {
+        "description": "Audio & tempo field label."
+    },
+    "loopAudioPitchUnchanged": "Unchanged",
+    "@loopAudioPitchUnchanged": {
+        "description": "Pitch choice."
+    },
+    "loopAudioPitchFollows": "Follows speed",
+    "@loopAudioPitchFollows": {
+        "description": "Pitch choice."
+    },
+    "loopAudioNoteOff": "Keeps its recorded speed, even when the song tempo changes.",
+    "@loopAudioNoteOff": {
+        "description": "Audio note."
+    },
+    "loopAudioNotePitchUnchanged": "Pitch stays unchanged at the recorded speed.",
+    "@loopAudioNotePitchUnchanged": {
+        "description": "Audio note."
+    },
+    "loopAudioUnavailable": "Tempo following is not available yet. Every track keeps its recorded speed.",
+    "@loopAudioUnavailable": {
+        "description": "Readout note on the Audio & tempo page."
+    },
+    "settingsSectionLoop": "Loop settings",
+    "@settingsSectionLoop": {
+        "description": "Settings rail entry that opens the Loop settings pages."
+    }
 }

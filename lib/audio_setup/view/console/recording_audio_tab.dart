@@ -5,8 +5,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/quantize_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Which of the tab's two openable rows is showing its list.
@@ -50,7 +50,7 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
     final surface = context.surface;
     final audio = context.watch<AudioSetupCubit>();
     final options = context.watch<RecordOptionsCubit>().state;
-    final quantize = context.watch<QuantizeCubit>().state;
+    final quantize = context.watch<RecordTimingCubit>().state.quantize;
     final cap = audio.state.maxLoopMinutes;
 
     return KeyedSubtree(
@@ -104,7 +104,7 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
                       value: quantize,
                       semanticLabel: l10n.quantizeRecording,
                       onChanged: (on) => unawaited(
-                        context.read<QuantizeCubit>().setEnabled(value: on),
+                        context.read<RecordTimingCubit>().setEnabled(value: on),
                       ),
                     ),
                   ),

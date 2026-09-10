@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/pen_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -13,6 +15,48 @@ import 'package:segno/theme/theme.dart';
 
 /// Paints one rail glyph in [color]. See [TrayNavigationRail._glyphFor].
 typedef _Glyph = Widget Function(Color color);
+
+/// The rail's rows, in the order the pen stacks them: every in-tray
+/// destination, plus the Loop entry, which opens the Loop settings route
+/// (accepted design, slice 2c) rather than a face beside the rail. Brightness
+/// is not a row here; it is the button pinned below the list.
+enum TrayRailEntry {
+  /// The Signal face.
+  signal,
+
+  /// The Control face.
+  control,
+
+  /// The Loop settings route; never selected, since it is not a face.
+  loop,
+
+  /// The Tracks face.
+  tracks,
+
+  /// The Audio face.
+  audio,
+
+  /// The Tuner face.
+  tuner,
+
+  /// The Network face.
+  network,
+
+  /// The System face.
+  system;
+
+  /// The face this row shows, or `null` for the route-opening row.
+  SettingsTrayDestination? get destination => switch (this) {
+    TrayRailEntry.signal => SettingsTrayDestination.signal,
+    TrayRailEntry.control => SettingsTrayDestination.control,
+    TrayRailEntry.loop => null,
+    TrayRailEntry.tracks => SettingsTrayDestination.tracks,
+    TrayRailEntry.audio => SettingsTrayDestination.audio,
+    TrayRailEntry.tuner => SettingsTrayDestination.tuner,
+    TrayRailEntry.network => SettingsTrayDestination.network,
+    TrayRailEntry.system => SettingsTrayDestination.system,
+  };
+}
 
 /// The open tray's navigation spine: a persistent vertical rail listing every
 /// in-tray destination, with the selected one filling the sheet beside it.
@@ -65,11 +109,12 @@ class TrayNavigationRail extends StatelessWidget {
   /// [PenIcon] supplies custom geometry; stock glyphs use icon fonts. Both
   /// render at [iconSize] and receive the item's selection tint.
   ///
-  /// Exhaustive `switch`, deliberately — the rail is built by iterating
-  /// [SettingsTrayDestination.values], so a part that adds a destination gets
+  /// Exhaustive `switch`, deliberately — a part that adds a destination gets
   /// a compile error here instead of a rail that silently omits its own panel.
   /// `TrayPanel`'s face switch already fails this way; the rail must too, or a
-  /// destination can be reachable in code and invisible on screen.
+  /// destination can be reachable in code and invisible on screen. The rail
+  /// is built from [TrayRailEntry], whose test checks every destination has
+  /// a row.
   ///
   /// Returns a builder rather than a widget because the tint is the rail
   /// item's to decide — it changes with selection.
@@ -81,7 +126,6 @@ class TrayNavigationRail extends StatelessWidget {
     return switch (destination) {
       SettingsTrayDestination.signal => pen(PenIcon.signal),
       SettingsTrayDestination.control => pen(PenIcon.control),
-      SettingsTrayDestination.loop => fontIcon(LucideIcons.repeat),
       SettingsTrayDestination.tracks => pen(PenIcon.tracks),
       // A cone with two arcs, which is `volume-2`. The component says
       // `speaker` — lucide's cabinet-with-drivers — and no screen draws it.
@@ -105,7 +149,6 @@ class TrayNavigationRail extends StatelessWidget {
   ) => switch (destination) {
     SettingsTrayDestination.signal => l10n.traySignalLabel,
     SettingsTrayDestination.control => l10n.trayControlLabel,
-    SettingsTrayDestination.loop => l10n.trayLoopLabel,
     SettingsTrayDestination.tracks => l10n.trayTracksLabel,
     SettingsTrayDestination.audio => l10n.trayAudioLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
@@ -174,17 +217,33 @@ class TrayNavigationRail extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             spacing: _itemGap,
                             children: [
-                              for (final target in domains)
-                                // Stretch so every pill spans the rail: pills
-                                // sized to their own text read as chips, not
-                                // as rows of one list.
-                                _RailItem(
-                                  key: Key('settingsTrayRail_${target.name}'),
-                                  glyph: _glyphFor(target),
-                                  label: _labelFor(l10n, target),
-                                  selected: destination == target,
-                                  onTap: () => cubit.showDestination(target),
-                                ),
+                              // Stretch so every pill spans the rail: pills
+                              // sized to their own text read as chips, not
+                              // as rows of one list.
+                              for (final entry in TrayRailEntry.values)
+                                switch (entry.destination) {
+                                  final target? => _RailItem(
+                                    key: Key('settingsTrayRail_${target.name}'),
+                                    glyph: _glyphFor(target),
+                                    label: _labelFor(l10n, target),
+                                    selected: destination == target,
+                                    onTap: () => cubit.showDestination(target),
+                                  ),
+                                  // The one row that is a route, not a face:
+                                  // never "selected", for the reason
+                                  // brightness is not.
+                                  null => _RailItem(
+                                    key: const Key('settingsTrayRail_loop'),
+                                    glyph: (color) => Icon(
+                                      LucideIcons.repeat,
+                                      size: TrayNavigationRail.iconSize,
+                                      color: color,
+                                    ),
+                                    label: l10n.trayLoopLabel,
+                                    selected: false,
+                                    onTap: () => unawaited(openLoopSettings()),
+                                  ),
+                                },
                             ],
                           ),
                         ),

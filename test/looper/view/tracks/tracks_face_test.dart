@@ -63,23 +63,6 @@ void main() {
     });
   });
 
-  group('sameLengths', () {
-    test('ignores meters', () {
-      expect(sameLengths(const [quiet], const [loud]), isTrue);
-    });
-
-    test('catches a preset change', () {
-      expect(
-        sameLengths(const [quiet], const [Track(lengthPresetBars: 8)]),
-        isFalse,
-      );
-    });
-
-    test('catches the roster changing', () {
-      expect(sameLengths(const [quiet], const [quiet, quiet]), isFalse);
-    });
-  });
-
   group('sameQuantize', () {
     test('ignores meters', () {
       expect(sameQuantize(const [quiet], const [loud]), isTrue);

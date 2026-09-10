@@ -652,16 +652,6 @@ class SettingsRepository {
     await _store.setInt(_timeSignatureDenKey, den);
   }
 
-  static const String _syncTempoKey = 'tempo.sync';
-
-  /// Whether loop↔grid sync is on. Defaults to `true` when unset.
-  Future<bool> loadSyncTempo() async =>
-      await _store.getBool(_syncTempoKey) ?? true;
-
-  /// Saves whether loop↔grid sync is on.
-  Future<void> saveSyncTempo({required bool value}) =>
-      _store.setBool(_syncTempoKey, value: value);
-
   static const String _quantizeDivKey = 'tempo.quantize_div';
 
   /// Loads the musical quantization granularity as the native `le_grid_div`
@@ -737,14 +727,57 @@ class SettingsRepository {
   // ---- track length presets (A6, D17) ----
 
   String _trackLengthPresetKey(int channel) => 'tempo.length_preset.$channel';
+  static const String _defaultLengthPresetKey = 'looper.default_length_bars';
+  static const String _defaultOnceKey = 'looper.default_once';
+  String _trackOnceKey(int channel) => 'track_once.$channel';
 
-  /// Loads track [channel]'s length preset (`0` = AUTO; `0` if unset).
-  Future<int> loadTrackLengthPreset(int channel) async =>
-      await _store.getInt(_trackLengthPresetKey(channel)) ?? 0;
+  /// Loads track [channel]'s length preset override: `null` follows the
+  /// default (also when unset, or saved as `-1`), `0` is an explicit Auto,
+  /// `1..64` a fixed bar count.
+  ///
+  /// A value saved before the defaults existed (slice 2c) was the track's
+  /// own preset: a saved `0` then meant Auto and still reads as an explicit
+  /// Auto, which is what that track recorded with.
+  Future<int?> loadTrackLengthPreset(int channel) async {
+    final value = await _store.getInt(_trackLengthPresetKey(channel));
+    return value == null || value < 0 ? null : value;
+  }
 
-  /// Saves track [channel]'s length preset (`0` = AUTO, `1..64` = fixed bars).
-  Future<void> saveTrackLengthPreset(int channel, int bars) =>
-      _store.setInt(_trackLengthPresetKey(channel), bars);
+  /// Saves track [channel]'s length preset override (`null` => follow the
+  /// default, `0` = Auto, `1..64` = fixed bars).
+  Future<void> saveTrackLengthPreset(int channel, int? bars) =>
+      _store.setInt(_trackLengthPresetKey(channel), bars ?? -1);
+
+  /// Loads the default length preset for a defining recording (`0` = Auto,
+  /// else bars); `0` when unset.
+  Future<int> loadDefaultLengthPreset() async =>
+      await _store.getInt(_defaultLengthPresetKey) ?? 0;
+
+  /// Saves the default length preset (`0` = Auto, `1..64` = fixed bars).
+  Future<void> saveDefaultLengthPreset(int bars) =>
+      _store.setInt(_defaultLengthPresetKey, bars);
+
+  /// Loads the default Loop/Once (`true` = play once then stop); `false`
+  /// when unset.
+  Future<bool> loadDefaultOnce() async =>
+      await _store.getBool(_defaultOnceKey) ?? false;
+
+  /// Saves the default Loop/Once.
+  Future<void> saveDefaultOnce({required bool value}) =>
+      _store.setBool(_defaultOnceKey, value: value);
+
+  /// Loads track [channel]'s Loop/Once override: `null` follows the default,
+  /// `true` plays once, `false` loops.
+  Future<bool?> loadTrackOnce(int channel) async {
+    final value = await _store.getInt(_trackOnceKey(channel));
+    if (value == null || value < 0) return null;
+    return value > 0;
+  }
+
+  /// Saves track [channel]'s Loop/Once override (`null` => follow the
+  /// default).
+  Future<void> saveTrackOnce(int channel, {required bool? once}) =>
+      _store.setInt(_trackOnceKey(channel), once == null ? -1 : (once ? 1 : 0));
 
   // Legacy single-route monitor keys (one route per input). No longer written
   // by the live app; read once by the v2 lane migration and then cleared. The

@@ -263,6 +263,17 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 2c (#1012, epic #1009):** the Loop settings
+  pages at the pen's size (hub, Loop mode cards with reasons and the stop
+  dialog, Recording, Tempo & click with the signature grid, Length &
+  quantize and Playback & overdub with the Tracks / Defaults / 1-8 selector
+  and field-level inheritance, Audio & tempo as a readout), opened from the
+  tray's Loop entry and the Settings rail; the tray's Loop tabs and Tracks
+  Lengths tab, the desktop Tempo and Mode sections and per-track rows, the
+  boolean quantize cubit and the sync switch are gone; the session manifest
+  carries per-track length and Once overrides; the click output and level
+  sit on the Audio tray's Device tab until the Mixer. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Accepted design, slice 2b (#1012, epic #1009):** timing ownership: one
   record timing setting (Immediately, Loop start, bar to 1/16) by default and
   per track (a per-track division joins the per-track gate in the engine),

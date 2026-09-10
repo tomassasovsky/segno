@@ -17,7 +17,6 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/looper/view/tray/tray.dart';
-import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -54,7 +53,7 @@ void main() {
   late SettingsRepository settings;
   late TracksCubit tracks;
   late InputsCubit inputs;
-  late QuantizeCubit quantize;
+  late RecordTimingCubit quantize;
   late SettingsTrayCubit tray;
 
   /// The live state stream, when a test needs the face to REACT rather than
@@ -63,6 +62,7 @@ void main() {
   StreamController<LooperState>? states;
 
   setUpAll(() {
+    registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(const LooperRecordPressed(0));
   });
 
@@ -72,6 +72,9 @@ void main() {
     repository = _MockLooperRepository();
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setRecordTiming(any()),
     ).thenReturn(EngineResult.ok);
     // The input names follow the OPEN DEVICE, so the cubit reads the
     // repository's stream the moment it is built.
@@ -118,7 +121,7 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     tracks = TracksCubit(settings: settings);
     inputs = InputsCubit(settings: settings, repository: repository);
-    quantize = QuantizeCubit(repository: repository, settings: settings);
+    quantize = RecordTimingCubit(repository: repository, settings: settings);
     tray = SettingsTrayCubit(settings: settings)..showTracksTab(tab);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).
@@ -175,7 +178,6 @@ void main() {
       expect(find.byType(ConsoleDomainPanel<TracksTab>), findsOneWidget);
       expect(find.text(l10n.trayTracksLabel), findsOneWidget);
       expect(find.text(l10n.tracksNamesTab), findsOneWidget);
-      expect(find.text(l10n.tracksLengthsTab), findsOneWidget);
       expect(find.text(l10n.tracksRoutingTab), findsOneWidget);
     });
 
@@ -311,95 +313,6 @@ void main() {
 
       expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
       expect(tracks.state.names[1], 'TRACK 2');
-    });
-  });
-
-  // ---------------------------------------------------------------- lengths
-
-  group('Tracks — Lengths', () {
-    testWidgets('a row reads auto or its bar preset', (tester) async {
-      await pump(tester, tab: TracksTab.lengths);
-      final l10n = l10nOf(tester);
-
-      expect(find.text(l10n.lengthPresetBars(8)), findsOneWidget);
-      expect(find.text(l10n.tracksLengthAuto), findsNWidgets(3));
-    });
-
-    testWidgets('the row opens IN PLACE onto the preset grid', (tester) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      expect(find.byKey(const Key('tracks_lengths_0_16')), findsNothing);
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('tracks_lengths_0_16')), findsOneWidget);
-      // The list it came from is still there — this is a drawer, not a route.
-      expect(find.byKey(const Key('tracks_lengths_row_3')), findsOneWidget);
-    });
-
-    testWidgets('the chooser GROWS open rather than appearing', (tester) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pump();
-      await tester.pump(kConsoleMotion ~/ 2);
-      final midway = tester.getSize(
-        find.byKey(const Key('tracks_lengths_slot_0')),
-      );
-      await tester.pumpAndSettle();
-      final settled = tester.getSize(
-        find.byKey(const Key('tracks_lengths_slot_0')),
-      );
-
-      // Goldens only ever photograph settled states, so the growth itself has
-      // to be asserted mid-flight or nothing pins it.
-      expect(midway.height, lessThan(settled.height));
-      expect(midway.height, greaterThan(0));
-    });
-
-    testWidgets('picking a preset writes it and closes the chooser', (
-      tester,
-    ) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('tracks_lengths_0_16')));
-      await tester.pumpAndSettle();
-
-      verify(
-        () => bloc.add(const LooperTrackLengthPresetChanged(0, 16)),
-      ).called(1);
-      expect(find.byKey(const Key('tracks_lengths_0_16')), findsNothing);
-    });
-
-    testWidgets('only one row is open at a time', (tester) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_1')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('tracks_lengths_0_16')), findsNothing);
-      expect(find.byKey(const Key('tracks_lengths_1_16')), findsOneWidget);
-    });
-
-    testWidgets('the preset set is the one Settings already offers', (
-      tester,
-    ) async {
-      await pump(tester, tab: TracksTab.lengths);
-
-      await tester.tap(find.byKey(const Key('tracks_lengths_row_0')));
-      await tester.pumpAndSettle();
-
-      for (final preset in SetupTrackLengthPresetRow.presets) {
-        expect(
-          find.byKey(Key('tracks_lengths_0_$preset')),
-          findsOneWidget,
-          reason: 'preset $preset is offered on Settings but not here',
-        );
-      }
     });
   });
 

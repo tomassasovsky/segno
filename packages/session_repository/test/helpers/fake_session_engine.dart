@@ -55,10 +55,6 @@ class FakeSessionEngine implements AudioEngine {
   /// D18); `-1` = none.
   int primaryTrack = -1;
 
-  /// Per-track One Shot flags reported by [snapshot] (B5c), keyed by
-  /// channel; absent = `false`.
-  final Map<int, bool> oneShot = {};
-
   /// Per-track record timing and decay overrides reported by [snapshot]
   /// (slice 2b), keyed by channel; absent = inherit.
   final Map<int, bool> quantizeOverride = {};
@@ -206,7 +202,6 @@ class FakeSessionEngine implements AudioEngine {
           rms: 0,
           peak: 0,
           multiple: t.multiple,
-          oneShot: oneShot[i] ?? false,
           quantizeOverride: quantizeOverride[i],
           quantizeDivOverride: quantizeDivOverride[i],
           overdubFeedbackOverride: overdubFeedbackOverride[i],

@@ -43,11 +43,15 @@ final EngineSnapshot _playingSnapshot = _playingAt(24000);
 
 /// [n] playing takes of one master loop; [emptyRedoOnly] tracks are empty
 /// with one redo step instead, [clearRestore] tracks are empty with a clear
-/// restore point.
+/// restore point. [mode] is the looper mode the engine reports and
+/// [position] the master position (vary it to make consecutive polls
+/// distinct).
 EngineSnapshot _playingTracksSnapshot(
   int n, {
   Set<int> emptyRedoOnly = const {},
   Set<int> clearRestore = const {},
+  LooperMode mode = LooperMode.multi,
+  int position = 0,
 }) => EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
@@ -62,6 +66,8 @@ EngineSnapshot _playingTracksSnapshot(
   latencyState: le.LatencyState.idle,
   measuredLatencyMs: -1,
   masterLengthFrames: 96000,
+  masterPositionFrames: position,
+  looperMode: mode,
   tracks: [
     for (var i = 0; i < n; i++)
       if (emptyRedoOnly.contains(i))
@@ -777,6 +783,51 @@ void main() {
           ..stopEngine()
           ..startEngine(const EngineConfig());
         expect(engine.lastLooperMode, LooperMode.multi);
+      });
+
+      test('a dropped request re-pushes the length presets its push moved: '
+          'the requested Multi shared the default, the revert to the '
+          'reported Free restores the override', () async {
+        engine.nextSnapshot = _playingTracksSnapshot(2, mode: LooperMode.free);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        // Free, confirmed by the engine's report.
+        expect(repo.setLooperMode(LooperMode.free), EngineResult.ok);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        repo.setTrackLengthPreset(channel: 1, bars: 8);
+        expect(engine.trackLengthPreset[1], 8);
+
+        // Requesting Multi pushes the shared default to the overridden track.
+        engine.trackLengthPreset.clear();
+        expect(repo.setLooperMode(LooperMode.multi), EngineResult.ok);
+        expect(engine.trackLengthPreset, {1: 0});
+
+        // The fake keeps reporting Free: the request is dropped after the
+        // limit, and the revert pushes the Free-mode effective value back.
+        engine.trackLengthPreset.clear();
+        for (var i = 1; i <= 11; i++) {
+          engine.nextSnapshot = _playingTracksSnapshot(
+            2,
+            mode: LooperMode.free,
+            position: 100 * i,
+          );
+          ticker.add(null);
+          await Future<void>.delayed(Duration.zero);
+        }
+        expect(engine.trackLengthPreset, isEmpty); // still pending
+        engine.nextSnapshot = _playingTracksSnapshot(
+          2,
+          mode: LooperMode.free,
+          position: 1200,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.trackLengthPreset, {1: 8});
+        expect(repo.state.transport.looperMode, LooperMode.free);
+        expect(repo.state.tracks[1].lengthPresetOverride, 8);
       });
 
       test('the restart replay is armed as a request, so the first report '
@@ -1820,6 +1871,70 @@ void main() {
       expect(repo.state.transport.overdubDecay, 100);
       expect(LooperRepository.feedbackOfDecay(25), closeTo(0.75, 1e-9));
       expect(LooperRepository.decayOfFeedback(0.75), 25);
+    });
+
+    test('the default length preset reaches every track without an override '
+        'and Multi shares it with all', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLooperMode(LooperMode.song)
+        ..setTrackLengthPreset(channel: 1, bars: 8)
+        ..setTrackLengthPreset(channel: 2, bars: 0); // an explicit Auto
+      engine.trackLengthPreset.clear();
+      repo.setDefaultLengthPreset(4);
+      expect(engine.trackLengthPreset[0], 4);
+      expect(engine.trackLengthPreset.containsKey(1), isFalse); // custom 8
+      expect(engine.trackLengthPreset.containsKey(2), isFalse); // custom Auto
+      expect(repo.state.transport.defaultLengthPresetBars, 4);
+      expect(repo.state.tracks[1].lengthPresetOverride, 8);
+      expect(repo.state.tracks[2].lengthPresetOverride, 0);
+      expect(repo.state.tracks[0].lengthPresetOverride, isNull);
+
+      // Use default: the track follows the default again.
+      repo.setTrackLengthPreset(channel: 1, bars: null);
+      expect(engine.trackLengthPreset[1], 4);
+      expect(repo.state.tracks[1].lengthPresetOverride, isNull);
+
+      // Multi: the length is shared, so every track is given the default
+      // while the overrides stay stored.
+      repo.setTrackLengthPreset(channel: 2, bars: 16);
+      engine.trackLengthPreset.clear();
+      repo.setLooperMode(LooperMode.multi);
+      expect(engine.trackLengthPreset[2], 4);
+      expect(repo.state.tracks[2].lengthPresetOverride, 16);
+
+      // A restart pushes the effective preset of every track.
+      engine.trackLengthPreset.clear();
+      repo
+        ..setLooperMode(LooperMode.song)
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.trackLengthPreset[0], 4);
+      expect(engine.trackLengthPreset[2], 16);
+    });
+
+    test('the default Once reaches every track without an override and '
+        'per-track overrides win either way', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackOnce(channel: 1, once: false)
+        ..setDefaultOnce(once: true);
+      expect(engine.trackOneShot[0], isTrue);
+      expect(engine.trackOneShot[2], isTrue);
+      expect(engine.trackOneShot[1] ?? false, isFalse); // explicit Loop
+      expect(repo.state.transport.defaultOneShot, isTrue);
+      expect(repo.state.tracks[1].oneShotOverride, isFalse);
+      expect(repo.state.tracks[0].oneShotOverride, isNull);
+
+      repo.setTrackOnce(channel: 1, once: null);
+      expect(engine.trackOneShot[1], isTrue); // follows the default again
+
+      // An explicit Loop is an override too, not "no override".
+      repo.setTrackOnce(channel: 0, once: false);
+      expect(repo.state.tracks[0].oneShotOverride, isFalse);
+      expect(engine.trackOneShot[0] ?? false, isFalse);
     });
 
     test('count-in and Sound start exclude each other in the remembered '
@@ -5107,7 +5222,13 @@ void main() {
     test(
       'setTrackLengthPreset is deferred until running, then re-applied',
       () {
-        final repo = buildRepo()..setTrackLengthPreset(channel: 1, bars: 4);
+        // Song: a per-track override is active outside Multi, where the
+        // length is shared. The start pushes only the channels the engine
+        // reports, so the fake must report the overridden one.
+        engine.nextSnapshot = _playingTracksSnapshot(2);
+        final repo = buildRepo()
+          ..setLooperMode(LooperMode.song)
+          ..setTrackLengthPreset(channel: 1, bars: 4);
         expect(engine.trackLengthPreset, isEmpty); // not running yet
 
         repo.startEngine(const EngineConfig());
@@ -5118,32 +5239,38 @@ void main() {
     test('setTrackLengthPreset applies immediately while running', () {
       buildRepo()
         ..startEngine(const EngineConfig())
+        ..setLooperMode(LooperMode.song)
         ..setTrackLengthPreset(channel: 2, bars: 8);
       expect(engine.trackLengthPreset[2], 8);
     });
 
-    test('setTrackLengthPreset(0) clears a remembered preset (AUTO)', () {
+    test('setTrackLengthPreset(null) follows the default again', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
+        ..setLooperMode(LooperMode.song)
         ..setTrackLengthPreset(channel: 1, bars: 4);
       expect(engine.trackLengthPreset[1], 4);
 
-      repo.setTrackLengthPreset(channel: 1, bars: 0);
-      expect(engine.trackLengthPreset[1], 0);
+      repo.setTrackLengthPreset(channel: 1, bars: null);
+      expect(engine.trackLengthPreset[1], 0); // the default: Auto
 
-      // A restart no longer replays the cleared preset.
+      // A restart replays the default, not the cleared override (the fake
+      // reports fewer tracks than the channel, so the push may not reach
+      // it; what matters is that no 4 comes back).
       engine.trackLengthPreset.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackLengthPreset, isEmpty);
+      expect(engine.trackLengthPreset[1] ?? 0, 0);
     });
 
     test(
       'per-track length presets re-apply on every restart (device change)',
       () {
+        engine.nextSnapshot = _playingTracksSnapshot(2);
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
+          ..setLooperMode(LooperMode.song)
           ..setTrackLengthPreset(channel: 1, bars: 3);
         expect(engine.trackLengthPreset[1], 3);
 
@@ -5154,6 +5281,98 @@ void main() {
         expect(engine.trackLengthPreset[1], 3);
       },
     );
+
+    test('setting the default length preset or Once to its current value '
+        'makes no engine call and emits nothing', () async {
+      engine.nextSnapshot = _playingTracksSnapshot(2);
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setDefaultLengthPreset(4)
+        ..setDefaultOnce(once: true);
+      addTearDown(repo.dispose);
+      final emitted = <LooperState>[];
+      final sub = repo.looperState.listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      emitted.clear();
+      engine.calls.clear();
+
+      expect(repo.setDefaultLengthPreset(4), EngineResult.ok);
+      expect(repo.setDefaultOnce(once: true), EngineResult.ok);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(engine.calls, isEmpty);
+      expect(emitted, isEmpty);
+    });
+
+    test('setTrackLengthPreset emits ONE state carrying both the override '
+        "and the engine's effective value (mock engine)", () async {
+      final mock = createMockEngine();
+      final repo = LooperRepository(
+        engine: mock.engine,
+        ticker: ticker.stream,
+      );
+      addTearDown(repo.dispose);
+      expect(repo.startEngine(mock.startConfig).isOk, isTrue);
+      // Song: the override is the effective preset outside Multi.
+      expect(repo.setLooperMode(LooperMode.song), EngineResult.ok);
+      final emitted = <LooperState>[];
+      final sub = repo.looperState.listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      emitted.clear();
+
+      expect(repo.setTrackLengthPreset(channel: 1, bars: 8), EngineResult.ok);
+      await Future<void>.delayed(Duration.zero);
+
+      // Not a stale projection first and the engine's value one state later.
+      expect(emitted, hasLength(1));
+      expect(emitted.single.tracks[1].lengthPresetOverride, 8);
+      expect(emitted.single.tracks[1].lengthPresetBars, 8);
+      expect(emitted.single.tracks[0].lengthPresetOverride, isNull);
+    });
+
+    test('a mode change pushes only the length presets it moves: none '
+        'between two non-Multi modes, the overridden tracks across the '
+        'Multi boundary, and never One Shot', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setDefaultLengthPreset(4)
+        ..setLooperMode(LooperMode.sync)
+        ..setTrackLengthPreset(channel: 2, bars: 8)
+        ..setTrackOnce(channel: 1, once: true);
+      Iterable<String> pushes() => engine.calls.where(
+        (call) => call == 'setTrackLengthPreset' || call == 'setOneShot',
+      );
+
+      // Sync -> Song: neither shares the default, nothing to push.
+      engine.calls.clear();
+      engine.trackLengthPreset.clear();
+      expect(repo.setLooperMode(LooperMode.song), EngineResult.ok);
+      expect(pushes(), isEmpty);
+      expect(engine.trackLengthPreset, isEmpty);
+
+      // Free -> Multi: the overridden track takes the shared default; the
+      // tracks on the default already hold it, and Once is untouched.
+      expect(repo.setLooperMode(LooperMode.free), EngineResult.ok);
+      engine.calls.clear();
+      engine.trackLengthPreset.clear();
+      engine.trackOneShot.clear();
+      expect(repo.setLooperMode(LooperMode.multi), EngineResult.ok);
+      expect(pushes(), ['setTrackLengthPreset']);
+      expect(engine.trackLengthPreset, {2: 4});
+      expect(engine.trackOneShot, isEmpty);
+      expect(repo.state.tracks[2].lengthPresetOverride, 8); // still stored
+
+      // Multi -> Free: the override is the effective preset again.
+      engine.calls.clear();
+      engine.trackLengthPreset.clear();
+      expect(repo.setLooperMode(LooperMode.free), EngineResult.ok);
+      expect(pushes(), ['setTrackLengthPreset']);
+      expect(engine.trackLengthPreset, {2: 8});
+      expect(engine.trackOneShot, isEmpty);
+    });
 
     test('crownPrimary is deferred until running, then re-applied', () {
       final repo = buildRepo()..crownPrimary(channel: 2);
@@ -5205,44 +5424,58 @@ void main() {
       expect(engine.lastCrownedChannel, isNull);
     });
 
-    test('setOneShot is deferred until running, then re-applied', () {
-      final repo = buildRepo()..setOneShot(channel: 1, oneShot: true);
+    test('setTrackOnce is deferred until running, then re-applied', () {
+      engine.nextSnapshot = _playingTracksSnapshot(2);
+      final repo = buildRepo()..setTrackOnce(channel: 1, once: true);
       expect(engine.trackOneShot, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
       expect(engine.trackOneShot[1], isTrue);
     });
 
-    test('setOneShot applies immediately while running', () {
+    test('setTrackOnce applies immediately while running', () {
       buildRepo()
         ..startEngine(const EngineConfig())
-        ..setOneShot(channel: 2, oneShot: true);
+        ..setTrackOnce(channel: 2, once: true);
       expect(engine.trackOneShot[2], isTrue);
     });
 
-    test('setOneShot(false) clears a remembered flag', () {
+    test('setTrackOnce(once: false) stores an explicit Loop override; '
+        'once: null removes the override', () {
+      engine.nextSnapshot = _playingTracksSnapshot(2);
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setOneShot(channel: 1, oneShot: true);
+        ..setTrackOnce(channel: 1, once: true);
       expect(engine.trackOneShot[1], isTrue);
+      expect(repo.state.tracks[1].oneShotOverride, isTrue);
 
-      repo.setOneShot(channel: 1, oneShot: false);
+      // An explicit Loop is stored as an override of its own.
+      repo.setTrackOnce(channel: 1, once: false);
       expect(engine.trackOneShot[1], isFalse);
+      expect(repo.state.tracks[1].oneShotOverride, isFalse);
 
-      // A restart no longer replays the cleared flag.
+      // A restart replays the explicit Loop, never the earlier Once.
       engine.trackOneShot.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackOneShot, isEmpty);
+      expect(engine.trackOneShot[1], isFalse);
+
+      // Use default: the entry is gone and the track follows the default.
+      repo
+        ..setDefaultOnce(once: true)
+        ..setTrackOnce(channel: 1, once: null);
+      expect(repo.state.tracks[1].oneShotOverride, isNull);
+      expect(engine.trackOneShot[1], isTrue);
     });
 
     test(
       'per-track one-shot flags re-apply on every restart (device change)',
       () {
+        engine.nextSnapshot = _playingTracksSnapshot(4);
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
-          ..setOneShot(channel: 3, oneShot: true);
+          ..setTrackOnce(channel: 3, once: true);
         expect(engine.trackOneShot[3], isTrue);
 
         engine.trackOneShot.clear();
@@ -5437,12 +5670,8 @@ void main() {
       bool muted = false,
       int outputMask = 0x3,
       int inputChannel = 0,
-      int lengthPresetBars = 0,
-      bool oneShot = false,
     }) => SessionRigTrack(
       channel: channel,
-      lengthPresetBars: lengthPresetBars,
-      oneShot: oneShot,
       lanes: [
         SessionRigLane(
           lane: 0,
@@ -5593,6 +5822,7 @@ void main() {
         engine.nextSnapshot = clearedSnapshot(2);
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
+          ..setLooperMode(LooperMode.song)
           // A live/prior session left track 0 at a 4-bar preset.
           ..setTrackLengthPreset(channel: 0, bars: 4);
         addTearDown(repo.dispose);
@@ -5618,7 +5848,7 @@ void main() {
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackLengthPreset.containsKey(0), isFalse);
+        expect(engine.trackLengthPreset[0], 0);
       },
     );
 
@@ -5627,19 +5857,21 @@ void main() {
       '(A6)',
       () async {
         engine.nextSnapshot = clearedSnapshot(2);
-        final repo = buildRepo()..startEngine(const EngineConfig());
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLooperMode(LooperMode.song);
         addTearDown(repo.dispose);
 
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
+            // Song: in Multi the length is shared and the loaded preset
+            // would stay stored but inactive.
+            looperMode: LooperMode.song,
             tracks: [
-              rigTrack(
-                0,
-                Float32List.fromList([1, 1, 1, 1]),
-                lengthPresetBars: 8,
-              ),
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
+            lengthPresetOverrides: const {0: 8},
           ),
           clearPollInterval: Duration.zero,
         );
@@ -5657,7 +5889,7 @@ void main() {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           // A live/prior session left track 0 marked One Shot.
-          ..setOneShot(channel: 0, oneShot: true);
+          ..setTrackOnce(channel: 0, once: true);
         addTearDown(repo.dispose);
         expect(engine.trackOneShot[0], isTrue);
 
@@ -5681,7 +5913,7 @@ void main() {
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackOneShot.containsKey(0), isFalse);
+        expect(engine.trackOneShot[0], isFalse);
       },
     );
 
@@ -5696,8 +5928,9 @@ void main() {
           SessionRig(
             baseLengthFrames: 4,
             tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1]), oneShot: true),
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
+            onceOverrides: const {0: true},
           ),
           clearPollInterval: Duration.zero,
         );
@@ -5707,59 +5940,69 @@ void main() {
     );
 
     test(
-      'restores a One Shot flag pre-armed on a CONTENT-LESS channel via '
-      'rig.oneShotChannels (independent review of #295): channel 1 has no '
-      'SessionRigTrack (no content), so only the session-level set can '
-      'restore it — a plain per-track restore would silently drop it',
+      'restores the length and Loop/Once OVERRIDES the rig carries and puts '
+      'every other track on the defaults (slice 2c): a track without an '
+      'override follows, and a stale override on a channel the rig does '
+      'not mention is dropped',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
-        final repo = buildRepo()..startEngine(const EngineConfig());
+        engine.nextSnapshot = clearedSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setDefaultLengthPreset(4)
+          ..setDefaultOnce(once: true)
+          // A live/prior session left overrides on track 1, which the rig
+          // below says nothing about.
+          ..setTrackLengthPreset(channel: 1, bars: 32)
+          ..setTrackOnce(channel: 1, once: false);
         addTearDown(repo.dispose);
 
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
+            // Song: outside Multi the override is the effective preset.
+            looperMode: LooperMode.song,
             tracks: [
               rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+              rigTrack(1, Float32List.fromList([1, 1, 1, 1])),
             ],
-            oneShotChannels: const {1},
+            // Track 2 has no content: its override still restores, since
+            // the overrides ride the rig, not the tracks.
+            lengthPresetOverrides: const {0: 8, 2: 16},
+            onceOverrides: const {0: false, 2: true},
           ),
           clearPollInterval: Duration.zero,
         );
 
+        // Track 0: the overrides, verbatim, and the engine holds them.
+        final tracks = repo.state.tracks;
+        expect(tracks[0].lengthPresetOverride, 8);
+        expect(tracks[0].oneShotOverride, isFalse);
+        expect(engine.trackLengthPreset[0], 8);
         expect(engine.trackOneShot[0], isFalse);
+        // Track 1: the rig says nothing, so the stale overrides are gone
+        // and it follows the defaults.
+        expect(tracks[1].lengthPresetOverride, isNull);
+        expect(tracks[1].oneShotOverride, isNull);
+        expect(engine.trackLengthPreset[1], 4);
         expect(engine.trackOneShot[1], isTrue);
+        // Track 2: no content, but the rig's overrides restore all the
+        // same.
+        expect(tracks[2].lengthPresetOverride, 16);
+        expect(tracks[2].oneShotOverride, isTrue);
+        expect(engine.trackLengthPreset[2], 16);
+        expect(engine.trackOneShot[2], isTrue);
+        expect(repo.state.transport.defaultLengthPresetBars, 4);
+        expect(repo.state.transport.defaultOneShot, isTrue);
 
-        // Restored through the remembered cache too, so a restart replays it.
+        // A restart replays the loaded overrides and defaults, never the
+        // stale ones.
+        engine.trackLengthPreset.clear();
         engine.trackOneShot.clear();
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackOneShot[1], isTrue);
-      },
-    );
-
-    test(
-      'ignores an out-of-range channel in rig.oneShotChannels rather than '
-      'pushing an invalid channel to the engine (a manifest saved on a '
-      'build with more physical tracks than this engine)',
-      () async {
-        engine.nextSnapshot = clearedSnapshot(2);
-        final repo = buildRepo()..startEngine(const EngineConfig());
-        addTearDown(repo.dispose);
-
-        await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 4,
-            tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
-            ],
-            oneShotChannels: const {7},
-          ),
-          clearPollInterval: Duration.zero,
-        );
-
-        expect(engine.trackOneShot.containsKey(7), isFalse);
+        expect(engine.trackLengthPreset, {0: 8, 1: 4, 2: 16});
+        expect(engine.trackOneShot, {0: false, 1: true, 2: true});
       },
     );
 

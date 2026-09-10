@@ -192,7 +192,10 @@ Future<AutoStartResult> tryAutoStartEngine({
     ..setDefaultMultiple(multiple: await settings.loadDefaultMultiple())
     // The default overdub decay (slice 2b), for the same reason: the cubit
     // that owns it may not have loaded before the first overdub pass.
-    ..setOverdubDecay(await settings.loadOverdubDecay());
+    ..setOverdubDecay(await settings.loadOverdubDecay())
+    // The default length preset and Loop/Once (slice 2c), likewise.
+    ..setDefaultLengthPreset(await settings.loadDefaultLengthPreset())
+    ..setDefaultOnce(once: await settings.loadDefaultOnce());
 
   // Restore per-track transport overrides and every lane's routing / mix /
   // effects so saved multi-lane setups are reapplied on launch (mirroring the
@@ -213,11 +216,15 @@ Future<AutoStartResult> tryAutoStartEngine({
       repository.setTrackMultiple(channel: track.channel, multiple: multiple);
     }
     final lengthPreset = await settings.loadTrackLengthPreset(track.channel);
-    if (lengthPreset > 0) {
+    if (lengthPreset != null) {
       repository.setTrackLengthPreset(
         channel: track.channel,
         bars: lengthPreset,
       );
+    }
+    final once = await settings.loadTrackOnce(track.channel);
+    if (once != null) {
+      repository.setTrackOnce(channel: track.channel, once: once);
     }
     // Restore the saved lane count first so the engine allocates the added
     // lanes before they are configured below.

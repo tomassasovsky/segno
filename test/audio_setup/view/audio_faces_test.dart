@@ -87,8 +87,9 @@ void main() {
   late SettingsRepository settings;
   late AudioSetupCubit audio;
   late InputsCubit inputs;
-  late QuantizeCubit quantize;
+  late RecordTimingCubit quantize;
   late RecordOptionsCubit options;
+  late TempoCubit tempo;
   late SettingsTrayCubit tray;
 
   /// The engine's own state stream, so a test can push a tick and watch the
@@ -96,6 +97,7 @@ void main() {
   late StreamController<LooperState> engine;
 
   setUpAll(() {
+    registerFallbackValue(RecordTiming.immediately);
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(const LooperRecordPressed(0));
   });
@@ -125,6 +127,9 @@ void main() {
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setRecordTiming(any()),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
@@ -133,6 +138,8 @@ void main() {
     when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
+    when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
+    when(() => repository.setClickVolume(any())).thenReturn(EngineResult.ok);
   });
 
   AppLocalizations l10nOf(WidgetTester tester) =>
@@ -172,8 +179,9 @@ void main() {
       deviceRefreshInterval: Duration.zero,
     );
     inputs = InputsCubit(settings: settings, repository: repository);
-    quantize = QuantizeCubit(repository: repository, settings: settings);
+    quantize = RecordTimingCubit(repository: repository, settings: settings);
     options = RecordOptionsCubit(repository: repository, settings: settings);
+    tempo = TempoCubit(repository: repository, settings: settings);
     tray = SettingsTrayCubit(settings: settings)
       ..showAudioTab(tab)
       ..showDestination(destination);
@@ -183,6 +191,7 @@ void main() {
     addTearDown(() => unawaited(inputs.close()));
     addTearDown(() => unawaited(quantize.close()));
     addTearDown(() => unawaited(options.close()));
+    addTearDown(() => unawaited(tempo.close()));
     addTearDown(() => unawaited(tray.close()));
 
     await tester.pumpWidget(
@@ -204,6 +213,7 @@ void main() {
               BlocProvider.value(value: inputs),
               BlocProvider.value(value: quantize),
               BlocProvider.value(value: options),
+              BlocProvider.value(value: tempo),
               BlocProvider.value(value: tray),
             ],
             child: Scaffold(
@@ -243,6 +253,32 @@ void main() {
       await tester.tap(find.byKey(const Key('audio_rate_row')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('audio_buffer_128')), findsNothing);
+    });
+
+    testWidgets('the click routing rides the Device tab, below the device', (
+      tester,
+    ) async {
+      // Output routing and click gain are facts about the rig's outputs, so
+      // they live here rather than on the Loop pages that decide WHEN the
+      // click sounds — and a fresh unit's saved mask is 0, which the engine
+      // reads as no output at all, so this is the one route to an audible
+      // click until the Mixer lands.
+      await pump(tester);
+      final device = find.byKey(const Key('audio_device_row'));
+      final click = find.byKey(const Key('audio_click_card'));
+      expect(click, findsOneWidget);
+      expect(
+        tester.getTopLeft(click).dy,
+        greaterThan(tester.getBottomLeft(device).dy),
+      );
+
+      await tester.tap(find.byKey(const Key('audio_click_output_row')));
+      await tester.pumpAndSettle();
+      // The open Scarlett has twenty outputs, and the grid lists them all.
+      expect(find.byKey(const Key('audio_click_output_19')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('audio_click_output_0')));
+      await tester.pumpAndSettle();
+      verify(() => repository.setClickOutput(0x1)).called(1);
     });
 
     testWidgets('the device list GROWS open rather than appearing', (
@@ -617,14 +653,16 @@ void main() {
         deviceRefreshInterval: Duration.zero,
       );
       inputs = InputsCubit(settings: settings, repository: repository);
-      quantize = QuantizeCubit(repository: repository, settings: settings);
+      quantize = RecordTimingCubit(repository: repository, settings: settings);
       options = RecordOptionsCubit(repository: repository, settings: settings);
+      tempo = TempoCubit(repository: repository, settings: settings);
       tray = SettingsTrayCubit(settings: settings)
         ..showDestination(SettingsTrayDestination.audio);
       addTearDown(() => unawaited(audio.close()));
       addTearDown(() => unawaited(inputs.close()));
       addTearDown(() => unawaited(quantize.close()));
       addTearDown(() => unawaited(options.close()));
+      addTearDown(() => unawaited(tempo.close()));
       addTearDown(() => unawaited(tray.close()));
 
       await tester.pumpWidget(
@@ -646,6 +684,7 @@ void main() {
                 BlocProvider.value(value: inputs),
                 BlocProvider.value(value: quantize),
                 BlocProvider.value(value: options),
+                BlocProvider.value(value: tempo),
                 BlocProvider.value(value: tray),
               ],
               child: const Scaffold(
@@ -782,7 +821,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('audio_quantize_switch')));
       await tester.pumpAndSettle();
-      expect(quantize.state, isTrue);
+      expect(quantize.state.quantize, isTrue);
 
       await tester.tap(find.byKey(const Key('audio_rec_dub_switch')));
       await tester.pumpAndSettle();

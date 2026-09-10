@@ -28,6 +28,9 @@ void main() {
     when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setDefaultLengthPreset(any()),
+    ).thenReturn(EngineResult.ok);
     looperStates = StreamController<LooperState>.broadcast();
     when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
   });
@@ -89,6 +92,17 @@ void main() {
         expect(await settings.loadDefaultMultiple(), 2);
       },
     );
+    blocTest<RecordOptionsCubit, RecordOptions>(
+      'setDefaultLengthBars emits, persists and applies the clamped default',
+      build: build,
+      act: (cubit) => cubit.setDefaultLengthBars(80),
+      expect: () => [const RecordOptions(defaultLengthBars: 64)],
+      verify: (_) async {
+        expect(await settings.loadDefaultLengthPreset(), 64);
+        verify(() => repository.setDefaultLengthPreset(64)).called(1);
+      },
+    );
+
     blocTest<RecordOptionsCubit, RecordOptions>(
       'turning Sound start on persists the count-in as off (the engine '
       'clears it, D9)',

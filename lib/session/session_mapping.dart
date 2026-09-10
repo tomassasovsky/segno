@@ -62,6 +62,30 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
   masterChain: _encodedMasterChain(looper),
 );
 
+/// Gathers the rig's loop settings (slice 2c) — the length preset and
+/// Loop/Once defaults plus each track's override of them — from [looper] into
+/// the shape a save persists. Read from the repository, not the engine: the
+/// engine only holds each track's EFFECTIVE preset and Once flag, and
+/// persisting those would make the restored override set depend on whatever
+/// default the device holds at load time.
+SessionLoopSettings loopSettingsFromLooper(LooperRepository looper) {
+  final state = looper.state;
+  return SessionLoopSettings(
+    defaultLengthPresetBars: state.transport.defaultLengthPresetBars,
+    defaultOnce: state.transport.defaultOneShot,
+    lengthPresetOverrides: {
+      for (final track in state.tracks)
+        if (track.lengthPresetOverride != null)
+          track.channel: track.lengthPresetOverride!,
+    },
+    onceOverrides: {
+      for (final track in state.tracks)
+        if (track.oneShotOverride != null)
+          track.channel: track.oneShotOverride!,
+    },
+  );
+}
+
 /// The Master insert as an envelope string, or the manifest's own "no chain"
 /// spelling (`''`) when the rig has no Master state at all — so a default rig
 /// does not persist a redundant envelope, and the manifest has ONE way to say
@@ -156,11 +180,11 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   // off the manifest rather than through `_rigTracks`.
   looperMode: bundle.session.looperMode,
   primaryTrack: bundle.session.primaryTrack,
-  // One Shot (post-B5c independent review fix) — also session-level and read
-  // straight off the manifest, so a channel armed with no content (and thus
-  // no `_rigTracks` entry) still restores; see `SessionRig.oneShotChannels`'s
-  // doc.
-  oneShotChannels: bundle.session.oneShotChannels.toSet(),
+  // The length preset and Loop/Once overrides (slice 2c) — session-level on
+  // both sides, keyed by channel, so a channel with no content (and so no
+  // track entry) still restores its override.
+  lengthPresetOverrides: bundle.session.lengthPresetOverrides,
+  onceOverrides: bundle.session.onceOverrides,
   // The session's own defaults (slice 2b), beside the per-track overrides in
   // `_rigTracks`: a track that follows the default has to find the default
   // the session was saved with, not whatever the app was last set to.
@@ -224,8 +248,6 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
         SessionRigTrack(
           channel: track.channel,
           lanes: lanes,
-          lengthPresetBars: track.lengthPresetBars,
-          oneShot: track.oneShot,
           recordTiming: track.recordTiming,
           overdubDecay: track.overdubDecay,
         ),

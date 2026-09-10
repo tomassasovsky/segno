@@ -110,9 +110,9 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setOneShot(
+      () => repository.setTrackOnce(
         channel: any(named: 'channel'),
-        oneShot: any(named: 'oneShot'),
+        once: any(named: 'once'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -443,6 +443,17 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperTrackOnceChanged forwards the override to the repository and '
+    'persists it',
+    build: buildBlocWithSettings,
+    act: (bloc) => bloc.add(const LooperTrackOnceChanged(2, once: true)),
+    verify: (_) async {
+      verify(() => repository.setTrackOnce(channel: 2, once: true)).called(1);
+      expect(await trackSettings.loadTrackOnce(2), isTrue);
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperTrackOverdubDecayChanged forwards the override to the repository '
     'and persists it',
     build: buildBlocWithSettings,
@@ -472,81 +483,6 @@ void main() {
     verify: (_) => verify(
       () => repository.setTrackLengthPreset(channel: 1, bars: 8),
     ).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperOneShotToggled forwards the flag to the repository (B5c)',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperOneShotToggled(1, oneShot: true)),
-    verify: (_) => verify(
-      () => repository.setOneShot(channel: 1, oneShot: true),
-    ).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperAllOneShotToggled sweeps every track the repository is holding, '
-    'from the repository snapshot rather than the bloc state — the console '
-    "switch's whole point is that no half-applied sweep is observable",
-    build: () {
-      when(() => repository.state).thenReturn(
-        const LooperState(
-          tracks: [
-            Track(oneShot: true),
-            Track(channel: 1),
-            Track(channel: 2, oneShot: true),
-          ],
-        ),
-      );
-      return buildBloc();
-    },
-    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: true)),
-    verify: (_) {
-      for (final channel in [0, 1, 2]) {
-        verify(
-          () => repository.setOneShot(channel: channel, oneShot: true),
-        ).called(1);
-      }
-    },
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperAllOneShotToggled carries the flag it was given — clearing the '
-    'switch clears every track, it does not toggle each one',
-    build: () {
-      when(() => repository.state).thenReturn(
-        const LooperState(
-          tracks: [Track(oneShot: true), Track(channel: 1, oneShot: true)],
-        ),
-      );
-      return buildBloc();
-    },
-    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: false)),
-    verify: (_) {
-      verify(
-        () => repository.setOneShot(channel: 0, oneShot: false),
-      ).called(1);
-      verify(
-        () => repository.setOneShot(channel: 1, oneShot: false),
-      ).called(1);
-      verifyNever(
-        () => repository.setOneShot(
-          channel: any(named: 'channel'),
-          oneShot: true,
-        ),
-      );
-    },
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperAllOneShotToggled with no tracks writes nothing',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: true)),
-    verify: (_) => verifyNever(
-      () => repository.setOneShot(
-        channel: any(named: 'channel'),
-        oneShot: any(named: 'oneShot'),
-      ),
-    ),
   );
 
   blocTest<LooperBloc, LooperState>(

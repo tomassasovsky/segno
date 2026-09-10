@@ -108,6 +108,7 @@ class SessionCubit extends Cubit<SessionState> {
     await _repository.save(
       await _repository.bundlePath(name),
       chains: chainsFromLooper(_looper),
+      loopSettings: loopSettingsFromLooper(_looper),
       pedalBindings: _currentPedalBindings(),
     );
     return _ActionResult(
@@ -135,6 +136,7 @@ class SessionCubit extends Cubit<SessionState> {
       await _repository.save(
         await _repository.bundlePath(name),
         chains: chainsFromLooper(_looper),
+        loopSettings: loopSettingsFromLooper(_looper),
         pedalBindings: _currentPedalBindings(),
       );
       // Re-list, like every other mutation: the sessions dialog stays open by
