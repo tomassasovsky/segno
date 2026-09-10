@@ -323,6 +323,15 @@ class _AppState extends State<App> {
               repository: context.read<LooperRepository>(),
             ),
           ),
+          // Destination names, the output-side twin of the inputs above and
+          // eager for the same reason: they key off the OPEN DEVICE.
+          BlocProvider(
+            lazy: false,
+            create: (context) => OutputsCubit(
+              settings: context.read<SettingsRepository>(),
+              repository: context.read<LooperRepository>(),
+            ),
+          ),
           // The tuner is lazy on purpose, unlike its neighbours: it subscribes
           // to the looper stream and arms the engine, and a console that never
           // opens the Tuner face should pay for neither.

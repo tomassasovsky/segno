@@ -1049,3 +1049,322 @@ surfaces.
 
 Slice 3c: the Audio routing and Output setup surfaces.
 
+### Slice 3c — the Audio routing and Output setup surfaces
+
+Same branch family, `claude/segno-slice3c-routing-surfaces`, stacked on 3b's
+PR #1018.
+
+#### Decisions
+
+- **One route, four tasks.** The pen draws Input setup, Recording inputs,
+  Output routing and Output setup as four pills in one nav row, not as four
+  routes, so they are page state: switching tasks keeps the route and its
+  Back button pointing at Settings. `openAudioRouting()` joins
+  `openLoopSettings()` in `segno_navigator.dart`, with its own re-entrancy
+  guard cleared by `resetSegnoNavigatorForTest`.
+- **The frame is reused, not forked.** `LoopPenCanvas` and
+  `LoopSettingsFrame` already draw the pen's 1920 x 1080 canvas, its 96 px
+  top bar, the crumb and Stage, so Audio routing imports them. Its children
+  are positioned in the 1720 x 984 main area, which is why every `top` in
+  the page is the pen's screen y minus 96.
+- **The path is Settings, not a ninth rail domain.** The accepted design
+  says "Settings → Audio routing", so the desktop Settings rail gains a
+  Routing row beside Loop settings and the tray rail is left alone. A ninth
+  tray row collapsed the pen's fill spacer between the domains and
+  Brightness, which the rail's own test measures.
+- **Input setup** reads the slice-3a projection and dispatches the slice-3b
+  events that had no consumer until now: `LooperInputPanChanged`,
+  `LooperInputBalanceChanged`, `LooperInputTrimChanged` and
+  `LooperInputPairChanged`. A linked pair shows one Balance where a mono jack
+  shows Pan, and names its two members with their ordered left and right
+  identities. The trim slider lands on the accepted half-decibel step, so the
+  readout can show what the engine holds.
+- **The lock is derived from the projection.** The repository keeps its
+  "armed or capturing" predicate private, so the page re-derives it from the
+  tracks it can see and says why the format is frozen, rather than drawing a
+  control that would be refused.
+- **Clipping is a fact about the source**, so the meter's tail lights on the
+  engine's held clip flag rather than on the decayed level, and the note
+  under the trim becomes the accepted sentence while it holds.
+- **Eighteen jacks scroll.** The pen draws four cards; a device with more
+  inputs scrolls the row rather than shrinking the cards past legibility.
+
+#### Checks
+
+- Dart: root 2253 with the test library built; `dart analyze` clean at the
+  root; `bloc lint` clean; the two settings goldens the new rail row changes
+  regenerated and eyeballed (715 px each, the row and nothing else).
+
+### Recording inputs
+
+- **A track's sources are a track-scoped choice**, so the task carries its own
+  scope row rather than following the stage selection: the eight tracks are
+  numbered buttons and the chosen track's name is shown beside them.
+- **Lane semantics are the retiring dialog's, kept verbatim.** Unchecking a
+  jack frees that lane in place, because compacting would renumber the lanes
+  and move a recorded take onto another source. A new jack fills an already
+  free lane; only when every lane is taken does the track grow, and the growth
+  is dispatched before the routing so the lane exists before it is addressed.
+  A track already at `kMaxLanes` refuses rather than addressing a lane the
+  engine can never have.
+- **The lock is per track.** A capturing or armed track says why its jacks are
+  frozen; its siblings stay editable in the same view.
+
+#### Checks
+
+- Dart: root 2230 passing and 35 skipped, `dart analyze` clean over `lib` and
+  `test`, `bloc lint` clean over 235 files, both arb files at 1081 keys with
+  no key present in one and missing from the other.
+- Every behavioural claim above is mutation-checked: ignoring the lock,
+  growing after routing instead of before, never reusing a freed lane,
+  freeing the wrong lane, drawing nothing as recorded, and never showing the
+  empty note each fail exactly one test and no other.
+
+### Destination names
+
+- **The unit is the destination, not the jack.** A destination is a stereo
+  pair (bus `k` = outputs `2k` and `2k+1`), which is what a player patches and
+  names; naming the jacks separately would ask for two names for one cable
+  pair and leave every routing surface to guess which to show. The per-jack
+  output gate keeps its own key, because a name and a gate are different facts
+  about different units.
+- **Names are per device**, like input names, and an unnamed destination falls
+  back to its jack numbers in a short form so a card can carry the full label
+  above the name without both lines saying the same words.
+- An odd-channel device leaves the last destination holding a single jack; it
+  is labelled and masked as one rather than promising a socket the interface
+  has not got.
+
+### Output routing
+
+- **Each source kind carries its own destinations**, per the accepted rule
+  that a recording-only track route never implicitly becomes a live input
+  route. Live inputs route through their monitor, tracks through their lanes,
+  the click through its own output mask.
+- **A track's route is the whole track's.** Every lane is written, because
+  writing lane 0 alone would leave the rest going elsewhere while the card
+  claimed a route half the track has. Lane 0 is read back as the track's
+  answer; lanes can only disagree by way of a session saved before this
+  surface owned the route, and writing every lane is what puts them in step.
+  This is the track-wide route `setLaneCount` deferred to this slice.
+- **Either jack of a pair means the destination is reached**, so a card never
+  offers to switch on something already partly on.
+- **Hear live belongs to the live inputs** and to no other kind. Auto says
+  whether it is hearing anything right now, and a monitor muted in Mixer says
+  so rather than looking switched on.
+
+#### Deviation from the pen
+
+The accepted design's third source kind is "Backing & click". This console has
+no backing player: there is no engine, repository or bloc seam for one
+anywhere. The kind ships with the accepted label and the click alone, because
+a card for a source that routes nothing would be a control that does nothing.
+The backing card lands with the backing player.
+
+#### Checks
+
+- Dart: root 2254 passing and 35 skipped, `looper_repository` 468 passing,
+  `dart analyze` clean over both packages, `bloc lint` clean over 239 files,
+  both arb files at 1099 keys with no key in one and missing from the other.
+- Mutation-checked: ignoring what is armed in the Auto note, routing lane 0
+  only, reading the monitor's route for the click, a destination that can only
+  be added, Hear live shown for every kind, a half-driven pair reading as
+  unreached, and an odd-channel device claiming the jack it has not got each
+  fail exactly the tests that name them.
+
+### Output setup
+
+- **Every fact is the chosen destination's own**: format, level, balance and
+  mute are per destination, and the page opens on the master because that is
+  the destination a player meets first.
+- **The meters read that destination's own jacks**, outputs `2k` and `2k+1`,
+  and a muted destination meters silence whatever the engine's last block
+  said. Below the meter's floor the readout says nothing is coming out rather
+  than printing a large negative number that would read as a level.
+- **The routing meter's fill was wrong and is fixed here.** It lit cells in
+  proportion to amplitude while the scale under it prints four evenly spaced
+  ticks, so a signal at -24 dBFS lit a sixteenth of the meter under a label
+  that says a third. It is not the stage's `peakMeterFill` either: the two
+  surfaces print different scales, and each meter has to agree with the one
+  drawn under it.
+
+#### Checks
+
+- Dart: root 2263 passing and 35 skipped, `dart analyze` clean over `lib` and
+  `test`, `bloc lint` clean over 240 files, both arb files at 1109 keys with
+  no key in one and missing from the other.
+- Mutation-checked: editing the master whatever card is chosen, metering the
+  first pair whatever destination is chosen, metering a muted destination's
+  last block, reading the balance slider as a level, a mute that never says it
+  is muted, a Mono note that always shows, and a decibel-linear meter fill
+  each fail exactly the tests that name them.
+
+### The name pages
+
+- **The header action names the side of the rig the task is on**: the two
+  input tasks offer Input names, the two output tasks Output names, exactly
+  as the pen draws them.
+- **They are page state, not routes.** The pen draws them behind the same
+  frame, so Back returns to the task they were opened from rather than out to
+  Settings, and the tab pills give way to the list.
+- **The output list is one row per destination**, not per jack, because that
+  is the unit a name belongs to.
+- Renaming reuses the console's one rename sheet, with an empty name allowed:
+  emptying the field is how a port is handed back its numbers.
+
+#### Checks
+
+- Dart: root 2267 passing and 35 skipped, `dart analyze` clean over `lib` and
+  `test`, `bloc lint` clean over 241 files, both arb files at 1115 keys with
+  no key in one and missing from the other.
+- Mutation-checked: a header action that always names the inputs, a Back that
+  leaves the route from the list, an output list drawn per jack, and a rename
+  that is dropped each fail exactly the tests that name them.
+
+### What retired with it
+
+- **The Tracks routing tab and its per-track routing dialog.** They were the
+  only dispatchers of the lane routing events, which the two new tasks now
+  own. Their per-track quantize group is not lost: slice 2's Length & quantize
+  page already writes the same override, and the dialog's three-way control
+  was reading a derived view of it.
+- **The interim click output card**, on the console's Device tab, and the
+  output chips of the desktop settings' click section. Where the click goes is
+  Output routing's; how loud it is has nowhere else to live until the Mixer
+  holds it, so the section keeps the level and was renamed for what it is.
+- **The Tracks tray panel lost its strip**, because a lone pill over a single
+  body chooses nothing.
+- Twenty-nine strings and five goldens went with those surfaces.
+
+### Review round 1
+
+Six reviews ran over the slice: correctness, removed behaviour, pen geometry,
+test quality, and one each over the two engine pull requests beneath it that no review
+had covered.
+What they found in 3c, and what it cost:
+
+- **Audio routing was unreachable on the appliance.** The accepted design
+  reaches it from Settings; on the console the tray IS Settings, and the
+  desktop settings page is behind a right-click, a key and a menu bar. A row
+  on the Audio face's Device tab opens the route, and the click's level rides
+  with it — the console had lost that too when the interim card retired.
+- **The format lock asked about one jack**, while the repository refuses the
+  pair change when EITHER member is armed. The control was drawn live and
+  silently refused. It now asks about both, from one predicate.
+- **Nothing clamped a chosen source or destination to the open device.** After
+  an interface narrows, the page fell back to the first card while the
+  controls went on editing the old one: the trim wrote a jack with no card,
+  the level wrote a bus with no jack, and the lock described a third thing.
+  Each projection now clamps, and everything below reads the clamped value.
+- **A route saved on a wider rig could not be switched off.** Setting a
+  destination must not claim a socket the interface has not got; clearing must
+  reach both jacks. They are now different masks, and a stale route keeps a
+  card of its own so it can be cleared at all.
+- **"Reaches nothing" tested the raw mask**, so a source driving only jacks
+  the device has not got looked routed while being silent.
+- **A jack a track records beyond the device had no card**, so a lane from a
+  wider rig was invisible, could not be switched off, and survived every
+  restart. Those jacks
+  now get their own cards.
+- **A full track's cards looked live** and did nothing when tapped. They are
+  drawn inert, with a sentence saying why.
+- **Input setup was 96 px too low**, the whole tab: it used the pen's screen
+  origin where its siblings used the main-area one. With that corrected the
+  tab's internals line up. The tab also gained the meter readout it was
+  missing, the clip line the pen puts beside the trim note rather than in
+  place of it, the pen's own card ordinals, and the pair member's side on both
+  the card and the trim label.
+- **The clip tail was four cells, the pen draws two**, and the output meter's
+  cells are 24 high, not the input meter's 28.
+- **The name rows were a pill inside a row**; the pen makes the whole
+  1708 x 108 row the button.
+- **Two tests were vacuous**: the rename guard's real value is the store write
+  it avoids, and the Routing rail row asserted a widget rather than a route.
+  Both now test what the code does, and the route's own guard is covered where
+  it lives.
+
+#### Checks
+
+- Dart: root 2243 passing and 35 skipped, `looper_repository` 469 passing,
+  `dart analyze` clean, `bloc lint` clean over 238 files, both arb files at
+  1091 keys.
+- Every fix above is mutation-checked, and two of the first tests written for
+  them were themselves vacuous under mutation and were rewritten.
+- Six goldens added for the four tasks and the two name pages, which had none;
+  the console Device tab's golden regenerated for the new row.
+
+### What the same round found beneath this slice
+
+The two engine pull requests under this one had never been reviewed. Two of
+their findings were verified and fixed on slice 2b, and the stack was rebased
+onto the fix:
+
+- **A perf-log wire code collided.** The per-track decay code reused 315,
+  which the performance-arm fact already had further down the same enum.
+  Duplicate enumerator values are legal C, so it compiled silently, and the
+  two codes carry different arms of the union: a decay set during a capture
+  could hand the offline renderer a position, a master length and an iteration
+  read out of a float. It is 317 now, in the wire-format table, and a test
+  walks every code so the next one cannot collide silently.
+- **The session's own record timing and overdub decay were write-only.** Only
+  the per-track overrides reached the rig, so a track that follows the default
+  came back on whatever the app was last set to.
+
+The remaining three were then verified and settled too: the Sync force-arm
+and the split quantize snapshot are fixed, and the per-track ordering claim
+was refuted.
+
+### The twelve engine findings, settled
+
+Both engine pull requests beneath this slice went through an adversarial
+round: one verifier per finding with a refute-first posture, then an
+independent skeptic on anything that survived. Nine were confirmed by both
+and are fixed; three were refuted with the code that blocks them.
+
+Fixed on slice 2a: the dead master clock a mode switch left running after an
+undo-to-empty (a 100-frame Free take was being padded to the erased take's
+800 and played on its clock); a gate that measured published lengths where
+the audio thread measures effective ones; the divide by zero its double read
+allowed; two undo taps in one audio block restarting a recording; a mode
+chosen with the device closed never being persisted; the grid outliving the
+master it measured; and a clear-all redo group standing down over a member
+whose undo was still parked.
+
+Fixed on slice 2b: a Sync force-armed defining take starting off the
+primary's loop top, which played the sub-loop rotated; and a snapshot that
+could publish the quantize gate without its division, so a session saved in
+that window recorded a different record timing from the one chosen.
+
+Refuted: a dropped clear-frozen event (the control thread drains the event
+ring either side of that push, so it cannot be full); a tempo derived from a
+cleared take (that is the stated contract — a defining take sets the grid
+and the restore path depends on the tempo surviving); and a per-track
+quantize ordering race (neither direction makes the track inherit a live
+grid before the arm is cancelled).
+
+Two of the reviews corrected the work rather than just confirming it. The
+skeptic on the double-tap rejected the originally proposed fix, which would
+have wedged every effective-state read; and two existing tests proved that
+the mode projection is load-bearing for the waveform sweep, so the
+persistence moved to the point of choice instead.
+
+One fix carries no test: the divide by zero is structural, the double read
+it removes is the whole failure mode, and the race binary that could
+exercise it deliberately links no engine code.
+
+#### What did NOT retire, and why
+
+The Signal face's per-jack output gate stays. It is a different fact from
+anything the accepted routing design offers: a structural switch per hardware
+output, with the last-live-output guard (#569) behind it, where Output setup's
+mute is a per-destination mix fact that retains its level. Retiring it would
+drop a shipped feature the accepted design does not replace. It needs a design
+answer before it can move.
+
+#### Checks
+
+- Dart: root 2223 passing and 35 skipped, `dart analyze` clean over `lib` and
+  `test`, `bloc lint` clean over 237 files, both arb files at 1086 keys.
+- Five goldens regenerated and eyeballed (the Tracks tray with no strip, the
+  Device tab with no click card), five deleted with their surfaces.
+

@@ -5,6 +5,38 @@ import 'package:equatable/equatable.dart';
 /// around one chain per destination, and this pin goes with it.
 const int kMasterOutputBus = 0;
 
+/// The hardware-output mask destination [bus] drives on a device with
+/// [channels] outputs.
+///
+/// A destination is a stereo pair — outputs `2*bus` and `2*bus + 1` — so a
+/// routing surface that offers destinations has to turn one into the pair of
+/// bits the engine's masks are made of. An odd-channel device leaves the last
+/// destination holding a single jack, and its mask carries the one bit the
+/// interface actually has rather than promising a socket it has not got.
+int outputBusMask(int bus, {required int channels}) {
+  if (bus < 0) return 0;
+  var mask = 0;
+  for (var channel = 2 * bus; channel < 2 * bus + 2; channel++) {
+    if (channel < channels) mask |= 1 << channel;
+  }
+  return mask;
+}
+
+/// Both jacks of destination [bus], whatever the open device has.
+///
+/// What a routing surface CLEARS, and what it tests. [outputBusMask] is what
+/// it SETS: a new route must not claim a socket the interface has not got,
+/// while an old one saved on a wider rig has to be removable — clearing only
+/// the jacks this device has would leave the other bit set for ever.
+int outputBusBits(int bus) => bus < 0 ? 0 : 0x3 << (2 * bus);
+
+/// Whether [mask] drives any jack of destination [bus].
+///
+/// EITHER jack counts: a mask that reaches half a pair still reaches the
+/// destination, and a card that read it as unselected would offer to switch on
+/// something that is already partly on.
+bool outputMaskDrivesBus(int mask, int bus) => mask & outputBusBits(bus) != 0;
+
 /// One output destination's facts (accepted design, Output setup): its level,
 /// mute, Stereo/Mono and balance. A destination is a stereo pair of hardware
 /// outputs, bus `k` being outputs `2k` and `2k + 1`.
