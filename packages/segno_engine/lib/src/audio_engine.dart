@@ -693,10 +693,19 @@ abstract interface class EffectsControl {
 
   /// Sets the active chain length on lane [lane] of track [channel] to [count]
   /// (`0..kTrackEffectMax`): only entries `[0, count)` are processed, in order.
+  ///
+  /// [preCount] (`0..count`, clamped) splits that order. Entries
+  /// `[0, preCount)` are Pre: the engine renders exactly them from the lane's
+  /// dry recording and swaps the result in at a loop boundary, so they are
+  /// heard as part of the take and a track Stop takes their tails with it.
+  /// Entries `[preCount, count)` are Post: always live, and their tails drain
+  /// past a Stop. The recording stays dry either way — the print is a rendered
+  /// copy, never a write back into the take.
   EngineResult setLaneFxCount({
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   });
 
   /// Sets parameter [param] (`0..kTrackEffectParams-1`) of chain entry [index]

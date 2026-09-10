@@ -2239,16 +2239,23 @@ static void le_fx_seed_entering_slots(int32_t* count_pushed,
 }
 
 int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
-                                    int32_t lane, int32_t count) {
+                                    int32_t lane, int32_t count,
+                                    int32_t pre_count) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
+  /* Clamped against the count it travels with, never against the published
+   * one: a Pre run longer than its chain would have the audio thread render
+   * entries that are not there and the wet cache key a prefix that cannot be
+   * rebuilt. */
+  if (pre_count < 0) pre_count = 0;
+  if (pre_count > count) pre_count = count;
   le_lane* ln = &engine->tracks[channel].lanes[lane];
-  const int32_t rc =
-      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
-                                       .fxcount = {channel, lane, count}});
+  const int32_t rc = le_push_cmd(
+      engine, (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
+                           .fxcount = {channel, lane, count, pre_count}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&ln->fx_count_pushed, ln->a_fx_enabled, count);
     le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
@@ -2385,7 +2392,7 @@ int32_t le_engine_set_monitor_input_fx_count(le_engine* engine, int32_t input,
   le_monitor_input* m = &engine->monitors[input];
   const int32_t rc =
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MONITOR_INPUT_FX_COUNT,
-                                       .fxcount = {input, 0, count}});
+                                       .fxcount = {input, 0, count, 0}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&m->fx_count_pushed, m->a_fx_enabled, count);
   }
@@ -2510,7 +2517,7 @@ int32_t le_engine_set_track_fx_count(le_engine* engine, int32_t channel,
   le_fx_bus* b = &engine->tracks[channel].bus;
   const int32_t rc =
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_TRACK_FX_COUNT,
-                                       .fxcount = {channel, 0, count}});
+                                       .fxcount = {channel, 0, count, 0}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&b->fx_count_pushed, b->a_fx_enabled, count);
   }
@@ -2582,7 +2589,7 @@ int32_t le_engine_set_output_fx_count(le_engine* engine, int32_t bus,
   le_fx_bus* b = &engine->outputs[bus].fx;
   const int32_t rc =
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_OUTPUT_FX_COUNT,
-                                       .fxcount = {bus, 0, count}});
+                                       .fxcount = {bus, 0, count, 0}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&b->fx_count_pushed, b->a_fx_enabled, count);
   }

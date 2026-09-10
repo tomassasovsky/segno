@@ -39,7 +39,8 @@ import 'package:segno_engine/segno_engine.dart'
         PluginRef,
         TrackEffect,
         TrackEffectParam,
-        TrackEffectType;
+        TrackEffectType,
+        fxPreCount;
 
 /// Builds the production [AudioEngine] backed by the native segno engine.
 ///
@@ -3799,6 +3800,11 @@ class LooperRepository {
       channel: channel,
       lane: lane,
       count: effects.length,
+      // The chain is stored Pre-first (the write boundary partitions it), so
+      // the leading Pre run is the whole split the engine needs. It rides the
+      // count in one command, so the audio thread never sees a Pre run longer
+      // than the chain it splits.
+      preCount: fxPreCount(effects),
     );
     // Push the per-slot enabled bit for EVERY slot on every apply (R16): the
     // engine keys its flags by slot index and re-seeds them to enabled on a

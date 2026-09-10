@@ -554,6 +554,9 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-(channel, lane) active chain length passed to [setLaneFxCount].
   final Map<(int, int), int> laneFxCount = {};
 
+  /// Per-(channel, lane) leading Pre run passed to [setLaneFxCount].
+  final Map<(int, int), int> laneFxPreCount = {};
+
   /// Per-(channel, lane, index, param) value passed to [setLaneFxParam].
   final Map<(int, int, int, int), double> laneFxParam = {};
 
@@ -579,12 +582,16 @@ class FakeAudioEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) {
     // D-ENSEED's second half: entering slots seed enabled.
     for (var s = laneFxCount[(channel, lane)] ?? 0; s < count; s++) {
       laneFxEnabled[(channel, lane, s)] = true;
     }
     laneFxCount[(channel, lane)] = count;
+    laneFxPreCount[(channel, lane)] = preCount < 0
+        ? 0
+        : (preCount > count ? count : preCount);
     return EngineResult.ok;
   }
 

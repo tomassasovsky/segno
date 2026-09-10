@@ -468,7 +468,7 @@ static void le_cache_collect(le_engine* e, struct le_fx_cache* c,
       const uint32_t rev =
           atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
       const uint64_t fp =
-          le_engine_lane_fx_fingerprint(e, job->channel, job->lane);
+          le_lane_pre_fx_fingerprint(e, job->channel, job->lane);
       const uint32_t vol =
           atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed);
       const int32_t len = load_i32(&ln->a_len);
@@ -509,9 +509,18 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   le_lane* ln = &tr->lanes[l];
   le_lane_cache* lc = &c->lanes[t][l];
 
-  /* Chain snapshot (atomics -> locals) + its identity. */
-  int32_t count = load_i32(&ln->a_fx_count);
+  /* Chain snapshot (atomics -> locals) + its identity.
+   *
+   * Only the PRE PREFIX is rendered (slice 3e): a Pre entry is part of what
+   * the take plays back, so printing it once from the dry pool is exactly the
+   * accepted "prepared from original sources". The Post entries are
+   * deliberately left out — their tails have to be able to drain past a Stop
+   * and a baked tail cannot — so `count` here is the Pre count, and a chain
+   * with no Pre entry has nothing to print and stays live. */
+  const int32_t total = load_i32(&ln->a_fx_count);
+  int32_t count = load_i32(&ln->a_fx_pre_count);
   if (count < 0) count = 0;
+  if (count > total) count = total;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
   const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
   int32_t types[LE_FX_MAX];
@@ -567,7 +576,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   /* Cross-check against the canonical atomic fold: a mismatch means the audio
    * thread published a type/count change mid-snapshot — skip this tick rather
    * than schedule a torn chain (the next tick reads it settled). */
-  if (fp != le_engine_lane_fx_fingerprint(e, t, l)) return;
+  if (fp != le_lane_pre_fx_fingerprint(e, t, l)) return;
 
   /* Settle debounce [B2][B3]: any key change (content, chain, enabled bits,
    * volume — D-VOL) restarts the window; a change also re-arms a lane that

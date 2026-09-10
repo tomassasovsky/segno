@@ -1290,10 +1290,17 @@ class NativeAudioEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_lane_fx_count(_engine, channel, lane, count),
+      _bindings.le_engine_set_lane_fx_count(
+        _engine,
+        channel,
+        lane,
+        count,
+        preCount,
+      ),
     );
   }
 

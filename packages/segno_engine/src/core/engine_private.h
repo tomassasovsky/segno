@@ -286,7 +286,7 @@ typedef struct le_fx_state {
  * field matches — any mismatch is the same-buffer live fallback. */
 typedef struct le_wet_entry {
   uint32_t audio_rev; /* le_track.a_audio_rev at render */
-  uint64_t chain_fp;  /* le_engine_lane_fx_fingerprint at render */
+  uint64_t chain_fp;  /* le_lane_pre_fx_fingerprint at render */
   uint32_t vol_bits;  /* le_lane.a_vol_bits at render (D-VOL: pre-chain) */
   int32_t len;        /* frames; == the lane's a_len at render */
   float* pcm;         /* interleaved stereo wet, 2*len floats */
@@ -362,9 +362,17 @@ typedef struct le_lane {
 
   /* Per-lane effects chain. Published config (control writes, audio reads once
    * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
-   * active, each with a type and LE_FX_PARAMS normalized parameters. The chain
-   * is stageless — every active entry colors playback in order — and runs on
-   * the lane's own `fx` DSP state.
+   * active, each with a type and LE_FX_PARAMS normalized parameters. Every
+   * active entry colors playback in order, on the lane's own `fx` DSP state.
+   *
+   * a_fx_pre_count splits that order in two (slice 3e). Entries [0,
+   * a_fx_pre_count) are Pre: they belong to what the take plays back, so the
+   * wet cache renders exactly them from the dry pool and a track Stop takes
+   * their tails with the recording. Entries [a_fx_pre_count, a_fx_count) are
+   * Post: they run downstream of the player and their tails drain past a
+   * Stop. The control thread stores the chain Pre-first, so one boundary
+   * index is the whole split; 0 (the default) is an all-Post chain, which is
+   * every chain the engine had before this field existed.
    *
    * Enable flags (two levels, both default 1): a_fx_enabled[s] bypasses one
    * slot, a_fx_chain_enabled bypasses the whole chain. The audio thread
@@ -376,6 +384,7 @@ typedef struct le_lane {
    * slot's DSP state so stale tails never sound (a hosted plugin keeps its
    * own state — no flush seam yet). */
   _Atomic int32_t a_fx_count;
+  _Atomic int32_t a_fx_pre_count; /* leading Pre entries (default 0) */
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
@@ -947,6 +956,15 @@ typedef struct le_track {
    * provably fits every live lane buffer (seam_room). */
   int32_t seam_capture;
   int32_t seam_len;
+
+  /* Audio-thread-owned shadow of a_state as of the previous frame that ran
+   * mix_tracks_frame, used ONLY to spot the edge out of sounding (slice 3e).
+   * The engine has no single place a track stops — a stop press, a finalize,
+   * a clear and a Cut all land here — so the edge is watched rather than
+   * hooked, and every one of them takes the lane Pre slots' tails with it.
+   * Zero-initialized to LE_TRACK_EMPTY, which is also a fresh track's state,
+   * so a freshly created engine sees no edge. Never read by control. */
+  int32_t proc_prev_state;
 
   /* Free/Song mode (B2b + B4, index Architecture §4): this track's OWN loop
    * clock, structurally identical to (and reusing) the master's

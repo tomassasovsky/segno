@@ -108,6 +108,18 @@ void le_track_set_len(le_track* t, int32_t len);
  * Defined in engine.c. */
 int32_t le_mask_to_channel(uint32_t mask);
 
+/* The lane's PRE-PREFIX chain fingerprint (slice 3e): the canonical
+ * le_fx_chain_fingerprint fold over entries [0, a_fx_pre_count) only.
+ *
+ * This is the wet cache's key term, because the cache renders exactly the Pre
+ * prefix — the printed part of the take. Keying on the prefix rather than the
+ * whole chain is what lets a Post edit leave the print standing: a Post entry
+ * is downstream of the player and never enters the render, so changing one
+ * cannot make the render stale. le_engine_lane_fx_fingerprint still folds the
+ * WHOLE chain and stays the Dart-divergence hash. */
+uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
+                                    int32_t lane);
+
 /* Posts a command into the engine's SPSC ring (control thread). Returns LE_OK,
  * LE_ERR_NOT_RUNNING (not configured), or LE_ERR_INVALID (null / ring full).
  * le_push builds a generic { arg_i, arg_f } command; le_push_cmd posts a

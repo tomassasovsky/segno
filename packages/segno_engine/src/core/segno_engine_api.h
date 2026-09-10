@@ -2097,17 +2097,31 @@ LE_EXPORT int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled);
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on lane [lane] of track [channel] to
  * [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY lazily
  * allocates the entry's delay line (on this calling thread) and seeds the type's
- * default parameters. The chain is non-destructive and stageless — every active
- * entry colors playback in order. This sets the entry's value only; use
- * le_engine_set_lane_fx_count to make entries active. */
+ * default parameters. Every active entry colors playback in order. This sets
+ * the entry's value only; use le_engine_set_lane_fx_count to make entries
+ * active. */
 LE_EXPORT int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel,
                                         int32_t lane, int32_t index,
                                         int32_t type);
 
 /* Sets the active chain length on lane [lane] of track [channel] to [count]
- * (0..LE_FX_MAX): only entries [0, count) are processed, in order. */
+ * (0..LE_FX_MAX): only entries [0, count) are processed, in order.
+ *
+ * [pre_count] (0..count, clamped) splits that order into the take's own
+ * processing and what runs after its player. Entries [0, pre_count) are PRE:
+ * the loop-stage cache renders exactly them from the lane's dry recording and
+ * swaps the result in at a loop boundary, so they are heard as part of the
+ * take and a track Stop takes their tails with it. Entries [pre_count, count)
+ * are POST: they always run live over whichever source is playing, and their
+ * tails drain past a Stop. The recording itself stays dry either way — the
+ * print is a rendered copy, never a write back into the take.
+ *
+ * pre_count travels with count in one command so the audio thread never sees
+ * a split naming more Pre entries than the chain has. 0 is the default and
+ * means an all-Post chain. */
 LE_EXPORT int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
-                                              int32_t lane, int32_t count);
+                                              int32_t lane, int32_t count,
+                                              int32_t pre_count);
 
 /* Sets parameter [param] (0..LE_FX_PARAMS-1) of chain entry [index] on lane
  * [lane] of track [channel] to [value] (clamped to 0..1). The parameter's

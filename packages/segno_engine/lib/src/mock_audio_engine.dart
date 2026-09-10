@@ -883,6 +883,7 @@ class MockAudioEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) => _requireRunning();
 
   @override

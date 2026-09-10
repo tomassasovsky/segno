@@ -7491,6 +7491,34 @@ void main() {
       ]);
     });
 
+    test('the split reaches the engine with the count it belongs to', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+
+      expect(engine.laneFxCount[(0, 0)], 3);
+      expect(engine.laneFxPreCount[(0, 0)], 1);
+
+      // Moving the one Pre entry to Post leaves nothing printed.
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: repo.laneEffects(0, 0).first.slotId!,
+        placement: FxPlacement.post,
+      );
+      expect(engine.laneFxCount[(0, 0)], 3);
+      expect(engine.laneFxPreCount[(0, 0)], 0);
+    });
+
     test('placement survives persist and restore through the envelope', () {
       final chain = [
         at(TrackEffectType.filter, FxPlacement.pre),
