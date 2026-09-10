@@ -1543,3 +1543,91 @@ untouched chain and needs no per-lane array.
 - Two of my own claims were withdrawn rather than shipped unobservable: a
   routing predicate keyed on a Post tail, and the pan-law reconstruction that
   a truncated read produced — recovered from git before it reached a commit.
+
+## Slice 3e — the whole-track Pre render (#1016, owner direction 2026-09-10)
+
+The owner settled the question part 3e deferred: keep the whole-track Pre/Post
+switch, and build a non-destructive processed copy of the combined track. The
+boundary is fixed in `docs/design/2026-09-10-whole-track-pre-render.md`; this
+records what was built and what it cost.
+
+### What it is
+
+A track's Pre run is rendered over the combination of its parts — each part's
+own PRINTED material at its level, mute and pan, summed — and swapped in at
+the track's loop top. The parts' prints are the input, not something the job
+re-renders, so it costs one stereo buffer rather than a copy of every part. A
+part with no chain contributes its dry recording at level, which is its own
+printed material.
+
+### The rule the whole design rests on
+
+**It renders only while every part's chain is wholly Pre.** A part carrying a
+Post entry keeps the track's Pre run live, with the reason reported through
+the cache's telemetry.
+
+That one condition is what keeps every accepted behaviour: a part's Post tail
+still drains past a Stop, the per-instance promise its own switch makes holds
+without the player needing to know a render exists, and Bounce's two
+categories still partition the chain.
+
+The first design put the parts' whole chains inside the render and accepted
+that a part's Post tail became captured material. An adversarial review of the
+design confirmed twenty-six objections against it. The decisive one: flipping
+a switch in the Whole track editor would change what a part's own editor
+promises, on the default configuration, since a new instance on a recorded
+destination is Post. Rendering a tail region to play at the Stop edge does not
+rescue it either — the tail a Stop needs depends on where the player stopped,
+and one stored region encodes one position.
+
+### Engineering notes worth not rediscovering
+
+- **Engaging must remove the parts from the bus, not merely bypass their
+  slots.** A force-bypassed entry is unity passthrough, not silence, so
+  bypassing alone would play the track's material twice.
+- **The key is refolded every buffer, not memoised.** It spans every part's
+  chain, level, pan and mute as well as the track's own Pre run, so a memo
+  would want a bump on some fifteen setters and one missed bump plays a render
+  that no longer describes the track. The refold is gated on a published
+  render, so a track without one costs one relaxed load.
+- **The cache now carries two entry classes.** The graveyard sizing, the LRU
+  scan, the budget, shutdown and the job accounting were all lane-indexed; the
+  accounting in particular assumed one mono source in three hard-coded places
+  and now derives from the job's shape.
+
+### A defect in shipped code, fixed on the way
+
+The idle-track lane skip (#897) left a STOPPED track out of the lane loop when
+none of its parts carried a chain. The Track-stage chain runs outside that
+loop and kept ticking, but the routing mask is built inside it — so a
+Track-stage Post reverb drained into nothing. "Stop drains Post tails" held
+for a track whose parts had chains and silently did not for a track with all
+its effects on the track itself, which is the canonical case.
+
+### Checks
+
+- Native suite green in all five variants, before and after every change.
+- Dart: root 2262 passing and 35 skipped; `looper_repository` 496;
+  `session_repository` 105; `settings_repository` 155; `segno_engine` 283.
+  `dart analyze` clean at the root and in every touched package.
+- The owner's verification list, each as a native test: the combination
+  processed as one signal (two parts at 0.5 through a unity drive give
+  tanh(1.0), where a per-part fan-out would give twice tanh(0.5)), live and
+  printed agreeing, edits re-rendering from the originals rather than
+  compounding, the recording and its layers surviving an overdub and an Undo
+  under an engaged render, a part's Post entry keeping the track live and
+  still sounding right, and Stop taking the Pre tails while the Post run
+  drains.
+- Mutation-checked: leaving a part out of the combination, dropping the
+  printability rule, keeping the track's Pre tails at Stop, and restoring the
+  idle-skip defect each fail exactly the test that names them.
+- One test was rewritten after a mutation survived it: a part whose chain is
+  wholly Post is refused by a different gate, so the case that actually
+  distinguishes the rule is a part carrying BOTH placements.
+
+### Not verified here
+
+Playback transforms. Speed, Reverse, pitch preservation and Follow tempo do
+not exist in this engine. The accepted direction for Speed is to stream from
+originals inline, which composes with a render from originals — both read the
+same recordings — but nothing tests that until Speed exists.
