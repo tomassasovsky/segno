@@ -794,13 +794,14 @@ Same branch, stacked on slice 3a's PR #1017 until it merges.
   recording or overdubbing track goes through the Stop handler (a take in
   progress finalizes, and the stop is perf-logged per track so a log replay
   does not hear it past the cut), a running count-in is cancelled, and every
-  built-in chain on every stage has its DSP state cleared at once while its
-  type, count, params and enables stay; `a_tail_reset_rev` advances and the
-  snapshot carries it. The delay rings are cleared through
-  `fx_apply_chain`'s existing spaced path (`clear_pending`, one slot per
-  chain per 128 samples, the slot dry until its turn), so a Cut never zeroes
-  every ring of the rig inside one callback. A hosted plugin has no reset
-  seam and keeps its own tail. Monitors keep their preferences.
+  built-in chain on every stage has its DSP state AND its delay rings cleared
+  in the one callback that applies the command, while its type, count, params
+  and enables stay; `a_tail_reset_rev` advances and the snapshot carries it.
+  The clear is deliberately NOT spaced the way a chain stomp's re-enable
+  clears are (see the review round below): the cost is proportional to the
+  rings actually allocated, paid once on a deliberate press. A hosted plugin
+  has no reset seam and keeps its own tail. Monitors keep their
+  preferences.
 - **Bypass drains the tail** (accepted: "bypass sends new audio dry and
   drains old wet tails"), for the types that have one. `le_fx_type_drains`
   is true for a ring-owning type with no reported latency (delay, echo,
@@ -882,9 +883,10 @@ the seven trailing fields; four fake engines updated.
   `test_fx_retype_mid_drain_starts_clean` and
   `test_perf_follow_survives_configure_and_capture_bus`; the golden parity
   test runs both capture policies. ffigen regenerated and formatted.
-- Dart: `segno_engine` 274, `looper_repository` 464, `settings_repository`
-  152, `session_repository` 103, `performance_repository` 117,
-  `daw_export` 100; root 2217; analyzers clean at the root and in every
+- Dart, with `SEGNO_ENGINE_LIB` built so the FFI-gated suites actually run:
+  `segno_engine` 306, `looper_repository` 475, `settings_repository` 152,
+  `session_repository` 103, `performance_repository` 118, `daw_export` 100;
+  root 2246; analyzers clean at the root and in every
   touched package; `bloc lint` clean; cspell clean on the changed markdown
   against the repository's dictionary.
 
@@ -919,7 +921,10 @@ Eight finder angles, then a verify pass. Fixed in the second commit:
   deliberate event, and one callback carrying a few hundred microseconds of
   memset is the cheaper of the two failures. Pinned by a test with two
   ring-owning slots on one chain, which a per-chain stagger would show on the
-  second.
+  second. The cost is proportional to the rings allocated (one ring is
+  `sample_rate` floats per channel, so a rig with twenty ring-owning slots is
+  several MB of memset in that callback); the note in the code says so rather
+  than quoting a figure.
 - **The Follow-output render assumed bus 0.** The engine captures the first
   bus with an enabled channel, so a rig on the second pair rendered with the
   wrong destination's level. The snapshot publishes `perf_capture_bus`, the
@@ -960,9 +965,11 @@ Eight finder angles, then a verify pass. Fixed in the second commit:
   `perf_push_master` for the two taps, one `le_fx_entry_clear_rings` for the
   two ring clears, one snapshot struct per bus instead of eleven parallel
   arrays and seventeen parameters, `OutputSetup.fromMaps`/`toMaps` instead
-  of four hand-written conversions, `kMaxChannels` instead of a literal 32,
+  of four hand-written conversions, the unused destination/mask helpers
+  deleted rather than left with a hard-coded channel count,
   and the stale D-MASTER / D-MASTERCH / "click is excluded from the capture"
-  comments rewritten to what the code does.
+  comments rewritten to what the code does, along with every "Master insert"
+  section label that now names a 16-destination loop.
 - Contracts that had drifted from the code: `engine_fx.h`'s `fx_apply_chain`
   block (it still promised "NO tail spill on bypass"), `le_fx_entry_reset`'s
   doc (it now touches the drain half deliberately), the capture-policy
@@ -977,6 +984,52 @@ Eight finder angles, then a verify pass. Fixed in the second commit:
   ring length (its silence assertion was reading calloc zeros), the legacy
   render default got a third golden-parity run whose manifest omits the key,
   and the `copyWith` golden is pinned to the field list.
+
+#### Review round 2 (2026-09-09, adversarial verification of round 1)
+
+Every round-1 fix was handed to a skeptic told to refute it, then four
+critics swept the whole change for new bugs, unaddressed findings and test
+honesty. Three of the fixes were themselves wrong, and several tests passed
+against their own reverted fix. Fixed in the third commit:
+
+- **The capture destination was recorded before the arm.** The engine settles
+  it inside `le_perf_arm`, from the output gate as it stands then; the
+  manifest read it from a snapshot taken before lane export and manifest I/O
+  — the same race that retired the old `clockFrame` anchor (#262). A manifest
+  naming one destination while the take captured another sends the offline
+  render to the wrong level rides, silently. It is now read after the arm and
+  the crash-survival file is rewritten.
+- **The `copyWith` guarantee was only relocated.** The constructor's
+  parameters are optional with defaults, so a field added later without a
+  `copyWith` parameter still compiles and yields the default. Two source-level
+  goldens now pin the parameter list to the field list and check that each
+  parameter feeds its own field.
+- **The spaced ring clear was worse than the memset.** Deferring a slot means
+  passing it dry, and dry is the wrong output for a fully wet effect. Reverted
+  to clearing at once, with the reasoning in the code.
+- **A jack's structural gate is not a bus mute.** A verifier read the new
+  gating as silencing a take when an output is disabled mid-record. It does —
+  but so did the engine before this slice, because every source already masks
+  by the enabled mask, and that is `le_engine_set_output_enabled`'s stated
+  contract. A test pins the mute and the disable side by side.
+- **`tool/build_test_lib.sh` had stopped compiling**, so every FFI-gated Dart
+  test had been skipping silently: it predates the vendored RNNoise and the
+  restore TUs. Repaired, which brought back 32 pumped-engine tests, 11 in
+  `looper_repository` and 29 more at the root.
+- Tests that passed against their own reverted fix, found by reverting each
+  one: the Cut silence test and the retype test both read calloc zeros
+  because they never filled the ring (both now pre-roll past its length), the
+  render's capture-bus filter had no coverage (a fourth golden-parity run
+  names a destination the take did not capture and requires the render to
+  diverge), and the pumped snapshot had none (it now asserts the facts the
+  old hand-written list dropped). Each was mutation-checked: revert the fix,
+  the test fails; restore it, the test passes.
+- Smaller: the guards `perf_bus` and the shared capture push had lost
+  (`master_out_ch[0] >= 0`, the armed check), `le_perf_first_enabled_pair`
+  reading the published channel mirror the rest of the snapshot uses, the
+  Cut stop entry asserted in the log, the plugin install path clearing the
+  drain state, and the last "Master insert" labels on what are now
+  16-destination loops.
 
 #### Not verified here
 

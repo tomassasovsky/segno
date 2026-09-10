@@ -14,7 +14,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."   # tool -> packages/segno_engine
 
 CC="${CC:-gcc}"
-STD="-std=gnu11 -O2 -fPIC -I src/core -I src/midi -I src/asio -I src/miniaudio"
+# Include path and TU set mirror run_native_tests.sh — keep the two in sync.
+# The vendored RNNoise headers and the restore_*.c TUs joined the engine after
+# this script was last touched, so it had stopped compiling: every consumer
+# saw "SEGNO_ENGINE_LIB not set" and skipped, silently.
+STD="-std=gnu11 -O2 -fPIC -I src/core -I src/midi -I src/asio -I src/miniaudio \
+  -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) EXT="dll";   LIBS="-lole32 -lwinmm -lm" ;;
@@ -35,8 +40,16 @@ mkdir -p "$OUT_DIR"
 $CC $STD -shared \
   src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
+  src/core/restore_declip.c src/core/restore_halfband.c \
   src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c \
+  third_party/rnnoise/src/denoise.c third_party/rnnoise/src/rnn.c \
+  third_party/rnnoise/src/pitch.c third_party/rnnoise/src/kiss_fft.c \
+  third_party/rnnoise/src/celt_lpc.c third_party/rnnoise/src/nnet.c \
+  third_party/rnnoise/src/nnet_default.c \
+  third_party/rnnoise/src/parse_lpcnet_weights.c \
+  third_party/rnnoise/src/rnnoise_data.c \
+  third_party/rnnoise/src/rnnoise_tables.c \
   $LIBS -o "$OUT" 1>&2
 
 # The one machine-readable line: the built library's absolute path.

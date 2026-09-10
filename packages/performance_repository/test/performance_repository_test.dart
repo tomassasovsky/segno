@@ -185,10 +185,14 @@ void main() {
       expect(armJson['outputMuted'], isTrue);
     });
 
-    test('the arm snapshot records the destination the engine captures and '
-        "that destination's facts, not the first one's", () async {
+    test('the arm snapshot records the destination the engine settles on '
+        'INSIDE the arm, not the one the pre-arm snapshot named', () async {
+      // The gate moves while this arm exports lanes and writes the manifest:
+      // the engine picks destination 1, so the manifest must say 1 and carry
+      // ITS facts, or the offline render replays the wrong level rides.
       engine
-        ..perfCaptureBus = 1
+        ..perfCaptureBus = 0
+        ..perfCaptureBusAtArm = 1
         ..outputLevels = [1, 0.25]
         ..outputMuted = [true, false];
 
@@ -200,6 +204,28 @@ void main() {
       expect(armJson['captureBus'], 1);
       expect(armJson['outputLevel'], 0.25);
       expect(armJson.containsKey('outputMuted'), isFalse);
+    });
+
+    test('an engine reporting no captured destination, or shorter fact '
+        'lists than the destination index, records the defaults', () async {
+      engine
+        ..perfCaptureBus = -1
+        ..perfCaptureBusAtArm = -1
+        ..outputLevels = const []
+        ..outputMuted = const [];
+
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      final armJson =
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(armJson.containsKey('captureBus'), isFalse);
+      expect(armJson.containsKey('outputLevel'), isFalse);
+      expect(armJson.containsKey('outputMuted'), isFalse);
+      final decoded = PerformanceArmSnapshot.fromJson(armJson);
+      expect(decoded.captureBus, 0);
+      expect(decoded.outputLevel, 1);
+      expect(decoded.outputMuted, isFalse);
     });
 
     test('writes the arm-time snapshot for every settled lane', () async {

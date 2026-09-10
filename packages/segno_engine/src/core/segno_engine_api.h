@@ -391,15 +391,14 @@ typedef enum le_command_code {
   LE_CMD_SET_CLOCK_MODE = 48, /* arg_i = le_clock_mode. RECEIVE (2) is
                                * rejected — see le_engine_set_clock_mode. */
 
-  /* ---- Track-stage + Master insert chains (FX v3 part 1b) ----
+  /* ---- Track-stage chains (FX v3 part 1b) ----
    * The bus twins of the lane / monitor FX commands: type/count ride the ring
    * so the audio thread resets the entry's DSP state in lockstep, while
-   * params and the enable flags are direct atomic stores (no command). The
-   * track commands reuse the typed `fx` / `fxcount` arms with the lane field
-   * unused; the master commands need no channel (one engine-level chain), so
-   * their channel field is unused too. NONE of these are perf-logged:
-   * track/master chains are manifest-only (part 9's stems decision — the arm
-   * manifest carries them from part 3; nothing replays them). */
+   * params and the enable flags are direct atomic stores (no command). They
+   * reuse the typed `fx` / `fxcount` arms with the lane field unused. NONE of
+   * these are perf-logged: track chains are manifest-only (part 9's stems
+   * decision — the arm manifest carries them from part 3; nothing replays
+   * them). The output-bus chains (65, 66) follow the same rules. */
   LE_CMD_SET_TRACK_FX = 49, /* set a track's Track-stage chain entry type (and
                              * reset its DSP state). fx arm: channel, index,
                              * type (lane unused). */
@@ -407,6 +406,12 @@ typedef enum le_command_code {
                                    * length. fxcount arm: channel, count
                                    * (lane unused). */
 
+  /* Arm the chromatic tuner on one hardware input, or -1 to disarm. arg_i =
+   * channel. The gate is the contract, not an optimization: a disarmed tuner
+   * runs no detection at all. Not perf-logged — the tuner changes no
+   * output. (51 and 52 were the Master insert family, retired in slice 3b
+   * when that insert became output bus 0's chain; the codes stay
+   * unallocated so an old event log can never be misread.) */
   LE_CMD_SET_TUNER_INPUT = 53,
 
   /* ---- per-input conditioning stage (input conditioning, S1) ----
@@ -475,7 +480,7 @@ typedef enum le_command_code {
   LE_CMD_SET_OUTPUT_MONO = 63,
   LE_CMD_SET_OUTPUT_BALANCE = 64,
   /* Output bus chain entry type / active length: fx / fxcount arms with
-   * channel = bus. The Master insert commands 51/52 are bus 0's. */
+   * channel = bus; bus 0's chain is what the app calls the Master insert. */
   LE_CMD_SET_OUTPUT_FX = 65,
   LE_CMD_SET_OUTPUT_FX_COUNT = 66,
   /* Cut all sound (accepted design): stops every audible recorded track and
@@ -2411,9 +2416,13 @@ LE_EXPORT int32_t le_engine_set_output_fx_chain_enabled(le_engine* engine,
 
 /* Cut all sound (accepted design, slice 3b): see LE_CMD_CUT_SOUND. Posted
  * through the ring; returns LE_ERR_NOT_RUNNING while stopped (nothing
- * sounds then). Built-in chains clear their state at once and their delay
- * rings within a few ms (spaced like a chain stomp's re-enable clears); a
- * hosted plugin has no reset seam, so its own tail is not cut. */
+ * sounds then). Every built-in chain's state AND its delay rings clear in
+ * the one callback that applies the command, unlike a chain stomp's spaced
+ * re-enable clears: deferring a slot means passing it dry, and dry is the
+ * wrong output for a fully wet effect. The cost is therefore proportional
+ * to the rings actually allocated (one is sample_rate floats per channel),
+ * paid once on a deliberate press. A hosted plugin has no reset seam, so
+ * its own tail is not cut. */
 LE_EXPORT int32_t le_engine_cut_sound(le_engine* engine);
 
 /* Whether the performance capture follows the output bus's level, balance,

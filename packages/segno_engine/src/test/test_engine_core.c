@@ -18633,11 +18633,17 @@ static void test_finalize_take_aborts_count_in(void) {
  * rather than a hand-typed approximation. Compares the offline-reconstructed
  * master (stems/wet/master.wav) against the live-captured master
  * (master.pcm) sample-by-sample. */
-static void run_perf_render_golden_master_parity(int follow, int omit_key) {
-  printf("test_perf_render_golden_master_parity follow=%d omit_key=%d\n",
-         follow, omit_key);
+static void run_perf_render_golden_master_parity(int follow, int omit_key,
+                                                  int manifest_bus,
+                                                  int expect_match) {
+  printf("test_perf_render_golden_master_parity follow=%d omit_key=%d "
+         "manifest_bus=%d expect_match=%d\n",
+         follow, omit_key, manifest_bus, expect_match);
   const char* dir = render_test_dir(
-      omit_key ? "golden-legacy" : (follow ? "golden-follow" : "golden"));
+      manifest_bus != 0
+          ? "golden-otherbus"
+          : (omit_key ? "golden-legacy" : (follow ? "golden-follow"
+                                                  : "golden")));
   const int32_t sr = 4800;
   const int32_t loop_len = 4;
 
@@ -18718,7 +18724,8 @@ static void run_perf_render_golden_master_parity(int follow, int omit_key) {
   snprintf(manifest, sizeof(manifest),
           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
-          "\"limiterCeiling\": 0.99, %s\"tracks\": []}, "
+          "\"limiterCeiling\": 0.99, %s\"captureBus\": %d, "
+          "\"tracks\": []}, "
           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 0, \"volume\": "
           "1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, \"deferred\": "
           "false, \"takeId\": %d, \"pcmRef\": \"track0-lane0.wav\", "
@@ -18727,7 +18734,7 @@ static void run_perf_render_golden_master_parity(int follow, int omit_key) {
           sr, (unsigned long long)capture_frames,
           omit_key ? "" : (follow ? "\"followOutput\": true, "
                                   : "\"followOutput\": false, "),
-          snap.tracks[0].settled_take_id);
+          manifest_bus, snap.tracks[0].settled_take_id);
   test_write_manifest(dir, manifest);
 
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -18771,8 +18778,19 @@ static void run_perf_render_golden_master_parity(int follow, int omit_key) {
   CHECK(offline_n == capture_frames);
 
   if (live_n == capture_frames && offline_n == capture_frames) {
-    for (uint64_t f = 0; f < capture_frames; ++f) {
-      CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
+    if (expect_match) {
+      for (uint64_t f = 0; f < capture_frames; ++f) {
+        CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
+      }
+    } else {
+      /* The manifest names a destination the take did not capture, so the
+       * renderer must skip that destination's level and mute rides and the
+       * two must DIVERGE — the filter is what makes them agree above. */
+      int differs = 0;
+      for (uint64_t f = 0; f < capture_frames; ++f) {
+        if (fabsf(offline[f] - live[f]) > 1e-3f) differs = 1;
+      }
+      CHECK(differs == 1);
     }
   }
 
@@ -18790,9 +18808,15 @@ static void run_perf_render_golden_master_parity(int follow, int omit_key) {
  * Follow and then omits the key, so parity holds only if absent reads as
  * Follow. */
 static void test_perf_render_golden_master_parity(void) {
-  run_perf_render_golden_master_parity(0, 0);
-  run_perf_render_golden_master_parity(1, 0);
-  run_perf_render_golden_master_parity(1, 1);
+  run_perf_render_golden_master_parity(0, 0, 0, 1);
+  run_perf_render_golden_master_parity(1, 0, 0, 1);
+  run_perf_render_golden_master_parity(1, 1, 0, 1);
+  /* A fourth run whose manifest names destination 1 while the take captured
+   * destination 0: the renderer filters the level and mute rides by that
+   * number, so it must now MISS them and diverge from the live capture.
+   * Without the filter it would apply destination 0's rides regardless and
+   * still match, which is the silent wrong-render this pins. */
+  run_perf_render_golden_master_parity(1, 0, 1, 0);
 }
 
 /* Code-review fix (A3 follow-up): a quantized record-END round-down
@@ -24899,9 +24923,13 @@ static void test_cut_sound_silences_full_wet_chain_at_once(void) {
   CHECK(le_engine_set_monitor_input_fx_count(e, 0, 2) == LE_OK);
   drain(e);
 
-  /* Fill both rings, then hold the input high through the cut: fully wet,
-   * so the live input must NOT come through. */
-  process_n(e, 1.0f, 1024, cap);
+  /* Fill both rings PAST their whole length (fx_delay_frames ==
+   * sample_rate) before cutting: le_fx_entry_reset puts the read head back
+   * to 0, so a short fill would leave the positions it reads first at their
+   * calloc zeros and the silence below would hold with no clear at all. */
+  for (int blk = 0; blk < 48000 / 1024 + 2; ++blk) {
+    process_n(e, 1.0f, 1024, cap);
+  }
   CHECK(fabsf(cap[1023]) > 0.5f); /* the delayed input is sounding */
   CHECK(le_engine_cut_sound(e) == LE_OK);
   drain(e);
@@ -24927,8 +24955,10 @@ static void test_output_bus_honours_disabled_channels(void) {
   drain(e);
   float zin[64] = {0};
 
-  /* Channel 1 disabled, a decorrelating REVERB on bus 0: the disabled jack
-   * stays exactly silent. */
+  /* Channel 1 disabled, a REVERB on bus 0: the disabled jack stays exactly
+   * silent. Nothing is summed into it upstream and the chain has no L to R
+   * crossfeed, so this half holds with or without the write gate — the Mono
+   * case below is what pins the gate. */
   CHECK(le_engine_set_output_enabled(e, 1, 0) == LE_OK);
   CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_REVERB) == LE_OK);
   CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
@@ -25076,6 +25106,29 @@ static void test_cut_sound_stops_tracks_and_clears_tails(void) {
   process_n(e, 0.0f, 2048, cap);
   for (int i = 0; i < 2048; ++i) CHECK(cap[i] == 0.0f);
 
+  /* Every track the cut stopped is in the performance log as a stop, the
+   * le_one_shot_stop precedent: the log records what a listener heard. */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 64, cap);
+  CHECK(le_engine_cut_sound(e) == LE_OK);
+  process_n(e, 0.0f, 64, cap);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  {
+    char path[600];
+    snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+    static unsigned char buf[16384];
+    const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+    CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+    le_perf_log_entry entry;
+    const int at =
+        find_log_entry(buf, log_entry_count(n), 0, LE_CMD_STOP, &entry);
+    CHECK(at >= 0);
+    CHECK(entry.cmd.arg_i == 0);
+  }
+
   /* A count-in under way is cancelled by the cut. */
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
   CHECK(le_engine_set_count_in(e, 1) == LE_OK);
@@ -25089,7 +25142,7 @@ static void test_cut_sound_stops_tracks_and_clears_tails(void) {
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.counting_in == 0);
-  CHECK(s.tail_reset_rev == rev0 + 2u);
+  CHECK(s.tail_reset_rev == rev0 + 3u); /* three cuts by now */
 
   le_engine_destroy(e);
 }
