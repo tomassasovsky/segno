@@ -1087,6 +1087,59 @@ class MockAudioEngine implements AudioEngine {
   EngineResult setAllTracksFxChainEnabled({required bool enabled}) =>
       EngineResult.ok;
 
+  /// Recorded channel-handling calls, in order, for test assertions.
+  final fxChannelsCalls = <({String stage, int index, FxChannels channels})>[];
+
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'lane', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'monitor', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'track', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'output', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'allTracks', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setMonitorInputEnabled({
     required int input,

@@ -73,6 +73,9 @@ export 'src/models/track.dart';
 export 'src/models/track_effect.dart'
     show
         BuiltInEffect,
+        FxChannelInput,
+        FxChannelOutput,
+        FxChannels,
         FxPlacement,
         ParamReadout,
         PluginEffect,
@@ -83,6 +86,7 @@ export 'src/models/track_effect.dart'
         decodeTrackEffects,
         encodeTrackEffects,
         fxChainFingerprint,
+        fxChannelsToEngine,
         fxPreCount,
         partitionByPlacement,
         trackEffectsToEngine;

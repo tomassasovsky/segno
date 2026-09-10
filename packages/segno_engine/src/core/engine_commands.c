@@ -2716,6 +2716,141 @@ int32_t le_engine_set_all_tracks_fx_chain_enabled(le_engine* engine,
   return LE_OK;
 }
 
+/* ---- per-entry channel handling and level (slice 3e) ----
+ *
+ * The accepted design's rack input/output choices and rack level, on every
+ * chain owner. Direct atomic publishes like the params: they change gain and
+ * routing WITHIN an entry, never its DSP state, so there is nothing for the
+ * audio thread to reset and no ring command to order against.
+ *
+ * The pan gains are precomputed here, exactly as a lane's are, so the
+ * per-sample path is two multiplies. Centre is exact unity, so an entry left
+ * alone is bit-identical to one with no channel handling at all.
+ *
+ * The five owners share one implementation, addressed by the published block;
+ * the public wrappers below only resolve which block. */
+
+static int32_t le_fx_chan_set_in(_Atomic int32_t* a_in, int32_t index,
+                                 int32_t mode) {
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (mode < LE_FX_CHAN_IN_STEREO || mode > LE_FX_CHAN_IN_MONO) {
+    return LE_ERR_INVALID;
+  }
+  store_i32(&a_in[index], mode);
+  return LE_OK;
+}
+
+static int32_t le_fx_chan_set_out(_Atomic int32_t* a_out,
+                                  _Atomic uint32_t* a_pan,
+                                  _Atomic uint32_t* a_gl,
+                                  _Atomic uint32_t* a_gr, int32_t index,
+                                  int32_t mode, float placement) {
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (mode < LE_FX_CHAN_OUT_STEREO || mode > LE_FX_CHAN_OUT_MONO) {
+    return LE_ERR_INVALID;
+  }
+  /* NaN reads as centre, the le_store_pan rule. */
+  if (!(placement >= -1.0f)) placement = placement < -1.0f ? -1.0f : 0.0f;
+  if (placement > 1.0f) placement = 1.0f;
+  float gl;
+  float gr;
+  le_pan_gains(placement, &gl, &gr);
+  store_f32(&a_gl[index], gl);
+  store_f32(&a_gr[index], gr);
+  store_f32(&a_pan[index], placement);
+  store_i32(&a_out[index], mode);
+  return LE_OK;
+}
+
+static int32_t le_fx_chan_set_level(_Atomic uint32_t* a_level, int32_t index,
+                                    float level) {
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (!(level >= 0.0f)) level = 0.0f; /* NaN reads as silence */
+  if (level > LE_MAX_GAIN) level = LE_MAX_GAIN;
+  store_f32(&a_level[index], level);
+  return LE_OK;
+}
+
+int32_t le_engine_set_lane_fx_channels(le_engine* engine, int32_t channel,
+                                       int32_t lane, int32_t index,
+                                       int32_t in_mode, int32_t out_mode,
+                                       float placement, float level) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  const int32_t rc = le_fx_chan_set_in(ln->a_fx_chan_in, index, in_mode);
+  if (rc != LE_OK) return rc;
+  const int32_t rc2 =
+      le_fx_chan_set_out(ln->a_fx_chan_out, ln->a_fx_chan_pan_bits,
+                         ln->a_fx_chan_gl_bits, ln->a_fx_chan_gr_bits, index,
+                         out_mode, placement);
+  if (rc2 != LE_OK) return rc2;
+  const int32_t rc3 =
+      le_fx_chan_set_level(ln->a_fx_chan_level_bits, index, level);
+  /* The channel handling is part of what the wet cache renders, so a change
+   * moves the lane's chain identity like a param does. */
+  if (rc3 == LE_OK) le_lane_fx_gen_bump(ln);
+  return rc3;
+}
+
+int32_t le_engine_set_monitor_input_fx_channels(le_engine* engine,
+                                                int32_t input, int32_t index,
+                                                int32_t in_mode,
+                                                int32_t out_mode,
+                                                float placement, float level) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  le_monitor_input* m = &engine->monitors[input];
+  const int32_t rc = le_fx_chan_set_in(m->a_fx_chan_in, index, in_mode);
+  if (rc != LE_OK) return rc;
+  const int32_t rc2 = le_fx_chan_set_out(
+      m->a_fx_chan_out, m->a_fx_chan_pan_bits, m->a_fx_chan_gl_bits,
+      m->a_fx_chan_gr_bits, index, out_mode, placement);
+  if (rc2 != LE_OK) return rc2;
+  return le_fx_chan_set_level(m->a_fx_chan_level_bits, index, level);
+}
+
+/* The three bus owners share one body; only the block differs. */
+static int32_t le_fx_bus_set_channels(le_fx_bus* b, int32_t index,
+                                      int32_t in_mode, int32_t out_mode,
+                                      float placement, float level) {
+  const int32_t rc = le_fx_chan_set_in(b->a_fx_chan_in, index, in_mode);
+  if (rc != LE_OK) return rc;
+  const int32_t rc2 = le_fx_chan_set_out(
+      b->a_fx_chan_out, b->a_fx_chan_pan_bits, b->a_fx_chan_gl_bits,
+      b->a_fx_chan_gr_bits, index, out_mode, placement);
+  if (rc2 != LE_OK) return rc2;
+  return le_fx_chan_set_level(b->a_fx_chan_level_bits, index, level);
+}
+
+int32_t le_engine_set_track_fx_channels(le_engine* engine, int32_t channel,
+                                        int32_t index, int32_t in_mode,
+                                        int32_t out_mode, float placement,
+                                        float level) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  return le_fx_bus_set_channels(&engine->tracks[channel].bus, index, in_mode,
+                                out_mode, placement, level);
+}
+
+int32_t le_engine_set_output_fx_channels(le_engine* engine, int32_t bus,
+                                         int32_t index, int32_t in_mode,
+                                         int32_t out_mode, float placement,
+                                         float level) {
+  if (engine == NULL || !le_output_bus_valid(bus)) return LE_ERR_INVALID;
+  return le_fx_bus_set_channels(&engine->outputs[bus].fx, index, in_mode,
+                                out_mode, placement, level);
+}
+
+int32_t le_engine_set_all_tracks_fx_channels(le_engine* engine, int32_t index,
+                                             int32_t in_mode, int32_t out_mode,
+                                             float placement, float level) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  return le_fx_bus_set_channels(&engine->all_tracks, index, in_mode, out_mode,
+                                placement, level);
+}
+
 int32_t le_engine_set_output_level(le_engine* engine, int32_t bus,
                                    float level) {
   if (!le_output_bus_valid(bus)) return LE_ERR_INVALID;

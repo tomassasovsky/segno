@@ -832,6 +832,41 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
   /// Per-input enabled flag passed to [setMonitorInputEnabled].
   final Map<int, bool> monitorInputEnabled = {};
 

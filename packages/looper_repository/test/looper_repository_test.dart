@@ -14,6 +14,9 @@ import 'package:segno_engine/segno_engine.dart'
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
+        FxChannelInput,
+        FxChannelOutput,
+        FxChannels,
         FxPlacement,
         LatencyState,
         LoopbackInfo,
@@ -32,6 +35,7 @@ import 'package:segno_engine/segno_engine.dart'
     as le
     show
         AudioDevice,
+        FxChannelOutput,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
@@ -7188,6 +7192,125 @@ void main() {
         effects: repo.laneEffects(0, 0).reversed.toList(),
       );
       expect(repo.laneEffects(0, 0).map((e) => e.slotId), before.reversed);
+    });
+  });
+
+  group('per-entry channel handling and level (slice 3e)', () {
+    const channels = FxChannels(
+      input: FxChannelInput.monoSum,
+      output: FxChannelOutput.mono,
+      placement: -0.5,
+      level: 0.25,
+    );
+
+    test('rides a chain write to the engine, per entry', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.echo, channels: channels),
+        ],
+      );
+
+      // Pushed for EVERY slot on every apply, for the reason the enabled bits
+      // are: they are keyed by index engine-side and by effect here, so a
+      // reorder must not leave one entry's settings on another's slot.
+      expect(engine.laneFxChannels[(0, 0, 0)]?.level, 1.0);
+      expect(engine.laneFxChannels[(0, 0, 1)]?.level, 0.25);
+      expect(
+        engine.laneFxChannels[(0, 0, 1)]?.output,
+        le.FxChannelOutput.mono,
+      );
+    });
+
+    test('the setter names the instance by slot id, never by index', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.echo),
+        ],
+      );
+      final second = repo.laneEffects(0, 0)[1].slotId!;
+
+      expect(
+        repo.setLaneEffectChannels(
+          channel: 0,
+          lane: 0,
+          slotId: second,
+          channels: channels,
+        ),
+        EngineResult.ok,
+      );
+      expect(repo.laneEffects(0, 0)[1].channels, channels);
+      expect(repo.laneEffects(0, 0)[0].channels, FxChannels.defaults);
+      expect(engine.laneFxChannels[(0, 0, 1)]?.level, 0.25);
+
+      // Reordering carries the settings with the entry, and the re-apply puts
+      // them on the slot the entry now occupies.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: repo.laneEffects(0, 0).reversed.toList(),
+      );
+      expect(repo.laneEffects(0, 0)[0].channels, channels);
+      expect(engine.laneFxChannels[(0, 0, 0)]?.level, 0.25);
+      expect(engine.laneFxChannels[(0, 0, 1)]?.level, 1.0);
+    });
+
+    test('an unknown slot id is invalid on both stages', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+
+      expect(
+        repo.setLaneEffectChannels(
+          channel: 0,
+          lane: 0,
+          slotId: 'nobody',
+          channels: channels,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMonitorEffectChannels(
+          input: 0,
+          slotId: 'nobody',
+          channels: channels,
+        ),
+        EngineResult.invalid,
+      );
+    });
+
+    test('survives persist and restore through the envelope', () {
+      final restored = decodeFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            entries: [
+              BuiltInEffect(type: TrackEffectType.echo, channels: channels),
+            ],
+          ),
+        ),
+      );
+      expect(restored.entries.single.channels, channels);
     });
   });
 

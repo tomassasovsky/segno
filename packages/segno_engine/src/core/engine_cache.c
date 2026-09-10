@@ -177,6 +177,11 @@ typedef struct le_cache_job {
   int32_t fx_type[LE_FX_MAX];
   float fx_params[LE_FX_MAX][LE_FX_PARAMS];
   int32_t fx_effective[LE_FX_MAX]; /* chain_on && slot enabled (D-EFFBITS) */
+  /* The entries' channel handling and level (slice 3e), frozen with the rest
+   * of the chain: a printed Pre entry that lost its input choice or its level
+   * would not be what the player heard live. */
+  int32_t chan_any;
+  le_fx_chan chan[LE_FX_MAX];
   int32_t copy_pos; /* frames of dry staged so far (COPYING state only) */
   float* dry;
   float* wet;
@@ -232,7 +237,8 @@ struct le_fx_cache {
  * two folds can never silently disagree about a scheduled render. */
 static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
                                   const int32_t* types, const int32_t* enabled,
-                                  const float params[LE_FX_MAX][LE_FX_PARAMS]) {
+                                  const float params[LE_FX_MAX][LE_FX_PARAMS],
+                                  const le_fx_chan* chan) {
   uint64_t h = 0xcbf29ce484222325ULL;
   if (count > 0) h = le_fx_fp_u32(h, chain_on ? 1u : 0u);
   for (int32_t i = 0; i < count; ++i) {
@@ -243,6 +249,9 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
       h = le_fx_fp_u32(h, f32_to_bits(params[i][p]));
     }
   }
+  /* The channel handling, after the entries — the order
+   * le_lane_pre_fx_fingerprint folds it in (slice 3e). */
+  for (int32_t i = 0; i < count; ++i) h = le_fx_chan_fold(h, &chan[i]);
   return h;
 }
 
@@ -572,7 +581,14 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
       atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
   const uint32_t vol_bits =
       atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed);
-  const uint64_t fp = le_ca_snapshot_fp(count, chain_on, types, raw_en, params);
+  le_fx_chan chan[LE_FX_MAX];
+  int32_t chan_any = 0;
+  memset(chan, 0, sizeof(chan));
+  le_fx_chan_snapshot(chan, &chan_any, count, ln->a_fx_chan_in,
+                      ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
+                      ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
+  const uint64_t fp =
+      le_ca_snapshot_fp(count, chain_on, types, raw_en, params, chan);
   /* Cross-check against the canonical atomic fold: a mismatch means the audio
    * thread published a type/count change mid-snapshot — skip this tick rather
    * than schedule a torn chain (the next tick reads it settled). */
@@ -699,6 +715,13 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
       job->fx_params[s][p] = params[s][p];
     }
   }
+  /* The entries' channel handling, read the way the audio thread reads it —
+   * one helper, so the render and the live chain can never disagree about
+   * what "at its defaults" means. */
+  /* The channel handling the fingerprint above was taken over, not a fresh
+   * read: the job must render exactly the chain its key names. */
+  job->chan_any = chan_any;
+  for (int32_t s = 0; s < LE_FX_MAX; ++s) job->chan[s] = chan[s];
   job->copy_pos = 0;
   job->dry = dry;
   job->wet = NULL;
@@ -810,6 +833,9 @@ static void le_cache_render(le_engine* e, struct le_fx_cache* c,
       le_fx_enable_force_bypass(fx, s);
     }
   }
+  /* The channel cache the live chain reads per buffer, frozen at enqueue. */
+  fx->chan_any = job->chan_any;
+  for (int s = 0; s < LE_FX_MAX; ++s) fx->chan[s] = job->chan[s];
   int failed = 0;
   for (int32_t s = 0; s < job->fx_count; ++s) {
     /* Match the live chain's slot state exactly: the SET_*_FX ring handler

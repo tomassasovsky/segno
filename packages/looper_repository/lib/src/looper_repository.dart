@@ -28,6 +28,9 @@ import 'package:segno_engine/segno_engine.dart'
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
+        FxChannelInput,
+        FxChannelOutput,
+        FxChannels,
         FxPlacement,
         LatencyState,
         LoopbackInfo,
@@ -3827,12 +3830,23 @@ class LooperRepository {
     // bits strictly AFTER the count leaves the domain — keyed by effect, not
     // index — the single source of truth.
     for (var i = 0; i < effects.length; i++) {
-      _engine.setLaneFxEnabled(
-        channel: channel,
-        lane: lane,
-        index: i,
-        enabled: effects[i].enabled,
-      );
+      _engine
+        ..setLaneFxEnabled(
+          channel: channel,
+          lane: lane,
+          index: i,
+          enabled: effects[i].enabled,
+        )
+        // The channel handling and level, pushed on every apply for the same
+        // reason the enabled bits are: they are keyed by slot index engine-side
+        // and by effect here, so a reorder must not leave one entry's settings
+        // on another's slot.
+        ..setLaneFxChannels(
+          channel: channel,
+          lane: lane,
+          index: i,
+          channels: fxChannelsToEngine(effects[i].channels),
+        );
     }
     return result;
   }
@@ -4113,11 +4127,17 @@ class LooperRepository {
     // Per-slot enabled bits strictly AFTER the count push — see
     // [_applyLaneEffects] for the D-ENSEED ordering rationale.
     for (var i = 0; i < effects.length; i++) {
-      _engine.setTrackFxEnabled(
-        channel: channel,
-        index: i,
-        enabled: effects[i].enabled,
-      );
+      _engine
+        ..setTrackFxEnabled(
+          channel: channel,
+          index: i,
+          enabled: effects[i].enabled,
+        )
+        ..setTrackFxChannels(
+          channel: channel,
+          index: i,
+          channels: fxChannelsToEngine(effects[i].channels),
+        );
     }
     return result;
   }
@@ -4270,11 +4290,17 @@ class LooperRepository {
     // Per-slot enabled bits strictly AFTER the count push — see
     // [_applyLaneEffects] for the D-ENSEED ordering rationale.
     for (var i = 0; i < effects.length; i++) {
-      _engine.setOutputFxEnabled(
-        bus: kMasterOutputBus,
-        index: i,
-        enabled: effects[i].enabled,
-      );
+      _engine
+        ..setOutputFxEnabled(
+          bus: kMasterOutputBus,
+          index: i,
+          enabled: effects[i].enabled,
+        )
+        ..setOutputFxChannels(
+          bus: kMasterOutputBus,
+          index: i,
+          channels: fxChannelsToEngine(effects[i].channels),
+        );
     }
     return result;
   }
@@ -4380,9 +4406,63 @@ class LooperRepository {
     }
     final result = _engine.setAllTracksFxCount(count: effects.length);
     for (var i = 0; i < effects.length; i++) {
-      _engine.setAllTracksFxEnabled(index: i, enabled: effects[i].enabled);
+      _engine
+        ..setAllTracksFxEnabled(index: i, enabled: effects[i].enabled)
+        ..setAllTracksFxChannels(
+          index: i,
+          channels: fxChannelsToEngine(effects[i].channels),
+        );
     }
     return result;
+  }
+
+  /// Sets the channel handling and level of the entry with [slotId] on lane
+  /// [lane] of track [channel] (slice 3e).
+  ///
+  /// By identity, not index, for the same reason the placement setters are:
+  /// these are per-instance settings, and an index is what a reorder or a
+  /// placement move changes. Returns [EngineResult.invalid] when no entry on
+  /// that chain carries [slotId].
+  EngineResult setLaneEffectChannels({
+    required int channel,
+    required int lane,
+    required String slotId,
+    required FxChannels channels,
+  }) {
+    final effects = _laneEffects[(channel, lane)];
+    if (effects == null) return EngineResult.invalid;
+    final index = effects.indexWhere((fx) => fx.slotId == slotId);
+    if (index < 0) return EngineResult.invalid;
+    _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
+      ..[index] = _withChannels(effects[index], channels);
+    _reproject();
+    return _engine.setLaneFxChannels(
+      channel: channel,
+      lane: lane,
+      index: index,
+      channels: fxChannelsToEngine(channels),
+    );
+  }
+
+  /// Sets the channel handling and level of the entry with [slotId] on
+  /// monitor [input]'s chain — see [setLaneEffectChannels].
+  EngineResult setMonitorEffectChannels({
+    required int input,
+    required String slotId,
+    required FxChannels channels,
+  }) {
+    final effects = _monitorEffects[input];
+    if (effects == null) return EngineResult.invalid;
+    final index = effects.indexWhere((fx) => fx.slotId == slotId);
+    if (index < 0) return EngineResult.invalid;
+    _monitorEffects[input] = List<TrackEffect>.of(effects)
+      ..[index] = _withChannels(effects[index], channels);
+    _monitorChanged(input);
+    return _engine.setMonitorInputFxChannels(
+      input: input,
+      index: index,
+      channels: fxChannelsToEngine(channels),
+    );
   }
 
   // ---- per-slot + per-chain enable, all four stages (R15/R16) ----
@@ -4637,6 +4717,13 @@ class LooperRepository {
     BuiltInEffect() => fx.copyWith(enabled: enabled),
     PluginEffect() => fx.copyWith(enabled: enabled),
   };
+
+  /// Sets one entry's channel handling, dispatching over the sealed hierarchy.
+  static TrackEffect _withChannels(TrackEffect fx, FxChannels channels) =>
+      switch (fx) {
+        BuiltInEffect() => fx.copyWith(channels: channels),
+        PluginEffect() => fx.copyWith(channels: channels),
+      };
 
   /// Sets one entry's placement, dispatching over the sealed hierarchy.
   static TrackEffect _placed(TrackEffect fx, FxPlacement placement) =>
@@ -4927,11 +5014,17 @@ class LooperRepository {
     // Per-slot enabled bit for EVERY slot, strictly AFTER the count push —
     // see [_applyLaneEffects] for the D-ENSEED ordering rationale.
     for (var i = 0; i < effects.length; i++) {
-      _engine.setMonitorInputFxEnabled(
-        input: input,
-        index: i,
-        enabled: effects[i].enabled,
-      );
+      _engine
+        ..setMonitorInputFxEnabled(
+          input: input,
+          index: i,
+          enabled: effects[i].enabled,
+        )
+        ..setMonitorInputFxChannels(
+          input: input,
+          index: i,
+          channels: fxChannelsToEngine(effects[i].channels),
+        );
     }
     return result;
   }

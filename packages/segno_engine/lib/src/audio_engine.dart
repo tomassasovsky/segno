@@ -718,6 +718,28 @@ abstract interface class MasterBusControl {
   /// Enables/disables the WHOLE All tracks chain, leaving the per-entry flags
   /// intact. Default enabled.
   EngineResult setAllTracksFxChainEnabled({required bool enabled});
+
+  /// Sets the All tracks chain entry [index]'s channel handling and level —
+  /// see [EffectsControl.setLaneFxChannels].
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  });
+
+  /// Sets track [channel]'s Track-stage chain entry [index]'s channel
+  /// handling and level.
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  });
+
+  /// Sets output bus [bus]'s chain entry [index]'s channel handling and level.
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  });
 }
 
 /// Per-lane (record-route) effect chains.
@@ -749,6 +771,29 @@ abstract interface class EffectsControl {
     required int lane,
     required int count,
     int preCount = 0,
+  });
+
+  /// Sets lane [lane] of track [channel]'s chain entry [index]'s channel
+  /// handling and level (slice 3e).
+  ///
+  /// The accepted design puts these around each instance: the input choice
+  /// before its effects, the output choice and then the level after them. A
+  /// bypassed entry passes the signal through exactly as it arrived — the
+  /// choices belong to the entry, so they leave with it. One call, because
+  /// the four values are one control and a half-applied change is audible.
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  });
+
+  /// Sets monitor [input]'s chain entry [index]'s channel handling and level
+  /// — see [setLaneFxChannels].
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
   });
 
   /// Sets parameter [param] (`0..kTrackEffectParams-1`) of chain entry [index]
