@@ -5543,10 +5543,11 @@ def _rail_solid(length, screws_local):
     channel centreline; z up from the FLOOR face, so z=0 is the plane the rubber
     would touch if the channel were full depth and the strip stands proud of it.
 
-    Both ends are ROUNDED to a stadium (owner call) and the channel follows, so a
-    square-cut strip leaves a small crescent unfilled at each end -- under the
-    console, invisible, and it keeps the strip a scissors cut rather than a
-    template job.
+    Both ends are ROUNDED to a stadium (owner call) and the channel follows. A
+    square-cut strip cannot reach into a rounded end -- its corners stop at the
+    tangent, 12.6 mm short -- so the installer rounds the two corners with the
+    same scissors that cut the strip. That is a two-second cut, not a template
+    job, and it is the reason the strip length below is quoted to the channel.
 
     The screw head sinks into a counterbore that stops inside the PETG, above the
     channel roof, so the neoprene runs over it unbroken and never needs punching.

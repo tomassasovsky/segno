@@ -109,17 +109,35 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   `post_felt:1` / `:2` use the same placements and model the bare 1.2 mm space.
   Native unfold gives **81.161489 ×30.142857 ×1.6 mm**, matching the DXF.
 - **Floor rails** (`floor_rails`, root, populated only — printed parts, not sheet
-  metal): five rails as ENVELOPES, one PETG bar and one neoprene bar each, joints
-  ignored. The real segmented geometry ships as `segno_floor_rail_*.step/.stl`;
-  an envelope is conservative for interference, which is all this document asks
-  of it. World datum: the base underside is z = 0, so PETG spans 0 to −6 mm and
-  the strip −6 to −7.7. Plate (u, v) maps straight to world (u/10, v/10), the
-  same mapping `base_foot_xy()` had when it drove the feet. Current depths:
-  front 18.0 / 114.883, mid 181.284 / 278.654, rear **343.25** — the rear one is
-  not where the feet were, because the buck converters' floor-side nuts are. The
-  envelopes still run the rail's full span; the printed segments stop 1.5 mm
-  short of it at each outer end, and an envelope is meant to be the larger of the
-  two. Do not chase that 1.5 mm into this model.
+  metal): the REAL geometry, 28 bodies in one non-parametric base feature named
+  `ISSUE_1019_FLOOR_RAIL_SEGMENTS` — the 14 printed PETG segments with their
+  stadium ends, channel and buried counterbores, plus the 14 neoprene strips.
+  This replaced five envelope bars, which could not show the thing the owner
+  actually approved: four identical segments per rail with a visible joint gap.
+  World datum: the base underside is z = 0, so PETG spans 0 to −6 mm and the
+  strip −7.7 to −4.5 (1.5 buried in the channel, 1.7 proud). Plate (u, v) maps
+  straight to world (u/10, v/10), the same mapping `base_foot_xy()` had when it
+  drove the feet. Depths: front 18.0 / 114.883, mid 181.284 / 278.654, rear
+  **343.25** — the rear one is not where the feet were, because the buck
+  converters' floor-side nuts are.
+
+  **Build it from primitives in ONE base feature, not 14 STEP imports and not a
+  sketch-and-extrude per body.** A base feature is a single timeline entry and a
+  single recompute; the placeholder version cost 31 entries for a tenth of the
+  geometry, and per-body parametric operations are what froze this document
+  before. `TemporaryBRepManager` boxes and cylinders reproduce `_rail_solid()`
+  exactly — verified at 3e−11 mm³ on volume and 1e−13 mm on bounding box against
+  CadQuery, over all 14. Rename and colour the bodies AFTER `finishEdit()`; names
+  assigned to the proxies inside the edit are silently dropped.
+  `scratchpad/rails.json`-style handoff (stem, u0, v, printed length, screw
+  offsets, reference volume and bbox) comes straight out of the generator, so the
+  rebuild is mechanical. The PETG is shown grey purely so the segmentation reads
+  on screen; the part is black.
+
+  The check worth running after any rebuild: every rail screw station must land
+  on a bore that already exists in the base's `CUT` sketch. All 48 do. That is
+  what this model is for — the generator gates its own arithmetic, and this
+  catches the case where the two have drifted apart.
 - **Rolling back is not free for feature creation.** The marker has to sit at or
   past the base's `Extrude1` for `comp.bRepBodies.item(0)` to exist, so a script
   that rolls back to edit sketch curves must roll forward again before it adds a
@@ -149,6 +167,12 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   is not centred on the bore. Delete those curves with the timeline marker rolled
   back to just after the sketch; deleting them with the marker at the end
   recomputes the whole model once per curve and takes tens of minutes.
+  **A re-export is not a change.** Running `fusion_export_formed.py` again rewrites
+  every flat with a different polyline START VERTEX and coordinates that differ in
+  the 13th decimal, so `git diff` shows thousands of changed lines for identical
+  geometry (5,960 on the base alone). Check `compare_flat_pattern` or the pipeline
+  test before believing a diff of that shape; if the areas match, revert the files
+  rather than committing the churn.
   **Type coordinates at full precision.** Rounding a bore centre to four
   decimals is a 40-80 nm error, which sounds like nothing and is not:
   seventeen of them put 0.0036 mm² into `compare_flat_pattern`, and the
