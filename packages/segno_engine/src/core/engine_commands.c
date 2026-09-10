@@ -1698,6 +1698,19 @@ int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
   return LE_OK;
 }
 
+int32_t le_engine_set_track_quantize_div(le_engine* engine, int32_t channel,
+                                         int32_t div) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (div > LE_GRID_DIV_SIXTEENTH) return LE_ERR_INVALID;
+  /* A plain store: the audio thread reads the override live at every
+   * boundary check, so a pending arm follows the new division from its next
+   * boundary on, exactly as the global setter's command does. */
+  store_i32(&engine->tracks[channel].a_quantize_div_override,
+            div < 0 ? -1 : div);
+  return LE_OK;
+}
+
 /* ---- tempo grid (state + locks; see segno_engine_api.h's tempo section) ----
  * Plain le_push producers: validation that needs no engine state runs here on
  * the control thread; the D6 tempo lock is enforced on the AUDIO thread
@@ -1730,6 +1743,10 @@ int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div) {
   if (div < LE_GRID_DIV_OFF || div > LE_GRID_DIV_SIXTEENTH) {
     return LE_ERR_INVALID;
   }
+  /* Mirrored before the push, the way the gate's own setter writes: the
+   * snapshot publishes the pair from here, so they can never disagree in the
+   * block the command is still travelling in. */
+  engine->quantize_div = div;
   return le_push(engine, LE_CMD_SET_QUANTIZE_DIV, div, 0.0f);
 }
 
@@ -2118,6 +2135,23 @@ int32_t le_engine_set_overdub_feedback(le_engine* engine, float feedback) {
   store_f32(&engine->a_overdub_fb_bits, feedback);
   le_plog_push_ctrl(engine, (le_command){.code = LE_PLOG_SET_OVERDUB_FEEDBACK,
                                         .arg_f = feedback});
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
+                                             int32_t channel, float feedback) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (feedback < 0.0f) {
+    feedback = -1.0f; /* inherit */
+  } else if (feedback > 1.0f) {
+    feedback = 1.0f;
+  }
+  store_f32(&engine->tracks[channel].a_overdub_fb_bits, feedback);
+  le_plog_push_ctrl(engine,
+                    (le_command){.code = LE_PLOG_SET_TRACK_OVERDUB_FEEDBACK,
+                                 .arg_i = channel,
+                                 .arg_f = feedback});
   return LE_OK;
 }
 

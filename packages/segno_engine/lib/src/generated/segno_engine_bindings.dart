@@ -1685,6 +1685,37 @@ class SegnoEngineBindings {
   late final _le_engine_set_track_quantize = _le_engine_set_track_quantizePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Sets track [channel]'s musical quantization division override (accepted
+  /// design, slice 2b): a negative [div] inherits the global default
+  /// (le_engine_set_quantize_div); 0 = the loop top only; 1..5 = bar .. 1/16
+  /// note (le_grid_div). Read live wherever the global division is read, so a
+  /// pending arm on this track fires on this track's own boundaries and a change
+  /// while armed re-evaluates on the next boundary of the new division. Only
+  /// meaningful while the track's quantize gate is effectively on
+  /// (le_engine_set_quantize / le_engine_set_track_quantize): the gate decides
+  /// whether a press waits at all, the division decides for what.
+  int le_engine_set_track_quantize_div(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int div,
+  ) {
+    return _le_engine_set_track_quantize_div(
+      engine,
+      channel,
+      div,
+    );
+  }
+
+  late final _le_engine_set_track_quantize_divPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_quantize_div');
+  late final _le_engine_set_track_quantize_div =
+      _le_engine_set_track_quantize_divPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Cancels track [channel]'s pending record arm, whatever armed it — the
   /// quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
   /// section toggle. No-op (LE_OK) when the track is not armed.
@@ -1996,8 +2027,8 @@ class SegnoEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Sets track [channel]'s One Shot flag (0/1). Rejects only an out-of-range
-  /// channel; accepted in every looper mode, though inert outside Free/Song
-  /// (see the class doc above). A SETTING, not content: like
+  /// channel; accepted and live in every looper mode (see the class doc
+  /// above). A SETTING, not content: like
   /// a_length_preset_bars and target_multiple, it is untouched by clear /
   /// undo-to-empty / mode switches — handle_clear's per-track reset
   /// (engine_process.c) deliberately does not include it, the same "cleared
@@ -2356,6 +2387,35 @@ class SegnoEngineBindings {
   late final _le_engine_set_overdub_feedback =
       _le_engine_set_overdub_feedbackPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  /// Sets track [channel]'s overdub feedback override (accepted design, slice
+  /// 2b): a negative [feedback] inherits the global coefficient
+  /// (le_engine_set_overdub_feedback); otherwise the value is clamped to [0,1]
+  /// and used for this track's overdub passes. Live: a change during a pass
+  /// reaches the write head through a ~10 ms ramp, never a step, so the
+  /// retained layer has no level seam. Like the global coefficient, only
+  /// overdub passes apply it; playback never decays.
+  int le_engine_set_track_overdub_feedback(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    double feedback,
+  ) {
+    return _le_engine_set_track_overdub_feedback(
+      engine,
+      channel,
+      feedback,
+    );
+  }
+
+  late final _le_engine_set_track_overdub_feedbackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_track_overdub_feedback');
+  late final _le_engine_set_track_overdub_feedback =
+      _le_engine_set_track_overdub_feedbackPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
 
   /// Enables sound-activated recording: a record press on an empty track waits and
   /// begins capturing the first frame the input level crosses the threshold. A
@@ -5031,6 +5091,21 @@ final class le_track_snapshot extends ffi.Struct {
   /// the boundary from this rather than guessing from the settings.
   @ffi.Int32()
   external int pending_trigger;
+
+  /// -1 inherit, 0 forced off, 1 forced on
+  /// (le_engine_set_track_quantize)
+  @ffi.Int32()
+  external int quantize_override;
+
+  /// -1 inherit, else le_grid_div
+  /// (le_engine_set_track_quantize_div)
+  @ffi.Int32()
+  external int quantize_div_override;
+
+  /// negative = inherit, else 0..1
+  /// (le_engine_set_track_overdub_feedback)
+  @ffi.Float()
+  external double overdub_feedback_override;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -5460,6 +5535,18 @@ final class le_snapshot extends ffi.Struct {
   /// per-track peaks. Sibling of output_rms above.
   @ffi.Float()
   external double output_peak;
+
+  /// 0/1: the global loop-grid record quantize gate
+  @ffi.Int32()
+  external int quantize;
+
+  /// 0/1: sound-activated record start
+  @ffi.Int32()
+  external int auto_record;
+
+  /// the global coefficient, 0..1 (default 1)
+  @ffi.Float()
+  external double overdub_feedback;
 }
 
 /// The plugin format a descriptor was discovered in.

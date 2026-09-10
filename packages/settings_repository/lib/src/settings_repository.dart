@@ -1145,21 +1145,56 @@ class SettingsRepository {
   }) => _store.remove(_inputNameKey(device, input));
 
   String _trackQuantizeKey(int channel) => 'track_quantize.$channel';
+  String _trackRecordTimingKey(int channel) => 'track_record_timing.$channel';
 
-  /// Loads track [channel]'s quantize override: `null` (inherit the global
-  /// default), `false` (force off), or `true` (force on).
-  Future<bool?> loadTrackQuantize(int channel) async {
-    final value = await _store.getInt(_trackQuantizeKey(channel));
-    if (value == null || value < 0) return null;
-    return value > 0;
+  /// Loads track [channel]'s record timing override as its `RecordTiming`
+  /// code (`0` = immediately, `1` = loop start, `2..6` = bar to 1/16), or
+  /// `null` to follow the default.
+  ///
+  /// A track saved before slice 2b carried only a quantize gate override
+  /// (`track_quantize.N`): forced off reads as immediately; forced on reads
+  /// as the loop top, or the saved global division when one was set, which
+  /// is what that track waited for at the time.
+  Future<int?> loadTrackRecordTiming(int channel) async {
+    final value = await _store.getInt(_trackRecordTimingKey(channel));
+    if (value != null) return value < 0 ? null : value;
+    final gate = await _store.getInt(_trackQuantizeKey(channel));
+    if (gate == null || gate < 0) return null;
+    if (gate == 0) return 0;
+    final division = await loadQuantizeDiv();
+    return division == 0 ? 1 : division + 1;
   }
 
-  /// Saves track [channel]'s quantize override (`null` => inherit).
-  Future<void> saveTrackQuantize(int channel, {required bool? enabled}) =>
-      _store.setInt(
-        _trackQuantizeKey(channel),
-        enabled == null ? -1 : (enabled ? 1 : 0),
-      );
+  /// Saves track [channel]'s record timing override by code (`null` =>
+  /// follow the default). The pre-slice-2b gate key is cleared so the
+  /// migration above never reads it again.
+  Future<void> saveTrackRecordTiming(int channel, int? code) async {
+    await _store.setInt(_trackRecordTimingKey(channel), code ?? -1);
+    await _store.remove(_trackQuantizeKey(channel));
+  }
+
+  static const String _overdubDecayKey = 'looper.overdub_decay';
+  String _trackOverdubDecayKey(int channel) => 'track_overdub_decay.$channel';
+
+  /// Loads the default overdub decay in percent (`0..100`); `0` when unset.
+  Future<int> loadOverdubDecay() async =>
+      await _store.getInt(_overdubDecayKey) ?? 0;
+
+  /// Saves the default overdub decay in percent.
+  Future<void> saveOverdubDecay(int percent) =>
+      _store.setInt(_overdubDecayKey, percent);
+
+  /// Loads track [channel]'s overdub decay override in percent, or `null`
+  /// to follow the default.
+  Future<int?> loadTrackOverdubDecay(int channel) async {
+    final value = await _store.getInt(_trackOverdubDecayKey(channel));
+    return value == null || value < 0 ? null : value;
+  }
+
+  /// Saves track [channel]'s overdub decay override (`null` => follow the
+  /// default).
+  Future<void> saveTrackOverdubDecay(int channel, int? percent) =>
+      _store.setInt(_trackOverdubDecayKey(channel), percent ?? -1);
 
   String _laneCountKey(int channel) => 'lane_count.$channel';
   String _laneInputKey(int channel, int lane) => 'lane_input.$channel.$lane';

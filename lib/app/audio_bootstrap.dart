@@ -188,15 +188,25 @@ Future<AutoStartResult> tryAutoStartEngine({
   // created on the auto-start path and may not have initialized before the
   // pedal triggers a recording, so without this a saved forced ×1 reverts to
   // auto-round-up and loops record at ×2/×4.
-  repository.setDefaultMultiple(multiple: await settings.loadDefaultMultiple());
+  repository
+    ..setDefaultMultiple(multiple: await settings.loadDefaultMultiple())
+    // The default overdub decay (slice 2b), for the same reason: the cubit
+    // that owns it may not have loaded before the first overdub pass.
+    ..setOverdubDecay(await settings.loadOverdubDecay());
 
   // Restore per-track transport overrides and every lane's routing / mix /
   // effects so saved multi-lane setups are reapplied on launch (mirroring the
   // latency-offset restore above).
   for (final track in repository.state.tracks) {
-    final quantize = await settings.loadTrackQuantize(track.channel);
-    if (quantize != null) {
-      repository.setTrackQuantize(channel: track.channel, enabled: quantize);
+    final timing = RecordTiming.fromCode(
+      await settings.loadTrackRecordTiming(track.channel),
+    );
+    if (timing != null) {
+      repository.setTrackRecordTiming(channel: track.channel, timing: timing);
+    }
+    final decay = await settings.loadTrackOverdubDecay(track.channel);
+    if (decay != null) {
+      repository.setTrackOverdubDecay(channel: track.channel, percent: decay);
     }
     final multiple = await settings.loadTrackMultiple(track.channel);
     if (multiple > 0) {

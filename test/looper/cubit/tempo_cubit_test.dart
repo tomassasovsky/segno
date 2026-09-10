@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -12,6 +14,7 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
+  late StreamController<LooperState> looperStates;
 
   setUpAll(() {
     registerFallbackValue(GridDivision.off);
@@ -21,6 +24,8 @@ void main() {
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    looperStates = StreamController<LooperState>.broadcast();
+    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
     for (final stub in <void Function()>[
       () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
       () => when(
@@ -272,5 +277,37 @@ void main() {
         [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
       );
     },
+  );
+
+  tearDown(() => looperStates.close());
+
+  blocTest<TempoCubit, TempoSettings>(
+    'setting a count-in persists Sound start as off (the engine clears it, '
+    'D9)',
+    setUp: () => settings.saveAutoRecord(value: true),
+    build: () => TempoCubit(repository: repository, settings: settings),
+    act: (cubit) => cubit.setCountInBars(2),
+    expect: () => [const TempoSettings(countInBars: 2)],
+    verify: (_) async {
+      expect(await settings.loadCountInBars(), 2);
+      expect(await settings.loadAutoRecord(), isFalse);
+    },
+  );
+
+  blocTest<TempoCubit, TempoSettings>(
+    'follows the engine when Sound start set elsewhere clears the count-in, '
+    'and persists what it sees',
+    setUp: () => settings.saveCountInBars(2),
+    build: () => TempoCubit(repository: repository, settings: settings),
+    act: (cubit) async {
+      await cubit.load();
+      looperStates.add(const LooperState());
+      await Future<void>.delayed(Duration.zero);
+    },
+    expect: () => [
+      const TempoSettings(countInBars: 2),
+      const TempoSettings(),
+    ],
+    verify: (_) async => expect(await settings.loadCountInBars(), 0),
   );
 }

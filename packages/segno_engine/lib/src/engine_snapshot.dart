@@ -188,6 +188,85 @@ enum GridDivision {
   };
 }
 
+/// When a record or overdub request over an existing loop takes effect
+/// (accepted design, Length & quantize): the one product setting the
+/// engine's quantize gate and musical division pair map to.
+///
+/// [immediately] is the gate off; every other value is the gate on with the
+/// division that names it: [loopStart] waits for the loop top only, the rest
+/// wait for the next boundary of that note value on the loop-locked grid.
+/// The defining first recording never waits (it has no grid yet); its
+/// count-in or Sound start is a separate Recording setting.
+enum RecordTiming {
+  /// The press acts now.
+  immediately,
+
+  /// The press waits for the next loop top.
+  loopStart,
+
+  /// The next bar boundary.
+  bar,
+
+  /// The next half note.
+  half,
+
+  /// The next quarter note.
+  quarter,
+
+  /// The next eighth note.
+  eighth,
+
+  /// The next sixteenth note.
+  sixteenth;
+
+  /// The timing the engine's gate and division pair mean.
+  static RecordTiming of({
+    required bool quantize,
+    required GridDivision division,
+  }) {
+    if (!quantize) return RecordTiming.immediately;
+    return switch (division) {
+      GridDivision.off => RecordTiming.loopStart,
+      GridDivision.bar => RecordTiming.bar,
+      GridDivision.half => RecordTiming.half,
+      GridDivision.quarter => RecordTiming.quarter,
+      GridDivision.eighth => RecordTiming.eighth,
+      GridDivision.sixteenth => RecordTiming.sixteenth,
+    };
+  }
+
+  /// Whether the press waits at all (the engine's quantize gate).
+  bool get quantize => this != RecordTiming.immediately;
+
+  /// The musical division the press waits for; [GridDivision.off] for the
+  /// loop top only, and for [immediately] (where the gate is off anyway).
+  GridDivision get division => switch (this) {
+    RecordTiming.immediately || RecordTiming.loopStart => GridDivision.off,
+    RecordTiming.bar => GridDivision.bar,
+    RecordTiming.half => GridDivision.half,
+    RecordTiming.quarter => GridDivision.quarter,
+    RecordTiming.eighth => GridDivision.eighth,
+    RecordTiming.sixteenth => GridDivision.sixteenth,
+  };
+
+  /// A stable integer for persistence ([index] order; `0` = [immediately]).
+  int get code => index;
+
+  /// Maps a persisted [code] back; `null` for an unknown or absent value.
+  static RecordTiming? fromCode(int? code) =>
+      code != null && code >= 0 && code < RecordTiming.values.length
+      ? RecordTiming.values[code]
+      : null;
+
+  /// Maps a persisted [name] back; `null` for an unknown or absent value.
+  static RecordTiming? fromName(String? name) {
+    for (final value in RecordTiming.values) {
+      if (value.name == name) return value;
+    }
+    return null;
+  }
+}
+
 /// Click (metronome) audibility mode — a 4-value mode (Sheeran manual
 /// §5.9.1) that gates WHEN the click voice sounds; WHERE it sounds is the
 /// click output mask (`TempoControl.setClickOutput`, default no outputs).
@@ -444,6 +523,9 @@ class TrackSnapshot {
     this.restoreState = TrackRestoreState.idle,
     this.positionFrames = 0,
     this.pendingTrigger = -1,
+    this.quantizeOverride,
+    this.quantizeDivOverride,
+    this.overdubFeedbackOverride,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -469,6 +551,9 @@ class TrackSnapshot {
       restoreState = TrackRestoreState.idle,
       positionFrames = 0,
       pendingTrigger = -1,
+      quantizeOverride = null,
+      quantizeDivOverride = null,
+      overdubFeedbackOverride = null,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -500,6 +585,15 @@ class TrackSnapshot {
     restoreState: TrackRestoreState.fromCode(native.restore_state),
     positionFrames: native.position_frames,
     pendingTrigger: native.pending_trigger,
+    quantizeOverride: native.quantize_override < 0
+        ? null
+        : native.quantize_override != 0,
+    quantizeDivOverride: native.quantize_div_override < 0
+        ? null
+        : GridDivision.fromCode(native.quantize_div_override),
+    overdubFeedbackOverride: native.overdub_feedback_override < 0
+        ? null
+        : native.overdub_feedback_override,
     lanes: lanes,
   );
 
@@ -581,6 +675,34 @@ class TrackSnapshot {
   /// toggle at the primary's loop top; `-1` while nothing is pending.
   final int pendingTrigger;
 
+  /// This track's quantize gate override (slice 2b): `null` inherits the
+  /// global gate, `false` forces the press immediate, `true` forces it to
+  /// wait. Read back from the engine (`LooperTransport.setTrackQuantize`).
+  final bool? quantizeOverride;
+
+  /// This track's musical division override (slice 2b): `null` inherits the
+  /// global division. Read back from the engine
+  /// (`LooperTransport.setTrackQuantizeDiv`).
+  final GridDivision? quantizeDivOverride;
+
+  /// This track's overdub feedback override in `0..1` (slice 2b): `null`
+  /// inherits the global coefficient. Read back from the engine
+  /// (`LooperTransport.setTrackOverdubFeedback`).
+  final double? overdubFeedbackOverride;
+
+  /// The record timing this track's overrides amount to, against the
+  /// [globalDivision] it would inherit: `null` while the gate is inherited
+  /// (the track follows the default in full), else the timing of its own
+  /// gate and its own or the inherited division.
+  RecordTiming? recordTimingOverride(GridDivision globalDivision) {
+    final gate = quantizeOverride;
+    if (gate == null) return null;
+    return RecordTiming.of(
+      quantize: gate,
+      division: quantizeDivOverride ?? globalDivision,
+    );
+  }
+
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
 
@@ -629,10 +751,13 @@ class TrackSnapshot {
           restoreState == other.restoreState &&
           positionFrames == other.positionFrames &&
           pendingTrigger == other.pendingTrigger &&
+          quantizeOverride == other.quantizeOverride &&
+          quantizeDivOverride == other.quantizeDivOverride &&
+          overdubFeedbackOverride == other.overdubFeedbackOverride &&
           _listEquals(lanes, other.lanes);
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     state,
     volume,
     muted,
@@ -652,8 +777,11 @@ class TrackSnapshot {
     restoreState,
     positionFrames,
     pendingTrigger,
+    quantizeOverride,
+    quantizeDivOverride,
+    overdubFeedbackOverride,
     Object.hashAll(lanes),
-  );
+  ]);
 }
 
 /// A class of real device dropout, as counted by [CallbackWindowStats.xruns].
@@ -978,6 +1106,9 @@ class EngineSnapshot {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.quantize = false,
+    this.autoRecord = false,
+    this.overdubFeedback = 1,
     this.tracks = const [],
   });
 
@@ -1031,6 +1162,9 @@ class EngineSnapshot {
       countInBeatsLeft = 0,
       looperMode = LooperMode.multi,
       primaryTrack = -1,
+      quantize = false,
+      autoRecord = false,
+      overdubFeedback = 1,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -1090,6 +1224,9 @@ class EngineSnapshot {
     countInBeatsLeft: native.count_in_beats_left,
     looperMode: LooperMode.fromCode(native.looper_mode),
     primaryTrack: native.primary_track,
+    quantize: native.quantize != 0,
+    autoRecord: native.auto_record != 0,
+    overdubFeedback: native.overdub_feedback,
     tracks: tracks,
   );
 
@@ -1319,6 +1456,23 @@ class EngineSnapshot {
   /// in-range channel, never back to `-1`, once first crowned.
   final int primaryTrack;
 
+  /// The global loop-grid record quantize gate the engine holds (slice 2b):
+  /// what a record press over a master waits for, together with
+  /// [quantizeDiv]. Published so the effective record timing is read from
+  /// the engine rather than from what was last sent.
+  final bool quantize;
+
+  /// Whether recording is sound-activated (slice 2b). Published because the
+  /// engine clears it when a count-in is set, and clears the count-in when
+  /// it is set: the two exclude each other at the engine boundary (D9).
+  final bool autoRecord;
+
+  /// The global overdub feedback coefficient in `0..1` (slice 2b): what an
+  /// overdub pass keeps of the existing layer at the write head; `1` keeps
+  /// it all (the classic additive overdub). Per-track overrides are on
+  /// [TrackSnapshot.overdubFeedbackOverride].
+  final double overdubFeedback;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -1402,6 +1556,9 @@ class EngineSnapshot {
           countInBeatsLeft == other.countInBeatsLeft &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
+          quantize == other.quantize &&
+          autoRecord == other.autoRecord &&
+          overdubFeedback == other.overdubFeedback &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -1454,6 +1611,9 @@ class EngineSnapshot {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    quantize,
+    autoRecord,
+    overdubFeedback,
     ...tracks,
   ]);
 

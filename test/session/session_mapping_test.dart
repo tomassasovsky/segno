@@ -414,6 +414,45 @@ void main() {
       );
     });
 
+    test("the session's own defaults reach the rig, not just the per-track "
+        'overrides', () {
+      // A track whose override is null follows the DEFAULT. Carrying the
+      // overrides across a load without the default they override leaves that
+      // track on whatever the app was last set to.
+      final rig = rigFromBundle((
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [],
+          recordTiming: RecordTiming.quarter,
+          overdubDecay: 40,
+        ),
+        laneStems: const {},
+      ));
+
+      expect(rig.recordTiming, RecordTiming.quarter);
+      expect(rig.overdubDecay, 40);
+    });
+
+    test("a manifest that names no defaults still carries the model's own, "
+        'so a load RESETS rather than inherits', () {
+      // The same posture the FX stages take: a fact the manifest does not
+      // describe is reset on apply, never left as whatever the live rig had.
+      final rig = rigFromBundle((
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [],
+        ),
+        laneStems: const {},
+      ));
+
+      expect(rig.recordTiming, RecordTiming.immediately);
+      expect(rig.overdubDecay, 0);
+    });
+
     Session sessionWithMonitor(SessionMonitor monitor) => Session(
       sampleRate: 48000,
       channels: 1,
@@ -724,6 +763,39 @@ void main() {
       expect(rig.tracks, hasLength(2));
       expect(rig.tracks[0].lengthPresetBars, 4);
       expect(rig.tracks[1].lengthPresetBars, 0);
+    });
+
+    test('carries the record timing and overdub decay overrides (slice 2b) '
+        'through to the rig', () {
+      final l0 = Float32List.fromList([1, 1, 1, 1]);
+      final bundle = (
+        session: sessionWith([
+          SessionTrack(
+            channel: 0,
+            multiple: 1,
+            lengthFrames: 4,
+            recordTiming: RecordTiming.quarter,
+            overdubDecay: 30,
+            lanes: [lane(0, 'track0_lane0_L0.wav')],
+          ),
+          SessionTrack(
+            channel: 1,
+            multiple: 1,
+            lengthFrames: 4,
+            lanes: [lane(0, 'track1_lane0_L0.wav')],
+          ),
+        ]),
+        laneStems: {
+          (0, 0): [l0],
+          (1, 0): [l0],
+        },
+      );
+
+      final rig = rigFromBundle(bundle);
+      expect(rig.tracks[0].recordTiming, RecordTiming.quarter);
+      expect(rig.tracks[0].overdubDecay, 30);
+      expect(rig.tracks[1].recordTiming, isNull);
+      expect(rig.tracks[1].overdubDecay, isNull);
     });
 
     test(

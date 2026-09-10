@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -12,6 +14,7 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
+  late StreamController<LooperState> looperStates;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -25,7 +28,11 @@ void main() {
     when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
+    looperStates = StreamController<LooperState>.broadcast();
+    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
   });
+
+  tearDown(() => looperStates.close());
 
   RecordOptionsCubit build() =>
       RecordOptionsCubit(repository: repository, settings: settings);
@@ -81,6 +88,49 @@ void main() {
         verify(() => repository.setDefaultMultiple(multiple: 2)).called(1);
         expect(await settings.loadDefaultMultiple(), 2);
       },
+    );
+    blocTest<RecordOptionsCubit, RecordOptions>(
+      'turning Sound start on persists the count-in as off (the engine '
+      'clears it, D9)',
+      setUp: () => settings.saveCountInBars(2),
+      build: build,
+      act: (cubit) => cubit.setAutoRecord(value: true),
+      expect: () => [const RecordOptions(autoRecord: true)],
+      verify: (_) async {
+        expect(await settings.loadAutoRecord(), isTrue);
+        expect(await settings.loadCountInBars(), 0);
+      },
+    );
+
+    blocTest<RecordOptionsCubit, RecordOptions>(
+      'follows the engine when a count-in set elsewhere turns Sound start '
+      'off, and persists what it sees',
+      setUp: () => settings.saveAutoRecord(value: true),
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        looperStates.add(
+          const LooperState(transport: TransportState(countInBars: 1)),
+        );
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => [
+        const RecordOptions(autoRecord: true),
+        const RecordOptions(),
+      ],
+      verify: (_) async => expect(await settings.loadAutoRecord(), isFalse),
+    );
+
+    blocTest<RecordOptionsCubit, RecordOptions>(
+      'ignores the engine before its own load, so a stale report cannot '
+      'overwrite the saved value',
+      setUp: () => settings.saveAutoRecord(value: true),
+      build: build,
+      act: (cubit) async {
+        looperStates.add(const LooperState());
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => <RecordOptions>[],
     );
   });
 }

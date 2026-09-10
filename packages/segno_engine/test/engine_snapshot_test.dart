@@ -1133,6 +1133,9 @@ void main() {
         'countInBeatsLeft',
         'looperMode',
         'primaryTrack',
+        'quantize',
+        'autoRecord',
+        'overdubFeedback',
         'tracks',
       };
 

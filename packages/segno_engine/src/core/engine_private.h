@@ -940,6 +940,25 @@ typedef struct le_track {
    * free_clock itself is — there is no per-track wrap event to hook in
    * Multi/Sync/Band. */
   _Atomic int32_t a_one_shot;
+  /* Musical quantization division override (accepted design, slice 2b): -1
+   * inherits the global a_quantize_div, else a le_grid_div. Control writes,
+   * the audio thread reads it live (le_live_subdiv_ratio). Configure resets
+   * it; clear does not (a setting, like a_one_shot). */
+  _Atomic int32_t a_quantize_div_override;
+  /* Overdub feedback override (slice 2b): the bits of a float; a negative
+   * value inherits the global a_overdub_fb_bits. Same lifetime as the
+   * division override above. */
+  _Atomic uint32_t a_overdub_fb_bits;
+  /* Audio-thread-local feedback actually applied at the write head: ramps
+   * toward the effective coefficient one od_step per frame so a live change
+   * never steps the retained layer (mix_tracks_frame). */
+  float fb_cur;
+  /* Frames this track has been sounding (PLAYING or OVERDUBBING) on the
+   * shared clock, audio-thread-local (slice 2b, Once): counted by
+   * le_shared_clock_one_shots and reset while the track is not sounding, so
+   * a take finalized or launched mid-lap plays at least one full lap before
+   * Once stops it at a lap end. */
+  uint64_t sounding_frames;
 } le_track;
 
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
@@ -1456,6 +1475,16 @@ struct le_engine {
    * at the next loop top. Arming creates no undo layer (layers are captured
    * per pass on the audio thread), so cancelling is a plain disarm. */
   int quantize; /* global default */
+  /* The control thread's mirror of a_quantize_div.
+   *
+   * The gate above is a plain control-side int the setter writes at once,
+   * while the DIVISION reaches the audio thread through the ring. Publishing
+   * one of each in the same snapshot let a reader see the gate move without
+   * its division — a session saved in that window recorded "quantize on, no
+   * division", which is a different record timing from the one chosen. The
+   * audio thread keeps reading a_quantize_div; this is what the snapshot
+   * publishes, so both halves come from one thread at one instant. */
+  int quantize_div;
   /* Per-track quantize override: -1 inherit the global default, 0 force off,
    * 1 force on. The effective value drives le_engine_record's arm decision. */
   int track_quantize[LE_MAX_TRACKS];

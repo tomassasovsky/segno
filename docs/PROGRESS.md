@@ -263,6 +263,14 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 2b (#1012, epic #1009):** timing ownership: one
+  record timing setting (Immediately, Loop start, bar to 1/16) by default and
+  per track (a per-track division joins the per-track gate in the engine),
+  overdub decay by default and per track with a ramped live change, Once in
+  all five modes (a track's lap ends on the shared clock in Multi/Sync/Band),
+  count-in and Sound start exclusive through the repository and the cubits,
+  and the overrides in settings and the session manifest. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Accepted design, slice 2a (#1012, epic #1009):** mode changes with
   recorded audio follow the accepted contract (the engine measures the gate:
   compatible spans switch on a stopped rig, playing loops are stopped first,

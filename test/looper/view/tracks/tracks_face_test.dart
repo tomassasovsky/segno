@@ -87,8 +87,8 @@ void main() {
 
     test('tells all three states apart', () {
       const follow = Track();
-      const always = Track(quantizeOverride: true);
-      const never = Track(quantizeOverride: false);
+      const always = Track(recordTimingOverride: RecordTiming.loopStart);
+      const never = Track(recordTimingOverride: RecordTiming.immediately);
       expect(sameQuantize(const [follow], const [always]), isFalse);
       expect(sameQuantize(const [always], const [never]), isFalse);
       expect(sameQuantize(const [never], const [follow]), isFalse);

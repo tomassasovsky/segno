@@ -499,7 +499,7 @@ void main() {
             Track(
               channel: 1,
               lanes: [Lane(inputChannel: 1)],
-              quantizeOverride: true,
+              recordTimingOverride: RecordTiming.loopStart,
             ),
           ],
           status: EngineStatus(inputChannels: 4, outputChannels: 4),
@@ -577,7 +577,10 @@ void main() {
         tester,
         const LooperState(
           tracks: [
-            Track(lanes: [Lane(inputChannel: 0)], quantizeOverride: true),
+            Track(
+              lanes: [Lane(inputChannel: 0)],
+              recordTimingOverride: RecordTiming.loopStart,
+            ),
           ],
           status: EngineStatus(inputChannels: 4, outputChannels: 4),
         ),
@@ -1053,7 +1056,10 @@ void main() {
         tab: TracksTab.routing,
         state: const LooperState(
           tracks: [
-            Track(lanes: [Lane(inputChannel: 0)], quantizeOverride: false),
+            Track(
+              lanes: [Lane(inputChannel: 0)],
+              recordTimingOverride: RecordTiming.immediately,
+            ),
           ],
           status: EngineStatus(inputChannels: 4, outputChannels: 4),
         ),
@@ -1092,8 +1098,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // "Always" with a default that does not wait is the loop top.
       verify(
-        () => bloc.add(const LooperTrackQuantizeChanged(0, enabled: true)),
+        () => bloc.add(
+          const LooperTrackRecordTimingChanged(
+            0,
+            timing: RecordTiming.loopStart,
+          ),
+        ),
       ).called(1);
     });
 

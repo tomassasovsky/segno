@@ -352,6 +352,9 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_i32(&tr->a_one_shot, 0); /* B4: per-track setting, resets like the
                                     * length preset above (not by clear —
                                     * see le_engine_set_one_shot's doc) */
+    store_i32(&tr->a_quantize_div_override, -1); /* slice 2b: inherit */
+    store_f32(&tr->a_overdub_fb_bits, -1.0f);    /* slice 2b: inherit */
+    tr->fb_cur = 1.0f;
     tr->length_preset_target_frames = 0;
     tr->pending_record = 0;
     tr->pending_trigger = 0;
@@ -816,6 +819,7 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_ts_den, 4);
   store_i32(&engine->a_sync_tempo, 1);
   store_i32(&engine->a_quantize_div, LE_GRID_DIV_OFF);
+  engine->quantize_div = LE_GRID_DIV_OFF; /* the snapshot's half of the pair */
   store_i32(&engine->a_tempo_source, LE_TEMPO_SOURCE_NONE);
   engine->grid_prev_beat = -1;
   /* Click + count-in SETTINGS (A2): same seeded-once persistence as the tempo
