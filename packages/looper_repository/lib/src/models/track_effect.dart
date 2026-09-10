@@ -2,6 +2,49 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart';
 import 'package:segno_engine/segno_engine.dart' as engine;
 
+/// Where one chain entry sits relative to the loop player. Domain mirror of
+/// the engine's `FxPlacement`.
+///
+/// A chain is stored [pre] entries first, then [post] entries, so the split is
+/// a single boundary index — [fxPreCount] — and that index is the only thing
+/// the native engine is told.
+///
+/// The accepted design states the consequence in one line each: [pre] is
+/// "recorded into loop", [post] "can ring after Stop". A hardware input's new
+/// entries default to [pre] and a recorded destination's to [post]; the
+/// destination chooses, not this model, whose own default is [post].
+enum FxPlacement {
+  /// Recorded into the loop: part of the take's playable representation, so a
+  /// track Stop stops its tail with the recording.
+  pre,
+
+  /// Downstream of the player: a track Stop leaves its tail to drain.
+  post,
+}
+
+/// The number of leading [FxPlacement.pre] entries in [chain] — the whole
+/// pre/post split of a chain that has crossed a repository write.
+int fxPreCount(List<TrackEffect> chain) {
+  var n = 0;
+  while (n < chain.length && chain[n].placement == FxPlacement.pre) {
+    n++;
+  }
+  return n;
+}
+
+/// Returns [chain] partitioned [FxPlacement.pre] entries first, preserving the
+/// relative order within each stage.
+///
+/// This is the storage invariant every repository chain write establishes, and
+/// it is a STABLE partition on purpose: reorder moves an entry within its own
+/// stage, so re-partitioning an already-ordered chain must be the identity.
+List<TrackEffect> partitionByPlacement(List<TrackEffect> chain) => [
+  for (final fx in chain)
+    if (fx.placement == FxPlacement.pre) fx,
+  for (final fx in chain)
+    if (fx.placement == FxPlacement.post) fx,
+];
+
 /// How a parameter's `0..1` value is read out in the UI, in its own units, when
 /// the bare number isn't meaningful on its own. Domain mirror of the engine's
 /// readout kinds; the UI maps each to a localized string ([none] shows none).
@@ -132,11 +175,14 @@ class PluginRef extends Equatable {
 /// effect ([BuiltInEffect]) or a hosted plugin ([PluginEffect]). Domain mirror
 /// of the engine's sealed `TrackEffect`.
 ///
-/// The chain is non-destructive and stage-addressed (FX v3) — the recording is
-/// always dry and every active, [enabled] entry colors the signal in order.
-/// The same model backs all four stages: a hardware input's live-monitor
-/// chain, a lane's record-route chain, a track's stereo-bus chain, and the
-/// Master insert.
+/// The chain is stage-addressed (FX v3) — the recording is always dry and
+/// every active, [enabled] entry colors the signal in order. The same model
+/// backs all four stages: a hardware input's live-monitor chain, a lane's
+/// record-route chain, a track's stereo-bus chain, and the Master insert.
+///
+/// Each entry also carries a [placement], and a chain that has crossed a
+/// repository write is stored with every [FxPlacement.pre] entry ahead of
+/// every [FxPlacement.post] one.
 sealed class TrackEffect extends Equatable {
   /// Const base constructor for the sealed subtypes.
   const TrackEffect();
@@ -154,6 +200,11 @@ sealed class TrackEffect extends Equatable {
   /// repository write path. Identity, not sound: two entries that sound the
   /// same but carry different ids are different entries (bindings target ids).
   String? get slotId;
+
+  /// Where this entry sits relative to the loop player: [FxPlacement.pre] is
+  /// recorded into the loop, [FxPlacement.post] runs downstream of the player
+  /// and can ring after Stop.
+  FxPlacement get placement;
 }
 
 /// A built-in DSP effect: a [type] with its normalized [params].
@@ -165,6 +216,7 @@ class BuiltInEffect extends TrackEffect {
     List<double>? params,
     this.enabled = true,
     this.slotId,
+    this.placement = FxPlacement.post,
   }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
 
   /// The effect type.
@@ -180,6 +232,9 @@ class BuiltInEffect extends TrackEffect {
   final String? slotId;
 
   @override
+  final FxPlacement placement;
+
+  @override
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
@@ -188,15 +243,17 @@ class BuiltInEffect extends TrackEffect {
     List<double>? params,
     bool? enabled,
     String? slotId,
+    FxPlacement? placement,
   }) => BuiltInEffect(
     type: type ?? this.type,
     params: params ?? this.params,
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
+    placement: placement ?? this.placement,
   );
 
   @override
-  List<Object?> get props => [type, params, enabled, slotId];
+  List<Object?> get props => [type, params, enabled, slotId, placement];
 }
 
 /// A hosted VST3/CLAP plugin in a chain entry, identified by its [ref]. Carries
@@ -218,6 +275,7 @@ class PluginEffect extends TrackEffect {
     this.loading = false,
     this.enabled = true,
     this.slotId,
+    this.placement = FxPlacement.post,
   });
 
   /// The hosted plugin's identity.
@@ -279,6 +337,9 @@ class PluginEffect extends TrackEffect {
   final String? slotId;
 
   @override
+  final FxPlacement placement;
+
+  @override
   int get typeCode => engine.kPluginFxCode;
 
   /// Returns a copy with the given fields replaced.
@@ -294,6 +355,7 @@ class PluginEffect extends TrackEffect {
     bool? loading,
     bool? enabled,
     String? slotId,
+    FxPlacement? placement,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -306,6 +368,7 @@ class PluginEffect extends TrackEffect {
     loading: loading ?? this.loading,
     enabled: enabled ?? this.enabled,
     slotId: slotId ?? this.slotId,
+    placement: placement ?? this.placement,
   );
 
   @override
@@ -321,6 +384,7 @@ class PluginEffect extends TrackEffect {
     loading,
     enabled,
     slotId,
+    placement,
   ];
 }
 
@@ -330,6 +394,20 @@ ParamReadout _readoutFromEngine(engine.ParamReadout readout) =>
       engine.ParamReadout.none => ParamReadout.none,
       engine.ParamReadout.pitchShift => ParamReadout.pitchShift,
       engine.ParamReadout.octaverMode => ParamReadout.octaverMode,
+    };
+
+/// Maps a domain [FxPlacement] to the engine enum at the boundary.
+engine.FxPlacement _placementToEngine(FxPlacement placement) =>
+    switch (placement) {
+      FxPlacement.pre => engine.FxPlacement.pre,
+      FxPlacement.post => engine.FxPlacement.post,
+    };
+
+/// Maps an engine [engine.FxPlacement] to its domain mirror.
+FxPlacement _placementFromEngine(engine.FxPlacement placement) =>
+    switch (placement) {
+      engine.FxPlacement.pre => FxPlacement.pre,
+      engine.FxPlacement.post => FxPlacement.post,
     };
 
 /// Maps a domain [TrackEffectType] to the engine enum at the boundary.
@@ -347,12 +425,14 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     :final params,
     :final enabled,
     :final slotId,
+    :final placement,
   ) =>
     engine.BuiltInEffect(
       type: trackEffectTypeToEngine(type),
       params: params,
       enabled: enabled,
       slotId: slotId,
+      placement: _placementToEngine(placement),
     ),
   PluginEffect(
     :final ref,
@@ -361,6 +441,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     :final name,
     :final enabled,
     :final slotId,
+    :final placement,
   ) =>
     engine.PluginEffect(
       ref: engine.PluginRef(
@@ -373,6 +454,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       name: name,
       enabled: enabled,
       slotId: slotId,
+      placement: _placementToEngine(placement),
     ),
 };
 
@@ -400,12 +482,14 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final params,
         :final enabled,
         :final slotId,
+        :final placement,
       ) =>
         BuiltInEffect(
           type: TrackEffectType.fromCode(type.code),
           params: params,
           enabled: enabled,
           slotId: slotId,
+          placement: _placementFromEngine(placement),
         ),
       engine.PluginEffect(
         :final ref,
@@ -414,6 +498,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final name,
         :final enabled,
         :final slotId,
+        :final placement,
       ) =>
         PluginEffect(
           ref: PluginRef(
@@ -426,6 +511,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           name: name,
           enabled: enabled,
           slotId: slotId,
+          placement: _placementFromEngine(placement),
         ),
     };
 

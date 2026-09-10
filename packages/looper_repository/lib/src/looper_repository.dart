@@ -28,6 +28,7 @@ import 'package:segno_engine/segno_engine.dart'
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
+        FxPlacement,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
@@ -4034,7 +4035,15 @@ class LooperRepository {
   /// [kTrackEffectMax]). Empty == bit-identical output. Remembered and
   /// re-applied on every (re)start.
   EngineResult setMasterEffects({required List<TrackEffect> effects}) {
-    _masterEffects = _markBusUnsupportedPlugins(_clampAndMint(effects));
+    // An output chain's stage is fixed after its mix, so the accepted design
+    // omits the Pre/Post control here and states that output chains always
+    // resolve to Post. Forcing it at the write boundary makes that a stored
+    // fact rather than a convention the surfaces have to remember: a chain
+    // pasted or restored from a destination that DID carry Pre entries lands
+    // wholly Post, and the engine is never told a Pre count it cannot honour.
+    _masterEffects = _markBusUnsupportedPlugins(
+      _clampAndMint([for (final fx in effects) _placed(fx, FxPlacement.post)]),
+    );
     _reproject();
     _recoverUnnamedBusPlugins();
     if (!_intendRunning) return EngineResult.ok;
@@ -4276,6 +4285,74 @@ class LooperRepository {
     );
   }
 
+  // ---- per-instance placement, the three switchable stages (slice 3e) ----
+  //
+  // Placement rides the ENTRY, not the [FxAddress], so a move preserves every
+  // binding that names the instance — bindings persist the address plus the
+  // slot id, and neither changes. Each setter names the instance by slot id
+  // for the same reason: an index would be the one thing the move invalidates.
+  //
+  // Only live inputs, whole recorded tracks and recorded parts have a
+  // switchable placement. Outputs and the All-tracks recorded mix are fixed
+  // after their own mix, so they have no setter and their write boundary
+  // forces Post.
+
+  /// Moves the entry with [slotId] on lane [lane] of track [channel] to
+  /// [placement], to the end of that stage's run, keeping its identity,
+  /// parameters, enable state and every binding that names it.
+  ///
+  /// Returns [EngineResult.invalid] when no entry on that chain carries
+  /// [slotId]; a move to the placement the entry already has succeeds and
+  /// changes nothing, including the stored order.
+  EngineResult setLaneEffectPlacement({
+    required int channel,
+    required int lane,
+    required String slotId,
+    required FxPlacement placement,
+  }) {
+    final effects = _laneEffects[(channel, lane)];
+    if (effects == null || !effects.any((fx) => fx.slotId == slotId)) {
+      return EngineResult.invalid;
+    }
+    final moved = _withPlacement(effects, slotId, placement);
+    if (identical(moved, effects)) return EngineResult.ok;
+    return setLaneEffects(channel: channel, lane: lane, effects: moved);
+  }
+
+  /// Moves the entry with [slotId] on track [channel]'s Track-stage chain to
+  /// [placement] — see [setLaneEffectPlacement].
+  EngineResult setTrackEffectPlacement({
+    required int channel,
+    required String slotId,
+    required FxPlacement placement,
+  }) {
+    final effects = _trackEffects[channel];
+    if (effects == null || !effects.any((fx) => fx.slotId == slotId)) {
+      return EngineResult.invalid;
+    }
+    final moved = _withPlacement(effects, slotId, placement);
+    if (identical(moved, effects)) return EngineResult.ok;
+    return setTrackEffects(channel: channel, effects: moved);
+  }
+
+  /// Moves the entry with [slotId] on monitor [input]'s chain to [placement]
+  /// — see [setLaneEffectPlacement]. A live input's Pre entries are the ones a
+  /// take records; its Post entries are copied onto the lane at record and run
+  /// after that take's player.
+  EngineResult setMonitorEffectPlacement({
+    required int input,
+    required String slotId,
+    required FxPlacement placement,
+  }) {
+    final effects = _monitorEffects[input];
+    if (effects == null || !effects.any((fx) => fx.slotId == slotId)) {
+      return EngineResult.invalid;
+    }
+    final moved = _withPlacement(effects, slotId, placement);
+    if (identical(moved, effects)) return EngineResult.ok;
+    return setMonitorEffects(input: input, effects: moved);
+  }
+
   /// Enables/disables entry [index] of monitor [input]'s chain. No
   /// `_reproject()`: monitor chains are not part of the projected
   /// [LooperState] (the MonitorCubit owns and emits them).
@@ -4445,15 +4522,58 @@ class LooperRepository {
     PluginEffect() => fx.copyWith(enabled: enabled),
   };
 
-  /// The shared write-boundary step of all four chain setters: clamps
-  /// [effects] to [kTrackEffectMax] and mints stable slot ids for any id-less
-  /// entry, exactly once (A9).
-  static List<TrackEffect> _clampAndMint(List<TrackEffect> effects) =>
-      withMintedSlotIds(
-        effects.length > kTrackEffectMax
-            ? effects.sublist(0, kTrackEffectMax)
-            : effects,
-      );
+  /// Sets one entry's placement, dispatching over the sealed hierarchy.
+  static TrackEffect _placed(TrackEffect fx, FxPlacement placement) =>
+      switch (fx) {
+        BuiltInEffect() => fx.copyWith(placement: placement),
+        PluginEffect() => fx.copyWith(placement: placement),
+      };
+
+  /// The shared write-boundary step of all four chain setters: partitions
+  /// [effects] Pre-first, clamps to [kTrackEffectMax] and mints stable slot
+  /// ids for any id-less entry, exactly once (A9).
+  ///
+  /// Partition BEFORE clamp, so an over-long chain loses its trailing Post
+  /// entries rather than whichever entries happened to sit last: the engine is
+  /// told one boundary index, and a clamp that cut across the partition would
+  /// name a Pre count larger than the chain it describes.
+  static List<TrackEffect> _clampAndMint(List<TrackEffect> effects) {
+    final ordered = partitionByPlacement(effects);
+    return withMintedSlotIds(
+      ordered.length > kTrackEffectMax
+          ? ordered.sublist(0, kTrackEffectMax)
+          : ordered,
+    );
+  }
+
+  /// Returns [effects] with the entry whose [TrackEffect.slotId] is [slotId]
+  /// moved to [placement], or [effects] unchanged when no entry carries that
+  /// id or it is already there.
+  ///
+  /// The accepted design: an explicit placement change "moves that instance to
+  /// the end of the destination stage and preserves its identity, parameters,
+  /// channels, enable state and pedal assignment". Removing the entry and
+  /// appending it is exactly that — [_clampAndMint]'s stable partition puts
+  /// the re-placed entry last within its new stage, and the id rides the entry
+  /// so every binding that names it still resolves.
+  static List<TrackEffect> _withPlacement(
+    List<TrackEffect> effects,
+    String slotId,
+    FxPlacement placement,
+  ) {
+    final index = effects.indexWhere((fx) => fx.slotId == slotId);
+    if (index < 0 || effects[index].placement == placement) return effects;
+    final fx = effects[index];
+    final moved = switch (fx) {
+      BuiltInEffect() => fx.copyWith(placement: placement),
+      PluginEffect() => fx.copyWith(placement: placement),
+    };
+    return [
+      for (var i = 0; i < effects.length; i++)
+        if (i != index) effects[i],
+      moved,
+    ];
+  }
 
   /// Marks hosted plugins in a bus-stage (Track/Master) chain with the D-MISS
   /// placeholder posture — the engine hosts no plugins at these stages yet
