@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
+import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:segno_engine/segno_engine.dart' show LooperMode, RecordTiming;
 
@@ -19,9 +20,19 @@ class SessionRigLane {
     required this.muted,
     required this.outputMask,
     required this.inputChannel,
+    this.pan = 0,
+    this.balance = 1,
     this.undoCount = 0,
     this.redoCount = 0,
   });
+
+  /// The lane's recorded image (slice 3): where its input sat when the take
+  /// started, before the track's own pan (`Lane.imagePan`).
+  final double pan;
+
+  /// The gain the input pair's balance gave the lane's side when the take
+  /// started, `0..1` (`Lane.balance`); [volume] is the level.
+  final double balance;
 
   /// Lane index within the track.
   final int lane;
@@ -61,9 +72,13 @@ class SessionRigTrack {
   const SessionRigTrack({
     required this.channel,
     required this.lanes,
+    this.pan = 0,
     this.recordTiming,
     this.overdubDecay,
   });
+
+  /// The track's Mixer pan (slice 3), `-1..1`.
+  final double pan;
 
   /// Track channel index.
   final int channel;
@@ -156,6 +171,7 @@ class SessionRig {
     this.onceOverrides = const {},
     this.recordTiming,
     this.overdubDecay,
+    this.inputSetup = const InputSetup(),
   });
 
   /// The session's DEFAULT record timing (slice 2b); `null` leaves the live
@@ -170,6 +186,10 @@ class SessionRig {
   /// The session's DEFAULT overdub decay in percent (slice 2b); `null` leaves
   /// the live default alone. Session-level, like [recordTiming].
   final int? overdubDecay;
+
+  /// The per-input capture setup the session was saved with (slice 3):
+  /// trims, pans and pairs. Restored on apply; the monitors' pans follow it.
+  final InputSetup inputSetup;
 
   /// The base (master) loop length in frames; `0` for an empty session.
   final int baseLengthFrames;

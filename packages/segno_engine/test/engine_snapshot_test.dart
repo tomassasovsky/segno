@@ -51,11 +51,27 @@ void main() {
       expect(snapshot.clickMode, ClickMode.off);
       expect(snapshot.clickMask, 0);
       expect(snapshot.clickVolume, 1);
+      // The per-channel meter lists (slice 3) hold one entry per channel the
+      // device has, so with no device open they are empty.
+      expect(snapshot.inputPeaks, isEmpty);
+      expect(snapshot.monitorPeaks, isEmpty);
+      expect(snapshot.outputPeaks, isEmpty);
       expect(snapshot.countInBars, 0);
       expect(snapshot.countingIn, isFalse);
       expect(snapshot.countInBeatsLeft, 0);
       // Looper mode (B2a) default.
       expect(snapshot.looperMode, LooperMode.multi);
+    });
+  });
+
+  group('channel constants', () {
+    test('kMaxChannels mirrors the native ceiling', () {
+      expect(kMaxChannels, LE_MAX_CHANNELS);
+    });
+
+    test('every openable input can be monitored (slice 3)', () {
+      expect(kMaxMonitoredInputs, LE_MAX_MONITORED_INPUTS);
+      expect(kMaxMonitoredInputs, kMaxChannels);
     });
   });
 
@@ -179,7 +195,10 @@ void main() {
           ..output_mask = 0x5
           ..length_preset_bars = 8
           ..settled_take_id = 4
-          ..restore_state = 2;
+          ..restore_state = 2
+          ..solo = 1
+          ..peak_l = 0.7
+          ..peak_r = 0.35;
 
         final track = TrackSnapshot.fromNative(ptr.ref);
         expect(track.state, TrackState.playing);
@@ -196,6 +215,10 @@ void main() {
         expect(track.lengthPresetBars, 8);
         expect(track.settledTakeId, 4);
         expect(track.restoreState, TrackRestoreState.running);
+        // Mixer facts (slice 3) trailing fields.
+        expect(track.solo, isTrue);
+        expect(track.peakL, closeTo(0.7, 1e-6));
+        expect(track.peakR, closeTo(0.35, 1e-6));
         // No lanes supplied => empty list, so the derived count is 0.
         expect(track.lanes, isEmpty);
         expect(track.laneCount, 0);
@@ -270,22 +293,43 @@ void main() {
   });
 
   group('TrackSnapshot value semantics', () {
-    TrackSnapshot build({int inputMask = 0x1, int outputMask = 0x3}) =>
-        TrackSnapshot(
-          state: TrackState.playing,
-          volume: 0.5,
-          muted: false,
-          lengthFrames: 100,
-          undoDepth: 0,
-          rms: 0.1,
-          peak: 0.2,
-          inputMask: inputMask,
-          outputMask: outputMask,
-        );
+    TrackSnapshot build({
+      int inputMask = 0x1,
+      int outputMask = 0x3,
+      bool solo = false,
+      double peakL = 0,
+      double peakR = 0,
+    }) => TrackSnapshot(
+      state: TrackState.playing,
+      volume: 0.5,
+      muted: false,
+      lengthFrames: 100,
+      undoDepth: 0,
+      rms: 0.1,
+      peak: 0.2,
+      inputMask: inputMask,
+      outputMask: outputMask,
+      solo: solo,
+      peakL: peakL,
+      peakR: peakR,
+    );
 
     test('equal tracks are equal and share a hashCode', () {
       expect(build(), equals(build()));
       expect(build().hashCode, build().hashCode);
+    });
+
+    test('empty track is not soloed and sends nothing', () {
+      const track = TrackSnapshot.empty();
+      expect(track.solo, isFalse);
+      expect(track.peakL, 0);
+      expect(track.peakR, 0);
+    });
+
+    test('solo and the post-fader peaks break equality', () {
+      expect(build(), isNot(equals(build(solo: true))));
+      expect(build(), isNot(equals(build(peakL: 0.5))));
+      expect(build(), isNot(equals(build(peakR: 0.5))));
     });
 
     test('a differing input or output mask breaks equality', () {
@@ -395,7 +439,8 @@ void main() {
           ..length_frames = 48000
           ..rms = 0.3
           ..peak = 0.45
-          ..recoverable = 1;
+          ..recoverable = 1
+          ..pan = -0.25;
 
         final lane = LaneSnapshot.fromNative(ptr.ref);
         expect(lane.inputChannel, 1);
@@ -406,6 +451,7 @@ void main() {
         expect(lane.rms, closeTo(0.3, 1e-6));
         expect(lane.peak, closeTo(0.45, 1e-6));
         expect(lane.recoverable, isTrue);
+        expect(lane.pan, closeTo(-0.25, 1e-6));
       } finally {
         calloc.free(ptr);
       }
@@ -417,6 +463,7 @@ void main() {
       expect(lane.lengthFrames, 0);
       expect(lane.muted, isFalse);
       expect(lane.recoverable, isFalse);
+      expect(lane.pan, 0);
     });
 
     LaneSnapshot build({
@@ -426,6 +473,7 @@ void main() {
       bool muted = false,
       double peak = 0.2,
       bool recoverable = false,
+      double pan = 0,
     }) => LaneSnapshot(
       inputChannel: inputChannel,
       outputMask: outputMask,
@@ -435,6 +483,7 @@ void main() {
       rms: 0.1,
       peak: peak,
       recoverable: recoverable,
+      pan: pan,
     );
 
     test('equal lanes are equal and share a hashCode', () {
@@ -449,6 +498,7 @@ void main() {
       expect(build(), isNot(equals(build(muted: true))));
       expect(build(), isNot(equals(build(peak: 0.9))));
       expect(build(), isNot(equals(build(recoverable: true))));
+      expect(build(), isNot(equals(build(pan: 0.5))));
     });
   });
 
@@ -498,6 +548,14 @@ void main() {
           ..counting_in = 1
           ..count_in_beats_left = 5
           ..looper_mode = 3;
+        // Per-channel meters (slice 3): one distinct entry each so a swapped
+        // array or a misread index shows up, plus one past the device's
+        // channel count that must NOT be read.
+        ptr.ref.input_peaks[1] = 0.5;
+        ptr.ref.input_peaks[2] = 0.9;
+        ptr.ref.monitor_peaks[0] = 0.25;
+        ptr.ref.output_peaks[3] = 0.75;
+        ptr.ref.output_peaks[4] = 0.9;
 
         const tracks = [
           TrackSnapshot(
@@ -557,6 +615,41 @@ void main() {
         expect(snapshot.countInBeatsLeft, 5);
         // Looper mode (B2a) trailing field.
         expect(snapshot.looperMode, LooperMode.band);
+        // Per-channel meters (slice 3) trailing arrays: one entry per
+        // negotiated channel (2 in / 4 out), read in order; the native
+        // arrays' entries past the device are not projected.
+        expect(snapshot.inputPeaks, hasLength(2));
+        expect(snapshot.inputPeaks[0], 0);
+        expect(snapshot.inputPeaks[1], closeTo(0.5, 1e-6));
+        expect(snapshot.monitorPeaks, hasLength(2));
+        expect(snapshot.monitorPeaks[0], closeTo(0.25, 1e-6));
+        expect(snapshot.outputPeaks, hasLength(4));
+        expect(snapshot.outputPeaks[3], closeTo(0.75, 1e-6));
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('sizes the meter lists to the channel counts, clamped to the C', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        // A count past the native ceiling must not index off the end of the
+        // fixed arrays; a negative one (a garbage struct) must not throw.
+        ptr.ref
+          ..input_channels = LE_MAX_CHANNELS + 7
+          ..output_channels = -1;
+        final over = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(over.inputPeaks, hasLength(LE_MAX_CHANNELS));
+        expect(over.monitorPeaks, hasLength(LE_MAX_CHANNELS));
+        expect(over.outputPeaks, isEmpty);
+
+        ptr.ref
+          ..input_channels = 0
+          ..output_channels = 0;
+        final none = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(none.inputPeaks, isEmpty);
+        expect(none.monitorPeaks, isEmpty);
+        expect(none.outputPeaks, isEmpty);
       } finally {
         calloc.free(ptr);
       }
@@ -671,6 +764,9 @@ void main() {
 
     // Distinct (non-const) instances so the `==` body runs rather than being
     // short-circuited by `identical`, exercising every field comparison.
+    /// The channel count the [build] meter lists are sized to.
+    const channels = 4;
+
     EngineSnapshot build({
       bool devicePresent = true,
       AudioBackend activeBackend = AudioBackend.miniaudio,
@@ -698,6 +794,9 @@ void main() {
       LooperMode looperMode = LooperMode.multi,
       int inputClipMask = 0,
       int inputCondMask = 0,
+      List<double>? inputPeaks,
+      List<double>? monitorPeaks,
+      List<double>? outputPeaks,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -735,7 +834,16 @@ void main() {
       looperMode: looperMode,
       inputClipMask: inputClipMask,
       inputCondMask: inputCondMask,
+      // Fresh (non-const) lists so equality has to compare contents, not
+      // identity.
+      inputPeaks: inputPeaks ?? List<double>.filled(channels, 0),
+      monitorPeaks: monitorPeaks ?? List<double>.filled(channels, 0),
+      outputPeaks: outputPeaks ?? List<double>.filled(channels, 0),
     );
+
+    /// [channels] zeros with [value] at [index].
+    List<double> perChannel(int index, double value) =>
+        List<double>.filled(channels, 0)..[index] = value;
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
       expect(build(), equals(build()));
@@ -840,6 +948,29 @@ void main() {
 
     test('inputClipMask participates in equality', () {
       expect(build(), isNot(equals(build(inputClipMask: 0x1))));
+    });
+
+    test('inputPeaks participates in equality by content', () {
+      expect(
+        build(inputPeaks: perChannel(2, 0.5)),
+        equals(build(inputPeaks: perChannel(2, 0.5))),
+      );
+      expect(build(), isNot(equals(build(inputPeaks: perChannel(2, 0.5)))));
+    });
+
+    test('monitorPeaks participates in equality', () {
+      expect(build(), isNot(equals(build(monitorPeaks: perChannel(0, 0.5)))));
+    });
+
+    test('outputPeaks participates in equality', () {
+      expect(build(), isNot(equals(build(outputPeaks: perChannel(1, 0.5)))));
+    });
+
+    test('a meter list of another length is not equal', () {
+      expect(
+        build(),
+        isNot(equals(build(inputPeaks: List<double>.filled(channels + 1, 0)))),
+      );
     });
 
     test('inputCondMask participates in equality', () {
@@ -1136,6 +1267,14 @@ void main() {
         'quantize',
         'autoRecord',
         'overdubFeedback',
+        // Per-channel block peaks (slice 3), like outputPeak: written once per
+        // block, read at render rate — not per-callback counters. One entry
+        // per channel the device has; the C's fixed-width `input_trim` array
+        // is deliberately NOT projected (the repository keeps its own dB
+        // intent), so adding it back is a review question, not a golden fix.
+        'inputPeaks',
+        'monitorPeaks',
+        'outputPeaks',
         'tracks',
       };
 

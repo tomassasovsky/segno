@@ -711,6 +711,36 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_lane_pan(_engine, channel, lane, pan),
+    );
+  }
+
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_solo(_engine, channel, solo ? 1 : 0),
+    );
+  }
+
+  // A direct store, not a ring command: works while stopped, like the enable
+  // setters.
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_trim(_engine, input, gain),
+    );
+  }
+
+  @override
   EngineResult setLaneInput({
     required int channel,
     required int lane,
@@ -1414,6 +1444,14 @@ class NativeAudioEngine implements AudioEngine {
         input,
         muted ? 1 : 0,
       ),
+    );
+  }
+
+  @override
+  EngineResult setMonitorInputPan({required int input, required double pan}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_input_pan(_engine, input, pan),
     );
   }
 

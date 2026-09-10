@@ -52,8 +52,18 @@ class SessionChains {
   final String masterChain;
 }
 
+/// One lane's mix as the looper repository holds it (slice 3): its `level`
+/// (`0..LE_MAX_GAIN`), its recorded `imagePan` (`-1..1`, before the track's
+/// pan) and the pair-balance gain of its side (`balance`, `0..1`). The
+/// engine holds only the products (level times balance, image plus track
+/// pan), so a save reads these from the repository's projection.
+typedef SessionLaneMix = ({double level, double imagePan, double balance});
+
 /// The rig's loop settings a save persists (slice 2c): the length preset and
-/// Loop/Once defaults plus each channel's override of them.
+/// Loop/Once defaults plus each channel's override of them; and, since slice
+/// 3, the rig's mix the engine snapshot does not carry either: every track's
+/// pan ([trackPans]), every lane's level, image and balance ([laneMix]) and
+/// the per-input capture setup ([inputSetup]).
 ///
 /// Handed in by the bloc layer like [SessionChains], because the engine only
 /// holds the EFFECTIVE per-track values (`TrackSnapshot.lengthPresetBars`,
@@ -75,6 +85,9 @@ class SessionLoopSettings {
     this.defaultOnce = false,
     this.lengthPresetOverrides = const {},
     this.onceOverrides = const {},
+    this.trackPans = const {},
+    this.laneMix = const {},
+    this.inputSetup = const SessionInputSetup(),
   });
 
   /// The rig's default length preset in bars; `0` = Auto.
@@ -90,6 +103,21 @@ class SessionLoopSettings {
   /// Per-channel Loop/Once overrides; a channel absent here follows the
   /// default.
   final Map<int, bool> onceOverrides;
+
+  /// Every track's Mixer pan (slice 3), keyed by channel; a channel absent
+  /// here is at centre. Looper repository state: the engine holds only each
+  /// lane's EFFECTIVE pan (the recorded image plus this).
+  final Map<int, double> trackPans;
+
+  /// Every lane's level, recorded image and balance (slice 3), keyed by
+  /// `(channel, lane)`. Looper repository state: the engine holds only the
+  /// products, so a lane absent here (an export, which hands in no settings)
+  /// persists the engine's gain as its level, a centred image and unity
+  /// balance.
+  final Map<(int, int), SessionLaneMix> laneMix;
+
+  /// The per-input capture setup (slice 3), persisted session-level.
+  final SessionInputSetup inputSetup;
 }
 
 /// Saves Segno sessions, reads them back, and exports audio.
@@ -458,6 +486,7 @@ class SessionRepository {
       final undoCount = track.undoDepth;
       final redoCount = track.redoDepth;
       final total = undoCount + 1 + redoCount;
+      final trackPan = loopSettings.trackPans[i] ?? 0;
       final lanes = <SessionLane>[];
       for (var l = 0; l < track.lanes.length; l++) {
         // The live layer sits at ordinal `undoCount`; skip a lane whose live
@@ -479,14 +508,23 @@ class SessionRepository {
         if (layerPcm.length != total) continue;
         laneStems[(i, l)] = layerPcm;
         final laneSnap = track.lanes[l];
+        // The lane's mix (slice 3) comes from the looper repository, not
+        // the engine: the engine holds the level times the balance and the
+        // image plus the track's pan, and neither product can be taken
+        // apart again. An export hands in no settings and persists no
+        // manifest, so its fallback only feeds the mixdown, where the
+        // engine's gain times unity plays the same.
+        final mix = loopSettings.laneMix[(i, l)];
         lanes.add(
           SessionLane(
             lane: l,
-            volume: laneSnap.volume,
+            volume: mix?.level ?? laneSnap.volume,
             muted: laneSnap.muted,
             outputMask: laneSnap.outputMask,
             inputChannel: laneSnap.inputChannel,
             layers: layerFiles,
+            pan: mix?.imagePan ?? 0,
+            balance: mix?.balance ?? 1,
             undoCount: undoCount,
             redoCount: redoCount,
           ),
@@ -498,6 +536,7 @@ class SessionRepository {
           channel: i,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
+          pan: trackPan,
           // Record timing and decay overrides (slice 2b): read back from
           // the engine, which reports what it holds for the track.
           recordTiming: track.recordTimingOverride(snapshot.quantizeDiv),
@@ -574,6 +613,10 @@ class SessionRepository {
       // save. Handed in by the bloc layer — see [SessionLoopSettings].
       lengthPresetOverrides: captured.loopSettings.lengthPresetOverrides,
       onceOverrides: captured.loopSettings.onceOverrides,
+      // The input setup (slice 3) is session-level for the same reason: an
+      // input's trim, pan or pair exists whether or not a take was recorded
+      // from it. Handed in by the bloc layer with the track pans.
+      inputSetup: captured.loopSettings.inputSetup,
       clickMode: snapshot.clickMode,
       clickOutputMask: snapshot.clickMask,
       clickVolume: snapshot.clickVolume,
@@ -591,9 +634,10 @@ class SessionRepository {
     );
   }
 
-  /// Sums every unmuted lane (at its gain) over the session period — the LCM of
-  /// the lane lengths, so every lane's loop closes cleanly. Lanes are summed,
-  /// never merged: a two-lane track contributes both lanes to the mix.
+  /// Sums every unmuted lane (at its gain: the level times its balance) over
+  /// the session period — the LCM of the lane lengths, so every lane's loop
+  /// closes cleanly. Lanes are summed, never merged: a two-lane track
+  /// contributes both lanes to the mix.
   Float32List _mixdown(_Capture captured) {
     final active = <(Float32List, double)>[];
     for (final track in captured.tracks) {
@@ -603,7 +647,7 @@ class SessionRepository {
         if (layerPcm == null) continue;
         final pcm = layerPcm[lane.liveIndex]; // mix the live buffer per lane
         if (pcm.isEmpty) continue;
-        active.add((pcm, lane.volume));
+        active.add((pcm, lane.volume * lane.balance));
       }
     }
     if (active.isEmpty) return Float32List(0);

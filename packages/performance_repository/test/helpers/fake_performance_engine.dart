@@ -13,6 +13,7 @@ class _FakeTrack {
   TrackState state = TrackState.empty;
   double volume = 1;
   bool muted = false;
+  bool solo = false;
   int multiple = 1;
   int settledTakeId = 0;
   final List<_FakeLane> lanes = [];
@@ -63,6 +64,7 @@ class FakePerformanceEngine implements AudioEngine {
     TrackState trackState = TrackState.playing,
     double volume = 1,
     bool muted = false,
+    bool solo = false,
     int multiple = 1,
     int settledTakeId = 0,
   }) {
@@ -70,6 +72,7 @@ class FakePerformanceEngine implements AudioEngine {
       ..state = trackState
       ..volume = volume
       ..muted = muted
+      ..solo = solo
       ..multiple = multiple
       ..settledTakeId = settledTakeId;
     while (track.lanes.length <= lane) {
@@ -127,6 +130,7 @@ class FakePerformanceEngine implements AudioEngine {
           state: t.state,
           volume: t.volume,
           muted: t.muted,
+          solo: t.solo,
           lengthFrames: t.lanes.isEmpty ? 0 : t.lanes[0].lengthFrames,
           undoDepth: 0,
           rms: 0,
@@ -303,6 +307,18 @@ class FakePerformanceEngine implements AudioEngine {
     int channel = 0,
     int lane = 0,
   }) => EngineResult.ok;
+  @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) =>
+      EngineResult.ok;
   @override
   EngineResult setLaneInput({
     required int channel,
@@ -506,6 +522,9 @@ class FakePerformanceEngine implements AudioEngine {
   }) => EngineResult.ok;
   @override
   EngineResult setMonitorInputMute({required int input, required bool muted}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setMonitorInputPan({required int input, required double pan}) =>
       EngineResult.ok;
   @override
   EngineResult setInputConditioningEnabled({

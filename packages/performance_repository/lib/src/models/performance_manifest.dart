@@ -109,6 +109,7 @@ class PerformanceTrackSnapshot {
     required this.volume,
     required this.muted,
     required this.multiple,
+    this.solo = false,
     this.lanes = const [],
   });
 
@@ -120,6 +121,8 @@ class PerformanceTrackSnapshot {
         volume: (json['volume'] as num).toDouble(),
         muted: json['muted'] as bool,
         multiple: (json['multiple'] as num).toInt(),
+        // Absent in manifests written before per-track solo existed.
+        solo: json['solo'] as bool? ?? false,
         lanes: [
           for (final l in (json['lanes'] as List<dynamic>? ?? const []))
             PerformanceLaneSnapshot.fromJson(l as Map<String, dynamic>),
@@ -138,6 +141,10 @@ class PerformanceTrackSnapshot {
   /// Whether the track is muted.
   final bool muted;
 
+  /// Whether the track is soloed: while any track is, only soloed tracks are
+  /// audible. Independent of [muted].
+  final bool solo;
+
   /// Track length in whole base loops.
   final int multiple;
 
@@ -150,6 +157,7 @@ class PerformanceTrackSnapshot {
     'state': state.name,
     'volume': volume,
     'muted': muted,
+    'solo': solo,
     'multiple': multiple,
     'lanes': [for (final l in lanes) l.toJson()],
   };

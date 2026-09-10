@@ -490,6 +490,39 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _repository.setTrackOnce(channel: event.channel, once: event.once);
       unawaited(_settings?.saveTrackOnce(event.channel, once: event.once));
     });
+    on<LooperTrackPanChanged>((event, _) {
+      _repository.setTrackPan(event.pan, channel: event.channel);
+      unawaited(_settings?.saveTrackPan(event.channel, event.pan));
+    });
+    on<LooperTrackSoloToggled>(
+      (event, _) =>
+          _repository.setTrackSolo(channel: event.channel, solo: event.solo),
+    );
+    on<LooperSoloCleared>((_, _) => _repository.clearSolo());
+    on<LooperMixerReset>((_, _) {
+      _repository.resetMixer();
+      // The level is not persisted by this bloc (LooperVolumeChanged above);
+      // the pan is, so every track's saved pan goes back to centre with it.
+      for (final track in _repository.state.tracks) {
+        unawaited(_settings?.saveTrackPan(track.channel, 0));
+      }
+    });
+    on<LooperInputTrimChanged>((event, _) {
+      _repository.setInputTrimDb(input: event.input, db: event.db);
+      _persistInputTrim(event.input);
+    });
+    on<LooperInputPanChanged>((event, _) {
+      _repository.setInputPan(input: event.input, pan: event.pan);
+      _persistInputPan(event.input);
+    });
+    on<LooperInputPairChanged>((event, _) {
+      _repository.setInputPair(input: event.input, paired: event.paired);
+      _persistInputPair(event.input);
+    });
+    on<LooperInputBalanceChanged>((event, _) {
+      _repository.setPairBalance(input: event.input, balance: event.balance);
+      _persistInputPair(event.input);
+    });
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
@@ -694,11 +727,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     channel: channel,
   );
 
-  /// Writes a loaded session's Loop / Track / Master chains back to the
-  /// boot-restore keys — the settings half of
-  /// [LooperRepository.applySession], which updates the engine and the
-  /// re-apply caches but leaves persistence to its caller (see its doc, and
-  /// `SessionPersistenceSyncListener` for the full argument).
+  /// Writes a loaded session's Loop / Track / Master chains, every track's
+  /// pan and the input setup back to the boot-restore keys — the settings
+  /// half of [LooperRepository.applySession], which updates the engine and
+  /// the re-apply caches but leaves persistence to its caller (see its doc,
+  /// and `SessionPersistenceSyncListener` for the full argument).
   ///
   /// Reads the repository's chain enumerations — the same truth a session SAVE
   /// captures — and writes through the same helpers the edit paths use, so a
@@ -708,6 +741,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// restore walks lanes `0..lane_count`, so without it every chain written
   /// for a lane above the PRE-LOAD count is stored and never read back, and a
   /// multi-lane session still restores wrong.
+  ///
+  /// The mix (slice 3) is re-persisted the same way: every track's pan
+  /// through the edit path's writer, and the input setup WHOLE under the
+  /// open device (an edit writes one input; a load replaces the setup, so
+  /// a key the loaded session does not carry is cleared). With no device
+  /// open there is nothing to key the setup to and it is left alone, like an
+  /// edit.
   ///
   /// Sweeps the whole key space (every engine track × [kMaxLanes]) rather than
   /// just the applied keys. A key above the live lane count is unreachable
@@ -750,6 +790,80 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     // Unconditional: there is exactly one Master envelope and it always has a
     // value, so it is overwritten rather than cleared.
     _persistMasterChain();
+    for (final track in _repository.state.tracks) {
+      unawaited(settings.saveTrackPan(track.channel, track.pan));
+    }
+    final device = _inputSetupDevice;
+    if (device == null) return;
+    final setup = _repository.inputSetup;
+    final status = _repository.state.status;
+    unawaited(
+      settings.replaceInputSetup(
+        device: device,
+        // Bounded like the boot restore's load: the device's input count,
+        // or the monitor ceiling when the status does not report one.
+        inputCount: status.inputChannels > 0
+            ? status.inputChannels
+            : kMaxMonitoredInputs,
+        setup: (trimDb: setup.trimDb, pan: setup.pan, pairs: setup.pairs),
+      ),
+    );
+  }
+
+  /// The device the input setup is keyed to (the input-name precedent: a
+  /// trim on a Scarlett's input 1 says nothing about the built-in pair's
+  /// input 1), or `null` when no device is open — then there is nothing to
+  /// key a write to, and the edit stays in the repository only.
+  String? get _inputSetupDevice {
+    final name = _repository.state.status.deviceName;
+    return name.isEmpty ? null : name;
+  }
+
+  /// Persists [input]'s trim as the repository now holds it (the repository
+  /// clamps, so its value is written, not the event's); an absent entry
+  /// clears the key.
+  void _persistInputTrim(int input) {
+    final settings = _settings;
+    final device = _inputSetupDevice;
+    if (settings == null || device == null) return;
+    unawaited(
+      settings.saveInputTrim(
+        device: device,
+        input: input,
+        db: _repository.inputSetup.trimDb[input],
+      ),
+    );
+  }
+
+  /// Persists mono [input]'s pan as the repository now holds it.
+  void _persistInputPan(int input) {
+    final settings = _settings;
+    final device = _inputSetupDevice;
+    if (settings == null || device == null) return;
+    unawaited(
+      settings.saveInputPan(
+        device: device,
+        input: input,
+        pan: _repository.inputSetup.pan[input],
+      ),
+    );
+  }
+
+  /// Persists the pair [input] belongs to — its link and balance, keyed by
+  /// the pair's lower member — as the repository now holds it; an unlinked
+  /// pair clears both keys.
+  void _persistInputPair(int input) {
+    final settings = _settings;
+    final device = _inputSetupDevice;
+    if (settings == null || device == null) return;
+    final lower = input.isEven ? input : input - 1;
+    unawaited(
+      settings.saveInputPair(
+        device: device,
+        input: lower,
+        balance: _repository.inputSetup.pairs[lower],
+      ),
+    );
   }
 
   /// Persists the Master insert chain envelope.

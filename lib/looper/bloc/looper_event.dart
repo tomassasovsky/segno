@@ -157,6 +157,108 @@ final class LooperTrackOnceChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, once];
 }
 
+/// Track [channel]'s Mixer pan changed (accepted design, Mixer): `-1` is
+/// hard left, `1` hard right. Every lane's recorded image moves by it.
+final class LooperTrackPanChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackPanChanged].
+  const LooperTrackPanChanged(super.channel, {required this.pan});
+
+  /// The pan, `-1..1`.
+  final double pan;
+
+  @override
+  List<Object?> get props => [channel, pan];
+}
+
+/// Track [channel] was soloed or un-soloed (accepted design, Mixer): while
+/// any track is soloed, only soloed tracks route. Not persisted: Solo is a
+/// performance state the engine drops on restart.
+final class LooperTrackSoloToggled extends LooperChannelEvent {
+  /// Creates a [LooperTrackSoloToggled].
+  const LooperTrackSoloToggled(super.channel, {required this.solo});
+
+  /// Whether the track is soloed.
+  final bool solo;
+
+  @override
+  List<Object?> get props => [channel, solo];
+}
+
+/// The Mixer's clear Solo: every track is un-soloed.
+final class LooperSoloCleared extends LooperEvent {
+  /// Creates a [LooperSoloCleared].
+  const LooperSoloCleared();
+}
+
+/// The Mixer's Reset mixer: every track's level back to unity and pan to
+/// centre; mute, Solo, effects and audio stay as they are.
+final class LooperMixerReset extends LooperEvent {
+  /// Creates a [LooperMixerReset].
+  const LooperMixerReset();
+}
+
+/// Base for events targeting a single hardware [input]'s capture setup
+/// (accepted design, Audio routing). The setup is keyed by the open device
+/// in settings, like the input names.
+sealed class LooperInputEvent extends LooperEvent {
+  const LooperInputEvent(this.input);
+
+  /// The hardware input channel, `0`-based.
+  final int input;
+
+  @override
+  List<Object?> get props => [input];
+}
+
+/// Hardware [input]'s capture trim changed, in dB.
+final class LooperInputTrimChanged extends LooperInputEvent {
+  /// Creates a [LooperInputTrimChanged].
+  const LooperInputTrimChanged(super.input, {required this.db});
+
+  /// The trim in dB (`kMinInputTrimDb..kMaxInputTrimDb`; `0` = unity).
+  final double db;
+
+  @override
+  List<Object?> get props => [input, db];
+}
+
+/// Mono hardware [input]'s pan changed.
+final class LooperInputPanChanged extends LooperInputEvent {
+  /// Creates a [LooperInputPanChanged].
+  const LooperInputPanChanged(super.input, {required this.pan});
+
+  /// The pan, `-1..1`.
+  final double pan;
+
+  @override
+  List<Object?> get props => [input, pan];
+}
+
+/// The stereo pair whose lower (even) member is [input] was linked or
+/// unlinked.
+final class LooperInputPairChanged extends LooperInputEvent {
+  /// Creates a [LooperInputPairChanged].
+  const LooperInputPairChanged(super.input, {required this.paired});
+
+  /// Whether [input] and the odd input above it form a stereo pair.
+  final bool paired;
+
+  @override
+  List<Object?> get props => [input, paired];
+}
+
+/// The balance of the pair whose lower member is [input] changed.
+final class LooperInputBalanceChanged extends LooperInputEvent {
+  /// Creates a [LooperInputBalanceChanged].
+  const LooperInputBalanceChanged(super.input, {required this.balance});
+
+  /// The balance, `-1` (Left only) .. `1` (Right only).
+  final double balance;
+
+  @override
+  List<Object?> get props => [input, balance];
+}
+
 /// [channel] was crowned the primary track (Sync/Band, D18;
 /// `crownPrimary` — D20). No "un-crown" event exists — the only way to move
 /// the crown is to crown a different channel.
@@ -762,8 +864,9 @@ final class LooperOutputEnabledToggled extends LooperEvent {
   List<Object?> get props => [output, enabled];
 }
 
-/// A session load landed, so the bloc must write its chains back to the
-/// boot-restore keys — see `_resyncSessionChains`.
+/// A session load landed, so the bloc must write its chains, its track pans
+/// and its input setup back to the boot-restore keys — see
+/// `_resyncSessionChains`.
 ///
 /// Named for the trigger rather than the work, like every other event here: a
 /// load is what HAPPENED; re-persisting is this bloc's response to it.

@@ -1059,6 +1059,180 @@ void main() {
     });
   });
 
+  group('track pan', () {
+    test('defaults to centre and round-trips per track', () async {
+      expect(await repository.loadTrackPan(0), 0);
+      await repository.saveTrackPan(0, -0.5);
+      await repository.saveTrackPan(1, 1);
+      expect(await repository.loadTrackPan(0), -0.5);
+      expect(await repository.loadTrackPan(1), 1);
+      expect(await repository.loadTrackPan(2), 0);
+      expect(store.values['track_pan.0'], -0.5);
+    });
+
+    test('clamps to -1..1 on both sides of the store', () async {
+      await repository.saveTrackPan(0, 3);
+      expect(store.values['track_pan.0'], 1.0);
+      store.values['track_pan.1'] = -7.0;
+      expect(await repository.loadTrackPan(1), -1);
+    });
+  });
+
+  group('input setup', () {
+    test('an unset device loads as the default setup', () async {
+      final setup = await repository.loadInputSetup(
+        device: 'Scarlett',
+        inputCount: 4,
+      );
+      expect(setup.trimDb, isEmpty);
+      expect(setup.pan, isEmpty);
+      expect(setup.pairs, isEmpty);
+    });
+
+    test('the per-input writers set a key for a value off its default and '
+        'remove it for null or the default', () async {
+      await repository.saveInputTrim(device: 'Scarlett', input: 0, db: -6);
+      await repository.saveInputTrim(device: 'Scarlett', input: 3, db: 4.5);
+      await repository.saveInputPan(device: 'Scarlett', input: 2, pan: -0.5);
+      await repository.saveInputPair(
+        device: 'Scarlett',
+        input: 0,
+        balance: 0.25,
+      );
+
+      expect(store.values['input_trim.Scarlett.0'], -6.0);
+      expect(store.values['input_trim.Scarlett.3'], 4.5);
+      expect(store.values['input_pan.Scarlett.2'], -0.5);
+      expect(store.values['input_pair.Scarlett.0'], isTrue);
+      expect(store.values['input_balance.Scarlett.0'], 0.25);
+      expect(store.values.containsKey('input_pair.Scarlett.1'), isFalse);
+
+      final setup = await repository.loadInputSetup(
+        device: 'Scarlett',
+        inputCount: 4,
+      );
+      expect(setup.trimDb, {0: -6.0, 3: 4.5});
+      expect(setup.pan, {2: -0.5});
+      expect(setup.pairs, {0: 0.25});
+
+      // Another device sees none of it.
+      final other = await repository.loadInputSetup(
+        device: 'Built-in',
+        inputCount: 4,
+      );
+      expect(other.trimDb, isEmpty);
+      expect(other.pan, isEmpty);
+      expect(other.pairs, isEmpty);
+
+      // Back to the default, by value and by null: the keys go.
+      await repository.saveInputTrim(device: 'Scarlett', input: 0, db: 0);
+      await repository.saveInputTrim(device: 'Scarlett', input: 3, db: null);
+      await repository.saveInputPan(device: 'Scarlett', input: 2, pan: null);
+      await repository.saveInputPair(
+        device: 'Scarlett',
+        input: 0,
+        balance: null,
+      );
+      expect(
+        store.values.keys.where((k) => k.contains('.Scarlett.')),
+        isEmpty,
+      );
+    });
+
+    test('a pair at an even balance writes the link alone, and a balance '
+        'put back to even removes its key but keeps the link', () async {
+      await repository.saveInputPair(device: 'Scarlett', input: 2, balance: 0);
+      expect(store.values['input_pair.Scarlett.2'], isTrue);
+      expect(store.values.containsKey('input_balance.Scarlett.2'), isFalse);
+
+      await repository.saveInputPair(
+        device: 'Scarlett',
+        input: 2,
+        balance: -1,
+      );
+      expect(store.values['input_balance.Scarlett.2'], -1.0);
+
+      await repository.saveInputPair(device: 'Scarlett', input: 2, balance: 0);
+      expect(store.values['input_pair.Scarlett.2'], isTrue);
+      expect(store.values.containsKey('input_balance.Scarlett.2'), isFalse);
+      final setup = await repository.loadInputSetup(
+        device: 'Scarlett',
+        inputCount: 4,
+      );
+      expect(setup.pairs, {2: 0.0});
+    });
+
+    test('the pan and balance writers clamp to -1..1', () async {
+      await repository.saveInputPan(device: 'Scarlett', input: 1, pan: 3);
+      await repository.saveInputPair(device: 'Scarlett', input: 0, balance: -4);
+      expect(store.values['input_pan.Scarlett.1'], 1.0);
+      expect(store.values['input_balance.Scarlett.0'], -1.0);
+    });
+
+    test('a replace clears every value the setup no longer carries', () async {
+      await repository.replaceInputSetup(
+        device: 'Scarlett',
+        inputCount: 4,
+        setup: (
+          trimDb: {0: -6, 1: 2},
+          pan: {1: 0.5, 2: -0.5},
+          pairs: {0: 0.25, 2: -1},
+        ),
+      );
+      await repository.replaceInputSetup(
+        device: 'Scarlett',
+        inputCount: 4,
+        setup: (trimDb: {1: 2}, pan: {2: -0.5}, pairs: {2: -1}),
+      );
+
+      expect(
+        store.values.keys.where((k) => k.contains('.Scarlett.')),
+        unorderedEquals([
+          'input_trim.Scarlett.1',
+          'input_pan.Scarlett.2',
+          'input_pair.Scarlett.2',
+          'input_balance.Scarlett.2',
+        ]),
+      );
+      final setup = await repository.loadInputSetup(
+        device: 'Scarlett',
+        inputCount: 4,
+      );
+      expect(setup.trimDb, {1: 2.0});
+      expect(setup.pan, {2: -0.5});
+      expect(setup.pairs, {2: -1.0});
+    });
+
+    test('a replace stores a default value as an absent key, and still '
+        'writes an input past the device count', () async {
+      await repository.replaceInputSetup(
+        device: 'Scarlett',
+        inputCount: 2,
+        setup: (trimDb: {0: 0, 5: -3}, pan: {1: 0}, pairs: {}),
+      );
+      expect(store.values.containsKey('input_trim.Scarlett.0'), isFalse);
+      expect(store.values.containsKey('input_pan.Scarlett.1'), isFalse);
+      expect(store.values['input_trim.Scarlett.5'], -3.0);
+    });
+
+    test('a load ignores a pair on an odd input or one whose partner is past '
+        'the device count, and clamps what it reads', () async {
+      store.values['input_pair.Scarlett.1'] = true;
+      store.values['input_balance.Scarlett.1'] = 0.5;
+      store.values['input_pair.Scarlett.2'] = true;
+      store.values['input_pan.Scarlett.0'] = 4.0;
+      store.values['input_trim.Scarlett.0'] = 0.0;
+
+      final setup = await repository.loadInputSetup(
+        device: 'Scarlett',
+        inputCount: 3,
+      );
+      expect(setup.pairs, isEmpty);
+      expect(setup.pan, {0: 1.0});
+      expect(setup.trimDb, isEmpty);
+    });
+  });
+
   group('overdub decay', () {
     test('defaults to 0 and round-trips, by default and per track', () async {
       expect(await repository.loadOverdubDecay(), 0);

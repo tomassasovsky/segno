@@ -2340,6 +2340,13 @@ int32_t le_engine_set_monitor_input_volume(le_engine* engine, int32_t input,
   return le_push(engine, LE_CMD_SET_MONITOR_INPUT_VOLUME, input, volume);
 }
 
+int32_t le_engine_set_monitor_input_pan(le_engine* engine, int32_t input,
+                                        float pan) {
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MONITOR_INPUT_PAN,
+                                          .lanef = {input, 0, pan}});
+}
+
 int32_t le_engine_set_monitor_input_mute(le_engine* engine, int32_t input,
                                          int32_t muted) {
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
@@ -2752,6 +2759,31 @@ int32_t le_engine_set_lane_volume(le_engine* engine, int32_t channel,
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_VOLUME,
                                           .lanef = {channel, lane, volume}});
+}
+
+int32_t le_engine_set_lane_pan(le_engine* engine, int32_t channel,
+                               int32_t lane, float pan) {
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_PAN,
+                                          .lanef = {channel, lane, pan}});
+}
+
+int32_t le_engine_set_track_solo(le_engine* engine, int32_t channel,
+                                 int32_t solo) {
+  return le_push(engine, LE_CMD_SET_TRACK_SOLO, channel, solo ? 1.0f : 0.0f);
+}
+
+int32_t le_engine_set_input_trim(le_engine* engine, int32_t input,
+                                 float gain) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_CHANNELS) return LE_ERR_INVALID;
+  if (!(gain >= 0.0f)) gain = 0.0f; /* NaN lands on silence, not on unity */
+  if (gain > LE_MAX_INPUT_TRIM) gain = LE_MAX_INPUT_TRIM;
+  /* A direct store, like the enable flags: the capture reads it once per
+   * block (relaxed), and it must hold while the engine is stopped so a
+   * restart's re-apply lands before the first block. */
+  store_f32(&engine->a_in_trim_bits[input], gain);
+  return LE_OK;
 }
 
 int32_t le_engine_set_lane_mute(le_engine* engine, int32_t channel, int32_t lane,

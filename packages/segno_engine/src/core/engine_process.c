@@ -1931,6 +1931,23 @@ static void finalize_master_xfade(le_engine* e, le_track* t, uint64_t frame) {
  * (l + r)/2 sum, so no routed output is ever dropped. A mono source has l == r,
  * so a single masked channel gets l, two get (l, r) == (l, l), and extras get the
  * mid == l: identical to plain mono routing. */
+/* The unity-centre balance law (accepted design, slice 3; documented on
+ * le_engine_set_lane_pan): the near side stays at unity and the far side
+ * falls on a quarter-sine. Centre is bit-identical to no pan. */
+static inline void le_pan_gains(float pan, float* gl, float* gr) {
+  if (pan > 1.0f) pan = 1.0f;
+  if (pan < -1.0f) pan = -1.0f;
+  if (pan == 0.0f) {
+    *gl = 1.0f;
+    *gr = 1.0f;
+    return;
+  }
+  /* Exactly silent at the hard side (cosf(pi/2) is not quite 0). */
+  const float far = fabsf(pan) >= 1.0f ? 0.0f : cosf(fabsf(pan) * 1.57079632679f);
+  *gl = pan > 0.0f ? far : 1.0f;
+  *gr = pan < 0.0f ? far : 1.0f;
+}
+
 static void le_fx_route(float* out, int f, int ch_out, uint32_t mask, float l,
                         float r) {
   float* o = out + (size_t)f * (size_t)ch_out;
@@ -2673,6 +2690,30 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       le_apply_mute_cmd(e, ch, lane, cmd->lanef.value != 0.0f, cmd, frame);
       break;
     }
+    case LE_CMD_SET_LANE_PAN: {
+      const int32_t ch = cmd->lanef.channel;
+      const int32_t lane = cmd->lanef.lane;
+      if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
+      le_plog_push(e, frame, *cmd);
+      float v = cmd->lanef.value;
+      if (!(v >= -1.0f)) v = v < -1.0f ? -1.0f : 0.0f; /* NaN -> centre */
+      if (v > 1.0f) v = 1.0f;
+      float gl;
+      float gr;
+      le_pan_gains(v, &gl, &gr);
+      le_lane* pl = &e->tracks[ch].lanes[lane];
+      store_f32(&pl->a_pan_gl_bits, gl);
+      store_f32(&pl->a_pan_gr_bits, gr);
+      store_f32(&pl->a_pan_bits, v);
+      break;
+    }
+    case LE_CMD_SET_TRACK_SOLO: {
+      const int32_t ch = cmd->arg_i;
+      if (!valid_channel(e, ch)) break;
+      le_plog_push(e, frame, *cmd);
+      store_i32(&e->tracks[ch].a_solo, cmd->arg_f != 0.0f ? 1 : 0);
+      break;
+    }
     /* ---- per-input live monitor ----
      * SET_MONITOR_INPUT carries the input index + enabled bit in the generic
      * { arg_i, arg_f } arm (input-level gate only). The per-lane monitor commands
@@ -2804,6 +2845,21 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
       le_plog_push(e, frame, *cmd);
       store_i32(&e->monitors[input].a_muted, cmd->arg_f != 0.0f ? 1 : 0);
+      break;
+    }
+    case LE_CMD_SET_MONITOR_INPUT_PAN: {
+      const int32_t input = cmd->lanef.channel;
+      if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
+      le_plog_push(e, frame, *cmd);
+      float v = cmd->lanef.value;
+      if (!(v >= -1.0f)) v = v < -1.0f ? -1.0f : 0.0f;
+      if (v > 1.0f) v = 1.0f;
+      float gl;
+      float gr;
+      le_pan_gains(v, &gl, &gr);
+      store_f32(&e->monitors[input].a_pan_gl_bits, gl);
+      store_f32(&e->monitors[input].a_pan_gr_bits, gr);
+      store_f32(&e->monitors[input].a_pan_bits, v);
       break;
     }
     case LE_CMD_SET_OUTPUT_ENABLED: {
@@ -3049,7 +3105,8 @@ static inline void master_fx_frame(le_engine* e, float* out, uint32_t f,
 static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
                                     int ch_out, float master_gain, int limiter_on,
                                     float limiter_ceiling, float lim_release,
-                                    float* out_sumsq, float* frame_out_peak) {
+                                    float* out_sumsq, float* frame_out_peak,
+                                    float* out_peak_ch) {
   /* Apply the global master gain post-mix, before metering and the loop-viz
    * tap, so meters and the waveform reflect what the listener actually hears.
    * The latency-calibration pulse path bypasses this (it `continue`s the frame),
@@ -3088,6 +3145,7 @@ static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
     *out_sumsq += sample * sample;
     const float sa = fabsf(sample);
     if (sa > *frame_out_peak) *frame_out_peak = sa;
+    if (sa > out_peak_ch[c]) out_peak_ch[c] = sa;
   }
 }
 
@@ -3746,12 +3804,15 @@ static inline void snapshot_monitor_fx(
     float* mon_vol, int* mon_mut, int32_t* mon_fx_count,
     int32_t mon_fx_type[][LE_FX_MAX],
     float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
-    int32_t mon_fx_enabled[][LE_FX_MAX], int* mon_has_fx) {
+    int32_t mon_fx_enabled[][LE_FX_MAX], int* mon_has_fx, float* mon_gl,
+    float* mon_gr) {
   for (int c = 0; c < ch_in && c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input* m = &e->monitors[c];
     mon_on[c] = load_i32(&m->a_enabled) && !(excluded & (1u << c));
     mon_out[c] = atomic_load_explicit(&m->a_output_mask, memory_order_relaxed);
     mon_vol[c] = load_f32(&m->a_vol_bits);
+    mon_gl[c] = load_f32(&m->a_pan_gl_bits);
+    mon_gr[c] = load_f32(&m->a_pan_gr_bits);
     mon_mut[c] = load_i32(&m->a_muted);
     mon_has_fx[c] = 0;
     int32_t n = load_i32(&m->a_fx_count);
@@ -4020,7 +4081,8 @@ static inline int process_input_frame(le_engine* e, const float* in,
                                       const float* in_c, float* out, uint32_t f,
                                       int ch_in, int ch_out, int tc,
                                       int sr, uint32_t excluded, float* in_sumsq,
-                                      float* in_peak, float* out_sumsq,
+                                      float* in_peak, float* in_peak_ch,
+                                      float* out_sumsq,
                                       uint64_t perf_frame_base) {
   float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
   float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
@@ -4042,6 +4104,7 @@ static inline int process_input_frame(le_engine* e, const float* in,
       continue;
     }
     if (a > frame_mag) frame_mag = a;
+    if (a > in_peak_ch[c]) in_peak_ch[c] = a;
     *in_sumsq += s * s;
     if (conditioned) {
       const float ca = fabsf(in_c[f * ch_in + c]);
@@ -4128,7 +4191,8 @@ static inline void mix_monitors_frame(
     int32_t mon_fx_type[][LE_FX_MAX],
     float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
     int32_t mon_fx_enabled[][LE_FX_MAX], const float* mon_vol,
-    const uint32_t* mon_out) {
+    const uint32_t* mon_out, const float* mon_gl, const float* mon_gr,
+    float* mon_peak) {
   if (in) {
     for (int c = 0; c < ch_in && c < LE_MAX_MONITORED_INPUTS; ++c) {
       const int captured =
@@ -4144,9 +4208,15 @@ static inline void mix_monitors_frame(
         fx_apply_chain(&e->monitors[c].fx, sr, fx_cap, &ml, &mr, mon_fx_count[c],
                        mon_fx_type[c], mon_fx_params[c], mon_fx_enabled[c]);
       }
-      const float g = mon_vol[c];
-      if (captured) perf_tap_monitor_frame(e, c, ml * g, mr * g);
-      le_fx_route(out, f, ch_out, mon_out[c] & out_enabled, ml * g, mr * g);
+      ml *= mon_vol[c] * mon_gl[c];
+      mr *= mon_vol[c] * mon_gr[c];
+      if (captured) perf_tap_monitor_frame(e, c, ml, mr);
+      const uint32_t routed = mon_out[c] & out_enabled;
+      le_fx_route(out, f, ch_out, routed, ml, mr);
+      if (routed) {
+        const float ma = fabsf(ml) > fabsf(mr) ? fabsf(ml) : fabsf(mr);
+        if (ma > mon_peak[c]) mon_peak[c] = ma;
+      }
     }
   }
 }
@@ -4259,7 +4329,8 @@ static inline void mix_tracks_frame(
     const le_wet_entry* cache_ent[][LE_MAX_LANES],
     float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
     int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
-    uint64_t perf_frame_base) {
+    float* trk_lpeak, float* trk_rpeak, const float* in_trim, const int* solo,
+    int any_solo, uint64_t perf_frame_base) {
   /* Snapshot per-lane playback state once per frame. The track state can flip
    * only between blocks; re-reading per frame is cheap and keeps undo's
    * control-thread a_live swap visible at frame granularity. */
@@ -4294,9 +4365,12 @@ static inline void mix_tracks_frame(
    * argument for that index is written there. */
   int32_t cap[LE_MAX_TRACKS][LE_MAX_LANES];
   float vol[LE_MAX_TRACKS][LE_MAX_LANES];
+  float pan_gl[LE_MAX_TRACKS][LE_MAX_LANES];
+  float pan_gr[LE_MAX_TRACKS][LE_MAX_LANES];
   int mut[LE_MAX_TRACKS][LE_MAX_LANES];
   int32_t lane_in[LE_MAX_TRACKS][LE_MAX_LANES];
   uint32_t out_mask[LE_MAX_TRACKS][LE_MAX_LANES];
+
   /* IDLE TRACK SKIP. An EMPTY or STOPPED track's lane body is provably a
    * no-op: it never enters the RECORDING / OVERDUBBING / PLAYING write
    * branches, so `loopsample` is 0; `audible` is false, so nothing is routed
@@ -4338,6 +4412,8 @@ static inline void mix_tracks_frame(
       buf[t][l] = ln->pool[live];
       cap[t][l] = ln->pool_cap[live];
       vol[t][l] = load_f32(&ln->a_vol_bits);
+      pan_gl[t][l] = load_f32(&ln->a_pan_gl_bits);
+      pan_gr[t][l] = load_f32(&ln->a_pan_gr_bits);
       mut[t][l] = load_i32(&ln->a_muted);
       lane_in[t][l] = load_i32(&ln->a_input_channel);
       out_mask[t][l] =
@@ -4519,6 +4595,10 @@ static inline void mix_tracks_frame(
     /* This track's lanes summed for THIS frame -- folded into the block
      * accumulators after the lane loop (#655). */
     float trk_mix = 0.0f;
+    /* What the track sends per side this frame (post-fader, post-pan; the
+     * bus after its chain when the track has one) — the Mixer's meter. */
+    float trk_l = 0.0f;
+    float trk_r = 0.0f;
 
     /* Idle track (see the idle[] derivation at the snapshot loop above): the
      * whole lane body folds to zero, and its snapshot was skipped with it.
@@ -4532,7 +4612,9 @@ static inline void mix_tracks_frame(
       const int32_t ic = lane_in[t][l];
       float insample = 0.0f;
       if (in && ic >= 0 && ic < ch_in && !(excluded & (1u << ic))) {
-        insample = in[f * ch_in + ic];
+        /* The capture trim (slice 3) scales only what records: the monitor
+         * path, the meters and the trigger read the untrimmed input. */
+        insample = in[f * ch_in + ic] * in_trim[ic];
       }
 
       /* Real-time null-guard: a lane whose buffer is not yet allocated (the
@@ -4586,7 +4668,7 @@ static inline void mix_tracks_frame(
        * path instead of resuming a stale tail. */
       const int audible =
           (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
-          !mut[t][l];
+          !mut[t][l] && (!any_solo || solo[t]);
       le_lane* ln = &e->tracks[t].lanes[l];
 
       /* Loop-stage wet cache (part 2). The per-buffer snapshot already
@@ -4643,12 +4725,25 @@ static inline void mix_tracks_frame(
                          fx_type[t][l], fx_params[t][l], fx_enabled[t][l]);
         }
       }
+      /* Pan (slice 3): placement of the lane's pair, after the chain and
+       * after the cache (the cache holds the unpanned render). The gains
+       * were computed when the pan was set; centre is exact unity, so an
+       * unpanned lane stays bit-identical. */
+      wl *= pan_gl[t][l];
+      wr *= pan_gr[t][l];
       if (!trk_has_fx[t]) {
         /* Empty Track chain (the default and the migration state): the legacy
          * per-lane routing runs untouched — bit-identical to the pre-part-1b
          * engine (D-TRACKROUTE's fingerprint invariant). */
         if (audible) {
-          le_fx_route(out, f, ch_out, out_mask[t][l] & out_enabled, wl, wr);
+          const uint32_t routed = out_mask[t][l] & out_enabled;
+          le_fx_route(out, f, ch_out, routed, wl, wr);
+          /* The meter reads what reaches an output: a lane routed to
+           * nothing (or only to disabled outputs) sends nothing. */
+          if (routed) {
+            trk_l += wl;
+            trk_r += wr;
+          }
         }
       } else if (audible) {
         /* Non-empty Track chain: accumulate onto the stereo bus instead.
@@ -4694,6 +4789,16 @@ static inline void mix_tracks_frame(
       fx_apply_chain(&tr->bus.fx, sr, fx_cap, &bus_l, &bus_r, trk_fx_count[t],
                      trk_fx_type[t], trk_fx_params[t], trk_fx_enabled[t]);
       le_fx_route(out, f, ch_out, bus_mask, bus_l, bus_r);
+      if (bus_mask) {
+        trk_l = bus_l;
+        trk_r = bus_r;
+      }
+    }
+    {
+      const float al = fabsf(trk_l);
+      const float ar = fabsf(trk_r);
+      if (al > trk_lpeak[t]) trk_lpeak[t] = al;
+      if (ar > trk_rpeak[t]) trk_rpeak[t] = ar;
     }
 
     /* Advance the per-pass capture once per written frame (all lanes share the
@@ -4738,8 +4843,9 @@ void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
                                          int limiter_on, float limiter_ceiling,
                                          float lim_release, float* out_sumsq,
                                          float* frame_out_peak) {
+  float out_peak_ch[LE_MAX_CHANNELS] = {0};
   master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
-                   lim_release, out_sumsq, frame_out_peak);
+                   lim_release, out_sumsq, frame_out_peak, out_peak_ch);
 }
 
 /* ---- the real-time DSP core ---- */
@@ -4922,6 +5028,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * the block the same way the per-lane figures are (#655). */
   float trk_sumsq[LE_MAX_TRACKS] = {0};
   float trk_peak[LE_MAX_TRACKS] = {0};
+  /* Post-fader stereo peaks per track (slice 3), see le_track_snapshot. */
+  float trk_lpeak[LE_MAX_TRACKS] = {0};
+  float trk_rpeak[LE_MAX_TRACKS] = {0};
 
   /* Active lane count per track (control-thread plain int; clamped once). */
   int32_t lane_n[LE_MAX_TRACKS];
@@ -4989,6 +5098,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int mon_on[LE_MAX_MONITORED_INPUTS] = {0};
   uint32_t mon_out[LE_MAX_MONITORED_INPUTS];
   float mon_vol[LE_MAX_MONITORED_INPUTS];
+  float mon_gl[LE_MAX_MONITORED_INPUTS];
+  float mon_gr[LE_MAX_MONITORED_INPUTS];
+  float mon_peak[LE_MAX_MONITORED_INPUTS] = {0};
+  float in_peak_ch[LE_MAX_CHANNELS] = {0};
+  float out_peak_ch[LE_MAX_CHANNELS] = {0};
   int mon_mut[LE_MAX_MONITORED_INPUTS];
   int32_t mon_fx_count[LE_MAX_MONITORED_INPUTS];
   int32_t mon_fx_type[LE_MAX_MONITORED_INPUTS][LE_FX_MAX];
@@ -4997,7 +5111,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int mon_has_fx[LE_MAX_MONITORED_INPUTS];
   snapshot_monitor_fx(e, ch_in, excluded, mon_on, mon_out, mon_vol, mon_mut,
                       mon_fx_count, mon_fx_type, mon_fx_params, mon_fx_enabled,
-                      mon_has_fx);
+                      mon_has_fx, mon_gl, mon_gr);
 
   /* Structural output gate, read once per block (a mid-block toggle applies from
    * the next block — RT-safe, no mid-buffer artifact). Intersected into every
@@ -5025,12 +5139,27 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
   const int fx_cap = e->fx_delay_frames;
 
+  /* Block-constant mix facts (slice 3), read once here like master_gain: the
+   * capture trim per input (a direct store; a mid-block change applies from
+   * the next block) and the solos of EVERY track, idle ones included, since
+   * one soloed track gates every other track's routing. */
+  float in_trim[LE_MAX_CHANNELS];
+  for (int c = 0; c < ch_in && c < LE_MAX_CHANNELS; ++c) {
+    in_trim[c] = load_f32(&e->a_in_trim_bits[c]);
+  }
+  int solo[LE_MAX_TRACKS];
+  int any_solo = 0;
+  for (int t = 0; t < tc; ++t) {
+    solo[t] = load_i32(&e->tracks[t].a_solo);
+    if (solo[t]) any_solo = 1;
+  }
+
   for (uint32_t f = 0; f < frames; ++f) {
     /* Input metering + sound-activated record + latency harness. When the harness
      * owns the frame it has already written `out`, so skip the rest. */
     if (process_input_frame(e, in, in_c, out, f, ch_in, ch_out, tc, sr,
-                            excluded, &in_sumsq, &in_peak, &out_sumsq,
-                            perf_frame_base)) {
+                            excluded, &in_sumsq, &in_peak, in_peak_ch,
+                            &out_sumsq, perf_frame_base)) {
       continue;
     }
 
@@ -5052,7 +5181,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                      fx_enabled,
                      trk_has_fx, trk_fx_count, trk_fx_type, trk_fx_params,
                      trk_fx_enabled, cache_ent, lane_sumsq, lane_peak, st,
-                     frame_trk_peak, trk_sumsq, trk_peak, perf_frame_base);
+                     frame_trk_peak, trk_sumsq, trk_peak, trk_lpeak, trk_rpeak,
+                     in_trim, solo, any_solo, perf_frame_base);
 
     /* Master insert (part 1b, D-MASTER): colors the track mix only — BEFORE
      * the monitors sum in below, and before master gain/limiter. Empty chain
@@ -5068,7 +5198,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * every consumer at once (WYSIWYG with the lane capture above). */
     mix_monitors_frame(e, in_c, out, f, ch_in, ch_out, sr, fx_cap, out_enabled,
                        mon_on, mon_mut, mon_has_fx, mon_fx_count, mon_fx_type,
-                       mon_fx_params, mon_fx_enabled, mon_vol, mon_out);
+                       mon_fx_params, mon_fx_enabled, mon_vol, mon_out, mon_gl,
+                       mon_gr, mon_peak);
 
     /* Master bus (gain + limiter + output metering), then the perf tap, THEN
      * the click bus (Architecture §3: after the tap so captures/exports never
@@ -5079,7 +5210,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * above. Dormant click cost: the click_on ternary here plus click_frame's
      * fused compare. */
     master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
-                     lim_release, &out_sumsq, &frame_out_peak);
+                     lim_release, &out_sumsq, &frame_out_peak, out_peak_ch);
     if (frame_out_peak > out_peak) out_peak = frame_out_peak;
     perf_tap_master_frame(e, out, f, ch_out);
     const int click_on =
@@ -5112,6 +5243,15 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   store_f32(&e->a_in_rms_bits,
             total_in ? sqrtf(in_sumsq / (float)total_in) : 0.0f);
   store_f32(&e->a_in_peak_bits, in_peak);
+  /* Per-channel meters (slice 3): the channels the device has; configure
+   * zeroed every entry, so nothing stale survives a smaller device. */
+  for (int c = 0; c < ch_in && c < LE_MAX_CHANNELS; ++c) {
+    store_f32(&e->a_in_peak_ch_bits[c], in_peak_ch[c]);
+    store_f32(&e->monitors[c].a_peak_bits, mon_peak[c]);
+  }
+  for (int c = 0; c < ch_out && c < LE_MAX_CHANNELS; ++c) {
+    store_f32(&e->a_out_peak_ch_bits[c], out_peak_ch[c]);
+  }
   store_f32(&e->a_out_rms_bits,
             total_out ? sqrtf(out_sumsq / (float)total_out) : 0.0f);
   store_f32(&e->a_out_peak_bits, out_peak);
@@ -5149,6 +5289,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     store_f32(&e->tracks[t].a_trk_rms_bits,
               frames ? sqrtf(trk_sumsq[t] / (float)frames) : 0.0f);
     store_f32(&e->tracks[t].a_trk_peak_bits, trk_peak[t]);
+    store_f32(&e->tracks[t].a_trk_peak_l_bits, trk_lpeak[t]);
+    store_f32(&e->tracks[t].a_trk_peak_r_bits, trk_rpeak[t]);
     /* The track's own playhead: the write head while its take is still being
      * defined (no length to play against yet), the mixer's read index
      * otherwise — see le_track_snapshot.position_frames. */

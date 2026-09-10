@@ -317,6 +317,12 @@ typedef struct le_lane {
   _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
   _Atomic uint32_t a_vol_bits;     /* per-lane volume (float bits, 0..1) */
+  _Atomic uint32_t a_pan_bits;     /* per-lane pan (float bits, -1..1) */
+  /* The pan's gains (le_pan_gains), written beside a_pan_bits by the ring
+   * handler so the audio thread loads two floats per lane per frame instead
+   * of computing a cosine. Unity at centre. */
+  _Atomic uint32_t a_pan_gl_bits;
+  _Atomic uint32_t a_pan_gr_bits;
   _Atomic int32_t a_muted;         /* per-lane mute */
   int32_t pending_mute; /* audio-thread-local: a mute that arrived while the
                          * track was capturing. Applied (into a_muted) when the
@@ -441,7 +447,11 @@ typedef struct le_monitor_input {
   _Atomic int32_t a_enabled;      /* 0/1 live monitoring on for this input */
   _Atomic uint32_t a_output_mask; /* output channels the monitor plays to */
   _Atomic uint32_t a_vol_bits;    /* monitor gain (float bits, 0..1) */
+  _Atomic uint32_t a_pan_bits;    /* monitor pan (float bits, -1..1) */
+  _Atomic uint32_t a_pan_gl_bits; /* its gains, see le_lane */
+  _Atomic uint32_t a_pan_gr_bits;
   _Atomic int32_t a_muted;        /* 0/1 monitor mute */
+  _Atomic uint32_t a_peak_bits;   /* block peak of what it routes, 0..1 */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
@@ -616,6 +626,14 @@ typedef struct le_track {
    * meter here. */
   _Atomic uint32_t a_trk_rms_bits;
   _Atomic uint32_t a_trk_peak_bits;
+  /* Post-fader stereo block peaks (accepted design, slice 3): what the
+   * track sends to the outputs per side, after volume, pan and its chain.
+   * Audio thread writes, snapshot reads. */
+  _Atomic uint32_t a_trk_peak_l_bits;
+  _Atomic uint32_t a_trk_peak_r_bits;
+  /* Solo (slice 3): 0/1, published by the ring handler. See
+   * le_engine_set_track_solo. */
+  _Atomic int32_t a_solo;
   /* This track's own playhead (le_track_snapshot.position_frames): the mixer's
    * read index for the last frame of the block, or the write head while
    * RECORDING. Published once per block beside the level above. */
@@ -1122,6 +1140,11 @@ struct le_engine {
   le_cb_timing cb_timing;
   _Atomic uint32_t a_in_rms_bits;
   _Atomic uint32_t a_in_peak_bits;
+  /* Per-channel block peaks and the capture trim (accepted design, slice
+   * 3): see le_snapshot's input_peaks / output_peaks / input_trim. */
+  _Atomic uint32_t a_in_peak_ch_bits[LE_MAX_CHANNELS];
+  _Atomic uint32_t a_out_peak_ch_bits[LE_MAX_CHANNELS];
+  _Atomic uint32_t a_in_trim_bits[LE_MAX_CHANNELS];
   _Atomic uint32_t a_out_rms_bits;
   _Atomic uint32_t a_out_peak_bits; /* master-bus block peak, post gain+limiter */
 

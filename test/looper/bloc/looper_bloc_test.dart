@@ -118,6 +118,43 @@ void main() {
     when(
       () => repository.crownPrimary(channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
+    // The mix (slice 3).
+    when(
+      () => repository.setTrackPan(any(), channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackSolo(
+        channel: any(named: 'channel'),
+        solo: any(named: 'solo'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(repository.clearSolo).thenReturn(EngineResult.ok);
+    when(repository.resetMixer).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setInputTrimDb(
+        input: any(named: 'input'),
+        db: any(named: 'db'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setInputPan(
+        input: any(named: 'input'),
+        pan: any(named: 'pan'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setInputPair(
+        input: any(named: 'input'),
+        paired: any(named: 'paired'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setPairBalance(
+        input: any(named: 'input'),
+        balance: any(named: 'balance'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.inputSetup).thenReturn(const InputSetup());
     when(() => repository.setLooperMode(any())).thenReturn(EngineResult.ok);
     // What the repository HOLDS after a set — the value the bloc persists.
     // Tests that care about a refusal or a closed engine override it.
@@ -452,6 +489,208 @@ void main() {
       expect(await trackSettings.loadTrackOnce(2), isTrue);
     },
   );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackPanChanged forwards the pan to the repository and persists '
+    'it under track_pan.N',
+    build: buildBlocWithSettings,
+    act: (bloc) => bloc.add(const LooperTrackPanChanged(2, pan: -0.5)),
+    verify: (_) async {
+      verify(() => repository.setTrackPan(-0.5, channel: 2)).called(1);
+      expect(await trackSettings.loadTrackPan(2), -0.5);
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackSoloToggled forwards the solo to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTrackSoloToggled(1, solo: true)),
+    verify: (_) =>
+        verify(() => repository.setTrackSolo(channel: 1, solo: true)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperSoloCleared un-solos every track through the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperSoloCleared()),
+    verify: (_) => verify(repository.clearSolo).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperMixerReset resets the mixer and puts every saved track pan back '
+    'to centre',
+    build: () {
+      when(() => repository.state).thenReturn(
+        const LooperState(tracks: [Track(), Track(channel: 1)]),
+      );
+      return buildBlocWithSettings();
+    },
+    act: (bloc) async {
+      await trackSettings.saveTrackPan(0, -1);
+      await trackSettings.saveTrackPan(1, 0.5);
+      bloc.add(const LooperMixerReset());
+    },
+    verify: (_) async {
+      verify(repository.resetMixer).called(1);
+      expect(await trackSettings.loadTrackPan(0), 0);
+      expect(await trackSettings.loadTrackPan(1), 0);
+    },
+  );
+
+  group('the input setup (slice 3)', () {
+    // Persisted per touched input under the OPEN device, keyed like the
+    // input names: the repository's remembered setup is what is written,
+    // not the event, and only the input the event named.
+    const setup = InputSetup(trimDb: {0: -6}, pan: {2: -0.5}, pairs: {0: 0.2});
+
+    LooperBloc buildWithDevice() {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(deviceName: 'Scarlett 18i20', inputChannels: 4),
+        ),
+      );
+      when(() => repository.inputSetup).thenReturn(setup);
+      return buildBlocWithSettings();
+    }
+
+    /// The keys written under the open device.
+    Future<StoredInputSetup> stored() => trackSettings.loadInputSetup(
+      device: 'Scarlett 18i20',
+      inputCount: 4,
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputTrimChanged forwards the trim and persists that trim only',
+      build: buildWithDevice,
+      act: (bloc) => bloc.add(const LooperInputTrimChanged(0, db: -6)),
+      verify: (_) async {
+        verify(() => repository.setInputTrimDb(input: 0, db: -6)).called(1);
+        final s = await stored();
+        expect(s.trimDb, {0: -6.0});
+        expect(s.pan, isEmpty);
+        expect(s.pairs, isEmpty);
+        final other = await trackSettings.loadInputSetup(
+          device: 'Built-in',
+          inputCount: 4,
+        );
+        expect(other.trimDb, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputPanChanged forwards the pan and persists that pan only',
+      build: buildWithDevice,
+      act: (bloc) => bloc.add(const LooperInputPanChanged(2, pan: -0.5)),
+      verify: (_) async {
+        verify(() => repository.setInputPan(input: 2, pan: -0.5)).called(1);
+        final s = await stored();
+        expect(s.pan, {2: -0.5});
+        expect(s.trimDb, isEmpty);
+        expect(s.pairs, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputPairChanged forwards the link and persists that pair only',
+      build: buildWithDevice,
+      act: (bloc) => bloc.add(const LooperInputPairChanged(0, paired: true)),
+      verify: (_) async {
+        verify(
+          () => repository.setInputPair(input: 0, paired: true),
+        ).called(1);
+        final s = await stored();
+        expect(s.pairs, {0: 0.2});
+        expect(s.trimDb, isEmpty);
+        expect(s.pan, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputBalanceChanged forwards the balance and persists it under '
+      "the pair's lower member",
+      build: buildWithDevice,
+      act: (bloc) => bloc.add(const LooperInputBalanceChanged(0, balance: 0.2)),
+      verify: (_) async {
+        verify(
+          () => repository.setPairBalance(input: 0, balance: 0.2),
+        ).called(1);
+        expect((await stored()).pairs, {0: 0.2});
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'a value put back to its default is cleared from the store, and the '
+      'other inputs are left alone',
+      build: () {
+        final bloc = buildWithDevice();
+        // The repository now reports a setup with nothing set.
+        when(() => repository.inputSetup).thenReturn(const InputSetup());
+        return bloc;
+      },
+      act: (bloc) async {
+        await trackSettings.replaceInputSetup(
+          device: 'Scarlett 18i20',
+          inputCount: 4,
+          setup: (trimDb: setup.trimDb, pan: setup.pan, pairs: setup.pairs),
+        );
+        bloc
+          ..add(const LooperInputTrimChanged(0, db: 0))
+          ..add(const LooperInputPairChanged(0, paired: false));
+      },
+      verify: (_) async {
+        final s = await stored();
+        expect(s.trimDb, isEmpty);
+        expect(s.pairs, isEmpty);
+        // Input 2's pan was not touched by either event.
+        expect(s.pan, {2: -0.5});
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'with no device open the edit reaches the repository but nothing is '
+      'persisted: there is no device to key it to',
+      build: () {
+        when(() => repository.state).thenReturn(const LooperState());
+        when(() => repository.inputSetup).thenReturn(setup);
+        return buildBlocWithSettings();
+      },
+      act: (bloc) => bloc
+        ..add(const LooperInputTrimChanged(0, db: -6))
+        ..add(const LooperInputPanChanged(2, pan: -0.5))
+        ..add(const LooperInputPairChanged(0, paired: true))
+        ..add(const LooperInputBalanceChanged(0, balance: 0.2)),
+      verify: (_) async {
+        verify(() => repository.setInputTrimDb(input: 0, db: -6)).called(1);
+        final s = await trackSettings.loadInputSetup(
+          device: '',
+          inputCount: 4,
+        );
+        expect(s.trimDb, isEmpty);
+        expect(s.pan, isEmpty);
+        expect(s.pairs, isEmpty);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'without a settings repository the events still reach the repository',
+      build: buildBloc,
+      act: (bloc) => bloc
+        ..add(const LooperInputTrimChanged(1, db: 3))
+        ..add(const LooperInputPanChanged(1, pan: 1))
+        ..add(const LooperInputPairChanged(2, paired: false))
+        ..add(const LooperInputBalanceChanged(2, balance: -1)),
+      verify: (_) {
+        verify(() => repository.setInputTrimDb(input: 1, db: 3)).called(1);
+        verify(() => repository.setInputPan(input: 1, pan: 1)).called(1);
+        verify(
+          () => repository.setInputPair(input: 2, paired: false),
+        ).called(1);
+        verify(
+          () => repository.setPairBalance(input: 2, balance: -1),
+        ).called(1);
+      },
+    );
+  });
 
   blocTest<LooperBloc, LooperState>(
     'LooperTrackOverdubDecayChanged forwards the override to the repository '
@@ -2497,6 +2736,37 @@ void main() {
       expect(await settings.loadLaneEffects(0, 0), isNull);
       expect(await settings.loadTrackFxChain(0), isNull);
     });
+
+    test(
+      "re-persists every track's pan and the loaded input setup under "
+      'the open device, so the next boot matches the loaded session',
+      () async {
+        // The pre-load persistence: a pan and a setup the load supersedes.
+        await settings.saveTrackPan(1, -1);
+        await settings.replaceInputSetup(
+          device: 'Fake Device',
+          inputCount: 4,
+          setup: (trimDb: {3: 12}, pan: {1: 1}, pairs: {}),
+        );
+        looper
+          ..setTrackPan(0.25)
+          ..setInputSetup(
+            const InputSetup(trimDb: {0: -6}, pan: {2: -0.5}, pairs: {0: 0.2}),
+          );
+
+        await resync();
+
+        expect(await settings.loadTrackPan(0), 0.25);
+        expect(await settings.loadTrackPan(1), 0);
+        final stored = await settings.loadInputSetup(
+          device: 'Fake Device',
+          inputCount: 4,
+        );
+        expect(stored.trimDb, {0: -6.0});
+        expect(stored.pan, {2: -0.5});
+        expect(stored.pairs, {0: 0.2});
+      },
+    );
 
     test('is a no-op without a settings dependency', () async {
       final blocWithoutSettings = LooperBloc(repository: looper);

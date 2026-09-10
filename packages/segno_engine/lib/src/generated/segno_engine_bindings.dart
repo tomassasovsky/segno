@@ -1580,6 +1580,103 @@ class SegnoEngineBindings {
   late final _le_engine_set_lane_mute = _le_engine_set_lane_mutePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
+  /// Sets lane [lane] of track [channel]'s pan, -1 (left) .. 1 (right), 0 centre
+  /// (accepted design, slice 3). A lane's output is a stereo pair (mono content
+  /// reads as an equal pair until a stereo effect spreads it); the pan scales
+  /// that pair before le_fx_route places it, with a unity-centre balance law:
+  /// the near side stays at unity and the far side falls on a quarter-sine
+  /// (left = cos(max(pan, 0) * pi/2), right = cos(max(-pan, 0) * pi/2)). Centre
+  /// is therefore bit-identical to an unpanned lane, and hard left is the left
+  /// output alone. A single masked output receives the (l + r) / 2 mid as
+  /// before, so pan on a mono route is a plain attenuation. Applied on the
+  /// legacy per-lane route and on the summed track bus alike; the loop-stage
+  /// wet cache stores the unpanned render, so a pan change never invalidates
+  /// it. Reset to centre by (re)configure, like volume; remembered and
+  /// re-applied by the caller.
+  int le_engine_set_lane_pan(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    double pan,
+  ) {
+    return _le_engine_set_lane_pan(
+      engine,
+      channel,
+      lane,
+      pan,
+    );
+  }
+
+  late final _le_engine_set_lane_panPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_lane_pan');
+  late final _le_engine_set_lane_pan = _le_engine_set_lane_panPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+
+  /// Solos or un-solos track [channel] (accepted design, slice 3). While any
+  /// track is soloed, only soloed tracks route to the outputs; every other
+  /// track's lanes keep playing (their chains keep running, their meters keep
+  /// reading the dry content) but route nothing, exactly as a muted lane does.
+  /// Independent of mute: a soloed muted track is still silent, and clearing
+  /// every solo leaves the mutes as they were. Monitors are not tracks and are
+  /// unaffected. Reset by (re)configure.
+  int le_engine_set_track_solo(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int solo,
+  ) {
+    return _le_engine_set_track_solo(
+      engine,
+      channel,
+      solo,
+    );
+  }
+
+  late final _le_engine_set_track_soloPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_solo');
+  late final _le_engine_set_track_solo = _le_engine_set_track_soloPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets hardware input [input]'s capture trim (accepted design, slice 3):
+  /// a linear gain, default 1, applied to the sample a lane RECORDS from that
+  /// input and to nothing else — the monitor path, the input meters, the clip
+  /// detector, the sound-activated trigger and the tuner all read the
+  /// untrimmed conditioned input. Clamped to 0..LE_MAX_INPUT_TRIM. Takes
+  /// effect on the next block (a direct store, so it works while stopped);
+  /// reset to 1 by (re)configure.
+  int le_engine_set_input_trim(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    double gain,
+  ) {
+    return _le_engine_set_input_trim(
+      engine,
+      input,
+      gain,
+    );
+  }
+
+  late final _le_engine_set_input_trimPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_input_trim');
+  late final _le_engine_set_input_trim = _le_engine_set_input_trimPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
+
   /// Copies lane [lane] of track [channel]'s snapshot into *out. Out-of-range
   /// channels/lanes yield an empty lane. No-op if either pointer is NULL.
   void le_engine_get_lane(
@@ -2718,6 +2815,31 @@ class SegnoEngineBindings {
   late final _le_engine_set_monitor_input_mute =
       _le_engine_set_monitor_input_mutePtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets hardware input [input]'s monitor pan, -1..1 (accepted design, slice
+  /// 3): the same unity-centre balance law as le_engine_set_lane_pan, applied
+  /// to the monitor's stereo pair after its chain and gain.
+  int le_engine_set_monitor_input_pan(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    double pan,
+  ) {
+    return _le_engine_set_monitor_input_pan(
+      engine,
+      input,
+      pan,
+    );
+  }
+
+  late final _le_engine_set_monitor_input_panPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_monitor_input_pan');
+  late final _le_engine_set_monitor_input_pan =
+      _le_engine_set_monitor_input_panPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
 
   /// Sets chain entry [index] (0..LE_FX_MAX-1) on hardware input [input]'s monitor
   /// chain to [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY
@@ -4730,6 +4852,21 @@ enum le_command_code {
   /// finalized length back so the control thread can file the redo entry.
   LE_CMD_CANCEL_TAKE(57),
 
+  /// Lane pan (accepted design, slice 3). lanef arm: channel, lane, value in
+  /// -1..1 (clamped). Placement of the lane's stereo pair across its first two
+  /// masked outputs, applied after the lane's chain: a unity-centre balance
+  /// law (see le_engine_set_lane_pan). Perf-logged like volume.
+  LE_CMD_SET_LANE_PAN(58),
+
+  /// Track solo. Generic arm: arg_i = channel, arg_f != 0 = soloed. While any
+  /// track is soloed, only soloed tracks route (mute is untouched and still
+  /// gates on its own). Perf-logged.
+  LE_CMD_SET_TRACK_SOLO(59),
+
+  /// Monitor pan. lanef arm: channel = input, value in -1..1. The monitor
+  /// mirror of LE_CMD_SET_LANE_PAN. Perf-logged.
+  LE_CMD_SET_MONITOR_INPUT_PAN(60),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100),
@@ -4810,6 +4947,9 @@ enum le_command_code {
     55 => LE_CMD_SET_INPUT_COND_PARAM,
     56 => LE_CMD_FINALIZE_TAKE,
     57 => LE_CMD_CANCEL_TAKE,
+    58 => LE_CMD_SET_LANE_PAN,
+    59 => LE_CMD_SET_TRACK_SOLO,
+    60 => LE_CMD_SET_MONITOR_INPUT_PAN,
     100 => LE_EVT_LAYER_RETIRED,
     101 => LE_EVT_TAKE_CANCELLED,
     102 => LE_EVT_CLEAR_FROZEN,
@@ -4951,6 +5091,11 @@ final class le_lane_snapshot extends ffi.Struct {
   /// nothing on the lane can come back.
   @ffi.Int32()
   external int recoverable;
+
+  /// Trailing (accepted design, slice 3): the lane's pan, -1 (left) .. 1
+  /// (right), 0 centre — see le_engine_set_lane_pan.
+  @ffi.Float()
+  external double pan;
 }
 
 /// Per-track state published in le_snapshot.tracks.
@@ -5106,6 +5251,20 @@ final class le_track_snapshot extends ffi.Struct {
   /// (le_engine_set_track_overdub_feedback)
   @ffi.Float()
   external double overdub_feedback_override;
+
+  /// 0/1 — le_engine_set_track_solo; independent of muted
+  @ffi.Int32()
+  external int solo;
+
+  /// The track's absolute peak per side over the most recent block, 0..1,
+  /// read AFTER volume, pan and the track's chain (what the track sends to
+  /// the outputs), before the master bus. 0 while nothing routes. Unlike
+  /// `peak` above (the dry loop content), these follow the fader.
+  @ffi.Float()
+  external double peak_l;
+
+  @ffi.Float()
+  external double peak_r;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -5547,6 +5706,28 @@ final class le_snapshot extends ffi.Struct {
   /// the global coefficient, 0..1 (default 1)
   @ffi.Float()
   external double overdub_feedback;
+
+  /// ---- per-channel meters and capture trim (accepted design, slice 3;
+  /// trailing). Peaks are absolute, 0..1, over the most recent block.
+  /// input_peaks[c] is input c's RAW device level (before conditioning and
+  /// trim, like input_clip_mask, so a hot ADC reads hot however the trim is
+  /// set); monitor_peaks[c] is what input c's monitor sends to the outputs
+  /// (after its chain, gain and pan; 0 while it is off or muted);
+  /// output_peaks[c] is output c after the master gain and limiter.
+  /// input_trim[c] is the capture gain le_engine_set_input_trim holds
+  /// (linear, default 1). Indexed by hardware channel; entries past the
+  /// device's channel count read 0 (trim 1).
+  @ffi.Array.multi([32])
+  external ffi.Array<ffi.Float> input_peaks;
+
+  @ffi.Array.multi([32])
+  external ffi.Array<ffi.Float> monitor_peaks;
+
+  @ffi.Array.multi([32])
+  external ffi.Array<ffi.Float> output_peaks;
+
+  @ffi.Array.multi([32])
+  external ffi.Array<ffi.Float> input_trim;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -5790,7 +5971,7 @@ const int LE_MAX_TRACKS = 8;
 
 const int LE_MAX_LANES = 8;
 
-const int LE_MAX_MONITORED_INPUTS = 8;
+const int LE_MAX_MONITORED_INPUTS = 32;
 
 const double LE_CLIP_LEVEL = 0.9990000128746033;
 
@@ -5799,6 +5980,8 @@ const int LE_CLIP_RUN = 4;
 const int LE_CLIP_HOLD_MS = 1500;
 
 const double LE_MAX_GAIN = 2.0;
+
+const double LE_MAX_INPUT_TRIM = 3.981071710586548;
 
 const int LE_VIZ_POINTS = 512;
 

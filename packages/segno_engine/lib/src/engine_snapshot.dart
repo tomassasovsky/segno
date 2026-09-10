@@ -12,14 +12,22 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 /// `LE_MAX_LANES`. Referenced (not re-typed) so it can never drift from the C.
 const int kMaxLanes = LE_MAX_LANES;
 
+/// The number of hardware channels the engine can open per direction,
+/// mirroring the native `LE_MAX_CHANNELS`. Referenced (not re-typed) so it
+/// can never drift from the C. Bounds the hardware channel index the engine
+/// accepts (trim, pairing) and caps the per-channel meter lists on
+/// [EngineSnapshot], which are sized to the open device, not to this.
+const int kMaxChannels = LE_MAX_CHANNELS;
+
 /// The number of hardware inputs the live-monitor path covers, mirroring the
 /// native `LE_MAX_MONITORED_INPUTS`. Referenced (not re-typed) so it can never
 /// drift from the C.
 ///
-/// Not "the inputs the rig can use": an input past this can still be RECORDED
-/// into a lane, it simply cannot be monitored. The old name for this
-/// (`kMaxInputs`) read as the former, and was misread that way at least once
-/// (#558) — capping what a socket could be NAMED at eight.
+/// Every input the engine can open can be monitored (accepted design, slice
+/// 3), so this equals [kMaxChannels]. It stays a distinct name from
+/// [kMaxLanes], which bounds a different thing (lanes per track). The old
+/// name for this (`kMaxInputs`) was misread at least once (#558) as a cap on
+/// what a socket could be NAMED.
 const int kMaxMonitoredInputs = LE_MAX_MONITORED_INPUTS;
 
 /// Phase of the loopback round-trip latency harness.
@@ -410,6 +418,7 @@ class LaneSnapshot {
     required this.rms,
     required this.peak,
     this.recoverable = false,
+    this.pan = 0,
   });
 
   /// An empty lane recording no input.
@@ -421,7 +430,8 @@ class LaneSnapshot {
       lengthFrames = 0,
       rms = 0,
       peak = 0,
-      recoverable = false;
+      recoverable = false,
+      pan = 0;
 
   /// Projects a native `le_lane_snapshot` into a [LaneSnapshot].
   factory LaneSnapshot.fromNative(le_lane_snapshot native) => LaneSnapshot(
@@ -433,6 +443,7 @@ class LaneSnapshot {
     rms: native.rms,
     peak: native.peak,
     recoverable: native.recoverable != 0,
+    pan: native.pan,
   );
 
   /// Hardware input channel this lane records (`-1` = none).
@@ -466,6 +477,10 @@ class LaneSnapshot {
   /// cleared-with-restore take reads `0` while its audio is one undo away.
   final bool recoverable;
 
+  /// The lane's pan, `-1` (left) .. `1` (right), `0` centre — see
+  /// `EngineRouting.setLanePan` for the balance law.
+  final double pan;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -478,7 +493,8 @@ class LaneSnapshot {
           lengthFrames == other.lengthFrames &&
           rms == other.rms &&
           peak == other.peak &&
-          recoverable == other.recoverable;
+          recoverable == other.recoverable &&
+          pan == other.pan;
 
   @override
   int get hashCode => Object.hash(
@@ -490,6 +506,7 @@ class LaneSnapshot {
     rms,
     peak,
     recoverable,
+    pan,
   );
 }
 
@@ -526,6 +543,9 @@ class TrackSnapshot {
     this.quantizeOverride,
     this.quantizeDivOverride,
     this.overdubFeedbackOverride,
+    this.solo = false,
+    this.peakL = 0,
+    this.peakR = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -554,6 +574,9 @@ class TrackSnapshot {
       quantizeOverride = null,
       quantizeDivOverride = null,
       overdubFeedbackOverride = null,
+      solo = false,
+      peakL = 0,
+      peakR = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -594,6 +617,9 @@ class TrackSnapshot {
     overdubFeedbackOverride: native.overdub_feedback_override < 0
         ? null
         : native.overdub_feedback_override,
+    solo: native.solo != 0,
+    peakL: native.peak_l,
+    peakR: native.peak_r,
     lanes: lanes,
   );
 
@@ -709,6 +735,19 @@ class TrackSnapshot {
   /// Peak level for the most recent block, in `0..1`.
   final double peak;
 
+  /// Whether this track is soloed (`EngineRouting.setTrackSolo`). While any
+  /// track is soloed only soloed tracks route; independent of [muted].
+  final bool solo;
+
+  /// The track's absolute peak on the left side over the most recent block,
+  /// `0..1`, read AFTER volume, pan and the track's chain (what the track
+  /// sends to the outputs), before the master bus. `0` while nothing routes.
+  /// Unlike [peak] (the dry loop content) this follows the fader.
+  final double peakL;
+
+  /// The right-side counterpart of [peakL].
+  final double peakR;
+
   /// Lane 0's recorded input as a bitmask (`1 << inputChannel`, or `0` when
   /// lane 0 records no input). Mirrors lane 0; per-lane inputs are in [lanes].
   final int inputMask;
@@ -754,6 +793,9 @@ class TrackSnapshot {
           quantizeOverride == other.quantizeOverride &&
           quantizeDivOverride == other.quantizeDivOverride &&
           overdubFeedbackOverride == other.overdubFeedbackOverride &&
+          solo == other.solo &&
+          peakL == other.peakL &&
+          peakR == other.peakR &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -780,6 +822,9 @@ class TrackSnapshot {
     quantizeOverride,
     quantizeDivOverride,
     overdubFeedbackOverride,
+    solo,
+    peakL,
+    peakR,
     Object.hashAll(lanes),
   ]);
 }
@@ -1109,6 +1154,9 @@ class EngineSnapshot {
     this.quantize = false,
     this.autoRecord = false,
     this.overdubFeedback = 1,
+    this.inputPeaks = const [],
+    this.monitorPeaks = const [],
+    this.outputPeaks = const [],
     this.tracks = const [],
   });
 
@@ -1165,6 +1213,9 @@ class EngineSnapshot {
       quantize = false,
       autoRecord = false,
       overdubFeedback = 1,
+      inputPeaks = const [],
+      monitorPeaks = const [],
+      outputPeaks = const [],
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -1172,63 +1223,75 @@ class EngineSnapshot {
   ///
   /// Tracks are read separately (via `le_engine_get_track`) because this ffi
   /// version cannot index a native struct array.
+  ///
+  /// The per-channel meter lists are sized to the negotiated channel counts
+  /// (clamped to the native `LE_MAX_CHANNELS` arrays), not to the arrays:
+  /// this runs at render rate, and the entries past the device would only
+  /// be zeros that every `==` and `hashCode` then walks.
   factory EngineSnapshot.fromNative(
     le_snapshot native,
     List<TrackSnapshot> tracks,
-  ) => EngineSnapshot(
-    isRunning: native.running != 0,
-    devicePresent: native.device_present != 0,
-    sampleRate: native.sample_rate,
-    bufferFrames: native.buffer_frames,
-    inputChannels: native.input_channels,
-    outputChannels: native.output_channels,
-    excludedInputMask: native.excluded_input_mask,
-    inputClipMask: native.input_clip_mask,
-    inputCondMask: native.input_cond_mask,
-    framesProcessed: native.frames_processed,
-    xrunCount: native.xrun_count,
-    inputRms: native.input_rms,
-    tunerHz: native.tuner_hz,
-    tunerConfidence: native.tuner_confidence,
-    tunerInput: native.tuner_input,
-    inputPeak: native.input_peak,
-    outputRms: native.output_rms,
-    outputPeak: native.output_peak,
-    latencyState: LatencyState.fromCode(native.latency_state),
-    measuredLatencyMs: native.measured_latency_ms,
-    masterLengthFrames: native.master_length_frames,
-    masterPositionFrames: native.master_position_frames,
-    recordOffsetFrames: native.record_offset_frames,
-    fxAddedLatencyFrames: native.fx_added_latency_frames,
-    masterGain: native.master_gain,
-    activeBackend: AudioBackend.fromNative(native.active_backend),
-    outputEnabledMask: native.output_enabled_mask,
-    isPerfArmed: native.perf_armed != 0,
-    perfFrames: native.perf_frames,
-    perfOverruns: native.perf_overruns,
-    perfZeroFilledFrames: native.perf_zero_filled_frames,
-    perfStopped: native.perf_stopped != 0,
-    tempoBpm: native.tempo_bpm,
-    tempoSource: TempoSource.fromCode(native.tempo_source),
-    tsNum: native.ts_num,
-    tsDen: native.ts_den,
-    syncTempo: native.sync_tempo != 0,
-    quantizeDiv: GridDivision.fromCode(native.quantize_div),
-    loopBars: native.loop_bars,
-    currentBeat: native.current_beat,
-    clickMode: ClickMode.fromCode(native.click_mode),
-    clickMask: native.click_mask,
-    clickVolume: native.click_volume,
-    countInBars: native.count_in_bars,
-    countingIn: native.counting_in != 0,
-    countInBeatsLeft: native.count_in_beats_left,
-    looperMode: LooperMode.fromCode(native.looper_mode),
-    primaryTrack: native.primary_track,
-    quantize: native.quantize != 0,
-    autoRecord: native.auto_record != 0,
-    overdubFeedback: native.overdub_feedback,
-    tracks: tracks,
-  );
+  ) {
+    final inputs = native.input_channels.clamp(0, LE_MAX_CHANNELS);
+    final outputs = native.output_channels.clamp(0, LE_MAX_CHANNELS);
+    return EngineSnapshot(
+      isRunning: native.running != 0,
+      devicePresent: native.device_present != 0,
+      sampleRate: native.sample_rate,
+      bufferFrames: native.buffer_frames,
+      inputChannels: native.input_channels,
+      outputChannels: native.output_channels,
+      excludedInputMask: native.excluded_input_mask,
+      inputClipMask: native.input_clip_mask,
+      inputCondMask: native.input_cond_mask,
+      framesProcessed: native.frames_processed,
+      xrunCount: native.xrun_count,
+      inputRms: native.input_rms,
+      tunerHz: native.tuner_hz,
+      tunerConfidence: native.tuner_confidence,
+      tunerInput: native.tuner_input,
+      inputPeak: native.input_peak,
+      outputRms: native.output_rms,
+      outputPeak: native.output_peak,
+      latencyState: LatencyState.fromCode(native.latency_state),
+      measuredLatencyMs: native.measured_latency_ms,
+      masterLengthFrames: native.master_length_frames,
+      masterPositionFrames: native.master_position_frames,
+      recordOffsetFrames: native.record_offset_frames,
+      fxAddedLatencyFrames: native.fx_added_latency_frames,
+      masterGain: native.master_gain,
+      activeBackend: AudioBackend.fromNative(native.active_backend),
+      outputEnabledMask: native.output_enabled_mask,
+      isPerfArmed: native.perf_armed != 0,
+      perfFrames: native.perf_frames,
+      perfOverruns: native.perf_overruns,
+      perfZeroFilledFrames: native.perf_zero_filled_frames,
+      perfStopped: native.perf_stopped != 0,
+      tempoBpm: native.tempo_bpm,
+      tempoSource: TempoSource.fromCode(native.tempo_source),
+      tsNum: native.ts_num,
+      tsDen: native.ts_den,
+      syncTempo: native.sync_tempo != 0,
+      quantizeDiv: GridDivision.fromCode(native.quantize_div),
+      loopBars: native.loop_bars,
+      currentBeat: native.current_beat,
+      clickMode: ClickMode.fromCode(native.click_mode),
+      clickMask: native.click_mask,
+      clickVolume: native.click_volume,
+      countInBars: native.count_in_bars,
+      countingIn: native.counting_in != 0,
+      countInBeatsLeft: native.count_in_beats_left,
+      looperMode: LooperMode.fromCode(native.looper_mode),
+      primaryTrack: native.primary_track,
+      quantize: native.quantize != 0,
+      autoRecord: native.auto_record != 0,
+      overdubFeedback: native.overdub_feedback,
+      inputPeaks: [for (var i = 0; i < inputs; i++) native.input_peaks[i]],
+      monitorPeaks: [for (var i = 0; i < inputs; i++) native.monitor_peaks[i]],
+      outputPeaks: [for (var i = 0; i < outputs; i++) native.output_peaks[i]],
+      tracks: tracks,
+    );
+  }
 
   /// Whether the audio device is open and the callback is running.
   final bool isRunning;
@@ -1473,6 +1536,24 @@ class EngineSnapshot {
   /// [TrackSnapshot.overdubFeedbackOverride].
   final double overdubFeedback;
 
+  /// Per-input RAW device level over the most recent block, `0..1`, indexed
+  /// by hardware channel: one entry per channel the device has (length
+  /// [inputChannels]; empty while no device is open). Read before
+  /// conditioning and trim, like [inputClipMask], so a hot ADC reads hot
+  /// however the trim is set. A block peak like [outputPeak]: written once
+  /// per block, not a per-callback counter.
+  final List<double> inputPeaks;
+
+  /// Per-input level of what that input's monitor sends to the outputs over
+  /// the most recent block, `0..1`, after its chain, gain and pan; `0` while
+  /// the monitor is off or muted. Indexed like [inputPeaks].
+  final List<double> monitorPeaks;
+
+  /// Per-output level after the master gain and limiter over the most recent
+  /// block, `0..1`, indexed by hardware output channel: one entry per channel
+  /// the device has (length [outputChannels]; empty while no device is open).
+  final List<double> outputPeaks;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -1559,6 +1640,9 @@ class EngineSnapshot {
           quantize == other.quantize &&
           autoRecord == other.autoRecord &&
           overdubFeedback == other.overdubFeedback &&
+          _listEquals(inputPeaks, other.inputPeaks) &&
+          _listEquals(monitorPeaks, other.monitorPeaks) &&
+          _listEquals(outputPeaks, other.outputPeaks) &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -1614,6 +1698,9 @@ class EngineSnapshot {
     quantize,
     autoRecord,
     overdubFeedback,
+    Object.hashAll(inputPeaks),
+    Object.hashAll(monitorPeaks),
+    Object.hashAll(outputPeaks),
     ...tracks,
   ]);
 

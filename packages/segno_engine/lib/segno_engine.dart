@@ -35,7 +35,6 @@ export 'src/engine_snapshot.dart'
         LaneSnapshot,
         LatencyState,
         LooperMode,
-
         LooperModeGate,
         RecordTiming,
         TempoSource,
@@ -43,6 +42,7 @@ export 'src/engine_snapshot.dart'
         TrackSnapshot,
         TrackState,
         XrunKind,
+        kMaxChannels,
         kMaxLanes,
         kMaxMonitoredInputs;
 export 'src/fx_fingerprint.dart' show FxFingerprint;

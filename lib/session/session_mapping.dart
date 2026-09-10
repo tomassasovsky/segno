@@ -41,6 +41,9 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
         outputMask: monitor.outputMask,
         volume: monitor.volume,
         muted: monitor.muted,
+        // No pan: on load the monitors' pans are rebuilt from the session's
+        // input setup (`loopSettingsFromLooper`), which is what produced
+        // them, so a written copy would never be read back.
         encoded: encodeFxChain(
           FxChainEnvelope(
             chainEnabled: monitor.chainEnabled,
@@ -63,13 +66,18 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
 );
 
 /// Gathers the rig's loop settings (slice 2c) — the length preset and
-/// Loop/Once defaults plus each track's override of them — from [looper] into
-/// the shape a save persists. Read from the repository, not the engine: the
-/// engine only holds each track's EFFECTIVE preset and Once flag, and
-/// persisting those would make the restored override set depend on whatever
-/// default the device holds at load time.
+/// Loop/Once defaults plus each track's override of them — and its mix
+/// (slice 3) — every track's pan, every lane's level, recorded image and
+/// balance, and the per-input capture setup — from [looper] into the shape a
+/// save persists. Read from the repository, not the engine: the engine only
+/// holds each track's EFFECTIVE preset, Once flag, lane gain (the level times
+/// the balance) and lane pan (the image plus the track pan), and persisting
+/// those would make the restored override set depend on whatever default the
+/// device holds at load time, and fold the track pan and the balance into
+/// every lane for good.
 SessionLoopSettings loopSettingsFromLooper(LooperRepository looper) {
   final state = looper.state;
+  final setup = state.inputSetup;
   return SessionLoopSettings(
     defaultLengthPresetBars: state.transport.defaultLengthPresetBars,
     defaultOnce: state.transport.defaultOneShot,
@@ -83,6 +91,27 @@ SessionLoopSettings loopSettingsFromLooper(LooperRepository looper) {
         if (track.oneShotOverride != null)
           track.channel: track.oneShotOverride!,
     },
+    trackPans: {
+      for (final track in state.tracks)
+        if (track.pan != 0) track.channel: track.pan,
+    },
+    // Every lane, whatever its values: the capture decides which lane has
+    // content, and a lane it keeps must find its mix here rather than fall
+    // back to the engine's product.
+    laneMix: {
+      for (final track in state.tracks)
+        for (var lane = 0; lane < track.lanes.length; lane++)
+          (track.channel, lane): (
+            level: track.lanes[lane].volume,
+            imagePan: track.lanes[lane].imagePan,
+            balance: track.lanes[lane].balance,
+          ),
+    },
+    inputSetup: SessionInputSetup(
+      trimDb: setup.trimDb,
+      pan: setup.pan,
+      pairs: setup.pairs,
+    ),
   );
 }
 
@@ -190,6 +219,14 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   // the session was saved with, not whatever the app was last set to.
   recordTiming: bundle.session.recordTiming,
   overdubDecay: bundle.session.overdubDecay,
+  // The input setup (slice 3): trims, pans and pairs. The monitors' pans are
+  // not mapped from the manifest's monitors — the repository derives them
+  // from this on apply, the same way it did when the session was saved.
+  inputSetup: InputSetup(
+    trimDb: bundle.session.inputSetup.trimDb,
+    pan: bundle.session.inputSetup.pan,
+    pairs: bundle.session.inputSetup.pairs,
+  ),
 );
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
@@ -238,6 +275,8 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           muted: lane.muted,
           outputMask: lane.outputMask,
           inputChannel: lane.inputChannel,
+          pan: lane.pan,
+          balance: lane.balance,
           undoCount: lane.undoCount,
           redoCount: lane.redoCount,
         ),
@@ -248,6 +287,7 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
         SessionRigTrack(
           channel: track.channel,
           lanes: lanes,
+          pan: track.pan,
           recordTiming: track.recordTiming,
           overdubDecay: track.overdubDecay,
         ),

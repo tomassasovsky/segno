@@ -641,6 +641,94 @@ void main() {
       expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
     });
 
+    test("restores every track pan and the open device's input setup "
+        '(slice 3) once the engine is up', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      // Channel 1 is panned; channel 0 is at centre and gets no call.
+      await settings.saveTrackPan(1, -0.5);
+      // Keyed to the device the running engine reports ('Fake Device'); a
+      // setup saved for another interface must not be applied.
+      await settings.replaceInputSetup(
+        device: 'Fake Device',
+        inputCount: 4,
+        setup: (trimDb: {0: -6}, pan: {2: -0.5}, pairs: {0: 0.2}),
+      );
+      await settings.replaceInputSetup(
+        device: 'Other Box',
+        inputCount: 4,
+        setup: (trimDb: {3: 12}, pan: {}, pairs: {}),
+      );
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      expect(engine.lanePan[(1, 0)], -0.5);
+      expect(engine.lanePan.containsKey((0, 0)), isFalse);
+      expect(repository.state.tracks[1].pan, -0.5);
+      expect(
+        repository.state.inputSetup,
+        const InputSetup(trimDb: {0: -6}, pan: {2: -0.5}, pairs: {0: 0.2}),
+      );
+      expect(engine.inputTrim[0], closeTo(inputTrimGainOfDb(-6), 1e-9));
+      // The whole setup lands as one projection; an input no setup names is
+      // never pushed, and the engine's own unity stands.
+      expect(engine.inputTrim[3], isNull);
+      expect(engine.monitorPan[2], -0.5);
+      // The pair's members sit hard on their sides.
+      expect(engine.monitorPan[0], -1);
+      expect(engine.monitorPan[1], 1);
+    });
+
+    test('restores a saved track pan onto every lane the saved lane count '
+        'grew, not just lane 0', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      await settings.saveLaneCount(0, 2);
+      await settings.saveTrackPan(0, 0.5);
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      expect(engine.laneCount[0], 2);
+      expect(engine.lanePan[(0, 0)], 0.5);
+      expect(engine.lanePan[(0, 1)], 0.5);
+    });
+
     test('restores the saved latency offset for the device', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(
