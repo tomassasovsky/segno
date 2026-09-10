@@ -3762,5 +3762,120 @@
     "settingsSectionLoop": "Loop settings",
     "@settingsSectionLoop": {
         "description": "Settings rail entry that opens the Loop settings pages."
+    },
+    "routingTitle": "Audio routing",
+    "@routingTitle": {
+            "description": "Title of the Audio routing settings route."
+    },
+    "routingTabInputSetup": "Input setup",
+    "@routingTabInputSetup": {
+            "description": "Audio routing task: set an input up."
+    },
+    "routingTabRecordingInputs": "Recording inputs",
+    "@routingTabRecordingInputs": {
+            "description": "Audio routing task: choose what a track records."
+    },
+    "routingTabOutputRouting": "Output routing",
+    "@routingTabOutputRouting": {
+            "description": "Audio routing task: choose where a source is sent."
+    },
+    "routingTabOutputSetup": "Output setup",
+    "@routingTabOutputSetup": {
+            "description": "Audio routing task: set an output destination up."
+    },
+    "routingRecordAs": "Record as",
+    "@routingRecordAs": {
+            "description": "Heading of the mono/stereo choice for an input."
+    },
+    "routingFormatMono": "Separate mono",
+    "@routingFormatMono": {
+            "description": "Record this input on its own."
+    },
+    "routingFormatStereo": "Stereo pair",
+    "@routingFormatStereo": {
+            "description": "Record this input and its partner as one stereo pair."
+    },
+    "routingFormatMonoNote": "Each input records separately.",
+    "@routingFormatMonoNote": {
+            "description": "Note beside the mono recording format."
+    },
+    "routingPairLeft": "L",
+    "@routingPairLeft": {
+            "description": "Side tag on the lower jack of a stereo pair."
+    },
+    "routingPairRight": "R",
+    "@routingPairRight": {
+            "description": "Side tag on the upper jack of a stereo pair."
+    },
+    "routingPan": "Pan",
+    "@routingPan": {
+            "description": "Placement control for a mono input."
+    },
+    "routingBalance": "Balance",
+    "@routingBalance": {
+            "description": "Placement control shared by a stereo pair."
+    },
+    "routingPanLeft": "Left",
+    "@routingPanLeft": {
+            "description": "Left end of the placement slider."
+    },
+    "routingPanRight": "Right",
+    "@routingPanRight": {
+            "description": "Right end of the placement slider."
+    },
+    "routingPanCenter": "Center",
+    "@routingPanCenter": {
+            "description": "Placement readout when the input sits in the middle."
+    },
+    "routingPanLeftAmount": "{percent}% left",
+    "@routingPanLeftAmount": {
+            "description": "Placement readout towards the left.",
+            "placeholders": {
+                    "percent": {
+                            "type": "int"
+                    }
+            }
+    },
+    "routingPanRightAmount": "{percent}% right",
+    "@routingPanRightAmount": {
+            "description": "Placement readout towards the right.",
+            "placeholders": {
+                    "percent": {
+                            "type": "int"
+                    }
+            }
+    },
+    "routingTrim": "Recording trim",
+    "@routingTrim": {
+            "description": "Capture gain for an input."
+    },
+    "routingTrimDb": "{db} dB",
+    "@routingTrimDb": {
+            "description": "Recording trim readout in decibels.",
+            "placeholders": {
+                    "db": {
+                            "type": "String"
+                    }
+            }
+    },
+    "routingTrimNote": "New recordings only. Live level stays in Mixer.",
+    "@routingTrimNote": {
+            "description": "Note under the recording trim."
+    },
+    "routingSignal": "Recording signal",
+    "@routingSignal": {
+            "description": "Name of the input meter."
+    },
+    "routingClipNote": "Input is clipping. Lower the source level.",
+    "@routingClipNote": {
+            "description": "Note shown while an input is clipping."
+    },
+    "routingLockedFormat": "Finish recording to change mono or stereo.",
+    "@routingLockedFormat": {
+            "description": "Why the recording format cannot change right now."
+    },
+    "settingsSectionRouting": "Routing",
+    "@settingsSectionRouting": {
+            "description": "Settings rail row that opens Audio routing."
     }
 }

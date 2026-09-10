@@ -1049,3 +1049,56 @@ surfaces.
 
 Slice 3c: the Audio routing and Output setup surfaces.
 
+### Slice 3c — the Audio routing and Output setup surfaces
+
+Same branch family, `claude/segno-slice3c-routing-surfaces`, stacked on 3b's
+PR #1018.
+
+#### Decisions
+
+- **One route, four tasks.** The pen draws Input setup, Recording inputs,
+  Output routing and Output setup as four pills in one nav row, not as four
+  routes, so they are page state: switching tasks keeps the route and its
+  Back button pointing at Settings. `openAudioRouting()` joins
+  `openLoopSettings()` in `segno_navigator.dart`, with its own re-entrancy
+  guard cleared by `resetSegnoNavigatorForTest`.
+- **The frame is reused, not forked.** `LoopPenCanvas` and
+  `LoopSettingsFrame` already draw the pen's 1920 x 1080 canvas, its 96 px
+  top bar, the crumb and Stage, so Audio routing imports them. Its children
+  are positioned in the 1720 x 984 main area, which is why every `top` in
+  the page is the pen's screen y minus 96.
+- **The path is Settings, not a ninth rail domain.** The accepted design
+  says "Settings → Audio routing", so the desktop Settings rail gains a
+  Routing row beside Loop settings and the tray rail is left alone. A ninth
+  tray row collapsed the pen's fill spacer between the domains and
+  Brightness, which the rail's own test measures.
+- **Input setup** reads the slice-3a projection and dispatches the slice-3b
+  events that had no consumer until now: `LooperInputPanChanged`,
+  `LooperInputBalanceChanged`, `LooperInputTrimChanged` and
+  `LooperInputPairChanged`. A linked pair shows one Balance where a mono jack
+  shows Pan, and names its two members with their ordered left and right
+  identities. The trim slider lands on the accepted half-decibel step, so the
+  readout can show what the engine holds.
+- **The lock is derived from the projection.** The repository keeps its
+  "armed or capturing" predicate private, so the page re-derives it from the
+  tracks it can see and says why the format is frozen, rather than drawing a
+  control that would be refused.
+- **Clipping is a fact about the source**, so the meter's tail lights on the
+  engine's held clip flag rather than on the decayed level, and the note
+  under the trim becomes the accepted sentence while it holds.
+- **Eighteen jacks scroll.** The pen draws four cards; a device with more
+  inputs scrolls the row rather than shrinking the cards past legibility.
+
+#### Checks
+
+- Dart: root 2253 with the test library built; `dart analyze` clean at the
+  root; `bloc lint` clean; the two settings goldens the new rail row changes
+  regenerated and eyeballed (715 px each, the row and nothing else).
+
+#### Not verified here
+
+The other three tasks (Recording inputs, Output routing, Output setup) and
+the input and output name pages land next, and the Signal-era routing
+surfaces and the interim click card retire with them. Output names have no
+settings key, cubit or fallback label yet; that whole triple is new work.
+
