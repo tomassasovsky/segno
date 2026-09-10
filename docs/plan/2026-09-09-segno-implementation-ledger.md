@@ -1310,9 +1310,47 @@ onto the fix:
   the per-track overrides reached the rig, so a track that follows the default
   came back on whatever the app was last set to.
 
-Three further findings are recorded on that pull request and not fixed: each
-is a control-write against audio-read ordering question rather than a typo,
-and they want a change of their own.
+The remaining three were then verified and settled too: the Sync force-arm
+and the split quantize snapshot are fixed, and the per-track ordering claim
+was refuted.
+
+### The twelve engine findings, settled
+
+Both engine pull requests beneath this slice went through an adversarial
+round: one verifier per finding with a refute-first posture, then an
+independent skeptic on anything that survived. Nine were confirmed by both
+and are fixed; three were refuted with the code that blocks them.
+
+Fixed on slice 2a: the dead master clock a mode switch left running after an
+undo-to-empty (a 100-frame Free take was being padded to the erased take's
+800 and played on its clock); a gate that measured published lengths where
+the audio thread measures effective ones; the divide by zero its double read
+allowed; two undo taps in one audio block restarting a recording; a mode
+chosen with the device closed never being persisted; the grid outliving the
+master it measured; and a clear-all redo group standing down over a member
+whose undo was still parked.
+
+Fixed on slice 2b: a Sync force-armed defining take starting off the
+primary's loop top, which played the sub-loop rotated; and a snapshot that
+could publish the quantize gate without its division, so a session saved in
+that window recorded a different record timing from the one chosen.
+
+Refuted: a dropped clear-frozen event (the control thread drains the event
+ring either side of that push, so it cannot be full); a tempo derived from a
+cleared take (that is the stated contract — a defining take sets the grid
+and the restore path depends on the tempo surviving); and a per-track
+quantize ordering race (neither direction makes the track inherit a live
+grid before the arm is cancelled).
+
+Two of the reviews corrected the work rather than just confirming it. The
+skeptic on the double-tap rejected the originally proposed fix, which would
+have wedged every effective-state read; and two existing tests proved that
+the mode projection is load-bearing for the waveform sweep, so the
+persistence moved to the point of choice instead.
+
+One fix carries no test: the divide by zero is structural, the double read
+it removes is the whole failure mode, and the race binary that could
+exercise it deliberately links no engine code.
 
 #### What did NOT retire, and why
 
