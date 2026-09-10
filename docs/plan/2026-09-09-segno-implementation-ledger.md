@@ -1095,10 +1095,35 @@ PR #1018.
   root; `bloc lint` clean; the two settings goldens the new rail row changes
   regenerated and eyeballed (715 px each, the row and nothing else).
 
+### Recording inputs
+
+- **A track's sources are a track-scoped choice**, so the task carries its own
+  scope row rather than following the stage selection: the eight tracks are
+  numbered buttons and the chosen track's name is shown beside them.
+- **Lane semantics are the retiring dialog's, kept verbatim.** Unchecking a
+  jack frees that lane in place, because compacting would renumber the lanes
+  and move a recorded take onto another source. A new jack fills an already
+  free lane; only when every lane is taken does the track grow, and the growth
+  is dispatched before the routing so the lane exists before it is addressed.
+  A track already at `kMaxLanes` refuses rather than addressing a lane the
+  engine can never have.
+- **The lock is per track.** A capturing or armed track says why its jacks are
+  frozen; its siblings stay editable in the same view.
+
+#### Checks
+
+- Dart: root 2230 passing and 35 skipped, `dart analyze` clean over `lib` and
+  `test`, `bloc lint` clean over 235 files, both arb files at 1081 keys with
+  no key present in one and missing from the other.
+- Every behavioural claim above is mutation-checked: ignoring the lock,
+  growing after routing instead of before, never reusing a freed lane,
+  freeing the wrong lane, drawing nothing as recorded, and never showing the
+  empty note each fail exactly one test and no other.
+
 #### Not verified here
 
-The other three tasks (Recording inputs, Output routing, Output setup) and
-the input and output name pages land next, and the Signal-era routing
-surfaces and the interim click card retire with them. Output names have no
-settings key, cubit or fallback label yet; that whole triple is new work.
+The other two tasks (Output routing, Output setup) and the input and output
+name pages land next, and the Signal-era routing surfaces and the interim
+click card retire with them. Output names have no settings key, cubit or
+fallback label yet; that whole triple is new work.
 
