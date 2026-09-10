@@ -2275,5 +2275,11 @@
     "routingOutputLevelPercent": "{percent}%",
     "routingOutputDbfs": "{db} dBFS",
     "routingOutputSilent": "−∞",
-    "routingOutputAppliesNote": "Se aplica a todo lo enviado aquí."
+    "routingOutputAppliesNote": "Se aplica a todo lo enviado aquí.",
+    "routingInputNames": "Nombres de entrada",
+    "routingOutputNames": "Nombres de salida",
+    "routingRename": "Renombrar",
+    "routingRenameTitle": "Renombrar",
+    "routingRenameField": "Nombre de {port}",
+    "routingNoPortsYet": "No hay puertos hasta que se abra una interfaz."
 }

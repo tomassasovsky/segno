@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
@@ -116,7 +117,12 @@ void main() {
       MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+        theme: ThemeData(
+          extensions: [
+            SurfaceTheme.dark,
+            routingGraphThemeFromSurface(SurfaceTheme.dark),
+          ],
+        ),
         home: RepositoryProvider<LooperRepository>.value(
           value: repository,
           child: MultiBlocProvider(
@@ -610,6 +616,84 @@ void main() {
 
     expect(find.text(l10n.routingOutputSilent), findsNWidgets(2));
     expect(find.text(l10n.routingOutputDbfs('0.0')), findsNothing);
+  });
+
+  testWidgets('the header action names the side of the rig the task is on', (
+    tester,
+  ) async {
+    await pump(tester);
+    final l10n = l10nOf(tester);
+    expect(find.text(l10n.routingInputNames), findsOneWidget);
+    expect(find.text(l10n.routingOutputNames), findsNothing);
+
+    await openOutputs(tester);
+    expect(find.text(l10n.routingOutputNames), findsOneWidget);
+    expect(find.text(l10n.routingInputNames), findsNothing);
+  });
+
+  testWidgets('the names list gives every port a row, and Back returns to '
+      'the task it was opened from', (tester) async {
+    await pump(tester);
+    final l10n = l10nOf(tester);
+    await tester.tap(find.byKey(const Key('routing_names_action')));
+    await tester.pump();
+
+    // The title is the page, the pills are gone, and four jacks are four rows.
+    expect(find.text(l10n.routingInputNames), findsOneWidget);
+    expect(find.byKey(const Key('routing_tab_setup')), findsNothing);
+    expect(find.byKey(const Key('routing_name_row_0')), findsOneWidget);
+    expect(find.byKey(const Key('routing_name_row_3')), findsOneWidget);
+    expect(find.byKey(const Key('routing_name_row_4')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('loop_settings_back')));
+    await tester.pump();
+    expect(find.byKey(const Key('routing_tab_setup')), findsOneWidget);
+    expect(find.text(l10n.routingTitle), findsOneWidget);
+  });
+
+  testWidgets('the output names list is one row per destination, not per '
+      'jack', (tester) async {
+    await pump(tester);
+    await openOutputs(tester);
+    await tester.tap(find.byKey(const Key('routing_names_action')));
+    await tester.pump();
+
+    // Four hardware outputs are two destinations.
+    expect(find.byKey(const Key('routing_name_row_1')), findsOneWidget);
+    expect(find.byKey(const Key('routing_name_row_2')), findsNothing);
+    expect(
+      find.text(l10nOf(tester).outputBusLabel(1, channels: 4)),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('renaming a port persists the name against the open device', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('routing_names_action')));
+    await tester.pump();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('routing_name_row_1')),
+        matching: find.byKey(const Key('routing_rename')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+    for (final key in ['d', 'i']) {
+      await tester.tap(find.text(key).first);
+      await tester.pump();
+    }
+    await tester.tap(find.text(l10nOf(tester).save));
+    await tester.pumpAndSettle();
+
+    expect(inputs.state.nameOf(1), 'di');
+    expect(
+      await settings.loadInputName(device: 'Fake Device', input: 1),
+      'di',
+    );
   });
 
   group('routingMeterPosition', () {
