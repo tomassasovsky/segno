@@ -157,15 +157,33 @@ All three recommendations are in the package as of this branch.
 
 | change | where | effect |
 |---|---|---|
-| A foot on each of a pedestal's four chassis screws | `pedestal_foot_xy()`, 40 feet, **no new bores** | 353 → 89 MPa, 23.0 → 1.4 mm |
+| Five printed floor rails on a neoprene strip | `floor_rail_lines()`, 14 segments in 3 parts | 353 → 49 MPa, 23.0 → 0.22 mm |
 | `POST_U` spread to the seven interior pedal gaps | 5 more steel posts, +10 M4 floor bores | band before the screens 7-11 kg → 49-398 kg |
 | `segno_lid_prop`, printed | the one clear lane beside BANK, +2 M4 bores | strip beside BANK 8 kg → 131 kg |
 | 1050 → 1100-H14 on every callout | generator, drawings, shop message | design value 95 MPa, not the lot's 127 |
 
-Both Fusion documents were synced to match: 12 new M4 bores and 4 moved ones in
-each base, 21 stale vent slots removed (the generator drops any slot under a
-foot), feet 15 → 60, posts 2 → 7, and the prop placed. The native formed export
+The 60 feet were an intermediate answer: they carried the load (89 MPa) and
+looked like a rash. Five continuous rails do it better on every count and the
+support is a 25.4 × 3.2 mm self-adhesive **solid neoprene** strip in a printed
+PETG channel — smooth, because every adhesive tape stocked locally is mineral
+grit that would score a floor, and 3.2 mm, because at the 0.5–1 mm of a grip tape
+a bonded rubber layer is stiff in compression and buys friction but no compliance.
+
+Both Fusion documents were synced to match, and the native formed export
 re-verified all four sheet-metal parts against the current cut files.
+
+**Where the rear rail's screws can go, and why it is not obvious.** The rear rail
+is the only one that adds bores, and a bore is cheap under the floor and
+expensive above it: the head stands up inside the console. The two buck
+converters are 22 mm bricks bolted flat to the floor across u 340–480, a segment
+boundary falls at u 423, and every segment of a rail is the same printed part —
+so an offset ruled out in one segment is ruled out in all four. That leaves
+61.5–114.8 mm from a segment's near end. The anchors sit at 65 and 111: not a
+symmetric pair, and only 46 mm apart on a 202 mm segment. Neither matters, since
+a rail works in compression between the plate and the floor and two screws
+already fix a segment against turning. An even 45 mm inset — the placement that
+looked right in plan and passed every gate then written — put four of the eight
+heads inside a converter body. `_check()` now gates it.
 
 **One residual, recorded rather than fixed.** The ligament left of CLEAR still
 dents at 11 kg. The 7 in tower's right leg ends at u 213.6 and the CLEAR
