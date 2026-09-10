@@ -1134,6 +1134,35 @@ assert HR_FLAT - BA90 / 2.0 > CORNER_HT + T + RI - DEV90 + 0.5, (
 assert HR_FLAT > max(CORNER_ZR_WALL) + T + RI + 2.0, (
     "rear web too short: corner-bracket rivet holes cross the transition fold")
 
+# The two rear brackets are HANDED but share ONE set of flat hole coordinates:
+# corner_bracket_outline() mirrors the outline, dxf_corner_bracket() does not
+# mirror the holes. That only works because both rivet rows are symmetric about
+# CORNER_HT/2 -- the mirrored bracket's flat y maps to world z as CORNER_HT+2T-y,
+# so a symmetric set maps onto itself. Make either row asymmetric and the left
+# bracket's rivets stop meeting the base's. Verified coaxial to 0.011 mm in the
+# assembled Fusion model 2026-09-10; this is the tripwire that keeps it that way.
+for _row in (CORNER_ZR_WALL, CORNER_ZR_SIDE):
+    assert sorted(_row) == sorted(CORNER_HT - z for z in _row), (
+        f"CORNER_ZR rivet heights {_row} are not symmetric about CORNER_HT/2 "
+        f"({CORNER_HT/2:.0f}) -- the mirrored bracket reuses the same flat, so "
+        "its holes would no longer line up with the base")
+# ...and a wall-leg rivet must never sit at the same height as a side-leg one:
+# they meet at the corner and their set tails would collide.
+assert not (set(CORNER_ZR_WALL) & set(CORNER_ZR_SIDE)), (
+    "corner rivets are not staggered: a rear-wall and a side-wall rivet share a height")
+# Rivet edge distance on the BRACKET. The hole sits CORNER_RO from the bend line
+# and CORNER_LEG - CORNER_RO from the leg's free edge, so the leg has to carry
+# both. The bend side needs to clear the deformation zone (RI + T); the free-edge
+# side is the one under the usual 2 x diameter rule of thumb at the current
+# 4.0 mm (1.25 D), which is why MANUFACTURING.md puts "4 mm edge distance" on the
+# list the shop has to qualify. On the BASE the same rivets have 8.2 mm of metal
+# to the blank edge, so only the bracket is tight.
+assert CORNER_RO >= RI + T + D_RIVET/2.0, (
+    f"corner rivet is {CORNER_RO} from its bend line, inside the RI+T bend zone")
+assert CORNER_LEG - CORNER_RO >= D_RIVET/2.0 + 2.0, (
+    f"corner rivet leaves only {CORNER_LEG-CORNER_RO-D_RIVET/2.0:.2f} mm of metal "
+    f"to the bracket leg's free edge")
+
 def lid_top_z(v):
     """Z of the Top-plate surface at control-area depth v (0..FP_V).
 

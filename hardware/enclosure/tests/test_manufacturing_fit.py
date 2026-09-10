@@ -18,6 +18,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import segno_enclosure as enclosure
+import flat_pattern_check
 from fusion_export_formed import _validate_forming
 
 
@@ -175,6 +176,102 @@ class ManufacturingFitTest(unittest.TestCase):
         coated = (cq.Workplane('XY').circle(51.7/2).circle(4.1)
                   .extrude(2).translate(offset).val())
         self.assertGreater(coated.intersect(holder).Volume(),.3)
+
+    def test_every_corner_rivet_in_the_base_has_its_mate_in_a_bracket(self):
+        """Ten rivets, drilled twice from two different developments.
+
+        The base draws them from ITS bend lines and the bracket from its own, so
+        the only thing making them meet is the pair of relations in dxf_base:
+        along the wall s = CORNER_RO + T, up the wall s = T + RI + z - DEV90.
+        An audit in 2026-09-04 found every one of them 2.0 mm off along the wall
+        and 1.9 mm low (#992). This rebuilds both flats and pairs them up.
+        """
+        radius = enclosure.D_RIVET/2.0
+
+        def circles(path):
+            return [(e.dxf.center.x, e.dxf.center.y)
+                    for e in ezdxf.readfile(path).modelspace()
+                    if e.dxftype() == 'CIRCLE' and abs(e.dxf.radius-radius) < 1e-9]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)/'segno_base.dxf'
+            enclosure.dxf_base(str(base))
+            base_holes = circles(str(base))
+            bracket = Path(tmp)/'b.dxf'
+            enclosure.dxf_corner_bracket(str(bracket))
+            bracket_holes = circles(str(bracket))
+        self.assertEqual(len(base_holes), 10)
+        self.assertEqual(len(bracket_holes), 5)
+
+        bw, bd = enclosure.W-2*enclosure.T, enclosure.D-2*enclosure.T
+        along = enclosure.CORNER_RO + enclosure.T
+        up = lambda z: enclosure.T + enclosure.RI + z - enclosure.DEV90
+        want = set()
+        for sign, xc in ((+1, 0.0), (-1, bw)):
+            for z in enclosure.CORNER_ZR_WALL:          # rear-wall face
+                want.add((round(xc + sign*along, 6), round(bd + up(z), 6)))
+            for z in enclosure.CORNER_ZR_SIDE:          # side-wall face
+                want.add((round(xc - sign*up(z), 6), round(bd - along, 6)))
+        self.assertEqual({(round(x, 6), round(y, 6)) for x, y in base_holes}, want)
+
+        # the bracket's own five, measured from ITS bend line at CORNER_LEG
+        self.assertEqual(
+            sorted((round(x, 6), round(y, 6)) for x, y in bracket_holes),
+            sorted([(enclosure.CORNER_LEG-enclosure.CORNER_RO, float(z))
+                    for z in enclosure.CORNER_ZR_WALL]
+                   + [(enclosure.CORNER_LEG+enclosure.CORNER_RO, float(z))
+                      for z in enclosure.CORNER_ZR_SIDE]))
+
+    def test_the_mirrored_bracket_reuses_one_flat_and_still_lands(self):
+        """Both hands ship the same hole pattern; only the outline is mirrored.
+
+        That is sound only while the rivet heights are symmetric about
+        CORNER_HT/2, because the mirrored bracket's flat y reads as
+        CORNER_HT - y in the world. Break the symmetry and the left corner's
+        rivets miss the base by twice the asymmetry.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for mirrored in (False, True):
+                path = Path(tmp)/('m.dxf' if mirrored else 'd.dxf')
+                enclosure.dxf_corner_bracket(str(path), mirrored=mirrored)
+                paths.append([(e.dxf.center.x, e.dxf.center.y)
+                              for e in ezdxf.readfile(str(path)).modelspace()
+                              if e.dxftype() == 'CIRCLE'
+                              and abs(e.dxf.radius-enclosure.D_RIVET/2.0) < 1e-9])
+        self.assertEqual(sorted(paths[0]), sorted(paths[1]))
+        for row in (enclosure.CORNER_ZR_WALL, enclosure.CORNER_ZR_SIDE):
+            self.assertEqual(sorted(row),
+                             sorted(enclosure.CORNER_HT-z for z in row))
+        # and no rivet from one leg shares a height with one from the other
+        self.assertFalse(set(enclosure.CORNER_ZR_WALL) & set(enclosure.CORNER_ZR_SIDE))
+
+    def test_rivet_edge_distances_are_the_ones_the_shop_was_asked_to_qualify(self):
+        """The base is comfortable; the bracket leg is the tight part.
+
+        Recorded rather than silently tolerated: 4.0 mm to the leg's free edge
+        is 1.25 x rivet diameter, under the usual 2 x rule of thumb, which is why
+        MANUFACTURING.md asks the shop to qualify it. If the leg or the offset
+        ever moves, this says which way it moved.
+        """
+        radius = enclosure.D_RIVET/2.0
+        free_edge = enclosure.CORNER_LEG - enclosure.CORNER_RO
+        self.assertAlmostEqual(free_edge, 4.0, places=6)
+        self.assertAlmostEqual(free_edge - radius, 2.35, places=6)
+        # the bend side has to clear the deformation zone, and does
+        self.assertGreaterEqual(enclosure.CORNER_RO,
+                                enclosure.RI + enclosure.T + radius)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'segno_base.dxf'
+            enclosure.dxf_base(str(path))
+            document = ezdxf.readfile(str(path))
+            holes = [(e.dxf.center.x, e.dxf.center.y) for e in document.modelspace()
+                     if e.dxftype() == 'CIRCLE' and abs(e.dxf.radius-radius) < 1e-9]
+            outline = max((flat_pattern_check._face(e) for e in document.modelspace()
+                           if e.dxftype() == 'LWPOLYLINE' and e.dxf.layer == 'CUT'),
+                          key=lambda f: f.Area()).outerWire()
+        worst = min(outline.distance(cq.Vertex.makeVertex(x, y, 0)) for x, y in holes)
+        self.assertGreater(worst - radius, 8.0)     # 8.211 mm as drawn
 
     def test_formed_beam_clears_measured_lid_with_coating_allowance(self):
         beam = enclosure._beam_solid().translate((
