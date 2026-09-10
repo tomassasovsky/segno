@@ -462,7 +462,7 @@ static void test_dry_recording_invariant(void) {
   /* Take 1: record with a drive FX (which audibly alters 0.8) in the chain. */
   le_engine* e = make_configured_engine();
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, 1 /* drive */) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   float out[64];
   le_engine_record(e, 0);
   process_const(e, kIn, LOOP_N, out);
@@ -10658,7 +10658,7 @@ static void test_perf_events_log_table_round_trip_and_frame_accuracy(void) {
   CHECK(le_engine_set_input_mask(e, 0, 1) == LE_OK);            /* trackmask */
   CHECK(le_engine_set_output_mask(e, 0, 1) == LE_OK);           /* trackmask */
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK); /* fx */
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);      /* fxcount */
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);      /* fxcount */
   CHECK(le_engine_set_lane_input(e, 0, 0, 0) == LE_OK);         /* lanei */
   CHECK(le_engine_set_lane_output(e, 0, 0, 1) == LE_OK);        /* lanei */
   CHECK(le_engine_set_lane_volume(e, 0, 0, 0.5f) == LE_OK);     /* lanef */
@@ -11736,7 +11736,7 @@ static void test_record_never_touches_lane_fx(void) {
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* 1x pre-gain */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f); /* unity level */
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   drain(e);
 
   /* Record a take: the staged chain survives and colours playback — tanh drive
@@ -11760,7 +11760,7 @@ static void test_record_never_touches_lane_fx(void) {
   le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE);
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* 1x pre-gain (unity) */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f);
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
   le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 1.0f); /* hot pre-gain */
   le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f);
@@ -13919,11 +13919,11 @@ static void test_fx_bypass_is_transparent(void) {
 
   /* Engaging then emptying the chain returns to transparent. */
   fx_drive_unity(e, 0);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - tanhf(1.0f)) < 1e-5f);
 
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0, 0) == LE_OK);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
 
@@ -13938,12 +13938,12 @@ static void test_fx_count_gates_the_chain(void) {
 
   /* Entry 0 is set but count is 0: it must not process. */
   fx_drive_unity(e, 0);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0, 0) == LE_OK);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
 
   /* Activating it engages the effect. */
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - tanhf(1.0f)) < 1e-5f);
 
@@ -13958,7 +13958,7 @@ static void test_fx_drive_saturates(void) {
 
   /* drive p0 = 0 -> 1x pre-gain, level p1 = 1 -> out = tanh(1) ~= 0.7616. */
   fx_drive_unity(e, 0);
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - tanhf(1.0f)) < 1e-5f);
 
@@ -13976,7 +13976,7 @@ static void test_fx_filter_attenuates_low_cutoff(void) {
   le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_FILTER);
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* min cutoff */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f); /* no res */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   process_const(e, 0.0f, LOOP_N, out);
   CHECK(out[0] < 0.05f);
   /* The DC component still passes after the filter settles over many frames. */
@@ -13999,7 +13999,7 @@ static void test_fx_delay_is_silent_until_time(void) {
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 10.0f / 47999.0f);
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f); /* no fb */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* full wet */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   process_const(e, 0.0f, 64, out);
   CHECK(fabsf(out[0]) < 1e-6f);  /* nothing in the line yet */
   CHECK(out[63] > 0.9f);         /* the delayed signal has arrived */
@@ -14021,7 +14021,7 @@ static void test_fx_reverb_builds_a_tail(void) {
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.6f); /* size */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.5f); /* damping */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 0.0f); /* mix = fully dry */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
 
   /* Dry: the loop passes through unchanged. */
   process_const(e, 0.0f, 64, out);
@@ -14068,7 +14068,7 @@ static void test_fx_reverb_is_stereo(void) {
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.6f); /* size */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.3f); /* damping */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* mix = fully wet */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
 
   float peak_l = 0.0f;
   float peak_r = 0.0f;
@@ -14103,7 +14103,7 @@ static void test_fx_tremolo_modulates_amplitude(void) {
   le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_TREMOLO);
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* slow rate */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f); /* full depth */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   process_const(e, 0.0f, LOOP_N, out);
   CHECK(fabsf(out[0] - 0.5f) < 1e-3f);
   /* Stays within the modulation bound [0, 1] for a constant 1.0 source. */
@@ -14123,7 +14123,7 @@ static void test_fx_chain_applies_in_order(void) {
    * the previous result: tanh(0.7616) ~= 0.6420. Confirms entries compose. */
   fx_drive_unity(e, 0);
   fx_drive_unity(e, 1);
-  le_engine_set_lane_fx_count(e, 0, 0, 2);
+  le_engine_set_lane_fx_count(e, 0, 0, 2, 0);
   process_const(e, 0.0f, LOOP_N, out);
   const float expected = tanhf(tanhf(1.0f));
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - expected) < 1e-5f);
@@ -14145,7 +14145,7 @@ static void test_fx_nondestructive_and_colors_playback(void) {
   /* Engage a drive on the lane post-record (the per-lane editor): the buffer is
    * untouched. */
   fx_drive_unity(e, 0);
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e);
 
   /* With the effect engaged, playback runs it: out = tanh(loop) = tanh(1). */
@@ -14154,7 +14154,7 @@ static void test_fx_nondestructive_and_colors_playback(void) {
 
   /* Remove every effect: the loop now plays back dry (1.0), proving the
    * recording was never wet-printed. */
-  le_engine_set_lane_fx_count(e, 0, 0, 0);
+  le_engine_set_lane_fx_count(e, 0, 0, 0, 0);
   drain(e);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
@@ -14169,7 +14169,7 @@ static void test_fx_muted_track_is_silent(void) {
   establish_loop(e, 1.0f);
 
   fx_drive_unity(e, 0);
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   le_engine_set_track_mute(e, 0, 1);
   drain(e);
   process_const(e, 0.0f, LOOP_N, out);
@@ -14192,7 +14192,7 @@ static void test_fx_rejects_invalid_args(void) {
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, -1, 0, 0.5f) == LE_ERR_INVALID);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, LE_FX_PARAMS, 0.5f) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_set_lane_fx_count(e, 0, LE_MAX_LANES, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_count(e, 0, LE_MAX_LANES, 1, 0) == LE_ERR_INVALID);
 
   /* LE_FX_REVERB is the current highest type: accepted, while one past it is
    * rejected — locking the validated upper bound. */
@@ -14203,7 +14203,7 @@ static void test_fx_rejects_invalid_args(void) {
    * over-large count clamps to LE_FX_MAX. */
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 5.0f) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, -5.0f) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 999) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 999, 0) == LE_OK);
 
   le_engine_destroy(e);
 }
@@ -14235,7 +14235,7 @@ static void test_fx_reverb_then_mono_effect_is_stereo(void) {
     le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.6f); /* size */
     le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.3f); /* damping */
     le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* fully wet */
-    le_engine_set_lane_fx_count(e, 0, 0, 1);
+    le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
     for (int b = 0; b < WARM; ++b) process_const(e, 0.0f, 64, out);
     process_const(e, 0.0f, 64, out);
     for (int i = 0; i < 64; ++i) {
@@ -14258,7 +14258,7 @@ static void test_fx_reverb_then_mono_effect_is_stereo(void) {
     le_engine_set_lane_fx(e, 0, 0, 1, LE_FX_DRIVE);
     le_engine_set_lane_fx_param(e, 0, 0, 1, 0, 1.0f); /* 30x pre-gain */
     le_engine_set_lane_fx_param(e, 0, 0, 1, 1, 1.0f); /* unity output level */
-    le_engine_set_lane_fx_count(e, 0, 0, 2);
+    le_engine_set_lane_fx_count(e, 0, 0, 2, 0);
     for (int b = 0; b < WARM; ++b) process_const(e, 0.0f, 64, out);
     process_const(e, 0.0f, 64, out);
     for (int i = 0; i < 64; ++i) {
@@ -14297,7 +14297,7 @@ static void impulse_through_delay(int on_right, int d, float* tap,
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, (float)d / 47999.0f); /* ~d frames */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f);               /* no feedback */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f);              /* full wet */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e); /* allocate both rings + reset DSP state before driving the chain */
 
   *tap = 0.0f;
@@ -14349,7 +14349,7 @@ static void test_fx_stereo_ring_retained_across_type_reorder(void) {
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, (float)d / 47999.0f);
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f); /* no feedback */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* full wet */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e);
 
   float tap = 0.0f, max_off = 0.0f;
@@ -14975,7 +14975,7 @@ static void test_lane_fx_colors_only_its_lane(void) {
   le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE);
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* 1x pre-gain */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f); /* unity level */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e);
 
   /* Playback over silence: lane 0 is driven (tanh(1.0)) on out 0; lane 1 is dry
@@ -15731,8 +15731,8 @@ static void test_fx_fourth_param_is_inert(void) {
     le_engine_set_lane_fx(a, 0, 0, 0, types[t]); /* seeds p3 = 0 */
     le_engine_set_lane_fx(b, 0, 0, 0, types[t]);
     CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, 3, 1.0f) == LE_OK); /* drive p3 */
-    le_engine_set_lane_fx_count(a, 0, 0, 1);
-    le_engine_set_lane_fx_count(b, 0, 0, 1);
+    le_engine_set_lane_fx_count(a, 0, 0, 1, 0);
+    le_engine_set_lane_fx_count(b, 0, 0, 1, 0);
 
     float oa[64];
     float ob[64];
@@ -16617,12 +16617,12 @@ static void test_octaver_added_latency(void) {
    * the hint also fires in the track lane editor, not just the monitor graph. */
   le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
   le_engine_set_lane_fx_param(e, 0, 0, 0, 3, 0.0f); /* PV mode */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.fx_added_latency_frames == 1024);
 
-  le_engine_set_lane_fx_count(e, 0, 0, 0);
+  le_engine_set_lane_fx_count(e, 0, 0, 0, 0);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.fx_added_latency_frames == 0);
@@ -16630,7 +16630,7 @@ static void test_octaver_added_latency(void) {
   /* A BYPASSED octaver settles into a full skip and adds no real delay, so
    * the reported latency must clear on a slot disable, a chain disable, and
    * come back on re-enable. */
-  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_lane_fx_count(e, 0, 0, 1, 0);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.fx_added_latency_frames == 1024);
@@ -17916,7 +17916,7 @@ static void test_perf_render_wet_multi_slot_and_count_shrink(void) {
     test_write_log_entry(
         lf, shrink_frame,
         (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
-                    .fxcount = {0, 0, 1}});
+                    .fxcount = {0, 0, 1, 0}});
     fclose(lf);
   }
 
@@ -18672,7 +18672,7 @@ static void run_perf_render_golden_master_parity(int follow, int omit_key,
    * master gain, limiter — every command below is real, applied to the
    * live engine, not a hand-authored log fixture. */
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   process_const(e, 0.6f, loop_len, out);
 
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.9f) == LE_OK);
@@ -23406,7 +23406,7 @@ static void fx_en_setup_drive_loop(le_engine* e, float value) {
   CHECK(le_engine_record(e, 0) == LE_OK);
   drain(e);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f) == LE_OK);
   drain(e);
@@ -23485,7 +23485,7 @@ static void test_fx_enable_bitexact_passthrough(void) {
   }
   /* Only A carries the (disabled) effect; B never has one. */
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 1, 1.0f) == LE_OK);
   CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, 0) == LE_OK);
   drain(a);
@@ -23607,7 +23607,7 @@ static void test_stop_drains_lane_tail_and_mute_gates_it(void) {
   bus_fx_record_loop(e, 0.5f);
 
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_ECHO) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.01f) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.6f) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f) == LE_OK);
@@ -23648,7 +23648,7 @@ static void test_stop_drains_lane_tail_and_mute_gates_it(void) {
 
   /* A shared tail: an ECHO on the output bus already holds the track's
    * audio. Mute the lane: the output chain's repeats keep draining. */
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0, 0) == LE_OK);
   CHECK(le_engine_set_output_fx(e, 0, 0, LE_FX_ECHO) == LE_OK);
   CHECK(le_engine_set_output_fx_count(e, 0, 1) == LE_OK);
   CHECK(le_engine_set_output_fx_param(e, 0, 0, 0, 0.01f) == LE_OK);
@@ -23664,6 +23664,118 @@ static void test_stop_drains_lane_tail_and_mute_gates_it(void) {
     if (fabsf(cap[i]) > peak) peak = fabsf(cap[i]);
   }
   CHECK(peak > 1e-3f); /* the shared tail drained under Mute */
+
+  le_engine_destroy(e);
+}
+
+/* The Pre half of that distinction (slice 3e; accepted: "Printed Pre stops
+ * with its recording"). The same echo, on the same lane, with the same Stop:
+ * declared Pre it belongs to the take, so the take stopping takes its tail
+ * with it, where the Post run above kept sounding for a second and a half.
+ *
+ * The cache cap is 0 so this pins the LIVE Pre path — the one where the Pre
+ * slots really are running and their rings really do hold repeats. With a
+ * print engaged the tail is inside the rendered audio and stops because the
+ * lane stops reading it, which the cache tests cover. */
+static void test_stop_cuts_the_pre_tail_with_the_recording(void) {
+  printf("test_stop_cuts_the_pre_tail_with_the_recording\n");
+  le_engine* e = make_configured_engine();
+  le_engine_set_fx_cache_cap(e, 0);
+  static float cap[4096];
+  bus_fx_record_loop(e, 0.5f);
+
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK); /* Pre */
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.6f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 1024, cap); /* the echo ring fills with the loop */
+  float peak = 0.0f;
+  for (int i = 0; i < 1024; ++i) {
+    if (fabsf(cap[i]) > peak) peak = fabsf(cap[i]);
+  }
+  CHECK(peak > 1e-3f); /* it really is sounding before the Stop */
+
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 1024, cap);
+  peak = 0.0f;
+  for (int i = 0; i < 1024; ++i) {
+    if (fabsf(cap[i]) > peak) peak = fabsf(cap[i]);
+  }
+  CHECK(peak < 1e-3f); /* no repeats: the tail stopped with the recording */
+
+  le_engine_destroy(e);
+}
+
+/* The same cut, where the lane is still routing. A Post entry downstream
+ * keeps the route open past the Stop (its own tail has to be able to drain),
+ * so the Pre echo's repeats would be audible THROUGH it unless the Stop edge
+ * really cleared them — where the Pre-only case above is carried by the route
+ * closing. Pre ECHO into Post DRIVE: drive has no memory, so anything heard
+ * after the Stop came out of the echo's rings. */
+static void test_stop_cuts_the_pre_tail_under_a_post_entry(void) {
+  printf("test_stop_cuts_the_pre_tail_under_a_post_entry\n");
+  le_engine* e = make_configured_engine();
+  le_engine_set_fx_cache_cap(e, 0);
+  static float cap[4096];
+  bus_fx_record_loop(e, 0.5f);
+
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 1, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 2, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.6f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 1024, cap);
+  float peak = 0.0f;
+  for (int i = 0; i < 1024; ++i) {
+    if (fabsf(cap[i]) > peak) peak = fabsf(cap[i]);
+  }
+  CHECK(peak > 1e-3f);
+
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 1024, cap);
+  peak = 0.0f;
+  for (int i = 0; i < 1024; ++i) {
+    if (fabsf(cap[i]) > peak) peak = fabsf(cap[i]);
+  }
+  CHECK(peak < 1e-3f);
+
+  le_engine_destroy(e);
+}
+
+/* The other half: a Post entry's tail on a SPLIT chain still drains. Pre
+ * DRIVE into Post ECHO — the failure this catches is a Stop edge that clears
+ * the whole chain instead of its Pre range and silences a tail the accepted
+ * design says must finish. */
+static void test_stop_spares_the_post_tail_on_a_split_chain(void) {
+  printf("test_stop_spares_the_post_tail_on_a_split_chain\n");
+  le_engine* e = make_configured_engine();
+  le_engine_set_fx_cache_cap(e, 0);
+  static float cap[4096];
+  bus_fx_record_loop(e, 0.5f);
+
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 1, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 2, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 1, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 1, 1, 0.6f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 1, 2, 1.0f) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 1024, cap);
+
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 1024, cap);
+  float peak = 0.0f;
+  for (int i = 0; i < 1024; ++i) {
+    if (fabsf(cap[i]) > peak) peak = fabsf(cap[i]);
+  }
+  CHECK(peak > 1e-3f); /* the Post echo's repeats still drain */
 
   le_engine_destroy(e);
 }
@@ -23720,16 +23832,16 @@ static void test_fx_enable_count_regrow_reseeds(void) {
   le_engine* e = make_configured_engine();
 
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   drain(e);
   const uint64_t fp_enabled = le_engine_lane_fx_fingerprint(e, 0, 0);
   CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
   CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) != fp_enabled);
 
   /* Same-type remove/re-add, no drain between the three pushes. */
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK); /* same ty */
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   drain(e);
   CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == fp_enabled);
 
@@ -23738,13 +23850,13 @@ static void test_fx_enable_count_regrow_reseeds(void) {
    * already-active slot 0 (the stale-published-count over-seed would wipe
    * it). Track 2 builds the identical end state as the reference. */
   CHECK(le_engine_set_lane_fx(e, 1, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 1, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 1, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx_enabled(e, 1, 0, 0, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx(e, 1, 0, 1, LE_FX_FILTER) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 1, 0, 2) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 1, 0, 2, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx(e, 2, 0, 0, LE_FX_DRIVE) == LE_OK);
   CHECK(le_engine_set_lane_fx(e, 2, 0, 1, LE_FX_FILTER) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 2, 0, 2) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 2, 0, 2, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx_enabled(e, 2, 0, 0, 0) == LE_OK);
   drain(e);
   CHECK(le_engine_lane_fx_fingerprint(e, 1, 0) ==
@@ -23906,7 +24018,7 @@ static void test_fx_enable_enseed_type_change(void) {
   le_engine* e = make_configured_engine();
 
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   drain(e);
   const uint64_t fp_enabled = le_engine_lane_fx_fingerprint(e, 0, 0);
   CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
@@ -23916,7 +24028,7 @@ static void test_fx_enable_enseed_type_change(void) {
    * identically to a NEVER-disabled lane running the same chain. */
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_FILTER) == LE_OK);
   CHECK(le_engine_set_lane_fx(e, 1, 0, 0, LE_FX_FILTER) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 1, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 1, 0, 1, 0) == LE_OK);
   drain(e);
   CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) ==
         le_engine_lane_fx_fingerprint(e, 1, 0));
@@ -23968,7 +24080,7 @@ static void test_fx_enable_works_while_stopped(void) {
    * type change re-seeds the flag to enabled (D-ENSEED), so the reverse
    * order would silently re-enable the slot. */
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f) == LE_OK);
   CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
 
@@ -24039,7 +24151,7 @@ static void test_fx_enable_fingerprint(void) {
   CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 1) == LE_OK);
 
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
   drain(e);
   const uint64_t fp = le_engine_lane_fx_fingerprint(e, 0, 0);
   CHECK(fp != basis);
@@ -24270,7 +24382,7 @@ static void test_idle_track_lane_skip(void) {
   {
     le_engine* e = make_configured_engine();
     CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DELAY) == LE_OK);
-    CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+    CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 0) == LE_OK);
     drain(e);
     le_track_snapshot ts;
     le_engine_get_track(e, 0, &ts);
@@ -25503,8 +25615,8 @@ static void cache_pair_prepare_chain(le_engine** pa, le_engine** pb,
     pump_frames(a, 0.0f, need);
     pump_frames(b, 0.0f, need);
   }
-  CHECK(le_engine_set_lane_fx_count(a, 0, 0, count) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(b, 0, 0, count) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, count, count) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(b, 0, 0, count, count) == LE_OK);
   for (int32_t s = 0; s < count; ++s) {
     CHECK(le_engine_set_lane_fx(a, 0, 0, s, types[s]) == LE_OK);
     CHECK(le_engine_set_lane_fx(b, 0, 0, s, types[s]) == LE_OK);
@@ -25557,6 +25669,72 @@ static void cache_check_chain_parity(const int32_t* types, int32_t count) {
   free(ob);
   le_engine_destroy(a);
   le_engine_destroy(b);
+}
+
+/* Only a PRE entry is printed (slice 3e). The same one-slot chain declared
+ * Post never renders however long it settles — a Post tail has to be able to
+ * drain past a Stop and a baked tail cannot — and the moment the same chain
+ * becomes Pre it renders and engages. */
+static void test_only_a_pre_chain_is_printed(void) {
+  printf("test_only_a_pre_chain_is_printed\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 0) == LE_OK); /* all Post */
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info); /* register the key */
+  pump_frames(a, 0.0f, CACHE_SETTLE + CACHE_LOOP);
+  test_sleep_ms(20); /* give a (wrongly scheduled) render time to land */
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.renders == 0);
+  CHECK(info.state == LE_CACHE_LIVE);
+  CHECK(info.engaged == 0);
+
+  /* Same entry, now Pre. */
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
+  drain(a);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  CHECK(cache_renders(a, 0, 0) == 1);
+  le_engine_destroy(a);
+}
+
+/* Editing a Post entry leaves the print standing (slice 3e): the print's key
+ * is the PRE PREFIX, and a Post entry never enters the render, so changing
+ * one cannot make it stale. Editing a Pre entry does drop it — the print no
+ * longer describes the take. */
+static void test_a_post_edit_leaves_the_print_standing(void) {
+  printf("test_a_post_edit_leaves_the_print_standing\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_FILTER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 2, 1) == LE_OK); /* one of each */
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  const int32_t renders = cache_renders(a, 0, 0);
+  /* On to the next loop top, where the print engages. */
+  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  CHECK(cache_engaged(a, 0, 0) == 1);
+
+  CHECK(le_engine_set_lane_fx_param(a, 0, 0, 1, 0, 0.9f) == LE_OK); /* Post */
+  drain(a);
+  pump_frames(a, 0.0f, 256);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.engaged == 1);
+  CHECK(info.state == LE_CACHE_CACHED);
+  CHECK(info.renders == renders); /* nothing re-rendered */
+
+  CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 0, 0.9f) == LE_OK); /* Pre */
+  drain(a);
+  pump_frames(a, 0.0f, 256);
+  CHECK(cache_engaged(a, 0, 0) == 0); /* same-buffer live fallback */
+  le_engine_destroy(a);
 }
 
 static void test_cache_cached_matches_live_every_builtin(void) {
@@ -25835,7 +26013,7 @@ static void test_cache_settle_debounce_gates_render(void) {
   printf("test_cache_settle_debounce_gates_render\n");
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
   cache_record_loop(a, CACHE_LOOP, 1.0f);
-  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
   drain(a);
   le_lane_cache_info info;
@@ -25872,7 +26050,7 @@ static void test_cache_eviction_lru_and_recover(void) {
   CHECK(le_engine_record(a, 1) == LE_OK);
   drain(a);
   for (int t = 0; t < 2; ++t) {
-    CHECK(le_engine_set_lane_fx_count(a, t, 0, 1) == LE_OK);
+    CHECK(le_engine_set_lane_fx_count(a, t, 0, 1, 1) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, t, 0, 0, LE_FX_DRIVE) == LE_OK);
   }
   drain(a);
@@ -25913,7 +26091,7 @@ static void test_cache_plugin_chain_excluded(void) {
   printf("test_cache_plugin_chain_excluded\n");
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
   cache_record_loop(a, CACHE_LOOP, 1.0f);
-  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 2) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 2, 2) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
   drain(a);
   /* The public setter rejects LE_FX_PLUGIN (plugins install via the plugin
@@ -25982,7 +26160,7 @@ static void test_cache_midrender_rev_bump_aborts(void) {
   le_engine_record(a, 0);
   drain(a);
   pump_frames(a, 1.0f, 600);
-  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_ECHO) == LE_OK);
@@ -26019,7 +26197,7 @@ static void test_cache_job_queue_full_degrades_then_retries(void) {
     drain(a);
   }
   for (int32_t t = 0; t < tracks; ++t) {
-    CHECK(le_engine_set_lane_fx_count(a, t, 0, 1) == LE_OK);
+    CHECK(le_engine_set_lane_fx_count(a, t, 0, 1, 1) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, t, 0, 0, LE_FX_DRIVE) == LE_OK);
   }
   drain(a);
@@ -26056,7 +26234,7 @@ static void test_cache_destroy_during_active_render(void) {
     le_engine_record(a, 0);
     drain(a);
     pump_frames(a, 1.0f, 600);
-    CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3) == LE_OK);
+    CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_ECHO) == LE_OK);
@@ -26207,7 +26385,7 @@ static void test_cache_batch_matches_per_lane(void) {
   printf("test_cache_batch_matches_per_lane\n");
   le_engine* e = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
   cache_record_loop(e, CACHE_LOOP, 1.0f);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
   drain(e);
   le_lane_cache_info reg;
@@ -28096,7 +28274,7 @@ static void test_lane_count_shrink_evicts_wet_cache(void) {
   drain(e);
   cache_record_loop(e, CACHE_LOOP, 1.0f);
   CHECK(le_engine_set_lane_fx(e, 0, 1, 0, LE_FX_DRIVE) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(e, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 1, 1, 1) == LE_OK);
   drain(e);
   le_lane_cache_info info;
   le_engine_get_lane_cache(e, 0, 1, &info); /* register the key */
@@ -28713,6 +28891,9 @@ int main(void) {
   test_fx_bypass_drains_tail_then_settles();
   test_fx_bypass_new_audio_dry();
   test_stop_drains_lane_tail_and_mute_gates_it();
+  test_stop_cuts_the_pre_tail_with_the_recording();
+  test_stop_cuts_the_pre_tail_under_a_post_entry();
+  test_stop_spares_the_post_tail_on_a_split_chain();
   test_fx_enable_midfade_reenable_keeps_state();
   test_fx_enable_defaults_bitexact();
   test_fx_enable_enseed_type_change();
@@ -28752,6 +28933,8 @@ int main(void) {
   test_track_output_fx_setters_push_no_plog();
   test_track_output_fx_lifecycle();
 
+  test_only_a_pre_chain_is_printed();
+  test_a_post_edit_leaves_the_print_standing();
   test_cache_cached_matches_live_every_builtin();
   test_cache_cached_matches_live_multi_slot_chain();
   test_cache_volume_move_invalidates();

@@ -590,6 +590,9 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-(channel, lane) active chain length passed to [setLaneFxCount].
   final Map<(int, int), int> laneFxCount = {};
 
+  /// Per-(channel, lane) leading Pre run passed to [setLaneFxCount].
+  final Map<(int, int), int> laneFxPreCount = {};
+
   /// Per-(channel, lane, index, param) value passed to [setLaneFxParam].
   final Map<(int, int, int, int), double> laneFxParam = {};
 
@@ -618,6 +621,7 @@ class FakeAudioEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) {
     // D-ENSEED's second half: a slot ENTERING the active window seeds
     // enabled, synchronously, like the engine's le_fx_seed_entering_slots.
@@ -625,6 +629,11 @@ class FakeAudioEngine implements AudioEngine {
       laneFxEnabled[(channel, lane, s)] = true;
     }
     laneFxCount[(channel, lane)] = count;
+    // Clamped as the native setter clamps it, so a test asserting the pushed
+    // split reads what the engine would actually store.
+    laneFxPreCount[(channel, lane)] = preCount < 0
+        ? 0
+        : (preCount > count ? count : preCount);
     calls.add('setLaneFxCount');
     return EngineResult.ok;
   }

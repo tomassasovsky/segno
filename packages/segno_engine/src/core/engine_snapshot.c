@@ -135,11 +135,11 @@ static int32_t le_max_fx_latency(le_engine* engine) {
  * float-bit params — a plugin entry (LE_FX_PLUGIN) folds type + enabled bit
  * only. The Dart repository computes the identical hash over its cache. */
 static uint64_t le_fx_chain_fingerprint(
-    _Atomic int32_t* a_count, _Atomic int32_t* a_type,
+    int32_t count, _Atomic int32_t* a_type,
     _Atomic uint32_t (*a_param)[LE_FX_PARAMS], _Atomic int32_t* a_enabled,
     _Atomic int32_t* a_chain_enabled) {
   uint64_t h = 0xcbf29ce484222325ULL; /* FNV-1a 64-bit offset basis */
-  int32_t n = load_i32(a_count);
+  int32_t n = count;
   if (n < 0) n = 0;
   if (n > LE_FX_MAX) n = LE_FX_MAX;
   if (n > 0) {
@@ -165,15 +165,31 @@ uint64_t le_engine_lane_fx_fingerprint(le_engine* engine, int32_t channel,
     return 0;
   }
   le_lane* ln = &engine->tracks[channel].lanes[lane];
-  return le_fx_chain_fingerprint(&ln->a_fx_count, ln->a_fx_type, ln->a_fx_param,
+  return le_fx_chain_fingerprint(load_i32(&ln->a_fx_count), ln->a_fx_type,
+                                 ln->a_fx_param, ln->a_fx_enabled,
+                                 &ln->a_fx_chain_enabled);
+}
+
+uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
+                                    int32_t lane) {
+  if (engine == NULL || channel < 0 || channel >= engine->track_count ||
+      lane < 0 || lane >= LE_MAX_LANES) {
+    return 0;
+  }
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  int32_t pre = load_i32(&ln->a_fx_pre_count);
+  const int32_t count = load_i32(&ln->a_fx_count);
+  if (pre > count) pre = count; /* a torn read is a live fallback, never a lie */
+  return le_fx_chain_fingerprint(pre, ln->a_fx_type, ln->a_fx_param,
                                  ln->a_fx_enabled, &ln->a_fx_chain_enabled);
 }
 
 uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine, int32_t input) {
   if (engine == NULL || input < 0 || input >= LE_MAX_MONITORED_INPUTS) return 0;
   le_monitor_input* m = &engine->monitors[input];
-  return le_fx_chain_fingerprint(&m->a_fx_count, m->a_fx_type, m->a_fx_param,
-                                 m->a_fx_enabled, &m->a_fx_chain_enabled);
+  return le_fx_chain_fingerprint(load_i32(&m->a_fx_count), m->a_fx_type,
+                                 m->a_fx_param, m->a_fx_enabled,
+                                 &m->a_fx_chain_enabled);
 }
 
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {

@@ -41,8 +41,12 @@ typedef struct le_command {
     struct { /* SET_LANE_FX / SET_MONITOR_INPUT_FX (channel = input, lane unused) */
       int32_t channel, lane, index, type;
     } fx;
-    struct { /* SET_LANE_FX_COUNT / SET_MONITOR_INPUT_FX_COUNT (channel = input) */
-      int32_t channel, lane, count;
+    struct { /* SET_LANE_FX_COUNT / SET_MONITOR_INPUT_FX_COUNT (channel = input)
+              * pre_count is the leading Pre run (slice 3e); it rides the same
+              * command as the count so the audio thread never sees a split
+              * that names more Pre entries than the chain has. Owners with no
+              * Pre stage (monitor, track, output) send 0. */
+      int32_t channel, lane, count, pre_count;
     } fxcount;
     struct { /* lane int payload: SET_LANE_INPUT (input ch) / *_OUTPUT (mask) */
       int32_t channel, lane, value;
