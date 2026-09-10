@@ -9,8 +9,10 @@ labels; there is no faceplate overlay or extra machining PDF page.
 
 ## Metal shop — cut, bend, drill and fit; owner rivets and taps
 
-Hola. Necesitamos un prototipo: aluminio 1050 de 2,0 y 1,2 mm, y dos postes de
-acero laminado en frío de 1,6 mm. En una sola entrega necesitamos corte, plegado,
+Hola. Necesitamos un prototipo: aluminio 1100-H14 de 2,0 mm (es el material del
+certificado del lote 26E0269 que nos pasaron; lo habíamos pedido como 1050),
+aluminio de 1,2 mm con aleación y temple a confirmar por ustedes, y siete postes
+de acero laminado en frío de 1,6 mm. En una sola entrega necesitamos corte, plegado,
 ajuste, taladros y desbarbado terminados. Entregar SIN
 REMACHAR y SIN ROSCAR. Yo remacharé antes de llevarlo a otro taller de pintura
 y haré las 32 roscas M3 del cuerpo después de pintar: 18 para la tapa y 14 para
@@ -72,7 +74,7 @@ de los apoyos.
 ## Painter — separate supplier
 
 Hola. Necesitamos negro liso mate RAL 9005, sin textura, 60–100 micrones por cara
-sobre aluminio 1050 y dos postes de acero. Pintar también caras ocultas, asientos,
+sobre aluminio 1100-H14 y siete postes de acero. Pintar también caras ocultas, asientos,
 cantos, agujeros de paso y el borde y paso recto del disco. Proteger únicamente
 contactos eléctricos de tierra señalados. Los pilotos M3 llegarán sin rosca
 y se limpiarán/roscarán después; no enmascarar

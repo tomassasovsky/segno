@@ -88,7 +88,16 @@ TRANS_RUN  = 22.0    # transition horizontal run (depth added behind the control
                      # forward, reduces the bottom-plate depth)
 TRANS_DROP = 10.0    # transition vertical drop (peak -> rear-panel top)
 
-T        = 2.0       # sheet thickness (2.0 mm 1050 aluminium -- the shop's stock, owner 2026-09-04)
+T        = 2.0       # sheet thickness (the shop's stock, owner 2026-09-04)
+# The stock was ordered as 1050 and is NOT: Alcast's certificate for lot 26E0269
+# (2026-04-01) reports 1100-H14, Rp0.2 127 MPa, Rm 145 MPa, A 10% -- inside the
+# ABNT NBR 7823 limits for the alloy, whose MINIMUM proof stress is 95 MPa. Design
+# to the 95; 127 belongs to that coil only. Stiffness is untouched either way,
+# E ~ 69 GPa for 1050, 1100 and 5052 alike, so no alloy call moves a deflection.
+ALLOY_2MM  = "1100-H14"
+# The certificate covers the 2.00 mm sheet ONLY. Nothing establishes what the
+# 1.2 mm rear panel is, so the drawings must ask rather than assert.
+ALLOY_REAR = "a confirmar"
 RI       = 2.0       # inside bend radius; confirm actual temper and trial bend with the shop
 KF       = 0.33      # K-factor for bend-allowance development
 FLANGE   = 18.0      # return-flange depth (lid side wings + wall top flange)
@@ -860,6 +869,36 @@ FOOT_FLOOR_D = 15.0  # purchased foot, floor contact diameter
 FOOT_H = 5.0
 FOOT_HEAD_D = 9.0    # maximum assumed top screw/washer envelope; verify hardware
 
+# --- pedestal floor supports (issue #1019) ------------------------------------
+# The fifteen feet above sit in the gaps BETWEEN pedals, never under one, so a
+# stomp is carried by the 2.0 mm floor spanning out to them. A plate-bending FE
+# check (_stomp_fea.py; docs/research/2026-09-09-enclosure-stomp-load-analysis.md)
+# put that at 353 MPa and 23 mm of travel under 1 kN on one pedal -- first yield
+# at ~360 N, which is about half a player's weight. Even a rigidly pinned
+# perimeter, more than a 12 mm front wall and a screwed-down lid can deliver,
+# only reaches 914 N, so stiffening the shell cannot fix it.
+#
+# The cure is to stop the plate carrying the stomp at all. Every pedestal's four
+# chassis screws already come UP through the floor from below, so their heads are
+# already on the underside: put a foot on each one and the load goes straight to
+# the ground. 89 MPa and 1.4 mm at 1 kN, first yield ~1425 N, and still 86 MPa
+# with any one of a pedal's four feet not touching. NO new bores -- base_foot_xy()
+# and segno_base.dxf are untouched; only the screw length and the BOM change.
+PEDESTAL_FOOT_H = FOOT_H   # MUST equal the purchased floor foot or the case rocks
+PEDESTAL_FOOT_BODY_D = 18.0   # chassis face. Fits inside the collar footprint at
+                              # every station: _check() proves it rather than
+                              # trusting this comment.
+PEDESTAL_FOOT_FLOOR_D = 15.0
+PEDESTAL_FOOT_BORE = 3.4      # through bore; the M3 chassis screw passes through
+PEDESTAL_FOOT_CBORE_D = 6.5   # counterbore that swallows the M3 head...
+PEDESTAL_FOOT_CBORE_H = 2.5   # ...so the head does not stand on the floor
+# PROVISIONAL, exactly as the fifteen purchased feet are: envelope and bore are a
+# design intent, not a sourced part. Same Ø18 x Ø15 x 5 envelope as those feet so
+# the console stands on ONE foot height; this variant is through-bored and
+# counterbored instead of carrying a washer insert. Verify the real part, and
+# check that a 0.5 mm height spread does not unload one -- at the ~400 N/mm
+# assumed in the check that error is worth 200 N.
+
 # --- fasteners ----------------------------------------------------------------
 D_M3_METAL = 3.6     # bare +0.10/-0.00; fully coated M3 clearance
 D_LID_SCREW = 4.5    # bare +0.10/-0.00; accommodates painted lid seating shift
@@ -1344,17 +1383,26 @@ LID_UNDER_Z0 = LID_UNDER_NORMAL / math.cos(math.radians(SLOPE_ANGLE))
 # display opening. The lid bears on fitted felt caps and remains removable.
 # Load passes through faceplate -> felt -> post -> base sheet -> rubber feet
 # -> floor. The base is suspended above the floor between those supports.
-# Confirm the supplied 1050 temper and qualify the assembled support layout
-# and intended foot loads; alloy designation alone does not establish yield
-# strength, and geometry/clearance checks do not establish structural capacity.
+# The supplied stock is certified 1100-H14 (lot 26E0269). Issue #1019 rates the
+# assembled support layout: away from a post the lid dents at 7-11 kg of point
+# load, over one it takes 170 kg, so the posts work and there were two of them
+# on an 850 mm panel. POST_U now covers the whole band.
 POST_V     = 165.0                 # web depth (user call 2026-08-19: "move the screws back, make the
                                    # posts taller"): the pad now sits 13mm in front of the 16in aperture
                                    # edge (178) -- the actual dent zone -- instead of jammed at 146.5
                                    # against the OLD panel's fictitious connector strip. Rear limit is
                                    # the measured UPERFECT body's front edge; the intake vent field below yields instead (slots
                                    # under the feet are skipped, see _bottom_vents_local).
-POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
-                                   # clears the LED slots; still under the 16in aperture, clear of the vent
+# One post per PEDAL GAP (issue #1019). Two of these existed, at the TRACK
+# T2-T3 and T3-T4 gaps, propping the band in front of the 16in aperture -- the
+# zone #292 identified. The FE check found that band dents at 7-11 kg of point
+# load everywhere the pads do NOT reach and takes 170 kg where they do, so the
+# answer was never two posts, it was the whole band: a missed stomp lands here.
+# The stations are the FRONT_SCREW_U interior gaps, which is why POST_PW below
+# derives from the pedal pitch -- every station sits between two pill shoulders
+# by construction. The two END stations are left out: the lid's own skirt ledge
+# already carries its edges, and a post there would crowd the corner feet.
+POST_U     = FRONT_SCREW_U[1:-1]   # 7 stations, the interior pedal gaps
 POST_U_CLR = 1.5                   # u clearance, pad edge to the neighbouring pill
                                    # shoulder (LED_SLOT_W + 2*LED_INS_FLANGE), each side
 POST_PW    = ((_row1_u(1) - _row1_u(0)) - LED_SLOT_W - 2*LED_INS_FLANGE
@@ -1765,10 +1813,18 @@ def _check(strict_board_mount=True):
     assert POST_V < _aperture_edge_v, \
         f"POST_V {POST_V:.0f} not in front of the aperture edge ({_aperture_edge_v:.0f})"
     assert POST_H > 10.0, f"POST height {POST_H:.1f} mm too short at v={POST_V:.0f}"
-    s16 = byref["SCREEN_16IN"]
+    # Every pad must land on SOLID faceplate metal. This replaces the old "post is
+    # under the 16in aperture" rule, which encoded #292's two-post scope rather
+    # than the requirement; with a post at every pedal gap the real gate is that
+    # nothing the pad bears on has been cut away.
+    _pad_v0, _pad_v1 = POST_V - POST_PAD, POST_V
     for u in POST_U:
-        assert s16["u"] <= u <= s16["u"] + s16["w"], \
-            f"post u={u:.0f} not under the 16in aperture ({s16['u']:.0f}..{s16['u']+s16['w']:.0f})"
+        pu0, pu1 = u - POST_PW/2.0, u + POST_PW/2.0
+        for c in cuts:
+            b = _bbox(c)
+            assert not (b[0] < pu1 and pu0 < b[2] and b[1] < _pad_v1 and _pad_v0 < b[3]), (
+                f"POST pad at u={u:.0f} bears on the {c.get('ref','?')} cutout "
+                f"(u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f}) -- there is no metal there")
     # COMPACT post sits in the band between the front pedals and the 15.6in BODY, and in the
     # TRACK LED-slot GAPS (in u) so the pad also clears the slots.
     assert POST_V - POST_PAD > PEDAL_ROW1_V + FSW_SLOT_D/2.0, \
@@ -1954,6 +2010,41 @@ def _check(strict_board_mount=True):
         assert clear >= INSERT_PILOT_D + 1.0, (
             f"CONSOLE_SLED: chassis station ({fx:.1f}, {fy:.1f}) is {clear:.2f} mm "
             "from a pedal insert -- the two bores crowd")
+
+    # 2d. PEDESTAL FEET (issue #1019): a foot on every chassis screw, so the stomp
+    # reaches the ground without bending the floor. These carry the load, so their
+    # geometry is gated, not assumed.
+    assert abs(PEDESTAL_FOOT_H - FOOT_H) < 1e-9, (
+        f"PED_FOOT: {PEDESTAL_FOOT_H} mm against {FOOT_H} mm floor feet -- the "
+        "console would stand on whichever set is taller and rock on the other")
+    assert PEDESTAL_FOOT_BORE > D_M3_METAL - 0.5, (
+        f"PED_FOOT: Ø{PEDESTAL_FOOT_BORE} bore will not pass the M3 that goes "
+        f"through the Ø{D_M3_METAL} plate clearance")
+    assert PEDESTAL_FOOT_CBORE_H < PEDESTAL_FOOT_H - 1.0, (
+        f"PED_FOOT: Ø{PEDESTAL_FOOT_CBORE_D} x {PEDESTAL_FOOT_CBORE_H} counterbore "
+        f"leaves under 1 mm of rubber below the screw head")
+    _pfr = PEDESTAL_FOOT_BODY_D / 2.0
+    for fx, fy in platform_foot_xy():       # x = depth, y = width, pedestal-local
+        assert abs(fx) + _pfr <= CONSOLE_PLATFORM_D / 2.0 and \
+               abs(fy) + _pfr <= SKIRT_OUT_W / 2.0, (
+            f"PED_FOOT: Ø{PEDESTAL_FOOT_BODY_D} foot at ({fx:.1f}, {fy:.1f}) "
+            "spills outside the pedestal footprint")
+    _ped = pedestal_foot_xy()
+    for i, (au, av) in enumerate(_ped):     # no two feet fight for the same floor
+        for bu, bv in _ped[i+1:]:
+            assert math.hypot(au-bu, av-bv) > PEDESTAL_FOOT_BODY_D, (
+                f"PED_FOOT: feet at ({au:.1f}, {av:.1f}) and ({bu:.1f}, {bv:.1f}) overlap")
+        for bu, bv in base_foot_xy():
+            assert math.hypot(au-bu, av-bv) > (PEDESTAL_FOOT_BODY_D + FOOT_BODY_D)/2.0, (
+                f"PED_FOOT: foot at ({au:.1f}, {av:.1f}) overlaps the floor foot "
+                f"at ({bu:.1f}, {bv:.1f})")
+    _vent_bb = [_bbox(c) for c in _bottom_vents_local(W-2*T, D-2*T)
+                if c.get("kind") == "rect"]
+    for au, av in _ped:                     # a foot over a vent slot has no floor
+        for b in _vent_bb:
+            assert not (b[0] < au+_pfr and au-_pfr < b[2] and
+                        b[1] < av+_pfr and av-_pfr < b[3]), (
+                f"PED_FOOT: foot at ({au:.1f}, {av:.1f}) sits over an intake vent slot")
 
     # 3c. the front gap absorbed the deeper Cherub slot; keep it usable
     assert FRONT_GAP >= 40.0, f"FRONT_GAP: {FRONT_GAP:.1f} mm < 40 -- pedals crowd the screen block"
@@ -3283,6 +3374,18 @@ def platform_foot_holes():
                         "d": D_M3_METAL, "ref": "PLAT_SCR"})
     return out
 
+def pedestal_foot_xy():
+    """Forty floor supports, one on each chassis screw (issue #1019).
+
+    The same stations platform_foot_holes() already bores, read in bottom-plate
+    (u, v). These carry the stomp straight from the pedestal to the ground
+    instead of through the sheet, and they add NO holes: the screws are there.
+    """
+    cs = math.cos(math.radians(SLOPE_ANGLE))
+    return [(u + fy, v * cs + fx)
+            for _label, u, v in PEDALS
+            for fx, fy in platform_foot_xy()]
+
 def dxf_rear_panel(path):
     """The dismountable rear I/O panel: a flat plate that closes the rear WINDOW with
     a bolt-on overlap and carries all nine connector stations. Its separate
@@ -3306,11 +3409,13 @@ def dxf_rear_panel(path):
 # bracket fallback was dropped entirely (user call 2026-08-18).
 
 def dxf_post(path):
-    """Base-anchored faceplate support post (issue #292), x2: a folded C -- foot
-    (bolts to the base floor, M4 x2) + vertical web + top pad, foot and pad both
-    forward of the web (all in the clear strip in front of the 16in aperture, nothing
-    under the display). A felt cap on the pad bears on the faceplate underside,
-    propping the one zone the perimeter folds do not reach. Load runs to the base, not
+    """Base-anchored faceplate support post (issue #292), one per POST_U station:
+    a folded C -- foot (bolts to the base floor, M4 x2) + vertical web + top pad,
+    foot and pad both forward of the web (all in the clear strip behind the front
+    pedal slots, nothing under a display). A felt cap on the pad bears on the
+    faceplate underside. #292 put two of these in front of the 16in aperture;
+    #1019 measured the rest of that band denting at 7-11 kg of point load against
+    170 kg over a pad, so there is now one at every pedal gap. Load runs to the base, not
     the lid, so nothing shows on the top face and the lid still lifts off. The
     pad->web fold is 90 + POST_TILT deg so the pad beds FLUSH on the sloped underside;
     the foot->web fold is 90. Flat DEVELOPED with post_deduct (K 0.33, Ri = T)."""
@@ -3325,7 +3430,7 @@ def dxf_post(path):
         _circle(msp, pw/2.0 + du, Wd - foot/2.0, D_M4)
     _note(msp, 5, Wd+6,
           f"Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de {POST_T:.1f} mm "
-          f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C; medidas EXTERIORES apoyo {POST_PAD_OUT:.2f} / "
+          f"(NO es el aluminio del gabinete)  CANT. {len(POST_U)}  plegado en C; medidas EXTERIORES apoyo {POST_PAD_OUT:.2f} / "
           f"alma {POST_WEB_OUT:.2f} / pie {POST_FOOT_OUT:.2f} mm (interiores {pad:.0f} / {web:.1f} / {foot:.0f}); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
           f"de {POST_TILT:.1f}°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), "
           f"fieltro sobre el apoyo; holgura perpendicular nominal SIN PINTAR {POST_BARE_GAP:.1f} mm, medir nuevamente después de pintar con todos los asientos de tapa pintados. Medir la holgura final montada y ajustar el fieltro sin levantar la tapa de sus asientos; deducción aplicada (K {KF}, Ri {POST_RI:.1f}): {POST_DD_PAD:.2f} mm en el plegado del apoyo, "
@@ -5561,8 +5666,9 @@ def build_step():
 # identifiers shared with the DXF/STEP files and the vendor zips, and the shop
 # matches a sheet to a file by them. Numbers, units, symbols (Ø ± °) and standard
 # designations (5052-H32, M3, K, R2) are international and are left alone.
-AL_SHEET  = f"aluminio 1050 de {T:.1f} mm"
-AL_REAR_PANEL = f"aluminio 1050 de {REAR_PANEL_T:.1f} mm"
+AL_SHEET  = f"aluminio {ALLOY_2MM} de {T:.1f} mm"
+AL_REAR_PANEL = (f"aluminio de {REAR_PANEL_T:.1f} mm "
+                 f"(aleación y temple {ALLOY_REAR})")
 STEEL_CR  = f"acero laminado en frío de {POST_T:.1f} mm"
 PLY_2MM   = (f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
              "(capa negra / núcleo blanco) - NO ES METAL")
@@ -5581,7 +5687,7 @@ PART_SPECS = {
     "segno_ring_disc":           (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_corner_bracket_rear": (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_corner_bracket_rear_mirrored": (AL_SHEET, 1, PKG_SHEETMETAL),
-    "segno_post":                (STEEL_CR, 2, PKG_SHEETMETAL),
+    "segno_post":                (STEEL_CR, len(POST_U), PKG_SHEETMETAL),
     "segno_pedal_tiles":         (PLY_2MM, 10, PKG_TILES),
 }
 
@@ -6115,8 +6221,8 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
 # stale the way a hand-typed parts table does.
 # ===========================================================================
 
-AL_2MM = "Aluminio 1050 2,0 mm"
-AL_PANEL_PAINT = f"Aluminio 1050 {REAR_PANEL_T:.1f} mm".replace(".",",")
+AL_2MM = f"Aluminio {ALLOY_2MM} 2,0 mm"
+AL_PANEL_PAINT = f"Aluminio {REAR_PANEL_T:.1f} mm ({ALLOY_REAR})".replace(".",",")
 ST_16  = "Acero laminado en frío 1,6 mm"
 
 PAINT_FINISH = "Negro liso mate (RAL 9005) - a confirmar contra cupón de muestra"
@@ -6132,7 +6238,7 @@ PAINT_BOM = [
     ("segno_corner_bracket_rear","Ángulo trasero derecho",                      1, AL_2MM, "Interno; perfil derecho"),
     ("segno_corner_bracket_rear_mirrored","Ángulo trasero izquierdo",           1, AL_2MM, "Interno; perfil izquierdo"),
     ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM, "Pintar canto y paso recto; sin bisel: Ø final 51,27-51,45; paso 8,25-8,43 mm"),
-    ("segno_post",               "Poste de apoyo de la tapa",                   2, ST_16,  "ACERO: otro pretratamiento"),
+    ("segno_post",               "Poste de apoyo de la tapa",         len(POST_U), ST_16,  "ACERO: otro pretratamiento"),
 ]
 
 def _verify_paint_bom():
@@ -6321,7 +6427,7 @@ def paint_quote_pdf(path):
         y = 0.885
         for k, v in (("Dimensiones nominales del diseño",
                       f"{W:.0f} x {D:.0f} x {H_REAR:.0f} mm"),
-                     ("Material del cuerpo", f"Aluminio 1050 de {T:.1f} mm; panel trasero {REAR_PANEL_T:.1f} mm (láser)".replace(".",",")),
+                     ("Material del cuerpo", f"Aluminio {ALLOY_2MM} de {T:.1f} mm; panel trasero {REAR_PANEL_T:.1f} mm, aleación {ALLOY_REAR} (láser)".replace(".",",")),
                      ("Terminación pedida", PAINT_FINISH),
                      ("Superficie de referencia", f"{grand:.2f} m2 por equipo (ambas caras, sin contar cantos)"),
                      ("Cantidad", "1 unidad prototipo; después por lotes")):
@@ -6440,7 +6546,7 @@ def report():
     P("="*68)
     P(f"Envelope        : {W:.0f} W x {D:.0f} D x {H_REAR:.0f} H mm (front lip {H_FRONT:.0f})")
     P(f"Top slope       : {SLOPE_ANGLE:.2f}deg, sloped length {L_SLOPE:.1f} mm")
-    P(f"Material        : {T:.1f} mm 1050 Al, bend R {RI:.1f}, K={KF}, BA90 {BA90:.2f}")
+    P(f"Material        : {T:.1f} mm {ALLOY_2MM} Al (cert lot 26E0269; design to the\n                  95 MPa spec minimum, not the lot's 127), bend R {RI:.1f}, K={KF}, BA90 {BA90:.2f}")
     P(f"Construction    : folded weld-free lower body + REMOVABLE TOP LID (faceplate carries")
     P(f"                  screens + encoder/ring PCB + LEDs; pedals stay on platforms)")
     P("-"*68)
@@ -6468,7 +6574,7 @@ def report():
     P("-"*68)
     P(f"Faceplate cutouts : {len(cuts)}  |  rear-wall cutouts : {len(rear_holes())}")
     area = (W*D + W*L_SLOPE + W*REAR_WALL_H + W*H_FRONT) + 2*(D*(H_FRONT+H_REAR)/2)
-    for mat, rho in (("5052 Al", 2.70), ("mild steel", 7.85)):
+    for mat, rho in ((f"{ALLOY_2MM} Al", 2.71), ("mild steel", 7.85)):
         P(f"Bare weight     : {area*T*rho/1e6:4.1f} kg  ({mat}, {T:.1f} mm, {area/1e6:.2f} m2)")
     P("="*68)
     return "\n".join(L)
@@ -6591,6 +6697,10 @@ def _render_parts(cq, explode=0.0):
     for x, y in base_foot_xy():
         add(cq.Solid.makeCone(FOOT_FLOOR_D/2, FOOT_BODY_D/2, FOOT_H,
                              cq.Vector(gx(y), gy(x), -FOOT_H)), FEET)
+    for x, y in pedestal_foot_xy():                 # 40x on the chassis screws (#1019)
+        add(cq.Solid.makeCone(PEDESTAL_FOOT_FLOOR_D/2, PEDESTAL_FOOT_BODY_D/2,
+                              PEDESTAL_FOOT_H,
+                              cq.Vector(gx(y), gy(x), -PEDESTAL_FOOT_H)), FEET)
     for name,cx,cy,(sx,sy) in board_mounts():       # M3 standoffs under Pi + board
         for dx in (-sx/2,sx/2):
             for dy in (-sy/2,sy/2):
@@ -6961,7 +7071,8 @@ DXF_PARTS = [
     ("segno_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
     ("segno_corner_bracket_rear", dxf_corner_bracket),
     ("segno_corner_bracket_rear_mirrored", lambda p: dxf_corner_bracket(p, mirrored=True)),
-    ("segno_post",             dxf_post),  # base-anchored faceplate support post x2 (issue #292)
+    ("segno_post",             dxf_post),  # base-anchored faceplate support post, one per
+                                           # pedal gap (issue #292 sized it, #1019 spread it)
 ]
 NO_PDF = set()   # every sheet part ships with a PDF drawing
 
@@ -7426,8 +7537,10 @@ def _verify_drawing_package(with_pdf=True, *, check_archives=True):
         mat, qty, pkg = PART_SPECS[stem]
         assert mat and isinstance(qty, int) and qty >= 1, f"{stem}: bad material/qty {mat!r}/{qty!r}"
         assert pkg in (PKG_SHEETMETAL, PKG_TILES), f"{stem}: unknown package {pkg!r}"
-    assert PART_SPECS["segno_post"][0] == STEEL_CR and PART_SPECS["segno_post"][1] == 2, \
-        "the support post is 1.6 mm cold-rolled steel x2, per MANUFACTURING.md section 1"
+    assert PART_SPECS["segno_post"][0] == STEEL_CR and \
+           PART_SPECS["segno_post"][1] == len(POST_U), (
+        "the support post is 1.6 mm cold-rolled steel, one per POST_U station, "
+        "per MANUFACTURING.md section 1")
     assert all(PART_SPECS[stem][1] == 1 for stem in
                ("segno_corner_bracket_rear","segno_corner_bracket_rear_mirrored")), (
         "rear brackets require one right and one left part")

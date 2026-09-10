@@ -36,7 +36,7 @@ Labels are carried by the individual pedal tiles; there is no faceplate overlay.
 | `segno_corner_bracket_rear` | 1 | 2.0 Al | Right rear internal L-bracket; use its handed upper profile and STEP placement. |
 | `segno_corner_bracket_rear_mirrored` | 1 | 2.0 Al | Left rear internal L-bracket; cut its separate file and mount inverted as shown in STEP. |
 | `segno_ring_disc` | 1 | 2.0 Al | Encoder LED-ring centre disc. |
-| `segno_post` | 2 | **1.6 CR steel** | Faceplate support posts — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. |
+| `segno_post` | 7 | **1.6 CR steel** | Faceplate support posts — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. |
 
 (The old `segno_screen_bracket` ×8 row is gone deliberately: the screens mount
 on printed stands anchored to the base floor (#762), not on sheet brackets.)
@@ -81,9 +81,10 @@ sheet claimed "2.0 mm 5052-H32 Al, qty 1" — including the steel post, ×2.
   earth-stud bonding land: cut it and the base is scrap and the safety earth is
   gone.
 
-Material: **2.0 mm 1050 aluminium** for base, lid, brackets and ring disc;
-**1.2 mm 1050 aluminium** for the flat rear panel; **1.6 mm cold-rolled steel**
-for the posts. The development assumes K=0.33, R2 for folded aluminium and
+Material: **2.0 mm 1100-H14 aluminium** for base, lid, brackets and ring disc
+(Alcast certificate, lot 26E0269 -- the stock was ordered as 1050 and is not);
+**1.2 mm aluminium, alloy and temper to be confirmed by the shop**, for the flat
+rear panel; **1.6 mm cold-rolled steel** for the posts. The development assumes K=0.33, R2 for folded aluminium and
 R1.6 for the posts. The shop must confirm stock temper, gauge and actual bend
 development with its tools.
 **Current source, exports and native metal models have passed local checks.**
@@ -193,7 +194,7 @@ Use edge-only retention outside the bearing faces and bore, keeping each pack
 with the base when the lid lifts off. No adhesive between shim layers or on the
 lid. No shims or retention adhesive enter pretreatment or the oven. Qualify
 clamping and coating durability using the actual painted joint; steel screw
-torque tables do not qualify M3 threads in 2 mm 1050 aluminium.
+torque tables do not qualify M3 threads in 2 mm 1100-H14 aluminium.
 
 **Encoder disc: laser cut, no chamfer.** Bare outside diameter **51.20±0.05**
 and straight through-hole **Ø8.50±0.05**. Deburr without a specified bevel;

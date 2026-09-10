@@ -1,6 +1,7 @@
-"""Fifteen floor supports: cutting and nominal assembly-clearance regressions.
+"""Twenty floor supports: cutting and nominal assembly-clearance regressions.
 
-These checks do not establish strength or load sharing. The purchased foot is
+These checks do not establish strength or load sharing; the rated-load
+answer lives in _stomp_fea.py and test_pedestal_feet.py. The purchased foot is
 modelled as Ø18 x 5 mm; Ø9 x 5 mm top hardware and Ø9 existing underside hardware
 are conservative design envelopes, not verified measurements of every screw.
 The converter washers use the separately specified Ø12 mm envelope.
@@ -34,7 +35,11 @@ ADDED = ((119.571429, 66.198026), (321.857143, 66.198026),
          (119.571429, 374.0), (321.857143, 374.0),
          (524.142857, 374.0), (726.428571, 374.0),
          (321.857143, 229.968960),
-         (625.285714, 131.439982), (726.428571, 131.439982))
+         # one forward of every steel-post foot -- this row follows POST_U, so
+         # it went from two to seven when the posts spread across the band (#1019)
+         (119.571429, 131.44), (220.714286, 131.44), (321.857143, 131.44),
+         (423.0, 131.44), (524.142857, 131.44),
+         (625.285714, 131.44), (726.428571, 131.44))
 FOOT_RADIUS = 9.0
 HEAD_RADIUS = 4.5
 HEAD_HEIGHT = 5.0
@@ -94,9 +99,11 @@ class FloorSupportTest(unittest.TestCase):
         cls.obstacles['7-inch tower'] = cls.tower
         for side in ('L', 'R'):
             cls.obstacles['16-inch stand '+side] = parts['segno_screen16_stand_'+side]
-        for index, x in enumerate((609.9285714285714, 710.9285714285714)):
+        # one steel post per POST_U station (#1019); the placement follows the
+        # generator so the obstacle set cannot drift from the shipped geometry
+        for index, u in enumerate(enclosure.POST_U):
             cls.obstacles['steel post '+str(index)] = parts['segno_post'].translate(
-                (x, 138.99693697984182, 2.0))
+                (u - enclosure.POST_PW/2.0, 138.99693697984182, 2.0))
         # Supplier image envelope at the two recorded floor placements. Using
         # its full rectangular volume is conservative around the mounting ears.
         for name, x in (('left converter', 372.15), ('right converter', 447.85)):
@@ -145,9 +152,9 @@ class FloorSupportTest(unittest.TestCase):
         self.assertGreater(self.underside_clearance(point), .25,
                            'Foot overlaps existing underside hardware')
 
-    def test_fresh_cut_dxf_contains_all_fifteen_unique_clearance_holes(self):
-        self.assertEqual(len(self.feet), 15)
-        self.assertEqual(len(set(map(rounded, self.feet))), 15)
+    def test_fresh_cut_dxf_contains_all_twenty_unique_clearance_holes(self):
+        self.assertEqual(len(self.feet), 20)
+        self.assertEqual(len(set(map(rounded, self.feet))), 20)
         self.assertCountEqual(list(map(rounded, self.feet)),
                               list(map(rounded, ORIGINAL+ADDED)))
         self.assertTrue(set(map(rounded, ORIGINAL)).issubset(map(rounded, self.feet)))

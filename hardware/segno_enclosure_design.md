@@ -43,7 +43,7 @@ override those dimensions or the separate metal-shop/painter sequence.
 | Depth `D` | **423 mm** | 397 mm control-face run +22 mm rear transition +4 mm sheet allowance |
 | Rear height | **100 mm** / front lip **12 mm** | low-raked wedge |
 | Top slope | **12.5°** | sloped length 407 mm |
-| Material | **2.0 mm 1050 aluminium** (shop stock, owner 2026-09-04) | bend R 2.0, K 0.33 |
+| Material | **2.0 mm 1100-H14 aluminium** (Alcast cert, lot 26E0269) | bend R 2.0, K 0.33 |
 
 **Construction = folded lower body + removable lid. Nothing is welded.**
 `segno_base` is one blank: floor, four walls and the rear transition shoulder.
@@ -177,15 +177,16 @@ fully internal.
 >
 > On the **10-pedal console**, all rings are secured to the bottom base rather
 > than retained by the faceplate. The eight front rings keep the single joint:
-> four nominal M3×8 chassis screws pass through 2 mm metal and the 2.043 mm
-> printed floor into the front sled's lower inserts. Front rings have clearance
+> four chassis screws pass through the pedestal foot, 2 mm metal and the
+> 2.043 mm printed floor into the front sled's lower inserts. The foot adds its
+> uncounterbored 2.5 mm to the stack, so the nominal M3×8 becomes **M3×12**. Front rings have clearance
 > holes and no inserts of their own.
 >
 > The two **CLEAR/BANK rings use two independent joints**. Their four column
 > feet have bottom-facing Ø4.5 ×6 mm blind pockets for M3 Ø5 ×5 mm inserts, on
 > the unchanged `platform_foot_xy()` pattern, local X = ±48.685 mm and
-> Y = ±22.1875 mm. Nominal M3×6 screws pass through the 2 mm metal base into
-> these inserts. Four separate Ø3.7 mm holes cross the 8 mm deck at local
+> Y = ±22.1875 mm. These screws also pick up a pedestal foot, so the nominal M3×6
+> becomes **M3×10** through the foot and the 2 mm metal base into these inserts. Four separate Ø3.7 mm holes cross the 8 mm deck at local
 > X = ±30 mm, Y = ±18 mm; nominal M3×12 screws enter the dedicated mid sled's
 > bottom inserts from the open underside cavity. Each joint has 4 mm nominal
 > bare insertion before any washer or insert recess; coating also reduces the
@@ -272,7 +273,9 @@ on the individual pedal tiles; no full-face overlay or logo cutout is required.
 
 ## 4. Rear I/O & ventilation
 
-The rear connectors mount in a removable **1.2 mm aluminium 1050 panel**, from
+The rear connectors mount in a removable **1.2 mm aluminium panel** whose alloy
+and temper the shop still has to confirm (the certificate covers the 2.00 mm
+sheet only), from
 inside the base's rear-wall window. The panel centre follows the main screen;
 `rear_io_layout()` spreads nine stations over 360 mm with equal keep-out gaps.
 The generated source and `MANUFACTURING.md` define the current revision.
@@ -462,19 +465,42 @@ standoff holes in the rear; an **intake-vent block** in the clear gap between th
 two platform rows (air crosses the boards to the rear-wall exhaust); and 15 rubber
 feet. The electronics are reached from the **open top** once the lid is lifted.
 
-**Rubber feet.** Fifteen mechanical fixing sets pass down from inside the case
+**Rubber feet.** Twenty mechanical fixing sets pass down from inside the case
 through Ø4.80(+0.10/−0.00) bare floor holes. The reference uxcell foot is
 Ø18 at the chassis, Ø15 at the floor and 5 mm tall, with a metal washer insert.
 That washer does not establish its screw thread or retention method. Verify
 the actual feet, choose matching hardware and check screw-tip recess; do not
 order the former guessed 12 mm self-tapper. Retain the four corner stations;
 add four front feet at every second pedal gap, four rear feet aligned with them,
-one beside CLEAR/BANK and two immediately forward of the steel-post feet.
+one beside CLEAR/BANK and one immediately forward of each steel-post foot — that
+last set follows `POST_U`, so it grew from two to seven with the posts.
 `base_foot_xy()` drives the cutting holes and preview. The clearance review
 assumes top screw/washer envelopes no larger than Ø9 ×5 mm. Install before the
-screen supports, verify access and loaded floor contact with the actual feet,
-and qualify the assembled structure; fifteen supports do not establish equal
-load sharing or a rated force.
+screen supports, and verify access and loaded floor contact with the actual feet.
+
+**Pedestal feet (issue #1019) — the ones that carry the playing.** The twenty
+above sit in the gaps *between* pedals, so a stomp reaches them only by bending
+the 2.0 mm floor: 353 MPa and 23 mm of travel under 1 kN on one pedal, first
+yield at about 360 N. Even a rigidly pinned perimeter, more than a 12 mm front
+wall and a screwed-down lid can deliver, tops out at 914 N, so no amount of shell
+stiffening fixes it. `_stomp_fea.py` and
+[the rated-load analysis](../docs/research/2026-09-09-enclosure-stomp-load-analysis.md)
+have the model and its validation.
+
+The cure is to keep the stomp out of the sheet. Every pedestal's four chassis
+screws already come **up** through the floor from below, so a foot on each screw
+head puts the load on the ground: 89 MPa and 1.4 mm at 1 kN, first yield about
+1425 N, and still 86 MPa with any one of a pedal's four feet not touching. Forty
+feet, on the stations `pedestal_foot_xy()` returns — the same ones
+`platform_foot_holes()` already bores. **No new holes; `segno_base.dxf` does not
+change.** They must share the Ø18 × Ø15 × 5 envelope of the twenty floor feet so
+the console stands on one foot height, and they are through-bored Ø3.4 with a
+Ø6.5 × 2.5 counterbore so the screw head does not stand on the floor. `_check()`
+gates the envelope, the overlaps and the vent clearances; the part itself is as
+PROVISIONAL as the floor feet, so verify the real one. Feed the counterbore into
+the screw length, and check that a 0.5 mm height spread across the sixty feet
+does not unload one — at the ~400 N/mm the analysis assumed, that error is worth
+200 N.
 
 ---
 
@@ -539,9 +565,20 @@ negative-controlled.
 
 ## 7. Material & weight
 
-Current materials are 2.0 mm aluminium 1050 for the base, lid, two rear brackets
-and encoder disc; 1.2 mm aluminium 1050 for the I/O panel; and 1.6 mm cold-rolled
-steel for the two support posts. The former all-5052 /all-steel mass estimates
+Current materials are 2.0 mm aluminium **1100-H14** for the base, lid, two rear
+brackets and encoder disc; 1.2 mm aluminium of unconfirmed alloy for the I/O
+panel; and 1.6 mm cold-rolled steel for the **seven** support posts.
+
+The 2.0 mm stock was ordered as 1050 and is not. Alcast's certificate for lot
+26E0269 (2026-04-01) reports 1100-H14 at Rp0.2 127 MPa, Rm 145 MPa and 10%
+elongation, all inside the ABNT NBR 7823 limits, whose **minimum proof stress is
+95 MPa**. Design to the 95: 127 belongs to that coil, and a later coil will not
+be it unless each delivery carries its own certificate. Stiffness is unaffected
+either way -- E is about 69 GPa for 1050, 1100 and 5052 alike, so no alloy call
+moves a deflection. The powder cure is a separate unknown: 1100 draws its
+strength from cold work, and a 180-200 degC bake can recover some of it. No
+validated residual-strength curve was found for this cycle, so do not assume a
+deduction and do not assume there is none. The former all-5052 /all-steel mass estimates
 are historical and are not the current order. Use current solid volumes and
 actual stock densities for a mass estimate, then weigh the assembled prototype.
 

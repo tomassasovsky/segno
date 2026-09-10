@@ -366,7 +366,7 @@ class ManufacturingFitTest(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, 'differs from its verified export'):
                     enclosure._formed_record(stem)
 
-    def test_assembly_has_eight_made_parts_and_twenty_seven_purchased_references(self):
+    def test_assembly_has_every_made_part_and_twenty_seven_purchased_references(self):
         source = Path(enclosure.HERE)/'out'
         with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure, 'OUT', tmp):
             for stem in (*enclosure.FORMED_PARTS,'segno_rear_panel'):
@@ -376,7 +376,8 @@ class ManufacturingFitTest(unittest.TestCase):
             assembly = cq.importers.importStep(path).val()
             self.assertTrue(assembly.isValid())
             solids = assembly.Solids()
-            self.assertEqual(len(solids),35)
+            posts = len(enclosure.POST_U)          # one per pedal gap since #1019
+            self.assertEqual(len(solids),33+posts)
             names = re.findall(r"NEXT_ASSEMBLY_USAGE_OCCURRENCE\('[^']*',\s*'([^']*)'",
                                Path(path).read_text())
             purchased = {f'PURCHASED_FITTED_FRONT_SHIM_PACK_{i}' for i in range(1,10)}
@@ -384,23 +385,23 @@ class ManufacturingFitTest(unittest.TestCase):
                           for end in ('FRONT','REAR')for i in range(1,10)}
             self.assertEqual(set(names),purchased | {
                 'segno_base_1','segno_faceplate_1','segno_corner_bracket_rear_1',
-                'segno_corner_bracket_rear_mirrored_1','segno_rear_panel','segno_post_1',
-                'segno_post_2','segno_ring_disc'})
-            self.assertEqual(len(names),35)
+                'segno_corner_bracket_rear_mirrored_1','segno_rear_panel',
+                'segno_ring_disc'} | {f'segno_post_{i}' for i in range(1,posts+1)})
+            self.assertEqual(len(names),33+posts)
             shims = [s for s in solids if len(self._cylinder_axes(s,2.05)) == 1
                      and s.BoundingBox().xlen < 10]
             washers = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 1
                        and len(self._cylinder_axes(s,3.5)) == 1]
             self.assertEqual(len(shims),9)
             self.assertEqual(len(washers),18)
-            self.assertEqual(len(solids)-len(shims)-len(washers),8)
+            self.assertEqual(len(solids)-len(shims)-len(washers),6+posts)
             base, lid = sorted(solids,key=lambda s:s.Volume(),reverse=True)[:2]
             self.assertAlmostEqual(base.BoundingBox().zmin,0.0,places=5)
             self.assertAlmostEqual(lid.BoundingBox().ymin,-4.4108425,places=4)
             self.assertLess(abs(lid.BoundingBox().zmin),.001)
-            posts = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 2
-                     and len(self._cylinder_axes(s,3.2)) == 2]
-            self.assertEqual(len(posts),2)
+            post_solids = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 2
+                           and len(self._cylinder_axes(s,3.2)) == 2]
+            self.assertEqual(len(post_solids),posts)
             self._assert_remaining_seats(solids,base,lid)
             self._assert_front_shim_seats(shims,base,lid)
             self._assert_lid_washer_seats(washers,lid)
@@ -411,7 +412,7 @@ class ManufacturingFitTest(unittest.TestCase):
                          else s for s in solids]
             with self.assertRaises(AssertionError):
                 self._assert_remaining_seats(displaced,base,lid)
-            for post in posts:
+            for post in post_solids:
                 self.assertAlmostEqual(post.BoundingBox().zmin,2.0,places=5)
                 self.assertLess(post.intersect(lid).Volume(),.001)
                 self.assertLess(post.intersect(base).Volume(),.001)
