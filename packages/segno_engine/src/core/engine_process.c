@@ -318,16 +318,31 @@ static void le_apply_mode_switch(le_engine* e, int32_t m) {
   const int32_t prev = load_i32(&e->a_looper_mode);
   if (prev == m) return;
   store_i32(&e->a_looper_mode, m);
-  const int32_t primary = le_mode_base_channel(e, m);
-  if (primary < 0) return; /* nothing recorded: nothing to re-clock */
   const int to_free = m == LE_LOOPER_MODE_FREE || m == LE_LOOPER_MODE_SONG;
+  /* Free/Song put the shared master DORMANT, and that must happen whether or
+   * not anything is recorded — before the "nothing to re-clock" return below.
+   * An undo-to-empty deliberately keeps the master so redo can restore
+   * through it, so an empty-looking rig can still be carrying a live clock;
+   * leaving it running here let the next Free take be rounded to the erased
+   * take's length and play on its clock rather than its own. Both halves of
+   * this function then leave the master a pure function of the mode. */
   if (to_free) {
     le_loop_clock_reset(&e->clock);
     e->loop_iteration = 0;
     store_i32(&e->a_master_len, 0);
     store_i32(&e->a_master_pos, 0);
+    /* The grid dies with the master it measured: a shared bar count means
+     * nothing once every take runs its own clock. The TEMPO and its source
+     * survive, exactly as at handle_clear's all-empty reset (D6). */
+    store_i32(&e->a_loop_bars, 0);
+    store_i32(&e->a_current_beat, 0);
+    e->grid_total_beats = 0;
+    e->grid_prev_beat = -1;
     e->loop_viz_bucket = -1;
-  } else {
+  }
+  const int32_t primary = le_mode_base_channel(e, m);
+  if (primary < 0) return; /* nothing recorded: nothing to re-clock */
+  if (!to_free) {
     const int32_t base = load_i32(&e->tracks[primary].lanes[0].a_len);
     le_loop_clock_set_length(&e->clock, base);
     e->loop_iteration = 0;

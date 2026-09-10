@@ -491,12 +491,20 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
-    on<LooperModeChanged>(
-      // Persisted from the reported state (LooperStateUpdated above), not
-      // from this call: a refused or dropped change must not become the mode
-      // the rig boots into.
-      (event, _) => _repository.setLooperMode(event.mode),
-    );
+    on<LooperModeChanged>((event, _) {
+      _repository.setLooperMode(event.mode);
+      // Persisted from what the REPOSITORY holds, never from the event: a
+      // refused change leaves the old mode standing there and writes it back
+      // unchanged, and a change the audio thread later drops is corrected by
+      // the reported-state guard above.
+      //
+      // Written here as well as there because a mode chosen while the engine
+      // is closed never reaches the engine at all — it is replayed at the next
+      // start — so the report can never carry it, and the guard above, which
+      // fires on a CHANGE in the report, would write nothing. The choice
+      // worked for the session and reverted on the next launch.
+      unawaited(_settings?.saveLooperMode(_repository.intendedLooperMode.code));
+    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);
