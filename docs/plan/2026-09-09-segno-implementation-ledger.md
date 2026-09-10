@@ -1431,3 +1431,115 @@ enum, the mode cycle, the entry switch, the press matrix, the LED and caption
 projection, the invariants, the pedal protocol and the firmware. That is its
 own change and its own risk.
 
+
+## Slice 3e — FX placement and printing (#1016 part 3e)
+
+Five things: placement per instance, Pre printed once from the dry originals,
+the All tracks recorded-mix chain, channel handling and level per instance,
+and instance identities that survive all of it.
+
+### Placement
+
+- **It rides the ENTRY, not the address.** A pedal binding persists an
+  `FxAddress` plus a slot id, and the accepted design requires a placement
+  move to keep its assignment — so putting placement on the address would
+  break the one thing the move must preserve.
+- **A chain is stored Pre-first**, so the split the engine has to know is one
+  boundary index rather than a per-slot flag. The write boundary partitions
+  BEFORE it clamps: a clamp that cut across the partition would name a Pre
+  count larger than the chain describing it.
+- **The partition is stable**, so re-partitioning an ordered chain is the
+  identity and a reorder within a stage survives the next write. Reorder is
+  refused across the boundary on every chain, because the chain would be
+  re-partitioned straight back.
+- **Post is the wire default and is omitted**, so a chain with no Pre entry
+  persists byte for byte as before. The legacy `stage` integer of a different,
+  removed pre/post model is still ignored on decode.
+- Live inputs and recorded parts have a setter. Whole tracks and outputs do
+  not — see the deferral below.
+
+### The print
+
+The loop-stage wet cache becomes the printer. It renders exactly the Pre
+prefix from the lane's dry pool and swaps the result in at the lane's own loop
+boundary. That IS the accepted "prepared from original sources" and "switched
+at an audio-safe boundary", and the recording is untouched: the print is a
+rendered copy, so the dry original stays the render source however many times
+the Pre chain is edited.
+
+- **Post stays live, printed or not.** Not a choice: a Post tail has to be
+  able to drain past a Stop and a baked tail cannot, so the whole-chain render
+  the cache used to do was already at odds with the tail contract slice 3b
+  shipped. The cost is that a cached lane now pays its Post chain's CPU, where
+  before it paid none and its Post tail could not drain at all.
+- **The key is the Pre prefix**, so a Post edit leaves the print standing
+  rather than dropping the lane to live processing for a change that cannot
+  make the render stale. The channel handling folds into that key too.
+- **Stop takes the Pre tails with it.** There is no single place a track stops
+  in this engine, so the edge out of sounding is watched per track. A Pre-only
+  chain is additionally carried by the route closing; a chain with both needs
+  the clear, which is what the second tail test pins.
+
+### The All tracks chain
+
+One config, one DSP instance per output bus. Since slice 3b every source picks
+its own destinations, so "the combined recorded mix" is a per-destination
+quantity: a track on Main and a track on Monitor are two different mixes, and
+one shared instance would have to send each track's audio to the other's
+jacks. The chain the player edits is one; the filter memory cannot be.
+
+Topology keys off emptiness like the track bus, so an empty chain leaves the
+tracks routing straight to their outputs bit-identically. It persists with its
+own settings key and a manifest field at schema v8.
+
+### Channel handling
+
+Per instance, on every chain owner: input choice before the effects, output
+choice and then level after them, on the engine's one unity-centre pan law.
+The choices ride the entry's FEED, so a bypassed entry passes the pair through
+exactly as it arrived. Read from a per-chain cache refreshed once per buffer —
+the arrangement the enable bits use — so the hot path costs one flag on an
+untouched chain and needs no per-lane array.
+
+### Deviations and deferrals
+
+- **A whole track's chain is stored wholly Post**, like an output chain. The
+  accepted design does give a whole track a Pre/Post switch, but a Pre entry
+  is printed from a dry original and this stage has none: it processes the SUM
+  of the track's parts, computed live from lanes that each own their own
+  recording. Delivering it needs either a per-part fan-out (one instance, N
+  engine slots, and an identity story for that) or a bounce, which the design
+  treats as its own journey. Storing a placement the engine cannot honour
+  would be a control that reads as doing something and does not, so the
+  write boundary forces Post and the question is recorded on #1016.
+- **The All tracks chain is not an `FxStage` yet.** An address is what a pedal
+  binding persists, so it arrives with the surface that can show what a
+  binding points at — slice 3f. The engine and the repository own the chain
+  from here.
+- **The offline performance renderer does not model the Pre tail cut.** It
+  replays the lane chain from the event log, which carries no channel handling
+  and no stop-edge tail clear; it already documents its divergences from the
+  live engine and this joins them.
+
+### Checks
+
+- Native suite green in all five variants, before and after every change.
+- Dart: root 2261 passing and 35 skipped; `looper_repository` 495;
+  `session_repository` 105; `settings_repository` 155; `segno_engine` 283.
+  `dart analyze` clean at the root and in every touched package.
+- Mutation-checked, each failing exactly the test that names it: clamping
+  before partitioning, moving a re-placed entry in place instead of to its
+  stage end, dropping the output stage's fixed Post, an unstable partition,
+  always writing the placement key, dropping placement from a boundary arm or
+  from equality, never pushing the Pre count, dropping the Stop-edge Pre tail
+  clear, printing the whole chain instead of the Pre prefix, dropping the
+  printed slots' masking, sharing one All tracks instance across destinations,
+  writing an empty All tracks chain to the manifest, applying the channel
+  handling to the dry as well as the wet, dropping the generation bump on a
+  channel change, and pushing only the first entry's channels.
+- Two tests were rewritten after a mutation survived them: the stage-end move
+  (the entry had no stage-mate to be ordered behind) and the per-destination
+  All tracks claim (a memoryless effect cannot show shared filter memory).
+- Two of my own claims were withdrawn rather than shipped unobservable: a
+  routing predicate keyed on a Post tail, and the pan-law reconstruction that
+  a truncated read produced — recovered from git before it reached a commit.
