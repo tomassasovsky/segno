@@ -7,6 +7,7 @@ import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/common/pen_icons.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/performance/performance.dart';
@@ -59,6 +60,7 @@ class StageTopBar extends StatelessWidget {
           const SizedBox(width: _gap),
           const _RecordLight(),
           const Expanded(child: _SessionName()),
+          const _ResetMixerButton(),
           const _BankButton(),
           const SizedBox(width: _gap),
           const _ViewButton(),
@@ -148,6 +150,41 @@ class _SessionName extends StatelessWidget {
   }
 }
 
+/// Reset mixer, drawn only while the Mixer is showing.
+///
+/// Every track's level back to unity and every pan to centre. Mute, Solo,
+/// effects and the audio itself are untouched — the accepted design is
+/// explicit that this is a mix reset, not a session one.
+///
+/// Only in the Mixer view, because that is where the pen puts it and because
+/// an action that changes eight values at once wants to be beside them.
+class _ResetMixerButton extends StatelessWidget {
+  const _ResetMixerButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    final showing = context.select<TracksCubit, bool>(
+      (cubit) => cubit.state.stageView == StageView.mixer,
+    );
+    if (!showing) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: StageTopBar._gap),
+      child: _StageIconButton(
+        key: const Key('stage_reset_mixer'),
+        semanticLabel: l10n.a11yMixerReset,
+        onTap: () => context.read<LooperBloc>().add(const LooperMixerReset()),
+        child: Icon(
+          LucideIcons.rotateCcw,
+          size: 28,
+          color: surface.textPrimary,
+        ),
+      ),
+    );
+  }
+}
+
 /// The bank button: the visible bank's letter; a tap reveals the other bank's
 /// four tracks without moving the selection or touching playback.
 class _BankButton extends StatelessWidget {
@@ -224,6 +261,7 @@ class _ViewButton extends StatelessWidget {
                     switch (view) {
                       StageView.track => l10n.stageViewTrack,
                       StageView.wave => l10n.stageViewWave,
+                      StageView.mixer => l10n.stageViewMixer,
                     },
                     style: TextStyle(
                       fontFamily: SurfaceTheme.displayFont,
