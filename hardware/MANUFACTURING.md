@@ -36,7 +36,7 @@ Labels are carried by the individual pedal tiles; there is no faceplate overlay.
 | `segno_corner_bracket_rear` | 1 | 2.0 Al | Right rear internal L-bracket; use its handed upper profile and STEP placement. |
 | `segno_corner_bracket_rear_mirrored` | 1 | 2.0 Al | Left rear internal L-bracket; cut its separate file and mount inverted as shown in STEP. |
 | `segno_ring_disc` | 1 | 2.0 Al | Encoder LED-ring centre disc. |
-| `segno_beam` | 1 | **1.6 CR steel** | Faceplate support beam, wall to wall — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. Blank 877.9 × 75.5 mm; four folds, the two wall ears FIRST. |
+| `segno_beam` | 1 | **1.6 CR steel** | Faceplate support beam, wall to wall — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. Blank 877.9 × 75.5 mm; four folds, the two wall ears FIRST. **Grade is the shop's choice**: the worst stress in the part is 78 MPa and the softest cold-rolled mild steel yields around 140. Finished separately from the aluminium and bolted in after coating. |
 
 (The old `segno_screen_bracket` ×8 row is gone deliberately: the screens mount
 on printed stands anchored to the base floor (#762), not on sheet brackets.)

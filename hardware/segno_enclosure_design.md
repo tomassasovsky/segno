@@ -723,6 +723,20 @@ deduction and do not assume there is none. The former all-5052 /all-steel mass e
 are historical and are not the current order. Use current solid volumes and
 actual stock densities for a mass estimate, then weigh the assembled prototype.
 
+**The support beam's steel has no grade called out, deliberately.** The drawing
+says 1.6 mm cold-rolled steel and stops there, because nothing about the beam is
+sensitive to which one. Its worst case is the end overhang: 108.9 mm of C
+section past the outermost bolt, wall tie ignored, and a 1 kN stomp landing on
+the very tip reads 78 MPa. The softest cold-rolled mild steel a shop stocks
+yields around 140, so all of them carry it; on the outermost pedal centreline,
+which is where a stomp can actually land, it is 29 MPa. Stiffness does not
+depend on the choice either, since E is 210 GPa across the range. Everything
+else the beam does is bearing and short-range compression under 7 MPa, and the
+web is nowhere near local buckling at b/t 26.7. Section as drawn: 122.2 mm2,
+I 33,097 mm4 about the horizontal axis, 779 g for the part. What the steel DOES
+change is finishing: it takes a different pretreatment from the aluminium, so it
+is finished separately and bolted in after coating.
+
 ---
 
 ## 8. Generating the package & the assertion gate

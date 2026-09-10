@@ -158,6 +158,42 @@ class SupportBeam(unittest.TestCase):
                                enclosure.BEAM_FOOTL + enclosure.BEAM_T
                                + enclosure.BEAM_EAR_V, places=6)
 
+    def test_the_section_is_strong_enough_that_the_steel_grade_is_free(self):
+        """No grade is called out on the drawing, and this is why.
+
+        The beam's own worst case is its end overhang: 108.9 mm of C section
+        past the outermost bolt, with the wall tie ignored. A 1 kN stomp landing
+        on the very tip reads 78 MPa. The softest cold-rolled mild steel a shop
+        stocks yields around 140, so any of them carries it, and E is 210 GPa
+        for all of them so stiffness does not depend on the choice either.
+        Everything else the beam does is bearing and short-range compression at
+        under 7 MPa.
+        """
+        import cadquery as cq
+        from OCP.BRepGProp import BRepGProp
+        from OCP.GProp import GProp_GProps
+
+        solid = enclosure._beam_solid()
+        windows = enclosure.beam_cable_u()
+        x = (windows[3] + windows[4])/2.0 - enclosure.BEAM_U0    # clear of every cut
+        knife = cq.Workplane('YZ').rect(400, 400).extrude(0.001).val().translate((x, 0, 0))
+        face = max((f for f in solid.intersect(knife).Faces()
+                    if abs(f.normalAt().x) > 0.999), key=lambda f: f.Area())
+        props = GProp_GProps()
+        BRepGProp.SurfaceProperties_s(face.wrapped, props)
+        area, centre = props.Mass(), props.CentreOfMass()
+        second = props.MatrixOfInertia().Value(2, 2)             # about the horizontal axis
+        box = face.BoundingBox()
+        fibre = max(box.zmax - centre.Z(), centre.Z() - box.zmin)
+
+        self.assertAlmostEqual(area, 122.2, places=1)
+        self.assertAlmostEqual(second, 33097, delta=50)
+        overhang = min(enclosure.beam_bolt_u()) - enclosure.BEAM_U0
+        self.assertAlmostEqual(overhang, 108.9, places=1)
+        tip = 1000.0*overhang*fibre/second
+        self.assertLess(tip, 100.0)          # 78.2 as drawn, against a 140 floor
+        self.assertLess(1000.0*overhang**3/(3*210000.0*second), 0.1)
+
     def test_the_fixings_are_slotted_and_the_flat_says_so(self):
         """Plain holes cost the bottom plate 147 MPa at 1 kN; slots, 135."""
         self.assertGreater(enclosure.BEAM_BOLT_SLOT, 0.0)
