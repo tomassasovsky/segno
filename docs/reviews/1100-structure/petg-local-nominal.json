@@ -1,0 +1,38 @@
+[
+  {
+    "name": "mid_retention",
+    "xy": [
+      30,
+      18
+    ],
+    "principal_MPa": 2.7888267445242985,
+    "three_times_nominal_MPa": 8.366480233572895
+  },
+  {
+    "name": "pedal_rear",
+    "xy": [
+      35.695,
+      27.875
+    ],
+    "principal_MPa": 2.183670153719592,
+    "three_times_nominal_MPa": 6.551010461158776
+  },
+  {
+    "name": "pedal_front",
+    "xy": [
+      -44.305,
+      26.5
+    ],
+    "principal_MPa": 1.8823048020827906,
+    "three_times_nominal_MPa": 5.646914406248372
+  },
+  {
+    "name": "column",
+    "xy": [
+      48.685,
+      22.1875
+    ],
+    "principal_MPa": 1.632358267302295,
+    "three_times_nominal_MPa": 4.897074801906885
+  }
+]

@@ -1,0 +1,76 @@
+{
+  "review_date": "2026-09-09",
+  "source": {
+    "title": "26E0269 200MM NF 88888.pdf",
+    "sha256": "50634eef431eecb54e9bc146ce1b26c76aee25caf8ee502b01ba6da6ae5b0141",
+    "issuer": "Alcast Laminados",
+    "issued": "2026-04-01",
+    "lot": "26E0269",
+    "received_via": "Owner forwarded supplier correction and certificate"
+  },
+  "material": {
+    "alloy": "1100",
+    "temper": "H14",
+    "thickness_mm": 2.0,
+    "thickness_band_mm": {
+      "lower_exclusive": 1.5,
+      "upper_inclusive": 3.0
+    },
+    "yield_MPa": {
+      "specified_minimum": 95,
+      "reported_result": 127
+    },
+    "tensile_MPa": {
+      "specified_minimum": 110,
+      "specified_maximum": 145,
+      "reported_result": 145
+    },
+    "elongation_percent": {
+      "specified_minimum": 4,
+      "reported_result": 10
+    }
+  },
+  "assessment": {
+    "minimum_strength_reference_MPa": 95,
+    "minimum_is_not_allowable_working_stress": true,
+    "actual_job_stock_traceability_confirmed": false,
+    "covers_rear_panel_1_2mm": false,
+    "previous_1050_H14_minimum_MPa": 85,
+    "increase_over_previous_H14_reference_percent": 11.764705882352944,
+    "previous_strip_model_reused_without_geometry_change": true,
+    "strip_rows": [
+      {
+        "load_N": 200,
+        "effective_width_mm": 115.37,
+        "stress_MPa": 76.99122543617432,
+        "spec_min_yield_to_stress_ratio": 1.233906844082576,
+        "lot_test_yield_to_stress_ratio": 1.64953862314197
+      },
+      {
+        "load_N": 700,
+        "effective_width_mm": 115.37,
+        "stress_MPa": 269.4692890266101,
+        "spec_min_yield_to_stress_ratio": 0.3525448125950217,
+        "lot_test_yield_to_stress_ratio": 0.47129674946913425
+      },
+      {
+        "load_N": 200,
+        "effective_width_mm": 230.74,
+        "stress_MPa": 38.49561271808716,
+        "spec_min_yield_to_stress_ratio": 2.467813688165152,
+        "lot_test_yield_to_stress_ratio": 3.29907724628394
+      },
+      {
+        "load_N": 700,
+        "effective_width_mm": 230.74,
+        "stress_MPa": 134.73464451330506,
+        "spec_min_yield_to_stress_ratio": 0.7050896251900434,
+        "lot_test_yield_to_stress_ratio": 0.9425934989382685
+      }
+    ],
+    "strip_model_is_not_full_assembly_or_conservative_bound": true,
+    "stomp_strength_qualified": false,
+    "drawing_material_callouts_reissued": false,
+    "cutting_authorized": false
+  }
+}

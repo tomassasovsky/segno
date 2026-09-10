@@ -1,0 +1,198 @@
+{
+  "normalization_baseline": "completed rear-closure revision before process changes",
+  "normalization_report_sha256": "ae20471b1e697eabf49788fb44b992e7e8524e173698f8b0d613f3678dc63d00",
+  "unchanged_STEP_STL": {
+    "segno_assembly.step": "02ddd5e94f89b33fc71dab2819e6801de104c04ccce0d677696087203d099632",
+    "segno_base.step": "2e9976ec08f5719bd3ad19980c6c36938089901fa860633eafee6fe16e72e52a",
+    "segno_buck_envelope.step": "f698e21e15d830188c1e6f778af606d9297b322bb840e434505292fff33658da",
+    "segno_buck_reference.step": "f0561790b1e61c20b5d8043f2b19414e36a9539ffcb8bdcf83eb232eb8740e1d",
+    "segno_corner_bracket_rear.step": "69e878582085c4c89c1fd50e779d5005c447d59ea5b0d4d83deb3d4847bbb9a1",
+    "segno_corner_bracket_rear_mirrored.step": "12dcbd799e6500a6c0a90499f087099e79969381e5de84c9a515a4d43143031f",
+    "segno_encoder_knob.step": "ea8d5b39a35e66701491e9c27884b8b1509499b45389e4bea4da6d025d85e783",
+    "segno_encoder_knob.stl": "ea7033d136d820353e843cabdebea9090cbad0c42c3df1e61bf7363aa68922b4",
+    "segno_faceplate.step": "38bbde2afa694603959f92965159318a2c098ae5d8e6f7f127f1a5e2e7251e25",
+    "segno_front_shim_pack_reference.step": "aef735652bf11fbe1094bbd92c5793db0aa65648502934ea9a4126aee8a4e605",
+    "segno_led_diffuser.step": "7f90b48ed349fd00dd18e193c976b90728d338a667ff588999de05ff3349e415",
+    "segno_led_diffuser.stl": "3ae2ec3fbfaf7bd567ab2cb7338d4b9c7045fe5dee23baa3ef28c7916f901a8a",
+    "segno_mini_console_assembly.step": "1866b5b07202b6af4c2bebccf82d2035ce38fc2a5943a4f620b6ae135a6d3587",
+    "segno_mini_console_lid.step": "e420d283311f08f9b83177714db10cb192c631ddda7f1ffbc49c31cdbbddeeaf",
+    "segno_mini_console_lid.stl": "ca0b58791d4f508806123a80277faf542b6c89e94cc5fb7f7162c5714bfec872",
+    "segno_mini_console_sled.step": "5d1f798df6bfca35441feaddd90c0316a5b13fa4a11c304a4be7580147eb30fc",
+    "segno_mini_console_sled.stl": "9aabfef4ea285b3a776867780786aecd2ac8f75dda2b504dfe5d920010f7778d",
+    "segno_mini_console_tray.step": "39cd6db56167b82137130f2652921622dd7c045e2838fd1d94f409ba2f423426",
+    "segno_mini_console_tray.stl": "b08fd06ab12a2af9aead7894894e8301761ec17e2bd0eadfcc72df34fd607d4b",
+    "segno_pedal_base_fit_test.step": "d47b7bf866529122924c6cf42004f9e0fb2b7e757542f08b07b8348387b90053",
+    "segno_pedal_base_fit_test.stl": "883527639c287bec0f77deaf4352ca5723fca82123389c5b435a32b7c92fcb8f",
+    "segno_pedal_tile_BANK.step": "53dd21e49ce33772831945880666e918c7ff758bb6abcd8d59c0bfa8cf5ca5b3",
+    "segno_pedal_tile_BANK.stl": "01e9224c8df659c6de1bda41a57610fdf95247b39fbc11b5bc9a87d4ec304f9e",
+    "segno_pedal_tile_CLEAR.step": "172f0473f7af4f261944957ea6deb9d5143ebfbaf52aaf6c9552c04bd5411630",
+    "segno_pedal_tile_CLEAR.stl": "b81e970c8e060bd10f749b62ac87917c382d64f9cf6be8cad04285336d790c1c",
+    "segno_pedal_tile_MODE.step": "dd44d7f6711946060c1a5c9802b8676123e58d8e6881a4e9cb72f77aae79fd2b",
+    "segno_pedal_tile_MODE.stl": "ff14d241f2baf3fce6083cd3decf3844b437fe38aee9cc4658542407354b3ee0",
+    "segno_pedal_tile_REC_PLAY.step": "9dd54a0a9b93e3bea3e7e6d212520d819951cbe98400da49b1a53c3246aab85f",
+    "segno_pedal_tile_REC_PLAY.stl": "3d9b740a1d1e7e74b6b95403e2cd2ab57dcf26398bd0eb4b34d0e05b6da74927",
+    "segno_pedal_tile_STOP.step": "8f1b7496053eb6c9e0896ff79e709c8f49e106e77c87665c31c9812e5849767b",
+    "segno_pedal_tile_STOP.stl": "4cce4a0c000d8e982531f5fa6b7d46b03af7ec496cdf20f213bdeed2c92f4fca",
+    "segno_pedal_tile_TRACK1.step": "764c7319ad4c7b54655f8ab343286d977b6851d57a3057294317c0f00c323424",
+    "segno_pedal_tile_TRACK1.stl": "44e4fada2cd23494a486b320f9cf7fc287ad05affde2d133e9667f42335803b7",
+    "segno_pedal_tile_TRACK2.step": "33d10f39109778be123a00c6daef30c0d4d7fdfc1327c89b196baa6316c5b915",
+    "segno_pedal_tile_TRACK2.stl": "d72b0b9fe0129f6a5cb444185fcbb65d49d846dbceeadd2bcc7da7332c6a7e7f",
+    "segno_pedal_tile_TRACK3.step": "48fc696b9228ee2ac51b665e2e4826fb27eaa8c02344a1645930556bcf6bb2b4",
+    "segno_pedal_tile_TRACK3.stl": "ab678d5fdf3f0c5a08094c3a26f23a5ee5316a994ea01591af0c7504b98655cf",
+    "segno_pedal_tile_TRACK4.step": "d693cdb6460050d67fcb0ed0921c77ec7814db93a466eb5be04920e43d913097",
+    "segno_pedal_tile_TRACK4.stl": "f48860f032752d17dca734911c2bbc9565c8f300d9d8344a80ddd52957189f3d",
+    "segno_pedal_tile_UNDO.step": "9a31de05fae7fa8d8087078a280cd1a2c17b2673c649317f4f79bcd581e5d678",
+    "segno_pedal_tile_UNDO.stl": "032d22216f4b5063a01968904d352c2a8e4829cf1850e2f333ef3c9c5b861a2c",
+    "segno_platform_front_ring.step": "2b50c5366ab2f60189a01b2c8b1fb3b439b119c9574270a4377fac1cec4fd9d0",
+    "segno_platform_front_ring.stl": "8594fb6942ad088b3747378e1f42471ea7674e0be5741979c4a8fb1a64581381",
+    "segno_platform_mid_ring.step": "203f37cb635a4ee896a9dc0eee0f70ba4c066c3382444b29db9f18c42608c2c7",
+    "segno_platform_mid_ring.stl": "a3240f0b00e86e9bbb3ed3b4e3dfae97af5cf3306705fe1dc672e6bb989e661c",
+    "segno_platform_sled.step": "0ab1dfa63cd067f56649dcdf8a3a3b8967be9720331ce8811f3a83ff0d1d48b5",
+    "segno_platform_sled.stl": "9b9f25a4ce3965ae0412574f323b7e2bf3635b9f5e2bec3de55517509064eb57",
+    "segno_post.step": "5b774f77d0849900c35cc3c5cc4051d5a68b4cc94332c41d0263eff5bdb23479",
+    "segno_post_felt.step": "a99592cea0addb00013d04736135609e19d1700e0e9ab45d6dd9107b85a0bd04",
+    "segno_rear_panel.step": "814b4649fdc4769e212d113a6ce6866f9d83493413f4b7cacd096d36a72df27c",
+    "segno_ring_diffuser.step": "4e8b793dbd60e2cc70a83f441c120963d84054e894d6b884e6c205d9a9ed602f",
+    "segno_ring_diffuser.stl": "9a8f876a82764a605308d55d01c38b5e0b46c5fa4757e0ff8a4a97bae57ea6f1",
+    "segno_ring_disc.step": "24247bc8edd8eadbd3dfc3ee3bc6659dd030a82dc1b8322e2e53081596e28d4f",
+    "segno_screen16_monitor.step": "7b5850b99635924d66cfbc6100f5fccbd5460bb3be5ffcd337100172977f7148",
+    "segno_screen16_portclear.step": "cdd753a9abea03fb1ad4f4176b0b90de6dde7a79dc25a61f7ab6ad9d490e7494",
+    "segno_screen16_stand_L.step": "bb5539cc27fe32f7ddc4bf213af25e5eac02c999e26f3d652af36b94a16af075",
+    "segno_screen16_stand_L.stl": "4a1070fe04d297fd97169a7ab4d94590526804c4eefdb3fd1b45e7c134264257",
+    "segno_screen16_stand_R.step": "cdd0d5049e9c7ee12be96c0e13285fcbbe6474df31c5dbaef199e7315375bd2d",
+    "segno_screen16_stand_R.stl": "eba82d79ee95c3f01ba5a64d34f214403b154400792132ec1c03cb32efe4a5e5",
+    "segno_screen7_fit_test.step": "76bf62e8d9356b2a0e3d5936676d93ffa73dd9532b567838d02b95aaab1469b1",
+    "segno_screen7_fit_test.stl": "d59e7a852942c0f40232f84361939cb3210863df70dea63a3502e79b9117a976",
+    "segno_screen7_tower.step": "1c9cff4438a73a99d5d20fc99e90d5b284a61b3bd64d11424a39eadc978c71cf",
+    "segno_screen7_tower.stl": "7a0331724073013a3a2a23ec4c14e8bdd9c5a77e69663e24ed9ae72b01896398"
+  },
+  "unchanged_formed_cache": {
+    "manifest.json": "401389b8c32400832bef5a6b70bd06960460d5501200b9d69c4d54116aef1313",
+    "segno_base.step": "2e9976ec08f5719bd3ad19980c6c36938089901fa860633eafee6fe16e72e52a",
+    "segno_base_flat.dxf": "f09d2e9a604af233d4acb9ae9d6eb5b47a4043df8690f07ce3c613c0b6ad3c3c",
+    "segno_corner_bracket_rear.step": "292181420b6d5533757b6a9dedbd734598884effaeea6b0bd88c70ebb39be008",
+    "segno_corner_bracket_rear_flat.dxf": "5faafb8c98861d11044c91e74cd435b1b5b14fa33b09c254182350d240f8ac28",
+    "segno_corner_bracket_rear_mirrored.step": "d3c09ef5f479d9e723c7991c276b8004def057d2710a13da68c19eaf2e2a6341",
+    "segno_corner_bracket_rear_mirrored_flat.dxf": "31c0417b4fbb90f16ce73e99fc7a36ca6236f028bc25162dbaddec9d6c9825be",
+    "segno_faceplate.step": "357318f44c5d90c4372c1eb33f86efa47266d7d33eedf6849afbf507481eb2b4",
+    "segno_faceplate_flat.dxf": "873d6826494adb0e4934bc9606e6610766b17fe3e36a3f9f77527add7668a3d1"
+  },
+  "unchanged_tile_DXF_entities": {
+    "segno_pedal_tile_BANK.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tile_CLEAR.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tile_MODE.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tile_REC_PLAY.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tile_STOP.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tile_TRACK1.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tile_TRACK2.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tile_TRACK3.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tile_TRACK4.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tile_UNDO.dxf": "all modelspace tags match except entity/owner handles",
+    "segno_pedal_tiles.dxf": "all modelspace tags match except entity/owner handles"
+  },
+  "shim_mask_squares": {
+    "segno_base": {
+      "count": 9,
+      "size_mm": [
+        7,
+        7
+      ],
+      "closed": true,
+      "centres": [
+        [
+          18.42857142857143,
+          -5.044579557318606
+        ],
+        [
+          119.57142857142857,
+          -5.044579557318606
+        ],
+        [
+          220.71428571428572,
+          -5.044579557318606
+        ],
+        [
+          321.8571428571429,
+          -5.044579557318606
+        ],
+        [
+          423.0,
+          -5.044579557318606
+        ],
+        [
+          524.1428571428571,
+          -5.044579557318606
+        ],
+        [
+          625.2857142857143,
+          -5.044579557318606
+        ],
+        [
+          726.4285714285714,
+          -5.044579557318606
+        ],
+        [
+          827.5714285714286,
+          -5.044579557318606
+        ]
+      ]
+    },
+    "segno_faceplate": {
+      "count": 9,
+      "size_mm": [
+        7,
+        7
+      ],
+      "closed": true,
+      "centres": [
+        [
+          20.328571428571408,
+          6.955420442681394
+        ],
+        [
+          121.47142857142855,
+          6.955420442681394
+        ],
+        [
+          222.6142857142857,
+          6.955420442681394
+        ],
+        [
+          323.75714285714287,
+          6.955420442681394
+        ],
+        [
+          424.9,
+          6.955420442681394
+        ],
+        [
+          526.0428571428571,
+          6.955420442681394
+        ],
+        [
+          627.1857142857143,
+          6.955420442681394
+        ],
+        [
+          728.3285714285714,
+          6.955420442681394
+        ],
+        [
+          829.4714285714285,
+          6.955420442681394
+        ]
+      ]
+    }
+  },
+  "changed_PDFs": [
+    "segno_base.pdf",
+    "segno_corner_bracket_rear.pdf",
+    "segno_corner_bracket_rear_mirrored.pdf",
+    "segno_faceplate.pdf",
+    "segno_overlay.pdf",
+    "segno_paint_quote.pdf",
+    "segno_post.pdf",
+    "segno_rear_panel.pdf",
+    "segno_ring_disc.pdf"
+  ]
+}

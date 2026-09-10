@@ -1,0 +1,85 @@
+{
+  "stage": "reopened",
+  "occurrences": 415,
+  "unchanged_occurrences_checked": 413,
+  "empty_leaf_components": [],
+  "required_solid_counts": {
+    "faceplate_support_post": 2,
+    "post_felt": 2,
+    "screen16_stand_L": 1,
+    "screen16_stand_R": 1,
+    "platform_mid_ring": 2,
+    "buck_converter_10a": 2
+  },
+  "converters": [
+    {
+      "path": "electronics:1+buck_converter_10a:1",
+      "bodies": 1,
+      "bounds_mm": [
+        [
+          340.3,
+          336.2,
+          2.0
+        ],
+        [
+          404.00000000000006,
+          393.8,
+          24.000000000000004
+        ]
+      ],
+      "volume_mm3": 53025.20972753176,
+      "mount_hole_centres_mm": [
+        [
+          345.20000000000005,
+          367.5
+        ],
+        [
+          399.1,
+          367.5
+        ]
+      ],
+      "base_axis_errors_mm": [
+        5.684341886080802e-14,
+        5.684341886080802e-14
+      ]
+    },
+    {
+      "path": "electronics:1+buck_converter_10a:2",
+      "bodies": 1,
+      "bounds_mm": [
+        [
+          415.99999999999994,
+          336.2,
+          2.0
+        ],
+        [
+          479.7,
+          393.8,
+          24.000000000000004
+        ]
+      ],
+      "volume_mm3": 53025.20972753176,
+      "mount_hole_centres_mm": [
+        [
+          420.9,
+          367.5
+        ],
+        [
+          474.79999999999995,
+          367.5
+        ]
+      ],
+      "base_axis_errors_mm": [
+        0.0,
+        5.684341886080802e-14
+      ]
+    }
+  ],
+  "conservative_envelope_pairs": 1344,
+  "clashes": [],
+  "fusion_document": "VAMP console (populated)",
+  "saved_version": 340,
+  "verified_after": "computeAll, save, completed cloud processing, close and reopen",
+  "source_step_sha256": "21fb79aa293a48ccd81a48458bf349ba0a375d7866a450c791c2e5e02aed24cc",
+  "scope_limit": "Supplier envelope and hole pattern; casing/fins approximate. No washer, cable, structural or physical-fit qualification."
+}

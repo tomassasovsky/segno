@@ -1,0 +1,137 @@
+{
+  "tests": {
+    "command": "python -m unittest discover -s hardware/enclosure/tests",
+    "count": 56,
+    "seconds": 73.636,
+    "passed": true
+  },
+  "native": [
+    {
+      "document": "VAMP console (populated)",
+      "version": 360,
+      "modified": false,
+      "unchanged_occurrences": 448,
+      "total_occurrences": 452,
+      "total_bodies": 1002,
+      "warnings_unchanged": true,
+      "warning_count": 8,
+      "source_checks": [
+        {
+          "part": "ring",
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 165908.17817350352
+        },
+        {
+          "part": "sled",
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 110919.65190270949
+        }
+      ]
+    },
+    {
+      "document": "VAMP sheet metal",
+      "version": 144,
+      "modified": false,
+      "unchanged_occurrences": 43,
+      "total_occurrences": 45,
+      "total_bodies": 45,
+      "warnings_unchanged": true,
+      "warning_count": 0,
+      "source_checks": [
+        {
+          "part": "ring",
+          "native_minus_source_mm3": 0.0,
+          "source_minus_native_mm3": 0.0,
+          "volume_mm3": 165908.17817350352
+        }
+      ]
+    }
+  ],
+  "source": {
+    "segno_platform_front_ring": {
+      "geometry_unchanged": true,
+      "stl_byte_identical": true
+    },
+    "segno_platform_sled": {
+      "geometry_unchanged": true,
+      "stl_byte_identical": true
+    },
+    "mid_collar": {
+      "only_mounting_bores_changed": true,
+      "solid": true,
+      "valid": true,
+      "added_mm3": 1391.1071901970781,
+      "removed_mm3": 467.7203142664499
+    },
+    "mid_sled": {
+      "only_lower_insert_pattern_changed": true,
+      "solid": true,
+      "valid": true,
+      "added_mm3": 381.7035074111598,
+      "removed_mm3": 381.70350741115993
+    }
+  },
+  "artifacts": {
+    "modified": [
+      "segno_3dprint.zip",
+      "segno_first_prints_STL.zip",
+      "segno_first_prints_STL/segno_platform_mid_ring.stl",
+      "segno_platform_mid_ring.step",
+      "segno_platform_mid_ring.stl"
+    ],
+    "added": [
+      "segno_first_prints_STL/segno_platform_mid_sled.stl",
+      "segno_platform_mid_sled.step",
+      "segno_platform_mid_sled.stl"
+    ],
+    "print_zip_members": 38,
+    "first_print_members": [
+      "segno_platform_front_ring.stl",
+      "segno_platform_sled.stl",
+      "segno_platform_mid_ring.stl",
+      "segno_platform_mid_sled.stl"
+    ],
+    "meshes": [
+      {
+        "part": "segno_platform_front_ring.stl",
+        "triangles": 2608,
+        "closed_mesh": true
+      },
+      {
+        "part": "segno_platform_sled.stl",
+        "triangles": 5084,
+        "closed_mesh": true
+      },
+      {
+        "part": "segno_platform_mid_ring.stl",
+        "triangles": 6656,
+        "closed_mesh": true
+      },
+      {
+        "part": "segno_platform_mid_sled.stl",
+        "triangles": 5084,
+        "closed_mesh": true
+      }
+    ],
+    "all_archived_parts_match_current": true,
+    "sheetmetal_zip_unchanged": true,
+    "sheetmetal_zip_sha256": "d2329edf667586356f759a7ce9282a4ffc76195bff03da4c540ad787232829d9",
+    "first_print_zip_sha256": "ae42a1c99a644d950df18729e049e9e52d5eb65b58fd6efb4325e87dd4c5a65a"
+  },
+  "source_files": {
+    "hardware/enclosure/segno_enclosure.py": "e4d20000e15af4a4d7ad4f6d006029a5bd3d50372919f3a520835f4f767a0023",
+    "hardware/enclosure/_fold_from_dxf.py": "6553bb654859760dc76b0a5c890318fa9129efaecc84edb1a4798155f860184b",
+    "hardware/enclosure/tests/test_coated_supports.py": "84293eb0cab509ed54752333d80c98db9b5dadc6affe3557ade0a49d4562e693",
+    "hardware/enclosure/tests/test_floor_supports.py": "e0db612b472dbfbdabdba1d82ca79aaf9529357f38f9910e36ca5bd23c14f066",
+    "hardware/enclosure/tests/test_manufacturing_fit.py": "753db5faf1b7ec02c1841ff29d3cea419a53783bb984aafac0ec0eb551065d8b",
+    "hardware/enclosure/tests/test_manufacturing_pipeline.py": "c8d6bc7378bffdbca4dfb1b1d594eeada5ad04d67435cae798a17da86f06eeb2",
+    "hardware/enclosure/tests/test_mid_platform_mount.py": "04b842836a74089d668a5b05287768ff07548130728288150f789ae91f7b2492",
+    "hardware/enclosure/tests/test_mini_sled_retention.py": "76a305d2324f3fe2c2f9816c31850ea2309ee9a0ebc1c9bbb81259bd82f8666f",
+    "hardware/enclosure/tests/test_platform_baffles.py": "573383f20cb249eda77f9be3f2c12625875951595b90e0a651f35c58a856339a",
+    "hardware/enclosure/tests/test_screen7_adjustment.py": "0ed4bf7bef297054ec65ae717f7a4b4afe0191f42c0037130e02e48ac9790d5d"
+  },
+  "physical_fit_and_strength_qualified": false,
+  "cutting_authorized": false
+}

@@ -1,0 +1,26 @@
+{
+  "source": "https://www.jst-mfg.com/product/pdf/eng/eXH.pdf#page=4",
+  "conditional_on_actual_XHP_2_housing": true,
+  "measurements": [
+    {
+      "collar": "front",
+      "assumed_housing": "JST XHP-2",
+      "rectangular_envelope_mm": [
+        7.3,
+        5.7
+      ],
+      "interference_mm3": 0.0,
+      "minimum_nominal_clearance_mm": 0.6281476064525687
+    },
+    {
+      "collar": "mid",
+      "assumed_housing": "JST XHP-2",
+      "rectangular_envelope_mm": [
+        7.3,
+        5.7
+      ],
+      "interference_mm3": 0.0,
+      "minimum_nominal_clearance_mm": 0.6281476064525678
+    }
+  ]
+}

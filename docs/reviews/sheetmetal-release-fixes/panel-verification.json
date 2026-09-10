@@ -1,0 +1,110 @@
+{
+  "date": "2026-09-05",
+  "change": "Rear panel stock 1.5 to 1.2 mm; outer seating face retained",
+  "method": "Edit existing extrusion; translate 0.3 mm towards rear wall; save and reopen both native documents; compare all occurrences to pre-edit snapshot.",
+  "limitations": "Digital geometry verification; actual stock, coating, jack retention and workshop corner details require physical/shop checks.",
+  "documents": [
+    {
+      "document": "VAMP sheet metal",
+      "version": 129,
+      "modified": false,
+      "occurrences": 18,
+      "unchanged_other_occurrences": 17,
+      "maximum_other_bounds_delta_mm": 0.0,
+      "maximum_other_volume_delta_mm3": 0.0,
+      "maximum_placement_delta_cm": 0.0,
+      "panel": {
+        "component_id": "9a3c75cd-98fd-4322-9f33-32c0932c7553",
+        "bounds_mm": [
+          [
+            21.713999999999984,
+            8.900000000000002,
+            417.71000000000004
+          ],
+          [
+            423.714,
+            84.9,
+            418.90999999999997
+          ]
+        ],
+        "volume_mm3": 33773.547127853286,
+        "mount_axes_mm": [
+          [
+            27.714,
+            14.9,
+            0
+          ],
+          [
+            417.714,
+            14.9,
+            0
+          ],
+          [
+            27.714,
+            78.9,
+            0
+          ],
+          [
+            417.714,
+            78.9,
+            0
+          ]
+        ],
+        "thickness_mm": 1.2,
+        "outer_seat_delta_mm": 0.0,
+        "feature_health": 0
+      }
+    },
+    {
+      "document": "VAMP console (populated)",
+      "version": 341,
+      "modified": false,
+      "occurrences": 415,
+      "unchanged_other_occurrences": 414,
+      "maximum_other_bounds_delta_mm": 0.0,
+      "maximum_other_volume_delta_mm3": 0.0,
+      "maximum_placement_delta_cm": 0.0,
+      "panel": {
+        "component_id": "f6713c1c-a446-4f51-bd4e-5f2bb6331a71",
+        "bounds_mm": [
+          [
+            424.28599999999994,
+            417.71000000000004,
+            8.900000000000002
+          ],
+          [
+            826.2860000000001,
+            418.90999999999997,
+            84.9
+          ]
+        ],
+        "volume_mm3": 33773.54712785329,
+        "mount_axes_mm": [
+          [
+            820.286,
+            0,
+            14.9
+          ],
+          [
+            820.286,
+            0,
+            78.9
+          ],
+          [
+            430.286,
+            0,
+            14.9
+          ],
+          [
+            430.286,
+            0,
+            78.9
+          ]
+        ],
+        "thickness_mm": 1.2,
+        "outer_seat_delta_mm": 0.0,
+        "feature_health": 0
+      }
+    }
+  ]
+}

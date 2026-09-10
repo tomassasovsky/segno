@@ -1,0 +1,92 @@
+{
+  "scope": "Replace encoder-disc underside chamfer with a straight laser-cut hole after owner provided washer measurements.",
+  "source_sha256": "d68decc6e4201e55181df3e895733504ce4d223d747b3182838e1ee6604a7bcf",
+  "washer": {
+    "id_mm": 7.25,
+    "od_mm": 11.85,
+    "source": "Owner measured2026-09-07"
+  },
+  "geometry": {
+    "raw_bore_mm": 8.5,
+    "tolerance_mm": 0.05,
+    "finished_bore_mm": [
+      8.25,
+      8.43
+    ],
+    "radial_washer_coverage_worst_finished_mm": 0.87,
+    "radial_washer_coverage_worst_bare_mm": 0.75,
+    "centered_root_clearance_min_radial_mm": 0.125,
+    "chamfer": false,
+    "outer_diameter_thickness_pose_unchanged": true
+  },
+  "tests": {
+    "passed": 40,
+    "log_sha256": "6480712055f3e1589ec52e8c91c785687d518ca5d4fdc1b49294e987abfb218f"
+  },
+  "exports": {
+    "assembly_solids": 35,
+    "changed_assembly_solids": 1,
+    "unrelated_solid_volume_area_bounds": "PASS",
+    "native_formed_cache_parity": "PASS",
+    "drawing_static_checks": "PASS"
+  },
+  "native": {
+    "vsm": {
+      "version": 138,
+      "document": "VAMP sheet metal",
+      "snapshot_sha256": "de550ae17cfed24383934c30dacf1055c19d26aba8cd6948d35509b930b77fff",
+      "saved_reopened": true
+    },
+    "pop": {
+      "version": 351,
+      "document": "VAMP console (populated)",
+      "snapshot_sha256": "ac40836d46e092879e17bd9798f770b27b0c40b2ae053b8f4346469bafbbcd5e",
+      "saved_reopened": true
+    }
+  },
+  "preservation": {
+    "vsm": {
+      "unchanged_occurrences": 44,
+      "modified_disc_only": true,
+      "warnings_unchanged": true,
+      "pose_appearance_visibility_identity_preserved": true,
+      "solid": "straight annulus OD51.2/ID8.5/T2"
+    },
+    "pop": {
+      "unchanged_occurrences": 440,
+      "modified_disc_only": true,
+      "warnings_unchanged": true,
+      "pose_appearance_visibility_identity_preserved": true,
+      "solid": "straight annulus OD51.2/ID8.5/T2"
+    }
+  },
+  "archives": {
+    "segno_3dprint.zip": {
+      "sha256": "065bf711852ffe9bcffead68c286737635c29c57761a073d8a4de79ee2d5216f",
+      "members": 36
+    },
+    "segno_pedal_tiles.zip": {
+      "sha256": "5ecdbfdd6be4b6bb8ea707a3540dbcc197fc56b39b41f73c4dde42659c257797",
+      "members": 22
+    },
+    "segno_pintura.zip": {
+      "sha256": "da09a922f70460eff33b00a3704b96f47e8d5b3e2c0f280feafb4905f79e7a74",
+      "members": 8
+    },
+    "segno_sheetmetal.zip": {
+      "sha256": "5863ae0e7434aebcaea5777d2140e7f5eba46778b1feb5fc618c94dd94cde668",
+      "members": 14
+    },
+    "segno_sheetmetal_step.zip": {
+      "sha256": "70ec6557392f65eb91751d9aedecb96231b8b3ebbe164d57062c6b27de6bd215",
+      "members": 8
+    }
+  },
+  "pdf_visual_review": {
+    "documents": 2,
+    "pages": 5,
+    "result": "PASS"
+  },
+  "production_release": false,
+  "limits": "Geometric coverage/root clearance verified. Center before tightening; actual retention, painted fit and switch/knob operation require assembled hardware checks. Earlier reviews apply to unchanged features only."
+}

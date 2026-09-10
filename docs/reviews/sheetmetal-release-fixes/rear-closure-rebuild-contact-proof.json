@@ -1,0 +1,164 @@
+{
+  "reference": {
+    "volume_mm3": 5.519205387175755,
+    "valid": true,
+    "solids": [
+      {
+        "volume_mm3": 0.21102053572540427,
+        "valid": true,
+        "bounds_mm": {
+          "xmin": 845.9108411604321,
+          "xmax": 847.9000000784798,
+          "ymin": 2.3118130725002075,
+          "ymax": 391.4664820320088,
+          "zmin": 12.935731241481342,
+          "zmax": 99.196899065103
+        },
+        "normal": [
+          0.0,
+          -0.21640965505268422,
+          0.9763026483626777
+        ],
+        "normal_projection_min_mm": 12.128889999999995,
+        "normal_projection_max_mm": 12.129156179686746,
+        "max_sampled_normal_thickness_mm": 0.00026617968675068937,
+        "normal_aligned_occ_bounds_mm": {
+          "zmin": 12.128889999957819,
+          "zmax": 12.129156179781909,
+          "thickness": 0.0002661798240897184
+        }
+      },
+      {
+        "volume_mm3": 0.21102053580177282,
+        "valid": true,
+        "bounds_mm": {
+          "xmin": -1.9000000784797855,
+          "xmax": 0.0891588395680048,
+          "ymin": 2.311813072486996,
+          "ymax": 391.46648203200897,
+          "zmin": 12.935731241478413,
+          "zmax": 99.1968990651031
+        },
+        "normal": [
+          0.0,
+          -0.21640965505268422,
+          0.9763026483626777
+        ],
+        "normal_projection_min_mm": 12.128889999999995,
+        "normal_projection_max_mm": 12.129156179686941,
+        "max_sampled_normal_thickness_mm": 0.0002661796869460886,
+        "normal_aligned_occ_bounds_mm": {
+          "zmin": 12.128889999890948,
+          "zmax": 12.129156179687733,
+          "thickness": 0.00026617979678533743
+        }
+      },
+      {
+        "volume_mm3": 5.097207853325342,
+        "valid": true,
+        "bounds_mm": {
+          "xmin": -1.9,
+          "xmax": 847.9,
+          "ymin": 395.92740157215604,
+          "ymax": 417.72466008490454,
+          "zmin": 89.45787021722542,
+          "zmax": 99.3658979407971
+        },
+        "normal": [
+          0.0,
+          0.413802944301184,
+          0.9103664774626048
+        ],
+        "normal_projection_min_mm": 254.29509742113675,
+        "normal_projection_max_mm": 254.2953501065928,
+        "max_sampled_normal_thickness_mm": 0.00025268545604717474,
+        "normal_aligned_occ_bounds_mm": {
+          "zmin": 254.29509742100828,
+          "zmax": 254.29535010664736,
+          "thickness": 0.00025268563908298347
+        }
+      }
+    ]
+  },
+  "rebuilt": {
+    "volume_mm3": 5.74793943221448,
+    "valid": true,
+    "solids": [
+      {
+        "volume_mm3": 0.2110205357543069,
+        "valid": true,
+        "bounds_mm": {
+          "xmin": 845.9108411604321,
+          "xmax": 847.9000000784798,
+          "ymin": 2.3118130725002075,
+          "ymax": 391.4664820320088,
+          "zmin": 12.935731241481342,
+          "zmax": 99.196899065103
+        },
+        "normal": [
+          0.0,
+          -0.21640965505268422,
+          0.9763026483626777
+        ],
+        "normal_projection_min_mm": 12.128889999999998,
+        "normal_projection_max_mm": 12.129156179686746,
+        "max_sampled_normal_thickness_mm": 0.00026617968674713666,
+        "normal_aligned_occ_bounds_mm": {
+          "zmin": 12.128889999957819,
+          "zmax": 12.129156179781909,
+          "thickness": 0.0002661798240897184
+        }
+      },
+      {
+        "volume_mm3": 0.2110205358022294,
+        "valid": true,
+        "bounds_mm": {
+          "xmin": -1.9000000784797855,
+          "xmax": 0.0891588395680048,
+          "ymin": 2.311813072486996,
+          "ymax": 391.46648203200897,
+          "zmin": 12.935731241478413,
+          "zmax": 99.1968990651031
+        },
+        "normal": [
+          0.0,
+          -0.21640965505268422,
+          0.9763026483626777
+        ],
+        "normal_projection_min_mm": 12.128889999999984,
+        "normal_projection_max_mm": 12.129156179686941,
+        "max_sampled_normal_thickness_mm": 0.00026617968695674676,
+        "normal_aligned_occ_bounds_mm": {
+          "zmin": 12.128889999890948,
+          "zmax": 12.12915617968828,
+          "thickness": 0.00026617979733245534
+        }
+      },
+      {
+        "volume_mm3": 5.325907885081688,
+        "valid": true,
+        "bounds_mm": {
+          "xmin": -1.9,
+          "xmax": 847.9,
+          "ymin": 395.92740311568554,
+          "ymax": 417.72466079168873,
+          "zmin": 89.45787021722542,
+          "zmax": 99.36591623174976
+        },
+        "normal": [
+          0.0,
+          0.413802944301184,
+          0.9103664774626048
+        ],
+        "normal_projection_min_mm": 254.29509742113675,
+        "normal_projection_max_mm": 254.2953709692324,
+        "max_sampled_normal_thickness_mm": 0.0002735480956630454,
+        "normal_aligned_occ_bounds_mm": {
+          "zmin": 254.29509742100828,
+          "zmax": 254.29537096930156,
+          "thickness": 0.00027354829327919106
+        }
+      }
+    ]
+  }
+}

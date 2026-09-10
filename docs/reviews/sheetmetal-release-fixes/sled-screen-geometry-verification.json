@@ -1,0 +1,106 @@
+{
+  "source_sha256": "79746013b1053ddadfc4724188c9739eea239a29976a7f8b97c43948d20f3fb2",
+  "fresh_source": {
+    "segno_mini_console_tray": {
+      "step_sha256": "39cd6db56167b82137130f2652921622dd7c045e2838fd1d94f409ba2f423426",
+      "source_step_equal_except_date": true,
+      "solids": 1,
+      "stl_sha256": "b08fd06ab12a2af9aead7894894e8301761ec17e2bd0eadfcc72df34fd607d4b",
+      "source_stl_exact": true
+    },
+    "segno_mini_console_lid": {
+      "step_sha256": "e420d283311f08f9b83177714db10cb192c631ddda7f1ffbc49c31cdbbddeeaf",
+      "source_step_equal_except_date": true,
+      "solids": 1,
+      "stl_sha256": "ca0b58791d4f508806123a80277faf542b6c89e94cc5fb7f7162c5714bfec872",
+      "source_stl_exact": true
+    },
+    "segno_mini_console_sled": {
+      "step_sha256": "5d1f798df6bfca35441feaddd90c0316a5b13fa4a11c304a4be7580147eb30fc",
+      "source_step_equal_except_date": true,
+      "solids": 1,
+      "stl_sha256": "9aabfef4ea285b3a776867780786aecd2ac8f75dda2b504dfe5d920010f7778d",
+      "source_stl_exact": true
+    },
+    "segno_mini_console_assembly": {
+      "step_sha256": "1866b5b07202b6af4c2bebccf82d2035ce38fc2a5943a4f620b6ae135a6d3587",
+      "source_step_equal_except_date": true,
+      "solids": 4
+    },
+    "segno_screen7_tower": {
+      "step_sha256": "1c9cff4438a73a99d5d20fc99e90d5b284a61b3bd64d11424a39eadc978c71cf",
+      "source_step_equal_except_date": true,
+      "solids": 1,
+      "stl_sha256": "7a0331724073013a3a2a23ec4c14e8bdd9c5a77e69663e24ed9ae72b01896398",
+      "source_stl_exact": true
+    },
+    "segno_screen7_fit_test": {
+      "step_sha256": "76bf62e8d9356b2a0e3d5936676d93ffa73dd9532b567838d02b95aaab1469b1",
+      "source_step_equal_except_date": true,
+      "solids": 1,
+      "stl_sha256": "d59e7a852942c0f40232f84361939cb3210863df70dea63a3502e79b9117a976",
+      "source_stl_exact": true
+    }
+  },
+  "assembly": {
+    "solid_volumes_mm3": [
+      371267.6708317166,
+      27811.88673160767,
+      60921.895861557394,
+      60921.89586155739
+    ],
+    "pair_intersection_mm3": {
+      "0,1": 0.0,
+      "0,2": 0.0,
+      "0,3": 0.0,
+      "1,2": 0.0,
+      "1,3": 0.0,
+      "2,3": 0.0
+    },
+    "sled_count": 2,
+    "old_sled_negative_intersection_mm3": 9.481431353453244,
+    "pill_intersections_mm3": {
+      "x47.075/glue0": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "x47.075/glue0.2": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "x148.2178571428571/glue0": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "x148.2178571428571/glue0.2": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "anchors": {
+    "unchanged_axis_xy_mm": [
+      [
+        8.5,
+        139.0
+      ],
+      [
+        97.646429,
+        20.0
+      ],
+      [
+        186.792857,
+        139.0
+      ]
+    ],
+    "all_three_underside_tool_access": "pass"
+  }
+}
