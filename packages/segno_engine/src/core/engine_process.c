@@ -3586,7 +3586,18 @@ static inline void advance_transport_frame(le_engine* e, int tc,
         le_track* pt = &e->tracks[qt];
         if (!pt->pending_record || pt->pending_trigger != 0) continue;
         int boundary = wrapped;
-        if (!boundary) {
+        /* A Sync/Band force-arm begins a DEFINING take, and
+         * finalize_new_track's division-playback formula reads a phase locked
+         * to the primary's loop top — which only holds if the take began
+         * there. A subdivision boundary would start it a quarter (or an
+         * eighth) into the primary's cycle and the sub-loop would play
+         * rotated by that much. The same rule the Band section transport
+         * states a dozen lines below; here it is keyed on the ARM's nature,
+         * so it covers a per-track division and a global one alike. */
+        const int sync_defining_arm =
+            load_i32(&pt->a_state) == LE_TRACK_EMPTY &&
+            le_sync_quantize_active(e, qt);
+        if (!boundary && !sync_defining_arm) {
           int64_t sn, sd;
           if (le_live_subdiv_ratio(e, qt, &sn, &sd)) {
             const int32_t p = e->clock.position; /* just ticked to p >= 1 */
