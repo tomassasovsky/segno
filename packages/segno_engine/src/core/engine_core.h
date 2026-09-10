@@ -136,6 +136,14 @@ int32_t le_mask_to_channel(uint32_t mask);
 uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
                                     int32_t lane);
 
+/* Whether track [channel]'s Pre run can be rendered at all: every active part
+ * must carry a wholly-Pre chain (slice 3e). See engine_snapshot.c. */
+int le_track_pre_printable(le_engine* engine, int32_t channel);
+
+/* The whole-track print's key: the track's Pre run plus every per-part fact
+ * inside the combined material it is rendered over. See engine_snapshot.c. */
+uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel);
+
 /* Posts a command into the engine's SPSC ring (control thread). Returns LE_OK,
  * LE_ERR_NOT_RUNNING (not configured), or LE_ERR_INVALID (null / ring full).
  * le_push builds a generic { arg_i, arg_f } command; le_push_cmd posts a

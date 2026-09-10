@@ -196,6 +196,83 @@ uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
   return h;
 }
 
+/* Whether track [channel]'s Pre run can be rendered at all (slice 3e).
+ *
+ * Every active part's chain must be WHOLLY PRE. A part carrying a Post entry
+ * makes the track's Pre run permanently live, because the render would
+ * otherwise have to cover that Post entry — it is upstream of the track's
+ * chain — and a baked Post tail cannot drain past a Stop, which is the
+ * promise that part's own switch makes. Reported through the cache's usual
+ * "why is this live" channel rather than silently.
+ *
+ * A part whose chain is EMPTY is fine: its dry recording is its own printed
+ * material. */
+int le_track_pre_printable(le_engine* engine, int32_t channel) {
+  if (engine == NULL || channel < 0 || channel >= engine->track_count) return 0;
+  le_track* t = &engine->tracks[channel];
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) {
+    le_lane* ln = &t->lanes[l];
+    int32_t count = load_i32(&ln->a_fx_count);
+    if (count < 0) count = 0;
+    if (count > LE_FX_MAX) count = LE_FX_MAX;
+    int32_t pre = load_i32(&ln->a_fx_pre_count);
+    if (pre < 0) pre = 0;
+    if (pre > count) pre = count;
+    if (count > pre) return 0; /* a Post entry on a part */
+  }
+  return 1;
+}
+
+/* The whole-track print's key (slice 3e): everything that moves the combined
+ * material a track's Pre run is rendered over.
+ *
+ * Folded in order: the track's Pre-run fingerprint and its channel handling,
+ * the active part count, then per part its own Pre-prefix fingerprint (which
+ * already carries that part's channel handling), its full chain length — so a
+ * Post entry appearing moves the key even though the prefix did not — its
+ * level, its pan gains and its mute. Level, pan and mute are inside the sum
+ * and cannot be applied after it, so they belong to the key.
+ *
+ * Solo is deliberately absent: it gates the track as a whole, so the audio
+ * thread applies it to the rendered pair exactly as it applies it live. */
+uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
+  if (engine == NULL || channel < 0 || channel >= engine->track_count) return 0;
+  le_track* t = &engine->tracks[channel];
+  le_fx_bus* b = &t->bus;
+  int32_t pre = load_i32(&b->a_fx_pre_count);
+  const int32_t count = load_i32(&b->a_fx_count);
+  if (pre > count) pre = count; /* a torn read is a live fallback, never a lie */
+  uint64_t h = le_fx_chain_fingerprint(pre, b->a_fx_type, b->a_fx_param,
+                                       b->a_fx_enabled, &b->a_fx_chain_enabled);
+  le_fx_chan chan[LE_FX_MAX];
+  int32_t chan_any = 0;
+  memset(chan, 0, sizeof(chan));
+  le_fx_chan_snapshot(chan, &chan_any, pre, b->a_fx_chan_in, b->a_fx_chan_out,
+                      b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
+                      b->a_fx_chan_level_bits);
+  for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
+
+  const int32_t n = le_lanes_active(t);
+  h = le_fx_fp_u32(h, (uint32_t)n);
+  for (int32_t l = 0; l < n; ++l) {
+    le_lane* ln = &t->lanes[l];
+    h = le_fx_fp_u32(h, (uint32_t)le_lane_pre_fx_fingerprint(engine, channel, l));
+    h = le_fx_fp_u32(h,
+                     (uint32_t)(le_lane_pre_fx_fingerprint(engine, channel, l) >>
+                                32));
+    h = le_fx_fp_u32(h, (uint32_t)load_i32(&ln->a_fx_count));
+    h = le_fx_fp_u32(
+        h, atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed));
+    h = le_fx_fp_u32(
+        h, atomic_load_explicit(&ln->a_pan_gl_bits, memory_order_relaxed));
+    h = le_fx_fp_u32(
+        h, atomic_load_explicit(&ln->a_pan_gr_bits, memory_order_relaxed));
+    h = le_fx_fp_u32(h, load_i32(&ln->a_muted) ? 1u : 0u);
+  }
+  return h;
+}
+
 uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine, int32_t input) {
   if (engine == NULL || input < 0 || input >= LE_MAX_MONITORED_INPUTS) return 0;
   le_monitor_input* m = &engine->monitors[input];

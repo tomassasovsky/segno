@@ -236,6 +236,13 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setTrackEffectPlacement(
+        channel: any(named: 'channel'),
+        slotId: any(named: 'slotId'),
+        placement: any(named: 'placement'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setLaneEffectParam(
         channel: any(named: 'channel'),
         lane: any(named: 'lane'),
@@ -1069,6 +1076,28 @@ void main() {
       expect(fx.enabled, isFalse);
       expect(fx.placement, FxPlacement.pre);
     },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackEffectPlacementChanged moves a whole-track instance by '
+    'identity',
+    build: () {
+      when(() => repository.trackEffects(1)).thenReturn([
+        BuiltInEffect(type: TrackEffectType.delay, slotId: 'a'),
+        BuiltInEffect(type: TrackEffectType.reverb, slotId: 'b'),
+      ]);
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(
+      const LooperTrackEffectPlacementChanged(1, 1, FxPlacement.pre),
+    ),
+    verify: (_) => verify(
+      () => repository.setTrackEffectPlacement(
+        channel: 1,
+        slotId: 'b',
+        placement: FxPlacement.pre,
+      ),
+    ).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(

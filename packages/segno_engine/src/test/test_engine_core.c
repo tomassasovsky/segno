@@ -25056,6 +25056,287 @@ static void test_fx_entry_channel_setter_guards(void) {
   le_engine_destroy(e);
 }
 
+/* ---- the whole-track Pre print (slice 3e) ---- */
+
+/* A short loop: these tests measure a steady value, not a decay, so the
+ * render settles quickly and the two-in input block fits one call. */
+#define WT_LOOP 64
+
+/* A two-in, two-out engine with a two-part track 0 holding [value] on both
+ * parts, PLAYING, routed to the one stereo pair. [cap] picks the cache: 0
+ * pins the live path, the default lets a render publish. */
+static le_engine* wt_engine_two_parts(float value, int64_t cap) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 20000);
+  le_engine_set_fx_cache_cap(e, cap);
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
+  CHECK(le_engine_set_lane_output(e, 0, 1, 0x3) == LE_OK);
+  drain(e);
+  static float in[2 * 64];
+  static float out[2 * 64];
+  for (int i = 0; i < 2 * 64; ++i) in[i] = value;
+  le_engine_record(e, 0);
+  le_engine_process(e, out, in, (uint32_t)WT_LOOP);
+  le_engine_record(e, 0);
+  drain(e);
+  return e;
+}
+
+/* Pumps [frames] of silence through a two-in engine, keeping the last block. */
+static void wt_pump(le_engine* e, int frames, float* last) {
+  static float zin[2 * 64];
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    le_engine_process(e, last, zin, (uint32_t)n);
+    frames -= n;
+  }
+}
+
+/* Whole-track Pre processes the COMBINATION of the track's parts as one
+ * signal, which is the whole reason it is not a per-part fan-out.
+ *
+ * Two parts at 0.5 through one unity drive (p0 = 0 -> 1x pre-gain, p1 = 1 ->
+ * unity level) on the TRACK give tanhf(1.0) = 0.7616. Fanning the same drive
+ * out to each part and summing would give 2 * tanhf(0.5) = 0.9242 — the
+ * difference a compressor or a distortion makes, and far outside any
+ * tolerance.
+ *
+ * Run twice: live, and through a published render. They must agree, because
+ * the render is an optimization of the same function. */
+static void test_whole_track_pre_processes_the_combination(void) {
+  printf("test_whole_track_pre_processes_the_combination\n");
+  static float out[2 * 64];
+  const float one_signal = tanhf(1.0f);
+  const float fanned_out = 2.0f * tanhf(0.5f);
+  CHECK(fabsf(one_signal - fanned_out) > 0.1f); /* the test can tell them apart */
+
+  for (int pass = 0; pass < 2; ++pass) {
+    const int64_t cap = pass == 0 ? 0 : LE_CACHE_DEFAULT_CAP_BYTES;
+    le_engine* e = wt_engine_two_parts(0.5f, cap);
+    CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+    CHECK(le_engine_set_track_fx_count(e, 0, 1, 1) == LE_OK); /* Pre */
+    CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
+    drain(e);
+    le_lane_cache_info info;
+    if (pass == 1) {
+      le_engine_get_track_cache(e, 0, &info); /* polling drives the cache */
+      wt_pump(e, 40000, out);
+      /* Past the settle window and several loop tops, so the render has
+       * published and engaged. */
+      int engaged = 0;
+      for (int k = 0; k < 500 && !engaged; ++k) {
+        le_engine_get_track_cache(e, 0, &info);
+        test_sleep_ms(1);
+        wt_pump(e, 256, out);
+        le_engine_get_track_cache(e, 0, &info);
+        engaged = info.engaged;
+      }
+      /* Without this the comparison would be two live passes. */
+      CHECK(engaged);
+      CHECK(info.state == LE_CACHE_CACHED);
+      CHECK(info.renders == 1);
+      CHECK(info.entry_frames == WT_LOOP);
+    } else {
+      wt_pump(e, 4000, out);
+      le_engine_get_track_cache(e, 0, &info);
+      CHECK(info.engaged == 0);
+    }
+    CHECK(fabsf(out[2 * 31] - one_signal) < 1e-3f);
+    CHECK(fabsf(out[2 * 31 + 1] - one_signal) < 1e-3f);
+    le_engine_destroy(e);
+  }
+}
+
+/* Spins the scheduler until the track's print engages, or gives up. */
+static int wt_wait_engaged(le_engine* e, float* out) {
+  le_lane_cache_info info;
+  wt_pump(e, 40000, out);
+  for (int k = 0; k < 500; ++k) {
+    le_engine_get_track_cache(e, 0, &info);
+    test_sleep_ms(1);
+    wt_pump(e, 256, out);
+    le_engine_get_track_cache(e, 0, &info);
+    if (info.engaged) return 1;
+  }
+  return 0;
+}
+
+/* A part carrying a POST entry keeps the whole track's Pre run LIVE, and says
+ * so. This is the printability rule, and it is the whole reason the design
+ * survives the accepted contract: printing the combination would have to bake
+ * that part's Post entry, because it is upstream of the track's chain — and a
+ * baked tail cannot drain past a Stop, which is exactly what that part's own
+ * switch promises. Nothing is disabled; the track's Pre run sounds the same,
+ * computed rather than rendered. */
+static void test_a_part_post_entry_keeps_the_track_live(void) {
+  printf("test_a_part_post_entry_keeps_the_track_live\n");
+  static float out[2 * 64];
+  le_engine* e = wt_engine_two_parts(0.5f, LE_CACHE_DEFAULT_CAP_BYTES);
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  /* One part gains a chain with BOTH placements: a Pre drive it DOES get its
+   * own print for, and a Post drive it does not. That is the case the rule
+   * exists for — the part's own print stops at its Pre prefix, so a track
+   * render built from it would silently drop the Post entry. */
+  for (int32_t idx = 0; idx < 2; ++idx) {
+    CHECK(le_engine_set_lane_fx(e, 0, 1, idx, LE_FX_DRIVE) == LE_OK);
+    CHECK(le_engine_set_lane_fx_param(e, 0, 1, idx, 0, 0.0f) == LE_OK);
+    CHECK(le_engine_set_lane_fx_param(e, 0, 1, idx, 1, 1.0f) == LE_OK);
+  }
+  CHECK(le_engine_set_lane_fx_count(e, 0, 1, 2, 1) == LE_OK); /* one of each */
+  drain(e);
+
+  CHECK(!wt_wait_engaged(e, out));
+  le_lane_cache_info info;
+  le_engine_get_track_cache(e, 0, &info);
+  CHECK(info.engaged == 0);
+  CHECK(info.renders == 0);
+
+  /* And it still SOUNDS right, live: part 0 at 0.5 plus part 1 through two
+   * unity drives, the sum through the track's. A render built from the part's
+   * Pre print alone would drop that second drive and land elsewhere. */
+  const float part1 = tanhf(tanhf(0.5f));
+  const float want = tanhf(0.5f + part1);
+  CHECK(fabsf(want - tanhf(0.5f + tanhf(0.5f))) > 1e-2f); /* the two differ */
+  wt_pump(e, 4000, out);
+  CHECK(fabsf(out[2 * 31] - want) < 1e-3f);
+
+  /* Move that entry to Pre as well and the track prints. */
+  CHECK(le_engine_set_lane_fx_count(e, 0, 1, 2, 2) == LE_OK);
+  drain(e);
+  CHECK(wt_wait_engaged(e, out));
+
+  le_engine_destroy(e);
+}
+
+/* A track's Pre run stops with its recording, and its Post run drains — the
+ * two halves of the accepted tail contract at track scope, on the live path
+ * (the cap is 0, so nothing is printed and the chain really is running). */
+static void test_whole_track_pre_stops_and_post_drains(void) {
+  printf("test_whole_track_pre_stops_and_post_drains\n");
+  static float out[2 * 64];
+
+  for (int pass = 0; pass < 2; ++pass) {
+    /* pass 0: the echo is Pre, pass 1: Post. */
+    le_engine* e = wt_engine_two_parts(0.5f, 0);
+    CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_ECHO) == LE_OK);
+    CHECK(le_engine_set_track_fx_count(e, 0, 1, pass == 0 ? 1 : 0) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.01f) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 0.6f) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
+    drain(e);
+    wt_pump(e, 4000, out);
+    float peak = 0.0f;
+    for (int i = 0; i < 64; ++i) {
+      if (fabsf(out[2 * i]) > peak) peak = fabsf(out[2 * i]);
+    }
+    CHECK(peak > 1e-3f); /* it is sounding before the Stop */
+
+    CHECK(le_engine_stop_track(e, 0) == LE_OK);
+    drain(e);
+    wt_pump(e, 1024, out);
+    peak = 0.0f;
+    for (int i = 0; i < 64; ++i) {
+      if (fabsf(out[2 * i]) > peak) peak = fabsf(out[2 * i]);
+    }
+    if (pass == 0) {
+      CHECK(peak < 1e-3f); /* Pre: the repeats stop with the recording */
+    } else {
+      CHECK(peak > 1e-3f); /* Post: the repeats drain */
+    }
+    le_engine_destroy(e);
+  }
+}
+
+/* Every edit re-renders from the ORIGINALS, never from the previous result:
+ * a Pre parameter moved twice lands exactly where a fresh engine with the
+ * final value lands, which compounding could not produce. */
+static void test_whole_track_pre_edits_from_the_originals(void) {
+  printf("test_whole_track_pre_edits_from_the_originals\n");
+  static float edited[2 * 64];
+  static float fresh[2 * 64];
+
+  for (int pass = 0; pass < 2; ++pass) {
+    float* out = pass == 0 ? edited : fresh;
+    le_engine* e = wt_engine_two_parts(0.4f, LE_CACHE_DEFAULT_CAP_BYTES);
+    CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+    CHECK(le_engine_set_track_fx_count(e, 0, 1, 1) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
+    if (pass == 0) {
+      /* Print at one pre-gain, then move it — twice. */
+      CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.3f) == LE_OK);
+      drain(e);
+      CHECK(wt_wait_engaged(e, out));
+      CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.7f) == LE_OK);
+      drain(e);
+      CHECK(wt_wait_engaged(e, out));
+    }
+    CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+    drain(e);
+    CHECK(wt_wait_engaged(e, out));
+    le_engine_destroy(e);
+  }
+  for (int i = 0; i < 64; ++i) {
+    CHECK(fabsf(edited[2 * i] - fresh[2 * i]) < 1e-4f);
+    CHECK(fabsf(edited[2 * i + 1] - fresh[2 * i + 1]) < 1e-4f);
+  }
+}
+
+/* The print is a copy: the recordings, their layers and the undo history are
+ * untouched by it, and it never outlives the audio it describes.
+ *
+ * Overdub a printed track, then Undo. The render is keyed on the track's
+ * content revision, so the overdub drops it the moment the content moves, and
+ * the Undo restores the take exactly as it would with no print in sight —
+ * which is what "non-destructive" has to mean. */
+static void test_whole_track_pre_leaves_the_recording_alone(void) {
+  printf("test_whole_track_pre_leaves_the_recording_alone\n");
+  static float out[2 * 64];
+  static float in[2 * 64];
+  le_engine* e = wt_engine_two_parts(0.5f, LE_CACHE_DEFAULT_CAP_BYTES);
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  drain(e);
+  CHECK(wt_wait_engaged(e, out));
+  const float printed = out[2 * 31];
+  CHECK(fabsf(printed - tanhf(1.0f)) < 1e-3f);
+
+  /* An overdub pass moves the content, so the render stops describing the
+   * track and it plays live from the new material. */
+  for (int i = 0; i < 2 * 64; ++i) in[i] = 0.25f;
+  CHECK(le_engine_record(e, 0) == LE_OK); /* start the overdub */
+  drain(e);
+  le_engine_process(e, out, in, (uint32_t)WT_LOOP);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* stop it */
+  drain(e);
+  wt_pump(e, 2000, out); /* let the pass retire */
+  le_lane_cache_info info;
+  le_engine_get_track_cache(e, 0, &info);
+  CHECK(info.engaged == 0);
+  wt_pump(e, 2000, out);
+  const float overdubbed = out[2 * 31];
+  CHECK(fabsf(overdubbed - printed) > 1e-3f); /* the pass really landed */
+
+  /* Undo takes the layer back. The take returns to what it was, and the
+   * render — which never wrote into it — can describe it again. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  wt_pump(e, 2000, out);
+  CHECK(fabsf(out[2 * 31] - printed) < 1e-3f);
+  CHECK(wt_wait_engaged(e, out));
+  CHECK(fabsf(out[2 * 31] - printed) < 1e-3f);
+
+  le_engine_destroy(e);
+}
+
 /* ---- the All tracks recorded-mix chain (slice 3e) ---- */
 
 /* An empty All tracks chain is bit-identical to the pre-slice-3e engine:
@@ -29313,6 +29594,11 @@ int main(void) {
   test_fx_entry_channels_and_level();
   test_fx_entry_channels_leave_with_a_bypass();
   test_fx_entry_channel_setter_guards();
+  test_whole_track_pre_processes_the_combination();
+  test_a_part_post_entry_keeps_the_track_live();
+  test_whole_track_pre_stops_and_post_drains();
+  test_whole_track_pre_edits_from_the_originals();
+  test_whole_track_pre_leaves_the_recording_alone();
   test_all_tracks_empty_is_bit_identical();
   test_all_tracks_leaves_live_monitoring_alone();
   test_all_tracks_runs_per_destination();

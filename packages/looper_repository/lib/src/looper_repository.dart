@@ -4044,14 +4044,7 @@ class LooperRepository {
     required int channel,
     required List<TrackEffect> effects,
   }) {
-    // Wholly Post, like an output chain (slice 3e). A Pre entry is printed
-    // from a dry original, and this stage has none: it processes the SUM of
-    // the track's parts, which is computed live from lanes that each own
-    // their own recording. Storing a placement the engine cannot honour
-    // would be a control that reads as doing something and does not.
-    final clamped = _markBusUnsupportedPlugins(
-      _clampAndMint([for (final fx in effects) _placed(fx, FxPlacement.post)]),
-    );
+    final clamped = _markBusUnsupportedPlugins(_clampAndMint(effects));
     if (clamped.isEmpty) {
       _trackEffects.remove(channel);
     } else {
@@ -4506,11 +4499,18 @@ class LooperRepository {
   // slot id, and neither changes. Each setter names the instance by slot id
   // for the same reason: an index would be the one thing the move invalidates.
   //
-  // Only a live input and a recorded part have a switchable placement: they
-  // are the two things that own a dry original, which is what a Pre entry is
-  // printed from. A whole track's chain and an output chain each process a
-  // sum computed live, so they have no setter and their write boundary forces
-  // Post.
+  // A live input, a recorded part and a whole track have a switchable
+  // placement. An output chain and the All-tracks recorded mix do not: they
+  // process every source routed to them, which is not a fixed combination the
+  // engine can render, so their stage is fixed after their own mix and their
+  // write boundary forces Post.
+  //
+  // A whole track's Pre run is rendered over the COMBINATION of its parts —
+  // each part's own printed material at its level, mute and pan, summed —
+  // which the engine can build from originals. It renders only while every
+  // part's chain is wholly Pre; a part carrying a Post entry keeps the
+  // track's Pre run live, sounding the same, because a render would have to
+  // bake that Post entry and a baked tail cannot drain past a Stop.
 
   /// Moves the entry with [slotId] on lane [lane] of track [channel] to
   /// [placement], to the end of that stage's run, keeping its identity,
@@ -4532,6 +4532,27 @@ class LooperRepository {
     final moved = _withPlacement(effects, slotId, placement);
     if (identical(moved, effects)) return EngineResult.ok;
     return setLaneEffects(channel: channel, lane: lane, effects: moved);
+  }
+
+  /// Moves the entry with [slotId] on track [channel]'s Track-stage chain to
+  /// [placement] — see [setLaneEffectPlacement].
+  ///
+  /// A whole track's Pre run processes the combination of its parts as one
+  /// signal, which is what makes it different from putting the same effect on
+  /// each part: a compressor or a distortion sounds different on a sum than
+  /// on the parts separately.
+  EngineResult setTrackEffectPlacement({
+    required int channel,
+    required String slotId,
+    required FxPlacement placement,
+  }) {
+    final effects = _trackEffects[channel];
+    if (effects == null || !effects.any((fx) => fx.slotId == slotId)) {
+      return EngineResult.invalid;
+    }
+    final moved = _withPlacement(effects, slotId, placement);
+    if (identical(moved, effects)) return EngineResult.ok;
+    return setTrackEffects(channel: channel, effects: moved);
   }
 
   /// Moves the entry with [slotId] on monitor [input]'s chain to [placement]

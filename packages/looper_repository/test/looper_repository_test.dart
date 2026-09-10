@@ -7583,7 +7583,7 @@ void main() {
       expect(repo.laneEffects(0, 0), before);
     });
 
-    test('an unknown slot id is invalid on both switchable stages', () {
+    test('an unknown slot id is invalid on every switchable stage', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
@@ -7595,6 +7595,10 @@ void main() {
         )
         ..setMonitorEffects(
           input: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        )
+        ..setTrackEffects(
+          channel: 0,
           effects: [at(TrackEffectType.drive, FxPlacement.post)],
         );
 
@@ -7610,6 +7614,14 @@ void main() {
       expect(
         repo.setMonitorEffectPlacement(
           input: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setTrackEffectPlacement(
+          channel: 0,
           slotId: 'nobody',
           placement: FxPlacement.pre,
         ),
@@ -7640,13 +7652,13 @@ void main() {
       expect(fxPreCount(repo.monitorEffects(1)), 1);
     });
 
-    test('a whole-track chain is stored wholly post, like an output one', () {
+    test('a whole track carries the switch, and its split reaches the '
+        'engine', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
-      // A Pre entry is printed from a dry original, and this stage has none:
-      // it processes the sum of the track's parts, computed live from lanes
-      // that each own their own recording.
+      // A whole track's Pre run is rendered over the combination of its
+      // parts, so unlike an output chain it does carry the switch.
       repo.setTrackEffects(
         channel: 2,
         effects: [
@@ -7656,14 +7668,47 @@ void main() {
       );
 
       expect(repo.trackEffects(2).map((e) => e.placement), [
-        FxPlacement.post,
+        FxPlacement.pre,
         FxPlacement.post,
       ]);
-      expect(fxPreCount(repo.trackEffects(2)), 0);
-      expect(repo.trackEffects(2).map((e) => (e as BuiltInEffect).type), [
-        TrackEffectType.reverb,
+      expect(fxPreCount(repo.trackEffects(2)), 1);
+      expect(engine.trackFxCount[2], 2);
+      expect(engine.trackFxPreCount[2], 1);
+    });
+
+    test('a whole-track instance moves to the end of its new stage, keeping '
+        'its identity', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.trackEffects(2).first.slotId!;
+
+      expect(
+        repo.setTrackEffectPlacement(
+          channel: 2,
+          slotId: moving,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+
+      final chain = repo.trackEffects(2);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
         TrackEffectType.drive,
+        TrackEffectType.delay,
+        TrackEffectType.filter,
       ]);
+      expect(chain.last.slotId, moving);
+      expect(fxPreCount(chain), 0);
+      expect(engine.trackFxPreCount[2], 0);
     });
 
     test('an output chain is stored wholly post, whatever it is handed', () {
