@@ -157,14 +157,14 @@ All three recommendations are in the package as of this branch.
 
 | change | where | effect |
 |---|---|---|
-| Five printed floor rails on a neoprene strip | `floor_rail_lines()`, 14 segments in 3 parts | 353 → 49 MPa, 23.0 → 0.22 mm |
+| Three printed floor rails on a neoprene strip | `floor_rail_lines()`, 12 segments in 2 parts | 96 MPa, 3.3 mm at 1 kN |
 | `POST_U` spread to the seven interior pedal gaps | 5 more steel posts, +10 M4 floor bores | band before the screens 7-11 kg → 49-398 kg |
 | `segno_lid_prop`, printed | the one clear lane beside BANK, +2 M4 bores | strip beside BANK 8 kg → 131 kg |
 | 1050 → 1100-H14 on every callout | generator, drawings, shop message | design value 95 MPa, not the lot's 127 |
 
 The 60 feet were an intermediate answer: they carried the load (89 MPa) and
 looked like a rash. Five continuous rails do it better on every count and the
-support is a 25.4 × 3.2 mm self-adhesive **solid neoprene** strip in a printed
+support is a 19.05 × 3.2 mm self-adhesive **solid neoprene** strip in a printed
 PETG channel — smooth, because every adhesive tape stocked locally is mineral
 grit that would score a floor, and 3.2 mm, because at the 0.5–1 mm of a grip tape
 a bonded rubber layer is stiff in compression and buys friction but no compliance.
@@ -190,14 +190,58 @@ dents at 11 kg. The 7 in tower's right leg ends at u 213.6 and the CLEAR
 pedestal starts at 226.9; 13.3 mm is not a column, and closing it means moving
 the tower or the pedestal.
 
+## The linear numbers above are superseded
+
+Everything in this file computed with `_stomp_fea.py` is linear Kirchhoff plate
+bending. That element is right to 0.3% against Timoshenko, and the model is
+useless outside small-deflection theory. Once a sheet passes its own thickness it
+starts carrying load as a membrane in tension, which the model does not have. At
+w/t = 10 it overstates deflection **sixfold**.
+
+That was caught by an observation, not by a check: a Boss RC-600 is 1.5 mm steel
+on four feet and survives years of stomping, and this model says its top panel
+yields at 42 kg. When a model contradicts a shipping product, the model is wrong.
+
+The replacement is OpenSees, free and pip-installable, using `ShellNLDKGQ`
+elements, which carry geometric nonlinearity. It was validated before use:
+deflection within 1.7% of Timoshenko, stress mesh-converged and within 2.4% at
+the plate centre, and the nonlinear element reproduces the linear answer exactly
+at w/t = 0.01. Two of my own errors surfaced during that validation and are worth
+recording because both looked like physics: reading the element's 24-value nodal
+force vector as if it were stress resultants gives stresses twenty times too high
+that scale with mesh size, and a load patch applied to a simply supported plate
+puts its true peak at the corners, not under the load.
+
+Numbers from the validated model, all at 1000 N on one pedal, each against its
+own material's yield:
+
+| support | peak | deflection | vs yield |
+|---|---|---|---|
+| Boss RC-600 top panel, the benchmark | 401 MPa | 1.77 mm | 2.00 |
+| four corner feet, RC-600 style | 351 MPa | 6.47 mm | 3.69 |
+| as originally drawn, 15 rubber feet | 277 MPa | 4.52 mm | 2.92 |
+| 20 feet, front and back of every pedal | 167 MPa | 2.15 mm | 1.76 |
+| **three rails, as built** | **96 MPa** | **3.28 mm** | **1.01** |
+| four rails, fourth at v 262.4 | 91 MPa | 1.43 mm | 0.96 |
+| 40 feet, one on every chassis screw | 71 MPa | 1.29 mm | 0.75 |
+
+Read the RC-600 row before drawing conclusions from the others. A product that
+demonstrably survives computes as yielding somewhere at 1 kN, so "peak von Mises
+exceeds yield" is not a failure criterion. Real sheet metal takes a small
+contained plastic zone at a load point and nothing visible happens. What matters
+is that the deflection stays small and the zone stays local.
+
+Keep `_stomp_fea.py`: its rankings are sound and its element is validated. Do not
+quote its absolute numbers.
+
 ## Limits of this model
 
 - Plate bending only. Membrane stiffening at large deflection is ignored, which
   makes the 13–23 mm as-designed deflections pessimistic; it does not rescue
   them, and stresses near the feet are bending-dominated either way.
-- The intake vent field sits in the band the plate would have to carry a stomp
-  through, and is not modelled, so the as-designed numbers are if anything
-  optimistic.
+- The bottom plate no longer has an intake vent field, so the band the plate
+  carries a stomp through is solid metal. The earlier note here about the field
+  making the as-designed numbers optimistic no longer applies.
 - The faceplate is modelled simply supported on its skirt ledge with the two
   posts as props; collar and LED-insert backing are ignored except where noted.
 - Foot stiffness is nominal. Sweeping 150–1200 N/mm moves the peak by ±5 %.
