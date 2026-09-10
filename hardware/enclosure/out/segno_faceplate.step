@@ -10,7 +10,7 @@ FILE_DESCRIPTION(
 
 FILE_NAME(
 /* name */ 'segno_faceplate.step',
-/* time_stamp */ '2026-09-09T22:43:09-03:00',
+/* time_stamp */ '2026-09-10T00:37:35-03:00',
 /* author */ (''),
 /* organization */ (''),
 /* preprocessor_version */ 'ST-DEVELOPER v20.1',
@@ -4701,7 +4701,7 @@ SOLID_ANGLE_UNIT()
 #4634=PRODUCT_DEFINITION_SHAPE('',$,#4637);
 #4635=SHAPE_REPRESENTATION('',(#2837),#4627);
 #4636=PRODUCT_DEFINITION_CONTEXT('part definition',#4641,'design');
-#4637=PRODUCT_DEFINITION('2026-09-09-22-43-09-484','faceplate',#4638,#4636);
+#4637=PRODUCT_DEFINITION('2026-09-10-00-37-35-454','faceplate',#4638,#4636);
 #4638=PRODUCT_DEFINITION_FORMATION('',$,#4643);
 #4639=PRODUCT_RELATED_PRODUCT_CATEGORY('faceplate','faceplate',(#4643));
 #4640=APPLICATION_PROTOCOL_DEFINITION('international standard',
@@ -4709,7 +4709,7 @@ SOLID_ANGLE_UNIT()
 #4641=APPLICATION_CONTEXT(
 'Core Data for Automotive Mechanical Design Process');
 #4642=PRODUCT_CONTEXT('part definition',#4641,'mechanical');
-#4643=PRODUCT('2026-09-09-22-43-09-484','faceplate',$,(#4642));
+#4643=PRODUCT('2026-09-10-00-37-35-454','faceplate',$,(#4642));
 #4644=PRESENTATION_STYLE_ASSIGNMENT((#4646));
 #4645=PRESENTATION_STYLE_ASSIGNMENT((#4647));
 #4646=SURFACE_STYLE_USAGE(.BOTH.,#4648);

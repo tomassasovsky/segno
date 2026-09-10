@@ -504,14 +504,53 @@ walls and still stands 1.7 mm proud to reach the floor. Adhesive holds it during
 handling; it is not in the load path, which is the same rule the feet were
 screw-on for. Ride height is 7.7 mm against the 5.0 mm the feet set.
 
-`_rail_split()` cuts each rail into bed-sized segments **with the joints on screw
-stations**, so one screw clamps two segment ends. That is not cosmetic: an
-equal-length split leaves segments holding a single screw, and a segment on one
-screw pivots about it. It optimises for the fewest segments and only then the
-shortest longest one — optimising length alone chops the rail into 40 mm
-confetti. Seventeen segments, longest 202.3 mm, every one on at least two screws.
-The set needs 2,819 mm of strip; a 10 ft roll leaves 229 mm of margin and a 20 ft
-roll leaves 3,277 mm, which is the one to buy.
+**Every segment of a rail is the same printed part.** Three parts in all: the
+front one ×8, the rear ×4 and the mid ×2. That falls out of taking the rail span
+from the pedal pitch rather than the plate edges — each segment is exactly two
+pedals wide, 202.29 mm, so the screw pattern repeats instead of drifting 5.2 mm a
+segment as it did across an 830 mm span. Ends are rounded to a full stadium and
+the joints keep a 3 mm gap. The set needs 2,765 mm of strip; a 20 ft roll is the
+one to buy.
+
+Sameness is measured on the **printed** part, not the span it occupies. Taking
+the joint gap off only the ends a segment shares with a neighbour reads as the
+obvious way to leave a 3 mm gap, and it makes the first and last segment of each
+rail 1.5 mm longer than the middle two. Every segment loses half a gap at both
+ends, so a rail now stops 1.5 mm short of its span at each outer end.
+
+The rear rail's anchors are ours to place, and there are only 53 mm of segment
+where they may go. Two of the eight are the whole story: the buck converters are
+22 mm bricks bolted flat to the floor across u 340–480, a segment boundary falls
+at u 423, and a screw's **head** stands up inside the console. So the left brick
+rules out the far end of segment 2 and the right brick rules out the near end of
+segment 3 — and because all four segments are one part, an offset ruled out in
+one is ruled out in all. What survives is 61.5–114.8 mm from a segment's near
+end; the anchors sit at 65 and 111, 3.5 mm inside each edge of that window.
+
+The pair is therefore not symmetric about the segment centre, and the two screws
+are 46 mm apart on a 202 mm segment. Neither costs anything: a rail works in
+compression between the plate and the floor, so an unscrewed tail still carries
+its load, and two screws already fix a segment against turning. What the offsets
+must not be is small — an even split of the old plate-to-plate span put a screw
+5 mm from a rounded tip with about 3 mm of wall behind the counterbore.
+
+**The rear rail has exactly one lane, and it is not where the feet were.** Behind
+the mid rail the floor is occupied at v = 278.65, 279.5, 296, 327, 359.5, 367.5
+and 392.8, and only the 327–359.5 gap takes 27 mm. It cannot sit at v 374: the
+buck converters bolt through v 367.5 with a **floor-side washer and nut**, so
+hardware protrudes there and the rail would perch on it. It sits at 343.25 with
+1.5 mm clear of each screen-stand row — thin, and worth checking on the first
+set. Moving forward costs nothing measurable: the stomp case is unchanged at
+49 MPa and a 3g set-down improves from 8.5 to 6.4 MPa. The rear overhang grows
+from 45 mm to 76 mm; the plate is fine, but tipping has not been checked and
+needs a real mass distribution.
+
+`_check()` gates the three properties learned the hard way here: that every
+segment of a rail is one printed shape; that **nothing but a rail's own screws
+sits under it**, the bore that gate first caught being the buck converter's; and
+that no anchor's head lands inside a converter body. The last one is the reason
+to distrust a plan view of the floor — the bores looked perfectly placed, and
+four of eight were under a brick.
 
 **The intake vents, and a mistake worth recording.** Spreading the posts across
 the whole band (below) put seven post feet in the intake vent field and shadowed

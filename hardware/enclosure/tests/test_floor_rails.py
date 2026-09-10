@@ -5,10 +5,10 @@ screw rows the floor already had. 52 MPa and 0.23 mm at a 1 kN stomp against
 353 MPa and 23 mm for the plate as drawn. `_stomp_fea.py` is the model; these
 are the regressions that keep the fix intact.
 
-Three of these guard mistakes that were actually made and caught here:
-a segment left holding one screw pivots about it, an equal-length split makes
-those, and the intake vent field collapsed 72% when the posts spread without
-anyone noticing, because the all-vents gate sums intake and exhaust.
+Three of these guard mistakes that were actually made and caught here: the rear
+anchors sat inside the buck converters, which no plan view shows; and the intake
+vent field collapsed 72% when the posts spread, because the all-vents gate sums
+intake and exhaust.
 """
 import math
 from pathlib import Path
@@ -50,20 +50,54 @@ class RailLayout(unittest.TestCase):
                 with self.subTest(rail=name, screw=round(s, 2)):
                     self.assertTrue(hit, 'rail screw is not on an existing bore')
 
-    def test_every_segment_holds_two_screws(self):
-        """A segment on one screw pivots about it. The equal split made two."""
+    def test_no_segment_is_left_turning_about_one_screw(self):
+        """An equal split gives every front and mid segment four screws, and the
+        rear anchors are ours to place, so they go two to a segment."""
         for name, k, _a, _b, on in self.segments:
             with self.subTest(rail=name, seg=k):
                 self.assertGreaterEqual(len(on), 2)
+
+    def test_the_rear_anchor_heads_stay_out_of_the_buck_converters(self):
+        """The bores are cheap under the floor and expensive above it. An even
+        45 mm inset put four of the eight heads inside a brick, and the plan view
+        showed nothing -- the converters are 22 mm of solid body standing on the
+        floor exactly where the rear rail runs.
+        """
+        half_head = enclosure.RAIL_HEAD_D / 2.0
+        for name, u, v, _spacing in enclosure.buck_mounts():
+            for au, av in enclosure.base_foot_xy():
+                with self.subTest(brick=name, anchor=(round(au, 2), av)):
+                    self.assertFalse(
+                        abs(au - u) < enclosure.BUCK_BODY[0]/2.0 + half_head
+                        and abs(av - v) < enclosure.BUCK_BODY[1]/2.0 + half_head)
+
+    def test_the_rear_anchors_repeat_and_stay_off_the_segment_tips(self):
+        """Same two offsets in every segment, or the segments are not one part;
+        and far enough in that the screw has wall around it, which is what the
+        45 mm inset was for before the converters took those offsets away."""
+        rear = [(a, b, on) for n, _k, a, b, on in self.segments if n == 'rear']
+        self.assertEqual(len(rear), enclosure.RAIL_SEGMENTS)
+        for a, b, on in rear:
+            start, length = enclosure._rail_print(a, b)
+            self.assertEqual([round(x - a, 6) for x in on],
+                             [round(o, 6) for o in enclosure.RAIL_REAR_ANCHORS])
+            for x in on:
+                self.assertGreater(x - start, enclosure.RAIL_W)
+                self.assertLess(x - start, length - enclosure.RAIL_W)
 
     def test_every_segment_fits_the_bed(self):
         for name, k, a, b, _on in self.segments:
             with self.subTest(rail=name, seg=k):
                 self.assertLessEqual(b - a, enclosure.RAIL_MAXLEN)
 
-    def test_the_split_takes_the_fewest_segments_not_the_shortest(self):
-        """Optimising length alone chopped the rail into 40 mm confetti."""
-        self.assertEqual(len(self.segments), 17)
+    def test_the_split_is_even(self):
+        """Even segments, as many as the bed needs. Cutting on screw stations
+        instead gave five uneven ones per rail to fix a problem three of the
+        five rails did not have."""
+        self.assertEqual(len(self.segments), 14)
+        for name in ("front_a", "front_b", "rear"):
+            lengths = [round(b - a, 6) for n, _k, a, b, _o in self.segments if n == name]
+            self.assertEqual(len(set(lengths)), 1, f"{name} segments are uneven")
 
     def test_rails_clear_the_bend_relief_and_each_other(self):
         BD = enclosure.D - 2 * enclosure.T
@@ -137,14 +171,42 @@ class Intake(unittest.TestCase):
 class Solid(unittest.TestCase):
 
     def test_a_segment_is_one_valid_printable_solid(self):
+        for name, _k, a, b, on in enclosure.floor_rail_segments():
+            dy = enclosure._rail_screw_dy(name)
+            with self.subTest(rail=name):
+                solid = enclosure._rail_solid(b - a, [(x - a, dy) for x in on])
+                self.assertTrue(solid.isValid())
+                self.assertEqual(len(solid.Solids()), 1)
+                box = solid.BoundingBox()
+                self.assertAlmostEqual(box.zmin, 0.0, places=6)
+                self.assertAlmostEqual(box.zmax, enclosure.RAIL_T, places=6)
+                self.assertAlmostEqual(box.ylen, enclosure.RAIL_W, places=6)
+                self.assertAlmostEqual(box.xlen, b - a, places=6)
+
+    def test_the_ends_are_round_and_the_joint_shows(self):
+        """Owner call: rounded ends and a visible gap. They are geometry, not a
+        drawing style -- an early version answered the ask with a rendering."""
         name, _k, a, b, on = enclosure.floor_rail_segments()[0]
-        dy = enclosure._rail_screw_dy(name)
-        solid = enclosure._rail_solid(b - a, [(x - a, dy) for x in on])
-        self.assertTrue(solid.isValid())
-        box = solid.BoundingBox()
-        self.assertAlmostEqual(box.zmin, 0.0, places=6)
-        self.assertAlmostEqual(box.zmax, enclosure.RAIL_T, places=6)
-        self.assertAlmostEqual(box.ylen, enclosure.RAIL_W, places=6)
+        solid = enclosure._rail_solid(b - a, [(x - a, enclosure._rail_screw_dy(name))
+                                              for x in on])
+        stadium = ((b - a) - enclosure.RAIL_W) * enclosure.RAIL_W \
+            + math.pi * (enclosure.RAIL_W/2.0)**2
+        gross = stadium * enclosure.RAIL_T
+        self.assertLess(solid.Volume(), gross)
+        self.assertGreater(solid.Volume(), gross * 0.75)
+        self.assertGreater(enclosure.RAIL_JOINT, 1.0)
+
+    def test_every_segment_of_a_rail_is_the_same_printed_part(self):
+        """The owner asked for four identical strips, not four that tile. Taking
+        the joint gap off only the shared ends left the first and last of each
+        rail 1.5 mm longer, and the span-based check could not see it."""
+        for name, _v, _u0, _u1, _s in enclosure.floor_rail_lines():
+            parts = {(round(enclosure._rail_print(a, b)[1], 6),
+                      tuple(round(x - enclosure._rail_print(a, b)[0], 6) for x in on))
+                     for n, _k, a, b, on in enclosure.floor_rail_segments()
+                     if n == name}
+            with self.subTest(rail=name):
+                self.assertEqual(len(parts), 1)
 
 
 if __name__ == '__main__':

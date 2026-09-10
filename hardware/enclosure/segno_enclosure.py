@@ -893,11 +893,31 @@ RAIL_CH_W = TAPE_W - 0.2      # UNDER the strip on purpose: gripped, not just gl
 RAIL_CH_D = 1.5               # shallower than the strip, so 1.7 mm reaches the floor
 RAIL_CBORE_D  = 6.2           # the M3 head sinks inside the PETG, above the channel,
 RAIL_CBORE_H  = 2.3           # so the strip runs over it unbroken -- no punching
-RAIL_JOINT     = 3.0          # gap at a segment joint
+RAIL_JOINT     = 3.0          # visible gap at a segment joint (owner call)
 RAIL_END_INSET = 1.5          # channel stops short of each end
 RAIL_MAXLEN    = 215.0        # Ender 3 V3 bed, less a margin
 RAIL_EDGE_MIN  = 4.5          # keep the rail off the wall bend relief (RI + T)
-RAIL_MARGIN    = 8.0          # rail ends inset from the side walls
+RAIL_SEGMENTS  = 4            # per full-width rail; two pedals each
+# The rear rail has exactly ONE lane. Behind the mid rail the floor is occupied at
+# v = 278.65, 279.5, 296, 327, 359.5, 367.5 and 392.8, and only the 327..359.5 gap
+# takes 27 mm. It cannot sit where the feet used to (v 374): the buck converters
+# bolt through v 367.5 with a floor-side washer and nut, so hardware protrudes
+# there and the rail would perch on it. Moving forward costs nothing -- the stomp
+# case is unchanged at 49 MPa and a 3g set-down improves from 8.5 to 6.4 MPa.
+RAIL_REAR_V    = (327.0 + 359.5) / 2.0   # 343.25, 1.5 mm clear of each stand row
+# The rear anchors are the only bores the rails add, and their SCREW HEADS land
+# inside the console. The two buck converters bolt flat to the floor across
+# u 340..480, and a segment boundary falls at u 423 -- so the left brick blocks
+# the far end of segment 1 and the right brick blocks the near end of segment 2.
+# Since every segment is the same part, one blocked offset is blocked in all four.
+# That leaves offsets 61.5..114.8 from a segment's near end, and these sit 3.5 mm
+# inside it at each side. The pair is deliberately NOT symmetric about the segment
+# centre; symmetry is not available here. The short 46 mm spread costs nothing:
+# a rail works in compression between the plate and the floor, so an unscrewed
+# tail still carries load, and two screws already fix the segment against turning.
+RAIL_REAR_ANCHORS = (65.0, 111.0)   # offsets from each segment's near end
+RAIL_HEAD_D = 9.0             # conservative envelope for the nut/washer stack that
+                              # stands on the floor at an anchor, inside the console
 VENT_RAIL_CLR  = 2.0          # intake slot to rail edge; the old block left 0.11
 VENT_INTAKE_MIN = 3000.0      # mm2 of INTAKE alone. VENT_FREE_AREA_MIN sums intake
                               # and exhaust, and the exhaust is 4x the intake, so it
@@ -2107,11 +2127,53 @@ def _check(strict_board_mount=True):
                         b[1] < v + RAIL_W/2.0 and v - RAIL_W/2.0 < b[3]), (
                 f"RAIL {name} crosses an intake vent slot "
                 f"(u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f})")
+    # Every segment of a rail must be the SAME PART: same length, same screw
+    # offsets. Spanning plate-edge to plate-edge drifted them 5.2 mm apart.
+    for name, _v, u0, u1, _s in floor_rail_lines():
+        shapes = set()
+        for n, _k, a, b, on in floor_rail_segments():
+            if n != name:
+                continue
+            start, length = _rail_print(a, b)
+            shapes.add((round(length, 6), tuple(round(x - start, 6) for x in on)))
+        assert len(shapes) == 1, (
+            f"RAIL {name}: {len(shapes)} different segment shapes -- they are meant "
+            "to be one printed part. Compare the PRINTED extent: trimming the joint "
+            "only where segments meet leaves the first and last 1.5 mm long")
+    # Nothing but a rail's own screws may sit under it: a bore there means hardware
+    # the rail would foul, or a hole it would blind.
+    _own = {(round(x, 3), round(v + _rail_screw_dy(n), 3))
+            for n, v, u0, u1, sc in floor_rail_lines() for x in sc if u0 <= x <= u1}
+    for name, v, u0, u1, _s in floor_rail_lines():
+        lo, hi = v - RAIL_W/2.0, v + RAIL_W/2.0
+        for c in dxf_base_bores():
+            if not (u0 <= c["u"] <= u1 and lo <= c["v"] <= hi):
+                continue
+            if (round(c["u"], 3), round(c["v"], 3)) in _own:
+                continue
+            assert False, (
+                f"RAIL {name} covers the {c['ref']} bore at "
+                f"({c['u']:.1f}, {c['v']:.1f}) -- move the rail, notch it, or "
+                "confirm nothing protrudes below there")
     for name, k, a, b, on in floor_rail_segments():
         assert b - a <= RAIL_MAXLEN, (
             f"RAIL {name} segment {k} is {b-a:.0f} mm; the bed takes {RAIL_MAXLEN:.0f}")
         assert len(on) >= 2, (
             f"RAIL {name} segment {k} holds {len(on)} screw -- it would pivot about it")
+    # A rail screw is cheap under the floor and expensive above it: the head, its
+    # washer and its nut stand up INSIDE the console. The rear rail is the only one
+    # placing new bores, and it runs straight under the two buck converters, which
+    # are bolted flat to the floor. Anchors at an even 45 mm inset put four of the
+    # eight heads inside a brick, and nothing in the plan view said so.
+    _hr = RAIL_HEAD_D / 2.0
+    for _bn, _bku, _bkv, _ in buck_mounts():
+        for _u, _v in base_foot_xy():
+            assert not (abs(_u - _bku) < BUCK_BODY[0]/2.0 + _hr
+                        and abs(_v - _bkv) < BUCK_BODY[1]/2.0 + _hr), (
+                f"RAIL rear: the anchor head at ({_u:.1f}, {_v:.1f}) is inside "
+                f"{_bn} (u {_bku-BUCK_BODY[0]/2.0:.1f}..{_bku+BUCK_BODY[0]/2.0:.1f}, "
+                f"v {_bkv-BUCK_BODY[1]/2.0:.1f}..{_bkv+BUCK_BODY[1]/2.0:.1f}) -- "
+                "see RAIL_REAR_ANCHORS for the offsets that stay clear")
     _rails = floor_rail_lines()
     for i, (na, va, a0, a1, _s) in enumerate(_rails):   # rails must not touch
         for nb, vb, b0, b1, _t in _rails[i+1:]:
@@ -3567,19 +3629,38 @@ def _transition_face(cq):
     return box.val().moved(loc)
 
 def base_foot_xy():
-    """Floor fixings in bottom-plate (u, v): the rear rail's six anchors.
+    """Floor fixings in bottom-plate (u, v): the rear rail's eight anchors.
 
     This was fifteen rubber feet, then twenty. The rails replaced them (#1019):
-    three full-width rails carry the console, so the only bores the floor still
-    needs are the ones holding the REAR rail down -- the other fourteen went, and
-    the intake vent field grew back into the room they were taking. The stations
-    are unchanged, so those six bores are the same holes the drawing already had.
+    four of the five rails ride screw rows the floor already had, so the only
+    bores the floor still needs are the two per segment holding the REAR rail
+    down -- the other twelve went, and the intake vent field grew back into the
+    room they were taking.
+
+    Two per segment, at the same offsets in every segment, because the segments
+    are one printed part. RAIL_REAR_ANCHORS says why those two offsets and no
+    others: the buck converters stand on the floor over most of the alternatives.
     """
-    BWl, BDl = W - 2*T, D - 2*T
-    front = sorted(u for _label, u, v in PEDALS if v == PEDAL_ROW1_V)
-    paired = [(front[i] + front[i+1]) / 2 for i in range(0, len(front), 2)]
-    return [(u, BDl - FOOT_INSET_Y)
-            for u in [FOOT_INSET_X] + paired + [BWl - FOOT_INSET_X]]
+    u0, u1 = _rail_span()
+    seg = (u1 - u0) / RAIL_SEGMENTS
+    return [(u0 + i*seg + off, RAIL_REAR_V)
+            for i in range(RAIL_SEGMENTS)
+            for off in RAIL_REAR_ANCHORS]
+
+
+def _rail_span():
+    """Full-width rails run pedal-to-pedal, half a pitch past each end one.
+
+    Not the plate edges. Spanning 8..838 makes the four segments 207.5 mm while
+    the pedals repeat every 101.14, so the screw pattern drifts 5.2 mm per
+    segment and no two segments are the same part. Taking the span from the pedal
+    pitch instead makes each segment exactly two pedals wide, so all four are one
+    printed part -- and the rear anchors, being ours to place, sit at the same
+    offset in every segment too.
+    """
+    row = sorted(u for _l, u, v in PEDALS if v == PEDAL_ROW1_V)
+    pitch = (row[-1] - row[0]) / (len(row) - 1)
+    return row[0] - pitch/2.0, row[-1] + pitch/2.0
 
 
 def floor_rail_lines():
@@ -3595,7 +3676,7 @@ def floor_rail_lines():
     BWl, BDl = W - 2*T, D - 2*T
     out = []
     for tag, row_v, u0, u1 in (
-            ("front", PEDAL_ROW1_V, RAIL_MARGIN, BWl - RAIL_MARGIN),
+            ("front", PEDAL_ROW1_V) + _rail_span(),
             ("mid", PEDAL_ROW2_V,
              min(u for _l, u, v in PEDALS if v != PEDAL_ROW1_V) - SKIRT_OUT_W/2.0,
              max(u for _l, u, v in PEDALS if v != PEDAL_ROW1_V) + SKIRT_OUT_W/2.0)):
@@ -3604,52 +3685,44 @@ def floor_rail_lines():
         screws = sorted(u + sgn*du for u in row for sgn in (-1, 1))
         for side, sfx in ((-1, "a"), (1, "b")):
             out.append((f"{tag}_{sfx}", _rail_v(row_v, side), u0, u1, screws))
-    out.append(("rear", BDl - FOOT_INSET_Y, RAIL_MARGIN, BWl - RAIL_MARGIN,
-                sorted(u for u, _v in base_foot_xy())))
+    out.append(("rear", RAIL_REAR_V) + _rail_span()
+               + (sorted(u for u, _v in base_foot_xy()),))
     return out
 
 
 def _rail_split(u0, u1, screws):
-    """Joints land ON screws, so one screw clamps both segment ends.
+    """Equal segments, as many as the bed needs and no more.
 
-    That is the whole point: an equal-length split leaves segments holding a
-    single screw, and a segment on one screw pivots about it. The objective is
-    the FEWEST segments that fit the bed, and only then the shortest longest one
-    -- optimising length alone chops the rail into forty-millimetre confetti.
-    Every segment must carry at least two screws.
+    An earlier version cut on screw stations so every segment carried two, which
+    is a real property but bought at the cost of five uneven segments per rail.
+    It was solving a problem three of the five rails did not have: an equal split
+    gives every front and mid segment four screws, and the rear anchors are ours
+    to place, so they go two per segment. _check() gates that; no segment is left
+    turning about a single screw.
     """
-    n = len(screws)
-    assert n >= 2, "a rail needs at least two screws"
-    if u1 - u0 <= RAIL_MAXLEN:
-        return [(u0, u1)]
-    INF = (10**9, float("inf"))
-    best = [INF] * n                      # (segments so far, longest so far)
-    prev = [None] * n
-    for i in range(1, n):                 # first segment u0..screws[i], holds 0..i
-        if screws[i] - u0 <= RAIL_MAXLEN:
-            best[i] = (1, screws[i] - u0)
-    for i in range(1, n):
-        for j in range(1, i):             # segment screws[j]..screws[i], both ends on it
-            if best[j] == INF or screws[i] - screws[j] > RAIL_MAXLEN:
-                continue
-            cand = (best[j][0] + 1, max(best[j][1], screws[i] - screws[j]))
-            if cand < best[i]:
-                best[i], prev[i] = cand, j
-    end, score = None, INF
-    for j in range(1, n - 1):             # last segment screws[j]..u1, holds j..n-1
-        if best[j] == INF or u1 - screws[j] > RAIL_MAXLEN:
-            continue
-        cand = (best[j][0] + 1, max(best[j][1], u1 - screws[j]))
-        if cand < score:
-            score, end = cand, j
-    assert end is not None, (
-        f"no split of {u1-u0:.0f} mm keeps every segment under {RAIL_MAXLEN:.0f} mm "
-        "with two screws on it")
-    cuts, k = [], end
-    while k is not None:
-        cuts.append(screws[k]); k = prev[k]
-    edges = [u0] + sorted(cuts) + [u1]
-    return list(zip(edges, edges[1:]))
+    n = max(1, int(math.ceil((u1 - u0) / RAIL_MAXLEN)))
+    step = (u1 - u0) / n
+    return [(u0 + i*step, u0 + (i+1)*step) for i in range(n)]
+
+
+def dxf_base_bores():
+    """Every bore in the bottom plate, with what put it there.
+
+    Used to prove a rail is not sitting on somebody else's hardware.
+    """
+    BDl = D - 2*T
+    out = [{"u": u, "v": v, "ref": "FOOT"} for u, v in base_foot_xy()]
+    out += [{"u": c["u"], "v": c["v"], "ref": "PLAT_SCR"} for c in platform_foot_holes()]
+    out += [{"u": au, "v": av, "ref": "STAND"} for au, av in STAND_ANCHORS]
+    for u in POST_U:
+        out += [{"u": u + du, "v": _POST_FOOT_VP, "ref": "POST_FOOT"}
+                for du in (-POST_BOLT_DU, POST_BOLT_DU)]
+    out += [{"u": PROP_U + du, "v": _PROP_FOOT_VP, "ref": "PROP_FOOT"}
+            for du in (-PROP_BOLT_DU, PROP_BOLT_DU)]
+    for _bn, bkx, _bky, bsp in buck_mounts():
+        out += [{"u": bkx + dx, "v": buck_mounts()[0][2] + BUCK_HOLE_OFFSET_V,
+                 "ref": "BUCK"} for dx in (-bsp/2.0, bsp/2.0)]
+    return out
 
 
 def floor_rail_segments():
@@ -5435,23 +5508,53 @@ def _prop_solid():
     return solid
 
 
+def _rail_stadium(cq, length, width, height):
+    """A stadium prism: rectangle plus a full round at each end, spanning 0..length.
+
+    Built from primitives rather than arcs -- a radiusArc of half the width picks
+    its own direction and quietly returns a concave profile, which reads as valid
+    and is 40% short on volume.
+    """
+    r = width / 2.0
+    body = (cq.Workplane("XY").box(length - width, width, height,
+                                   centered=(False, True, False))
+            .translate((r, 0, 0)))
+    for x in (r, length - r):
+        body = body.union(cq.Workplane("XY").center(x, 0).circle(r).extrude(height))
+    return body
+
+
+def _rail_print(a, b):
+    """A segment's PRINTED extent (start, length) -- what actually gets made.
+
+    Half a joint gap comes off each end, the outer ends included. Trimming only
+    the shared ends is the obvious reading of "a visible gap at a joint", and it
+    is wrong: it makes the first and last segment of a rail 1.5 mm longer than
+    the middle two, so the four are no longer one part. The owner asked for four
+    identical strips, and this is where that is either true or quietly not.
+    """
+    return a + RAIL_JOINT/2.0, (b - a) - RAIL_JOINT
+
+
 def _rail_solid(length, screws_local):
     """One printed floor-rail segment (issue #1019).
 
     Local frame: x along the rail, 0 at its low-u end; y across it, 0 on the
-    channel centreline; z up from the FLOOR face. So z=0 is the plane the rubber
-    would touch if the channel were full depth, and the strip stands proud of it.
+    channel centreline; z up from the FLOOR face, so z=0 is the plane the rubber
+    would touch if the channel were full depth and the strip stands proud of it.
+
+    Both ends are ROUNDED to a stadium (owner call) and the channel follows, so a
+    square-cut strip leaves a small crescent unfilled at each end -- under the
+    console, invisible, and it keeps the strip a scissors cut rather than a
+    template job.
 
     The screw head sinks into a counterbore that stops inside the PETG, above the
     channel roof, so the neoprene runs over it unbroken and never needs punching.
-    That does fix the assembly order: rails on first, strip in afterwards.
+    That fixes the assembly order: rails on first, strip in afterwards.
     """
     import cadquery as cq
-    body = (cq.Workplane("XY").box(length, RAIL_W, RAIL_T,
-                                   centered=(False, True, False)))
-    body = body.cut(cq.Workplane("XY")                       # the strip channel
-                    .box(length - 2*RAIL_END_INSET, RAIL_CH_W, RAIL_CH_D,
-                         centered=(False, True, False))
+    body = _rail_stadium(cq, length, RAIL_W, RAIL_T)
+    body = body.cut(_rail_stadium(cq, length - 2*RAIL_END_INSET, RAIL_CH_W, RAIL_CH_D)
                     .translate((RAIL_END_INSET, 0, 0)))
     for x, y in screws_local:
         body = body.cut(cq.Workplane("XY").center(x, y)      # M3 clearance, through
@@ -5467,18 +5570,14 @@ def _rail_solid(length, screws_local):
 def build_floor_rail_steps():
     """Every rail segment as STEP + STL, named so the plate order is obvious.
 
-    A segment loses half a joint gap at each end it shares with a neighbour, so
-    the printed run is continuous to within RAIL_JOINT and the joints land in
-    the pedal gaps where no screw sits.
+    Every segment loses half a joint gap at BOTH ends, so all four of a rail are
+    the same part and the joints land in the pedal gaps where no screw sits. The
+    rail therefore stops RAIL_JOINT/2 short of its span at each outer end.
     """
     import cadquery as cq
     made = []
     for name, k, a, b, on in floor_rail_segments():
-        u0, u1 = _rail_extent(name)
-        trim = (0.0 if a <= u0 + 1e-6 else RAIL_JOINT/2.0) \
-             + (0.0 if b >= u1 - 1e-6 else RAIL_JOINT/2.0)
-        length = (b - a) - trim
-        start = a + (0.0 if a <= u0 + 1e-6 else RAIL_JOINT/2.0)
+        start, length = _rail_print(a, b)
         dy = _rail_screw_dy(name)
         solid = _rail_solid(length, [(x - start, dy) for x in on])
         stem = f"segno_floor_rail_{name}_{k}"
@@ -6844,8 +6943,8 @@ def report():
       f"ride height {RIDE_H:.1f} mm")
     P(f"  strip         : {TAPE_W} x {TAPE_T} self-adhesive SOLID neoprene, "
       f"{_tape:.0f} mm needed (a 20 ft roll is 6096)")
-    P(f"  floor bores   : {len(base_foot_xy())} (the rear rail's anchors; the other "
-      f"fourteen went with the feet)")
+    P(f"  floor bores   : {len(base_foot_xy())} (the rear rail's anchors; twenty feet's "
+      f"worth of bores went, two came back to kill the pivot)")
     P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents())+_sv_area*FOAM_OPEN_FRACTION:.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
     P(f"  side louvres  : {len(_sv)} slots ({_sv_area:.0f} mm^2 geometric, counted at "
       f"{FOAM_OPEN_FRACTION:.0%} through foam), v {SIDE_VENT_V[0]:.0f}..{SIDE_VENT_V[1]:.0f}")
@@ -6976,14 +7075,12 @@ def _render_parts(cq, explode=0.0):
     for x,y in perim:                               # M4 bottom-plate screw heads
         add(cq.Workplane("XY").circle(4).extrude(2.6).translate((gx(y),gy(x),-2.6)).val(), SCR)
     for name, k, a, b, _on in floor_rail_segments():   # printed rails (#1019)
-        u0, u1 = _rail_extent(name)
-        a2 = a + (0.0 if a <= u0 + 1e-6 else RAIL_JOINT/2.0)
-        b2 = b - (0.0 if b >= u1 - 1e-6 else RAIL_JOINT/2.0)
+        a2, plen = _rail_print(a, b)
         v = dict((r[0], r[1]) for r in floor_rail_lines())[name]
-        add(cq.Workplane("XY").box(b2 - a2, RAIL_W, RAIL_T, centered=False)
+        add(cq.Workplane("XY").box(plen, RAIL_W, RAIL_T, centered=False)
             .translate((gx(v - RAIL_W/2.0), gy(a2), -RAIL_T)).val(), RAIL_PETG)
         add(cq.Workplane("XY")                        # the neoprene strip, standing proud
-            .box(b2 - a2 - 2*RAIL_END_INSET, TAPE_W, TAPE_T, centered=False)
+            .box(plen - 2*RAIL_END_INSET, TAPE_W, TAPE_T, centered=False)
             .translate((gx(v - TAPE_W/2.0), gy(a2 + RAIL_END_INSET),
                         -RAIL_T - (TAPE_T - RAIL_CH_D))).val(), FEET)
     for name,cx,cy,(sx,sy) in board_mounts():       # M3 standoffs under Pi + board

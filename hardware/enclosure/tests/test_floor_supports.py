@@ -1,4 +1,4 @@
-"""The rear rail's six floor anchors: cutting and clearance regressions.
+"""The rear rail's eight floor anchors: cutting and clearance regressions.
 
 These checks do not establish strength or load sharing; the rated-load
 answer lives in _stomp_fea.py and test_floor_rails.py. The purchased foot is
@@ -25,16 +25,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import segno_enclosure as enclosure
 
 
-# Selected floor coordinates, frozen independently of base_foot_xy(). The
-# original four locations remain; every front pair gains one support, and the
-# rear row matches it. The other three follow CLEAR/BANK and the steel posts.
 # The rear rail's anchors, frozen independently of base_foot_xy(). Twenty rubber
-# feet became five printed rails (#1019); three full-width rails carry the
-# console, so the only bores the floor still needs are these six, and they are
-# the same stations the drawing already had.
-ORIGINAL = ((14.3, 374.0), (831.7, 374.0))
-ADDED = ((119.571429, 374.0), (321.857143, 374.0),
-         (524.142857, 374.0), (726.428571, 374.0))
+# feet became five printed rails (#1019); four of the five ride screw rows the
+# floor already had, so the only bores the floor still needs are these eight --
+# two per rear segment, at the same pair of offsets in each, because the four
+# segments are one printed part.
+#
+# They are NOT where the feet were. The old row at v=374 sat on the buck
+# converters' floor-side washer-and-nut stack, and an even inset along this row
+# put four of the eight screw HEADS inside a converter body. Both moves are
+# gated in the generator; these are the stations that come out of it.
+REAR_V = 343.25
+ANCHORS = ((83.428571, REAR_V), (129.428571, REAR_V),
+           (285.714286, REAR_V), (331.714286, REAR_V),
+           (488.0, REAR_V), (534.0, REAR_V),
+           (690.285714, REAR_V), (736.285714, REAR_V))
 FOOT_RADIUS = 9.0
 HEAD_RADIUS = 4.5
 HEAD_HEIGHT = 5.0
@@ -147,12 +152,11 @@ class FloorSupportTest(unittest.TestCase):
         self.assertGreater(self.underside_clearance(point), .25,
                            'Foot overlaps existing underside hardware')
 
-    def test_fresh_cut_dxf_contains_the_six_rear_rail_anchors(self):
-        self.assertEqual(len(self.feet), 6)
-        self.assertEqual(len(set(map(rounded, self.feet))), 6)
+    def test_fresh_cut_dxf_contains_the_eight_rear_rail_anchors(self):
+        self.assertEqual(len(self.feet), 8)
+        self.assertEqual(len(set(map(rounded, self.feet))), 8)
         self.assertCountEqual(list(map(rounded, self.feet)),
-                              list(map(rounded, ORIGINAL+ADDED)))
-        self.assertTrue(set(map(rounded, ORIGINAL)).issubset(map(rounded, self.feet)))
+                              list(map(rounded, ANCHORS)))
 
     def test_heads_clear_independently_placed_printed_and_metal_parts(self):
         for point in self.feet:
@@ -169,14 +173,26 @@ class FloorSupportTest(unittest.TestCase):
         for first, second in itertools.combinations(self.feet, 2):
             self.assertGreater(math.dist(first, second)-2*FOOT_RADIUS, .25)
 
-    def test_rear_left_uses_tower_hollow_without_hitting_flange_or_anchor(self):
-        point = (119.571429, 374.0)
-        head = self.head(point)
-        self.assertEqual(box_distance(head.BoundingBox(), self.tower.BoundingBox()), 0.0)
-        self.assertLess(head.intersect(self.tower).Volume(), 1e-7)
-        self.assertGreater(head.distance(self.tower), 4.0)
-        self.assertGreater(self.underside_clearance(point), 5.4)
-        self.assertGreater(self.underside_clearance((321.857143, 374.0)), 9.2)
+    def test_two_anchors_sit_inside_the_tower_bounding_box(self):
+        """Which is why assert_head_clear() may only use the box to skip work,
+        never to pass a point. The 7in tower is an L in plan; its box covers a
+        third of the rear rail, and the two left anchors fall inside it."""
+        inside = [p for p in ANCHORS
+                  if box_distance(self.head(p).BoundingBox(),
+                                  self.tower.BoundingBox()) == 0.0]
+        self.assertEqual(list(map(rounded, inside)),
+                         list(map(rounded, ANCHORS[:2])))
+        for point in inside:
+            head = self.head(point)
+            self.assertLess(head.intersect(self.tower).Volume(), 1e-7)
+            self.assertGreater(head.distance(self.tower), 4.0)
+
+    def test_the_tightest_anchor_is_the_one_beside_the_16in_stand(self):
+        """(488, 343.25) passes 4.6 mm from the stand's rear anchor at (480, 327).
+        It is the closest of the eight and the one to re-check if either moves."""
+        clearances = sorted((self.underside_clearance(p), rounded(p)) for p in ANCHORS)
+        self.assertEqual(clearances[0][1], (488.0, 343.25))
+        self.assertGreater(clearances[0][0], 4.0)
 
     def test_collision_checks_reject_bad_board_and_tower_positions(self):
         # Repeating a regular row at the CLEAR/BANK depth hits the console

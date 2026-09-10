@@ -30,8 +30,8 @@ u along the 850 width from the left wall, v along the 423 depth from the front).
 
 Populated-doc browser hygiene: root holds only the chassis (`VAMP sheet
 metal`, `base`, `faceplate`, `rear_panel`, `vent_foam`) plus identity-placed
-grouping components — `pedals` (10), `platforms` (20), `feet` (60 since #1019: 20 floor supports plus
-the 40 pedestal feet, all one `foot_uxcell_18x15x5` component),
+grouping components — `pedals` (10), `platforms` (20), `floor_rails` (10 bodies since #1019 — the
+`feet` group and its 60 occurrences are gone),
 `fasteners` (18 native ISO 7380-1 screws and 18 M3 Ø7 washers), `lid_stack` (screens, the
 switched-off legacy `encoder`, texts (switched off), logo, support posts, and
 `diffusers` = the ten `led_diffuser_*` pills; the old `led_strips` bar
@@ -108,6 +108,25 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   without lifting the lid off its seats. Regenerated
   `post_felt:1` / `:2` use the same placements and model the bare 1.2 mm space.
   Native unfold gives **81.161489 ×30.142857 ×1.6 mm**, matching the DXF.
+- **Floor rails** (`floor_rails`, root, populated only — printed parts, not sheet
+  metal): five rails as ENVELOPES, one PETG bar and one neoprene bar each, joints
+  ignored. The real segmented geometry ships as `segno_floor_rail_*.step/.stl`;
+  an envelope is conservative for interference, which is all this document asks
+  of it. World datum: the base underside is z = 0, so PETG spans 0 to −6 mm and
+  the strip −6 to −7.7. Plate (u, v) maps straight to world (u/10, v/10), the
+  same mapping `base_foot_xy()` had when it drove the feet. Current depths:
+  front 18.0 / 114.883, mid 181.284 / 278.654, rear **343.25** — the rear one is
+  not where the feet were, because the buck converters' floor-side nuts are. The
+  envelopes still run the rail's full span; the printed segments stop 1.5 mm
+  short of it at each outer end, and an envelope is meant to be the larger of the
+  two. Do not chase that 1.5 mm into this model.
+- **Rolling back is not free for feature creation.** The marker has to sit at or
+  past the base's `Extrude1` for `comp.bRepBodies.item(0)` to exist, so a script
+  that rolls back to edit sketch curves must roll forward again before it adds a
+  cut. And it must add one: deleting curves drops their profiles out of an
+  extrude, but adding curves does NOT enrol them — so the sketch matches the DXF,
+  the formed export passes on sketches alone, and the body silently keeps the
+  material. That cost 3,757 mm² of uncut vent once already.
 - **Mid-field lid prop** (`lid_prop:1`, root, populated only — it is a printed
   part, not a sheet-metal source): imported `out/segno_lid_prop.step`. Its local
   frame is x = depth, y = width, z = up with the origin on the floor TOP under
@@ -116,10 +135,14 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   x = 43.25, y = 23.2219636 cm. The STEP lands about 0.01 mm proud of z = 0.2;
   that is import tolerance, not a clash.
 - **Base support bores** (`ISSUE_1019_SUPPORT_BORES` in both base components):
-  the twelve M4 post/prop foot bolts and five floor-foot bores that #1019 added
-  live in the `CUT` sketch, but are cut by their own extrude rather than added to
-  `Extrude1`'s profile set. Four existing post-foot circles were moved in place,
-  so `Extrude1` carries them as before. **The `VENT` sketch has to follow**: the
+  the twelve M4 post/prop foot bolts that #1019 added live in the `CUT` sketch,
+  but are cut by their own extrude rather than added to `Extrude1`'s profile set.
+  Four existing post-foot circles were moved in place, so `Extrude1` carries them
+  as before. The rear rail's eight anchors are the same story under
+  `ISSUE_1019_FOOT_BORES`, at u = 83.4286, 129.4286, 285.7143, 331.7143, 488.0,
+  534.0, 690.2857, 736.2857 and v = 343.25 mm. **Moving a circle keeps its
+  profile in the owning extrude** — unlike adding one, which does not enrol —
+  so the two rounds of station changes here were sketch moves, not new features. **The `VENT` sketch has to follow**: the
   generator drops any slot under a foot, so spreading the posts removed 21 slots
   from the bottom field (127 -> 106 on this flat). Leaving them makes the new
   bores break into open slots — visible as cylindrical faces whose bounding box
