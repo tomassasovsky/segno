@@ -111,6 +111,62 @@ void main() {
     });
   });
 
+  group('outputName and outputBusLabel', () {
+    late AppLocalizations l10n;
+
+    setUpAll(() async {
+      l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    });
+
+    test('a destination is a PAIR of jacks, named as one thing', () {
+      // Bus 1 drives outputs 3 and 4. Labelling it "Out 3" would name half a
+      // cable pair, and every routing surface would have to guess the other.
+      expect(l10n.outputBusLabel(0, channels: 4), l10n.outputPairLabel(1, 2));
+      expect(l10n.outputBusLabel(1, channels: 4), l10n.outputPairLabel(3, 4));
+    });
+
+    test('an odd-channel device ends on a single jack, labelled as one', () {
+      // A five-out interface has no output 6, and a destination card must not
+      // promise a socket the rig has not got.
+      expect(l10n.outputBusLabel(2, channels: 5), l10n.outputSingleLabel(5));
+      expect(l10n.outputBusLabel(1, channels: 5), l10n.outputPairLabel(3, 4));
+    });
+
+    test('is the name the player gave the destination', () {
+      expect(
+        l10n.outputName(const {0: 'mains', 1: 'monitors'}, 1, channels: 4),
+        'monitors',
+      );
+    });
+
+    test('an unnamed destination falls back to its jack numbers', () {
+      expect(
+        l10n.outputName(const {0: 'mains'}, 1, channels: 4),
+        l10n.outputPairShort(3, 4),
+      );
+      // A stored empty string reads the same way, so a half-written value can
+      // never render as a blank name.
+      expect(
+        l10n.outputName(const {1: ''}, 1, channels: 4),
+        l10n.outputPairShort(3, 4),
+      );
+      // And the short form is not the full label: a card carries both lines.
+      expect(
+        l10n.outputName(const {}, 0, channels: 4),
+        isNot(l10n.outputBusLabel(0, channels: 4)),
+      );
+    });
+
+    test('falls back rather than throwing past the rig it is shown on', () {
+      // A session saved on a wider rig still routes to a destination this one
+      // has not got, and that row has to say something.
+      expect(
+        l10n.outputName(const {0: 'mains'}, 4, channels: 4),
+        l10n.outputChannelLabel(9),
+      );
+    });
+  });
+
   group('the console explains its controls', () {
     testWidgets('an explanation uses the words of the control it explains', (
       tester,

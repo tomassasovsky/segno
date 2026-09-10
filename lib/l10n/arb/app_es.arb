@@ -2247,5 +2247,8 @@
     "settingsSectionRouting": "Enrutamiento",
     "routingRecordFrom": "Grabar desde",
     "routingLockedInputs": "Termina la grabación para cambiar las entradas.",
-    "routingNoInputs": "No hay entradas seleccionadas para esta pista."
+    "routingNoInputs": "No hay entradas seleccionadas para esta pista.",
+    "outputPairLabel": "Salidas {first}–{second}",
+    "outputPairShort": "Sal. {first}–{second}",
+    "outputSingleLabel": "Salida {channelNumber}"
 }

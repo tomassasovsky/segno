@@ -1212,6 +1212,37 @@ class SettingsRepository {
     required int input,
   }) => _store.remove(_inputNameKey(device, input));
 
+  /// Keyed per DEVICE and DESTINATION, the pair-shaped twin of
+  /// [_inputNameKey].
+  ///
+  /// The unit is the destination (bus `k` = hardware outputs `2k` and
+  /// `2k+1`), not the jack, because that is what the player patches and names:
+  /// "monitor" is a pair of sockets, not one of them. The output GATE is per
+  /// jack and keeps its own key; a name and a gate are different facts about
+  /// different units and sharing a key would force one of them to lie.
+  String _outputNameKey(String device, int bus) => 'output_name.$device.$bus';
+
+  /// Loads the given name for destination [bus] on [device], or `null` if it
+  /// has none.
+  Future<String?> loadOutputName({
+    required String device,
+    required int bus,
+  }) => _store.getString(_outputNameKey(device, bus));
+
+  /// Saves the given [name] for destination [bus] on [device].
+  Future<void> saveOutputName({
+    required String device,
+    required int bus,
+    required String name,
+  }) => _store.setString(_outputNameKey(device, bus), name);
+
+  /// Forgets [bus]'s given name on [device], handing the destination back its
+  /// jack numbers.
+  Future<void> clearOutputName({
+    required String device,
+    required int bus,
+  }) => _store.remove(_outputNameKey(device, bus));
+
   // The per-input capture setup (accepted design, Audio routing), keyed per
   // DEVICE and socket like [saveInputName]: a trim dialed in for a
   // condenser on a Scarlett's input 1 says nothing about the built-in pair's

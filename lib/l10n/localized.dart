@@ -113,6 +113,34 @@ extension EngineLocalizations on AppLocalizations {
     return given.isNotEmpty ? given : inputChannelLabel(input + 1);
   }
 
+  /// The jacks destination [bus] drives on a device with [channels] outputs.
+  ///
+  /// A destination is the stereo pair `2*bus` and `2*bus + 1`. An odd-channel
+  /// device leaves the last destination holding a single jack, and it is
+  /// labelled as one rather than promising a socket the interface has not got.
+  String outputBusLabel(int bus, {required int channels}) =>
+      2 * bus + 1 < channels
+      ? outputPairLabel(2 * bus + 1, 2 * bus + 2)
+      : outputSingleLabel(2 * bus + 1);
+
+  /// What to CALL destination [bus], given the rig's [names] — the output-side
+  /// twin of [inputName], and for the same reason.
+  ///
+  /// An unnamed destination falls back to its jack numbers in the short form
+  /// (`Out 1-2`), so a card can carry the full label above the name without
+  /// the two lines saying the same words.
+  String outputName(
+    Map<int, String> names,
+    int bus, {
+    required int channels,
+  }) {
+    final given = names[bus] ?? '';
+    if (given.isNotEmpty) return given;
+    return 2 * bus + 1 < channels
+        ? outputPairShort(2 * bus + 1, 2 * bus + 2)
+        : outputChannelLabel(2 * bus + 1);
+  }
+
   String sampleRateKhzLabel(int rate) {
     final khz = rate / 1000;
     final text = khz == khz.roundToDouble()
