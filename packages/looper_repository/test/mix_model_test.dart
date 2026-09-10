@@ -507,6 +507,17 @@ void main() {
       expect(outputBusMask(-1, channels: 4), 0);
     });
 
+    test('what a route SETS is not what it CLEARS', () {
+      // Setting must not claim a socket the interface has not got; clearing
+      // must reach both jacks, or a route saved on a wider rig can never be
+      // switched off on a narrower one.
+      expect(outputBusMask(2, channels: 5), 0x10);
+      expect(outputBusBits(2), 0x30);
+      expect(0x30 & ~outputBusBits(2), 0);
+      expect(0x30 & ~outputBusMask(2, channels: 5), 0x20);
+      expect(outputBusBits(-1), 0);
+    });
+
     test('EITHER jack of a pair means the destination is reached', () {
       // A mask that reaches half a pair still reaches the destination; read
       // as unselected, a card would offer to switch on what is already on.

@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -13,18 +11,31 @@ import 'package:segno/theme/theme.dart';
 
 /// What the Recording inputs tab draws for the track it is scoped to.
 typedef _RecordValues = ({
+  int channel,
   List<Lane> lanes,
   int trackCount,
   int inputCount,
+  List<int> strayInputs,
   bool locked,
 });
 
-_RecordValues _recordValues(LooperState state, int channel) {
-  final track = channel < state.tracks.length ? state.tracks[channel] : null;
+_RecordValues _recordValues(LooperState state, int chosen) {
+  final trackCount = state.tracks.length;
+  final channel = chosen < trackCount ? chosen : 0;
+  final track = channel < trackCount ? state.tracks[channel] : null;
+  final lanes = track?.lanes ?? const <Lane>[];
   return (
-    lanes: track?.lanes ?? const [],
-    trackCount: state.tracks.length,
+    channel: channel,
+    lanes: lanes,
+    trackCount: trackCount,
     inputCount: state.status.inputChannels,
+    // Jacks this track records that the open device has not got, so a lane
+    // saved on a wider rig keeps a card to switch it off. Without one it is
+    // invisible, unclearable, and survives every restart.
+    strayInputs: [
+      for (final lane in lanes)
+        if (lane.inputChannel >= state.status.inputChannels) lane.inputChannel,
+    ]..sort(),
     // The accepted rule: a track's sources are locked while it is armed or
     // capturing, and only that track's are.
     locked: track != null && (track.pending || track.isCapturing),
@@ -87,6 +98,11 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
       for (final lane in values.lanes)
         if (lane.inputChannel >= 0) lane.inputChannel,
     };
+    // The device's jacks, then any this track records beyond them.
+    final jacks = [
+      for (var input = 0; input < values.inputCount; input++) input,
+      ...values.strayInputs,
+    ];
 
     return Stack(
       children: [
@@ -96,7 +112,7 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
           child: RoutingTrackScope(
             heading: l10n.loopScopeTracks,
             count: values.trackCount,
-            selected: _channel,
+            selected: values.channel,
             names: trackNames,
             onSelected: (channel) => setState(() => _channel = channel),
           ),
@@ -108,38 +124,46 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
         ),
         Positioned(
           left: 100,
-          top: 433,
+          top: 439,
           child: SizedBox(
             width: 1720,
             height: 180,
             // More jacks than the pen's four cards scroll rather than shrink.
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: math.max(values.inputCount, 0),
+              itemCount: jacks.length,
               separatorBuilder: (_, _) =>
                   const SizedBox(width: _cardStep - _cardWidth),
-              itemBuilder: (context, index) => _InputChoiceCard(
-                key: Key('routing_record_card_$index'),
-                ordinal: '${index + 1}',
-                name: l10n.inputName(names.names, index),
-                selected: recorded.contains(index),
-                enabled: !values.locked,
-                onTap: () => _toggle(values.lanes, index),
-              ),
+              itemBuilder: (context, index) {
+                final input = jacks[index];
+                final on = recorded.contains(input);
+                // A full track can take no more sources. The card says so by
+                // going inert rather than by accepting a tap that does
+                // nothing.
+                final full = !on && values.lanes.length >= kMaxLanes;
+                return _InputChoiceCard(
+                  key: Key('routing_record_card_$input'),
+                  ordinal: '${input + 1}',
+                  name: l10n.inputName(names.names, input),
+                  selected: on,
+                  enabled: !values.locked && !full,
+                  onTap: () => _toggle(values.lanes, input),
+                );
+              },
             ),
           ),
         ),
         Positioned(
           left: 100,
-          top: 645,
-          child: values.locked
-              ? LoopLockBanner(
-                  text: l10n.routingLockedInputs,
-                  width: 1720,
-                )
-              : recorded.isEmpty
-              ? LoopNote(l10n.routingNoInputs)
-              : const SizedBox.shrink(),
+          top: 649,
+          child: switch (values) {
+            final it when it.locked => LoopNote(l10n.routingLockedInputs),
+            _ when recorded.isEmpty => LoopNote(l10n.routingNoInputs),
+            _ when values.lanes.length >= kMaxLanes => LoopNote(
+              l10n.routingTrackFull(kMaxLanes),
+            ),
+            _ => const SizedBox.shrink(),
+          },
         ),
       ],
     );
@@ -188,26 +212,30 @@ class _InputChoiceCard extends StatelessWidget {
               ),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Stack(
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AppText(
-                      ordinal,
-                      style: TextStyle(
-                        color: surface.textPrimary,
-                        fontSize: 36,
-                        height: 1,
-                      ),
+                // The pen's `routing-input-top`: the port number and, centred
+                // beside it, the check.
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  child: AppText(
+                    ordinal,
+                    style: TextStyle(
+                      color: surface.textPrimary,
+                      fontSize: 36,
+                      height: 1,
                     ),
-                    const Spacer(),
-                    RoutingCheck(selected: selected),
-                  ],
+                  ),
                 ),
-                const Spacer(),
-                SizedBox(
+                Positioned(
+                  left: 278,
+                  top: 10.5,
+                  child: RoutingCheck(selected: selected),
+                ),
+                Positioned(
+                  left: 0,
+                  top: 76,
                   width: 310,
                   child: FittedBox(
                     fit: BoxFit.scaleDown,

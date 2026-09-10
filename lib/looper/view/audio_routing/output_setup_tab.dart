@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -14,18 +12,27 @@ import 'package:segno/theme/theme.dart';
 
 /// What the Output setup tab draws for the destination being edited.
 typedef _OutputValues = ({
+  int selected,
   OutputBus bus,
   int busCount,
   int outputChannels,
   List<double> peaks,
 });
 
-_OutputValues _outputValues(LooperState state, int bus) => (
-  bus: state.outputSetup.of(bus),
-  busCount: state.outputBusCount,
-  outputChannels: state.status.outputChannels,
-  peaks: state.outputPeaks,
-);
+_OutputValues _outputValues(LooperState state, int chosen) {
+  // A device can narrow under a chosen destination. Everything below reads the
+  // destination the page can actually show, so the controls cannot go on
+  // editing a bus with no card and no jack.
+  final count = state.outputBusCount;
+  final selected = chosen < count ? chosen : 0;
+  return (
+    selected: selected,
+    bus: state.outputSetup.of(selected),
+    busCount: count,
+    outputChannels: state.status.outputChannels,
+    peaks: state.outputPeaks,
+  );
+}
 
 /// Output setup (accepted design, Output setup): pick a destination, then the
 /// format, level, balance and mute everything routed there is heard through.
@@ -58,6 +65,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
       (bloc) => _outputValues(bloc.state, _bus),
     );
     final names = context.watch<OutputsCubit>().state.names;
+    final selected = values.selected;
     final bus = values.bus;
     final level = _dragLevel ?? bus.level;
     final balance = _dragBalance ?? bus.balance;
@@ -86,8 +94,12 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
                   bus,
                   channels: values.outputChannels,
                 ),
-                selected: bus == _bus,
-                onTap: () => setState(() => _bus = bus),
+                selected: bus == selected,
+                onTap: () => setState(() {
+                  _bus = bus;
+                  _dragLevel = null;
+                  _dragBalance = null;
+                }),
               ),
             ),
           ),
@@ -102,7 +114,11 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
           Positioned(
             left: 100,
             top: 425,
-            child: _FormatRow(bus: _bus, mono: bus.mono, muted: bus.muted),
+            child: _FormatRow(
+              bus: selected,
+              mono: bus.mono,
+              muted: bus.muted,
+            ),
           ),
           Positioned(
             left: 100,
@@ -113,7 +129,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
               onCommit: (v) {
                 setState(() => _dragBalance = null);
                 context.read<LooperBloc>().add(
-                  LooperOutputBalanceChanged(_bus, balance: v),
+                  LooperOutputBalanceChanged(selected, balance: v),
                 );
               },
             ),
@@ -125,12 +141,12 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
               level: level,
               muted: bus.muted,
               peaks: values.peaks,
-              bus: _bus,
+              bus: selected,
               onChanged: (v) => setState(() => _dragLevel = v),
               onCommit: (v) {
                 setState(() => _dragLevel = null);
                 context.read<LooperBloc>().add(
-                  LooperOutputLevelChanged(_bus, level: v),
+                  LooperOutputLevelChanged(selected, level: v),
                 );
               },
             ),
@@ -360,7 +376,6 @@ class _MeterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final db = 20 * (math.log(peak) / math.ln10);
     return SizedBox(
       width: _OutputSetupTabState._column,
       height: 28,
@@ -386,6 +401,7 @@ class _MeterRow extends StatelessWidget {
               clipping: false,
               width: _LevelColumn._meterWidth,
               segments: _LevelColumn._meterCells,
+              height: 24,
               semanticLabel: side,
             ),
           ),
@@ -396,12 +412,7 @@ class _MeterRow extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerRight,
               child: AppText(
-                // Below the meter's floor there is no reading to give, and a
-                // large negative number would read as a level rather than as
-                // silence.
-                peak <= 0 || db < kMeterFloorDb
-                    ? l10n.routingOutputSilent
-                    : l10n.routingOutputDbfs(db.toStringAsFixed(1)),
+                routingDbfsLabel(l10n, peak),
                 style: TextStyle(
                   color: context.surface.textSecondary,
                   fontSize: 22,

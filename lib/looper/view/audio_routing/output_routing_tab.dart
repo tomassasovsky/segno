@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -31,26 +32,53 @@ enum RoutingSourceKind {
 
 /// What the Output routing tab draws.
 typedef _RoutingValues = ({
+  int input,
+  int channel,
   int inputCount,
   int outputChannels,
-  int busCount,
+  int deviceBuses,
   int trackCount,
   List<Lane> lanes,
   bool sourceBusy,
 });
 
-_RoutingValues _routingValues(LooperState state, int input, int channel) {
-  final track = channel < state.tracks.length ? state.tracks[channel] : null;
+_RoutingValues _routingValues(
+  LooperState state,
+  int selectedInput,
+  int selectedChannel,
+) {
+  // A device can narrow under a chosen source. Everything below reads the
+  // source the page can actually show, so a control cannot end up editing one
+  // jack while the row beside it draws another.
+  final inputCount = state.status.inputChannels;
+  final input = selectedInput < inputCount ? selectedInput : 0;
+  final trackCount = state.tracks.length;
+  final channel = selectedChannel < trackCount ? selectedChannel : 0;
+  final track = channel < trackCount ? state.tracks[channel] : null;
   return (
-    inputCount: state.status.inputChannels,
+    input: input,
+    channel: channel,
+    inputCount: inputCount,
     outputChannels: state.status.outputChannels,
-    busCount: state.outputBusCount,
-    trackCount: state.tracks.length,
+    deviceBuses: state.outputBusCount,
+    trackCount: trackCount,
     lanes: track?.lanes ?? const [],
     // Only Auto reads this, and only to say whether it is live right now.
     sourceBusy: inputBusy(state, input),
   );
 }
+
+/// How many destinations to draw: the device's own, plus any this source is
+/// already routed to beyond them.
+///
+/// A session saved on a wider rig can carry a route to a destination this one
+/// has not got. Drawing only the device's own would leave that route on with
+/// no card to switch it off, and it would outlive every reopen.
+int shownBuses(int deviceBuses, int mask) => deviceBuses == 0
+    // With no interface open nothing is routable, and a card built from a
+    // remembered mask would offer a destination that does not exist.
+    ? 0
+    : math.max(deviceBuses, (mask.bitLength + 1) ~/ 2);
 
 /// Output routing (accepted design, Audio routing): pick a source, then the
 /// destinations it reaches. Choosing a destination never starts playback and
@@ -77,7 +105,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
   /// The mask the chosen source currently drives.
   int _mask(_RoutingValues values) => switch (_kind) {
     RoutingSourceKind.live =>
-      context.watch<MonitorCubit>().state.forInput(_input).outputMask,
+      context.watch<MonitorCubit>().state.forInput(values.input).outputMask,
     // A track's route is track-wide, so lane 0 speaks for the track. Lanes
     // can only disagree by way of a session saved before this surface owned
     // the route, and writing every lane is what puts them back in step.
@@ -93,7 +121,9 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
   void _send(_RoutingValues values, int mask) {
     switch (_kind) {
       case RoutingSourceKind.live:
-        unawaited(context.read<MonitorCubit>().setOutputMask(_input, mask));
+        unawaited(
+          context.read<MonitorCubit>().setOutputMask(values.input, mask),
+        );
       case RoutingSourceKind.tracks:
         final bloc = context.read<LooperBloc>();
         // Every lane, because the choice is the TRACK's. A track with no lanes
@@ -101,7 +131,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
         // projection has reported it.
         final lanes = values.lanes.isEmpty ? 1 : values.lanes.length;
         for (var lane = 0; lane < lanes; lane++) {
-          bloc.add(LooperLaneOutputChanged(_channel, lane, mask));
+          bloc.add(LooperLaneOutputChanged(values.channel, lane, mask));
         }
       case RoutingSourceKind.players:
         unawaited(context.read<TempoCubit>().setClickOutput(mask));
@@ -109,9 +139,16 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
   }
 
   /// Adds or removes destination [bus].
+  ///
+  /// Set only the jacks this device has; clear both, so a route saved on a
+  /// wider rig can be switched off here rather than surviving every reopen.
   void _toggleDestination(_RoutingValues values, int bus, int mask) {
-    final bits = outputBusMask(bus, channels: values.outputChannels);
-    _send(values, outputMaskDrivesBus(mask, bus) ? mask & ~bits : mask | bits);
+    _send(
+      values,
+      outputMaskDrivesBus(mask, bus)
+          ? mask & ~outputBusBits(bus)
+          : mask | outputBusMask(bus, channels: values.outputChannels),
+    );
   }
 
   @override
@@ -121,6 +158,9 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
       (bloc) => _routingValues(bloc.state, _input, _channel),
     );
     final mask = _mask(values);
+    // The device's destinations, plus any this source already reaches beyond
+    // them, so a route saved on a wider rig has a card to switch it off.
+    final buses = shownBuses(values.deviceBuses, mask);
     // Live inputs carry Hear live above Send to; the other kinds have only
     // Send to, so their row moves up to where it would have been.
     final live = _kind == RoutingSourceKind.live;
@@ -146,7 +186,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
             left: 100,
             top: 545,
             child: _HearLive(
-              input: _input,
+              input: values.input,
               busy: values.sourceBusy,
             ),
           ),
@@ -170,7 +210,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
                   height: 144,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
-                    itemCount: values.busCount,
+                    itemCount: buses,
                     separatorBuilder: (_, _) =>
                         const SizedBox(width: _destinationStep - 684),
                     itemBuilder: (context, bus) => RoutingDestinationCard(
@@ -196,9 +236,16 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
         Positioned(
           left: 428,
           top: sendTop + 168,
-          child: values.busCount == 0
+          // "Reaches nothing" is about the destinations this rig HAS: a mask
+          // that only drives jacks the device has not got reaches nothing
+          // audible, and saying otherwise would leave a silent source with no
+          // explanation.
+          child: buses == 0
               ? LoopNote(l10n.routingNoDestinationsYet)
-              : mask == 0
+              : !List.generate(
+                  values.deviceBuses,
+                  (bus) => outputMaskDrivesBus(mask, bus),
+                ).any((on) => on)
               ? LoopNote(l10n.routingNoDestinations)
               : const SizedBox.shrink(),
         ),
@@ -224,7 +271,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
               context.watch<InputsCubit>().state.names,
               input,
             ),
-            selected: input == _input,
+            selected: input == values.input,
             onTap: () => setState(() => _input = input),
           ),
         ),
@@ -232,7 +279,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
       RoutingSourceKind.tracks => RoutingTrackScope(
         heading: l10n.loopScopeTracks,
         count: values.trackCount,
-        selected: _channel,
+        selected: values.channel,
         names: trackDisplayNames(context, values.trackCount),
         onSelected: (channel) => setState(() => _channel = channel),
       ),
