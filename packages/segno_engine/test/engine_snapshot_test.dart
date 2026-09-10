@@ -988,6 +988,28 @@ void main() {
             'not name is silently replaced by its constructor default '
             'whenever copyWith runs.',
       );
+
+      // ...and each parameter must feed its OWN field. The round-trip test
+      // above only exercises two of them, so a cross-wired line
+      // (`outputMono: outputMuted ?? this.outputMuted`) would pass it and
+      // the set comparison alone.
+      final callStart = source.indexOf('  }) => EngineSnapshot(', start);
+      final call = source.substring(
+        callStart,
+        source.indexOf('\n  );', callStart),
+      );
+      final assigned = RegExp(
+        r'^    (\w+): (\w+) \?\? this\.(\w+),$',
+        multiLine: true,
+      ).allMatches(call);
+      expect(assigned, hasLength(fields.length));
+      for (final m in assigned) {
+        expect(
+          [m.group(2), m.group(3)],
+          [m.group(1), m.group(1)],
+          reason: 'copyWith cross-wires ${m.group(1)}',
+        );
+      }
     });
 
     test('activeBackend participates in equality', () {

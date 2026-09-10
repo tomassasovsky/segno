@@ -201,6 +201,10 @@ class FakePerformanceEngine implements AudioEngine {
     lastPerfCaptureDir = captureDir;
     if (!perfArmResult.isOk) return perfArmResult;
     perfArmed = true;
+    // The real engine settles the captured destination INSIDE the arm, from
+    // the output gate as it stands then; this models a rig whose gate moved
+    // while the caller was exporting lanes and writing the manifest.
+    if (perfCaptureBusAtArm != null) perfCaptureBus = perfCaptureBusAtArm!;
     return EngineResult.ok;
   }
 
@@ -348,6 +352,10 @@ class FakePerformanceEngine implements AudioEngine {
   List<double> outputLevels = const [];
   List<bool> outputMuted = const [];
   int perfCaptureBus = 0;
+
+  /// When set, the destination [perfArm] settles on, replacing
+  /// [perfCaptureBus] at the arm instant.
+  int? perfCaptureBusAtArm;
 
   @override
   EngineResult setPerfFollowOutput({required bool follow}) {

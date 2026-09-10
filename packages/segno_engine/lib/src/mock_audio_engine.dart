@@ -990,7 +990,7 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  // ---- Master insert chain (FX v3 part 1b): same split as the track
+  // ---- Output bus chains (slice 3b): same split as the track
   // family above. ----
 
   @override

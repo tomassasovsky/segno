@@ -639,7 +639,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   }
   atomic_store_explicit(&engine->a_input_clip_mask, 0u, memory_order_relaxed);
 
-  /* Master insert chain (part 1b): defaults empty/enabled, same rationale as
+  /* Output buses (slice 3b): defaults empty/enabled/unity, same rationale as
    * the per-track bus resets above. */
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
     le_output_bus_reset(&engine->outputs[k]);
@@ -950,7 +950,7 @@ void le_engine_destroy(le_engine* engine) {
           &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
     }
   }
-  /* Master insert chain (part 1b). */
+  /* Output bus chains (slice 3b). */
   for (int s = 0; s < LE_FX_MAX; ++s) {
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
       free(engine->outputs[k].fx.fx.delay[s][0]);

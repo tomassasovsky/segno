@@ -198,8 +198,6 @@ class PerformanceArmSnapshot {
     this.outputMuted = false,
   });
 
-  /// Rebuilds a [PerformanceArmSnapshot] from a decoded JSON map.
-  ///
   /// Presence-keyed, matching the session manifest's own migration style (no
   /// version `switch`): an absent `fxStagesVersion` marks a LEGACY snapshot —
   /// bus stages empty, every chain enabled — and the two bus fields are simply
@@ -241,6 +239,34 @@ class PerformanceArmSnapshot {
         ],
         masterChainEnabled: json['masterChainEnabled'] as bool? ?? true,
       );
+
+  /// This snapshot with the captured destination's facts filled in — the
+  /// three the engine only settles inside `le_perf_arm`, so the caller
+  /// records them after arming rather than from a pre-arm snapshot.
+  PerformanceArmSnapshot withCapture({
+    required int captureBus,
+    required double outputLevel,
+    required bool outputMuted,
+  }) => PerformanceArmSnapshot(
+    masterGain: masterGain,
+    limiterEnabled: limiterEnabled,
+    limiterCeiling: limiterCeiling,
+    latencyOffsetFrames: latencyOffsetFrames,
+    tempoBpm: tempoBpm,
+    tracks: tracks,
+    monitors: monitors,
+    trackChains: trackChains,
+    masterEffects: masterEffects,
+    masterChainEnabled: masterChainEnabled,
+    fxStagesVersion: fxStagesVersion,
+    followOutput: followOutput,
+    captureBus: captureBus,
+    outputLevel: outputLevel,
+    outputMuted: outputMuted,
+  );
+
+  /// Rebuilds a [PerformanceArmSnapshot] from a decoded JSON map.
+  ///
 
   /// The FX-stage schema revision this code writes (R20): the four-stage model
   /// with per-chain + per-slot enabled flags.

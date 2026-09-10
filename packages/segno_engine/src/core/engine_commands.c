@@ -2468,7 +2468,7 @@ int32_t le_engine_set_input_conditioning_param(le_engine* engine, int32_t input,
                                   .lanef = {input, param, value}});
 }
 
-/* ---- Track-stage + Master insert chains (FX v3 part 1b) ----
+/* ---- Track-stage + output bus chains ----
  * The bus twins of the lane/monitor setter families above, on the two
  * le_fx_bus owners (le_track.bus / le_engine.outputs[k].fx, the Master
  * insert being bus 0's chain since slice 3b): type/count via the
@@ -2894,10 +2894,14 @@ int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
   /* The first output BUS (slice 3b) with an enabled channel: the capture
    * is that bus's pair, so its pre-level tap has one bus to read. A single
    * enabled channel of the pair makes the capture mono. */
-  for (int32_t c = 0; c < e->out_channels && c < LE_MAX_CHANNELS; c += 2) {
+  /* The published mirror, not the plain configuration field: this runs from
+   * le_engine_get_snapshot too, which reads every other channel count that
+   * way. */
+  const int32_t ch_out = load_i32(&e->a_out_channels);
+  for (int32_t c = 0; c < ch_out && c < LE_MAX_CHANNELS; c += 2) {
     const int left = (mask & (1u << c)) != 0;
     const int right =
-        c + 1 < e->out_channels && (mask & (1u << (c + 1))) != 0;
+        c + 1 < ch_out && (mask & (1u << (c + 1))) != 0;
     if (!left && !right) continue;
     out_ch[0] = left ? c : c + 1;
     if (left && right) {
