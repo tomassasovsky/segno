@@ -7444,14 +7444,17 @@ void main() {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
-      // Nine entries, the last of them Pre. Clamping before the partition
-      // would drop that Pre entry and leave eight Post ones; clamping after
-      // it keeps every Pre entry and cuts the Post tail.
+      // One entry past the ceiling, the last of them Pre. Clamping before the
+      // partition would drop that Pre entry and leave a chain of Post ones;
+      // clamping after it keeps every Pre entry and cuts the Post tail.
+      //
+      // Sized from the ceiling rather than a literal, so raising it cannot
+      // leave this case quietly under the cap and passing for free.
       repo.setLaneEffects(
         channel: 0,
         lane: 0,
         effects: [
-          for (var i = 0; i < 8; i++)
+          for (var i = 0; i < kTrackEffectMax; i++)
             at(TrackEffectType.drive, FxPlacement.post),
           at(TrackEffectType.reverb, FxPlacement.pre),
         ],

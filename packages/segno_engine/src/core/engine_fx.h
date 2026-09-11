@@ -118,6 +118,15 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
  * (per-buffer snapshots, le_engine_stop, the offline render's count/type
  * mirror): guarantees a processing gap never strands a ramp mid-fade, so
  * resumption always re-enters through the settled-edge reset (B7). */
+
+/* Whether slot [slot]'s enable ramp is already parked at bypass, so
+ * [le_fx_enable_force_bypass] would write nothing.
+ *
+ * The per-buffer settle sweep walks every slot up to LE_FX_MAX, and beyond a
+ * chain's active count almost all of them are in exactly this state — zeroed
+ * at reset and left there. Audio-thread-owned plain reads, so the check costs
+ * less than the published bit the sweep would otherwise load. */
+int le_fx_enable_settled_bypassed(const le_fx_state* fx, int slot);
 void le_fx_enable_force_bypass(le_fx_state* fx, int slot);
 
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and

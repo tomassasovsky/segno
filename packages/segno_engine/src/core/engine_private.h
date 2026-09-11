@@ -195,6 +195,76 @@ typedef struct le_fx_chan {
   float level; /* applied after the effects and after the output choice */
 } le_fx_chan;
 
+/* One output bus's per-block snapshot (slice 3b): its chain and facts, read
+ * once per buffer by snapshot_output_bus. */
+typedef struct le_obus_snap {
+  int32_t fx_count;
+  int32_t fx_type[LE_FX_MAX];
+  float fx_params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t fx_enabled[LE_FX_MAX];
+  int has_fx;
+  float level;
+  float gl;
+  float gr;
+  int muted;
+  int mono;
+  /* Enabled channels of the pair (out_enabled bits). Every source already
+   * masks by out_enabled before summing and the frame starts zeroed, so a
+   * disabled channel reads 0 either way; these gate what is WRITTEN, and
+   * which channels Mono averages. */
+  int en_l;
+  int en_r;
+  /* False for a bus at its defaults with no chain: nothing to do per frame. */
+  int active;
+} le_obus_snap;
+
+/* One buffer's worth of every chain's published configuration, read once at
+ * the top of the audio callback and used by every stage below it.
+ *
+ * Per-buffer scratch, not state: nothing here survives the callback that
+ * wrote it. It is a named struct only so it can live in [le_engine] instead
+ * of on the audio thread's stack — see the `fx_snap` field for why.
+ *
+ * `count` is the active chain length, `pre_count` where its Pre run ends,
+ * `type` / `params` / `enabled` the per-slot configuration (the enable bits
+ * already folded against the chain's own flag, D-EFFBITS), and `has` whether
+ * the chain is worth running at all. */
+typedef struct le_fx_snapshot {
+  /* The Loop stage: one chain per lane of every track. */
+  int32_t lane_count[LE_MAX_TRACKS][LE_MAX_LANES];
+  int32_t lane_pre_count[LE_MAX_TRACKS][LE_MAX_LANES];
+  int32_t lane_type[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX];
+  float lane_params[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS];
+  int32_t lane_enabled[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX];
+  int lane_has[LE_MAX_TRACKS][LE_MAX_LANES];
+
+  /* The Track stage: one chain per track's stereo bus. */
+  int32_t trk_count[LE_MAX_TRACKS];
+  int32_t trk_pre_count[LE_MAX_TRACKS];
+  int32_t trk_type[LE_MAX_TRACKS][LE_FX_MAX];
+  float trk_params[LE_MAX_TRACKS][LE_FX_MAX][LE_FX_PARAMS];
+  int32_t trk_enabled[LE_MAX_TRACKS][LE_FX_MAX];
+  int trk_has[LE_MAX_TRACKS];
+
+  /* The All tracks recorded-mix chain: one config for every destination. */
+  int32_t at_count;
+  int32_t at_pre_count;
+  int32_t at_type[LE_FX_MAX];
+  float at_params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t at_enabled[LE_FX_MAX];
+  int at_has;
+
+  /* The Input stage: one live-monitor chain per hardware input. */
+  int32_t mon_count[LE_MAX_MONITORED_INPUTS];
+  int32_t mon_type[LE_MAX_MONITORED_INPUTS][LE_FX_MAX];
+  float mon_params[LE_MAX_MONITORED_INPUTS][LE_FX_MAX][LE_FX_PARAMS];
+  int32_t mon_enabled[LE_MAX_MONITORED_INPUTS][LE_FX_MAX];
+  int mon_has[LE_MAX_MONITORED_INPUTS];
+
+  /* The output stage: one destination's chain and facts each. */
+  le_obus_snap obus[LE_MAX_OUTPUT_BUSES];
+} le_fx_snapshot;
+
 /* Audio-thread-owned DSP state for one effects chain (LE_FX_MAX entries), reset
  * per entry when its type changes. svf_* are the state-variable filter
  * integrators; lfo is an LFO phase (0..1, TREMOLO depth / ECHO wow); delay is a
@@ -1416,6 +1486,18 @@ struct le_engine {
    * engine, so this stage costs nothing until something is put on it. */
   le_fx_bus all_tracks;
   le_fx_state all_tracks_fx[LE_MAX_OUTPUT_BUSES];
+  /* Per-buffer FX snapshot scratch, audio-thread-owned (slice 3f).
+   *
+   * Written and read only inside one callback, so it carries no state across
+   * buffers and needs no atomics — but it lives HERE rather than on the
+   * callback's stack because it is sized by LE_FX_MAX, and an audio thread's
+   * stack is the one budget in this engine that is neither ours to set nor
+   * reported by the host. At the eight-slot ceiling these arrays were 32 KB
+   * of frame; the accepted FX design needs a chain long enough to hold
+   * several racks, and on the stack that number buys itself in kilobytes of
+   * a budget nothing measures. In the engine struct it is one allocation
+   * whose size the ceiling's own note in the public header records. */
+  le_fx_snapshot fx_snap;
   /* Advances on every applied LE_CMD_CUT_SOUND; published as
    * le_snapshot.tail_reset_rev. */
   _Atomic uint32_t a_tail_reset_rev;

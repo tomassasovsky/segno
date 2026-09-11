@@ -3605,7 +3605,44 @@ class SegnoEngineBindings {
 
   /// Fills [out] with lane [lane] of track [channel]'s cache telemetry. Control
   /// thread; also drains events / runs a scheduler tick first, so polling this is
-  /// enough to drive the cache forward in a device-free test.
+  /// enough to drive the cache forward in a device-free test. */
+  /// /* The whole-track Pre print's telemetry (slice 3e): the lane query's twin,
+  /// one per track. `reason` is where the engine says WHY a track's Pre run is
+  /// running live rather than printed — a part carrying a Post entry (the print
+  /// would have to bake it, and a baked tail cannot drain past a Stop), a hosted
+  /// plugin, a budget that does not fit, a render that failed. Log/test-only in
+  /// v3, like the lane query.
+  int le_engine_get_track_cache(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<le_lane_cache_info> out,
+  ) {
+    return _le_engine_get_track_cache(
+      engine,
+      channel,
+      out,
+    );
+  }
+
+  late final _le_engine_get_track_cachePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<le_lane_cache_info>,
+          )
+        >
+      >('le_engine_get_track_cache');
+  late final _le_engine_get_track_cache = _le_engine_get_track_cachePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<le_lane_cache_info>,
+        )
+      >();
+
   int le_engine_get_lane_cache(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -6617,7 +6654,7 @@ const int LE_COUNT_IN_MAX_BARS = 64;
 
 const int LE_LENGTH_PRESET_MAX_BARS = 64;
 
-const int LE_FX_MAX = 8;
+const int LE_FX_MAX = 64;
 
 const int LE_FX_PARAMS = 4;
 
