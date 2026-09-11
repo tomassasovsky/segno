@@ -3886,6 +3886,115 @@
             },
             "description": "The ordinal line on an input source card."
     },
+    "fxTitle": "Effects",
+    "@fxTitle": {
+        "description": "Title of the Effects page."
+    },
+    "fxPedalAssignments": "Pedal assignments",
+    "@fxPedalAssignments": {
+        "description": "Opens the pedal assignment surface from the Effects page."
+    },
+    "fxKindLiveInputs": "Live inputs",
+    "@fxKindLiveInputs": {
+        "description": "Sound type: the live hardware inputs."
+    },
+    "fxKindRecordedTracks": "Recorded tracks",
+    "@fxKindRecordedTracks": {
+        "description": "Sound type: the recorded tracks and All tracks."
+    },
+    "fxKindOutputs": "Outputs",
+    "@fxKindOutputs": {
+        "description": "Sound type: the output destinations."
+    },
+    "fxAllTracks": "All tracks",
+    "@fxAllTracks": {
+        "description": "The recorded-mix destination, beside the tracks in the same strip."
+    },
+    "fxWholeTrack": "Whole track",
+    "@fxWholeTrack": {
+        "description": "The part picker's entry for the track's own chain, downstream of its parts."
+    },
+    "fxEffectsOn": "Effects on",
+    "@fxEffectsOn": {
+        "description": "Label before the part picker on a recorded track."
+    },
+    "fxAllTracksContext": "Effects on combined loop audio",
+    "@fxAllTracksContext": {
+        "description": "What the All tracks chain processes."
+    },
+    "fxOutputContext": "All routed audio · live inputs, tracks, click & backing",
+    "@fxOutputContext": {
+        "description": "What an output chain processes."
+    },
+    "fxReorder": "Reorder",
+    "@fxReorder": {
+        "description": "Arranges this destination's chain."
+    },
+    "fxAddEffects": "Add effects",
+    "@fxAddEffects": {
+        "description": "Opens the effect library for this destination."
+    },
+    "fxPlacementPre": "Pre",
+    "@fxPlacementPre": {
+        "description": "Placement tag: recorded into the loop."
+    },
+    "fxPlacementPost": "Post",
+    "@fxPlacementPost": {
+        "description": "Placement tag: can ring after Stop."
+    },
+    "fxNoEffects": "No effects here yet",
+    "@fxNoEffects": {
+        "description": "Shown in place of the chain when this destination carries none."
+    },
+    "fxNoTrackPart": "This track has nothing recorded yet",
+    "@fxNoTrackPart": {
+        "description": "Shown when a selected track has no recorded parts to point effects at."
+    },
+    "fxRackPositionRange": "{first}\u2013{last} / {total}",
+    "@fxRackPositionRange": {
+        "description": "Which of the chain's effects are in view.",
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            },
+            "total": {
+                "type": "int"
+            }
+        }
+    },
+    "fxPreviousEffects": "Previous effects",
+    "@fxPreviousEffects": {
+        "description": "Accessible name of the chain strip's left arrow."
+    },
+    "fxNextEffects": "Next effects",
+    "@fxNextEffects": {
+        "description": "Accessible name of the chain strip's right arrow."
+    },
+    "fxEffectPower": "{name} power",
+    "@fxEffectPower": {
+        "description": "Accessible name of an effect card's power button.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "fxPartOrdinal": "Part {number}",
+    "@fxPartOrdinal": {
+        "description": "A recorded part with no input to name it after.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "fxUnassigned": "Unassigned",
+    "@fxUnassigned": {
+        "description": "An effect with no pedal assignment, on its card's status line."
+    },
     "routingHearLive": "Hear live",
     "@routingHearLive": {
             "description": "Heading over the live-monitoring choice."

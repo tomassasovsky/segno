@@ -329,6 +329,7 @@ class LoopOutlinedButton extends StatelessWidget {
     required this.onTap,
     this.label,
     this.icon,
+    this.leadingIcon,
     this.trailingIcon,
     this.semanticLabel,
     this.semanticValue,
@@ -350,6 +351,11 @@ class LoopOutlinedButton extends StatelessWidget {
 
   /// The button glyph, when it shows one instead of a label.
   final IconData? icon;
+
+  /// A glyph BEFORE the label, for a button that is named and marked at
+  /// once (the Effects page's Add effects). Unlike [icon], which replaces the
+  /// label outright.
+  final IconData? leadingIcon;
 
   /// A glyph after the label.
   final IconData? trailingIcon;
@@ -417,6 +423,10 @@ class LoopOutlinedButton extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (leadingIcon != null) ...[
+                              Icon(leadingIcon, size: 28, color: foreground),
+                              const SizedBox(width: 12),
+                            ],
                             AppText(label ?? '', style: text),
                             if (trailingIcon != null) ...[
                               const SizedBox(width: 12),

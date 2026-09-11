@@ -990,6 +990,7 @@ class LooperRepository {
         ),
     ],
     outputChains: allOutputChains(),
+    allTracksChain: allTracksChainEnvelope(),
     inputSetup: _inputSetup,
     outputSetup: _outputSetup,
     outputBusCount: s.outputBusCount,

@@ -329,6 +329,13 @@ class _SettingsRail extends StatelessWidget {
                 selected: false,
                 onTap: () => unawaited(openAudioRouting()),
               ),
+              // Effects, on the same rule (slice 3f).
+              _RailTab(
+                key: const Key('settings_tab_fx'),
+                label: l10n.fxTitle,
+                selected: false,
+                onTap: () => unawaited(openFx()),
+              ),
             ],
           ],
         ],
