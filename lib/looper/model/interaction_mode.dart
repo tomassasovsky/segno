@@ -23,16 +23,31 @@ enum InteractionMode {
   /// chains off; long-press restores them), Bank / Mode / the encoder keep
   /// their usual jobs, and Rec/Play, Undo and Clear are deliberately INERT —
   /// a stray stomp must never erase the set.
-  fx;
+  fx,
+
+  /// Every switch but MODE and BANK runs whatever the Pedals setup assigned
+  /// to it; an unassigned one does nothing at all (#763).
+  ///
+  /// The opposite of [fx] in one respect that matters: FX mode gives every
+  /// unbound control a contextual default, so a stray stomp there still
+  /// means something. Custom mode has no defaults to fall back to, which is
+  /// what "fully user-defined" costs — and is why an unassigned switch is
+  /// inert rather than guessing.
+  ///
+  /// MODE and BANK keep their jobs here as everywhere: MODE is the way out
+  /// and BANK is the way to the other four track switches, and the binding
+  /// model refuses to hold an assignment on either.
+  custom;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes what new saves write — [fromToken] must keep
   /// accepting every token older builds ever wrote (see its legacy shim).
   String get token => name;
 
-  /// The modes the system may BOOT into. [fx] is excluded on purpose: booting
-  /// into FX mode with no chains configured is a dead surface, so it is
-  /// reachable only by an explicit mode cycle (R12).
+  /// The modes the system may BOOT into. [fx] and [custom] are excluded on
+  /// purpose: booting into FX mode with no chains configured, or into custom
+  /// with nothing assigned, is a dead surface — so both are reachable only
+  /// by an explicit mode cycle (R12).
   static const List<InteractionMode> bootDefaults = [record, mute];
 
   /// Parses a persisted [token] back to a mode, defaulting to [record].
@@ -56,10 +71,10 @@ enum InteractionMode {
   /// Parses a persisted BOOT-DEFAULT [token]: [fromToken] with anything
   /// outside [bootDefaults] coerced to [record].
   ///
-  /// Defensive by design — no build ever writes `'fx'` under the default-mode
-  /// key (the settings picker does not offer it), so a stored `'fx'` means a
-  /// hand-edited or corrupted pref, and booting a dead surface is the one
-  /// outcome R12 forbids.
+  /// Defensive by design — no build ever writes `'fx'` or `'custom'` under
+  /// the default-mode key (the settings picker offers neither), so a stored
+  /// one means a hand-edited or corrupted pref, and booting a dead surface is
+  /// the one outcome R12 forbids.
   static InteractionMode bootDefaultFromToken(String? token) {
     final mode = fromToken(token);
     return bootDefaults.contains(mode) ? mode : InteractionMode.record;

@@ -368,6 +368,10 @@ class TrackColumn extends StatelessWidget {
                   track.chainEnabled
                       ? l10n.a11yTrackTileFxOn(fxCellLabel, stateWord)
                       : l10n.a11yTrackTileFxOff(fxCellLabel, stateWord),
+                InteractionMode.custom => l10n.a11yTrackTileCustom(
+                  name,
+                  stateWord,
+                ),
               },
               selected: selected,
               borderRadius: 8,
@@ -387,6 +391,12 @@ class TrackColumn extends StatelessWidget {
                       context,
                     ).announceFxChainToggle(track.channel);
                     bloc.add(LooperTrackChainToggled(track.channel));
+                  case InteractionMode.custom:
+                    // Selection only. What a control does in Custom controls
+                    // is assigned per FOOTSWITCH, and a tile is not one —
+                    // running some other switch's assignment from a tap
+                    // would be a guess.
+                    break;
                 }
               },
               child: GestureDetector(
