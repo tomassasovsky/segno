@@ -349,8 +349,8 @@ void main() {
     expect(control.state.cursor, 1); // the digit still selects
   });
 
-  testWidgets('M cycles the mode chip through REC, MUTE and FX, announcing '
-      'each landed mode', (tester) async {
+  testWidgets('M cycles the mode chip through every mode, announcing each '
+      'landed one', (tester) async {
     // Assert the DELIVERED announcement text, not the getter: a getter-only
     // assertion passes even when two ARB keys collide and the string that
     // actually ships is some other surface's copy.
@@ -390,6 +390,10 @@ void main() {
     expect(control.state.mode, InteractionMode.fx);
     expect(announcements, contains(l10n.a11yModeFx));
     expect(l10n.a11yModeFx, 'FX mode');
+    await cycle();
+    expect(control.state.mode, InteractionMode.custom);
+    expect(announcements, contains(l10n.a11yModeCustom));
+    expect(l10n.a11yModeCustom, 'Custom controls');
     await cycle();
     expect(control.state.mode, InteractionMode.record);
     expect(announcements, contains(l10n.a11yModeRecord));

@@ -1065,6 +1065,12 @@ String _ledStateLabel(
     led == PedalTrackLed.off
         ? l10n.pedalSimLedChainDisabled
         : l10n.pedalSimLedChainEnabled,
+  // Custom mode lights a track LED for a switch that CARRIES an assignment,
+  // so the reading is about the switch rather than about the track.
+  InteractionMode.custom =>
+    led == PedalTrackLed.off
+        ? l10n.pedalSimLedUnassigned
+        : l10n.pedalSimLedAssigned,
   InteractionMode.record || InteractionMode.mute => switch (led) {
     PedalTrackLed.off => l10n.pedalSimLedOff,
     PedalTrackLed.green => l10n.pedalSimLedArmed,

@@ -13,7 +13,7 @@ void main() {
     test('are the accepted pair and holds', () {
       const setup = PedalSetup();
       expect(setup.modePress, InteractionMode.mute);
-      expect(setup.modeHold, InteractionMode.fx);
+      expect(setup.modeHold, InteractionMode.custom);
       expect(setup.recordHold, RecordHold.undoRecording);
       expect(setup.trackHold, TrackHold.armOverdub);
       expect(setup.custom, isEmpty);

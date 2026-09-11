@@ -118,6 +118,7 @@ class TracksCommands {
       InteractionMode.record => l10n.a11yModeRecord,
       InteractionMode.mute => l10n.a11yModeMute,
       InteractionMode.fx => l10n.a11yModeFx,
+      InteractionMode.custom => l10n.a11yModeCustom,
     });
   }
 
@@ -293,6 +294,10 @@ class TracksCommands {
             // missing channel as "off" and dispatch enable forever.
             announceFxChainToggle(channel);
             bloc.add(LooperTrackChainToggled(channel));
+          case InteractionMode.custom:
+            // Selection only: what a control does in Custom controls is
+            // assigned per FOOTSWITCH, and a digit key is not one.
+            break;
         }
       }
       return KeyEventResult.handled;
