@@ -102,7 +102,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
               selected: _selectedGroup,
               editable: _editable,
               onSelect: (button) => setState(() => _selected = button),
-              bank: _bank,
+              bank: _mapBank,
               bankSelectable: _context == PedalSetupContext.custom,
               onToggleBank: () => setState(() => _bank = 1 - _bank),
             ),
@@ -263,6 +263,13 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     });
   }
 
+  /// The bank the MAP is showing.
+  ///
+  /// Always A in Track controls: nothing there is per-bank — one hold covers
+  /// all four track switches — so a map reading TRACK 5-8 would name a bank
+  /// that context has no way to leave, since BANK is dimmed there.
+  int get _mapBank => _context == PedalSetupContext.custom ? _bank : 0;
+
   /// The switches this context can edit.
   Set<PedalButton> get _editable => switch (_context) {
     // Stop, Undo, Clear and Bank do one thing here and keep it: the accepted
@@ -412,7 +419,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     );
   }
 
-  int get _selectedChannel => pedalTrackChannel(_selected, _bank) ?? 0;
+  int get _selectedChannel => pedalTrackChannel(_selected, _mapBank) ?? 0;
 
   String _controlName(BuildContext context) {
     final l10n = context.l10n;
@@ -420,7 +427,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
         kTrackSwitches.contains(_selected)) {
       return l10n.pedalSetupTrackGroup;
     }
-    return pedalSwitchLabel(l10n, _selected, _bank);
+    return pedalSwitchLabel(l10n, _selected, _mapBank);
   }
 
   String _pickerTitle(BuildContext context, {required bool hold}) {

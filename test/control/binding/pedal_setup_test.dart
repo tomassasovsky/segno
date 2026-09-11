@@ -123,6 +123,27 @@ void main() {
       expect(PedalSetup.decode(setup.encode()), setup);
     });
 
+    test('two setups differing only in one gesture are not equal — the '
+        'ordered flattening props compares on has to see through the map', () {
+      final a = const PedalSetup().withCustom(
+        PedalButton.undo,
+        bank: 0,
+        pair: const ControlGesturePair(press: _stop),
+      );
+      final b = const PedalSetup().withCustom(
+        PedalButton.undo,
+        bank: 0,
+        pair: const ControlGesturePair(press: _stop, hold: _mute),
+      );
+      expect(a, isNot(b));
+      final c = const PedalSetup().withCustom(
+        PedalButton.stop,
+        bank: 0,
+        pair: const ControlGesturePair(press: _stop),
+      );
+      expect(a, isNot(c));
+    });
+
     test('is byte-stable for equal setups built in different orders', () {
       final a = const PedalSetup()
           .withCustom(

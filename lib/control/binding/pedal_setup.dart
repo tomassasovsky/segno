@@ -293,9 +293,15 @@ class PedalSetup extends Equatable {
     modeHold,
     recordHold,
     trackHold,
-    // The encoding, not the map: two equal setups built in different
-    // insertion orders must compare equal, and a Map does not promise that
-    // through Equatable.
-    encode(),
+    // An ORDERED flattening of the map, not the map itself: two setups built
+    // in different insertion orders must compare equal, which a Map does not
+    // promise through Equatable. Not the encoding either — this is compared
+    // whenever a fresh setup reaches the state, and encoding JSON to answer
+    // "did it change" is work the answer does not need.
+    for (final key in _orderedCustomKeys()) ...[
+      key,
+      custom[key]!.press,
+      custom[key]!.hold,
+    ],
   ];
 }
