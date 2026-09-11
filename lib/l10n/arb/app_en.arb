@@ -4262,6 +4262,18 @@
     "@fxPresetRename": {
             "description": "Renames a saved preset."
     },
+    "fxPresetExport": "Export",
+    "@fxPresetExport": {
+        "description": "Copies a saved preset off this console. Not built yet."
+    },
+    "fxImportPresets": "Import presets",
+    "@fxImportPresets": {
+        "description": "Brings saved presets onto this console. Not built yet."
+    },
+    "fxExportAllPresets": "Export all",
+    "@fxExportAllPresets": {
+        "description": "Copies every saved preset off this console. Not built yet."
+    },
     "fxPresetDelete": "Delete",
     "@fxPresetDelete": {
             "description": "Deletes a saved preset."

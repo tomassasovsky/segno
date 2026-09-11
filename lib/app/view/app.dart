@@ -296,6 +296,19 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
+          // The player's saved sounds. Three FX surfaces touch the same list —
+          // the two editors save into it, the library recalls from it, and My
+          // presets renames and deletes in it — so it is owned once, here,
+          // rather than per page.
+          BlocProvider(
+            create: (context) {
+              final cubit = FxPresetsCubit(
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
           // The stage status bar's wall-clock transport timer (#678). Eager:
           // its epoch is the transport's FIRST run, not the strip's first
           // build — created lazily it would start counting only when the

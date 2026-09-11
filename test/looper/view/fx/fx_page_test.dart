@@ -14,6 +14,7 @@ import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/fx_presets_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
@@ -24,6 +25,7 @@ import 'package:segno/looper/view/fx/fx_rack_editor.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:toastification/toastification.dart';
 
 import '../../../helpers/helpers.dart';
 
@@ -207,6 +209,7 @@ void main() {
   late StreamController<int> monitorChanges;
   late StreamController<int> monitorParams;
   late PluginCatalog catalog;
+  late FxPresetsCubit presets;
 
   setUp(() {
     catalog = PluginCatalog(
@@ -283,12 +286,15 @@ void main() {
     await monitors.load();
     final tempo = TempoCubit(repository: repository, settings: settings);
     final tracks = TracksCubit(settings: settings);
+    presets = FxPresetsCubit(settings: settings);
+    await presets.load();
     for (final cubit in <BlocBase<Object?>>[
       inputs,
       outputs,
       monitors,
       tempo,
       tracks,
+      presets,
     ]) {
       addTearDown(() => unawaited(cubit.close()));
     }
@@ -300,30 +306,35 @@ void main() {
     await tracks.rename(0, 'drums');
 
     await tester.pumpWidget(
-      MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        theme: ThemeData(
-          fontFamily: SurfaceTheme.displayFont,
-          extensions: [
-            SurfaceTheme.dark,
-            routingGraphThemeFromSurface(SurfaceTheme.dark),
-          ],
-        ),
-        home: RepositoryProvider<LooperRepository>.value(
-          value: repository,
-          child: MultiBlocProvider(
-            providers: [
-              BlocProvider<LooperBloc>.value(value: bloc),
-              BlocProvider.value(value: inputs),
-              BlocProvider.value(value: outputs),
-              BlocProvider.value(value: monitors),
-              BlocProvider.value(value: tempo),
-              BlocProvider.value(value: tracks),
+      // Saving a preset confirms with a toast, which needs the app's own
+      // overlay wrapper to land in.
+      ToastificationWrapper(
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: ThemeData(
+            fontFamily: SurfaceTheme.displayFont,
+            extensions: [
+              SurfaceTheme.dark,
+              routingGraphThemeFromSurface(SurfaceTheme.dark),
             ],
-            child: FxPage(
-              initial: destination,
-              catalogue: catalogue ?? _catalogue,
+          ),
+          home: RepositoryProvider<LooperRepository>.value(
+            value: repository,
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<LooperBloc>.value(value: bloc),
+                BlocProvider.value(value: inputs),
+                BlocProvider.value(value: outputs),
+                BlocProvider.value(value: monitors),
+                BlocProvider.value(value: tempo),
+                BlocProvider.value(value: tracks),
+                BlocProvider.value(value: presets),
+              ],
+              child: FxPage(
+                initial: destination,
+                catalogue: catalogue ?? _catalogue,
+              ),
             ),
           ),
         ),
@@ -592,22 +603,25 @@ void main() {
       );
     });
 
-    testWidgets('a single effect belongs to no rack, so it stays its own card',
-        (tester) async {
-      await pump(tester, destination: const FxDestination.recordedTrack(0));
-      await tapKey(tester, 'fx_add_effects');
-      await tapKey(tester, 'fx_library_single');
-      await tapKey(tester, 'fx_single_reverb');
+    testWidgets(
+      'a single effect belongs to no rack, so it stays its own card',
+      (tester) async {
+        await pump(tester, destination: const FxDestination.recordedTrack(0));
+        await tapKey(tester, 'fx_add_effects');
+        await tapKey(tester, 'fx_library_single');
+        await tapKey(tester, 'fx_single_reverb');
 
-      final appended =
-          verify(
-                () =>
-                    bloc.add(captureAny(that: isA<LooperBusEffectsAppended>())),
-              ).captured.single
-              as LooperBusEffectsAppended;
+        final appended =
+            verify(
+                  () => bloc.add(
+                    captureAny(that: isA<LooperBusEffectsAppended>()),
+                  ),
+                ).captured.single
+                as LooperBusEffectsAppended;
 
-      expect(appended.entries.single.rack, isNull);
-    });
+        expect(appended.entries.single.rack, isNull);
+      },
+    );
 
     testWidgets(
       'every added entry arrives bypassed, whatever the preset says',
@@ -1063,6 +1077,220 @@ void main() {
         verifyNever(
           () => bloc.add(any(that: isA<LooperBusEffectsChanged>())),
         );
+      });
+    });
+
+    group('saved sounds', () {
+      Future<void> pumpRack(WidgetTester tester) => pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: _rackRig,
+      );
+
+      /// Lets a confirmation toast close, rather than leave its timer
+      /// pending past the end of the test.
+      Future<void> settleToast(WidgetTester tester) async {
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+      }
+
+      /// Types [text] into the console's one keyboard and commits it.
+      Future<void> typeName(WidgetTester tester, String text) async {
+        for (final unit in text.codeUnits) {
+          await tester.sendKeyEvent(
+            LogicalKeyboardKey(unit),
+            character: String.fromCharCode(unit),
+          );
+        }
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        await settleToast(tester);
+      }
+
+      /// Empties the name field, so a test can type its own from scratch.
+      Future<void> clearName(WidgetTester tester, int length) async {
+        for (var i = 0; i < length; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        }
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('Save preset copies the rack under the name the player '
+          'gives it, and does NOT rename the rack itself', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+        await tapKey(tester, 'fx_rack_save');
+        await clearName(tester, 'Funk Wah'.length);
+        await typeName(tester, 'verse');
+
+        final saved = presets.state.single;
+        expect(saved.name, 'verse');
+        expect(saved.entries, hasLength(3));
+        // The instance on the chain is untouched: no write went out at all.
+        verifyNever(
+          () => bloc.add(any(that: isA<LooperBusEffectsChanged>())),
+        );
+        expect(find.text('Funk Wah'), findsWidgets);
+      });
+
+      testWidgets('a name already taken asks, and Replace rewrites that '
+          'definition rather than adding a second row', (tester) async {
+        await pumpRack(tester);
+        await presets.save(
+          name: 'verse',
+          entries: [_fx('old', TrackEffectType.echo)],
+        );
+        await tester.pumpAndSettle();
+        await tapKey(tester, 'fx_card_R1');
+        await tapKey(tester, 'fx_rack_save');
+        await clearName(tester, 'Funk Wah'.length);
+        await typeName(tester, 'verse');
+
+        expect(find.text(l10nOf(tester).fxPresetExists), findsOneWidget);
+        await tapKey(tester, 'fx_option_replace');
+        await settleToast(tester);
+
+        expect(presets.state, hasLength(1));
+        expect(presets.state.single.entries, hasLength(3));
+      });
+
+      testWidgets('cancelling the question keeps the previous preset', (
+        tester,
+      ) async {
+        await pumpRack(tester);
+        await presets.save(
+          name: 'verse',
+          entries: [_fx('old', TrackEffectType.echo)],
+        );
+        await tester.pumpAndSettle();
+        await tapKey(tester, 'fx_card_R1');
+        await tapKey(tester, 'fx_rack_save');
+        await clearName(tester, 'Funk Wah'.length);
+        await typeName(tester, 'verse');
+        await tapKey(tester, 'fx_options_cancel');
+
+        expect(presets.state.single.entries, hasLength(1));
+      });
+
+      testWidgets('My presets lists the saved sounds, and recalling one adds '
+          'a NEW instance rather than a reference', (tester) async {
+        await pumpRack(tester);
+        await presets.save(
+          name: 'verse',
+          entries: [
+            _fx('old1', TrackEffectType.echo),
+            _fx('old2', TrackEffectType.reverb),
+          ],
+          art: 'guitar',
+        );
+        await tester.pumpAndSettle();
+        await tapKey(tester, 'fx_add_effects');
+        await tapKey(tester, 'fx_library_saved');
+
+        expect(find.text('verse'), findsOneWidget);
+        await tapKey(tester, 'fx_saved_${presets.state.single.id}');
+
+        final appended =
+            verify(
+                  () => bloc.add(
+                    captureAny(that: isA<LooperBusEffectsAppended>()),
+                  ),
+                ).captured.single
+                as LooperBusEffectsAppended;
+
+        // Its own rack, so it is its own thing on the chain; bypassed, like
+        // every other addition; and the destination's placement, because
+        // placement belongs to where a sound is used, not to the sound.
+        final racks = appended.entries.map((e) => e.rack).toSet();
+        expect(racks, hasLength(1));
+        expect(racks.single!.name, 'verse');
+        expect(racks.single!.id, isNot('R1'));
+        expect(appended.entries.every((e) => !e.enabled), isTrue);
+        expect(
+          appended.entries.every((e) => e.placement == FxPlacement.post),
+          isTrue,
+        );
+      });
+
+      testWidgets('a saved single effect recalls as a single effect, not a '
+          'rack of one', (tester) async {
+        await pumpRack(tester);
+        await presets.save(
+          name: 'just echo',
+          entries: [_fx('old', TrackEffectType.echo)],
+        );
+        await tester.pumpAndSettle();
+        await tapKey(tester, 'fx_add_effects');
+        await tapKey(tester, 'fx_library_saved');
+        await tapKey(tester, 'fx_saved_${presets.state.single.id}');
+
+        final appended =
+            verify(
+                  () => bloc.add(
+                    captureAny(that: isA<LooperBusEffectsAppended>()),
+                  ),
+                ).captured.single
+                as LooperBusEffectsAppended;
+
+        expect(appended.entries.single.rack, isNull);
+      });
+
+      testWidgets('My presets says so when nothing has been saved', (
+        tester,
+      ) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_add_effects');
+        await tapKey(tester, 'fx_library_saved');
+
+        expect(find.byKey(const Key('fx_saved_empty')), findsOneWidget);
+      });
+
+      testWidgets('Delete asks first and says what it does not affect', (
+        tester,
+      ) async {
+        await pumpRack(tester);
+        await presets.save(
+          name: 'verse',
+          entries: [_fx('old', TrackEffectType.echo)],
+        );
+        await tester.pumpAndSettle();
+        await tapKey(tester, 'fx_add_effects');
+        await tapKey(tester, 'fx_library_saved');
+        await tapKey(tester, 'fx_saved_delete_${presets.state.single.id}');
+
+        expect(
+          find.text(l10nOf(tester).fxPresetDeleteBody),
+          findsOneWidget,
+        );
+        await tester.tap(find.text(l10nOf(tester).fxPresetDelete).last);
+        await tester.pumpAndSettle();
+
+        expect(presets.state, isEmpty);
+      });
+
+      testWidgets('moving a preset off this console is drawn and inert, '
+          'because that domain is not built', (tester) async {
+        await pumpRack(tester);
+        await presets.save(
+          name: 'verse',
+          entries: [_fx('old', TrackEffectType.echo)],
+        );
+        await tester.pumpAndSettle();
+        await tapKey(tester, 'fx_add_effects');
+        await tapKey(tester, 'fx_library_saved');
+
+        for (final key in [
+          'fx_presets_import',
+          'fx_presets_export_all',
+          'fx_saved_export_${presets.state.single.id}',
+        ]) {
+          expect(
+            tester.widget<LoopOutlinedButton>(find.byKey(Key(key))).onTap,
+            isNull,
+            reason: key,
+          );
+        }
       });
     });
 
