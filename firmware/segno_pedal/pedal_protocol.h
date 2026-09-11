@@ -47,14 +47,25 @@
  * which used 1 of its 8 bits). Same 17-byte payload again; the mode field
  * is the only wire difference from v2 (R8: no other growth). */
 #define PEDAL_PROTOCOL_VERSION_V3 0x03
-/* Wire protocol version 4 (current, #763): the mode field's fourth value
- * (0b11) stops being reserved and becomes PEDAL_MODE_CUSTOM. Same 17-byte
- * payload a third time -- claiming a reserved value is the whole change
- * (D2, zero growth). A version of its own is unavoidable: every deployed v3
- * decoder REJECTS a frame carrying mode 3, so a fourth mode could not ride
- * v3 without darkening the pedal it reached. Encoding a custom frame below
- * v4 writes the mode as PEDAL_MODE_PLAY (mute), the same inert-safe degrade
- * FX takes below v3. */
+/* Wire protocol version 4 (current, #763): two changes, both about what the
+ * plate can SAY.
+ *
+ * The mode field's fourth value (0b11) stops being reserved and becomes
+ * PEDAL_MODE_CUSTOM. A version of its own is unavoidable for that: every
+ * deployed v3 decoder REJECTS a frame carrying mode 3, so a fourth mode
+ * could not ride v3 without darkening the pedal it reached. Encoding a
+ * custom frame below v4 writes the mode as PEDAL_MODE_PLAY (mute), the same
+ * inert-safe degrade FX takes below v3.
+ *
+ * And the payload grows for the first time since v1: 30 bytes carrying one
+ * RGB triplet per footswitch (pedal_frame.pedal_colors, indexed by
+ * PEDAL_BTN_*), so each of the ten indicators can be given its own hue.
+ * The earlier zero-growth call rejected exactly this as bytes for feedback
+ * no hardware could show -- true of the six single LEDs the v2 faceplate had
+ * then, and no longer true of the ten 8-LED colour pills it has now (#930).
+ * Raw RGB rather than a palette index: the colours a user picks are exact,
+ * the frame is pushed a handful of times a second, and 30 bytes that rarely
+ * change cost less than a palette the pedal could hold a stale copy of. */
 #define PEDAL_PROTOCOL_VERSION_V4 0x04
 /* The version pedal_encode_frame emits when a pedal_frame carries no
  * remembered version (protocol_version == 0) -- i.e. the newest this unit
@@ -81,8 +92,9 @@
 /* The relative CC the encoder reports / the pedal sends (binary-offset). */
 #define PEDAL_ENCODER_CC 0x10
 
-/* The largest state frame, for output buffers (26 in practice). */
-#define PEDAL_FRAME_MAX_BYTES 32
+/* The largest state frame, for output buffers (60 in practice at v4, 26 at
+ * v3 and below). */
+#define PEDAL_FRAME_MAX_BYTES 64
 
 /* Per-track LED, matching PedalTrackLed. BLUE (FX v3 part 5a) is the
  * FX-mode chain-enabled color part 5b's app-side projection emits -- the
@@ -152,6 +164,21 @@ enum {
   PEDAL_BTN_COUNT = 10
 };
 
+/* One indicator hue (protocol v4). Full 8-bit RGB, matching the WS2812 the
+ * pills and the V1 indicators are built from, so a colour the user picked
+ * reaches the LED unquantised. */
+typedef struct pedal_color {
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+} pedal_color;
+
+/* What a pedal's indicator uses when the frame carries no colour for it:
+ * white, which is the palette default on both sides. */
+#define PEDAL_COLOR_DEFAULT_R 0xFFu
+#define PEDAL_COLOR_DEFAULT_G 0xFFu
+#define PEDAL_COLOR_DEFAULT_B 0xFFu
+
 /* The decoded looper state the pedal renders. */
 typedef struct pedal_frame {
   uint8_t play_mode;  /* PEDAL_MODE_*: 0 = Rec, 1 = Play, 2 = FX (v3) */
@@ -166,6 +193,11 @@ typedef struct pedal_frame {
   uint8_t active_bank; /* 0 = A, 1 = B */
   uint8_t armed_track; /* 0..7 */
   uint8_t track_leds[PEDAL_TRACK_COUNT];
+  /* protocol v4 (#763): the hue each footswitch's indicator uses, indexed by
+   * PEDAL_BTN_*. Carried below v4 as PEDAL_COLOR_DEFAULT for every pedal --
+   * the wire had no bytes for it, so a v1/v2/v3 decode reports the default
+   * rather than inventing one. */
+  pedal_color pedal_colors[PEDAL_BTN_COUNT];
   uint32_t loop_length_micros;
   uint8_t master_gain; /* engine master output gain, 0..255 (255 = unity) */
   /* protocol v2 (D11); PEDAL_LOOPER_MODE_MULTI / 0 on a v1-decoded frame --

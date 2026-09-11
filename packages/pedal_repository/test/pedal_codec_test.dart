@@ -281,6 +281,77 @@ void main() {
       }
     });
 
+    test('the per-pedal colours round-trip at v4 as an ARRAY, one hue per '
+        'footswitch', () {
+      final colors = [
+        for (var i = 0; i < PedalButton.values.length; i++)
+          PedalColor(i * 20, 255 - i * 20, i.isEven ? 0 : 255),
+      ];
+      final frame = PedalStateFrame.blank().copyWith(pedalColors: colors);
+      final decoded = PedalCodec.decodeFrame(
+        PedalCodec.encodeFrame(
+          frame,
+          targetVersion: PedalCodec.protocolVersionV4,
+        ),
+      );
+      // Element-wise, not just list equality: a codec that wrote the first
+      // colour ten times, or indexed the array backwards, would still produce
+      // a ten-entry list.
+      for (var i = 0; i < colors.length; i++) {
+        expect(decoded!.pedalColors[i], colors[i], reason: 'pedal $i');
+      }
+    });
+
+    test('the colours fall off the wire below v4 and decode as the default '
+        'palette — the wire had no bytes for them, so reporting a colour '
+        'would be an invention', () {
+      final frame = PedalStateFrame.blank().copyWith(
+        pedalColors: List.filled(
+          PedalButton.values.length,
+          const PedalColor(1, 2, 3),
+        ),
+      );
+      for (final version in [
+        PedalCodec.protocolVersionV1,
+        PedalCodec.protocolVersionV2,
+        PedalCodec.protocolVersionV3,
+      ]) {
+        final decoded = PedalCodec.decodeFrame(
+          PedalCodec.encodeFrame(frame, targetVersion: version),
+        );
+        expect(decoded!.pedalColors, defaultPedalColors, reason: 'v$version');
+      }
+    });
+
+    test(
+      'a v4 frame at the v3 payload length is truncated, not colourless',
+      () {
+        final v3 = PedalCodec.encodeFrame(
+          PedalStateFrame.blank(),
+          targetVersion: PedalCodec.protocolVersionV3,
+        );
+        expect(PedalCodec.decodeFrame(v3), isNotNull);
+        final relabelled = [...v3]..[2] = PedalCodec.protocolVersionV4;
+        expect(PedalCodec.decodeFrame(relabelled), isNull);
+      },
+    );
+
+    test('a body longer than the largest payload is rejected before it is '
+        'unpacked — the wire does not get to say how much to read', () {
+      final good = PedalCodec.encodeFrame(
+        PedalStateFrame.blank(),
+        targetVersion: PedalCodec.protocolVersionV4,
+      );
+      // Same framing, a body far past any version's payload.
+      final huge = <int>[
+        ...good.sublist(0, 4),
+        ...List.filled(400, 0),
+        0,
+        PedalCodec.sysExEnd,
+      ];
+      expect(PedalCodec.decodeFrame(huge), isNull);
+    });
+
     test('a v3 frame carrying the fourth mode value is rejected — the whole '
         'reason a fourth mode needed a version of its own', () {
       final v4 = PedalCodec.encodeFrame(

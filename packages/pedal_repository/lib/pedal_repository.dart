@@ -16,6 +16,7 @@ export 'src/native_pedal_transport.dart';
 export 'src/noop_pedal_transport.dart';
 export 'src/pedal_button.dart';
 export 'src/pedal_codec.dart';
+export 'src/pedal_color.dart';
 export 'src/pedal_event.dart';
 export 'src/pedal_mode.dart';
 export 'src/pedal_protocol_traffic.dart';
