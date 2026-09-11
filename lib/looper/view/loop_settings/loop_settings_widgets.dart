@@ -397,45 +397,52 @@ class LoopOutlinedButton extends StatelessWidget {
         ? surface.onAccent
         : surface.textPrimary;
     final text = TextStyle(color: foreground, fontSize: fontSize, height: 1);
+    // A button with nothing to do READS as having nothing to do. A control
+    // that looks live and is inert is the working-but-silent control the
+    // accepted design says to explain rather than present.
     return Semantics(
       button: true,
+      enabled: onTap != null,
       label: semanticLabel ?? label,
       value: semanticValue,
-      child: Material(
-        color: fill,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radius),
-          side: BorderSide(color: border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: Center(
-              child: icon != null
-                  ? Icon(icon, size: 28, color: foreground)
-                  : Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (leadingIcon != null) ...[
-                              Icon(leadingIcon, size: 28, color: foreground),
-                              const SizedBox(width: 12),
+      child: Opacity(
+        opacity: onTap == null ? surface.disabledOpacity : 1,
+        child: Material(
+          color: fill,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radius),
+            side: BorderSide(color: border),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Center(
+                child: icon != null
+                    ? Icon(icon, size: 28, color: foreground)
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (leadingIcon != null) ...[
+                                Icon(leadingIcon, size: 28, color: foreground),
+                                const SizedBox(width: 12),
+                              ],
+                              AppText(label ?? '', style: text),
+                              if (trailingIcon != null) ...[
+                                const SizedBox(width: 12),
+                                Icon(trailingIcon, size: 28, color: foreground),
+                              ],
                             ],
-                            AppText(label ?? '', style: text),
-                            if (trailingIcon != null) ...[
-                              const SizedBox(width: 12),
-                              Icon(trailingIcon, size: 28, color: foreground),
-                            ],
-                          ],
+                          ),
                         ),
                       ),
-                    ),
+              ),
             ),
           ),
         ),

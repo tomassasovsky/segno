@@ -16,6 +16,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
+import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_library_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -77,6 +78,133 @@ class _FxViewState extends State<FxView> {
   }
 
   void _back() => Navigator.maybePop(context);
+
+  /// Opens [index] of [destination]'s chain in its own editor.
+  ///
+  /// A route rather than a panel, because the accepted design gives the
+  /// editor the whole surface: its controls are direct, which is what the
+  /// removed parameter dialog was in the way of.
+  void _openEditor(FxDestination destination, int index) {
+    final address = destination.address;
+    if (address == null) return;
+    final label = _destinationLabel(destination);
+    final monitor = context.read<MonitorCubit>();
+    final bloc = context.read<LooperBloc>();
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        // The route is pushed on a navigator ABOVE the page's providers, so
+        // the two the editor watches are carried in by value rather than
+        // looked up — and carried rather than snapshotted, so an edit made
+        // here and an edit made from a pedal land in the same place: the
+        // editor renders the rig, it does not hold a copy of it.
+        builder: (_) => MultiBlocProvider(
+          providers: [
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<MonitorCubit>.value(value: monitor),
+          ],
+          child: Builder(
+            builder: (context) {
+              final entries = _watchEntriesOf(context, address);
+              if (index >= entries.length) return const SizedBox.shrink();
+              return FxEffectEditor(
+                effect: entries[index],
+                destination: destination,
+                destinationLabel: label,
+                onBack: () => Navigator.maybePop(context),
+                edits: _editsFor(bloc, monitor, address, index),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// How one entry's editor writes, per stage.
+  ///
+  /// Each stage keeps its own owner rather than routing through one shared
+  /// setter: that is what stops a write meant for a live input landing on a
+  /// track's chain.
+  static FxEffectEdits _editsFor(
+    LooperBloc bloc,
+    MonitorCubit monitor,
+    FxAddress address,
+    int index,
+  ) => (
+    setEnabled: ({required enabled}) => _DestinationChain._togglePower(
+      bloc,
+      monitor,
+      address,
+      index,
+      enabled: enabled,
+    ),
+    setParam: (param, value) {
+      switch (address.stage) {
+        case FxStage.input:
+          monitor.setEffectParam(address.index, index, param, value);
+        case FxStage.loop:
+          bloc.add(
+            LooperLaneEffectParamChanged(
+              address.index,
+              address.lane ?? 0,
+              index,
+              param,
+              value,
+            ),
+          );
+        case FxStage.track:
+        case FxStage.output:
+          bloc.add(LooperBusEffectParamChanged(address, index, param, value));
+        case FxStage.allTracks:
+          bloc.add(LooperAllTracksEffectParamChanged(index, param, value));
+      }
+    },
+    setPlacement: (placement) {
+      switch (address.stage) {
+        case FxStage.input:
+          monitor.setEffectPlacement(address.index, index, placement);
+        case FxStage.loop:
+          bloc.add(
+            LooperLaneEffectPlacementChanged(
+              address.index,
+              address.lane ?? 0,
+              index,
+              placement,
+            ),
+          );
+        case FxStage.track:
+          bloc.add(
+            LooperTrackEffectPlacementChanged(address.index, index, placement),
+          );
+        case FxStage.allTracks:
+        case FxStage.output:
+          // Fixed after their own mixes, so the editor never offers the
+          // switch here and nothing can reach this.
+          break;
+      }
+    },
+    setChannels: (channels) {
+      switch (address.stage) {
+        case FxStage.input:
+          monitor.setEffectChannels(address.index, index, channels);
+        case FxStage.loop:
+          bloc.add(
+            LooperLaneEffectChannelsChanged(
+              address.index,
+              address.lane ?? 0,
+              index,
+              channels,
+            ),
+          );
+        case FxStage.track:
+        case FxStage.output:
+          bloc.add(LooperBusEffectChannelsChanged(address, index, channels));
+        case FxStage.allTracks:
+          bloc.add(LooperAllTracksEffectChannelsChanged(index, channels));
+      }
+    },
+  );
 
   /// Opens the library for [destination] and appends what comes back.
   ///
@@ -152,11 +280,25 @@ class _FxViewState extends State<FxView> {
     };
   }
 
+  /// The chain at [address], read once — for a handler, which is outside the
+  /// widget tree and so cannot listen.
   List<TrackEffect> _entriesOf(BuildContext context, FxAddress address) =>
       address.stage == FxStage.input
       ? context.read<MonitorCubit>().state.forInput(address.index).effects
       : _DestinationChain._entriesAt(
           context.read<LooperBloc>().state,
+          address,
+        );
+
+  /// The chain at [address], WATCHED: the editor re-renders when the rig
+  /// changes under it, whether the change came from this surface or a pedal.
+  static List<TrackEffect> _watchEntriesOf(
+    BuildContext context,
+    FxAddress address,
+  ) => address.stage == FxStage.input
+      ? context.watch<MonitorCubit>().state.forInput(address.index).effects
+      : _DestinationChain._entriesAt(
+          context.watch<LooperBloc>().state,
           address,
         );
 
@@ -239,6 +381,7 @@ class _FxViewState extends State<FxView> {
             child: _DestinationChain(
               destination: destination,
               controller: _chainScroll[destination.kind],
+              onOpen: _openEditor,
             ),
           ),
         ],
@@ -600,9 +743,14 @@ List<int> _recordedLanes(LooperState state, int channel) {
 
 /// The chain at the selected destination.
 class _DestinationChain extends StatelessWidget {
-  const _DestinationChain({required this.destination, this.controller});
+  const _DestinationChain({
+    required this.destination,
+    required this.onOpen,
+    this.controller,
+  });
 
   final FxDestination destination;
+  final void Function(FxDestination, int) onOpen;
   final ScrollController? controller;
 
   @override
@@ -632,7 +780,7 @@ class _DestinationChain extends StatelessWidget {
         index,
         enabled: enabled,
       ),
-      onOpen: (_) {},
+      onOpen: (index) => onOpen(destination, index),
     );
   }
 

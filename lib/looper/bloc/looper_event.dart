@@ -495,8 +495,70 @@ final class LooperLaneEffectMoved extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, from, to];
 }
 
-/// Chain entry [index] on lane [lane] of track [channel] moved to
-/// [placement] — Pre (recorded into the loop) or Post (can ring after Stop).
+/// Sets chain entry [index] on lane [lane] of track [channel] to [channels] —
+/// its input handling, its output handling, its placement between the sides
+/// and its own level.
+///
+/// One event for all four, because they are one control: the accepted design
+/// applies the input choice before the effects, the output choice and its
+/// placement after them, and the level last, and a half-applied change is
+/// audible.
+final class LooperLaneEffectChannelsChanged extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectChannelsChanged].
+  const LooperLaneEffectChannelsChanged(
+    super.channel,
+    super.lane,
+    this.index,
+    this.channels,
+  );
+
+  /// The entry's current index in the chain.
+  final int index;
+
+  /// Its channel handling and level.
+  final FxChannels channels;
+
+  @override
+  List<Object?> get props => [channel, lane, index, channels];
+}
+
+/// Sets entry [index] of the bus chain at [address] to [channels] — the bus
+/// twin of the lane event above.
+final class LooperBusEffectChannelsChanged extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectChannelsChanged].
+  const LooperBusEffectChannelsChanged(
+    super.address,
+    this.index,
+    this.channels,
+  );
+
+  /// The entry's current index in the chain.
+  final int index;
+
+  /// Its channel handling and level.
+  final FxChannels channels;
+
+  @override
+  List<Object?> get props => [address, index, channels];
+}
+
+/// Sets entry [index] of the All tracks chain to [channels].
+final class LooperAllTracksEffectChannelsChanged extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectChannelsChanged].
+  const LooperAllTracksEffectChannelsChanged(this.index, this.channels);
+
+  /// The entry's current index in the chain.
+  final int index;
+
+  /// Its channel handling and level.
+  final FxChannels channels;
+
+  @override
+  List<Object?> get props => [index, channels];
+}
+
+/// Moves entry [index] of lane [lane] of track [channel]'s chain to
+/// [placement].
 ///
 /// The entry keeps its identity, parameters and enable state and lands at the
 /// end of the destination stage's run.

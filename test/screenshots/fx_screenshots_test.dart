@@ -20,6 +20,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_library_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/theme/theme.dart';
@@ -258,6 +259,17 @@ void main() {
   testWidgets('Outputs', (tester) async {
     await pump(tester, destination: const FxDestination.output(0));
     await shoot(tester, 'outputs');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('The effect editor', (tester) async {
+    await pump(tester, destination: const FxDestination.recordedTrack(0));
+    await tester.tap(find.byKey(const Key('fx_card_t1')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(FxEffectEditor),
+      matchesGoldenFile('goldens/fx_effect_editor.png'),
+    );
   }, skip: !hasScreenshotFonts);
 
   testWidgets('Add effects, the library grid', (tester) async {

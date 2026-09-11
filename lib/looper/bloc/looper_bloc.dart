@@ -180,6 +180,51 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       next.insert(target, next.removeAt(event.from));
       _pushLaneEffects(event.channel, event.lane, next);
     });
+    on<LooperLaneEffectChannelsChanged>((event, _) {
+      final effects = _repository.laneEffects(event.channel, event.lane);
+      if (event.index < 0 || event.index >= effects.length) return;
+      final slotId = effects[event.index].slotId;
+      if (slotId == null) return;
+      // By identity, like placement: channel handling belongs to the
+      // INSTANCE, and an index is what a reorder or a placement move changes.
+      _repository.setLaneEffectChannels(
+        channel: event.channel,
+        lane: event.lane,
+        slotId: slotId,
+        channels: event.channels,
+      );
+      _persistLaneChain(event.channel, event.lane);
+    });
+    on<LooperBusEffectChannelsChanged>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      // A bus stage has no by-slot channel setter: channel handling rides the
+      // entry, and the whole-chain push is what carries an entry's own fields
+      // to the engine. Re-pushing a chain re-sends every slot's type, which
+      // resets that slot's DSP — acceptable here because this is a settled
+      // choice, not a swept knob.
+      _pushBusChain(event.address, [
+        for (var i = 0; i < chain.length; i++)
+          if (i == event.index)
+            _withChannels(chain[i], event.channels)
+          else
+            chain[i],
+      ]);
+    });
+    on<LooperAllTracksEffectChannelsChanged>((event, _) {
+      final chain = _repository.allTracksEffects;
+      if (event.index < 0 || event.index >= chain.length) return;
+      _repository.setAllTracksEffects(
+        effects: [
+          for (var i = 0; i < chain.length; i++)
+            if (i == event.index)
+              _withChannels(chain[i], event.channels)
+            else
+              chain[i],
+        ],
+      );
+      _persistAllTracksChain();
+    });
     on<LooperLaneEffectPlacementChanged>((event, _) {
       final effects = _repository.laneEffects(event.channel, event.lane);
       if (event.index < 0 || event.index >= effects.length) return;
@@ -818,6 +863,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       entries: _repository.laneEffects(channel, lane),
     ),
   );
+
+  /// One entry with its channel handling replaced, dispatched over the
+  /// sealed hierarchy.
+  static TrackEffect _withChannels(TrackEffect fx, FxChannels channels) =>
+      switch (fx) {
+        BuiltInEffect() => fx.copyWith(channels: channels),
+        PluginEffect() => fx.copyWith(channels: channels),
+      };
 
   /// The current chain at bus [address], read from the repository (the
   /// authority that every bus write lands in synchronously) rather than from
