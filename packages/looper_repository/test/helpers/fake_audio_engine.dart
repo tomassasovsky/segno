@@ -590,6 +590,9 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-(channel, lane) active chain length passed to [setLaneFxCount].
   final Map<(int, int), int> laneFxCount = {};
 
+  /// Per-(channel, lane) leading Pre run passed to [setLaneFxCount].
+  final Map<(int, int), int> laneFxPreCount = {};
+
   /// Per-(channel, lane, index, param) value passed to [setLaneFxParam].
   final Map<(int, int, int, int), double> laneFxParam = {};
 
@@ -618,6 +621,7 @@ class FakeAudioEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) {
     // D-ENSEED's second half: a slot ENTERING the active window seeds
     // enabled, synchronously, like the engine's le_fx_seed_entering_slots.
@@ -625,6 +629,11 @@ class FakeAudioEngine implements AudioEngine {
       laneFxEnabled[(channel, lane, s)] = true;
     }
     laneFxCount[(channel, lane)] = count;
+    // Clamped as the native setter clamps it, so a test asserting the pushed
+    // split reads what the engine would actually store.
+    laneFxPreCount[(channel, lane)] = preCount < 0
+        ? 0
+        : (preCount > count ? count : preCount);
     calls.add('setLaneFxCount');
     return EngineResult.ok;
   }
@@ -680,6 +689,9 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-channel active chain length passed to [setTrackFxCount].
   final Map<int, int> trackFxCount = {};
 
+  /// Per-channel leading Pre run passed to [setTrackFxCount].
+  final Map<int, int> trackFxPreCount = {};
+
   /// Per-(channel, index, param) value passed to [setTrackFxParam].
   final Map<(int, int, int), double> trackFxParam = {};
 
@@ -720,12 +732,19 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTrackFxCount({required int channel, required int count}) {
+  EngineResult setTrackFxCount({
+    required int channel,
+    required int count,
+    int preCount = 0,
+  }) {
     // D-ENSEED entering-slot seed — see [setLaneFxCount].
     for (var s = trackFxCount[channel] ?? 0; s < count; s++) {
       trackFxEnabled[(channel, s)] = true;
     }
     trackFxCount[channel] = count;
+    trackFxPreCount[channel] = preCount < 0
+        ? 0
+        : (preCount > count ? count : preCount);
     calls.add('setTrackFxCount');
     return EngineResult.ok;
   }
@@ -821,6 +840,120 @@ class FakeAudioEngine implements AudioEngine {
     calls.add('setOutputFxChainEnabled');
     return EngineResult.ok;
   }
+
+  /// Chain entry types passed to [setAllTracksFx], by index.
+  final Map<int, TrackEffectType> allTracksFx = {};
+
+  /// The active chain length passed to [setAllTracksFxCount].
+  int allTracksFxCount = 0;
+
+  /// Params passed to [setAllTracksFxParam], by (index, param).
+  final Map<(int, int), double> allTracksFxParam = {};
+
+  /// Per-entry flags passed to [setAllTracksFxEnabled].
+  final Map<int, bool> allTracksFxEnabled = {};
+
+  /// The flag passed to [setAllTracksFxChainEnabled].
+  bool? allTracksFxChainEnabled;
+
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    // D-ENSEED re-seed on type change — see [setLaneFx].
+    if (allTracksFx[index] != type) allTracksFxEnabled[index] = true;
+    allTracksFx[index] = type;
+    calls.add('setAllTracksFx');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) {
+    for (var s = allTracksFxCount; s < count; s++) {
+      allTracksFxEnabled[s] = true;
+    }
+    allTracksFxCount = count;
+    calls.add('setAllTracksFxCount');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    allTracksFxParam[(index, param)] = value;
+    calls.add('setAllTracksFxParam');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    allTracksFxEnabled[index] = enabled;
+    calls.add('setAllTracksFxEnabled');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) {
+    allTracksFxChainEnabled = enabled;
+    calls.add('setAllTracksFxChainEnabled');
+    return EngineResult.ok;
+  }
+
+  /// Per-(channel, lane, index) channel handling passed to
+  /// [setLaneFxChannels].
+  final Map<(int, int, int), FxChannels> laneFxChannels = {};
+
+  /// Per-(input, index) channel handling passed to
+  /// [setMonitorInputFxChannels].
+  final Map<(int, int), FxChannels> monitorFxChannels = {};
+
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) {
+    laneFxChannels[(channel, lane, index)] = channels;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
+  }) {
+    monitorFxChannels[(input, index)] = channels;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
 
   /// Per-input enabled flag passed to [setMonitorInputEnabled].
   final Map<int, bool> monitorInputEnabled = {};

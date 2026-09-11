@@ -63,6 +63,7 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
       ),
   ],
   masterChain: _encodedMasterChain(looper),
+  allTracksChain: _encodedAllTracksChain(looper),
 );
 
 /// Gathers the rig's loop settings (slice 2c) — the length preset and
@@ -149,6 +150,13 @@ String _encodedMasterChain(LooperRepository looper) {
   return master == const FxChainEnvelope() ? '' : encodeFxChain(master);
 }
 
+/// The All tracks recorded-mix chain as an envelope string, or the manifest's
+/// "no chain" spelling (`''`) — the Master rule exactly, for the same reason.
+String _encodedAllTracksChain(LooperRepository looper) {
+  final chain = looper.allTracksChainEnvelope();
+  return chain == const FxChainEnvelope() ? '' : encodeFxChain(chain);
+}
+
 /// Gathers the same live four-stage chains into the models a
 /// performance-capture arm snapshot records, plus the master-limiter state the
 /// engine snapshot cannot read back. The rig — not settings — is the truth
@@ -229,6 +237,9 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
       chain.channel: decodeFxChain(chain.encoded),
   },
   masterChain: decodeFxChain(bundle.session.masterChain),
+  // The All tracks chain (manifest v8). A v7-or-earlier bundle carries none,
+  // so this arrives empty and `applySession` resets whatever the rig had.
+  allTracksChain: decodeFxChain(bundle.session.allTracksChain),
   // Looper mode + crown (schema v4, B5c) — session-level, so read straight
   // off the manifest rather than through `_rigTracks`.
   looperMode: bundle.session.looperMode,

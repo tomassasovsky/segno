@@ -14,6 +14,10 @@ import 'package:segno_engine/segno_engine.dart'
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
+        FxChannelInput,
+        FxChannelOutput,
+        FxChannels,
+        FxPlacement,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
@@ -25,11 +29,13 @@ import 'package:segno_engine/segno_engine.dart'
         TrackEffect,
         TrackEffectParam,
         TrackEffectType,
-        encodeTrackEffects;
+        encodeTrackEffects,
+        fxPreCount;
 import 'package:segno_engine/segno_engine.dart'
     as le
     show
         AudioDevice,
+        FxChannelOutput,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
@@ -7189,6 +7195,592 @@ void main() {
     });
   });
 
+  group('per-entry channel handling and level (slice 3e)', () {
+    const channels = FxChannels(
+      input: FxChannelInput.monoSum,
+      output: FxChannelOutput.mono,
+      placement: -0.5,
+      level: 0.25,
+    );
+
+    test('rides a chain write to the engine, per entry', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.echo, channels: channels),
+        ],
+      );
+
+      // Pushed for EVERY slot on every apply, for the reason the enabled bits
+      // are: they are keyed by index engine-side and by effect here, so a
+      // reorder must not leave one entry's settings on another's slot.
+      expect(engine.laneFxChannels[(0, 0, 0)]?.level, 1.0);
+      expect(engine.laneFxChannels[(0, 0, 1)]?.level, 0.25);
+      expect(
+        engine.laneFxChannels[(0, 0, 1)]?.output,
+        le.FxChannelOutput.mono,
+      );
+    });
+
+    test('the setter names the instance by slot id, never by index', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.echo),
+        ],
+      );
+      final second = repo.laneEffects(0, 0)[1].slotId!;
+
+      expect(
+        repo.setLaneEffectChannels(
+          channel: 0,
+          lane: 0,
+          slotId: second,
+          channels: channels,
+        ),
+        EngineResult.ok,
+      );
+      expect(repo.laneEffects(0, 0)[1].channels, channels);
+      expect(repo.laneEffects(0, 0)[0].channels, FxChannels.defaults);
+      expect(engine.laneFxChannels[(0, 0, 1)]?.level, 0.25);
+
+      // Reordering carries the settings with the entry, and the re-apply puts
+      // them on the slot the entry now occupies.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: repo.laneEffects(0, 0).reversed.toList(),
+      );
+      expect(repo.laneEffects(0, 0)[0].channels, channels);
+      expect(engine.laneFxChannels[(0, 0, 0)]?.level, 0.25);
+      expect(engine.laneFxChannels[(0, 0, 1)]?.level, 1.0);
+    });
+
+    test('an unknown slot id is invalid on both stages', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+
+      expect(
+        repo.setLaneEffectChannels(
+          channel: 0,
+          lane: 0,
+          slotId: 'nobody',
+          channels: channels,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMonitorEffectChannels(
+          input: 0,
+          slotId: 'nobody',
+          channels: channels,
+        ),
+        EngineResult.invalid,
+      );
+    });
+
+    test('survives persist and restore through the envelope', () {
+      final restored = decodeFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            entries: [
+              BuiltInEffect(type: TrackEffectType.echo, channels: channels),
+            ],
+          ),
+        ),
+      );
+      expect(restored.entries.single.channels, channels);
+    });
+  });
+
+  group('the All tracks recorded-mix chain (slice 3e)', () {
+    test('a chain write pushes types, params, count and every enabled bit', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksEffects(
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            params: const [0.1, 0.2, 0.3, 0.4],
+          ),
+          BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+        ],
+      );
+
+      expect(engine.allTracksFx[0]?.code, TrackEffectType.reverb.code);
+      expect(engine.allTracksFx[1]?.code, TrackEffectType.drive.code);
+      expect(engine.allTracksFxParam[(0, 2)], 0.3);
+      expect(engine.allTracksFxCount, 2);
+      // Strictly after the count, so a disabled entry stays disabled through
+      // the engine's D-ENSEED re-seed (R16 ordering).
+      expect(engine.allTracksFxEnabled[1], isFalse);
+      expect(
+        engine.calls.indexOf('setAllTracksFxCount') <
+            engine.calls.lastIndexOf('setAllTracksFxEnabled'),
+        isTrue,
+      );
+    });
+
+    test('is stored wholly post — the stage has no dry original', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksEffects(
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            placement: FxPlacement.pre,
+          ),
+        ],
+      );
+
+      expect(repo.allTracksEffects.single.placement, FxPlacement.post);
+      expect(fxPreCount(repo.allTracksEffects), 0);
+    });
+
+    test('re-applies on restart, chain flag included', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setAllTracksEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        )
+        ..setAllTracksChainEnabled(enabled: false)
+        ..stopEngine();
+      engine.calls.clear();
+      engine.allTracksFxCount = 0;
+      repo.startEngine(const EngineConfig());
+
+      expect(engine.allTracksFx[0]?.code, TrackEffectType.echo.code);
+      expect(engine.allTracksFxCount, 1);
+      expect(engine.allTracksFxChainEnabled, isFalse);
+    });
+
+    test(
+      'a session that describes no such chain resets the live one',
+      () async {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        repo.setAllTracksEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        );
+        await repo.applySession(const SessionRig());
+
+        // R17: a stage the session does not describe is reset on apply, never
+        // left carrying the previous session's chain.
+        expect(repo.allTracksEffects, isEmpty);
+      },
+    );
+  });
+
+  group('per-instance placement (slice 3e)', () {
+    BuiltInEffect at(TrackEffectType type, FxPlacement placement) =>
+        BuiltInEffect(type: type, placement: placement);
+
+    test('a chain write partitions pre entries ahead of post ones', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.delay, FxPlacement.post),
+          at(TrackEffectType.echo, FxPlacement.pre),
+        ],
+      );
+
+      expect(
+        repo.laneEffects(0, 0).map((e) => (e as BuiltInEffect).type),
+        [
+          TrackEffectType.filter,
+          TrackEffectType.echo,
+          TrackEffectType.drive,
+          TrackEffectType.delay,
+        ],
+      );
+      expect(fxPreCount(repo.laneEffects(0, 0)), 2);
+    });
+
+    test('an over-long chain loses trailing post entries, never the '
+        'partition', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // Nine entries, the last of them Pre. Clamping before the partition
+      // would drop that Pre entry and leave eight Post ones; clamping after
+      // it keeps every Pre entry and cuts the Post tail.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          for (var i = 0; i < 8; i++)
+            at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.reverb, FxPlacement.pre),
+        ],
+      );
+
+      final chain = repo.laneEffects(0, 0);
+      expect(chain, hasLength(kTrackEffectMax));
+      expect(fxPreCount(chain), 1);
+      expect((chain.first as BuiltInEffect).type, TrackEffectType.reverb);
+    });
+
+    test('a placement move keeps the id and lands at the destination '
+        'stage end', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // The moved entry starts AHEAD of the entries it joins, so "the end of
+      // the destination stage" and "wherever it already was" are different
+      // answers: leaving it in place would order filter before delay.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.laneEffects(0, 0).first.slotId!;
+
+      expect(
+        repo.setLaneEffectPlacement(
+          channel: 0,
+          lane: 0,
+          slotId: moving,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+
+      final chain = repo.laneEffects(0, 0);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+        TrackEffectType.filter,
+      ]);
+      expect(chain.last.slotId, moving);
+      expect(chain.last.placement, FxPlacement.post);
+      expect(fxPreCount(chain), 0);
+    });
+
+    test('a move into a stage that already holds entries goes behind '
+        'them', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.laneEffects(0, 0)[1].slotId!;
+
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: moving,
+        placement: FxPlacement.pre,
+      );
+
+      final chain = repo.laneEffects(0, 0);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.filter,
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+      ]);
+      expect(chain[1].slotId, moving);
+      expect(fxPreCount(chain), 2);
+    });
+
+    test('a placement move preserves parameters and the enable state', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.delay,
+            params: const [0.11, 0.22, 0.33, 0.44],
+            enabled: false,
+          ),
+        ],
+      );
+      final id = repo.laneEffects(0, 0).single.slotId!;
+
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: id,
+        placement: FxPlacement.pre,
+      );
+
+      final moved = repo.laneEffects(0, 0).single as BuiltInEffect;
+      expect(moved.slotId, id);
+      expect(moved.params, const [0.11, 0.22, 0.33, 0.44]);
+      expect(moved.enabled, isFalse);
+      expect(moved.placement, FxPlacement.pre);
+    });
+
+    test('a move to the placement an entry already has changes nothing', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final before = repo.laneEffects(0, 0);
+
+      expect(
+        repo.setLaneEffectPlacement(
+          channel: 0,
+          lane: 0,
+          slotId: before.first.slotId!,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+      // Order too: a no-op move must not send the entry to the stage end.
+      expect(repo.laneEffects(0, 0), before);
+    });
+
+    test('an unknown slot id is invalid on every switchable stage', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        )
+        ..setTrackEffects(
+          channel: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        );
+
+      expect(
+        repo.setLaneEffectPlacement(
+          channel: 0,
+          lane: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMonitorEffectPlacement(
+          input: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setTrackEffectPlacement(
+          channel: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+    });
+
+    test('a monitor instance moves the same way a lane one does', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setMonitorEffects(
+        input: 1,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.echo, FxPlacement.pre),
+        ],
+      );
+      final monitorId = repo.monitorEffects(1).first.slotId!;
+
+      repo.setMonitorEffectPlacement(
+        input: 1,
+        slotId: monitorId,
+        placement: FxPlacement.post,
+      );
+
+      expect(repo.monitorEffects(1).last.slotId, monitorId);
+      expect(fxPreCount(repo.monitorEffects(1)), 1);
+    });
+
+    test('a whole track carries the switch, and its split reaches the '
+        'engine', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // A whole track's Pre run is rendered over the combination of its
+      // parts, so unlike an output chain it does carry the switch.
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          at(TrackEffectType.reverb, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+        ],
+      );
+
+      expect(repo.trackEffects(2).map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.post,
+      ]);
+      expect(fxPreCount(repo.trackEffects(2)), 1);
+      expect(engine.trackFxCount[2], 2);
+      expect(engine.trackFxPreCount[2], 1);
+    });
+
+    test('a whole-track instance moves to the end of its new stage, keeping '
+        'its identity', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.trackEffects(2).first.slotId!;
+
+      expect(
+        repo.setTrackEffectPlacement(
+          channel: 2,
+          slotId: moving,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+
+      final chain = repo.trackEffects(2);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+        TrackEffectType.filter,
+      ]);
+      expect(chain.last.slotId, moving);
+      expect(fxPreCount(chain), 0);
+      expect(engine.trackFxPreCount[2], 0);
+    });
+
+    test('an output chain is stored wholly post, whatever it is handed', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // The accepted design omits the control here because the stage is fixed
+      // after the mix, so a chain arriving with Pre entries — pasted, or
+      // restored from a destination that had them — must land Post rather
+      // than name a Pre count the output stage cannot honour.
+      repo.setMasterEffects(
+        effects: [
+          at(TrackEffectType.reverb, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+        ],
+      );
+
+      expect(
+        repo.masterEffects.map((e) => e.placement),
+        [FxPlacement.post, FxPlacement.post],
+      );
+      expect(fxPreCount(repo.masterEffects), 0);
+      // Order is the order it was handed: nothing moved, only the placement.
+      expect(repo.masterEffects.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.reverb,
+        TrackEffectType.drive,
+      ]);
+    });
+
+    test('the split reaches the engine with the count it belongs to', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+
+      expect(engine.laneFxCount[(0, 0)], 3);
+      expect(engine.laneFxPreCount[(0, 0)], 1);
+
+      // Moving the one Pre entry to Post leaves nothing printed.
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: repo.laneEffects(0, 0).first.slotId!,
+        placement: FxPlacement.post,
+      );
+      expect(engine.laneFxCount[(0, 0)], 3);
+      expect(engine.laneFxPreCount[(0, 0)], 0);
+    });
+
+    test('placement survives persist and restore through the envelope', () {
+      final chain = [
+        at(TrackEffectType.filter, FxPlacement.pre),
+        at(TrackEffectType.drive, FxPlacement.post),
+      ];
+      final restored = decodeFxChain(
+        encodeFxChain(FxChainEnvelope(entries: chain)),
+      );
+      expect(restored.entries.map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.post,
+      ]);
+    });
+  });
+
   group('four-stage chains: track + master setters (FX v3 part 3a)', () {
     test('setTrackEffects updates cache and pushes type/params/enabled/count '
         'to the engine bus stage', () {
@@ -7865,6 +8457,35 @@ void main() {
         effects: [BuiltInEffect(type: TrackEffectType.reverb)],
       );
       expect(repo.laneEffects(0, 0), take);
+    });
+
+    test("the take inherits each entry's placement, so an input's Pre run "
+        'becomes what the take prints (slice 3e)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(
+              type: TrackEffectType.delay,
+              placement: FxPlacement.pre,
+            ),
+            BuiltInEffect(type: TrackEffectType.reverb),
+          ],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      // The input's Pre entry is what the take records; its Post entry runs
+      // after that take's player. Both ride the same copy.
+      final take = repo.laneEffects(0, 0);
+      expect(take.map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.post,
+      ]);
+      expect(fxPreCount(take), 1);
+      expect(engine.laneFxPreCount[(0, 0)], 1);
     });
 
     test('copied entries carry FRESH slot ids — bindings on the input chain '

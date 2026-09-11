@@ -489,6 +489,12 @@ typedef enum le_command_code {
    * tail_reset_rev advances. Monitors keep their preferences: new live
    * input sounds again at once. Perf-logged. */
   LE_CMD_CUT_SOUND = 67,
+  /* All tracks recorded-mix chain entry type / active length (slice 3e): the
+   * fx / fxcount arms with channel = 0 (there is one such chain). One shared
+   * config; the audio thread runs it once per output bus over the recorded
+   * contribution to that bus. */
+  LE_CMD_SET_ALL_TRACKS_FX = 68,
+  LE_CMD_SET_ALL_TRACKS_FX_COUNT = 69,
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -2097,17 +2103,31 @@ LE_EXPORT int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled);
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on lane [lane] of track [channel] to
  * [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY lazily
  * allocates the entry's delay line (on this calling thread) and seeds the type's
- * default parameters. The chain is non-destructive and stageless — every active
- * entry colors playback in order. This sets the entry's value only; use
- * le_engine_set_lane_fx_count to make entries active. */
+ * default parameters. Every active entry colors playback in order. This sets
+ * the entry's value only; use le_engine_set_lane_fx_count to make entries
+ * active. */
 LE_EXPORT int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel,
                                         int32_t lane, int32_t index,
                                         int32_t type);
 
 /* Sets the active chain length on lane [lane] of track [channel] to [count]
- * (0..LE_FX_MAX): only entries [0, count) are processed, in order. */
+ * (0..LE_FX_MAX): only entries [0, count) are processed, in order.
+ *
+ * [pre_count] (0..count, clamped) splits that order into the take's own
+ * processing and what runs after its player. Entries [0, pre_count) are PRE:
+ * the loop-stage cache renders exactly them from the lane's dry recording and
+ * swaps the result in at a loop boundary, so they are heard as part of the
+ * take and a track Stop takes their tails with it. Entries [pre_count, count)
+ * are POST: they always run live over whichever source is playing, and their
+ * tails drain past a Stop. The recording itself stays dry either way — the
+ * print is a rendered copy, never a write back into the take.
+ *
+ * pre_count travels with count in one command so the audio thread never sees
+ * a split naming more Pre entries than the chain has. 0 is the default and
+ * means an all-Post chain. */
 LE_EXPORT int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
-                                              int32_t lane, int32_t count);
+                                              int32_t lane, int32_t count,
+                                              int32_t pre_count);
 
 /* Sets parameter [param] (0..LE_FX_PARAMS-1) of chain entry [index] on lane
  * [lane] of track [channel] to [value] (clamped to 0..1). The parameter's
@@ -2344,9 +2364,24 @@ LE_EXPORT int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
 
 /* Sets track [channel]'s Track-stage active chain length to [count]
  * (0..LE_FX_MAX): only entries [0, count) are processed, in order. Count 0
- * (empty) restores the bit-identical per-lane routing path. */
+ * (empty) restores the bit-identical per-lane routing path.
+ *
+ * [pre_count] (0..count, clamped) splits that order the way a lane's does.
+ * Entries [0, pre_count) are PRE: the engine renders them over the COMBINED
+ * material of the track's parts — each part's dry recording through that
+ * part's own chain, at its level, pan and mute, summed — and swaps the result
+ * in at the track's loop top, so they are heard as part of the take. Entries
+ * [pre_count, count) are POST: always live over whatever is playing, and
+ * their tails drain past a Stop. The recordings themselves stay dry; the
+ * render is a copy, and every part, overdub layer and undo step survives it.
+ *
+ * A part's own Post entries are INSIDE that render, because they are upstream
+ * of the track's chain — a Pre stage commits everything upstream of it — so
+ * while a track carries a Pre run its parts' tails stop with the recording
+ * rather than draining, live or printed alike. */
 LE_EXPORT int32_t le_engine_set_track_fx_count(le_engine* engine,
-                                               int32_t channel, int32_t count);
+                                               int32_t channel, int32_t count,
+                                               int32_t pre_count);
 
 /* Sets parameter [param] (0..LE_FX_PARAMS-1) of track [channel]'s Track-stage
  * chain entry [index] to [value] (clamped to 0..1). Direct atomic publish —
@@ -2481,6 +2516,15 @@ typedef struct le_lane_cache_info {
 /* Fills [out] with lane [lane] of track [channel]'s cache telemetry. Control
  * thread; also drains events / runs a scheduler tick first, so polling this is
  * enough to drive the cache forward in a device-free test. */
+/* The whole-track Pre print's telemetry (slice 3e): the lane query's twin,
+ * one per track. `reason` is where the engine says WHY a track's Pre run is
+ * running live rather than printed — a part carrying a Post entry (the print
+ * would have to bake it, and a baked tail cannot drain past a Stop), a hosted
+ * plugin, a budget that does not fit, a render that failed. Log/test-only in
+ * v3, like the lane query. */
+LE_EXPORT int32_t le_engine_get_track_cache(le_engine* engine, int32_t channel,
+                                            le_lane_cache_info* out);
+
 LE_EXPORT int32_t le_engine_get_lane_cache(le_engine* engine, int32_t channel,
                                            int32_t lane,
                                            le_lane_cache_info* out);
@@ -2505,6 +2549,92 @@ LE_EXPORT int32_t le_engine_get_all_lane_caches(le_engine* engine,
  * thread — no ring command (no heap pointer crosses to the audio thread
  * here; entries publish through their own atomic seam). The default is
  * appliance-tuned (LE_CACHE_DEFAULT_CAP_BYTES, 64 MiB). */
+/* ---- the All tracks recorded-mix chain (slice 3e) ----
+ *
+ * The accepted design's third FX destination, beside the live inputs and the
+ * per-track chains: "the single shared chain applied after the loop tracks are
+ * combined". It is NOT the output bus — an output chain processes every source
+ * routed to it (live monitoring, the click, backing), where this one processes
+ * the recorded tracks alone, and runs before those other sources join.
+ *
+ * Its entries are always Post: the stage has no dry original of its own,
+ * because it processes a sum computed live from lanes that each own their own
+ * recording. There is no Pre count here.
+ *
+ * ONE config, N instances. Since slice 3b every source picks its own output
+ * destinations, so the combined recorded mix is a per-destination quantity —
+ * a track on Main and a track on Monitor are two different mixes. The chain
+ * runs once per output bus, over the recorded contribution to that bus, on
+ * that bus's own filter memory. Setting a type prepares every bus of the
+ * configured device; le_engine_configure re-prepares them.
+ *
+ * An EMPTY chain (the default) leaves the per-track routing path bit-identical
+ * to the pre-slice-3e engine — topology keys off emptiness, exactly like the
+ * track bus. */
+LE_EXPORT int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
+                                              int32_t type);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_count(le_engine* engine,
+                                                    int32_t count);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_param(le_engine* engine,
+                                                    int32_t index,
+                                                    int32_t param, float value);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_enabled(le_engine* engine,
+                                                      int32_t index,
+                                                      int32_t enabled);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_chain_enabled(le_engine* engine,
+                                                            int32_t enabled);
+
+/* ---- per-entry channel handling and level (slice 3e) ----
+ *
+ * The accepted design puts an input choice, an output choice and a level
+ * around each instance in a chain: the input choice before its effects, the
+ * output choice and then the level after them.
+ *
+ *   in_mode   0 Stereo (default, left and right as they arrive)
+ *             1 Left only   — the incoming left on both sides
+ *             2 Right only  — the incoming right on both sides
+ *             3 Mono sum    — their average on both sides
+ *   out_mode  0 Stereo (default) — keeps what the effects made; [placement]
+ *                                  is a BALANCE over the two sides
+ *             1 Mono            — averages them; [placement] is a PAN
+ *   placement -1..1, centre 0 (default). One unity-centre law, the same the
+ *             lanes, monitors and output buses use, so centre is exactly
+ *             unity and a hard side is exactly silent.
+ *   level     0..LE_MAX_GAIN, unity 1 (default). Applied last.
+ *
+ * Set as one call, because the four values are one control surface and a
+ * half-applied change would be audible. Direct atomic publishes: they change
+ * gain within an entry, never its DSP state, so nothing resets and there is
+ * no ring command to order against. An entry left at its defaults is
+ * bit-identical to one with no channel handling at all.
+ *
+ * A BYPASSED entry passes the signal through exactly as it arrived — the
+ * choices belong to the entry, so they leave with it. */
+LE_EXPORT int32_t le_engine_set_lane_fx_channels(le_engine* engine,
+                                                 int32_t channel, int32_t lane,
+                                                 int32_t index,
+                                                 int32_t in_mode,
+                                                 int32_t out_mode,
+                                                 float placement, float level);
+LE_EXPORT int32_t le_engine_set_monitor_input_fx_channels(
+    le_engine* engine, int32_t input, int32_t index, int32_t in_mode,
+    int32_t out_mode, float placement, float level);
+LE_EXPORT int32_t le_engine_set_track_fx_channels(le_engine* engine,
+                                                  int32_t channel,
+                                                  int32_t index,
+                                                  int32_t in_mode,
+                                                  int32_t out_mode,
+                                                  float placement, float level);
+LE_EXPORT int32_t le_engine_set_output_fx_channels(le_engine* engine,
+                                                   int32_t bus, int32_t index,
+                                                   int32_t in_mode,
+                                                   int32_t out_mode,
+                                                   float placement,
+                                                   float level);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_channels(
+    le_engine* engine, int32_t index, int32_t in_mode, int32_t out_mode,
+    float placement, float level);
+
 LE_EXPORT int32_t le_engine_set_fx_cache_cap(le_engine* engine, int64_t bytes);
 
 /* Current wet-cache memory accounting in bytes (entries + in-flight copies).

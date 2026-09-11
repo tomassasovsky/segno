@@ -169,6 +169,7 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
   store_i32(&ln->a_fx_chain_enabled, 1);
   ln->fx_count_pushed = 0;
   ln->fx.enable_clear_cooldown = 0;
+  ln->fx.chan_any = 0;
   for (int s = 0; s < LE_FX_MAX; ++s) {
     ln->fx_type_pushed[s] = LE_FX_NONE;
     store_i32(&ln->a_fx_type[s], LE_FX_NONE);
@@ -178,6 +179,14 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
     /* Enable flags default 1 with the crossfade runtime SETTLED at that
      * target, so a fresh chain does not fade in on first use. */
     store_i32(&ln->a_fx_enabled[s], 1);
+    /* Channel handling defaults (slice 3e): stereo in, stereo out, centre and
+     * unity — the shape the audio thread reads as "nothing to do". */
+    store_i32(&ln->a_fx_chan_in[s], LE_FX_CHAN_IN_STEREO);
+    store_i32(&ln->a_fx_chan_out[s], LE_FX_CHAN_OUT_STEREO);
+    store_f32(&ln->a_fx_chan_pan_bits[s], 0.0f);
+    store_f32(&ln->a_fx_chan_gl_bits[s], 1.0f);
+    store_f32(&ln->a_fx_chan_gr_bits[s], 1.0f);
+    store_f32(&ln->a_fx_chan_level_bits[s], 1.0f);
     le_fx_enable_seed_settled(&ln->fx, s);
     free(ln->fx.delay[s][0]);
     ln->fx.delay[s][0] = NULL;
@@ -211,6 +220,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
   store_i32(&m->a_fx_chain_enabled, 1);
   m->fx_count_pushed = 0;
   m->fx.enable_clear_cooldown = 0;
+  m->fx.chan_any = 0;
   for (int s = 0; s < LE_FX_MAX; ++s) {
     m->fx_type_pushed[s] = LE_FX_NONE;
     store_i32(&m->a_fx_type[s], LE_FX_NONE);
@@ -219,6 +229,14 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     }
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&m->a_fx_enabled[s], 1);
+    /* Channel handling defaults (slice 3e): stereo in, stereo out, centre and
+     * unity — the shape the audio thread reads as "nothing to do". */
+    store_i32(&m->a_fx_chan_in[s], LE_FX_CHAN_IN_STEREO);
+    store_i32(&m->a_fx_chan_out[s], LE_FX_CHAN_OUT_STEREO);
+    store_f32(&m->a_fx_chan_pan_bits[s], 0.0f);
+    store_f32(&m->a_fx_chan_gl_bits[s], 1.0f);
+    store_f32(&m->a_fx_chan_gr_bits[s], 1.0f);
+    store_f32(&m->a_fx_chan_level_bits[s], 1.0f);
     le_fx_enable_seed_settled(&m->fx, s);
     free(m->fx.delay[s][0]);
     m->fx.delay[s][0] = NULL;
@@ -241,9 +259,11 @@ static void le_monitor_input_reset(le_monitor_input* m) {
  * fresh engine and an old session behave bit-identically. Used at configure. */
 static void le_fx_bus_reset(le_fx_bus* b) {
   store_i32(&b->a_fx_count, 0);
+  store_i32(&b->a_fx_pre_count, 0);
   store_i32(&b->a_fx_chain_enabled, 1);
   b->fx_count_pushed = 0;
   b->fx.enable_clear_cooldown = 0;
+  b->fx.chan_any = 0;
   for (int s = 0; s < LE_FX_MAX; ++s) {
     b->fx_type_pushed[s] = LE_FX_NONE;
     store_i32(&b->a_fx_type[s], LE_FX_NONE);
@@ -252,6 +272,14 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     }
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&b->a_fx_enabled[s], 1);
+    /* Channel handling defaults (slice 3e): stereo in, stereo out, centre and
+     * unity — the shape the audio thread reads as "nothing to do". */
+    store_i32(&b->a_fx_chan_in[s], LE_FX_CHAN_IN_STEREO);
+    store_i32(&b->a_fx_chan_out[s], LE_FX_CHAN_OUT_STEREO);
+    store_f32(&b->a_fx_chan_pan_bits[s], 0.0f);
+    store_f32(&b->a_fx_chan_gl_bits[s], 1.0f);
+    store_f32(&b->a_fx_chan_gr_bits[s], 1.0f);
+    store_f32(&b->a_fx_chan_level_bits[s], 1.0f);
     le_fx_enable_seed_settled(&b->fx, s);
     free(b->fx.delay[s][0]);
     b->fx.delay[s][0] = NULL;
@@ -644,6 +672,24 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
     le_output_bus_reset(&engine->outputs[k]);
   }
+  /* The All tracks recorded-mix chain (slice 3e): one config, one DSP
+   * instance per output bus. The config resets like any other bus-stage
+   * chain; every instance's own state is cleared beside it, because a
+   * configure can change how many buses the device has and a stale instance
+   * would carry the previous device's filter memory into the new one. */
+  le_fx_bus_reset(&engine->all_tracks);
+  for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      le_fx_entry_reset(&engine->all_tracks_fx[k], s);
+      le_fx_enable_seed_settled(&engine->all_tracks_fx[k], s);
+      free(engine->all_tracks_fx[k].delay[s][0]);
+      engine->all_tracks_fx[k].delay[s][0] = NULL;
+      free(engine->all_tracks_fx[k].delay[s][1]);
+      engine->all_tracks_fx[k].delay[s][1] = NULL;
+      le_fx_free_octaver(&engine->all_tracks_fx[k], s);
+    }
+    engine->all_tracks_fx[k].enable_clear_cooldown = 0;
+  }
   /* a_perf_follow_output is a preference, not device state: it survives a
    * (re)configure and is zero only from le_engine_create's calloc. */
 
@@ -950,12 +996,15 @@ void le_engine_destroy(le_engine* engine) {
           &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
     }
   }
-  /* Output bus chains (slice 3b). */
+  /* Output bus chains (slice 3b) and the All tracks instances (slice 3e). */
   for (int s = 0; s < LE_FX_MAX; ++s) {
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
       free(engine->outputs[k].fx.fx.delay[s][0]);
       free(engine->outputs[k].fx.fx.delay[s][1]);
       le_fx_free_octaver(&engine->outputs[k].fx.fx, s);
+      free(engine->all_tracks_fx[k].delay[s][0]);
+      free(engine->all_tracks_fx[k].delay[s][1]);
+      le_fx_free_octaver(&engine->all_tracks_fx[k], s);
     }
     for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
       le_plugin_slot_destroy(atomic_load_explicit(
@@ -1121,6 +1170,16 @@ int32_t le_engine_stop(le_engine* engine) {
   }
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
     le_fx_bus_settle_bypass(&engine->outputs[k].fx);
+  }
+  /* The All tracks instances share one config's flags (slice 3e). */
+  {
+    const int32_t chain_on = load_i32(&engine->all_tracks.a_fx_chain_enabled);
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      if (chain_on && load_i32(&engine->all_tracks.a_fx_enabled[s])) continue;
+      for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+        le_fx_enable_force_bypass(&engine->all_tracks_fx[k], s);
+      }
+    }
   }
   /* Loop-stage wet cache (part 2, [R2](d)): the device (and its callback) is
    * stopped, so join the render worker and release every cache allocation

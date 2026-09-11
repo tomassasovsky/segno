@@ -19,6 +19,7 @@
 /* The struct holds atomic_* fields; pull in <stdatomic.h> explicitly rather than
  * relying on it arriving transitively via lockfree_ring.h. <string.h> backs the
  * memcpy-based float<->bits helpers below. */
+#include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
@@ -165,6 +166,35 @@ extern "C" {
  * overdubbing). All undo/redo bookkeeping — the pool, the stacks, and a_live
  * (whose sole writer is the control thread) — lives on the control thread, so
  * undo/redo never races the audio callback. */
+/* How one chain entry takes the pair it is handed (slice 3e). The accepted
+ * design's rack input choice, and a single effect's "Effect input". */
+typedef enum {
+  LE_FX_CHAN_IN_STEREO = 0, /* the default: left and right as they arrive */
+  LE_FX_CHAN_IN_LEFT = 1,   /* the incoming left on both sides */
+  LE_FX_CHAN_IN_RIGHT = 2,  /* the incoming right on both sides */
+  LE_FX_CHAN_IN_MONO = 3,   /* their average on both sides */
+} le_fx_chan_in;
+
+/* How one chain entry hands its result on. Stereo keeps what the effects made
+ * and Balance changes the relative level of the two sides; Mono averages them
+ * and Pan places the result. Both use the engine's one unity-centre pan law,
+ * so centre is bit-identical to no placement at all. */
+typedef enum {
+  LE_FX_CHAN_OUT_STEREO = 0, /* the default */
+  LE_FX_CHAN_OUT_MONO = 1,
+} le_fx_chan_out;
+
+/* One entry's channel handling and level, as the audio thread reads it. The
+ * gains are precomputed by the setter (le_pan_gains), exactly as a lane's pan
+ * gains are, so the per-sample path is two multiplies. */
+typedef struct le_fx_chan {
+  int32_t in_mode;  /* le_fx_chan_in */
+  int32_t out_mode; /* le_fx_chan_out */
+  float gl;         /* the balance's (or pan's) gains */
+  float gr;
+  float level; /* applied after the effects and after the output choice */
+} le_fx_chan;
+
 /* Audio-thread-owned DSP state for one effects chain (LE_FX_MAX entries), reset
  * per entry when its type changes. svf_* are the state-variable filter
  * integrators; lfo is an LFO phase (0..1, TREMOLO depth / ECHO wow); delay is a
@@ -268,7 +298,46 @@ typedef struct le_fx_state {
    * the MSVC-C++ `#define _Atomic` shim above collapses it cleanly. Identical
    * C11 semantics: an atomic array of pointers to le_plugin_slot. */
   le_plugin_slot *_Atomic plugin[LE_FX_MAX];
+
+  /* Per-entry channel handling and level (slice 3e), cached from the owner's
+   * published atomics ONCE PER BUFFER by le_fx_chan_snapshot and read per
+   * sample from here — the same two-tier arrangement the enable bits use, and
+   * the reason fx_apply_chain needs no extra parameter and no per-lane stack
+   * array for it.
+   *
+   * The accepted design puts these around each instance: the input choice
+   * before its effects, the output choice and then the level after them.
+   *
+   * chan_any is the topology gate: 0 (a zeroed state, and every chain at its
+   * defaults) means fx_apply_chain does not look at `chan` at all, so an
+   * untouched chain is bit-identical to the pre-slice-3e engine. A fresh
+   * le_fx_state is therefore SAFE zeroed — nothing has to remember to seed a
+   * unity level — and any renderer that wants the channel handling seeds
+   * `chan` and sets the flag explicitly. */
+  int32_t chan_any;
+  le_fx_chan chan[LE_FX_MAX];
 } le_fx_state;
+
+/* The unity-centre pan/balance law (accepted design, slice 3; documented on
+ * le_engine_set_lane_pan): the near side stays at unity and the far side falls
+ * on a quarter-sine. Centre is bit-identical to no pan.
+ *
+ * In the header because both threads need it: the audio thread's ring handlers
+ * store a lane's pan gains with it, and the control thread precomputes an FX
+ * entry's channel gains with it (slice 3e). */
+static inline void le_pan_gains(float pan, float* gl, float* gr) {
+  if (pan > 1.0f) pan = 1.0f;
+  if (pan < -1.0f) pan = -1.0f;
+  if (pan == 0.0f) {
+    *gl = 1.0f;
+    *gr = 1.0f;
+    return;
+  }
+  /* Exactly silent at the hard side (cosf(pi/2) is not quite 0). */
+  const float far = fabsf(pan) >= 1.0f ? 0.0f : cosf(fabsf(pan) * 1.57079632679f);
+  *gl = pan > 0.0f ? far : 1.0f;
+  *gr = pan < 0.0f ? far : 1.0f;
+}
 
 /* One rendered Loop-stage wet-cache entry (FX v3 part 2): a lane's full loop,
  * pre-rendered through its record-route chain at the volume baked into the key,
@@ -286,7 +355,7 @@ typedef struct le_fx_state {
  * field matches — any mismatch is the same-buffer live fallback. */
 typedef struct le_wet_entry {
   uint32_t audio_rev; /* le_track.a_audio_rev at render */
-  uint64_t chain_fp;  /* le_engine_lane_fx_fingerprint at render */
+  uint64_t chain_fp;  /* le_lane_pre_fx_fingerprint at render */
   uint32_t vol_bits;  /* le_lane.a_vol_bits at render (D-VOL: pre-chain) */
   int32_t len;        /* frames; == the lane's a_len at render */
   float* pcm;         /* interleaved stereo wet, 2*len floats */
@@ -362,9 +431,17 @@ typedef struct le_lane {
 
   /* Per-lane effects chain. Published config (control writes, audio reads once
    * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
-   * active, each with a type and LE_FX_PARAMS normalized parameters. The chain
-   * is stageless — every active entry colors playback in order — and runs on
-   * the lane's own `fx` DSP state.
+   * active, each with a type and LE_FX_PARAMS normalized parameters. Every
+   * active entry colors playback in order, on the lane's own `fx` DSP state.
+   *
+   * a_fx_pre_count splits that order in two (slice 3e). Entries [0,
+   * a_fx_pre_count) are Pre: they belong to what the take plays back, so the
+   * wet cache renders exactly them from the dry pool and a track Stop takes
+   * their tails with the recording. Entries [a_fx_pre_count, a_fx_count) are
+   * Post: they run downstream of the player and their tails drain past a
+   * Stop. The control thread stores the chain Pre-first, so one boundary
+   * index is the whole split; 0 (the default) is an all-Post chain, which is
+   * every chain the engine had before this field existed.
    *
    * Enable flags (two levels, both default 1): a_fx_enabled[s] bypasses one
    * slot, a_fx_chain_enabled bypasses the whole chain. The audio thread
@@ -376,10 +453,21 @@ typedef struct le_lane {
    * slot's DSP state so stale tails never sound (a hosted plugin keeps its
    * own state — no flush seam yet). */
   _Atomic int32_t a_fx_count;
+  _Atomic int32_t a_fx_pre_count; /* leading Pre entries (default 0) */
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Per-entry channel handling and level (slice 3e), published like the
+   * params: plain atomics the audio thread caches once per buffer. Defaults
+   * are stereo in, stereo out, unity gains and unity level, which the audio
+   * thread reads as "nothing to do" (le_fx_state.chan_any). */
+  _Atomic int32_t a_fx_chan_in[LE_FX_MAX];
+  _Atomic int32_t a_fx_chan_out[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
+  _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
+  _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
   /* Control-thread-owned shadows of the last successfully PUSHED count/types.
    * a_fx_count / a_fx_type are published by the AUDIO thread when it drains
    * the ring, so the control thread must not read them to decide D-ENSEED
@@ -464,6 +552,16 @@ typedef struct le_monitor_input {
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Per-entry channel handling and level (slice 3e), published like the
+   * params: plain atomics the audio thread caches once per buffer. Defaults
+   * are stereo in, stereo out, unity gains and unity level, which the audio
+   * thread reads as "nothing to do" (le_fx_state.chan_any). */
+  _Atomic int32_t a_fx_chan_in[LE_FX_MAX];
+  _Atomic int32_t a_fx_chan_out[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
+  _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
+  _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
@@ -558,10 +656,28 @@ typedef struct le_input_cond {
  * (work while stopped), exactly like the lane/monitor owners'. */
 typedef struct le_fx_bus {
   _Atomic int32_t a_fx_count;
+  /* Leading Pre entries (slice 3e), the le_lane split at bus scope. Only the
+   * TRACK instance uses it: a whole track's Pre run is rendered over the
+   * combined material of its parts and swapped in at the track's loop top,
+   * exactly as a lane's is over its own dry pool. The output-bus and All
+   * tracks instances keep 0 — those stages process a sum computed live and
+   * have no dry original to render from, so the accepted design omits the
+   * control there. */
+  _Atomic int32_t a_fx_pre_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Per-entry channel handling and level (slice 3e), published like the
+   * params: plain atomics the audio thread caches once per buffer. Defaults
+   * are stereo in, stereo out, unity gains and unity level, which the audio
+   * thread reads as "nothing to do" (le_fx_state.chan_any). */
+  _Atomic int32_t a_fx_chan_in[LE_FX_MAX];
+  _Atomic int32_t a_fx_chan_out[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_pan_bits[LE_FX_MAX]; /* -1..1 */
+  _Atomic uint32_t a_fx_chan_gl_bits[LE_FX_MAX];  /* its gains */
+  _Atomic uint32_t a_fx_chan_gr_bits[LE_FX_MAX];
+  _Atomic uint32_t a_fx_chan_level_bits[LE_FX_MAX]; /* 0..LE_MAX_GAIN */
   /* Control-thread-owned pushed-count/type shadows (see le_lane). */
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
@@ -670,6 +786,26 @@ typedef struct le_track {
    * (lanes[l].a_fx_*): those run per lane first; this runs once on their
    * summed stereo bus. */
   le_fx_bus bus;
+
+  /* The whole-track Pre print (slice 3e). a_wet is the published render of
+   * this track's COMBINED material — every part's own printed material at its
+   * level, mute and pan, summed, through the track's Pre run — or NULL. Same
+   * discipline as le_lane.a_wet in every respect: control-thread
+   * single-writer, audio-thread loaded once per buffer (acquire) and
+   * key-checked before any read, a_cache_active written only by the audio
+   * thread, engaged only at the track's loop top.
+   *
+   * There is deliberately NO generation memo here, unlike a lane's. This
+   * key covers the whole combination — every part's chain, level, pan and
+   * mute, the part count, and the track's own Pre run — so a memo would need
+   * a bump on some fifteen setters, and a single missed one would let the
+   * audio thread keep a stale verdict and play a render that no longer
+   * describes the track (a muted part still sounding is the shape of that
+   * bug). The key is refolded every buffer instead, and the refold is gated
+   * on a_track_wet being non-NULL: a track with no published print — every
+   * track until something is put on its Pre run — costs one relaxed load. */
+  le_wet_entry* _Atomic a_track_wet;
+  _Atomic int32_t a_track_cache_active;
 
   /* Control-thread-owned undo/redo stacks, shared by all lanes (the same slot
    * index names the snapshot in every lane). Layers arrive on the undo stack via
@@ -948,6 +1084,15 @@ typedef struct le_track {
   int32_t seam_capture;
   int32_t seam_len;
 
+  /* Audio-thread-owned shadow of a_state as of the previous frame that ran
+   * mix_tracks_frame, used ONLY to spot the edge out of sounding (slice 3e).
+   * The engine has no single place a track stops — a stop press, a finalize,
+   * a clear and a Cut all land here — so the edge is watched rather than
+   * hooked, and every one of them takes the lane Pre slots' tails with it.
+   * Zero-initialized to LE_TRACK_EMPTY, which is also a fresh track's state,
+   * so a freshly created engine sees no edge. Never read by control. */
+  int32_t proc_prev_state;
+
   /* Free/Song mode (B2b + B4, index Architecture §4): this track's OWN loop
    * clock, structurally identical to (and reusing) the master's
    * le_loop_clock — length 0 means "not yet established", exactly like
@@ -1000,7 +1145,6 @@ typedef struct le_track {
    * Once stops it at a lap end. */
   uint64_t sounding_frames;
 } le_track;
-
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
  * segno_engine_api.h). Rings are allocated CONTROL-side at arm and freed
  * CONTROL-side only after the quiescent handshake in le_perf_disarm; the audio
@@ -1251,6 +1395,27 @@ struct le_engine {
    * le_fx_bus's doc for the chain's place in the frame. Bus 0's chain is
    * what the app calls the Master insert. */
   le_output_bus outputs[LE_MAX_OUTPUT_BUSES];
+
+  /* The All tracks recorded-mix chain (slice 3e). The accepted design: "the
+   * single shared chain applied after the loop tracks are combined", ahead of
+   * live monitoring and the click, and NOT the output bus — an output chain
+   * processes every source routed to it, this one processes the recorded
+   * tracks alone.
+   *
+   * One published config, N DSP instances. Since slice 3b every source picks
+   * its own destinations, so "the combined recorded mix" is a per-destination
+   * quantity: track 1 on Main and track 2 on Monitor are two different mixes,
+   * and one shared instance would have to send each track's audio to the
+   * other's jacks. So the chain the player edits is `all_tracks`, and it runs
+   * once per output bus over the recorded contribution to THAT bus, on
+   * `all_tracks_fx[bus]`. `all_tracks.fx` is unused: the config is shared,
+   * the filter memory cannot be.
+   *
+   * Topology keys off EMPTINESS, exactly like the track bus: an empty chain
+   * leaves the per-track routing path bit-identical to the pre-slice-3e
+   * engine, so this stage costs nothing until something is put on it. */
+  le_fx_bus all_tracks;
+  le_fx_state all_tracks_fx[LE_MAX_OUTPUT_BUSES];
   /* Advances on every applied LE_CMD_CUT_SOUND; published as
    * le_snapshot.tail_reset_rev. */
   _Atomic uint32_t a_tail_reset_rev;
@@ -1785,6 +1950,36 @@ static inline void store_f32(_Atomic uint32_t* slot, float v) {
 static inline float load_f32(_Atomic uint32_t* slot) {
   return bits_to_f32(atomic_load_explicit(slot, memory_order_relaxed));
 }
+
+/* Caches one chain's published channel handling into its DSP state, once per
+ * buffer (slice 3e). Sets chan_any when any ACTIVE entry asks for something
+ * other than stereo in, stereo out and unity level, so a chain at its defaults
+ * costs one flag and fx_apply_chain never looks further. */
+static inline void le_fx_chan_snapshot(le_fx_chan* chan, int32_t* out_any,
+                                       int32_t count, _Atomic int32_t* a_in,
+                                       _Atomic int32_t* a_out,
+                                       _Atomic uint32_t* a_gl,
+                                       _Atomic uint32_t* a_gr,
+                                       _Atomic uint32_t* a_level) {
+  int32_t any = 0;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  for (int32_t s = 0; s < count; ++s) {
+    le_fx_chan* c = &chan[s];
+    c->in_mode = load_i32(&a_in[s]);
+    c->out_mode = load_i32(&a_out[s]);
+    c->gl = load_f32(&a_gl[s]);
+    c->gr = load_f32(&a_gr[s]);
+    c->level = load_f32(&a_level[s]);
+    if (c->in_mode != LE_FX_CHAN_IN_STEREO ||
+        c->out_mode != LE_FX_CHAN_OUT_STEREO || c->gl != 1.0f ||
+        c->gr != 1.0f || c->level != 1.0f) {
+      any = 1;
+    }
+  }
+  *out_any = any;
+}
+
 
 #ifdef __cplusplus
 }

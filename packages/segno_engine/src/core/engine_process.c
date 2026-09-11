@@ -1733,6 +1733,30 @@ static void le_fx_state_clear_tails(le_fx_state* fx, _Atomic int32_t* types,
   }
 }
 
+/* Clears the tails of chain slots [first, last) on [fx] (slice 3e).
+ *
+ * The accepted design: "Printed Pre stops with its recording." A Pre entry
+ * belongs to the take, so when the take stops sounding its delay/reverb tail
+ * has to stop with it — unlike a Post entry, whose tail drains past a Stop.
+ * While the print is engaged that happens for free (the tail is inside the
+ * rendered audio and the lane simply stops reading it); this is the same
+ * behaviour on the live fallback, where the Pre slots really are running.
+ *
+ * Same no-stagger reasoning as le_fx_state_clear_tails: a Stop is one
+ * deliberate event, and deferring a full-wet slot's clear would pass its dry
+ * input through at full level exactly when the player asked for silence. */
+static void le_fx_state_clear_tails_range(le_fx_state* fx,
+                                          _Atomic int32_t* types, int first,
+                                          int last, int fx_cap) {
+  if (first < 0) first = 0;
+  if (last > LE_FX_MAX) last = LE_FX_MAX;
+  for (int s = first; s < last; ++s) {
+    if (load_i32(&types[s]) == LE_FX_NONE) continue;
+    le_fx_entry_reset(fx, s);
+    le_fx_entry_clear_rings(fx, s, fx_cap);
+  }
+}
+
 /* Cut all sound (accepted design): every audible recorded track stops (a
  * take in progress finalizes as a Stop would), the count-in is cancelled,
  * and every chain's tail is cleared. Monitors keep their preferences. */
@@ -1766,6 +1790,10 @@ static void handle_cut_sound(le_engine* e, uint64_t frame) {
   const int bus_n = (e->out_channels + 1) / 2;
   for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
     le_fx_state_clear_tails(&e->outputs[k].fx.fx, e->outputs[k].fx.a_fx_type,
+                            fx_cap);
+    /* The All tracks instance on the same destination (slice 3e): one config,
+     * so every instance reads the same types. */
+    le_fx_state_clear_tails(&e->all_tracks_fx[k], e->all_tracks.a_fx_type,
                             fx_cap);
   }
   atomic_fetch_add_explicit(&e->a_tail_reset_rev, 1u, memory_order_relaxed);
@@ -1985,29 +2013,6 @@ static void finalize_master_xfade(le_engine* e, le_track* t, uint64_t frame) {
   finalize_master(e, t, t->xfade_end_state, frame);
 }
 
-/* Sums a lane/monitor's processed (l, r) pair into the masked output channels:
- * the left on the first masked channel and the right on the second; any further
- * masked channels — and the lone channel when only one is masked — get the
- * (l + r)/2 sum, so no routed output is ever dropped. A mono source has l == r,
- * so a single masked channel gets l, two get (l, r) == (l, l), and extras get the
- * mid == l: identical to plain mono routing. */
-/* The unity-centre balance law (accepted design, slice 3; documented on
- * le_engine_set_lane_pan): the near side stays at unity and the far side
- * falls on a quarter-sine. Centre is bit-identical to no pan. */
-static inline void le_pan_gains(float pan, float* gl, float* gr) {
-  if (pan > 1.0f) pan = 1.0f;
-  if (pan < -1.0f) pan = -1.0f;
-  if (pan == 0.0f) {
-    *gl = 1.0f;
-    *gr = 1.0f;
-    return;
-  }
-  /* Exactly silent at the hard side (cosf(pi/2) is not quite 0). */
-  const float far = fabsf(pan) >= 1.0f ? 0.0f : cosf(fabsf(pan) * 1.57079632679f);
-  *gl = pan > 0.0f ? far : 1.0f;
-  *gr = pan < 0.0f ? far : 1.0f;
-}
-
 /* Stores a pan or balance [v] (NaN reads as centre; clamped to -1..1) with
  * its precomputed gains, for the lane, monitor and output bus handlers. */
 static inline void le_store_pan(_Atomic uint32_t* pan_bits,
@@ -2023,9 +2028,20 @@ static inline void le_store_pan(_Atomic uint32_t* pan_bits,
   store_f32(pan_bits, v);
 }
 
-static void le_fx_route(float* out, int f, int ch_out, uint32_t mask, float l,
-                        float r) {
-  float* o = out + (size_t)f * (size_t)ch_out;
+/* Sums a lane/monitor's processed (l, r) pair into the masked channels of ONE
+ * frame's channel slice [o]: the left on the first masked channel and the
+ * right on the second; any further masked channels — and the lone channel
+ * when only one is masked — get the (l + r)/2 sum, so no routed output is
+ * ever dropped. A mono source has l == r, so a single masked channel gets l,
+ * two get (l, r) == (l, l), and extras get the mid == l: identical to plain
+ * mono routing.
+ *
+ * Split out of le_fx_route (slice 3e) so the recorded tracks can be routed
+ * into a scratch frame instead of the output buffer when the All tracks chain
+ * has something on it — the stage runs on the recorded mix per destination,
+ * which is exactly this array. */
+static void le_fx_route_frame(float* o, int ch_out, uint32_t mask, float l,
+                              float r) {
   const float mid = 0.5f * (l + r);
   int n = 0;
   for (int c = 0; c < ch_out; ++c) {
@@ -2038,6 +2054,11 @@ static void le_fx_route(float* out, int f, int ch_out, uint32_t mask, float l,
     o[c] += (n == 1) ? mid : (idx == 0) ? l : (idx == 1) ? r : mid;
     idx++;
   }
+}
+
+static void le_fx_route(float* out, int f, int ch_out, uint32_t mask, float l,
+                        float r) {
+  le_fx_route_frame(out + (size_t)f * (size_t)ch_out, ch_out, mask, l, r);
 }
 
 /* Drops the last `drop` captured frames of a RECORDING non-defining track
@@ -2704,13 +2725,25 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       const int32_t ch = cmd->fxcount.channel;
       const int32_t lane = cmd->fxcount.lane;
       int32_t count = cmd->fxcount.count;
+      int32_t pre = cmd->fxcount.pre_count;
       if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
       le_plog_push(e, frame, *cmd);
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
-      store_i32(&e->tracks[ch].lanes[lane].a_fx_count, count);
+      if (pre < 0) pre = 0;
+      if (pre > count) pre = count;
+      /* The two stores cannot be made atomic together, and NEITHER order is
+       * safe for a reader in both directions — count-first lies while the
+       * chain shrinks, pre-first lies while it grows. So every reader clamps
+       * pre to the count it read alongside it instead (snapshot_lane_fx,
+       * le_lane_pre_fx_fingerprint), and a torn pair costs at most one
+       * buffer of live fallback. The raw le_engine_post_command hatch reaches
+       * this handler too, so the clamps live here as well as in the setter. */
+      le_lane* ln = &e->tracks[ch].lanes[lane];
+      store_i32(&ln->a_fx_pre_count, pre);
+      store_i32(&ln->a_fx_count, count);
       /* Wet-cache fast path: covers the raw-post hatch (see SET_LANE_FX). */
-      le_lane_fx_gen_bump(&e->tracks[ch].lanes[lane]);
+      le_lane_fx_gen_bump(ln);
       break;
     }
     /* ---- multi-lane routing commands ----
@@ -2867,10 +2900,34 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     case LE_CMD_SET_TRACK_FX_COUNT: {
       const int32_t ch = cmd->fxcount.channel;
       int32_t count = cmd->fxcount.count;
+      int32_t pre = cmd->fxcount.pre_count;
       if (!valid_channel(e, ch)) break;
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
+      if (pre < 0) pre = 0;
+      if (pre > count) pre = count;
+      /* Every reader clamps pre to the count it read alongside it — see the
+       * lane handler for why neither store order is tear-safe. */
+      store_i32(&e->tracks[ch].bus.a_fx_pre_count, pre);
       store_i32(&e->tracks[ch].bus.a_fx_count, count);
+      break;
+    }
+    case LE_CMD_SET_ALL_TRACKS_FX: {
+      const int32_t index = cmd->fx.index;
+      if (index < 0 || index >= LE_FX_MAX) break;
+      store_i32(&e->all_tracks.a_fx_type[index], cmd->fx.type);
+      /* One config, one instance per bus: every instance's DSP state resets,
+       * or a destination would keep the previous effect's filter memory. */
+      for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
+        le_fx_entry_reset(&e->all_tracks_fx[k], index);
+      }
+      break;
+    }
+    case LE_CMD_SET_ALL_TRACKS_FX_COUNT: {
+      int32_t count = cmd->fxcount.count;
+      if (count < 0) count = 0;
+      if (count > LE_FX_MAX) count = LE_FX_MAX;
+      store_i32(&e->all_tracks.a_fx_count, count);
       break;
     }
     case LE_CMD_SET_OUTPUT_FX: {
@@ -3178,6 +3235,7 @@ static inline void perf_tap_master_pair(le_engine* e, int bus, float l,
 }
 
 static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
+                                   int32_t* bus_fx_pre_count,
                                    int32_t bus_fx_type[LE_FX_MAX],
                                    float bus_fx_params[LE_FX_MAX][LE_FX_PARAMS],
                                    int32_t bus_fx_enabled[LE_FX_MAX],
@@ -3209,8 +3267,9 @@ typedef struct le_obus_snap {
 static inline void snapshot_output_bus(le_output_bus* ob, int bus, int ch_out,
                                        uint32_t out_enabled,
                                        le_obus_snap* sn) {
-  snapshot_bus_fx(&ob->fx, &sn->fx_count, sn->fx_type, sn->fx_params,
-                  sn->fx_enabled, &sn->has_fx);
+  int32_t unused_pre = 0; /* an output chain is wholly Post */
+  snapshot_bus_fx(&ob->fx, &sn->fx_count, &unused_pre, sn->fx_type,
+                  sn->fx_params, sn->fx_enabled, &sn->has_fx);
   sn->level = load_f32(&ob->a_level_bits);
   sn->muted = load_i32(&ob->a_muted);
   sn->mono = load_i32(&ob->a_mono);
@@ -3927,7 +3986,8 @@ static inline void advance_transport_frame(le_engine* e, int tc,
  * are skipped, inside the chain (D-BITEXACT). */
 static inline void snapshot_lane_fx(
     le_engine* e, int tc, const int32_t* lane_n,
-    int32_t fx_count[][LE_MAX_LANES], int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
+    int32_t fx_count[][LE_MAX_LANES], int32_t fx_pre_count[][LE_MAX_LANES],
+    int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
     float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
     int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], int has_fx[][LE_MAX_LANES]) {
   for (int t = 0; t < tc; ++t) {
@@ -3938,6 +3998,14 @@ static inline void snapshot_lane_fx(
       if (n < 0) n = 0;
       if (n > LE_FX_MAX) n = LE_FX_MAX;
       fx_count[t][l] = n;
+      /* The Pre/Post split (slice 3e). Clamped against the count read in this
+       * same snapshot, because the two atomics are published by separate
+       * stores and either order can be read torn: an over-long Pre run would
+       * have the frame treat Post entries as printed and skip them. */
+      int32_t pre = load_i32(&ln->a_fx_pre_count);
+      if (pre < 0) pre = 0;
+      if (pre > n) pre = n;
+      fx_pre_count[t][l] = pre;
       const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
       for (int s = 0; s < n; ++s) {
         const int32_t ty = load_i32(&ln->a_fx_type[s]);
@@ -3948,6 +4016,9 @@ static inline void snapshot_lane_fx(
           fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
         }
       }
+      le_fx_chan_snapshot(ln->fx.chan, &ln->fx.chan_any, n, ln->a_fx_chan_in,
+                          ln->a_fx_chan_out, ln->a_fx_chan_gl_bits,
+                          ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits);
       /* A slot the chain will NOT process this buffer (chain skipped, beyond
        * the active count, or LE_FX_NONE) cannot advance its enable ramp; if
        * its effective bit is 0, settle it to bypass now so a processing gap
@@ -4000,6 +4071,9 @@ static inline void snapshot_monitor_fx(
         mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
       }
     }
+    le_fx_chan_snapshot(m->fx.chan, &m->fx.chan_any, n, m->a_fx_chan_in,
+                        m->a_fx_chan_out, m->a_fx_chan_gl_bits,
+                        m->a_fx_chan_gr_bits, m->a_fx_chan_level_bits);
     /* Settle unprocessed disabled slots (see snapshot_lane_fx). The monitor
      * chain additionally stops running while the input is off or muted
      * (mix_monitors_frame), so those gaps are covered here too. */
@@ -4023,6 +4097,7 @@ static inline void snapshot_monitor_fx(
  * legacy path untouched (bit-identical), while enabled-ness only ever toggles
  * DSP inside fx_apply_chain, never topology. */
 static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
+                                   int32_t* bus_fx_pre_count,
                                    int32_t bus_fx_type[LE_FX_MAX],
                                    float bus_fx_params[LE_FX_MAX][LE_FX_PARAMS],
                                    int32_t bus_fx_enabled[LE_FX_MAX],
@@ -4032,6 +4107,12 @@ static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
   if (n < 0) n = 0;
   if (n > LE_FX_MAX) n = LE_FX_MAX;
   *bus_fx_count = n;
+  /* The Pre/Post split, clamped against the count read beside it — the lane
+   * rule (slice 3e). Only the TRACK instance ever carries a non-zero one. */
+  int32_t pre = load_i32(&b->a_fx_pre_count);
+  if (pre < 0) pre = 0;
+  if (pre > n) pre = n;
+  *bus_fx_pre_count = pre;
   const int32_t chain_on = load_i32(&b->a_fx_chain_enabled);
   for (int s = 0; s < n; ++s) {
     const int32_t ty = load_i32(&b->a_fx_type[s]);
@@ -4042,6 +4123,9 @@ static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
       bus_fx_params[s][p] = load_f32(&b->a_fx_param[s][p]);
     }
   }
+  le_fx_chan_snapshot(b->fx.chan, &b->fx.chan_any, n, b->a_fx_chan_in,
+                      b->a_fx_chan_out, b->a_fx_chan_gl_bits,
+                      b->a_fx_chan_gr_bits, b->a_fx_chan_level_bits);
   /* Settle unprocessed disabled slots (see snapshot_lane_fx): an empty bus
    * chain runs nothing at all, so every disabled slot's ramp settles here. */
   for (int s = 0; s < LE_FX_MAX; ++s) {
@@ -4053,18 +4137,45 @@ static inline void snapshot_bus_fx(le_fx_bus* b, int32_t* bus_fx_count,
   }
 }
 
+/* The All tracks chain's DSP state is NOT its config block's `fx` — one
+ * config drives one instance per output bus (slice 3e) — so its per-buffer
+ * cache and its settled bypasses are applied to every instance here, after
+ * snapshot_bus_fx has read the shared config. */
+static inline void snapshot_all_tracks_instances(le_engine* e, int ch_out,
+                                                 int32_t count, int has_fx,
+                                                 const int32_t* fx_type) {
+  le_fx_bus* b = &e->all_tracks;
+  const int32_t chain_on = load_i32(&b->a_fx_chain_enabled);
+  int bus_n = (ch_out + 1) / 2;
+  if (bus_n > LE_MAX_OUTPUT_BUSES) bus_n = LE_MAX_OUTPUT_BUSES;
+  for (int k = 0; k < bus_n; ++k) {
+    le_fx_chan_snapshot(e->all_tracks_fx[k].chan, &e->all_tracks_fx[k].chan_any,
+                        count, b->a_fx_chan_in, b->a_fx_chan_out,
+                        b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
+                        b->a_fx_chan_level_bits);
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      const int unprocessed =
+          !has_fx || s >= count || fx_type[s] == LE_FX_NONE;
+      if (unprocessed && !(chain_on && load_i32(&b->a_fx_enabled[s]))) {
+        le_fx_enable_force_bypass(&e->all_tracks_fx[k], s);
+      }
+    }
+  }
+}
+
 /* Snapshots every track's Track-stage chain (le_track.bus) — the per-track
  * fan-out of snapshot_bus_fx. trk_has_fx[t] false (the empty chain, the
  * default and the migration state) keeps mix_tracks_frame's per-lane routing
  * path bit-identical to today: the bus accumulator must not engage at all. */
 static inline void snapshot_track_fx(
-    le_engine* e, int tc, int32_t* trk_fx_count,
+    le_engine* e, int tc, int32_t* trk_fx_count, int32_t* trk_fx_pre_count,
     int32_t trk_fx_type[][LE_FX_MAX],
     float trk_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
     int32_t trk_fx_enabled[][LE_FX_MAX], int* trk_has_fx) {
   for (int t = 0; t < tc; ++t) {
-    snapshot_bus_fx(&e->tracks[t].bus, &trk_fx_count[t], trk_fx_type[t],
-                    trk_fx_params[t], trk_fx_enabled[t], &trk_has_fx[t]);
+    snapshot_bus_fx(&e->tracks[t].bus, &trk_fx_count[t], &trk_fx_pre_count[t],
+                    trk_fx_type[t], trk_fx_params[t], trk_fx_enabled[t],
+                    &trk_has_fx[t]);
   }
 }
 
@@ -4079,7 +4190,7 @@ static inline void snapshot_track_fx(
  * edge (reset + staggered ring clear + warmup + ramp [B7]), which is what
  * makes the fallback click-free while the documented tail-drop happens.
  * Cost when the cache is idle: one relaxed pointer load per lane. The
- * fingerprint recompute (le_engine_lane_fx_fingerprint — pure atomic loads +
+ * fingerprint recompute (le_lane_pre_fx_fingerprint — pure atomic loads +
  * FNV math, RT-safe) runs only while an entry is published. */
 static inline void snapshot_lane_cache(
     le_engine* e, int tc, const int32_t* lane_n,
@@ -4110,7 +4221,7 @@ static inline void snapshot_lane_cache(
           ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
         } else {
           ok = le_wet_entry_key_matches(
-              w, rev, le_engine_lane_fx_fingerprint(e, t, l), vol, len);
+              w, rev, le_lane_pre_fx_fingerprint(e, t, l), vol, len);
           if (ok) { /* remember the passed fp verdict for this {entry, gen} */
             ln->cache_fp_entry = w;
             ln->cache_fp_gen = gen;
@@ -4122,6 +4233,42 @@ static inline void snapshot_lane_cache(
       } else if (load_i32(&ln->a_cache_active)) {
         store_i32(&ln->a_cache_active, 0); /* same-buffer live fallback [B4] */
       }
+    }
+  }
+}
+
+/* Each TRACK's whole-track print, checked once per buffer (slice 3e) — the
+ * lane check's twin, with one deliberate difference: there is no verdict
+ * memo. A track's key spans every part's chain, level, pan and mute as well
+ * as its own Pre run, so a memo would need a generation bump on some fifteen
+ * setters and a single missed one would play a render that no longer
+ * describes the track. The refold is gated on a published entry instead, so a
+ * track with no print — every track until something is put on its Pre run —
+ * costs one relaxed load. */
+static inline void snapshot_track_cache(le_engine* e, int tc,
+                                        const le_wet_entry* track_ent[]) {
+  for (int t = 0; t < tc; ++t) {
+    le_track* tr = &e->tracks[t];
+    track_ent[t] = NULL;
+    const le_wet_entry* w =
+        atomic_load_explicit(&tr->a_track_wet, memory_order_acquire);
+    if (w == NULL) {
+      if (load_i32(&tr->a_track_cache_active)) {
+        store_i32(&tr->a_track_cache_active, 0);
+      }
+      continue;
+    }
+    const uint32_t rev =
+        atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
+    /* Unity stands in for the volume term: every part's level is inside the
+     * rendered combination, so there is no separate one to key on. */
+    const int ok = le_wet_entry_key_matches(w, rev, le_track_pre_fingerprint(e, t),
+                                            f32_to_bits(1.0f),
+                                            load_i32(&tr->lanes[0].a_len));
+    if (ok) {
+      track_ent[t] = w;
+    } else if (load_i32(&tr->a_track_cache_active)) {
+      store_i32(&tr->a_track_cache_active, 0); /* same-buffer live fallback */
     }
   }
 }
@@ -4491,17 +4638,36 @@ static inline void mix_tracks_frame(
     float od_step, int32_t od_fade_frames, int32_t pos, const int32_t* lane_n,
     const int* lane_fx_any,
     int has_fx[][LE_MAX_LANES], int32_t fx_count[][LE_MAX_LANES],
+    int32_t fx_pre_count[][LE_MAX_LANES],
     int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
     float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
     int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], const int* trk_has_fx,
     const int32_t* trk_fx_count, int32_t trk_fx_type[][LE_FX_MAX],
     float trk_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
-    int32_t trk_fx_enabled[][LE_FX_MAX],
+    int32_t trk_fx_enabled[][LE_FX_MAX], const int32_t* trk_fx_pre_count,
+    const le_wet_entry* track_cache_ent[], int at_has_fx, int32_t at_fx_count,
+    const int32_t* at_fx_type,
+    const float at_fx_params[LE_FX_MAX][LE_FX_PARAMS],
+    const int32_t* at_fx_enabled,
     const le_wet_entry* cache_ent[][LE_MAX_LANES],
     float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
     int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
     float* trk_lpeak, float* trk_rpeak, const float* in_trim, const int* solo,
     int any_solo, uint64_t perf_frame_base) {
+  /* The All tracks recorded-mix stage (slice 3e). While the chain has
+   * something on it the tracks route HERE instead of straight to `out`, and
+   * the loop after the track loop runs the chain once per output bus over
+   * that bus's recorded contribution before adding it in. An empty chain
+   * skips all of it and the routing path stays bit-identical to the
+   * pre-slice-3e engine (topology keys off emptiness, like the track bus).
+   *
+   * The scratch is per FRAME, not per block: the stage runs inside this
+   * frame, so nothing needs to outlive it. */
+  float rec[LE_MAX_CHANNELS];
+  if (at_has_fx) {
+    for (int c = 0; c < ch_out && c < LE_MAX_CHANNELS; ++c) rec[c] = 0.0f;
+  }
+
   /* Snapshot per-lane playback state once per frame. The track state can flip
    * only between blocks; re-reading per frame is cheap and keeps undo's
    * control-thread a_live swap visible at frame granularity. */
@@ -4573,9 +4739,39 @@ static inline void mix_tracks_frame(
   int idle[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) {
     st[t] = load_i32(&e->tracks[t].a_state);
+    /* The edge out of sounding, wherever it came from — a stop press, a
+     * finalize, a clear, a Cut. "Printed Pre stops with its recording", so
+     * each lane's Pre slots lose their tails here while its Post slots keep
+     * theirs and drain. One compare per track per frame; the clear itself
+     * only runs on the edge, and only over slots that carry a tail. */
+    if ((st[t] == LE_TRACK_STOPPED || st[t] == LE_TRACK_EMPTY) &&
+        e->tracks[t].proc_prev_state != st[t]) {
+      for (int l = 0; l < lane_n[t]; ++l) {
+        if (fx_pre_count[t][l] <= 0) continue;
+        le_lane* pl = &e->tracks[t].lanes[l];
+        le_fx_state_clear_tails_range(&pl->fx, pl->a_fx_type, 0,
+                                      fx_pre_count[t][l], fx_cap);
+      }
+      /* The track's own Pre run is part of the take in the same way, so its
+       * tails stop with the recording too — printed or live. Its Post run is
+       * untouched and drains. */
+      if (trk_fx_pre_count[t] > 0) {
+        le_fx_state_clear_tails_range(&e->tracks[t].bus.fx,
+                                      e->tracks[t].bus.a_fx_type, 0,
+                                      trk_fx_pre_count[t], fx_cap);
+      }
+    }
+    e->tracks[t].proc_prev_state = st[t];
+    /* trk_has_fx keeps a track with a TRACK-stage chain out of the skip. The
+     * chain itself runs outside this loop either way, but bus_mask is built
+     * INSIDE it — so a skipped track routes its own tail to nothing, and a
+     * Stop would silence a Post reverb that the accepted tail contract says
+     * drains. The lane-chain clause below covers a track whose PARTS carry
+     * chains; this covers the canonical whole-track case, where the parts are
+     * plain and every effect sits on the track. */
     idle[t] = (st[t] == LE_TRACK_EMPTY || st[t] == LE_TRACK_STOPPED) &&
-              !lane_fx_any[t] && e->tracks[t].seam_capture == 0 &&
-              e->tracks[t].od_gain == 0.0f;
+              !lane_fx_any[t] && !trk_has_fx[t] &&
+              e->tracks[t].seam_capture == 0 && e->tracks[t].od_gain == 0.0f;
     if (idle[t]) continue;
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
@@ -4763,6 +4959,48 @@ static inline void mix_tracks_frame(
     float bus_l = 0.0f;
     float bus_r = 0.0f;
     uint32_t bus_mask = 0u;
+
+    /* The whole-track Pre print (slice 3e). It ENGAGES at the track's own
+     * loop top — every part shares that index — so the swap is click-free by
+     * construction and no transport state is touched: the loop does not
+     * restart. The edge settles every part's chain slots and the track's own
+     * Pre slots to bypass, so a later fallback re-enters through the enable
+     * machinery's clean path rather than resuming a stale tail.
+     *
+     * While engaged the parts contribute NOTHING to the bus: their audio is
+     * inside the render, and a bypassed slot is unity passthrough rather than
+     * silence, so leaving them summing would play the track's material twice.
+     * They keep being read for metering. */
+    const le_wet_entry* tce = track_cache_ent[t];
+    const int32_t trk_rp = seg_base[t] + trk_pos[t];
+    if (tce != NULL && st[t] == LE_TRACK_PLAYING &&
+        !load_i32(&tr->a_track_cache_active) && trk_rp == 0) {
+      store_i32(&tr->a_track_cache_active, 1);
+      for (int l = 0; l < lane_n[t]; ++l) {
+        le_lane* el = &e->tracks[t].lanes[l];
+        for (int sfx = 0; sfx < fx_count[t][l]; ++sfx) {
+          le_fx_enable_force_bypass(&el->fx, sfx);
+        }
+      }
+      for (int sfx = 0; sfx < trk_fx_pre_count[t]; ++sfx) {
+        le_fx_enable_force_bypass(&tr->bus.fx, sfx);
+      }
+    }
+    const int track_printed =
+        tce != NULL && load_i32(&tr->a_track_cache_active);
+    if (track_printed) {
+      /* The engage edge can land mid-buffer, so mask the printed slots'
+       * effective bits for the rest of it too — a force-bypassed slot whose
+       * bit is still 1 would ramp itself back in on the next sample. */
+      for (int l = 0; l < lane_n[t]; ++l) {
+        for (int sfx = 0; sfx < fx_count[t][l]; ++sfx) {
+          fx_enabled[t][l][sfx] = 0;
+        }
+      }
+      for (int sfx = 0; sfx < trk_fx_pre_count[t]; ++sfx) {
+        trk_fx_enabled[t][sfx] = 0;
+      }
+    }
     /* This track's lanes summed for THIS frame -- folded into the block
      * accumulators after the lane loop (#655). */
     float trk_mix = 0.0f;
@@ -4851,20 +5089,26 @@ static inline void mix_tracks_frame(
       const int routes = audible || (has_fx[t][l] && gate_ok);
       le_lane* ln = &e->tracks[t].lanes[l];
 
-      /* Loop-stage wet cache (part 2). The per-buffer snapshot already
-       * verified the published entry's full key against the lane's current
-       * one (snapshot_lane_cache — a mismatch cleared cache_active there, the
-       * same-buffer live fallback [B4]). Cached playback ENGAGES only at the
-       * lane's own loop boundary (read position 0), never mid-cycle, so
-       * cache-in is click-free by construction; the engage edge settles every
-       * chain slot to bypass so a later fallback re-enters through the
-       * enable machinery's clean re-enable path (reset + ring clear + warmup
-       * + ramp [B7]) rather than resuming a stale tail. While engaged the
-       * chain is SKIPPED entirely — zero FX CPU — and the entry's stereo pair
-       * plays verbatim (volume is baked into the render, D-VOL). Mute routes
-       * nothing but stays engaged; unmute resumes cached (tails are part of
-       * the periodic render — the small documented difference from live
-       * [R5]). Meters above keep reading the dry loopsample either way.
+      /* The printed Pre stage (slice 3e), rendered by the loop-stage cache
+       * (part 2). The per-buffer snapshot already verified the published
+       * entry's full key against the lane's current one (snapshot_lane_cache
+       * — a mismatch cleared cache_active there, the same-buffer live
+       * fallback [B4]). The print ENGAGES only at the lane's own loop
+       * boundary (read position 0), never mid-cycle, so the swap is
+       * click-free by construction and IS the accepted "switch at an
+       * audio-safe boundary"; the engage edge settles the PRE slots to
+       * bypass so a later fallback re-enters through the enable machinery's
+       * clean re-enable path (reset + ring clear + warmup + ramp [B7])
+       * rather than resuming a stale tail.
+       *
+       * What is printed is exactly entries [0, fx_pre_count): the take's own
+       * processing, rendered from the dry pool at pre-chain volume (D-VOL).
+       * The Post entries keep running LIVE over it, because a Post tail has
+       * to be able to drain past a Stop and a baked one cannot — that is why
+       * this is a prefix render and not the whole chain. Mute routes nothing
+       * but stays engaged; unmute resumes printed (Pre tails are part of the
+       * periodic render — the small documented difference from live [R5]).
+       * Meters above keep reading the dry loopsample either way.
        *
        * PERIODIC-RENDER SEMANTICS (the general form of that [R5] note, part
        * of the [B4] listen check): cached playback replays ONE baked lap, so
@@ -4883,13 +5127,22 @@ static inline void mix_tracks_frame(
       if (wce != NULL && st[t] == LE_TRACK_PLAYING &&
           !load_i32(&ln->a_cache_active) && rp == 0) {
         store_i32(&ln->a_cache_active, 1);
-        for (int s = 0; s < LE_FX_MAX; ++s) {
+        for (int s = 0; s < fx_pre_count[t][l]; ++s) {
           le_fx_enable_force_bypass(&ln->fx, s);
         }
       }
+      const int printed = wce != NULL && load_i32(&ln->a_cache_active);
       float wl;
       float wr;
-      if (wce != NULL && load_i32(&ln->a_cache_active)) {
+      if (printed) {
+        /* The engage edge can land mid-buffer, so zero the printed slots'
+         * effective bits for the REST of this buffer too: a force-bypassed
+         * slot whose bit is still 1 would see want != target on the very
+         * next sample and ramp itself back in, printing its Pre entry a
+         * second time over audio that already carries it. */
+        for (int s = 0; s < fx_pre_count[t][l]; ++s) {
+          fx_enabled[t][l][s] = 0;
+        }
         if (audible && rp >= 0 && rp < wce->len) {
           wl = wce->pcm[2 * rp];
           wr = wce->pcm[2 * rp + 1];
@@ -4900,10 +5153,17 @@ static inline void mix_tracks_frame(
       } else {
         wl = audible ? loopsample * vol[t][l] : 0.0f;
         wr = wl;
-        if (has_fx[t][l]) {
-          fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
-                         fx_type[t][l], fx_params[t][l], fx_enabled[t][l]);
-        }
+      }
+      /* One pass over the whole chain either way. The printed Pre slots are
+       * settled bypasses by now, so they cost a bit-exact skip (D-BITEXACT)
+       * and the Post entries downstream of them process normally.
+       *
+       * A whole-track print covers this part's chain entirely, so it is
+       * skipped rather than walked: its state was settled to bypass at that
+       * engage edge and a fallback re-enters through the clean path. */
+      if (has_fx[t][l] && !track_printed) {
+        fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
+                       fx_type[t][l], fx_params[t][l], fx_enabled[t][l]);
       }
       /* Pan (slice 3): placement of the lane's pair, after the chain and
        * after the cache (the cache holds the unpanned render). The gains
@@ -4917,7 +5177,11 @@ static inline void mix_tracks_frame(
          * engine (D-TRACKROUTE's fingerprint invariant). */
         if (routes) {
           const uint32_t routed = out_mask[t][l] & out_enabled;
-          le_fx_route(out, f, ch_out, routed, wl, wr);
+          if (at_has_fx) {
+            le_fx_route_frame(rec, ch_out, routed, wl, wr);
+          } else {
+            le_fx_route(out, f, ch_out, routed, wl, wr);
+          }
           /* The meter reads what reaches an output: a lane routed to
            * nothing (or only to disabled outputs) sends nothing. */
           if (routed) {
@@ -4935,10 +5199,12 @@ static inline void mix_tracks_frame(
          * takes the lane's route out of it (the track's own chain is gated
          * with the track; only the shared output chains drain under Mute,
          * see the accepted tail distinctions). */
-        if (routes) {
+        if (routes && !track_printed) {
           bus_l += wl;
           bus_r += wr;
         }
+        /* The routing union is built from the parts either way: the printed
+         * pair reaches exactly the destinations the parts would have. */
         if (gate_ok) bus_mask |= out_mask[t][l] & out_enabled;
       }
 
@@ -4972,10 +5238,30 @@ static inline void mix_tracks_frame(
      * gated by a Mute (slice 3b tail distinctions). Meters
      * (lane_peak / lane_sumsq / frame_trk_peak above) keep reading the dry
      * loopsample, untouched by this stage. */
+    if (track_printed) {
+      /* The rendered combination replaces the parts' sum. Gated the way a
+       * part's print is: a stopped or soloed-away track feeds its chain
+       * silence, so the Post run drains exactly as it does live. Each part's
+       * own mute is already inside the render. */
+      const int track_audible =
+          (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
+          (!any_solo || solo[t]);
+      if (track_audible && trk_rp >= 0 && trk_rp < tce->len) {
+        bus_l = tce->pcm[2 * trk_rp];
+        bus_r = tce->pcm[2 * trk_rp + 1];
+      } else {
+        bus_l = 0.0f;
+        bus_r = 0.0f;
+      }
+    }
     if (trk_has_fx[t]) {
       fx_apply_chain(&tr->bus.fx, sr, fx_cap, &bus_l, &bus_r, trk_fx_count[t],
                      trk_fx_type[t], trk_fx_params[t], trk_fx_enabled[t]);
-      le_fx_route(out, f, ch_out, bus_mask, bus_l, bus_r);
+      if (at_has_fx) {
+        le_fx_route_frame(rec, ch_out, bus_mask, bus_l, bus_r);
+      } else {
+        le_fx_route(out, f, ch_out, bus_mask, bus_l, bus_r);
+      }
       if (bus_mask) {
         trk_l = bus_l;
         trk_r = bus_r;
@@ -5016,6 +5302,36 @@ static inline void mix_tracks_frame(
        * publish torn content, and one completing just before it would replay
        * exactly the click this fold removes. */
       le_audio_rev_bump(tr);
+    }
+  }
+
+  /* The All tracks stage: one chain, one instance per destination. The
+   * accepted design's "single shared chain applied after the loop tracks are
+   * combined" — and only them: live monitoring, the click and the output
+   * chains all join after this, which is what makes this stage different from
+   * an output chain.
+   *
+   * Per bus because slice 3b made output selection per source: a track on
+   * Main and a track on Monitor are two different recorded mixes, and one
+   * shared instance would have to send each track's audio to the other's
+   * jacks. Every bus of the device runs, fed or not, so a tail that started
+   * on one keeps draining while nothing new arrives — the same run-on-silence
+   * rule the lane and track chains follow.
+   *
+   * A single-channel last bus processes its channel as l == r and writes only
+   * that channel, exactly as output_bus_frame does. */
+  if (at_has_fx) {
+    float* o = out + (size_t)f * (size_t)ch_out;
+    const int bus_n = (ch_out + 1) / 2;
+    for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
+      const int c0 = 2 * k;
+      const int c1 = c0 + 1 < ch_out ? c0 + 1 : -1;
+      float l = rec[c0];
+      float r = c1 >= 0 ? rec[c1] : l;
+      fx_apply_chain(&e->all_tracks_fx[k], sr, fx_cap, &l, &r, at_fx_count,
+                     at_fx_type, at_fx_params, at_fx_enabled);
+      o[c0] += l;
+      if (c1 >= 0) o[c1] += r;
     }
   }
 }
@@ -5227,12 +5543,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * has_fx gates the playback pass so lanes with no effects skip the chain;
    * fx_enabled carries the per-slot effective enable bits (D-EFFBITS). */
   int32_t fx_count[LE_MAX_TRACKS][LE_MAX_LANES];
+  int32_t fx_pre_count[LE_MAX_TRACKS][LE_MAX_LANES];
   int32_t fx_type[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX];
   float fx_params[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS];
   int32_t fx_enabled[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX];
   int has_fx[LE_MAX_TRACKS][LE_MAX_LANES];
-  snapshot_lane_fx(e, tc, lane_n, fx_count, fx_type, fx_params, fx_enabled,
-                   has_fx);
+  snapshot_lane_fx(e, tc, lane_n, fx_count, fx_pre_count, fx_type, fx_params,
+                   fx_enabled, has_fx);
   /* "Does ANY lane of this track carry a chain?", folded once per buffer.
    * mix_tracks_frame's per-frame idle-track skip needs it (a chain must keep
    * ticking on silence — tails and LFO phase — so a track with one runs its
@@ -5254,12 +5571,27 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * topology gate: false (empty chain) keeps the per-lane routing path
    * bit-identical; true engages the per-track stereo bus. */
   int32_t trk_fx_count[LE_MAX_TRACKS];
+  int32_t trk_fx_pre_count[LE_MAX_TRACKS];
   int32_t trk_fx_type[LE_MAX_TRACKS][LE_FX_MAX];
   float trk_fx_params[LE_MAX_TRACKS][LE_FX_MAX][LE_FX_PARAMS];
   int32_t trk_fx_enabled[LE_MAX_TRACKS][LE_FX_MAX];
   int trk_has_fx[LE_MAX_TRACKS];
-  snapshot_track_fx(e, tc, trk_fx_count, trk_fx_type, trk_fx_params,
-                    trk_fx_enabled, trk_has_fx);
+  snapshot_track_fx(e, tc, trk_fx_count, trk_fx_pre_count, trk_fx_type,
+                    trk_fx_params, trk_fx_enabled, trk_has_fx);
+
+  /* The All tracks recorded-mix chain (slice 3e), one config for every
+   * destination. at_has_fx is this stage's topology gate, the track bus's
+   * rule exactly: false (empty chain) leaves the tracks routing straight to
+   * the outputs as before. */
+  int32_t at_fx_count;
+  int32_t at_fx_type[LE_FX_MAX];
+  float at_fx_params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t at_fx_enabled[LE_FX_MAX];
+  int at_has_fx;
+  int32_t at_fx_pre_count = 0; /* the recorded-mix chain is wholly Post */
+  snapshot_bus_fx(&e->all_tracks, &at_fx_count, &at_fx_pre_count, at_fx_type,
+                  at_fx_params, at_fx_enabled, &at_has_fx);
+  snapshot_all_tracks_instances(e, ch_out, at_fx_count, at_has_fx, at_fx_type);
 
   /* Loop-stage wet cache (part 2), snapshotted once per buffer (see
    * snapshot_lane_cache): the per-lane published-entry pointer + full key
@@ -5267,6 +5599,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * lane of dormant cost. */
   const le_wet_entry* cache_ent[LE_MAX_TRACKS][LE_MAX_LANES];
   snapshot_lane_cache(e, tc, lane_n, cache_ent);
+
+  /* Each track's whole-track print (slice 3e), same shape, one entry per
+   * track. NULL everywhere until a render publishes — one relaxed load per
+   * track of dormant cost. */
+  const le_wet_entry* track_cache_ent[LE_MAX_TRACKS];
+  snapshot_track_cache(e, tc, track_cache_ent);
 
 
   /* Per-input live monitor chain, snapshotted once per buffer (see
@@ -5358,10 +5696,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * upstream of the lane write by design (WYSIWYG). */
     mix_tracks_frame(e, in_c, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
                      out_enabled, overdub_fb, od_step, od_fade_frames, pos,
-                     lane_n, lane_fx_any, has_fx, fx_count, fx_type, fx_params,
-                     fx_enabled,
+                     lane_n, lane_fx_any, has_fx, fx_count, fx_pre_count,
+                     fx_type, fx_params, fx_enabled,
                      trk_has_fx, trk_fx_count, trk_fx_type, trk_fx_params,
-                     trk_fx_enabled, cache_ent, lane_sumsq, lane_peak, st,
+                     trk_fx_enabled, trk_fx_pre_count, track_cache_ent,
+                     at_has_fx, at_fx_count, at_fx_type,
+                     at_fx_params, at_fx_enabled, cache_ent, lane_sumsq,
+                     lane_peak, st,
                      frame_trk_peak, trk_sumsq, trk_peak, trk_lpeak, trk_rpeak,
                      in_trim, solo, any_solo, perf_frame_base);
 

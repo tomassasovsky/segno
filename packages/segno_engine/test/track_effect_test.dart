@@ -32,9 +32,11 @@ void main() {
     });
 
     test('fromJson ignores a legacy stage key', () {
-      // Older persisted chains stored a `stage` integer; it must decode
-      // cleanly now that the pre/post model is gone. The length-3 params from
-      // that era are padded to the current width with the type's default.
+      // Older persisted chains stored a `stage` integer from a different,
+      // removed pre/post model. It is NOT this model's `placement` key and
+      // must decode cleanly as the placement default. The length-3 params
+      // from that era are padded to the current width with the type's
+      // default.
       final fx = BuiltInEffect.fromJson(const {
         'type': 4,
         'stage': 1,
@@ -42,6 +44,7 @@ void main() {
       });
       expect(fx.type, TrackEffectType.tremolo);
       expect(fx.params, [0.4, 0.5, 0.6, 0]);
+      expect(fx.placement, FxPlacement.post);
     });
 
     test(
@@ -504,6 +507,143 @@ void main() {
       expect(p, isNot(const PluginEffect(ref: ref)));
       expect(p.copyWith(slotId: 'y').slotId, 'y');
       expect(p.copyWith(slotId: 'y').enabled, isFalse);
+    });
+  });
+
+  group('FxPlacement', () {
+    test('an entry defaults to post and omits the key from the wire', () {
+      final builtIn = BuiltInEffect(type: TrackEffectType.drive);
+      const plugin = PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'a', version: 1),
+      );
+      expect(builtIn.placement, FxPlacement.post);
+      expect(plugin.placement, FxPlacement.post);
+      expect(builtIn.toJson().containsKey('placement'), isFalse);
+      expect(plugin.toJson().containsKey('placement'), isFalse);
+    });
+
+    test('a pre entry carries the key and round-trips, in both arms', () {
+      final builtIn = BuiltInEffect(
+        type: TrackEffectType.reverb,
+        placement: FxPlacement.pre,
+      );
+      const plugin = PluginEffect(
+        ref: PluginRef(format: PluginFormat.clap, id: 'b', version: 2),
+        placement: FxPlacement.pre,
+      );
+      expect(builtIn.toJson()['placement'], 'pre');
+      expect(plugin.toJson()['placement'], 'pre');
+      final decoded = decodeTrackEffects(
+        encodeTrackEffects([builtIn, plugin]),
+      );
+      expect(decoded.map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.pre,
+      ]);
+    });
+
+    test('an unrecognized placement decodes as post', () {
+      // Wrong-typed and unknown values must land on the default rather than
+      // throw: this decoder runs uncaught on the boot path.
+      expect(
+        BuiltInEffect.fromJson(const {
+          'type': 1,
+          'placement': 'sideways',
+        }).placement,
+        FxPlacement.post,
+      );
+      expect(
+        BuiltInEffect.fromJson(const {'type': 1, 'placement': 7}).placement,
+        FxPlacement.post,
+      );
+    });
+
+    test('placement separates two otherwise identical entries', () {
+      final pre = BuiltInEffect(
+        type: TrackEffectType.echo,
+        placement: FxPlacement.pre,
+      );
+      final post = BuiltInEffect(type: TrackEffectType.echo);
+      expect(pre, isNot(post));
+      expect(pre.copyWith(placement: FxPlacement.post), post);
+    });
+
+    test('fxPreCount counts the leading pre run only', () {
+      BuiltInEffect at(FxPlacement placement) =>
+          BuiltInEffect(type: TrackEffectType.drive, placement: placement);
+      expect(fxPreCount(const []), 0);
+      expect(fxPreCount([at(FxPlacement.post), at(FxPlacement.post)]), 0);
+      expect(fxPreCount([at(FxPlacement.pre), at(FxPlacement.post)]), 1);
+      expect(fxPreCount([at(FxPlacement.pre), at(FxPlacement.pre)]), 2);
+      // An unpartitioned chain counts what the engine would see, not the
+      // total number of pre entries.
+      expect(
+        fxPreCount([
+          at(FxPlacement.pre),
+          at(FxPlacement.post),
+          at(FxPlacement.pre),
+        ]),
+        1,
+      );
+    });
+  });
+
+  group('FxChannels', () {
+    test(
+      'an entry defaults to stereo/stereo/centre/unity and omits the key',
+      () {
+        final fx = BuiltInEffect(type: TrackEffectType.drive);
+        expect(fx.channels, FxChannels.defaults);
+        expect(fx.channels.isDefault, isTrue);
+        expect(fx.toJson().containsKey('channels'), isFalse);
+      },
+    );
+
+    test('round-trips through the wire in both arms', () {
+      const channels = FxChannels(
+        input: FxChannelInput.monoSum,
+        output: FxChannelOutput.mono,
+        placement: -0.5,
+        level: 0.25,
+      );
+      final chain = <TrackEffect>[
+        BuiltInEffect(type: TrackEffectType.reverb, channels: channels),
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
+          channels: channels,
+        ),
+      ];
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+      expect(decoded, chain);
+      expect(decoded.map((e) => e.channels), [channels, channels]);
+    });
+
+    test('a malformed channels block decodes as the defaults', () {
+      // This decoder runs uncaught on the boot path.
+      expect(
+        BuiltInEffect.fromJson(const {
+          'type': 1,
+          'channels': 'sideways',
+        }).channels,
+        FxChannels.defaults,
+      );
+      expect(
+        BuiltInEffect.fromJson(const {
+          'type': 1,
+          'channels': {'input': 'nope', 'level': 'loud'},
+        }).channels,
+        FxChannels.defaults,
+      );
+    });
+
+    test('channel handling separates two otherwise identical entries', () {
+      final a = BuiltInEffect(type: TrackEffectType.echo);
+      final b = BuiltInEffect(
+        type: TrackEffectType.echo,
+        channels: const FxChannels(level: 0.5),
+      );
+      expect(a, isNot(b));
+      expect(b.copyWith(channels: FxChannels.defaults), a);
     });
   });
 }

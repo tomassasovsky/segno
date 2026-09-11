@@ -675,6 +675,71 @@ abstract interface class MasterBusControl {
     required int bus,
     required bool enabled,
   });
+
+  // ---- the All tracks recorded-mix chain (slice 3e) ----
+  //
+  // The chain applied after the loop tracks are combined, and only them: live
+  // monitoring, the click and the output chains all join after it, which is
+  // what makes this stage different from an output chain. Its entries are
+  // always Post — the stage processes a sum computed live, so it has no dry
+  // original to print from.
+  //
+  // One chain, one DSP instance per output destination: since output
+  // selection is per source, a track on Main and a track on Monitor are two
+  // different recorded mixes, and one shared instance would send each track's
+  // audio to the other's jacks.
+
+  /// Sets the All tracks chain entry [index] (`0..kTrackEffectMax-1`) to
+  /// [type], resetting that entry on every destination's instance.
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  });
+
+  /// Sets the All tracks chain's active length to [count]
+  /// (`0..kTrackEffectMax`). Count 0 (empty) restores bit-identical output.
+  EngineResult setAllTracksFxCount({required int count});
+
+  /// Sets parameter [param] of the All tracks chain entry [index] to [value]
+  /// (clamped to `0..1`). A direct atomic publish.
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  });
+
+  /// Enables/disables the All tracks chain entry [index] — the usual
+  /// per-entry contract.
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  });
+
+  /// Enables/disables the WHOLE All tracks chain, leaving the per-entry flags
+  /// intact. Default enabled.
+  EngineResult setAllTracksFxChainEnabled({required bool enabled});
+
+  /// Sets the All tracks chain entry [index]'s channel handling and level —
+  /// see [EffectsControl.setLaneFxChannels].
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  });
+
+  /// Sets track [channel]'s Track-stage chain entry [index]'s channel
+  /// handling and level.
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  });
+
+  /// Sets output bus [bus]'s chain entry [index]'s channel handling and level.
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  });
 }
 
 /// Per-lane (record-route) effect chains.
@@ -693,10 +758,42 @@ abstract interface class EffectsControl {
 
   /// Sets the active chain length on lane [lane] of track [channel] to [count]
   /// (`0..kTrackEffectMax`): only entries `[0, count)` are processed, in order.
+  ///
+  /// [preCount] (`0..count`, clamped) splits that order. Entries
+  /// `[0, preCount)` are Pre: the engine renders exactly them from the lane's
+  /// dry recording and swaps the result in at a loop boundary, so they are
+  /// heard as part of the take and a track Stop takes their tails with it.
+  /// Entries `[preCount, count)` are Post: always live, and their tails drain
+  /// past a Stop. The recording stays dry either way — the print is a rendered
+  /// copy, never a write back into the take.
   EngineResult setLaneFxCount({
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
+  });
+
+  /// Sets lane [lane] of track [channel]'s chain entry [index]'s channel
+  /// handling and level (slice 3e).
+  ///
+  /// The accepted design puts these around each instance: the input choice
+  /// before its effects, the output choice and then the level after them. A
+  /// bypassed entry passes the signal through exactly as it arrived — the
+  /// choices belong to the entry, so they leave with it. One call, because
+  /// the four values are one control and a half-applied change is audible.
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  });
+
+  /// Sets monitor [input]'s chain entry [index]'s channel handling and level
+  /// — see [setLaneFxChannels].
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
   });
 
   /// Sets parameter [param] (`0..kTrackEffectParams-1`) of chain entry [index]
@@ -786,7 +883,19 @@ abstract interface class EffectsControl {
   /// Sets track [channel]'s Track-stage active chain length to [count]
   /// (`0..kTrackEffectMax`). Count 0 (empty) restores the bit-identical
   /// per-lane routing path.
-  EngineResult setTrackFxCount({required int channel, required int count});
+  ///
+  /// [preCount] (`0..count`, clamped) splits that order the way a lane's
+  /// does. Entries `[0, preCount)` are Pre: the engine renders them over the
+  /// COMBINED material of the track's parts — each part's dry recording
+  /// through that part's own chain, at its level, pan and mute, summed — and
+  /// swaps the result in at the track's loop top. Entries `[preCount, count)`
+  /// are Post: always live, tails draining past a Stop. The recordings stay
+  /// dry; the render is a copy.
+  EngineResult setTrackFxCount({
+    required int channel,
+    required int count,
+    int preCount = 0,
+  });
 
   /// Sets parameter [param] (`0..kTrackEffectParams-1`) of track [channel]'s
   /// Track-stage chain entry [index] to [value] (clamped to `0..1`). A direct

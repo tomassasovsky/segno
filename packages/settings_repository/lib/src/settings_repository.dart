@@ -1635,6 +1635,17 @@ class SettingsRepository {
   Future<void> saveMasterFxChain(String encoded) =>
       _store.setString(_masterFxChainKey, encoded);
 
+  static const String _allTracksFxChainKey = 'all_tracks_fx_chain';
+
+  /// Loads the persisted All tracks recorded-mix chain as an opaque encoded
+  /// envelope string (see `encodeFxChain`), or `null` if none is saved.
+  Future<String?> loadAllTracksFxChain() =>
+      _store.getString(_allTracksFxChainKey);
+
+  /// Saves the [encoded] All tracks chain envelope.
+  Future<void> saveAllTracksFxChain(String encoded) =>
+      _store.setString(_allTracksFxChainKey, encoded);
+
   static const String _updateAutoCheckKey = 'updates.auto_check';
   static const String _updateChannelKey = 'updates.channel';
   static const String _updateDismissedKey = 'updates.dismissed';
