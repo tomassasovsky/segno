@@ -58,6 +58,16 @@ jobs:
   # and never silently lowered (raise-only from here). Native-lib-dependent
   # tests (the fingerprint agreement suite) are fuzz-tagged and self-skip
   # here; the `fuzz` job below runs them against the real engine.
+  # The factory effects catalogue (slice 3f): data and its loader, no bloc.
+  # Its own job for the same reason as the packages below — the root `build`
+  # job runs only the root app's test/ dir.
+  fx-catalogue:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.47.x"
+      working_directory: packages/fx_catalogue
+      run_bloc_lint: false
+      min_coverage: 100
   looper-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
     with:
