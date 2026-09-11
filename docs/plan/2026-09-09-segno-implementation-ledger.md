@@ -1870,3 +1870,56 @@ because `le_fx_enable_force_bypass` on it would write nothing.
   now.
 - Dart: root 2278, `looper_repository` 501, `segno_engine` 283, the other
   packages unchanged. Bindings regenerated and formatted.
+
+## Slice 3f part 4: the factory catalogue
+
+The owner's decision was that the extracted Looper X catalogue ships. It is
+committed as `packages/fx_catalogue`: nine rack families, 159 presets and 66
+artwork images, 6.3 MB of assets with a loader and nothing else.
+
+### What the package will and will not say
+
+Data and its loader. Nothing in it knows about a chain, an engine or a screen:
+what a preset MEANS to this engine is the repository's business, and the
+accepted design is explicit that unverified source scales and values are
+EVIDENCE, not permission to claim factory defaults or invent a schema. So the
+model carries the source's own fields and draws no conclusions.
+
+- **The family is the FOLDER, not the `type` field.** Two families carry the
+  same `type` value in the source and one family carries two, so `type` is
+  retained verbatim and read as nothing.
+- **Names are kept exactly.** A source spelling or a trailing space is not
+  silently corrected.
+- **Every numeric parameter survives the parse.** A quiet filter here would be
+  exactly the twenty entries the accepted design says must stop being dropped
+  by name, and a test walks all 159 files to check the count against the raw
+  JSON.
+- **Module names are a READING.** They come from splitting a parameter name at
+  its first space, which is how the design study grouped them to make the
+  catalogue inspectable. The source never says which modules a rack holds or
+  what order they run in, and the doc comment says so.
+- **Artwork slugs are mapped, not derived.** The folder names and the image
+  names follow no single rule: `Ed's Rack` is `edsguitar`, `Lo-Fi Rack` is
+  `lo-fi`, `Vocal Tuner Rack` is `vocaltuner`. A slugging function would get at
+  least the first wrong and silently draw another rack.
+
+### Loading
+
+Driven by the import's own manifest, checked against Flutter's asset manifest
+before any read. A Flutter bundle has no directory listing at runtime, and
+`loadString` raises a `FlutterError` — an Error, not a thing to catch — for a
+missing key, so presence is checked rather than caught. A build that ships
+without these assets loads an empty catalogue; a partial bundle loads the
+presets it does have rather than failing whole.
+
+### Checks
+
+Eleven tests against the REAL files, not a fixture: this package's whole job
+is to read what the import actually copied, and a hand-written fixture would
+only prove the parser reads the shape its author imagined. They cover all nine
+families with every artwork path resolving to a file that exists, the 159
+presets, one preset source-exact down to its id, version and the four-band
+EQ's fourteen controls plus its separate enable value, no parameter lost on
+any of the 159, the module-name reading, the stomp artwork resolving only for
+names the catalogue carries, and the four ways a build can come up with no
+catalogue. 100% line coverage, with its own CI job pinned there.

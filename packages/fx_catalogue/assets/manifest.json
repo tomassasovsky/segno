@@ -1,0 +1,1352 @@
+[
+  {
+    "source": "AppUI/img/Effects/selector/singlefx.png",
+    "destination": "images/selector/singlefx.png",
+    "sha256": "7c5d520b15f9e90e3a43068fe252390654072dd031b769ae6c765cb309d720da",
+    "bytes": 4670
+  },
+  {
+    "source": "AppUI/img/Effects/selector/edsguitar.png",
+    "destination": "images/selector/edsguitar.png",
+    "sha256": "2e18bada7bc1eff30e3e3a2a2129fa16c04a8471b084f18b43d77c7cad498dbe",
+    "bytes": 17241
+  },
+  {
+    "source": "AppUI/img/Effects/footswitch/edsguitar.png",
+    "destination": "images/footswitch/edsguitar.png",
+    "sha256": "4a9c08ccf7765d143395f63891c9047751f8580fdf45bcc4fffc9e39aa2b7201",
+    "bytes": 19269
+  },
+  {
+    "source": "AppUI/img/Effects/strip/edsguitar.png",
+    "destination": "images/strip/edsguitar.png",
+    "sha256": "09ef3bf378423c43843dc70dfe4d414e57554fce44b7e46fe1844807aadf4b3e",
+    "bytes": 12674
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Acoustic Rhythm 1.fxpreset",
+    "destination": "presets/Ed's Rack/Acoustic Rhythm 1.fxpreset",
+    "sha256": "388b454a800f06a55a8c986f99125f8a93a7362b71bd5c15f39ad8481c3ed811",
+    "bytes": 1499
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Acoustic Rhythm 2.fxpreset",
+    "destination": "presets/Ed's Rack/Acoustic Rhythm 2.fxpreset",
+    "sha256": "c7495fd735a6bcc376375bd0a1acd5756f6beb05a3e0c633ce35855f554ccf5c",
+    "bytes": 1501
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Acoustic Slap Bright.fxpreset",
+    "destination": "presets/Ed's Rack/Acoustic Slap Bright.fxpreset",
+    "sha256": "f4c624a4650ae14697d3a1f3ddf18139e44fff000a271b0dade63bb0a3431140",
+    "bytes": 1534
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Acoustic Tight Chorus.fxpreset",
+    "destination": "presets/Ed's Rack/Acoustic Tight Chorus.fxpreset",
+    "sha256": "147fc2689b17d7a0d59d0ee60f919ee0faf7ee9bf46534962b6fc6d7232c932f",
+    "bytes": 1519
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Acoustic Wash.fxpreset",
+    "destination": "presets/Ed's Rack/Acoustic Wash.fxpreset",
+    "sha256": "9967efe44fc08cbc8749eaff646b6afdf62f5439ad5986e56734b2e3c7e4d3ce",
+    "bytes": 1539
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Acoustic Wide.fxpreset",
+    "destination": "presets/Ed's Rack/Acoustic Wide.fxpreset",
+    "sha256": "c56e0e274b2ac08688a5ca5e96251858b2250d6b377d3a66bc300c6ea035dfce",
+    "bytes": 1540
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Bass Amp Dirty.fxpreset",
+    "destination": "presets/Ed's Rack/Bass Amp Dirty.fxpreset",
+    "sha256": "b42064cc214a572bda8a2d0d2242dfce4dc4e074c7a59d42fb63ffb63b4d372c",
+    "bytes": 1526
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Bass Amp Vintage.fxpreset",
+    "destination": "presets/Ed's Rack/Bass Amp Vintage.fxpreset",
+    "sha256": "6971643ffa96180e88984e180386b7b8553b0dc512c021520b831e62dea6c6db",
+    "bytes": 1513
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Bass Octave 1.fxpreset",
+    "destination": "presets/Ed's Rack/Bass Octave 1.fxpreset",
+    "sha256": "a677ac2c0f18c55eb8307bef17f34b20be03a95963fbf0fbb5b16371237ff7a7",
+    "bytes": 1510
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Bass Octave Layer.fxpreset",
+    "destination": "presets/Ed's Rack/Bass Octave Layer.fxpreset",
+    "sha256": "27e92d1ce1703501f32b6c6c32c5877917d68ec9455d1f3cba22227906ae51c6",
+    "bytes": 1529
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Beatbox Crunch.fxpreset",
+    "destination": "presets/Ed's Rack/Beatbox Crunch.fxpreset",
+    "sha256": "5335106c03e90752d98fb8c17db9f8c23d0f220e2098f4a3d74adbea78418d8e",
+    "bytes": 1508
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Beatbox Heavy Drive.fxpreset",
+    "destination": "presets/Ed's Rack/Beatbox Heavy Drive.fxpreset",
+    "sha256": "dbad76c658391dd9e46aaaea91c7d0e78adb248f6da8c64d4faf921bf905c84c",
+    "bytes": 1528
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Beatbox.fxpreset",
+    "destination": "presets/Ed's Rack/Beatbox.fxpreset",
+    "sha256": "0d8777bd5e87165258f32007948249ec79dff65547713044bede2b54c3e04a0c",
+    "bytes": 1500
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Boom Bright.fxpreset",
+    "destination": "presets/Ed's Rack/Boom Bright.fxpreset",
+    "sha256": "eb5015ef1f13065d5ca43af2a3e5412fd660c741a11ac0fa62b26b9ee562020c",
+    "bytes": 1491
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Boom Dry.fxpreset",
+    "destination": "presets/Ed's Rack/Boom Dry.fxpreset",
+    "sha256": "f39345987e0cc1fdf1a4cfed74c7e65a8be76ca23109918472cd4c7f1bb5c9fa",
+    "bytes": 1487
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Boom Rhythmic Delay.fxpreset",
+    "destination": "presets/Ed's Rack/Boom Rhythmic Delay.fxpreset",
+    "sha256": "e7357e1658cc08af999021ee7390b687b5f9f5e70201b5f20e7238084c6586be",
+    "bytes": 1529
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Boom Sub.fxpreset",
+    "destination": "presets/Ed's Rack/Boom Sub.fxpreset",
+    "sha256": "e39f48760ea15072d6e2e659dba04ddb40b7a7574dcb13e8db8d8a56f87bb088",
+    "bytes": 1473
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Boom Wet.fxpreset",
+    "destination": "presets/Ed's Rack/Boom Wet.fxpreset",
+    "sha256": "ecd49ec2d8e03ffcecc4895b32a4c41fa48bbc91ae123a50f5a7c137723888db",
+    "bytes": 1504
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Electric Guitar Clean Echo.fxpreset",
+    "destination": "presets/Ed's Rack/Electric Guitar Clean Echo.fxpreset",
+    "sha256": "aa29e7dd60c8ef821ec00f3acbaca52e0280f686d599404f42429a08e20bd568",
+    "bytes": 1568
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Electric Guitar Clean Rhythm.fxpreset",
+    "destination": "presets/Ed's Rack/Electric Guitar Clean Rhythm.fxpreset",
+    "sha256": "ebfc4d2669781f092dfd3710a5923813278f3ad5f072179246d526874fb028cd",
+    "bytes": 1559
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Electric Guitar Clean Rich.fxpreset",
+    "destination": "presets/Ed's Rack/Electric Guitar Clean Rich.fxpreset",
+    "sha256": "0329ea6813729054e045b523b96fe280724c42a5a1366200d7ff5898c592a9e5",
+    "bytes": 1568
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Electric Guitar Dirty Lead 1.fxpreset",
+    "destination": "presets/Ed's Rack/Electric Guitar Dirty Lead 1.fxpreset",
+    "sha256": "e7156e39afb62b8403aa91beafa3cef3de83b60320ec3cd500cfa2e9dead69a5",
+    "bytes": 1571
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Electric Guitar Dirty Lead 2.fxpreset",
+    "destination": "presets/Ed's Rack/Electric Guitar Dirty Lead 2.fxpreset",
+    "sha256": "9a5f9cfd353b2727bf32b1c137cb6e157652505cd1c54d50444543fb8c6af3bf",
+    "bytes": 1573
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Electric Guitar Dirty Rhythm.fxpreset",
+    "destination": "presets/Ed's Rack/Electric Guitar Dirty Rhythm.fxpreset",
+    "sha256": "41ad2d1f3c09b3ab447182c2759a4d92c7720106edccfb1d1bf13b36648f3f6c",
+    "bytes": 1526
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Electric Guitar Light Drive.fxpreset",
+    "destination": "presets/Ed's Rack/Electric Guitar Light Drive.fxpreset",
+    "sha256": "41a76394da1e9adfd3d380dbb807ca554d1f31aab634c1f2aaf10b893a5869ed",
+    "bytes": 1526
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Electric Guitar Light Lead.fxpreset",
+    "destination": "presets/Ed's Rack/Electric Guitar Light Lead.fxpreset",
+    "sha256": "4bdcad895ca87c74454ffd6a2e9409ad98fd254a35113e0f41bb353087179acb",
+    "bytes": 1525
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Keys Atmos.fxpreset",
+    "destination": "presets/Ed's Rack/Keys Atmos.fxpreset",
+    "sha256": "c4cfa1365d722513892621b8d01e7eef68fcbc3e0f0ad83321dbde08525791f8",
+    "bytes": 1547
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Keys Wet.fxpreset",
+    "destination": "presets/Ed's Rack/Keys Wet.fxpreset",
+    "sha256": "b188c5511700c08754170ab2ca2a527fe89302c83b2f5e59410f24fc3868b28b",
+    "bytes": 1518
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Keys.fxpreset",
+    "destination": "presets/Ed's Rack/Keys.fxpreset",
+    "sha256": "0839b55fc46674c214b6b7c6bf048ac55c3a581ea5abe3860b47c374b1702b43",
+    "bytes": 1501
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Synth Bass Sub.fxpreset",
+    "destination": "presets/Ed's Rack/Synth Bass Sub.fxpreset",
+    "sha256": "5f8008659ba39fc76cb8bbe2aacc4ae8d8cc4aadbfc68e5a7d99134d2fa69392",
+    "bytes": 1512
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Synth Bass.fxpreset",
+    "destination": "presets/Ed's Rack/Synth Bass.fxpreset",
+    "sha256": "eae47f342f2b52fd47a977bf974e9bbe47ef5e510c6898f7fca68656074ad968",
+    "bytes": 1492
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Vocal Chorus.fxpreset",
+    "destination": "presets/Ed's Rack/Vocal Chorus.fxpreset",
+    "sha256": "2011f8d1d5af87a0d8147a2ff3725fbd6567e78f9d8aad3a9c8de312e95ed5b1",
+    "bytes": 1536
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Vocal Close.fxpreset",
+    "destination": "presets/Ed's Rack/Vocal Close.fxpreset",
+    "sha256": "0a9de4f1c2db96e7c7d3c2593b207f8028548f0fde576bf27de7968c825eec23",
+    "bytes": 1492
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Vocal Dubby.fxpreset",
+    "destination": "presets/Ed's Rack/Vocal Dubby.fxpreset",
+    "sha256": "6a85bc06df72399c38ed154139f9f35bec25e779c7d55b1f12b541a9a4aafec1",
+    "bytes": 1549
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Vocal Verb.fxpreset",
+    "destination": "presets/Ed's Rack/Vocal Verb.fxpreset",
+    "sha256": "6954b2acfbe7efe62e8d1e4b19bab99cc0eeaa0406507bd2bce38535953c4c3e",
+    "bytes": 1506
+  },
+  {
+    "source": "FxPresets/Ed's Rack/Vocal Wet.fxpreset",
+    "destination": "presets/Ed's Rack/Vocal Wet.fxpreset",
+    "sha256": "d227e1402131f608a5f0b275113c78d87d0679363af45c0272c25ebbea8e1b97",
+    "bytes": 1521
+  },
+  {
+    "source": "AppUI/img/Effects/selector/vocal.png",
+    "destination": "images/selector/vocal.png",
+    "sha256": "87df90d82cbbcc7e5b9c8cd1f5cf2d73966a7b8f903edad74521bb31da3ef5eb",
+    "bytes": 15739
+  },
+  {
+    "source": "AppUI/img/Effects/footswitch/vocal.png",
+    "destination": "images/footswitch/vocal.png",
+    "sha256": "b7bcfd030b44d5eca621225bf990e81a2c4eac6b50b7825bddc2ff6dbf58e819",
+    "bytes": 49965
+  },
+  {
+    "source": "AppUI/img/Effects/strip/vocal.png",
+    "destination": "images/strip/vocal.png",
+    "sha256": "8c47ed035bfe525cf052b3e157eb5a996953c34bea6bb153b929a92a97754114",
+    "bytes": 23114
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Close Reverb.fxpreset",
+    "destination": "presets/Vocal Rack/Close Reverb.fxpreset",
+    "sha256": "08d8bafc1ef663264deebe3a687ac4db25223593ddca422cfb2d41073f136999",
+    "bytes": 766
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Compression Only.fxpreset",
+    "destination": "presets/Vocal Rack/Compression Only.fxpreset",
+    "sha256": "400f4f3ed06f9ce8946ee4f7fb5e90ae72c70f702de00f5e5d015adc544c147b",
+    "bytes": 810
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Double.fxpreset",
+    "destination": "presets/Vocal Rack/Double.fxpreset",
+    "sha256": "facbd2944151c0accbbbbd5952a317d77a5c76a92d93700d0e28cdf64f1d0b15",
+    "bytes": 788
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Ducking Reverb.fxpreset",
+    "destination": "presets/Vocal Rack/Ducking Reverb.fxpreset",
+    "sha256": "ee1fed9328ea667350e2e52340cfbf623d83ea57951e0a6b83441d470373d4b9",
+    "bytes": 741
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Harmony 5th.fxpreset",
+    "destination": "presets/Vocal Rack/Harmony 5th.fxpreset",
+    "sha256": "4c198390b9372fe9d6b053e6678529c38b94f30aae02ff86c0bc6c56c3371c21",
+    "bytes": 837
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Heavy FX 1.fxpreset",
+    "destination": "presets/Vocal Rack/Heavy FX 1.fxpreset",
+    "sha256": "acfc5157fffd1adb4b7459fd2d9415bc9967adc30f2c939df2b459943860b752",
+    "bytes": 820
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Heavy FX 2.fxpreset",
+    "destination": "presets/Vocal Rack/Heavy FX 2.fxpreset",
+    "sha256": "dfeaf9ae0ab855fb38262b7d31eed5da3fe15d33e6b142d010f194d1625b48fe",
+    "bytes": 835
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Heavy FX 3.fxpreset",
+    "destination": "presets/Vocal Rack/Heavy FX 3.fxpreset",
+    "sha256": "817a3b06aeaabcfaf86cf78b7fa1d2d21044674e18e1a03a3bf64fdbe27248b2",
+    "bytes": 805
+  },
+  {
+    "source": "FxPresets/Vocal Rack/High Pass.fxpreset",
+    "destination": "presets/Vocal Rack/High Pass.fxpreset",
+    "sha256": "2cce67b5c9a4a0cfa284b208dd6bf8ffa166537d6050d850523b637148aee78a",
+    "bytes": 791
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Light Double.fxpreset",
+    "destination": "presets/Vocal Rack/Light Double.fxpreset",
+    "sha256": "41036d0497fbd86cf6792633c5adeed731fea91e31e6a20fc0837517bd68cdd9",
+    "bytes": 794
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Light FX 1.fxpreset",
+    "destination": "presets/Vocal Rack/Light FX 1.fxpreset",
+    "sha256": "c62cd091da46776147775518705fe0fd4ac06265977dd45d4b920f9d379165ee",
+    "bytes": 778
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Light FX 2.fxpreset",
+    "destination": "presets/Vocal Rack/Light FX 2.fxpreset",
+    "sha256": "47a66f09f03e3cb585e3e761abf2dc3ef84af0d9a6a31256c9e4662180f61577",
+    "bytes": 778
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Light FX 3.fxpreset",
+    "destination": "presets/Vocal Rack/Light FX 3.fxpreset",
+    "sha256": "3c645143b94ce69c2525de6ba7a9d73640fb79f467a54adaee6c6bb41aa5f25b",
+    "bytes": 764
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Light Hi Octave.fxpreset",
+    "destination": "presets/Vocal Rack/Light Hi Octave.fxpreset",
+    "sha256": "62c1778d7fe99255c7d4112a9e1ac9c7936130aff788bff1404227e135cc1b3b",
+    "bytes": 827
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Long Reverb.fxpreset",
+    "destination": "presets/Vocal Rack/Long Reverb.fxpreset",
+    "sha256": "070595e830c5f10c0c8c0aa1236c5a221a635b03d4ef2c22f302312e642d3630",
+    "bytes": 723
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Low Octave.fxpreset",
+    "destination": "presets/Vocal Rack/Low Octave.fxpreset",
+    "sha256": "13fc3fe7520835a42c5b0d1f4b4c226b873dfefba1c033581a64234fb2546e00",
+    "bytes": 822
+  },
+  {
+    "source": "FxPresets/Vocal Rack/Medium Reverb.fxpreset",
+    "destination": "presets/Vocal Rack/Medium Reverb.fxpreset",
+    "sha256": "659e24110810422b8cee4ef693132fdb010c2ed93c46304a2b761c84a3cdd085",
+    "bytes": 753
+  },
+  {
+    "source": "AppUI/img/Effects/selector/guitar.png",
+    "destination": "images/selector/guitar.png",
+    "sha256": "399374789c9c3d778d11d76cfd9c94185d4016c0da340ef392e9c20f5e7799da",
+    "bytes": 24417
+  },
+  {
+    "source": "AppUI/img/Effects/footswitch/guitar.png",
+    "destination": "images/footswitch/guitar.png",
+    "sha256": "243aadad55f6cb8e6d3d171721b55990741ed8732d9ca484c501d4952fe5eaec",
+    "bytes": 39365
+  },
+  {
+    "source": "AppUI/img/Effects/strip/guitar.png",
+    "destination": "images/strip/guitar.png",
+    "sha256": "783d94a132604db8e67427157440775aa699c397400e3b02d5597544b40632ec",
+    "bytes": 45357
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Clean Rhythm.fxpreset",
+    "destination": "presets/Guitar Rack/Clean Rhythm.fxpreset",
+    "sha256": "df3540c3bb47b9f2f504e33815d37a005ed2b39a182fb3dc3c26d0bb57b31b3a",
+    "bytes": 668
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Clean Soft Chords.fxpreset",
+    "destination": "presets/Guitar Rack/Clean Soft Chords.fxpreset",
+    "sha256": "6ce0308757543f3c2cd74cbd091096bfb8a0e96d1af6d245dab06b82eca1a128",
+    "bytes": 786
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Full Drive Power.fxpreset",
+    "destination": "presets/Guitar Rack/Full Drive Power.fxpreset",
+    "sha256": "55f07479e1a51a6b05d8567beb5a86f5f8ff82a19bace5f4076719d66b1541b2",
+    "bytes": 810
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Full Drive.fxpreset",
+    "destination": "presets/Guitar Rack/Full Drive.fxpreset",
+    "sha256": "a1f870e4fc85148bd871be9be2a15a2fa5744497fee5330c16947d03406b80d9",
+    "bytes": 793
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Lead Crunch.fxpreset",
+    "destination": "presets/Guitar Rack/Lead Crunch.fxpreset",
+    "sha256": "786cf1c2a052a1e3a12d7ea5f077095d7e08f4988f417c4d174fc0b3643d3974",
+    "bytes": 806
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Lead Dirty.fxpreset",
+    "destination": "presets/Guitar Rack/Lead Dirty.fxpreset",
+    "sha256": "7fc0be33764f024771aa6c7f30eb5c5440170bd0726290e53f402066ac540f27",
+    "bytes": 778
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Lead Wet.fxpreset",
+    "destination": "presets/Guitar Rack/Lead Wet.fxpreset",
+    "sha256": "465e33175ccd4657e543104a40ace11f73330169c0d4bd211b9a24a0a406d185",
+    "bytes": 792
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Rhythm Amped.fxpreset",
+    "destination": "presets/Guitar Rack/Rhythm Amped.fxpreset",
+    "sha256": "4bb965cbb63a84f720620df4bdfe5972d3ce11ab69951dc5a719d71719c70f3e",
+    "bytes": 767
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Rhythm Atmos.fxpreset",
+    "destination": "presets/Guitar Rack/Rhythm Atmos.fxpreset",
+    "sha256": "c55b1c5fcb8ac6d5ea6ee955278acb67fd5b80f0f10f27744562d4d20859d920",
+    "bytes": 754
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Rhythm Chorus.fxpreset",
+    "destination": "presets/Guitar Rack/Rhythm Chorus.fxpreset",
+    "sha256": "0098861a10fa724655f202685008fa1f72c7689c47ca18a8abf351d0161f3ea7",
+    "bytes": 780
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Rhythm Dirty.fxpreset",
+    "destination": "presets/Guitar Rack/Rhythm Dirty.fxpreset",
+    "sha256": "3fe085fe253b76f36504f772d5510f51a420db5494481da7f6897bf2c0538944",
+    "bytes": 696
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Rhythm Half Dirty.fxpreset",
+    "destination": "presets/Guitar Rack/Rhythm Half Dirty.fxpreset",
+    "sha256": "28261ecc4ab4f02a40f9f388bb54da6a34f7ea8d1885510924255b92aefafed6",
+    "bytes": 687
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Rhythm Power Chor.fxpreset",
+    "destination": "presets/Guitar Rack/Rhythm Power Chor.fxpreset",
+    "sha256": "740f900a9f994fd3c042dca195788c299c3a0ec72297b0bf04712b98d5c8d7a2",
+    "bytes": 717
+  },
+  {
+    "source": "FxPresets/Guitar Rack/Rhythm Wet+Dirty.fxpreset",
+    "destination": "presets/Guitar Rack/Rhythm Wet+Dirty.fxpreset",
+    "sha256": "2b3db33c86d637554bf7a58106cdc5eff8c7b995379c81cf076f41264cec6f50",
+    "bytes": 812
+  },
+  {
+    "source": "AppUI/img/Effects/selector/lo-fi.png",
+    "destination": "images/selector/lo-fi.png",
+    "sha256": "ef1d4eec3e740e7d9159e47015608f9187d7d9f1d5962bbf1dd8a4e60a5d9cb8",
+    "bytes": 52686
+  },
+  {
+    "source": "AppUI/img/Effects/footswitch/lo-fi.png",
+    "destination": "images/footswitch/lo-fi.png",
+    "sha256": "051c208048fc00566ccdfcc8c97f5bb4973b500fdcbb348405a55acb3eb34648",
+    "bytes": 62788
+  },
+  {
+    "source": "AppUI/img/Effects/strip/lo-fi.png",
+    "destination": "images/strip/lo-fi.png",
+    "sha256": "88469ac4872a8f97d54dfdc8e8803c4346277d141630da4b53f4a8b947642f95",
+    "bytes": 101630
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Bright Echo.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Bright Echo.fxpreset",
+    "sha256": "cd6f7a054c8e5bb98ee7349ec49eb4e74e63fa8c5f9c22e2c735cd156ad2f34d",
+    "bytes": 887
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Cutting.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Cutting.fxpreset",
+    "sha256": "594a23163836bfafd989330cf69a5fb7b0bc2e7f4fb65986b3d794236f28791d",
+    "bytes": 785
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Dirty Delay.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Dirty Delay.fxpreset",
+    "sha256": "d3e2bd5e71dee9daa88c1406cc6384aff2a2d132029bd87c8b0c26e721f7b5e5",
+    "bytes": 801
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Ghost .fxpreset",
+    "destination": "presets/Lo-Fi Rack/Ghost .fxpreset",
+    "sha256": "60288b709e56c6eeaeb0da64ecd3057c1f67d0c4fedffc031ef79e0ba12e5c52",
+    "bytes": 812
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Grubby.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Grubby.fxpreset",
+    "sha256": "abaacee67bb830af9fe830a30c4b1ffb1a47bfd939e4a2a44b2a8176e7023cc8",
+    "bytes": 855
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Light Lo.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Light Lo.fxpreset",
+    "sha256": "a71cc473eff4242f1983143e668a76f00ba113d62e0061f9dd9a50dfefa9704b",
+    "bytes": 861
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/LoFi Echo.fxpreset",
+    "destination": "presets/Lo-Fi Rack/LoFi Echo.fxpreset",
+    "sha256": "1a31777b6c8e1087d183ab9f544390960886772f14c82522f0fe76662ea49d5d",
+    "bytes": 805
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Loop Distort.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Loop Distort.fxpreset",
+    "sha256": "620109cb12dee7902c4b68b4dbe47c222d6b13ad24e1c72b0ca276ebef0c00a8",
+    "bytes": 889
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Loop Vinyl.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Loop Vinyl.fxpreset",
+    "sha256": "645f94badabb6f1cd08df116152fef62497de01bdc582e93b8f56e05bfa43ff0",
+    "bytes": 888
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Pokey Vox.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Pokey Vox.fxpreset",
+    "sha256": "618fe34a1ca63d1251e9ae7243c29e9750ad0d5beda8dfb57755a0246ca53a35",
+    "bytes": 842
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Robo.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Robo.fxpreset",
+    "sha256": "9c458889bd461f55597c4ff78bdb13a4f871befbfe96bf6eb376e2d52cf7960c",
+    "bytes": 810
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Simple Distort.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Simple Distort.fxpreset",
+    "sha256": "5ef626c9d463d3cd66d9dbc585f1804c06c97cf38aed23a1056090fec0cc32eb",
+    "bytes": 850
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Tubey.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Tubey.fxpreset",
+    "sha256": "be80d7538def8cb7323f388bea4552280899b3280614d770570d3dec99b195b2",
+    "bytes": 811
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Vinyl.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Vinyl.fxpreset",
+    "sha256": "2ec1a8d9d40910baa3821ca09d1c72b371c9494fa244f16dd7d35475488843e3",
+    "bytes": 824
+  },
+  {
+    "source": "FxPresets/Lo-Fi Rack/Wide.fxpreset",
+    "destination": "presets/Lo-Fi Rack/Wide.fxpreset",
+    "sha256": "86fd926ea3c9012ce398dd835ad4de83573d97798c49f5bf8f997065c40bab98",
+    "bytes": 868
+  },
+  {
+    "source": "AppUI/img/Effects/selector/drum.png",
+    "destination": "images/selector/drum.png",
+    "sha256": "eb7b42fd7d79274e8ce1f3c9886d1f00fa2080407451769be3ae833d556d96fa",
+    "bytes": 18965
+  },
+  {
+    "source": "AppUI/img/Effects/footswitch/drum.png",
+    "destination": "images/footswitch/drum.png",
+    "sha256": "37a42078c9c096efa82e8999816d08ccd8798aeaeca6e6afbe0fcaebed46351c",
+    "bytes": 47883
+  },
+  {
+    "source": "AppUI/img/Effects/strip/drum.png",
+    "destination": "images/strip/drum.png",
+    "sha256": "0d1da5253cd941f93af1d43c5495888bcbeba33b7a3ad51a4d75fc83fe9753be",
+    "bytes": 23256
+  },
+  {
+    "source": "FxPresets/Drum Rack/Ballad.fxpreset",
+    "destination": "presets/Drum Rack/Ballad.fxpreset",
+    "sha256": "b4c4569c0062535aa9a905c6933401b78e20d2602b8648c03bad2425bdaa2d73",
+    "bytes": 809
+  },
+  {
+    "source": "FxPresets/Drum Rack/Dub.fxpreset",
+    "destination": "presets/Drum Rack/Dub.fxpreset",
+    "sha256": "ece4ab631502a7430984380c5ea90eada7e46f39c7f70f1fe8835860529134c1",
+    "bytes": 848
+  },
+  {
+    "source": "FxPresets/Drum Rack/Gate.fxpreset",
+    "destination": "presets/Drum Rack/Gate.fxpreset",
+    "sha256": "453e8eb6f111323509086523bbab75d788629263daf7e7b9ad07ba40308f7a00",
+    "bytes": 806
+  },
+  {
+    "source": "FxPresets/Drum Rack/Hammer.fxpreset",
+    "destination": "presets/Drum Rack/Hammer.fxpreset",
+    "sha256": "d613e5674ab8081201b90f72a5e6beceab7c4bc773ec7d2a2fe0fc79eb939593",
+    "bytes": 796
+  },
+  {
+    "source": "FxPresets/Drum Rack/Lively.fxpreset",
+    "destination": "presets/Drum Rack/Lively.fxpreset",
+    "sha256": "cefaff0a2727d4c59fa7cf75c4d05098a360a79fc9615f36ad7c1fcebe89ecda",
+    "bytes": 793
+  },
+  {
+    "source": "FxPresets/Drum Rack/Open Air.fxpreset",
+    "destination": "presets/Drum Rack/Open Air.fxpreset",
+    "sha256": "a6949897280f29e49b29a2d3e01b57174d1b27ff944b810f0b2555b079f9bd0f",
+    "bytes": 812
+  },
+  {
+    "source": "FxPresets/Drum Rack/Polish.fxpreset",
+    "destination": "presets/Drum Rack/Polish.fxpreset",
+    "sha256": "b50006e912aeafa5c216e9950574b39259e4ffae792c305a46000b3e18ddedb3",
+    "bytes": 767
+  },
+  {
+    "source": "FxPresets/Drum Rack/Pop Slap.fxpreset",
+    "destination": "presets/Drum Rack/Pop Slap.fxpreset",
+    "sha256": "63b755884a7848eeae12457a70ac87a3629fa32fccec8021032b069cc3d99957",
+    "bytes": 825
+  },
+  {
+    "source": "FxPresets/Drum Rack/Power.fxpreset",
+    "destination": "presets/Drum Rack/Power.fxpreset",
+    "sha256": "803c7311c2bd929a66de7205d7916d89bc4acf2ec79ea25edb19ab5699773450",
+    "bytes": 807
+  },
+  {
+    "source": "FxPresets/Drum Rack/Pump.fxpreset",
+    "destination": "presets/Drum Rack/Pump.fxpreset",
+    "sha256": "10980a9369bc062ca4bfe2d4ad518e6ff15af1cbd13070c0f82049ed1a49bfd7",
+    "bytes": 780
+  },
+  {
+    "source": "FxPresets/Drum Rack/Solid.fxpreset",
+    "destination": "presets/Drum Rack/Solid.fxpreset",
+    "sha256": "b1c14667505e9819dd06f6696b5a48fad48588b0a141044e0100631e7c29f5fd",
+    "bytes": 820
+  },
+  {
+    "source": "FxPresets/Drum Rack/Wet+Tight.fxpreset",
+    "destination": "presets/Drum Rack/Wet+Tight.fxpreset",
+    "sha256": "cdb3b3e97faba68568550e66e3b9dc7f0d4ae07a11dfc4bc69460e72de9d795c",
+    "bytes": 799
+  },
+  {
+    "source": "AppUI/img/Effects/selector/dub.png",
+    "destination": "images/selector/dub.png",
+    "sha256": "48820e3a3f1d77b84d10b93e6e0206ddf503b8786ffd0338e428784a7f10f606",
+    "bytes": 25231
+  },
+  {
+    "source": "AppUI/img/Effects/footswitch/dub.png",
+    "destination": "images/footswitch/dub.png",
+    "sha256": "60c6fd8a373196e807748b2c3f16edb2b8a2dcc73a081d3ae6013f217202d619",
+    "bytes": 68766
+  },
+  {
+    "source": "AppUI/img/Effects/strip/dub.png",
+    "destination": "images/strip/dub.png",
+    "sha256": "ea74b70ff256c20c2f6271e56ffd98fe22148062c6a72e4233e6261ff5b12170",
+    "bytes": 28997
+  },
+  {
+    "source": "FxPresets/Dub Rack/Big Clouds 1.fxpreset",
+    "destination": "presets/Dub Rack/Big Clouds 1.fxpreset",
+    "sha256": "5fa903c603facf8333dacd464677b1c169526ffd071d3bc2f75d612933d681a9",
+    "bytes": 868
+  },
+  {
+    "source": "FxPresets/Dub Rack/Big Clouds 2.fxpreset",
+    "destination": "presets/Dub Rack/Big Clouds 2.fxpreset",
+    "sha256": "da7dd9207bc3842080c5adba85761e2fc96be3b5425c2c1fdf87cf96d01ae7b4",
+    "bytes": 883
+  },
+  {
+    "source": "FxPresets/Dub Rack/Big Clouds 3.fxpreset",
+    "destination": "presets/Dub Rack/Big Clouds 3.fxpreset",
+    "sha256": "2b812f7ed1d56bc471f9c0f713e6175dfda18a4d4cd1fd74f49018fbd02ed27f",
+    "bytes": 855
+  },
+  {
+    "source": "FxPresets/Dub Rack/Dub FX 1.fxpreset",
+    "destination": "presets/Dub Rack/Dub FX 1.fxpreset",
+    "sha256": "e0f4a5a0655efe895f63f7952c3abd2faa419fe66a33b404c798129c23d3e0ee",
+    "bytes": 880
+  },
+  {
+    "source": "FxPresets/Dub Rack/Dub FX 2.fxpreset",
+    "destination": "presets/Dub Rack/Dub FX 2.fxpreset",
+    "sha256": "e5ca4e1d7220761eb593d090d0b3c56b4d68764d468741de723f52dbdc5afbee",
+    "bytes": 880
+  },
+  {
+    "source": "FxPresets/Dub Rack/Dub FX 3.fxpreset",
+    "destination": "presets/Dub Rack/Dub FX 3.fxpreset",
+    "sha256": "eb87978c128a3d411bb311436dead6fb2da763b329c26d7607562a88bd0d9b86",
+    "bytes": 882
+  },
+  {
+    "source": "FxPresets/Dub Rack/Dub FX 4.fxpreset",
+    "destination": "presets/Dub Rack/Dub FX 4.fxpreset",
+    "sha256": "355868554d25445fe37f8bcf39e53c01d7aed3d64546163445090677a3e10ac6",
+    "bytes": 885
+  },
+  {
+    "source": "FxPresets/Dub Rack/Light.fxpreset",
+    "destination": "presets/Dub Rack/Light.fxpreset",
+    "sha256": "3bc6cd9ea1a86c56fd813d58e2f0c4902ffe2adc678db5558126e59f8c439fa5",
+    "bytes": 882
+  },
+  {
+    "source": "FxPresets/Dub Rack/Long Roller.fxpreset",
+    "destination": "presets/Dub Rack/Long Roller.fxpreset",
+    "sha256": "d287b529ed1c7becaf149da177b1ff1ac439f43269ee91b0c13b9b99b60e7813",
+    "bytes": 913
+  },
+  {
+    "source": "FxPresets/Dub Rack/Medium.fxpreset",
+    "destination": "presets/Dub Rack/Medium.fxpreset",
+    "sha256": "66586028c80a1bf3c95aa5c4fb1681b172b4d2346a51110c0acab2458d001a93",
+    "bytes": 895
+  },
+  {
+    "source": "FxPresets/Dub Rack/Wide Echoes.fxpreset",
+    "destination": "presets/Dub Rack/Wide Echoes.fxpreset",
+    "sha256": "fdb1c0301d74aa6c0dd9820eaaf094a994d25df17d94502f3d2e09b24a5fda85",
+    "bytes": 854
+  },
+  {
+    "source": "AppUI/img/Effects/selector/studio.png",
+    "destination": "images/selector/studio.png",
+    "sha256": "3ee5618f66863c7ce7c47b01010ff9195bb1877b03ae5845183c5fa06076e2ef",
+    "bytes": 8092
+  },
+  {
+    "source": "AppUI/img/Effects/footswitch/studio.png",
+    "destination": "images/footswitch/studio.png",
+    "sha256": "bbfb3dc6386081bad9a62b3e6dfbb7fa829c2003b01109df7e8df82494f4f959",
+    "bytes": 43185
+  },
+  {
+    "source": "AppUI/img/Effects/strip/studio.png",
+    "destination": "images/strip/studio.png",
+    "sha256": "997f7c940ebba4cee37ffbece7fe54218b13aff14cf4e277b973e312b55b3c44",
+    "bytes": 8998
+  },
+  {
+    "source": "FxPresets/Studio Rack/AC Guitar Chorus.fxpreset",
+    "destination": "presets/Studio Rack/AC Guitar Chorus.fxpreset",
+    "sha256": "44f4b8308d397e82dd7801c342c89d438e55cdb6249242b4e5a20139759a9c01",
+    "bytes": 807
+  },
+  {
+    "source": "FxPresets/Studio Rack/AC Guitar Close.fxpreset",
+    "destination": "presets/Studio Rack/AC Guitar Close.fxpreset",
+    "sha256": "1926a67af1629678526c16209143bf46b80b145578b034c5f65b31df4936973e",
+    "bytes": 751
+  },
+  {
+    "source": "FxPresets/Studio Rack/AC Guitar Far.fxpreset",
+    "destination": "presets/Studio Rack/AC Guitar Far.fxpreset",
+    "sha256": "a709f544035700011bb848ccc771a551802ae06aa9a171e2c68e8f6d9d25a8ce",
+    "bytes": 734
+  },
+  {
+    "source": "FxPresets/Studio Rack/AC Guitar Medium.fxpreset",
+    "destination": "presets/Studio Rack/AC Guitar Medium.fxpreset",
+    "sha256": "c3ef768dc512da56063b162557a90a276870200523ffe3cfe99c050c8b3f1f44",
+    "bytes": 751
+  },
+  {
+    "source": "FxPresets/Studio Rack/AC Guitar Wet 1.fxpreset",
+    "destination": "presets/Studio Rack/AC Guitar Wet 1.fxpreset",
+    "sha256": "e45c5ea0b6203ff457168f41a827ec27c06f6975f4e91ef20a9a28bc2c4c9aea",
+    "bytes": 749
+  },
+  {
+    "source": "FxPresets/Studio Rack/AC Guitar Wet 2.fxpreset",
+    "destination": "presets/Studio Rack/AC Guitar Wet 2.fxpreset",
+    "sha256": "eb0900668aaca715c469fb2417cd430c9aa82d8ea6b51e045e356f6246e77022",
+    "bytes": 790
+  },
+  {
+    "source": "FxPresets/Studio Rack/Bass Amp.fxpreset",
+    "destination": "presets/Studio Rack/Bass Amp.fxpreset",
+    "sha256": "7c7be88a99ea3e8af2933fb264699616b506c481f9717d21f168efed9edf353d",
+    "bytes": 786
+  },
+  {
+    "source": "FxPresets/Studio Rack/Bass Di.fxpreset",
+    "destination": "presets/Studio Rack/Bass Di.fxpreset",
+    "sha256": "620e1327437899b7e4770b6d779d7ee41b31235d7d503f3de5a0fd7694dc5245",
+    "bytes": 814
+  },
+  {
+    "source": "FxPresets/Studio Rack/Crunchy Tremolo.fxpreset",
+    "destination": "presets/Studio Rack/Crunchy Tremolo.fxpreset",
+    "sha256": "9c30346fbdcdc02ab4043baf422cd914cc568cb1ce1b9bfec57c96c394bfa182",
+    "bytes": 836
+  },
+  {
+    "source": "FxPresets/Studio Rack/Double.fxpreset",
+    "destination": "presets/Studio Rack/Double.fxpreset",
+    "sha256": "a90b119099fb1687159fd13b509e6d03964607530dfb0b468a411f086422e62f",
+    "bytes": 770
+  },
+  {
+    "source": "FxPresets/Studio Rack/Ducker.fxpreset",
+    "destination": "presets/Studio Rack/Ducker.fxpreset",
+    "sha256": "bc9404141e9adac9b7e531891c0f1e9927077aa6d817c0c793c5c226a4312148",
+    "bytes": 767
+  },
+  {
+    "source": "FxPresets/Studio Rack/El Piano Chorus.fxpreset",
+    "destination": "presets/Studio Rack/El Piano Chorus.fxpreset",
+    "sha256": "d00cfb98b1ac5982a80aa0cc1dc429bd18aecadcee3631dd0c7520dcf381f579",
+    "bytes": 777
+  },
+  {
+    "source": "FxPresets/Studio Rack/El Piano Light.fxpreset",
+    "destination": "presets/Studio Rack/El Piano Light.fxpreset",
+    "sha256": "7f233b08558f8aaa931aa8ad6a7b35b0532150966c61df0423eecc3eb134eb49",
+    "bytes": 778
+  },
+  {
+    "source": "FxPresets/Studio Rack/El Piano Medium.fxpreset",
+    "destination": "presets/Studio Rack/El Piano Medium.fxpreset",
+    "sha256": "ab902bf282eda544cec1f55283b9eb6da43c9054b3200f8303ca138f01f93924",
+    "bytes": 750
+  },
+  {
+    "source": "FxPresets/Studio Rack/El Piano Wet.fxpreset",
+    "destination": "presets/Studio Rack/El Piano Wet.fxpreset",
+    "sha256": "ba818da7f985c09e42f04b097feecb418469ed44de5e071e2c0b75ca2a7a9cec",
+    "bytes": 775
+  },
+  {
+    "source": "FxPresets/Studio Rack/Fifth Atmosphere.fxpreset",
+    "destination": "presets/Studio Rack/Fifth Atmosphere.fxpreset",
+    "sha256": "a8030689a7ca6769456c25f0c2fdc4b0988e5b92dd3522e713740733afb61ca3",
+    "bytes": 809
+  },
+  {
+    "source": "FxPresets/Studio Rack/Oct Down Atmos.fxpreset",
+    "destination": "presets/Studio Rack/Oct Down Atmos.fxpreset",
+    "sha256": "016acf4dc0e8ace81b102a032cb4e83ec2c23a34b8b2e61cd92bdfd91997d0e1",
+    "bytes": 845
+  },
+  {
+    "source": "FxPresets/Studio Rack/Oct Up Atmos.fxpreset",
+    "destination": "presets/Studio Rack/Oct Up Atmos.fxpreset",
+    "sha256": "3deaf3744a09d4bf482602822b698a84242c1b778e78455bb0bf58593823e725",
+    "bytes": 845
+  },
+  {
+    "source": "FxPresets/Studio Rack/Tremolo.fxpreset",
+    "destination": "presets/Studio Rack/Tremolo.fxpreset",
+    "sha256": "5c201d0f2c3fe9d8a60f72bc96a88554a352d991375c4e03026b8560d84b0926",
+    "bytes": 754
+  },
+  {
+    "source": "AppUI/img/Effects/selector/rhythmic.png",
+    "destination": "images/selector/rhythmic.png",
+    "sha256": "264419169333e7f29f7e3ca52e2bc5be441b55f13d350ba3ca9bb79e890a6378",
+    "bytes": 14472
+  },
+  {
+    "source": "AppUI/img/Effects/footswitch/rhythmic.png",
+    "destination": "images/footswitch/rhythmic.png",
+    "sha256": "b443dc79f209ae4c2bf0c3942faf4ff922ef70e63df3abb7987faf9f85edda8b",
+    "bytes": 53134
+  },
+  {
+    "source": "AppUI/img/Effects/strip/rhythmic.png",
+    "destination": "images/strip/rhythmic.png",
+    "sha256": "b8482b19b312a9573ce103d375d98cd335c3f3d32f420db4bf8d8cc8b96e5229",
+    "bytes": 21099
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Funk Wah.fxpreset",
+    "destination": "presets/Rhythmic Rack/Funk Wah.fxpreset",
+    "sha256": "7ed1b008c2f8aa61e08445b1f3e986536ec66c186e7cb8149ebaf618bd4e3cf7",
+    "bytes": 849
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Low Pass Dub.fxpreset",
+    "destination": "presets/Rhythmic Rack/Low Pass Dub.fxpreset",
+    "sha256": "c0fe4ca0b25f57f8807ac923501a9d1a86988b84cbc66165bd4994dc3c63ad67",
+    "bytes": 811
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Modern Rhythm.fxpreset",
+    "destination": "presets/Rhythmic Rack/Modern Rhythm.fxpreset",
+    "sha256": "ff35936c8c3cf14b286ebb806ad75cbfbd0b72ab96cd5287eccab722df494ea8",
+    "bytes": 877
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Quarter Pump.fxpreset",
+    "destination": "presets/Rhythmic Rack/Quarter Pump.fxpreset",
+    "sha256": "d7cc2aff046aa8215f0ba852d5b42dc65920a7968f0691e6b2c4f9fe6e6646cf",
+    "bytes": 809
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Reverse.fxpreset",
+    "destination": "presets/Rhythmic Rack/Reverse.fxpreset",
+    "sha256": "8796399b4fb8bb23b84fd4291eed736ee9702556a2ea54dbca6b853d294ec69b",
+    "bytes": 788
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Sliced Breaker.fxpreset",
+    "destination": "presets/Rhythmic Rack/Sliced Breaker.fxpreset",
+    "sha256": "9dcff15d9d882011e9faf2978fdc952d6506ab97606fa2bdbdd5b18f9c6c8978",
+    "bytes": 808
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Sliced LPF.fxpreset",
+    "destination": "presets/Rhythmic Rack/Sliced LPF.fxpreset",
+    "sha256": "322603eb5828ef6c20aa268c3a7b68cdee505a366e5d297c1cf29837fc7d86c0",
+    "bytes": 854
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Sliced Quarter.fxpreset",
+    "destination": "presets/Rhythmic Rack/Sliced Quarter.fxpreset",
+    "sha256": "0260d731a6660b972ff750d8d62bcd100f3934f1a4353254afec7857ca960438",
+    "bytes": 796
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Sweeper.fxpreset",
+    "destination": "presets/Rhythmic Rack/Sweeper.fxpreset",
+    "sha256": "49d6af7e2a58ff3905b92d277bcd6680c95153ab00315a44a12583966f43bb8c",
+    "bytes": 773
+  },
+  {
+    "source": "FxPresets/Rhythmic Rack/Thin Swinger.fxpreset",
+    "destination": "presets/Rhythmic Rack/Thin Swinger.fxpreset",
+    "sha256": "163c79a771b1465d25d6a09c8e4cee656bbf7e49b6d6aa64dbccfb2f61436065",
+    "bytes": 853
+  },
+  {
+    "source": "AppUI/img/Effects/selector/vocaltuner.png",
+    "destination": "images/selector/vocaltuner.png",
+    "sha256": "5de258558954c205a5cd69997ebc5c96d483f6d8715a52a7a37a8d160d7374d2",
+    "bytes": 13929
+  },
+  {
+    "source": "AppUI/img/Effects/footswitch/vocaltuner.png",
+    "destination": "images/footswitch/vocaltuner.png",
+    "sha256": "a973c0f09c85345e083f321786b369b3ae246cd91de3afdde78ead06ee0faad1",
+    "bytes": 58119
+  },
+  {
+    "source": "AppUI/img/Effects/strip/vocaltuner.png",
+    "destination": "images/strip/vocaltuner.png",
+    "sha256": "99320ae07a2f848e91bb43c7755dd28f0b21ea8632f231b0fc93522e71698706",
+    "bytes": 17271
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Auto Harm Hi Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Auto Harm Hi Dry.fxpreset",
+    "sha256": "db6980b417d020e2e62bd16146d945cb7cec5e8825dc74f6d2d43db7aadbf063",
+    "bytes": 1498
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Auto Harm Hi Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Auto Harm Hi Wet.fxpreset",
+    "sha256": "ba692c9b482ace93ff2ec846058c91ece4a4046c371769160c4b908acc531534",
+    "bytes": 1498
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Auto Harm Low Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Auto Harm Low Dry.fxpreset",
+    "sha256": "67ee567c8f1a9f77a4d304abae80aa59455934acc6269407bca8a01639f1cde3",
+    "bytes": 1499
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Auto Harm Low Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Auto Harm Low Wet.fxpreset",
+    "sha256": "1ff0040b498684ceb042224463a0abb6122aa2805ac7232e66ea5eba2c06e710",
+    "bytes": 1499
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Auto Harm Mid Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Auto Harm Mid Dry.fxpreset",
+    "sha256": "446f35d623cf0d9a2b69e3c3703ab89a15db9f7f090a6d72da76e6eee10ff23c",
+    "bytes": 1499
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Auto Harm Mid Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Auto Harm Mid Wet.fxpreset",
+    "sha256": "25abd9b0957018c774bc3d84af01b6249f4cd27b4b00e56067bfcd8cba4b7f20",
+    "bytes": 1499
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Delayed Harmonies.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Delayed Harmonies.fxpreset",
+    "sha256": "09457817c986ec9d169b3dc3f0babe5d265ad78db47c6991ea92ae7a46cef74e",
+    "bytes": 1547
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Midi Harm Hi Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Midi Harm Hi Dry.fxpreset",
+    "sha256": "8c52ebec3c02fa22bebb883eac4bfc8e919f21c84f13ee4dd5a621eb9b2b7864",
+    "bytes": 1498
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Midi Harm Hi Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Midi Harm Hi Wet.fxpreset",
+    "sha256": "272daae87b24f42a793dca57099f26610624029baf06f1007c5e252b27f5f7e4",
+    "bytes": 1498
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Midi Harm Low Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Midi Harm Low Dry.fxpreset",
+    "sha256": "146694ee91f51f715f12bfab34077d6bdfbc29fe51c2c46df06e037857fe00c4",
+    "bytes": 1499
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Midi Harm Low Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Midi Harm Low Wet.fxpreset",
+    "sha256": "5ebc84cf0b2025d07d48b558acfe0610aa53da18112839a89287193054647545",
+    "bytes": 1499
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Midi Harm Mid Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Midi Harm Mid Wet.fxpreset",
+    "sha256": "0e09c5b809a200b2d1d845b434c9ddd26896f3f1ae3e2c4b9d2d7ed261e439aa",
+    "bytes": 1499
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Midi Harm Mid.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Midi Harm Mid.fxpreset",
+    "sha256": "9cff86147be020d7b3dc80d9f402249c552f1edf6d797d0e27bf5cd6ecfd771a",
+    "bytes": 1495
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Octaves Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Octaves Dry.fxpreset",
+    "sha256": "542f509bbd523f7dc17d86421890a1322d06bd395a2600d7a5e581feba66ced7",
+    "bytes": 1479
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Octaves Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Octaves Wet.fxpreset",
+    "sha256": "a4e751c398f3202bee0e4eccf272bdaf11e9826950266bd68bd73b1dca2098b8",
+    "bytes": 1479
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Retune Fast Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Retune Fast Dry.fxpreset",
+    "sha256": "bfc4b7020c2d82417debd1002627e9d26b5bb7ba47613e12415be61eb3a0b916",
+    "bytes": 1483
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Retune Fast Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Retune Fast Wet.fxpreset",
+    "sha256": "c46f1c4aedf048deee6d2e27a09db6850d43c7e7a250278726caeed8901cda09",
+    "bytes": 1483
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Retune Slow Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Retune Slow Dry.fxpreset",
+    "sha256": "30d1bfd70528be40bca2a3bd87229cfc6ebf98f443ae380ca75cda3aee51b64a",
+    "bytes": 1498
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Retune Slow Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Retune Slow Wet.fxpreset",
+    "sha256": "0eca968cdd6a07988351a727ff7894a903a435b0304e0fcbdc79183a6e1ca12f",
+    "bytes": 1498
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Scale Harm 12 Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Scale Harm 12 Dry.fxpreset",
+    "sha256": "7d8f3e012881e658e8548b04507771802dea22448e2cb72bf09b2fba9e8a574f",
+    "bytes": 1501
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Scale Harm 12 Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Scale Harm 12 Wet.fxpreset",
+    "sha256": "ab71cb5f2899cb72f597802c7b8cf392265f5ebaa04a7d06cf1dcc29657cf0d1",
+    "bytes": 1501
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Scale Harm Hi Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Scale Harm Hi Dry.fxpreset",
+    "sha256": "c0e1eddbb58e8738570624ced0bff3d9d8f23e27ddc2dc8cc16c02b689de695a",
+    "bytes": 1517
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Scale Harm Hi Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Scale Harm Hi Wet.fxpreset",
+    "sha256": "4ebec9442a282d2c69ebe8e446c5f2f37071e9d88a74c9e6856bc0dcc2890a55",
+    "bytes": 1517
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Scale Harm Lo Dry.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Scale Harm Lo Dry.fxpreset",
+    "sha256": "1b49eea4c4220b92a32624759e2cbf3ef01cb676286a64db8369b4e7f07a0f30",
+    "bytes": 1500
+  },
+  {
+    "source": "FxPresets/Vocal Tuner Rack/Scale Harm Lo Wet.fxpreset",
+    "destination": "presets/Vocal Tuner Rack/Scale Harm Lo Wet.fxpreset",
+    "sha256": "a3c113dbe807c7eeec9f3c3391d83855744efbf76b716a9555d39cc19541c07b",
+    "bytes": 1500
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/AmbiVerb2.png",
+    "destination": "images/stomps/AmbiVerb2.png",
+    "sha256": "492805763a522f9a47a66c1177e0e2e90d0dbc2d3c93ac276a05238eaeed8f2e",
+    "bytes": 138877
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Amp4.png",
+    "destination": "images/stomps/Amp4.png",
+    "sha256": "52b533a9f881aec4b38fad74b5f9306f16755792a955e7a9cb39946217e40d0c",
+    "bytes": 142219
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Chorus3.png",
+    "destination": "images/stomps/Chorus3.png",
+    "sha256": "04c7f425e7dad3a3183bcccbe5f2ae19192bd93ed12320e5c89e4f79c9a97a1e",
+    "bytes": 142090
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Compressor2.png",
+    "destination": "images/stomps/Compressor2.png",
+    "sha256": "229e43137e0239622326ac6c833b49a3820460928022eba87ffd7bd214ba863c",
+    "bytes": 140791
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Compressor3.png",
+    "destination": "images/stomps/Compressor3.png",
+    "sha256": "229e43137e0239622326ac6c833b49a3820460928022eba87ffd7bd214ba863c",
+    "bytes": 140791
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Compressor4.png",
+    "destination": "images/stomps/Compressor4.png",
+    "sha256": "476b1f79ee6d681fd6b0b7aaa7dccbfcc9041e4d0a0795597940cd3ae58b4399",
+    "bytes": 13942
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Degrade3.png",
+    "destination": "images/stomps/Degrade3.png",
+    "sha256": "0b4650356e4d463322881e6f2232dfda0cbd41a0e08a6cdfbb511019cbb28b45",
+    "bytes": 172538
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Delay3.png",
+    "destination": "images/stomps/Delay3.png",
+    "sha256": "6dfab0abef05e9ab6347b10293c04f07b5c7f2b9c3884fc4c38360428ab6d47c",
+    "bytes": 120885
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Delay4.png",
+    "destination": "images/stomps/Delay4.png",
+    "sha256": "6dfab0abef05e9ab6347b10293c04f07b5c7f2b9c3884fc4c38360428ab6d47c",
+    "bytes": 120885
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Delay6.png",
+    "destination": "images/stomps/Delay6.png",
+    "sha256": "06bdf216b0ee05349d5b2ca73472c13c4eeec4e39b8fb82a337aaaeccef6a1ad",
+    "bytes": 137767
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Distort1.png",
+    "destination": "images/stomps/Distort1.png",
+    "sha256": "6824cbafb88ea98a1b827e1d329b2adee838193f1c5dd223864c0b4675bb457a",
+    "bytes": 133978
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Distort2.png",
+    "destination": "images/stomps/Distort2.png",
+    "sha256": "1b2a66fc160cd16b666802a882ca2fea602bc2bd5453e67a48f4361c09f1d559",
+    "bytes": 133478
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Doubler1.png",
+    "destination": "images/stomps/Doubler1.png",
+    "sha256": "6ba33ee8b60f1aa50d82282ed882d48991ac30e16c3b53d43c17e41e93bbfdd2",
+    "bytes": 120707
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Doubler2.png",
+    "destination": "images/stomps/Doubler2.png",
+    "sha256": "6ba33ee8b60f1aa50d82282ed882d48991ac30e16c3b53d43c17e41e93bbfdd2",
+    "bytes": 120707
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/DubVerb2.png",
+    "destination": "images/stomps/DubVerb2.png",
+    "sha256": "e6c219d75e50bdba586e0f1c30f9d429f4d7e0fc12fa77815f59a65863d93792",
+    "bytes": 143391
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/EQ3.png",
+    "destination": "images/stomps/EQ3.png",
+    "sha256": "67721a1f8dc17e8041eed98426e602ab9add6d9b3f10add5a99298c9767b3b5c",
+    "bytes": 7830
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/EQ4.png",
+    "destination": "images/stomps/EQ4.png",
+    "sha256": "dadc88510e247f098f63dc62e1e5a5040dfebc4d909bfb6a9ff9cdc9e8f09123",
+    "bytes": 167390
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/EQ5.png",
+    "destination": "images/stomps/EQ5.png",
+    "sha256": "a8ae94912a5b8c7426a2c7725be895658e11573c8a4f20a456209c0faff5e900",
+    "bytes": 169548
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/EQ8.png",
+    "destination": "images/stomps/EQ8.png",
+    "sha256": "dadc88510e247f098f63dc62e1e5a5040dfebc4d909bfb6a9ff9cdc9e8f09123",
+    "bytes": 167390
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/HPFGate2.png",
+    "destination": "images/stomps/HPFGate2.png",
+    "sha256": "f463d071f74af5233c9590cd869c3fccba9f45b5505bbe2e880fbd535623ae33",
+    "bytes": 91146
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Harmonise20.png",
+    "destination": "images/stomps/Harmonise20.png",
+    "sha256": "585adc1d58fbef07aa2166cda20835693c9975069c901fdac0323ce679a02588",
+    "bytes": 117189
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/LPF2.png",
+    "destination": "images/stomps/LPF2.png",
+    "sha256": "90d7e2e00d7f011c369d92f69a25fdddfec183927e27c676ccfc5109e7988cfa",
+    "bytes": 167130
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/LPF4.png",
+    "destination": "images/stomps/LPF4.png",
+    "sha256": "90d7e2e00d7f011c369d92f69a25fdddfec183927e27c676ccfc5109e7988cfa",
+    "bytes": 167130
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Mod3.png",
+    "destination": "images/stomps/Mod3.png",
+    "sha256": "4d056c00da7753ab9fd735865e4bd11d8a4cdb95d82b6005613e71169a12cd5e",
+    "bytes": 141865
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Octaver3.png",
+    "destination": "images/stomps/Octaver3.png",
+    "sha256": "655840c7b35a48f3c4a764a21d681aeb8481f9b46a67c7ab583a71c098ff17b8",
+    "bytes": 131265
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Overdrive2.png",
+    "destination": "images/stomps/Overdrive2.png",
+    "sha256": "7628aaf97122a08a76426d7bb55cbcfd2394b246a9c324560328ba29c5daae1a",
+    "bytes": 135058
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/PitchShift2.png",
+    "destination": "images/stomps/PitchShift2.png",
+    "sha256": "49774f94601f2a3225844de7866d1d8dfe407ad4fbc0b3e2a46aa747e3d07506",
+    "bytes": 143255
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Pumper2.png",
+    "destination": "images/stomps/Pumper2.png",
+    "sha256": "cf5246e7a8cc48236f229f69d8a078ebf61a18533e67194290b8ae1b6ceea5e6",
+    "bytes": 125184
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Reverb2.png",
+    "destination": "images/stomps/Reverb2.png",
+    "sha256": "1fe2a4c324e6896ed6ed4dc919aff63577636fec6c470c6d023f727d56914daf",
+    "bytes": 122271
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Reverb3.png",
+    "destination": "images/stomps/Reverb3.png",
+    "sha256": "1fe2a4c324e6896ed6ed4dc919aff63577636fec6c470c6d023f727d56914daf",
+    "bytes": 122271
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Reverb5.png",
+    "destination": "images/stomps/Reverb5.png",
+    "sha256": "1fe2a4c324e6896ed6ed4dc919aff63577636fec6c470c6d023f727d56914daf",
+    "bytes": 122271
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Slicer2.png",
+    "destination": "images/stomps/Slicer2.png",
+    "sha256": "67657cda27b5753c781b030f7c7b4eac9fc725085e5787612e07e08ac56ccf17",
+    "bytes": 121194
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/SmartTune2.png",
+    "destination": "images/stomps/SmartTune2.png",
+    "sha256": "5b3123673549b03aa5b5b4a7f2bcec923fe79fa6842835fcbfc93d653e16b076",
+    "bytes": 94503
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/SpringRev2.png",
+    "destination": "images/stomps/SpringRev2.png",
+    "sha256": "23dcee4d87ca7460647826c63d799aaafb82c218dec8ecc0af7b313512266342",
+    "bytes": 141936
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Transient3.png",
+    "destination": "images/stomps/Transient3.png",
+    "sha256": "71d3c5a69079765a9c1f6da58e14c141b5da1afd66fd7cb88f9a34602efe5d18",
+    "bytes": 109265
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Vinyl4.png",
+    "destination": "images/stomps/Vinyl4.png",
+    "sha256": "be7c19e93bc55314c7b13384af1bf9be178ec7b904ab75a8462a9c51a4800b83",
+    "bytes": 140356
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Wah1.png",
+    "destination": "images/stomps/Wah1.png",
+    "sha256": "b37d68d126c3ff3cdf3557a74af8aec1d0039d5ab34c205ab072980eefa79c89",
+    "bytes": 109942
+  },
+  {
+    "source": "AppUI/img/Effects/NewEditor/Stomps/Wham2.png",
+    "destination": "images/stomps/Wham2.png",
+    "sha256": "9001e1f2c4d0be9b0517397854139bdae28dd5cc45621ff5c83de3dfe3d3cb22",
+    "bytes": 124967
+  }
+]
