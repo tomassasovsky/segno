@@ -1732,3 +1732,80 @@ such a line. They worked by accident while the extension's last call was
 `masterEffects`; when it became `state`, they stubbed `state` to return a list
 of effects. The real extension resolves from the members already stubbed
 around it, so the fix was to delete the lines.
+
+## Slice 3f part 2: the Effects destinations surface
+
+The pen's `01 Effects · destinations`: one page for every destination, not one
+page per stage. The Sound type row picks the strip, the strip picks the source,
+and the chain underneath is whatever that source carries. A live input, a
+recorded part, a whole track, All tracks and an output all arrive at the same
+editor, which is what makes this one surface rather than five.
+
+### What it draws
+
+The Sound type row (Live inputs / Recorded tracks / Outputs), the strip for
+that kind, the context row, and the chain in processing order.
+
+- **Live inputs** carry the two-tier source card and the Off / Auto / On Hear
+  live control, written through the monitor cubit that owns the Input stage.
+- **Recorded tracks** carry the single-line buttons with All tracks beside the
+  last track in the SAME strip, and a part picker offering only the parts that
+  track actually has. Switching tracks returns the picker to Whole track: a
+  part index names a lane of the track it was chosen on.
+- **Outputs** carry the destination cards and the sentence that says what an
+  output chain actually processes.
+
+The chain is the pen's horizontal strip: a card per effect, a plain line
+between consecutive cards, and a wider break with NO line where the Pre run
+hands over to the Post run, because the loop player is in there. The
+connectors have no arrowheads — the owner rejected them twice, and the order
+of the cards is what says which way the signal goes.
+
+### Where each control writes
+
+Each stage has one owner and the page uses it: the monitor cubit for a live
+input, and the looper bloc's own per-stage events for a part, a track, All
+tracks and an output. There is deliberately no shared "set the enabled bit"
+setter to route through — that is what would let one surface's write land on
+another stage's chain.
+
+Each strip keeps its own place, and so does each kind's chain scroll. Browsing
+the chain never changes the selected source, and a context switch restores a
+strip rather than resetting it.
+
+### What this part does NOT do
+
+The editors. Opening a card, the rack chain editor with its connected pedals,
+the parameter controls, the channel-handling footer, the Pre/Post switch
+itself, Add effects, Reorder, rack options and presets are the rest of 3f. The
+two buttons that will reach them are drawn and inert.
+
+The All tracks chain also gained a projection here: slice 3e built it in the
+engine and the repository and left it unreadable from the app.
+
+### Checks
+
+- Root suite 2278 passing, 35 skipped; every package suite green; analyze and
+  bloc lint clean.
+- Ten widget tests: the Sound type row switching strips, each strip keeping its
+  place across a switch, the tracks strip listing tracks with All tracks beside
+  them, All tracks carrying neither part picker nor placement tag, a track
+  switch returning the picker to Whole track, the cable between consecutive
+  effects and the break where the Pre run ends, an output chain carrying no
+  placement tag while a track chain does, the empty state, power writing to
+  each stage's own owner, and a live input's chain both read and written
+  through the monitor cubit.
+- Mutation-checked: carrying the part across a track switch, drawing a cable
+  across the stage break, and showing the placement tag on every destination
+  each fail exactly the tests that name them.
+- Four screenshots at the pen's 1920 x 1080.
+
+### Two gaps this surface makes concrete
+
+**There is no rack artwork, and no rack.** The accepted design's chain is made
+of RACKS — named groups of pedals with their own level — drawn with the
+original Looper X artwork. This engine's chain is a flat run of at most eight
+entries with no grouping, and the extracted catalogue (159 presets, 66 artwork
+files) is not in this repository. So a card here is one effect, drawn with the
+app's own vocabulary rather than a placeholder picture pretending to be
+artwork. Both are owner decisions, recorded on the issue.

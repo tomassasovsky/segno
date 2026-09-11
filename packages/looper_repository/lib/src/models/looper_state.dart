@@ -18,6 +18,7 @@ class LooperState extends Equatable {
     this.status = const EngineStatus(),
     this.outputEnabledMask = 0xFFFFFFFF,
     this.outputChains = const {},
+    this.allTracksChain = const FxChainEnvelope(),
     this.tuner = const TunerReading(),
     this.inputSetup = const InputSetup(),
     this.outputSetup = const OutputSetup(),
@@ -47,6 +48,13 @@ class LooperState extends Equatable {
   /// (slice 3f) — each with its entries and its chain-enabled flag (R15).
   /// A destination with no entry has no chain: bit-identical output.
   final Map<int, FxChainEnvelope> outputChains;
+
+  /// The All tracks chain, over the sum of the recorded tracks (slice 3e).
+  ///
+  /// Always a value, unlike [outputChains]: there is exactly one such chain
+  /// and it always exists, so an unconfigured rig reads the empty engaged
+  /// envelope rather than an absence.
+  final FxChainEnvelope allTracksChain;
 
   /// What the chromatic tuner hears on its armed input. Disarmed by default,
   /// and disarmed costs nothing — the engine gates detection on the arm.
@@ -113,6 +121,7 @@ class LooperState extends Equatable {
     status,
     outputEnabledMask,
     outputChains,
+    allTracksChain,
     tuner,
     inputSetup,
     outputSetup,

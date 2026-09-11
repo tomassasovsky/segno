@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
+import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/settings_page.dart';
@@ -19,8 +21,30 @@ const String segnoLoopSettingsRouteName = 'segno/loop-settings';
 /// Route name for the Audio routing pages.
 const String segnoAudioRoutingRouteName = 'segno/audio-routing';
 
+/// Route name for the Effects page.
+const String segnoFxRouteName = 'segno/fx';
+
 bool _loopSettingsOpen = false;
 bool _audioRoutingOpen = false;
+bool _fxOpen = false;
+
+/// Pushes the Effects route onto the root navigator, pointed at
+/// [destination]; guarded against stacking duplicates like the routes below.
+Future<void> openFx({FxDestination? destination}) async {
+  final navigator = segnoNavigatorKey.currentState;
+  if (navigator == null || _fxOpen) return;
+  _fxOpen = true;
+  try {
+    await navigator.push(
+      desktopPageRoute<void>(
+        (_) => FxPage(initial: destination),
+        settings: const RouteSettings(name: segnoFxRouteName),
+      ),
+    );
+  } finally {
+    _fxOpen = false;
+  }
+}
 
 /// Pushes the Audio routing route (the accepted input and output setup
 /// tasks) onto the root navigator, opened on [initial]; guarded against
@@ -77,6 +101,7 @@ void resetSegnoNavigatorForTest() {
   _openSettingsSection = null;
   _loopSettingsOpen = false;
   _audioRoutingOpen = false;
+  _fxOpen = false;
 }
 
 SettingsSection? _openSettingsSection;
