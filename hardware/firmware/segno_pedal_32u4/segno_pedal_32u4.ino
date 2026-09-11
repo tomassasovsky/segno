@@ -305,6 +305,7 @@ static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY: return globalColor(PEDAL_GLOBAL_GREEN); // one green
     case PEDAL_MODE_FX:   return CRGB::Blue;
+    case PEDAL_MODE_CUSTOM: return globalColor(PEDAL_GLOBAL_AMBER); // the one hue left unspoken for
     default:              return globalColor(PEDAL_GLOBAL_RED); // PEDAL_MODE_REC
   }
 }

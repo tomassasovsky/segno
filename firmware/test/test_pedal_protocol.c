@@ -92,6 +92,10 @@ static void test_golden_round_trip(void) {
        * same frame downgraded onto the v2 and v1 wires (B10) -- see
        * test_fx_downgrade_twins. */
       "fx_mode_v3", "fx_mode_v2", "fx_mode_v1",
+      /* protocol v4 (#763): custom mode, plus the same frame on the v3 wire
+       * where the fourth value has no meaning -- see
+       * test_custom_downgrade_twin. */
+      "custom_mode_v4", "custom_mode_v3",
   };
   pedal_frame frame;
   for (size_t i = 0; i < sizeof(kNames) / sizeof(kNames[0]); i++) {
@@ -293,14 +297,14 @@ static void test_fx_downgrade_twins(void) {
   }
 }
 
-/* Part 5a: every defined interaction mode survives an encode -> decode
- * round trip at v3 (fx needs the high bit in the bank byte), and the
- * reserved fourth wire value (0b11) is rejected before anything is
- * written. */
-static void test_mode_round_trip_and_reserved_value(void) {
-  printf("test_mode_round_trip_and_reserved_value\n");
+/* Part 5a + #763: every defined interaction mode survives an encode ->
+ * decode round trip at v4 (fx and custom need the high bit in the bank
+ * byte), and a v3 wire carrying the fourth value is rejected -- which is
+ * the whole reason a fourth mode needed a version of its own. */
+static void test_mode_round_trip_and_version_gate(void) {
+  printf("test_mode_round_trip_and_version_gate\n");
   static const uint8_t kModes[] = {PEDAL_MODE_REC, PEDAL_MODE_PLAY,
-                                   PEDAL_MODE_FX};
+                                   PEDAL_MODE_FX, PEDAL_MODE_CUSTOM};
   for (size_t i = 0; i < sizeof(kModes) / sizeof(kModes[0]); i++) {
     for (uint8_t bank = 0; bank <= 1; bank++) {
       pedal_frame frame;
@@ -309,7 +313,7 @@ static void test_mode_round_trip_and_reserved_value(void) {
       frame.play_mode = kModes[i];
       frame.active_bank = bank;
       frame.master_gain = 255;
-      frame.protocol_version = PEDAL_PROTOCOL_VERSION_V3;
+      frame.protocol_version = PEDAL_PROTOCOL_VERSION_V4;
 
       uint8_t buf[PEDAL_FRAME_MAX_BYTES];
       const int len = pedal_encode_frame(&frame, buf);
@@ -320,17 +324,56 @@ static void test_mode_round_trip_and_reserved_value(void) {
     }
   }
 
-  /* The reserved value: encode writes both mode bits, decode must reject. */
+  /* The version gate. The encoder degrades custom to play below v4, so
+   * reaching the decoder's rejection means writing the bits by hand: take a
+   * v4 custom frame and relabel its version byte, which the checksum does
+   * not cover. A v3 decoder must refuse it whole. */
   pedal_frame frame;
   memset(&frame, 0, sizeof(frame));
   frame.global_color = PEDAL_GLOBAL_GREEN;
-  frame.play_mode = 3; /* 0b11, one past PEDAL_MODE_FX */
+  frame.play_mode = PEDAL_MODE_CUSTOM;
   frame.master_gain = 255;
-  frame.protocol_version = PEDAL_PROTOCOL_VERSION_V3;
+  frame.protocol_version = PEDAL_PROTOCOL_VERSION_V4;
   uint8_t buf[PEDAL_FRAME_MAX_BYTES];
   const int len = pedal_encode_frame(&frame, buf);
   pedal_frame decoded;
+  CHECK(pedal_decode_frame(buf, len, &decoded) == 1);
+  CHECK(decoded.play_mode == PEDAL_MODE_CUSTOM);
+  buf[2] = PEDAL_PROTOCOL_VERSION_V3;
   CHECK(pedal_decode_frame(buf, len, &decoded) == 0);
+
+  /* And the encoder never writes those bits below v4 on its own. */
+  frame.protocol_version = PEDAL_PROTOCOL_VERSION_V3;
+  const int v3len = pedal_encode_frame(&frame, buf);
+  CHECK(pedal_decode_frame(buf, v3len, &decoded) == 1);
+  CHECK(decoded.play_mode == PEDAL_MODE_PLAY);
+}
+
+/* #763: the committed custom_mode_v3 fixture is byte-for-byte what the
+ * encoder produces from the unmodified v4 frame -- the mode degrades to
+ * play and nothing else moves, since v3 already carries blue chain LEDs. */
+static void test_custom_downgrade_twin(void) {
+  printf("test_custom_downgrade_twin\n");
+  pedal_frame custom;
+  if (!decode_fixture("custom_mode_v4", &custom)) return;
+  CHECK(custom.play_mode == PEDAL_MODE_CUSTOM);
+
+  uint8_t expected[64];
+  const int explen = read_fixture("custom_mode_v3", expected, sizeof(expected));
+  if (explen < 0) return;
+
+  pedal_frame twin = custom;
+  twin.protocol_version = PEDAL_PROTOCOL_VERSION_V3;
+  uint8_t reencoded[PEDAL_FRAME_MAX_BYTES];
+  const int rlen = pedal_encode_frame(&twin, reencoded);
+  CHECK(rlen == explen);
+  CHECK(memcmp(reencoded, expected, (size_t)explen) == 0);
+
+  pedal_frame decoded;
+  CHECK(pedal_decode_frame(expected, explen, &decoded) == 1);
+  CHECK(decoded.play_mode == PEDAL_MODE_PLAY);
+  /* v3 carries blue, so the chain LEDs are untouched by THIS degrade. */
+  CHECK(decoded.track_leds[0] == PEDAL_LED_BLUE);
 }
 
 /* Mirrors what a device still running older firmware does: each firmware
@@ -431,7 +474,7 @@ static void test_malformed_frames_are_rejected(void) {
   CHECK(pedal_decode_frame(bad, len, &f) == 0);
 
   memcpy(bad, bytes, (size_t)len);
-  bad[2] = 0x04; /* unknown protocol version (0x01..0x03 are valid) */
+  bad[2] = 0x05; /* unknown protocol version (0x01..0x04 are valid) */
   CHECK(pedal_decode_frame(bad, len, &f) == 0);
 
   memcpy(bad, bytes, (size_t)len);
@@ -518,7 +561,8 @@ int main(int argc, char** argv) {
   test_looper_mode_round_trip_every_value();
   test_decode_fields_fx_mode_v3();
   test_fx_downgrade_twins();
-  test_mode_round_trip_and_reserved_value();
+  test_custom_downgrade_twin();
+  test_mode_round_trip_and_version_gate();
   test_version_pairings();
   test_malformed_frames_are_rejected();
   test_identity_request();

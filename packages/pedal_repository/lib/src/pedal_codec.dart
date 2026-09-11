@@ -101,10 +101,21 @@ abstract final class PedalCodec {
   /// field is the **only** wire difference from v2 (R8: no other growth).
   static const protocolVersionV3 = 0x03;
 
+  /// Wire protocol version 4 (#763): the mode field's fourth value (`3`)
+  /// stops being reserved and becomes [PedalMode.custom]. Same 17-byte
+  /// payload a third time — claiming a reserved value is the whole change.
+  ///
+  /// A version of its own is unavoidable, not bookkeeping: every deployed v3
+  /// decoder REJECTS a frame whose mode field holds `3`, so a fourth mode
+  /// riding v3 would darken the pedal it reached rather than mis-colour one
+  /// LED. Below v4, [encodeFrame] writes custom as [PedalMode.play] (mute) —
+  /// the same inert-safe degrade FX takes below v3.
+  static const protocolVersionV4 = 0x04;
+
   /// The newest protocol version this codec speaks: the ceiling
   /// [decodeFrame] accepts up to, and the value a negotiated target version
   /// is clamped to (see `PedalRepository.targetProtocolVersion`).
-  static const int protocolVersionMax = protocolVersionV3;
+  static const int protocolVersionMax = protocolVersionV4;
 
   /// The version [encodeFrame] targets when its `targetVersion` parameter is
   /// omitted.
@@ -161,19 +172,27 @@ abstract final class PedalCodec {
   }) {
     assert(
       targetVersion >= protocolVersionV1 && targetVersion <= protocolVersionMax,
-      'targetVersion must be protocolVersionV1..protocolVersionV3, '
+      'targetVersion must be protocolVersionV1..protocolVersionV4, '
       'got $targetVersion',
     );
     // The 2-bit mode field (v3): low bit in flags bit 0, high bit in byte 2
     // bit 1. Below v3 only the low bit exists, and fx degrades to play so an
     // older pedal renders FX mode as mute rather than rec (B10).
+    //
+    // Custom takes the same degrade below v4, and must: the bits carry it
+    // fine at v3, but a v3 decoder rejects value 3 outright, so writing it
+    // would blank the pedal rather than mis-colour one LED.
+    final mode =
+        targetVersion < protocolVersionV4 && frame.mode == PedalMode.custom
+        ? PedalMode.play
+        : frame.mode;
     final int modeLowBit;
     final int modeHighBit;
     if (targetVersion >= protocolVersionV3) {
-      modeLowBit = frame.mode.index & 0x01;
-      modeHighBit = (frame.mode.index >> 1) & 0x01;
+      modeLowBit = mode.index & 0x01;
+      modeHighBit = (mode.index >> 1) & 0x01;
     } else {
-      modeLowBit = frame.mode == PedalMode.rec ? 0 : 1;
+      modeLowBit = mode == PedalMode.rec ? 0 : 1;
       modeHighBit = 0;
     }
     final payload = Uint8List(_payloadLength);
@@ -240,13 +259,13 @@ abstract final class PedalCodec {
   ///
   /// Returns `null` if the message is not a well-formed, checksum-valid state
   /// frame of a recognized version — callers keep the last good frame.
-  /// Accepts [protocolVersionV1] through [protocolVersionV3]: a v1 frame
+  /// Accepts [protocolVersionV1] through [protocolVersionV4]: a v1 frame
   /// decodes with [PedalStateFrame.looperMode] `multi` and
   /// [PedalStateFrame.countingIn] `false` (the wire never carried anything
   /// else for those fields at v1), and a v1/v2 frame can never decode to
-  /// [PedalMode.fx] (only v3 carries the mode field's high bit). A v3 frame
-  /// whose mode field holds the reserved fourth value (`3`) is rejected,
-  /// like any other out-of-range enum index.
+  /// [PedalMode.fx] or [PedalMode.custom] (only v3 carries the mode field's
+  /// high bit). The fourth value (`3`) is [PedalMode.custom] from v4 on and
+  /// rejected below it — the version gate is the whole reason v4 exists.
   static PedalStateFrame? decodeFrame(List<int> message) {
     if (message.length < 6) return null;
     if (message.first != sysExStart || message.last != sysExEnd) return null;
@@ -297,10 +316,13 @@ abstract final class PedalCodec {
     // high bit needs no version gate: the range check above already rejects
     // any v1/v2 frame with byte-2 bits beyond the bank bit, so it is
     // provably zero on those wires — a v1/v2 frame can never decode to fx.
-    // The reserved fourth value is rejected like any other out-of-range
-    // enum index.
+    // The fourth value is custom from v4 on, and rejected below it.
     final modeIndex = (flags & 0x01) | (((bankByte >> 1) & 0x01) << 1);
     if (modeIndex >= PedalMode.values.length) return null;
+    if (PedalMode.values[modeIndex] == PedalMode.custom &&
+        version < protocolVersionV4) {
+      return null;
+    }
 
     // v1 frames never carried these fields — bits 4-7 are reserved zero on
     // that wire, so a v1 decode always reports the defaults (D11). A v2
