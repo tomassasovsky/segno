@@ -2051,3 +2051,83 @@ A fifth screenshot covers the library grid. Its artwork is NOT in the golden:
 a widget test has no app asset bundle, so `rootBundle` resolves nothing there.
 What the golden shows is the grid — the wide banner's place, the card sizes
 and the order.
+
+## Slice 3f part 7: the effect editor, and the Pre/Post switch
+
+The pen's `02 Single effect`: an effect opened in place, with its controls
+direct and the channel-handling footer under them.
+
+**Direct controls, not a grid that opens a sheet.** The accepted design removed
+the generic parameter dialog: available controls are visible under the effect
+they belong to, and touch moves the actual slider. One control per parameter
+the effect actually has, each reading its own value.
+
+Every control says **Scale unverified** under it. That is the accepted
+design's own position: raw source values are shown WITHOUT invented physical
+units, and a control whose mapping was never recovered says so rather than
+printing a number in milliseconds nobody verified.
+
+### The Pre/Post switch
+
+A direct segmented control in the footer, with the one consequence line that
+changes with it: "Recorded into loop" or "Can ring after Stop". No dropdown, no
+modal, no tooltip — all three were rejected.
+
+**Offered only where the placement is the player's to choose.** A live input
+and an individual recorded track or part carry it. All tracks and the outputs
+omit the control AND its line, because their stage is fixed after their
+respective mixes and a control that could not move would be a promise the rig
+cannot keep.
+
+### Channel handling
+
+Input choice, output choice, the placement between the sides and the level are
+ONE write. The accepted design applies the input before the effects, the output
+and its placement after them, and the level last, and a half-applied change is
+audible. The same control is named for the job it is doing: Balance on a stereo
+output, Pan on a mono one.
+
+Two new events carry it, one per stage family, because slice 3e built the
+repository setters and left the surfaces to this slice. A bus stage has no
+by-slot channel setter, so its write rides the whole-chain push — acceptable
+because this is a settled choice rather than a swept knob.
+
+### Where the editor writes
+
+Each stage keeps its own owner: the monitor cubit for a live input, the bloc's
+per-stage events for the rest. That is what stops a write meant for a live
+input landing on a track's chain.
+
+The editor is pushed on a navigator ABOVE the page's providers, so the two it
+watches are carried in by value — carried rather than snapshotted, so an edit
+made here and an edit made from a pedal land in the same place. The editor
+renders the rig; it does not hold a copy of it.
+
+### One truthfulness fix in a shared widget
+
+`LoopOutlinedButton` drew a button with no callback exactly like a live one.
+Effect options and Save preset arrive with the rack-options surface, and until
+then they are the working-but-silent control the accepted design says to
+explain rather than present. A button with nothing to do now reads as having
+nothing to do, and reports itself disabled to a screen reader.
+
+### Checks
+
+Eleven more widget tests: the editor opening on a card, one control per
+parameter the effect actually has, the unverified-scale note, the switch
+offered on a recorded track with the line that goes with it, the move going
+through the stage's own owner, the switch absent on an output and on All
+tracks, the output choice renaming the placement control, channel handling
+written as one change, the balance reading Centre at rest, and a live input's
+edits going through the monitor cubit.
+
+Mutation-checked: showing the switch on every destination, and writing the
+channel change as a whole value rather than a copy, each fail exactly the test
+that names them.
+
+**One of those tests was vacuous and was rewritten.** The whole-value mutation
+survived the first version, because the fixture's channel handling was at its
+defaults and a replacement with defaults is indistinguishable from a copy. The
+fixture now carries non-default handling, so losing it is observable.
+
+A sixth screenshot covers the editor.

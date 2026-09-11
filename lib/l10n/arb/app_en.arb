@@ -4047,6 +4047,86 @@
     "@fxModuleUnavailable": {
         "description": "Readiness note for an effect the engine cannot build."
     },
+    "fxEffectOptions": "Effect options",
+    "@fxEffectOptions": {
+        "description": "Opens rename, reorder and remove for one effect."
+    },
+    "fxSavePreset": "Save preset",
+    "@fxSavePreset": {
+        "description": "Saves this effect's settings as a reusable sound."
+    },
+    "fxBypassEffect": "Effect",
+    "@fxBypassEffect": {
+        "description": "Label of the effect's own bypass toggle, beside its power glyph."
+    },
+    "fxPlacementCaption": "Placement",
+    "@fxPlacementCaption": {
+        "description": "Caption over the Pre/Post switch."
+    },
+    "fxPlacementPreHint": "Recorded into loop",
+    "@fxPlacementPreHint": {
+        "description": "The one-line consequence of Pre."
+    },
+    "fxPlacementPostHint": "Can ring after Stop",
+    "@fxPlacementPostHint": {
+        "description": "The one-line consequence of Post."
+    },
+    "fxEffectInput": "Effect input",
+    "@fxEffectInput": {
+        "description": "Caption over the effect's input channel choice."
+    },
+    "fxEffectOutput": "Effect output",
+    "@fxEffectOutput": {
+        "description": "Caption over the effect's output channel choice."
+    },
+    "fxChannelStereo": "Stereo",
+    "@fxChannelStereo": {
+        "description": "Channel choice: keep the incoming left and right."
+    },
+    "fxChannelLeft": "Left only",
+    "@fxChannelLeft": {
+        "description": "Channel choice: use the incoming left on both sides."
+    },
+    "fxChannelRight": "Right only",
+    "@fxChannelRight": {
+        "description": "Channel choice: use the incoming right on both sides."
+    },
+    "fxChannelMonoSum": "Mono sum",
+    "@fxChannelMonoSum": {
+        "description": "Channel choice: average the incoming left and right."
+    },
+    "fxChannelMono": "Mono",
+    "@fxChannelMono": {
+        "description": "Output choice: average the effect output to mono."
+    },
+    "fxBalance": "Balance",
+    "@fxBalance": {
+        "description": "The stereo output's left/right level control."
+    },
+    "fxPan": "Pan",
+    "@fxPan": {
+        "description": "The mono output's placement between left and right."
+    },
+    "fxLevel": "Level",
+    "@fxLevel": {
+        "description": "The effect's output level, applied after it."
+    },
+    "fxCentre": "Centre",
+    "@fxCentre": {
+        "description": "The balance or pan control at its middle."
+    },
+    "fxLeft": "Left",
+    "@fxLeft": {
+        "description": "The left end of the balance or pan control."
+    },
+    "fxRight": "Right",
+    "@fxRight": {
+        "description": "The right end of the balance or pan control."
+    },
+    "fxScaleUnverified": "Scale unverified",
+    "@fxScaleUnverified": {
+        "description": "Note under a control whose real-world units were never recovered."
+    },
     "fxPartOrdinal": "Part {number}",
     "@fxPartOrdinal": {
         "description": "A recorded part with no input to name it after.",

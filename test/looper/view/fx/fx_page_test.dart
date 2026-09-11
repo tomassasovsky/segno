@@ -17,6 +17,7 @@ import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
+import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -33,11 +34,13 @@ BuiltInEffect _fx(
   TrackEffectType type, {
   bool enabled = true,
   FxPlacement placement = FxPlacement.post,
+  FxChannels channels = FxChannels.defaults,
 }) => BuiltInEffect(
   type: type,
   slotId: slot,
   enabled: enabled,
   placement: placement,
+  channels: channels,
 );
 
 /// A four-in, four-out rig with two tracks recording, as the pen's examples
@@ -56,7 +59,18 @@ final _rig = LooperState(
         const Lane(inputChannel: 1, lengthFrames: 48000),
       ],
       effects: [
-        _fx('t1', TrackEffectType.filter, placement: FxPlacement.pre),
+        _fx(
+          't1',
+          TrackEffectType.filter,
+          placement: FxPlacement.pre,
+          // Off its defaults, so a write that replaces the whole value
+          // instead of copying it loses something a test can see.
+          channels: const FxChannels(
+            input: FxChannelInput.monoSum,
+            placement: -0.5,
+            level: 0.8,
+          ),
+        ),
         _fx(
           't2',
           TrackEffectType.drive,
@@ -612,6 +626,165 @@ void main() {
       await tapKey(tester, 'fx_add_effects');
 
       expect(find.byKey(const Key('fx_library_empty')), findsOneWidget);
+    });
+  });
+
+  group('the effect editor', () {
+    testWidgets('opens on the card and shows the effect by name', (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_card_t1');
+
+      expect(find.byType(FxEffectEditor), findsOneWidget);
+      // Its own controls, directly: the accepted design removed the generic
+      // parameter dialog the earlier study opened from a grid.
+      expect(find.byKey(const Key('fx_param_0')), findsOneWidget);
+      expect(find.byKey(const Key('fx_param_1')), findsOneWidget);
+    });
+
+    testWidgets('draws one control per parameter the effect actually has', (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      // Filter has two parameters; reverb has three.
+      await tapKey(tester, 'fx_card_t1');
+      expect(find.byKey(const Key('fx_param_2')), findsNothing);
+      await tapKey(tester, 'loop_settings_back');
+
+      await tapKey(tester, 'fx_card_t3');
+      expect(find.byKey(const Key('fx_param_2')), findsOneWidget);
+    });
+
+    testWidgets("says a control's scale was never recovered rather than "
+        'printing a unit nobody verified', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_card_t1');
+
+      expect(
+        find.text(l10nOf(tester).fxScaleUnverified),
+        findsNWidgets(2),
+      );
+    });
+
+    group('the Pre/Post switch', () {
+      testWidgets('is offered on a recorded track, with the consequence line '
+          'that goes with it', (tester) async {
+        await pump(tester, destination: const FxDestination.recordedTrack(0));
+        await tapKey(tester, 'fx_card_t1');
+
+        expect(find.byKey(const Key('fx_placement_pre')), findsOneWidget);
+        // t1 is Pre, so the line says what Pre means.
+        expect(
+          find.text(l10nOf(tester).fxPlacementPreHint),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets("moves the entry through the stage's own owner", (
+        tester,
+      ) async {
+        await pump(tester, destination: const FxDestination.recordedTrack(0));
+        await tapKey(tester, 'fx_card_t1');
+        await tapKey(tester, 'fx_placement_post');
+
+        verify(
+          () => bloc.add(
+            const LooperTrackEffectPlacementChanged(0, 0, FxPlacement.post),
+          ),
+        ).called(1);
+      });
+
+      testWidgets('is NOT offered on an output, whose stage is fixed after '
+          'its own mix', (tester) async {
+        await pump(tester, destination: const FxDestination.output(0));
+        await tapKey(tester, 'fx_card_o1');
+
+        expect(find.byType(FxEffectEditor), findsOneWidget);
+        expect(find.byKey(const Key('fx_placement_pre')), findsNothing);
+        expect(find.byKey(const Key('fx_placement_hint')), findsNothing);
+      });
+
+      testWidgets('is NOT offered on All tracks either', (tester) async {
+        await pump(tester, destination: const FxDestination.allTracks());
+        await tapKey(tester, 'fx_card_a1');
+
+        expect(find.byType(FxEffectEditor), findsOneWidget);
+        expect(find.byKey(const Key('fx_placement_pre')), findsNothing);
+      });
+    });
+
+    group('channel handling', () {
+      testWidgets('the output choice renames the placement control, because '
+          'the same control is doing a different job', (tester) async {
+        await pump(tester, destination: const FxDestination.recordedTrack(0));
+        await tapKey(tester, 'fx_card_t1');
+
+        // Stereo out places the two sides against each other.
+        expect(find.text(l10nOf(tester).fxBalance), findsOneWidget);
+        expect(find.text(l10nOf(tester).fxPan), findsNothing);
+      });
+
+      testWidgets('writes input, output and placement as ONE change', (
+        tester,
+      ) async {
+        await pump(tester, destination: const FxDestination.recordedTrack(0));
+        await tapKey(tester, 'fx_card_t1');
+        await tapKey(tester, 'fx_output_mono');
+
+        final written =
+            verify(
+                  () => bloc.add(
+                    captureAny(that: isA<LooperBusEffectChannelsChanged>()),
+                  ),
+                ).captured.single
+                as LooperBusEffectChannelsChanged;
+
+        // The one field the control touched changed, and the other three
+        // came through untouched: the four are one control, and writing the
+        // output alone would silently reset the rest.
+        expect(written.channels.output, FxChannelOutput.mono);
+        expect(written.channels.input, FxChannelInput.monoSum);
+        expect(written.channels.placement, -0.5);
+        expect(written.channels.level, 0.8);
+        expect(written.index, 0);
+      });
+
+      testWidgets('the balance reads Centre at rest rather than a number', (
+        tester,
+      ) async {
+        await pump(tester, destination: const FxDestination.recordedTrack(0));
+        // t3 is at its defaults; t1 is deliberately not.
+        await tapKey(tester, 'fx_card_t3');
+
+        expect(find.text(l10nOf(tester).fxCentre), findsOneWidget);
+      });
+    });
+
+    testWidgets("a live input's edits go through the monitor cubit", (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.liveInput(0));
+      await tapKey(tester, 'fx_card_m1');
+      await tapKey(tester, 'fx_placement_post');
+
+      final pushed =
+          verify(
+                () => repository.setMonitorEffects(
+                  input: 0,
+                  effects: captureAny(named: 'effects'),
+                ),
+              ).captured.last
+              as List<TrackEffect>;
+
+      // Through the cubit that owns the Input stage, and re-placed at the end
+      // of its destination stage rather than edited where it stood.
+      final moved = pushed.firstWhere((e) => e.slotId == 'm1');
+      expect(moved.placement, FxPlacement.post);
+      expect(pushed.last.slotId, 'm1');
+      verifyNever(
+        () => bloc.add(any(that: isA<LooperBusEffectChannelsChanged>())),
+      );
     });
   });
 }

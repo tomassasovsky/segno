@@ -122,9 +122,8 @@ class FxDestination extends Equatable {
 
   /// Which placement a NEW instance takes here: inputs default Pre, recorded
   /// destinations default Post, and the fixed stages resolve to Post.
-  FxPlacement get defaultPlacement => kind == FxDestinationKind.liveInput
-      ? FxPlacement.pre
-      : FxPlacement.post;
+  FxPlacement get defaultPlacement =>
+      kind == FxDestinationKind.liveInput ? FxPlacement.pre : FxPlacement.post;
 
   /// The chain this destination names, or `null` when the selection does not
   /// name one (a recorded track with no such part).
