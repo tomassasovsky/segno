@@ -78,7 +78,12 @@ void main() {
         encoded: '{"chainEnabled":true,"entries":[]}',
       ),
     ],
-    masterChain: '{"chainEnabled":true,"entries":[{"t":9}]}',
+    outputChains: [
+      SessionOutputChain(
+        bus: 0,
+        encoded: '{"chainEnabled":true,"entries":[{"t":9}]}',
+      ),
+    ],
     tempoBpm: 128.5,
     tempoSource: TempoSource.manual,
     tsNum: 6,
@@ -116,10 +121,10 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the manifest version (v8)', () {
+    test('serializes the manifest version (v9)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 8);
+      expect(json['version'], 9);
       expect(json['baseLengthFrames'], 96000);
     });
 
@@ -243,7 +248,7 @@ void main() {
       });
     });
 
-    test('serializes the schema-v5 bus stages (Track + Master)', () {
+    test('serializes the bus stages (Track + output destinations)', () {
       final json = session.toJson();
       expect(json['trackChains'], [
         {
@@ -252,7 +257,12 @@ void main() {
         },
         {'channel': 1, 'encoded': '{"chainEnabled":true,"entries":[]}'},
       ]);
-      expect(json['masterChain'], '{"chainEnabled":true,"entries":[{"t":9}]}');
+      expect(json['outputChains'], [
+        {
+          'bus': 0,
+          'encoded': '{"chainEnabled":true,"entries":[{"t":9}]}',
+        },
+      ]);
     });
 
     test('v5 round-trips the bus stages, chain strings byte-intact', () {
@@ -270,7 +280,11 @@ void main() {
         loaded.trackChains[1].encoded,
         '{"chainEnabled":true,"entries":[]}',
       );
-      expect(loaded.masterChain, '{"chainEnabled":true,"entries":[{"t":9}]}');
+      expect(loaded.outputChains.single.bus, 0);
+      expect(
+        loaded.outputChains.single.encoded,
+        '{"chainEnabled":true,"entries":[{"t":9}]}',
+      );
       expect(loaded, session);
     });
 
@@ -338,7 +352,7 @@ void main() {
         final loaded = Session.fromJson(v4);
 
         expect(loaded.trackChains, isEmpty);
-        expect(loaded.masterChain, '');
+        expect(loaded.outputChains, isEmpty);
         // Everything v4 DID describe survives untouched.
         expect(loaded.laneChains.single.encoded, '[{"t":1}]');
         expect(loaded.monitors.single.encoded, '[{"t":2}]');
@@ -350,7 +364,7 @@ void main() {
         final resaved = loaded.toJson();
         expect(resaved['version'], Session.formatVersion);
         expect(resaved['trackChains'], isEmpty);
-        expect(resaved['masterChain'], '');
+        expect(resaved['outputChains'], isEmpty);
         expect(resaved['pedalBindings'], '');
       },
     );
@@ -1023,11 +1037,11 @@ void main() {
     });
 
     test(
-      'rejects a hypothetical v9 manifest (an extra unknown field does not '
+      'rejects a hypothetical v10 manifest (an extra unknown field does not '
       'change the outcome) via the existing version-gate check',
       () {
         final json = session.toJson()
-          ..['version'] = 9
+          ..['version'] = 10
           // A field a hypothetical future schema might add — proves the
           // rejection is purely the version-number gate, not incidentally
           // triggered by an unparseable shape.
@@ -1038,7 +1052,7 @@ void main() {
           () => Session.fromJson(json),
           throwsA(
             isA<SessionUnsupportedVersion>()
-                .having((e) => e.version, 'version', 9)
+                .having((e) => e.version, 'version', 10)
                 .having((e) => e.supported, 'supported', Session.formatVersion),
           ),
         );

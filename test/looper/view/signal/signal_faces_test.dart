@@ -197,11 +197,28 @@ void main() {
       );
     });
 
-    test('the stage tab IS FxStage — no parallel enum to drift', () {
-      expect(
-        FxStage.values,
-        [FxStage.input, FxStage.loop, FxStage.track, FxStage.master],
-      );
+    testWidgets('the stage tabs ARE FxStage values — no parallel enum to '
+        'drift', (tester) async {
+      await pump(tester);
+
+      // A SUBSET, not the whole enum: this face was drawn for four stages,
+      // and the All tracks chain arrives with the FX surfaces that replace
+      // it. The point of the check is that each tab is a real stage rather
+      // than a look-alike of its own.
+      final tabs = tester
+          .widget<ConsoleDomainPanel<FxStage>>(
+            find.byType(ConsoleDomainPanel<FxStage>),
+          )
+          .tabs
+          .map((tab) => tab.value)
+          .toList();
+      expect(tabs, [
+        FxStage.input,
+        FxStage.loop,
+        FxStage.track,
+        FxStage.output,
+      ]);
+      expect(FxStage.values, containsAll(tabs));
     });
 
     testWidgets('the domain names itself once, above the strip', (
@@ -227,7 +244,7 @@ void main() {
       await tester.tap(find.text(l10n.signalStageMaster));
       await tester.pumpAndSettle();
 
-      expect(tray.state.signalTab, FxStage.master);
+      expect(tray.state.signalTab, FxStage.output);
       expect(tray.state.destination, SettingsTrayDestination.signal);
     });
   });
@@ -635,7 +652,7 @@ void main() {
     testWidgets('one full-width card over the outputs it sums into', (
       tester,
     ) async {
-      await pump(tester, stage: FxStage.master);
+      await pump(tester, stage: FxStage.output);
       final l10n = l10nOf(tester);
 
       expect(find.byType(SignalCard), findsNWidgets(1));
@@ -650,7 +667,7 @@ void main() {
     });
 
     testWidgets('one row per hardware output', (tester) async {
-      await pump(tester, stage: FxStage.master);
+      await pump(tester, stage: FxStage.output);
       final l10n = l10nOf(tester);
 
       expect(find.text(l10n.signalOutputsGroup), findsOneWidget);
@@ -664,7 +681,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        stage: FxStage.master,
+        stage: FxStage.output,
         state: const LooperState(
           status: EngineStatus(inputChannels: 2, outputChannels: 6),
         ),
@@ -688,7 +705,7 @@ void main() {
     testWidgets('the switch reflects the rig gate, off included', (
       tester,
     ) async {
-      await pump(tester, stage: FxStage.master);
+      await pump(tester, stage: FxStage.output);
 
       bool onOf(int output) => tester
           .widget<ConsoleSwitch>(
@@ -704,7 +721,7 @@ void main() {
     testWidgets('flipping a switch writes the gate through the bloc', (
       tester,
     ) async {
-      await pump(tester, stage: FxStage.master);
+      await pump(tester, stage: FxStage.output);
 
       await tester.tap(find.byKey(const Key('signal_output_switch_3')));
       await tester.pumpAndSettle();
@@ -719,7 +736,7 @@ void main() {
     ) async {
       // Three outputs live (_rig is 0x7): out 1 off leaves two — reversible
       // by ear, so the guard must not become friction.
-      await pump(tester, stage: FxStage.master);
+      await pump(tester, stage: FxStage.output);
 
       await tester.tap(find.byKey(const Key('signal_output_switch_1')));
       await tester.pumpAndSettle();
@@ -735,7 +752,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        stage: FxStage.master,
+        stage: FxStage.output,
         state: const LooperState(
           outputEnabledMask: 0x1,
           status: EngineStatus(inputChannels: 2, outputChannels: 4),
@@ -764,7 +781,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        stage: FxStage.master,
+        stage: FxStage.output,
         state: const LooperState(
           outputEnabledMask: 0x1,
           status: EngineStatus(inputChannels: 2, outputChannels: 4),
@@ -787,7 +804,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        stage: FxStage.master,
+        stage: FxStage.output,
         state: const LooperState(
           outputEnabledMask: 0x1,
           status: EngineStatus(inputChannels: 2, outputChannels: 4),
@@ -812,7 +829,7 @@ void main() {
       // the way OUT of it must never be gated.
       await pump(
         tester,
-        stage: FxStage.master,
+        stage: FxStage.output,
         state: const LooperState(
           outputEnabledMask: 0,
           status: EngineStatus(inputChannels: 2, outputChannels: 4),
@@ -833,7 +850,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        stage: FxStage.master,
+        stage: FxStage.output,
         state: const LooperState(
           outputEnabledMask: 0,
           status: EngineStatus(inputChannels: 2, outputChannels: 4),
@@ -851,13 +868,13 @@ void main() {
     testWidgets('one live output is enough to drop the warning', (
       tester,
     ) async {
-      await pump(tester, stage: FxStage.master);
+      await pump(tester, stage: FxStage.output);
 
       expect(find.byKey(const Key('signal_no_outputs_banner')), findsNothing);
     });
 
     testWidgets('a stopped engine reports no outputs', (tester) async {
-      await pump(tester, stage: FxStage.master, state: _stopped);
+      await pump(tester, stage: FxStage.output, state: _stopped);
       final l10n = l10nOf(tester);
 
       expect(
@@ -1039,13 +1056,17 @@ void main() {
     testWidgets("the master's chain reads on its card", (tester) async {
       await pump(
         tester,
-        stage: FxStage.master,
+        stage: FxStage.output,
         state: LooperState(
           tracks: _rig.tracks,
           outputEnabledMask: _rig.outputEnabledMask,
-          masterEffects: [
-            BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
-          ],
+          outputChains: {
+            0: FxChainEnvelope(
+              entries: [
+                BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
+              ],
+            ),
+          },
           status: _rig.status,
         ),
       );
@@ -1182,11 +1203,11 @@ void main() {
       final chain = [BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a')];
       await pump(
         tester,
-        stage: FxStage.master,
+        stage: FxStage.output,
         state: LooperState(
           tracks: _rig.tracks,
           outputEnabledMask: _rig.outputEnabledMask,
-          masterEffects: chain,
+          outputChains: {0: FxChainEnvelope(entries: chain)},
           status: _rig.status,
         ),
         states: states.stream,
@@ -1198,11 +1219,12 @@ void main() {
         LooperState(
           tracks: _rig.tracks,
           outputEnabledMask: _rig.outputEnabledMask,
-          masterChainEnabled: false,
-          // The SAME list instance: switching the master chain off does not
-          // touch `masterEffects`, so the chain's own subscription sees
-          // nothing here and the power's is the only thing that redraws.
-          masterEffects: chain,
+          // The SAME list instance: switching the chain off does not touch
+          // its entries, so the chain's own subscription sees nothing here
+          // and the power's is the only thing that redraws.
+          outputChains: {
+            0: FxChainEnvelope(chainEnabled: false, entries: chain),
+          },
           status: _rig.status,
         ),
       );
@@ -1219,14 +1241,18 @@ void main() {
     ) async {
       await pump(
         tester,
-        stage: FxStage.master,
+        stage: FxStage.output,
         state: LooperState(
           tracks: _rig.tracks,
           outputEnabledMask: _rig.outputEnabledMask,
-          masterChainEnabled: false,
-          masterEffects: [
-            BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
-          ],
+          outputChains: {
+            0: FxChainEnvelope(
+              chainEnabled: false,
+              entries: [
+                BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
+              ],
+            ),
+          },
           status: _rig.status,
         ),
       );
@@ -1285,7 +1311,7 @@ void main() {
     ) async {
       final states = StreamController<LooperState>.broadcast();
       addTearDown(states.close);
-      await pump(tester, stage: FxStage.master, states: states.stream);
+      await pump(tester, stage: FxStage.output, states: states.stream);
       final l10n = l10nOf(tester);
       expect(find.text(l10n.effectDelay), findsNothing);
 
@@ -1293,9 +1319,13 @@ void main() {
         LooperState(
           tracks: _rig.tracks,
           outputEnabledMask: _rig.outputEnabledMask,
-          masterEffects: [
-            BuiltInEffect(type: TrackEffectType.delay, slotId: 'a'),
-          ],
+          outputChains: {
+            0: FxChainEnvelope(
+              entries: [
+                BuiltInEffect(type: TrackEffectType.delay, slotId: 'a'),
+              ],
+            ),
+          },
           status: _rig.status,
         ),
       );
@@ -1488,7 +1518,7 @@ void main() {
     tester,
   ) async {
     final handle = tester.ensureSemantics();
-    await pump(tester, stage: FxStage.master);
+    await pump(tester, stage: FxStage.output);
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     handle.dispose();
   });

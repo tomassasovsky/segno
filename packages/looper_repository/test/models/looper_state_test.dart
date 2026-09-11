@@ -48,17 +48,40 @@ void main() {
       );
     });
 
-    test('Master insert fields default and participate in equality', () {
+    test('output chain fields default and participate in equality', () {
       const state = LooperState();
-      expect(state.masterEffects, isEmpty);
-      expect(state.masterChainEnabled, isTrue);
+      expect(state.outputEffects(0), isEmpty);
+      expect(state.outputChainEnabled(0), isTrue);
 
-      expect(state, isNot(const LooperState(masterChainEnabled: false)));
+      expect(
+        state,
+        isNot(
+          const LooperState(
+            outputChains: {0: FxChainEnvelope(chainEnabled: false)},
+          ),
+        ),
+      );
       expect(
         state,
         isNot(
           LooperState(
-            masterEffects: [BuiltInEffect(type: TrackEffectType.reverb)],
+            outputChains: {
+              0: FxChainEnvelope(
+                entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+              ),
+            },
+          ),
+        ),
+      );
+      // Keyed by destination: the same chain on another destination is a
+      // different rig, which is the whole reason this is a map.
+      expect(
+        const LooperState(
+          outputChains: {0: FxChainEnvelope(chainEnabled: false)},
+        ),
+        isNot(
+          const LooperState(
+            outputChains: {1: FxChainEnvelope(chainEnabled: false)},
           ),
         ),
       );

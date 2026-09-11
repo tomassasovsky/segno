@@ -368,8 +368,8 @@ class LaneFxScope extends FxScope {
 }
 
 /// The FX chain of a **bus stage** — a track's stereo bus ([FxStage.track],
-/// downstream of that track's lanes) or the single Master insert
-/// ([FxStage.master], on the summed mix before gain/limiter).
+/// downstream of that track's lanes) or one output destination's post-sum
+/// chain ([FxStage.output], before gain/limiter).
 ///
 /// One scope covers both because the stage is *data* in [address], not a type:
 /// the two differ only in which chain they read. Bus chains are owned by the
@@ -394,7 +394,7 @@ class StageFxScope extends FxScope {
     required this.address,
     required this.trackNames,
   }) {
-    if (address.stage != FxStage.track && address.stage != FxStage.master) {
+    if (address.stage != FxStage.track && address.stage != FxStage.output) {
       throw ArgumentError.value(
         address.stage,
         'address.stage',
@@ -417,40 +417,44 @@ class StageFxScope extends FxScope {
   @override
   final FxAddress address;
 
-  /// Whether this scope edits the Master insert (else a track's stereo bus).
-  bool get _isMaster => address.stage == FxStage.master;
+  /// Whether this scope edits an output destination (else a track's stereo
+  /// bus).
+  bool get _isOutput => address.stage == FxStage.output;
 
-  /// The track channel this scope edits (meaningless on the Master insert).
+  /// The track channel this scope edits (meaningless on an output chain).
   int get _channel => address.index;
 
+  /// The output destination this scope edits (meaningless on a track bus).
+  int get _bus => address.index;
+
   @override
-  String label(AppLocalizations l10n) => _isMaster
+  String label(AppLocalizations l10n) => _isOutput
       ? l10n.fxEditorMasterTitle
       : l10n.fxEditorTrackTitle(l10n.trackName(trackNames, _channel));
 
   @override
-  String consequence(AppLocalizations l10n) => _isMaster
+  String consequence(AppLocalizations l10n) => _isOutput
       ? l10n.fxEditorMasterConsequence
       : l10n.fxEditorTrackConsequence;
 
   @override
-  String chainDisabledConsequence(AppLocalizations l10n) => _isMaster
+  String chainDisabledConsequence(AppLocalizations l10n) => _isOutput
       ? l10n.fxChainOffMasterConsequence
       : l10n.fxChainOffTrackConsequence;
 
   @override
   bool get isPresent =>
-      _isMaster || (_channel >= 0 && _channel < looper.state.tracks.length);
+      _isOutput || (_channel >= 0 && _channel < looper.state.tracks.length);
 
   @override
   List<TrackEffect> get effects {
-    if (_isMaster) return looper.state.masterEffects;
+    if (_isOutput) return looper.state.outputEffects(_bus);
     return isPresent ? looper.state.tracks[_channel].effects : const [];
   }
 
   @override
   bool get chainEnabled {
-    if (_isMaster) return looper.state.masterChainEnabled;
+    if (_isOutput) return looper.state.outputChainEnabled(_bus);
     return !isPresent || looper.state.tracks[_channel].chainEnabled;
   }
 
@@ -493,15 +497,15 @@ class StageFxScope extends FxScope {
 
   @override
   void setEffectEnabled(int index, {required bool enabled}) => looper.add(
-    _isMaster
-        ? LooperMasterEffectEnabledToggled(index, enabled: enabled)
+    _isOutput
+        ? LooperOutputEffectEnabledToggled(_bus, index, enabled: enabled)
         : LooperTrackEffectEnabledToggled(_channel, index, enabled: enabled),
   );
 
   @override
   void setChainEnabled({required bool enabled}) => looper.add(
-    _isMaster
-        ? LooperMasterChainEnabledToggled(enabled: enabled)
+    _isOutput
+        ? LooperOutputChainEnabledToggled(_bus, enabled: enabled)
         : LooperTrackChainEnabledToggled(_channel, enabled: enabled),
   );
 

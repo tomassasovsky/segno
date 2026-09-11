@@ -468,9 +468,9 @@ void main() {
     });
 
     test('round-trips the master chain envelope', () async {
-      expect(await repository.loadMasterFxChain(), isNull);
-      await repository.saveMasterFxChain('{"chainEnabled":true}');
-      expect(await repository.loadMasterFxChain(), '{"chainEnabled":true}');
+      expect(await repository.loadOutputFxChain(0), isNull);
+      await repository.saveOutputFxChain(0, '{"chainEnabled":true}');
+      expect(await repository.loadOutputFxChain(0), '{"chainEnabled":true}');
     });
 
     test('clearing a track chain reads back as unset, not as the old '

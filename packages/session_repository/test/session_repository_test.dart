@@ -136,15 +136,22 @@ void main() {
             encoded: '{"chainEnabled":false,"entries":[{"t":1}]}',
           ),
         ],
-        masterChain: '{"chainEnabled":true,"entries":[{"t":7}]}',
+        outputChains: [
+          SessionOutputChain(
+            bus: 1,
+            encoded: '{"chainEnabled":true,"entries":[{"t":7}]}',
+          ),
+        ],
       );
       final session = await repoFor(source).save(dir, chains: chains);
       expect(session.trackChains, chains.trackChains);
-      expect(session.masterChain, chains.masterChain);
+      expect(session.outputChains, chains.outputChains);
 
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
       expect(bundle.session.trackChains, chains.trackChains);
-      expect(bundle.session.masterChain, chains.masterChain);
+      // The DESTINATION round-trips with the chain: a manifest that carried
+      // only the envelope would restore the second pair's FX onto the first.
+      expect(bundle.session.outputChains, chains.outputChains);
     },
   );
 
@@ -159,7 +166,7 @@ void main() {
 
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
       expect(bundle.session.trackChains, isEmpty);
-      expect(bundle.session.masterChain, '');
+      expect(bundle.session.outputChains, isEmpty);
     },
   );
 

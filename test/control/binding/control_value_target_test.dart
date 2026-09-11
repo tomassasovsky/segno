@@ -33,12 +33,12 @@ void main() {
 
     test('equal targets encode byte-identically', () {
       const a = FxParamTarget(
-        address: FxAddress(stage: FxStage.master),
+        address: FxAddress(stage: FxStage.output),
         slotId: 's',
         param: 0,
       );
       const b = FxParamTarget(
-        address: FxAddress(stage: FxStage.master),
+        address: FxAddress(stage: FxStage.output),
         slotId: 's',
         param: 0,
       );

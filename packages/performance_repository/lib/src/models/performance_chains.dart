@@ -7,9 +7,9 @@ import 'package:segno_engine/segno_engine.dart';
 /// repository that owns the live chain/limiter cache hands them in, the same
 /// way `session_repository`'s `SessionChains` works for session saves).
 ///
-/// All four stages of the FX v3 model are represented: Input ([monitors]),
-/// Loop ([laneChains]), Track ([trackChains]) and Master ([masterEffects] +
-/// [masterChainEnabled]). Every stage also carries its chain-enabled flag, and
+/// Every stage of the FX model is represented: Input ([monitors]), Loop
+/// ([laneChains]), Track ([trackChains]) and the output destinations
+/// ([outputChains]). Every stage also carries its chain-enabled flag, and
 /// each entry its own `enabled` bit, so a replay can seed arm-time bypass
 /// state instead of guessing (R3).
 @immutable
@@ -19,8 +19,7 @@ class PerformanceChains {
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
-    this.masterEffects = const [],
-    this.masterChainEnabled = true,
+    this.outputChains = const [],
     this.limiterEnabled = false,
     this.limiterCeiling = 0.99,
   });
@@ -37,11 +36,9 @@ class PerformanceChains {
   /// snapshot.
   final List<PerformanceTrackChain> trackChains;
 
-  /// The Master insert chain's entries, in order (empty = no Master FX).
-  final List<TrackEffect> masterEffects;
-
-  /// Whether the Master insert chain is engaged as a whole.
-  final bool masterChainEnabled;
+  /// Each output destination's post-sum chain at the moment of the snapshot,
+  /// one entry per destination the rig configured.
+  final List<PerformanceOutputChain> outputChains;
 
   /// Whether the master peak limiter is enabled.
   final bool limiterEnabled;
@@ -95,6 +92,47 @@ class PerformanceTrackChain {
   /// defaults so an all-default record stays minimal.
   Map<String, dynamic> toJson() => {
     'channel': channel,
+    if (!chainEnabled) 'chainEnabled': false,
+    if (effects.isNotEmpty) 'effects': [for (final e in effects) e.toJson()],
+  };
+}
+
+/// One output destination's post-sum chain at the moment of a performance
+/// snapshot — the [PerformanceTrackChain] twin, keyed by destination.
+@immutable
+class PerformanceOutputChain {
+  /// Creates a [PerformanceOutputChain].
+  const PerformanceOutputChain({
+    required this.bus,
+    this.effects = const [],
+    this.chainEnabled = true,
+  });
+
+  /// Rebuilds a [PerformanceOutputChain] from a decoded JSON map, on the same
+  /// omit-when-default rule as [PerformanceTrackChain.fromJson].
+  factory PerformanceOutputChain.fromJson(Map<String, dynamic> json) =>
+      PerformanceOutputChain(
+        bus: (json['bus'] as num).toInt(),
+        chainEnabled: json['chainEnabled'] as bool? ?? true,
+        effects: [
+          for (final e in (json['effects'] as List<dynamic>? ?? const []))
+            TrackEffect.fromJson(e as Map<String, dynamic>),
+        ],
+      );
+
+  /// The output destination this chain sits after.
+  final int bus;
+
+  /// The chain's entries, in order.
+  final List<TrackEffect> effects;
+
+  /// Whether the chain is engaged as a whole (R15).
+  final bool chainEnabled;
+
+  /// Serializes this chain to a JSON map, omitting both fields at their
+  /// defaults so an all-default record stays minimal.
+  Map<String, dynamic> toJson() => {
+    'bus': bus,
     if (!chainEnabled) 'chainEnabled': false,
     if (effects.isNotEmpty) 'effects': [for (final e in effects) e.toJson()],
   };

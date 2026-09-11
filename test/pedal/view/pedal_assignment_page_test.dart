@@ -43,6 +43,7 @@ void main() {
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
+        outputBusCount: 1,
         status: const EngineStatus(sampleRate: 48000),
       ),
     );
@@ -57,11 +58,13 @@ void main() {
     when(
       () => looper.trackEffects(any()),
     ).thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
-    when(() => looper.masterEffects).thenReturn(const []);
+    when(() => looper.outputEffects(0)).thenReturn(const []);
+    when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(
-      () => looper.masterChainEnvelope(),
+      () => looper.outputChainEnvelope(0),
     ).thenReturn(const FxChainEnvelope());
+    when(() => looper.outputChainEnabled(any())).thenReturn(true);
   });
 
   tearDown(() => looperStates.close());
@@ -369,7 +372,8 @@ void main() {
       tester,
     ) async {
       trackChains.clear();
-      when(() => looper.masterEffects).thenReturn(const []);
+      when(() => looper.outputEffects(0)).thenReturn(const []);
+      when(() => looper.allTracksEffects).thenReturn(const []);
       await pump(tester);
       await select(tester, PedalButton.recPlay);
 

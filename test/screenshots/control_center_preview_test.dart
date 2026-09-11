@@ -113,7 +113,7 @@ const _previewStatus = EngineStatus(
 
 /// A rig with a Master insert carrying two effects — enough for the assign
 /// list to have chains, slots and a bound target to draw.
-const _master = FxAddress(stage: FxStage.master);
+const _master = FxAddress(stage: FxStage.output);
 
 final _masterChain = <TrackEffect>[
   BuiltInEffect(type: TrackEffectType.drive, slotId: 'slot-drive'),
@@ -408,6 +408,7 @@ void main() {
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
+        outputBusCount: 1,
         status: _previewStatus,
       ),
     );
@@ -421,9 +422,11 @@ void main() {
     when(looper.allLaneChains).thenReturn(const {});
     when(looper.allTrackChains).thenReturn(const {});
     when(() => looper.trackEffects(any())).thenReturn(const []);
-    when(() => looper.masterEffects).thenAnswer((_) => _masterChain);
-    when(() => looper.chainEntriesAt(_master)).thenAnswer((_) => _masterChain);
-    when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+    when(() => looper.outputEffects(0)).thenAnswer((_) => _masterChain);
+    when(() => looper.allTracksEffects).thenReturn(const []);
+    when(() => looper.outputChainEnabled(any())).thenReturn(true);
+    when(() => looper.allTracksChainEnabled).thenReturn(true);
+    when(looper.allOutputChains).thenReturn(const {});
     // What `AUDIO / settings-device` draws: an interface the host reports in
     // both directions with its real channel counts, and the built-in pair.
     when(looper.devices).thenReturn(_previewDevices);
@@ -1126,7 +1129,7 @@ void main() {
   }, skip: !hasFonts);
 
   testWidgets('signal domain, master tab with its outputs', (tester) async {
-    await pumpSignal(tester, FxStage.master);
+    await pumpSignal(tester, FxStage.output);
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_signal_master.png'),

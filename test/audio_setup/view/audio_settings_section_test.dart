@@ -102,12 +102,13 @@ void main() {
     when(repository.allMonitors).thenReturn(const {});
     when(repository.allLaneChains).thenReturn(const {});
     when(repository.allTrackChains).thenReturn(const {});
-    when(() => repository.masterEffects).thenReturn(const []);
+    when(() => repository.outputEffects(0)).thenReturn(const []);
+    when(() => repository.allTracksEffects).thenReturn(const []);
     when(() => repository.state).thenReturn(const LooperState());
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(repository.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+    when(repository.allOutputChains).thenReturn(const {});
     final settings = SettingsRepository(store: FakeKeyValueStore());
     monitor = MonitorCubit(repository: repository, settings: settings);
     quantize = RecordTimingCubit(repository: repository, settings: settings);

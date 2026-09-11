@@ -1604,7 +1604,7 @@ class SettingsRepository {
       _store.remove(_laneEffectsKey(channel, lane));
 
   String _trackFxChainKey(int channel) => 'track_fx_chain.$channel';
-  static const String _masterFxChainKey = 'master_fx_chain';
+  String _outputFxChainKey(int bus) => 'output_fx_chain.$bus';
 
   /// Loads track [channel]'s persisted Track-stage (stereo bus) chain as an
   /// opaque encoded envelope string (see `encodeFxChain`), or `null` if none
@@ -1621,19 +1621,23 @@ class SettingsRepository {
   /// twin of [clearLaneEffects], for a session load that drops a chain the
   /// live rig carried.
   ///
-  /// There is no Master equivalent: the Master envelope always has a value
-  /// (the empty enabled chain when none is configured), so a load overwrites
-  /// it rather than needing it cleared.
   Future<void> clearTrackFxChain(int channel) =>
       _store.remove(_trackFxChainKey(channel));
 
-  /// Loads the persisted Master insert chain as an opaque encoded envelope
-  /// string (see `encodeFxChain`), or `null` if none is saved.
-  Future<String?> loadMasterFxChain() => _store.getString(_masterFxChainKey);
+  /// Loads output destination [bus]'s persisted post-sum chain as an opaque
+  /// encoded envelope string (see `encodeFxChain`), or `null` if none is
+  /// saved.
+  Future<String?> loadOutputFxChain(int bus) =>
+      _store.getString(_outputFxChainKey(bus));
 
-  /// Saves the [encoded] Master insert chain envelope.
-  Future<void> saveMasterFxChain(String encoded) =>
-      _store.setString(_masterFxChainKey, encoded);
+  /// Saves output destination [bus]'s [encoded] chain envelope.
+  Future<void> saveOutputFxChain(int bus, String encoded) =>
+      _store.setString(_outputFxChainKey(bus), encoded);
+
+  /// Clears output destination [bus]'s persisted chain envelope — the output
+  /// twin of [clearTrackFxChain].
+  Future<void> clearOutputFxChain(int bus) =>
+      _store.remove(_outputFxChainKey(bus));
 
   static const String _allTracksFxChainKey = 'all_tracks_fx_chain';
 

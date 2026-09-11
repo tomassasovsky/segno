@@ -14,7 +14,7 @@ void main() {
         FxAddress(stage: FxStage.input, index: 3),
         loop,
         track,
-        FxAddress(stage: FxStage.master),
+        FxAddress(stage: FxStage.output),
       ]) {
         final target = FxChainTarget(address);
         expect(FxBindingTarget.tryParse(target.canonicalString()), target);

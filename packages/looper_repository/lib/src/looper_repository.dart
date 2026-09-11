@@ -391,11 +391,16 @@ class LooperRepository {
   /// never sees; rides the persisted chain envelope.
   final Map<(int, int), List<int>> _laneChainMeta = {};
 
-  /// The Track-stage (per-track stereo bus) chains and the Master insert
-  /// chain (FX v3 part 1b), remembered and re-applied on every (re)start,
-  /// mirroring [_laneEffects]. Owned by the bloc layer's `LooperBloc`.
+  /// The Track-stage (per-track stereo bus) chains (FX v3 part 1b),
+  /// remembered and re-applied on every (re)start, mirroring [_laneEffects].
+  /// Owned by the bloc layer's `LooperBloc`.
   final Map<int, List<TrackEffect>> _trackEffects = {};
-  List<TrackEffect> _masterEffects = const [];
+
+  /// Each output destination's post-sum chain, keyed by bus (slice 3f). One
+  /// chain per destination, not one Master insert: the accepted design puts
+  /// an output chain after everything actually routed to that destination,
+  /// and two destinations carry different sources.
+  final Map<int, List<TrackEffect>> _outputEffects = {};
 
   /// The All tracks recorded-mix chain (slice 3e), remembered and re-applied
   /// on every (re)start like the others. One chain for every destination: the
@@ -403,11 +408,11 @@ class LooperRepository {
   List<TrackEffect> _allTracksEffects = const [];
   bool _allTracksChainEnabled = true;
 
-  /// Track/monitor/master chain-enabled flags (absent / `true` => enabled),
+  /// Track/monitor/output chain-enabled flags (absent / `true` => enabled),
   /// stored like [_laneChainEnabled].
   final Map<int, bool> _trackChainEnabled = {};
   final Map<int, bool> _monitorChainEnabled = {};
-  bool _masterChainEnabled = true;
+  final Map<int, bool> _outputChainEnabled = {};
 
   /// What each cleared track's [undo] must put back that the engine cannot:
   /// `channel -> lane -> (chain, chain flag, provenance, mute)`. Written by
@@ -984,8 +989,7 @@ class LooperRepository {
           chainEnabled: trackChainEnabled(i),
         ),
     ],
-    masterEffects: _masterEffects,
-    masterChainEnabled: _masterChainEnabled,
+    outputChains: allOutputChains(),
     inputSetup: _inputSetup,
     outputSetup: _outputSetup,
     outputBusCount: s.outputBusCount,
@@ -1215,17 +1219,19 @@ class LooperRepository {
         (input, enabled) =>
             _engine.setInputConditioningEnabled(input: input, enabled: enabled),
       );
-      // Re-apply the Track-stage + Master insert chains and their chain flags
+      // Re-apply the Track-stage and output chains and their chain flags
       // (FX v3 part 1b owners), mirroring the lane/monitor replay above.
       _trackEffects.keys.toList().forEach(_applyTrackEffects);
       _trackChainEnabled.forEach(
         (channel, enabled) =>
             _engine.setTrackFxChainEnabled(channel: channel, enabled: enabled),
       );
-      if (_masterEffects.isNotEmpty) _applyMasterEffects();
-      if (!_masterChainEnabled) {
-        _engine.setOutputFxChainEnabled(bus: kMasterOutputBus, enabled: false);
+      for (final entry in _outputEffects.entries) {
+        if (entry.value.isNotEmpty) _applyOutputEffects(entry.key);
       }
+      _outputChainEnabled.forEach((bus, enabled) {
+        if (!enabled) _engine.setOutputFxChainEnabled(bus: bus, enabled: false);
+      });
       if (_allTracksEffects.isNotEmpty) _applyAllTracksEffects();
       if (!_allTracksChainEnabled) {
         _engine.setAllTracksFxChainEnabled(enabled: false);
@@ -1324,8 +1330,11 @@ class LooperRepository {
       for (final e in _trackEffects.entries)
         if (_hasUnnamedPlugin(e.value)) e.key,
     ];
-    final masterUnnamed = _hasUnnamedPlugin(_masterEffects);
-    if (trackKeys.isEmpty && !masterUnnamed) return;
+    final outputKeys = [
+      for (final e in _outputEffects.entries)
+        if (_hasUnnamedPlugin(e.value)) e.key,
+    ];
+    if (trackKeys.isEmpty && outputKeys.isEmpty) return;
     // A populated catalog means a scan already ran this session, so a name
     // still missing is a plugin the catalog does not have — same argument as
     // [_recoverUnavailablePlugins].
@@ -1344,8 +1353,11 @@ class LooperRepository {
             _trackEffects[channel] = _markBusUnsupportedPlugins(effects);
           }
         }
-        if (masterUnnamed) {
-          _masterEffects = _markBusUnsupportedPlugins(_masterEffects);
+        for (final bus in outputKeys) {
+          final effects = _outputEffects[bus];
+          if (effects != null) {
+            _outputEffects[bus] = _markBusUnsupportedPlugins(effects);
+          }
         }
         _reproject();
       }),
@@ -1984,7 +1996,7 @@ class LooperRepository {
   /// and the caches only; it never touches the boot-restore keys. A session
   /// load is therefore not complete until whichever layer owns settings
   /// persistence re-writes them from the enumerations below ([allLaneChains] /
-  /// [allTrackChains] / [masterChainEnvelope] / [allMonitors]). Left silent,
+  /// [allTrackChains] / [allOutputChains] / [allMonitors]). Left silent,
   /// that asymmetry shipped twice — a cold boot restored the pre-load rig — so
   /// state it here rather than leaving the caller to discover it.
   ///
@@ -1995,7 +2007,7 @@ class LooperRepository {
   /// their defaults before any content is imported — import the stems,
   /// commit the master loop, re-apply mix through the cached setters, then
   /// apply the rig's chains — explicitly resetting every remembered chain of
-  /// all FOUR FX stages (input monitor, loop lane, track bus, master insert)
+  /// every FX stage (input monitor, loop lane, track bus, All tracks, output)
   /// and every chain-enabled flag the rig does not define, so a previous
   /// session's leftovers can never sound (or apply) under the loaded one
   /// (R17). The crowned
@@ -2334,11 +2346,16 @@ class LooperRepository {
       setTrackEffects(channel: channel, effects: chain.entries);
       setTrackChainEnabled(channel: channel, enabled: chain.chainEnabled);
     });
-    // Master insert (R17): exactly one chain exists, so pushing the rig's
-    // value IS the reset — an undefined Master arrives as the empty enabled
-    // envelope and wipes whatever the previous session left on the bus.
-    setMasterEffects(effects: rig.masterChain.entries);
-    setMasterChainEnabled(enabled: rig.masterChain.chainEnabled);
+    // Output chains (R17): every destination the OLD rig configured is
+    // written too, not just the ones the arriving one names — an absent entry
+    // means "no chain there", and pushing only the new rig's keys would leave
+    // the previous session's chain sounding on a destination this one never
+    // mentions.
+    for (final bus in {..._outputEffects.keys, ...rig.outputChains.keys}) {
+      final chain = rig.outputChains[bus] ?? const FxChainEnvelope();
+      setOutputEffects(bus: bus, effects: chain.entries);
+      setOutputChainEnabled(bus: bus, enabled: chain.chainEnabled);
+    }
     setAllTracksEffects(effects: rig.allTracksChain.entries);
     setAllTracksChainEnabled(enabled: rig.allTracksChain.chainEnabled);
     // Monitors: fully reset every remembered monitor the rig does not define —
@@ -2454,14 +2471,6 @@ class LooperRepository {
         ),
     };
   }
-
-  /// The Master insert chain as the persisted envelope. There is exactly one,
-  /// so — unlike [allTrackChains] — this always has a value: the empty enabled
-  /// envelope when no Master chain is configured.
-  FxChainEnvelope masterChainEnvelope() => FxChainEnvelope(
-    chainEnabled: _masterChainEnabled,
-    entries: masterEffects,
-  );
 
   /// Every **configured** live monitor, keyed by input — the union of all
   /// remembered monitor state (enable / routing / mix / effects), not just
@@ -2593,11 +2602,11 @@ class LooperRepository {
     chainEnabled: trackChainEnabled(channel),
   );
 
-  /// The fingerprint of the CACHED Master insert chain (see
+  /// The fingerprint of output destination [bus]'s CACHED chain (see
   /// [trackFxChainFingerprint]).
-  int masterFxChainFingerprint() => fxChainFingerprint(
-    _masterEffects,
-    chainEnabled: _masterChainEnabled,
+  int outputFxChainFingerprint(int bus) => fxChainFingerprint(
+    _outputEffects[bus] ?? const [],
+    chainEnabled: outputChainEnabled(bus),
   );
 
   /// Whether lane [lane] of track [channel]'s chain currently SOUNDS
@@ -4025,7 +4034,7 @@ class LooperRepository {
     return _engine.pluginParamValueText(handle, paramId, value);
   }
 
-  // ---- Track-stage (stereo bus) + Master insert chains (FX v3 part 3a) ----
+  // ---- Track-stage (stereo bus) + output chains (FX v3 part 3a) ----
   //
   // The two bus stages mirror the lane set: a remembered chain per owner,
   // re-applied on every (re)start, with `LooperBloc` owning their state the
@@ -4063,28 +4072,57 @@ class LooperRepository {
   List<TrackEffect> trackEffects(int channel) =>
       List<TrackEffect>.unmodifiable(_trackEffects[channel] ?? const []);
 
-  /// Replaces the Master insert chain with [effects] (clamped to
-  /// [kTrackEffectMax]). Empty == bit-identical output. Remembered and
-  /// re-applied on every (re)start.
-  EngineResult setMasterEffects({required List<TrackEffect> effects}) {
+  /// Replaces output destination [bus]'s post-sum chain with [effects]
+  /// (clamped to [kTrackEffectMax]). Empty == bit-identical output.
+  /// Remembered and re-applied on every (re)start.
+  EngineResult setOutputEffects({
+    required int bus,
+    required List<TrackEffect> effects,
+  }) {
+    if (bus < 0 || bus >= kMaxOutputBuses) return EngineResult.invalid;
     // An output chain's stage is fixed after its mix, so the accepted design
     // omits the Pre/Post control here and states that output chains always
     // resolve to Post. Forcing it at the write boundary makes that a stored
     // fact rather than a convention the surfaces have to remember: a chain
     // pasted or restored from a destination that DID carry Pre entries lands
     // wholly Post, and the engine is never told a Pre count it cannot honour.
-    _masterEffects = _markBusUnsupportedPlugins(
+    final clamped = _markBusUnsupportedPlugins(
       _clampAndMint([for (final fx in effects) _placed(fx, FxPlacement.post)]),
     );
+    // Dropped when it lands back at the default, like the Track stage: an
+    // entry in this map is what says "this destination is configured", and a
+    // destination cleared to nothing must stop claiming a persisted key.
+    if (clamped.isEmpty) {
+      _outputEffects.remove(bus);
+    } else {
+      _outputEffects[bus] = clamped;
+    }
     _reproject();
     _recoverUnnamedBusPlugins();
     if (!_intendRunning) return EngineResult.ok;
-    return _applyMasterEffects();
+    return _applyOutputEffects(bus);
   }
 
-  /// The remembered Master insert chain (empty if none), in processing order.
-  List<TrackEffect> get masterEffects =>
-      List<TrackEffect>.unmodifiable(_masterEffects);
+  /// Output destination [bus]'s remembered chain (empty if none), in
+  /// processing order.
+  List<TrackEffect> outputEffects(int bus) =>
+      List<TrackEffect>.unmodifiable(_outputEffects[bus] ?? const []);
+
+  /// Every configured output chain as a persisted envelope, keyed by bus.
+  ///
+  /// A destination appears once it has been written to, the way the Track
+  /// stage's map does: an untouched destination has no entry rather than an
+  /// empty one, so a rig that never opened Outputs persists nothing.
+  Map<int, FxChainEnvelope> allOutputChains() => {
+    for (final bus in {..._outputEffects.keys, ..._outputChainEnabled.keys})
+      bus: outputChainEnvelope(bus),
+  };
+
+  /// Output destination [bus]'s chain as the persisted envelope.
+  FxChainEnvelope outputChainEnvelope(int bus) => FxChainEnvelope(
+    chainEnabled: outputChainEnabled(bus),
+    entries: outputEffects(bus),
+  );
 
   /// Pushes track [channel]'s remembered Track-stage chain to the engine —
   /// the bus twin of [_applyLaneEffects]: each entry's type + params, its
@@ -4209,60 +4247,64 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
-  /// Sets built-in parameter [param] of Master insert entry [index] (see
-  /// [setTrackEffectParam] for why this is granular).
-  EngineResult setMasterEffectParam({
+  /// Sets built-in parameter [param] of entry [index] of output destination
+  /// [bus]'s chain (see [setTrackEffectParam] for why this is granular).
+  EngineResult setOutputEffectParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) {
-    if (index < 0 || index >= _masterEffects.length) {
+    final effects = _outputEffects[bus];
+    if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
-    final fx = _masterEffects[index];
+    final fx = effects[index];
     if (fx is! BuiltInEffect) return EngineResult.invalid;
     if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
     final params = List<double>.of(fx.params)..[param] = value;
-    _masterEffects = List<TrackEffect>.of(_masterEffects)
+    _outputEffects[bus] = List<TrackEffect>.of(effects)
       ..[index] = fx.copyWith(params: params);
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setOutputFxParam(
-      bus: kMasterOutputBus,
+      bus: bus,
       index: index,
       param: param,
       value: value,
     );
   }
 
-  /// Sets hosted-plugin parameter [paramId] of Master insert entry [index]
-  /// (see [setTrackPluginParam] for why this is granular and why it writes no
-  /// engine command).
-  EngineResult setMasterPluginParam({
+  /// Sets hosted-plugin parameter [paramId] of entry [index] of output
+  /// destination [bus]'s chain (see [setTrackPluginParam] for why this is
+  /// granular and why it writes no engine command).
+  EngineResult setOutputPluginParam({
+    required int bus,
     required int index,
     required int paramId,
     required double value,
   }) {
-    if (index < 0 || index >= _masterEffects.length) {
+    final effects = _outputEffects[bus];
+    if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
-    final fx = _masterEffects[index];
+    final fx = effects[index];
     if (fx is! PluginEffect) return EngineResult.invalid;
     final values = Map<int, double>.of(fx.paramValues)..[paramId] = value;
-    _masterEffects = List<TrackEffect>.of(_masterEffects)
+    _outputEffects[bus] = List<TrackEffect>.of(effects)
       ..[index] = fx.copyWith(paramValues: values);
     _reproject();
     return EngineResult.ok;
   }
 
-  /// Pushes the remembered Master insert chain to the engine (see
+  /// Pushes output destination [bus]'s remembered chain to the engine (see
   /// [_applyTrackEffects]).
-  EngineResult _applyMasterEffects() {
-    final effects = _masterEffects;
+  EngineResult _applyOutputEffects(int bus) {
+    final effects = _outputEffects[bus] ?? const <TrackEffect>[];
     for (var i = 0; i < effects.length; i++) {
       final fx = effects[i];
       _engine.setOutputFx(
-        bus: kMasterOutputBus,
+        bus: bus,
         index: i,
         type: fx is BuiltInEffect
             ? trackEffectTypeToEngine(fx.type)
@@ -4271,7 +4313,7 @@ class LooperRepository {
       if (fx is BuiltInEffect) {
         for (var p = 0; p < fx.params.length; p++) {
           _engine.setOutputFxParam(
-            bus: kMasterOutputBus,
+            bus: bus,
             index: i,
             param: p,
             value: fx.params[p],
@@ -4279,21 +4321,14 @@ class LooperRepository {
         }
       }
     }
-    final result = _engine.setOutputFxCount(
-      bus: kMasterOutputBus,
-      count: effects.length,
-    );
+    final result = _engine.setOutputFxCount(bus: bus, count: effects.length);
     // Per-slot enabled bits strictly AFTER the count push — see
     // [_applyLaneEffects] for the D-ENSEED ordering rationale.
     for (var i = 0; i < effects.length; i++) {
       _engine
-        ..setOutputFxEnabled(
-          bus: kMasterOutputBus,
-          index: i,
-          enabled: effects[i].enabled,
-        )
+        ..setOutputFxEnabled(bus: bus, index: i, enabled: effects[i].enabled)
         ..setOutputFxChannels(
-          bus: kMasterOutputBus,
+          bus: bus,
           index: i,
           channels: fxChannelsToEngine(effects[i].channels),
         );
@@ -4378,7 +4413,7 @@ class LooperRepository {
     chainEnabled: _allTracksChainEnabled,
   );
 
-  /// Pushes the remembered All tracks chain to the engine — the master twin:
+  /// Pushes the remembered All tracks chain to the engine — the output twin:
   /// each entry's type + params, the count, then every per-slot enabled bit
   /// (R16 ordering, see [_applyLaneEffects]).
   EngineResult _applyAllTracksEffects() {
@@ -4615,19 +4650,21 @@ class LooperRepository {
     );
   }
 
-  /// Enables/disables entry [index] of the Master insert chain.
-  EngineResult setMasterEffectEnabled({
+  /// Enables/disables entry [index] of output destination [bus]'s chain.
+  EngineResult setOutputEffectEnabled({
+    required int bus,
     required int index,
     required bool enabled,
   }) {
-    if (index < 0 || index >= _masterEffects.length) {
+    final effects = _outputEffects[bus];
+    if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
-    _masterEffects = List<TrackEffect>.of(_masterEffects)
-      ..[index] = _withEnabled(_masterEffects[index], enabled);
+    _outputEffects[bus] = List<TrackEffect>.of(effects)
+      ..[index] = _withEnabled(effects[index], enabled);
     _reproject();
     return _engine.setOutputFxEnabled(
-      bus: kMasterOutputBus,
+      bus: bus,
       index: index,
       enabled: enabled,
     );
@@ -4699,18 +4736,25 @@ class LooperRepository {
   /// Whether track [channel]'s Track-stage chain is engaged.
   bool trackChainEnabled(int channel) => _trackChainEnabled[channel] ?? true;
 
-  /// Enables/disables the WHOLE Master insert chain.
-  EngineResult setMasterChainEnabled({required bool enabled}) {
-    _masterChainEnabled = enabled;
+  /// Enables/disables the WHOLE chain on output destination [bus].
+  EngineResult setOutputChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) {
+    if (bus < 0 || bus >= kMaxOutputBuses) return EngineResult.invalid;
+    // Engaged is the default, so it is stored as the ABSENCE of an entry —
+    // see [setOutputEffects].
+    if (enabled) {
+      _outputChainEnabled.remove(bus);
+    } else {
+      _outputChainEnabled[bus] = false;
+    }
     _reproject();
-    return _engine.setOutputFxChainEnabled(
-      bus: kMasterOutputBus,
-      enabled: enabled,
-    );
+    return _engine.setOutputFxChainEnabled(bus: bus, enabled: enabled);
   }
 
-  /// Whether the Master insert chain is engaged.
-  bool get masterChainEnabled => _masterChainEnabled;
+  /// Whether output destination [bus]'s chain is engaged.
+  bool outputChainEnabled(int bus) => _outputChainEnabled[bus] ?? true;
 
   /// Sets lane [lane] of track [channel]'s inheritance provenance (R13/A8) —
   /// the boot-restore counterpart of the record-time stamp in
@@ -4802,7 +4846,7 @@ class LooperRepository {
     ];
   }
 
-  /// Marks hosted plugins in a bus-stage (Track/Master) chain with the D-MISS
+  /// Marks hosted plugins in a bus-stage (Track/output) chain with the D-MISS
   /// placeholder posture — the engine hosts no plugins at these stages yet
   /// (see the section comment above the bus setters), so the entry is kept
   /// but must not read as an active slot: the UI gets the "installed but not

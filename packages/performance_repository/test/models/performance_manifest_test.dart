@@ -148,8 +148,8 @@ void main() {
         PerformanceArmSnapshot.currentFxStagesVersion,
       );
       expect(decoded.trackChains, isEmpty);
-      expect(decoded.masterEffects, isEmpty);
-      expect(decoded.masterChainEnabled, isTrue);
+      expect(decoded.outputEffects(0), isEmpty);
+      expect(decoded.outputChainEnabled(0), isTrue);
       // The capture policy (slice 3b) is always written: an absent key is a
       // pre-policy take, which reads the other way.
       expect(snapshot.toJson()['followOutput'], isFalse);
@@ -248,10 +248,15 @@ void main() {
             ),
             const PerformanceTrackChain(channel: 1),
           ],
-          masterEffects: [
-            BuiltInEffect(type: TrackEffectType.filter, enabled: false),
+          outputChains: [
+            PerformanceOutputChain(
+              bus: 0,
+              chainEnabled: false,
+              effects: [
+                BuiltInEffect(type: TrackEffectType.filter, enabled: false),
+              ],
+            ),
           ],
-          masterChainEnabled: false,
         );
 
         final decoded = PerformanceArmSnapshot.fromJson(snapshot.toJson());
@@ -273,10 +278,10 @@ void main() {
         expect(decoded.trackChains[1].effects, isEmpty);
         expect(decoded.trackChains[1].chainEnabled, isTrue);
         expect(
-          (decoded.masterEffects.single as BuiltInEffect).enabled,
+          (decoded.outputEffects(0).single as BuiltInEffect).enabled,
           isFalse,
         );
-        expect(decoded.masterChainEnabled, isFalse);
+        expect(decoded.outputChainEnabled(0), isFalse);
       },
     );
 
@@ -330,8 +335,8 @@ void main() {
           PerformanceArmSnapshot.legacyFxStagesVersion,
         );
         expect(decoded.trackChains, isEmpty);
-        expect(decoded.masterEffects, isEmpty);
-        expect(decoded.masterChainEnabled, isTrue);
+        expect(decoded.outputEffects(0), isEmpty);
+        expect(decoded.outputChainEnabled(0), isTrue);
         // No tempo field either (#281): a pre-field capture reads back the
         // 0-as-unset sentinel — the exporter's cue that there is no tempo
         // evidence here, same as a capture that never set one.

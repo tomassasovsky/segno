@@ -84,6 +84,7 @@ void main() {
       LooperState(
         tracks: [for (var i = 0; i < 4; i++) Track(channel: i)],
         status: const EngineStatus(sampleRate: 48000),
+        outputBusCount: 1,
       ),
     );
     when(() => looper.allMonitors()).thenReturn(const {});
@@ -99,11 +100,13 @@ void main() {
     when(
       () => looper.trackEffects(any()),
     ).thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
-    when(() => looper.masterEffects).thenReturn(const []);
+    when(() => looper.outputEffects(0)).thenReturn(const []);
+    when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(
-      () => looper.masterChainEnvelope(),
+      () => looper.outputChainEnvelope(0),
     ).thenReturn(const FxChainEnvelope());
+    when(() => looper.outputChainEnabled(any())).thenReturn(true);
   });
 
   tearDown(() => looperStates.close());

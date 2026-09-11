@@ -417,6 +417,41 @@ class SessionTrackChain {
   int get hashCode => Object.hash(channel, encoded);
 }
 
+/// One output destination's post-sum effect chain within a [Session] (schema
+/// v9): the destination [bus] and its [encoded] chain envelope.
+@immutable
+class SessionOutputChain {
+  /// Creates a [SessionOutputChain].
+  const SessionOutputChain({required this.bus, required this.encoded});
+
+  /// Projects a [SessionOutputChain] from a decoded JSON map.
+  factory SessionOutputChain.fromJson(Map<String, dynamic> json) =>
+      SessionOutputChain(
+        bus: (json['bus'] as num).toInt(),
+        encoded: json['encoded'] as String,
+      );
+
+  /// The output destination this chain sits after.
+  final int bus;
+
+  /// The chain as an opaque chain-envelope string.
+  final String encoded;
+
+  /// Serializes this chain to a JSON map.
+  Map<String, dynamic> toJson() => {'bus': bus, 'encoded': encoded};
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionOutputChain &&
+          runtimeType == other.runtimeType &&
+          bus == other.bus &&
+          encoded == other.encoded;
+
+  @override
+  int get hashCode => Object.hash(bus, encoded);
+}
+
 /// One hardware input's live-monitor configuration within a [Session] (schema
 /// v2+): routing / mix plus the monitor's [encoded] effect chain.
 @immutable
@@ -711,7 +746,8 @@ class SessionOutputSetup {
 ///
 /// Schema v5 (FX system v3, #351 part 3b) adds the two BUS stages of the
 /// four-stage FX model — [trackChains] (one per track channel) and the single
-/// [masterChain] — and re-documents the two chain fields it already had as the
+/// the single Master insert — and re-documents the two chain fields it already
+/// had as the
 /// model's other two stages: [monitors] is the **Input** stage and
 /// [laneChains] the **Loop** stage. Those keep their v2 key names (renaming
 /// them would be churn with no presence-keyed payoff). Every chain string is
@@ -728,6 +764,13 @@ class SessionOutputSetup {
 /// as the chains: the model lives app-side, this package only stores the blob.
 /// Presence-keyed like every rung before it, so a v5 manifest loads with `''`
 /// and the global remap applies.
+///
+/// Schema v9 (slice 3f) replaces the single `masterChain` string with
+/// [outputChains], one entry per output destination. The accepted design puts
+/// a chain after each destination's own sum rather than one insert on the
+/// first pair, so the manifest names the destination it belongs to. A v8
+/// manifest's `masterChain` key is NOT read: its chain is dropped rather than
+/// assigned to a destination its author never chose.
 ///
 /// Schema v7 (#575) adds [SessionMonitor.mode] — the monitor's gate by name,
 /// beside the boolean the manifest has always carried. The gate grew a third
@@ -746,7 +789,7 @@ class Session {
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
-    this.masterChain = '',
+    this.outputChains = const [],
     this.allTracksChain = '',
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
@@ -777,7 +820,7 @@ class Session {
   /// v3-or-earlier manifest (no tempo grid fields at all) loads with every new
   /// field at its grid-off default (see the class doc) — zero data loss, and
   /// indistinguishable from a v4 session someone deliberately saved with the
-  /// grid off. A v4-or-earlier manifest (no `trackChains` / `masterChain`)
+  /// grid off. A v4-or-earlier manifest (no `trackChains` / output chains)
   /// loads with both bus stages empty, on the same presence-keyed rule — and,
   /// since its chain strings are pre-envelope bare arrays, every chain and
   /// slot decodes ENABLED at the looper-domain envelope layer, which is what
@@ -812,7 +855,10 @@ class Session {
         for (final c in (json['trackChains'] as List<dynamic>? ?? const []))
           SessionTrackChain.fromJson(c as Map<String, dynamic>),
       ],
-      masterChain: json['masterChain'] as String? ?? '',
+      outputChains: [
+        for (final c in (json['outputChains'] as List<dynamic>? ?? const []))
+          SessionOutputChain.fromJson(c as Map<String, dynamic>),
+      ],
       allTracksChain: json['allTracksChain'] as String? ?? '',
       tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
       tempoSource: _tempoSourceFromJson(json['tempoSource'] as String?),
@@ -870,7 +916,7 @@ class Session {
   /// audio layers); v2 added the lane + monitor effect chains. v1 through v5
   /// bundles all still load — a legacy track migrates to one lane-0 live
   /// layer, and a v1 bundle loads with empty chains.
-  static const int formatVersion = 8;
+  static const int formatVersion = 9;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -903,7 +949,7 @@ class Session {
   /// The single Master insert chain as an opaque chain-envelope string (schema
   /// v5); `''` when the session defines none — the same "no chain" state a
   /// v4-or-earlier bundle loads with.
-  final String masterChain;
+  final List<SessionOutputChain> outputChains;
 
   /// The single All tracks recorded-mix chain as an opaque chain-envelope
   /// string (schema v8); `''` when the session defines none — the same "no
@@ -1031,7 +1077,7 @@ class Session {
   final SessionOutputSetup outputSetup;
 
   /// Serializes this session manifest to a JSON map. Always writes the
-  /// current [formatVersion] (v7 — this code never writes an older schema).
+  /// current [formatVersion] (this code never writes an older schema).
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
     'sampleRate': sampleRate,
@@ -1041,7 +1087,7 @@ class Session {
     'laneChains': [for (final c in laneChains) c.toJson()],
     'monitors': [for (final m in monitors) m.toJson()],
     'trackChains': [for (final c in trackChains) c.toJson()],
-    'masterChain': masterChain,
+    'outputChains': [for (final c in outputChains) c.toJson()],
     'allTracksChain': allTracksChain,
     'tempoBpm': tempoBpm,
     'tempoSource': tempoSource.name,
@@ -1090,7 +1136,7 @@ class Session {
           countInBars == other.countInBars &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
-          masterChain == other.masterChain &&
+          _listEquals(outputChains, other.outputChains) &&
           allTracksChain == other.allTracksChain &&
           pedalBindings == other.pedalBindings &&
           inputSetup == other.inputSetup &&
@@ -1124,7 +1170,7 @@ class Session {
     countInBars,
     looperMode,
     primaryTrack,
-    masterChain,
+    Object.hashAll(outputChains),
     allTracksChain,
     pedalBindings,
     inputSetup,

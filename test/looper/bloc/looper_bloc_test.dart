@@ -1637,30 +1637,35 @@ void main() {
           ),
         ).thenReturn(EngineResult.ok);
         when(
-          () => repository.setMasterEffects(
+          () => repository.setOutputEffects(
+            bus: any(named: 'bus'),
             effects: any(named: 'effects'),
           ),
         ).thenReturn(EngineResult.ok);
         when(
-          () => repository.setMasterEffectEnabled(
+          () => repository.setOutputEffectEnabled(
+            bus: 0,
             index: any(named: 'index'),
             enabled: any(named: 'enabled'),
           ),
         ).thenReturn(EngineResult.ok);
         when(
-          () => repository.setMasterChainEnabled(
+          () => repository.setOutputChainEnabled(
+            bus: any(named: 'bus'),
             enabled: any(named: 'enabled'),
           ),
         ).thenReturn(EngineResult.ok);
         when(() => repository.trackEffects(any())).thenReturn(trackChain);
         when(() => repository.trackChainEnabled(any())).thenReturn(false);
-        when(() => repository.masterEffects).thenReturn(masterChain);
-        when(() => repository.masterChainEnabled).thenReturn(false);
+        when(() => repository.outputEffects(0)).thenReturn(masterChain);
+        when(() => repository.allTracksEffects).thenReturn(const []);
+        when(repository.allOutputChains).thenReturn(const {});
+        when(() => repository.outputChainEnabled(0)).thenReturn(false);
         when(
           () => settings.saveTrackFxChain(any(), any()),
         ).thenAnswer((_) async {});
         when(
-          () => settings.saveMasterFxChain(any()),
+          () => settings.saveOutputFxChain(0, any()),
         ).thenAnswer((_) async {});
       });
 
@@ -1737,13 +1742,13 @@ void main() {
         'a bus edit on the master stage writes the Master insert',
         setUp: () {
           when(
-            () => repository.masterEffects,
+            () => repository.outputEffects(0),
           ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
         },
         build: () => LooperBloc(repository: repository, settings: settings),
         act: (bloc) => bloc.add(
           const LooperBusEffectTypeChanged(
-            FxAddress(stage: FxStage.master),
+            FxAddress(stage: FxStage.output),
             0,
             TrackEffectType.reverb,
           ),
@@ -1751,7 +1756,8 @@ void main() {
         verify: (_) {
           final pushed =
               verify(
-                    () => repository.setMasterEffects(
+                    () => repository.setOutputEffects(
+                      bus: any(named: 'bus'),
                       effects: captureAny(named: 'effects'),
                     ),
                   ).captured.single
@@ -1760,7 +1766,7 @@ void main() {
             (pushed.single as BuiltInEffect).type,
             TrackEffectType.reverb,
           );
-          verify(() => settings.saveMasterFxChain(any())).called(1);
+          verify(() => settings.saveOutputFxChain(0, any())).called(1);
         },
       );
 
@@ -1804,7 +1810,7 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'a bus relink onto another plugin drops the name it replaced',
         setUp: () {
-          when(() => repository.masterEffects).thenReturn([
+          when(() => repository.outputEffects(0)).thenReturn([
             const PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'old'),
               name: 'Ancient Chorus',
@@ -1816,7 +1822,7 @@ void main() {
         build: () => LooperBloc(repository: repository, settings: settings),
         act: (bloc) => bloc.add(
           const LooperBusPluginRelinked(
-            FxAddress(stage: FxStage.master),
+            FxAddress(stage: FxStage.output),
             0,
             PluginRef(format: PluginFormat.vst3, id: 'new'),
           ),
@@ -1824,7 +1830,8 @@ void main() {
         verify: (_) {
           final pushed =
               verify(
-                    () => repository.setMasterEffects(
+                    () => repository.setOutputEffects(
+                      bus: any(named: 'bus'),
                       effects: captureAny(named: 'effects'),
                     ),
                   ).captured.single
@@ -1839,7 +1846,7 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'a bus relink onto the SAME plugin keeps its name',
         setUp: () {
-          when(() => repository.masterEffects).thenReturn([
+          when(() => repository.outputEffects(0)).thenReturn([
             const PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'same'),
               name: 'Ancient Chorus',
@@ -1851,7 +1858,7 @@ void main() {
         build: () => LooperBloc(repository: repository, settings: settings),
         act: (bloc) => bloc.add(
           const LooperBusPluginRelinked(
-            FxAddress(stage: FxStage.master),
+            FxAddress(stage: FxStage.output),
             0,
             // Accepting a version change: same plugin, so the name it is
             // already showing is the right one whatever the catalog knows.
@@ -1861,7 +1868,8 @@ void main() {
         verify: (_) {
           final pushed =
               verify(
-                    () => repository.setMasterEffects(
+                    () => repository.setOutputEffects(
+                      bus: any(named: 'bus'),
                       effects: captureAny(named: 'effects'),
                     ),
                   ).captured.single
@@ -1873,7 +1881,7 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'a bus relink keeps the persisted state, tweaks and power flag',
         setUp: () {
-          when(() => repository.masterEffects).thenReturn([
+          when(() => repository.outputEffects(0)).thenReturn([
             const PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'old', version: 1),
               paramValues: {3: 0.8},
@@ -1888,7 +1896,7 @@ void main() {
         build: () => LooperBloc(repository: repository, settings: settings),
         act: (bloc) => bloc.add(
           const LooperBusPluginRelinked(
-            FxAddress(stage: FxStage.master),
+            FxAddress(stage: FxStage.output),
             0,
             PluginRef(format: PluginFormat.vst3, id: 'new', version: 2),
           ),
@@ -1896,7 +1904,8 @@ void main() {
         verify: (_) {
           final pushed =
               verify(
-                    () => repository.setMasterEffects(
+                    () => repository.setOutputEffects(
+                      bus: any(named: 'bus'),
                       effects: captureAny(named: 'effects'),
                     ),
                   ).captured.single
@@ -1966,14 +1975,15 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'a bus PLUGIN param change goes through the granular setter too',
         setUp: () {
-          when(() => repository.masterEffects).thenReturn([
+          when(() => repository.outputEffects(0)).thenReturn([
             const PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
               unsupported: true,
             ),
           ]);
           when(
-            () => repository.setMasterPluginParam(
+            () => repository.setOutputPluginParam(
+              bus: 0,
               index: any(named: 'index'),
               paramId: any(named: 'paramId'),
               value: any(named: 'value'),
@@ -1987,7 +1997,7 @@ void main() {
         ),
         act: (bloc) => bloc.add(
           const LooperBusPluginParamChanged(
-            FxAddress(stage: FxStage.master),
+            FxAddress(stage: FxStage.output),
             0,
             7,
             0.5,
@@ -1995,7 +2005,8 @@ void main() {
         ),
         verify: (_) {
           verify(
-            () => repository.setMasterPluginParam(
+            () => repository.setOutputPluginParam(
+              bus: 0,
               index: 0,
               paramId: 7,
               value: 0.5,
@@ -2005,11 +2016,12 @@ void main() {
           // whole-chain push this used to take would have reset the DSP of
           // the BUILT-INS beside it for nothing.
           verifyNever(
-            () => repository.setMasterEffects(
+            () => repository.setOutputEffects(
+              bus: 0,
               effects: any(named: 'effects'),
             ),
           );
-          verify(() => settings.saveMasterFxChain(any())).called(1);
+          verify(() => settings.saveOutputFxChain(0, any())).called(1);
         },
       );
 
@@ -2184,14 +2196,14 @@ void main() {
         'LooperMasterEffectsChanged pushes the chain and persists the '
         'envelope',
         build: () => LooperBloc(repository: repository, settings: settings),
-        act: (bloc) => bloc.add(LooperMasterEffectsChanged(masterChain)),
+        act: (bloc) => bloc.add(LooperOutputEffectsChanged(0, masterChain)),
         verify: (_) {
           verify(
-            () => repository.setMasterEffects(effects: masterChain),
+            () => repository.setOutputEffects(bus: 0, effects: masterChain),
           ).called(1);
           final encoded =
               verify(
-                    () => settings.saveMasterFxChain(captureAny()),
+                    () => settings.saveOutputFxChain(0, captureAny()),
                   ).captured.single
                   as String;
           expect(decodeFxChain(encoded).entries, masterChain);
@@ -2202,13 +2214,17 @@ void main() {
         'LooperMasterEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(repository: repository, settings: settings),
         act: (bloc) => bloc.add(
-          const LooperMasterEffectEnabledToggled(0, enabled: false),
+          const LooperOutputEffectEnabledToggled(0, 0, enabled: false),
         ),
         verify: (_) {
           verify(
-            () => repository.setMasterEffectEnabled(index: 0, enabled: false),
+            () => repository.setOutputEffectEnabled(
+              bus: 0,
+              index: 0,
+              enabled: false,
+            ),
           ).called(1);
-          verify(() => settings.saveMasterFxChain(any())).called(1);
+          verify(() => settings.saveOutputFxChain(0, any())).called(1);
         },
       );
 
@@ -2217,12 +2233,12 @@ void main() {
         're-persists',
         build: () => LooperBloc(repository: repository, settings: settings),
         act: (bloc) =>
-            bloc.add(const LooperMasterChainEnabledToggled(enabled: false)),
+            bloc.add(const LooperOutputChainEnabledToggled(0, enabled: false)),
         verify: (_) {
           verify(
-            () => repository.setMasterChainEnabled(enabled: false),
+            () => repository.setOutputChainEnabled(bus: 0, enabled: false),
           ).called(1);
-          verify(() => settings.saveMasterFxChain(any())).called(1);
+          verify(() => settings.saveOutputFxChain(0, any())).called(1);
         },
       );
     });
@@ -2308,11 +2324,16 @@ void main() {
       ).thenAnswer((_) async {});
       when(() => repository.trackEffects(any())).thenReturn(const []);
       when(() => repository.trackChainEnabled(any())).thenReturn(true);
-      when(() => repository.masterEffects).thenReturn(const []);
-      when(() => repository.masterChainEnabled).thenReturn(true);
+      when(() => repository.outputEffects(0)).thenReturn(const []);
+      when(() => repository.allTracksEffects).thenReturn(const []);
+      when(repository.allOutputChains).thenReturn(const {});
+      when(() => repository.outputChainEnabled(0)).thenReturn(true);
       when(() => repository.allLaneChains()).thenReturn(const {});
       when(() => repository.allTrackChains()).thenReturn(const {});
-      when(() => settings.saveMasterFxChain(any())).thenAnswer((_) async {});
+      when(
+        () => settings.saveOutputFxChain(any(), any()),
+      ).thenAnswer((_) async {});
+      when(() => settings.clearOutputFxChain(any())).thenAnswer((_) async {});
       when(
         () => repository.setTrackEffectParam(
           channel: any(named: 'channel'),
@@ -2897,7 +2918,8 @@ void main() {
             channel: 1,
             effects: [BuiltInEffect(type: TrackEffectType.reverb)],
           )
-          ..setMasterEffects(
+          ..setOutputEffects(
+            bus: 0,
             effects: [BuiltInEffect(type: TrackEffectType.delay)],
           );
 
@@ -2920,7 +2942,7 @@ void main() {
           ),
         );
         expect(
-          decodeFxChain(await settings.loadMasterFxChain()).entries.single,
+          decodeFxChain(await settings.loadOutputFxChain(0)).entries.single,
           isA<BuiltInEffect>().having(
             (e) => e.type,
             'type',
@@ -2939,7 +2961,7 @@ void main() {
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         )
         ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
-        ..setMasterChainEnabled(enabled: false);
+        ..setOutputChainEnabled(bus: 0, enabled: false);
 
       await resync();
 
@@ -2948,7 +2970,7 @@ void main() {
         isFalse,
       );
       expect(
-        decodeFxChain(await settings.loadMasterFxChain()).chainEnabled,
+        decodeFxChain(await settings.loadOutputFxChain(0)).chainEnabled,
         isFalse,
       );
     });
@@ -3051,14 +3073,15 @@ void main() {
     test('is a no-op without a settings dependency', () async {
       final blocWithoutSettings = LooperBloc(repository: looper);
       addTearDown(blocWithoutSettings.close);
-      looper.setMasterEffects(
+      looper.setOutputEffects(
+        bus: 0,
         effects: [BuiltInEffect(type: TrackEffectType.delay)],
       );
 
       blocWithoutSettings.add(const LooperSessionLoaded());
       await pumpEventQueue();
 
-      expect(await settings.loadMasterFxChain(), isNull);
+      expect(await settings.loadOutputFxChain(0), isNull);
     });
   });
 }
