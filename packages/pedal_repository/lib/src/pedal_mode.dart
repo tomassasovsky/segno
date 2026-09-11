@@ -43,4 +43,12 @@ enum PedalMode {
   /// chain-enabled state (`PedalTrackLed.blue`). The app-side button matrix
   /// and LED projection are part 5b's — the codec only carries the mode.
   fx,
+
+  /// Fully user-defined control (protocol v4, #763).
+  ///
+  /// Every switch but MODE and BANK runs whatever the Pedals setup assigned
+  /// to it; an unassigned one does nothing. The pedal holds none of that —
+  /// it renders the mode LED and sends raw events, exactly as in every other
+  /// mode — so the wire's whole share of "custom" is this fourth value.
+  custom,
 }

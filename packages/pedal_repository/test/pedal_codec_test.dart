@@ -220,7 +220,7 @@ void main() {
 
     test('encodeFrame rejects an unrecognized targetVersion', () {
       expect(
-        () => PedalCodec.encodeFrame(PedalStateFrame.blank(), targetVersion: 4),
+        () => PedalCodec.encodeFrame(PedalStateFrame.blank(), targetVersion: 5),
         throwsA(isA<AssertionError>()),
       );
       expect(
@@ -230,12 +230,12 @@ void main() {
     });
   });
 
-  group('PedalCodec protocol v3: 2-bit mode field (FX v3 part 5a)', () {
+  group('PedalCodec protocol v3/v4: the 2-bit mode field', () {
     PedalStateFrame frameWithMode(PedalMode mode, {int activeBank = 0}) =>
         PedalStateFrame.blank().copyWith(mode: mode, activeBank: activeBank);
 
-    test('protocolVersionMax is v3', () {
-      expect(PedalCodec.protocolVersionMax, PedalCodec.protocolVersionV3);
+    test('protocolVersionMax is v4', () {
+      expect(PedalCodec.protocolVersionMax, PedalCodec.protocolVersionV4);
     });
 
     test(
@@ -248,7 +248,23 @@ void main() {
       },
     );
 
-    test('every PedalMode round-trips at v3', () {
+    test('every PedalMode round-trips at v4', () {
+      for (final mode in PedalMode.values) {
+        final bytes = PedalCodec.encodeFrame(
+          frameWithMode(mode),
+          targetVersion: PedalCodec.protocolVersionV4,
+        );
+        expect(bytes[2], PedalCodec.protocolVersionV4);
+        expect(
+          PedalCodec.decodeFrame(bytes)!.mode,
+          mode,
+          reason: 'PedalMode.$mode did not round-trip at v4',
+        );
+      }
+    });
+
+    test('every mode but custom round-trips at v3 — the fourth wire value '
+        'is v4 and only v4', () {
       for (final mode in PedalMode.values) {
         final bytes = PedalCodec.encodeFrame(
           frameWithMode(mode),
@@ -257,10 +273,25 @@ void main() {
         expect(bytes[2], PedalCodec.protocolVersionV3);
         expect(
           PedalCodec.decodeFrame(bytes)!.mode,
-          mode,
+          // Custom degrades to mute rather than writing a value a v3 decoder
+          // would reject, which would blank the pedal outright.
+          mode == PedalMode.custom ? PedalMode.play : mode,
           reason: 'PedalMode.$mode did not round-trip at v3',
         );
       }
+    });
+
+    test('a v3 frame carrying the fourth mode value is rejected — the whole '
+        'reason a fourth mode needed a version of its own', () {
+      final v4 = PedalCodec.encodeFrame(
+        frameWithMode(PedalMode.custom),
+        targetVersion: PedalCodec.protocolVersionV4,
+      );
+      expect(PedalCodec.decodeFrame(v4)!.mode, PedalMode.custom);
+      // The SAME payload relabelled v3: the bits carry custom fine, and the
+      // version is the only thing that makes it readable.
+      final relabelled = [...v4]..[2] = PedalCodec.protocolVersionV3;
+      expect(PedalCodec.decodeFrame(relabelled), isNull);
     });
 
     test('fx mode coexists with bank B (both bits of payload byte 2)', () {
@@ -416,14 +447,21 @@ void main() {
       );
     });
 
-    test('is false for v3 firmware', () {
+    test('is true for v3 firmware, which cannot read the custom mode', () {
       expect(
         PedalCodec.firmwareNeedsUpdate(PedalCodec.protocolVersionV3),
+        isTrue,
+      );
+    });
+
+    test('is false for v4 firmware', () {
+      expect(
+        PedalCodec.firmwareNeedsUpdate(PedalCodec.protocolVersionV4),
         isFalse,
       );
     });
 
-    test('is false for any firmware version at least as new as v3', () {
+    test('is false for any firmware version at least as new as v4', () {
       expect(PedalCodec.firmwareNeedsUpdate(99), isFalse);
     });
   });
@@ -644,9 +682,10 @@ void main() {
     });
 
     test('an unrecognized protocol version', () {
-      // 0x01..0x03 are recognized (D11, part 5a); 0x04 and 0x00 are not.
+      // 0x01..0x04 are recognized (D11, part 5a, #763); 0x05 and 0x00 are
+      // not.
       expect(
-        PedalCodec.decodeFrame(buildStateSysEx(validPayload(), version: 0x04)),
+        PedalCodec.decodeFrame(buildStateSysEx(validPayload(), version: 0x05)),
         isNull,
       );
       expect(

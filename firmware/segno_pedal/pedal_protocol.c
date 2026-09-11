@@ -57,21 +57,29 @@ static uint8_t pedal_checksum(const uint8_t* packed, int len) {
 int pedal_encode_frame(const pedal_frame* frame, uint8_t* buf) {
   const uint8_t version =
       (frame->protocol_version >= PEDAL_PROTOCOL_VERSION_V1 &&
-       frame->protocol_version <= PEDAL_PROTOCOL_VERSION_V3)
+       frame->protocol_version <= PEDAL_PROTOCOL_VERSION_V4)
           ? frame->protocol_version
           : PEDAL_PROTOCOL_VERSION;
 
   /* The 2-bit mode field (v3): low bit in flags bit 0, high bit in byte 2
    * bit 1. Below v3 only the low bit exists, and FX degrades to PLAY so an
    * older pedal renders FX mode as mute rather than rec (B10) -- every
-   * other byte is encoded identically to the v3 path. */
+   * other byte is encoded identically to the v3 path.
+   *
+   * CUSTOM takes the same degrade below v4, and must: the bits would carry
+   * it fine at v3, but a v3 decoder rejects value 3 outright, so writing it
+   * would blank the pedal rather than mis-colour one LED. */
+  uint8_t mode = frame->play_mode;
+  if (version < PEDAL_PROTOCOL_VERSION_V4 && mode == PEDAL_MODE_CUSTOM) {
+    mode = PEDAL_MODE_PLAY;
+  }
   uint8_t mode_low;
   uint8_t mode_high;
   if (version >= PEDAL_PROTOCOL_VERSION_V3) {
-    mode_low = (uint8_t)(frame->play_mode & 0x01u);
-    mode_high = (uint8_t)((frame->play_mode >> 1) & 0x01u);
+    mode_low = (uint8_t)(mode & 0x01u);
+    mode_high = (uint8_t)((mode >> 1) & 0x01u);
   } else {
-    mode_low = (uint8_t)(frame->play_mode != PEDAL_MODE_REC ? 1 : 0);
+    mode_low = (uint8_t)(mode != PEDAL_MODE_REC ? 1 : 0);
     mode_high = 0;
   }
 
@@ -126,7 +134,7 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
   if (msg[1] != PEDAL_MANUFACTURER_ID) return 0;
   const uint8_t version = msg[2];
   if (version < PEDAL_PROTOCOL_VERSION_V1 ||
-      version > PEDAL_PROTOCOL_VERSION_V3) {
+      version > PEDAL_PROTOCOL_VERSION_V4) {
     return 0;
   }
   if (msg[3] != PEDAL_MSG_TYPE_STATE) return 0;
@@ -181,12 +189,16 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
    * bit 1. The high bit needs no version gate: the range check above
    * already rejects any v1/v2 frame with byte-2 bits beyond the bank bit,
    * so it is provably zero on those wires -- a v1/v2 frame can never decode
-   * to PEDAL_MODE_FX. The reserved fourth value (3) is rejected like any
-   * other out-of-range enum index, here alongside every other pre-write
-   * validation. */
+   * to PEDAL_MODE_FX. The fourth value (3) is PEDAL_MODE_CUSTOM from v4 on
+   * and reserved-and-rejected below it -- the version gate is the whole
+   * reason v4 exists, so it is enforced here alongside every other
+   * pre-write validation. */
   const uint8_t mode = (uint8_t)((payload[0] & 0x01u) |
                                  (((bank_byte >> 1) & 0x01u) << 1));
   if (mode >= PEDAL_MODE_COUNT) return 0;
+  if (mode == PEDAL_MODE_CUSTOM && version < PEDAL_PROTOCOL_VERSION_V4) {
+    return 0;
+  }
 
   out->play_mode = mode;
   out->clear_fade = (uint8_t)((payload[0] >> 1) & 0x01u);

@@ -208,6 +208,8 @@ static CRGB modeColor(uint8_t mode) {
       return globalColor(PEDAL_GLOBAL_GREEN); // one definition of green
     case PEDAL_MODE_FX:
       return CRGB::Blue;
+    case PEDAL_MODE_CUSTOM:
+      return globalColor(PEDAL_GLOBAL_AMBER); // the one hue left unspoken for
     default: // PEDAL_MODE_REC
       return globalColor(PEDAL_GLOBAL_RED); // one definition of red
   }

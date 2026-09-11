@@ -1034,6 +1034,10 @@ Color _modeColor(SurfaceTheme surface, PedalMode mode) => switch (mode) {
   PedalMode.rec => surface.ledRed,
   PedalMode.play => surface.ledGreen,
   PedalMode.fx => surface.ledBlue,
+  // Amber: the one hue the plate had left unspoken for. Kept in lockstep
+  // with `modeColor` in both sketches, which the firmware drift gate holds
+  // identical to each other.
+  PedalMode.custom => surface.ledAmber,
 };
 
 Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {

@@ -14,12 +14,14 @@
  * The 17-byte logical payload (the current fields, master gain included),
  * the 7-bit packing, and the XOR checksum match PedalCodec exactly (see that
  * file for the field table). <ver> is PEDAL_PROTOCOL_VERSION_V1 (0x01),
- * PEDAL_PROTOCOL_VERSION_V2 (0x02, D11), or PEDAL_PROTOCOL_VERSION_V3
- * (0x03, FX v3 part 5a) — the payload's byte *count* is identical at all
- * three versions: v2 only claims 4 previously-unused bits in the existing
- * flags byte (looper_mode + counting_in), and v3 only claims bit 1 of the
- * active-bank byte as the mode field's high bit so a third interaction mode
- * (FX) fits; see pedal_decode_frame.
+ * PEDAL_PROTOCOL_VERSION_V2 (0x02, D11), PEDAL_PROTOCOL_VERSION_V3 (0x03,
+ * FX v3 part 5a) or PEDAL_PROTOCOL_VERSION_V4 (0x04, #763) — the payload's
+ * byte *count* is identical at all four versions: v2 only claims 4
+ * previously-unused bits in the existing flags byte (looper_mode +
+ * counting_in), v3 only claims bit 1 of the active-bank byte as the mode
+ * field's high bit so a third interaction mode (FX) fits, and v4 only
+ * unreserves that field's fourth value for a fourth mode (custom); see
+ * pedal_decode_frame.
  *
  * This file is mirrored byte-for-byte in
  * hardware/firmware/segno_pedal_32u4/ — firmware/test/run_tests.sh fails if
@@ -39,12 +41,21 @@
  * code (PEDAL_LOOPER_MODE_*), bit 7 carries counting_in. Same 17-byte
  * payload as v1 -- the flags byte had the headroom. */
 #define PEDAL_PROTOCOL_VERSION_V2 0x02
-/* Wire protocol version 3 (current, FX v3 part 5a): the interaction-mode
+/* Wire protocol version 3 (FX v3 part 5a): the interaction-mode
  * field widens to 2 bits so PEDAL_MODE_FX fits -- low bit stays flags
  * bit 0, the high bit claims bit 1 of the active-bank byte (payload byte 2,
  * which used 1 of its 8 bits). Same 17-byte payload again; the mode field
  * is the only wire difference from v2 (R8: no other growth). */
 #define PEDAL_PROTOCOL_VERSION_V3 0x03
+/* Wire protocol version 4 (current, #763): the mode field's fourth value
+ * (0b11) stops being reserved and becomes PEDAL_MODE_CUSTOM. Same 17-byte
+ * payload a third time -- claiming a reserved value is the whole change
+ * (D2, zero growth). A version of its own is unavoidable: every deployed v3
+ * decoder REJECTS a frame carrying mode 3, so a fourth mode could not ride
+ * v3 without darkening the pedal it reached. Encoding a custom frame below
+ * v4 writes the mode as PEDAL_MODE_PLAY (mute), the same inert-safe degrade
+ * FX takes below v3. */
+#define PEDAL_PROTOCOL_VERSION_V4 0x04
 /* The version pedal_encode_frame emits when a pedal_frame carries no
  * remembered version (protocol_version == 0) -- i.e. the newest this unit
  * speaks. Also the wire-protocol revision the identity reply reports (the
@@ -60,7 +71,7 @@
  * pedal_encode_frame is host-test-only today; any future runtime C encode
  * path must pass an explicitly negotiated protocol_version rather than
  * relying on this newest-version fallback. */
-#define PEDAL_PROTOCOL_VERSION PEDAL_PROTOCOL_VERSION_V3
+#define PEDAL_PROTOCOL_VERSION PEDAL_PROTOCOL_VERSION_V4
 #define PEDAL_MSG_TYPE_STATE 0x01
 #define PEDAL_SYSEX_START 0xF0
 #define PEDAL_SYSEX_END 0xF7
@@ -87,15 +98,18 @@ enum {
 
 /* The pedal's interaction mode (pedal_frame.play_mode), matching PedalMode.
  * A 2-bit wire field since protocol v3: low bit in flags bit 0, high bit in
- * bit 1 of the active-bank byte. The fourth wire value (3) is reserved; the
- * decoder rejects it. On a v1/v2 wire only the low bit exists, so those
- * frames can never decode to PEDAL_MODE_FX. This is a DIFFERENT axis from
+ * bit 1 of the active-bank byte. The fourth wire value (3) was reserved
+ * until v4 and is PEDAL_MODE_CUSTOM from v4 on; a v3 frame carrying it is
+ * still rejected, which is exactly why a fourth mode needed a version. On a
+ * v1/v2 wire only the low bit exists, so those frames can never decode to
+ * PEDAL_MODE_FX or PEDAL_MODE_CUSTOM. This is a DIFFERENT axis from
  * PEDAL_LOOPER_MODE_* (the engine's transport mode). */
 enum {
   PEDAL_MODE_REC = 0,
   PEDAL_MODE_PLAY = 1,
   PEDAL_MODE_FX = 2,
-  PEDAL_MODE_COUNT = 3
+  PEDAL_MODE_CUSTOM = 3,
+  PEDAL_MODE_COUNT = 4
 };
 
 /* Global / mode color, matching GlobalColor. */
@@ -173,7 +187,7 @@ extern "C" {
 #endif
 
 /* Decodes a complete SysEx message (F0..F7) into *out. Accepts
- * PEDAL_PROTOCOL_VERSION_V1 through _V3 -- a v1 frame decodes with
+ * PEDAL_PROTOCOL_VERSION_V1 through _V4 -- a v1 frame decodes with
  * looper_mode/counting_in at their defaults (v1 never carried them), and a
  * v1/v2 frame can never decode to PEDAL_MODE_FX (only v3 carries the mode
  * field's high bit). Returns 1 on success, 0 for any malformed /
