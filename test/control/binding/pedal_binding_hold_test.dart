@@ -130,6 +130,34 @@ void main() {
       expect(paired.copyWith(clearHold: true).hasHold, isFalse);
     });
 
+    test('the scope round-trips, and a fixed one writes no key at all', () {
+      // A binding written before scopes existed and one written now encode
+      // identically, so adding the field moved no bytes.
+      final fixed = PedalBinding(
+        key: _key(PedalButton.track1, bank: 0),
+        target: _chain,
+      );
+      expect(fixed.toJson().containsKey('scope'), isFalse);
+
+      final following = fixed.copyWith(scope: BindingScope.selected);
+      expect(following.toJson()['scope'], 'selected');
+      expect(PedalBinding.fromJson(following.toJson()), following);
+    });
+
+    test("a hold's scope is its own, not the press's", () {
+      final split = PedalBinding(
+        key: _key(PedalButton.track1, bank: 0),
+        target: _chain,
+        holdTarget: _slot,
+        holdScope: BindingScope.selected,
+      );
+
+      final back = PedalBinding.fromJson(split.toJson());
+
+      expect(back!.scope, BindingScope.fixed);
+      expect(back.holdScope, BindingScope.selected);
+    });
+
     test('a hold whose target no longer parses decodes to null rather than '
         'falling back to the press', () {
       final binding = PedalBinding(

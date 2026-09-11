@@ -2531,3 +2531,66 @@ instead.
 - Three mutations, each caught by exactly the test that names it: a press that
   never defers, an invalidation that cancels nothing, and a lock that stops at
   the press.
+
+## Slice 4 part 2: the selected-track scope, and target following
+
+The accepted rule (controls 3 and 11): "Resolve fixed targets by identity,
+never visible slot/name. Before a target-following hold fires, follow the newly
+selected track/current bank position; after it fires, release remains attached
+to that completed gesture." And: "Selected, fixed and all-track scopes are
+explicit and resolved once."
+
+### A scope beside the target, not inside it
+
+The same chain target means a different chain under each scope, so the scope
+rides beside it rather than being folded into the address. A binding carries
+one for its press and one for its hold, because the two halves of a switch can
+legitimately want different things: hold the selected track's chain, press a
+fixed one.
+
+Omitted from the encoding when it is `fixed`, so a binding written before
+scopes existed and one written now encode identically — adding the field moved
+no bytes.
+
+### Following fell out of moving resolution to dispatch
+
+There is no following machinery. The scope is read at the instant the action
+FIRES rather than when the switch goes down, and that is both halves of the
+accepted rule at once: a pending hold acts on the newly selected track because
+it reads the cursor when it fires, and it stays attached to what it resolved
+because the momentary restore captures the RESOLVED target. Part 1 already
+deferred the press of a switch carrying a hold to the release, so both halves
+resolve at the moment they act.
+
+### What identity means for a track here
+
+The engine channel. Tracks are never reordered, so a channel is not a visible
+slot that could drift under a binding — it is the track. No second identity was
+invented for something that already had one.
+
+Only the two stages whose index IS a track are repointed: the Loop stage's
+per-lane chains and the Track stage's bus. An input, an output and All tracks
+have no relationship to the selected track, so a scope on one of those is
+honoured as written rather than pointed somewhere arbitrary. A lane survives
+the repoint — a lane binding follows the cursor onto the SAME lane of another
+track, because dropping it would widen the binding to the whole track.
+
+An unrecognised scope decodes to `fixed`, never to `selected`: a stale binding
+must keep acting on the track it names rather than quietly following whatever
+the foot last selected.
+
+### Checks
+
+- Root suite 2110 passing, 35 skipped; analyze and bloc lint clean.
+- Six model tests for the scope resolver and two more for the round trip.
+- Three cubit tests: acting on the selected track rather than the one it names,
+  a fixed scope staying put, and a pending hold following a selection made
+  while the foot was down.
+- Two mutations, each caught by exactly the test that names it: a resolver that
+  never repoints, and a hold resolved at press rather than at dispatch.
+
+### What is NOT here
+
+The all-track scope. The accepted design names it among direct ACTIONS —
+"Clear All is one grouped edit, not eight Clear calls" — which belongs with the
+action catalogue rather than with FX chain targets, and lands with it.

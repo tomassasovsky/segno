@@ -2284,6 +2284,86 @@ void main() {
         );
       });
 
+      group('the selected-track scope', () {
+        /// track1 bound to the Track-stage chain, following the cursor.
+        PedalBinding following({
+          BindingScope scope = BindingScope.selected,
+          String? holdTarget,
+        }) => PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+          // Bound on channel 3, which a selected scope must ignore.
+          target: chain3.canonicalString(),
+          scope: scope,
+          holdTarget: holdTarget,
+          holdScope: scope,
+        );
+
+        setUp(() {
+          // Chains on 0 and 3 so either can be the one that flips.
+          trackChains[0] = [
+            BuiltInEffect(type: TrackEffectType.drive, slotId: 'a0'),
+          ];
+        });
+
+        test(
+          'acts on the track selected when it fires, not the one it names',
+          () async {
+            await cubit.setGlobalBindings(PedalBindingSet([following()]));
+            cubit
+              ..setMode(InteractionMode.fx)
+              ..selectTrack(0);
+            await pumpEventQueue();
+
+            await stomp(PedalButton.track1);
+
+            expect(chainEnabled[0], isFalse, reason: 'the selected track');
+            expect(chain3Enabled(), isTrue, reason: 'not the one it names');
+          },
+        );
+
+        test('a fixed scope stays on the track it names, whatever is '
+            'selected', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([following(scope: BindingScope.fixed)]),
+          );
+          cubit
+            ..setMode(InteractionMode.fx)
+            ..selectTrack(0);
+          await pumpEventQueue();
+
+          await stomp(PedalButton.track1);
+
+          expect(chain3Enabled(), isFalse, reason: 'the track it names');
+          expect(chainEnabled[0], isNull, reason: 'the selected one is left');
+        });
+
+        test('a pending hold FOLLOWS a selection made while the foot is down, '
+            'and stays attached to what it resolved', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([following(holdTarget: chain3.canonicalString())]),
+          );
+          cubit
+            ..setMode(InteractionMode.fx)
+            ..selectTrack(3);
+          await pumpEventQueue();
+
+          transport.emit(0x90, PedalButton.track1.note, 127);
+          await pumpEventQueue();
+          // The selection moves under the foot, before the threshold.
+          cubit.selectTrack(0);
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          transport.emit(0x80, PedalButton.track1.note, 0);
+          await pumpEventQueue();
+
+          expect(
+            chainEnabled[0],
+            isFalse,
+            reason: 'the hold followed the newly selected track',
+          );
+          expect(chain3Enabled(), isTrue, reason: 'the old one is untouched');
+        });
+      });
+
       group('pending gestures are retired', () {
         PedalBinding pair() => PedalBinding(
           key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
