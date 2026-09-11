@@ -2287,6 +2287,8 @@
     "fxReorderEffects": "Reordenar efectos",
     "fxRemoveAnEffect": "Quitar un efecto",
     "fxRemoveRack": "Quitar rack",
+    "fxRemoveRackTitle": "¿Quitar {name}?",
+    "fxRemoveRackBody": "Los sonidos que guardaste desde él quedan en Mis presets.",
     "fxRemoveEffect": "Quitar {name}",
     "fxBypassRack": "Rack",
     "fxAddEffect": "Agregar efecto",

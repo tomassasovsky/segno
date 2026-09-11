@@ -245,14 +245,21 @@ class _FxViewState extends State<FxView> {
         if (index < 0) return;
         edits.setChain(fxRemoveRange(group.chain, index, index + 1));
       case 'remove':
+        // Asked first, because a rack is several pedals with their settings
+        // and a chain has no undo. What it says is the accepted rule: removing
+        // a rack leaves the sounds saved from it alone.
         final confirmed = await showConsoleConfirmDialog(
           context,
-          title: l10n.fxPresetDeleteTitle(rack.name),
-          body: l10n.fxPresetDeleteBody,
+          title: l10n.fxRemoveRackTitle(rack.name),
+          body: l10n.fxRemoveRackBody,
           confirmLabel: l10n.fxRemoveRack,
         );
         if (!confirmed || !context.mounted) return;
         edits.setChain(fxRemoveRange(group.chain, group.start, group.end));
+        showAppSnackToast(
+          id: 'fx-rack-removed',
+          title: AppText(l10n.fxRackRemoved(rack.name)),
+        );
         Navigator.maybePop(context);
     }
   }
