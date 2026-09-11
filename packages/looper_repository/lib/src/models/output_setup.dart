@@ -1,8 +1,11 @@
 import 'package:equatable/equatable.dart';
 
-/// The output destination whose chain the app calls the Master insert
-/// (`FxStage.master`): the first pair. Slice 3f rebuilds the FX surfaces
-/// around one chain per destination, and this pin goes with it.
+/// The first output destination — the one the retiring Signal surfaces still
+/// pin their single output chain to.
+///
+/// Every output chain is addressable per destination from slice 3f
+/// (`FxStage.output`); this constant names the destination those old surfaces
+/// address, and goes with them.
 const int kMasterOutputBus = 0;
 
 /// The hardware-output mask destination [bus] drives on a device with

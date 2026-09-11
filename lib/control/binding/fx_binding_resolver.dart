@@ -59,8 +59,15 @@ extension FxBindingResolver on LooperRepository {
         trackEffects(channel),
       );
     }
-    // The Master insert always exists, so it is always offerable.
-    add(const FxAddress(stage: FxStage.master), masterEffects);
+    // The All tracks chain always exists, so it is always offerable.
+    add(const FxAddress(stage: FxStage.allTracks), allTracksEffects);
+    // Every destination the OPEN DEVICE has, not only the ones already
+    // carrying a chain: a destination exists because the interface has the
+    // jacks, and a picker that hid the empty ones would have nowhere to point
+    // a binding at the chain the player is about to build there.
+    for (var bus = 0; bus < state.outputBusCount; bus++) {
+      add(FxAddress(stage: FxStage.output, index: bus), outputEffects(bus));
+    }
     return targets;
   }
 
@@ -111,7 +118,8 @@ extension FxBindingResolver on LooperRepository {
       // address, so this branch is unreachable without one.
       FxStage.loop => laneChainEnabled(address.index, address.lane!),
       FxStage.track => trackChainEnabled(address.index),
-      FxStage.master => masterChainEnvelope().chainEnabled,
+      FxStage.allTracks => allTracksChainEnabled,
+      FxStage.output => outputChainEnabled(address.index),
     };
   }
 
@@ -127,8 +135,10 @@ extension FxBindingResolver on LooperRepository {
         );
       case FxStage.track:
         setTrackChainEnabled(channel: address.index, enabled: enabled);
-      case FxStage.master:
-        setMasterChainEnabled(enabled: enabled);
+      case FxStage.allTracks:
+        setAllTracksChainEnabled(enabled: enabled);
+      case FxStage.output:
+        setOutputChainEnabled(bus: address.index, enabled: enabled);
     }
     return true;
   }
@@ -160,8 +170,14 @@ extension FxBindingResolver on LooperRepository {
           index: index,
           enabled: enabled,
         );
-      case FxStage.master:
-        setMasterEffectEnabled(index: index, enabled: enabled);
+      case FxStage.allTracks:
+        setAllTracksEffectEnabled(index: index, enabled: enabled);
+      case FxStage.output:
+        setOutputEffectEnabled(
+          bus: address.index,
+          index: index,
+          enabled: enabled,
+        );
     }
     return true;
   }

@@ -53,8 +53,15 @@ export 'src/models/fx_chain_envelope.dart'
         concatenateInheritedChains,
         decodeFxChain,
         encodeFxChain;
+// The accepted chain is a run of RACKS; the engine's is a flat run of entries.
+// This is the one place that turns the second into the first, plus the pure
+// transforms every rack surface (rename, reorder, remove, channels, Pre/Post)
+// applies before handing the chain back to a repository setter.
+export 'src/models/fx_chain_group.dart';
+export 'src/models/fx_module_build.dart';
 export 'src/models/fx_slot_ids.dart'
     show SlotIds, withFreshSlotIds, withMintedSlotIds;
+export 'src/models/fx_user_preset.dart';
 export 'src/models/input_monitor.dart';
 export 'src/models/input_setup.dart';
 export 'src/models/lane.dart';
@@ -77,6 +84,7 @@ export 'src/models/track_effect.dart'
         FxChannelOutput,
         FxChannels,
         FxPlacement,
+        FxRack,
         ParamReadout,
         PluginEffect,
         PluginRef,

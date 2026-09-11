@@ -508,7 +508,8 @@ void main() {
           ),
         ),
       );
-      await settings.saveMasterFxChain(
+      await settings.saveOutputFxChain(
+        0,
         encodeFxChain(
           FxChainEnvelope(
             entries: [BuiltInEffect(type: TrackEffectType.reverb)],
@@ -544,9 +545,9 @@ void main() {
       expect(engine.trackFxCount[0], 1);
       expect(engine.trackFxChainEnabled[0], isFalse);
       // Master insert chain (enabled envelope pushes no disable).
-      expect(engine.masterFx[0]?.code, TrackEffectType.reverb.code);
-      expect(engine.masterFxCount, 1);
-      expect(engine.masterFxChainEnabled, isNull);
+      expect(engine.outputFx[(0, 0)]?.code, TrackEffectType.reverb.code);
+      expect(engine.outputFxCount[0], 1);
+      expect(engine.outputFxChainEnabled[0], isNull);
     });
 
     test('restores a saved multi-lane setup on launch', () async {
@@ -962,7 +963,7 @@ void main() {
           ]),
         )
         ..add(
-          LooperMasterEffectsChanged([
+          LooperOutputEffectsChanged(0, [
             BuiltInEffect(type: TrackEffectType.drive),
           ]),
         );
@@ -1040,9 +1041,11 @@ void main() {
               entries: [BuiltInEffect(type: TrackEffectType.reverb)],
             ),
           },
-          masterChain: FxChainEnvelope(
-            entries: [BuiltInEffect(type: TrackEffectType.delay)],
-          ),
+          outputChains: {
+            0: FxChainEnvelope(
+              entries: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+          },
           monitors: [
             SessionRigMonitor(
               input: 0,
@@ -1069,9 +1072,9 @@ void main() {
       // even though it was written correctly.
       expect(await settings.loadLaneCount(0), 2);
       expect(rebooted.laneFx[(0, 1, 0)]?.code, TrackEffectType.echo.code);
-      // Track + Master: the loaded chains, not the pre-load drive.
+      // Track + output: the loaded chains, not the pre-load drive.
       expect(rebooted.trackFx[(0, 0)]?.code, TrackEffectType.reverb.code);
-      expect(rebooted.masterFx[0]?.code, TrackEffectType.delay.code);
+      expect(rebooted.outputFx[(0, 0)]?.code, TrackEffectType.delay.code);
       // Input is the stage that was already correct — the regression canary
       // for folding its listener into the shared one. Monitors are restored by
       // MonitorCubit.load(), so assert the key it reads.
@@ -1102,9 +1105,52 @@ void main() {
       expect(rebooted.laneFx.containsKey((0, 0, 0)), isFalse);
       expect(rebooted.trackFx.containsKey((0, 0)), isFalse);
       expect(
-        decodeFxChain(await settings.loadMasterFxChain()).entries,
+        decodeFxChain(await settings.loadOutputFxChain(0)).entries,
         isEmpty,
       );
+    });
+
+    test('each output destination persists and restores under its own key, '
+        'so the second pair keeps its own FX across a cold boot', () async {
+      repository
+        ..setOutputEffects(
+          bus: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setOutputEffects(
+          bus: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setOutputChainEnabled(bus: 1, enabled: false);
+      await resync();
+
+      final rebooted = await coldBoot();
+
+      expect(rebooted.outputFx[(0, 0)]?.code, TrackEffectType.reverb.code);
+      expect(rebooted.outputFx[(1, 0)]?.code, TrackEffectType.drive.code);
+      // The flag rides its own destination's envelope, not the first one's.
+      expect(rebooted.outputFxChainEnabled[0], isNot(false));
+      expect(rebooted.outputFxChainEnabled[1], isFalse);
+    });
+
+    test('a load that drops the second destination clears ITS key, so the '
+        'next boot does not resurrect the previous rig on that pair', () async {
+      repository.setOutputEffects(
+        bus: 1,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      await resync();
+      expect(await settings.loadOutputFxChain(1), isNotNull);
+
+      await repository.applySession(
+        const SessionRig(),
+        clearPollInterval: Duration.zero,
+      );
+      await resync();
+
+      expect(await settings.loadOutputFxChain(1), isNull);
+      final rebooted = await coldBoot();
+      expect(rebooted.outputFx.containsKey((1, 0)), isFalse);
     });
   });
 }

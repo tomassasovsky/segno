@@ -332,8 +332,7 @@ class PerformanceRepository {
       // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the
       // whole four-stage rig, bypass state included.
       trackChains: chains.trackChains,
-      masterEffects: chains.masterEffects,
-      masterChainEnabled: chains.masterChainEnabled,
+      outputChains: chains.outputChains,
     );
     await File(
       '$dir/$_armSnapshotFileName',

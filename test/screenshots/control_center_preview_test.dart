@@ -113,7 +113,7 @@ const _previewStatus = EngineStatus(
 
 /// A rig with a Master insert carrying two effects — enough for the assign
 /// list to have chains, slots and a bound target to draw.
-const _master = FxAddress(stage: FxStage.master);
+const _master = FxAddress(stage: FxStage.output);
 
 final _masterChain = <TrackEffect>[
   BuiltInEffect(type: TrackEffectType.drive, slotId: 'slot-drive'),
@@ -408,6 +408,7 @@ void main() {
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
+        outputBusCount: 1,
         status: _previewStatus,
       ),
     );
@@ -421,9 +422,11 @@ void main() {
     when(looper.allLaneChains).thenReturn(const {});
     when(looper.allTrackChains).thenReturn(const {});
     when(() => looper.trackEffects(any())).thenReturn(const []);
-    when(() => looper.masterEffects).thenAnswer((_) => _masterChain);
-    when(() => looper.chainEntriesAt(_master)).thenAnswer((_) => _masterChain);
-    when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+    when(() => looper.outputEffects(0)).thenAnswer((_) => _masterChain);
+    when(() => looper.allTracksEffects).thenReturn(const []);
+    when(() => looper.outputChainEnabled(any())).thenReturn(true);
+    when(() => looper.allTracksChainEnabled).thenReturn(true);
+    when(looper.allOutputChains).thenReturn(const {});
     // What `AUDIO / settings-device` draws: an interface the host reports in
     // both directions with its real channel counts, and the built-in pair.
     when(looper.devices).thenReturn(_previewDevices);
@@ -1045,134 +1048,6 @@ void main() {
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/control_center_track_rename.png'),
-    );
-  }, skip: !hasFonts);
-
-  /// The rig the Signal previews draw, and it is the mockups' own: three
-  /// tracks with one take each, four sockets and four outputs.
-  ///
-  /// The fourth output is OFF, so the `OUTPUTS` group shows both switch states
-  /// rather than a column of identical ones.
-  final signalRig = LooperState(
-    tracks: [
-      Track(
-        lanes: const [Lane(inputChannel: 0)],
-        // With slot ids, as anything read back from the repository has: the
-        // panel names the entry its editor is open on by identity, so a chain
-        // without them draws chips that cannot be opened at all.
-        effects: [
-          BuiltInEffect(type: TrackEffectType.drive, slotId: 'shot-drive'),
-          BuiltInEffect(type: TrackEffectType.tremolo, slotId: 'shot-tremolo'),
-        ],
-      ),
-      const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
-      const Track(channel: 2, lanes: [Lane(inputChannel: 0)]),
-    ],
-    outputEnabledMask: 0x7,
-    status: const EngineStatus(
-      sampleRate: 48000,
-      inputChannels: 4,
-      outputChannels: 4,
-    ),
-  );
-
-  Future<void> pumpSignal(WidgetTester tester, FxStage stage) async {
-    await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
-      ..open()
-      ..showDestination(SettingsTrayDestination.signal)
-      ..showSignalTab(stage);
-    addTearDown(cubit.close);
-
-    final providers = controlProviders(tester, looperState: signalRig);
-    for (final (channel, name) in ['drums', 'bass', 'rhythm'].indexed) {
-      await providers.tracks.rename(channel, name);
-    }
-    for (final (input, name) in ['guitar', 'mic', 'aux'].indexed) {
-      await providers.inputs.rename(input, name);
-    }
-    // One socket per mode, so the input face draws all three states of the
-    // tri-state PR 1 landed rather than three copies of the default.
-    await providers.monitor.setMode(0, MonitorMode.on);
-    await providers.monitor.setMode(1, MonitorMode.auto);
-    await providers.monitor.setMode(2, MonitorMode.off);
-    await pumpTray(tester, cubit: cubit, control: providers);
-    await tester.pumpAndSettle();
-  }
-
-  testWidgets('signal domain, input tab', (tester) async {
-    await pumpSignal(tester, FxStage.input);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_signal_input.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('signal domain, loop tab', (tester) async {
-    await pumpSignal(tester, FxStage.loop);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_signal_loop.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('signal domain, track tab', (tester) async {
-    await pumpSignal(tester, FxStage.track);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_signal_track.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('signal domain, master tab with its outputs', (tester) async {
-    await pumpSignal(tester, FxStage.master);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_signal_master.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('signal domain, a card open on its panel', (tester) async {
-    await pumpSignal(tester, FxStage.input);
-    await tester.tap(find.byKey(const Key('signal_card_input_0')));
-    await tester.pumpAndSettle();
-
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_signal_detail.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('signal domain, a chain entry open in the editor', (
-    tester,
-  ) async {
-    await pumpSignal(tester, FxStage.track);
-    await tester.tap(find.byKey(const Key('signal_card_track_0')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
-    await tester.pumpAndSettle();
-
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_signal_fx_edit.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('signal domain, a stopped engine has no chains', (tester) async {
-    await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
-      ..open()
-      ..showDestination(SettingsTrayDestination.signal)
-      ..showSignalTab(FxStage.loop);
-    addTearDown(cubit.close);
-    await pumpTray(tester, cubit: cubit, control: controlProviders(tester));
-    await tester.pumpAndSettle();
-
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_signal_empty.png'),
     );
   }, skip: !hasFonts);
 

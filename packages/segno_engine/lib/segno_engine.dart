@@ -69,6 +69,7 @@ export 'src/track_effect.dart'
         FxChannelOutput,
         FxChannels,
         FxPlacement,
+        FxRack,
         ParamReadout,
         PluginEffect,
         PluginRef,

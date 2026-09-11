@@ -501,17 +501,6 @@ class SettingsRepository {
   Future<void> saveBrightness(double value) =>
       _store.setDouble(_brightnessKey, value.clamp(0.0, 1.0));
 
-  static const String _showTrackIndicatorsKey = 'tracks.indicators';
-
-  /// Whether per-track status indicators show on the Tracks-view tiles.
-  /// Defaults to `true` when unset.
-  Future<bool> loadShowTrackIndicators({bool defaultValue = true}) async =>
-      await _store.getBool(_showTrackIndicatorsKey) ?? defaultValue;
-
-  /// Saves whether per-track status indicators show on the Tracks-view tiles.
-  Future<void> saveShowTrackIndicators({required bool value}) =>
-      _store.setBool(_showTrackIndicatorsKey, value: value);
-
   static const String _defaultInteractionModeKey = 'looper.default_mode';
 
   /// Loads the persisted default interaction mode (an opaque token, e.g.
@@ -1604,7 +1593,7 @@ class SettingsRepository {
       _store.remove(_laneEffectsKey(channel, lane));
 
   String _trackFxChainKey(int channel) => 'track_fx_chain.$channel';
-  static const String _masterFxChainKey = 'master_fx_chain';
+  String _outputFxChainKey(int bus) => 'output_fx_chain.$bus';
 
   /// Loads track [channel]'s persisted Track-stage (stereo bus) chain as an
   /// opaque encoded envelope string (see `encodeFxChain`), or `null` if none
@@ -1621,19 +1610,23 @@ class SettingsRepository {
   /// twin of [clearLaneEffects], for a session load that drops a chain the
   /// live rig carried.
   ///
-  /// There is no Master equivalent: the Master envelope always has a value
-  /// (the empty enabled chain when none is configured), so a load overwrites
-  /// it rather than needing it cleared.
   Future<void> clearTrackFxChain(int channel) =>
       _store.remove(_trackFxChainKey(channel));
 
-  /// Loads the persisted Master insert chain as an opaque encoded envelope
-  /// string (see `encodeFxChain`), or `null` if none is saved.
-  Future<String?> loadMasterFxChain() => _store.getString(_masterFxChainKey);
+  /// Loads output destination [bus]'s persisted post-sum chain as an opaque
+  /// encoded envelope string (see `encodeFxChain`), or `null` if none is
+  /// saved.
+  Future<String?> loadOutputFxChain(int bus) =>
+      _store.getString(_outputFxChainKey(bus));
 
-  /// Saves the [encoded] Master insert chain envelope.
-  Future<void> saveMasterFxChain(String encoded) =>
-      _store.setString(_masterFxChainKey, encoded);
+  /// Saves output destination [bus]'s [encoded] chain envelope.
+  Future<void> saveOutputFxChain(int bus, String encoded) =>
+      _store.setString(_outputFxChainKey(bus), encoded);
+
+  /// Clears output destination [bus]'s persisted chain envelope — the output
+  /// twin of [clearTrackFxChain].
+  Future<void> clearOutputFxChain(int bus) =>
+      _store.remove(_outputFxChainKey(bus));
 
   static const String _allTracksFxChainKey = 'all_tracks_fx_chain';
 
@@ -1645,6 +1638,20 @@ class SettingsRepository {
   /// Saves the [encoded] All tracks chain envelope.
   Future<void> saveAllTracksFxChain(String encoded) =>
       _store.setString(_allTracksFxChainKey, encoded);
+
+  static const String _fxUserPresetsKey = 'fx_user_presets';
+
+  /// Loads the player's saved effect presets as one opaque encoded string, or
+  /// `null` when none has been saved.
+  ///
+  /// One key rather than one per preset. The list is read whole every time it
+  /// is shown and rewritten whole on every change, so a key per preset would
+  /// buy nothing and would need its own index to enumerate.
+  Future<String?> loadFxUserPresets() => _store.getString(_fxUserPresetsKey);
+
+  /// Saves the player's [encoded] effect presets.
+  Future<void> saveFxUserPresets(String encoded) =>
+      _store.setString(_fxUserPresetsKey, encoded);
 
   static const String _updateAutoCheckKey = 'updates.auto_check';
   static const String _updateChannelKey = 'updates.channel';

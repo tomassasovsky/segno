@@ -121,10 +121,12 @@ void main() {
     when(() => repository.allMonitors()).thenAnswer((_) => const {});
     when(() => repository.allLaneChains()).thenAnswer((_) => const {});
     when(() => repository.allTrackChains()).thenAnswer((_) => const {});
-    when(() => repository.masterEffects).thenAnswer((_) => const []);
+    when(() => repository.outputEffects(0)).thenAnswer((_) => const []);
+    when(() => repository.allTracksEffects).thenReturn(const []);
     when(
-      () => repository.masterChainEnvelope(),
+      () => repository.outputChainEnvelope(0),
     ).thenReturn(const FxChainEnvelope());
+    when(() => repository.outputChainEnabled(any())).thenReturn(true);
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
     quantize = RecordTimingCubit(repository: repository, settings: settings);
     monitor = MonitorCubit(repository: repository, settings: settings);
@@ -251,23 +253,6 @@ void main() {
 
     expect(highContrast.state, isTrue);
     expect(await settings.loadHighContrast(), isTrue);
-  });
-
-  testWidgets('track-indicators toggle renders, reflects state, and flips it', (
-    tester,
-  ) async {
-    await pump(tester);
-
-    final toggle = find.byKey(const Key('settings_trackIndicators_switch'));
-    expect(toggle, findsOneWidget);
-    // Default off on the console (the pedals carry readiness).
-    expect(tracks.state.showIndicators, isFalse);
-
-    await tester.tap(toggle);
-    await tester.pumpAndSettle();
-
-    expect(tracks.state.showIndicators, isTrue);
-    expect(await settings.loadShowTrackIndicators(), isTrue);
   });
 
   testWidgets('renaming a track updates the list and persists it', (

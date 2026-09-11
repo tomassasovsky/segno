@@ -679,6 +679,12 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
  * re-enters through the clean re-enable path. Enabled slots are deliberately
  * left alone: their state persisting across a gap is the pre-existing
  * behavior for engaged effects. */
+int le_fx_enable_settled_bypassed(const le_fx_state* fx, int slot) {
+  return fx->enable_mix[slot] == 0.0f && fx->enable_target[slot] == 0 &&
+         fx->enable_warmup[slot] == 0 && fx->enable_drain[slot] == 0 &&
+         fx->enable_quiet[slot] == 0;
+}
+
 void le_fx_enable_force_bypass(le_fx_state* fx, int slot) {
   fx->enable_mix[slot] = 0.0f;
   fx->enable_target[slot] = 0;

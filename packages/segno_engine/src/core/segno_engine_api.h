@@ -516,10 +516,23 @@ typedef enum le_command_code {
  * carries an ordered chain of up to LE_FX_MAX entries, each with a type and
  * LE_FX_PARAMS normalized (0..1) parameters. The chain is non-destructive (the
  * recording is ALWAYS dry; effects color playback only) and every active entry
- * applies in chain order — there is no pre/post stage. The cap exists only so
- * the audio thread reads a fixed-size, allocation-free array — it is far beyond
- * musical need, not a CPU limit. */
-#define LE_FX_MAX 8
+ * applies in chain order. The cap exists only so the audio thread reads a
+ * fixed-size, allocation-free array — it is not a CPU limit: the audio path
+ * iterates the ACTIVE count, and the per-slot DSP heap (delay rings, the
+ * octaver's vocoder buffers) is allocated lazily on first use, so an unused
+ * slot costs nothing but its place in the struct.
+ *
+ * Raised from 8 to 64 in slice 3f. The accepted FX design builds a chain out
+ * of RACKS — named groups of pedals — and one factory rack is about six, so
+ * eight slots held roughly one rack where the design shows ten. Sixty-four
+ * holds ten full racks.
+ *
+ * What that cost, measured: the per-buffer snapshot arrays moved off the
+ * audio thread's stack into [le_fx_snapshot] inside the engine, which took
+ * the callback's frame from 32 KB to 7.2 KB and left it there (7200 bytes at
+ * this ceiling, 7184 at the old one). The engine struct grew from 1.27 MB to
+ * 4.92 MB, which is one allocation made once at engine construction. */
+#define LE_FX_MAX 64
 #define LE_FX_PARAMS 4
 
 /* Built-in effect types. Designed so a hosted VST3/CLAP plugin can later slot

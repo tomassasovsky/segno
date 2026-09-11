@@ -8,11 +8,15 @@ import 'package:segno_engine/src/plugin_descriptor.dart';
 /// every other code is a [BuiltInEffect].
 const int kPluginFxCode = 8;
 
-/// The maximum number of effects a single track's chain can hold. The cap
-/// exists only so the audio thread reads a fixed-size, allocation-free array —
-/// it is far beyond musical need, not a CPU limit. Mirrors the native
-/// `LE_FX_MAX`.
-const int kTrackEffectMax = 8;
+/// The maximum number of effects one chain can hold. The cap exists only so
+/// the audio thread reads a fixed-size, allocation-free array — it is not a
+/// CPU limit: the audio path iterates the ACTIVE count, and an unused slot
+/// allocates no DSP state.
+///
+/// Sixty-four because the accepted FX design builds a chain out of RACKS, and
+/// one factory rack is about six pedals. Mirrors the native `LE_FX_MAX`,
+/// whose own note records what raising it cost.
+const int kTrackEffectMax = 64;
 
 /// The number of normalized (`0..1`) parameters each effect exposes. Mirrors
 /// the native `LE_FX_PARAMS`.
@@ -138,6 +142,77 @@ final class FxChannels {
 
   @override
   int get hashCode => Object.hash(input, output, placement, level);
+}
+
+/// The rack a chain entry belongs to.
+///
+/// The accepted design's chain is built out of RACKS — named groups of pedals
+/// that the player adds, renames, reorders and removes as one thing. This
+/// engine's chain is a flat run of entries, so the grouping rides the entries:
+/// every module of one rack carries the same [id], and a run of entries
+/// sharing an [id] IS that rack.
+///
+/// Denormalised on purpose. The chain crosses four persistence boundaries (a
+/// session file, a performance arm snapshot, the settings store and the
+/// repository's own maps) as one encoded list, and a field on the entry rides
+/// all of them for free. A rename rewrites every module of the rack; that is
+/// cheaper than a second structure that could fall out of step with the chain
+/// it describes.
+///
+/// A `null` rack means a standalone single effect, which the accepted design
+/// offers beside the racks and which is edited in its own direct editor.
+@immutable
+final class FxRack {
+  /// Creates an [FxRack].
+  const FxRack({required this.id, required this.name, this.art});
+
+  /// Rebuilds an [FxRack] from [toJson] output, or `null` when the map does
+  /// not carry the two fields that make a rack addressable.
+  static FxRack? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final id = json['id'];
+    final name = json['name'];
+    if (id is! String || id.isEmpty || name is! String) return null;
+    final art = json['art'];
+    return FxRack(id: id, name: name, art: art is String ? art : null);
+  }
+
+  /// The rack's identity, shared by every module in it and unique within its
+  /// chain. Minted when the rack is added and never rewritten, so a rename or
+  /// a reorder leaves every binding that names this rack still pointing at it.
+  final String id;
+
+  /// The rack's name, which the player can change. Starts as the preset's own
+  /// name; renaming it never touches the saved preset it came from.
+  final String name;
+
+  /// The catalogue artwork slug the card draws, or `null` when there is none.
+  ///
+  /// A plain string rather than a catalogue type: this package knows nothing
+  /// about the asset catalogue, and a slug whose artwork has since gone simply
+  /// draws nothing.
+  final String? art;
+
+  /// Returns a copy with the given fields replaced.
+  FxRack copyWith({String? id, String? name, String? art}) =>
+      FxRack(id: id ?? this.id, name: name ?? this.name, art: art ?? this.art);
+
+  /// A JSON-friendly map for persistence.
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    if (art != null) 'art': art,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is FxRack &&
+      other.id == id &&
+      other.name == name &&
+      other.art == art;
+
+  @override
+  int get hashCode => Object.hash(id, name, art);
 }
 
 /// Where one chain entry sits relative to the loop player.
@@ -422,6 +497,20 @@ sealed class TrackEffect {
   /// This entry's channel handling and level.
   FxChannels get channels;
 
+  /// The rack this entry belongs to, or `null` when it is a standalone single
+  /// effect. Every module of one rack carries the same [FxRack.id].
+  FxRack? get rack;
+
+  /// What the factory catalogue calls this entry, or `null` when it did not
+  /// come from the catalogue.
+  ///
+  /// One string rather than a name and an artwork path, because the catalogue
+  /// maps a module name to both. It is kept because the engine effect an entry
+  /// became is not what the player chose: a pedal this build cannot process at
+  /// all becomes a passthrough entry, and without its own name it would be
+  /// indistinguishable from every other one.
+  String? get module;
+
   /// A JSON-friendly map for persistence (codes, not enum names).
   Map<String, dynamic> toJson();
 }
@@ -438,6 +527,8 @@ final class BuiltInEffect extends TrackEffect {
     this.slotId,
     this.placement = FxPlacement.post,
     this.channels = FxChannels.defaults,
+    this.rack,
+    this.module,
   }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
 
   /// Rebuilds a [BuiltInEffect] from [toJson] output; unknown codes fall back
@@ -465,6 +556,9 @@ final class BuiltInEffect extends TrackEffect {
     final channels = rawChannels is Map<String, dynamic>
         ? FxChannels.fromJson(rawChannels)
         : FxChannels.defaults;
+    final rack = FxRack.fromJson(json['rack']);
+    final rawModule = json['module'];
+    final module = rawModule is String ? rawModule : null;
     final rawParams = json['params'];
     if (rawParams is! List) {
       return BuiltInEffect(
@@ -473,6 +567,8 @@ final class BuiltInEffect extends TrackEffect {
         slotId: slotId,
         placement: placement,
         channels: channels,
+        rack: rack,
+        module: module,
       );
     }
     final decoded = [for (final v in rawParams) (v as num).toDouble()];
@@ -487,6 +583,8 @@ final class BuiltInEffect extends TrackEffect {
       slotId: slotId,
       placement: placement,
       channels: channels,
+      rack: rack,
+      module: module,
     );
   }
 
@@ -514,6 +612,12 @@ final class BuiltInEffect extends TrackEffect {
   final FxChannels channels;
 
   @override
+  final FxRack? rack;
+
+  @override
+  final String? module;
+
+  @override
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
@@ -524,6 +628,8 @@ final class BuiltInEffect extends TrackEffect {
     String? slotId,
     FxPlacement? placement,
     FxChannels? channels,
+    FxRack? rack,
+    String? module,
   }) => BuiltInEffect(
     type: type ?? this.type,
     params: params ?? this.params,
@@ -531,6 +637,8 @@ final class BuiltInEffect extends TrackEffect {
     slotId: slotId ?? this.slotId,
     placement: placement ?? this.placement,
     channels: channels ?? this.channels,
+    rack: rack ?? this.rack,
+    module: module ?? this.module,
   );
 
   @override
@@ -542,6 +650,8 @@ final class BuiltInEffect extends TrackEffect {
     if (slotId != null) 'slotId': slotId,
     if (placement != FxPlacement.post) 'placement': placement.wireName,
     if (!channels.isDefault) 'channels': channels.toJson(),
+    if (rack != null) 'rack': rack!.toJson(),
+    if (module != null) 'module': module,
   };
 
   @override
@@ -552,6 +662,8 @@ final class BuiltInEffect extends TrackEffect {
       other.slotId == slotId &&
       other.placement == placement &&
       other.channels == channels &&
+      other.rack == rack &&
+      other.module == module &&
       _listEquals(other.params, params);
 
   @override
@@ -561,6 +673,8 @@ final class BuiltInEffect extends TrackEffect {
     slotId,
     placement,
     channels,
+    rack,
+    module,
     Object.hashAll(params),
   );
 
@@ -594,6 +708,8 @@ final class PluginEffect extends TrackEffect {
     this.slotId,
     this.placement = FxPlacement.post,
     this.channels = FxChannels.defaults,
+    this.rack,
+    this.module,
   });
 
   /// Rebuilds a [PluginEffect] from a persisted `{type, plugin, paramValues,
@@ -624,6 +740,8 @@ final class PluginEffect extends TrackEffect {
       channels: json['channels'] is Map<String, dynamic>
           ? FxChannels.fromJson(json['channels'] as Map<String, dynamic>)
           : FxChannels.defaults,
+      rack: FxRack.fromJson(json['rack']),
+      module: json['module'] is String ? json['module'] as String : null,
     );
   }
 
@@ -665,6 +783,12 @@ final class PluginEffect extends TrackEffect {
   final FxChannels channels;
 
   @override
+  final FxRack? rack;
+
+  @override
+  final String? module;
+
+  @override
   int get typeCode => kPluginFxCode;
 
   /// Returns a copy with the given fields replaced.
@@ -678,6 +802,8 @@ final class PluginEffect extends TrackEffect {
     String? slotId,
     FxPlacement? placement,
     FxChannels? channels,
+    FxRack? rack,
+    String? module,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -688,6 +814,8 @@ final class PluginEffect extends TrackEffect {
     slotId: slotId ?? this.slotId,
     placement: placement ?? this.placement,
     channels: channels ?? this.channels,
+    rack: rack ?? this.rack,
+    module: module ?? this.module,
   );
 
   @override
@@ -705,6 +833,8 @@ final class PluginEffect extends TrackEffect {
     if (slotId != null) 'slotId': slotId,
     if (placement != FxPlacement.post) 'placement': placement.wireName,
     if (!channels.isDefault) 'channels': channels.toJson(),
+    if (rack != null) 'rack': rack!.toJson(),
+    if (module != null) 'module': module,
   };
 
   @override
@@ -717,6 +847,8 @@ final class PluginEffect extends TrackEffect {
       other.slotId == slotId &&
       other.placement == placement &&
       other.channels == channels &&
+      other.rack == rack &&
+      other.module == module &&
       _mapEquals(other.paramValues, paramValues);
 
   @override
@@ -728,6 +860,8 @@ final class PluginEffect extends TrackEffect {
     slotId,
     placement,
     channels,
+    rack,
+    module,
     Object.hashAllUnordered([
       for (final e in paramValues.entries) Object.hash(e.key, e.value),
     ]),

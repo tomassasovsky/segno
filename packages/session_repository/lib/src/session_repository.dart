@@ -20,9 +20,9 @@ typedef SessionBundle = ({
 });
 
 /// The effect-chain data a [SessionRepository.save] persists that the engine
-/// snapshot alone cannot supply: all four FX stages' chains (schema v5) —
-/// Input ([monitors]), Loop ([laneChains]), Track ([trackChains]) and Master
-/// ([masterChain]).
+/// snapshot alone cannot supply: every FX stage's chains — Input
+/// ([monitors]), Loop ([laneChains]), Track ([trackChains]), All tracks
+/// ([allTracksChain]) and the output destinations ([outputChains]).
 ///
 /// The bloc layer gathers these from the looper repository (the live rig is
 /// the truth being saved) and hands them to [SessionRepository.save]. Kept as
@@ -35,7 +35,7 @@ class SessionChains {
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
-    this.masterChain = '',
+    this.outputChains = const [],
     this.allTracksChain = '',
   });
 
@@ -48,9 +48,9 @@ class SessionChains {
   /// The Track-stage (per-track stereo bus) effect chains to persist.
   final List<SessionTrackChain> trackChains;
 
-  /// The Master insert chain to persist as an opaque envelope string; `''`
-  /// when the rig has none.
-  final String masterChain;
+  /// Each output destination's post-sum chain to persist, one entry per
+  /// destination the rig configured.
+  final List<SessionOutputChain> outputChains;
 
   /// The All tracks recorded-mix chain to persist as an opaque envelope
   /// string; `''` when the rig has none.
@@ -591,7 +591,7 @@ class SessionRepository {
       // live rig's — handed in already encoded, since a chain's insides are
       // the looper domain's business, not this package's.
       trackChains: chains.trackChains,
-      masterChain: chains.masterChain,
+      outputChains: chains.outputChains,
       allTracksChain: chains.allTracksChain,
       // Tempo/signature/quantize/click/count-in are session-level settings,
       // not derived-from-track-content state, so — unlike baseLengthFrames

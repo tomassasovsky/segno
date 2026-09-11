@@ -329,6 +329,7 @@ class LoopOutlinedButton extends StatelessWidget {
     required this.onTap,
     this.label,
     this.icon,
+    this.leadingIcon,
     this.trailingIcon,
     this.semanticLabel,
     this.semanticValue,
@@ -350,6 +351,11 @@ class LoopOutlinedButton extends StatelessWidget {
 
   /// The button glyph, when it shows one instead of a label.
   final IconData? icon;
+
+  /// A glyph BEFORE the label, for a button that is named and marked at
+  /// once (the Effects page's Add effects). Unlike [icon], which replaces the
+  /// label outright.
+  final IconData? leadingIcon;
 
   /// A glyph after the label.
   final IconData? trailingIcon;
@@ -391,41 +397,52 @@ class LoopOutlinedButton extends StatelessWidget {
         ? surface.onAccent
         : surface.textPrimary;
     final text = TextStyle(color: foreground, fontSize: fontSize, height: 1);
+    // A button with nothing to do READS as having nothing to do. A control
+    // that looks live and is inert is the working-but-silent control the
+    // accepted design says to explain rather than present.
     return Semantics(
       button: true,
+      enabled: onTap != null,
       label: semanticLabel ?? label,
       value: semanticValue,
-      child: Material(
-        color: fill,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radius),
-          side: BorderSide(color: border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: Center(
-              child: icon != null
-                  ? Icon(icon, size: 28, color: foreground)
-                  : Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AppText(label ?? '', style: text),
-                            if (trailingIcon != null) ...[
-                              const SizedBox(width: 12),
-                              Icon(trailingIcon, size: 28, color: foreground),
+      child: Opacity(
+        opacity: onTap == null ? surface.disabledOpacity : 1,
+        child: Material(
+          color: fill,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radius),
+            side: BorderSide(color: border),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Center(
+                child: icon != null
+                    ? Icon(icon, size: 28, color: foreground)
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (leadingIcon != null) ...[
+                                Icon(leadingIcon, size: 28, color: foreground),
+                                const SizedBox(width: 12),
+                              ],
+                              AppText(label ?? '', style: text),
+                              if (trailingIcon != null) ...[
+                                const SizedBox(width: 12),
+                                Icon(trailingIcon, size: 28, color: foreground),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
-                    ),
+              ),
             ),
           ),
         ),

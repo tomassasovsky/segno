@@ -15,7 +15,6 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
-import 'package:segno/looper/view/cache_telemetry_scope.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
@@ -182,204 +181,197 @@ class _TracksViewState extends State<TracksView> {
             unawaited(cubit.load());
             return cubit;
           },
-          // The scope wraps the whole stack (tray included): it listens to
-          // the SettingsTrayCubit created just above, and its dispose bounds
-          // the wet-cache telemetry to this screen's lifetime (#418).
-          child: CacheTelemetryScope(
-            child: Stack(
-              children: [
-                // Its own commands, built from a context UNDER the tray cubit
-                // just created: the outer `commands` predates the provider, and
-                // `G` reads the cubit to open the tray at Signal.
-                Builder(
-                  builder: (context) => Focus(
-                    autofocus: true,
-                    onKeyEvent: TracksCommands(context).handleKey,
-                    child: GestureDetector(
-                      key: const Key('tracks_settings_secondaryTap'),
-                      behavior: HitTestBehavior.translucent,
-                      onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
-                      child: Scaffold(
-                        // #692: FX is a performance MODE, so the whole stage
-                        // takes the FX surface — the mode reads from the
-                        // gutters and chrome around the tiles, not from one
-                        // pill. Other modes keep the default stage black.
-                        backgroundColor: mode == InteractionMode.fx
-                            ? context.surface.fxSurface
-                            : null,
-                        body: SafeArea(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const StageTopBar(),
-                              // Standing loss conditions hold the stage for
-                              // as long as they are true — the pen's
-                              // `STAGE / device-lost`, at the run's top. The
-                              // widget carries its own bottom gap, so an
-                              // empty stack adds no space here.
+          child: Stack(
+            children: [
+              // Its own commands, built from a context UNDER the tray cubit
+              // just created: the outer `commands` predates the provider.
+              Builder(
+                builder: (context) => Focus(
+                  autofocus: true,
+                  onKeyEvent: TracksCommands(context).handleKey,
+                  child: GestureDetector(
+                    key: const Key('tracks_settings_secondaryTap'),
+                    behavior: HitTestBehavior.translucent,
+                    onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
+                    child: Scaffold(
+                      // #692: FX is a performance MODE, so the whole stage
+                      // takes the FX surface — the mode reads from the
+                      // gutters and chrome around the tiles, not from one
+                      // pill. Other modes keep the default stage black.
+                      backgroundColor: mode == InteractionMode.fx
+                          ? context.surface.fxSurface
+                          : null,
+                      body: SafeArea(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const StageTopBar(),
+                            // Standing loss conditions hold the stage for
+                            // as long as they are true — the pen's
+                            // `STAGE / device-lost`, at the run's top. The
+                            // widget carries its own bottom gap, so an
+                            // empty stack adds no space here.
+                            const Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                StageTopBar.sideInset,
+                                10,
+                                StageTopBar.sideInset,
+                                0,
+                              ),
+                              child: ConnectivityBanners(),
+                            ),
+                            // With no first-run gate, a stopped engine
+                            // lands here; a full-width affordance opens
+                            // settings to (re)start it. Suppressed while
+                            // the device-lost banner above already states
+                            // the stop, so the two never stack (#453).
+                            if (!chrome.isConnected && !deviceLost)
                               const Padding(
                                 padding: EdgeInsets.fromLTRB(
                                   StageTopBar.sideInset,
                                   10,
                                   StageTopBar.sideInset,
+                                  4,
+                                ),
+                                child: AudioNotRunningBanner(),
+                              ),
+                            Expanded(
+                              child: Padding(
+                                // The pen's instrument: 24 under the bar,
+                                // 60 off each edge.
+                                padding: const EdgeInsets.fromLTRB(
+                                  StageTopBar.sideInset,
+                                  24,
+                                  StageTopBar.sideInset,
                                   0,
                                 ),
-                                child: ConnectivityBanners(),
-                              ),
-                              // With no first-run gate, a stopped engine
-                              // lands here; a full-width affordance opens
-                              // settings to (re)start it. Suppressed while
-                              // the device-lost banner above already states
-                              // the stop, so the two never stack (#453).
-                              if (!chrome.isConnected && !deviceLost)
-                                const Padding(
-                                  padding: EdgeInsets.fromLTRB(
-                                    StageTopBar.sideInset,
-                                    10,
-                                    StageTopBar.sideInset,
-                                    4,
-                                  ),
-                                  child: AudioNotRunningBanner(),
-                                ),
-                              Expanded(
-                                child: Padding(
-                                  // The pen's instrument: 24 under the bar,
-                                  // 60 off each edge.
-                                  padding: const EdgeInsets.fromLTRB(
-                                    StageTopBar.sideInset,
-                                    24,
-                                    StageTopBar.sideInset,
-                                    0,
-                                  ),
-                                  child: switch (tracksState.stageView) {
-                                    StageView.track => Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        const StageDbScale(trailing: false),
-                                        const SizedBox(width: 16),
-                                        Expanded(
-                                          child: Row(
-                                            key: const Key('stage_track_run'),
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.stretch,
-                                            // The pen's four columns sit 22
-                                            // apart.
-                                            spacing: 22,
-                                            children: [
-                                              // _TrackSlot supplies its own
-                                              // Expanded, so a slot with no
-                                              // track takes no flex and its
-                                              // siblings widen.
-                                              for (final channel in bankTracks)
-                                                _TrackSlot(
-                                                  channel: channel,
-                                                  name: l10n.displayTrackName(
-                                                    tracksState.nameOf(channel),
-                                                    channel,
-                                                  ),
-                                                  selected:
-                                                      channel == overlay.cursor,
-                                                  mode: mode,
-                                                  isPrimary:
-                                                      channel ==
-                                                      chrome.primaryTrack,
-                                                  bars: barsOf(channel),
-                                                  quantizeDiv:
-                                                      chrome.quantizeDiv,
-                                                  recDub: chrome.recDub,
+                                child: switch (tracksState.stageView) {
+                                  StageView.track => Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      const StageDbScale(trailing: false),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Row(
+                                          key: const Key('stage_track_run'),
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          // The pen's four columns sit 22
+                                          // apart.
+                                          spacing: 22,
+                                          children: [
+                                            // _TrackSlot supplies its own
+                                            // Expanded, so a slot with no
+                                            // track takes no flex and its
+                                            // siblings widen.
+                                            for (final channel in bankTracks)
+                                              _TrackSlot(
+                                                channel: channel,
+                                                name: l10n.displayTrackName(
+                                                  tracksState.nameOf(channel),
+                                                  channel,
                                                 ),
-                                            ],
-                                          ),
+                                                selected:
+                                                    channel == overlay.cursor,
+                                                mode: mode,
+                                                isPrimary:
+                                                    channel ==
+                                                    chrome.primaryTrack,
+                                                bars: barsOf(channel),
+                                                quantizeDiv: chrome.quantizeDiv,
+                                                recDub: chrome.recDub,
+                                              ),
+                                          ],
                                         ),
-                                        const SizedBox(width: 16),
-                                        const StageDbScale(trailing: true),
-                                      ],
-                                    ),
-                                    StageView.wave => Column(
-                                      key: const Key('stage_wave_run'),
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      spacing: 22,
-                                      children: [
-                                        for (final channel in bankTracks)
-                                          _WaveSlot(
-                                            channel: channel,
-                                            name: l10n.displayTrackName(
-                                              tracksState.nameOf(channel),
-                                              channel,
-                                            ),
-                                            selected: channel == overlay.cursor,
-                                            mode: mode,
-                                            isPrimary:
-                                                channel == chrome.primaryTrack,
-                                            bars: barsOf(channel),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      const StageDbScale(trailing: true),
+                                    ],
+                                  ),
+                                  StageView.wave => Column(
+                                    key: const Key('stage_wave_run'),
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    spacing: 22,
+                                    children: [
+                                      for (final channel in bankTracks)
+                                        _WaveSlot(
+                                          channel: channel,
+                                          name: l10n.displayTrackName(
+                                            tracksState.nameOf(channel),
+                                            channel,
                                           ),
-                                      ],
-                                    ),
-                                    // The Mixer wears the Track view's own
-                                    // chrome: the same two dB scales, because
-                                    // its meters print the same scale.
-                                    StageView.mixer => Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        const StageDbScale(
-                                          trailing: false,
-                                          topInset: MixerColumn.meterTopInset,
-                                          bottomInset:
-                                              MixerColumn.meterBottomInset,
+                                          selected: channel == overlay.cursor,
+                                          mode: mode,
+                                          isPrimary:
+                                              channel == chrome.primaryTrack,
+                                          bars: barsOf(channel),
                                         ),
-                                        const SizedBox(width: 16),
-                                        Expanded(
-                                          child: Row(
-                                            key: const Key('stage_mixer_run'),
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.stretch,
-                                            spacing: 22,
-                                            children: [
-                                              for (final channel in bankTracks)
-                                                _MixerSlot(
-                                                  channel: channel,
-                                                  name: l10n.displayTrackName(
-                                                    tracksState.nameOf(channel),
-                                                    channel,
-                                                  ),
-                                                  selected:
-                                                      channel == overlay.cursor,
-                                                  mode: mode,
-                                                  isPrimary:
-                                                      channel ==
-                                                      chrome.primaryTrack,
-                                                  bars: barsOf(channel),
+                                    ],
+                                  ),
+                                  // The Mixer wears the Track view's own
+                                  // chrome: the same two dB scales, because
+                                  // its meters print the same scale.
+                                  StageView.mixer => Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      const StageDbScale(
+                                        trailing: false,
+                                        topInset: MixerColumn.meterTopInset,
+                                        bottomInset:
+                                            MixerColumn.meterBottomInset,
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Row(
+                                          key: const Key('stage_mixer_run'),
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          spacing: 22,
+                                          children: [
+                                            for (final channel in bankTracks)
+                                              _MixerSlot(
+                                                channel: channel,
+                                                name: l10n.displayTrackName(
+                                                  tracksState.nameOf(channel),
+                                                  channel,
                                                 ),
-                                            ],
-                                          ),
+                                                selected:
+                                                    channel == overlay.cursor,
+                                                mode: mode,
+                                                isPrimary:
+                                                    channel ==
+                                                    chrome.primaryTrack,
+                                                bars: barsOf(channel),
+                                              ),
+                                          ],
                                         ),
-                                        const SizedBox(width: 16),
-                                        const StageDbScale(
-                                          trailing: true,
-                                          topInset: MixerColumn.meterTopInset,
-                                          bottomInset:
-                                              MixerColumn.meterBottomInset,
-                                        ),
-                                      ],
-                                    ),
-                                  },
-                                ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      const StageDbScale(
+                                        trailing: true,
+                                        topInset: MixerColumn.meterTopInset,
+                                        bottomInset:
+                                            MixerColumn.meterBottomInset,
+                                      ),
+                                    ],
+                                  ),
+                                },
                               ),
-                              const StageFooter(),
-                              const SizedBox(height: 22),
-                            ],
-                          ),
+                            ),
+                            const StageFooter(),
+                            const SizedBox(height: 22),
+                          ],
                         ),
                       ),
                     ),
                   ),
                 ),
-                const SettingsTray(),
-              ],
-            ),
+              ),
+              const SettingsTray(),
+            ],
           ),
         ),
       ),

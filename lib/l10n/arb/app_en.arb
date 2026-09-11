@@ -477,8 +477,6 @@
     "waveformWindowSubtitle": "Open a second window showing the whole-loop output waveform",
     "highContrastTitle": "High contrast",
     "highContrastSubtitle": "Force a brighter, higher-contrast palette. On desktop the OS contrast setting is not applied automatically.",
-    "trackIndicatorsTitle": "Lane cache indicators",
-    "trackIndicatorsSubtitle": "Show cache status on the Signal lanes",
     "looperGroupLabel": "LOOPER",
     "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Mute mode they mute / unmute. FX mode (where track presses toggle FX chains) is not offered here — it is switched into live, never booted into.",
     "recordModeLabel": "Record",
@@ -800,9 +798,18 @@
             }
         }
     },
-    "stageFxTargetMaster": "MASTER",
-    "@stageFxTargetMaster": {
-        "description": "The FX-stage prefix of an FX-mode cell whose bound chain is the single Master insert."
+    "stageFxTargetOutput": "OUT {number}",
+    "@stageFxTargetOutput": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on one output destination.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "stageFxTargetAllTracks": "ALL TRACKS",
+    "@stageFxTargetAllTracks": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain is the All tracks recorded-mix chain."
     },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",
@@ -1601,7 +1608,16 @@
             }
         }
     },
-    "pedalAssignStageMaster": "Master",
+    "pedalAssignStageAllTracks": "All tracks",
+    "pedalAssignStageOutput": "Output {number}",
+    "@pedalAssignStageOutput": {
+        "description": "Names one output destination in a binding target label.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
     "a11yPedalAssignRow": "{button}: {target}",
     "@a11yPedalAssignRow": {
         "description": "Semantics label for one assignment row.",
@@ -2700,10 +2716,6 @@
                 "type": "int"
             }
         }
-    },
-    "traySignalLabel": "Signal",
-    "@traySignalLabel": {
-        "description": "Navigation-rail entry for the Signal domain — the four FX stages of the signal path."
     },
     "signalStageInput": "input",
     "@signalStageInput": {
@@ -3867,6 +3879,442 @@
                     }
             },
             "description": "The ordinal line on an input source card."
+    },
+    "fxTitle": "Effects",
+    "@fxTitle": {
+        "description": "Title of the Effects page."
+    },
+    "fxPedalAssignments": "Pedal assignments",
+    "@fxPedalAssignments": {
+        "description": "Opens the pedal assignment surface from the Effects page."
+    },
+    "fxKindLiveInputs": "Live inputs",
+    "@fxKindLiveInputs": {
+        "description": "Sound type: the live hardware inputs."
+    },
+    "fxKindRecordedTracks": "Recorded tracks",
+    "@fxKindRecordedTracks": {
+        "description": "Sound type: the recorded tracks and All tracks."
+    },
+    "fxKindOutputs": "Outputs",
+    "@fxKindOutputs": {
+        "description": "Sound type: the output destinations."
+    },
+    "fxAllTracks": "All tracks",
+    "@fxAllTracks": {
+        "description": "The recorded-mix destination, beside the tracks in the same strip."
+    },
+    "fxWholeTrack": "Whole track",
+    "@fxWholeTrack": {
+        "description": "The part picker's entry for the track's own chain, downstream of its parts."
+    },
+    "fxEffectsOn": "Effects on",
+    "@fxEffectsOn": {
+        "description": "Label before the part picker on a recorded track."
+    },
+    "fxAllTracksContext": "Effects on combined loop audio",
+    "@fxAllTracksContext": {
+        "description": "What the All tracks chain processes."
+    },
+    "fxOutputContext": "All routed audio · live inputs, tracks, click & backing",
+    "@fxOutputContext": {
+        "description": "What an output chain processes."
+    },
+    "fxReorder": "Reorder",
+    "@fxReorder": {
+        "description": "Arranges this destination's chain."
+    },
+    "fxAddEffects": "Add effects",
+    "@fxAddEffects": {
+        "description": "Opens the effect library for this destination."
+    },
+    "fxPlacementPre": "Pre",
+    "@fxPlacementPre": {
+        "description": "Placement tag: recorded into the loop."
+    },
+    "fxPlacementPost": "Post",
+    "@fxPlacementPost": {
+        "description": "Placement tag: can ring after Stop."
+    },
+    "fxNoEffects": "No effects here yet",
+    "@fxNoEffects": {
+        "description": "Shown in place of the chain when this destination carries none."
+    },
+    "fxNoTrackPart": "This track has nothing recorded yet",
+    "@fxNoTrackPart": {
+        "description": "Shown when a selected track has no recorded parts to point effects at."
+    },
+    "fxRackPositionRange": "{first}\u2013{last} / {total}",
+    "@fxRackPositionRange": {
+        "description": "Which of the chain's effects are in view.",
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            },
+            "total": {
+                "type": "int"
+            }
+        }
+    },
+    "fxPreviousEffects": "Previous effects",
+    "@fxPreviousEffects": {
+        "description": "Accessible name of the chain strip's left arrow."
+    },
+    "fxNextEffects": "Next effects",
+    "@fxNextEffects": {
+        "description": "Accessible name of the chain strip's right arrow."
+    },
+    "fxEffectPower": "{name} power",
+    "@fxEffectPower": {
+        "description": "Accessible name of an effect card's power button.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "fxAddTitle": "Add effects",
+    "@fxAddTitle": {
+        "description": "Title of the effect library."
+    },
+    "fxAddCrumb": "EFFECTS / {destination}",
+    "@fxAddCrumb": {
+        "description": "Breadcrumb naming the destination an effect is being added to.",
+        "placeholders": {
+            "destination": {
+                "type": "String"
+            }
+        }
+    },
+    "fxLibrarySingle": "Single FX",
+    "@fxLibrarySingle": {
+        "description": "The library entry for a standalone effect rather than a rack."
+    },
+    "fxLibraryMyPresets": "My presets",
+    "@fxLibraryMyPresets": {
+        "description": "The library entry for the player's own saved sounds."
+    },
+    "fxPresetCount": "{count, plural, =1{1 preset} other{{count} presets}}",
+    "@fxPresetCount": {
+        "description": "How many presets a rack family holds.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxLibraryEmpty": "No effects are bundled with this build",
+    "@fxLibraryEmpty": {
+        "description": "Shown when the factory catalogue is not in the bundle."
+    },
+    "fxNoSavedPresets": "You have not saved a sound yet",
+    "@fxNoSavedPresets": {
+        "description": "Shown in place of the saved-preset list when there are none."
+    },
+    "fxChainFull": "This chain is full",
+    "@fxChainFull": {
+        "description": "Shown when a destination cannot take another effect."
+    },
+    "fxRackTooLong": "{name} needs {needed} slots and {free} are free here",
+    "@fxRackTooLong": {
+        "description": "Shown when a rack will not fit in the space the chain has left.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "needed": {
+                "type": "int"
+            },
+            "free": {
+                "type": "int"
+            }
+        }
+    },
+    "fxModulePartial": "Some controls do not reach the sound yet",
+    "@fxModulePartial": {
+        "description": "Readiness note for an effect the engine builds only partly."
+    },
+    "fxModuleUnavailable": "This build does not process this effect yet",
+    "@fxModuleUnavailable": {
+        "description": "Readiness note for an effect the engine cannot build."
+    },
+    "fxEffectOptions": "Effect options",
+    "@fxEffectOptions": {
+        "description": "Opens rename, reorder and remove for one effect."
+    },
+    "fxSavePreset": "Save preset",
+    "@fxSavePreset": {
+        "description": "Saves this effect's settings as a reusable sound."
+    },
+    "fxBypassEffect": "Effect",
+    "@fxBypassEffect": {
+        "description": "Label of the effect's own bypass toggle, beside its power glyph."
+    },
+    "fxPlacementCaption": "Placement",
+    "@fxPlacementCaption": {
+        "description": "Caption over the Pre/Post switch."
+    },
+    "fxPlacementPreHint": "Recorded into loop",
+    "@fxPlacementPreHint": {
+        "description": "The one-line consequence of Pre."
+    },
+    "fxPlacementPostHint": "Can ring after Stop",
+    "@fxPlacementPostHint": {
+        "description": "The one-line consequence of Post."
+    },
+    "fxEffectInput": "Effect input",
+    "@fxEffectInput": {
+        "description": "Caption over the effect's input channel choice."
+    },
+    "fxEffectOutput": "Effect output",
+    "@fxEffectOutput": {
+        "description": "Caption over the effect's output channel choice."
+    },
+    "fxChannelStereo": "Stereo",
+    "@fxChannelStereo": {
+        "description": "Channel choice: keep the incoming left and right."
+    },
+    "fxChannelLeft": "Left only",
+    "@fxChannelLeft": {
+        "description": "Channel choice: use the incoming left on both sides."
+    },
+    "fxChannelRight": "Right only",
+    "@fxChannelRight": {
+        "description": "Channel choice: use the incoming right on both sides."
+    },
+    "fxChannelMonoSum": "Mono sum",
+    "@fxChannelMonoSum": {
+        "description": "Channel choice: average the incoming left and right."
+    },
+    "fxChannelMono": "Mono",
+    "@fxChannelMono": {
+        "description": "Output choice: average the effect output to mono."
+    },
+    "fxBalance": "Balance",
+    "@fxBalance": {
+        "description": "The stereo output's left/right level control."
+    },
+    "fxPan": "Pan",
+    "@fxPan": {
+        "description": "The mono output's placement between left and right."
+    },
+    "fxLevel": "Level",
+    "@fxLevel": {
+        "description": "The effect's output level, applied after it."
+    },
+    "fxCentre": "Centre",
+    "@fxCentre": {
+        "description": "The balance or pan control at its middle."
+    },
+    "fxLeft": "Left",
+    "@fxLeft": {
+        "description": "The left end of the balance or pan control."
+    },
+    "fxRight": "Right",
+    "@fxRight": {
+        "description": "The right end of the balance or pan control."
+    },
+    "fxScaleUnverified": "Scale unverified",
+    "@fxScaleUnverified": {
+        "description": "Note under a control whose real-world units were never recovered."
+    },
+    "fxPartOrdinal": "Part {number}",
+    "@fxPartOrdinal": {
+        "description": "A recorded part with no input to name it after.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "fxUnassigned": "Unassigned",
+    "@fxUnassigned": {
+        "description": "An effect with no pedal assignment, on its card's status line."
+    },
+    "fxModuleCount": "{count, plural, =1{1 effect} other{{count} effects}}",
+    "@fxModuleCount": {
+            "description": "How many pedals a rack holds, on its card's status line.",
+            "placeholders": {
+                    "count": {
+                            "type": "int"
+                    }
+            }
+    },
+    "fxRackOptions": "Rack options",
+    "@fxRackOptions": {
+            "description": "Opens rename, reorder and removal for one rack."
+    },
+    "fxRackRename": "Rename",
+    "@fxRackRename": {
+            "description": "Rack options row: give this rack another name."
+    },
+    "fxRackRenameField": "Rack name",
+    "@fxRackRenameField": {
+            "description": "Announced label of the rack-name field."
+    },
+    "fxReorderEffects": "Reorder effects",
+    "@fxReorderEffects": {
+            "description": "Title of the reorder surface, and the rack-options row that opens it."
+    },
+    "fxRemoveAnEffect": "Remove an effect",
+    "@fxRemoveAnEffect": {
+            "description": "Rack options row: take one pedal out of this rack."
+    },
+    "fxRemoveRack": "Remove rack",
+    "@fxRemoveRack": {
+            "description": "Rack options row: take the whole rack out of the chain."
+    },
+    "fxRemoveRackTitle": "Remove {name}?",
+    "@fxRemoveRackTitle": {
+        "description": "Asked before taking a whole rack out of a chain.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "fxRemoveRackBody": "Sounds you saved from it stay in My presets.",
+    "@fxRemoveRackBody": {
+        "description": "What removing a rack from a chain does not do."
+    },
+    "fxRemoveEffect": "Remove {name}",
+    "@fxRemoveEffect": {
+            "description": "Takes one named pedal out of a rack.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
+    },
+    "fxBypassRack": "Rack",
+    "@fxBypassRack": {
+            "description": "Label of the rack-wide power button in the rack editor's titlebar."
+    },
+    "fxAddEffect": "Add effect",
+    "@fxAddEffect": {
+            "description": "Adds one more pedal to the rack being edited."
+    },
+    "fxRackInput": "Rack input",
+    "@fxRackInput": {
+            "description": "How the rack takes the pair it is handed."
+    },
+    "fxRackOutput": "Rack output",
+    "@fxRackOutput": {
+            "description": "How the rack hands its result on."
+    },
+    "fxRackLevel": "Rack level",
+    "@fxRackLevel": {
+            "description": "The rack's own level, applied after its pedals."
+    },
+    "fxMoveLeft": "Move left",
+    "@fxMoveLeft": {
+            "description": "Moves the picked card one place earlier in the chain."
+    },
+    "fxMoveRight": "Move right",
+    "@fxMoveRight": {
+            "description": "Moves the picked card one place later in the chain."
+    },
+    "fxOrderPosition": "{name}, position {position} of {total}",
+    "@fxOrderPosition": {
+            "description": "Announced label of a card on the reorder surface.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    },
+                    "position": {
+                            "type": "int"
+                    },
+                    "total": {
+                            "type": "int"
+                    }
+            }
+    },
+    "fxSavePresetTitle": "Save preset",
+    "@fxSavePresetTitle": {
+            "description": "Title of the sheet that names a sound before saving it."
+    },
+    "fxPresetNameField": "Preset name",
+    "@fxPresetNameField": {
+            "description": "Announced label of the preset-name field."
+    },
+    "fxReplacePresetTitle": "Replace {name}?",
+    "@fxReplacePresetTitle": {
+            "description": "Asked when the typed preset name is already taken.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
+    },
+    "fxPresetExists": "A preset with this name is already in My presets.",
+    "@fxPresetExists": {
+            "description": "Why the replace question is being asked."
+    },
+    "fxReplacePreset": "Replace preset",
+    "@fxReplacePreset": {
+            "description": "Overwrites the saved preset of the same name."
+    },
+    "fxUseAnotherName": "Use another name",
+    "@fxUseAnotherName": {
+            "description": "Goes back to naming instead of replacing."
+    },
+    "fxMyPresetsTitle": "My presets",
+    "@fxMyPresetsTitle": {
+            "description": "Title of the saved-sounds page."
+    },
+    "fxPresetRename": "Rename",
+    "@fxPresetRename": {
+            "description": "Renames a saved preset."
+    },
+    "fxPresetExport": "Export",
+    "@fxPresetExport": {
+        "description": "Copies a saved preset off this console. Not built yet."
+    },
+    "fxImportPresets": "Import presets",
+    "@fxImportPresets": {
+        "description": "Brings saved presets onto this console. Not built yet."
+    },
+    "fxExportAllPresets": "Export all",
+    "@fxExportAllPresets": {
+        "description": "Copies every saved preset off this console. Not built yet."
+    },
+    "fxPresetDelete": "Delete",
+    "@fxPresetDelete": {
+            "description": "Deletes a saved preset."
+    },
+    "fxPresetDeleteTitle": "Delete {name}?",
+    "@fxPresetDeleteTitle": {
+            "description": "Asked before deleting a saved preset.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
+    },
+    "fxPresetDeleteBody": "Effects already added from it are not affected.",
+    "@fxPresetDeleteBody": {
+            "description": "What deleting a saved preset does not do."
+    },
+    "fxPresetSaved": "Saved {name}",
+    "@fxPresetSaved": {
+            "description": "Confirms a sound was saved for reuse.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
+    },
+    "fxRackRemoved": "Removed {name}",
+    "@fxRackRemoved": {
+            "description": "Confirms a rack left the chain.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
     },
     "routingHearLive": "Hear live",
     "@routingHearLive": {

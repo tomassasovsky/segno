@@ -1,0 +1,37 @@
+name: fx_catalogue
+description: >-
+  The factory effects catalogue: the rack families, their presets and the
+  parameter values each carries, plus the artwork the surfaces draw them with.
+  Data and its loader only — no engine, no chain, no UI.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+  flutter: ^3.41.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^10.2.0
+
+flutter:
+  assets:
+    - assets/manifest.json
+    - assets/images/selector/
+    - assets/images/strip/
+    - assets/images/footswitch/
+    - assets/images/stomps/
+    - assets/presets/Drum Rack/
+    - assets/presets/Dub Rack/
+    - assets/presets/Ed's Rack/
+    - assets/presets/Guitar Rack/
+    - assets/presets/Lo-Fi Rack/
+    - assets/presets/Rhythmic Rack/
+    - assets/presets/Studio Rack/
+    - assets/presets/Vocal Rack/
+    - assets/presets/Vocal Tuner Rack/

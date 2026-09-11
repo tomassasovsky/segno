@@ -78,6 +78,39 @@ class FxChannels extends Equatable {
   List<Object?> get props => [input, output, placement, level];
 }
 
+/// The rack a chain entry belongs to. Domain mirror of the engine's `FxRack`.
+///
+/// The accepted design's chain is built out of RACKS — named groups of pedals
+/// the player adds, renames, reorders and removes as one thing. The engine's
+/// chain is a flat run of entries, so the grouping rides the entries: every
+/// module of one rack carries the same [id], and a run of entries sharing an
+/// [id] IS that rack. A `null` rack means a standalone single effect.
+///
+/// `fxChainGroups` (in `fx_chain_group.dart`) turns a chain into the groups
+/// the surfaces draw.
+class FxRack extends Equatable {
+  /// Creates an [FxRack].
+  const FxRack({required this.id, required this.name, this.art});
+
+  /// The rack's identity, shared by every module in it, unique within its
+  /// chain, and never rewritten by a rename or a reorder.
+  final String id;
+
+  /// The rack's name, which the player can change. Renaming it never touches
+  /// the saved preset it came from.
+  final String name;
+
+  /// The catalogue artwork slug the card draws, or `null` when there is none.
+  final String? art;
+
+  /// Returns a copy with the given fields replaced.
+  FxRack copyWith({String? id, String? name, String? art}) =>
+      FxRack(id: id ?? this.id, name: name ?? this.name, art: art ?? this.art);
+
+  @override
+  List<Object?> get props => [id, name, art];
+}
+
 /// Where one chain entry sits relative to the loop player. Domain mirror of
 /// the engine's `FxPlacement`.
 ///
@@ -284,6 +317,19 @@ sealed class TrackEffect extends Equatable {
 
   /// This entry's channel handling and level.
   FxChannels get channels;
+
+  /// The rack this entry belongs to, or `null` when it is a standalone single
+  /// effect. Every module of one rack carries the same [FxRack.id].
+  FxRack? get rack;
+
+  /// What the factory catalogue calls this entry, or `null` when it did not
+  /// come from the catalogue. The catalogue maps this one name to both the
+  /// pedal's display name and its artwork.
+  ///
+  /// Kept because the engine effect an entry became is not what the player
+  /// chose: a pedal this build cannot process becomes a passthrough entry, and
+  /// without its own name it would be indistinguishable from every other one.
+  String? get module;
 }
 
 /// A built-in DSP effect: a [type] with its normalized [params].
@@ -297,6 +343,8 @@ class BuiltInEffect extends TrackEffect {
     this.slotId,
     this.placement = FxPlacement.post,
     this.channels = FxChannels.defaults,
+    this.rack,
+    this.module,
   }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
 
   /// The effect type.
@@ -318,6 +366,12 @@ class BuiltInEffect extends TrackEffect {
   final FxChannels channels;
 
   @override
+  final FxRack? rack;
+
+  @override
+  final String? module;
+
+  @override
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
@@ -328,6 +382,8 @@ class BuiltInEffect extends TrackEffect {
     String? slotId,
     FxPlacement? placement,
     FxChannels? channels,
+    FxRack? rack,
+    String? module,
   }) => BuiltInEffect(
     type: type ?? this.type,
     params: params ?? this.params,
@@ -335,6 +391,8 @@ class BuiltInEffect extends TrackEffect {
     slotId: slotId ?? this.slotId,
     placement: placement ?? this.placement,
     channels: channels ?? this.channels,
+    rack: rack ?? this.rack,
+    module: module ?? this.module,
   );
 
   @override
@@ -345,6 +403,8 @@ class BuiltInEffect extends TrackEffect {
     slotId,
     placement,
     channels,
+    rack,
+    module,
   ];
 }
 
@@ -369,6 +429,8 @@ class PluginEffect extends TrackEffect {
     this.slotId,
     this.placement = FxPlacement.post,
     this.channels = FxChannels.defaults,
+    this.rack,
+    this.module,
   });
 
   /// The hosted plugin's identity.
@@ -436,6 +498,12 @@ class PluginEffect extends TrackEffect {
   final FxChannels channels;
 
   @override
+  final FxRack? rack;
+
+  @override
+  final String? module;
+
+  @override
   int get typeCode => engine.kPluginFxCode;
 
   /// Returns a copy with the given fields replaced.
@@ -453,6 +521,8 @@ class PluginEffect extends TrackEffect {
     String? slotId,
     FxPlacement? placement,
     FxChannels? channels,
+    FxRack? rack,
+    String? module,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -467,6 +537,8 @@ class PluginEffect extends TrackEffect {
     slotId: slotId ?? this.slotId,
     placement: placement ?? this.placement,
     channels: channels ?? this.channels,
+    rack: rack ?? this.rack,
+    module: module ?? this.module,
   );
 
   @override
@@ -484,6 +556,8 @@ class PluginEffect extends TrackEffect {
     slotId,
     placement,
     channels,
+    rack,
+    module,
   ];
 }
 
@@ -562,6 +636,8 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     :final slotId,
     :final placement,
     :final channels,
+    :final rack,
+    :final module,
   ) =>
     engine.BuiltInEffect(
       type: trackEffectTypeToEngine(type),
@@ -570,6 +646,8 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       slotId: slotId,
       placement: _placementToEngine(placement),
       channels: fxChannelsToEngine(channels),
+      rack: _rackToEngine(rack),
+      module: module,
     ),
   PluginEffect(
     :final ref,
@@ -580,6 +658,8 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     :final slotId,
     :final placement,
     :final channels,
+    :final rack,
+    :final module,
   ) =>
     engine.PluginEffect(
       ref: engine.PluginRef(
@@ -594,8 +674,20 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       slotId: slotId,
       placement: _placementToEngine(placement),
       channels: fxChannelsToEngine(channels),
+      rack: _rackToEngine(rack),
+      module: module,
     ),
 };
+
+/// Maps a domain [FxRack] to the engine mirror (boundary; internal).
+engine.FxRack? _rackToEngine(FxRack? rack) => rack == null
+    ? null
+    : engine.FxRack(id: rack.id, name: rack.name, art: rack.art);
+
+/// Maps an engine `FxRack` to its domain mirror (boundary; internal).
+FxRack? _rackFromEngine(engine.FxRack? rack) => rack == null
+    ? null
+    : FxRack(id: rack.id, name: rack.name, art: rack.art);
 
 /// Maps an ordered domain chain to its engine counterpart, for callers that
 /// must hand a chain to another engine-facing repository verbatim rather than
@@ -623,6 +715,8 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final slotId,
         :final placement,
         :final channels,
+        :final rack,
+        :final module,
       ) =>
         BuiltInEffect(
           type: TrackEffectType.fromCode(type.code),
@@ -631,6 +725,8 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           slotId: slotId,
           placement: _placementFromEngine(placement),
           channels: _channelsFromEngine(channels),
+          rack: _rackFromEngine(rack),
+          module: module,
         ),
       engine.PluginEffect(
         :final ref,
@@ -641,6 +737,8 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final slotId,
         :final placement,
         :final channels,
+        :final rack,
+        :final module,
       ) =>
         PluginEffect(
           ref: PluginRef(
@@ -655,6 +753,8 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           slotId: slotId,
           placement: _placementFromEngine(placement),
           channels: _channelsFromEngine(channels),
+          rack: _rackFromEngine(rack),
+          module: module,
         ),
     };
 
@@ -691,9 +791,11 @@ List<TrackEffect> decodeTrackEffects(String? encoded) => [
 /// bit only — the engine's `a_fx_param` holds no plugin params (they live in
 /// the plugin host).
 ///
-/// [TrackEffect.slotId] deliberately does NOT fold: the fingerprint is sound
-/// identity, slot ids are entry identity (A9) — folding them would break the
-/// wet cache's fingerprint-keyed hits on toggle pairs and identical loads.
+/// [TrackEffect.slotId] and [TrackEffect.rack] deliberately do NOT fold: the
+/// fingerprint is sound identity, slot ids are entry identity (A9) and a rack
+/// is a grouping and a name — folding either would break the wet cache's
+/// fingerprint-keyed hits on toggle pairs and identical loads, and renaming a
+/// rack would re-render every take it is printed into.
 int fxChainFingerprint(List<TrackEffect> chain, {bool chainEnabled = true}) {
   var h = engine.FxFingerprint.offset;
   final n = chain.length > engine.kTrackEffectMax

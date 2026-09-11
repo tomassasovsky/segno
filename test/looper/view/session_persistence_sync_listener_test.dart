@@ -125,7 +125,8 @@ void main() {
           channel: 1,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.delay)],
         );
       streamOutcome(SessionOutcome.loaded);
@@ -149,7 +150,7 @@ void main() {
           TrackEffectType.reverb,
         ),
       ]);
-      expect(decodeFxChain(await settings.loadMasterFxChain()).entries, [
+      expect(decodeFxChain(await settings.loadOutputFxChain(0)).entries, [
         isA<BuiltInEffect>().having(
           (e) => e.type,
           'type',
@@ -174,7 +175,7 @@ void main() {
       // the Master key is the sharpest probe of the other half, since the
       // resync writes it unconditionally and nothing else here touches it.
       expect(monitor.state.inputs, isEmpty);
-      expect(await settings.loadMasterFxChain(), isNull);
+      expect(await settings.loadOutputFxChain(0), isNull);
     });
   });
 }

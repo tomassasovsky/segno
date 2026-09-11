@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
+import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -13,13 +14,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/common/pen_icons.dart';
+import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tray/brightness_capsule.dart';
 import 'package:segno/looper/view/tray/tray.dart';
@@ -122,6 +127,10 @@ void main() {
   late LooperRepository looper;
   late TunerCubit tunerCubit;
   late InputsCubit inputsCubit;
+  late ControlCubit controlCubit;
+  late TracksCubit tracksCubit;
+  late PerformanceRepository performance;
+  late ControllerRepository controller;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -138,15 +147,36 @@ void main() {
     looper = LooperRepository(engine: FakeAudioEngine());
     tunerCubit = TunerCubit(repository: looper);
     inputsCubit = InputsCubit(settings: settings, repository: looper);
+    // Control is where the tray lands now that Effects is a route, and
+    // `closeTray` returns there — so the SHELL's tests mount that face's
+    // dependencies whether or not they ever look at it.
+    performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
+    controller = ControllerRepository(sources: const []);
+    controlCubit = ControlCubit(
+      looper: looper,
+      pedal: PedalRepository(const NoopPedalTransport()),
+      settings: settings,
+      performance: performance,
+      controller: controller,
+      keepAliveInterval: Duration.zero,
+    );
+    tracksCubit = TracksCubit(settings: settings);
   });
   tearDown(() async {
     await cubit.close();
     await tunerCubit.close();
     await inputsCubit.close();
+    unawaited(controlCubit.close());
+    unawaited(tracksCubit.close());
+    unawaited(controller.dispose());
+    performance.dispose();
     unawaited(looper.dispose());
   });
 
-  Future<void> pump(
+  Future<void> mount(
     WidgetTester tester, {
     VoidCallback? onStageTap,
   }) => tester.pumpWidget(
@@ -169,10 +199,9 @@ void main() {
             BlocProvider<SettingsTrayCubit>.value(value: cubit),
             BlocProvider<TunerCubit>.value(value: tunerCubit),
             BlocProvider<InputsCubit>.value(value: inputsCubit),
-            // The tray now opens on Signal, so the shell's own tests mount
-            // that face's dependencies. Cheaper than the alternative — a
-            // landing face chosen to keep this harness small.
             BlocProvider<LooperBloc>.value(value: looperBloc),
+            BlocProvider<ControlCubit>.value(value: controlCubit),
+            BlocProvider<TracksCubit>.value(value: tracksCubit),
             BlocProvider<MonitorCubit>(
               create: (_) =>
                   MonitorCubit(repository: looper, settings: settings),
@@ -197,6 +226,9 @@ void main() {
       ),
     ),
   );
+
+  Future<void> pump(WidgetTester tester, {VoidCallback? onStageTap}) =>
+      mount(tester, onStageTap: onStageTap);
 
   testWidgets('renders the always-visible handle', (tester) async {
     await pump(tester);
@@ -614,7 +646,6 @@ void main() {
       // preserves the custom geometry, with the owner's chosen Cupertino
       // WiFi glyph for Network.
       const drawn = {
-        SettingsTrayDestination.signal: PenIcon.signal,
         SettingsTrayDestination.control: PenIcon.control,
         SettingsTrayDestination.tracks: PenIcon.tracks,
         SettingsTrayDestination.tuner: PenIcon.tuner,
@@ -699,7 +730,7 @@ void main() {
       expect(TrayNavigationRail.width, 180);
 
       final item = tester.getRect(
-        find.byKey(const Key('settingsTrayRail_signal')),
+        find.byKey(const Key('settingsTrayRail_effects')),
       );
       // 180 less the pen's 10 left and 11 right.
       expect(item.width, closeTo(159, 0.5));
@@ -727,15 +758,15 @@ void main() {
           ),
         );
 
-        // Signal is the tray's opening destination, so it is the lit one.
-        final selected = labelIn('settingsTrayRail_signal');
+        // Control is the tray's opening destination, so it is the lit one.
+        final selected = labelIn('settingsTrayRail_control');
         expect(selected.style?.fontSize, 17);
         expect(selected.style?.fontWeight, FontWeight.w500);
         expect(selected.style?.color, surface.accent);
 
         final pill = tester.widget<AnimatedContainer>(
           find.descendant(
-            of: find.byKey(const Key('settingsTrayRail_signal')),
+            of: find.byKey(const Key('settingsTrayRail_control')),
             matching: find.byType(AnimatedContainer),
           ),
         );
@@ -760,7 +791,7 @@ void main() {
           FontWeight.w500,
         );
         expect(
-          labelIn('settingsTrayRail_signal').style?.fontWeight,
+          labelIn('settingsTrayRail_control').style?.fontWeight,
           FontWeight.w500,
         );
         expect(
@@ -768,7 +799,7 @@ void main() {
           surface.accent,
         );
         expect(
-          labelIn('settingsTrayRail_signal').style?.color,
+          labelIn('settingsTrayRail_control').style?.color,
           surface.textSecondary,
         );
       },
@@ -822,10 +853,10 @@ void main() {
       // has — which is what made Tuner look like a dialog in a tray.
       expect(find.byKey(const Key('tuner_back')), findsNothing);
 
-      await tester.tap(find.byKey(const Key('settingsTrayRail_signal')));
+      await tester.tap(find.byKey(const Key('settingsTrayRail_network')));
       await tester.pumpAndSettle();
 
-      expect(cubit.state.destination, SettingsTrayDestination.signal);
+      expect(cubit.state.destination, SettingsTrayDestination.network);
       expect(cubit.state.dragProgress, 1);
     });
 

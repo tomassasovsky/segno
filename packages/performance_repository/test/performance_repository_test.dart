@@ -456,8 +456,13 @@ void main() {
                 effects: [BuiltInEffect(type: TrackEffectType.drive)],
               ),
             ],
-            masterEffects: [BuiltInEffect(type: TrackEffectType.filter)],
-            masterChainEnabled: false,
+            outputChains: [
+              PerformanceOutputChain(
+                bus: 0,
+                chainEnabled: false,
+                effects: [BuiltInEffect(type: TrackEffectType.filter)],
+              ),
+            ],
           ),
         );
 
@@ -485,12 +490,12 @@ void main() {
           armSnapshot.trackChains.single.effects.single.typeCode,
           TrackEffectType.drive.code,
         );
-        // Master insert.
+        // Output destination.
         expect(
-          armSnapshot.masterEffects.single.typeCode,
+          armSnapshot.outputEffects(0).single.typeCode,
           TrackEffectType.filter.code,
         );
-        expect(armSnapshot.masterChainEnabled, isFalse);
+        expect(armSnapshot.outputChainEnabled(0), isFalse);
       },
     );
 

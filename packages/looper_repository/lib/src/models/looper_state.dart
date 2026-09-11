@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
+import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/track.dart';
@@ -16,8 +17,8 @@ class LooperState extends Equatable {
     this.tracks = const [],
     this.status = const EngineStatus(),
     this.outputEnabledMask = 0xFFFFFFFF,
-    this.masterEffects = const [],
-    this.masterChainEnabled = true,
+    this.outputChains = const {},
+    this.allTracksChain = const FxChainEnvelope(),
     this.tuner = const TunerReading(),
     this.inputSetup = const InputSetup(),
     this.outputSetup = const OutputSetup(),
@@ -43,12 +44,17 @@ class LooperState extends Equatable {
   /// are enabled by default; only bits in `[0, status.outputChannels)` matter.
   final int outputEnabledMask;
 
-  /// The Master insert chain on the summed track mix, in processing order
-  /// (FX v3 part 1b). Empty == bit-identical output.
-  final List<TrackEffect> masterEffects;
+  /// Every configured output destination's post-sum chain, keyed by bus
+  /// (slice 3f) — each with its entries and its chain-enabled flag (R15).
+  /// A destination with no entry has no chain: bit-identical output.
+  final Map<int, FxChainEnvelope> outputChains;
 
-  /// Whether the Master insert chain is engaged (R15).
-  final bool masterChainEnabled;
+  /// The All tracks chain, over the sum of the recorded tracks (slice 3e).
+  ///
+  /// Always a value, unlike [outputChains]: there is exactly one such chain
+  /// and it always exists, so an unconfigured rig reads the empty engaged
+  /// envelope rather than an absence.
+  final FxChainEnvelope allTracksChain;
 
   /// What the chromatic tuner hears on its armed input. Disarmed by default,
   /// and disarmed costs nothing — the engine gates detection on the arm.
@@ -100,14 +106,22 @@ class LooperState extends Equatable {
   /// "yes, all of them", which is never what the question means.
   bool get allOneShot => tracks.isNotEmpty && tracks.every((t) => t.oneShot);
 
+  /// Output destination [bus]'s chain entries, empty when it has none.
+  List<TrackEffect> outputEffects(int bus) =>
+      outputChains[bus]?.entries ?? const [];
+
+  /// Whether output destination [bus]'s chain is engaged (R15). A destination
+  /// with no chain reads as engaged: there is nothing switched off there.
+  bool outputChainEnabled(int bus) => outputChains[bus]?.chainEnabled ?? true;
+
   @override
   List<Object?> get props => [
     transport,
     tracks,
     status,
     outputEnabledMask,
-    masterEffects,
-    masterChainEnabled,
+    outputChains,
+    allTracksChain,
     tuner,
     inputSetup,
     outputSetup,

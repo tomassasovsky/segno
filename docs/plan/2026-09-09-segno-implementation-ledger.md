@@ -1631,3 +1631,807 @@ Playback transforms. Speed, Reverse, pitch preservation and Follow tempo do
 not exist in this engine. The accepted direction for Speed is to stream from
 originals inline, which composes with a render from originals — both read the
 same recordings — but nothing tests that until Speed exists.
+
+## Slice 3f part 1: the FX destination model
+
+The FX surfaces the accepted design draws address five destinations: a live
+input, a recorded part, a whole recorded track, All tracks, and one output.
+The stage enum named four, and two of those five had no address at all. This
+part builds the model underneath the surfaces, with no UI change of its own.
+
+### What the stage enum says now
+
+`input`, `loop`, `track`, `allTracks`, `output`. The `master` stage is gone.
+It named one insert on the first output pair, which slice 3b had already
+turned into one chain per output destination; `FxStage.output` carries the
+destination in the address it already had a field for.
+
+A persisted binding still spelling `master` decodes to `null` and goes inert.
+That is the AGENTS rule (remove obsolete paths, do not migrate) and it is also
+the safer reading: `master` named a stage whose meaning was "the first enabled
+pair", and silently rewriting it as destination 0 would point a binding at a
+destination its author never chose.
+
+### One chain per destination, all the way down
+
+The repository held one `_masterEffects` list and one flag. Both are maps
+keyed by bus now, with the Track stage's own conventions:
+
+- A destination's entry is dropped when its chain lands back at the default,
+  so an entry in the map means "this destination is configured" and a cleared
+  destination stops claiming a persisted key.
+- `applySession` writes every destination the OLD rig configured as well as
+  the ones the arriving rig names, so a session that mentions no destination
+  resets rather than inherits.
+- The restart replay walks the map instead of pushing bus 0.
+
+Persistence follows the same shape: the settings key is `output_fx_chain.<bus>`
+with a clear for a destination a load drops, the session manifest carries
+`outputChains` (one record per destination, schema v9) where it carried a bare
+`masterChain` string, and the performance arm snapshot records
+`PerformanceOutputChain` per destination beside its `PerformanceTrackChain`
+twin.
+
+### What a binding can point at
+
+The picker offers the All tracks chain and every destination the OPEN DEVICE
+has, not only the destinations already carrying effects. A destination exists
+because the interface has the jacks; a picker that hid the empty ones would
+have nowhere to point a binding at the chain the player is about to build
+there. `chainEntriesAt` draws the same line: an empty destination within the
+device's count names a real, stompable chain, the way a configured monitor
+does.
+
+Binding rows name a destination by ORDINAL (`Output 1`), not by jack pair or
+by the rig's rename. The label helper has neither the channel count that
+decides whether the last destination is a pair or a single jack, nor the
+rename map, and a row that guessed either would name a socket the interface
+may not have.
+
+### The retiring Signal domain
+
+Its four tabs stay four tabs, now an explicit subset of the enum rather than
+the enum itself, and they address destination 0. The All tracks chain is not
+reachable from that face — it never was — and arrives with the FX surfaces
+that replace it in the rest of 3f.
+
+### A defect in shipped code, fixed on the way
+
+`packages/performance_repository`'s test fake never grew the methods slice 3e
+added to the engine interface: the five All tracks setters, the four
+channel-handling setters and the two `preCount` arguments. Every test in that
+package failed to COMPILE, so its whole suite (coverage floor 99%) was
+silently absent rather than failing. Fixed on the 3e branch, where it was
+introduced.
+
+### Checks
+
+- Dart: root 2264 passing and 35 skipped; `looper_repository` 501;
+  `session_repository` 105; `performance_repository` 118;
+  `settings_repository` 155. `dart analyze` clean everywhere, bloc lint clean.
+- Five repository tests for the per-destination model: two destinations
+  holding independent chains pushed to their own buses, the chain flag and
+  entry flag and a parameter each addressed per destination, a destination
+  past the ceiling refused rather than wrapped, `applySession` resetting an
+  unnamed destination, and every configured destination replaying on restart.
+- Two bootstrap tests: each destination persisting and restoring under its own
+  key across a cold boot, and a load that drops a destination clearing ITS key
+  so the next boot does not resurrect the previous rig on that pair.
+- Mutation-checked: pushing only the arriving rig's destinations, replaying
+  only destination 0 on restart, and dropping the destination at the engine
+  boundary each fail exactly the tests that name them.
+- Three goldens regenerated: the pedal binding list now offers `All tracks
+  chain` and `Output 1 chain` where it offered one `Master chain`.
+
+### A trap worth not rediscovering
+
+`chainEntriesAt` is an EXTENSION on the repository, so `when(() =>
+looper.chainEntriesAt(...))` does not stub it — mocktail RUNS it and registers
+a stub against whichever member it happened to touch last. Two tests carried
+such a line. They worked by accident while the extension's last call was
+`masterEffects`; when it became `state`, they stubbed `state` to return a list
+of effects. The real extension resolves from the members already stubbed
+around it, so the fix was to delete the lines.
+
+## Slice 3f part 2: the Effects destinations surface
+
+The pen's `01 Effects · destinations`: one page for every destination, not one
+page per stage. The Sound type row picks the strip, the strip picks the source,
+and the chain underneath is whatever that source carries. A live input, a
+recorded part, a whole track, All tracks and an output all arrive at the same
+editor, which is what makes this one surface rather than five.
+
+### What it draws
+
+The Sound type row (Live inputs / Recorded tracks / Outputs), the strip for
+that kind, the context row, and the chain in processing order.
+
+- **Live inputs** carry the two-tier source card and the Off / Auto / On Hear
+  live control, written through the monitor cubit that owns the Input stage.
+- **Recorded tracks** carry the single-line buttons with All tracks beside the
+  last track in the SAME strip, and a part picker offering only the parts that
+  track actually has. Switching tracks returns the picker to Whole track: a
+  part index names a lane of the track it was chosen on.
+- **Outputs** carry the destination cards and the sentence that says what an
+  output chain actually processes.
+
+The chain is the pen's horizontal strip: a card per effect, a plain line
+between consecutive cards, and a wider break with NO line where the Pre run
+hands over to the Post run, because the loop player is in there. The
+connectors have no arrowheads — the owner rejected them twice, and the order
+of the cards is what says which way the signal goes.
+
+### Where each control writes
+
+Each stage has one owner and the page uses it: the monitor cubit for a live
+input, and the looper bloc's own per-stage events for a part, a track, All
+tracks and an output. There is deliberately no shared "set the enabled bit"
+setter to route through — that is what would let one surface's write land on
+another stage's chain.
+
+Each strip keeps its own place, and so does each kind's chain scroll. Browsing
+the chain never changes the selected source, and a context switch restores a
+strip rather than resetting it.
+
+### What this part does NOT do
+
+The editors. Opening a card, the rack chain editor with its connected pedals,
+the parameter controls, the channel-handling footer, the Pre/Post switch
+itself, Add effects, Reorder, rack options and presets are the rest of 3f. The
+two buttons that will reach them are drawn and inert.
+
+The All tracks chain also gained a projection here: slice 3e built it in the
+engine and the repository and left it unreadable from the app.
+
+### Checks
+
+- Root suite 2278 passing, 35 skipped; every package suite green; analyze and
+  bloc lint clean.
+- Ten widget tests: the Sound type row switching strips, each strip keeping its
+  place across a switch, the tracks strip listing tracks with All tracks beside
+  them, All tracks carrying neither part picker nor placement tag, a track
+  switch returning the picker to Whole track, the cable between consecutive
+  effects and the break where the Pre run ends, an output chain carrying no
+  placement tag while a track chain does, the empty state, power writing to
+  each stage's own owner, and a live input's chain both read and written
+  through the monitor cubit.
+- Mutation-checked: carrying the part across a track switch, drawing a cable
+  across the stage break, and showing the placement tag on every destination
+  each fail exactly the tests that name them.
+- Four screenshots at the pen's 1920 x 1080.
+
+### Two gaps this surface makes concrete
+
+**There is no rack artwork, and no rack.** The accepted design's chain is made
+of RACKS — named groups of pedals with their own level — drawn with the
+original Looper X artwork. This engine's chain is a flat run of at most eight
+entries with no grouping, and the extracted catalogue (159 presets, 66 artwork
+files) is not in this repository. So a card here is one effect, drawn with the
+app's own vocabulary rather than a placeholder picture pretending to be
+artwork. Both are owner decisions, recorded on the issue.
+
+## Slice 3f part 3: the chain ceiling
+
+The accepted FX design builds a chain out of RACKS — named groups of pedals —
+and one factory rack is about six of them. `LE_FX_MAX` was 8, so a chain held
+roughly one rack where the design shows ten. The owner's direction was to
+raise the ceiling before building the rack surfaces on it.
+
+### What the ceiling actually cost, measured
+
+The cap was never a CPU limit: the audio path iterates the ACTIVE count, and
+the per-slot DSP heap (delay rings, the octaver's vocoder buffers) is
+allocated lazily on first use, so an unused slot allocates nothing. Two things
+did scale with it:
+
+| Ceiling | Callback stack frame | Engine struct |
+| --- | --- | --- |
+| 8 (before) | 32,048 B | 1.27 MB |
+| 64 (naive) | 194,672 B | 4.73 MB |
+| 64 (shipped) | 7,200 B | 4.92 MB |
+
+The stack was the real constraint. The per-buffer snapshot arrays — every
+lane's chain, every track bus's, the All tracks chain, every monitor's and
+every output destination's — were locals of the audio callback, sized by
+`LE_FX_MAX`. At 64 they would have put 195 KB in one frame of the one budget
+in this engine that is neither ours to set nor reported by the host.
+
+They are now `le_fx_snapshot` inside `le_engine`. Nothing about them is state:
+each is written and read inside a single callback, so they need no atomics.
+They live in the struct only so that their size is charged to an allocation
+whose size is known. The move took the frame from 32 KB to 7.2 KB and left it
+there — 7,200 bytes at the new ceiling against 7,184 at the old one, so the
+ceiling is nearly free in stack now and the engine struct carries the cost.
+
+### The per-buffer sweep
+
+The settle sweep that parks an unprocessed slot's enable ramp walked all
+`LE_FX_MAX` slots of every chain, every buffer, reading each slot's published
+bit. At 64 that is eight times the atomic loads for slots that have never been
+used. It now skips a slot whose ramp is ALREADY parked at bypass, which is a
+plain audio-owned read and is the state almost every slot past a chain's count
+is in — zeroed at reset and left there. Skipping such a slot is safe precisely
+because `le_fx_enable_force_bypass` on it would write nothing.
+
+### Checks
+
+- The native suite green in all five variants, plus the AddressSanitizer and
+  telemetry-disabled runs, and the C++ header shim.
+- A new native test fills a chain to `LE_FX_MAX` with unity drives and asserts
+  the output is tanh applied that many times over, so a ceiling the audio path
+  did not honour would be wrong rather than merely short; it also asserts the
+  slot one past the ceiling is refused rather than wrapping onto a real one.
+  Written against the constant, not a literal, so raising the ceiling again
+  cannot leave it passing for free.
+- Mutation-checked: leaving the old eight-slot clamp in the lane snapshot
+  while the ceiling says 64 fails it.
+- The over-long-chain repository test was sized from a literal 8 and would
+  have gone vacuous at the new ceiling; it is sized from `kTrackEffectMax`
+  now.
+- Dart: root 2278, `looper_repository` 501, `segno_engine` 283, the other
+  packages unchanged. Bindings regenerated and formatted.
+
+## Slice 3f part 4: the factory catalogue
+
+The owner's decision was that the extracted Looper X catalogue ships. It is
+committed as `packages/fx_catalogue`: nine rack families, 159 presets and 66
+artwork images, 6.3 MB of assets with a loader and nothing else.
+
+### What the package will and will not say
+
+Data and its loader. Nothing in it knows about a chain, an engine or a screen:
+what a preset MEANS to this engine is the repository's business, and the
+accepted design is explicit that unverified source scales and values are
+EVIDENCE, not permission to claim factory defaults or invent a schema. So the
+model carries the source's own fields and draws no conclusions.
+
+- **The family is the FOLDER, not the `type` field.** Two families carry the
+  same `type` value in the source and one family carries two, so `type` is
+  retained verbatim and read as nothing.
+- **Names are kept exactly.** A source spelling or a trailing space is not
+  silently corrected.
+- **Every numeric parameter survives the parse.** A quiet filter here would be
+  exactly the twenty entries the accepted design says must stop being dropped
+  by name, and a test walks all 159 files to check the count against the raw
+  JSON.
+- **Module names are a READING.** They come from splitting a parameter name at
+  its first space, which is how the design study grouped them to make the
+  catalogue inspectable. The source never says which modules a rack holds or
+  what order they run in, and the doc comment says so.
+- **Artwork slugs are mapped, not derived.** The folder names and the image
+  names follow no single rule: `Ed's Rack` is `edsguitar`, `Lo-Fi Rack` is
+  `lo-fi`, `Vocal Tuner Rack` is `vocaltuner`. A slugging function would get at
+  least the first wrong and silently draw another rack.
+
+### Loading
+
+Driven by the import's own manifest, checked against Flutter's asset manifest
+before any read. A Flutter bundle has no directory listing at runtime, and
+`loadString` raises a `FlutterError` — an Error, not a thing to catch — for a
+missing key, so presence is checked rather than caught. A build that ships
+without these assets loads an empty catalogue; a partial bundle loads the
+presets it does have rather than failing whole.
+
+### Checks
+
+Eleven tests against the REAL files, not a fixture: this package's whole job
+is to read what the import actually copied, and a hand-written fixture would
+only prove the parser reads the shape its author imagined. They cover all nine
+families with every artwork path resolving to a file that exists, the 159
+presets, one preset source-exact down to its id, version and the four-band
+EQ's fourteen controls plus its separate enable value, no parameter lost on
+any of the 159, the module-name reading, the stomp artwork resolving only for
+names the catalogue carries, and the four ways a build can come up with no
+catalogue. 100% line coverage, with its own CI job pinned there.
+
+## Slice 3f part 5: what a preset actually says, and what this engine can do with it
+
+Two tables, both written by hand and both pinned against the data by test.
+
+### The module table, in `fx_catalogue`
+
+A preset is a flat map of parameter names to values. It never says which
+modules it holds, and the three vocabularies in the source disagree about how
+to name the same pedal: the power key (`Compressor`), the parameter prefix
+(`Comp Ratio`) and the artwork (`Compressor2`). `Delay` enables `Del *`,
+`Reverb` enables `Rev *`, `OvDrive` enables `OD *`. So the correspondence is
+written down rather than derived, and the doc says it is a reading.
+
+Twenty-six modules. What the tests pin is not that the reading is the source's
+own grouping, which the source does not record, but that it matches what is
+actually there:
+
+- Every power key the table names appears in the catalogue, and is BINARY
+  wherever it appears. That is what separates a power key from a parameter
+  that happens to be spelled without a space: `Cab` and `Sustain` are
+  space-free too, and continuous.
+- Every parameter group the table names appears in the catalogue.
+- Every parameter group IN the catalogue is claimed by exactly one module, or
+  listed as deliberately unclaimed. `Master` is the rack's own level, which
+  the accepted design puts after the pedals and gives to the rack. `Para`
+  appears in two families with no power key and nothing naming what it belongs
+  to, so it stays an evidence gap rather than being assigned on a guess.
+- No two modules claim the same key or group.
+- Every illustration the table names is a file that is here.
+
+A module with several illustrations records them ALL, because the source ships
+numbered variants (`Delay3`, `Delay4`, `Delay6`) and nothing in the preset data
+says which variant a family used. The first is drawn; the rest keep the gap
+visible rather than looking like a choice.
+
+Mutation-checked: dropping a module from the table, mistaking a continuous key
+for a power key, and letting two modules claim one group each fail exactly the
+test that names them.
+
+### The readiness map, in `looper_repository`
+
+The engine builds seven effects; the catalogue names twenty-six modules. The
+accepted design requires truthful partial support and forbids substituting
+another effect and calling that parity, so a module is one of three things:
+
+- **Full**: the engine builds this kind and every control the preset carries
+  has somewhere to go. Not a claim of sonic parity — the design permits the
+  sound to differ — only that nothing the preset says is being dropped.
+- **Partial**: the engine builds the kind but the preset carries controls it
+  has no place for. Those values are kept and NAMED, so a surface can show
+  them and say plainly they do not reach the sound.
+- **Unavailable**: no effect of this kind. Most of the catalogue, and saying
+  so is the point.
+
+Six modules map. **The reverb's brightness is deliberately NOT wired into the
+engine's damping**, though it is that control's complement: inverting someone
+else's control into ours is exactly the silent substitution the design forbids,
+so it stays unmapped and visible.
+
+A parameter the preset says nothing about keeps the ENGINE's default rather
+than falling to zero. The catalogue's octaver is two fixed voices with their
+own levels where this engine's is one continuously shifted voice, so its shift
+has nothing to read, and zero would be two octaves down.
+
+An unavailable module still takes its place in the chain and passes signal
+through. A rack is what the player loaded, not what this build can run.
+
+Eleven tests, mutation-checked on the two that would be quietest if wrong:
+wiring brightness into damping, and letting an unread parameter fall to zero.
+
+## Slice 3f part 6: Add effects
+
+The pen's `03 Sound library & presets`: the rack families and Single FX in one
+artwork grid, then the chosen family's presets as plain rows.
+
+### A route that resolves, not one that edits
+
+The library returns a CHOICE and changes nothing itself. What the choice does
+to a chain belongs to the destination that opened it, which is what makes the
+accepted "one Back from a completed addition returns to the destination" true:
+Add, the family and the preset are page state inside one route, so they are
+never in the completed addition's history. Back out of the library changes
+nothing at all.
+
+### What a choice becomes
+
+A rack becomes one chain entry per module it names, built through the
+readiness map. **Every entry arrives bypassed, whatever the preset's own power
+keys say** — the accepted design is explicit that a new instance starts
+bypassed, so adding a rack mid-set cannot change the sound until the player
+says so. The preset's power values are not lost; they ride each entry's
+parameters and come back when the chain is engaged. Placement is the
+destination's default: Pre on a live input, Post on a recorded one.
+
+**One write, not one per pedal.** A rack is one thing the player chose, and
+adding its pedals one at a time would push the chain to the engine once per
+pedal and let a half-built rack be heard on the way in. That is a new append
+event per stage rather than a loop over the existing add.
+
+**A rack that will not fit is offered and explains itself** rather than
+half-landing: the row says how many slots it needs and how many are free. Even
+at the raised ceiling a chain can run out, and a rack that landed in part
+would be a sound nobody chose.
+
+### Loading
+
+The catalogue is read lazily on the first open of the Effects route rather than
+at startup: 6 MB of assets only these surfaces want, and a rig that never opens
+them should not pay for it on the way to the stage.
+
+### Checks
+
+Eight widget tests over the adding path: the library opening on the
+destination with it stated once, Back changing nothing, a rack becoming one
+entry per module in one write with the preset's values in the parameters they
+feed, every entry bypassed, the destination's default placement, a live
+input's addition going through the monitor cubit and not the bloc, a rack that
+will not fit explaining itself and staying unavailable, and a build with no
+catalogue saying so rather than drawing an empty grid.
+
+Mutation-checked: letting entries keep the preset's own power, and offering a
+rack that does not fit, each fail exactly the test that names them.
+
+A fifth screenshot covers the library grid. Its artwork is NOT in the golden:
+a widget test has no app asset bundle, so `rootBundle` resolves nothing there.
+What the golden shows is the grid — the wide banner's place, the card sizes
+and the order.
+
+## Slice 3f part 7: the effect editor, and the Pre/Post switch
+
+The pen's `02 Single effect`: an effect opened in place, with its controls
+direct and the channel-handling footer under them.
+
+**Direct controls, not a grid that opens a sheet.** The accepted design removed
+the generic parameter dialog: available controls are visible under the effect
+they belong to, and touch moves the actual slider. One control per parameter
+the effect actually has, each reading its own value.
+
+Every control says **Scale unverified** under it. That is the accepted
+design's own position: raw source values are shown WITHOUT invented physical
+units, and a control whose mapping was never recovered says so rather than
+printing a number in milliseconds nobody verified.
+
+### The Pre/Post switch
+
+A direct segmented control in the footer, with the one consequence line that
+changes with it: "Recorded into loop" or "Can ring after Stop". No dropdown, no
+modal, no tooltip — all three were rejected.
+
+**Offered only where the placement is the player's to choose.** A live input
+and an individual recorded track or part carry it. All tracks and the outputs
+omit the control AND its line, because their stage is fixed after their
+respective mixes and a control that could not move would be a promise the rig
+cannot keep.
+
+### Channel handling
+
+Input choice, output choice, the placement between the sides and the level are
+ONE write. The accepted design applies the input before the effects, the output
+and its placement after them, and the level last, and a half-applied change is
+audible. The same control is named for the job it is doing: Balance on a stereo
+output, Pan on a mono one.
+
+Two new events carry it, one per stage family, because slice 3e built the
+repository setters and left the surfaces to this slice. A bus stage has no
+by-slot channel setter, so its write rides the whole-chain push — acceptable
+because this is a settled choice rather than a swept knob.
+
+### Where the editor writes
+
+Each stage keeps its own owner: the monitor cubit for a live input, the bloc's
+per-stage events for the rest. That is what stops a write meant for a live
+input landing on a track's chain.
+
+The editor is pushed on a navigator ABOVE the page's providers, so the two it
+watches are carried in by value — carried rather than snapshotted, so an edit
+made here and an edit made from a pedal land in the same place. The editor
+renders the rig; it does not hold a copy of it.
+
+### One truthfulness fix in a shared widget
+
+`LoopOutlinedButton` drew a button with no callback exactly like a live one.
+Effect options and Save preset arrive with the rack-options surface, and until
+then they are the working-but-silent control the accepted design says to
+explain rather than present. A button with nothing to do now reads as having
+nothing to do, and reports itself disabled to a screen reader.
+
+### Checks
+
+Eleven more widget tests: the editor opening on a card, one control per
+parameter the effect actually has, the unverified-scale note, the switch
+offered on a recorded track with the line that goes with it, the move going
+through the stage's own owner, the switch absent on an output and on All
+tracks, the output choice renaming the placement control, channel handling
+written as one change, the balance reading Centre at rest, and a live input's
+edits going through the monitor cubit.
+
+Mutation-checked: showing the switch on every destination, and writing the
+channel change as a whole value rather than a copy, each fail exactly the test
+that names them.
+
+**One of those tests was vacuous and was rewritten.** The whole-value mutation
+survived the first version, because the fixture's channel handling was at its
+defaults and a replacement with defaults is indistinguishable from a copy. The
+fixture now carries non-default handling, so losing it is observable.
+
+A sixth screenshot covers the editor.
+
+## Slice 3f part 8: the rack becomes a thing
+
+Part 2 recorded the gap in as many words: "There is no rack artwork, and no
+rack." The owner settled both — ship the extracted assets, raise the engine
+ceiling first — and parts 3 and 4 did those. This part is the rack itself.
+
+The accepted chain is a run of RACKS: named groups of pedals the player adds,
+renames, reorders and removes as one thing. This engine's chain is a flat run
+of entries. So the grouping rides the entries.
+
+### Two fields on a chain entry
+
+- `rack` — an id, a name and an artwork slug. Every module of one rack carries
+  the same id, and a run of entries sharing an id IS that rack. A null rack is
+  a standalone single effect.
+- `module` — what the factory catalogue calls this entry. One string, because
+  the catalogue maps a module name to both a display name and a picture.
+
+Denormalised on purpose. The chain crosses four persistence boundaries — a
+session file, a performance arm snapshot, the settings store and the
+repository's own maps — as one encoded list, so a field on the entry rides all
+of them for free. A rename rewrites the run; that is cheaper than a second
+structure free to fall out of step with the chain it describes.
+
+`module` exists because the engine effect an entry became is not what the
+player chose. Twenty of the catalogue's twenty-six modules have no DSP here and
+become passthrough entries; without their own name they would all be the same
+nameless thing. With it, a rack draws Pumper as Pumper, with its own artwork,
+and says this build does not process it.
+
+Neither field folds into the chain fingerprint. The fingerprint is sound
+identity: folding a rack's name would re-render every take it is printed into
+for a change nobody can hear.
+
+### What a group is, and where the rules live
+
+`fxChainGroups` turns a chain into what the surfaces draw, and the transforms
+beside it are the only things that rearrange one: rename, remove a span, move a
+group, move a module inside its rack, order by id, set a group's channels, set
+a group's placement. Every surface computes a new chain with those and hands it
+to the stage's own setter. No surface does its own list surgery.
+
+Two rules worth naming:
+
+- **Channel handling is read AROUND a group.** The engine applies it per entry:
+  the input choice before an entry's effect, the output choice, level and
+  placement after it. For a rack that is exactly what "Rack input / Rack output
+  / Rack level / Balance" means — the first module's input side and the last
+  module's output side, with the modules in between at defaults so the rack is
+  transparent between its own pedals. The surface issues the one or two
+  per-entry writes the repository already has rather than pushing the whole
+  chain on every frame of a drag; a test pins the targeted writes and the whole
+  rewrite agreeing.
+- **A rack never straddles the loop player.** The Pre/Post switch moves every
+  module together, and lands them at the END of the other stage rather than
+  where they stood. That is the accepted design's own wording, and it is what
+  keeps reorder — a separate, cancellable surface — the only thing that
+  arranges a stage.
+
+### What the surfaces became
+
+A card on the destination chain is a GROUP: the rack's name, its family's
+artwork and how many pedals it holds, or a single effect as before. Opening a
+rack card opens the rack chain editor — one column per pedal with its own
+power, artwork, controls and a persistent scrollbar, plain cables between them,
+and the rack's channel handling in the footer. Opening a single effect still
+opens the direct editor.
+
+### Two corrections to what part 2 and part 7 shipped
+
+- **The card's artwork frame was the wrong height.** It was `Expanded`, so it
+  took 189 of the card's 360; the pen fixes it at 138 and puts the slack
+  between the name and the status line.
+- **Both editors' titlebar rows were left-aligned where the pen right-aligns
+  them.** The pen puts the instance's pedal assignment ahead of the buttons;
+  that chip belongs to the pedal-binding surface, which is not built, and the
+  buttons that are keep the pen's right edge rather than sliding left into the
+  gap it would have left.
+
+### The one thing a rack's power does not do
+
+There is no rack-level bypass bit. A rack's power writes every pedal's own bit,
+so a rack turned off and on again comes back with every pedal on, losing which
+ones were individually bypassed before. The engine has one enable per slot and
+nothing above it; a rack bit would have to be a fourth bypass masked at every
+write path and folded into the fingerprint, which is a slice of its own. The
+common action — make this rack do nothing — is exact; only that round trip
+loses something.
+
+## Slice 3f part 9: rack options, and reorder
+
+The pen's `06 Rack options`, `04 Reorder effects` and `05 Reorder rack chain`.
+
+### Rack options
+
+Rename, Reorder effects, Remove an effect, Remove rack. Reorder and Remove an
+effect are offered only on a rack holding more than one pedal — there is no
+order to change in a rack of one, and taking its only pedal out is Remove rack
+said the long way — and are drawn dimmed rather than hidden, so the list keeps
+its shape between two racks.
+
+Rename goes through `showConsoleRenameSheet`, which this console already has
+and which owns the one keyboard. A standalone effect's options offer removal
+and nothing else: the accepted design gives rename and reorder to a rack.
+
+### One reorder surface, two jobs
+
+The same horizontal strip arranges a destination's racks and one rack's pedals.
+The draft is local and Cancel discards it, which is what makes the accepted
+"Reorder can be canceled" true after several moves — and what keeps a pedal
+press from persisting an order the player was still trying out.
+
+The stage is the boundary. A card carries its stage tag, a move is refused when
+the neighbour's tag differs, and no cable is drawn across the break. Read off
+the DRAFT rather than the order the page opened on, so the answer follows the
+moves already made. A rack's own pedals have no tag at all, so they move
+freely.
+
+Committing refuses an id list that does not name exactly the groups the chain
+still has. A draft is made on a chain a pedal can change under it, and
+committing a stale one would drop or duplicate whatever moved in the meantime.
+
+### Add an effect to a rack
+
+The same full-page catalogue, with what it resolves to joining THIS rack rather
+than starting a second one beside it. New pedals land at the end of the rack
+and arrive bypassed, like every other addition.
+
+### Checks
+
+- Root suite 2319 passing, 35 skipped; every package suite green; analyze and
+  bloc lint clean.
+- Thirty-six repository tests for the group model: grouping, the channel rule
+  in both directions, rename, removal, both moves, both orderings and their
+  refusals, the stage-end landing, and a rack surviving encode and decode.
+- Sixteen more widget tests: a rack as one card, its power writing every pedal,
+  the editor's columns, an unprocessable pedal keeping its name, a pedal's own
+  power, the footer's two targets, rename, both removals, reorder inside a rack,
+  reorder cancelled, the destination reorder arranging whole racks, its refusal
+  to cross the break, and its commit.
+- Six mutations, each caught by exactly the test that names it: no grouping, a
+  placement that stays where it stood, a rack power that writes one pedal, a
+  level written to the first pedal, a reorder that ignores the stage, and a
+  Cancel that commits.
+- Four more screenshots: a chain of racks, the rack editor, reorder and rack
+  options.
+
+### A golden that had been photographing a half-loaded page
+
+Part 6 recorded that artwork "cannot be in a widget-test golden". That was
+wrong, and the goldens it produced had empty frames where pictures belong. A
+widget test pumps in fake async and an asset load is real async, so the
+bundle's future never completes while time is fake. `runAsync` hands the real
+event loop back for a moment, and the artwork arrives. Every FX golden now
+carries the real Looper X artwork.
+
+## Slice 3f part 10: saved sounds
+
+The pen's `05 Save a preset`, `06 Replace a saved preset` and `04 My presets`.
+
+### A saved preset is a copy, not a reference
+
+Everything the accepted design says about saving follows from that one fact.
+Replacing a definition leaves existing instances unchanged; recalling one
+creates an independent, editable instance; saving does not rename the active
+rack. None of those is enforced anywhere — they are all just true, because the
+saved list holds entries of its own.
+
+What a save copies is the effect parameters, the channel settings and the
+catalogue's name for each pedal. What it deliberately drops is the rack, the
+slot ids and the placement: those three are what make one instance distinct
+from the next, and a definition carrying them would recall as the same
+instance twice and drag its old destination's stage along with it. Placement in
+particular belongs to where a sound is used, which the accepted design states
+in as many words.
+
+### One owner, one write
+
+`FxPresetsCubit` owns the list, because three surfaces touch it: the two
+editors save into it, the library recalls from it and My presets renames and
+deletes in it. A second copy would let them disagree about what is saved. The
+whole list is rewritten on every change, which is what makes a delete, a rename
+and a save the same single write.
+
+The name check is case-insensitive. The accepted collision question is about a
+name the player will read back, and two rows differing only in case are two
+rows nobody can tell apart.
+
+### The journey
+
+Save preset names the sound, then either saves it or asks. A name already taken
+offers Replace preset or Use another name; cancelling that question keeps the
+previous preset untouched, which is the accepted wording. My presets lives
+inside Add effects, lists each saved sound as a card over the row that renames
+or deletes it, and recalls one as a new instance with its own rack id,
+bypassed, at the destination's own stage. A saved single effect recalls as a
+single effect rather than a rack of one.
+
+### What is drawn and does nothing
+
+Import presets, Export all and each card's Export. Moving a preset on or off
+this console is the USB export domain's job, and that domain is not built. They
+are drawn where the pen draws them, dimmed, and report themselves disabled —
+the same treatment Effect options and Save preset had while they were waiting.
+
+My presets still has no artwork of its own. The accepted design gives it
+matching ORIGINAL art; that art is not in this repository, so the library card
+carries its name and no picture rather than a borrowed rack banner.
+
+### Checks
+
+- Root suite 2337 passing, 35 skipped; every package suite green; analyze and
+  bloc lint clean.
+- Nine cubit tests: the definition dropping rack, slot ids and placement while
+  keeping parameters, channels and the pedal name; the case-insensitive name
+  check; replace keeping identity and name; rename; remove; a restart; and a
+  malformed entry dropped without taking the good ones with it.
+- Eight widget tests: saving without renaming the rack, the collision question,
+  Replace rewriting one definition, Cancel keeping the previous preset, My
+  presets listing and recalling a new instance, a saved single effect staying
+  single, the empty state, Delete asking first, and the inert export controls.
+- Three mutations, each caught by exactly the test that names it: a definition
+  that keeps its instance identity, a recall that reuses the saved rack id, and
+  a case-sensitive name check.
+- A seventh screenshot covers My presets.
+
+## Slice 3f part 11: the Signal tray domain retires
+
+The implementation map's own words for this slice: "Replace Signal-era surfaces
+with accepted rack/single-FX editing, shared descriptor controls and output
+destinations." Parts 1 through 10 built the replacement. This part removes what
+it replaced.
+
+### The rail keeps its first row
+
+Signal was the tray's first domain and its landing, for a stated reason: the
+signal path is what the rest of the console configures, so it reads before the
+things that drive it. The accepted Effects page is that same signal path, so it
+takes the same first position and the same signal-path glyph — as a ROUTE
+rather than a face, the treatment Loop settings already has, because the page
+takes the whole screen and its editors are direct controls rather than a list
+that opens a dialog.
+
+The tray now lands on Control, the first face the rail still has. The `G`
+shortcut, which used to open the tray at Signal, opens the Effects route.
+
+### What went with it
+
+- `lib/looper/view/signal/` — nine files: the tray panel, the cards, the detail
+  panel, the FX editor, the parameter editor and tile, Add effect and the
+  plugin browser.
+- `fx_scope.dart` and `fx_plugin_state.dart`, which only those used.
+  `fx_block_chip.dart` stays: the track column and the new FX surfaces draw it.
+- `CacheTelemetryScope` and the lane-cache indicator preference. The Signal
+  detail panel was the only surface that rendered lane-cache state, and the
+  scope existed solely to gate the engine's poll for it. The toggle's own
+  subtitle named the surface — "Show cache status on the Signal lanes" — so
+  with the surface gone it was a switch for nothing.
+- Six control-centre screenshots of the retired face, and the shell tests that
+  drove it.
+
+### The plugin browser, and the owner's call
+
+Retiring Signal removed the only way to add a hosted VST3 or CLAP plugin to a
+chain. The accepted Add effects offers the factory catalogue and Single FX, and
+the pen draws no plugin entry, so there was nowhere accepted to put it. The
+owner's call was to drop the browser with the domain rather than invent a
+surface for it.
+
+Plugin hosting stays in the engine, the repository and the chain model: a chain
+that still carries a plugin entry loads, renders and persists exactly as
+before. What is gone is the console surface that added one.
+
+### Written back into the pen
+
+Per the project's own rule, a shipped departure from `segno-ui.pen` is a design
+change rather than a PR note. The rail's Signal row becoming an Effects route,
+the landing moving to Control, and the two things dropped with the domain are
+recorded there as `c/signal-domain-retired`, under `11 Earlier control &
+capture notes`.
+
+### Checks
+
+- Root suite 2081 passing, 35 skipped; analyze and bloc lint clean.
+- Every control-centre golden regenerated: the rail lost a row and gained one,
+  so almost all of them moved.
+
+### A package suite that stopped compiling, again
+
+`settings_repository`'s own tests still named the removed indicator keys, so
+the whole package's suite was silently absent — the same shape of defect slice
+3e left in `performance_repository`. The root analyzer does not reach a
+package's tests, and neither does the root suite. After a removal that crosses
+packages, every package's suite has to be run, not only the ones that look
+involved.
+
+### One harness that had been leaning on the old landing
+
+The tray SHELL's tests — handle, scrim, drag, rail — mount whichever face the
+tray lands on, because `closeTray` returns there. They had been mounting
+Signal's dependencies; they now mount Control's. The alternative was choosing a
+landing face to keep a harness small, which the harness's own comment already
+warned against.

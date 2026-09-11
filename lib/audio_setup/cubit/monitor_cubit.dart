@@ -439,6 +439,24 @@ class MonitorCubit extends Cubit<MonitorState> {
     ]);
   }
 
+  /// Replaces monitor [input]'s chain with [effects].
+  ///
+  /// The structural write every rack surface goes through: rename, reorder and
+  /// removal all rewrite the chain rather than edit one slot, because a rack is
+  /// several entries that move together.
+  void setEffects(int input, List<TrackEffect> effects) =>
+      _pushEffects(input, effects);
+
+  /// Appends [entries] to monitor [input]'s chain in one write.
+  ///
+  /// One write rather than a loop of [addEffect], because a rack is one thing
+  /// the player chose: adding its pedals one at a time would push the chain to
+  /// the engine once per pedal and let a half-built rack be heard on the way.
+  void appendEffects(int input, List<TrackEffect> entries) {
+    if (entries.isEmpty) return;
+    _pushEffects(input, [...state.forInput(input).effects, ...entries]);
+  }
+
   /// Appends a hosted plugin (identified by [ref]) to monitor [input]'s chain,
   /// Pre — see [addEffect]. The repository loads it through the slot ABI on
   /// the next chain apply.
@@ -577,6 +595,24 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Enables/disables monitor [input]'s chain entry [index] without losing its
   /// type or parameters (R16; click-free ramp engine-side) — the input-stage
   /// half of the universal per-slot power control.
+  /// Sets entry [index] of monitor [input]'s chain to [channels].
+  ///
+  /// By identity at the repository boundary, like placement: channel handling
+  /// belongs to the INSTANCE, and an index is what a reorder changes.
+  void setEffectChannels(int input, int index, FxChannels channels) {
+    final effects = state.forInput(input).effects;
+    if (index < 0 || index >= effects.length) return;
+    final slotId = effects[index].slotId;
+    if (slotId == null) return;
+    _repository.setMonitorEffectChannels(
+      input: input,
+      slotId: slotId,
+      channels: channels,
+    );
+    _emitInputEffects(input);
+    _schedulePersist(input);
+  }
+
   void setEffectEnabled(int input, int index, {required bool enabled}) {
     final monitor = state.forInput(input);
     if (index < 0 || index >= monitor.effects.length) return;
