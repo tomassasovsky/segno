@@ -340,24 +340,27 @@ Future<AutoStartResult> tryAutoStartEngine({
     }
   }
 
-  // Restore the Master insert chain envelope (FX v3 part 3a).
-  final masterChain = decodeFxChain(await settings.loadMasterFxChain());
-  if (masterChain.entries.isNotEmpty) {
-    repository.setMasterEffects(effects: masterChain.entries);
-    // Mint-once (A9) — see the lane restore above.
-    if (masterChain.entries.any((e) => e.slotId == null)) {
-      await settings.saveMasterFxChain(
-        encodeFxChain(
-          FxChainEnvelope(
-            chainEnabled: masterChain.chainEnabled,
-            entries: repository.masterEffects,
+  // Restore each output destination's post-sum chain envelope (slice 3f).
+  for (var bus = 0; bus < kMaxOutputBuses; bus++) {
+    final outputChain = decodeFxChain(await settings.loadOutputFxChain(bus));
+    if (outputChain.entries.isNotEmpty) {
+      repository.setOutputEffects(bus: bus, effects: outputChain.entries);
+      // Mint-once (A9) — see the lane restore above.
+      if (outputChain.entries.any((e) => e.slotId == null)) {
+        await settings.saveOutputFxChain(
+          bus,
+          encodeFxChain(
+            FxChainEnvelope(
+              chainEnabled: outputChain.chainEnabled,
+              entries: repository.outputEffects(bus),
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
-  }
-  if (!masterChain.chainEnabled) {
-    repository.setMasterChainEnabled(enabled: false);
+    if (!outputChain.chainEnabled) {
+      repository.setOutputChainEnabled(bus: bus, enabled: false);
+    }
   }
 
   // Restore the All tracks recorded-mix chain envelope (slice 3e).

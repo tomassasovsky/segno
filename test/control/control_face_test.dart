@@ -51,7 +51,7 @@ TrackEffect _fx(String slotId, TrackEffectType type) =>
 
 /// The Master chain, which every rig has — the one target that is always
 /// offerable, so a test never depends on a configured stage existing.
-const _master = FxAddress(stage: FxStage.master);
+const _master = FxAddress(stage: FxStage.output);
 
 void main() {
   late _MockLooperRepository looper;
@@ -82,6 +82,7 @@ void main() {
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
+        outputBusCount: 1,
         status: const EngineStatus(sampleRate: 48000),
       ),
     );
@@ -89,13 +90,14 @@ void main() {
     when(() => looper.allLaneChains()).thenReturn(const {});
     when(() => looper.allTrackChains()).thenReturn(const {});
     when(() => looper.trackEffects(any())).thenReturn(const []);
-    when(() => looper.masterEffects).thenAnswer((_) => masterChain);
+    when(() => looper.outputEffects(0)).thenAnswer((_) => masterChain);
+    when(() => looper.allTracksEffects).thenReturn(const []);
+    when(() => looper.outputChainEnabled(any())).thenReturn(true);
+    when(() => looper.allTracksChainEnabled).thenReturn(true);
     when(
-      () => looper.chainEntriesAt(_master),
-    ).thenAnswer((_) => masterChain);
-    when(
-      () => looper.masterChainEnvelope(),
+      () => looper.outputChainEnvelope(0),
     ).thenReturn(const FxChainEnvelope());
+    when(() => looper.outputChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
 
     midiDevices = _MockMidiDevices();

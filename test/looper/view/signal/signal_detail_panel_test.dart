@@ -91,9 +91,13 @@ final _rig = LooperState(
     ),
     const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
   ],
-  masterEffects: [
-    BuiltInEffect(type: TrackEffectType.drive, slotId: 'slot-master-drive'),
-  ],
+  outputChains: {
+    0: FxChainEnvelope(
+      entries: [
+        BuiltInEffect(type: TrackEffectType.drive, slotId: 'slot-master-drive'),
+      ],
+    ),
+  },
   status: const EngineStatus(
     deviceName: 'Scarlett 18i20',
     inputChannels: 2,
@@ -495,7 +499,7 @@ void main() {
     testWidgets('the master answers one — the sum has no fader or mute', (
       tester,
     ) async {
-      await pump(tester, stage: FxStage.master);
+      await pump(tester, stage: FxStage.output);
       await tester.tap(find.byKey(const Key('signal_card_master')));
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
@@ -769,7 +773,7 @@ void main() {
     });
 
     testWidgets('the master draws its own insert chain', (tester) async {
-      await pump(tester, stage: FxStage.master);
+      await pump(tester, stage: FxStage.output);
       await tester.tap(find.byKey(const Key('signal_card_master')));
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);

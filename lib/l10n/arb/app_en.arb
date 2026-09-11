@@ -800,9 +800,18 @@
             }
         }
     },
-    "stageFxTargetMaster": "MASTER",
-    "@stageFxTargetMaster": {
-        "description": "The FX-stage prefix of an FX-mode cell whose bound chain is the single Master insert."
+    "stageFxTargetOutput": "OUT {number}",
+    "@stageFxTargetOutput": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on one output destination.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "stageFxTargetAllTracks": "ALL TRACKS",
+    "@stageFxTargetAllTracks": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain is the All tracks recorded-mix chain."
     },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",
@@ -1601,7 +1610,16 @@
             }
         }
     },
-    "pedalAssignStageMaster": "Master",
+    "pedalAssignStageAllTracks": "All tracks",
+    "pedalAssignStageOutput": "Output {number}",
+    "@pedalAssignStageOutput": {
+        "description": "Names one output destination in a binding target label.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
     "a11yPedalAssignRow": "{button}: {target}",
     "@a11yPedalAssignRow": {
         "description": "Semantics label for one assignment row.",

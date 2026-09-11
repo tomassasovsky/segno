@@ -1631,3 +1631,104 @@ Playback transforms. Speed, Reverse, pitch preservation and Follow tempo do
 not exist in this engine. The accepted direction for Speed is to stream from
 originals inline, which composes with a render from originals — both read the
 same recordings — but nothing tests that until Speed exists.
+
+## Slice 3f part 1: the FX destination model
+
+The FX surfaces the accepted design draws address five destinations: a live
+input, a recorded part, a whole recorded track, All tracks, and one output.
+The stage enum named four, and two of those five had no address at all. This
+part builds the model underneath the surfaces, with no UI change of its own.
+
+### What the stage enum says now
+
+`input`, `loop`, `track`, `allTracks`, `output`. The `master` stage is gone.
+It named one insert on the first output pair, which slice 3b had already
+turned into one chain per output destination; `FxStage.output` carries the
+destination in the address it already had a field for.
+
+A persisted binding still spelling `master` decodes to `null` and goes inert.
+That is the AGENTS rule (remove obsolete paths, do not migrate) and it is also
+the safer reading: `master` named a stage whose meaning was "the first enabled
+pair", and silently rewriting it as destination 0 would point a binding at a
+destination its author never chose.
+
+### One chain per destination, all the way down
+
+The repository held one `_masterEffects` list and one flag. Both are maps
+keyed by bus now, with the Track stage's own conventions:
+
+- A destination's entry is dropped when its chain lands back at the default,
+  so an entry in the map means "this destination is configured" and a cleared
+  destination stops claiming a persisted key.
+- `applySession` writes every destination the OLD rig configured as well as
+  the ones the arriving rig names, so a session that mentions no destination
+  resets rather than inherits.
+- The restart replay walks the map instead of pushing bus 0.
+
+Persistence follows the same shape: the settings key is `output_fx_chain.<bus>`
+with a clear for a destination a load drops, the session manifest carries
+`outputChains` (one record per destination, schema v9) where it carried a bare
+`masterChain` string, and the performance arm snapshot records
+`PerformanceOutputChain` per destination beside its `PerformanceTrackChain`
+twin.
+
+### What a binding can point at
+
+The picker offers the All tracks chain and every destination the OPEN DEVICE
+has, not only the destinations already carrying effects. A destination exists
+because the interface has the jacks; a picker that hid the empty ones would
+have nowhere to point a binding at the chain the player is about to build
+there. `chainEntriesAt` draws the same line: an empty destination within the
+device's count names a real, stompable chain, the way a configured monitor
+does.
+
+Binding rows name a destination by ORDINAL (`Output 1`), not by jack pair or
+by the rig's rename. The label helper has neither the channel count that
+decides whether the last destination is a pair or a single jack, nor the
+rename map, and a row that guessed either would name a socket the interface
+may not have.
+
+### The retiring Signal domain
+
+Its four tabs stay four tabs, now an explicit subset of the enum rather than
+the enum itself, and they address destination 0. The All tracks chain is not
+reachable from that face — it never was — and arrives with the FX surfaces
+that replace it in the rest of 3f.
+
+### A defect in shipped code, fixed on the way
+
+`packages/performance_repository`'s test fake never grew the methods slice 3e
+added to the engine interface: the five All tracks setters, the four
+channel-handling setters and the two `preCount` arguments. Every test in that
+package failed to COMPILE, so its whole suite (coverage floor 99%) was
+silently absent rather than failing. Fixed on the 3e branch, where it was
+introduced.
+
+### Checks
+
+- Dart: root 2264 passing and 35 skipped; `looper_repository` 501;
+  `session_repository` 105; `performance_repository` 118;
+  `settings_repository` 155. `dart analyze` clean everywhere, bloc lint clean.
+- Five repository tests for the per-destination model: two destinations
+  holding independent chains pushed to their own buses, the chain flag and
+  entry flag and a parameter each addressed per destination, a destination
+  past the ceiling refused rather than wrapped, `applySession` resetting an
+  unnamed destination, and every configured destination replaying on restart.
+- Two bootstrap tests: each destination persisting and restoring under its own
+  key across a cold boot, and a load that drops a destination clearing ITS key
+  so the next boot does not resurrect the previous rig on that pair.
+- Mutation-checked: pushing only the arriving rig's destinations, replaying
+  only destination 0 on restart, and dropping the destination at the engine
+  boundary each fail exactly the tests that name them.
+- Three goldens regenerated: the pedal binding list now offers `All tracks
+  chain` and `Output 1 chain` where it offered one `Master chain`.
+
+### A trap worth not rediscovering
+
+`chainEntriesAt` is an EXTENSION on the repository, so `when(() =>
+looper.chainEntriesAt(...))` does not stub it — mocktail RUNS it and registers
+a stub against whichever member it happened to touch last. Two tests carried
+such a line. They worked by accident while the extension's last call was
+`masterEffects`; when it became `state`, they stubbed `state` to return a list
+of effects. The real extension resolves from the members already stubbed
+around it, so the fix was to delete the lines.

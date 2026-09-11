@@ -634,7 +634,7 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  // ---- Track-stage + Master insert chains (FX v3), recorded so app tests
+  // ---- Track-stage + output chains (FX v3), recorded so app tests
   // can assert the bootstrap restore + bloc pushes. ----
 
   /// Per-(channel, index) effect type passed to [setTrackFx].
@@ -655,20 +655,20 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-channel flag passed to [setTrackFxChainEnabled].
   final Map<int, bool> trackFxChainEnabled = {};
 
-  /// Per-index effect type passed to [setOutputFx] on bus 0.
-  final Map<int, TrackEffectType> masterFx = {};
+  /// Per-(bus, index) effect type passed to [setOutputFx].
+  final Map<(int, int), TrackEffectType> outputFx = {};
 
-  /// Bus 0's active chain length passed to [setOutputFxCount].
-  int? masterFxCount;
+  /// Per-bus active chain length passed to [setOutputFxCount].
+  final Map<int, int> outputFxCount = {};
 
-  /// Per-(index, param) value passed to [setOutputFxParam] on bus 0.
-  final Map<(int, int), double> masterFxParam = {};
+  /// Per-(bus, index, param) value passed to [setOutputFxParam].
+  final Map<(int, int, int), double> outputFxParam = {};
 
-  /// Per-index flag passed to [setOutputFxEnabled] on bus 0.
-  final Map<int, bool> masterFxEnabled = {};
+  /// Per-(bus, index) flag passed to [setOutputFxEnabled].
+  final Map<(int, int), bool> outputFxEnabled = {};
 
-  /// Bus 0's flag passed to [setOutputFxChainEnabled].
-  bool? masterFxChainEnabled;
+  /// Per-bus flag passed to [setOutputFxChainEnabled].
+  final Map<int, bool> outputFxChainEnabled = {};
 
   @override
   EngineResult setTrackFx({
@@ -731,31 +731,27 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  // Only bus 0 is addressed by the app today (FxStage.master), so the fake
-  // records that bus and ignores the rest.
   @override
   EngineResult setOutputFx({
     required int bus,
     required int index,
     required TrackEffectType type,
   }) {
-    if (bus != 0) return EngineResult.ok;
     // D-ENSEED re-seed on type change — see [setLaneFx].
-    if (masterFx[index] != type) {
-      masterFxEnabled[index] = true;
+    if (outputFx[(bus, index)] != type) {
+      outputFxEnabled[(bus, index)] = true;
     }
-    masterFx[index] = type;
+    outputFx[(bus, index)] = type;
     return EngineResult.ok;
   }
 
   @override
   EngineResult setOutputFxCount({required int bus, required int count}) {
-    if (bus != 0) return EngineResult.ok;
     // D-ENSEED entering-slot seed — see [setLaneFxCount].
-    for (var s = masterFxCount ?? 0; s < count; s++) {
-      masterFxEnabled[s] = true;
+    for (var s = outputFxCount[bus] ?? 0; s < count; s++) {
+      outputFxEnabled[(bus, s)] = true;
     }
-    masterFxCount = count;
+    outputFxCount[bus] = count;
     return EngineResult.ok;
   }
 
@@ -766,7 +762,7 @@ class FakeAudioEngine implements AudioEngine {
     required int param,
     required double value,
   }) {
-    if (bus == 0) masterFxParam[(index, param)] = value;
+    outputFxParam[(bus, index, param)] = value;
     return EngineResult.ok;
   }
 
@@ -776,7 +772,7 @@ class FakeAudioEngine implements AudioEngine {
     required int index,
     required bool enabled,
   }) {
-    if (bus == 0) masterFxEnabled[index] = enabled;
+    outputFxEnabled[(bus, index)] = enabled;
     return EngineResult.ok;
   }
 
@@ -785,7 +781,7 @@ class FakeAudioEngine implements AudioEngine {
     required int bus,
     required bool enabled,
   }) {
-    if (bus == 0) masterFxChainEnabled = enabled;
+    outputFxChainEnabled[bus] = enabled;
     return EngineResult.ok;
   }
 

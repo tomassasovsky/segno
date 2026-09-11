@@ -13,18 +13,17 @@ enum FxStage {
 
   /// A lane's record-route (loop playback) chain — one recorded part.
   loop,
-  // The All tracks recorded-mix chain is deliberately NOT a stage yet: the
-  // engine and the repository own it from slice 3e, and it becomes an
-  // addressable destination when slice 3f rebuilds these surfaces around one
-  // chain per destination. An address is what a pedal binding persists, so it
-  // arrives with the surface that can show what a binding points at.
 
   /// A track's stereo-bus chain, downstream of its lanes.
   track,
 
-  /// The Master insert — output bus 0's chain, until slice 3f rebuilds the FX
-  /// surfaces around one chain per destination.
-  master;
+  /// The All tracks chain, over the sum of the recorded tracks. Not an output
+  /// bus: live inputs, backing and click are not in this sum.
+  allTracks,
+
+  /// One output destination's post-sum chain — the true output stage, over
+  /// every source actually routed to that destination.
+  output;
 
   /// Maps a canonical wire [name] back to a stage, or `null` when unknown.
   static FxStage? fromName(String? name) {
@@ -35,7 +34,7 @@ enum FxStage {
   }
 }
 
-/// The address of one effects chain in the four-stage FX model (A9/R19):
+/// The address of one effects chain in the FX model (A9/R19):
 /// `{stage, index, lane?}`.
 ///
 /// Per-stage field meaning:
@@ -45,8 +44,16 @@ enum FxStage {
 /// - [FxStage.loop]: [index] is the track channel; [lane] is the lane within
 ///   that track (required to name one chain, since every lane owns one).
 /// - [FxStage.track]: [index] is the track channel; [lane] is unused (null).
-/// - [FxStage.master]: there is exactly one Master insert — [index] is `0`
+/// - [FxStage.allTracks]: there is exactly one such chain — [index] is `0`
 ///   and [lane] is null.
+/// - [FxStage.output]: [index] is the output destination (bus); [lane] is
+///   unused (null).
+///
+/// The `master` stage of the four-stage model is gone: an output chain is
+/// per destination from slice 3f, so the one chain that stage named is the
+/// [FxStage.output] address at bus 0. A persisted binding still saying
+/// `master` decodes to `null` and goes inert rather than retargeting itself
+/// at a destination its author never chose.
 ///
 /// ## Canonical JSON (the single declaration — R19)
 ///
@@ -101,7 +108,8 @@ class FxAddress extends Equatable {
   final FxStage stage;
 
   /// The stage-scoped coordinate: input channel for [FxStage.input], track
-  /// channel for [FxStage.loop] / [FxStage.track], `0` for [FxStage.master].
+  /// channel for [FxStage.loop] / [FxStage.track], output destination for
+  /// [FxStage.output], `0` for [FxStage.allTracks].
   final int index;
 
   /// The lane within track [index] — only meaningful for [FxStage.loop];

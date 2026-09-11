@@ -104,7 +104,10 @@ void main() {
 
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
       when(() => looper.state).thenReturn(
-        LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
+        LooperState(
+          tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
+          outputBusCount: 1,
+        ),
       );
 
       chainEnabled = <int, bool>{};
@@ -138,7 +141,10 @@ void main() {
       );
       when(() => looper.allMonitors()).thenAnswer((_) => const {});
       when(() => looper.allLaneChains()).thenAnswer((_) => const {});
-      when(() => looper.masterEffects).thenAnswer((_) => const []);
+      when(() => looper.outputEffects(0)).thenAnswer((_) => const []);
+      when(() => looper.allTracksEffects).thenReturn(const []);
+      when(() => looper.outputChainEnabled(any())).thenReturn(true);
+      when(() => looper.allTracksChainEnabled).thenReturn(true);
       when(
         () => looper.setVolume(any(), channel: any(named: 'channel')),
       ).thenAnswer((call) {

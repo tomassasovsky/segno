@@ -75,8 +75,13 @@ void main() {
     when(
       () => looper.trackEffects(any()),
     ).thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
-    when(() => looper.masterEffects).thenAnswer((_) => masterChain);
-    when(() => looper.state).thenAnswer((_) => LooperState(tracks: tracks));
+    when(() => looper.outputEffects(0)).thenAnswer((_) => masterChain);
+    when(() => looper.allTracksEffects).thenReturn(const []);
+    when(() => looper.outputChainEnabled(any())).thenReturn(true);
+    when(() => looper.allTracksChainEnabled).thenReturn(true);
+    when(() => looper.state).thenAnswer(
+      (_) => LooperState(tracks: tracks, outputBusCount: 1),
+    );
 
     when(
       () => looper.setLaneEffectParam(
@@ -104,7 +109,8 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => looper.setMasterEffectParam(
+      () => looper.setOutputEffectParam(
+        bus: 0,
         index: any(named: 'index'),
         param: any(named: 'param'),
         value: any(named: 'value'),

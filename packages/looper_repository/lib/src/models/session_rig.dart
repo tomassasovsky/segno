@@ -164,7 +164,7 @@ class SessionRig {
     this.tracks = const [],
     this.laneChains = const {},
     this.trackChains = const {},
-    this.masterChain = const FxChainEnvelope(),
+    this.outputChains = const {},
     this.allTracksChain = const FxChainEnvelope(),
     this.monitors = const [],
     this.looperMode = LooperMode.multi,
@@ -215,9 +215,10 @@ class SessionRig {
   /// carrying the previous session's bus chain (R17).
   final Map<int, FxChainEnvelope> trackChains;
 
-  /// The session's single Master insert chain; the empty enabled envelope when
-  /// it defines none (a v4-or-earlier manifest always does).
-  final FxChainEnvelope masterChain;
+  /// Every output destination's post-sum chain the session defines, keyed by
+  /// bus (slice 3f). An absent destination is RESET on apply rather than left
+  /// carrying the previous session's chain, like [trackChains].
+  final Map<int, FxChainEnvelope> outputChains;
 
   /// The session's single All tracks recorded-mix chain (slice 3e); the empty
   /// enabled envelope when it defines none (every v7-or-earlier manifest).

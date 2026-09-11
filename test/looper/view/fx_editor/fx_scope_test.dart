@@ -17,10 +17,10 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 LooperState _state({
   List<Track> tracks = const [],
   int inputChannels = 2,
-  List<TrackEffect> masterEffects = const [],
+  List<TrackEffect> outputEffects = const [],
 }) => LooperState(
   tracks: tracks,
-  masterEffects: masterEffects,
+  outputChains: {0: FxChainEnvelope(entries: outputEffects)},
   status: EngineStatus(
     inputChannels: inputChannels,
     outputChannels: 2,
@@ -238,7 +238,7 @@ void main() {
     StageFxScope masterScope() => StageFxScope(
       looper: bloc,
       trackNames: const [],
-      address: const FxAddress(stage: FxStage.master),
+      address: const FxAddress(stage: FxStage.output),
     );
 
     test('the track stage reads that track bus chain and its labels', () {
@@ -275,14 +275,14 @@ void main() {
         bloc,
         const Stream<LooperState>.empty(),
         initialState: _state(
-          masterEffects: [BuiltInEffect(type: TrackEffectType.drive)],
+          outputEffects: [BuiltInEffect(type: TrackEffectType.drive)],
         ),
       );
       final scope = masterScope();
 
       // There is exactly one Master insert — no track has to exist for it.
       expect(scope.isPresent, isTrue);
-      expect(scope.address.stage, FxStage.master);
+      expect(scope.address.stage, FxStage.output);
       expect(scope.effects, hasLength(1));
       expect(scope.label(l10n), l10n.fxEditorMasterTitle);
       expect(
@@ -368,7 +368,7 @@ void main() {
         const Stream<LooperState>.empty(),
         initialState: _state(),
       );
-      const address = FxAddress(stage: FxStage.master);
+      const address = FxAddress(stage: FxStage.output);
       const ref = PluginRef(format: PluginFormat.vst3, id: 'a', version: 1);
 
       masterScope()
@@ -413,9 +413,12 @@ void main() {
       );
       expect(
         events[2],
-        const LooperMasterEffectEnabledToggled(1, enabled: true),
+        const LooperOutputEffectEnabledToggled(0, 1, enabled: true),
       );
-      expect(events[3], const LooperMasterChainEnabledToggled(enabled: true));
+      expect(
+        events[3],
+        const LooperOutputChainEnabledToggled(0, enabled: true),
+      );
     });
 
     test('a bus stage inherits nothing and never re-syncs', () {

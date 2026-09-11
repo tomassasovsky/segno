@@ -36,7 +36,13 @@ String fxStageLabel(
   FxStage.track => l10n.pedalAssignStageTrack(
     l10n.trackName(trackNames, address.index),
   ),
-  FxStage.master => l10n.pedalAssignStageMaster,
+  FxStage.allTracks => l10n.pedalAssignStageAllTracks,
+  // By destination ORDINAL, not by jack pair or by the rig's alias: this
+  // label has neither the device's channel count (which decides whether the
+  // last destination is a pair or a single jack) nor the rename map, and a
+  // binding row that guessed either would name a socket the interface may not
+  // have.
+  FxStage.output => l10n.pedalAssignStageOutput(address.index + 1),
 };
 
 /// Names a discrete (`enabled`-flipping) [target] — one whole chain, or one

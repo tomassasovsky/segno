@@ -50,7 +50,7 @@ class SignalTrayPanel extends StatelessWidget {
           PillTab(value: FxStage.input, label: l10n.signalStageInput),
           PillTab(value: FxStage.loop, label: l10n.signalStageLoop),
           PillTab(value: FxStage.track, label: l10n.signalStageTrack),
-          PillTab(value: FxStage.master, label: l10n.signalStageMaster),
+          PillTab(value: FxStage.output, label: l10n.signalStageMaster),
         ],
         // One body for four tabs, keyed by stage: what a card *is* changes
         // with the stage, and the six questions it answers do not.

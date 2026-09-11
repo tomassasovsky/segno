@@ -171,7 +171,7 @@ class PerformanceTrackSnapshot {
 ///
 /// All four FX stages of the v3 model are recorded — Input ([monitors]), Loop
 /// (per-lane, inside [tracks]), Track ([trackChains]) and Master
-/// ([masterEffects] + [masterChainEnabled]) — each with its chain-enabled flag
+/// ([outputChains]) — each with its chain-enabled flag
 /// and each entry with its own `enabled` bit, so a replay seeds arm-time bypass
 /// state rather than assuming everything was audible (R3). [fxStagesVersion] is
 /// the presence-keyed marker that tells a legacy snapshot (written before those
@@ -189,8 +189,7 @@ class PerformanceArmSnapshot {
     this.tracks = const [],
     this.monitors = const [],
     this.trackChains = const [],
-    this.masterEffects = const [],
-    this.masterChainEnabled = true,
+    this.outputChains = const [],
     this.fxStagesVersion = currentFxStagesVersion,
     this.followOutput = false,
     this.captureBus = 0,
@@ -233,11 +232,10 @@ class PerformanceArmSnapshot {
           for (final c in (json['trackChains'] as List<dynamic>? ?? const []))
             PerformanceTrackChain.fromJson(c as Map<String, dynamic>),
         ],
-        masterEffects: [
-          for (final e in (json['masterEffects'] as List<dynamic>? ?? const []))
-            TrackEffect.fromJson(e as Map<String, dynamic>),
+        outputChains: [
+          for (final c in (json['outputChains'] as List<dynamic>? ?? const []))
+            PerformanceOutputChain.fromJson(c as Map<String, dynamic>),
         ],
-        masterChainEnabled: json['masterChainEnabled'] as bool? ?? true,
       );
 
   /// This snapshot with the captured destination's facts filled in — the
@@ -256,8 +254,7 @@ class PerformanceArmSnapshot {
     tracks: tracks,
     monitors: monitors,
     trackChains: trackChains,
-    masterEffects: masterEffects,
-    masterChainEnabled: masterChainEnabled,
+    outputChains: outputChains,
     fxStagesVersion: fxStagesVersion,
     followOutput: followOutput,
     captureBus: captureBus,
@@ -335,11 +332,27 @@ class PerformanceArmSnapshot {
   /// no bus FX.
   final List<PerformanceTrackChain> trackChains;
 
-  /// The Master insert chain's entries at arm time, in order.
-  final List<TrackEffect> masterEffects;
+  /// Each output destination's post-sum chain at arm time. Empty for a
+  /// legacy snapshot ([legacyFxStagesVersion]) — and for a rig with no
+  /// output FX.
+  final List<PerformanceOutputChain> outputChains;
 
-  /// Whether the Master insert chain was engaged as a whole at arm time.
-  final bool masterChainEnabled;
+  /// Output destination [bus]'s chain entries at arm time, empty when the
+  /// snapshot records none there.
+  List<TrackEffect> outputEffects(int bus) =>
+      _outputChain(bus)?.effects ?? const [];
+
+  /// Whether output destination [bus]'s chain was engaged at arm time. A
+  /// destination the snapshot does not record reads as engaged: there was
+  /// nothing switched off there.
+  bool outputChainEnabled(int bus) => _outputChain(bus)?.chainEnabled ?? true;
+
+  PerformanceOutputChain? _outputChain(int bus) {
+    for (final chain in outputChains) {
+      if (chain.bus == bus) return chain;
+    }
+    return null;
+  }
 
   /// Which FX-stage schema this snapshot was written under (R20):
   /// [currentFxStagesVersion] for a four-stage capture,
@@ -369,9 +382,8 @@ class PerformanceArmSnapshot {
     'monitors': monitors,
     if (trackChains.isNotEmpty)
       'trackChains': [for (final c in trackChains) c.toJson()],
-    if (masterEffects.isNotEmpty)
-      'masterEffects': [for (final e in masterEffects) e.toJson()],
-    if (!masterChainEnabled) 'masterChainEnabled': false,
+    if (outputChains.isNotEmpty)
+      'outputChains': [for (final c in outputChains) c.toJson()],
   };
 }
 

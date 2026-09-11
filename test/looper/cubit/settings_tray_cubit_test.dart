@@ -267,15 +267,15 @@ void main() {
       addTearDown(cubit.close);
       cubit
         ..selectSignalCard(const FxAddress(stage: FxStage.input))
-        ..showSignalTab(FxStage.master);
+        ..showSignalTab(FxStage.output);
 
       expect(cubit.state.signalSelection, isNull);
-      expect(cubit.state.signalTab, FxStage.master);
+      expect(cubit.state.signalTab, FxStage.output);
     });
 
     test('copyWith cannot clear it by accident, only by flag', () {
       const open = SettingsTrayState(
-        signalSelection: FxAddress(stage: FxStage.master),
+        signalSelection: FxAddress(stage: FxStage.output),
       );
       // `?? this` can never clear — the flag is what makes null reachable.
       expect(open.copyWith().signalSelection, isNotNull);

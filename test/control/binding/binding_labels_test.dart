@@ -64,7 +64,11 @@ void main() {
     when(
       () => looper.trackEffects(any()),
     ).thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
-    when(() => looper.masterEffects).thenReturn(const []);
+    when(() => looper.outputEffects(0)).thenReturn(const []);
+    when(() => looper.allTracksEffects).thenReturn(const []);
+    when(() => looper.outputChainEnabled(any())).thenReturn(true);
+    when(() => looper.allTracksChainEnabled).thenReturn(true);
+    when(() => looper.state).thenReturn(const LooperState(outputBusCount: 1));
   });
 
   group('fxStageLabel', () {
@@ -94,8 +98,8 @@ void main() {
         l10n.pedalAssignStageTrack('TRACK 4'),
       );
       expect(
-        fxStageLabel(l10n, names, const FxAddress(stage: FxStage.master)),
-        l10n.pedalAssignStageMaster,
+        fxStageLabel(l10n, names, const FxAddress(stage: FxStage.output)),
+        l10n.pedalAssignStageOutput(1),
       );
     });
   });

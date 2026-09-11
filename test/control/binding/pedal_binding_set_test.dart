@@ -8,7 +8,7 @@ import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_binding_set.dart';
 
 const _track5 = FxAddress(stage: FxStage.track, index: 5);
-const _master = FxAddress(stage: FxStage.master);
+const _master = FxAddress(stage: FxStage.output);
 
 String get _chainTarget => const FxChainTarget(_track5).canonicalString();
 String get _slotTarget =>

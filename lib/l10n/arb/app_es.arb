@@ -366,7 +366,8 @@
     "stageFxTargetInput": "ENTRADA {number}",
     "stageFxTargetTrack": "PISTA {number}",
     "stageFxTargetLane": "LÍNEA {lane}",
-    "stageFxTargetMaster": "MASTER",
+    "stageFxTargetOutput": "SALIDA {number}",
+    "stageFxTargetAllTracks": "TODAS LAS PISTAS",
     "signalShowAllLanes": "Todos los carriles",
     "signalShowRecordedLanes": "Carriles grabados",
     "signalInherited": "Heredada",
@@ -1054,7 +1055,16 @@
     "pedalAssignStageInput": "Entrada {number}",
     "pedalAssignStageLoop": "{trackName} línea {lane}",
     "pedalAssignStageTrack": "{trackName}",
-    "pedalAssignStageMaster": "Master",
+    "pedalAssignStageAllTracks": "Todas las pistas",
+    "pedalAssignStageOutput": "Salida {number}",
+    "@pedalAssignStageOutput": {
+        "description": "Names one output destination in a binding target label.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
     "a11yPedalAssignRow": "{button}: {target}",
     "a11yPedalAssignSelected": "{button} seleccionado",
     "fxStompBound": "Pedal",

@@ -742,13 +742,14 @@ void main() {
         tester,
         name: 'GUITAR',
         mode: InteractionMode.fx,
-        // The footswitch over the GUITAR column is bound to the MASTER insert's
-        // chain: the cell must say MASTER, never TRACK 1 / GUITAR.
-        fxTarget: const FxAddress(stage: FxStage.master),
+        // The footswitch over the GUITAR column is bound to the FIRST OUTPUT
+        // destination's chain: the cell must say OUT 1, never TRACK 1 /
+        // GUITAR.
+        fxTarget: const FxAddress(stage: FxStage.output),
         track: Track(effects: [BuiltInEffect(type: TrackEffectType.reverb)]),
       );
 
-      expect(find.text('MASTER · REVERB'), findsOneWidget);
+      expect(find.text('OUT 1 · REVERB'), findsOneWidget);
       expect(fxIdentity(tester), isNot(contains('GUITAR')));
       expect(fxIdentity(tester), isNot(contains('TRACK')));
     });

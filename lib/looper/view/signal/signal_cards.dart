@@ -61,7 +61,11 @@ class SignalStageBody extends StatelessWidget {
             FxStage.input => const _InputCards(),
             FxStage.loop => const _LoopCards(),
             FxStage.track => const _TrackCards(),
-            FxStage.master => const _MasterStage(),
+            FxStage.output => const _MasterStage(),
+            // No tab reaches it: this domain's strip lists the four stages it
+            // was drawn for, and the All tracks chain arrives with the FX
+            // surfaces that replace this face.
+            FxStage.allTracks => const SizedBox.shrink(),
           },
         ],
       ),
@@ -332,10 +336,10 @@ class _MasterStage extends StatelessWidget {
     // mutation reassigns it, so this fires when the chain changes and not when
     // a meter does.
     final master = context.select<LooperBloc, List<TrackEffect>>(
-      (b) => b.state.masterEffects,
+      (b) => b.state.outputEffects(kMasterOutputBus),
     );
     final masterOn = context.select<LooperBloc, bool>(
-      (b) => b.state.masterChainEnabled,
+      (b) => b.state.outputChainEnabled(kMasterOutputBus),
     );
     final (outputs, mask) = context.select<LooperBloc, (int, int)>(
       (bloc) =>
@@ -351,9 +355,9 @@ class _MasterStage extends StatelessWidget {
       children: [
         SignalCard(
           key: const Key('signal_card_master'),
-          selected: open == const FxAddress(stage: FxStage.master),
+          selected: open == const FxAddress(stage: FxStage.output),
           onTap: () =>
-              tray.selectSignalCard(const FxAddress(stage: FxStage.master)),
+              tray.selectSignalCard(const FxAddress(stage: FxStage.output)),
           name: l10n.signalMasterCardName,
           coordinate: l10n.signalCoordMain,
           routesTo: l10n.signalRouteOutputs,
@@ -363,9 +367,9 @@ class _MasterStage extends StatelessWidget {
         ),
         // Under the card it belongs to, and above the group that answers a
         // different question — where the sum goes.
-        if (open == const FxAddress(stage: FxStage.master)) ...[
+        if (open == const FxAddress(stage: FxStage.output)) ...[
           const SizedBox(height: kConsoleBlockGap),
-          const SignalDetailPanel(address: FxAddress(stage: FxStage.master)),
+          const SignalDetailPanel(address: FxAddress(stage: FxStage.output)),
         ],
         const SizedBox(height: kConsoleGroupGap),
         ConsoleGroupLabel(l10n.signalOutputsGroup),

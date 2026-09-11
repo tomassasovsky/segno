@@ -65,7 +65,9 @@ class SignalDetailPanel extends StatelessWidget {
           ? const SizedBox.shrink()
           : _LoopPanel(track: address.index, lane: address.lane!),
     FxStage.track => _TrackPanel(track: address.index),
-    FxStage.master => const _MasterPanel(),
+    FxStage.output => const _MasterPanel(),
+    // Unreachable from this face — see the stage body's own note.
+    FxStage.allTracks => const SizedBox.shrink(),
   };
 }
 
@@ -319,13 +321,17 @@ class _MasterPanel extends StatelessWidget {
     // would be a collision-shaped subscription.
     return BlocBuilder<LooperBloc, LooperState>(
       buildWhen: (previous, current) =>
-          !listEquals(previous.masterEffects, current.masterEffects) ||
-          previous.masterChainEnabled != current.masterChainEnabled,
+          !listEquals(
+            previous.outputEffects(kMasterOutputBus),
+            current.outputEffects(kMasterOutputBus),
+          ) ||
+          previous.outputChainEnabled(kMasterOutputBus) !=
+              current.outputChainEnabled(kMasterOutputBus),
       builder: (context, state) => _PanelBody(
-        address: const FxAddress(stage: FxStage.master),
+        address: const FxAddress(stage: FxStage.output),
         scope: StageFxScope(
           looper: context.read<LooperBloc>(),
-          address: const FxAddress(stage: FxStage.master),
+          address: const FxAddress(stage: FxStage.output),
           trackNames: const [],
         ),
         title: l10n.signalMasterCardName,
@@ -333,7 +339,7 @@ class _MasterPanel extends StatelessWidget {
           l10n.signalCoordMain,
           l10n.signalStageMaster,
         ),
-        chain: state.masterEffects,
+        chain: state.outputEffects(kMasterOutputBus),
       ),
     );
   }
