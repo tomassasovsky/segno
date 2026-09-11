@@ -9,4 +9,5 @@ library;
 
 export 'src/fx_catalogue_loader.dart';
 export 'src/fx_family.dart';
+export 'src/fx_module.dart';
 export 'src/fx_preset.dart';

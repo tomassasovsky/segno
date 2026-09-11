@@ -53,6 +53,7 @@ export 'src/models/fx_chain_envelope.dart'
         concatenateInheritedChains,
         decodeFxChain,
         encodeFxChain;
+export 'src/models/fx_module_build.dart';
 export 'src/models/fx_slot_ids.dart'
     show SlotIds, withFreshSlotIds, withMintedSlotIds;
 export 'src/models/input_monitor.dart';
