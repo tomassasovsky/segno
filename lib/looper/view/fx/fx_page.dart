@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/app/app_toasts.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
@@ -14,6 +15,7 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_cubit.dart';
+import 'package:segno/looper/cubit/fx_presets_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
@@ -101,6 +103,7 @@ class _FxViewState extends State<FxView> {
     final label = _destinationLabel(destination);
     final monitor = context.read<MonitorCubit>();
     final bloc = context.read<LooperBloc>();
+    final presets = context.read<FxPresetsCubit>();
     final groups = fxChainGroups(_entriesOf(context, address));
     if (group < 0 || group >= groups.length) return;
     final id = fxGroupId(groups[group]);
@@ -116,6 +119,7 @@ class _FxViewState extends State<FxView> {
           providers: [
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<MonitorCubit>.value(value: monitor),
+            BlocProvider<FxPresetsCubit>.value(value: presets),
           ],
           child: Builder(
             builder: (context) {
@@ -134,7 +138,8 @@ class _FxViewState extends State<FxView> {
                       onBack: () => Navigator.maybePop(context),
                       onOptions: () =>
                           unawaited(_rackOptions(context, found, edits, label)),
-                      onSavePreset: () {},
+                      onSavePreset: () =>
+                          unawaited(_savePreset(context, found)),
                       onAddEffect: () =>
                           unawaited(_addToRack(context, found, edits)),
                     )
@@ -147,7 +152,8 @@ class _FxViewState extends State<FxView> {
                       onOptions: () => unawaited(
                         _effectOptions(context, found, edits),
                       ),
-                      onSavePreset: () {},
+                      onSavePreset: () =>
+                          unawaited(_savePreset(context, found)),
                     );
             },
           ),
@@ -317,13 +323,20 @@ class _FxViewState extends State<FxView> {
     final rack = group.rack;
     if (rack == null) return;
     final chain = group.chain;
+    final presets = context.read<FxPresetsCubit>();
     final choice = await Navigator.push<FxLibraryChoice>(
       context,
       MaterialPageRoute(
-        builder: (_) => FxLibraryPage(
-          catalogue: widget.catalogue ?? FxCatalogue.empty,
-          destinationLabel: rack.name,
-          freeSlots: kTrackEffectMax - chain.length,
+        // My presets lives inside the library, and the library's route sits
+        // above the page's providers, so the saved list is carried in by
+        // value rather than looked up.
+        builder: (_) => BlocProvider<FxPresetsCubit>.value(
+          value: presets,
+          child: FxLibraryPage(
+            catalogue: widget.catalogue ?? FxCatalogue.empty,
+            destinationLabel: rack.name,
+            freeSlots: kTrackEffectMax - chain.length,
+          ),
         ),
       ),
     );
@@ -339,6 +352,71 @@ class _FxViewState extends State<FxView> {
       ...added,
       ...chain.sublist(group.end),
     ]);
+  }
+
+  /// The pen's `05 Save a preset` and `06 Replace a saved preset`: names the
+  /// sound, then makes a reusable copy of it.
+  ///
+  /// Saving does NOT rename the active instance — the accepted design says so
+  /// in as many words, and it is why this writes to the saved list and touches
+  /// nothing on the chain. A name already taken asks whether to replace that
+  /// definition or use another; cancelling the question keeps the previous
+  /// preset, unchanged.
+  static Future<void> _savePreset(
+    BuildContext context,
+    FxChainGroup group,
+  ) async {
+    final l10n = context.l10n;
+    final presets = context.read<FxPresetsCubit>();
+    final entries = group.entries;
+    final art = group.rack?.art;
+    final suggested = fxGroupName(l10n, group);
+    var current = suggested;
+    while (true) {
+      final name = await showConsoleRenameSheet(
+        context,
+        title: l10n.fxSavePresetTitle,
+        subtitle: suggested,
+        current: current,
+        fieldLabel: l10n.fxPresetNameField,
+      );
+      if (name == null || !context.mounted) return;
+      current = name;
+      final existing = fxPresetNamed(presets.state, name);
+      if (existing == null) {
+        await presets.save(name: name, entries: entries, art: art);
+        showAppSnackToast(
+          id: 'fx-preset-saved',
+          title: AppText(l10n.fxPresetSaved(name.trim())),
+        );
+        return;
+      }
+      final answer = await showFxOptionsSheet(
+        context,
+        title: l10n.fxReplacePresetTitle(existing.name),
+        body: l10n.fxPresetExists,
+        options: [
+          FxOption(id: 'replace', label: l10n.fxReplacePreset),
+          FxOption(id: 'another', label: l10n.fxUseAnotherName),
+        ],
+      );
+      // Cancel keeps the previous preset, which is the accepted wording: the
+      // question is asked about a definition that already exists, and backing
+      // out of it must not touch it.
+      if (answer != 'replace' && answer != 'another') return;
+      if (answer == 'replace') {
+        // The definition changes; every instance already made from it does
+        // not. That is the accepted rule, and it falls out of a saved preset
+        // being a copy rather than a reference.
+        await presets.replace(id: existing.id, entries: entries, art: art);
+        showAppSnackToast(
+          id: 'fx-preset-saved',
+          title: AppText(l10n.fxPresetSaved(existing.name)),
+        );
+        return;
+      }
+      if (!context.mounted) return;
+    }
   }
 
   /// A standalone effect's options.
@@ -452,13 +530,19 @@ class _FxViewState extends State<FxView> {
     final address = destination.address;
     if (address == null) return;
     final entries = _entriesOf(context, address);
+    final presets = context.read<FxPresetsCubit>();
     final choice = await Navigator.push<FxLibraryChoice>(
       context,
       MaterialPageRoute(
-        builder: (_) => FxLibraryPage(
-          catalogue: widget.catalogue ?? FxCatalogue.empty,
-          destinationLabel: _destinationLabel(destination),
-          freeSlots: kTrackEffectMax - entries.length,
+        // See the in-rack add: the library's route is above this page's
+        // providers, and My presets lives inside it.
+        builder: (_) => BlocProvider<FxPresetsCubit>.value(
+          value: presets,
+          child: FxLibraryPage(
+            catalogue: widget.catalogue ?? FxCatalogue.empty,
+            destinationLabel: _destinationLabel(destination),
+            freeSlots: kTrackEffectMax - entries.length,
+          ),
         ),
       ),
     );
@@ -492,6 +576,35 @@ class _FxViewState extends State<FxView> {
             placement: placement,
             rack: into,
           ),
+        ];
+      case FxSavedChoice(:final preset):
+        // The player's own sound, recalled as a NEW instance: a fresh rack id
+        // so it is its own thing on the chain, this destination's placement,
+        // and bypassed like every other addition. A single-effect preset
+        // stays a single effect.
+        final rack =
+            into ??
+            (preset.isRack
+                ? FxRack(
+                    id: SlotIds.mint(),
+                    name: preset.name,
+                    art: preset.art,
+                  )
+                : null);
+        return [
+          for (final fx in preset.entries)
+            switch (fx) {
+              BuiltInEffect() => fx.copyWith(
+                enabled: false,
+                placement: placement,
+                rack: rack,
+              ),
+              PluginEffect() => fx.copyWith(
+                enabled: false,
+                placement: placement,
+                rack: rack,
+              ),
+            },
         ];
       case FxRackChoice(:final preset):
         // Every module of one rack carries the same rack: a freshly minted id

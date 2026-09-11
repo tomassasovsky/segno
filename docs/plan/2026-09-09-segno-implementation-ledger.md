@@ -2287,3 +2287,73 @@ widget test pumps in fake async and an asset load is real async, so the
 bundle's future never completes while time is fake. `runAsync` hands the real
 event loop back for a moment, and the artwork arrives. Every FX golden now
 carries the real Looper X artwork.
+
+## Slice 3f part 10: saved sounds
+
+The pen's `05 Save a preset`, `06 Replace a saved preset` and `04 My presets`.
+
+### A saved preset is a copy, not a reference
+
+Everything the accepted design says about saving follows from that one fact.
+Replacing a definition leaves existing instances unchanged; recalling one
+creates an independent, editable instance; saving does not rename the active
+rack. None of those is enforced anywhere — they are all just true, because the
+saved list holds entries of its own.
+
+What a save copies is the effect parameters, the channel settings and the
+catalogue's name for each pedal. What it deliberately drops is the rack, the
+slot ids and the placement: those three are what make one instance distinct
+from the next, and a definition carrying them would recall as the same
+instance twice and drag its old destination's stage along with it. Placement in
+particular belongs to where a sound is used, which the accepted design states
+in as many words.
+
+### One owner, one write
+
+`FxPresetsCubit` owns the list, because three surfaces touch it: the two
+editors save into it, the library recalls from it and My presets renames and
+deletes in it. A second copy would let them disagree about what is saved. The
+whole list is rewritten on every change, which is what makes a delete, a rename
+and a save the same single write.
+
+The name check is case-insensitive. The accepted collision question is about a
+name the player will read back, and two rows differing only in case are two
+rows nobody can tell apart.
+
+### The journey
+
+Save preset names the sound, then either saves it or asks. A name already taken
+offers Replace preset or Use another name; cancelling that question keeps the
+previous preset untouched, which is the accepted wording. My presets lives
+inside Add effects, lists each saved sound as a card over the row that renames
+or deletes it, and recalls one as a new instance with its own rack id,
+bypassed, at the destination's own stage. A saved single effect recalls as a
+single effect rather than a rack of one.
+
+### What is drawn and does nothing
+
+Import presets, Export all and each card's Export. Moving a preset on or off
+this console is the USB export domain's job, and that domain is not built. They
+are drawn where the pen draws them, dimmed, and report themselves disabled —
+the same treatment Effect options and Save preset had while they were waiting.
+
+My presets still has no artwork of its own. The accepted design gives it
+matching ORIGINAL art; that art is not in this repository, so the library card
+carries its name and no picture rather than a borrowed rack banner.
+
+### Checks
+
+- Root suite 2337 passing, 35 skipped; every package suite green; analyze and
+  bloc lint clean.
+- Nine cubit tests: the definition dropping rack, slot ids and placement while
+  keeping parameters, channels and the pedal name; the case-insensitive name
+  check; replace keeping identity and name; rename; remove; a restart; and a
+  malformed entry dropped without taking the good ones with it.
+- Eight widget tests: saving without renaming the rack, the collision question,
+  Replace rewriting one definition, Cancel keeping the previous preset, My
+  presets listing and recalling a new instance, a saved single effect staying
+  single, the empty state, Delete asking first, and the inert export controls.
+- Three mutations, each caught by exactly the test that names it: a definition
+  that keeps its instance identity, a recall that reuses the saved rack id, and
+  a case-sensitive name check.
+- A seventh screenshot covers My presets.

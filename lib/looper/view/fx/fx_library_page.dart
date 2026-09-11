@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/fx/fx_saved_list.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
 /// What the library was asked for: a whole rack preset, or a single effect.
@@ -26,6 +28,15 @@ final class FxSingleChoice extends FxLibraryChoice {
 
   /// The built-in chosen.
   final TrackEffectType type;
+}
+
+/// One of the player's own saved sounds.
+final class FxSavedChoice extends FxLibraryChoice {
+  /// Creates an [FxSavedChoice].
+  const FxSavedChoice(this.preset);
+
+  /// The saved preset chosen.
+  final FxUserPreset preset;
 }
 
 /// The effect library (accepted design, `03 Sound library & presets`): the
@@ -71,11 +82,15 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
   /// Whether the standalone-effect list is showing.
   bool _single = false;
 
+  /// Whether the player's saved sounds are showing.
+  bool _saved = false;
+
   void _back() {
-    if (_family != null || _single) {
+    if (_family != null || _single || _saved) {
       setState(() {
         _family = null;
         _single = false;
+        _saved = false;
       });
       return;
     }
@@ -92,9 +107,10 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
       type: MaterialType.transparency,
       child: LoopSettingsFrame(
         crumb: l10n.fxAddCrumb(widget.destinationLabel),
-        title: switch ((family, _single)) {
-          (final FxFamily f, _) => f.name,
-          (_, true) => l10n.fxLibrarySingle,
+        title: switch ((family, _single, _saved)) {
+          (final FxFamily f, _, _) => f.name,
+          (_, true, _) => l10n.fxLibrarySingle,
+          (_, _, true) => l10n.fxMyPresetsTitle,
           _ => l10n.fxAddTitle,
         },
         onBack: _back,
@@ -113,22 +129,55 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
                 ),
               ),
             ),
+          // Import and Export all are drawn where the pen draws them and do
+          // nothing: moving presets on or off this console is the USB export
+          // domain's job, and that domain is not built.
+          if (_saved)
+            Positioned(
+              left: 36,
+              top: 32,
+              right: 36,
+              height: 64,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  LoopOutlinedButton(
+                    key: const Key('fx_presets_import'),
+                    width: 204,
+                    label: l10n.fxImportPresets,
+                    onTap: null,
+                  ),
+                  const SizedBox(width: 14),
+                  LoopOutlinedButton(
+                    key: const Key('fx_presets_export_all'),
+                    width: 151,
+                    label: l10n.fxExportAllPresets,
+                    onTap: null,
+                  ),
+                ],
+              ),
+            ),
           Positioned(
             left: 36,
-            top: family != null || _single ? 138 : 124,
+            top: family != null || _single || _saved ? 138 : 124,
             right: 36,
             bottom: 24,
-            child: switch ((family, _single)) {
-              (final FxFamily f, _) => _PresetList(
+            child: switch ((family, _single, _saved)) {
+              (final FxFamily f, _, _) => _PresetList(
                 family: f,
                 freeSlots: widget.freeSlots,
                 onChoose: _choose,
               ),
-              (_, true) => _SingleList(onChoose: _choose),
+              (_, true, _) => _SingleList(onChoose: _choose),
+              (_, _, true) => FxSavedList(
+                freeSlots: widget.freeSlots,
+                onChoose: _choose,
+              ),
               _ => _LibraryGrid(
                 catalogue: widget.catalogue,
                 onFamily: (f) => setState(() => _family = f),
                 onSingle: () => setState(() => _single = true),
+                onSaved: () => setState(() => _saved = true),
               ),
             },
           ),
@@ -144,11 +193,13 @@ class _LibraryGrid extends StatelessWidget {
     required this.catalogue,
     required this.onFamily,
     required this.onSingle,
+    required this.onSaved,
   });
 
   final FxCatalogue catalogue;
   final void Function(FxFamily) onFamily;
   final VoidCallback onSingle;
+  final VoidCallback onSaved;
 
   @override
   Widget build(BuildContext context) {
@@ -182,7 +233,7 @@ class _LibraryGrid extends StatelessWidget {
             // accepted design gives My presets matching ORIGINAL artwork
             // rather than a borrowed rack banner. Until that art exists the
             // card carries its name and no picture.
-            onTap: onSingle,
+            onTap: onSaved,
           ),
           if (wide != null)
             _LibraryCard(

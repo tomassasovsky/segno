@@ -1650,6 +1650,20 @@ class SettingsRepository {
   Future<void> saveAllTracksFxChain(String encoded) =>
       _store.setString(_allTracksFxChainKey, encoded);
 
+  static const String _fxUserPresetsKey = 'fx_user_presets';
+
+  /// Loads the player's saved effect presets as one opaque encoded string, or
+  /// `null` when none has been saved.
+  ///
+  /// One key rather than one per preset. The list is read whole every time it
+  /// is shown and rewritten whole on every change, so a key per preset would
+  /// buy nothing and would need its own index to enumerate.
+  Future<String?> loadFxUserPresets() => _store.getString(_fxUserPresetsKey);
+
+  /// Saves the player's [encoded] effect presets.
+  Future<void> saveFxUserPresets(String encoded) =>
+      _store.setString(_fxUserPresetsKey, encoded);
+
   static const String _updateAutoCheckKey = 'updates.auto_check';
   static const String _updateChannelKey = 'updates.channel';
   static const String _updateDismissedKey = 'updates.dismissed';

@@ -17,6 +17,7 @@ import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/fx_presets_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
@@ -238,6 +239,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  late FxPresetsCubit presets;
+
   Future<void> pump(
     WidgetTester tester, {
     required FxDestination destination,
@@ -261,12 +264,15 @@ void main() {
     final monitors = MonitorCubit(repository: repository, settings: settings);
     final tempo = TempoCubit(repository: repository, settings: settings);
     final tracks = TracksCubit(settings: settings);
+    presets = FxPresetsCubit(settings: settings);
+    await presets.load();
     for (final cubit in <BlocBase<Object?>>[
       inputs,
       outputs,
       monitors,
       tempo,
       tracks,
+      presets,
     ]) {
       addTearDown(() => unawaited(cubit.close()));
     }
@@ -298,6 +304,7 @@ void main() {
               BlocProvider.value(value: monitors),
               BlocProvider.value(value: tempo),
               BlocProvider.value(value: tracks),
+              BlocProvider.value(value: presets),
             ],
             child: FxPage(initial: destination, catalogue: catalogue),
           ),
@@ -402,6 +409,39 @@ void main() {
     await expectLater(
       find.byKey(const Key('fx_options_sheet')),
       matchesGoldenFile('goldens/fx_rack_options.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('My presets', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _rackRig,
+      catalogue: _library,
+    );
+    await presets.save(
+      name: 'Warm rhythmic guitar',
+      entries: [
+        _module('a', TrackEffectType.delay, rackId: 'X', module: 'Delay'),
+        _module('b', TrackEffectType.reverb, rackId: 'X', module: 'Reverb'),
+      ],
+      art: 'guitar',
+    );
+    await presets.save(
+      name: 'Clean verse',
+      entries: [_fx('c', TrackEffectType.echo)],
+      art: 'rhythmic',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('fx_add_effects')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('fx_library_saved')));
+    await tester.pumpAndSettle();
+    await settleArtwork(tester);
+
+    await expectLater(
+      find.byType(FxLibraryPage),
+      matchesGoldenFile('goldens/fx_my_presets.png'),
     );
   }, skip: !hasScreenshotFonts);
 
