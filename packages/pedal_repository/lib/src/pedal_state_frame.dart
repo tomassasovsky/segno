@@ -1,5 +1,22 @@
 import 'package:equatable/equatable.dart';
+import 'package:pedal_repository/src/pedal_button.dart';
+import 'package:pedal_repository/src/pedal_color.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
+
+/// The colours a frame carries when nothing has set them: white on every
+/// footswitch, which is the palette default on both sides of the wire.
+const List<PedalColor> defaultPedalColors = [
+  PedalColor.defaultColor,
+  PedalColor.defaultColor,
+  PedalColor.defaultColor,
+  PedalColor.defaultColor,
+  PedalColor.defaultColor,
+  PedalColor.defaultColor,
+  PedalColor.defaultColor,
+  PedalColor.defaultColor,
+  PedalColor.defaultColor,
+  PedalColor.defaultColor,
+];
 
 /// The render state of a single track LED on the pedal ring.
 ///
@@ -112,7 +129,12 @@ class PedalStateFrame extends Equatable {
     this.masterGain = 1,
     this.looperMode = PedalLooperMode.multi,
     this.countingIn = false,
+    this.pedalColors = defaultPedalColors,
   }) : assert(
+         pedalColors.length == PedalButton.values.length,
+         'a frame must carry one colour per footswitch',
+       ),
+       assert(
          trackLeds.length == trackCount,
          'a frame must carry exactly $trackCount track LEDs',
        ),
@@ -211,6 +233,18 @@ class PedalStateFrame extends Equatable {
   /// always `false` when encoded for (or decoded from) a v1 frame.
   final bool countingIn;
 
+  /// The hue each footswitch's indicator uses, indexed by [PedalButton].
+  ///
+  /// Carried on the wire only since protocol v4 (#763): below it every entry
+  /// is [PedalColor.defaultColor] on both encode and decode, because the wire
+  /// has no bytes for the colours and reporting a colour nothing sent would
+  /// be an invention.
+  ///
+  /// What the colour means is the HUE an indicator uses when it is lit. What
+  /// lights it is still the frame's own state — the track LEDs, the mode, the
+  /// clear fade — so this adds a dimension rather than replacing one.
+  final List<PedalColor> pedalColors;
+
   /// Returns a copy with the given fields replaced.
   PedalStateFrame copyWith({
     GlobalColor? globalColor,
@@ -225,6 +259,7 @@ class PedalStateFrame extends Equatable {
     double? masterGain,
     PedalLooperMode? looperMode,
     bool? countingIn,
+    List<PedalColor>? pedalColors,
   }) {
     return PedalStateFrame(
       globalColor: globalColor ?? this.globalColor,
@@ -239,6 +274,7 @@ class PedalStateFrame extends Equatable {
       masterGain: masterGain ?? this.masterGain,
       looperMode: looperMode ?? this.looperMode,
       countingIn: countingIn ?? this.countingIn,
+      pedalColors: pedalColors ?? this.pedalColors,
     );
   }
 
@@ -256,6 +292,7 @@ class PedalStateFrame extends Equatable {
     masterGain,
     looperMode,
     countingIn,
+    pedalColors,
   ];
 
   @override

@@ -14,6 +14,12 @@
 
 #define PEDAL_PAYLOAD_LEN 17
 #define PEDAL_PAYLOAD_LEN_LEGACY 16 /* pre master-gain frames (decode as unity) */
+/* protocol v4 (#763): PEDAL_PAYLOAD_LEN plus one RGB triplet per footswitch. */
+#define PEDAL_PAYLOAD_COLORS (PEDAL_BTN_COUNT * 3)
+#define PEDAL_PAYLOAD_LEN_V4 (PEDAL_PAYLOAD_LEN + PEDAL_PAYLOAD_COLORS)
+/* The packed size of the largest payload: one high-bit byte per group of 7. */
+#define PEDAL_PACKED_MAX \
+  (PEDAL_PAYLOAD_LEN_V4 + ((PEDAL_PAYLOAD_LEN_V4 + 6) / 7))
 
 /* Packs `len` 8-bit bytes into 7-bit-clean bytes: each group of up to 7 data
  * bytes is preceded by one byte carrying their high bits (MIDI SysEx style). */
@@ -83,7 +89,11 @@ int pedal_encode_frame(const pedal_frame* frame, uint8_t* buf) {
     mode_high = 0;
   }
 
-  uint8_t payload[PEDAL_PAYLOAD_LEN];
+  /* v4 appends the per-pedal colours; every earlier version stops at 17. */
+  const int payload_len = (version >= PEDAL_PROTOCOL_VERSION_V4)
+                              ? PEDAL_PAYLOAD_LEN_V4
+                              : PEDAL_PAYLOAD_LEN;
+  uint8_t payload[PEDAL_PAYLOAD_LEN_V4];
   payload[0] = (uint8_t)(mode_low |
                          (frame->clear_fade ? 0x02 : 0) |
                          (frame->goodbye ? 0x04 : 0) |
@@ -113,9 +123,16 @@ int pedal_encode_frame(const pedal_frame* frame, uint8_t* buf) {
   payload[14] = (uint8_t)((us >> 16) & 0xFFu);
   payload[15] = (uint8_t)((us >> 24) & 0xFFu);
   payload[16] = frame->master_gain;
+  if (version >= PEDAL_PROTOCOL_VERSION_V4) {
+    for (int i = 0; i < PEDAL_BTN_COUNT; i++) {
+      payload[17 + i * 3] = frame->pedal_colors[i].r;
+      payload[18 + i * 3] = frame->pedal_colors[i].g;
+      payload[19 + i * 3] = frame->pedal_colors[i].b;
+    }
+  }
 
-  uint8_t packed[24];
-  const int packed_len = pedal_pack7(payload, PEDAL_PAYLOAD_LEN, packed);
+  uint8_t packed[PEDAL_FRAME_MAX_BYTES];
+  const int packed_len = pedal_pack7(payload, payload_len, packed);
 
   int o = 0;
   buf[o++] = PEDAL_SYSEX_START;
@@ -142,6 +159,12 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
   /* body = packed payload + checksum, between the header and the F7. */
   const int packed_len = (len - 1) - 4 - 1; /* drop F0/id/ver/type and cksum/F7 */
   if (packed_len < 1) return 0;
+  /* Bound BEFORE unpacking, not after: pedal_unpack7 writes one byte per
+   * payload byte it finds, and `len` comes off the wire. Without this a long
+   * message walks straight off the end of `payload` below. The length checks
+   * after the unpack are about which version carries what; this one is about
+   * not being told how much to write by whoever is sending. */
+  if (packed_len > PEDAL_PACKED_MAX) return 0;
   const uint8_t* packed = &msg[4];
   const uint8_t checksum = msg[4 + packed_len];
   if (pedal_checksum(packed, packed_len) != checksum) return 0;
@@ -149,11 +172,17 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
     if (packed[i] & 0x80u) return 0; /* all payload bytes must be 7-bit clean */
   }
 
-  uint8_t payload[PEDAL_PAYLOAD_LEN];
-  /* Accept the current 17-byte payload and the legacy 16-byte one (pre master
-   * gain); a legacy frame decodes with unity gain. Anything else is malformed. */
+  uint8_t payload[PEDAL_PAYLOAD_LEN_V4];
+  /* The length a version defines, and only that. v4 carries the colours, so a
+   * v4 frame that stops at 17 is truncated rather than colourless; below v4
+   * the 17-byte payload and the legacy 16-byte one (pre master gain, decodes
+   * with unity) are both good. Anything else is malformed. */
   const int plen = pedal_unpack7(packed, packed_len, payload);
-  if (plen != PEDAL_PAYLOAD_LEN && plen != PEDAL_PAYLOAD_LEN_LEGACY) return 0;
+  if (version >= PEDAL_PROTOCOL_VERSION_V4) {
+    if (plen != PEDAL_PAYLOAD_LEN_V4) return 0;
+  } else if (plen != PEDAL_PAYLOAD_LEN && plen != PEDAL_PAYLOAD_LEN_LEGACY) {
+    return 0;
+  }
 
   const uint8_t color = payload[1];
   const uint8_t bank_byte = payload[2];
@@ -222,6 +251,19 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
                             ((uint32_t)payload[14] << 16) |
                             ((uint32_t)payload[15] << 24);
   out->master_gain = (plen >= PEDAL_PAYLOAD_LEN) ? payload[16] : 255u;
+  for (int i = 0; i < PEDAL_BTN_COUNT; i++) {
+    if (plen >= PEDAL_PAYLOAD_LEN_V4) {
+      out->pedal_colors[i].r = payload[17 + i * 3];
+      out->pedal_colors[i].g = payload[18 + i * 3];
+      out->pedal_colors[i].b = payload[19 + i * 3];
+    } else {
+      /* The wire had no bytes for it: report the default rather than invent
+       * a colour, so a v3 frame renders exactly as it always did. */
+      out->pedal_colors[i].r = PEDAL_COLOR_DEFAULT_R;
+      out->pedal_colors[i].g = PEDAL_COLOR_DEFAULT_G;
+      out->pedal_colors[i].b = PEDAL_COLOR_DEFAULT_B;
+    }
+  }
   out->protocol_version = version;
   return 1;
 }

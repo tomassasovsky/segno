@@ -96,6 +96,10 @@ static void test_golden_round_trip(void) {
        * where the fourth value has no meaning -- see
        * test_custom_downgrade_twin. */
       "custom_mode_v4", "custom_mode_v3",
+      /* protocol v4's payload growth: ten distinct per-pedal colours, and
+       * the same frame on the v3 wire where they have no bytes -- see
+       * test_pedal_colors. */
+      "pedal_colors_v4", "pedal_colors_v3",
   };
   pedal_frame frame;
   for (size_t i = 0; i < sizeof(kNames) / sizeof(kNames[0]); i++) {
@@ -349,6 +353,84 @@ static void test_mode_round_trip_and_version_gate(void) {
   CHECK(decoded.play_mode == PEDAL_MODE_PLAY);
 }
 
+/* #763: the per-pedal colours survive a v4 round trip as an ARRAY -- ten
+ * distinct hues, each landing on its own footswitch -- and fall off the v3
+ * wire entirely, where the decoder reports the default palette rather than
+ * inventing a colour nothing sent. The committed v3 twin is byte-for-byte
+ * what the encoder produces from the unmodified v4 frame. */
+static void test_pedal_colors(void) {
+  printf("test_pedal_colors\n");
+  pedal_frame colored;
+  if (!decode_fixture("pedal_colors_v4", &colored)) return;
+
+  /* The exact fixture palette, in PEDAL_BTN_* order. */
+  static const uint8_t kRgb[PEDAL_BTN_COUNT][3] = {
+      {0xE6, 0xEE, 0xF9}, {0xEF, 0xBC, 0x72}, {0xEE, 0x6B, 0x70},
+      {0xEF, 0x96, 0x66}, {0x7A, 0xCB, 0x9E}, {0x73, 0xCF, 0xDF},
+      {0x82, 0xAA, 0xFF}, {0xB1, 0x9A, 0xFA}, {0x00, 0x00, 0x00},
+      {0xFF, 0xFF, 0xFF},
+  };
+  for (int i = 0; i < PEDAL_BTN_COUNT; i++) {
+    CHECK(colored.pedal_colors[i].r == kRgb[i][0]);
+    CHECK(colored.pedal_colors[i].g == kRgb[i][1]);
+    CHECK(colored.pedal_colors[i].b == kRgb[i][2]);
+  }
+
+  uint8_t expected[PEDAL_FRAME_MAX_BYTES];
+  const int explen =
+      read_fixture("pedal_colors_v3", expected, sizeof(expected));
+  if (explen < 0) return;
+
+  pedal_frame twin = colored;
+  twin.protocol_version = PEDAL_PROTOCOL_VERSION_V3;
+  uint8_t reencoded[PEDAL_FRAME_MAX_BYTES];
+  const int rlen = pedal_encode_frame(&twin, reencoded);
+  CHECK(rlen == explen);
+  CHECK(memcmp(reencoded, expected, (size_t)explen) == 0);
+
+  pedal_frame decoded;
+  CHECK(pedal_decode_frame(expected, explen, &decoded) == 1);
+  for (int i = 0; i < PEDAL_BTN_COUNT; i++) {
+    CHECK(decoded.pedal_colors[i].r == PEDAL_COLOR_DEFAULT_R);
+    CHECK(decoded.pedal_colors[i].g == PEDAL_COLOR_DEFAULT_G);
+    CHECK(decoded.pedal_colors[i].b == PEDAL_COLOR_DEFAULT_B);
+  }
+}
+
+/* A body longer than any version's payload is rejected BEFORE it is
+ * unpacked. pedal_unpack7 writes one byte per payload byte it finds, into a
+ * fixed buffer, and the length comes off the wire -- without the bound this
+ * walks off the end of that buffer, which the sanitized build makes a
+ * failure rather than a silent write. */
+static void test_overlong_body_is_rejected(void) {
+  printf("test_overlong_body_is_rejected\n");
+  uint8_t msg[512];
+  msg[0] = PEDAL_SYSEX_START;
+  msg[1] = PEDAL_MANUFACTURER_ID;
+  msg[2] = PEDAL_PROTOCOL_VERSION_V4;
+  msg[3] = PEDAL_MSG_TYPE_STATE;
+  const int body = 400;
+  for (int i = 0; i < body; i++) msg[4 + i] = 0; /* 7-bit clean, checksum 0 */
+  msg[4 + body] = 0;                             /* the checksum */
+  msg[5 + body] = PEDAL_SYSEX_END;
+  pedal_frame f;
+  CHECK(pedal_decode_frame(msg, body + 6, &f) == 0);
+}
+
+/* A v4 frame that stops at the v3 payload length is TRUNCATED, not a
+ * colourless v4 frame: the version says which bytes must be there. Reached
+ * by relabelling a v3 frame, since the encoder never writes a short v4. */
+static void test_truncated_v4_is_rejected(void) {
+  printf("test_truncated_v4_is_rejected\n");
+  uint8_t bytes[PEDAL_FRAME_MAX_BYTES];
+  const int len = read_fixture("fx_mode_v3", bytes, sizeof(bytes));
+  if (len < 0) return;
+  pedal_frame f;
+  CHECK(pedal_decode_frame(bytes, len, &f) == 1);
+  bytes[2] = PEDAL_PROTOCOL_VERSION_V4;
+  CHECK(pedal_decode_frame(bytes, len, &f) == 0);
+}
+
 /* #763: the committed custom_mode_v3 fixture is byte-for-byte what the
  * encoder produces from the unmodified v4 frame -- the mode degrades to
  * play and nothing else moves, since v3 already carries blue chain LEDs. */
@@ -562,6 +644,9 @@ int main(int argc, char** argv) {
   test_decode_fields_fx_mode_v3();
   test_fx_downgrade_twins();
   test_custom_downgrade_twin();
+  test_pedal_colors();
+  test_truncated_v4_is_rejected();
+  test_overlong_body_is_rejected();
   test_mode_round_trip_and_version_gate();
   test_version_pairings();
   test_malformed_frames_are_rejected();

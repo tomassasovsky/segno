@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:pedal_repository/src/pedal_button.dart';
+import 'package:pedal_repository/src/pedal_color.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
@@ -101,15 +102,23 @@ abstract final class PedalCodec {
   /// field is the **only** wire difference from v2 (R8: no other growth).
   static const protocolVersionV3 = 0x03;
 
-  /// Wire protocol version 4 (#763): the mode field's fourth value (`3`)
-  /// stops being reserved and becomes [PedalMode.custom]. Same 17-byte
-  /// payload a third time — claiming a reserved value is the whole change.
+  /// Wire protocol version 4 (#763): two changes, both about what the plate
+  /// can SAY.
   ///
-  /// A version of its own is unavoidable, not bookkeeping: every deployed v3
-  /// decoder REJECTS a frame whose mode field holds `3`, so a fourth mode
-  /// riding v3 would darken the pedal it reached rather than mis-colour one
-  /// LED. Below v4, [encodeFrame] writes custom as [PedalMode.play] (mute) —
-  /// the same inert-safe degrade FX takes below v3.
+  /// The mode field's fourth value (`3`) stops being reserved and becomes
+  /// [PedalMode.custom]. A version of its own is unavoidable for that, not
+  /// bookkeeping: every deployed v3 decoder REJECTS a frame whose mode field
+  /// holds `3`, so a fourth mode riding v3 would darken the pedal it reached
+  /// rather than mis-colour one LED. Below v4, [encodeFrame] writes custom as
+  /// [PedalMode.play] (mute) — the same inert-safe degrade FX takes below v3.
+  ///
+  /// And the payload grows for the first time since v1: 30 bytes carrying one
+  /// RGB triplet per footswitch ([PedalStateFrame.pedalColors], indexed by
+  /// `PedalButton`), so each of the ten indicators can be given its own hue.
+  /// The earlier zero-growth call rejected exactly this as bytes for feedback
+  /// no hardware could show — true of the six single LEDs the v2 faceplate
+  /// had then, and no longer true of the ten 8-LED colour pills it has now
+  /// (#930).
   static const protocolVersionV4 = 0x04;
 
   /// The newest protocol version this codec speaks: the ceiling
@@ -147,6 +156,18 @@ abstract final class PedalCodec {
 
   /// The number of logical (unpacked) payload bytes in a state frame.
   static const _payloadLength = 17;
+
+  /// The v4 payload: [_payloadLength] plus one RGB triplet per footswitch.
+  static const int _payloadLengthV4 = _payloadLength + _pedalCount * 3;
+
+  /// The ten footswitches a colour is carried for, in `PedalButton` order.
+  static const _pedalCount = 10;
+
+  /// The packed size of the largest payload — one high-bit byte per group of
+  /// seven. A message packing to more than this is rejected before it is
+  /// unpacked: the length comes off the wire, and nothing that arrives gets
+  /// to say how much this decoder reads.
+  static const int _packedMax = _payloadLengthV4 + (_payloadLengthV4 + 6) ~/ 7;
 
   // ---------------------------------------------------------------------------
   // segno → pedal
@@ -195,7 +216,10 @@ abstract final class PedalCodec {
       modeLowBit = mode == PedalMode.rec ? 0 : 1;
       modeHighBit = 0;
     }
-    final payload = Uint8List(_payloadLength);
+    // v4 appends the per-pedal colours; every earlier version stops at 17.
+    final payload = Uint8List(
+      targetVersion >= protocolVersionV4 ? _payloadLengthV4 : _payloadLength,
+    );
     payload[0] =
         modeLowBit |
         (frame.clearFadeActive ? 0x02 : 0) |
@@ -226,6 +250,14 @@ abstract final class PedalCodec {
     payload[14] = (us >> 16) & 0xFF;
     payload[15] = (us >> 24) & 0xFF;
     payload[16] = (frame.masterGain.clamp(0.0, 1.0) * 255).round();
+    if (targetVersion >= protocolVersionV4) {
+      for (var i = 0; i < _pedalCount; i++) {
+        final color = frame.pedalColors[i];
+        payload[17 + i * 3] = color.r;
+        payload[18 + i * 3] = color.g;
+        payload[19 + i * 3] = color.b;
+      }
+    }
 
     final packed = _pack7(payload);
     final out = BytesBuilder()
@@ -280,6 +312,13 @@ abstract final class PedalCodec {
     // The length >= 6 guard above guarantees body is non-empty.
     final body = message.sublist(4, message.length - 1);
     final packed = body.sublist(0, body.length - 1);
+    // Bounded before it is unpacked: the length comes off the wire, and
+    // nothing that arrives gets to say how much this decoder does. Here that
+    // bounds the WORK — `_unpack7` allocates, so the length check below would
+    // reject an over-long body anyway, after building it. In the C twin the
+    // same bound stops a write past a fixed buffer, which is why it is
+    // spelled the same way on both sides.
+    if (packed.length > _packedMax) return null;
     final checksum = body.last;
     if (_checksum(packed) != checksum) return null;
     // All transmitted bytes must be 7-bit clean.
@@ -291,7 +330,13 @@ abstract final class PedalCodec {
     // Accept the current 17-byte payload and the legacy 16-byte one (pre master
     // gain); a legacy frame decodes with unity gain. Anything else is
     // malformed.
-    if (payload.length != _payloadLength &&
+    // The length a version defines, and only that. v4 carries the colours, so
+    // a v4 frame that stops at 17 is truncated rather than colourless; below
+    // v4 the 17-byte payload and the legacy 16-byte one (pre master gain,
+    // decodes with unity) are both good.
+    if (version >= protocolVersionV4) {
+      if (payload.length != _payloadLengthV4) return null;
+    } else if (payload.length != _payloadLength &&
         payload.length != _payloadLength - 1) {
       return null;
     }
@@ -362,6 +407,19 @@ abstract final class PedalCodec {
       performanceArmed: flags & 0x08 != 0,
       loopLengthMicros: loopLengthMicros,
       masterGain: payload.length >= _payloadLength ? payload[16] / 255.0 : 1.0,
+      pedalColors: [
+        for (var i = 0; i < _pedalCount; i++)
+          if (payload.length >= _payloadLengthV4)
+            PedalColor(
+              payload[17 + i * 3],
+              payload[18 + i * 3],
+              payload[19 + i * 3],
+            )
+          else
+            // The wire had no bytes for it: report the default rather than
+            // invent a colour, so a v3 frame renders exactly as it always did.
+            PedalColor.defaultColor,
+      ],
       looperMode: looperMode,
       countingIn: countingIn,
     );
