@@ -419,18 +419,18 @@ class SettingsRepository {
   Future<void> savePedalLongPressMs(int ms) =>
       _store.setInt(_pedalLongPressMsKey, ms);
 
-  static const String _modeSwitchStyleKey = 'pedal.mode_switch_style';
+  static const String _pedalSetupKey = 'pedal.setup';
 
-  /// Loads the persisted MODE-footswitch style token (an opaque token, e.g.
-  /// `'cycleThree'` / `'holdFx'`), or `null` if unset. The presentation layer
-  /// maps the token to its style enum; unset (and unknown) tokens resolve to
-  /// the original three-mode tap cycle, so existing rigs see no change.
-  Future<String?> loadModeSwitchStyle() =>
-      _store.getString(_modeSwitchStyleKey);
+  /// Loads the persisted built-in footswitch setup blob, or `null` if unset.
+  ///
+  /// Opaque here on purpose: the setup names actions in a vocabulary the
+  /// presentation layer owns, and a repository that could read it would be a
+  /// second place able to decide what a footswitch means.
+  Future<String?> loadPedalSetup() => _store.getString(_pedalSetupKey);
 
-  /// Saves the MODE-footswitch [style] token.
-  Future<void> saveModeSwitchStyle(String style) =>
-      _store.setString(_modeSwitchStyleKey, style);
+  /// Saves the built-in footswitch setup blob.
+  Future<void> savePedalSetup(String encoded) =>
+      _store.setString(_pedalSetupKey, encoded);
 
   static const String _pedalClearFadeMsKey = 'pedal.clear_fade_ms';
 

@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/control.dart';
@@ -88,6 +89,22 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: _gap),
+            // The way to what each switch DOES, above the list of what the FX
+            // switches act on: a performer who opens this tab to change a
+            // footswitch should not have to learn that the two questions live
+            // on different surfaces.
+            ConsoleCard(
+              children: [
+                ConsoleRow(
+                  key: const Key('pedal_open_setup'),
+                  title: l10n.controlPedalSetupRow,
+                  subtitle: l10n.controlPedalSetupSub,
+                  showDivider: false,
+                  onTap: () => unawaited(openPedalSetup()),
+                ),
+              ],
+            ),
+            const SizedBox(height: _gap),
             ConsoleGroupLabel(l10n.controlTransportGroup),
             const SizedBox(height: _gap),
             SizedBox(
@@ -155,31 +172,6 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
               child: selected == null
                   ? const SizedBox(width: double.infinity)
                   : _assignSection(context, cubit, selected, bank),
-            ),
-            const SizedBox(height: _gap),
-            ConsoleGroupLabel(l10n.controlModeSwitchGroup),
-            const SizedBox(height: _gap),
-            ConsoleCard(
-              children: [
-                ConsoleRow(
-                  key: const Key('pedal_fx_hold_row'),
-                  title: l10n.controlFxHoldRow,
-                  subtitle: l10n.controlFxHoldSub,
-                  showDivider: false,
-                  trailing: ConsoleSwitch(
-                    key: const Key('pedal_fx_hold_switch'),
-                    value: state.modeSwitchStyle == ModeSwitchStyle.holdFx,
-                    semanticLabel: l10n.controlFxHoldRow,
-                    onChanged: (on) => unawaited(
-                      cubit.setModeSwitchStyle(
-                        on
-                            ? ModeSwitchStyle.holdFx
-                            : ModeSwitchStyle.cycleThree,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
