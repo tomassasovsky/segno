@@ -187,8 +187,6 @@
     "waveformWindowSubtitle": "Abre una segunda ventana con la forma de onda de salida del bucle completo",
     "highContrastTitle": "Alto contraste",
     "highContrastSubtitle": "Fuerza una paleta más brillante y de mayor contraste. En escritorio, el ajuste de contraste del sistema no se aplica automáticamente.",
-    "trackIndicatorsTitle": "Indicadores de caché de carril",
-    "trackIndicatorsSubtitle": "Mostrar el estado de caché en los carriles de Señal",
     "looperGroupLabel": "LOOPER",
     "defaultModeIntro": "Modo en el que inicia el looper: lo que hace una pulsación de pista, desde el pedal, el teclado o la pantalla. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Silenciar silencian / activan sonido. El modo FX (donde las pulsaciones de pista alternan las cadenas de FX) no se ofrece aquí: se entra en él en vivo, nunca al iniciar.",
     "recordModeLabel": "Grabar",
@@ -1897,7 +1895,6 @@
             }
         }
     },
-    "traySignalLabel": "Señal",
     "signalStageInput": "entrada",
     "signalStageLoop": "bucle",
     "signalStageTrack": "pista",

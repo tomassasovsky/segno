@@ -279,19 +279,21 @@ void main() {
         tester.element(find.byType(SettingsTray)),
       ).state;
 
-  testWidgets('G opens the tray at Signal too', (tester) async {
+  testWidgets('G reaches the Effects route, and no longer opens the tray', (
+    tester,
+  ) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
     await tester.pumpAndSettle();
 
-    // The key handler is built from a context ABOVE the tray's own provider
-    // unless something puts it below: reading the cubit from the wrong one
-    // throws `ProviderNotFoundException` out of the key callback, and on a
-    // console build — where the toolbar is hidden — `G` is the only way in.
+    // Effects is a full-screen route now, not a tray domain. The route itself
+    // needs the app's root navigator, which this harness does not install, so
+    // what this pins is that the handler runs cleanly and leaves the tray
+    // alone — the shortcut used to open it.
     expect(tester.takeException(), isNull);
-    expect(trayState(tester).destination, SettingsTrayDestination.signal);
+    expect(trayState(tester).dragProgress, 0);
   });
 
   testWidgets('tapping a tile records that channel in record mode', (
@@ -1820,11 +1822,24 @@ void main() {
       );
       control.selectTrack(2);
       await pump(tester);
-      expect(find.text('A'), findsOneWidget);
+      // Scoped to the button: the tray behind the stage carries its own bank
+      // letters now that it lands on Control rather than the retired Signal
+      // face, so a bare text finder would match two of them.
+      final bank = find.descendant(
+        of: find.byKey(const Key('stage_bank_button')),
+        matching: find.text('A'),
+      );
+      expect(bank, findsOneWidget);
 
       await tester.tap(find.byKey(const Key('stage_bank_button')));
       await tester.pumpAndSettle();
-      expect(find.text('B'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('stage_bank_button')),
+          matching: find.text('B'),
+        ),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('tracks_tile_4')), findsOneWidget);
       expect(find.byKey(const Key('tracks_tile_2')), findsNothing);
       // The selected track stays where it was, out of sight.

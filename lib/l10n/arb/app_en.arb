@@ -477,8 +477,6 @@
     "waveformWindowSubtitle": "Open a second window showing the whole-loop output waveform",
     "highContrastTitle": "High contrast",
     "highContrastSubtitle": "Force a brighter, higher-contrast palette. On desktop the OS contrast setting is not applied automatically.",
-    "trackIndicatorsTitle": "Lane cache indicators",
-    "trackIndicatorsSubtitle": "Show cache status on the Signal lanes",
     "looperGroupLabel": "LOOPER",
     "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Mute mode they mute / unmute. FX mode (where track presses toggle FX chains) is not offered here — it is switched into live, never booted into.",
     "recordModeLabel": "Record",
@@ -2718,10 +2716,6 @@
                 "type": "int"
             }
         }
-    },
-    "traySignalLabel": "Signal",
-    "@traySignalLabel": {
-        "description": "Navigation-rail entry for the Signal domain — the four FX stages of the signal path."
     },
     "signalStageInput": "input",
     "@signalStageInput": {

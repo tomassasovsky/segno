@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/audio_setup/view/console/audio_tray_panel.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/looper/view/tray/tray_brightness_popover.dart';
 import 'package:segno/looper/view/tray/tray_metrics.dart';
@@ -134,8 +133,6 @@ class _TrayPanelState extends State<TrayPanel> {
                           child: KeyedSubtree(
                             key: ValueKey(state.destination),
                             child: switch (state.destination) {
-                              SettingsTrayDestination.signal =>
-                                const _TrayFaceFrame(child: SignalTrayPanel()),
                               SettingsTrayDestination.control =>
                                 const _TrayFaceFrame(child: ControlTrayPanel()),
                               SettingsTrayDestination.tracks =>

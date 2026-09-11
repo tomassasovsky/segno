@@ -255,23 +255,6 @@ void main() {
     expect(await settings.loadHighContrast(), isTrue);
   });
 
-  testWidgets('track-indicators toggle renders, reflects state, and flips it', (
-    tester,
-  ) async {
-    await pump(tester);
-
-    final toggle = find.byKey(const Key('settings_trackIndicators_switch'));
-    expect(toggle, findsOneWidget);
-    // Default off on the console (the pedals carry readiness).
-    expect(tracks.state.showIndicators, isFalse);
-
-    await tester.tap(toggle);
-    await tester.pumpAndSettle();
-
-    expect(tracks.state.showIndicators, isTrue);
-    expect(await settings.loadShowTrackIndicators(), isTrue);
-  });
-
   testWidgets('renaming a track updates the list and persists it', (
     tester,
   ) async {

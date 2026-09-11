@@ -12,24 +12,6 @@ part of 'settings_tray_cubit.dart';
 /// placeholders, because a rail item that does nothing when tapped is worse
 /// than a two-line enum edit.
 enum SettingsTrayDestination {
-  /// In-tray Signal domain — the four FX stages as tabs of one entry.
-  ///
-  /// **First of the domains**, as the mockups draw the rail: the signal path
-  /// is what the rest of the console configures, so it reads before the things
-  /// that drive it.
-  ///
-  /// One destination, not four: the tabs are [FxStage] itself — the app's own
-  /// FX addressing model, `input · loop · track · master` in signal order — so
-  /// this domain does not own a tab enum of its own the way its six siblings
-  /// do. A tab here selects which STAGE's chains you are looking at, and every
-  /// card on every tab is one chain.
-  ///
-  /// This is the destination that closed the rail's last exception. Signal was
-  /// a tile on the old home face pushing a full-screen route, which #533
-  /// replaced
-  /// with the face beside the rail.
-  signal,
-
   /// In-tray Control domain — the footswitch plate and the MIDI foot
   /// controller as tabs of one entry.
   ///
@@ -97,10 +79,7 @@ class SettingsTrayState extends Equatable {
   const SettingsTrayState({
     this.dragProgress = 0,
     this.brightness = kDefaultDisplayBrightness,
-    this.destination = SettingsTrayDestination.signal,
-    this.signalTab = FxStage.input,
-    this.signalSelection,
-    this.signalEffectSlot,
+    this.destination = SettingsTrayDestination.control,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
     this.audioTab = AudioTab.device,
@@ -125,39 +104,6 @@ class SettingsTrayState extends Equatable {
 
   /// Which FX stage the Signal domain shows.
   ///
-  /// Typed as [FxStage] rather than a `SignalTab` of its own: the four tabs
-  /// the mockups draw *are* the four stages the app already addresses chains
-  /// by, in the same order, so a parallel enum would be a second name for one
-  /// thing — and the one that could drift.
-  ///
-  /// Starts on [FxStage.input], the head of the signal path.
-  final FxStage signalTab;
-
-  /// The Signal card whose panel is open, or null when none is.
-  ///
-  /// Typed as [FxAddress] rather than a selection struct of its own: a card IS
-  /// one chain, and `{stage, index, lane}` is already how the app names one.
-  /// The same argument as [signalTab] being [FxStage] — a parallel model here
-  /// would be a second way to say "track 3, lane A" and the one free to drift.
-  ///
-  /// One at a time, and it survives a tab change only in the sense that the
-  /// tab change clears it: a card on the loop tab has no meaning while the
-  /// input tab is showing, and a panel hanging under the wrong run would be a
-  /// selection the face cannot draw.
-  final FxAddress? signalSelection;
-
-  /// Which entry of the open card's chain is being edited, or null when the
-  /// panel is showing the chain rather than one link of it.
-  ///
-  /// The entry's `slotId` — its stable identity (A9), minted at the repository
-  /// write boundary and preserved across edits, reorders and restore — NOT its
-  /// position. A position is what the chain changes when an entry is dragged,
-  /// so an index here means the editor describes whoever moved into the slot;
-  /// with drag-and-drop that stops being a one-frame race and becomes the
-  /// normal case. Resolving an identity to a position at draw time cannot
-  /// drift, and an identity that is no longer in the chain simply closes.
-  final String? signalEffectSlot;
-
   /// Which tab the Network domain shows.
   ///
   /// Survives leaving and returning to the domain — closing the tray resets
@@ -179,11 +125,6 @@ class SettingsTrayState extends Equatable {
     double? dragProgress,
     double? brightness,
     SettingsTrayDestination? destination,
-    FxStage? signalTab,
-    FxAddress? signalSelection,
-    bool clearSignalSelection = false,
-    String? signalEffectSlot,
-    bool clearSignalEffect = false,
     NetworkTab? networkTab,
     ControlTab? controlTab,
     AudioTab? audioTab,
@@ -192,15 +133,6 @@ class SettingsTrayState extends Equatable {
     dragProgress: dragProgress ?? this.dragProgress,
     brightness: brightness ?? this.brightness,
     destination: destination ?? this.destination,
-    signalTab: signalTab ?? this.signalTab,
-    // Null is a real value here (nothing selected), so it needs its own flag —
-    // `?? this` alone could never clear a selection.
-    signalSelection: clearSignalSelection
-        ? null
-        : signalSelection ?? this.signalSelection,
-    signalEffectSlot: clearSignalSelection || clearSignalEffect
-        ? null
-        : signalEffectSlot ?? this.signalEffectSlot,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
     audioTab: audioTab ?? this.audioTab,
@@ -212,9 +144,6 @@ class SettingsTrayState extends Equatable {
     dragProgress,
     brightness,
     destination,
-    signalTab,
-    signalSelection,
-    signalEffectSlot,
     networkTab,
     controlTab,
     audioTab,
