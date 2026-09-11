@@ -2131,3 +2131,159 @@ defaults and a replacement with defaults is indistinguishable from a copy. The
 fixture now carries non-default handling, so losing it is observable.
 
 A sixth screenshot covers the editor.
+
+## Slice 3f part 8: the rack becomes a thing
+
+Part 2 recorded the gap in as many words: "There is no rack artwork, and no
+rack." The owner settled both — ship the extracted assets, raise the engine
+ceiling first — and parts 3 and 4 did those. This part is the rack itself.
+
+The accepted chain is a run of RACKS: named groups of pedals the player adds,
+renames, reorders and removes as one thing. This engine's chain is a flat run
+of entries. So the grouping rides the entries.
+
+### Two fields on a chain entry
+
+- `rack` — an id, a name and an artwork slug. Every module of one rack carries
+  the same id, and a run of entries sharing an id IS that rack. A null rack is
+  a standalone single effect.
+- `module` — what the factory catalogue calls this entry. One string, because
+  the catalogue maps a module name to both a display name and a picture.
+
+Denormalised on purpose. The chain crosses four persistence boundaries — a
+session file, a performance arm snapshot, the settings store and the
+repository's own maps — as one encoded list, so a field on the entry rides all
+of them for free. A rename rewrites the run; that is cheaper than a second
+structure free to fall out of step with the chain it describes.
+
+`module` exists because the engine effect an entry became is not what the
+player chose. Twenty of the catalogue's twenty-six modules have no DSP here and
+become passthrough entries; without their own name they would all be the same
+nameless thing. With it, a rack draws Pumper as Pumper, with its own artwork,
+and says this build does not process it.
+
+Neither field folds into the chain fingerprint. The fingerprint is sound
+identity: folding a rack's name would re-render every take it is printed into
+for a change nobody can hear.
+
+### What a group is, and where the rules live
+
+`fxChainGroups` turns a chain into what the surfaces draw, and the transforms
+beside it are the only things that rearrange one: rename, remove a span, move a
+group, move a module inside its rack, order by id, set a group's channels, set
+a group's placement. Every surface computes a new chain with those and hands it
+to the stage's own setter. No surface does its own list surgery.
+
+Two rules worth naming:
+
+- **Channel handling is read AROUND a group.** The engine applies it per entry:
+  the input choice before an entry's effect, the output choice, level and
+  placement after it. For a rack that is exactly what "Rack input / Rack output
+  / Rack level / Balance" means — the first module's input side and the last
+  module's output side, with the modules in between at defaults so the rack is
+  transparent between its own pedals. The surface issues the one or two
+  per-entry writes the repository already has rather than pushing the whole
+  chain on every frame of a drag; a test pins the targeted writes and the whole
+  rewrite agreeing.
+- **A rack never straddles the loop player.** The Pre/Post switch moves every
+  module together, and lands them at the END of the other stage rather than
+  where they stood. That is the accepted design's own wording, and it is what
+  keeps reorder — a separate, cancellable surface — the only thing that
+  arranges a stage.
+
+### What the surfaces became
+
+A card on the destination chain is a GROUP: the rack's name, its family's
+artwork and how many pedals it holds, or a single effect as before. Opening a
+rack card opens the rack chain editor — one column per pedal with its own
+power, artwork, controls and a persistent scrollbar, plain cables between them,
+and the rack's channel handling in the footer. Opening a single effect still
+opens the direct editor.
+
+### Two corrections to what part 2 and part 7 shipped
+
+- **The card's artwork frame was the wrong height.** It was `Expanded`, so it
+  took 189 of the card's 360; the pen fixes it at 138 and puts the slack
+  between the name and the status line.
+- **Both editors' titlebar rows were left-aligned where the pen right-aligns
+  them.** The pen puts the instance's pedal assignment ahead of the buttons;
+  that chip belongs to the pedal-binding surface, which is not built, and the
+  buttons that are keep the pen's right edge rather than sliding left into the
+  gap it would have left.
+
+### The one thing a rack's power does not do
+
+There is no rack-level bypass bit. A rack's power writes every pedal's own bit,
+so a rack turned off and on again comes back with every pedal on, losing which
+ones were individually bypassed before. The engine has one enable per slot and
+nothing above it; a rack bit would have to be a fourth bypass masked at every
+write path and folded into the fingerprint, which is a slice of its own. The
+common action — make this rack do nothing — is exact; only that round trip
+loses something.
+
+## Slice 3f part 9: rack options, and reorder
+
+The pen's `06 Rack options`, `04 Reorder effects` and `05 Reorder rack chain`.
+
+### Rack options
+
+Rename, Reorder effects, Remove an effect, Remove rack. Reorder and Remove an
+effect are offered only on a rack holding more than one pedal — there is no
+order to change in a rack of one, and taking its only pedal out is Remove rack
+said the long way — and are drawn dimmed rather than hidden, so the list keeps
+its shape between two racks.
+
+Rename goes through `showConsoleRenameSheet`, which this console already has
+and which owns the one keyboard. A standalone effect's options offer removal
+and nothing else: the accepted design gives rename and reorder to a rack.
+
+### One reorder surface, two jobs
+
+The same horizontal strip arranges a destination's racks and one rack's pedals.
+The draft is local and Cancel discards it, which is what makes the accepted
+"Reorder can be canceled" true after several moves — and what keeps a pedal
+press from persisting an order the player was still trying out.
+
+The stage is the boundary. A card carries its stage tag, a move is refused when
+the neighbour's tag differs, and no cable is drawn across the break. Read off
+the DRAFT rather than the order the page opened on, so the answer follows the
+moves already made. A rack's own pedals have no tag at all, so they move
+freely.
+
+Committing refuses an id list that does not name exactly the groups the chain
+still has. A draft is made on a chain a pedal can change under it, and
+committing a stale one would drop or duplicate whatever moved in the meantime.
+
+### Add an effect to a rack
+
+The same full-page catalogue, with what it resolves to joining THIS rack rather
+than starting a second one beside it. New pedals land at the end of the rack
+and arrive bypassed, like every other addition.
+
+### Checks
+
+- Root suite 2319 passing, 35 skipped; every package suite green; analyze and
+  bloc lint clean.
+- Thirty-six repository tests for the group model: grouping, the channel rule
+  in both directions, rename, removal, both moves, both orderings and their
+  refusals, the stage-end landing, and a rack surviving encode and decode.
+- Sixteen more widget tests: a rack as one card, its power writing every pedal,
+  the editor's columns, an unprocessable pedal keeping its name, a pedal's own
+  power, the footer's two targets, rename, both removals, reorder inside a rack,
+  reorder cancelled, the destination reorder arranging whole racks, its refusal
+  to cross the break, and its commit.
+- Six mutations, each caught by exactly the test that names it: no grouping, a
+  placement that stays where it stood, a rack power that writes one pedal, a
+  level written to the first pedal, a reorder that ignores the stage, and a
+  Cancel that commits.
+- Four more screenshots: a chain of racks, the rack editor, reorder and rack
+  options.
+
+### A golden that had been photographing a half-loaded page
+
+Part 6 recorded that artwork "cannot be in a widget-test golden". That was
+wrong, and the goldens it produced had empty frames where pictures belong. A
+widget test pumps in fake async and an asset load is real async, so the
+bundle's future never completes while time is fake. `runAsync` hands the real
+event loop back for a moment, and the artwork arrives. Every FX golden now
+carries the real Looper X artwork.

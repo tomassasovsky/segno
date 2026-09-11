@@ -433,6 +433,23 @@ final class LooperLaneEffectAdded extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, type];
 }
 
+/// Lane [lane] of track [channel]'s chain was replaced with [effects] — the
+/// lane twin of [LooperTrackEffectsChanged].
+///
+/// The structural write: rename, reorder and removal all rewrite the chain
+/// rather than edit one slot, because a rack is several entries and every one
+/// of them moves together.
+final class LooperLaneEffectsChanged extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectsChanged].
+  const LooperLaneEffectsChanged(super.channel, super.lane, this.effects);
+
+  /// The new chain, in processing order.
+  final List<TrackEffect> effects;
+
+  @override
+  List<Object?> get props => [channel, lane, effects];
+}
+
 /// Appends [entries] to lane [lane] of track [channel]'s chain in one write
 /// — the lane twin of [LooperBusEffectsAppended], for the same reason.
 final class LooperLaneEffectsAppended extends LooperLaneEvent {
@@ -776,6 +793,20 @@ final class LooperBusEffectAdded extends LooperBusChainEvent {
 
   @override
   List<Object?> get props => [address, type];
+}
+
+/// The bus chain at [address] was replaced with [effects] — the addressed
+/// twin of [LooperTrackEffectsChanged] / [LooperOutputEffectsChanged], so one
+/// structural edit reaches either bus stage without the caller switching.
+final class LooperBusEffectsChanged extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectsChanged].
+  const LooperBusEffectsChanged(super.address, this.effects);
+
+  /// The new chain, in processing order.
+  final List<TrackEffect> effects;
+
+  @override
+  List<Object?> get props => [address, effects];
 }
 
 /// Appends [entries] to the bus chain at [address] in one write.

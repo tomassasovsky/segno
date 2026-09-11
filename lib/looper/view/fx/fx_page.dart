@@ -9,6 +9,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
+import 'package:segno/common/console_rename_sheet.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_cubit.dart';
@@ -16,8 +18,12 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
+import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_library_page.dart';
+import 'package:segno/looper/view/fx/fx_options_sheet.dart';
+import 'package:segno/looper/view/fx/fx_rack_editor.dart';
+import 'package:segno/looper/view/fx/fx_reorder_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -79,17 +85,25 @@ class _FxViewState extends State<FxView> {
 
   void _back() => Navigator.maybePop(context);
 
-  /// Opens [index] of [destination]'s chain in its own editor.
+  /// Opens group [group] of [destination]'s chain in its own editor.
   ///
   /// A route rather than a panel, because the accepted design gives the
   /// editor the whole surface: its controls are direct, which is what the
   /// removed parameter dialog was in the way of.
-  void _openEditor(FxDestination destination, int index) {
+  ///
+  /// The group is re-found by IDENTITY on every rebuild rather than held by
+  /// index: a reorder or a removal made while this editor is open changes what
+  /// index the rack sits at, and an editor keyed by index would silently start
+  /// editing its neighbour.
+  void _openEditor(FxDestination destination, int group) {
     final address = destination.address;
     if (address == null) return;
     final label = _destinationLabel(destination);
     final monitor = context.read<MonitorCubit>();
     final bloc = context.read<LooperBloc>();
+    final groups = fxChainGroups(_entriesOf(context, address));
+    if (group < 0 || group >= groups.length) return;
+    final id = fxGroupId(groups[group]);
     Navigator.push<void>(
       context,
       MaterialPageRoute(
@@ -105,15 +119,36 @@ class _FxViewState extends State<FxView> {
           ],
           child: Builder(
             builder: (context) {
-              final entries = _watchEntriesOf(context, address);
-              if (index >= entries.length) return const SizedBox.shrink();
-              return FxEffectEditor(
-                effect: entries[index],
-                destination: destination,
-                destinationLabel: label,
-                onBack: () => Navigator.maybePop(context),
-                edits: _editsFor(bloc, monitor, address, index),
-              );
+              final chain = _watchEntriesOf(context, address);
+              final found = fxChainGroups(
+                chain,
+              ).where((g) => fxGroupId(g) == id).firstOrNull;
+              if (found == null) return const SizedBox.shrink();
+              final edits = _editsFor(bloc, monitor, address);
+              return found.isRack
+                  ? FxRackEditor(
+                      group: found,
+                      destination: destination,
+                      destinationLabel: label,
+                      edits: edits,
+                      onBack: () => Navigator.maybePop(context),
+                      onOptions: () =>
+                          unawaited(_rackOptions(context, found, edits, label)),
+                      onSavePreset: () {},
+                      onAddEffect: () =>
+                          unawaited(_addToRack(context, found, edits)),
+                    )
+                  : FxEffectEditor(
+                      group: found,
+                      destination: destination,
+                      destinationLabel: label,
+                      edits: edits,
+                      onBack: () => Navigator.maybePop(context),
+                      onOptions: () => unawaited(
+                        _effectOptions(context, found, edits),
+                      ),
+                      onSavePreset: () {},
+                    );
             },
           ),
         ),
@@ -121,25 +156,231 @@ class _FxViewState extends State<FxView> {
     );
   }
 
-  /// How one entry's editor writes, per stage.
+  /// The pen's `06 Rack options`: rename, reorder, remove one pedal, remove
+  /// the rack.
+  ///
+  /// Reorder and Remove an effect are offered only on a rack with more than
+  /// one pedal — there is no order to change in a rack of one, and taking its
+  /// only pedal out is Remove rack said the long way. They are drawn dimmed
+  /// rather than hidden so the list keeps its shape between two racks.
+  static Future<void> _rackOptions(
+    BuildContext context,
+    FxChainGroup group,
+    FxEdits edits,
+    String label,
+  ) async {
+    final l10n = context.l10n;
+    final rack = group.rack;
+    if (rack == null) return;
+    final several = group.length > 1;
+    final choice = await showFxOptionsSheet(
+      context,
+      title: l10n.fxRackOptions,
+      options: [
+        FxOption(id: 'rename', label: l10n.fxRackRename),
+        FxOption(
+          id: 'reorder',
+          label: l10n.fxReorderEffects,
+          enabled: several,
+        ),
+        FxOption(
+          id: 'remove-one',
+          label: l10n.fxRemoveAnEffect,
+          enabled: several,
+        ),
+        FxOption(id: 'remove', label: l10n.fxRemoveRack),
+      ],
+    );
+    if (choice == null || !context.mounted) return;
+    switch (choice) {
+      case 'rename':
+        final name = await showConsoleRenameSheet(
+          context,
+          title: l10n.fxRackRename,
+          subtitle: rack.name,
+          current: rack.name,
+          fieldLabel: l10n.fxRackRenameField,
+        );
+        if (name == null || !context.mounted) return;
+        edits.setChain(fxRenameRack(group.chain, rack.id, name));
+      case 'reorder':
+        final ordered = await Navigator.push<List<String>>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => FxReorderPage(
+              crumb: l10n.fxAddCrumb(label),
+              cards: [
+                for (final fx in group.entries)
+                  FxReorderCard(
+                    id: fx.slotId ?? '',
+                    name: fxPedalName(l10n, fx),
+                    art: fx.module == null ? null : fxModuleArt(fx.module!),
+                  ),
+              ],
+            ),
+          ),
+        );
+        if (ordered == null || !context.mounted) return;
+        edits.setChain(fxOrderRackModules(group.chain, rack.id, ordered));
+      case 'remove-one':
+        final id = await showFxOptionsSheet(
+          context,
+          title: l10n.fxRemoveAnEffect,
+          options: [
+            for (final fx in group.entries)
+              FxOption(
+                id: fx.slotId ?? '',
+                label: fxPedalName(l10n, fx),
+              ),
+          ],
+        );
+        if (id == null || !context.mounted) return;
+        final index = group.chain.indexWhere((fx) => fx.slotId == id);
+        if (index < 0) return;
+        edits.setChain(fxRemoveRange(group.chain, index, index + 1));
+      case 'remove':
+        final confirmed = await showConsoleConfirmDialog(
+          context,
+          title: l10n.fxPresetDeleteTitle(rack.name),
+          body: l10n.fxPresetDeleteBody,
+          confirmLabel: l10n.fxRemoveRack,
+        );
+        if (!confirmed || !context.mounted) return;
+        edits.setChain(fxRemoveRange(group.chain, group.start, group.end));
+        Navigator.maybePop(context);
+    }
+  }
+
+  /// How many groups the destination's chain holds.
+  int _groupCount(BuildContext context, FxDestination destination) {
+    final address = destination.address;
+    if (address == null) return 0;
+    return fxChainGroups(_watchEntriesOf(context, address)).length;
+  }
+
+  /// The pen's `05 Reorder rack chain`: the destination's own racks and single
+  /// effects, arranged on the shared reorder strip.
+  ///
+  /// The cards carry their stage, and a move across the Pre/Post break is
+  /// refused, because the accepted design says reorder moves an effect within
+  /// its stage and the explicit switch is what moves it between them.
+  Future<void> _reorderChain(FxDestination destination) async {
+    final address = destination.address;
+    if (address == null) return;
+    final l10n = context.l10n;
+    final chain = _entriesOf(context, address);
+    final groups = fxChainGroups(chain);
+    if (groups.length < 2) return;
+    final showStage = destination.placementIsEditable;
+    final ordered = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FxReorderPage(
+          crumb: l10n.fxAddCrumb(_destinationLabel(destination)),
+          cards: [
+            for (var i = 0; i < groups.length; i++)
+              FxReorderCard(
+                id: fxGroupId(groups[i]),
+                name: fxGroupName(l10n, groups[i]),
+                art: groups[i].rack?.art == null
+                    ? null
+                    : fxRackArtAsset(groups[i].rack!.art!),
+                stageTag: !showStage
+                    ? null
+                    : groups[i].placement == FxPlacement.pre
+                    ? l10n.fxPlacementPre
+                    : l10n.fxPlacementPost,
+              ),
+          ],
+        ),
+      ),
+    );
+    if (ordered == null || !mounted) return;
+    _editsFor(
+      context.read<LooperBloc>(),
+      context.read<MonitorCubit>(),
+      address,
+    ).setChain(fxOrderGroups(chain, ordered));
+  }
+
+  /// The pen's `02 Add an effect to a rack`: the same full-page catalogue,
+  /// with what it resolves to joining THIS rack rather than starting a second
+  /// one beside it.
+  ///
+  /// The new pedals land at the end of the rack and arrive bypassed, like every
+  /// other addition, and Back from the catalogue changes nothing.
+  Future<void> _addToRack(
+    BuildContext context,
+    FxChainGroup group,
+    FxEdits edits,
+  ) async {
+    final rack = group.rack;
+    if (rack == null) return;
+    final chain = group.chain;
+    final choice = await Navigator.push<FxLibraryChoice>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FxLibraryPage(
+          catalogue: widget.catalogue ?? FxCatalogue.empty,
+          destinationLabel: rack.name,
+          freeSlots: kTrackEffectMax - chain.length,
+        ),
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    final added = _entriesFor(
+      choice,
+      placement: group.placement,
+      into: rack,
+    );
+    if (added.isEmpty) return;
+    edits.setChain([
+      ...chain.sublist(0, group.end),
+      ...added,
+      ...chain.sublist(group.end),
+    ]);
+  }
+
+  /// A standalone effect's options.
+  ///
+  /// Removal and nothing else. The accepted design gives rename and reorder to
+  /// a RACK — a single effect has no modules to arrange and no name of its own
+  /// beyond the effect it is.
+  static Future<void> _effectOptions(
+    BuildContext context,
+    FxChainGroup group,
+    FxEdits edits,
+  ) async {
+    final l10n = context.l10n;
+    final name = fxPedalName(l10n, group.entries.first);
+    final choice = await showFxOptionsSheet(
+      context,
+      title: l10n.fxEffectOptions,
+      options: [FxOption(id: 'remove', label: l10n.fxRemoveEffect(name))],
+    );
+    if (choice != 'remove' || !context.mounted) return;
+    edits.setChain(fxRemoveRange(group.chain, group.start, group.end));
+    Navigator.maybePop(context);
+  }
+
+  /// How a chain's editors write, per stage.
   ///
   /// Each stage keeps its own owner rather than routing through one shared
   /// setter: that is what stops a write meant for a live input landing on a
   /// track's chain.
-  static FxEffectEdits _editsFor(
+  static FxEdits _editsFor(
     LooperBloc bloc,
     MonitorCubit monitor,
     FxAddress address,
-    int index,
   ) => (
-    setEnabled: ({required enabled}) => _DestinationChain._togglePower(
+    setEnabled: (index, {required enabled}) => _DestinationChain._togglePower(
       bloc,
       monitor,
       address,
       index,
       enabled: enabled,
     ),
-    setParam: (param, value) {
+    setParam: (index, param, value) {
       switch (address.stage) {
         case FxStage.input:
           monitor.setEffectParam(address.index, index, param, value);
@@ -160,31 +401,7 @@ class _FxViewState extends State<FxView> {
           bloc.add(LooperAllTracksEffectParamChanged(index, param, value));
       }
     },
-    setPlacement: (placement) {
-      switch (address.stage) {
-        case FxStage.input:
-          monitor.setEffectPlacement(address.index, index, placement);
-        case FxStage.loop:
-          bloc.add(
-            LooperLaneEffectPlacementChanged(
-              address.index,
-              address.lane ?? 0,
-              index,
-              placement,
-            ),
-          );
-        case FxStage.track:
-          bloc.add(
-            LooperTrackEffectPlacementChanged(address.index, index, placement),
-          );
-        case FxStage.allTracks:
-        case FxStage.output:
-          // Fixed after their own mixes, so the editor never offers the
-          // switch here and nothing can reach this.
-          break;
-      }
-    },
-    setChannels: (channels) {
+    setChannels: (index, channels) {
       switch (address.stage) {
         case FxStage.input:
           monitor.setEffectChannels(address.index, index, channels);
@@ -202,6 +419,25 @@ class _FxViewState extends State<FxView> {
           bloc.add(LooperBusEffectChannelsChanged(address, index, channels));
         case FxStage.allTracks:
           bloc.add(LooperAllTracksEffectChannelsChanged(index, channels));
+      }
+    },
+    // The structural write. Rename, reorder, removal and the Pre/Post switch
+    // all move several entries at once, so they hand back a whole chain rather
+    // than editing one slot: a rack is one thing, and half a rack moved is not
+    // a state any surface can draw.
+    setChain: (chain) {
+      switch (address.stage) {
+        case FxStage.input:
+          monitor.setEffects(address.index, chain);
+        case FxStage.loop:
+          bloc.add(
+            LooperLaneEffectsChanged(address.index, address.lane ?? 0, chain),
+          );
+        case FxStage.track:
+        case FxStage.output:
+          bloc.add(LooperBusEffectsChanged(address, chain));
+        case FxStage.allTracks:
+          bloc.add(LooperAllTracksEffectsChanged(chain));
       }
     },
   );
@@ -227,7 +463,10 @@ class _FxViewState extends State<FxView> {
       ),
     );
     if (choice == null || !mounted) return;
-    final added = _entriesFor(choice, destination);
+    final added = _entriesFor(
+      choice,
+      placement: destination.defaultPlacement,
+    );
     if (added.isEmpty) return;
     _append(context, address, added);
   }
@@ -240,22 +479,43 @@ class _FxViewState extends State<FxView> {
   /// The preset's power values are not lost — they ride each entry's own
   /// parameters and come back when the chain is engaged.
   static List<TrackEffect> _entriesFor(
-    FxLibraryChoice choice,
-    FxDestination destination,
-  ) {
-    final placement = destination.defaultPlacement;
-    return switch (choice) {
-      FxSingleChoice(:final type) => [
-        BuiltInEffect(type: type, enabled: false, placement: placement),
-      ],
-      FxRackChoice(:final preset) => [
-        for (final module in fxPresetModules(preset))
-          fxModuleEntry(module, preset).copyWith(
+    FxLibraryChoice choice, {
+    required FxPlacement placement,
+    FxRack? into,
+  }) {
+    switch (choice) {
+      case FxSingleChoice(:final type):
+        return [
+          BuiltInEffect(
+            type: type,
             enabled: false,
             placement: placement,
+            rack: into,
           ),
-      ],
-    };
+        ];
+      case FxRackChoice(:final preset):
+        // Every module of one rack carries the same rack: a freshly minted id
+        // that makes them one thing to every surface downstream, the preset's
+        // own name (which the player may rename without touching the preset),
+        // and the family's artwork slug for the card. Adding INTO a rack keeps
+        // that rack instead, so the new pedals join it rather than starting a
+        // second one beside it.
+        final rack =
+            into ??
+            FxRack(
+              id: SlotIds.mint(),
+              name: preset.name,
+              art: kFxFamilySlugs[preset.family],
+            );
+        return [
+          for (final module in fxPresetModules(preset))
+            fxModuleEntry(module, preset).copyWith(
+              enabled: false,
+              placement: placement,
+              rack: rack,
+            ),
+        ];
+    }
   }
 
   /// What the library's header calls the destination.
@@ -371,6 +631,8 @@ class _FxViewState extends State<FxView> {
             child: _SoundContext(
               destination: destination,
               onAdd: () => unawaited(_addEffects(destination)),
+              onReorder: () => unawaited(_reorderChain(destination)),
+              canReorder: _groupCount(context, destination) > 1,
             ),
           ),
           Positioned(
@@ -551,10 +813,21 @@ class _OutputStrip extends StatelessWidget {
 /// The row under the strip: what this destination processes, the part picker
 /// or the Hear live control when the destination has one, and the actions.
 class _SoundContext extends StatelessWidget {
-  const _SoundContext({required this.destination, required this.onAdd});
+  const _SoundContext({
+    required this.destination,
+    required this.onAdd,
+    required this.onReorder,
+    required this.canReorder,
+  });
 
   final FxDestination destination;
   final VoidCallback onAdd;
+  final VoidCallback onReorder;
+
+  /// Whether there is an order to change. A chain of one has none, so the
+  /// button is drawn dimmed rather than promising a page that could do
+  /// nothing.
+  final bool canReorder;
 
   @override
   Widget build(BuildContext context) {
@@ -586,6 +859,14 @@ class _SoundContext extends StatelessWidget {
             !destination.isAllTracks)
           _PartPicker(destination: destination),
         const Spacer(),
+        LoopOutlinedButton(
+          key: const Key('fx_reorder'),
+          width: 137,
+          radius: 8,
+          label: l10n.fxReorder,
+          onTap: canReorder ? onReorder : null,
+        ),
+        const SizedBox(width: 12),
         LoopOutlinedButton(
           key: const Key('fx_add_effects'),
           width: 217,
@@ -773,14 +1054,18 @@ class _DestinationChain extends StatelessWidget {
       entries: entries,
       controller: controller,
       showPlacement: destination.placementIsEditable,
-      onTogglePower: (index, {required enabled}) => _togglePower(
-        bloc,
-        context.read<MonitorCubit>(),
-        address,
-        index,
-        enabled: enabled,
-      ),
-      onOpen: (index) => onOpen(destination, index),
+      onTogglePower: (group, {required enabled}) {
+        final monitor = context.read<MonitorCubit>();
+        final groups = fxChainGroups(entries);
+        if (group < 0 || group >= groups.length) return;
+        // A rack's power is every pedal's power, one write each. There is no
+        // rack-level bypass bit in this engine, so a rack turned back on turns
+        // every pedal on — see the rack editor's own note.
+        for (var i = groups[group].start; i < groups[group].end; i++) {
+          _togglePower(bloc, monitor, address, i, enabled: enabled);
+        }
+      },
+      onOpen: (group) => onOpen(destination, group),
     );
   }
 

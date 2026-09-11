@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
@@ -19,6 +20,8 @@ import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
+import 'package:segno/looper/view/fx/fx_rack_editor.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -41,6 +44,53 @@ BuiltInEffect _fx(
   enabled: enabled,
   placement: placement,
   channels: channels,
+);
+
+/// One module of the rack [rackId].
+BuiltInEffect _module(
+  String slot,
+  TrackEffectType type, {
+  required String rackId,
+  String rackName = 'Funk Wah',
+  String? module,
+  bool enabled = true,
+  FxPlacement placement = FxPlacement.post,
+  FxChannels channels = FxChannels.defaults,
+}) => BuiltInEffect(
+  type: type,
+  slotId: slot,
+  enabled: enabled,
+  placement: placement,
+  channels: channels,
+  module: module,
+  rack: FxRack(id: rackId, name: rackName, art: 'guitar'),
+);
+
+/// A rig whose track 0 carries a rack of three pedals followed by one
+/// standalone effect, both Post, plus a Pre standalone ahead of them.
+final _rackRig = LooperState(
+  tracks: [
+    Track(
+      state: TrackState.playing,
+      lanes: const [Lane(inputChannel: 0, lengthFrames: 48000)],
+      effects: [
+        _fx('p1', TrackEffectType.filter, placement: FxPlacement.pre),
+        _module('r1a', TrackEffectType.delay, rackId: 'R1', module: 'Delay'),
+        // A pedal this build has no effect for: it keeps its catalogue name
+        // and becomes a passthrough entry.
+        _module('r1b', TrackEffectType.none, rackId: 'R1', module: 'Pumper'),
+        _module('r1c', TrackEffectType.reverb, rackId: 'R1', module: 'Reverb'),
+        _fx('s1', TrackEffectType.echo),
+      ],
+    ),
+  ],
+  status: const EngineStatus(
+    isConnected: true,
+    deviceName: 'Scarlett 18i20',
+    inputChannels: 4,
+    outputChannels: 4,
+  ),
+  outputBusCount: 2,
 );
 
 /// A four-in, four-out rig with two tracks recording, as the pen's examples
@@ -514,6 +564,51 @@ void main() {
       expect(delay.params[0], closeTo(0.42, 1e-9));
     });
 
+    testWidgets('every pedal of one rack carries the SAME rack, which is what '
+        'makes them one card and one thing to move', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+
+      final appended =
+          verify(
+                () =>
+                    bloc.add(captureAny(that: isA<LooperBusEffectsAppended>())),
+              ).captured.single
+              as LooperBusEffectsAppended;
+
+      final racks = appended.entries.map((e) => e.rack).toSet();
+      expect(racks, hasLength(1));
+      expect(racks.single!.name, 'Acoustic Rhythm 1');
+      // The family's own artwork slug, not a slug derived from its folder
+      // name — the source does not name those the same way.
+      expect(racks.single!.art, 'edsguitar');
+      // And the catalogue's own name for each pedal, kept whatever this
+      // engine could build for it.
+      expect(
+        appended.entries.map((e) => e.module),
+        ['Compressor', 'Delay', 'Reverb'],
+      );
+    });
+
+    testWidgets('a single effect belongs to no rack, so it stays its own card',
+        (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_single');
+      await tapKey(tester, 'fx_single_reverb');
+
+      final appended =
+          verify(
+                () =>
+                    bloc.add(captureAny(that: isA<LooperBusEffectsAppended>())),
+              ).captured.single
+              as LooperBusEffectsAppended;
+
+      expect(appended.entries.single.rack, isNull);
+    });
+
     testWidgets(
       'every added entry arrives bypassed, whatever the preset says',
       (tester) async {
@@ -681,18 +776,28 @@ void main() {
         );
       });
 
-      testWidgets("moves the entry through the stage's own owner", (
-        tester,
-      ) async {
+      testWidgets('moves the instance to the END of the other stage, through '
+          "that stage's own owner", (tester) async {
         await pump(tester, destination: const FxDestination.recordedTrack(0));
         await tapKey(tester, 'fx_card_t1');
         await tapKey(tester, 'fx_placement_post');
 
-        verify(
-          () => bloc.add(
-            const LooperTrackEffectPlacementChanged(0, 0, FxPlacement.post),
-          ),
-        ).called(1);
+        // A whole-chain write, because the switch moves an INSTANCE and an
+        // instance can be a rack of six pedals. And to the end of the Post
+        // run, not to where it stood: reorder is the separate, cancellable
+        // surface that arranges a stage.
+        final written =
+            verify(
+                  () => bloc.add(
+                    captureAny(that: isA<LooperBusEffectsChanged>()),
+                  ),
+                ).captured.single
+                as LooperBusEffectsChanged;
+
+        expect(written.address.stage, FxStage.track);
+        expect(written.effects.last.slotId, 't1');
+        expect(written.effects.last.placement, FxPlacement.post);
+        expect(fxPreCount(written.effects), 1);
       });
 
       testWidgets('is NOT offered on an output, whose stage is fixed after '
@@ -758,6 +863,264 @@ void main() {
         await tapKey(tester, 'fx_card_t3');
 
         expect(find.text(l10nOf(tester).fxCentre), findsOneWidget);
+      });
+    });
+
+    group('the rack', () {
+      Future<void> pumpRack(WidgetTester tester) => pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: _rackRig,
+      );
+
+      /// The chain the last structural write pushed.
+      List<TrackEffect> lastChain() =>
+          (verify(
+                    () => bloc.add(
+                      captureAny(that: isA<LooperBusEffectsChanged>()),
+                    ),
+                  ).captured.last
+                  as LooperBusEffectsChanged)
+              .effects;
+
+      testWidgets('is ONE card on the chain, named by the rack and saying how '
+          'many pedals it holds', (tester) async {
+        await pumpRack(tester);
+
+        // Three modules, one card — and the standalones on either side are
+        // still their own.
+        expect(find.byKey(const Key('fx_card_R1')), findsOneWidget);
+        expect(find.byKey(const Key('fx_card_r1a')), findsNothing);
+        expect(find.text('Funk Wah'), findsOneWidget);
+        expect(find.text(l10nOf(tester).fxModuleCount(3)), findsOneWidget);
+      });
+
+      testWidgets("the card's power writes every pedal, because a rack is one "
+          'thing to the player', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_power_R1');
+
+        final written = verify(
+          () => bloc.add(
+            captureAny(that: isA<LooperTrackEffectEnabledToggled>()),
+          ),
+        ).captured.cast<LooperTrackEffectEnabledToggled>();
+
+        expect(written.map((e) => e.index), [1, 2, 3]);
+        expect(written.every((e) => !e.enabled), isTrue);
+      });
+
+      testWidgets('opens into one column per pedal, each with its own power '
+          'and controls', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+
+        expect(find.byType(FxRackEditor), findsOneWidget);
+        expect(find.byKey(const Key('fx_pedal_r1a')), findsOneWidget);
+        expect(find.byKey(const Key('fx_pedal_r1b')), findsOneWidget);
+        expect(find.byKey(const Key('fx_pedal_r1c')), findsOneWidget);
+        // Two cables for three pedals.
+        expect(find.byKey(const Key('fx_pedal_cable_1')), findsOneWidget);
+        expect(find.byKey(const Key('fx_pedal_cable_2')), findsOneWidget);
+      });
+
+      testWidgets("a pedal this build cannot process keeps the catalogue's "
+          'name and says so, rather than offering controls that reach '
+          'nothing', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+
+        expect(find.text('Pumper'), findsOneWidget);
+        expect(
+          find.text(l10nOf(tester).fxModuleUnavailable),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets("a pedal's own power is its own, not the rack's", (
+        tester,
+      ) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+        await tapKey(tester, 'fx_pedal_power_r1a');
+
+        final written = verify(
+          () => bloc.add(
+            captureAny(that: isA<LooperTrackEffectEnabledToggled>()),
+          ),
+        ).captured.cast<LooperTrackEffectEnabledToggled>();
+
+        expect(written.single.index, 1);
+      });
+
+      testWidgets('the footer writes the input to the first pedal and the '
+          'level to the last', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+        await tester.drag(
+          find.byKey(const Key('fx_rack_level')),
+          const Offset(-60, 0),
+        );
+        await tester.pumpAndSettle();
+
+        final written = verify(
+          () => bloc.add(
+            captureAny(that: isA<LooperBusEffectChannelsChanged>()),
+          ),
+        ).captured.cast<LooperBusEffectChannelsChanged>();
+
+        // The last pedal, because that is where the engine applies a level —
+        // after the rack's effects, which is what the control says it does.
+        expect(written.last.index, 3);
+        expect(written.last.channels.level, lessThan(1));
+      });
+
+      testWidgets('rename writes every pedal and leaves the rack id alone', (
+        tester,
+      ) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+        await tapKey(tester, 'fx_rack_options');
+        await tapKey(tester, 'fx_option_rename');
+        // The console's one keyboard takes physical keys too, which is how a
+        // test types into it.
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+
+        final chain = lastChain();
+        final rack = chain.where((fx) => fx.rack?.id == 'R1').toList();
+        expect(rack, hasLength(3));
+        expect(rack.every((fx) => fx.rack!.name == 'Funk Wahv'), isTrue);
+        // The rack's identity survives its name changing, and the standalone
+        // effects on either side are untouched.
+        expect(chain.map((fx) => fx.slotId), [
+          'p1',
+          'r1a',
+          'r1b',
+          'r1c',
+          's1',
+        ]);
+      });
+
+      testWidgets('Remove rack takes every pedal and leaves its neighbours', (
+        tester,
+      ) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+        await tapKey(tester, 'fx_rack_options');
+        await tapKey(tester, 'fx_option_remove');
+        await tester.tap(find.text(l10nOf(tester).fxRemoveRack));
+        await tester.pumpAndSettle();
+
+        expect(
+          lastChain().map((fx) => fx.slotId),
+          ['p1', 's1'],
+        );
+      });
+
+      testWidgets('Remove an effect takes one pedal and keeps the rack', (
+        tester,
+      ) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+        await tapKey(tester, 'fx_rack_options');
+        await tapKey(tester, 'fx_option_remove-one');
+        await tapKey(tester, 'fx_option_r1b');
+
+        final chain = lastChain();
+        expect(chain.map((fx) => fx.slotId), ['p1', 'r1a', 'r1c', 's1']);
+        expect(fxChainGroups(chain).map(fxGroupId), ['p1', 'R1', 's1']);
+      });
+
+      testWidgets('Reorder effects arranges the pedals inside the rack and '
+          'nothing else', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+        await tapKey(tester, 'fx_rack_options');
+        await tapKey(tester, 'fx_option_reorder');
+        // The first pedal is picked by default; move it right once.
+        await tapKey(tester, 'fx_move_right');
+        await tapKey(tester, 'fx_reorder_done');
+
+        expect(
+          lastChain().map((fx) => fx.slotId),
+          ['p1', 'r1b', 'r1a', 'r1c', 's1'],
+        );
+      });
+
+      testWidgets('Reorder is cancellable: Cancel after several moves writes '
+          'nothing at all', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+        await tapKey(tester, 'fx_rack_options');
+        await tapKey(tester, 'fx_option_reorder');
+        await tapKey(tester, 'fx_move_right');
+        await tapKey(tester, 'fx_move_right');
+        await tapKey(tester, 'fx_reorder_cancel');
+
+        verifyNever(
+          () => bloc.add(any(that: isA<LooperBusEffectsChanged>())),
+        );
+      });
+    });
+
+    group('reordering the destination chain', () {
+      Future<void> pumpRack(WidgetTester tester) => pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: _rackRig,
+      );
+
+      testWidgets('arranges whole racks, not their pedals', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_reorder');
+
+        // Three cards for five entries: the Pre standalone, the rack, and the
+        // Post standalone.
+        expect(find.byKey(const Key('fx_reorder_p1')), findsOneWidget);
+        expect(find.byKey(const Key('fx_reorder_R1')), findsOneWidget);
+        expect(find.byKey(const Key('fx_reorder_s1')), findsOneWidget);
+        expect(find.byKey(const Key('fx_reorder_r1a')), findsNothing);
+      });
+
+      testWidgets('will not carry a card across the Pre/Post break', (
+        tester,
+      ) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_reorder');
+
+        // p1 is the only Pre card, so it has nowhere to go: moving it right
+        // would put it in the Post run, which only the explicit switch does.
+        final right = tester.widget<LoopOutlinedButton>(
+          find.byKey(const Key('fx_move_right')),
+        );
+        expect(right.onTap, isNull);
+        // And no cable is drawn across the break.
+        expect(find.byKey(const Key('fx_reorder_cable_1')), findsNothing);
+      });
+
+      testWidgets('commits the new order on Done', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_reorder');
+        await tester.tap(find.byKey(const Key('fx_reorder_R1')));
+        await tester.pumpAndSettle();
+        await tapKey(tester, 'fx_move_right');
+        await tapKey(tester, 'fx_reorder_done');
+
+        final written =
+            verify(
+                  () => bloc.add(
+                    captureAny(that: isA<LooperBusEffectsChanged>()),
+                  ),
+                ).captured.single
+                as LooperBusEffectsChanged;
+
+        expect(
+          written.effects.map((fx) => fx.slotId),
+          ['p1', 's1', 'r1a', 'r1b', 'r1c'],
+        );
       });
     });
 
