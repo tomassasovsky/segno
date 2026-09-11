@@ -433,6 +433,19 @@ final class LooperLaneEffectAdded extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, type];
 }
 
+/// Appends [entries] to lane [lane] of track [channel]'s chain in one write
+/// — the lane twin of [LooperBusEffectsAppended], for the same reason.
+final class LooperLaneEffectsAppended extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectsAppended].
+  const LooperLaneEffectsAppended(super.channel, super.lane, this.entries);
+
+  /// The entries to append, in order.
+  final List<TrackEffect> entries;
+
+  @override
+  List<Object?> get props => [channel, lane, entries];
+}
+
 /// Chain entry [index] was removed from lane [lane] of track [channel].
 final class LooperLaneEffectRemoved extends LooperLaneEvent {
   /// Creates a [LooperLaneEffectRemoved].
@@ -701,6 +714,23 @@ final class LooperBusEffectAdded extends LooperBusChainEvent {
 
   @override
   List<Object?> get props => [address, type];
+}
+
+/// Appends [entries] to the bus chain at [address] in one write.
+///
+/// One event rather than a run of [LooperBusEffectAdded], because a rack is
+/// one thing the player chose: adding its pedals one at a time would push the
+/// chain to the engine once per pedal and let a half-built rack be heard on
+/// the way.
+final class LooperBusEffectsAppended extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectsAppended].
+  const LooperBusEffectsAppended(super.address, this.entries);
+
+  /// The entries to append, in order.
+  final List<TrackEffect> entries;
+
+  @override
+  List<Object?> get props => [address, entries];
 }
 
 /// Removes entry [index] from the bus chain at [address].
@@ -978,6 +1008,19 @@ final class LooperAllTracksEffectsChanged extends LooperEvent {
 
   @override
   List<Object?> get props => [effects];
+}
+
+/// Appends [entries] to the All tracks chain in one write — see
+/// [LooperBusEffectsAppended].
+final class LooperAllTracksEffectsAppended extends LooperEvent {
+  /// Creates a [LooperAllTracksEffectsAppended].
+  const LooperAllTracksEffectsAppended(this.entries);
+
+  /// The entries to append, in order.
+  final List<TrackEffect> entries;
+
+  @override
+  List<Object?> get props => [entries];
 }
 
 /// Entry [index] of the All tracks chain was toggled to [enabled].

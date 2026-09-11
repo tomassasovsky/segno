@@ -129,6 +129,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         BuiltInEffect(type: event.type ?? TrackEffectType.drive),
       ]);
     });
+    on<LooperLaneEffectsAppended>((event, _) {
+      if (event.entries.isEmpty) return;
+      _pushLaneEffects(event.channel, event.lane, [
+        ..._repository.laneEffects(event.channel, event.lane),
+        ...event.entries,
+      ]);
+    });
     on<LooperLaneEffectRemoved>((event, _) {
       final effects = _repository.laneEffects(event.channel, event.lane);
       if (event.index < 0 || event.index >= effects.length) return;
@@ -278,6 +285,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _pushBusChain(event.address, [
         ...chain,
         BuiltInEffect(type: event.type ?? TrackEffectType.drive),
+      ]);
+    });
+    on<LooperBusEffectsAppended>((event, _) {
+      if (event.entries.isEmpty) return;
+      _pushBusChain(event.address, [
+        ..._busChain(event.address),
+        ...event.entries,
       ]);
     });
     on<LooperBusEffectRemoved>((event, _) {
@@ -455,6 +469,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     });
     on<LooperAllTracksEffectsChanged>((event, _) {
       _repository.setAllTracksEffects(effects: event.effects);
+      _persistAllTracksChain();
+    });
+    on<LooperAllTracksEffectsAppended>((event, _) {
+      if (event.entries.isEmpty) return;
+      _repository.setAllTracksEffects(
+        effects: [..._repository.allTracksEffects, ...event.entries],
+      );
       _persistAllTracksChain();
     });
     on<LooperAllTracksEffectEnabledToggled>((event, _) {

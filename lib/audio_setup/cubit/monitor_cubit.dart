@@ -439,6 +439,16 @@ class MonitorCubit extends Cubit<MonitorState> {
     ]);
   }
 
+  /// Appends [entries] to monitor [input]'s chain in one write.
+  ///
+  /// One write rather than a loop of [addEffect], because a rack is one thing
+  /// the player chose: adding its pedals one at a time would push the chain to
+  /// the engine once per pedal and let a half-built rack be heard on the way.
+  void appendEffects(int input, List<TrackEffect> entries) {
+    if (entries.isEmpty) return;
+    _pushEffects(input, [...state.forInput(input).effects, ...entries]);
+  }
+
   /// Appends a hosted plugin (identified by [ref]) to monitor [input]'s chain,
   /// Pre — see [addEffect]. The repository loads it through the slot ABI on
   /// the next chain apply.

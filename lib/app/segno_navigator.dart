@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
@@ -27,6 +28,21 @@ const String segnoFxRouteName = 'segno/fx';
 bool _loopSettingsOpen = false;
 bool _audioRoutingOpen = false;
 bool _fxOpen = false;
+Future<FxCatalogue>? _fxCatalogue;
+
+/// The factory catalogue, loaded once and kept.
+///
+/// Read lazily on the first open rather than at startup: it is 6 MB of assets
+/// that only the Effects surfaces want, and a rig that never opens them should
+/// not pay for it on the way to the stage.
+Future<FxCatalogue> segnoFxCatalogue() =>
+    _fxCatalogue ??= const FxCatalogueLoader().load();
+
+/// Replaces the loaded catalogue, for a test or a screenshot that supplies its
+/// own instead of an asset bundle.
+@visibleForTesting
+void setSegnoFxCatalogueForTest(FxCatalogue? catalogue) =>
+    _fxCatalogue = catalogue == null ? null : Future.value(catalogue);
 
 /// Pushes the Effects route onto the root navigator, pointed at
 /// [destination]; guarded against stacking duplicates like the routes below.
@@ -35,9 +51,11 @@ Future<void> openFx({FxDestination? destination}) async {
   if (navigator == null || _fxOpen) return;
   _fxOpen = true;
   try {
+    final catalogue = await segnoFxCatalogue();
+    if (segnoNavigatorKey.currentState == null) return;
     await navigator.push(
       desktopPageRoute<void>(
-        (_) => FxPage(initial: destination),
+        (_) => FxPage(initial: destination, catalogue: catalogue),
         settings: const RouteSettings(name: segnoFxRouteName),
       ),
     );
@@ -102,6 +120,7 @@ void resetSegnoNavigatorForTest() {
   _loopSettingsOpen = false;
   _audioRoutingOpen = false;
   _fxOpen = false;
+  _fxCatalogue = null;
 }
 
 SettingsSection? _openSettingsSection;
