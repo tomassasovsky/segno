@@ -129,6 +129,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         BuiltInEffect(type: event.type ?? TrackEffectType.drive),
       ]);
     });
+    on<LooperLaneEffectsChanged>((event, _) {
+      _pushLaneEffects(event.channel, event.lane, event.effects);
+    });
     on<LooperLaneEffectsAppended>((event, _) {
       if (event.entries.isEmpty) return;
       _pushLaneEffects(event.channel, event.lane, [
@@ -331,6 +334,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         ...chain,
         BuiltInEffect(type: event.type ?? TrackEffectType.drive),
       ]);
+    });
+    on<LooperBusEffectsChanged>((event, _) {
+      _pushBusChain(event.address, event.effects);
     });
     on<LooperBusEffectsAppended>((event, _) {
       if (event.entries.isEmpty) return;

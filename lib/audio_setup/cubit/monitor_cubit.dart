@@ -439,6 +439,14 @@ class MonitorCubit extends Cubit<MonitorState> {
     ]);
   }
 
+  /// Replaces monitor [input]'s chain with [effects].
+  ///
+  /// The structural write every rack surface goes through: rename, reorder and
+  /// removal all rewrite the chain rather than edit one slot, because a rack is
+  /// several entries that move together.
+  void setEffects(int input, List<TrackEffect> effects) =>
+      _pushEffects(input, effects);
+
   /// Appends [entries] to monitor [input]'s chain in one write.
   ///
   /// One write rather than a loop of [addEffect], because a rack is one thing

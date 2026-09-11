@@ -23,6 +23,8 @@ import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_library_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
+import 'package:segno/looper/view/fx/fx_rack_editor.dart';
+import 'package:segno/looper/view/fx/fx_reorder_page.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -48,6 +50,63 @@ BuiltInEffect _fx(
 /// A four-in, four-out rig with two tracks recording, as the pen's examples
 /// draw: track 0 takes inputs 1 and 2, track 1 takes input 3. Track 0 carries
 /// a chain that straddles both stages, so the strip has a break to draw.
+/// One module of the rack [rackId].
+BuiltInEffect _module(
+  String slot,
+  TrackEffectType type, {
+  required String rackId,
+  required String module,
+  String rackName = 'Funk Wah',
+  bool enabled = true,
+}) => BuiltInEffect(
+  type: type,
+  slotId: slot,
+  enabled: enabled,
+  module: module,
+  rack: FxRack(id: rackId, name: rackName, art: 'guitar'),
+);
+
+/// A rig whose track 0 carries a rack of three pedals between two standalone
+/// effects, so the strip draws both kinds of card.
+final _rackRig = LooperState(
+  tracks: [
+    Track(
+      state: TrackState.playing,
+      lanes: const [Lane(inputChannel: 0, lengthFrames: 48000)],
+      effects: [
+        _fx('p1', TrackEffectType.filter, placement: FxPlacement.pre),
+        _module(
+          'r1a',
+          TrackEffectType.delay,
+          rackId: 'R1',
+          module: 'Delay',
+        ),
+        _module(
+          'r1b',
+          TrackEffectType.none,
+          rackId: 'R1',
+          module: 'Pumper',
+          enabled: false,
+        ),
+        _module(
+          'r1c',
+          TrackEffectType.reverb,
+          rackId: 'R1',
+          module: 'Reverb',
+        ),
+        _fx('s1', TrackEffectType.echo),
+      ],
+    ),
+  ],
+  status: const EngineStatus(
+    isConnected: true,
+    deviceName: 'Scarlett 18i20',
+    inputChannels: 4,
+    outputChannels: 4,
+  ),
+  outputBusCount: 2,
+);
+
 final _rig = LooperState(
   tracks: [
     Track(
@@ -165,6 +224,20 @@ void main() {
     when(() => repository.allMonitors()).thenReturn(const {});
   });
 
+  /// Lets the bundled artwork actually load.
+  ///
+  /// A widget test runs its pumps in fake async, and an asset load is real
+  /// async: the bundle's future never completes while time is fake, so a
+  /// golden taken straight after `pumpAndSettle` photographs empty frames
+  /// where the pictures belong. `runAsync` hands the real event loop back for
+  /// a moment, which is what lets them arrive.
+  Future<void> settleArtwork(WidgetTester tester) async {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+  }
+
   Future<void> pump(
     WidgetTester tester, {
     required FxDestination destination,
@@ -232,6 +305,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await settleArtwork(tester);
   }
 
   Future<void> shoot(WidgetTester tester, String name) async {
@@ -272,11 +346,70 @@ void main() {
     );
   }, skip: !hasScreenshotFonts);
 
+  testWidgets('A chain of racks', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _rackRig,
+    );
+
+    await shoot(tester, 'racks');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('The rack editor', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _rackRig,
+    );
+    await tester.tap(find.byKey(const Key('fx_card_R1')));
+    await tester.pumpAndSettle();
+    await settleArtwork(tester);
+
+    await expectLater(
+      find.byType(FxRackEditor),
+      matchesGoldenFile('goldens/fx_rack_editor.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Reorder', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _rackRig,
+    );
+    await tester.tap(find.byKey(const Key('fx_reorder')));
+    await tester.pumpAndSettle();
+    await settleArtwork(tester);
+
+    await expectLater(
+      find.byType(FxReorderPage),
+      matchesGoldenFile('goldens/fx_reorder.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Rack options', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _rackRig,
+    );
+    await tester.tap(find.byKey(const Key('fx_card_R1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('fx_rack_options')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byKey(const Key('fx_options_sheet')),
+      matchesGoldenFile('goldens/fx_rack_options.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
   testWidgets('Add effects, the library grid', (tester) async {
-    // A stand-in catalogue of the real shape rather than the bundled one: a
-    // widget test has no app asset bundle, so `rootBundle` resolves nothing
-    // here and the artwork cannot be part of this golden. What it does show
-    // is the grid — the wide banner's place, the card sizes and the order.
+    // A stand-in catalogue of the real shape rather than the bundled one, so
+    // this golden is pinned to a fixed set of families and presets rather
+    // than to whatever the catalogue import last shipped. The artwork it
+    // names is the real artwork.
     await pump(
       tester,
       destination: const FxDestination.liveInput(0),

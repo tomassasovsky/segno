@@ -170,6 +170,10 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
     type: build.type ?? TrackEffectType.none,
     params: params,
     enabled: enabled,
+    // The catalogue's own name for the pedal, kept whatever this engine could
+    // build for it. A module with no engine effect becomes a passthrough
+    // entry, and this is what still says which pedal it is.
+    module: module.name,
   );
 }
 

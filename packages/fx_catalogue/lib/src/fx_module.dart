@@ -1,3 +1,5 @@
+import 'package:fx_catalogue/src/fx_family.dart';
+
 /// One pedal a factory rack can hold: how the source spells its power, which
 /// parameter groups belong to it, and which illustrations the catalogue
 /// carries for it.
@@ -256,6 +258,26 @@ FxModule? fxModuleFor(String key) {
     if (module.poweredBy(key)) return module;
   }
   return null;
+}
+
+/// The module CALLED [name], or `null` — the lookup a persisted chain entry
+/// uses to find its pedal again.
+///
+/// Distinct from [fxModuleFor], which resolves a source POWER key: an entry
+/// stores the display name, and the two vocabularies are not the same word.
+FxModule? fxModuleNamed(String name) {
+  for (final module in kFxModules) {
+    if (module.name == name) return module;
+  }
+  return null;
+}
+
+/// The illustration for the module called [name], or `null` when the
+/// catalogue names none.
+String? fxModuleArt(String name) {
+  final artwork = fxModuleNamed(name)?.artwork;
+  if (artwork == null || artwork.isEmpty) return null;
+  return fxStompAsset(artwork.first);
 }
 
 /// The module that owns parameter [key], or `null`.

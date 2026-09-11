@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -19,9 +20,20 @@ const double kFxCardGap = 24;
 /// between the two stages.
 const double kFxStageBreak = 72;
 
+/// The artwork frame inside a card, at the pen's fixed height.
+const double kFxCardArtHeight = 138;
+
+/// The asset path for a rack artwork slug, in the catalogue package.
+String fxRackArtAsset(String slug) => 'assets/images/footswitch/$slug.png';
+
 /// One destination's chain, drawn as the pen's horizontal strip: a card per
-/// effect in processing order, plain lines between consecutive cards, and a
-/// break where the Pre run hands over to the Post run.
+/// RACK (or per standalone single effect) in processing order, plain lines
+/// between consecutive cards, and a break where the Pre run hands over to the
+/// Post run.
+///
+/// A card is a group, not an entry. The accepted chain is built out of racks —
+/// named groups of pedals the player adds and moves as one thing — so a rack of
+/// six pedals is one card here and six pedals inside its own editor.
 ///
 /// **No arrowheads on the connectors.** The owner rejected them twice; the
 /// order of the cards is what says which way the signal goes.
@@ -51,11 +63,11 @@ class FxChainStrip extends StatelessWidget {
   /// cannot act on (accepted design, FX 4).
   final bool showPlacement;
 
-  /// Flips one entry's own enabled bit.
-  final void Function(int index, {required bool enabled}) onTogglePower;
+  /// Flips a whole group's power, by its index among the groups.
+  final void Function(int group, {required bool enabled}) onTogglePower;
 
-  /// Opens one entry's editor.
-  final void Function(int index) onOpen;
+  /// Opens one group's editor, by its index among the groups.
+  final void Function(int group) onOpen;
 
   /// Whether the chain as a whole is engaged. A switched-off chain dims every
   /// card without touching the per-entry bits it will come back to.
@@ -64,9 +76,6 @@ class FxChainStrip extends StatelessWidget {
   /// The strip's scroll position, so the page can keep each destination's
   /// place across a context switch.
   final ScrollController? controller;
-
-  /// Where the Pre run ends, which is where the break goes.
-  int get _preCount => fxPreCount(entries);
 
   @override
   Widget build(BuildContext context) {
@@ -82,17 +91,21 @@ class FxChainStrip extends StatelessWidget {
         ),
       );
     }
+    final groups = fxChainGroups(entries);
+    final preGroups = groups
+        .where((g) => g.placement == FxPlacement.pre)
+        .length;
     return SingleChildScrollView(
       controller: controller,
       scrollDirection: Axis.horizontal,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (var i = 0; i < entries.length; i++) ...[
-            if (i > 0) _gapBefore(i, surface),
+          for (var i = 0; i < groups.length; i++) ...[
+            if (i > 0) _gapBefore(i, preGroups, surface),
             _FxChainCard(
-              key: Key('fx_card_${entries[i].slotId ?? i}'),
-              effect: entries[i],
+              key: Key('fx_card_${fxGroupId(groups[i])}'),
+              group: groups[i],
               showPlacement: showPlacement,
               dimmed: !chainEnabled,
               onTogglePower: ({required enabled}) =>
@@ -107,8 +120,8 @@ class FxChainStrip extends StatelessWidget {
 
   /// The space before card [i]: the stage break where the Pre run ends, and
   /// otherwise the plain cable.
-  Widget _gapBefore(int i, SurfaceTheme surface) {
-    final isBreak = showPlacement && i == _preCount && _preCount > 0;
+  Widget _gapBefore(int i, int preGroups, SurfaceTheme surface) {
+    final isBreak = showPlacement && i == preGroups && preGroups > 0;
     return SizedBox(
       width: isBreak ? kFxStageBreak : kFxCardGap,
       height: kFxCardHeight,
@@ -125,11 +138,11 @@ class FxChainStrip extends StatelessWidget {
   }
 }
 
-/// One effect in the strip: its placement tag, its artwork frame, its name,
-/// and the status line carrying its pedal assignment and its power.
+/// One group in the strip: its placement tag, its artwork frame, its name, and
+/// the status line carrying its pedal assignment and its power.
 class _FxChainCard extends StatelessWidget {
   const _FxChainCard({
-    required this.effect,
+    required this.group,
     required this.showPlacement,
     required this.dimmed,
     required this.onTogglePower,
@@ -137,7 +150,7 @@ class _FxChainCard extends StatelessWidget {
     super.key,
   });
 
-  final TrackEffect effect;
+  final FxChainGroup group;
   final bool showPlacement;
   final bool dimmed;
   final void Function({required bool enabled}) onTogglePower;
@@ -147,12 +160,12 @@ class _FxChainCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
-    final name = fxBlockName(l10n, effect);
+    final name = fxGroupName(l10n, group);
     // The pen's two card states: an engaged card takes the accent surface and
-    // border, a bypassed one the plain card and a dashed edge. Bypassed is
+    // border, a bypassed one the plain card and a muted edge. Bypassed is
     // drawn, not hidden — a chain reads as a chain whether or not every link
     // is passing signal.
-    final lit = effect.enabled && !dimmed;
+    final lit = group.anyEnabled && !dimmed;
     return Opacity(
       opacity: dimmed ? surface.disabledOpacity : 1,
       child: Material(
@@ -180,7 +193,7 @@ class _FxChainCard extends StatelessWidget {
                         ? Align(
                             alignment: Alignment.centerLeft,
                             child: AppText(
-                              effect.placement == FxPlacement.pre
+                              group.placement == FxPlacement.pre
                                   ? l10n.fxPlacementPre
                                   : l10n.fxPlacementPost,
                               style: TextStyle(
@@ -193,25 +206,7 @@ class _FxChainCard extends StatelessWidget {
                         : null,
                   ),
                   const SizedBox(height: 12),
-                  // The artwork frame. The original Looper X rack art is not
-                  // in this repository, so the frame carries the effect's own
-                  // identity rather than a placeholder picture pretending to
-                  // be one.
-                  Expanded(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: surface.cardHigh,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Center(
-                        child: Icon(
-                          LucideIcons.audioWaveform,
-                          size: 56,
-                          color: lit ? surface.accent : surface.textTertiary,
-                        ),
-                      ),
-                    ),
-                  ),
+                  FxRackArt(slug: group.rack?.art, lit: lit),
                   const SizedBox(height: 11),
                   SizedBox(
                     height: 60,
@@ -228,13 +223,16 @@ class _FxChainCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  const Spacer(),
                   SizedBox(
                     height: 28,
                     child: Row(
                       children: [
                         Expanded(
                           child: AppText(
-                            l10n.fxUnassigned,
+                            group.isRack
+                                ? l10n.fxModuleCount(group.entries.length)
+                                : l10n.fxUnassigned,
                             style: TextStyle(
                               color: surface.textTertiary,
                               fontSize: 18,
@@ -243,10 +241,11 @@ class _FxChainCard extends StatelessWidget {
                           ),
                         ),
                         _PowerButton(
-                          key: Key('fx_power_${effect.slotId ?? name}'),
-                          on: effect.enabled,
+                          key: Key('fx_power_${fxGroupId(group)}'),
+                          on: group.anyEnabled,
                           name: name,
-                          onTap: () => onTogglePower(enabled: !effect.enabled),
+                          onTap: () =>
+                              onTogglePower(enabled: !group.anyEnabled),
                         ),
                       ],
                     ),
@@ -261,7 +260,58 @@ class _FxChainCard extends StatelessWidget {
   }
 }
 
-/// The card's power: the one owner of an effect's enabled bit.
+/// A rack's artwork frame at the pen's fixed height.
+///
+/// Falls back to the app's own mark when the group is a single effect (which
+/// has no rack artwork), when the slug names a file this build did not ship,
+/// and in a widget test, which has no asset bundle at all.
+class FxRackArt extends StatelessWidget {
+  /// Creates an [FxRackArt].
+  const FxRackArt({required this.slug, required this.lit, super.key});
+
+  /// The catalogue artwork slug, or `null` for a single effect.
+  final String? slug;
+
+  /// Whether the group is audible, which the fallback mark follows.
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final slug = this.slug;
+    return SizedBox(
+      height: kFxCardArtHeight,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surface.cardHigh,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: slug == null
+            ? _fallback(surface)
+            : Image.asset(
+                fxRackArtAsset(slug),
+                package: FxCatalogueLoader.package,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => _fallback(surface),
+              ),
+      ),
+    );
+  }
+
+  Widget _fallback(SurfaceTheme surface) => Center(
+    child: Icon(
+      LucideIcons.audioWaveform,
+      size: 56,
+      color: lit ? surface.accent : surface.textTertiary,
+    ),
+  );
+}
+
+/// What a group is called: the rack's own name, or the single effect's.
+String fxGroupName(AppLocalizations l10n, FxChainGroup group) =>
+    group.rack?.name ?? fxBlockName(l10n, group.entries.first);
+
+/// The card's power: the one owner of a group's audibility.
 ///
 /// The accepted design puts power on the title/power control and nowhere
 /// else: the duplicate Off/On parameter row the earlier study drew is exactly

@@ -4140,6 +4140,163 @@
     "@fxUnassigned": {
         "description": "An effect with no pedal assignment, on its card's status line."
     },
+    "fxModuleCount": "{count, plural, =1{1 effect} other{{count} effects}}",
+    "@fxModuleCount": {
+            "description": "How many pedals a rack holds, on its card's status line.",
+            "placeholders": {
+                    "count": {
+                            "type": "int"
+                    }
+            }
+    },
+    "fxRackOptions": "Rack options",
+    "@fxRackOptions": {
+            "description": "Opens rename, reorder and removal for one rack."
+    },
+    "fxRackRename": "Rename",
+    "@fxRackRename": {
+            "description": "Rack options row: give this rack another name."
+    },
+    "fxRackRenameField": "Rack name",
+    "@fxRackRenameField": {
+            "description": "Announced label of the rack-name field."
+    },
+    "fxReorderEffects": "Reorder effects",
+    "@fxReorderEffects": {
+            "description": "Title of the reorder surface, and the rack-options row that opens it."
+    },
+    "fxRemoveAnEffect": "Remove an effect",
+    "@fxRemoveAnEffect": {
+            "description": "Rack options row: take one pedal out of this rack."
+    },
+    "fxRemoveRack": "Remove rack",
+    "@fxRemoveRack": {
+            "description": "Rack options row: take the whole rack out of the chain."
+    },
+    "fxRemoveEffect": "Remove {name}",
+    "@fxRemoveEffect": {
+            "description": "Takes one named pedal out of a rack.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
+    },
+    "fxBypassRack": "Rack",
+    "@fxBypassRack": {
+            "description": "Label of the rack-wide power button in the rack editor's titlebar."
+    },
+    "fxAddEffect": "Add effect",
+    "@fxAddEffect": {
+            "description": "Adds one more pedal to the rack being edited."
+    },
+    "fxRackInput": "Rack input",
+    "@fxRackInput": {
+            "description": "How the rack takes the pair it is handed."
+    },
+    "fxRackOutput": "Rack output",
+    "@fxRackOutput": {
+            "description": "How the rack hands its result on."
+    },
+    "fxRackLevel": "Rack level",
+    "@fxRackLevel": {
+            "description": "The rack's own level, applied after its pedals."
+    },
+    "fxMoveLeft": "Move left",
+    "@fxMoveLeft": {
+            "description": "Moves the picked card one place earlier in the chain."
+    },
+    "fxMoveRight": "Move right",
+    "@fxMoveRight": {
+            "description": "Moves the picked card one place later in the chain."
+    },
+    "fxOrderPosition": "{name}, position {position} of {total}",
+    "@fxOrderPosition": {
+            "description": "Announced label of a card on the reorder surface.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    },
+                    "position": {
+                            "type": "int"
+                    },
+                    "total": {
+                            "type": "int"
+                    }
+            }
+    },
+    "fxSavePresetTitle": "Save preset",
+    "@fxSavePresetTitle": {
+            "description": "Title of the sheet that names a sound before saving it."
+    },
+    "fxPresetNameField": "Preset name",
+    "@fxPresetNameField": {
+            "description": "Announced label of the preset-name field."
+    },
+    "fxReplacePresetTitle": "Replace {name}?",
+    "@fxReplacePresetTitle": {
+            "description": "Asked when the typed preset name is already taken.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
+    },
+    "fxPresetExists": "A preset with this name is already in My presets.",
+    "@fxPresetExists": {
+            "description": "Why the replace question is being asked."
+    },
+    "fxReplacePreset": "Replace preset",
+    "@fxReplacePreset": {
+            "description": "Overwrites the saved preset of the same name."
+    },
+    "fxUseAnotherName": "Use another name",
+    "@fxUseAnotherName": {
+            "description": "Goes back to naming instead of replacing."
+    },
+    "fxMyPresetsTitle": "My presets",
+    "@fxMyPresetsTitle": {
+            "description": "Title of the saved-sounds page."
+    },
+    "fxPresetRename": "Rename",
+    "@fxPresetRename": {
+            "description": "Renames a saved preset."
+    },
+    "fxPresetDelete": "Delete",
+    "@fxPresetDelete": {
+            "description": "Deletes a saved preset."
+    },
+    "fxPresetDeleteTitle": "Delete {name}?",
+    "@fxPresetDeleteTitle": {
+            "description": "Asked before deleting a saved preset.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
+    },
+    "fxPresetDeleteBody": "Effects already added from it are not affected.",
+    "@fxPresetDeleteBody": {
+            "description": "What deleting a saved preset does not do."
+    },
+    "fxPresetSaved": "Saved {name}",
+    "@fxPresetSaved": {
+            "description": "Confirms a sound was saved for reuse.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
+    },
+    "fxRackRemoved": "Removed {name}",
+    "@fxRackRemoved": {
+            "description": "Confirms a rack left the chain.",
+            "placeholders": {
+                    "name": {
+                            "type": "String"
+                    }
+            }
+    },
     "routingHearLive": "Hear live",
     "@routingHearLive": {
             "description": "Heading over the live-monitoring choice."
