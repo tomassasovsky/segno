@@ -1809,3 +1809,64 @@ entries with no grouping, and the extracted catalogue (159 presets, 66 artwork
 files) is not in this repository. So a card here is one effect, drawn with the
 app's own vocabulary rather than a placeholder picture pretending to be
 artwork. Both are owner decisions, recorded on the issue.
+
+## Slice 3f part 3: the chain ceiling
+
+The accepted FX design builds a chain out of RACKS — named groups of pedals —
+and one factory rack is about six of them. `LE_FX_MAX` was 8, so a chain held
+roughly one rack where the design shows ten. The owner's direction was to
+raise the ceiling before building the rack surfaces on it.
+
+### What the ceiling actually cost, measured
+
+The cap was never a CPU limit: the audio path iterates the ACTIVE count, and
+the per-slot DSP heap (delay rings, the octaver's vocoder buffers) is
+allocated lazily on first use, so an unused slot allocates nothing. Two things
+did scale with it:
+
+| Ceiling | Callback stack frame | Engine struct |
+| --- | --- | --- |
+| 8 (before) | 32,048 B | 1.27 MB |
+| 64 (naive) | 194,672 B | 4.73 MB |
+| 64 (shipped) | 7,200 B | 4.92 MB |
+
+The stack was the real constraint. The per-buffer snapshot arrays — every
+lane's chain, every track bus's, the All tracks chain, every monitor's and
+every output destination's — were locals of the audio callback, sized by
+`LE_FX_MAX`. At 64 they would have put 195 KB in one frame of the one budget
+in this engine that is neither ours to set nor reported by the host.
+
+They are now `le_fx_snapshot` inside `le_engine`. Nothing about them is state:
+each is written and read inside a single callback, so they need no atomics.
+They live in the struct only so that their size is charged to an allocation
+whose size is known. The move took the frame from 32 KB to 7.2 KB and left it
+there — 7,200 bytes at the new ceiling against 7,184 at the old one, so the
+ceiling is nearly free in stack now and the engine struct carries the cost.
+
+### The per-buffer sweep
+
+The settle sweep that parks an unprocessed slot's enable ramp walked all
+`LE_FX_MAX` slots of every chain, every buffer, reading each slot's published
+bit. At 64 that is eight times the atomic loads for slots that have never been
+used. It now skips a slot whose ramp is ALREADY parked at bypass, which is a
+plain audio-owned read and is the state almost every slot past a chain's count
+is in — zeroed at reset and left there. Skipping such a slot is safe precisely
+because `le_fx_enable_force_bypass` on it would write nothing.
+
+### Checks
+
+- The native suite green in all five variants, plus the AddressSanitizer and
+  telemetry-disabled runs, and the C++ header shim.
+- A new native test fills a chain to `LE_FX_MAX` with unity drives and asserts
+  the output is tanh applied that many times over, so a ceiling the audio path
+  did not honour would be wrong rather than merely short; it also asserts the
+  slot one past the ceiling is refused rather than wrapping onto a real one.
+  Written against the constant, not a literal, so raising the ceiling again
+  cannot leave it passing for free.
+- Mutation-checked: leaving the old eight-slot clamp in the lane snapshot
+  while the ceiling says 64 fails it.
+- The over-long-chain repository test was sized from a literal 8 and would
+  have gone vacuous at the new ceiling; it is sized from `kTrackEffectMax`
+  now.
+- Dart: root 2278, `looper_repository` 501, `segno_engine` 283, the other
+  packages unchanged. Bindings regenerated and formatted.

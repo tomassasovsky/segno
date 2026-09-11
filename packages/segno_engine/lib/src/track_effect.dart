@@ -8,11 +8,15 @@ import 'package:segno_engine/src/plugin_descriptor.dart';
 /// every other code is a [BuiltInEffect].
 const int kPluginFxCode = 8;
 
-/// The maximum number of effects a single track's chain can hold. The cap
-/// exists only so the audio thread reads a fixed-size, allocation-free array —
-/// it is far beyond musical need, not a CPU limit. Mirrors the native
-/// `LE_FX_MAX`.
-const int kTrackEffectMax = 8;
+/// The maximum number of effects one chain can hold. The cap exists only so
+/// the audio thread reads a fixed-size, allocation-free array — it is not a
+/// CPU limit: the audio path iterates the ACTIVE count, and an unused slot
+/// allocates no DSP state.
+///
+/// Sixty-four because the accepted FX design builds a chain out of RACKS, and
+/// one factory rack is about six pedals. Mirrors the native `LE_FX_MAX`,
+/// whose own note records what raising it cost.
+const int kTrackEffectMax = 64;
 
 /// The number of normalized (`0..1`) parameters each effect exposes. Mirrors
 /// the native `LE_FX_PARAMS`.

@@ -14131,6 +14131,33 @@ static void test_fx_chain_applies_in_order(void) {
   le_engine_destroy(e);
 }
 
+/* A FULL chain runs every one of its entries (slice 3f raised LE_FX_MAX to
+ * hold the accepted design's racks). Filling the chain with unity drives makes
+ * the count observable in the output: tanh applied LE_FX_MAX times over is a
+ * different number for every length, so a ceiling the audio path did not
+ * actually honour would be wrong rather than merely short. */
+static void test_fx_chain_runs_the_full_ceiling(void) {
+  printf("test_fx_chain_runs_the_full_ceiling\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f);
+
+  for (int s = 0; s < LE_FX_MAX; ++s) fx_drive_unity(e, s);
+  le_engine_set_lane_fx_count(e, 0, 0, LE_FX_MAX, 0);
+  process_const(e, 0.0f, LOOP_N, out);
+
+  float expected = 1.0f;
+  for (int s = 0; s < LE_FX_MAX; ++s) expected = tanhf(expected);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - expected) < 1e-5f);
+
+  /* And the slot one past the ceiling is refused rather than wrapping onto a
+   * real one. */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, LE_FX_MAX, LE_FX_DRIVE) ==
+        LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
 /* A lane's effect chain is non-destructive: it never prints into the recording
  * (the buffer stays dry) but does color playback. */
 static void test_fx_nondestructive_and_colors_playback(void) {
@@ -29380,6 +29407,7 @@ int main(void) {
   test_fx_delay_is_silent_until_time();
   test_fx_tremolo_modulates_amplitude();
   test_fx_chain_applies_in_order();
+  test_fx_chain_runs_the_full_ceiling();
   test_fx_nondestructive_and_colors_playback();
   test_fx_muted_track_is_silent();
   test_fx_rejects_invalid_args();
