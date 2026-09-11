@@ -158,6 +158,14 @@ explicitVersionGoldenFrames() {
     looperMode: PedalLooperMode.band,
   );
 
+  // The custom-mode frame (protocol v4, #763): the fourth mode value, again
+  // on bank B so it shares payload byte 2 with the bank bit (byte 2 = 0b11 —
+  // the SAME byte the fx twin writes, since custom differs from fx only in
+  // the flags-byte low bit). The v3 twin below pins the degrade: custom
+  // writes as play, because a v3 decoder rejects the fourth value outright
+  // and a blank pedal is worse than a mis-coloured LED.
+  final customMode = fxMode.copyWith(mode: PedalMode.custom);
+
   // What a downgraded wire's trackLeds decode back to: blue -> green.
   final degradedLeds = [
     for (final led in fxMode.trackLeds)
@@ -180,6 +188,22 @@ explicitVersionGoldenFrames() {
       frame: fxMode,
       version: PedalCodec.protocolVersionV3,
       decoded: fxMode,
+    ),
+
+    // Custom mode at v4: full fidelity, and the only version that has it.
+    'custom_mode_v4': (
+      frame: customMode,
+      version: PedalCodec.protocolVersionV4,
+      decoded: customMode,
+    ),
+
+    // Custom mode on the v3 wire: the mode degrades to play (mute). The
+    // chain LEDs do NOT degrade — v3 carries blue — so this fixture isolates
+    // the mode degrade from the LED one the fx twins pin.
+    'custom_mode_v3': (
+      frame: customMode,
+      version: PedalCodec.protocolVersionV3,
+      decoded: customMode.copyWith(mode: PedalMode.play),
     ),
 
     // FX mode downgraded onto the v2 wire (B10): the mode field degrades to
