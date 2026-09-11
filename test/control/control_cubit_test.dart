@@ -808,6 +808,19 @@ void main() {
       });
 
       test(
+        'a track hold is never armed in FX mode, where the four track '
+        'switches carry the remap and its own gestures',
+        () async {
+          await cubit.setPedalSetup(
+            cubit.state.pedalSetup.copyWith(trackHold: TrackHold.clearTrack),
+          );
+          cubit.setMode(InteractionMode.fx);
+          await hold(PedalButton.track3);
+          verifyNever(() => looper.clear(channel: any(named: 'channel')));
+        },
+      );
+
+      test(
         'a track hold set to None leaves the switch a plain contact',
         () async {
           await cubit.setPedalSetup(

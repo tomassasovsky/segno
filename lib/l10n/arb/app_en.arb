@@ -4747,10 +4747,6 @@
     "@pedalSetupContextCustom": {
         "description": "The Pedals setup context that edits the free footswitch map."
     },
-    "pedalSetupExternal": "External pedals",
-    "@pedalSetupExternal": {
-        "description": "Opens the external pedal setup from the Pedals page."
-    },
     "pedalSetupSave": "Save",
     "@pedalSetupSave": {
         "description": "Applies the Pedals setup draft."
