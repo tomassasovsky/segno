@@ -1923,3 +1923,73 @@ EQ's fourteen controls plus its separate enable value, no parameter lost on
 any of the 159, the module-name reading, the stomp artwork resolving only for
 names the catalogue carries, and the four ways a build can come up with no
 catalogue. 100% line coverage, with its own CI job pinned there.
+
+## Slice 3f part 5: what a preset actually says, and what this engine can do with it
+
+Two tables, both written by hand and both pinned against the data by test.
+
+### The module table, in `fx_catalogue`
+
+A preset is a flat map of parameter names to values. It never says which
+modules it holds, and the three vocabularies in the source disagree about how
+to name the same pedal: the power key (`Compressor`), the parameter prefix
+(`Comp Ratio`) and the artwork (`Compressor2`). `Delay` enables `Del *`,
+`Reverb` enables `Rev *`, `OvDrive` enables `OD *`. So the correspondence is
+written down rather than derived, and the doc says it is a reading.
+
+Twenty-six modules. What the tests pin is not that the reading is the source's
+own grouping, which the source does not record, but that it matches what is
+actually there:
+
+- Every power key the table names appears in the catalogue, and is BINARY
+  wherever it appears. That is what separates a power key from a parameter
+  that happens to be spelled without a space: `Cab` and `Sustain` are
+  space-free too, and continuous.
+- Every parameter group the table names appears in the catalogue.
+- Every parameter group IN the catalogue is claimed by exactly one module, or
+  listed as deliberately unclaimed. `Master` is the rack's own level, which
+  the accepted design puts after the pedals and gives to the rack. `Para`
+  appears in two families with no power key and nothing naming what it belongs
+  to, so it stays an evidence gap rather than being assigned on a guess.
+- No two modules claim the same key or group.
+- Every illustration the table names is a file that is here.
+
+A module with several illustrations records them ALL, because the source ships
+numbered variants (`Delay3`, `Delay4`, `Delay6`) and nothing in the preset data
+says which variant a family used. The first is drawn; the rest keep the gap
+visible rather than looking like a choice.
+
+Mutation-checked: dropping a module from the table, mistaking a continuous key
+for a power key, and letting two modules claim one group each fail exactly the
+test that names them.
+
+### The readiness map, in `looper_repository`
+
+The engine builds seven effects; the catalogue names twenty-six modules. The
+accepted design requires truthful partial support and forbids substituting
+another effect and calling that parity, so a module is one of three things:
+
+- **Full**: the engine builds this kind and every control the preset carries
+  has somewhere to go. Not a claim of sonic parity — the design permits the
+  sound to differ — only that nothing the preset says is being dropped.
+- **Partial**: the engine builds the kind but the preset carries controls it
+  has no place for. Those values are kept and NAMED, so a surface can show
+  them and say plainly they do not reach the sound.
+- **Unavailable**: no effect of this kind. Most of the catalogue, and saying
+  so is the point.
+
+Six modules map. **The reverb's brightness is deliberately NOT wired into the
+engine's damping**, though it is that control's complement: inverting someone
+else's control into ours is exactly the silent substitution the design forbids,
+so it stays unmapped and visible.
+
+A parameter the preset says nothing about keeps the ENGINE's default rather
+than falling to zero. The catalogue's octaver is two fixed voices with their
+own levels where this engine's is one continuously shifted voice, so its shift
+has nothing to read, and zero would be two octaves down.
+
+An unavailable module still takes its place in the chain and passes signal
+through. A rack is what the player loaded, not what this build can run.
+
+Eleven tests, mutation-checked on the two that would be quietest if wrong:
+wiring brightness into damping, and letting an unread parameter fall to zero.

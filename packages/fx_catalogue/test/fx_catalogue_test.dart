@@ -252,4 +252,153 @@ void main() {
       );
     });
   });
+
+  group('the module table', () {
+    // The table is a reading of the data, so what a test can pin is that the
+    // reading matches what is actually there — never that it is the source's
+    // own grouping, which the source does not record.
+
+    test('no two modules claim the same power key or parameter group', () {
+      final keys = <String, String>{};
+      final groups = <String, String>{};
+      for (final module in kFxModules) {
+        for (final key in module.enables) {
+          expect(
+            keys.containsKey(key),
+            isFalse,
+            reason: '$key claimed by both ${keys[key]} and ${module.name}',
+          );
+          keys[key] = module.name;
+        }
+        for (final group in module.groups) {
+          expect(
+            groups.containsKey(group),
+            isFalse,
+            reason:
+                '$group claimed by both ${groups[group]} and '
+                '${module.name}',
+          );
+          groups[group] = module.name;
+        }
+      }
+    });
+
+    test('every power key the table names appears in the catalogue', () {
+      final present = <String>{
+        for (final preset in catalogue.presets) ...preset.params.keys,
+      };
+      for (final module in kFxModules) {
+        for (final key in module.enables) {
+          expect(
+            present,
+            contains(key),
+            reason: '${module.name} names a power key nothing carries: $key',
+          );
+        }
+      }
+    });
+
+    test('every parameter group the table names appears in the catalogue', () {
+      final prefixes = <String>{
+        for (final preset in catalogue.presets)
+          for (final key in preset.params.keys) key.split(' ').first,
+      };
+      for (final module in kFxModules) {
+        for (final group in module.groups) {
+          expect(
+            prefixes,
+            contains(group),
+            reason: '${module.name} names a group nothing carries: $group',
+          );
+        }
+      }
+    });
+
+    test('every parameter group in the catalogue is claimed, or listed as '
+        'unclaimed on purpose', () {
+      // The one check that catches the table falling behind the data: a
+      // family whose pedals nothing accounts for would otherwise draw as a
+      // rack with missing controls and no sign of why.
+      final unaccounted = <String>{};
+      for (final preset in catalogue.presets) {
+        for (final key in preset.params.keys) {
+          final prefix = key.split(' ').first;
+          if (kFxUnclaimedGroups.contains(prefix)) continue;
+          if (fxModuleOwning(key) != null) continue;
+          if (fxModuleFor(key) != null) continue;
+          unaccounted.add(key);
+        }
+      }
+      expect(unaccounted, isEmpty);
+    });
+
+    test(
+      "a module's power key is binary wherever the catalogue carries it",
+      () {
+        // What makes a key a POWER key rather than a parameter that happens to
+        // be spelled without a space: `Cab` and `Sustain` are space-free too,
+        // and continuous.
+        for (final module in kFxModules) {
+          for (final key in module.enables) {
+            for (final preset in catalogue.presets) {
+              final value = preset.params[key];
+              if (value == null) continue;
+              expect(
+                value == 0.0 || value == 1.0,
+                isTrue,
+                reason: '${module.name} / $key is $value in ${preset.name}',
+              );
+            }
+          }
+        }
+      },
+    );
+
+    test('every illustration the table names is a file that is here', () {
+      for (final module in kFxModules) {
+        expect(module.artwork, isNotEmpty, reason: module.name);
+        for (final art in module.artwork) {
+          expect(
+            kFxStompAssets,
+            contains(art),
+            reason: '${module.name} names $art',
+          );
+          expect(
+            File('${root.path}/${fxStompAsset(art)}').existsSync(),
+            isTrue,
+            reason: '${module.name} names $art',
+          );
+        }
+      }
+    });
+
+    test('a module with several illustrations records them all, because the '
+        'data does not say which variant a family used', () {
+      final delay = kFxModules.firstWhere((m) => m.name == 'Delay');
+
+      expect(delay.artwork, ['Delay3', 'Delay4', 'Delay6']);
+      // The first is what a surface draws; the rest keep the gap visible.
+      expect(delay.artwork.first, 'Delay3');
+    });
+
+    test('the power key and the parameter prefix are usually different '
+        'words, which is why the table exists', () {
+      final delay = kFxModules.firstWhere((m) => m.name == 'Delay');
+      expect(delay.enables, ['Delay']);
+      expect(delay.groups, ['Del']);
+
+      expect(fxModuleFor('Delay')!.name, 'Delay');
+      expect(fxModuleOwning('Del Feedback')!.name, 'Delay');
+      // And the power key is not a parameter of its own module.
+      expect(fxModuleOwning('Delay'), isNull);
+    });
+
+    test("the rack's own level belongs to no pedal", () {
+      // The accepted design puts rack level AFTER the pedals and gives it to
+      // the rack, so claiming it for a module would put it on the wrong
+      // control.
+      expect(fxModuleOwning('Master Vol'), isNull);
+      expect(kFxUnclaimedGroups, contains('Master'));
+    });
+  });
 }
