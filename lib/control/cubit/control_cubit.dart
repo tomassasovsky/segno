@@ -9,6 +9,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/common/fx_chain_persistence.dart';
+import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/controller_learn.dart';
@@ -1480,7 +1481,10 @@ class ControlCubit extends Cubit<ControlState> {
   /// and lights nothing; the assignment screen is where the user learns it is
   /// broken, not a mid-song stomp that silently bypasses the wrong thing.
   void _pressBinding(PedalBinding binding, {bool hold = false}) {
-    final target = hold ? binding.decodeHoldTarget() : binding.decodeTarget();
+    final target = _scoped(
+      hold ? binding.decodeHoldTarget() : binding.decodeTarget(),
+      hold ? binding.holdScope : binding.scope,
+    );
     final prior = target == null ? null : _looper.bindingEnabled(target);
     if (target == null || prior == null) {
       final half = hold ? 'hold' : 'press';
@@ -1508,6 +1512,27 @@ class ControlCubit extends Cubit<ControlState> {
         );
     }
     _pushProjected();
+  }
+
+  /// [target] pointed at the track [scope] names, resolved NOW.
+  ///
+  /// Resolved at dispatch, never at press. That is the whole of the accepted
+  /// "target following" rule: a pending hold acts on the newly selected track
+  /// because it reads the cursor when it fires, and it stays attached to what
+  /// it resolved because the momentary restore captures the RESOLVED target.
+  /// A switch carrying a hold defers its press to the release, so both halves
+  /// resolve at the instant they act.
+  FxBindingTarget? _scoped(FxBindingTarget? target, BindingScope scope) {
+    if (target == null || scope == BindingScope.fixed) return target;
+    final address = resolveBindingAddress(target.address, scope, state.cursor);
+    if (address == target.address) return target;
+    return switch (target) {
+      FxChainTarget() => FxChainTarget(address),
+      FxSlotTarget(:final slotId) => FxSlotTarget(
+        address: address,
+        slotId: slotId,
+      ),
+    };
   }
 
   /// Restores the momentary [button] is holding, if any.

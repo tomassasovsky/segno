@@ -1,6 +1,7 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 
 /// [BindingBehavior] — toggle vs momentary — is re-exported from
@@ -9,6 +10,7 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 /// this library for `PedalBinding` keep getting it from here.
 export 'package:controller_repository/controller_repository.dart'
     show BindingBehavior;
+export 'package:segno/control/binding/binding_scope.dart' show BindingScope;
 
 /// Which control a binding is keyed to.
 ///
@@ -137,8 +139,10 @@ class PedalBinding extends Equatable {
     required this.key,
     required this.target,
     this.behavior = BindingBehavior.toggle,
+    this.scope = BindingScope.fixed,
     this.holdTarget,
     this.holdBehavior = BindingBehavior.toggle,
+    this.holdScope = BindingScope.fixed,
   });
 
   /// Rebuilds a binding from its [toJson] map, or `null` when the map does
@@ -160,8 +164,10 @@ class PedalBinding extends Equatable {
       key: key,
       target: target,
       behavior: behavior,
+      scope: BindingScope.fromName(json['scope'] as String?),
       holdTarget: canHold(key, behavior) ? hold : null,
       holdBehavior: BindingBehavior.fromName(json['holdBehavior'] as String?),
+      holdScope: BindingScope.fromName(json['holdScope'] as String?),
     );
   }
 
@@ -189,6 +195,10 @@ class PedalBinding extends Equatable {
   /// Whether the press latches or is held.
   final BindingBehavior behavior;
 
+  /// Which track the press acts on — the one it names, or whatever is
+  /// selected when it fires.
+  final BindingScope scope;
+
   /// The target a HOLD on this switch acts on, or `null` when the switch
   /// carries only a press.
   ///
@@ -201,6 +211,9 @@ class PedalBinding extends Equatable {
   /// Whether the hold latches or is held. Meaningless when [holdTarget] is
   /// null.
   final BindingBehavior holdBehavior;
+
+  /// Which track the hold acts on. Meaningless when [holdTarget] is null.
+  final BindingScope holdScope;
 
   /// Whether this switch carries a hold as well as a press.
   bool get hasHold => holdTarget != null;
@@ -219,8 +232,10 @@ class PedalBinding extends Equatable {
   PedalBinding copyWith({
     String? target,
     BindingBehavior? behavior,
+    BindingScope? scope,
     String? holdTarget,
     BindingBehavior? holdBehavior,
+    BindingScope? holdScope,
     bool clearHold = false,
   }) {
     final nextBehavior = behavior ?? this.behavior;
@@ -229,10 +244,12 @@ class PedalBinding extends Equatable {
       key: key,
       target: target ?? this.target,
       behavior: nextBehavior,
+      scope: scope ?? this.scope,
       // A press turned momentary drops the hold with it rather than keeping a
       // combination the model refuses — see [canHold].
       holdTarget: canHold(key, nextBehavior) ? nextHold : null,
       holdBehavior: holdBehavior ?? this.holdBehavior,
+      holdScope: holdScope ?? this.holdScope,
     );
   }
 
@@ -242,12 +259,24 @@ class PedalBinding extends Equatable {
     ...key.toJson(),
     'target': target,
     'behavior': behavior.name,
+    // Omitted when fixed, so a binding written before scopes existed and one
+    // written now encode identically.
+    if (scope != BindingScope.fixed) 'scope': scope.name,
     if (holdTarget != null) ...{
       'holdTarget': holdTarget,
       'holdBehavior': holdBehavior.name,
+      if (holdScope != BindingScope.fixed) 'holdScope': holdScope.name,
     },
   };
 
   @override
-  List<Object?> get props => [key, target, behavior, holdTarget, holdBehavior];
+  List<Object?> get props => [
+    key,
+    target,
+    behavior,
+    scope,
+    holdTarget,
+    holdBehavior,
+    holdScope,
+  ];
 }
