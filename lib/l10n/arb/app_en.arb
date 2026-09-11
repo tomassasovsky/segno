@@ -260,6 +260,10 @@
     "@a11yModeFx": {
         "description": "Announced when the looper lands in FX mode."
     },
+    "a11yModeCustom": "Custom controls",
+    "@a11yModeCustom": {
+        "description": "Announced when the looper lands in the custom controls mode."
+    },
     "a11yTrackFxChainOn": "Track FX chain on",
     "@a11yTrackFxChainOn": {
         "description": "Announced when a track's Track-stage FX chain is switched on from the tracks surface. Distinct from a11yFxChainOn, which belongs to the FX editor's chain power toggle — two surfaces, two strings, so a copy change to one never rewords the other."
@@ -373,6 +377,18 @@
     },
     "a11yTrackTile": "{name}, {state}, activate to record",
     "@a11yTrackTile": {
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackTileCustom": "{name}, {state}, activate to select",
+    "@a11yTrackTileCustom": {
+        "description": "Accessibility label for a track tile in Custom controls, where a tap only selects: what a switch does there is assigned per footswitch, and the screen has no footswitches.",
         "placeholders": {
             "name": {
                 "type": "String"
@@ -1220,6 +1236,14 @@
     "pedalSimLedArmed": "armed",
     "pedalSimLedRecording": "recording",
     "pedalSimLedChainEnabled": "FX chain enabled",
+    "pedalSimLedAssigned": "assigned",
+    "@pedalSimLedAssigned": {
+        "description": "What a lit track LED means in the custom controls mode: that switch carries an assignment."
+    },
+    "pedalSimLedUnassigned": "unassigned",
+    "@pedalSimLedUnassigned": {
+        "description": "What a dark track LED means in the custom controls mode: that switch does nothing there."
+    },
     "pedalSimLedChainDisabled": "FX chain bypassed",
     "@pedalSimLedChainDisabled": {
         "description": "Accessibility reading of a dark track LED while the pedal is in FX mode: that track's FX chain is switched off."
@@ -3224,6 +3248,10 @@
     "readoutFunctionTracks": "Tracks",
     "readoutFunctionMute": "Mute",
     "readoutFunctionFx": "FX",
+    "readoutFunctionCustom": "CUSTOM",
+    "@readoutFunctionCustom": {
+        "description": "The 7-inch readout's function word while the custom controls are in force."
+    },
     "a11ySelectedTrackWaveform": "{name} waveform",
     "@a11ySelectedTrackWaveform": {
         "placeholders": {
@@ -4584,6 +4612,10 @@
     "actionModeMute": "Mute",
     "@actionModeMute": {
         "description": "Catalogue action: enter the mute-track controls."
+    },
+    "actionModeCustom": "Custom",
+    "@actionModeCustom": {
+        "description": "Catalogue action: enter the custom controls."
     },
     "actionModeFx": "FX",
     "@actionModeFx": {

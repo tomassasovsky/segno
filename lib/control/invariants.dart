@@ -32,6 +32,7 @@ library;
 
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -144,6 +145,7 @@ final List<ControlInvariant> controlInvariants = [
       InteractionMode.record => PedalMode.rec,
       InteractionMode.mute => PedalMode.play,
       InteractionMode.fx => PedalMode.fx,
+      InteractionMode.custom => PedalMode.custom,
     };
     if (c.frame.mode != want) {
       return 'frame mode ${c.frame.mode} != overlay mode ${c.overlay.mode}';
@@ -164,10 +166,15 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   ControlInvariant('empty-track-dark', (c) {
-    // Rec and Mute only: in FX mode the LEDs report chain state, which an
+    // Rec and Mute only. In FX mode the LEDs report chain state, which an
     // empty track has just as much as a loaded one ('fx-led-mirrors-chain'
-    // below is that mode's rule).
-    if (c.overlay.mode == InteractionMode.fx) return null;
+    // below is that mode's rule); in custom mode they report whether the
+    // SWITCH carries an assignment, which has nothing to do with the track
+    // at all ('custom-led-mirrors-assignment' below).
+    if (c.overlay.mode == InteractionMode.fx ||
+        c.overlay.mode == InteractionMode.custom) {
+      return null;
+    }
     for (final t in c.looper.tracks) {
       if (t.state != TrackState.empty ||
           t.channel >= c.frame.trackLeds.length) {
@@ -179,6 +186,29 @@ final List<ControlInvariant> controlInvariants = [
           t.channel == c.overlay.cursor;
       if (!isCursor && led != PedalTrackLed.off) {
         return 'EMPTY track ${t.channel} shows $led';
+      }
+    }
+    return null;
+  }),
+  // Custom mode's own LED rule: a track LED is lit exactly when the switch
+  // that drives that channel carries an assignment. The mirror of FX mode's
+  // rule, one level out — there the lamp reports a chain, here it reports
+  // the switch, because most of the catalogue has no on/off state a lamp
+  // could report.
+  ControlInvariant('custom-led-mirrors-assignment', (c) {
+    if (c.overlay.mode != InteractionMode.custom) return null;
+    for (var channel = 0; channel < c.frame.trackLeds.length; channel++) {
+      final button = kTrackSwitches[channel % ControlState.tracksPerBank];
+      final assigned = !c.overlay.pedalSetup
+          .customFor(
+            button,
+            bank: channel ~/ ControlState.tracksPerBank,
+          )
+          .isEmpty;
+      final lit = c.frame.trackLeds[channel] != PedalTrackLed.off;
+      if (lit != assigned) {
+        return 'custom track $channel is ${lit ? 'lit' : 'dark'} but its '
+            'switch is ${assigned ? 'assigned' : 'unassigned'}';
       }
     }
     return null;

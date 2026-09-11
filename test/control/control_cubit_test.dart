@@ -259,12 +259,14 @@ void main() {
     });
 
     group('mode', () {
-      test('toggleMode cycles Record -> Mute -> FX -> Record', () {
+      test('toggleMode cycles Record -> Mute -> FX -> Custom -> Record', () {
         expect(cubit.state.mode, InteractionMode.record);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.mute);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.fx);
+        cubit.toggleMode();
+        expect(cubit.state.mode, InteractionMode.custom);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.record);
       });
@@ -602,10 +604,10 @@ void main() {
         await pumpEventQueue();
       }
 
-      test('defaults to the accepted pair: Mute on the press, FX on the '
+      test('defaults to the accepted pair: Mute on the press, Custom on the '
           'hold', () {
         expect(cubit.state.pedalSetup.modePress, InteractionMode.mute);
-        expect(cubit.state.pedalSetup.modeHold, InteractionMode.fx);
+        expect(cubit.state.pedalSetup.modeHold, InteractionMode.custom);
       });
 
       test('with a hold assigned the press waits for the release — a hold '
@@ -641,7 +643,7 @@ void main() {
         'a hold enters the assigned mode and a second hold leaves it',
         () async {
           await hold(PedalButton.mode);
-          expect(cubit.state.mode, InteractionMode.fx);
+          expect(cubit.state.mode, InteractionMode.custom);
           await hold(PedalButton.mode);
           expect(cubit.state.mode, InteractionMode.record);
         },
@@ -649,11 +651,11 @@ void main() {
 
       test('the mode and its LED frame flip AT the hold threshold, not at '
           'release, and the release is silent', () async {
-        // v3 wire: below it the mode field has no FX bit and the frame
-        // degrades fx to play (B10), which would hide exactly the flip this
+        // The hold opens Custom, whose wire value is v4's: below that the
+        // codec degrades it to play, which would hide exactly the flip this
         // test pins.
         pedal
-          ..firmwareProtocolVersion = 3
+          ..firmwareProtocolVersion = 4
           ..bind('out');
         await pumpEventQueue();
 
@@ -666,31 +668,33 @@ void main() {
         );
 
         await Future<void>.delayed(const Duration(milliseconds: 600));
-        expect(cubit.state.mode, InteractionMode.fx);
+        expect(cubit.state.mode, InteractionMode.custom);
         expect(
           PedalCodec.decodeFrame(transport.sent.last)?.mode,
-          PedalMode.fx,
+          PedalMode.custom,
         );
 
         transport.emit(0x80, PedalButton.mode.note, 0);
         await pumpEventQueue();
-        expect(cubit.state.mode, InteractionMode.fx);
+        expect(cubit.state.mode, InteractionMode.custom);
       });
 
       test('a press while in another mode enters its OWN mode rather than '
           'exiting — both gestures always lead somewhere', () async {
-        await hold(PedalButton.mode); // record -> fx
-        await stomp(PedalButton.mode); // fx -> mute, the press's own mode
+        await hold(PedalButton.mode); // record -> custom
+        await stomp(PedalButton.mode); // custom -> mute, the press's own mode
         expect(cubit.state.mode, InteractionMode.mute);
       });
 
-      test('toggleMode (keyboard M / on-screen chip) still cycles all three '
-          'modes — the setup governs the pedal only, so FX stays reachable '
-          'with no pedal plugged in', () {
+      test('toggleMode (keyboard M / on-screen chip) still cycles every '
+          'mode — the setup governs the pedal only, so FX and Custom stay '
+          'reachable with no pedal plugged in', () {
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.mute);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.fx);
+        cubit.toggleMode();
+        expect(cubit.state.mode, InteractionMode.custom);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.record);
       });
@@ -831,6 +835,259 @@ void main() {
           verifyNever(() => looper.clear(channel: any(named: 'channel')));
         },
       );
+    });
+
+    // Custom controls: every switch but MODE and BANK runs whatever the
+    // setup put on it, and an unassigned one does nothing at all — the mode
+    // has no contextual defaults to fall back on.
+    group('custom controls', () {
+      Future<void> stomp(PedalButton button) async {
+        transport
+          ..emit(0x90, button.note, 127)
+          ..emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      Future<void> hold(PedalButton button) async {
+        transport.emit(0x90, button.note, 127);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        transport.emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      /// Puts [pair] on [button] and enters custom mode.
+      Future<void> assign(
+        PedalButton button,
+        ControlGesturePair pair, {
+        int bank = 0,
+      }) async {
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.withCustom(button, bank: bank, pair: pair),
+        );
+        cubit.setMode(InteractionMode.custom);
+      }
+
+      test('an unassigned switch does nothing', () async {
+        cubit.setMode(InteractionMode.custom);
+        for (final button in [
+          PedalButton.recPlay,
+          PedalButton.stop,
+          PedalButton.undo,
+          PedalButton.clear,
+          PedalButton.track1,
+        ]) {
+          await stomp(button);
+        }
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+        verifyNever(() => looper.clear(channel: any(named: 'channel')));
+        verifyNever(() => looper.clearAll(any()));
+        expect(cubit.state.cursor, 0);
+      });
+
+      test('a press-only switch acts on contact', () async {
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.undo),
+          ),
+        );
+        transport.emit(0x90, PedalButton.undo.note, 127);
+        await pumpEventQueue();
+        verify(() => looper.undo()).called(1);
+      });
+
+      test('a switch carrying both moves its press to the release', () async {
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.undo),
+            hold: CommandAction(ControlCommand.redo),
+          ),
+        );
+        transport.emit(0x90, PedalButton.undo.note, 127);
+        await pumpEventQueue();
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+        transport.emit(0x80, PedalButton.undo.note, 0);
+        await pumpEventQueue();
+        verify(() => looper.undo()).called(1);
+      });
+
+      test('a hold runs the hold action and retires the press', () async {
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.undo),
+            hold: CommandAction(ControlCommand.redo),
+          ),
+        );
+        await hold(PedalButton.undo);
+        verify(() => looper.redo()).called(1);
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+      });
+
+      test('a selected-track operation resolves against the cursor at '
+          'dispatch, and a fixed one never does', () async {
+        await assign(
+          PedalButton.stop,
+          const ControlGesturePair(
+            press: TrackOperationAction(
+              operation: TrackOperation.clear,
+              scope: SelectedTrackScope(),
+            ),
+          ),
+        );
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.withCustom(
+            PedalButton.clear,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: TrackOperationAction(
+                operation: TrackOperation.clear,
+                scope: FixedTrackScope(6),
+              ),
+            ),
+          ),
+        );
+        cubit
+          ..setMode(InteractionMode.custom)
+          ..selectTrack(2);
+
+        await stomp(PedalButton.stop);
+        verify(() => looper.clear(channel: 2)).called(1);
+
+        await stomp(PedalButton.clear);
+        verify(() => looper.clear(channel: 6)).called(1);
+      });
+
+      test('an all-tracks operation reaches every channel', () async {
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(
+            press: TrackOperationAction(
+              operation: TrackOperation.undo,
+              scope: AllTracksScope(),
+            ),
+          ),
+        );
+        await stomp(PedalButton.undo);
+        for (var channel = 0; channel < 8; channel++) {
+          verify(() => looper.undo(channel: channel)).called(1);
+        }
+      });
+
+      test('a track switch runs the pair for the VISIBLE bank', () async {
+        await assign(
+          PedalButton.track1,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.undo),
+          ),
+        );
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.withCustom(
+            PedalButton.track1,
+            bank: 1,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.redo),
+            ),
+          ),
+        );
+        cubit.setMode(InteractionMode.custom);
+
+        await stomp(PedalButton.track1);
+        verify(() => looper.undo()).called(1);
+
+        // browseBank, not selectTrack: the bank the SWITCH reads is the
+        // visible one, while the action's own scope is its own business —
+        // this redo names the cursor, which browsing deliberately leaves
+        // where it is.
+        cubit.browseBank(1);
+        await stomp(PedalButton.track1);
+        verify(() => looper.redo()).called(1);
+      });
+
+      test(
+        'MODE and BANK keep their own jobs, whatever a setup claims',
+        () async {
+          cubit.setMode(InteractionMode.custom);
+          // The model refuses an assignment on either, so there is nothing to
+          // shadow them with — this pins that they still work in the one mode
+          // where every other switch has been handed over.
+          await stomp(PedalButton.bank);
+          expect(cubit.state.activeBank, 1);
+          await stomp(PedalButton.mode);
+          // MODE's press is assigned to Mute, and the rig is in custom, so the
+          // press enters the mode it names.
+          expect(cubit.state.mode, InteractionMode.mute);
+        },
+      );
+
+      test('an assignment edited mid-gesture cannot retarget it', () async {
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.undo),
+            hold: CommandAction(ControlCommand.redo),
+          ),
+        );
+        transport.emit(0x90, PedalButton.undo.note, 127);
+        await pumpEventQueue();
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.withCustom(
+            PedalButton.undo,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.clearAll),
+            ),
+          ),
+        );
+        transport.emit(0x80, PedalButton.undo.note, 0);
+        await pumpEventQueue();
+        verifyNever(() => looper.clearAll(any()));
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+      });
+
+      test('the take lock suppresses a custom press', () async {
+        await assign(
+          PedalButton.undo,
+          const ControlGesturePair(
+            press: CommandAction(ControlCommand.undo),
+          ),
+        );
+        takeLocked = true;
+        await stomp(PedalButton.undo);
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+      });
+
+      test('the track LEDs report which switches carry an assignment', () {
+        cubit.setMode(InteractionMode.custom);
+        expect(
+          projectTrackLed(looper.state, cubit.state, 0),
+          PedalTrackLed.off,
+        );
+        unawaited(
+          cubit.setPedalSetup(
+            cubit.state.pedalSetup.withCustom(
+              PedalButton.track1,
+              bank: 1,
+              pair: const ControlGesturePair(
+                press: CommandAction(ControlCommand.undo),
+              ),
+            ),
+          ),
+        );
+        // Channel 4 is track switch 1 in bank B; channel 0 is the same cap
+        // in bank A and stays dark.
+        expect(
+          projectTrackLed(looper.state, cubit.state, 4),
+          PedalTrackLed.blue,
+        );
+        expect(
+          projectTrackLed(looper.state, cubit.state, 0),
+          PedalTrackLed.off,
+        );
+      });
     });
 
     // The FX-mode button matrix: every one of the ten controls is defined,
@@ -1037,10 +1294,10 @@ void main() {
         verify(() => looper.setMasterGain(any())).called(1);
       });
 
-      test('a MODE hold in FX leaves to Tracks — the hold is assigned to FX, '
-          'and an assigned mode you are already in is the way out', () async {
+      test('a MODE hold in FX opens the mode the HOLD names, and arms no '
+          'recording — that gesture belongs to the mode pair now', () async {
         await hold(PedalButton.mode);
-        expect(cubit.state.mode, InteractionMode.record);
+        expect(cubit.state.mode, InteractionMode.custom);
         expect(performance.armedDirectory, isNull);
       });
 
@@ -2032,7 +2289,7 @@ void main() {
             transport.emit(0x80, PedalButton.mode.note, 0);
             await pumpEventQueue();
 
-            expect(cubit.state.mode, InteractionMode.fx);
+            expect(cubit.state.mode, InteractionMode.custom);
             expect(performance.armedDirectory, isNull);
           },
         );
@@ -2044,7 +2301,7 @@ void main() {
             await Future<void>.delayed(const Duration(milliseconds: 600));
             transport.emit(0x80, PedalButton.mode.note, 0);
             await pumpEventQueue();
-            expect(cubit.state.mode, InteractionMode.fx);
+            expect(cubit.state.mode, InteractionMode.custom);
 
             transport.emit(0x90, PedalButton.mode.note, 100);
             await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -2558,15 +2815,15 @@ void main() {
           await cubit.setGlobalBindings(
             PedalBindingSet([bind(PedalButton.mode)]),
           );
-          // This group runs in FX mode, and the hold is assigned to FX — so
-          // it is the way OUT, which is the point: MODE ran its own gesture
-          // rather than the binding the set tried to put on it.
+          // MODE ran its own gesture rather than the binding the set tried
+          // to put on it: the hold opened the mode it names, out of the FX
+          // mode this group runs in.
           await press(PedalButton.mode);
           await Future<void>.delayed(const Duration(milliseconds: 600));
           await release(PedalButton.mode);
           await pumpEventQueue();
 
-          expect(cubit.state.mode, InteractionMode.record);
+          expect(cubit.state.mode, InteractionMode.custom);
         });
       });
 

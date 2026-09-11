@@ -145,7 +145,7 @@ void main() {
       );
       // The accepted defaults, on the accepted gestures.
       expect(find.text(l10n.actionModeMute), findsOneWidget);
-      expect(find.text(l10n.actionModeFx), findsOneWidget);
+      expect(find.text(l10n.actionModeCustom), findsOneWidget);
     });
 
     testWidgets('the fixed switches are dimmed and refuse the tap', (
@@ -223,11 +223,11 @@ void main() {
       );
       await tester.tap(find.byKey(cancel));
       await tester.pumpAndSettle();
-      expect(control.state.pedalSetup.modeHold, InteractionMode.fx);
+      expect(control.state.pedalSetup.modeHold, InteractionMode.custom);
       final l10n = AppLocalizations.of(
         tester.element(find.byType(PedalSetupPage)),
       );
-      expect(find.text(l10n.actionModeFx), findsOneWidget);
+      expect(find.text(l10n.actionModeCustom), findsOneWidget);
     });
 
     testWidgets('Save and Cancel are inert until something is edited', (

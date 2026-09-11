@@ -126,10 +126,10 @@ class PedalSetup extends Equatable {
   /// Creates a [PedalSetup].
   ///
   /// The defaults are the accepted ones: MODE presses to Mute, and its hold
-  /// is the FX door.
+  /// opens the Custom controls.
   const PedalSetup({
     this.modePress = InteractionMode.mute,
-    this.modeHold = InteractionMode.fx,
+    this.modeHold = InteractionMode.custom,
     this.recordHold = RecordHold.undoRecording,
     this.trackHold = TrackHold.armOverdub,
     this.custom = const <PedalBindingKey, ControlGesturePair>{},

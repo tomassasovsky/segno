@@ -10,6 +10,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/common/fx_chain_persistence.dart';
 import 'package:segno/control/binding/binding_scope.dart';
+import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/controller_learn.dart';
@@ -508,7 +509,8 @@ class ControlCubit extends Cubit<ControlState> {
   void toggleMode() => setMode(switch (state.mode) {
     InteractionMode.record => InteractionMode.mute,
     InteractionMode.mute => InteractionMode.fx,
-    InteractionMode.fx => InteractionMode.record,
+    InteractionMode.fx => InteractionMode.custom,
+    InteractionMode.custom => InteractionMode.record,
   });
 
   /// Replaces the built-in footswitch setup and persists it — the Pedals
@@ -585,6 +587,18 @@ class ControlCubit extends Cubit<ControlState> {
               for (final track in _tracks)
                 if (_playable(track)) track.channel,
             },
+          ),
+        );
+      case InteractionMode.custom:
+        // No entry side effects of its own. Custom mode changes what the
+        // SWITCHES mean and nothing else — it arms nothing, cancels nothing
+        // and moves no transport, so there is nothing here for a mode
+        // change to undo later.
+        emit(
+          state.copyWith(
+            mode: InteractionMode.custom,
+            excluded: const <int>{},
+            parkedResume: const <int>{},
           ),
         );
       case InteractionMode.fx:
@@ -690,6 +704,10 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mute:
         _muteRecPlay();
       case InteractionMode.fx:
+      case InteractionMode.custom:
+        // Inert. In FX the switch is reserved (A4); in custom it runs
+        // whatever the setup assigned, dispatched at the press rather than
+        // here, so this path must not also act.
         break;
     }
   }
@@ -784,6 +802,9 @@ class ControlCubit extends Cubit<ControlState> {
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
+      case InteractionMode.custom:
+        // Inert here: the switch runs its assignment at the press.
+        break;
     }
   }
 
@@ -832,6 +853,11 @@ class ControlCubit extends Cubit<ControlState> {
         _muteTrackPressed(channel);
       case InteractionMode.fx:
         toggleTrackChain(channel);
+      case InteractionMode.custom:
+        // Inert here: the switch runs its assignment at the press. Note the
+        // on-screen surfaces still call this — selection happens at their
+        // own call sites, so a tile tap in custom mode selects and stops.
+        break;
     }
   }
 
@@ -1097,6 +1123,15 @@ class ControlCubit extends Cubit<ControlState> {
       'press ${button.name}  [mode=${state.mode.name} '
       'cursor=${state.cursor}]',
     );
+    // Custom controls: the switch runs whatever the setup put on it, and
+    // nothing else. MODE and BANK fall through to their own arms below —
+    // the binding model refuses to hold an assignment on either, so they
+    // keep being the way out and the way to the other four track switches.
+    if (state.mode == InteractionMode.custom &&
+        !PedalBindingKey.unbindable.contains(button)) {
+      _armCustom(button);
+      return;
+    }
     final fx = state.mode == InteractionMode.fx;
     // A remap overrides its button's contextual DEFAULT, and only in FX mode —
     // the other two modes are transport surfaces a binding must never shadow.
@@ -1166,6 +1201,121 @@ class ControlCubit extends Cubit<ControlState> {
         // Same shape as Record / Play: selection keeps its immediate contact
         // and the configured hold rides above it.
         _armTrackHold(button, channel);
+    }
+  }
+
+  /// Arms a Custom-controls switch's press/hold pair.
+  ///
+  /// The pair is read and LATCHED at press time, like every other gesture
+  /// here. The latch is belt-and-braces rather than the enforcement: every
+  /// setup edit goes through [setPedalSetup], which retires the pending
+  /// gestures outright, so an edit mid-gesture leaves nothing to retarget.
+  /// It is kept because a gesture that reads live state at dispatch would be
+  /// one exception to a rule this file otherwise holds everywhere.
+  ///
+  /// A switch with nothing on it arms nothing and does nothing — custom mode
+  /// has no contextual defaults to fall back on, which is what "fully
+  /// user-defined" costs.
+  void _armCustom(PedalButton button) {
+    final pair = state.pedalSetup.customFor(button, bank: state.activeBank);
+    final hold = pair.hold;
+    if (hold == null) {
+      // Press only: act on contact, like every plain switch.
+      final press = pair.press;
+      if (press != null) _runAction(press);
+      return;
+    }
+    _gestures
+        .of(button)
+        .press(
+          generation: _gestures.generation,
+          threshold: _longPress,
+          onHold: () => _runAction(hold),
+          // Deferred to the release: until the threshold passes neither half
+          // is known to be the one the foot meant.
+          onTap: () {
+            final press = pair.press;
+            if (press != null) _runAction(press);
+          },
+        );
+  }
+
+  /// Runs one catalogue action.
+  ///
+  /// The single dispatch point for the shared vocabulary: the built-in
+  /// switches reach it here, and the external and MIDI surfaces will reach
+  /// the same method rather than growing interpreters of their own.
+  void _runAction(ControlAction action) {
+    _log('action ${action.key}');
+    switch (action) {
+      case ModeAction(:final mode):
+        _enterMode(mode);
+      case CommandAction(:final command):
+        _runCommand(command);
+      case TrackPedalAction(:final channel):
+        selectTrack(channel);
+        _recAdvance(channel);
+      case SelectTrackAction(:final channel):
+        selectTrack(channel);
+      case TrackOperationAction(:final operation, :final scope):
+        for (final channel in _channelsIn(scope)) {
+          _runTrackOperation(operation, channel);
+        }
+    }
+  }
+
+  void _runCommand(ControlCommand command) {
+    switch (command) {
+      // The TRACKS-mode transport action, not the current mode's: the
+      // current mode is custom, where both switches are inert, so "the
+      // current mode's" would resolve to nothing.
+      case ControlCommand.recordPlay:
+        _recAdvance(state.cursor);
+      case ControlCommand.stop:
+        _recStop(state.cursor);
+      case ControlCommand.undo:
+        undo(state.cursor);
+      case ControlCommand.redo:
+        redo(state.cursor);
+      case ControlCommand.clearAll:
+        unawaited(clearAll());
+      case ControlCommand.cutSound:
+        _looper.cutSound();
+      case ControlCommand.recordPerformance:
+        togglePerformanceRecord();
+      case ControlCommand.nextBank:
+        toggleBankWithCursor();
+    }
+  }
+
+  /// The channels [scope] resolves to, ONCE, at dispatch.
+  ///
+  /// A selected-track action fires on whatever the cursor holds at the moment
+  /// the foot commits; a fixed-track one never follows the bank, which is the
+  /// whole point of naming a track.
+  Iterable<int> _channelsIn(ActionScope scope) => switch (scope) {
+    SelectedTrackScope() => [state.cursor],
+    AllTracksScope() => [for (var c = 0; c < _channelCount; c++) c],
+    FixedTrackScope(:final channel) => [channel],
+  };
+
+  void _runTrackOperation(TrackOperation operation, int channel) {
+    final track = _trackAt(channel);
+    switch (operation) {
+      case TrackOperation.mute:
+        if (track == null) return;
+        _looper.setMute(muted: !track.muted, channel: channel);
+      case TrackOperation.solo:
+        _looper.setTrackSolo(
+          channel: channel,
+          solo: !_looper.trackSoloed(channel),
+        );
+      case TrackOperation.clear:
+        _looper.clear(channel: channel);
+      case TrackOperation.undo:
+        undo(channel);
+      case TrackOperation.redo:
+        redo(channel);
     }
   }
 

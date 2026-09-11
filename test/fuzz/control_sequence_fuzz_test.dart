@@ -461,12 +461,22 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.recording);
         expect(h.control.state.mode, InteractionMode.mute);
 
-        // It keeps ACCUMULATING through mute mode, and through FX on the way
-        // back round — every stop on the cycle leaves a live take alone.
+        // It keeps ACCUMULATING through mute mode, and through every other
+        // stop the MODE switch can reach — no mode a foot can open finalizes
+        // a live take. The pedal's MODE is a PAIR now, not a cycle: the tap
+        // goes to Mute (or leaves it), the hold to Custom (or leaves it).
         h
           ..run(const [_Pump(100, 0.5)], fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
+          ..run(const [_Tap(PedalButton.mode)], fa) // mute -> rec
+          ..run(const [_SetMode(InteractionMode.fx)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.recording);
+        h
+          ..run(const [_SetMode(InteractionMode.custom)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.recording);
+        h
+          ..run(const [_SetMode(InteractionMode.record)], fa)
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.recording);
 
@@ -495,8 +505,8 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
 
         h
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
+          // The tap is the MODE pair's press, which leaves the mode it names.
+          ..run(const [_Tap(PedalButton.mode)], fa) // mute -> rec
           ..run(const [_Tap(PedalButton.recPlay)], fa) // punch out
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.playing);
@@ -1190,8 +1200,8 @@ List<_FuzzAction> _generate(int seed, int steps) {
       ),
       < 65 => _Select(rng.next(8)),
       < 68 => const _ToggleMode(),
-      // NB: no `_SetMode` in the random alphabet. FX mode is already reachable
-      // here — `_Tap`/`_ToggleMode` walk the three-stop cycle — and giving it
+      // NB: no `_SetMode` in the random alphabet. FX and custom are already
+      // reachable here — `_Tap`/`_ToggleMode` walk the cycle — and giving one
       // its own band would have taken draws from `_Pump` (the only action that
       // feeds audio in, so the only way tracks gain content) and shifted every
       // subsequent draw, replacing the sequences the fixed seeds have explored

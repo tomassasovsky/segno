@@ -11,6 +11,7 @@ library;
 
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -61,7 +62,8 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
 /// Mute mode: green = armed AND audible (a muted or excluded track reads
 /// off; while parked, the parked-resume members show what Rec/Play brings
 /// back). Record mode: the cursor and any capturing track read red. FX mode:
-/// blue = the track's Track-stage chain is engaged.
+/// blue = the track's Track-stage chain is engaged. Custom mode: blue = the
+/// switch that drives this channel carries an assignment.
 ///
 /// The FX-mode reading costs ZERO new wire bytes (R8): the same `trackLeds`
 /// enum-index byte carries a different meaning per mode, so the firmware
@@ -88,6 +90,25 @@ PedalTrackLed projectTrackLed(
       if (channel == overlay.cursor) return PedalTrackLed.red;
       if (track?.isCapturing ?? false) return PedalTrackLed.red;
       return PedalTrackLed.off;
+    case InteractionMode.custom:
+      // Assigned or not — the only thing this mode has to say about a switch.
+      // The reading is about the SWITCH rather than the track: what a custom
+      // control does is whatever the setup put on it, and most of the
+      // catalogue has no on/off state a lamp could report. A lit LED here
+      // promises "this switch does something", which is exactly what a
+      // performer needs to know before stomping it.
+      //
+      // Blue, like FX's engaged chain, and for the same reason: it degrades
+      // to green below protocol v3 and still reads as lit.
+      final button = channel >= 0 && channel < PedalStateFrame.trackCount
+          ? kTrackSwitches[channel % ControlState.tracksPerBank]
+          : null;
+      if (button == null) return PedalTrackLed.off;
+      final pair = overlay.pedalSetup.customFor(
+        button,
+        bank: channel ~/ ControlState.tracksPerBank,
+      );
+      return pair.isEmpty ? PedalTrackLed.off : PedalTrackLed.blue;
     case InteractionMode.fx:
       // A BOUND switch reports its own target, not this channel's track chain.
       // The two are different flags — a binding can name a chain on any stage
@@ -166,6 +187,9 @@ PedalStateFrame projectFrame(
       InteractionMode.record => PedalMode.rec,
       InteractionMode.mute => PedalMode.play,
       InteractionMode.fx => PedalMode.fx,
+      // Protocol v4 (#763). Below it the codec degrades this to play, so an
+      // un-reflashed pedal shows the wrong mode LED rather than no LEDs.
+      InteractionMode.custom => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
