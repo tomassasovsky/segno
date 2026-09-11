@@ -9,6 +9,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/common/fx_chain_persistence.dart';
+import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/controller_learn.dart';
@@ -44,12 +45,20 @@ class _HoldGesture {
   Timer? _timer;
   void Function()? _onTap;
 
+  /// The generation this press belongs to. A release is only the end of the
+  /// gesture that started it; one carried over from a retired generation —
+  /// the pedal was unbound, the mode changed, a take took the lock — is a
+  /// stranger and runs nothing.
+  int _generation = -1;
+
   void press({
     required Duration threshold,
+    required int generation,
     required void Function() onHold,
     void Function()? onTap,
   }) {
     _onTap = onTap;
+    _generation = generation;
     _timer?.cancel();
     _timer = Timer(threshold, () {
       _timer = null;
@@ -58,7 +67,11 @@ class _HoldGesture {
     });
   }
 
-  void release() {
+  void release(int generation) {
+    if (_generation != generation) {
+      cancel();
+      return;
+    }
     _timer?.cancel();
     _timer = null;
     final onTap = _onTap;
@@ -66,11 +79,51 @@ class _HoldGesture {
     onTap?.call();
   }
 
-  /// Drops the pending hold and tap without running either — cubit teardown.
+  /// Drops the pending hold and tap without running either.
   void cancel() {
     _timer?.cancel();
     _timer = null;
     _onTap = null;
+    _generation = -1;
+  }
+}
+
+/// Every pending footswitch gesture, so there is ONE place that retires them
+/// all (accepted design, controls 3: "Cancel pending gestures on invalidating
+/// navigation, disconnect or configuration").
+///
+/// Before this, each gestural switch owned a field of its own and nothing
+/// could reach them together: unbinding the pedal released held momentaries
+/// but left the hold timers armed to fire into a rig that no longer had a
+/// pedal on it, and a press taken before a take locked the transport still
+/// ran its latched tap when the foot came up.
+///
+/// [generation] is what makes a cancel stick. A pending hold can be dropped by
+/// cancelling its timer, but a release already on its way cannot; bumping the
+/// generation makes every gesture pressed before the cancel a stranger, so the
+/// release that arrives after it runs nothing.
+class _Gestures {
+  final Map<PedalButton, _HoldGesture> _byButton = {};
+  int _generation = 0;
+
+  /// The generation a press starting now belongs to.
+  int get generation => _generation;
+
+  /// The gesture for [button], created on first use.
+  _HoldGesture of(PedalButton button) =>
+      _byButton.putIfAbsent(button, _HoldGesture.new);
+
+  /// Ends [button]'s gesture, running its tap unless the gesture has been
+  /// retired since the press.
+  void release(PedalButton button) => _byButton[button]?.release(_generation);
+
+  /// Drops every pending gesture without running it, and retires the
+  /// generation so a release still in flight is ignored too.
+  void cancelAll() {
+    _generation++;
+    for (final gesture in _byButton.values) {
+      gesture.cancel();
+    }
   }
 }
 
@@ -225,25 +278,25 @@ class ControlCubit extends Cubit<ControlState> {
   Duration _longPress = const Duration(milliseconds: 500);
   Timer? _keepAliveTimer;
 
-  // Undo: tap = undo, long-press = redo. The target channel is LATCHED at
-  // press time (captured by the callbacks) — an on-screen click mid-hold must
-  // not retarget the action the foot already committed to.
-  final _undoGesture = _HoldGesture();
-
-  // MODE: tap = cycle the interaction mode, long-press = arm/disarm
-  // performance recording (D-PEDAL) — or, under ModeSwitchStyle.holdFx, the
-  // FX door (#632). No spare footswitch/pin exists on the physical pedal, so
-  // the gesture rides the existing MODE button rather than a new one —
-  // mirrors the undo/redo split above.
-  final _modeGesture = _HoldGesture();
-
-  // BANK: armed only under ModeSwitchStyle.holdFx, where tap = toggle the
-  // visible bank (moved to the release, as every tap sharing a switch with a
-  // hold) and long-press = arm/disarm performance recording (D-PEDAL) — the
-  // pedal path the MODE hold gives up to the FX door (#677). Under
-  // cycleThree this gesture is never armed: BANK stays the plain press-time
-  // toggle it has always been.
-  final _bankGesture = _HoldGesture();
+  // Every pending footswitch gesture, and the one place that retires them
+  // all. The four system gestures below and every bound button's own live in
+  // here, keyed by the switch they are on.
+  //
+  // - Undo: tap = undo, long-press = redo. The target channel is LATCHED at
+  //   press time (captured by the callbacks) — an on-screen click mid-hold
+  //   must not retarget the action the foot already committed to.
+  // - MODE: tap = cycle the interaction mode, long-press = arm/disarm
+  //   performance recording (D-PEDAL) — or, under ModeSwitchStyle.holdFx, the
+  //   FX door (#632). No spare footswitch/pin exists on the physical pedal, so
+  //   the gesture rides the existing MODE button rather than a new one.
+  // - BANK: armed only under ModeSwitchStyle.holdFx, where tap = toggle the
+  //   visible bank (moved to the release, as every tap sharing a switch with a
+  //   hold) and long-press = arm/disarm performance recording (#677). Under
+  //   cycleThree this gesture is never armed: BANK stays the plain press-time
+  //   toggle it has always been.
+  // - The FX-mode Stop long-press (restore every Track chain). The panic half
+  //   fires on the press, so that one arms no tap action — only the hold.
+  final _gestures = _Gestures();
 
   // Where leaving FX under ModeSwitchStyle.holdFx returns to: the mode the
   // rig was in when FX was entered (record or mute — never fx by
@@ -255,10 +308,6 @@ class ControlCubit extends Cubit<ControlState> {
   // rules is never read. A cubit field rather than ControlState, like the
   // momentary restore values: a mid-gesture latch no surface renders.
   InteractionMode _fxReturn = InteractionMode.record;
-
-  // The FX-mode Stop long-press (restore every Track chain). The panic half
-  // fires on the press, so this one arms no tap action — only the hold.
-  final _stopGesture = _HoldGesture();
 
   // The remap (part 6b) lives in ControlState — it is stored user intent, and
   // the surfaces that render it rebuild on emit. What stays here is only the
@@ -486,6 +535,10 @@ class ControlCubit extends Cubit<ControlState> {
   /// record fallback is the only value a fresh style can honestly promise.
   Future<void> setModeSwitchStyle(ModeSwitchStyle style) async {
     if (style == state.modeSwitchStyle) return;
+    // Configuration: MODE and BANK mean different things on either side of
+    // this, so a gesture pressed under the old style cannot finish under the
+    // new one.
+    _invalidateGestures();
     _fxReturn = InteractionMode.record;
     emit(state.copyWith(modeSwitchStyle: style));
     await _settings.saveModeSwitchStyle(style.token);
@@ -528,8 +581,10 @@ class ControlCubit extends Cubit<ControlState> {
     if (next == state.mode) return;
     // Leaving the mode the bindings live in strands any held momentary — the
     // release will arrive with the foot in a mode that no longer dispatches
-    // it, or not at all. Restore first (B1), before the emit re-projects.
-    releaseAllMomentary();
+    // it, or not at all. Restore first (B1), before the emit re-projects, and
+    // retire the pending gestures with it: a hold that opened this mode must
+    // not also act again when the foot comes up in it.
+    _invalidateGestures();
     switch (next) {
       case InteractionMode.record:
         emit(
@@ -1037,11 +1092,20 @@ class ControlCubit extends Cubit<ControlState> {
       case ButtonPressed(:final button):
         _onPress(button);
       case ButtonReleased(:final button):
-        if (button == PedalButton.undo) _undoGesture.release();
         if (button == PedalButton.clear) _onClearRelease();
-        if (button == PedalButton.mode) _modeGesture.release();
-        if (button == PedalButton.bank) _bankGesture.release();
-        if (button == PedalButton.stop) _stopGesture.release();
+        if (_takeLocked()) {
+          // The lock reaches the release, not only the press. A press taken
+          // before a take started leaves a gesture armed, and running its
+          // latched tap when the foot comes up is exactly the mid-take edit
+          // the lock exists to refuse. The held momentary still restores: a
+          // target left enabled by a press whose release was swallowed is the
+          // wedge (B1), and the lock is not a reason to strand one.
+          _gestures.of(button).cancel();
+        } else {
+          // Every gesture on this switch, system or bound, ends here. A
+          // release from a retired generation runs nothing (see [_Gestures]).
+          _gestures.release(button);
+        }
         // Unconditional: a momentary is keyed to the button, so this finds
         // the held one (if any) whatever else that button's release did.
         _releaseBinding(button);
@@ -1065,11 +1129,22 @@ class ControlCubit extends Cubit<ControlState> {
     if (fx) {
       final binding = state.bindings.lookup(button, bank: state.activeBank);
       if (binding != null) {
-        _pressBinding(binding);
+        if (binding.hasHold) {
+          // A switch carrying both moves its PRESS to the release: until the
+          // threshold passes neither half is known to be the one the foot
+          // meant, and the accepted design is explicit that holding must not
+          // first execute the short action (controls 3). Firing the hold
+          // retires the tap, so the release after it stays silent — the same
+          // rule that keeps every other gesture from acting twice.
+          _armBoundHold(binding);
+        } else {
+          _pressBinding(binding);
+        }
         // Stop keeps its restore-all HOLD even when bound: a remap overrides
         // contextual defaults but never the long-press system gestures, and
         // the panic's only undo must stay reachable from the plate whatever
-        // the user mapped onto the tap.
+        // the user mapped onto the tap. A bound hold can never be here —
+        // `PedalBindingKey.holdable` is the four track switches.
         if (button == PedalButton.stop) _armStopRestore();
         return;
       }
@@ -1107,6 +1182,24 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// Arms a bound switch's press/hold pair.
+  ///
+  /// Both halves are built at press time and act on the binding the foot
+  /// committed to, so an assignment edited mid-gesture cannot retarget it —
+  /// the same latching every system gesture uses. The generation is what
+  /// makes a configuration change retire this one rather than letting it
+  /// land somewhere else.
+  void _armBoundHold(PedalBinding binding) {
+    _gestures
+        .of(binding.key.button)
+        .press(
+          generation: _gestures.generation,
+          threshold: _longPress,
+          onHold: () => _pressBinding(binding, hold: true),
+          onTap: () => _pressBinding(binding),
+        );
+  }
+
   void _onClear() {
     // Light the Clear LED while the footswitch is held (cleared on release).
     _clearHeld = true;
@@ -1123,17 +1216,20 @@ class ControlCubit extends Cubit<ControlState> {
 
   void _armUndo() {
     final channel = state.cursor; // latched at press by both closures
-    _undoGesture.press(
-      threshold: _longPress,
-      onHold: () {
-        _log('redo ch=$channel  (long-press)');
-        redo(channel);
-      },
-      onTap: () {
-        _log('undo ch=$channel  (tap)');
-        undo(channel);
-      },
-    );
+    _gestures
+        .of(PedalButton.undo)
+        .press(
+          generation: _gestures.generation,
+          threshold: _longPress,
+          onHold: () {
+            _log('redo ch=$channel  (long-press)');
+            redo(channel);
+          },
+          onTap: () {
+            _log('undo ch=$channel  (tap)');
+            undo(channel);
+          },
+        );
   }
 
   /// The FX-mode Stop gesture: the PANIC fires on the press itself, and a
@@ -1165,17 +1261,20 @@ class ControlCubit extends Cubit<ControlState> {
   void _armStopRestore() {
     // No `onTap`: whatever fired on the press already did, so the release is
     // inert.
-    _stopGesture.press(
-      threshold: _longPress,
-      onHold: () {
-        // Only while the foot is still in the mode it committed to: cycling
-        // MODE mid-hold leaves the pedal showing cursor/armed LEDs, where a
-        // silent rewrite of every chain would be invisible.
-        if (state.mode != InteractionMode.fx) return;
-        _log('fx chains restored (long-press)');
-        restoreAllTrackChains();
-      },
-    );
+    _gestures
+        .of(PedalButton.stop)
+        .press(
+          generation: _gestures.generation,
+          threshold: _longPress,
+          onHold: () {
+            // Only while the foot is still in the mode it committed to: cycling
+            // MODE mid-hold leaves the pedal showing cursor/armed LEDs, where a
+            // silent rewrite of every chain would be invisible.
+            if (state.mode != InteractionMode.fx) return;
+            _log('fx chains restored (long-press)');
+            restoreAllTrackChains();
+          },
+        );
   }
 
   // ---------------------------------------------------------------------------
@@ -1226,26 +1325,29 @@ class ControlCubit extends Cubit<ControlState> {
   /// the prior mode until then, and the release stays silent.
   void _armMode() {
     final holdFx = state.modeSwitchStyle == ModeSwitchStyle.holdFx;
-    _modeGesture.press(
-      threshold: _longPress,
-      onHold: () {
-        if (holdFx) {
-          _log('fx mode toggled (long-press)');
-          _toggleFxHold();
-        } else {
-          _log('performance record toggled (long-press)');
-          togglePerformanceRecord();
-        }
-      },
-      onTap: () {
-        _log('mode toggled (tap)');
-        if (holdFx) {
-          _pedalModeTap();
-        } else {
-          toggleMode();
-        }
-      },
-    );
+    _gestures
+        .of(PedalButton.mode)
+        .press(
+          generation: _gestures.generation,
+          threshold: _longPress,
+          onHold: () {
+            if (holdFx) {
+              _log('fx mode toggled (long-press)');
+              _toggleFxHold();
+            } else {
+              _log('performance record toggled (long-press)');
+              togglePerformanceRecord();
+            }
+          },
+          onTap: () {
+            _log('mode toggled (tap)');
+            if (holdFx) {
+              _pedalModeTap();
+            } else {
+              toggleMode();
+            }
+          },
+        );
   }
 
   /// The pedal MODE tap under [ModeSwitchStyle.holdFx]: Record <-> Mute, and
@@ -1289,17 +1391,20 @@ class ControlCubit extends Cubit<ControlState> {
       toggleBankWithCursor();
       return;
     }
-    _bankGesture.press(
-      threshold: _longPress,
-      onHold: () {
-        _log('performance record toggled (bank long-press)');
-        togglePerformanceRecord();
-      },
-      onTap: () {
-        _log('bank toggled (tap)');
-        toggleBankWithCursor();
-      },
-    );
+    _gestures
+        .of(PedalButton.bank)
+        .press(
+          generation: _gestures.generation,
+          threshold: _longPress,
+          onHold: () {
+            _log('performance record toggled (bank long-press)');
+            togglePerformanceRecord();
+          },
+          onTap: () {
+            _log('bank toggled (tap)');
+            toggleBankWithCursor();
+          },
+        );
   }
 
   // ---------------------------------------------------------------------------
@@ -1320,7 +1425,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// prevent.
   Future<void> setGlobalBindings(PedalBindingSet next) async {
     if (next == state.globalBindings) return;
-    releaseAllMomentary();
+    _invalidateGestures();
     emit(state.copyWith(globalBindings: next));
     await _settings.savePedalBindings(next.encode());
   }
@@ -1330,8 +1435,23 @@ class ControlCubit extends Cubit<ControlState> {
   /// momentaries on the same rule as [setGlobalBindings].
   void applySessionBindings(PedalBindingSet next) {
     if (next == state.sessionBindings) return;
-    releaseAllMomentary();
+    _invalidateGestures();
     emit(state.copyWith(sessionBindings: next));
+  }
+
+  /// Retires every pending gesture, and every held momentary with it.
+  ///
+  /// The accepted rule (controls 3): pending gestures are cancelled on
+  /// invalidating navigation, disconnect or configuration. All three mean the
+  /// same thing here — the rig the foot committed to is not the rig the
+  /// release will land in, so neither half of the gesture may still run.
+  ///
+  /// Cancelling a timer is not enough on its own: a release already on its way
+  /// up the wire cannot be recalled, so [_Gestures] retires the generation and
+  /// the stale release runs nothing when it lands.
+  void _invalidateGestures() {
+    _gestures.cancelAll();
+    releaseAllMomentary();
   }
 
   /// Restores every held momentary to the state its press captured — the ONE
@@ -1360,14 +1480,18 @@ class ControlCubit extends Cubit<ControlState> {
   /// chain/slot the rig no longer has — is a NO-OP (R25). It writes nothing
   /// and lights nothing; the assignment screen is where the user learns it is
   /// broken, not a mid-song stomp that silently bypasses the wrong thing.
-  void _pressBinding(PedalBinding binding) {
-    final target = binding.decodeTarget();
+  void _pressBinding(PedalBinding binding, {bool hold = false}) {
+    final target = _scoped(
+      hold ? binding.decodeHoldTarget() : binding.decodeTarget(),
+      hold ? binding.holdScope : binding.scope,
+    );
     final prior = target == null ? null : _looper.bindingEnabled(target);
     if (target == null || prior == null) {
-      _log('binding on ${binding.key.button.name} is stale — no-op');
+      final half = hold ? 'hold' : 'press';
+      _log('binding $half on ${binding.key.button.name} is stale — no-op');
       return;
     }
-    switch (binding.behavior) {
+    switch (hold ? binding.holdBehavior : binding.behavior) {
       case BindingBehavior.toggle:
         _log('binding toggle ${binding.key.button.name} -> ${!prior}');
         _looper.setBindingEnabled(target, enabled: !prior);
@@ -1388,6 +1512,27 @@ class ControlCubit extends Cubit<ControlState> {
         );
     }
     _pushProjected();
+  }
+
+  /// [target] pointed at the track [scope] names, resolved NOW.
+  ///
+  /// Resolved at dispatch, never at press. That is the whole of the accepted
+  /// "target following" rule: a pending hold acts on the newly selected track
+  /// because it reads the cursor when it fires, and it stays attached to what
+  /// it resolved because the momentary restore captures the RESOLVED target.
+  /// A switch carrying a hold defers its press to the release, so both halves
+  /// resolve at the instant they act.
+  FxBindingTarget? _scoped(FxBindingTarget? target, BindingScope scope) {
+    if (target == null || scope == BindingScope.fixed) return target;
+    final address = resolveBindingAddress(target.address, scope, state.cursor);
+    if (address == target.address) return target;
+    return switch (target) {
+      FxChainTarget() => FxChainTarget(address),
+      FxSlotTarget(:final slotId) => FxSlotTarget(
+        address: address,
+        slotId: slotId,
+      ),
+    };
   }
 
   /// Restores the momentary [button] is holding, if any.
@@ -2020,8 +2165,9 @@ class ControlCubit extends Cubit<ControlState> {
       return;
     }
     // Unplugged mid-hold: the release note-off is never coming, so a held
-    // momentary would leave its target enabled forever (B1). Restore now.
-    releaseAllMomentary();
+    // momentary would leave its target enabled forever (B1), and an armed
+    // hold would fire into a rig with no pedal on it. Retire both now.
+    _invalidateGestures();
   }
 
   void _detectLoopTop(LooperState s) {
@@ -2124,10 +2270,7 @@ class ControlCubit extends Cubit<ControlState> {
     // Commit whatever the debounce was still holding, so a quit mid-edit does
     // not lose the mapping the user just made.
     _flushMappingsWrite();
-    _undoGesture.cancel();
-    _modeGesture.cancel();
-    _bankGesture.cancel();
-    _stopGesture.cancel();
+    _gestures.cancelAll();
     await _looperSub.cancel();
     await _eventsSub.cancel();
     await _statusSub.cancel();

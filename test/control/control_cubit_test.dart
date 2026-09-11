@@ -116,6 +116,7 @@ void main() {
     late PedalRepository pedal;
     late PerformanceRepository performance;
     late ControlCubit cubit;
+    late bool takeLocked;
     late Directory tempDir;
     late DateTime clock;
 
@@ -235,12 +236,16 @@ void main() {
         exportsRoot: () async => tempDir.path,
         now: () => clock,
       );
+      takeLocked = false;
       cubit = ControlCubit(
         looper: looper,
         pedal: pedal,
         settings: settings,
         performance: performance,
         keepAliveInterval: Duration.zero, // deterministic: no heartbeat re-push
+        // Readable mid-test, so a take can start while a foot is already
+        // down — which is the only way to exercise the lock on a RELEASE.
+        takeLocked: () => takeLocked,
       );
       setEngine(_emptyTracks());
     });
@@ -1205,6 +1210,21 @@ void main() {
         expect(locked.state.cursor, 0);
       });
 
+      test('takeLocked reaches the RELEASE, so a gesture pressed before the '
+          'lock does not fire when the foot comes up', () async {
+        // The press is refused while the lock is on; a press taken just
+        // before it is not, and running its latched tap on the release is
+        // exactly the mid-take edit the lock exists to refuse.
+        transport.emit(0x90, PedalButton.undo.note, 127);
+        await pumpEventQueue();
+        takeLocked = true;
+        transport.emit(0x80, PedalButton.undo.note, 0);
+        await pumpEventQueue();
+
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+        verifyNever(() => looper.undo());
+      });
+
       test('takeLocked suppresses togglePerformanceRecord', () {
         final locked = ControlCubit(
           looper: looper,
@@ -2152,6 +2172,251 @@ void main() {
         ];
         setEngine(_emptyTracks());
         cubit.setMode(InteractionMode.fx);
+      });
+
+      /// Holds [button] past the 500 ms threshold, then releases. Real
+      /// delays, not fake_async: the wire events reach the cubit through the
+      /// repository's stream, which a fake clock cannot pump.
+      Future<void> hold(PedalButton button) async {
+        transport.emit(0x90, button.note, 127);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        transport.emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      /// Chain 3's enabled bit, defaulting the way the repository's own
+      /// getter does — an untouched chain is on.
+      bool chain3Enabled() => chainEnabled[3] ?? true;
+
+      /// Slot b's enabled bit, read back off the chain the mock rewrites.
+      bool slotB2Enabled() {
+        for (final fx in trackChains[3] ?? const <TrackEffect>[]) {
+          if (fx.slotId == 'b') return fx.enabled;
+        }
+        return true;
+      }
+
+      group('a switch carrying both a press and a hold', () {
+        /// track1 in bank A: press toggles chain 3, hold toggles slot b.
+        PedalBinding pair({
+          BindingBehavior behavior = BindingBehavior.toggle,
+        }) => PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+          target: chain3.canonicalString(),
+          behavior: behavior,
+          holdTarget: slotB.canonicalString(),
+        );
+
+        Future<void> bindPair() async {
+          await cubit.setGlobalBindings(PedalBindingSet([pair()]));
+          cubit.setMode(InteractionMode.fx);
+          await pumpEventQueue();
+        }
+
+        test('the press waits for the release, so holding never first runs '
+            'the short action', () async {
+          await bindPair();
+
+          await press(PedalButton.track1);
+          // Nothing yet: which half the foot meant is not known until the
+          // threshold passes or the foot comes up.
+          expect(chain3Enabled(), isTrue);
+          expect(slotB2Enabled(), isTrue);
+
+          await release(PedalButton.track1);
+          expect(chain3Enabled(), isFalse, reason: 'the press ran on release');
+          expect(slotB2Enabled(), isTrue, reason: 'the hold did not');
+        });
+
+        test('the hold runs its own target, and the release after it stays '
+            'silent', () async {
+          await bindPair();
+
+          await hold(PedalButton.track1);
+
+          expect(slotB2Enabled(), isFalse, reason: 'the hold ran');
+          expect(
+            chain3Enabled(),
+            isTrue,
+            reason: 'the press never ran, before or after the hold',
+          );
+        });
+
+        test('a switch with no hold keeps its press on contact', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.track1, bank: 0)]),
+          );
+          cubit.setMode(InteractionMode.fx);
+          await pumpEventQueue();
+
+          await press(PedalButton.track1);
+
+          expect(chain3Enabled(), isFalse, reason: 'no hold, no deferral');
+          await release(PedalButton.track1);
+        });
+
+        test(
+          'a stale hold is a no-op, and does not fall back to the press',
+          () async {
+            await cubit.setGlobalBindings(
+              PedalBindingSet([
+                PedalBinding(
+                  key: const PedalBindingKey(
+                    button: PedalButton.track1,
+                    bank: 0,
+                  ),
+                  target: chain3.canonicalString(),
+                  holdTarget: const FxSlotTarget(
+                    address: FxAddress(stage: FxStage.track, index: 3),
+                    slotId: 'gone',
+                  ).canonicalString(),
+                ),
+              ]),
+            );
+            cubit.setMode(InteractionMode.fx);
+            await pumpEventQueue();
+
+            await hold(PedalButton.track1);
+
+            expect(chain3Enabled(), isTrue, reason: 'the press stayed retired');
+          },
+        );
+      });
+
+      group('the selected-track scope', () {
+        /// track1 bound to the Track-stage chain, following the cursor.
+        PedalBinding following({
+          BindingScope scope = BindingScope.selected,
+          String? holdTarget,
+        }) => PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+          // Bound on channel 3, which a selected scope must ignore.
+          target: chain3.canonicalString(),
+          scope: scope,
+          holdTarget: holdTarget,
+          holdScope: scope,
+        );
+
+        setUp(() {
+          // Chains on 0 and 3 so either can be the one that flips.
+          trackChains[0] = [
+            BuiltInEffect(type: TrackEffectType.drive, slotId: 'a0'),
+          ];
+        });
+
+        test(
+          'acts on the track selected when it fires, not the one it names',
+          () async {
+            await cubit.setGlobalBindings(PedalBindingSet([following()]));
+            cubit
+              ..setMode(InteractionMode.fx)
+              ..selectTrack(0);
+            await pumpEventQueue();
+
+            await stomp(PedalButton.track1);
+
+            expect(chainEnabled[0], isFalse, reason: 'the selected track');
+            expect(chain3Enabled(), isTrue, reason: 'not the one it names');
+          },
+        );
+
+        test('a fixed scope stays on the track it names, whatever is '
+            'selected', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([following(scope: BindingScope.fixed)]),
+          );
+          cubit
+            ..setMode(InteractionMode.fx)
+            ..selectTrack(0);
+          await pumpEventQueue();
+
+          await stomp(PedalButton.track1);
+
+          expect(chain3Enabled(), isFalse, reason: 'the track it names');
+          expect(chainEnabled[0], isNull, reason: 'the selected one is left');
+        });
+
+        test('a pending hold FOLLOWS a selection made while the foot is down, '
+            'and stays attached to what it resolved', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([following(holdTarget: chain3.canonicalString())]),
+          );
+          cubit
+            ..setMode(InteractionMode.fx)
+            ..selectTrack(3);
+          await pumpEventQueue();
+
+          transport.emit(0x90, PedalButton.track1.note, 127);
+          await pumpEventQueue();
+          // The selection moves under the foot, before the threshold.
+          cubit.selectTrack(0);
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          transport.emit(0x80, PedalButton.track1.note, 0);
+          await pumpEventQueue();
+
+          expect(
+            chainEnabled[0],
+            isFalse,
+            reason: 'the hold followed the newly selected track',
+          );
+          expect(chain3Enabled(), isTrue, reason: 'the old one is untouched');
+        });
+      });
+
+      group('pending gestures are retired', () {
+        PedalBinding pair() => PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+          target: chain3.canonicalString(),
+          holdTarget: slotB.canonicalString(),
+        );
+
+        test('when the binding set is edited under the foot', () async {
+          await cubit.setGlobalBindings(PedalBindingSet([pair()]));
+          cubit.setMode(InteractionMode.fx);
+          await pumpEventQueue();
+          await press(PedalButton.track1);
+
+          // The assignment screen saves while the foot is still down.
+          await cubit.setGlobalBindings(PedalBindingSet(const []));
+          await release(PedalButton.track1);
+
+          expect(
+            chain3Enabled(),
+            isTrue,
+            reason: 'the release belongs to a gesture that no longer exists',
+          );
+        });
+
+        test('when the mode changes under the foot', () async {
+          await cubit.setGlobalBindings(PedalBindingSet([pair()]));
+          cubit.setMode(InteractionMode.fx);
+          await pumpEventQueue();
+          await press(PedalButton.track1);
+
+          cubit.setMode(InteractionMode.record);
+          await pumpEventQueue();
+          await release(PedalButton.track1);
+
+          expect(
+            chain3Enabled(),
+            isTrue,
+            reason: 'a hold that opened a mode must not also act in it',
+          );
+        });
+
+        test('when the pedal is unplugged mid-press', () async {
+          await cubit.setGlobalBindings(PedalBindingSet([pair()]));
+          cubit.setMode(InteractionMode.fx);
+          await pumpEventQueue();
+          await press(PedalButton.track1);
+
+          pedal.unbind();
+          await pumpEventQueue();
+          await release(PedalButton.track1);
+
+          expect(chain3Enabled(), isTrue);
+        });
       });
 
       group('what the LED reports', () {
