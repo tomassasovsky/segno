@@ -4167,6 +4167,19 @@
     "@fxRemoveRack": {
             "description": "Rack options row: take the whole rack out of the chain."
     },
+    "fxRemoveRackTitle": "Remove {name}?",
+    "@fxRemoveRackTitle": {
+        "description": "Asked before taking a whole rack out of a chain.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "fxRemoveRackBody": "Sounds you saved from it stay in My presets.",
+    "@fxRemoveRackBody": {
+        "description": "What removing a rack from a chain does not do."
+    },
     "fxRemoveEffect": "Remove {name}",
     "@fxRemoveEffect": {
             "description": "Takes one named pedal out of a rack.",

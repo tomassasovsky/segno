@@ -1018,13 +1018,16 @@ void main() {
         ]);
       });
 
-      testWidgets('Remove rack takes every pedal and leaves its neighbours', (
-        tester,
-      ) async {
+      testWidgets('Remove rack asks first, saying what it leaves alone, then '
+          'takes every pedal and leaves its neighbours', (tester) async {
         await pumpRack(tester);
         await tapKey(tester, 'fx_card_R1');
         await tapKey(tester, 'fx_rack_options');
         await tapKey(tester, 'fx_option_remove');
+
+        // The accepted rule, said where it matters: removing a rack from a
+        // chain leaves the sounds saved from it in My presets.
+        expect(find.text(l10nOf(tester).fxRemoveRackBody), findsOneWidget);
         await tester.tap(find.text(l10nOf(tester).fxRemoveRack));
         await tester.pumpAndSettle();
 
@@ -1032,6 +1035,8 @@ void main() {
           lastChain().map((fx) => fx.slotId),
           ['p1', 's1'],
         );
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
       });
 
       testWidgets('Remove an effect takes one pedal and keeps the rack', (
