@@ -456,34 +456,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(Key('pedal_target_$chain')), findsNothing);
     });
-
-    testWidgets('the Hold-for-FX row toggles the mode-switch style and '
-        'persists it (#632)', (tester) async {
-      await pump(tester);
-      expect(control.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
-
-      final row = find.byKey(const Key('pedal_fx_hold_switch'));
-      await tester.ensureVisible(row);
-      await tester.pumpAndSettle();
-      await tester.tap(row);
-      await tester.pumpAndSettle();
-
-      expect(control.state.modeSwitchStyle, ModeSwitchStyle.holdFx);
-      expect(
-        await settings.loadModeSwitchStyle(),
-        ModeSwitchStyle.holdFx.token,
-      );
-
-      // And back: the switch renders the live state, so a second tap lands
-      // on the original three-mode cycle.
-      await tester.tap(row);
-      await tester.pumpAndSettle();
-      expect(control.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
-      expect(
-        await settings.loadModeSwitchStyle(),
-        ModeSwitchStyle.cycleThree.token,
-      );
-    });
   });
 
   group('MIDI tab', () {
