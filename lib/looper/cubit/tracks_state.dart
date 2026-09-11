@@ -28,9 +28,6 @@ class TracksState extends Equatable {
   /// Creates a [TracksState].
   const TracksState({
     required this.names,
-    // Off by default on the console; the loaded
-    // preference can still turn it on.
-    this.showIndicators = false,
     this.stageView = StageView.track,
   });
 
@@ -43,10 +40,6 @@ class TracksState extends Equatable {
   /// Per-track display names, indexed by channel.
   final List<String> names;
 
-  /// Whether the Signal face's lane-cache indicators are wanted (persisted
-  /// view preference; it gates the cache telemetry, see `CacheTelemetryScope`).
-  final bool showIndicators;
-
   /// The main display's current presentation. Not persisted: normal startup
   /// opens Tracks (the accepted stage), whatever was open last time.
   final StageView stageView;
@@ -57,16 +50,12 @@ class TracksState extends Equatable {
       : storedDefaultTrackName(channel);
 
   /// Returns a copy with the given overrides.
-  TracksState copyWith({
-    List<String>? names,
-    bool? showIndicators,
-    StageView? stageView,
-  }) => TracksState(
-    names: names ?? this.names,
-    showIndicators: showIndicators ?? this.showIndicators,
-    stageView: stageView ?? this.stageView,
-  );
+  TracksState copyWith({List<String>? names, StageView? stageView}) =>
+      TracksState(
+        names: names ?? this.names,
+        stageView: stageView ?? this.stageView,
+      );
 
   @override
-  List<Object?> get props => [names, showIndicators, stageView];
+  List<Object?> get props => [names, stageView];
 }

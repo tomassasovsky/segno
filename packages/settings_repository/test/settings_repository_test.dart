@@ -974,14 +974,17 @@ void main() {
     });
   });
 
-  group('track indicators', () {
-    test('defaults to enabled when unset', () async {
-      expect(await repository.loadShowTrackIndicators(), isTrue);
+  group('saved FX presets', () {
+    test('reads null when nothing has been saved', () async {
+      expect(await repository.loadFxUserPresets(), isNull);
     });
 
-    test('round-trips a saved preference', () async {
-      await repository.saveShowTrackIndicators(value: false);
-      expect(await repository.loadShowTrackIndicators(), isFalse);
+    test('round-trips the encoded list', () async {
+      await repository.saveFxUserPresets('[{"id":"1","name":"Verse"}]');
+      expect(
+        await repository.loadFxUserPresets(),
+        '[{"id":"1","name":"Verse"}]',
+      );
     });
   });
 

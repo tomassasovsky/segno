@@ -1,8 +1,6 @@
 import 'package:bloc/bloc.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
-import 'package:looper_repository/looper_repository.dart'
-    show FxAddress, FxStage;
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
@@ -94,7 +92,7 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   void closeTray() => emit(
     state.copyWith(
       dragProgress: 0,
-      destination: SettingsTrayDestination.signal,
+      destination: SettingsTrayDestination.control,
     ),
   );
 
@@ -107,18 +105,6 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
       open();
     }
   }
-
-  /// Opens the tray at the Signal domain (the toolbar's Signal button, `G`).
-  ///
-  /// Signal used to be a pushed full-screen page of its own; it is a rail
-  /// destination now, so the ways in point at the tray rather than at a
-  /// from outside the tray has to say both "open" and "at what".
-  void openSignal() => emit(
-    state.copyWith(
-      dragProgress: 1,
-      destination: SettingsTrayDestination.signal,
-    ),
-  );
 
   /// Opens the tray at the Audio domain's Device tab — the device-lost
   /// banner's **Open setup** action (#453). The one caller that may set a
@@ -139,54 +125,6 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// give a tab a say in which domain is up.
   void showNetworkTab(NetworkTab tab) => emit(state.copyWith(networkTab: tab));
 
-  /// Moves the Signal domain's stage tab. Same rule as [showNetworkTab].
-  ///
-  /// Clears any open card panel: a card belongs to one stage's run, so a
-  /// panel left open under a different tab would be hanging off a card that
-  /// is no longer on screen.
-  void showSignalTab(FxStage tab) =>
-      emit(state.copyWith(signalTab: tab, clearSignalSelection: true));
-
-  /// Opens [card]'s panel, or closes it when it is already the open one.
-  ///
-  /// Re-tapping to close rather than only ever switching: the panel is a
-  /// disclosure on a card, and a disclosure that cannot be shut leaves the
-  /// face with no way back to the plain run of cards.
-  void selectSignalCard(FxAddress card) => emit(
-    state.signalSelection == card
-        ? state.copyWith(clearSignalSelection: true)
-        // Clears the open editor too: an entry index means nothing against a
-        // different chain, so carrying it over would open a stranger's third
-        // effect — or nothing at all — on the card just tapped.
-        : state.copyWith(signalSelection: card, clearSignalEffect: true),
-  );
-
-  /// Shuts the editor without touching the open card.
-  ///
-  /// Called when the entry it was opened on stops existing — removed from
-  /// another surface, or a chain rewritten wholesale by a record-time
-  /// snapshot copy. Leaving the selection set would suppress the panel's
-  /// `level` and `in the mix` rows as well, with no chip left to tap.
-  void clearSignalEffect() {
-    if (state.signalEffectSlot == null) return;
-    emit(state.copyWith(clearSignalEffect: true));
-  }
-
-  /// Opens the chain entry identified by [slot], or closes it when it is
-  /// already the open one.
-  ///
-  /// Closing leaves the CARD open: the editor is a link of the chain, and
-  /// shutting it hands back the chain rather than the whole face.
-  ///
-  /// Takes the entry's identity rather than its position, so dragging it
-  /// somewhere else in the chain moves the editor with it and needs no
-  /// follow-up call.
-  void selectSignalEffect(String slot) => emit(
-    state.signalEffectSlot == slot
-        ? state.copyWith(clearSignalEffect: true)
-        : state.copyWith(signalEffectSlot: slot),
-  );
-
   /// Moves the Control domain's tab. Same rule as [showNetworkTab].
   void showControlTab(ControlTab tab) => emit(state.copyWith(controlTab: tab));
 
@@ -198,10 +136,11 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
 
   /// Returns to the landing destination.
   ///
-  /// Named for what it does, not for the face it used to reach: the `home`
-  /// tile grid is gone and Signal is where the rail lands.
+  /// Named for what it does, not for the face it reaches: the `home` tile grid
+  /// is gone, and Control is the first face the rail has now that Effects is a
+  /// route rather than a domain.
   void showLanding() =>
-      emit(state.copyWith(destination: SettingsTrayDestination.signal));
+      emit(state.copyWith(destination: SettingsTrayDestination.control));
 
   /// Selects [destination] without changing whether the tray is open — the
   /// navigation rail's one entry point.

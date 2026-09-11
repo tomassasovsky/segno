@@ -21,8 +21,14 @@ typedef _Glyph = Widget Function(Color color);
 /// (accepted design, slice 2c) rather than a face beside the rail. Brightness
 /// is not a row here; it is the button pinned below the list.
 enum TrayRailEntry {
-  /// The Signal face.
-  signal,
+  /// The Effects route; never selected, since it is not a face.
+  ///
+  /// First, where the Signal face was and for its reason: the signal path is
+  /// what the rest of the console configures, so it reads before the things
+  /// that drive it. It is a ROUTE now — the accepted Effects page takes the
+  /// whole screen, because its editors are direct controls rather than a list
+  /// that opens a dialog.
+  effects,
 
   /// The Control face.
   control,
@@ -47,7 +53,7 @@ enum TrayRailEntry {
 
   /// The face this row shows, or `null` for the route-opening row.
   SettingsTrayDestination? get destination => switch (this) {
-    TrayRailEntry.signal => SettingsTrayDestination.signal,
+    TrayRailEntry.effects => null,
     TrayRailEntry.control => SettingsTrayDestination.control,
     TrayRailEntry.loop => null,
     TrayRailEntry.tracks => SettingsTrayDestination.tracks,
@@ -124,7 +130,6 @@ class TrayNavigationRail extends StatelessWidget {
     _Glyph pen(PenIcon icon) =>
         (color) => PenIconView(icon: icon, size: iconSize, color: color);
     return switch (destination) {
-      SettingsTrayDestination.signal => pen(PenIcon.signal),
       SettingsTrayDestination.control => pen(PenIcon.control),
       SettingsTrayDestination.tracks => pen(PenIcon.tracks),
       // A cone with two arcs, which is `volume-2`. The component says
@@ -141,13 +146,39 @@ class TrayNavigationRail extends StatelessWidget {
   /// rail had been drawing them at 20.
   static const double iconSize = 22;
 
+  /// The glyph for a rail row that opens a ROUTE rather than a face.
+  ///
+  /// Effects keeps the console's own signal-path mark: the Effects page IS the
+  /// signal path, and the face that used to carry that mark is exactly what
+  /// this route replaces.
+  static _Glyph _routeGlyph(TrayRailEntry entry) => switch (entry) {
+    TrayRailEntry.effects => (color) => PenIconView(
+      icon: PenIcon.signal,
+      size: iconSize,
+      color: color,
+    ),
+    _ => (color) => Icon(LucideIcons.repeat, size: iconSize, color: color),
+  };
+
+  /// The caption for a route row.
+  static String _routeLabel(AppLocalizations l10n, TrayRailEntry entry) =>
+      switch (entry) {
+        TrayRailEntry.effects => l10n.fxTitle,
+        _ => l10n.trayLoopLabel,
+      };
+
+  /// What a route row opens.
+  static Future<void> _openRoute(TrayRailEntry entry) => switch (entry) {
+    TrayRailEntry.effects => openFx(),
+    _ => openLoopSettings(),
+  };
+
   /// The caption for [destination]. Exhaustive for the same reason as
   /// [_glyphFor].
   static String _labelFor(
     AppLocalizations l10n,
     SettingsTrayDestination destination,
   ) => switch (destination) {
-    SettingsTrayDestination.signal => l10n.traySignalLabel,
     SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.tracks => l10n.trayTracksLabel,
     SettingsTrayDestination.audio => l10n.trayAudioLabel,
@@ -229,19 +260,17 @@ class TrayNavigationRail extends StatelessWidget {
                                     selected: destination == target,
                                     onTap: () => cubit.showDestination(target),
                                   ),
-                                  // The one row that is a route, not a face:
+                                  // The rows that are routes, not faces:
                                   // never "selected", for the reason
                                   // brightness is not.
                                   null => _RailItem(
-                                    key: const Key('settingsTrayRail_loop'),
-                                    glyph: (color) => Icon(
-                                      LucideIcons.repeat,
-                                      size: TrayNavigationRail.iconSize,
-                                      color: color,
+                                    key: Key(
+                                      'settingsTrayRail_${entry.name}',
                                     ),
-                                    label: l10n.trayLoopLabel,
+                                    glyph: _routeGlyph(entry),
+                                    label: _routeLabel(l10n, entry),
                                     selected: false,
-                                    onTap: () => unawaited(openLoopSettings()),
+                                    onTap: () => unawaited(_openRoute(entry)),
                                   ),
                                 },
                             ],

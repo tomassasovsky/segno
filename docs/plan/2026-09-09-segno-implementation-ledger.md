@@ -2357,3 +2357,81 @@ carries its name and no picture rather than a borrowed rack banner.
   that keeps its instance identity, a recall that reuses the saved rack id, and
   a case-sensitive name check.
 - A seventh screenshot covers My presets.
+
+## Slice 3f part 11: the Signal tray domain retires
+
+The implementation map's own words for this slice: "Replace Signal-era surfaces
+with accepted rack/single-FX editing, shared descriptor controls and output
+destinations." Parts 1 through 10 built the replacement. This part removes what
+it replaced.
+
+### The rail keeps its first row
+
+Signal was the tray's first domain and its landing, for a stated reason: the
+signal path is what the rest of the console configures, so it reads before the
+things that drive it. The accepted Effects page is that same signal path, so it
+takes the same first position and the same signal-path glyph — as a ROUTE
+rather than a face, the treatment Loop settings already has, because the page
+takes the whole screen and its editors are direct controls rather than a list
+that opens a dialog.
+
+The tray now lands on Control, the first face the rail still has. The `G`
+shortcut, which used to open the tray at Signal, opens the Effects route.
+
+### What went with it
+
+- `lib/looper/view/signal/` — nine files: the tray panel, the cards, the detail
+  panel, the FX editor, the parameter editor and tile, Add effect and the
+  plugin browser.
+- `fx_scope.dart` and `fx_plugin_state.dart`, which only those used.
+  `fx_block_chip.dart` stays: the track column and the new FX surfaces draw it.
+- `CacheTelemetryScope` and the lane-cache indicator preference. The Signal
+  detail panel was the only surface that rendered lane-cache state, and the
+  scope existed solely to gate the engine's poll for it. The toggle's own
+  subtitle named the surface — "Show cache status on the Signal lanes" — so
+  with the surface gone it was a switch for nothing.
+- Six control-centre screenshots of the retired face, and the shell tests that
+  drove it.
+
+### The plugin browser, and the owner's call
+
+Retiring Signal removed the only way to add a hosted VST3 or CLAP plugin to a
+chain. The accepted Add effects offers the factory catalogue and Single FX, and
+the pen draws no plugin entry, so there was nowhere accepted to put it. The
+owner's call was to drop the browser with the domain rather than invent a
+surface for it.
+
+Plugin hosting stays in the engine, the repository and the chain model: a chain
+that still carries a plugin entry loads, renders and persists exactly as
+before. What is gone is the console surface that added one.
+
+### Written back into the pen
+
+Per the project's own rule, a shipped departure from `segno-ui.pen` is a design
+change rather than a PR note. The rail's Signal row becoming an Effects route,
+the landing moving to Control, and the two things dropped with the domain are
+recorded there as `c/signal-domain-retired`, under `11 Earlier control &
+capture notes`.
+
+### Checks
+
+- Root suite 2081 passing, 35 skipped; analyze and bloc lint clean.
+- Every control-centre golden regenerated: the rail lost a row and gained one,
+  so almost all of them moved.
+
+### A package suite that stopped compiling, again
+
+`settings_repository`'s own tests still named the removed indicator keys, so
+the whole package's suite was silently absent — the same shape of defect slice
+3e left in `performance_repository`. The root analyzer does not reach a
+package's tests, and neither does the root suite. After a removal that crosses
+packages, every package's suite has to be run, not only the ones that look
+involved.
+
+### One harness that had been leaning on the old landing
+
+The tray SHELL's tests — handle, scrim, drag, rail — mount whichever face the
+tray lands on, because `closeTray` returns there. They had been mounting
+Signal's dependencies; they now mount Control's. The alternative was choosing a
+landing face to keep a harness small, which the harness's own comment already
+warned against.
