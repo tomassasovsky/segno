@@ -4572,5 +4572,255 @@
     "a11yMixerReset": "Reset every level to unity and every pan to centre",
     "@a11yMixerReset": {
             "description": "The top bar’s Reset mixer action."
+    },
+    "actionNone": "None",
+    "@actionNone": {
+        "description": "What an unassigned Press or Hold reads as in the action pickers."
+    },
+    "actionModeExit": "Exit",
+    "@actionModeExit": {
+        "description": "Catalogue action: return to the Tracks mode."
+    },
+    "actionModeMute": "Mute",
+    "@actionModeMute": {
+        "description": "Catalogue action: enter the mute-track controls."
+    },
+    "actionModeFx": "FX",
+    "@actionModeFx": {
+        "description": "Catalogue action: enter the FX controls."
+    },
+    "actionRecordPlay": "Record / Play",
+    "@actionRecordPlay": {
+        "description": "Catalogue action: the Record / Play transport command."
+    },
+    "actionStop": "Stop",
+    "@actionStop": {
+        "description": "Catalogue action: the Stop transport command."
+    },
+    "actionUndo": "Undo",
+    "@actionUndo": {
+        "description": "Catalogue action: undo the selected track's latest audio edit."
+    },
+    "actionRedo": "Redo",
+    "@actionRedo": {
+        "description": "Catalogue action: redo the selected track's latest undone audio edit."
+    },
+    "actionClearAll": "Clear all tracks",
+    "@actionClearAll": {
+        "description": "Catalogue action: clear every track as one grouped edit."
+    },
+    "actionCutSound": "Cut all sound",
+    "@actionCutSound": {
+        "description": "Catalogue action: stop tracks and backing and end existing effect tails."
+    },
+    "actionRecordPerformance": "Record performance",
+    "@actionRecordPerformance": {
+        "description": "Catalogue action: arm or finish a performance recording."
+    },
+    "actionNextBank": "Next bank",
+    "@actionNextBank": {
+        "description": "Catalogue action: switch the track bank A / B."
+    },
+    "actionTrackPedal": "{name} pedal",
+    "@actionTrackPedal": {
+        "description": "Catalogue action naming a track footswitch: selects that track and advances its Record / Play.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "actionSelectTrack": "Select {name}",
+    "@actionSelectTrack": {
+        "description": "Catalogue action that only changes the selected track.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "actionScoped": "{target} · {name}",
+    "@actionScoped": {
+        "description": "A per-track catalogue action: what it acts on, then what it does.",
+        "placeholders": {
+            "target": {
+                "type": "String"
+            },
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "actionScopeSelected": "Selected track",
+    "@actionScopeSelected": {
+        "description": "The scope of a catalogue action resolved against the selection when it fires."
+    },
+    "actionScopeAllTracks": "All tracks",
+    "@actionScopeAllTracks": {
+        "description": "The scope of a catalogue action that acts on all eight tracks."
+    },
+    "actionOperationMute": "Mute",
+    "@actionOperationMute": {
+        "description": "Per-track catalogue operation: mute or unmute."
+    },
+    "actionOperationSolo": "Solo",
+    "@actionOperationSolo": {
+        "description": "Per-track catalogue operation: solo or unsolo."
+    },
+    "actionOperationClear": "Clear",
+    "@actionOperationClear": {
+        "description": "Per-track catalogue operation: erase the track's audio."
+    },
+    "actionOperationUndo": "Undo audio edit",
+    "@actionOperationUndo": {
+        "description": "Per-track catalogue operation: undo the latest audio edit."
+    },
+    "actionOperationRedo": "Redo audio edit",
+    "@actionOperationRedo": {
+        "description": "Per-track catalogue operation: redo the latest undone audio edit."
+    },
+    "actionUndoRecording": "Undo recording",
+    "@actionUndoRecording": {
+        "description": "What a Record / Play hold does in the fixed Track controls."
+    },
+    "actionArmOverdub": "Arm overdub",
+    "@actionArmOverdub": {
+        "description": "What a track footswitch hold does in the fixed Track controls."
+    },
+    "actionClearTrack": "Clear track",
+    "@actionClearTrack": {
+        "description": "The other choice for a track footswitch hold in the fixed Track controls."
+    },
+    "actionGroupFunctions": "Modes & functions",
+    "@actionGroupFunctions": {
+        "description": "Action picker heading."
+    },
+    "actionGroupTransport": "Loop transport",
+    "@actionGroupTransport": {
+        "description": "Action picker heading."
+    },
+    "actionGroupLoopModes": "Loop modes",
+    "@actionGroupLoopModes": {
+        "description": "Action picker heading."
+    },
+    "actionGroupSelected": "Selected track",
+    "@actionGroupSelected": {
+        "description": "Action picker heading."
+    },
+    "actionGroupFixed": "Fixed tracks",
+    "@actionGroupFixed": {
+        "description": "Action picker heading."
+    },
+    "actionGroupAllTracks": "All tracks",
+    "@actionGroupAllTracks": {
+        "description": "Action picker heading."
+    },
+    "actionGroupTracks": "Track pedals & bank",
+    "@actionGroupTracks": {
+        "description": "Action picker heading."
+    },
+    "actionGroupFx": "FX pedals",
+    "@actionGroupFx": {
+        "description": "Action picker heading."
+    },
+    "actionGroupBacking": "Backing",
+    "@actionGroupBacking": {
+        "description": "Action picker heading."
+    },
+    "actionGroupSessions": "Sessions",
+    "@actionGroupSessions": {
+        "description": "Action picker heading."
+    },
+    "pedalSetupTitle": "Pedals",
+    "@pedalSetupTitle": {
+        "description": "Title of the built-in footswitch setup page."
+    },
+    "pedalSetupCrumb": "SETTINGS / Pedals",
+    "@pedalSetupCrumb": {
+        "description": "Breadcrumb over the Pedals setup page title."
+    },
+    "pedalSetupContextTracks": "Track controls",
+    "@pedalSetupContextTracks": {
+        "description": "The Pedals setup context that edits the fixed plate."
+    },
+    "pedalSetupContextCustom": "Custom controls",
+    "@pedalSetupContextCustom": {
+        "description": "The Pedals setup context that edits the free footswitch map."
+    },
+    "pedalSetupSave": "Save",
+    "@pedalSetupSave": {
+        "description": "Applies the Pedals setup draft."
+    },
+    "pedalSetupCancel": "Cancel",
+    "@pedalSetupCancel": {
+        "description": "Discards the Pedals setup draft."
+    },
+    "pedalSetupSaved": "Saved",
+    "@pedalSetupSaved": {
+        "description": "Shown beside the Pedals setup actions after a successful save."
+    },
+    "pedalSetupPress": "Press",
+    "@pedalSetupPress": {
+        "description": "Label over a control's press assignment."
+    },
+    "pedalSetupHold": "Hold",
+    "@pedalSetupHold": {
+        "description": "Label over a control's hold assignment."
+    },
+    "pedalSetupTrackGroup": "Track pedals",
+    "@pedalSetupTrackGroup": {
+        "description": "What the editor calls the four track footswitches, which are edited as one group in Track controls."
+    },
+    "pedalSetupClearCustom": "Clear custom assignments",
+    "@pedalSetupClearCustom": {
+        "description": "Empties every Custom controls assignment in the draft."
+    },
+    "pedalSetupRestoreCustom": "Restore assignments",
+    "@pedalSetupRestoreCustom": {
+        "description": "Puts back the Custom controls assignments the draft just cleared."
+    },
+    "pedalSetupClearTitle": "Clear custom assignments?",
+    "@pedalSetupClearTitle": {
+        "description": "Title of the clear-custom-assignments confirmation."
+    },
+    "pedalSetupClearScope": "Both banks A and B · Press and Hold on every editable custom pedal.",
+    "@pedalSetupClearScope": {
+        "description": "What the clear covers."
+    },
+    "pedalSetupClearKeeps": "MODE keeps its mode assignments and BANK keeps switching banks. Track controls stay as set.",
+    "@pedalSetupClearKeeps": {
+        "description": "What the clear leaves alone."
+    },
+    "pedalSetupClearDraft": "This changes the draft. Save applies it; Restore assignments brings these mappings back.",
+    "@pedalSetupClearDraft": {
+        "description": "That the clear is undoable until saved."
+    },
+    "pedalSetupClearConfirm": "Clear both banks",
+    "@pedalSetupClearConfirm": {
+        "description": "Confirms the clear."
+    },
+    "pedalSetupChooser": "{control} · {gesture}",
+    "@pedalSetupChooser": {
+        "description": "Title of the action picker: which control, and which gesture on it.",
+        "placeholders": {
+            "control": {
+                "type": "String"
+            },
+            "gesture": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalSetupFixedNote": "This control has a fixed action.",
+    "@pedalSetupFixedNote": {
+        "description": "Shown in place of the editor when a dimmed, unassignable footswitch is selected."
+    },
+    "controlPedalSetupRow": "Pedal setup",
+    "@controlPedalSetupRow": {
+        "description": "Opens the Pedals setup page from the Control face's Pedal tab."
+    },
+    "controlPedalSetupSub": "What each footswitch does on a press and on a hold",
+    "@controlPedalSetupSub": {
+        "description": "Subtitle of the row that opens the Pedals setup page."
     }
 }

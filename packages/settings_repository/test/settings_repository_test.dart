@@ -908,17 +908,14 @@ void main() {
     });
   });
 
-  group('mode switch style', () {
-    test(
-      'defaults to null when unset (the original three-mode cycle)',
-      () async {
-        expect(await repository.loadModeSwitchStyle(), isNull);
-      },
-    );
+  group('pedal setup', () {
+    test('defaults to null when unset', () async {
+      expect(await repository.loadPedalSetup(), isNull);
+    });
 
-    test('round-trips a saved token', () async {
-      await repository.saveModeSwitchStyle('holdFx');
-      expect(await repository.loadModeSwitchStyle(), 'holdFx');
+    test('round-trips a saved blob', () async {
+      await repository.savePedalSetup('{"modePress":"mute"}');
+      expect(await repository.loadPedalSetup(), '{"modePress":"mute"}');
     });
   });
 

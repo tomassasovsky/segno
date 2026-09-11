@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
@@ -25,9 +26,13 @@ const String segnoAudioRoutingRouteName = 'segno/audio-routing';
 /// Route name for the Effects page.
 const String segnoFxRouteName = 'segno/fx';
 
+/// Route name for the Pedals setup page.
+const String segnoPedalSetupRouteName = 'segno/pedal-setup';
+
 bool _loopSettingsOpen = false;
 bool _audioRoutingOpen = false;
 bool _fxOpen = false;
+bool _pedalSetupOpen = false;
 Future<FxCatalogue>? _fxCatalogue;
 
 /// The factory catalogue, loaded once and kept.
@@ -85,6 +90,24 @@ Future<void> openAudioRouting({
   }
 }
 
+/// Pushes the Pedals setup route (the accepted Layout A) onto the root
+/// navigator; guarded against stacking duplicates like [openLoopSettings].
+Future<void> openPedalSetup() async {
+  final navigator = segnoNavigatorKey.currentState;
+  if (navigator == null || _pedalSetupOpen) return;
+  _pedalSetupOpen = true;
+  try {
+    await navigator.push(
+      desktopPageRoute<void>(
+        (_) => const PedalSetupPage(),
+        settings: const RouteSettings(name: segnoPedalSetupRouteName),
+      ),
+    );
+  } finally {
+    _pedalSetupOpen = false;
+  }
+}
+
 /// Pushes the Loop settings route (the accepted hub and its submenus) onto
 /// the root navigator, opened at [initial]; guarded against stacking
 /// duplicates like [openSegnoSettings].
@@ -120,6 +143,7 @@ void resetSegnoNavigatorForTest() {
   _loopSettingsOpen = false;
   _audioRoutingOpen = false;
   _fxOpen = false;
+  _pedalSetupOpen = false;
   _fxCatalogue = null;
 }
 

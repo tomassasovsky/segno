@@ -14,7 +14,7 @@ class ControlState extends Equatable {
   const ControlState({
     this.mode = InteractionMode.record,
     this.defaultMode = InteractionMode.record,
-    this.modeSwitchStyle = ModeSwitchStyle.cycleThree,
+    this.pedalSetup = const PedalSetup(),
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -41,13 +41,13 @@ class ControlState extends Equatable {
   /// The persisted mode the system boots into.
   final InteractionMode defaultMode;
 
-  /// How the MODE footswitch reaches the three interaction modes (#632): the
-  /// original three-stop tap cycle (the default), or a Record ↔ Mute tap
-  /// cycle with FX behind the MODE hold. Per-rig, persisted under
-  /// `pedal.mode_switch_style` and restored at boot. Invalidation rule: only
-  /// an explicit edit ([ControlCubit.setModeSwitchStyle]) writes it — engine
-  /// truth never can.
-  final ModeSwitchStyle modeSwitchStyle;
+  /// The built-in footswitch setup: what MODE's press and hold reach, what a
+  /// Record / Play or track hold adds, and the Custom-controls map.
+  ///
+  /// Per-rig, persisted under `pedal.setup` and restored at boot.
+  /// Invalidation rule: only an explicit edit
+  /// ([ControlCubit.setPedalSetup]) writes it — engine truth never can.
+  final PedalSetup pedalSetup;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -169,7 +169,7 @@ class ControlState extends Equatable {
   ControlState copyWith({
     InteractionMode? mode,
     InteractionMode? defaultMode,
-    ModeSwitchStyle? modeSwitchStyle,
+    PedalSetup? pedalSetup,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -184,7 +184,7 @@ class ControlState extends Equatable {
   }) => ControlState(
     mode: mode ?? this.mode,
     defaultMode: defaultMode ?? this.defaultMode,
-    modeSwitchStyle: modeSwitchStyle ?? this.modeSwitchStyle,
+    pedalSetup: pedalSetup ?? this.pedalSetup,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -205,7 +205,7 @@ class ControlState extends Equatable {
   List<Object?> get props => [
     mode,
     defaultMode,
-    modeSwitchStyle,
+    pedalSetup,
     cursor,
     activeBank,
     excluded,
