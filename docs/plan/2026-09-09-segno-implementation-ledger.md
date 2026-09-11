@@ -2435,3 +2435,99 @@ tray lands on, because `closeTray` returns there. They had been mounting
 Signal's dependencies; they now mount Control's. The alternative was choosing a
 landing face to keep a harness small, which the harness's own comment already
 warned against.
+
+# Slice 4: shared assignments and foot performance
+
+Issue #1026, built on slice 3. What the code actually had was mapped before
+splitting the slice, so the parts land in dependency order: eight of the ten
+performance operations have no engine implementation at all, Press and Hold are
+not separable, every target is addressed by index, one control carries one
+action, and the controller vocabulary is 7-bit MIDI Note and CC.
+
+## Slice 4 part 1: Press and Hold as separate actions
+
+The accepted rule (controls 3): "Press/Hold are separate actions. Holding a
+navigation/control pair must not first execute its short action or act again on
+release in the newly opened mode. Normal Record/Play and Stop retain their
+immediate contact behavior. Cancel pending gestures on invalidating navigation,
+disconnect or configuration."
+
+### Holds were four hard-wired switches, and now they are data
+
+Undo, MODE, BANK and Stop-in-FX each owned a `_HoldGesture` field of its own,
+armed by hand in four places. A bound switch had no hold at all, and fired its
+press on contact with no way to retract it.
+
+A binding now carries a hold beside its press, and a switch carrying both moves
+its press to the RELEASE — until the threshold passes, neither half is known to
+be the one the foot meant. Firing the hold retires the tap, so the release after
+it stays silent, which is the same rule every system gesture already used.
+
+### Which switches may carry a hold, and why the rest may not
+
+The four track footswitches, and only those. Every exclusion is the accepted
+design's own:
+
+- **Record/Play and Stop** keep immediate contact. Delaying a rhythm-sensitive
+  command until the release to learn whether the foot is holding is explicitly
+  not approved.
+- **Undo, Stop, MODE and Bank** already carry a long-press system gesture. A
+  remap overrides a button's contextual default, never the system gesture
+  layered above it, so a second hold has nowhere to go.
+- **Clear** is the one irreversible stomp on the plate, and is inert in the
+  mode bindings dispatch in at all.
+- **A momentary press** cannot carry one either, because holding IS the
+  momentary gesture: the press enables its target for exactly as long as the
+  foot is down, so there is no hold left to assign and no press to defer.
+
+A persisted hold on a switch that cannot carry one is DROPPED rather than
+rejected with the binding. The press half is still a usable assignment, and
+losing it because a file claimed a hold on Stop would punish the performer for
+the file.
+
+### Cancelling a gesture needed a generation, not a cancelled timer
+
+Dropping a pending hold is easy; a release already on its way up the wire
+cannot be recalled. `_Gestures` owns every pending gesture, system and bound,
+and retires a GENERATION: a press belongs to the generation it started in, and
+a release that lands in a later one runs nothing.
+
+One call point, `_invalidateGestures`, is now reached from every invalidating
+path the accepted rule names — a mode change, a binding-set edit, a session's
+bindings applied, a mode-switch-style change, and pedal disconnect.
+
+### Two defects the rule exposed
+
+- **Unbinding the pedal left the hold timers armed.** Disconnect released held
+  momentaries but nothing dropped the pending holds, so a redo or an FX-door
+  hold could fire into a rig with no pedal on it.
+- **The take lock reached the press but not the release.** A press taken just
+  before a take started still ran its latched tap when the foot came up, which
+  is exactly the mid-take edit the lock exists to refuse. The held momentary
+  still restores: a target left enabled by a swallowed release is the wedge the
+  release-all rule exists to prevent, and the lock is not a reason to strand
+  one.
+
+### Not in the invariant spec, deliberately
+
+`controlInvariants` predicates over SETTLED states — LED, armed set, cursor.
+A hold is a property of time between two states, and the fuzzer's step boundary
+settles before it checks. The gesture rules are pinned by the cubit's own tests
+instead.
+
+### Checks
+
+- Root suite 2099 passing, 35 skipped; analyze and bloc lint clean.
+- Ten model tests: which switches may carry a hold and why each other may not,
+  the momentary exclusion, the JSON round trip, a binding with no hold writing
+  no hold keys, a persisted hold on an ineligible switch dropped while its
+  press survives, a press turned momentary dropping the hold with it, and a
+  hold whose target no longer parses decoding to null rather than falling back
+  to the press.
+- Seven cubit tests: the press waiting for the release, the hold running its
+  own target with the release silent after it, a switch with no hold keeping
+  contact, a stale hold not falling back to the press, and the three
+  retirement paths.
+- Three mutations, each caught by exactly the test that names it: a press that
+  never defers, an invalidation that cancels nothing, and a lock that stops at
+  the press.
