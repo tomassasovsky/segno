@@ -8,6 +8,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
@@ -19,6 +20,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/view/fx/fx_library_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -90,6 +92,15 @@ final _rig = LooperState(
   outputBusCount: 2,
 );
 
+/// A stand-in catalogue: the wide family, two ordinary ones, real slugs.
+const _library = FxCatalogue(
+  families: [
+    FxFamily(name: "Ed's Rack", slug: 'edsguitar', presets: []),
+    FxFamily(name: 'Guitar Rack', slug: 'guitar', presets: []),
+    FxFamily(name: 'Vocal Rack', slug: 'vocal', presets: []),
+  ],
+);
+
 void main() {
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
@@ -157,6 +168,7 @@ void main() {
     WidgetTester tester, {
     required FxDestination destination,
     LooperState? state,
+    FxCatalogue catalogue = FxCatalogue.empty,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -213,7 +225,7 @@ void main() {
               BlocProvider.value(value: tempo),
               BlocProvider.value(value: tracks),
             ],
-            child: FxPage(initial: destination),
+            child: FxPage(initial: destination, catalogue: catalogue),
           ),
         ),
       ),
@@ -246,5 +258,24 @@ void main() {
   testWidgets('Outputs', (tester) async {
     await pump(tester, destination: const FxDestination.output(0));
     await shoot(tester, 'outputs');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Add effects, the library grid', (tester) async {
+    // A stand-in catalogue of the real shape rather than the bundled one: a
+    // widget test has no app asset bundle, so `rootBundle` resolves nothing
+    // here and the artwork cannot be part of this golden. What it does show
+    // is the grid — the wide banner's place, the card sizes and the order.
+    await pump(
+      tester,
+      destination: const FxDestination.liveInput(0),
+      catalogue: _library,
+    );
+    await tester.tap(find.byKey(const Key('fx_add_effects')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(FxLibraryPage),
+      matchesGoldenFile('goldens/fx_library.png'),
+    );
   }, skip: !hasScreenshotFonts);
 }

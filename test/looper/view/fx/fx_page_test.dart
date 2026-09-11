@@ -4,6 +4,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
@@ -87,6 +88,49 @@ final _rig = LooperState(
   outputBusCount: 2,
 );
 
+/// A small catalogue of the real shape: a family whose preset names three
+/// modules, and one whose preset names one.
+const _catalogue = FxCatalogue(
+  families: [
+    FxFamily(
+      name: "Ed's Rack",
+      slug: 'edsguitar',
+      presets: [
+        FxPreset(
+          family: "Ed's Rack",
+          name: 'Acoustic Rhythm 1',
+          id: 'ed53e7b8',
+          type: 0,
+          params: {
+            'Compressor': 1,
+            'Comp Ratio': 0.75,
+            'Delay': 0,
+            'Del Time': 0.42,
+            'Del Feedback': 0.35,
+            'Del Mix': 0.25,
+            'Reverb': 1,
+            'Rev Length': 0.36,
+            'Rev Mix': 0.05,
+          },
+        ),
+      ],
+    ),
+    FxFamily(
+      name: 'Rhythmic Rack',
+      slug: 'rhythmic',
+      presets: [
+        FxPreset(
+          family: 'Rhythmic Rack',
+          name: 'Quarter Pump',
+          id: 'rh-1',
+          type: 6,
+          params: {'Pumper': 1, 'Pumper Depth': 0.8},
+        ),
+      ],
+    ),
+  ],
+);
+
 void main() {
   setUpAll(() {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
@@ -125,6 +169,12 @@ void main() {
     ]);
     when(() => repository.monitorChainEnabled(any())).thenReturn(true);
     when(
+      () => repository.setMonitorEffects(
+        input: any(named: 'input'),
+        effects: any(named: 'effects'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.monitorChanges,
     ).thenAnswer((_) => monitorChanges.stream);
     when(
@@ -149,6 +199,7 @@ void main() {
     WidgetTester tester, {
     required FxDestination destination,
     LooperState? state,
+    FxCatalogue? catalogue,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -206,7 +257,10 @@ void main() {
               BlocProvider.value(value: tempo),
               BlocProvider.value(value: tracks),
             ],
-            child: FxPage(initial: destination),
+            child: FxPage(
+              initial: destination,
+              catalogue: catalogue ?? _catalogue,
+            ),
           ),
         ),
       ),
@@ -219,8 +273,10 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // Any Localizations context, because the library route covers the page and
+  // half these checks read strings while it is up.
   AppLocalizations l10nOf(WidgetTester tester) =>
-      AppLocalizations.of(tester.element(find.byType(FxView)));
+      AppLocalizations.of(tester.element(find.byType(Navigator).first));
 
   Future<void> tapKey(WidgetTester tester, String key) async {
     await tester.tap(find.byKey(Key(key)));
@@ -380,6 +436,182 @@ void main() {
           enabled: false,
         ),
       ).called(1);
+    });
+  });
+
+  group('Add effects', () {
+    testWidgets('opens the library on the destination, and one Back from a '
+        'completed addition lands on the destination', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+
+      // The destination is stated once, in the header.
+      expect(find.text(l10nOf(tester).fxAddTitle), findsOneWidget);
+      expect(
+        find.byKey(const Key('fx_library_family_edsguitar')),
+        findsOneWidget,
+      );
+
+      await tapKey(tester, 'fx_library_family_edsguitar');
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+
+      // Back on the page, not on the family it was chosen from: Add, family
+      // and preset are not in the completed addition's history.
+      expect(find.byKey(const Key('fx_track_strip')), findsOneWidget);
+    });
+
+    testWidgets('Back from the library changes nothing', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'loop_settings_back');
+
+      verifyNever(() => bloc.add(any(that: isA<LooperBusEffectsAppended>())));
+    });
+
+    testWidgets('a rack becomes one entry per module, in one write', (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+
+      final appended =
+          verify(
+                () =>
+                    bloc.add(captureAny(that: isA<LooperBusEffectsAppended>())),
+              ).captured.single
+              as LooperBusEffectsAppended;
+
+      // One write, not one per pedal: a half-built rack must not be heard on
+      // the way in.
+      expect(appended.entries, hasLength(3));
+      expect(
+        appended.entries.map((e) => (e as BuiltInEffect).type),
+        [
+          // The table's order, which is not a processing order.
+          TrackEffectType.none, // Compressor, which this engine cannot build
+          TrackEffectType.delay,
+          TrackEffectType.reverb,
+        ],
+      );
+      // The preset's own values reach the parameters they feed.
+      final delay = appended.entries[1] as BuiltInEffect;
+      expect(delay.params[0], closeTo(0.42, 1e-9));
+    });
+
+    testWidgets(
+      'every added entry arrives bypassed, whatever the preset says',
+      (tester) async {
+        await pump(tester, destination: const FxDestination.recordedTrack(0));
+        await tapKey(tester, 'fx_add_effects');
+        await tapKey(tester, 'fx_library_family_edsguitar');
+        await tapKey(tester, 'fx_preset_ed53e7b8');
+
+        final appended =
+            verify(
+                  () => bloc.add(
+                    captureAny(that: isA<LooperBusEffectsAppended>()),
+                  ),
+                ).captured.single
+                as LooperBusEffectsAppended;
+
+        // The preset engages its compressor and reverb. Adding a rack mid-set
+        // must not change the sound until the player says so.
+        expect(appended.entries.every((e) => !e.enabled), isTrue);
+      },
+    );
+
+    testWidgets("an added entry takes the destination's default placement", (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_rhythmic');
+      await tapKey(tester, 'fx_preset_rh-1');
+
+      final appended =
+          verify(
+                () =>
+                    bloc.add(captureAny(that: isA<LooperBusEffectsAppended>())),
+              ).captured.single
+              as LooperBusEffectsAppended;
+
+      // A recorded destination defaults Post.
+      expect(appended.entries.single.placement, FxPlacement.post);
+    });
+
+    testWidgets("a live input's addition goes through the monitor cubit, not "
+        'the bloc', (tester) async {
+      await pump(tester, destination: const FxDestination.liveInput(0));
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_rhythmic');
+      await tapKey(tester, 'fx_preset_rh-1');
+
+      final pushed =
+          verify(
+                () => repository.setMonitorEffects(
+                  input: 0,
+                  effects: captureAny(named: 'effects'),
+                ),
+              ).captured.last
+              as List<TrackEffect>;
+
+      // Appended to the two the input already carries, and Pre — the live
+      // input's default. Found by TYPE rather than by position: the chain is
+      // stored Pre-first, so an added Pre entry lands before the input's
+      // existing Post one.
+      expect(pushed, hasLength(3));
+      final added = pushed.firstWhere(
+        (e) => e is BuiltInEffect && e.type == TrackEffectType.none,
+      );
+      expect(added.placement, FxPlacement.pre);
+      verifyNever(() => bloc.add(any(that: isA<LooperBusEffectsAppended>())));
+    });
+
+    testWidgets('a rack that will not fit is offered and explains itself '
+        'rather than half-landing', (tester) async {
+      // A track chain with one slot free.
+      final full = [
+        for (var i = 0; i < kTrackEffectMax - 1; i++)
+          _fx('f$i', TrackEffectType.drive),
+      ];
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: LooperState(
+          tracks: [
+            Track(effects: full),
+            const Track(channel: 1),
+          ],
+          status: _rig.status,
+          outputBusCount: 2,
+        ),
+      );
+      await tapKey(tester, 'fx_add_effects');
+      await tapKey(tester, 'fx_library_family_edsguitar');
+
+      // Three modules into one free slot: shown, with the reason.
+      expect(
+        find.text(
+          l10nOf(tester).fxRackTooLong('Acoustic Rhythm 1', 3, 1),
+        ),
+        findsOneWidget,
+      );
+      await tapKey(tester, 'fx_preset_ed53e7b8');
+      verifyNever(() => bloc.add(any(that: isA<LooperBusEffectsAppended>())));
+    });
+
+    testWidgets('a build with no catalogue says so instead of drawing an '
+        'empty grid', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        catalogue: FxCatalogue.empty,
+      );
+      await tapKey(tester, 'fx_add_effects');
+
+      expect(find.byKey(const Key('fx_library_empty')), findsOneWidget);
     });
   });
 }

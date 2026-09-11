@@ -3982,6 +3982,71 @@
             }
         }
     },
+    "fxAddTitle": "Add effects",
+    "@fxAddTitle": {
+        "description": "Title of the effect library."
+    },
+    "fxAddCrumb": "EFFECTS / {destination}",
+    "@fxAddCrumb": {
+        "description": "Breadcrumb naming the destination an effect is being added to.",
+        "placeholders": {
+            "destination": {
+                "type": "String"
+            }
+        }
+    },
+    "fxLibrarySingle": "Single FX",
+    "@fxLibrarySingle": {
+        "description": "The library entry for a standalone effect rather than a rack."
+    },
+    "fxLibraryMyPresets": "My presets",
+    "@fxLibraryMyPresets": {
+        "description": "The library entry for the player's own saved sounds."
+    },
+    "fxPresetCount": "{count, plural, =1{1 preset} other{{count} presets}}",
+    "@fxPresetCount": {
+        "description": "How many presets a rack family holds.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxLibraryEmpty": "No effects are bundled with this build",
+    "@fxLibraryEmpty": {
+        "description": "Shown when the factory catalogue is not in the bundle."
+    },
+    "fxNoSavedPresets": "You have not saved a sound yet",
+    "@fxNoSavedPresets": {
+        "description": "Shown in place of the saved-preset list when there are none."
+    },
+    "fxChainFull": "This chain is full",
+    "@fxChainFull": {
+        "description": "Shown when a destination cannot take another effect."
+    },
+    "fxRackTooLong": "{name} needs {needed} slots and {free} are free here",
+    "@fxRackTooLong": {
+        "description": "Shown when a rack will not fit in the space the chain has left.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "needed": {
+                "type": "int"
+            },
+            "free": {
+                "type": "int"
+            }
+        }
+    },
+    "fxModulePartial": "Some controls do not reach the sound yet",
+    "@fxModulePartial": {
+        "description": "Readiness note for an effect the engine builds only partly."
+    },
+    "fxModuleUnavailable": "This build does not process this effect yet",
+    "@fxModuleUnavailable": {
+        "description": "Readiness note for an effect the engine cannot build."
+    },
     "fxPartOrdinal": "Part {number}",
     "@fxPartOrdinal": {
         "description": "A recorded part with no input to name it after.",

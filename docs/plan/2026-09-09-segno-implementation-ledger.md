@@ -1993,3 +1993,61 @@ through. A rack is what the player loaded, not what this build can run.
 
 Eleven tests, mutation-checked on the two that would be quietest if wrong:
 wiring brightness into damping, and letting an unread parameter fall to zero.
+
+## Slice 3f part 6: Add effects
+
+The pen's `03 Sound library & presets`: the rack families and Single FX in one
+artwork grid, then the chosen family's presets as plain rows.
+
+### A route that resolves, not one that edits
+
+The library returns a CHOICE and changes nothing itself. What the choice does
+to a chain belongs to the destination that opened it, which is what makes the
+accepted "one Back from a completed addition returns to the destination" true:
+Add, the family and the preset are page state inside one route, so they are
+never in the completed addition's history. Back out of the library changes
+nothing at all.
+
+### What a choice becomes
+
+A rack becomes one chain entry per module it names, built through the
+readiness map. **Every entry arrives bypassed, whatever the preset's own power
+keys say** — the accepted design is explicit that a new instance starts
+bypassed, so adding a rack mid-set cannot change the sound until the player
+says so. The preset's power values are not lost; they ride each entry's
+parameters and come back when the chain is engaged. Placement is the
+destination's default: Pre on a live input, Post on a recorded one.
+
+**One write, not one per pedal.** A rack is one thing the player chose, and
+adding its pedals one at a time would push the chain to the engine once per
+pedal and let a half-built rack be heard on the way in. That is a new append
+event per stage rather than a loop over the existing add.
+
+**A rack that will not fit is offered and explains itself** rather than
+half-landing: the row says how many slots it needs and how many are free. Even
+at the raised ceiling a chain can run out, and a rack that landed in part
+would be a sound nobody chose.
+
+### Loading
+
+The catalogue is read lazily on the first open of the Effects route rather than
+at startup: 6 MB of assets only these surfaces want, and a rig that never opens
+them should not pay for it on the way to the stage.
+
+### Checks
+
+Eight widget tests over the adding path: the library opening on the
+destination with it stated once, Back changing nothing, a rack becoming one
+entry per module in one write with the preset's values in the parameters they
+feed, every entry bypassed, the destination's default placement, a live
+input's addition going through the monitor cubit and not the bloc, a rack that
+will not fit explaining itself and staying unavailable, and a build with no
+catalogue saying so rather than drawing an empty grid.
+
+Mutation-checked: letting entries keep the preset's own power, and offering a
+rack that does not fit, each fail exactly the test that names them.
+
+A fifth screenshot covers the library grid. Its artwork is NOT in the golden:
+a widget test has no app asset bundle, so `rootBundle` resolves nothing there.
+What the golden shows is the grid — the wide banner's place, the card sizes
+and the order.

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
@@ -15,6 +16,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
+import 'package:segno/looper/view/fx/fx_library_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -28,15 +30,19 @@ import 'package:segno/theme/theme.dart';
 /// a whole track, All tracks and an output all arrive at the same editor.
 class FxPage extends StatelessWidget {
   /// Creates an [FxPage] opened on [initial].
-  const FxPage({this.initial, super.key});
+  const FxPage({this.initial, this.catalogue, super.key});
 
   /// Where the page opens, or the first live input when absent.
   final FxDestination? initial;
 
+  /// The catalogue Add effects offers. Injected so a test and a screenshot
+  /// need no asset bundle, and so the app loads it once rather than per open.
+  final FxCatalogue? catalogue;
+
   @override
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => FxCubit(initial: initial),
-    child: const FxView(),
+    child: FxView(catalogue: catalogue),
   );
 }
 
@@ -44,7 +50,10 @@ class FxPage extends StatelessWidget {
 @visibleForTesting
 class FxView extends StatefulWidget {
   /// Creates an [FxView].
-  const FxView({super.key});
+  const FxView({this.catalogue, super.key});
+
+  /// The catalogue Add effects offers, or the bundled one when absent.
+  final FxCatalogue? catalogue;
 
   @override
   State<FxView> createState() => _FxViewState();
@@ -68,6 +77,109 @@ class _FxViewState extends State<FxView> {
   }
 
   void _back() => Navigator.maybePop(context);
+
+  /// Opens the library for [destination] and appends what comes back.
+  ///
+  /// The library resolves to a CHOICE and changes nothing itself: what the
+  /// choice does to a chain is this page's business, which is what makes one
+  /// Back from a completed addition land on the destination rather than
+  /// walking back out through the family and the grid.
+  Future<void> _addEffects(FxDestination destination) async {
+    final address = destination.address;
+    if (address == null) return;
+    final entries = _entriesOf(context, address);
+    final choice = await Navigator.push<FxLibraryChoice>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FxLibraryPage(
+          catalogue: widget.catalogue ?? FxCatalogue.empty,
+          destinationLabel: _destinationLabel(destination),
+          freeSlots: kTrackEffectMax - entries.length,
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final added = _entriesFor(choice, destination);
+    if (added.isEmpty) return;
+    _append(context, address, added);
+  }
+
+  /// The entries a choice becomes.
+  ///
+  /// Every one arrives BYPASSED, whatever the preset's own power keys say:
+  /// the accepted design is explicit that a new instance starts bypassed, so
+  /// adding a rack mid-set cannot change the sound until the player says so.
+  /// The preset's power values are not lost — they ride each entry's own
+  /// parameters and come back when the chain is engaged.
+  static List<TrackEffect> _entriesFor(
+    FxLibraryChoice choice,
+    FxDestination destination,
+  ) {
+    final placement = destination.defaultPlacement;
+    return switch (choice) {
+      FxSingleChoice(:final type) => [
+        BuiltInEffect(type: type, enabled: false, placement: placement),
+      ],
+      FxRackChoice(:final preset) => [
+        for (final module in fxPresetModules(preset))
+          fxModuleEntry(module, preset).copyWith(
+            enabled: false,
+            placement: placement,
+          ),
+      ],
+    };
+  }
+
+  /// What the library's header calls the destination.
+  String _destinationLabel(FxDestination destination) {
+    final l10n = context.l10n;
+    return switch (destination.kind) {
+      FxDestinationKind.liveInput => l10n.inputName(
+        context.read<InputsCubit>().state.names,
+        destination.index,
+      ),
+      FxDestinationKind.recordedTrack when destination.isAllTracks =>
+        l10n.fxAllTracks,
+      FxDestinationKind.recordedTrack => l10n.trackName(
+        context.read<TracksCubit>().state.names,
+        destination.index,
+      ),
+      FxDestinationKind.output => l10n.outputName(
+        context.read<OutputsCubit>().state.names,
+        destination.index,
+        channels: context.read<LooperBloc>().state.status.outputChannels,
+      ),
+    };
+  }
+
+  List<TrackEffect> _entriesOf(BuildContext context, FxAddress address) =>
+      address.stage == FxStage.input
+      ? context.read<MonitorCubit>().state.forInput(address.index).effects
+      : _DestinationChain._entriesAt(
+          context.read<LooperBloc>().state,
+          address,
+        );
+
+  void _append(
+    BuildContext context,
+    FxAddress address,
+    List<TrackEffect> entries,
+  ) {
+    final bloc = context.read<LooperBloc>();
+    switch (address.stage) {
+      case FxStage.input:
+        context.read<MonitorCubit>().appendEffects(address.index, entries);
+      case FxStage.loop:
+        bloc.add(
+          LooperLaneEffectsAppended(address.index, address.lane ?? 0, entries),
+        );
+      case FxStage.track:
+      case FxStage.output:
+        bloc.add(LooperBusEffectsAppended(address, entries));
+      case FxStage.allTracks:
+        bloc.add(LooperAllTracksEffectsAppended(entries));
+    }
+  }
 
   void _stage() => Navigator.popUntil(context, (route) => route.isFirst);
 
@@ -114,7 +226,10 @@ class _FxViewState extends State<FxView> {
             top: _contextTop(destination.kind),
             right: 36,
             height: 76,
-            child: _SoundContext(destination: destination),
+            child: _SoundContext(
+              destination: destination,
+              onAdd: () => unawaited(_addEffects(destination)),
+            ),
           ),
           Positioned(
             left: 32,
@@ -293,9 +408,10 @@ class _OutputStrip extends StatelessWidget {
 /// The row under the strip: what this destination processes, the part picker
 /// or the Hear live control when the destination has one, and the actions.
 class _SoundContext extends StatelessWidget {
-  const _SoundContext({required this.destination});
+  const _SoundContext({required this.destination, required this.onAdd});
 
   final FxDestination destination;
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -334,7 +450,7 @@ class _SoundContext extends StatelessWidget {
           tone: LoopButtonTone.raised,
           leadingIcon: LucideIcons.plus,
           label: l10n.fxAddEffects,
-          onTap: () {},
+          onTap: onAdd,
         ),
       ],
     );
