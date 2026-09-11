@@ -128,7 +128,12 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 
 for tree in "$PRIMARY" "$MIRROR"; do
   echo "== contract test against $tree =="
-  gcc -std=c11 -Wall -I "$tree" \
+  # Sanitized: this decoder reads straight off a wire, and its buffers are
+  # fixed-size. A bounds bug here is a stack write from whatever is sending,
+  # which a plain CHECK can only notice if it happens to corrupt something the
+  # test then looks at. ASan makes it the failure it is. Host-only, so the
+  # sketches' own toolchain is unaffected.
+  gcc -std=c11 -Wall -fsanitize=address,undefined -I "$tree" \
     firmware/test/test_pedal_protocol.c "$tree/pedal_protocol.c" \
     -o "$BUILD_DIR/pedal_protocol_tests"
   "$BUILD_DIR/pedal_protocol_tests"

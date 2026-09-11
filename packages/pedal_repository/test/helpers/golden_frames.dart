@@ -166,6 +166,25 @@ explicitVersionGoldenFrames() {
   // and a blank pedal is worse than a mis-coloured LED.
   final customMode = fxMode.copyWith(mode: PedalMode.custom);
 
+  // Ten DISTINCT colours, one per footswitch, so the colour bytes are pinned
+  // as a per-pedal array rather than as one repeated value — a fixture where
+  // every pedal is white would pass an encoder that wrote the first colour
+  // ten times, or that indexed the array backwards.
+  final coloredPedals = customMode.copyWith(
+    pedalColors: const [
+      PedalColor(0xE6, 0xEE, 0xF9), // white
+      PedalColor(0xEF, 0xBC, 0x72), // amber
+      PedalColor(0xEE, 0x6B, 0x70), // red
+      PedalColor(0xEF, 0x96, 0x66), // orange
+      PedalColor(0x7A, 0xCB, 0x9E), // green
+      PedalColor(0x73, 0xCF, 0xDF), // cyan
+      PedalColor(0x82, 0xAA, 0xFF), // blue
+      PedalColor(0xB1, 0x9A, 0xFA), // violet
+      PedalColor(0x00, 0x00, 0x00), // off, which is a colour a user may pick
+      PedalColor.defaultColor, // the default, explicitly
+    ],
+  );
+
   // What a downgraded wire's trackLeds decode back to: blue -> green.
   final degradedLeds = [
     for (final led in fxMode.trackLeds)
@@ -204,6 +223,25 @@ explicitVersionGoldenFrames() {
       frame: customMode,
       version: PedalCodec.protocolVersionV3,
       decoded: customMode.copyWith(mode: PedalMode.play),
+    ),
+
+    // The colours at v4: ten distinct hues, full fidelity.
+    'pedal_colors_v4': (
+      frame: coloredPedals,
+      version: PedalCodec.protocolVersionV4,
+      decoded: coloredPedals,
+    ),
+
+    // The same frame on the v3 wire: the colours have no bytes there, so they
+    // fall off entirely and decode as the default palette — and the mode
+    // degrades with them, since v3 has no fourth value either.
+    'pedal_colors_v3': (
+      frame: coloredPedals,
+      version: PedalCodec.protocolVersionV3,
+      decoded: coloredPedals.copyWith(
+        mode: PedalMode.play,
+        pedalColors: defaultPedalColors,
+      ),
     ),
 
     // FX mode downgraded onto the v2 wire (B10): the mode field degrades to
