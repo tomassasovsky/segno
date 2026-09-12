@@ -222,9 +222,7 @@ class ExpressionControlPicker extends StatelessWidget {
   Widget _grid(BuildContext context, ExpressionControlGroup group) => Wrap(
     spacing: _gridGap,
     runSpacing: _gridGap,
-    children: [
-      for (final control in group.controls) _button(context, control),
-    ],
+    children: [for (final control in group.controls) _button(context, control)],
   );
 
   Widget _button(BuildContext context, ExpressionControl control) {
@@ -256,9 +254,12 @@ class ExpressionControlPicker extends StatelessWidget {
                       child: ExcludeSemantics(
                         child: AppText(
                           control.label,
+                          // Keyed by the canonical form itself: it IS the
+                          // target's identity, and two hashes that collided
+                          // would be two rows of one list sharing a key.
                           key: Key(
                             'expression_target_'
-                            '${control.target.canonicalString().hashCode}',
+                            '${control.target.canonicalString()}',
                           ),
                           maxLines: 1,
                           style: TextStyle(

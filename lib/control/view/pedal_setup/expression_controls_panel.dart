@@ -229,7 +229,10 @@ class ExpressionControlsPanel extends StatelessWidget {
                         : at == null
                         ? l10n.expressionNoReading
                         : _percent(row.mapping.valueAt(at)),
-                    key: Key('expression_value_${row.mapping.target.hashCode}'),
+                    key: Key(
+                      'expression_value_'
+                      '${row.mapping.target.canonicalString()}',
+                    ),
                     style: TextStyle(
                       color: row.available
                           ? surface.textPrimary

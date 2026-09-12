@@ -95,6 +95,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   double? _captureHeel;
   double? _captureToe;
 
+  /// The cubit, remembered so [dispose] can reach it after the element is
+  /// detached — `context.read` is not available by then.
+  ControlCubit? _control;
+
   /// The pen's insets inside the 1920 x 984 main area.
   static const double _left = 100;
   static const double _toolbarTop = 122;
@@ -128,10 +132,6 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     _control?.setCalibrating(null);
     super.dispose();
   }
-
-  /// The cubit, remembered so [dispose] can reach it after the element is
-  /// detached — `context.read` is not available by then.
-  ControlCubit? _control;
 
   @override
   Widget build(BuildContext context) {
@@ -476,6 +476,15 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     final replacing = _replacing;
     final expression = jack.expression;
+    if (target == replacing) {
+      // The control it already has. Removing and re-adding would send its row
+      // to the bottom of the list for a choice that changed nothing.
+      setState(() {
+        _replacing = null;
+        _view = _ExternalView.main;
+      });
+      return;
+    }
     // Repointing keeps the endpoints: the performer chose how far this pedal
     // should travel, and a different destination does not change that.
     final kept = replacing == null ? null : expression.mappingFor(replacing);
@@ -599,9 +608,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
 
   void _save(ControlCubit control, ExternalPedalSetup setup) {
     unawaited(
-      control.setPedalSetup(
-        control.state.pedalSetup.copyWith(external: setup),
-      ),
+      control.setPedalSetup(control.state.pedalSetup.copyWith(external: setup)),
     );
     setState(() {
       _draft = null;
@@ -796,11 +803,8 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                       l10n.externalHardwareLatching,
                   },
                   selected: hardware == button.hardware,
-                  onTap: () => _write(
-                    setup,
-                    jack,
-                    button.copyWith(hardware: hardware),
-                  ),
+                  onTap: () =>
+                      _write(setup, jack, button.copyWith(hardware: hardware)),
                   width: hardware == ExternalSwitchHardware.momentary
                       ? 182
                       : 153,
@@ -908,10 +912,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final names = context.read<TracksCubit>().state.names;
     final chosen = await showControlActionPicker(
       context,
-      title: l10n.pedalSetupChooser(
-        l10n.externalButton(_button + 1),
-        gesture,
-      ),
+      title: l10n.pedalSetupChooser(l10n.externalButton(_button + 1), gesture),
       current: current,
       trackNames: names,
     );
