@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:segno/control/binding/control_action.dart';
+import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 
 /// One of the console's two external control jacks.
@@ -153,6 +154,7 @@ class ExternalJackSetup extends Equatable {
     this.single = ExternalSwitchSetup.empty,
     this.dualFirst = ExternalSwitchSetup.empty,
     this.dualSecond = ExternalSwitchSetup.empty,
+    this.expression = ExternalExpressionSetup.empty,
   });
 
   /// Rebuilds a jack from its [toJson] map.
@@ -164,11 +166,15 @@ class ExternalJackSetup extends Equatable {
           : ExternalSwitchSetup.empty;
     }
 
+    final expression = json['expression'];
     return ExternalJackSetup(
       type: ExternalJackType.fromName(json['type'] as String?),
       single: read('single'),
       dualFirst: read('dualFirst'),
       dualSecond: read('dualSecond'),
+      expression: expression is Map<String, dynamic>
+          ? ExternalExpressionSetup.fromJson(expression)
+          : ExternalExpressionSetup.empty,
     );
   }
 
@@ -186,6 +192,10 @@ class ExternalJackSetup extends Equatable {
 
   /// The second of them.
   final ExternalSwitchSetup dualSecond;
+
+  /// The travel and the mappings used when [type] is
+  /// [ExternalJackType.expression].
+  final ExternalExpressionSetup expression;
 
   /// The switch at [index] under the ACTIVE type, or `null` when the active
   /// type has no such switch.
@@ -214,11 +224,16 @@ class ExternalJackSetup extends Equatable {
       };
 
   /// Whether anything is configured here, under any type.
+  ///
+  /// The taught travel counts, like a switch's hardware does: a pedal
+  /// calibrated but not yet assigned anything has had work done to it, and a
+  /// jack that read as empty would throw that away on the next save.
   bool get isEmpty =>
       type == ExternalJackType.singleSwitch &&
       single.isEmpty &&
       dualFirst.isEmpty &&
-      dualSecond.isEmpty;
+      dualSecond.isEmpty &&
+      expression.isEmpty;
 
   /// Returns a copy with the given fields replaced.
   ExternalJackSetup copyWith({
@@ -226,11 +241,13 @@ class ExternalJackSetup extends Equatable {
     ExternalSwitchSetup? single,
     ExternalSwitchSetup? dualFirst,
     ExternalSwitchSetup? dualSecond,
+    ExternalExpressionSetup? expression,
   }) => ExternalJackSetup(
     type: type ?? this.type,
     single: single ?? this.single,
     dualFirst: dualFirst ?? this.dualFirst,
     dualSecond: dualSecond ?? this.dualSecond,
+    expression: expression ?? this.expression,
   );
 
   /// Serializes this jack, omitting the switches nothing has touched.
@@ -239,10 +256,11 @@ class ExternalJackSetup extends Equatable {
     if (!single.isEmpty) 'single': single.toJson(),
     if (!dualFirst.isEmpty) 'dualFirst': dualFirst.toJson(),
     if (!dualSecond.isEmpty) 'dualSecond': dualSecond.toJson(),
+    if (!expression.isEmpty) 'expression': expression.toJson(),
   };
 
   @override
-  List<Object?> get props => [type, single, dualFirst, dualSecond];
+  List<Object?> get props => [type, single, dualFirst, dualSecond, expression];
 }
 
 /// Both external jacks.

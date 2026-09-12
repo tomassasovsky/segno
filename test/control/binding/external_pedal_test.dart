@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/control_action.dart';
+import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -122,6 +124,37 @@ void main() {
             ),
           );
       expect(ExternalJackSetup.fromJson(jack.toJson()), jack);
+    });
+
+    test('keeps its expression work beside its switches', () {
+      // A jack remembers every type it has been configured as, so plugging in
+      // a switch for one song does not cost the expression pedal its travel.
+      const jack = ExternalJackSetup(
+        single: ExternalSwitchSetup(change: _mute),
+        expression: ExternalExpressionSetup(
+          calibration: ExpressionCalibration(heel: 0.1, toe: 0.9),
+          mappings: [ExpressionMapping(target: MasterGainTarget(), toe: 0.8)],
+        ),
+      );
+      expect(ExternalJackSetup.fromJson(jack.toJson()), jack);
+      expect(jack.switchAt(0)?.change, _mute);
+      expect(
+        jack.copyWith(type: ExternalJackType.expression).switchAt(0),
+        isNull,
+        reason: 'an expression jack has no switch under it',
+      );
+    });
+
+    test('a calibrated jack is not an untouched one', () {
+      const taught = ExternalJackSetup(
+        expression: ExternalExpressionSetup(
+          calibration: ExpressionCalibration(heel: 0, toe: 1),
+        ),
+      );
+      expect(taught.isEmpty, isFalse);
+      expect(taught.toJson().containsKey('expression'), isTrue);
+      // And a jack that carries nothing still encodes like one never touched.
+      expect(ExternalJackSetup.empty.toJson().containsKey('expression'), false);
     });
   });
 

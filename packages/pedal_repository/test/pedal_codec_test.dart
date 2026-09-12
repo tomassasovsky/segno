@@ -696,10 +696,9 @@ void main() {
       });
 
       test('ignores an unrelated CC number', () {
-        expect(
-          PedalCodec.decodeMessage(0xB0, PedalCodec.encoderCc + 1, 65),
-          isNull,
-        );
+        // Not simply the next number up: the two expression jacks sit
+        // immediately above the encoder, and they ARE pedal input.
+        expect(PedalCodec.decodeMessage(0xB0, 0x40, 65), isNull);
       });
     });
 

@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
+import 'package:pedal_repository/src/pedal_expression_jack.dart';
 import 'package:pedal_repository/src/pedal_external_switch.dart';
 
 /// A decoded input from the pedal, hardware-agnostic.
@@ -96,4 +97,28 @@ final class ExternalContactChanged extends PedalEvent {
   String toString() =>
       'ExternalContactChanged(${switchId.name}, '
       '${closed ? 'closed' : 'open'}, $timestamp)';
+}
+
+/// An expression pedal moved.
+///
+/// [raw] is the UNCALIBRATED reading, `0..1` across the pedal's full electrical
+/// range. Which end of it is heel and which is toe this does not say, and
+/// cannot: a pedal can be wired either way round, and the travel a given pedal
+/// actually reaches is narrower than its range. Turning this into a position
+/// is the app's calibration, not the wire's.
+final class ExpressionMoved extends PedalEvent {
+  /// Creates an [ExpressionMoved] event.
+  const ExpressionMoved(this.jack, {required this.raw});
+
+  /// Which jack moved.
+  final PedalExpressionJack jack;
+
+  /// The uncalibrated reading, `0..1`.
+  final double raw;
+
+  @override
+  List<Object?> get props => [jack, raw];
+
+  @override
+  String toString() => 'ExpressionMoved(${jack.name}, $raw)';
 }

@@ -64,6 +64,28 @@ void main() {
       });
     });
 
+    group('ExpressionMoved', () {
+      test('values with the same jack and reading are equal', () {
+        expect(
+          const ExpressionMoved(PedalExpressionJack.ctrl1, raw: 0.25),
+          const ExpressionMoved(PedalExpressionJack.ctrl1, raw: 0.25),
+        );
+        expect(
+          const ExpressionMoved(PedalExpressionJack.ctrl1, raw: 0.25),
+          isNot(const ExpressionMoved(PedalExpressionJack.ctrl2, raw: 0.25)),
+        );
+      });
+
+      test('toString includes the jack and the reading', () {
+        final text = const ExpressionMoved(
+          PedalExpressionJack.ctrl2,
+          raw: 0.5,
+        ).toString();
+        expect(text, contains('ctrl2'));
+        expect(text, contains('0.5'));
+      });
+    });
+
     group('EncoderDelta', () {
       test('values with the same delta are equal', () {
         expect(const EncoderDelta(3), const EncoderDelta(3));
@@ -81,6 +103,7 @@ void main() {
         ButtonReleased() => 'released',
         EncoderDelta() => 'encoder',
         ExternalContactChanged() => 'external',
+        ExpressionMoved() => 'expression',
       };
 
       expect(describe(const ButtonPressed(PedalButton.recPlay)), 'pressed');
@@ -94,6 +117,10 @@ void main() {
           ),
         ),
         'external',
+      );
+      expect(
+        describe(const ExpressionMoved(PedalExpressionJack.ctrl1, raw: 0.5)),
+        'expression',
       );
     });
   });

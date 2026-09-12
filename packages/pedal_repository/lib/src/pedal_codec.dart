@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_color.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
+import 'package:pedal_repository/src/pedal_expression_jack.dart';
 import 'package:pedal_repository/src/pedal_external_switch.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
@@ -15,7 +16,8 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 ///   versioned, checksummed, 7-bit-packed SysEx message; [decodeFrame] is the
 ///   inverse (mirrors what the firmware does, and underpins the golden tests).
 /// * **pedal → segno:** [decodeMessage] turns a raw 3-byte MIDI message
-///   (button Note / encoder CC) into a [PedalEvent].
+///   (footswitch or external-switch Note, encoder CC, expression CC) into a
+///   [PedalEvent].
 ///
 /// ### State frame layout (segno → pedal)
 ///
@@ -450,7 +452,8 @@ abstract final class PedalCodec {
   ///
   /// NoteOn maps to [ButtonPressed] (velocity 0 is treated as a release),
   /// NoteOff to [ButtonReleased], an external jack's note to
-  /// [ExternalContactChanged], and the relative encoder CC to [EncoderDelta].
+  /// [ExternalContactChanged], the relative encoder CC to [EncoderDelta], and
+  /// an expression jack's absolute CC to [ExpressionMoved].
   /// The MIDI channel is ignored here; channel filtering is the repository's
   /// concern. [timestamp] is attached to button events for tap/hold timing.
   static PedalEvent? decodeMessage(
@@ -467,8 +470,8 @@ abstract final class PedalCodec {
       case 0x80: // NoteOff
         return _decodeNote(data1, closed: false, timestamp: timestamp);
       case 0xB0: // Control Change
-        if (data1 != encoderCc) return null;
-        return EncoderDelta(_decodeEncoder(data2));
+        if (data1 == encoderCc) return EncoderDelta(_decodeEncoder(data2));
+        return _decodeExpression(data1, data2);
       default:
         return null;
     }
@@ -496,6 +499,22 @@ abstract final class PedalCodec {
       external,
       closed: closed,
       timestamp: timestamp,
+    );
+  }
+
+  /// One Control Change that is not the encoder's, which is either an
+  /// expression jack's position or nothing this pedal sends.
+  static PedalEvent? _decodeExpression(int cc, int value) {
+    final jack = PedalExpressionJackCc.fromCc(cc);
+    if (jack == null) return null;
+    // Divided here, once, so the raw reading crosses into the app already in
+    // the 0..1 domain its calibration and its mappings both work in. Nothing
+    // downstream has to know the wire is 7 bits wide.
+    return ExpressionMoved(
+      jack,
+      raw:
+          value.clamp(0, PedalExpressionJackCc.maxValue) /
+          PedalExpressionJackCc.maxValue,
     );
   }
 
