@@ -748,6 +748,7 @@ class LoopSlider extends StatefulWidget {
     required this.semanticLabel,
     this.onChangeEnd,
     this.enabled = true,
+    this.height = 56,
     super.key,
   });
 
@@ -769,6 +770,10 @@ class LoopSlider extends StatefulWidget {
 
   /// Whether the slider can be moved right now.
   final bool enabled;
+
+  /// The pen's rail height. 56 on the settings pages; the colour editor's
+  /// dialog draws the same rail at 64.
+  final double height;
 
   @override
   State<LoopSlider> createState() => _LoopSliderState();
@@ -828,7 +833,7 @@ class _LoopSliderState extends State<LoopSlider> {
             opacity: enabled ? 1 : surface.disabledOpacity,
             child: Container(
               width: width,
-              height: 56,
+              height: widget.height,
               decoration: BoxDecoration(
                 color: surface.surface,
                 borderRadius: BorderRadius.circular(12),

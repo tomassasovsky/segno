@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -358,6 +359,60 @@ void main() {
         ),
         throwsA(isA<Error>()),
       );
+    });
+  });
+  group('projected LED colours', () {
+    test('a frame carries white on all ten before anyone picks a colour', () {
+      final frame = projectFrame(
+        _stateWith(_tracksWith(const [])),
+        const ControlState(),
+      );
+      expect(frame.pedalColors, hasLength(PedalButton.values.length));
+      expect(frame.pedalColors, everyElement(PedalColor.white));
+    });
+
+    test('the palette reaches the wire, per switch', () {
+      final palette = const PedalPalette()
+          .withCustom(1, const PedalColor(0xED, 0x63, 0x9B))
+          .withChoice(PedalButton.track3, const CustomPaletteEntry(1))
+          .withChoice(
+            PedalButton.mode,
+            const BuiltInPaletteEntry(PedalPaletteColor.cyan),
+          );
+      final frame = projectFrame(
+        _stateWith(_tracksWith(const [])),
+        ControlState(pedalSetup: PedalSetup(palette: palette)),
+      );
+      expect(frame.colorFor(PedalButton.track3).rgb, 0xED639B);
+      expect(frame.colorFor(PedalButton.mode), PedalColor.cyan);
+      expect(frame.colorFor(PedalButton.stop), PedalColor.white);
+    });
+
+    test('a colour changes no indicator STATE', () {
+      // The two halves are independent by construction: what lights an
+      // indicator is the rig, and the palette only says what hue it comes up
+      // in. A recolour that darkened a lit LED would be a performance bug
+      // dressed as a preference.
+      final looper = _stateWith(
+        _tracksWith(const [
+          Track(state: TrackState.playing, lengthFrames: 48000),
+        ]),
+      );
+      const plain = ControlState(mode: InteractionMode.mute);
+      final coloured = plain.copyWith(
+        pedalSetup: PedalSetup(
+          palette: const PedalPalette().withChoice(
+            PedalButton.track1,
+            const BuiltInPaletteEntry(PedalPaletteColor.violet),
+          ),
+        ),
+      );
+      final before = projectFrame(looper, plain);
+      final after = projectFrame(looper, coloured);
+      expect(after.trackLeds, before.trackLeds);
+      for (final button in PedalButton.values) {
+        expect(after.isLit(button), before.isLit(button), reason: button.name);
+      }
     });
   });
 }

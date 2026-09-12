@@ -165,4 +165,124 @@ void main() {
       );
     });
   });
+  group('indicator state (the lit half of the accepted LED contract)', () {
+    PedalStateFrame dark() => PedalStateFrame.blank();
+
+    test('nothing is lit on a blank frame', () {
+      for (final button in PedalButton.values) {
+        expect(dark().isLit(button), isFalse, reason: button.name);
+      }
+    });
+
+    test('Record / Play reports a live take, not the transport at rest', () {
+      expect(
+        dark()
+            .copyWith(globalColor: GlobalColor.red)
+            .isLit(
+              PedalButton.recPlay,
+            ),
+        isTrue,
+      );
+      expect(
+        dark()
+            .copyWith(globalColor: GlobalColor.amber)
+            .isLit(
+              PedalButton.recPlay,
+            ),
+        isTrue,
+      );
+      // Playing is not capturing: a loop going round lights the tracks, not
+      // the transport switch.
+      expect(
+        dark()
+            .copyWith(globalColor: GlobalColor.green)
+            .isLit(
+              PedalButton.recPlay,
+            ),
+        isFalse,
+      );
+    });
+
+    test('Stop and Undo are never lit', () {
+      final busy = PedalStateFrame(
+        globalColor: GlobalColor.red,
+        trackLeds: List<PedalTrackLed>.filled(
+          PedalStateFrame.trackCount,
+          PedalTrackLed.green,
+        ),
+        activeBank: 1,
+        selectedTrack: 0,
+        mode: PedalMode.fx,
+        loopLengthMicros: 1000,
+        clearFadeActive: true,
+      );
+      expect(busy.isLit(PedalButton.stop), isFalse);
+      expect(busy.isLit(PedalButton.undo), isFalse);
+    });
+
+    test('MODE is lit in every mode but the normal one', () {
+      expect(
+        dark().copyWith(mode: PedalMode.rec).isLit(PedalButton.mode),
+        isFalse,
+      );
+      for (final mode in [PedalMode.play, PedalMode.fx, PedalMode.custom]) {
+        expect(
+          dark().copyWith(mode: mode).isLit(PedalButton.mode),
+          isTrue,
+          reason: mode.name,
+        );
+      }
+    });
+
+    test('a track switch follows the LED of the track its BANK drives', () {
+      final leds = List<PedalTrackLed>.filled(
+        PedalStateFrame.trackCount,
+        PedalTrackLed.off,
+      )..[5] = PedalTrackLed.green;
+      final frame = dark().copyWith(trackLeds: leds);
+      // Track 6 is the second switch of bank B, and nothing at all on bank A.
+      expect(frame.copyWith(activeBank: 0).isLit(PedalButton.track2), isFalse);
+      expect(frame.copyWith(activeBank: 1).isLit(PedalButton.track2), isTrue);
+      expect(frame.copyWith(activeBank: 1).isLit(PedalButton.track1), isFalse);
+    });
+
+    test('Clear follows the fade and Bank follows the bank', () {
+      expect(
+        dark().copyWith(clearFadeActive: true).isLit(PedalButton.clear),
+        isTrue,
+      );
+      expect(dark().copyWith(activeBank: 1).isLit(PedalButton.bank), isTrue);
+      expect(dark().isLit(PedalButton.bank), isFalse);
+    });
+
+    test('the goodbye frame darkens everything that was lit', () {
+      final lit = PedalStateFrame(
+        globalColor: GlobalColor.red,
+        trackLeds: List<PedalTrackLed>.filled(
+          PedalStateFrame.trackCount,
+          PedalTrackLed.green,
+        ),
+        activeBank: 1,
+        selectedTrack: 0,
+        mode: PedalMode.fx,
+        loopLengthMicros: 1000,
+        clearFadeActive: true,
+      );
+      expect(lit.isLit(PedalButton.mode), isTrue);
+      final off = lit.copyWith(isGoodbye: true);
+      for (final button in PedalButton.values) {
+        expect(off.isLit(button), isFalse, reason: button.name);
+      }
+    });
+
+    test('colorFor reads the colour the frame carries for that switch', () {
+      final colors = [
+        for (var i = 0; i < PedalButton.values.length; i++) PedalColor(i, 0, 0),
+      ];
+      final frame = dark().copyWith(pedalColors: colors);
+      expect(frame.colorFor(PedalButton.recPlay), const PedalColor(0, 0, 0));
+      expect(frame.colorFor(PedalButton.bank), const PedalColor(9, 0, 0));
+      expect(dark().colorFor(PedalButton.mode), PedalColor.defaultColor);
+    });
+  });
 }

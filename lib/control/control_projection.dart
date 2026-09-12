@@ -198,6 +198,12 @@ PedalStateFrame projectFrame(
     clearFadeActive: clearFadeActive,
     performanceArmed: performanceArmed,
     masterGain: masterGain,
+    // The hue each indicator uses when it is lit. Configuration, not state:
+    // what LIGHTS an indicator is everything above, and the performer's
+    // palette says what colour it comes up in. Below protocol v4 the codec
+    // drops these bytes, so this projection stays version-agnostic like the
+    // rest of the frame.
+    pedalColors: overlay.pedalSetup.palette.frameColors,
   );
   // The control-surface invariant spec runs on every projection in debug
   // builds — the same predicates the sequence fuzzer checks. assert() only:

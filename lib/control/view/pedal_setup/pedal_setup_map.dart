@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/common/pedal_color_display.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The plate, to scale, with the switch being edited marked on it.
@@ -22,6 +24,8 @@ class PedalSetupMap extends StatelessWidget {
     required this.bank,
     required this.bankSelectable,
     required this.onToggleBank,
+    required this.palette,
+    required this.lit,
     super.key,
   });
 
@@ -36,8 +40,10 @@ class PedalSetupMap extends StatelessWidget {
   /// Selects a switch.
   final ValueChanged<PedalButton> onSelect;
 
-  /// The bank the track caps are showing.
-  final int bank;
+  /// The bank the track caps are showing, or `null` in a context that has no
+  /// bank — LED colors, where a switch's colour is the switch's whatever bank
+  /// it is driving.
+  final int? bank;
 
   /// Whether BANK pages the map here. It does in Custom controls, where the
   /// four track caps carry a pair per bank; it does not in Track controls,
@@ -46,6 +52,19 @@ class PedalSetupMap extends StatelessWidget {
 
   /// Pages the bank.
   final VoidCallback onToggleBank;
+
+  /// Which colour each indicator uses. The map shows the palette being
+  /// edited, so a colour picked in the LED colors context is on the plate
+  /// before Save — that is the whole reason the map stays on screen.
+  final PedalPalette palette;
+
+  /// The switches whose indicator is lit right now, from the live rig.
+  ///
+  /// State, not selection: which switch is being EDITED is drawn on the cap.
+  /// The accepted design is explicit that setup feedback must not read as a
+  /// saved performance latch, so nothing here lights a pill that the rig is
+  /// not lighting.
+  final Set<PedalButton> lit;
 
   /// The pen's box for the whole map.
   static const Size penSize = Size(1720, 480);
@@ -104,31 +123,39 @@ class PedalSetupMap extends StatelessWidget {
   );
 
   Widget _cap(BuildContext context, PedalButton button, Size slot) {
-    final channel = pedalTrackChannel(button, bank);
-    final live =
-        editable.contains(button) ||
-        (button == PedalButton.bank && bankSelectable);
+    final channel = pedalTrackChannel(button, bank ?? 0);
+    // BANK pages the map where the assignments are per-bank, and is an
+    // ordinary selectable cap everywhere else — including LED colors, where it
+    // has a colour of its own like the other nine.
+    final pagesBank = button == PedalButton.bank && bankSelectable;
+    final live = editable.contains(button) || pagesBank;
     return PedalSetupCap(
       key: Key('pedal_setup_cap_${button.name}'),
+      ledKey: Key('pedal_setup_led_${button.name}'),
+      color: palette.colorFor(button),
+      lit: lit.contains(button),
       // The cap's own silkscreen. A track cap prints the channel its bank
       // drives, so the map says 5 6 7 8 while bank B is being edited — the
       // same thing the plate under the foot says.
       legend: channel == null
           ? pedalButtonLegend(button)
           : 'TRACK ${channel + 1}',
-      badge: button == PedalButton.bank ? _bankLetter : null,
+      // The bank letter is on the cap wherever a bank is in play. In LED
+      // colors there is none to name: a colour belongs to the switch whatever
+      // bank it happens to be driving.
+      badge: button == PedalButton.bank && bank != null ? _bankLetter : null,
       slot: slot,
       selected: selected.contains(button),
       enabled: live,
       onTap: !live
           ? null
-          : button == PedalButton.bank
+          : pagesBank
           ? onToggleBank
           : () => onSelect(button),
     );
   }
 
-  String get _bankLetter => String.fromCharCode(65 + bank);
+  String get _bankLetter => String.fromCharCode(65 + (bank ?? 0));
 }
 
 /// One footswitch on the map: the metal cap, its nameplate legend, and the
@@ -141,14 +168,20 @@ class PedalSetupMap extends StatelessWidget {
 class PedalSetupCap extends StatelessWidget {
   /// Creates a [PedalSetupCap].
   const PedalSetupCap({
+    required this.ledKey,
     required this.legend,
     required this.slot,
     required this.selected,
     required this.enabled,
     required this.onTap,
+    required this.color,
+    required this.lit,
     this.badge,
     super.key,
   });
+
+  /// Names the indicator itself, the way the plate's own LEDs are named.
+  final Key ledKey;
 
   /// The silkscreen on the cap.
   final String legend;
@@ -168,6 +201,12 @@ class PedalSetupCap extends StatelessWidget {
 
   /// Selects it; `null` while it cannot be edited.
   final VoidCallback? onTap;
+
+  /// The hue this switch's indicator uses when it is lit.
+  final PedalColor color;
+
+  /// Whether the rig is lighting it.
+  final bool lit;
 
   /// The pen's LED pill: 114 x 11, sitting 30 above the cap.
   static const Size _ledSize = Size(114, 11);
@@ -189,12 +228,16 @@ class PedalSetupCap extends StatelessWidget {
             width: _ledSize.width,
             height: _ledSize.height,
             child: DecoratedBox(
+              key: ledKey,
               decoration: BoxDecoration(
-                // Dark, always: this is the plate's LED, and the setup screen
-                // must not light one. A lit pill here would read as a saved
-                // performance latch rather than as the switch being edited.
-                color: enabled ? surface.cardHigh : surface.card,
+                // The plate's own LED: its hue is the configured colour and
+                // what lights it is the rig. Unlit it is the dark pill the
+                // hardware shows, not a dimmed version of the colour — an
+                // indicator that is faintly its own colour while off would
+                // make every switch look half-engaged.
+                color: lit ? color.display : surface.ledOff,
                 borderRadius: BorderRadius.circular(_ledSize.height / 2),
+                border: Border.all(color: surface.line),
               ),
             ),
           ),

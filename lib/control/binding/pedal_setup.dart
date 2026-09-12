@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// What a HOLD on Record / Play does.
@@ -133,6 +134,7 @@ class PedalSetup extends Equatable {
     this.recordHold = RecordHold.undoRecording,
     this.trackHold = TrackHold.armOverdub,
     this.custom = const <PedalBindingKey, ControlGesturePair>{},
+    this.palette = const PedalPalette(),
   });
 
   /// Rebuilds a setup from its [encode] string.
@@ -161,12 +163,16 @@ class PedalSetup extends Equatable {
         custom[key] = pair;
       }
     }
+    final palette = raw['palette'];
     return PedalSetup(
       modePress: _mode(raw['modePress']) ?? InteractionMode.mute,
       modeHold: _mode(raw['modeHold']),
       recordHold: RecordHold.fromToken(raw['recordHold'] as String?),
       trackHold: TrackHold.fromToken(raw['trackHold'] as String?),
       custom: Map.unmodifiable(custom),
+      palette: palette is Map<String, dynamic>
+          ? PedalPalette.fromJson(palette)
+          : const PedalPalette(),
     );
   }
 
@@ -194,6 +200,16 @@ class PedalSetup extends Equatable {
 
   /// The Custom-controls map, keyed exactly like the FX remap.
   final Map<PedalBindingKey, ControlGesturePair> custom;
+
+  /// Which colour each footswitch's indicator uses, and the custom hues the
+  /// performer mixed for them.
+  ///
+  /// Part of the setup rather than a settings key of its own, because the
+  /// accepted screen edits it in the same draft and commits it with the same
+  /// Save. It is also why Clear custom assignments can promise to keep the
+  /// colours: clearing rebuilds the assignments and carries this across
+  /// untouched.
+  final PedalPalette palette;
 
   /// The pair on [button] within [bank], or [ControlGesturePair.empty].
   ///
@@ -233,7 +249,8 @@ class PedalSetup extends Equatable {
   }
 
   /// The setup with every Custom assignment gone, on both banks and both
-  /// gestures, and the fixed Track controls untouched.
+  /// gestures, and the fixed Track controls and the LED palette untouched —
+  /// the two things the accepted confirmation promises to keep.
   PedalSetup clearedCustom() =>
       copyWith(custom: const <PedalBindingKey, ControlGesturePair>{});
 
@@ -247,6 +264,7 @@ class PedalSetup extends Equatable {
     RecordHold? recordHold,
     TrackHold? trackHold,
     Map<PedalBindingKey, ControlGesturePair>? custom,
+    PedalPalette? palette,
     bool clearModeHold = false,
   }) => PedalSetup(
     modePress: modePress ?? this.modePress,
@@ -254,6 +272,7 @@ class PedalSetup extends Equatable {
     recordHold: recordHold ?? this.recordHold,
     trackHold: trackHold ?? this.trackHold,
     custom: custom ?? this.custom,
+    palette: palette ?? this.palette,
   );
 
   /// The canonical encoding. Byte-stable for equal setups — the Custom
@@ -269,6 +288,7 @@ class PedalSetup extends Equatable {
         for (final key in _orderedCustomKeys())
           {...key.toJson(), ...custom[key]!.toJson()},
       ],
+    if (!palette.isEmpty) 'palette': palette.toJson(),
   });
 
   List<PedalBindingKey> _orderedCustomKeys() {
@@ -303,5 +323,6 @@ class PedalSetup extends Equatable {
       custom[key]!.press,
       custom[key]!.hold,
     ],
+    palette,
   ];
 }

@@ -21,12 +21,43 @@ class PedalColor extends Equatable {
   factory PedalColor.fromRgb(int rgb) =>
       PedalColor((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
 
-  /// What a pedal's indicator uses when the frame carries no colour for it.
+  /// The eight built-in indicator hues, in the order the palette lists them.
   ///
-  /// White, the palette default on both sides. A frame below protocol v4 has
-  /// no bytes for the colours at all, so it decodes to this for every pedal
-  /// rather than to a colour nothing sent.
-  static const PedalColor defaultColor = PedalColor(0xFF, 0xFF, 0xFF);
+  /// These are the values the LED is driven at, not swatch paint: the app
+  /// shows the same number it sends. They are deliberately short of full
+  /// saturation — a WS2812 run flat out washes its own hue out at the
+  /// distance a foot reads it from, and the pair a performer has to tell
+  /// apart eyes-free is two hues, not two brightnesses.
+  static const PedalColor white = PedalColor(0xE6, 0xEE, 0xF9);
+
+  /// Built-in amber.
+  static const PedalColor amber = PedalColor(0xEF, 0xBC, 0x72);
+
+  /// Built-in red.
+  static const PedalColor red = PedalColor(0xEE, 0x6B, 0x70);
+
+  /// Built-in orange.
+  static const PedalColor orange = PedalColor(0xEF, 0x96, 0x66);
+
+  /// Built-in green.
+  static const PedalColor green = PedalColor(0x7A, 0xCB, 0x9E);
+
+  /// Built-in cyan.
+  static const PedalColor cyan = PedalColor(0x73, 0xCF, 0xDF);
+
+  /// Built-in blue.
+  static const PedalColor blue = PedalColor(0x82, 0xAA, 0xFF);
+
+  /// Built-in violet.
+  static const PedalColor violet = PedalColor(0xB1, 0x9A, 0xFA);
+
+  /// What a pedal's indicator uses when nothing has chosen a colour for it.
+  ///
+  /// [white], which is also what the palette assigns to all ten before a user
+  /// opens the editor, so the default is ONE number rather than one on each
+  /// side. A frame below protocol v4 has no bytes for the colours at all, so
+  /// it decodes to this for every pedal rather than to a colour nothing sent.
+  static const PedalColor defaultColor = white;
 
   /// Red channel, `0..255`.
   final int r;
