@@ -9,6 +9,7 @@ import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -3340,6 +3341,253 @@ void main() {
             PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[2],
             PedalTrackLed.red,
           );
+        },
+      );
+    });
+
+    group('external pedals (part 4f)', () {
+      /// Puts [setup] on CTRL 1 and waits for the write to land.
+      Future<void> configure(
+        ExternalJackSetup jack, {
+        ExternalJack on = ExternalJack.ctrl1,
+      }) async {
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup.copyWith(
+            external: cubit.state.pedalSetup.external.withJack(on, jack),
+          ),
+        );
+        await pumpEventQueue();
+      }
+
+      Future<void> contact(
+        PedalExternalSwitch switchId, {
+        required bool closed,
+      }) async {
+        transport.emit(closed ? 0x90 : 0x80, switchId.note, closed ? 127 : 0);
+        await pumpEventQueue();
+      }
+
+      test('a momentary switch with no hold acts on contact', () async {
+        await configure(
+          const ExternalJackSetup(
+            single: ExternalSwitchSetup(
+              gestures: ControlGesturePair(
+                press: ModeAction(InteractionMode.mute),
+              ),
+            ),
+          ),
+        );
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.mute);
+        // The release adds nothing: the press already ran.
+        await contact(PedalExternalSwitch.ctrl1First, closed: false);
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('with a hold assigned the press waits for the release', () async {
+        await configure(
+          const ExternalJackSetup(
+            single: ExternalSwitchSetup(
+              gestures: ControlGesturePair(
+                press: ModeAction(InteractionMode.mute),
+                hold: ModeAction(InteractionMode.fx),
+              ),
+            ),
+          ),
+        );
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(
+          cubit.state.mode,
+          InteractionMode.record,
+          reason: 'until the foot comes up, neither half is the one it meant',
+        );
+        await contact(PedalExternalSwitch.ctrl1First, closed: false);
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test(
+        'holding past the threshold runs the hold and eats the release',
+        () async {
+          await configure(
+            const ExternalJackSetup(
+              single: ExternalSwitchSetup(
+                gestures: ControlGesturePair(
+                  press: ModeAction(InteractionMode.mute),
+                  hold: ModeAction(InteractionMode.fx),
+                ),
+              ),
+            ),
+          );
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          await Future<void>.delayed(const Duration(milliseconds: 520));
+          expect(cubit.state.mode, InteractionMode.fx);
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          expect(
+            cubit.state.mode,
+            InteractionMode.fx,
+            reason: 'the hold consumed the release',
+          );
+        },
+      );
+
+      test('a latching switch runs its action on every change', () async {
+        await configure(
+          const ExternalJackSetup(
+            single: ExternalSwitchSetup(
+              hardware: ExternalSwitchHardware.latching,
+              change: ModeAction(InteractionMode.mute),
+            ),
+          ),
+        );
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.mute);
+        // Opening is a change too, and the action is "enter or leave mute".
+        await contact(PedalExternalSwitch.ctrl1First, closed: false);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test('a state that did not change runs nothing', () async {
+        await configure(
+          const ExternalJackSetup(
+            single: ExternalSwitchSetup(
+              hardware: ExternalSwitchHardware.latching,
+              change: ModeAction(InteractionMode.mute),
+            ),
+          ),
+        );
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.mute);
+        // A resent message, or a switch bouncing: the contact is already
+        // closed, so this is not a change.
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('only the ACTIVE type dispatches', () async {
+        await configure(
+          const ExternalJackSetup(
+            dualSecond: ExternalSwitchSetup(
+              gestures: ControlGesturePair(
+                press: ModeAction(InteractionMode.mute),
+              ),
+            ),
+          ),
+        );
+        // The jack is a single switch, so its second switch is not there.
+        await contact(PedalExternalSwitch.ctrl1Second, closed: true);
+        expect(cubit.state.mode, InteractionMode.record);
+        // The foot comes off it. The contact register tracks the WIRE, not
+        // the assignment, so a switch that was down while nothing was
+        // listening is still down.
+        await contact(PedalExternalSwitch.ctrl1Second, closed: false);
+
+        await configure(
+          const ExternalJackSetup(
+            type: ExternalJackType.dualSwitch,
+            dualSecond: ExternalSwitchSetup(
+              gestures: ControlGesturePair(
+                press: ModeAction(InteractionMode.mute),
+              ),
+            ),
+          ),
+        );
+        await contact(PedalExternalSwitch.ctrl1Second, closed: true);
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('the two jacks are separate switches', () async {
+        await configure(
+          const ExternalJackSetup(
+            single: ExternalSwitchSetup(
+              gestures: ControlGesturePair(
+                press: ModeAction(InteractionMode.mute),
+              ),
+            ),
+          ),
+          on: ExternalJack.ctrl2,
+        );
+        // CTRL 1 carries nothing.
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.record);
+
+        await contact(PedalExternalSwitch.ctrl2First, closed: true);
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('an unassigned switch is silent', () async {
+        await configure(ExternalJackSetup.empty);
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        await contact(PedalExternalSwitch.ctrl1First, closed: false);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test('unplugging forgets what the jacks were doing', () async {
+        await configure(
+          const ExternalJackSetup(
+            single: ExternalSwitchSetup(
+              hardware: ExternalSwitchHardware.latching,
+              change: ModeAction(InteractionMode.mute),
+            ),
+          ),
+        );
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.mute);
+
+        // The cable goes while the foot is still on it. Coming back, the
+        // console reports the closure again — and a remembered "already
+        // closed" would swallow it.
+        pedal.unbind();
+        await pumpEventQueue();
+        pedal.bind('out');
+        await pumpEventQueue();
+
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test('a take in progress refuses the jack too', () async {
+        await configure(
+          const ExternalJackSetup(
+            single: ExternalSwitchSetup(
+              gestures: ControlGesturePair(
+                press: ModeAction(InteractionMode.mute),
+              ),
+            ),
+          ),
+        );
+        takeLocked = true;
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.record);
+        takeLocked = false;
+      });
+
+      test(
+        'a pending hold is dropped when the configuration changes',
+        () async {
+          await configure(
+            const ExternalJackSetup(
+              single: ExternalSwitchSetup(
+                gestures: ControlGesturePair(
+                  press: ModeAction(InteractionMode.mute),
+                  hold: ModeAction(InteractionMode.fx),
+                ),
+              ),
+            ),
+          );
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          // Saving the setup retires every gesture in flight: the foot is still
+          // down on a switch that may no longer mean what it meant.
+          await configure(
+            const ExternalJackSetup(
+              single: ExternalSwitchSetup(
+                gestures: ControlGesturePair(
+                  press: ModeAction(InteractionMode.fx),
+                ),
+              ),
+            ),
+          );
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          expect(cubit.state.mode, InteractionMode.record);
         },
       );
     });
