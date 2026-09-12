@@ -102,6 +102,12 @@
  * wired the other way round. Keep these in step with PedalExpressionJack in
  * packages/pedal_repository.
  *
+ * The board sends each jack's CURRENT position once when the link comes up,
+ * and then on change. That initial report is what lets the app tell a jack
+ * with nothing plugged into it from a pedal simply standing still: a jack that
+ * has said nothing has nothing on it. A pedal pulled out afterwards cannot be
+ * reported at all on this wire -- its position just stops changing.
+ *
  * 7 bits of raw travel, one message: the inbound side of this link is 3-byte
  * MIDI only (segno's capture drops SysEx), so a higher-resolution position
  * would need an MSB/LSB pair and a half-assembled value held between two
