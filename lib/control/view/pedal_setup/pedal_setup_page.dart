@@ -9,7 +9,6 @@ import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
-import 'package:segno/control/control_projection.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/control/view/pedal_setup/pedal_color_dialog.dart';
@@ -17,7 +16,6 @@ import 'package:segno/control/view/pedal_setup/pedal_led_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_map.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -111,15 +109,27 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
           Positioned(
             left: _left,
             top: _mapTop,
-            child: PedalSetupMap(
-              selected: _selectedGroup,
-              editable: _editable,
-              onSelect: (button) => setState(() => _selected = button),
-              bank: _mapBank,
-              bankSelectable: _context == PedalSetupContext.custom,
-              onToggleBank: () => setState(() => _bank = 1 - _bank),
-              palette: setup.palette,
-              lit: _litSwitches(context, control.state),
+            // The pills are lit by the RIG, from the very frame the pedal is
+            // rendering — not re-projected here, which would pair an engine
+            // state with an overlay that had not caught up with it and read a
+            // rig that never existed. It changes only when the frame does.
+            child: ValueListenableBuilder<PedalStateFrame>(
+              valueListenable: context.read<PedalRepository>().lastFrame,
+              builder: (context, frame, _) => PedalSetupMap(
+                selected: _selectedGroup,
+                editable: _editable,
+                onSelect: (button) => setState(() => _selected = button),
+                bank: _mapBank,
+                bankSelectable: _context == PedalSetupContext.custom,
+                onToggleBank: () => setState(() => _bank = 1 - _bank),
+                // The DRAFT's palette, so a colour is on the plate before
+                // Save; the frame's own colours are the saved ones.
+                palette: setup.palette,
+                lit: {
+                  for (final button in PedalButton.values)
+                    if (frame.isLit(button)) button,
+                },
+              ),
             ),
           ),
           Positioned(
@@ -130,35 +140,6 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
         ],
       ),
     );
-  }
-
-  /// Which indicators the rig is lighting, re-projected here from the live
-  /// engine state so the map's pills say what the pedal's do.
-  ///
-  /// Selected out of [LooperBloc] as a BITMASK rather than watched: that state
-  /// carries the moving meters, so watching it would rebuild this page on
-  /// every audio poll, and a `Set` compares by identity and would defeat the
-  /// selector anyway. An int changes only when the lit switches do.
-  ///
-  /// [projectFrame]'s two optional inputs are left at their defaults on
-  /// purpose. `clearFadeActive` is true only while the CLEAR footswitch is
-  /// physically held, which nobody is doing while this screen is open, and the
-  /// FX-mode `boundChains` resolution belongs to the cubit that owns the
-  /// bindings — without it an FX-bound track pill reads its own chain, which
-  /// is the preview being one step behind rather than wrong about the palette.
-  Set<PedalButton> _litSwitches(BuildContext context, ControlState overlay) {
-    final mask = context.select<LooperBloc, int>((bloc) {
-      final frame = projectFrame(bloc.state, overlay);
-      var bits = 0;
-      for (final button in PedalButton.values) {
-        if (frame.isLit(button)) bits |= 1 << button.index;
-      }
-      return bits;
-    });
-    return {
-      for (final button in PedalButton.values)
-        if (mask & (1 << button.index) != 0) button,
-    };
   }
 
   // ---------------------------------------------------------------------------

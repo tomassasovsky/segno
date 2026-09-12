@@ -12,7 +12,7 @@
 #
 # It ALSO compares the two .ino sketches' colour-mapping functions, which are
 # hand-maintained in parallel and had no gate at all before #693. Since the
-# LED palette (#1026) that includes `indicatorFor`, which carries the whole
+# LED palette (#1026) those include `indicatorFor`, which carries the whole
 # accepted contract -- what lights an indicator and what hue it comes up in --
 # so the two pedals cannot disagree about either half.
 #

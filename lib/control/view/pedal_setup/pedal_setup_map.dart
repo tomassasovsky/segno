@@ -237,7 +237,10 @@ class PedalSetupCap extends StatelessWidget {
                 // make every switch look half-engaged.
                 color: lit ? color.display : surface.ledOff,
                 borderRadius: BorderRadius.circular(_ledSize.height / 2),
-                border: Border.all(color: surface.line),
+                // The rim is the unlit pill's own edge. A lit one takes the
+                // colour right to the edge, because a dark rim around a lit
+                // LED is a thing the hardware cannot do.
+                border: Border.all(color: lit ? color.display : surface.line),
               ),
             ),
           ),
