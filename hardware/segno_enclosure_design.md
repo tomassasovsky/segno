@@ -182,13 +182,14 @@ fully internal.
 > uncounterbored 2.5 mm to the stack, so the nominal M3×8 becomes **M3×12**. Front rings have clearance
 > holes and no inserts of their own.
 >
-> The two **CLEAR/BANK rings use two independent joints**. Their four column
-> feet have bottom-facing Ø4.5 ×6 mm blind pockets for M3 Ø5 ×5 mm inserts, on
+> The two **CLEAR/BANK rings use two independent joints**. Their solid floor
+> has bottom-facing Ø4.5 ×6 mm blind pockets for M3 Ø5 ×5 mm inserts, on
 > the unchanged `platform_foot_xy()` pattern, local X = ±48.685 mm and
 > Y = ±22.1875 mm. These screws also pick up a pedestal foot, so the nominal M3×6
 > becomes **M3×10** through the foot and the 2 mm metal base into these inserts. Four separate Ø3.7 mm holes cross the 8 mm deck at local
 > X = ±30 mm, Y = ±18 mm; nominal M3×12 screws enter the dedicated mid sled's
-> bottom inserts from the open underside cavity. Each joint has 4 mm nominal
+> bottom inserts up a Ø12 mm driver bore in the otherwise solid collar (#1037,
+> replacing the open underside cavity). Each joint has 4 mm nominal
 > bare insertion before any washer or insert recess; coating also reduces the
 > base joint's engagement. Check actual insert fit, screw heads, coated stack
 > and blind screw-tip clearance on the first PETG prints.

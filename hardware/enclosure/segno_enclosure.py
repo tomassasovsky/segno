@@ -209,8 +209,11 @@ INSERT_PILOT_D  = 4.5         # heat-set pilot bore -- sized for M3 5x5 inserts
                               # (5.0 OD knurled, ~0.5mm interference; the old 4.0
                               # suited the 4.6-OD x 5.7 type)
 INSERT_DEPTH    = 6.0         # pilot depth (5.0 insert + 1.0 melt allowance)
-PLAT_WALL       = 3.0         # printed perimeter wall (cavity hollowing)
 PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
+PLAT_TOOL_D     = 12.0        # driver bore under each mid-collar deck screw: the
+                              # 2026-09-09 mounting brainstorm qualified a O6 x 3
+                              # head and a O8 straight driver, and this leaves
+                              # 2 mm of radial slack on the driver to reach them
 POCKET_DEPTH    = 1.2         # bottom-pad locating pocket depth (< PEDAL_PAD_T)
 POCKET_CLR      = 0.6         # pocket clearance over the pad footprint (total)
 # --- pedal SLED (issue #719): the pedestal split in two -----------------------
@@ -4040,9 +4043,10 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
 
     With a removable sled, the deck has screw clearances. Tall console collars
     use separate bottom inserts for the base and deck screws for their sled;
-    the front collars share one chassis/sled joint. Tall standalone collars
-    have an open underside cavity and mounting columns; mini pedestals stay solid.
-    Print black, base-down, supporting a hollow collar's underside ceiling.
+    the front collars share one chassis/sled joint. Every collar is SOLID under
+    the deck, with a driver bore sunk at each deck-screw axis so those screws
+    can still be reached and turned from below. Print black, base-down: the
+    bores open onto the bed and only their roofs bridge, across O12.
     Origin: pedal centre at the base plate top. Local +X is rearward, +Y is
     across the pedal, and +Z is up. The wall follows the sloped faceplate.
     """
@@ -4066,21 +4070,19 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
     # clears the pad pocket above) and fit SHORT inserts (M3 x 3) instead of 5.7s
     pil = min(INSERT_DEPTH, (h - 1.0) / 2.0)
     body = cq.Workplane("XY").box(sd, sw, h, centered=(True, True, False))
-    cav_h = h - PLAT_DECK
+    cav_h = h - PLAT_DECK                      # deck underside, the collar's inner datum
     # The wider console collar still mates to the existing metal-base holes
     # and sled inserts. Growing its walls must not move these axes or columns.
     mount_d = SKIRT_OUT_D if standalone and sled else sd
     foot_x = (-(mount_d/2 - PLATFORM_FOOT/2), mount_d/2 - PLATFORM_FOOT/2)
-    # A standalone collar's hollow underside remains accessible for support
-    # removal after printing base-down. The mini tray would seal that cavity
-    # and trap supports, so leave it solid and let slicer infill do the hollowing.
-    if standalone and cav_h > 2.0:
-        body = body.cut(cq.Workplane("XY").box(
-            sd - 2*PLAT_WALL, sw - 2*PLAT_WALL, cav_h, centered=(True, True, False)))
-        for dx in foot_x:                      # boss columns for the base inserts
-            for dy in platform_foot_u(sw):
-                body = body.union(cq.Workplane("XY").cylinder(
-                    cav_h, 6.0, centered=(True, True, False)).translate((dx, dy, 0)))
+    # SOLID UNDER THE DECK (#1037). The tall collar used to be a 3 mm shell over
+    # an open cavity, with four O12 columns carrying the base inserts. That shell
+    # is what the slicer lays down at the perimeter anyway, so modelling it only
+    # pinned the wall thickness and the part's density in geometry -- on the one
+    # printed part that carries a stomp from the sled into the base plate (#1019).
+    # Solid, and a print that used to hang a 17,000 mm2 ceiling over an open
+    # void now bridges four O12 bore roofs. What the cavity was FOR is kept
+    # below: one driver bore per deck-screw axis.
     if standalone and not sled:
         for dx in foot_x:                      # base inserts, from below
             for dy in platform_foot_u(sw):
@@ -4095,9 +4097,9 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
         # no pad pocket: the pad is OFF and the SLED lands on this deck, flat.
         if standalone:
             if v_c == PEDAL_ROW2_V:
-                # Short base screws terminate in the column bottoms. The sled
-                # is secured separately from the open cavity, before installing
-                # the complete pedal/platform module onto the metal base.
+                # Short base screws terminate in blind pockets in the floor.
+                # The sled is secured first, driven up the four deck bores,
+                # before the complete pedal/platform module goes on the base.
                 for x, y in platform_foot_xy():
                     body = body.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2)
                                     .extrude(INSERT_DEPTH).translate((x, y, 0)))
@@ -4105,6 +4107,11 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
                     body = body.cut(cq.Workplane("XY").circle(D_M3/2.0 + 0.25)
                                     .extrude(PLAT_DECK + 1.0)
                                     .translate((x, y, cav_h)))
+                    # ...and the bore the screw head and driver come up, in
+                    # place of the cavity that used to leave the whole
+                    # underside open. Blind at the deck, open at the floor.
+                    body = body.cut(cq.Workplane("XY").circle(PLAT_TOOL_D/2.0)
+                                    .extrude(cav_h).translate((x, y, 0)))
             else:
                 # Front: one short chassis screw clamps base, collar and sled.
                 for dx in foot_x:

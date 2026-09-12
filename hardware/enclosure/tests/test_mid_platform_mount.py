@@ -111,6 +111,23 @@ class MidPlatformMountTest(unittest.TestCase):
                                        cylinder(2.25, 6.0, x, y, 0))
                     self.assertGreaterEqual(6.0-insertion, 2.0)
 
+    def test_the_underside_is_solid_apart_from_its_pockets_and_driver_bores(self):
+        """Issue #1037. The collar was a 3 mm shell over an open cavity; only
+        the four driver bores survive it, so the tool access the joint above
+        depends on is the ONLY thing left under the deck."""
+        self.assertCountEqual(bore_spans(self.collar, 6.0), [
+            (x, y, 0.0, round(CEILING, 6), round(2*math.pi*6.0*CEILING, 6))
+            for x, y in DECK_AXES])
+        # Everything the cavity used to empty out, between the floor and the
+        # deck, is material now -- except those bores and the base pockets.
+        filled = cq.Solid.makeBox(80, 60, CEILING-0.4,
+                                  cq.Vector(-40, -30, 0.2))
+        for x, y in DECK_AXES:
+            filled = filled.cut(cylinder(6.2, CEILING, x, y, 0))
+        for x, y in BASE_AXES:
+            filled = filled.cut(cylinder(2.45, 6.2, x, y, 0))
+        self.assert_inside(filled, self.collar)
+
     def test_independent_deck_pattern_allows_short_screws_and_straight_tools(self):
         self.assertCountEqual(bore_spans(self.collar, 1.85), [
             (x, y, round(CEILING, 6), round(SEAT, 6),
