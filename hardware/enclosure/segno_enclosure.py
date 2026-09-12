@@ -191,8 +191,6 @@ INSERT_PILOT_D  = 4.5         # heat-set pilot bore -- sized for M3 5x5 inserts
                               # (5.0 OD knurled, ~0.5mm interference; the old 4.0
                               # suited the 4.6-OD x 5.7 type)
 INSERT_DEPTH    = 6.0         # pilot depth (5.0 insert + 1.0 melt allowance)
-PLAT_WALL       = 3.0         # printed perimeter wall (cavity hollowing)
-PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
 POCKET_DEPTH    = 1.2         # bottom-pad locating pocket depth (< PEDAL_PAD_T)
 POCKET_CLR      = 0.6         # pocket clearance over the pad footprint (total)
 # --- pedal SLED (issue #719): the pedestal split in two -----------------------
@@ -3538,8 +3536,8 @@ def pedal_sled(cq):
     return s
 
 def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
-    """3D-printed pedal pedestal: solid deck + perimeter wall, hollowed below
-    (tall MID parts) with boss columns at the insert stations. M3 heat-set
+    """3D-printed pedal pedestal: a SOLID block under the deck (no modelled
+    cavity -- the slicer's infill does the hollowing). M3 heat-set
     inserts press in from BELOW at the base PLAT_SCR pattern; the deck top gets
     a shallow LOCATING POCKET for the Cherub's bottom anti-slip pad (the WTB-006
     has no base screws -- side screws only; retention PROVISIONAL), and a
@@ -3569,23 +3567,16 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
     # clears the pad pocket above) and fit SHORT inserts (M3 x 3) instead of 5.7s
     pil = min(INSERT_DEPTH, (h - 1.0) / 2.0)
     body = cq.Workplane("XY").box(sd, sw, h, centered=(True, True, False))
-    cav_h = h - PLAT_DECK
     foot_x = (-(sd/2 - PLATFORM_FOOT/2), sd/2 - PLATFORM_FOOT/2)
-    # `standalone` = this pedestal is its own printed part, bolted to the base
-    # plate from below. It then prints deck-down, so the weight-saving cavity
-    # opens upward and costs nothing, and the base-insert pilots are reachable.
-    # Built INTO the mini tray neither holds: the tray prints floor-down, which
-    # turns the cavity into a 17,000 mm2 ceiling over a sealed void (nothing can
-    # bridge it, and any support the slicer drops in is trapped forever), and
-    # the pilots end up buried against the tray floor. Solid instead, and let
-    # INFILL do the hollowing (#539).
-    if standalone and cav_h > 2.0:
-        body = body.cut(cq.Workplane("XY").box(
-            sd - 2*PLAT_WALL, sw - 2*PLAT_WALL, cav_h, centered=(True, True, False)))
-        for dx in foot_x:                      # boss columns for the base inserts
-            for dy in platform_foot_u(sw):
-                body = body.union(cq.Workplane("XY").cylinder(
-                    cav_h, 6.0, centered=(True, True, False)).translate((dx, dy, 0)))
+    # NO MODELLED CAVITY -- every pedestal is a solid block and INFILL does the
+    # hollowing. The mini tray always worked this way (it prints floor-down, so
+    # a modelled cavity would be a 17,000 mm2 ceiling over a sealed void that
+    # nothing can bridge and no support can leave, #539); the tall MID ring kept
+    # a 3 mm shell with boss columns at the four stations instead. That
+    # shell is what the slicer would have built anyway at the perimeter, and
+    # modelling it froze the wall thickness at print time: the ring is the part
+    # that carries a stomp down to the base plate (#1019), and its density is a
+    # slicer setting, not a geometry one. One rule for both now.
     if standalone and not sled:
         for dx in foot_x:                      # base inserts, from below
             for dy in platform_foot_u(sw):
