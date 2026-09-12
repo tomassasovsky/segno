@@ -92,6 +92,28 @@
 /* The relative CC the encoder reports / the pedal sends (binary-offset). */
 #define PEDAL_ENCODER_CC 0x10
 
+/* The absolute CC each external CTRL jack's expression position arrives on.
+ *
+ * An expression pedal is a potentiometer the console board reads on the same
+ * jack a switch would use, so its position reaches segno on the link the
+ * footswitches and the encoder already share -- as a Control Change whose
+ * value is the RAW reading, 0 at one mechanical end and 0x7F at the other.
+ * Which end is which is not fixed: the app calibrates, and accepts a pedal
+ * wired the other way round. Keep these in step with PedalExpressionJack in
+ * packages/pedal_repository.
+ *
+ * 7 bits of raw travel, one message: the inbound side of this link is 3-byte
+ * MIDI only (segno's capture drops SysEx), so a higher-resolution position
+ * would need an MSB/LSB pair and a half-assembled value held between two
+ * messages. 128 raw steps is what a commercial expression input delivers; a
+ * calibration near the app's 10% minimum span cuts that to about 13, so if
+ * the bench shows that stepping, the answer is a 14-bit CC pair here rather
+ * than anything the app can do about it. */
+#define PEDAL_EXPRESSION_CTRL1_CC 0x11
+#define PEDAL_EXPRESSION_CTRL2_CC 0x12
+/* The raw value at a mechanical end -- the full 7-bit CC range. */
+#define PEDAL_EXPRESSION_MAX 0x7F
+
 /* The largest state frame, for output buffers (60 in practice at v4, 26 at
  * v3 and below). */
 #define PEDAL_FRAME_MAX_BYTES 64
@@ -269,6 +291,15 @@ int pedal_encode_button(uint8_t note, int pressed, uint8_t channel,
 /* Writes the 3-byte relative-encoder CC for `delta` detents (binary-offset,
  * clamped to -64..+63) into `buf`. Returns 3. */
 int pedal_encode_encoder(int delta, uint8_t channel, uint8_t* buf);
+
+/* Writes the 3-byte absolute CC carrying an expression jack's position into
+ * `buf`: `cc` is PEDAL_EXPRESSION_CTRL1_CC or PEDAL_EXPRESSION_CTRL2_CC and
+ * `raw` is the reading, clamped to PEDAL_EXPRESSION_MAX. Returns 3.
+ *
+ * Raw, not calibrated: the board sends what it read, and which end of the
+ * travel is heel is the app's to decide. */
+int pedal_encode_expression(uint8_t cc, int raw, uint8_t channel,
+                            uint8_t* buf);
 
 #ifdef __cplusplus
 }
