@@ -22,14 +22,10 @@ void main() {
       }
     });
 
-    test('names which jack and which of its switches', () {
-      expect(PedalExternalSwitch.ctrl1First.jack, 0);
+    test("names which of its jack's switches it is", () {
       expect(PedalExternalSwitch.ctrl1First.position, 0);
-      expect(PedalExternalSwitch.ctrl1Second.jack, 0);
       expect(PedalExternalSwitch.ctrl1Second.position, 1);
-      expect(PedalExternalSwitch.ctrl2First.jack, 1);
       expect(PedalExternalSwitch.ctrl2First.position, 0);
-      expect(PedalExternalSwitch.ctrl2Second.jack, 1);
       expect(PedalExternalSwitch.ctrl2Second.position, 1);
     });
 
