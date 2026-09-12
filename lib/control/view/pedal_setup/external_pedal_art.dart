@@ -49,7 +49,7 @@ class ExternalPedalArt extends StatelessWidget {
       asset: 'assets/hardware/external_dual.webp',
       size: Size(1672, 941),
       switches: [Offset(402.5, 485.5), Offset(1265.5, 485.5)],
-      indicators: [Offset(405, 285)],
+      indicators: [Offset(405, 285), Offset(1265, 285)],
     ),
   };
 

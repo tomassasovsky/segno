@@ -8,15 +8,7 @@ enum ExternalJack {
   ctrl1,
 
   /// CTRL 2.
-  ctrl2;
-
-  /// Parses a persisted [name], or `null` when it names neither jack.
-  static ExternalJack? fromName(String? name) {
-    for (final jack in values) {
-      if (jack.name == name) return jack;
-    }
-    return null;
-  }
+  ctrl2,
 }
 
 /// What is plugged into a jack.
