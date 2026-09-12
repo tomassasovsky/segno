@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
@@ -29,10 +30,14 @@ const String segnoFxRouteName = 'segno/fx';
 /// Route name for the Pedals setup page.
 const String segnoPedalSetupRouteName = 'segno/pedal-setup';
 
+/// The route name of the External pedals subview.
+const String segnoExternalPedalsRouteName = 'segno/external-pedals';
+
 bool _loopSettingsOpen = false;
 bool _audioRoutingOpen = false;
 bool _fxOpen = false;
 bool _pedalSetupOpen = false;
+bool _externalPedalsOpen = false;
 Future<FxCatalogue>? _fxCatalogue;
 
 /// The factory catalogue, loaded once and kept.
@@ -105,6 +110,29 @@ Future<void> openPedalSetup() async {
     );
   } finally {
     _pedalSetupOpen = false;
+    _externalPedalsOpen = false;
+  }
+}
+
+/// Pushes the External pedals subview on top of the Pedals route; guarded
+/// against stacking duplicates like [openPedalSetup].
+///
+/// Its own route rather than a context of the Pedals screen: it has its own
+/// draft and its own Save, and Back has to mean "leave this subview and
+/// discard what it holds" rather than "leave Pedals".
+Future<void> openExternalPedals() async {
+  final navigator = segnoNavigatorKey.currentState;
+  if (navigator == null || _externalPedalsOpen) return;
+  _externalPedalsOpen = true;
+  try {
+    await navigator.push(
+      desktopPageRoute<void>(
+        (_) => const ExternalPedalPage(),
+        settings: const RouteSettings(name: segnoExternalPedalsRouteName),
+      ),
+    );
+  } finally {
+    _externalPedalsOpen = false;
   }
 }
 
@@ -144,6 +172,7 @@ void resetSegnoNavigatorForTest() {
   _audioRoutingOpen = false;
   _fxOpen = false;
   _pedalSetupOpen = false;
+  _externalPedalsOpen = false;
   _fxCatalogue = null;
 }
 

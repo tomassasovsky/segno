@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
@@ -271,6 +272,17 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             height: 64,
           ),
           const Spacer(),
+          // The jacks are not a context of this screen: they are their own
+          // screen, with their own draft and their own Save.
+          LoopChoiceButton(
+            key: const Key('pedal_setup_external'),
+            label: l10n.externalPedalsTitle,
+            selected: false,
+            onTap: () => unawaited(openExternalPedals()),
+            width: 216,
+            height: 64,
+          ),
+          const SizedBox(width: 23),
           // Away from the pair, at the far end of the row: the colours are not
           // a third set of assignments to choose between, they are a different
           // question about the same ten switches.
