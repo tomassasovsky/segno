@@ -11,7 +11,10 @@
 # test against each, so CI and the local verify loop run the identical check.
 #
 # It ALSO compares the two .ino sketches' colour-mapping functions, which are
-# hand-maintained in parallel and had no gate at all before #693.
+# hand-maintained in parallel and had no gate at all before #693. Since the
+# LED palette (#1026) those include `indicatorFor`, which carries the whole
+# accepted contract -- what lights an indicator and what hue it comes up in --
+# so the two pedals cannot disagree about either half.
 #
 # Run from anywhere; the script cd's to the repo root so the default golden
 # fixtures path (packages/pedal_repository/test/fixtures) resolves.
@@ -68,7 +71,7 @@ extract_fn() {
 # Comments and whitespace carry no meaning here; everything else does.
 normalize() { sed 's://.*::' | tr -d '[:space:]'; }
 
-for fn in ledColor globalColor modeColor scaled; do
+for fn in indicatorFor globalColor scaled; do
   p="$(extract_fn "$PRIMARY_INO" "$fn" | normalize)"
   m="$(extract_fn "$MIRROR_INO" "$fn" | normalize)"
   if [ -z "$p" ]; then

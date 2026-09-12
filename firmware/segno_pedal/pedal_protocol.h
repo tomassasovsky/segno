@@ -173,11 +173,15 @@ typedef struct pedal_color {
   uint8_t b;
 } pedal_color;
 
-/* What a pedal's indicator uses when the frame carries no colour for it:
- * white, which is the palette default on both sides. */
-#define PEDAL_COLOR_DEFAULT_R 0xFFu
-#define PEDAL_COLOR_DEFAULT_G 0xFFu
-#define PEDAL_COLOR_DEFAULT_B 0xFFu
+/* What a pedal's indicator uses when nothing has chosen a colour for it: the
+ * palette's white, which is also what it assigns to all ten before a user
+ * opens the editor. One number, not one on each side -- keep it in step with
+ * PedalColor.white in packages/pedal_repository. Short of 0xFFFFFF on
+ * purpose: a WS2812 run flat out washes its own hue out at the distance a
+ * foot reads it from. */
+#define PEDAL_COLOR_DEFAULT_R 0xE6u
+#define PEDAL_COLOR_DEFAULT_G 0xEEu
+#define PEDAL_COLOR_DEFAULT_B 0xF9u
 
 /* The decoded looper state the pedal renders. */
 typedef struct pedal_frame {

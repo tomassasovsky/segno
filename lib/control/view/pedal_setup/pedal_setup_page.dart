@@ -7,9 +7,12 @@ import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
+import 'package:segno/control/view/pedal_setup/pedal_color_dialog.dart';
+import 'package:segno/control/view/pedal_setup/pedal_led_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_editor.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_map.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -26,6 +29,9 @@ enum PedalSetupContext {
 
   /// The free map: eight switches, each with its own Press and Hold.
   custom,
+
+  /// The ten indicators, and which colour each of them uses.
+  leds,
 }
 
 /// The accepted Pedals setup (Layout A): the hardware map stays on screen
@@ -54,9 +60,14 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   /// live one, and the first edit forks from whatever is current then.
   PedalSetup? _draft;
 
-  /// What Clear custom assignments took away, until the draft is saved or
+  /// The Custom assignments Clear took away, until the draft is saved or
   /// cancelled.
-  PedalSetup? _cleared;
+  ///
+  /// The assignments alone, not the whole setup: the accepted design says
+  /// recovery must not rewrite LED colours or anything else edited after the
+  /// clear, so Restore puts these back INTO the current draft rather than
+  /// rewinding it.
+  Map<PedalBindingKey, ControlGesturePair>? _cleared;
 
   PedalSetupContext _context = PedalSetupContext.tracks;
 
@@ -98,13 +109,27 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
           Positioned(
             left: _left,
             top: _mapTop,
-            child: PedalSetupMap(
-              selected: _selectedGroup,
-              editable: _editable,
-              onSelect: (button) => setState(() => _selected = button),
-              bank: _mapBank,
-              bankSelectable: _context == PedalSetupContext.custom,
-              onToggleBank: () => setState(() => _bank = 1 - _bank),
+            // The pills are lit by the RIG, from the very frame the pedal is
+            // rendering — not re-projected here, which would pair an engine
+            // state with an overlay that had not caught up with it and read a
+            // rig that never existed. It changes only when the frame does.
+            child: ValueListenableBuilder<PedalStateFrame>(
+              valueListenable: context.read<PedalRepository>().lastFrame,
+              builder: (context, frame, _) => PedalSetupMap(
+                selected: _selectedGroup,
+                editable: _editable,
+                onSelect: (button) => setState(() => _selected = button),
+                bank: _mapBank,
+                bankSelectable: _context == PedalSetupContext.custom,
+                onToggleBank: () => setState(() => _bank = 1 - _bank),
+                // The DRAFT's palette, so a colour is on the plate before
+                // Save; the frame's own colours are the saved ones.
+                palette: setup.palette,
+                lit: {
+                  for (final button in PedalButton.values)
+                    if (frame.isLit(button)) button,
+                },
+              ),
             ),
           ),
           Positioned(
@@ -160,7 +185,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
               key: const Key('pedal_setup_restore_custom'),
               width: 300,
               label: l10n.pedalSetupRestoreCustom,
-              onTap: _restoreCleared,
+              onTap: () => _restoreCleared(setup),
             ),
             const SizedBox(width: 16),
           ],
@@ -198,8 +223,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     });
   }
 
-  void _restoreCleared() => setState(() {
-    _draft = _cleared;
+  void _restoreCleared(PedalSetup setup) => setState(() {
+    _draft = setup.copyWith(custom: _cleared);
     _cleared = null;
     _saved = false;
   });
@@ -208,10 +233,10 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     final confirmed = await showPedalClearDialog(context);
     if (!confirmed || !mounted) return;
     setState(() {
-      // The cleared setup is what Restore puts back — the DRAFT at the moment
-      // of the clear, not what is saved, so clearing after other edits and
-      // then restoring keeps those edits.
-      _cleared = setup;
+      // What Restore puts back is the DRAFT's assignments at the moment of the
+      // clear, not the saved ones, so clearing after other edits and then
+      // restoring keeps those edits.
+      _cleared = setup.custom;
       _draft = setup.clearedCustom();
       _saved = false;
     });
@@ -245,6 +270,18 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             width: 225,
             height: 64,
           ),
+          const Spacer(),
+          // Away from the pair, at the far end of the row: the colours are not
+          // a third set of assignments to choose between, they are a different
+          // question about the same ten switches.
+          LoopChoiceButton(
+            key: const Key('pedal_setup_context_leds'),
+            label: l10n.pedalSetupContextLeds,
+            selected: _context == PedalSetupContext.leds,
+            onTap: () => _openContext(PedalSetupContext.leds),
+            width: 168,
+            height: 64,
+          ),
         ],
       ),
     );
@@ -259,6 +296,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
       _selected = switch (next) {
         PedalSetupContext.tracks => PedalButton.mode,
         PedalSetupContext.custom => PedalButton.track1,
+        // Every switch has a colour, so whichever one was being edited can
+        // keep being the one on screen.
+        PedalSetupContext.leds => _selected,
       };
     });
   }
@@ -268,7 +308,14 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   /// Always A in Track controls: nothing there is per-bank — one hold covers
   /// all four track switches — so a map reading TRACK 5-8 would name a bank
   /// that context has no way to leave, since BANK is dimmed there.
-  int get _mapBank => _context == PedalSetupContext.custom ? _bank : 0;
+  int? get _mapBank => switch (_context) {
+    PedalSetupContext.custom => _bank,
+    PedalSetupContext.tracks => 0,
+    // No bank at all: a colour belongs to the switch, not to what the switch
+    // is currently driving, so naming a bank here would promise a per-bank
+    // colour that does not exist.
+    PedalSetupContext.leds => null,
+  };
 
   /// The switches this context can edit.
   Set<PedalButton> get _editable => switch (_context) {
@@ -286,6 +333,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
       for (final button in PedalButton.values)
         if (!PedalBindingKey.unbindable.contains(button)) button,
     },
+    // All ten, including the switches whose action is fixed: the accepted
+    // design is explicit that colour is configurable on every one of them.
+    PedalSetupContext.leds => PedalButton.values.toSet(),
   };
 
   /// The switches drawn as selected.
@@ -305,7 +355,22 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   Widget _editor(BuildContext context, PedalSetup setup) => switch (_context) {
     PedalSetupContext.tracks => _tracksEditor(context, setup),
     PedalSetupContext.custom => _customEditor(context, setup),
+    PedalSetupContext.leds => _ledEditor(context, setup),
   };
+
+  /// LED colors: one switch, the palette, and a way to grow it.
+  Widget _ledEditor(BuildContext context, PedalSetup setup) => PedalLedEditor(
+    title: _controlName(context),
+    palette: setup.palette,
+    button: _selected,
+    onChoose: (entry) => setState(
+      () => _draft = setup.copyWith(
+        palette: setup.palette.withChoice(_selected, entry),
+      ),
+    ),
+    onAdd: () => unawaited(_mixColor(setup, editing: null)),
+    onEdit: (entry) => unawaited(_mixColor(setup, editing: entry)),
+  );
 
   /// Track controls: the fixed plate's three configurable gestures.
   ///
@@ -419,7 +484,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     );
   }
 
-  int get _selectedChannel => pedalTrackChannel(_selected, _mapBank) ?? 0;
+  int get _selectedChannel => pedalTrackChannel(_selected, _mapBank ?? 0) ?? 0;
 
   String _controlName(BuildContext context) {
     final l10n = context.l10n;
@@ -427,7 +492,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
         kTrackSwitches.contains(_selected)) {
       return l10n.pedalSetupTrackGroup;
     }
-    return pedalSwitchLabel(l10n, _selected, _mapBank);
+    return pedalSwitchLabel(l10n, _selected, _mapBank ?? 0);
   }
 
   String _pickerTitle(BuildContext context, {required bool hold}) {
@@ -548,6 +613,38 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     );
     if (chosen == null || !mounted) return;
     setState(() => _draft = setup.copyWith(trackHold: chosen.value));
+  }
+
+  /// Opens the colour editor: [editing] names the palette entry being changed,
+  /// or `null` to mix a new one.
+  Future<void> _mixColor(
+    PedalSetup setup, {
+    required CustomPaletteEntry? editing,
+  }) async {
+    final palette = setup.palette;
+    final number = editing?.number ?? palette.nextCustomNumber;
+    final chosen = await showPedalColorDialog(
+      context,
+      // A new colour starts mid-space rather than on the switch's current one,
+      // which is white almost every time: white has no hue and no saturation,
+      // so the hue slider would move with nothing happening on screen.
+      initial: editing == null
+          ? PedalColor.blue
+          : palette.colorOf(editing) ?? PedalColor.defaultColor,
+      editing: editing != null,
+    );
+    if (chosen == null || !mounted) return;
+    setState(() {
+      // Adding puts the new colour on the switch that asked for it. Editing
+      // touches no assignment at all: the colour moves, and every switch
+      // pointing at it moves with it, which is what makes a custom colour
+      // reusable.
+      var next = palette.withCustom(number, chosen);
+      if (editing == null) {
+        next = next.withChoice(_selected, CustomPaletteEntry(number));
+      }
+      _draft = setup.copyWith(palette: next);
+    });
   }
 
   Future<void> _editCustom(PedalSetup setup, {required bool hold}) async {

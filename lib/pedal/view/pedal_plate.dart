@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/common/pedal_color_display.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -242,10 +243,8 @@ class PedalPlate extends StatelessWidget {
                   _row2V,
                   statusLed: _Led(
                     ledKey: const Key('pedalFaceplate_led_clear'),
-                    color: frame.clearFadeActive
-                        ? surface.ledRed
-                        : surface.ledOff,
-                    glow: frame.globalColor != GlobalColor.off,
+                    color: _indicator(surface, frame, PedalButton.clear),
+                    glow: frame.isLit(PedalButton.clear),
                   ),
                 ),
                 footswitch(
@@ -255,10 +254,8 @@ class PedalPlate extends StatelessWidget {
                   _row2V,
                   statusLed: _Led(
                     ledKey: const Key('pedalFaceplate_led_bank'),
-                    color: frame.activeBank == 1
-                        ? surface.ledBlue
-                        : surface.ledOff,
-                    glow: frame.activeBank == 1,
+                    color: _indicator(surface, frame, PedalButton.bank),
+                    glow: frame.isLit(PedalButton.bank),
                   ),
                 ),
                 ...silkLabels(_silk(PedalButton.clear), _pedalU(2), _row2V),
@@ -287,23 +284,21 @@ class PedalPlate extends StatelessWidget {
                   _silk(PedalButton.mode),
                   _pedalU(3),
                   _row1V,
-                  // The tri-state mode indicator (A1), mirroring the firmware
-                  // verbatim: rec red, mute green, FX blue (#693), SOLID —
-                  // with the goodbye frame darkening it, exactly as both
-                  // sketches render it (`goodbye ? Black : modeColor(...)`).
+                  // Dark in the normal Tracks mode and lit in every other
+                  // one, SOLID either way — mirroring both sketches verbatim.
+                  // It used to say WHICH mode by its hue; the hue belongs to
+                  // the performer now (#1026) and the mode is on the displays.
                   //
                   // `frame.performanceArmed` is deliberately NOT read here.
                   // This LED used to blink red while armed; #693 removed that
                   // reading, because armed already shows on the screens (the
                   // 7" readout's REC block with running elapsed, and the
                   // stage status bar) and the duplicate cost this dot its
-                  // one unambiguous meaning. It now says the mode, only.
+                  // one unambiguous meaning.
                   statusLed: _Led(
                     ledKey: const Key('pedalFaceplate_led_mode'),
-                    color: frame.isGoodbye
-                        ? surface.ledOff
-                        : _modeColor(surface, frame.mode),
-                    glow: !frame.isGoodbye,
+                    color: _indicator(surface, frame, PedalButton.mode),
+                    glow: frame.isLit(PedalButton.mode),
                   ),
                 ),
                 ...silkLabels(_silk(PedalButton.recPlay), _pedalU(0), _row1V),
@@ -318,10 +313,9 @@ class PedalPlate extends StatelessWidget {
                     _row1V,
                     channel: bankBase + t,
                   ),
-                // Status LEDs sit behind each track switch (and CLEAR/BANK), as
-                // on the plate. The four track LEDs come from the frame; BANK
-                // lights on bank B and CLEAR lights while there is activity to
-                // clear.
+                // Status LEDs sit behind each track switch (and CLEAR/BANK),
+                // as on the plate. Each one is lit by the frame's own state
+                // and coloured by the performer's palette.
                 for (var t = 0; t < _trackButtons.length; t++)
                   box(
                     _pedalU(4 + t),
@@ -330,8 +324,8 @@ class PedalPlate extends StatelessWidget {
                     _ledD,
                     _Led(
                       ledKey: Key('pedalFaceplate_led_track${bankBase + t}'),
-                      color: _ledColor(surface, frame.trackLeds[bankBase + t]),
-                      glow: frame.trackLeds[bankBase + t] != PedalTrackLed.off,
+                      color: _indicator(surface, frame, _trackButtons[t]),
+                      glow: frame.isLit(_trackButtons[t]),
                     ),
                   ),
 
@@ -993,52 +987,24 @@ const _trackButtons = <PedalButton>[
   PedalButton.track4,
 ];
 
-Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
-  PedalTrackLed.off => surface.ledOff,
-  PedalTrackLed.green => surface.ledGreen,
-  PedalTrackLed.red => surface.ledRed,
-  // FX-mode chain-enabled (protocol v3, part 5a) — rendered like the
-  // firmware's verbatim blue; the FX-mode projection that emits it is 5b's.
-  PedalTrackLed.blue => surface.ledBlue,
-};
-
-/// The tri-state MODE indicator's color (A1), one per interaction mode —
-/// the on-screen twin of the firmware's `modeColor`.
+/// What one footswitch's indicator shows: the hue the performer gave it while
+/// the rig is lighting it, and the unlit dot otherwise.
 ///
-/// Rec red, mute green, FX blue (#693, owner's call from the bench). This
-/// used to read rec GREEN and mute AMBER, which put the plate at odds with
-/// every screen: the console's mode pill has always drawn rec in red, and the
-/// owner's call is that mute reads green everywhere. Recolouring mute alone
-/// was not possible — green was already spoken for by rec, and collapsing the
-/// two would have made the pedal's two BOOT modes (`record` and `mute`)
-/// indistinguishable on the one indicator that names them. So rec moves to
-/// red in the same stroke, which is where the screens had it all along.
+/// The accepted LED contract in two halves — [PedalStateFrame.isLit] decides
+/// whether an indicator is on, and the frame's own colour byte decides its hue
+/// — which is exactly what `indicatorFor` does in both sketches. Keep the two
+/// in lockstep; a widget test covers this side and the firmware drift gate
+/// covers that one.
 ///
-/// The wire is untouched: the frame carries the 2-bit mode, never a colour,
-/// so this is a rendering change on both sides. Keep it in lockstep with the
-/// firmware's `modeColor`.
-///
-/// Both sides now have exactly ONE call site for this mapping: the MODE LED.
-/// The firmware's `modeColor()` used to also tint the ring's idle sweep, so
-/// the plate carried a mode reading this widget could not show; #693 dropped
-/// that in both sketches in favour of the neutral `kRingIdleGlow` (the app's
-/// [SurfaceTheme.ringGlow]), because a dim red idle ring in rec mode reads as
-/// a live take from stage distance. The ring renders straight from
-/// `_ringColor(frame.globalColor)` here and from the activity colour there —
-/// mode-blind on both.
-///
-/// The MODE LED is also SOLID in every state on both sides. The armed blink is
-/// gone (armed shows on the screens); `PedalStateFrame.performanceArmed` still
-/// crosses the wire and is deliberately not read for display.
-Color _modeColor(SurfaceTheme surface, PedalMode mode) => switch (mode) {
-  PedalMode.rec => surface.ledRed,
-  PedalMode.play => surface.ledGreen,
-  PedalMode.fx => surface.ledBlue,
-  // Amber: the one hue the plate had left unspoken for. Kept in lockstep
-  // with `modeColor` in both sketches, which the firmware drift gate holds
-  // identical to each other.
-  PedalMode.custom => surface.ledAmber,
-};
+/// The hue used to BE the state here: a track LED read green for playing and
+/// red for recording, and the MODE LED said which mode it was in. Both
+/// readings are gone. What a lit indicator says now is that its function is
+/// engaged; which function, and which mode, is on the displays.
+Color _indicator(
+  SurfaceTheme surface,
+  PedalStateFrame frame,
+  PedalButton button,
+) => frame.isLit(button) ? frame.colorFor(button).display : surface.ledOff;
 
 Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {
   GlobalColor.off => surface.ringGlow,

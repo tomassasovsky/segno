@@ -91,9 +91,11 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
+    final pedal = PedalRepository(const NoopPedalTransport());
+    addTearDown(() => unawaited(pedal.dispose()));
     final control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(const NoopPedalTransport()),
+      pedal: pedal,
       settings: settings,
       performance: performance,
       keepAliveInterval: Duration.zero,
@@ -115,8 +117,13 @@ void main() {
             routingGraphThemeFromSurface(SurfaceTheme.dark),
           ],
         ),
-        home: RepositoryProvider<LooperRepository>.value(
-          value: looper,
+        home: MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<LooperRepository>.value(value: looper),
+            // The map's indicators read the frame the app last handed the
+            // pedal.
+            RepositoryProvider<PedalRepository>.value(value: pedal),
+          ],
           child: MultiBlocProvider(
             providers: [
               BlocProvider.value(value: control),
@@ -192,6 +199,43 @@ void main() {
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/pedal_setup_clear.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+  testWidgets('LED colors, the palette over the ten indicators', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_cap_track1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_swatch_blue')));
+    await tester.pumpAndSettle();
+    await shot(tester, 'leds');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('LED colors, a mixed colour and the Edit color it offers', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_swatch_add')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_color_done')));
+    await tester.pumpAndSettle();
+    await shot(tester, 'leds_custom');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('the colour editor, mixing one hue', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_setup_swatch_add')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/pedal_setup_color_editor.png'),
     );
   }, skip: !hasScreenshotFonts);
 }

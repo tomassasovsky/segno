@@ -106,10 +106,71 @@ class PedalSetupField extends StatelessWidget {
   }
 }
 
-/// The selected control's name and its two gesture fields.
+/// The selected control's name beside whatever the current context edits.
 ///
-/// The pen's `selected-editor`: the name on the left, the fields filling the
-/// rest of the row.
+/// The pen's `selected-editor`: the name on the left at a fixed place, the
+/// fields filling the rest of the row. Shared by both editors so the switch
+/// being edited is named in exactly one spot whichever context is open —
+/// nothing under the map should move when the context changes.
+class PedalSetupEditorFrame extends StatelessWidget {
+  /// Creates a [PedalSetupEditorFrame].
+  const PedalSetupEditorFrame({
+    required this.title,
+    required this.top,
+    required this.child,
+    super.key,
+  });
+
+  /// What the selected control is called.
+  final String title;
+
+  /// Where the editing area starts inside the box. Its own, because the two
+  /// contexts edit blocks of different heights.
+  final double top;
+
+  /// The editing area.
+  final Widget child;
+
+  /// The pen's box.
+  static const Size penSize = Size(1720, 212);
+
+  /// The pen's inset before the fields.
+  static const double fieldsLeft = 332;
+
+  /// What is left for them.
+  static const double fieldsWidth = 1720 - fieldsLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return SizedBox.fromSize(
+      size: penSize,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 96,
+            width: fieldsLeft - 32,
+            child: AppText(
+              title,
+              key: const Key('pedal_setup_selected'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: surface.textPrimary,
+                fontSize: 34,
+                height: 1,
+              ),
+            ),
+          ),
+          Positioned(left: fieldsLeft, top: top, child: child),
+        ],
+      ),
+    );
+  }
+}
+
+/// The selected control's name and its two gesture fields.
 class PedalSetupEditor extends StatelessWidget {
   /// Creates a [PedalSetupEditor].
   const PedalSetupEditor({
@@ -128,51 +189,19 @@ class PedalSetupEditor extends StatelessWidget {
   /// The Hold field.
   final Widget hold;
 
-  /// The pen's box.
-  static const Size penSize = Size(1720, 212);
-
-  /// The pen's inset before the fields.
-  static const double _fieldsLeft = 332;
-
   /// The pen's gap between the two fields.
   static const double _fieldGap = 28;
 
   @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return SizedBox.fromSize(
-      size: penSize,
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            top: 96,
-            width: _fieldsLeft - 32,
-            child: AppText(
-              title,
-              key: const Key('pedal_setup_selected'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: surface.textPrimary,
-                fontSize: 34,
-                height: 1,
-              ),
-            ),
-          ),
-          Positioned(
-            left: _fieldsLeft,
-            top: 46,
-            child: Row(
-              children: [
-                press,
-                const SizedBox(width: _fieldGap),
-                hold,
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => PedalSetupEditorFrame(
+    title: title,
+    top: 46,
+    child: Row(
+      children: [
+        press,
+        const SizedBox(width: _fieldGap),
+        hold,
+      ],
+    ),
+  );
 }
