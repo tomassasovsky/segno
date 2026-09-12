@@ -420,6 +420,41 @@ static void test_external_switch_notes(void) {
   CHECK(buf[2] == 0);
 }
 
+/* The expression CCs do not collide with the encoder's, and the position goes
+ * out raw and clamped.
+ *
+ * The collision is the thing worth a test: the encoder and both expression
+ * jacks share one Control Change status byte, so a CC number reused here would
+ * make a pedal sweep read as an encoder turn with nothing in either decoder to
+ * notice. */
+static void test_expression_ccs(void) {
+  printf("test_expression_ccs\n");
+  CHECK(PEDAL_EXPRESSION_CTRL1_CC != PEDAL_ENCODER_CC);
+  CHECK(PEDAL_EXPRESSION_CTRL2_CC != PEDAL_ENCODER_CC);
+  CHECK(PEDAL_EXPRESSION_CTRL1_CC != PEDAL_EXPRESSION_CTRL2_CC);
+  CHECK(PEDAL_EXPRESSION_MAX == 0x7F);
+
+  uint8_t buf[8];
+  const int len = pedal_encode_expression(PEDAL_EXPRESSION_CTRL2_CC, 64, 0, buf);
+  CHECK(len == 3);
+  CHECK(buf[0] == 0xB0);
+  CHECK(buf[1] == PEDAL_EXPRESSION_CTRL2_CC);
+  CHECK(buf[2] == 64);
+
+  /* Both mechanical ends, and a reading past either one. A pot read through a
+   * divider can land outside the nominal range; what must never reach the wire
+   * is a byte with its high bit set, which MIDI would read as a status. */
+  pedal_encode_expression(PEDAL_EXPRESSION_CTRL1_CC, 0, 0, buf);
+  CHECK(buf[2] == 0);
+  pedal_encode_expression(PEDAL_EXPRESSION_CTRL1_CC, PEDAL_EXPRESSION_MAX, 0,
+                          buf);
+  CHECK(buf[2] == PEDAL_EXPRESSION_MAX);
+  pedal_encode_expression(PEDAL_EXPRESSION_CTRL1_CC, 4095, 0, buf);
+  CHECK(buf[2] == PEDAL_EXPRESSION_MAX);
+  pedal_encode_expression(PEDAL_EXPRESSION_CTRL1_CC, -7, 0, buf);
+  CHECK(buf[2] == 0);
+}
+
 /* A body longer than any version's payload is rejected BEFORE it is
  * unpacked. pedal_unpack7 writes one byte per payload byte it finds, into a
  * fixed buffer, and the length comes off the wire -- without the bound this
@@ -669,6 +704,7 @@ int main(int argc, char** argv) {
   test_custom_downgrade_twin();
   test_pedal_colors();
   test_external_switch_notes();
+  test_expression_ccs();
   test_truncated_v4_is_rejected();
   test_overlong_body_is_rejected();
   test_mode_round_trip_and_version_gate();

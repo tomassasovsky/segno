@@ -294,3 +294,14 @@ int pedal_encode_encoder(int delta, uint8_t channel, uint8_t* buf) {
   buf[2] = (uint8_t)(64 + clamped);
   return 3;
 }
+
+int pedal_encode_expression(uint8_t cc, int raw, uint8_t channel,
+                            uint8_t* buf) {
+  int clamped = raw;
+  if (clamped < 0) clamped = 0;
+  if (clamped > PEDAL_EXPRESSION_MAX) clamped = PEDAL_EXPRESSION_MAX;
+  buf[0] = (uint8_t)(0xB0u | (channel & 0x0Fu));
+  buf[1] = (uint8_t)(cc & 0x7Fu);
+  buf[2] = (uint8_t)clamped;
+  return 3;
+}

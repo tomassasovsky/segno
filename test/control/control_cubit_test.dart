@@ -9,6 +9,7 @@ import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -3590,6 +3591,170 @@ void main() {
           expect(cubit.state.mode, InteractionMode.record);
         },
       );
+
+      group('an expression pedal', () {
+        /// Moves the pedal on [jack] to a raw reading of [raw] out of 127.
+        Future<void> sweep(
+          int raw, {
+          PedalExpressionJack jack = PedalExpressionJack.ctrl1,
+        }) async {
+          transport.emit(0xB0, jack.cc, raw);
+          await pumpEventQueue();
+        }
+
+        /// A jack taught the pedal's whole range, sweeping master gain over
+        /// [heel] to [toe].
+        ExternalJackSetup taught({double heel = 0, double toe = 1}) =>
+            ExternalJackSetup(
+              type: ExternalJackType.expression,
+              expression: ExternalExpressionSetup(
+                calibration: const ExpressionCalibration(heel: 0, toe: 1),
+                mappings: [
+                  ExpressionMapping(
+                    target: const MasterGainTarget(),
+                    heel: heel,
+                    toe: toe,
+                  ),
+                ],
+              ),
+            );
+
+        setUp(() {
+          when(
+            () => looper.setVolume(any(), channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.ok);
+        });
+
+        test('writes each endpoint at the end of the travel', () async {
+          await configure(taught());
+          await sweep(0);
+          verify(() => looper.setMasterGain(0)).called(1);
+          await sweep(PedalExpressionJackCc.maxValue);
+          verify(() => looper.setMasterGain(1)).called(1);
+        });
+
+        test('a pedal wired backwards sweeps the other way', () async {
+          await configure(
+            const ExternalJackSetup(
+              type: ExternalJackType.expression,
+              expression: ExternalExpressionSetup(
+                // Toe below heel: the calibration the accepted design takes
+                // rather than asking the player to rewire the pedal.
+                calibration: ExpressionCalibration(heel: 1, toe: 0),
+                mappings: [ExpressionMapping(target: MasterGainTarget())],
+              ),
+            ),
+          );
+          await sweep(PedalExpressionJackCc.maxValue);
+          verify(() => looper.setMasterGain(0)).called(1);
+          await sweep(0);
+          verify(() => looper.setMasterGain(1)).called(1);
+        });
+
+        test('endpoints narrower than the range are respected', () async {
+          await configure(taught(heel: 0.25, toe: 0.75));
+          await sweep(0);
+          verify(() => looper.setMasterGain(0.25)).called(1);
+          await sweep(PedalExpressionJackCc.maxValue);
+          verify(() => looper.setMasterGain(0.75)).called(1);
+        });
+
+        test('one pedal sweeps every control it carries', () async {
+          await configure(
+            const ExternalJackSetup(
+              type: ExternalJackType.expression,
+              expression: ExternalExpressionSetup(
+                calibration: ExpressionCalibration(heel: 0, toe: 1),
+                mappings: [
+                  ExpressionMapping(target: MasterGainTarget()),
+                  ExpressionMapping(target: TrackVolumeTarget(1), toe: 0.5),
+                ],
+              ),
+            ),
+          );
+          await sweep(PedalExpressionJackCc.maxValue);
+          verify(() => looper.setMasterGain(1)).called(1);
+          verify(() => looper.setVolume(0.5, channel: 1)).called(1);
+        });
+
+        test('an uncalibrated pedal writes nothing', () async {
+          await configure(
+            const ExternalJackSetup(
+              type: ExternalJackType.expression,
+              expression: ExternalExpressionSetup(
+                mappings: [ExpressionMapping(target: MasterGainTarget())],
+              ),
+            ),
+          );
+          await sweep(64);
+          verifyNever(() => looper.setMasterGain(any()));
+        });
+
+        test('a travel too short to divide by writes nothing', () async {
+          await configure(
+            const ExternalJackSetup(
+              type: ExternalJackType.expression,
+              expression: ExternalExpressionSetup(
+                calibration: ExpressionCalibration(
+                  heel: 60 / 127,
+                  toe: 65 / 127,
+                ),
+                mappings: [ExpressionMapping(target: MasterGainTarget())],
+              ),
+            ),
+          );
+          await sweep(62);
+          verifyNever(() => looper.setMasterGain(any()));
+        });
+
+        test('only the ACTIVE type dispatches', () async {
+          // Everything the expression pedal needs is here; the jack is set to
+          // a switch, so none of it runs.
+          await configure(
+            taught().copyWith(type: ExternalJackType.singleSwitch),
+          );
+          await sweep(PedalExpressionJackCc.maxValue);
+          verifyNever(() => looper.setMasterGain(any()));
+        });
+
+        test('the two jacks sweep separately', () async {
+          await configure(taught(), on: ExternalJack.ctrl2);
+          await sweep(PedalExpressionJackCc.maxValue);
+          verifyNever(() => looper.setMasterGain(any()));
+          await sweep(
+            PedalExpressionJackCc.maxValue,
+            jack: PedalExpressionJack.ctrl2,
+          );
+          verify(() => looper.setMasterGain(1)).called(1);
+        });
+
+        test('the encoder stays in step with what the pedal wrote', () async {
+          await configure(taught());
+          await sweep(0);
+          verify(() => looper.setMasterGain(0)).called(1);
+          // Without the accumulator update, the next detent would resume from
+          // whatever the encoder itself last set and jump the gain.
+          cubit.encoderTurned(1);
+          await pumpEventQueue();
+          final written =
+              verify(
+                    () => looper.setMasterGain(captureAny()),
+                  ).captured.last
+                  as double;
+          expect(written, lessThan(0.2));
+        });
+
+        test('a dialog being up does not silence the pedal', () async {
+          // The take lock stops a take starting behind the power-off route. A
+          // sweep starts no take, and a pedal that went dead under a dialog
+          // would be the worse surprise.
+          await configure(taught());
+          takeLocked = true;
+          await sweep(PedalExpressionJackCc.maxValue);
+          verify(() => looper.setMasterGain(1)).called(1);
+          takeLocked = false;
+        });
+      });
     });
   });
 }

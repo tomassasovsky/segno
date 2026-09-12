@@ -1128,6 +1128,42 @@ class ControlCubit extends Cubit<ControlState> {
         encoderTurned(delta);
       case ExternalContactChanged(:final switchId, :final closed):
         _onExternalContact(switchId, closed: closed);
+      case ExpressionMoved(:final jack, :final raw):
+        _onExpressionMoved(jack, raw);
+    }
+  }
+
+  /// An expression pedal on a CTRL jack moved.
+  ///
+  /// Every mapping on the jack is swept at once — one pedal can drive any
+  /// number of controls, each between its own two endpoints.
+  ///
+  /// Deliberately NOT gated on [_takeLocked], which every switch path is: that
+  /// lock stops a TAKE from starting behind the power-off route, and sweeping
+  /// a filter starts nothing. An expression pedal that went dead whenever a
+  /// dialog was up would be a worse surprise than the one the lock prevents.
+  void _onExpressionMoved(PedalExpressionJack jack, double raw) {
+    // Named, not indexed, for the reason the contact path is: the wire enum
+    // and the app's jacks are declared in different packages, and a jack added
+    // to one would silently index past the other.
+    final setup = state.pedalSetup.external.forJack(switch (jack) {
+      PedalExpressionJack.ctrl1 => ExternalJack.ctrl1,
+      PedalExpressionJack.ctrl2 => ExternalJack.ctrl2,
+    });
+    // Only the ACTIVE type dispatches: a pedal still holding expression
+    // mappings is silent while its jack is set to a switch, exactly as a
+    // dual pedal's second switch is silent under a single one.
+    if (setup.type != ExternalJackType.expression) return;
+    final expression = setup.expression;
+    // An uncalibrated pedal, or one taught a travel too short to divide by,
+    // writes nothing. Guessing its ends would turn pot noise into a sweep.
+    final position = expression.calibration?.positionOf(raw);
+    if (position == null) return;
+    for (final mapping in expression.mappings) {
+      // A target that no longer exists is skipped, not repointed: a pedal
+      // bound to a filter cutoff must never start sweeping the delay that
+      // replaced it. Its row says it is unavailable.
+      _writeValueTarget(mapping.target, mapping.valueAt(position));
     }
   }
 
@@ -2103,14 +2139,21 @@ class ControlCubit extends Cubit<ControlState> {
   void _applyControllerValue(String target, double value) {
     final decoded = _controllerValueTargets[target];
     if (decoded == null) return; // undecodable string: inert, never a guess
-    if (!_looper.writeValueTarget(decoded, value)) return;
-    if (decoded is MasterGainTarget) {
-      // Keep the accumulator the encoder and the pedal's ring meter read in
-      // step with what MIDI just wrote, or the next detent turn would jump
-      // back to the value the encoder last set.
-      _masterGain = value.clamp(0.0, 1.0);
-      _pushProjected();
-    }
+    _writeValueTarget(decoded, value);
+  }
+
+  /// Writes [value] to [target] and keeps the master-gain accumulator in step.
+  ///
+  /// Shared by every continuous source — a learned MIDI CC and an expression
+  /// pedal both land here — because the accumulator is the part that is easy
+  /// to forget: master gain has a second reader in this cubit (the encoder,
+  /// and the ring meter the frame carries), and a write that skipped it would
+  /// make the next detent turn jump back to whatever the encoder last set.
+  void _writeValueTarget(ControlValueTarget target, double value) {
+    if (!_looper.writeValueTarget(target, value)) return;
+    if (target is! MasterGainTarget) return;
+    _masterGain = value.clamp(0.0, 1.0);
+    _pushProjected();
   }
 
   void _applyControllerSwitch(
