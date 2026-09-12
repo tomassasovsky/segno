@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/control/binding/control_action.dart';
+import 'package:segno/control/binding/control_action_labels.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -230,4 +232,47 @@ class _PedalChoicePickerState<T> extends State<_PedalChoicePicker<T>> {
       ),
     );
   }
+}
+
+/// Opens the shared action catalogue on [current].
+///
+/// The one place the catalogue is turned into a picker, so the built-in map
+/// and the external jacks offer the same actions in the same groups under the
+/// same headings. A surface that built its own list would drift from this one
+/// the first time an action was added.
+///
+/// Returns the chosen action wrapped, `null` inside the wrapper for None, and
+/// `null` itself when the picker was dismissed.
+Future<PedalChoiceResult<ControlAction?>?> showControlActionPicker(
+  BuildContext context, {
+  required String title,
+  required ControlAction? current,
+  required List<String> trackNames,
+}) {
+  final l10n = context.l10n;
+  return showPedalChoicePicker<ControlAction?>(
+    context,
+    title: title,
+    current: current,
+    groups: [
+      for (final group in controlActionGroups())
+        PedalChoiceGroup(
+          label: controlActionGroupLabel(l10n, group),
+          id: group.name,
+          choices: [
+            // None leads the first group rather than getting a tab of its
+            // own: the accepted catalogue lists it among the functions, and a
+            // tab holding one button would be a heading over nothing.
+            if (group == controlActionGroups().first)
+              PedalChoice(value: null, id: 'none', label: l10n.actionNone),
+            for (final action in controlActionsIn(group))
+              PedalChoice(
+                value: action,
+                id: action.key,
+                label: controlActionLabel(l10n, trackNames, action),
+              ),
+          ],
+        ),
+    ],
+  );
 }

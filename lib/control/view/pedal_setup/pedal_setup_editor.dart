@@ -14,6 +14,10 @@ class PedalSetupField extends StatelessWidget {
     required this.label,
     required this.value,
     required this.onTap,
+    this.width = 680,
+    this.height = 140,
+    this.buttonHeight = 96,
+    this.valueFontSize = 30,
     super.key,
   });
 
@@ -26,13 +30,18 @@ class PedalSetupField extends StatelessWidget {
   /// Opens the picker; `null` when this gesture is fixed.
   final VoidCallback? onTap;
 
-  /// The pen's field.
-  static const double width = 680;
+  /// The pen's field width. 680 on the built-in map, 506 on the narrower
+  /// external-pedal editor.
+  final double width;
 
   /// The pen's field height: the label band plus the value button.
-  static const double height = 140;
+  final double height;
 
-  static const double _buttonHeight = 96;
+  /// How tall the value button itself is.
+  final double buttonHeight;
+
+  /// The size of the value's own text.
+  final double valueFontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +78,7 @@ class PedalSetupField extends StatelessWidget {
                 child: InkWell(
                   onTap: onTap,
                   child: SizedBox(
-                    height: _buttonHeight,
+                    height: buttonHeight,
                     child: Row(
                       children: [
                         const SizedBox(width: 25),
@@ -80,7 +89,7 @@ class PedalSetupField extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: surface.textPrimary,
-                              fontSize: 30,
+                              fontSize: valueFontSize,
                               height: 1,
                             ),
                           ),
