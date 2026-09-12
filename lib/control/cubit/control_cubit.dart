@@ -1151,8 +1151,16 @@ class ControlCubit extends Cubit<ControlState> {
       _externalContacts.remove(switchId);
     }
 
+    // Named, not indexed: the wire enum and the app's jacks are declared in
+    // different packages, and a switch added to one would silently index past
+    // the other. This fails to compile instead.
     final jack = state.pedalSetup.external.forJack(
-      ExternalJack.values[switchId.jack],
+      switch (switchId) {
+        PedalExternalSwitch.ctrl1First ||
+        PedalExternalSwitch.ctrl1Second => ExternalJack.ctrl1,
+        PedalExternalSwitch.ctrl2First ||
+        PedalExternalSwitch.ctrl2Second => ExternalJack.ctrl2,
+      },
     );
     // Only the ACTIVE type dispatches: a dual pedal's second switch is silent
     // while the jack is set to a single one, whatever it still carries.
@@ -2402,6 +2410,12 @@ class ControlCubit extends Cubit<ControlState> {
     // momentary would leave its target enabled forever (B1), and an armed
     // hold would fire into a rig with no pedal on it. Retire both now.
     _invalidateGestures();
+    // And forget what the jacks were doing. The register exists to tell a
+    // change from a repeat, and across a link drop there is nothing to
+    // compare against: a switch still down when the cable goes reports its
+    // closure again on the way back, and a remembered "already closed" would
+    // swallow it.
+    _externalContacts.clear();
   }
 
   void _detectLoopTop(LooperState s) {

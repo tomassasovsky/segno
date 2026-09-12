@@ -3521,6 +3521,46 @@ void main() {
         expect(cubit.state.mode, InteractionMode.record);
       });
 
+      test('unplugging forgets what the jacks were doing', () async {
+        await configure(
+          const ExternalJackSetup(
+            single: ExternalSwitchSetup(
+              hardware: ExternalSwitchHardware.latching,
+              change: ModeAction(InteractionMode.mute),
+            ),
+          ),
+        );
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.mute);
+
+        // The cable goes while the foot is still on it. Coming back, the
+        // console reports the closure again — and a remembered "already
+        // closed" would swallow it.
+        pedal.unbind();
+        await pumpEventQueue();
+        pedal.bind('out');
+        await pumpEventQueue();
+
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test('a take in progress refuses the jack too', () async {
+        await configure(
+          const ExternalJackSetup(
+            single: ExternalSwitchSetup(
+              gestures: ControlGesturePair(
+                press: ModeAction(InteractionMode.mute),
+              ),
+            ),
+          ),
+        );
+        takeLocked = true;
+        await contact(PedalExternalSwitch.ctrl1First, closed: true);
+        expect(cubit.state.mode, InteractionMode.record);
+        takeLocked = false;
+      });
+
       test(
         'a pending hold is dropped when the configuration changes',
         () async {

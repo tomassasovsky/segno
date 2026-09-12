@@ -20,10 +20,11 @@ enum PedalExternalSwitch {
   /// The second switch on CTRL 2.
   ctrl2Second;
 
-  /// Which jack this switch is on: `0` for CTRL 1, `1` for CTRL 2.
-  int get jack => index ~/ 2;
-
   /// Which of its jack's switches this is: `0` or `1`.
+  ///
+  /// Which JACK is deliberately not offered here: the app names its own jacks
+  /// and maps them by name, so a switch appended to this enum has to be given
+  /// one rather than falling into whichever the arithmetic reached.
   int get position => index % 2;
 }
 
