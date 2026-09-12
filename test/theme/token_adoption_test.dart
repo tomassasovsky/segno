@@ -14,6 +14,12 @@ const _allowed = <String, String>{
   // simulator from the thing it simulates.
   'lib/pedal/view/pedal_plate.dart': 'pedal faceplate — hardware replica',
 
+  // The same decision, one part down: these are the footswitch's own moulded
+  // colours, transcribed from the vector reconstruction of the Fusion
+  // assembly (docs/design/pedal-hardware-widget.js). A theme token here would
+  // repaint the metal and stop it being a picture of the switch.
+  'lib/common/pedal_face.dart': 'footswitch art — hardware replica',
+
   // Gate decision on #499: the prototype is a 1920x1080 appliance view with no
   // title bar, so there is no design to adopt here — only one to invent.
   'lib/window/window_chrome.dart': 'desktop window chrome — no DS counterpart',

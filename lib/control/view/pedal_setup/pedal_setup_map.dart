@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/common/pedal_color_display.dart';
+import 'package:segno/common/pedal_face.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/theme/theme.dart';
@@ -247,67 +248,39 @@ class PedalSetupCap extends StatelessWidget {
           Positioned.fill(
             child: Opacity(
               opacity: enabled ? 1 : surface.disabledOpacity,
-              child: FocusableTapTarget(
-                onTap: onTap,
-                selected: selected,
-                semanticLabel: legend,
-                borderRadius: 14,
-                child: Material(
-                  color: selected ? surface.accentSurface : surface.cardHigh,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(
-                      color: selected ? surface.accent : surface.borderStrong,
-                      width: selected ? 2 : 1,
-                    ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
+              child: Center(
+                child: SizedBox(
+                  width: PedalFace.widthFor(slot.height),
+                  height: slot.height,
+                  child: FocusableTapTarget(
                     onTap: onTap,
+                    selected: selected,
+                    semanticLabel: legend,
+                    borderRadius: 14,
                     child: Stack(
                       children: [
-                        // The rubber pad: the part a foot actually lands on.
-                        Positioned(
-                          left: 20,
-                          right: 20,
-                          top: 22,
-                          bottom: 62,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: surface.background,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: surface.line),
-                            ),
-                          ),
-                        ),
-                        // The nameplate, and the legend raised on it.
-                        Positioned(
-                          left: 12,
-                          right: 12,
-                          bottom: 16,
-                          height: 38,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: surface.control,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Center(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                ),
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: AppText(
-                                    legend,
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      color: surface.textPrimary,
-                                      fontFamily: SurfaceTheme.monoFont,
-                                      fontSize: 18,
-                                      height: 1,
-                                      letterSpacing: 1.2,
-                                    ),
+                        Positioned.fill(
+                          child: PedalFace(
+                            selected: selected,
+                            // The nameplate is the one part of the switch that
+                            // is not moulded metal: it is what the plate has
+                            // printed on it, and here it is what the map is
+                            // naming.
+                            legend: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: AppText(
+                                  legend,
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    color: PedalFace.labelInk,
+                                    fontFamily: SurfaceTheme.monoFont,
+                                    fontSize: 18,
+                                    height: 1,
+                                    letterSpacing: 1.2,
                                   ),
                                 ),
                               ),
