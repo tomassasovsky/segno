@@ -1163,7 +1163,7 @@ class ControlCubit extends Cubit<ControlState> {
       // A target that no longer exists is skipped, not repointed: a pedal
       // bound to a filter cutoff must never start sweeping the delay that
       // replaced it. Its row says it is unavailable.
-      _writeValueTarget(mapping.target, mapping.valueAt(position));
+      _applyValueTarget(mapping.target, mapping.valueAt(position));
     }
   }
 
@@ -2139,7 +2139,7 @@ class ControlCubit extends Cubit<ControlState> {
   void _applyControllerValue(String target, double value) {
     final decoded = _controllerValueTargets[target];
     if (decoded == null) return; // undecodable string: inert, never a guess
-    _writeValueTarget(decoded, value);
+    _applyValueTarget(decoded, value);
   }
 
   /// Writes [value] to [target] and keeps the master-gain accumulator in step.
@@ -2149,7 +2149,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// to forget: master gain has a second reader in this cubit (the encoder,
   /// and the ring meter the frame carries), and a write that skipped it would
   /// make the next detent turn jump back to whatever the encoder last set.
-  void _writeValueTarget(ControlValueTarget target, double value) {
+  void _applyValueTarget(ControlValueTarget target, double value) {
     if (!_looper.writeValueTarget(target, value)) return;
     if (target is! MasterGainTarget) return;
     _masterGain = value.clamp(0.0, 1.0);

@@ -7,6 +7,17 @@ import 'package:pedal_repository/pedal_repository.dart';
 /// does not exist yet.
 void main() {
   group('PedalExpressionJack', () {
+    test('the numbers match the firmware copies byte for byte', () {
+      // The only cross-language check available: these literals are declared a
+      // second time in firmware/segno_pedal/pedal_protocol.h (and its 32u4
+      // mirror) as PEDAL_EXPRESSION_CTRL1_CC, PEDAL_EXPRESSION_CTRL2_CC and
+      // PEDAL_EXPRESSION_MAX, where the C contract suite pins them to the same
+      // values. Changing one side without the other fails here.
+      expect(PedalExpressionJack.ctrl1.cc, 0x11);
+      expect(PedalExpressionJack.ctrl2.cc, 0x12);
+      expect(PedalExpressionJackCc.maxValue, 0x7F);
+    });
+
     test('neither jack collides with the encoder', () {
       for (final jack in PedalExpressionJack.values) {
         expect(
