@@ -100,6 +100,7 @@ flutter:
     # they came from are 2.6 MB against 284 KB here, on an appliance image.
     - assets/hardware/external_single.webp
     - assets/hardware/external_dual.webp
+    - assets/hardware/external_expression.webp
   fonts:
     - family: Inter
       fonts:

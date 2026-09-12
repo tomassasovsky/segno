@@ -309,6 +309,18 @@ class ControlCubit extends Cubit<ControlState> {
   /// or a bouncing switch must not run an action twice.
   final Set<PedalExternalSwitch> _externalContacts = {};
 
+  /// The jack whose travel is being taught right now, or `null`.
+  ///
+  /// A field rather than part of [ControlState]: it is not something the
+  /// control surface projects, nothing outside the setup screen can see it,
+  /// and it changes when a view opens rather than when the rig does.
+  ///
+  /// Set by the calibrate view for as long as it is open, and deliberately NOT
+  /// cleared when the link drops: the view is still open when the cable comes
+  /// back, and resuming dispatch under it would dump a teaching sweep into the
+  /// rig.
+  ExternalJack? _calibratingJack;
+
   // The remap (part 6b) lives in ControlState — it is stored user intent, and
   // the surfaces that render it rebuild on emit. What stays here is only the
   // mid-gesture restore VALUES: the enabled state each held press captured,
@@ -1146,10 +1158,15 @@ class ControlCubit extends Cubit<ControlState> {
     // Named, not indexed, for the reason the contact path is: the wire enum
     // and the app's jacks are declared in different packages, and a jack added
     // to one would silently index past the other.
-    final setup = state.pedalSetup.external.forJack(switch (jack) {
+    final which = switch (jack) {
       PedalExpressionJack.ctrl1 => ExternalJack.ctrl1,
       PedalExpressionJack.ctrl2 => ExternalJack.ctrl2,
-    });
+    };
+    // Sweeping a pedal to teach its ends must not also play them. The
+    // calibrate view still reads the position — it is capturing it — and that
+    // reading comes from the repository, not from here.
+    if (which == _calibratingJack) return;
+    final setup = state.pedalSetup.external.forJack(which);
     // Only the ACTIVE type dispatches: a pedal still holding expression
     // mappings is silent while its jack is set to a switch, exactly as a
     // dual pedal's second switch is silent under a single one.
@@ -1165,6 +1182,17 @@ class ControlCubit extends Cubit<ControlState> {
       // replaced it. Its row says it is unavailable.
       _applyValueTarget(mapping.target, mapping.valueAt(position));
     }
+  }
+
+  /// Tells the interpreter that [jack]'s travel is being taught, so a sweep
+  /// writes nothing while the ends are being captured. `null` when no
+  /// calibration is open.
+  void setCalibrating(ExternalJack? jack) {
+    if (_calibratingJack == jack) return;
+    _calibratingJack = jack;
+    // Logged because suppression leaves no other trace: a pedal that writes
+    // nothing looks the same as one nothing is assigned to.
+    _log('calibrating ${jack?.name ?? 'nothing'}');
   }
 
   /// A switch on a CTRL jack changed state.

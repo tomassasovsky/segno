@@ -12,7 +12,10 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/control/binding/external_expression.dart';
+import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/view/pedal_setup/expression_position_panel.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -21,6 +24,7 @@ import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
+import '../pedal/helpers/fake_pedal_transport.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -71,16 +75,28 @@ void main() {
       ),
     );
     when(() => looper.trackEffects(any())).thenReturn(const []);
+    when(() => looper.monitorEffects(any())).thenReturn(const []);
+    when(() => looper.laneEffects(any(), any())).thenReturn(const []);
+    when(() => looper.outputEffects(any())).thenReturn(const []);
+    when(() => looper.allTracksEffects).thenReturn(const []);
+    when(() => looper.allMonitors()).thenReturn(const {});
+    when(() => looper.allLaneChains()).thenReturn(const {});
     when(() => looper.allTrackChains()).thenReturn(const {});
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setVolume(any(), channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
   });
 
   tearDown(() async {
     await looperStates.close();
   });
 
-  Future<void> pump(WidgetTester tester) async {
+  late FakePedalTransport transport;
+  late PedalRepository pedal;
+
+  Future<void> pump(WidgetTester tester, {ExternalJackSetup? jack}) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -92,7 +108,8 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
-    final pedal = PedalRepository(const NoopPedalTransport());
+    transport = FakePedalTransport();
+    pedal = PedalRepository(transport);
     addTearDown(() => unawaited(pedal.dispose()));
     final control = ControlCubit(
       looper: looper,
@@ -105,6 +122,16 @@ void main() {
     addTearDown(() => unawaited(control.close()));
     addTearDown(() => unawaited(tracks.close()));
     await control.load();
+    if (jack != null) {
+      await control.setPedalSetup(
+        control.state.pedalSetup.copyWith(
+          external: const ExternalPedalSetup().withJack(
+            ExternalJack.ctrl1,
+            jack,
+          ),
+        ),
+      );
+    }
 
     await tester.pumpWidget(
       MaterialApp(
@@ -144,6 +171,10 @@ void main() {
       for (final art in ExternalPedalArt.artwork.values) {
         await precacheImage(AssetImage(art.asset), context);
       }
+      await precacheImage(
+        const AssetImage(ExpressionPositionPanel.asset),
+        context,
+      );
     });
     await tester.pumpAndSettle();
   }
@@ -174,5 +205,57 @@ void main() {
     await pump(tester);
     await tap(tester, 'external_hardware_latching');
     await shot(tester, 'latching');
+  }, skip: !hasScreenshotFonts);
+
+  /// A jack taught its whole travel, sweeping one track's fader.
+  const taught = ExternalJackSetup(
+    type: ExternalJackType.expression,
+    expression: ExternalExpressionSetup(
+      calibration: ExpressionCalibration(heel: 0, toe: 1),
+      mappings: [ExpressionMapping(target: TrackVolumeTarget(0))],
+    ),
+  );
+
+  Future<void> sweep(WidgetTester tester, int raw) async {
+    transport.emit(0xB0, PedalExpressionJack.ctrl1.cc, raw);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('an expression pedal with nothing plugged in', (tester) async {
+    await pump(
+      tester,
+      jack: const ExternalJackSetup(type: ExternalJackType.expression),
+    );
+    await shot(tester, 'expression_empty');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('an expression pedal sweeping one control', (tester) async {
+    await pump(tester, jack: taught);
+    await sweep(tester, 80);
+    await shot(tester, 'expression');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('teaching an expression pedal its travel', (tester) async {
+    await pump(tester, jack: taught);
+    await sweep(tester, 14);
+    await tap(tester, 'expression_calibrate');
+    await tap(tester, 'expression_capture_heel');
+    await sweep(tester, 112);
+    await shot(tester, 'expression_calibrate');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('choosing where a control lives', (tester) async {
+    await pump(tester, jack: taught);
+    await tap(tester, 'expression_add');
+    await tap(tester, 'expression_kind_recordedTrack');
+    await shot(tester, 'expression_destinations');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('choosing the control itself', (tester) async {
+    await pump(tester, jack: taught);
+    await tap(tester, 'expression_add');
+    await tap(tester, 'expression_kind_recordedTrack');
+    await tap(tester, 'expression_destination_track:1');
+    await shot(tester, 'expression_controls');
   }, skip: !hasScreenshotFonts);
 }

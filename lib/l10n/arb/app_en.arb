@@ -5030,5 +5030,126 @@
     "externalContact": "Contact",
     "@externalContact": {
         "description": "Accessible name of the dot that shows an external switch's received contact state."
+    },
+    "expressionPosition": "Pedal position",
+    "@expressionPosition": {
+        "description": "Label of the readout showing where the expression pedal is in its taught travel."
+    },
+    "expressionHeel": "Heel",
+    "@expressionHeel": {
+        "description": "The end of an expression pedal's travel with the foot back."
+    },
+    "expressionToe": "Toe",
+    "@expressionToe": {
+        "description": "The end of an expression pedal's travel with the foot forward."
+    },
+    "expressionNoReading": "\u2014",
+    "@expressionNoReading": {
+        "description": "Shown in place of a position when the jack has reported none."
+    },
+    "expressionNotConnected": "Not connected",
+    "@expressionNotConnected": {
+        "description": "Status shown when nothing on a CTRL jack has reported a position."
+    },
+    "expressionCalibrationNeeded": "Calibration needed",
+    "@expressionCalibrationNeeded": {
+        "description": "Status shown when a connected expression pedal has not been taught its travel."
+    },
+    "expressionCalibrate": "Calibrate",
+    "@expressionCalibrate": {
+        "description": "Button that opens the travel-teaching view."
+    },
+    "expressionCalibrateTitle": "Calibrate",
+    "@expressionCalibrateTitle": {
+        "description": "Title of the travel-teaching view."
+    },
+    "expressionTeachTravel": "Teach the pedal's travel",
+    "@expressionTeachTravel": {
+        "description": "Heading of the travel-teaching panel."
+    },
+    "expressionHeelDown": "Heel down",
+    "@expressionHeelDown": {
+        "description": "Heading of the first calibration capture."
+    },
+    "expressionToeDown": "Toe down",
+    "@expressionToeDown": {
+        "description": "Heading of the second calibration capture."
+    },
+    "expressionSetEnd": "Set {end}",
+    "@expressionSetEnd": {
+        "description": "Button that captures one end of the travel. {end} is the lowercase end name.",
+        "placeholders": {
+            "end": {
+                "type": "String"
+            }
+        }
+    },
+    "expressionSetAgain": "Set again",
+    "@expressionSetAgain": {
+        "description": "Button that re-captures an end already captured."
+    },
+    "expressionCalibrateHint": "Move to each end, then set its position.",
+    "@expressionCalibrateHint": {
+        "description": "Instruction shown while teaching an expression pedal's travel."
+    },
+    "expressionCalibrateSpanHint": "Move through more of the pedal's travel.",
+    "@expressionCalibrateSpanHint": {
+        "description": "Shown when the two captured ends are too close together to divide by."
+    },
+    "expressionUseCalibration": "Use calibration",
+    "@expressionUseCalibration": {
+        "description": "Button that stages a captured travel into the draft."
+    },
+    "expressionControls": "Controls",
+    "@expressionControls": {
+        "description": "Heading of the list of what an expression pedal sweeps."
+    },
+    "expressionAddControl": "Add control",
+    "@expressionAddControl": {
+        "description": "Button that starts choosing something for the pedal to sweep."
+    },
+    "expressionEmpty": "Give this pedal something to control.",
+    "@expressionEmpty": {
+        "description": "Shown when an expression pedal sweeps nothing yet."
+    },
+    "expressionRange": "Pedal range",
+    "@expressionRange": {
+        "description": "Heading of the two endpoints of the selected control."
+    },
+    "expressionUnavailable": "Unavailable",
+    "@expressionUnavailable": {
+        "description": "Shown in place of a value when the control a mapping names is gone from the rig."
+    },
+    "expressionUnavailableNote": "This control is no longer available.",
+    "@expressionUnavailableNote": {
+        "description": "Shown in place of the range heading when the selected control is gone."
+    },
+    "expressionChangeControl": "Change control",
+    "@expressionChangeControl": {
+        "description": "Button that repoints the selected mapping at something else."
+    },
+    "expressionRemoveControl": "Remove",
+    "@expressionRemoveControl": {
+        "description": "Button that drops the selected mapping."
+    },
+    "expressionChooseDestination": "Choose a destination",
+    "@expressionChooseDestination": {
+        "description": "Title of the destination picker."
+    },
+    "expressionChooseControl": "Choose a control",
+    "@expressionChooseControl": {
+        "description": "Title of the control picker."
+    },
+    "expressionControlVolume": "Volume",
+    "@expressionControlVolume": {
+        "description": "The name of a track's own fader where the destination is already named."
+    },
+    "expressionControlGain": "Gain",
+    "@expressionControlGain": {
+        "description": "The name of the master output's level where the destination is already named."
+    },
+    "expressionNoControls": "Nothing here can be swept yet.",
+    "@expressionNoControls": {
+        "description": "Shown when a destination offers no continuous control."
     }
 }

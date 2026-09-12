@@ -21,6 +21,52 @@ void main() {
 
     tearDown(() async => repo.dispose());
 
+    group('expression positions', () {
+      test('a jack says nothing until it has reported', () {
+        expect(repo.expressionPositions.value, PedalExpressionPositions.none);
+        expect(
+          repo.expressionPositions.value.of(PedalExpressionJack.ctrl1),
+          isNull,
+        );
+      });
+
+      test('each jack keeps its own last reading', () async {
+        transport.emit(0xB0, PedalExpressionJack.ctrl1.cc, 127);
+        await Future<void>.delayed(Duration.zero);
+        final positions = repo.expressionPositions.value;
+        expect(positions.of(PedalExpressionJack.ctrl1), 1);
+        expect(
+          positions.of(PedalExpressionJack.ctrl2),
+          isNull,
+          reason: 'one jack moving says nothing about the other',
+        );
+      });
+
+      test('the link dropping forgets both', () async {
+        transport.emit(0xB0, PedalExpressionJack.ctrl2.cc, 64);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          repo.expressionPositions.value.of(PedalExpressionJack.ctrl2),
+          isNotNull,
+        );
+
+        repo.bind('pedal-out');
+        repo.unbind();
+        // A position is a claim about where a foot is, not a value the rig
+        // sounds like: nothing is reporting it any more, so nobody should be
+        // reading it.
+        expect(repo.expressionPositions.value, PedalExpressionPositions.none);
+      });
+
+      test('a notification reaches a listener', () async {
+        var seen = 0;
+        repo.expressionPositions.addListener(() => seen++);
+        transport.emit(0xB0, PedalExpressionJack.ctrl1.cc, 10);
+        await Future<void>.delayed(Duration.zero);
+        expect(seen, 1);
+      });
+    });
+
     group('events', () {
       test('decodes a button NoteOn into a stamped ButtonPressed', () async {
         final expectation = expectLater(
