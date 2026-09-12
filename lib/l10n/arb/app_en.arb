@@ -4961,5 +4961,74 @@
                 "type": "int"
             }
         }
+    },
+    "externalPedalsTitle": "External pedals",
+    "@externalPedalsTitle": {
+        "description": "The subview of Pedals that sets up what is plugged into the two CTRL jacks."
+    },
+    "externalPedalsSub": "What is plugged into CTRL 1 and CTRL 2, and what it does",
+    "@externalPedalsSub": {
+        "description": "Subtitle of the row that opens External pedals."
+    },
+    "externalJackCtrl1": "CTRL 1",
+    "@externalJackCtrl1": {
+        "description": "The first external control jack, named as the socket is silkscreened."
+    },
+    "externalJackCtrl2": "CTRL 2",
+    "@externalJackCtrl2": {
+        "description": "The second external control jack."
+    },
+    "externalTypeExpression": "Expression",
+    "@externalTypeExpression": {
+        "description": "A continuous pedal on a potentiometer."
+    },
+    "externalTypeSingle": "Single switch",
+    "@externalTypeSingle": {
+        "description": "One switch on the jack."
+    },
+    "externalTypeDual": "Dual switch",
+    "@externalTypeDual": {
+        "description": "Two switches on one ring-tip-sleeve jack."
+    },
+    "externalButton": "Button {number}",
+    "@externalButton": {
+        "description": "Names one switch on the external pedal, numbered from the left as the artwork shows them.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "externalSwitchType": "Switch type",
+    "@externalSwitchType": {
+        "description": "Label of the choice between a momentary and a latching switch."
+    },
+    "externalHardwareMomentary": "Momentary",
+    "@externalHardwareMomentary": {
+        "description": "A switch that closes while held and opens on release."
+    },
+    "externalHardwareLatching": "Latching",
+    "@externalHardwareLatching": {
+        "description": "A switch that flips and stays."
+    },
+    "externalOnChange": "On change",
+    "@externalOnChange": {
+        "description": "The one gesture a latching switch has: its contact changed state."
+    },
+    "externalHoldNote": "Holding runs only the Hold action.",
+    "@externalHoldNote": {
+        "description": "Says that a hold does not also run the press, on a momentary switch that has both."
+    },
+    "externalPressNote": "With no Hold, the Press runs the moment the contact closes.",
+    "@externalPressNote": {
+        "description": "Says why a press with no hold beside it fires immediately."
+    },
+    "externalChangeNote": "Each change of contact runs the action once. A latching switch cannot report how long a foot stayed on it, so it has no hold.",
+    "@externalChangeNote": {
+        "description": "Explains what a latching switch can and cannot do."
+    },
+    "externalContact": "Contact",
+    "@externalContact": {
+        "description": "Accessible name of the dot that shows an external switch's received contact state."
     }
 }

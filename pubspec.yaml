@@ -95,6 +95,11 @@ flutter:
   uses-material-design: true
   assets:
     - assets/brand/segno-lockup.png
+    # The external pedals the CTRL jacks take, as generated art rather than a
+    # photograph of any product. WebP because they carry alpha and the PNGs
+    # they came from are 2.6 MB against 284 KB here, on an appliance image.
+    - assets/hardware/external_single.webp
+    - assets/hardware/external_dual.webp
   fonts:
     - family: Inter
       fonts:
