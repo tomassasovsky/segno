@@ -139,7 +139,7 @@ void main() {
 
   /// The picker's key for one control, which is keyed by its canonical form.
   String targetKey(ControlValueTarget target) =>
-      'expression_target_${target.canonicalString().hashCode}';
+      'expression_target_${target.canonicalString()}';
 
   /// Moves CTRL 1's pedal to [raw] out of 127.
   Future<void> sweep(WidgetTester tester, int raw) async {
@@ -368,7 +368,9 @@ void main() {
 
     testWidgets('a row shows what it is writing right now', (tester) async {
       await pump(tester, jack: taught);
-      final key = 'expression_value_${const TrackVolumeTarget(0).hashCode}';
+      final key =
+          'expression_value_'
+          '${const TrackVolumeTarget(0).canonicalString()}';
       expect(textOf(key), '—', reason: 'nothing has reported a position');
       await sweep(tester, 127);
       expect(textOf(key), '100%');
@@ -411,6 +413,38 @@ void main() {
             .expression
             .mappings,
         isEmpty,
+      );
+    });
+
+    testWidgets('changing a control to the one it has moves nothing', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        jack: const ExternalJackSetup(
+          type: ExternalJackType.expression,
+          expression: ExternalExpressionSetup(
+            mappings: [
+              ExpressionMapping(target: TrackVolumeTarget(0)),
+              ExpressionMapping(target: TrackVolumeTarget(1)),
+            ],
+          ),
+        ),
+      );
+      await tap(tester, 'expression_change');
+      await tap(tester, 'expression_kind_recordedTrack');
+      await tap(tester, 'expression_destination_track:0');
+      await tap(tester, targetKey(const TrackVolumeTarget(0)));
+      await tap(tester, 'external_save');
+
+      expect(
+        control.state.pedalSetup.external
+            .forJack(ExternalJack.ctrl1)
+            .expression
+            .mappings
+            .map((m) => m.target),
+        [const TrackVolumeTarget(0), const TrackVolumeTarget(1)],
+        reason: 'a choice that changed nothing must not reorder the list',
       );
     });
 
