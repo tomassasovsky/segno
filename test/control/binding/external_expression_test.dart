@@ -62,6 +62,13 @@ void main() {
         isNull,
       );
     });
+
+    test('an end the wire could not have produced reads as untaught', () {
+      // Clamping would invent a travel the foot never took. The jack reading as
+      // untaught is the honest answer, and the screen has a state for it.
+      expect(ExpressionCalibration.fromJson({'heel': -0.5, 'toe': 1}), isNull);
+      expect(ExpressionCalibration.fromJson({'heel': 0, 'toe': 4}), isNull);
+    });
   });
 
   group('ExpressionMapping', () {

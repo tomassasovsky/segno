@@ -13,15 +13,18 @@ class ExpressionCalibration extends Equatable {
   const ExpressionCalibration({required this.heel, required this.toe});
 
   /// Rebuilds a calibration from its [toJson] map, or `null` when either end
-  /// is missing or is not a number.
+  /// is missing, is not a number, or is outside the raw `0..1` domain.
+  ///
+  /// An end outside that domain is rejected rather than pulled into it: a
+  /// reading the wire cannot produce says nothing about where the pedal's
+  /// travel is, and clamping it would invent a travel the foot never took. The
+  /// jack then reads as untaught, which the screen already has a state for.
   static ExpressionCalibration? fromJson(Map<String, dynamic> json) {
     final heel = json['heel'];
     final toe = json['toe'];
     if (heel is! num || toe is! num) return null;
-    return ExpressionCalibration(
-      heel: heel.toDouble(),
-      toe: toe.toDouble(),
-    );
+    if (heel < 0 || heel > 1 || toe < 0 || toe > 1) return null;
+    return ExpressionCalibration(heel: heel.toDouble(), toe: toe.toDouble());
   }
 
   /// The narrowest travel worth dividing by, as a fraction of the pedal's raw
