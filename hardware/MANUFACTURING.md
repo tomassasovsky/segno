@@ -323,9 +323,17 @@ Console collar update, September 9: the front and rear light-baffle walls are
 pedal seating heights and metal-base fixing positions retain their previous
 dimensions. The front collar and front sled keep their existing mounting.
 The tall CLEAR/BANK collar now has four blind Ø4.5 ×6 mm insert pockets opening
-at the bottom of its columns, at local X = ±48.685 mm, Y = ±22.1875 mm. Four
+at its bottom face, at local X = ±48.685 mm, Y = ±22.1875 mm. Four
 separate Ø3.7 mm deck holes at X = ±30 mm, Y = ±18 mm connect it to the dedicated
 mid sled. The metal holes and mini-console are unchanged.
+
+Console collar update, September 12 (issue #1037): the collar is **solid**
+between its floor and its deck. It used to be a 3 mm shell over an open cavity
+with four Ø12 mm columns. The only openings left under the deck are a Ø12 mm
+driver bore at each of the four deck-screw axes, blind at the deck and open at
+the floor: the Ø6 ×3 mm head and the Ø8 mm straight driver both work in one.
+Enclosed volume goes from 165.9 to 420.9 cm³, so budget roughly 240 g of
+filament per collar at 40% infill.
 
 
 Console cable-slot update, September 9: the measured cable feature is
@@ -348,9 +356,10 @@ actual plug, latch and cable routing before printing a batch.
 
 PETG starting profile for these collars and sleds: 0.20 mm layers, 40% gyroid,
 six perimeters with a 0.4 mm nozzle, and six top/bottom solid layers. Print
-collars base-down and sleds flat-bottom-down. Support the tall CLEAR/BANK
-collar's hollow underside ceiling; inspect and avoid unnecessary support
-inside the collars' or sleds' blind insert pockets. Keep a brim optional
+collars base-down and sleds flat-bottom-down. The tall CLEAR/BANK collar has no
+underside ceiling to support since #1037; its four driver bores open onto the
+bed and only their Ø12 mm roofs bridge. Inspect and avoid unnecessary support
+inside those bores and inside the collars' or sleds' blind insert pockets. Keep a brim optional
 according to actual corner adhesion. The first-print archive,
 `enclosure/out/segno_first_prints_STL.zip`, contains four STLs: one front collar,
 one mid collar, one front sled and one mid sled. Print one of each at 100% scale
@@ -433,10 +442,10 @@ finished stack, actual insert depth and screw-tip clearance. Rows marked
 | Joint | Quantity and hardware | Length / assembly requirement |
 |---|---|---|
 | Pedal sled inserts | **80 M3 heat-set inserts**, 5.0 mm long ×5.0 mm OD | Eight front sleds and two dedicated mid sleds, each with four inserts from above and four from below. Printed pilots are Ø4.5 ×6.0 mm deep; fit-test the selected insert in the printed material. The two sled variants have different lower patterns. |
-| CLEAR/BANK collar inserts | **8 M3 heat-set inserts**, 5.0 mm long ×5.0 mm OD | Four from below per tall collar, in Ø4.5 ×6.0 mm blind pockets in the column feet. These are additional to the 80 sled inserts, giving 88 inserts across the console's pedal platforms and sleds. |
+| CLEAR/BANK collar inserts | **8 M3 heat-set inserts**, 5.0 mm long ×5.0 mm OD | Four from below per tall collar, in Ø4.5 ×6.0 mm blind pockets in its solid floor. These are additional to the 80 sled inserts, giving 88 inserts across the console's pedal platforms and sleds. |
 | Front-row collars and sleds → base | **32 M3×8 screws**, nominal | Four per pedal, driven upward from under the base. Bare stack to the insert is 2.000 +2.043 = **4.043 mm**, giving 3.957 mm nominal insertion before coating, washers and insert recess. Confirm engagement and head clearance on the finished assembly. |
 | CLEAR/BANK collars → base | **8 M3×6 screws**, nominal | Four per collar, driven upward through the existing holes in the 2 mm bottom metal base into the collar's bottom inserts. Nominal bare insertion is 4.0 mm, reduced by coating, any washer and insert recess. Check the finished stack, head clearance and blind screw-tip clearance. |
-| CLEAR/BANK sleds → collars | **8 M3×12 screws**, nominal | Four per sled on a 60 ×36 mm pattern, driven upward through the 8 mm deck before mounting the module to the base. Nominal insertion is 4.0 mm before any washer or insert recess. Screw heads and straight driver access are in the open underside cavity. Check the actual hardware and remove the complete module for service. |
+| CLEAR/BANK sleds → collars | **8 M3×12 screws**, nominal | Four per sled on a 60 ×36 mm pattern, driven upward through the 8 mm deck before mounting the module to the base. Nominal insertion is 4.0 mm before any washer or insert recess. Each screw head and its driver work inside that axis's Ø12 mm bore, 30.3 mm deep, so use a long driver and hold the screw on it. Check the actual hardware and remove the complete module for service. |
 | Pedals → sleds | **40 M3 screws; measure before ordering** | Four per pedal, driven from inside the opened pedal into the sled's top inserts. Remove the lower rubber pad. Measure the real pedal base thickness, head-bearing surface and permitted insertion; close the supplied pedal case on the bench before lowering it into the collar. Reuse the pedal's original case fasteners. |
 | Lid → base | **18 M3×8 ISO 7380-1 button-head screws and 18 OD 7 mm M3 washers**, screw length nominal | Nine front plus nine rear, into the base's tapped M3 pilots. Verify the final coated fit, thread engagement and screw-tip clearance. No clinch nuts. |
 | Front lid lip → base, between painted bearing faces | **9 fitted solid-metal shim packs**, individual-layer quantity depends on finished gaps | Flat stainless, OD 6.90–7.00 mm, ID 4.0–4.2 mm. Fit after coating to 0.00–0.02 mm residual with the lid seated; nominal 0.50 mm STEP thickness is reference only. Record thicknesses and stations 1–9; edge-only retention, no coating removal or adhesive in the bearing stack. |
