@@ -1,3 +1,5 @@
+import 'package:equatable/equatable.dart';
+
 /// One of the console's two external control jacks, carrying an expression
 /// pedal.
 ///
@@ -53,4 +55,50 @@ extension PedalExpressionJackCc on PedalExpressionJack {
     if (index < 0 || index >= PedalExpressionJack.values.length) return null;
     return PedalExpressionJack.values[index];
   }
+}
+
+/// The last position each expression jack reported.
+///
+/// A jack is `null` until something on it has sent a position. That is the
+/// closest thing to jack detection this link has: the board is expected to
+/// report each jack's current position once when the link comes up (see
+/// PEDAL_EXPRESSION_CTRL1_CC in the firmware header), so a jack that has said
+/// nothing has nothing plugged into it. What the link cannot report is a pedal
+/// pulled out afterwards — its last position simply stops changing.
+class PedalExpressionPositions extends Equatable {
+  /// Creates a [PedalExpressionPositions].
+  const PedalExpressionPositions({this.ctrl1, this.ctrl2});
+
+  /// Nothing heard from either jack.
+  static const PedalExpressionPositions none = PedalExpressionPositions();
+
+  /// CTRL 1's last raw reading, or `null` if it has not sent one.
+  final double? ctrl1;
+
+  /// CTRL 2's.
+  final double? ctrl2;
+
+  /// What [jack] last reported.
+  double? of(PedalExpressionJack jack) => switch (jack) {
+    PedalExpressionJack.ctrl1 => ctrl1,
+    PedalExpressionJack.ctrl2 => ctrl2,
+  };
+
+  /// Returns a copy with [jack]'s reading replaced.
+  PedalExpressionPositions withPosition(
+    PedalExpressionJack jack,
+    double raw,
+  ) => switch (jack) {
+    PedalExpressionJack.ctrl1 => PedalExpressionPositions(
+      ctrl1: raw,
+      ctrl2: ctrl2,
+    ),
+    PedalExpressionJack.ctrl2 => PedalExpressionPositions(
+      ctrl1: ctrl1,
+      ctrl2: raw,
+    ),
+  };
+
+  @override
+  List<Object?> get props => [ctrl1, ctrl2];
 }

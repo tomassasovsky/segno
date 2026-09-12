@@ -1,16 +1,28 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
+import 'package:segno/control/binding/control_value_resolver.dart';
+import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/expression_catalogue.dart';
+import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
+import 'package:segno/control/view/pedal_setup/expression_calibration_panel.dart';
+import 'package:segno/control/view/pedal_setup/expression_controls_panel.dart';
+import 'package:segno/control/view/pedal_setup/expression_position_panel.dart';
+import 'package:segno/control/view/pedal_setup/expression_target_picker.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_editor.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -30,6 +42,26 @@ class ExternalPedalPage extends StatefulWidget {
   State<ExternalPedalPage> createState() => _ExternalPedalPageState();
 }
 
+/// Which body the screen is showing.
+///
+/// The accepted design draws the pickers and the calibration as whole views
+/// rather than panels over the page — the lists behind them are as long as the
+/// rig is — so they are states of this page, not routes of their own. Back
+/// steps through them rather than leaving, which is what keeps one draft.
+enum _ExternalView {
+  /// The jack, its type, and what it carries.
+  main,
+
+  /// Teaching an expression pedal its travel.
+  calibrate,
+
+  /// Choosing where a new control lives.
+  destinations,
+
+  /// Choosing the control itself.
+  controls,
+}
+
 class _ExternalPedalPageState extends State<ExternalPedalPage> {
   /// The edit in progress, or `null` when nothing has been touched.
   ///
@@ -42,76 +74,476 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   int _button = 0;
   bool _saved = false;
 
+  _ExternalView _view = _ExternalView.main;
+
+  /// Which tab of the destination picker is open, kept across visits so adding
+  /// two controls on one input does not start from the first tab twice.
+  FxDestinationKind _kind = FxDestinationKind.liveInput;
+
+  /// The destination whose controls are open.
+  ExpressionDestination? _destination;
+
+  /// The mapping whose range is open.
+  ControlValueTarget? _selected;
+
+  /// The mapping being repointed, so choosing a control replaces it in place
+  /// instead of adding a second row.
+  ControlValueTarget? _replacing;
+
+  /// The travel being captured: the raw readings at each end, staged until Use
+  /// calibration puts them in the draft.
+  double? _captureHeel;
+  double? _captureToe;
+
   /// The pen's insets inside the 1920 x 984 main area.
   static const double _left = 100;
   static const double _toolbarTop = 122;
   static const double _workspaceTop = 214;
   static const double _editorLeft = 680;
 
-  /// The types this screen offers.
-  ///
-  /// Expression is in the model and not here: what it needs — calibration, and
-  /// a list of destinations with their own endpoints — is its own part, and a
-  /// type that opened an empty panel would be worse than one not offered yet.
+  /// The types this screen offers, in the pen's order.
   static const List<ExternalJackType> _types = [
+    ExternalJackType.expression,
     ExternalJackType.singleSwitch,
     ExternalJackType.dualSwitch,
   ];
+
+  /// The pen's expression workspace: a narrow column for the pedal beside a
+  /// wide one for what it does. Taller in the calibrate view, which has no
+  /// toolbar above it.
+  static const double _expressionTop = 226;
+  static const double _calibrateTop = 134;
+  static const double _expressionHeight = 710;
+  static const double _calibrateHeight = 802;
+  static const double _columnGap = 90;
+
+  /// The pen's picker area: the whole main area under the titlebar.
+  static const double _pickerTop = 122;
+  static const double _pickerHeight = 814;
+
+  @override
+  void dispose() {
+    // Leaving with the calibrate view open must not leave dispatch suppressed:
+    // the page is gone, and nothing else would ever turn it back on.
+    _control?.setCalibrating(null);
+    super.dispose();
+  }
+
+  /// The cubit, remembered so [dispose] can reach it after the element is
+  /// detached — `context.read` is not available by then.
+  ControlCubit? _control;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final control = context.watch<ControlCubit>();
+    _control = control;
     final setup = _draft ?? control.state.pedalSetup.external;
     final jack = setup.forJack(_jack);
+    final main = _view == _ExternalView.main;
     return Scaffold(
       body: LoopSettingsFrame(
         key: const Key('external_pedal_page'),
         crumb: l10n.pedalSetupCrumb,
-        title: l10n.externalPedalsTitle,
+        title: switch (_view) {
+          _ExternalView.main => l10n.externalPedalsTitle,
+          _ExternalView.calibrate => l10n.expressionCalibrateTitle,
+          _ExternalView.destinations => l10n.expressionChooseDestination,
+          _ExternalView.controls => l10n.expressionChooseControl,
+        },
         titleLeft: _left,
-        onBack: () => Navigator.of(context).maybePop(),
+        onBack: _back,
         onStage: () => Navigator.of(context).popUntil((route) => route.isFirst),
-        actions: _actions(context, control, setup),
+        // Save and Cancel belong to the page's one draft, and the subviews are
+        // steps inside it: a Save offered from a half-chosen control would
+        // commit a decision the performer has not finished making.
+        actions: main ? _actions(context, control, setup) : null,
         children: [
-          Positioned(
-            left: _left,
-            top: _toolbarTop,
-            child: _toolbar(context, jack),
-          ),
-          Positioned(
-            left: _left,
-            top: _workspaceTop,
-            child: SizedBox(
-              width: 1720,
-              height: ExternalPedalArt.penSize.height,
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    child: ExternalPedalArt(
-                      type: jack.type,
-                      selected: _button,
-                      onSelect: (index) => setState(() => _button = index),
-                      // Nothing drives a real jack yet: the contact dot is
-                      // wired to the hardware it reports on, and there is no
-                      // transport behind these jacks to report anything.
-                      contacts: const {},
-                    ),
-                  ),
-                  Positioned(
-                    left: _editorLeft,
-                    top: 0,
-                    child: _editor(context, setup, jack),
-                  ),
-                ],
-              ),
+          if (main)
+            Positioned(
+              left: _left,
+              top: _toolbarTop,
+              child: _toolbar(context, jack),
             ),
-          ),
+          ..._body(context, setup, jack),
         ],
       ),
     );
+  }
+
+  List<Widget> _body(
+    BuildContext context,
+    ExternalPedalSetup setup,
+    ExternalJackSetup jack,
+  ) => switch (_view) {
+    _ExternalView.main when jack.type == ExternalJackType.expression => [
+      Positioned(
+        left: _left,
+        top: _expressionTop,
+        child: _expressionWorkspace(context, setup, jack),
+      ),
+    ],
+    _ExternalView.main => [
+      Positioned(
+        left: _left,
+        top: _workspaceTop,
+        child: SizedBox(
+          width: 1720,
+          height: ExternalPedalArt.penSize.height,
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                child: ExternalPedalArt(
+                  type: jack.type,
+                  selected: _button,
+                  onSelect: (index) => setState(() => _button = index),
+                  // Nothing drives a real jack yet: the contact dot is
+                  // wired to the hardware it reports on, and there is no
+                  // transport behind these jacks to report anything.
+                  contacts: const {},
+                ),
+              ),
+              Positioned(
+                left: _editorLeft,
+                top: 0,
+                child: _editor(context, setup, jack),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+    _ExternalView.calibrate => [
+      Positioned(
+        left: _left,
+        top: _calibrateTop,
+        child: _calibrateWorkspace(context, setup, jack),
+      ),
+    ],
+    _ExternalView.destinations => [
+      Positioned(
+        left: _left,
+        top: _pickerTop,
+        width: 1720,
+        height: _pickerHeight,
+        child: ExpressionDestinationPicker(
+          destinations: _destinations(context),
+          kind: _kind,
+          onKind: (kind) => setState(() => _kind = kind),
+          onOpen: (destination) => setState(() {
+            _destination = destination;
+            _view = _ExternalView.controls;
+          }),
+        ),
+      ),
+    ],
+    _ExternalView.controls => [
+      Positioned(
+        left: _left,
+        top: _pickerTop,
+        width: 1720,
+        height: _pickerHeight,
+        child: ExpressionControlPicker(
+          // An empty destination is still a destination: the picker says so
+          // rather than this page guessing its way back a view.
+          destination:
+              _destination ??
+              const ExpressionDestination(
+                id: '',
+                kind: FxDestinationKind.liveInput,
+                label: '',
+                groups: [],
+              ),
+          taken: {
+            for (final mapping in jack.expression.mappings)
+              if (mapping.target != _replacing) mapping.target,
+          },
+          onPick: (target) => _pickControl(setup, jack, target),
+        ),
+      ),
+    ],
+  };
+
+  // ---------------------------------------------------------------------------
+  // The expression pedal
+  // ---------------------------------------------------------------------------
+
+  /// The live readings, straight from the repository.
+  ///
+  /// Not from the control state: a pedal under a foot reports many times a
+  /// second, and a screen that rebuilt its whole control surface for each one
+  /// would pay for a readout. This rebuilds the workspace and nothing else.
+  ValueListenable<PedalExpressionPositions> get _positions =>
+      context.read<PedalRepository>().expressionPositions;
+
+  PedalExpressionJack get _wireJack => switch (_jack) {
+    ExternalJack.ctrl1 => PedalExpressionJack.ctrl1,
+    ExternalJack.ctrl2 => PedalExpressionJack.ctrl2,
+  };
+
+  Widget _expressionWorkspace(
+    BuildContext context,
+    ExternalPedalSetup setup,
+    ExternalJackSetup jack,
+  ) {
+    final expression = jack.expression;
+    return SizedBox(
+      width: 1720,
+      height: _expressionHeight,
+      child: ValueListenableBuilder<PedalExpressionPositions>(
+        valueListenable: _positions,
+        builder: (context, positions, _) {
+          final raw = positions.of(_wireJack);
+          final position = raw == null
+              ? null
+              : expression.calibration?.positionOf(raw);
+          return Row(
+            children: [
+              ExpressionPositionPanel(
+                raw: raw,
+                calibration: expression.calibration,
+                height: _expressionHeight,
+                onCalibrate: () => _openCalibrate(context),
+              ),
+              const SizedBox(width: _columnGap),
+              SizedBox(
+                height: _expressionHeight,
+                child: ExpressionControlsPanel(
+                  rows: _rows(context, expression),
+                  selected: _openTarget(expression),
+                  position: position,
+                  onSelect: (target) => setState(() => _selected = target),
+                  onAdd: () => setState(() {
+                    _replacing = null;
+                    _view = _ExternalView.destinations;
+                  }),
+                  onChange: () => setState(() {
+                    _replacing = _openTarget(expression);
+                    _view = _ExternalView.destinations;
+                  }),
+                  onRemove: () => _removeControl(setup, jack),
+                  onEndpoint: ({required isHeel, required value}) =>
+                      _moveEndpoint(setup, jack, isHeel: isHeel, value: value),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _calibrateWorkspace(
+    BuildContext context,
+    ExternalPedalSetup setup,
+    ExternalJackSetup jack,
+  ) => SizedBox(
+    width: 1720,
+    height: _calibrateHeight,
+    child: ValueListenableBuilder<PedalExpressionPositions>(
+      valueListenable: _positions,
+      builder: (context, positions, _) {
+        final raw = positions.of(_wireJack);
+        // The link dropped with captures in hand: they were readings from a
+        // board that is no longer there, and the accepted design discards them
+        // rather than letting half of an old travel meet half of a new one.
+        if (raw == null && (_captureHeel != null || _captureToe != null)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            setState(() {
+              _captureHeel = null;
+              _captureToe = null;
+            });
+          });
+        }
+        return Row(
+          children: [
+            ExpressionPositionPanel(
+              raw: raw,
+              calibration: jack.expression.calibration,
+              height: _calibrateHeight,
+            ),
+            const SizedBox(width: _columnGap),
+            SizedBox(
+              height: _calibrateHeight,
+              child: ExpressionCalibrationPanel(
+                heel: _captureHeel,
+                toe: _captureToe,
+                connected: raw != null,
+                onCapture: ({required isHeel}) => setState(() {
+                  if (isHeel) {
+                    _captureHeel = raw;
+                  } else {
+                    _captureToe = raw;
+                  }
+                }),
+                onCancel: _leaveCalibrate,
+                onUse: (travel) => _useCalibration(setup, jack, travel),
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+
+  /// The mapping whose range is open: the selected one, or the first row when
+  /// nothing has been selected yet.
+  ControlValueTarget? _openTarget(ExternalExpressionSetup expression) {
+    final chosen = _selected;
+    if (chosen != null && expression.mappingFor(chosen) != null) return chosen;
+    return expression.mappings.isEmpty
+        ? null
+        : expression.mappings.first.target;
+  }
+
+  List<ExpressionRow> _rows(
+    BuildContext context,
+    ExternalExpressionSetup expression,
+  ) {
+    final l10n = context.l10n;
+    final looper = context.read<LooperRepository>();
+    final names = context.watch<TracksCubit>().state.names;
+    return [
+      for (final mapping in expression.mappings)
+        ExpressionRow(
+          mapping: mapping,
+          destination: expressionTargetName(
+            l10n,
+            names,
+            looper,
+            mapping.target,
+          ).destination,
+          control: expressionRowName(l10n, names, looper, mapping.target),
+          available: looper.valueTargetResolves(mapping.target),
+        ),
+    ];
+  }
+
+  List<ExpressionDestination> _destinations(BuildContext context) =>
+      expressionDestinations(
+        context.l10n,
+        context.watch<TracksCubit>().state.names,
+        context.read<LooperRepository>(),
+      );
+
+  void _openCalibrate(BuildContext context) {
+    // Told before the view opens, not after: a sweep arriving between the two
+    // would be dispatched by a pedal the performer is already teaching.
+    context.read<ControlCubit>().setCalibrating(_jack);
+    setState(() {
+      _view = _ExternalView.calibrate;
+      _captureHeel = null;
+      _captureToe = null;
+    });
+  }
+
+  void _leaveCalibrate() {
+    context.read<ControlCubit>().setCalibrating(null);
+    setState(() {
+      _view = _ExternalView.main;
+      _captureHeel = null;
+      _captureToe = null;
+    });
+  }
+
+  void _useCalibration(
+    ExternalPedalSetup setup,
+    ExternalJackSetup jack,
+    ExpressionCalibration travel,
+  ) {
+    context.read<ControlCubit>().setCalibrating(null);
+    setState(() {
+      _draft = setup.withJack(
+        _jack,
+        jack.copyWith(
+          expression: jack.expression.copyWith(calibration: travel),
+        ),
+      );
+      _view = _ExternalView.main;
+      _captureHeel = null;
+      _captureToe = null;
+      _saved = false;
+    });
+  }
+
+  void _pickControl(
+    ExternalPedalSetup setup,
+    ExternalJackSetup jack,
+    ControlValueTarget target,
+  ) {
+    final replacing = _replacing;
+    final expression = jack.expression;
+    // Repointing keeps the endpoints: the performer chose how far this pedal
+    // should travel, and a different destination does not change that.
+    final kept = replacing == null ? null : expression.mappingFor(replacing);
+    final next = replacing == null
+        ? expression.withMapping(ExpressionMapping(target: target))
+        : expression
+              .withoutMapping(replacing)
+              .withMapping(
+                ExpressionMapping(
+                  target: target,
+                  heel: kept?.heel ?? 0,
+                  toe: kept?.toe ?? 1,
+                ),
+              );
+    setState(() {
+      _draft = setup.withJack(_jack, jack.copyWith(expression: next));
+      _selected = target;
+      _replacing = null;
+      _view = _ExternalView.main;
+      _saved = false;
+    });
+  }
+
+  void _removeControl(ExternalPedalSetup setup, ExternalJackSetup jack) {
+    final target = _openTarget(jack.expression);
+    if (target == null) return;
+    final next = jack.expression.withoutMapping(target);
+    setState(() {
+      _draft = setup.withJack(_jack, jack.copyWith(expression: next));
+      _selected = next.mappings.isEmpty ? null : next.mappings.first.target;
+      _saved = false;
+    });
+  }
+
+  void _moveEndpoint(
+    ExternalPedalSetup setup,
+    ExternalJackSetup jack, {
+    required bool isHeel,
+    required double value,
+  }) {
+    final target = _openTarget(jack.expression);
+    if (target == null) return;
+    final mapping = jack.expression.mappingFor(target);
+    if (mapping == null) return;
+    final next = jack.expression.withMapping(
+      isHeel ? mapping.copyWith(heel: value) : mapping.copyWith(toe: value),
+    );
+    setState(() {
+      _draft = setup.withJack(_jack, jack.copyWith(expression: next));
+      _saved = false;
+    });
+  }
+
+  /// Back steps out of a subview before it leaves the page.
+  void _back() {
+    switch (_view) {
+      case _ExternalView.main:
+        Navigator.of(context).maybePop();
+      case _ExternalView.calibrate:
+        _leaveCalibrate();
+      case _ExternalView.destinations:
+        setState(() {
+          _view = _ExternalView.main;
+          _replacing = null;
+        });
+      case _ExternalView.controls:
+        setState(() => _view = _ExternalView.destinations);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -210,7 +642,11 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
               label: _typeLabel(context, type),
               selected: type == jack.type,
               onTap: () => _setType(type),
-              width: type == ExternalJackType.singleSwitch ? 202 : 185,
+              width: switch (type) {
+                ExternalJackType.expression => 181,
+                ExternalJackType.singleSwitch => 203,
+                ExternalJackType.dualSwitch => 185,
+              },
               height: 64,
             ),
           ],
@@ -235,6 +671,8 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     setState(() {
       _jack = jack;
       _button = 0;
+      // The other jack sweeps its own controls, and may sweep none.
+      _selected = null;
     });
   }
 
@@ -247,6 +685,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
       _draft = setup.withJack(_jack, jack.copyWith(type: type));
       // A type with fewer switches cannot keep the second one selected.
       if (_button >= type.switchCount) _button = 0;
+      // Every type keeps its own assignments, so this selects nothing: the
+      // expression panel opens on its own first row.
+      _selected = null;
       _saved = false;
     });
   }

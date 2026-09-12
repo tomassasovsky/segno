@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:pedal_repository/src/models/pedal_output.dart';
 import 'package:pedal_repository/src/pedal_codec.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
+import 'package:pedal_repository/src/pedal_expression_jack.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 import 'package:pedal_repository/src/pedal_transport.dart';
 import 'package:pedal_repository/src/simulator_pedal_transport.dart'
@@ -157,6 +158,12 @@ class PedalRepository {
     }
     _transport.closeOutput();
     _boundOutputId = null;
+    // Nothing is reporting a jack any more, so no jack has a position. The
+    // last reading is not held the way a swept VALUE is: a value is what the
+    // rig sounds like and must not jump, a position is a claim about where a
+    // foot is, and keeping a stale one would leave the setup screen reading
+    // the pedal it no longer hears.
+    _expressionPositions.value = PedalExpressionPositions.none;
     _setStatus(PedalBindStatus.none);
   }
 
@@ -194,6 +201,20 @@ class PedalRepository {
     _transport.send(PedalCodec.encodeLoopTop());
   }
 
+  /// What each expression jack last reported, `null` per jack until it has
+  /// reported anything.
+  ///
+  /// A [ValueListenable] rather than a field on the control state, for the
+  /// reason [lastFrame] is one: a pedal under a foot sends a position many
+  /// times a second, and a screen that rebuilt its whole control surface on
+  /// each one would pay for a readout. The setup screen listens to just the
+  /// readout it draws.
+  ValueListenable<PedalExpressionPositions> get expressionPositions =>
+      _expressionPositions;
+
+  final ValueNotifier<PedalExpressionPositions> _expressionPositions =
+      ValueNotifier(PedalExpressionPositions.none);
+
   void _onRaw(PedalRawMessage message) {
     final event = PedalCodec.decodeMessage(
       message.status,
@@ -201,7 +222,14 @@ class PedalRepository {
       message.data2,
       timestamp: _clock(),
     );
-    if (event != null && !_events.isClosed) _events.add(event);
+    if (event == null) return;
+    if (event is ExpressionMoved) {
+      _expressionPositions.value = _expressionPositions.value.withPosition(
+        event.jack,
+        event.raw,
+      );
+    }
+    if (!_events.isClosed) _events.add(event);
   }
 
   void _setStatus(PedalBindStatus status) {
@@ -219,5 +247,6 @@ class PedalRepository {
     await _events.close();
     await _statusChanges.close();
     _lastFrame.dispose();
+    _expressionPositions.dispose();
   }
 }

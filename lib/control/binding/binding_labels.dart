@@ -82,7 +82,7 @@ String valueTargetLabel(
     l10n.midiLearnTargetParam(
       fxStageLabel(l10n, trackNames, address),
       slotId,
-      _paramLabel(looper, target) ?? '#$param',
+      fxParamName(looper, target) ?? '#$param',
     ),
 };
 
@@ -125,11 +125,14 @@ String controlLabel(AppLocalizations l10n, MappingTrigger trigger) {
 /// The live label of the parameter [target] names, or `null` when the chain,
 /// the slot, or the parameter index is gone.
 ///
+/// The parameter's own name, without the chain or the effect around it — what
+/// a picker already inside one effect's section has room for.
+///
 /// Goes through the SAME [FxChainLookup] the resolvers use, so a label can
 /// never describe a chain the mapping does not actually resolve against — a
 /// lane-less Loop address names nothing here exactly as it writes nothing
 /// there (A9).
-String? _paramLabel(LooperRepository looper, FxParamTarget target) {
+String? fxParamName(LooperRepository looper, FxParamTarget target) {
   final entries = looper.chainEntriesAt(target.address);
   if (entries == null) return null;
   for (final fx in entries) {
