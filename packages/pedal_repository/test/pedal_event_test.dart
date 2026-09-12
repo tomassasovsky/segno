@@ -80,11 +80,21 @@ void main() {
         ButtonPressed() => 'pressed',
         ButtonReleased() => 'released',
         EncoderDelta() => 'encoder',
+        ExternalContactChanged() => 'external',
       };
 
       expect(describe(const ButtonPressed(PedalButton.recPlay)), 'pressed');
       expect(describe(const ButtonReleased(PedalButton.recPlay)), 'released');
       expect(describe(const EncoderDelta(1)), 'encoder');
+      expect(
+        describe(
+          const ExternalContactChanged(
+            PedalExternalSwitch.ctrl1First,
+            closed: true,
+          ),
+        ),
+        'external',
+      );
     });
   });
 }

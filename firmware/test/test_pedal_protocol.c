@@ -397,6 +397,29 @@ static void test_pedal_colors(void) {
   }
 }
 
+/* The external CTRL jacks ride the same Note space as the footswitches, one
+ * block after them, so a decoder that predates them ignores an external switch
+ * rather than acting on the wrong control. */
+static void test_external_switch_notes(void) {
+  printf("test_external_switch_notes\n");
+  CHECK(PEDAL_EXT_CTRL1_FIRST == PEDAL_BTN_COUNT);
+  CHECK(PEDAL_EXT_CTRL2_SECOND == PEDAL_BTN_COUNT + PEDAL_EXT_COUNT - 1);
+
+  /* Each one encodes as an ordinary Note, which is all the console board has
+   * to send for segno to tell the switches apart. */
+  uint8_t buf[8];
+  const int len = pedal_encode_button(PEDAL_EXT_CTRL2_FIRST, 1, 0, buf);
+  CHECK(len == 3);
+  CHECK(buf[0] == 0x90);
+  CHECK(buf[1] == PEDAL_EXT_CTRL2_FIRST);
+  CHECK(buf[2] > 0);
+
+  const int up = pedal_encode_button(PEDAL_EXT_CTRL2_FIRST, 0, 0, buf);
+  CHECK(up == 3);
+  CHECK(buf[1] == PEDAL_EXT_CTRL2_FIRST);
+  CHECK(buf[2] == 0);
+}
+
 /* A body longer than any version's payload is rejected BEFORE it is
  * unpacked. pedal_unpack7 writes one byte per payload byte it finds, into a
  * fixed buffer, and the length comes off the wire -- without the bound this
@@ -645,6 +668,7 @@ int main(int argc, char** argv) {
   test_fx_downgrade_twins();
   test_custom_downgrade_twin();
   test_pedal_colors();
+  test_external_switch_notes();
   test_truncated_v4_is_rejected();
   test_overlong_body_is_rejected();
   test_mode_round_trip_and_version_gate();
