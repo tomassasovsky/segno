@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_color.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
+import 'package:pedal_repository/src/pedal_external_switch.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
@@ -448,8 +449,8 @@ abstract final class PedalCodec {
   /// [PedalEvent], or `null` for messages that are not pedal input.
   ///
   /// NoteOn maps to [ButtonPressed] (velocity 0 is treated as a release),
-  /// NoteOff to [ButtonReleased], and the relative encoder CC to
-  /// [EncoderDelta].
+  /// NoteOff to [ButtonReleased], an external jack's note to
+  /// [ExternalContactChanged], and the relative encoder CC to [EncoderDelta].
   /// The MIDI channel is ignored here; channel filtering is the repository's
   /// concern. [timestamp] is attached to button events for tap/hold timing.
   static PedalEvent? decodeMessage(
@@ -461,22 +462,41 @@ abstract final class PedalCodec {
     final type = status & 0xF0;
     switch (type) {
       case 0x90: // NoteOn
-        final button = PedalButtonNote.fromNote(data1);
-        if (button == null) return null;
         // Running-status NoteOn with velocity 0 means release.
-        return data2 == 0
-            ? ButtonReleased(button, timestamp: timestamp)
-            : ButtonPressed(button, timestamp: timestamp);
+        return _decodeNote(data1, closed: data2 != 0, timestamp: timestamp);
       case 0x80: // NoteOff
-        final button = PedalButtonNote.fromNote(data1);
-        if (button == null) return null;
-        return ButtonReleased(button, timestamp: timestamp);
+        return _decodeNote(data1, closed: false, timestamp: timestamp);
       case 0xB0: // Control Change
         if (data1 != encoderCc) return null;
         return EncoderDelta(_decodeEncoder(data2));
       default:
         return null;
     }
+  }
+
+  /// One Note number, which is either a footswitch on the plate or a switch on
+  /// an external jack.
+  ///
+  /// The external numbers follow the plate's ten, so a note that is neither
+  /// decodes to nothing rather than to the wrong control.
+  static PedalEvent? _decodeNote(
+    int note, {
+    required bool closed,
+    required Duration timestamp,
+  }) {
+    final button = PedalButtonNote.fromNote(note);
+    if (button != null) {
+      return closed
+          ? ButtonPressed(button, timestamp: timestamp)
+          : ButtonReleased(button, timestamp: timestamp);
+    }
+    final external = PedalExternalSwitchNote.fromNote(note);
+    if (external == null) return null;
+    return ExternalContactChanged(
+      external,
+      closed: closed,
+      timestamp: timestamp,
+    );
   }
 
   /// Encodes a relative encoder [delta] to its CC value (binary-offset).

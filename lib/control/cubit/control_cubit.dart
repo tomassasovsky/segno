@@ -14,6 +14,7 @@ import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/controller_learn.dart';
+import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
@@ -104,25 +105,29 @@ class _HoldGesture {
 /// generation makes every gesture pressed before the cancel a stranger, so the
 /// release that arrives after it runs nothing.
 class _Gestures {
-  final Map<PedalButton, _HoldGesture> _byButton = {};
+  /// Keyed by the control's own enum — a [PedalButton] on the plate, a
+  /// [PedalExternalSwitch] on a jack. Both are enums with value identity and
+  /// neither can collide with the other, so one registry serves both and the
+  /// cancellation rules cannot diverge between them.
+  final Map<Enum, _HoldGesture> _byControl = {};
   int _generation = 0;
 
   /// The generation a press starting now belongs to.
   int get generation => _generation;
 
-  /// The gesture for [button], created on first use.
-  _HoldGesture of(PedalButton button) =>
-      _byButton.putIfAbsent(button, _HoldGesture.new);
+  /// The gesture for [control], created on first use.
+  _HoldGesture of(Enum control) =>
+      _byControl.putIfAbsent(control, _HoldGesture.new);
 
-  /// Ends [button]'s gesture, running its tap unless the gesture has been
+  /// Ends [control]'s gesture, running its tap unless the gesture has been
   /// retired since the press.
-  void release(PedalButton button) => _byButton[button]?.release(_generation);
+  void release(Enum control) => _byControl[control]?.release(_generation);
 
   /// Drops every pending gesture without running it, and retires the
   /// generation so a release still in flight is ignored too.
   void cancelAll() {
     _generation++;
-    for (final gesture in _byButton.values) {
+    for (final gesture in _byControl.values) {
       gesture.cancel();
     }
   }
@@ -296,6 +301,13 @@ class ControlCubit extends Cubit<ControlState> {
   //
   // BANK arms nothing: it pages the plate and nothing else.
   final _gestures = _Gestures();
+
+  /// The external contacts currently closed, as the jacks last reported them.
+  ///
+  /// Not derived state: it is what the HARDWARE is doing, which nothing else
+  /// in the app knows. It exists to make a change a change — a resent message
+  /// or a bouncing switch must not run an action twice.
+  final Set<PedalExternalSwitch> _externalContacts = {};
 
   // The remap (part 6b) lives in ControlState — it is stored user intent, and
   // the surfaces that render it rebuild on emit. What stays here is only the
@@ -1114,7 +1126,91 @@ class ControlCubit extends Cubit<ControlState> {
       case EncoderDelta(:final delta):
         _log('encoder $delta');
         encoderTurned(delta);
+      case ExternalContactChanged(:final switchId, :final closed):
+        _onExternalContact(switchId, closed: closed);
     }
+  }
+
+  /// A switch on a CTRL jack changed state.
+  ///
+  /// The jacks reach the same interpreter the plate does: whatever the setup
+  /// put on the switch runs through [_runAction], so an external pedal cannot
+  /// mean something different from the footswitch beside it.
+  void _onExternalContact(
+    PedalExternalSwitch switchId, {
+    required bool closed,
+  }) {
+    // A contact already down has to come up before another closure counts,
+    // and a state that did not change is not a change. Both are the same
+    // guard: a resent message, or a switch bouncing, must not run an action
+    // twice.
+    if (_externalContacts.contains(switchId) == closed) return;
+    if (closed) {
+      _externalContacts.add(switchId);
+    } else {
+      _externalContacts.remove(switchId);
+    }
+
+    final jack = state.pedalSetup.external.forJack(
+      ExternalJack.values[switchId.jack],
+    );
+    // Only the ACTIVE type dispatches: a dual pedal's second switch is silent
+    // while the jack is set to a single one, whatever it still carries.
+    final setup = jack.switchAt(switchId.position);
+    if (setup == null) return;
+
+    if (_takeLocked()) {
+      // The lock reaches the release for the reason it does on the plate: a
+      // press taken before a take started leaves a gesture armed, and running
+      // its tap when the foot comes up is the mid-take edit the lock refuses.
+      if (!closed) _gestures.of(switchId).cancel();
+      return;
+    }
+
+    _log(
+      'external ${switchId.name} ${closed ? 'closed' : 'open'} '
+      '[${setup.hardware.name}]',
+    );
+    switch (setup.hardware) {
+      case ExternalSwitchHardware.latching:
+        // No press and no release: the contact changed, and that is the whole
+        // gesture. A latching switch cannot report how long a foot stayed on
+        // it, so there is nothing to time a hold against.
+        final action = setup.change;
+        if (action != null) _runAction(action);
+      case ExternalSwitchHardware.momentary:
+        if (closed) {
+          _armExternalPress(switchId, setup);
+        } else {
+          _gestures.release(switchId);
+        }
+    }
+  }
+
+  /// Arms a momentary external switch's press.
+  ///
+  /// With a hold assigned the press waits for the release, because until the
+  /// threshold passes neither half is known to be the one the foot meant.
+  /// With no hold there is nothing to wait for, so the press acts on contact
+  /// — the same rule the plate's own switches follow.
+  void _armExternalPress(
+    PedalExternalSwitch switchId,
+    ExternalSwitchSetup setup,
+  ) {
+    final press = setup.gestures.press;
+    final hold = setup.gestures.hold;
+    if (hold == null) {
+      if (press != null) _runAction(press);
+      return;
+    }
+    _gestures
+        .of(switchId)
+        .press(
+          threshold: _longPress,
+          generation: _gestures.generation,
+          onHold: () => _runAction(hold),
+          onTap: press == null ? null : () => _runAction(press),
+        );
   }
 
   void _onPress(PedalButton button) {

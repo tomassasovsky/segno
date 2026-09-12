@@ -164,6 +164,24 @@ enum {
   PEDAL_BTN_COUNT = 10
 };
 
+/* The Note number each switch on the two external CTRL jacks transmits.
+ *
+ * The console board reads those jacks alongside the ten footswitches and the
+ * encoder, so an external switch reaches segno the way a footswitch does. The
+ * numbers follow the plate's, so a build that predates them decodes nothing
+ * rather than mistaking one for a footswitch. Append, never renumber: keep
+ * these in step with PedalExternalSwitch in packages/pedal_repository.
+ *
+ * A single pedal uses only the first switch of its jack's pair. These are
+ * INPUT numbers; nothing in the state frame addresses an external switch. */
+enum {
+  PEDAL_EXT_CTRL1_FIRST = PEDAL_BTN_COUNT + 0,
+  PEDAL_EXT_CTRL1_SECOND = PEDAL_BTN_COUNT + 1,
+  PEDAL_EXT_CTRL2_FIRST = PEDAL_BTN_COUNT + 2,
+  PEDAL_EXT_CTRL2_SECOND = PEDAL_BTN_COUNT + 3,
+  PEDAL_EXT_COUNT = 4
+};
+
 /* One indicator hue (protocol v4). Full 8-bit RGB, matching the WS2812 the
  * pills and the V1 indicators are built from, so a colour the user picked
  * reaches the LED unquantised. */

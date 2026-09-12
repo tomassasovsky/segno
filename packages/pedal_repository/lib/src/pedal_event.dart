@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
+import 'package:pedal_repository/src/pedal_external_switch.dart';
 
 /// A decoded input from the pedal, hardware-agnostic.
 ///
@@ -63,4 +64,36 @@ final class EncoderDelta extends PedalEvent {
 
   @override
   String toString() => 'EncoderDelta($delta)';
+}
+
+/// An external switch's contact changed state.
+///
+/// ONE event for both edges, unlike the plate's [ButtonPressed] and
+/// [ButtonReleased] pair: a latching switch has no press and no release, only
+/// a contact that is now closed or now open, and the two hardwares have to
+/// arrive here the same way for the setup to decide what a change means.
+final class ExternalContactChanged extends PedalEvent {
+  /// Creates an [ExternalContactChanged] event.
+  const ExternalContactChanged(
+    this.switchId, {
+    required this.closed,
+    this.timestamp = Duration.zero,
+  });
+
+  /// Which switch on which jack.
+  final PedalExternalSwitch switchId;
+
+  /// Whether the contact is now closed.
+  final bool closed;
+
+  /// When the change was observed, relative to an arbitrary epoch.
+  final Duration timestamp;
+
+  @override
+  List<Object?> get props => [switchId, closed, timestamp];
+
+  @override
+  String toString() =>
+      'ExternalContactChanged(${switchId.name}, '
+      '${closed ? 'closed' : 'open'}, $timestamp)';
 }
