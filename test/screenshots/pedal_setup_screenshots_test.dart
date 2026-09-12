@@ -15,7 +15,6 @@ import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -92,16 +91,16 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
+    final pedal = PedalRepository(const NoopPedalTransport());
+    addTearDown(() => unawaited(pedal.dispose()));
     final control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(const NoopPedalTransport()),
+      pedal: pedal,
       settings: settings,
       performance: performance,
       keepAliveInterval: Duration.zero,
     );
     final tracks = TracksCubit(settings: settings);
-    final looperBloc = LooperBloc(repository: looper);
-    addTearDown(() => unawaited(looperBloc.close()));
     addTearDown(() => unawaited(control.close()));
     addTearDown(() => unawaited(tracks.close()));
     await control.load();
@@ -118,15 +117,17 @@ void main() {
             routingGraphThemeFromSurface(SurfaceTheme.dark),
           ],
         ),
-        home: RepositoryProvider<LooperRepository>.value(
-          value: looper,
+        home: MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<LooperRepository>.value(value: looper),
+            // The map's indicators read the frame the app last handed the
+            // pedal.
+            RepositoryProvider<PedalRepository>.value(value: pedal),
+          ],
           child: MultiBlocProvider(
             providers: [
               BlocProvider.value(value: control),
               BlocProvider.value(value: tracks),
-              // The map's indicators are lit by the rig, which the page
-              // re-projects out of this bloc.
-              BlocProvider.value(value: looperBloc),
             ],
             child: const PedalSetupPage(),
           ),

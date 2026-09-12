@@ -131,7 +131,7 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
   /// The hue, the size it will never be on the hardware, and its hex.
   ///
   /// The number is shown because it is the only part of a colour a performer
-  /// can write down, say out loud or type back in later.
+  /// can write down or say out loud.
   Widget _preview(BuildContext context) {
     final surface = context.surface;
     return Column(

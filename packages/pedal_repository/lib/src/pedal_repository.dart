@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
+
 import 'package:pedal_repository/src/models/pedal_output.dart';
 import 'package:pedal_repository/src/pedal_codec.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
@@ -158,10 +160,29 @@ class PedalRepository {
     _setStatus(PedalBindStatus.none);
   }
 
+  /// The last frame handed to [pushState], whether or not a pedal was bound
+  /// to receive it.
+  ///
+  /// The app projects exactly one frame per change and hands it here, so this
+  /// is the one consistent answer to "what are the indicators showing" — the
+  /// on-screen surfaces that draw them read it rather than re-projecting from
+  /// their own view of the rig, which would pair an engine state with an
+  /// overlay that had not caught up with it yet.
+  ///
+  /// Unbound is not blank: a rig with no pedal plugged in still has a mode, a
+  /// bank and lit tracks, and the setup screen draws them.
+  ValueListenable<PedalStateFrame> get lastFrame => _lastFrame;
+
+  final ValueNotifier<PedalStateFrame> _lastFrame = ValueNotifier(
+    PedalStateFrame.blank(),
+  );
+
   /// Encodes [frame] at [targetProtocolVersion] and sends it to the pedal.
-  /// A no-op when not bound.
+  /// Sending is a no-op when not bound; [lastFrame] is published either way.
   void pushState(PedalStateFrame frame) {
-    if (_disposed || _status != PedalBindStatus.bound) return;
+    if (_disposed) return;
+    _lastFrame.value = frame;
+    if (_status != PedalBindStatus.bound) return;
     _transport.send(
       PedalCodec.encodeFrame(frame, targetVersion: targetProtocolVersion),
     );
@@ -197,5 +218,6 @@ class PedalRepository {
     await _transport.dispose();
     await _events.close();
     await _statusChanges.close();
+    _lastFrame.dispose();
   }
 }
