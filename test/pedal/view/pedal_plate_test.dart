@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/common/pedal_color_display.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/pedal.dart';
@@ -13,6 +14,7 @@ const _waveformScreenKey = Key('waveformScreen');
 PedalStateFrame _frame({
   int activeBank = 0,
   Map<int, PedalTrackLed> leds = const {},
+  Map<PedalButton, PedalColor> colors = const {},
 }) => PedalStateFrame.blank().copyWith(
   trackLeds: [
     for (var i = 0; i < PedalStateFrame.trackCount; i++)
@@ -20,6 +22,10 @@ PedalStateFrame _frame({
   ],
   activeBank: activeBank,
   selectedTrack: activeBank * 4,
+  pedalColors: [
+    for (final button in PedalButton.values)
+      colors[button] ?? PedalColor.defaultColor,
+  ],
 );
 
 void main() {
@@ -76,10 +82,19 @@ void main() {
     expect(find.byKey(_recPlayKey), findsOneWidget);
   });
 
-  testWidgets('the frame drives LED rendering', (tester) async {
+  testWidgets('the frame lights an indicator and the palette colours it', (
+    tester,
+  ) async {
     await pumpPlate(
       tester,
-      frame: _frame(leds: {0: PedalTrackLed.red, 1: PedalTrackLed.green}),
+      frame: _frame(
+        leds: {0: PedalTrackLed.red, 1: PedalTrackLed.green},
+        colors: const {
+          PedalButton.track1: PedalColor.violet,
+          PedalButton.track2: PedalColor.cyan,
+          PedalButton.track3: PedalColor.red,
+        },
+      ),
     );
 
     Color ledColor(int channel) =>
@@ -90,8 +105,13 @@ void main() {
                     .decoration!
                 as BoxDecoration)
             .color!;
-    expect(ledColor(0), SurfaceTheme.dark.ledRed);
-    expect(ledColor(1), SurfaceTheme.dark.ledGreen);
+    // What LIGHTS the indicator is the frame's own state; what colour it comes
+    // up in is the performer's. Track 1 is recording and track 2 is playing —
+    // the two states that used to be red and green, and are now each that
+    // switch's own hue.
+    expect(ledColor(0), PedalColor.violet.display);
+    expect(ledColor(1), PedalColor.cyan.display);
+    // Unlit: the dark dot, never a dimmed version of the configured colour.
     expect(ledColor(2), SurfaceTheme.dark.ledOff);
   });
 
@@ -162,28 +182,47 @@ void main() {
     expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
   });
 
-  testWidgets('the MODE LED reflects the frame mode color', (tester) async {
-    // Every mode, not only FX: the plate is the on-screen twin of the two
-    // sketches' `modeColor`, and a mode added to the wire with no colour
-    // here would render as whatever the switch fell through to.
-    final colors = {
-      PedalMode.rec: SurfaceTheme.dark.ledRed,
-      PedalMode.play: SurfaceTheme.dark.ledGreen,
-      PedalMode.fx: SurfaceTheme.dark.ledBlue,
-      PedalMode.custom: SurfaceTheme.dark.ledAmber,
-    };
-    expect(colors.keys, PedalMode.values.toSet());
-    for (final mode in PedalMode.values) {
-      await pumpPlate(tester, frame: _frame().copyWith(mode: mode));
-      final led = tester.widget<Container>(
-        find.byKey(const Key('pedalFaceplate_led_mode')),
+  testWidgets('the MODE LED is dark in the normal mode and the configured '
+      'colour in every other one', (tester) async {
+    Color modeColor(WidgetTester tester) =>
+        (tester
+                    .widget<Container>(
+                      find.byKey(const Key('pedalFaceplate_led_mode')),
+                    )
+                    .decoration!
+                as BoxDecoration)
+            .color!;
+
+    const colors = {PedalButton.mode: PedalColor.amber};
+    // Every mode, not only FX: the plate is the on-screen twin of both
+    // sketches' `indicatorFor`, and a mode added to the wire with nothing said
+    // about it here would light whatever the comparison fell through to.
+    await pumpPlate(
+      tester,
+      frame: _frame(colors: colors).copyWith(mode: PedalMode.rec),
+    );
+    expect(modeColor(tester), SurfaceTheme.dark.ledOff);
+
+    for (final mode in [PedalMode.play, PedalMode.fx, PedalMode.custom]) {
+      await pumpPlate(
+        tester,
+        frame: _frame(colors: colors).copyWith(mode: mode),
       );
       expect(
-        (led.decoration! as BoxDecoration).color,
-        colors[mode],
+        modeColor(tester),
+        PedalColor.amber.display,
         reason: 'PedalMode.$mode',
       );
     }
+
+    // The shutdown frame darkens it whatever mode it was in.
+    await pumpPlate(
+      tester,
+      frame: _frame(
+        colors: colors,
+      ).copyWith(mode: PedalMode.fx, isGoodbye: true),
+    );
+    expect(modeColor(tester), SurfaceTheme.dark.ledOff);
   });
 
   group('selection state', () {

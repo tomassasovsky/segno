@@ -158,19 +158,6 @@ static void pollMidiIn() {
 
 // ---- rendering --------------------------------------------------------------
 
-static CRGB ledColor(uint8_t led) {
-  switch (led) {
-    case PEDAL_LED_GREEN:
-      return CRGB::Green;
-    case PEDAL_LED_RED:
-      return CRGB::Red;
-    case PEDAL_LED_BLUE: // FX-mode chain-enabled (part 5b's projection)
-      return CRGB::Blue;
-    default:
-      return CRGB::Black;
-  }
-}
-
 static CRGB globalColor(uint8_t color) {
   switch (color) {
     case PEDAL_GLOBAL_GREEN:
@@ -186,33 +173,43 @@ static CRGB globalColor(uint8_t color) {
   }
 }
 
-// The tri-state mode indicator's color per decoded interaction mode (A1):
-// Rec red, Play/mute green, FX blue — matching the chain-enabled track-LED
-// blue. Rendered verbatim from the frame's 2-bit mode; segno remains the
-// single source of truth.
+// The colour one footswitch's indicator comes up in, and black when it is not
+// lit at all.
 //
-// Rec was green and Play/mute amber until #693. The owner's call is that mute
-// reads green on every surface, and green was already spoken for by rec — so
-// rec moves to red, which is what every screen has always drawn it as. Keep
-// this in lockstep with the app's `_modeColor` in `pedal_plate.dart`.
-// No wire byte changes: the frame carries the 2-bit mode, never a colour.
+// The accepted LED contract, both halves in one place: function STATE decides
+// whether an indicator is lit, and the performer's own palette -- carried per
+// footswitch since protocol v4 -- decides its hue. Mirrors
+// PedalStateFrame.isLit and .colorFor in packages/pedal_repository, which the
+// app's on-screen plate reads out of the same frame.
 //
-// One call site, one meaning: the MODE LED. This used to tint the ring's idle
-// sweep too, which meant a colour change here rippled across the whole plate;
-// #693 cut that, so the ring is now colored by transport activity alone. The
-// app's `_modeColor` has the same single call site, so the on-screen plate is
-// a faithful twin of this function and a widget test covers it.
-static CRGB modeColor(uint8_t mode) {
-  switch (mode) {
-    case PEDAL_MODE_PLAY:
-      return globalColor(PEDAL_GLOBAL_GREEN); // one definition of green
-    case PEDAL_MODE_FX:
-      return CRGB::Blue;
-    case PEDAL_MODE_CUSTOM:
-      return globalColor(PEDAL_GLOBAL_AMBER); // the one hue left unspoken for
-    default: // PEDAL_MODE_REC
-      return globalColor(PEDAL_GLOBAL_RED); // one definition of red
+// The hue used to BE the state: a track LED said green for playing and red for
+// recording, and the MODE LED said which mode it was in. Both readings are
+// gone. The colour is the performer's, the mode is on the displays, and this
+// indicator says only that the rig is somewhere other than Tracks.
+//
+// Stop and Undo are never lit. Both do a thing and finish, so an indicator on
+// them could only report that the function exists, which is true all evening.
+static CRGB indicatorFor(uint8_t button) {
+  if (g_frame.goodbye) return CRGB::Black;
+  bool lit = false;
+  if (button >= PEDAL_BTN_TRACK1 && button <= PEDAL_BTN_TRACK4) {
+    const uint8_t slot = button - PEDAL_BTN_TRACK1;
+    const uint8_t track = g_frame.active_bank * (PEDAL_TRACK_COUNT / 2) + slot;
+    lit = g_frame.track_leds[track] != PEDAL_LED_OFF;
+  } else if (button == PEDAL_BTN_REC_PLAY) {
+    // A live take, which is what the transport's activity colour reports.
+    lit = g_frame.global_color == PEDAL_GLOBAL_RED ||
+          g_frame.global_color == PEDAL_GLOBAL_AMBER;
+  } else if (button == PEDAL_BTN_MODE) {
+    lit = g_frame.play_mode != PEDAL_MODE_REC;
+  } else if (button == PEDAL_BTN_CLEAR) {
+    lit = g_frame.clear_fade != 0;
+  } else if (button == PEDAL_BTN_BANK) {
+    lit = g_frame.active_bank == 1;
   }
+  if (!lit) return CRGB::Black;
+  const pedal_color c = g_frame.pedal_colors[button];
+  return CRGB(c.r, c.g, c.b);
 }
 
 static CRGB scaled(CRGB c, uint8_t level) {
@@ -373,31 +370,27 @@ static void showGamma() {
 static void render() {
   renderRing(); // the loop-position ring, LEDs 0..11
   if (g_haveFrame) {
-    // Active bank's 4 tracks on the physical Tr1..Tr4 LEDs — solid color from
-    // each track's LED state. The selected/armed track is NOT highlighted here
-    // (no breathing, no blue dot); selection is shown on segno's screen.
-    const uint8_t base = g_frame.active_bank * 4; // bank A: 0..3, bank B: 4..7
+    // Active bank's 4 tracks on the physical Tr1..Tr4 LEDs. The
+    // selected/armed track is NOT highlighted here (no breathing, no blue
+    // dot); selection is shown on segno's screen.
     for (uint8_t i = 0; i < 4; i++) {
-      g_leds[kTrackLed0 + i] = ledColor(g_frame.track_leds[base + i]);
+      g_leds[kTrackLed0 + i] = indicatorFor(PEDAL_BTN_TRACK1 + i);
     }
-    // LED 12 is the tri-state mode indicator (A1): rec red / play green / fx
-    // blue from the decoded 2-bit mode (#693). SOLID, always — this LED means
-    // the interaction mode and nothing else. The goodbye frame darkens
-    // everything, this LED included.
+    // LED 12 is the mode indicator: dark in the normal Tracks mode and lit in
+    // every other one, SOLID either way. It used to say WHICH mode by its
+    // colour; the colour is the performer's now, and which mode is on the
+    // displays.
     //
     // It used to BLINK red while performance-recording was armed (D-PEDAL).
     // That reading is gone (#693): armed state already lives on the screens —
     // the 7" readout carries a REC block with running elapsed, permanently in
     // view, and the stage status bar shows it too — so the pedal was
     // duplicating it and paying for the duplicate with an ambiguous MODE LED.
-    // Once rec mode went solid red, "blinking red" vs "solid red" was the only
-    // thing separating armed from rec mode on one 5mm dot at stage distance.
     // One signal, one meaning: the plate shows mode here and activity on the
     // ring, and neither has to be read against the other.
-    g_leds[kModeLed] = g_frame.goodbye ? CRGB::Black
-                                       : modeColor(g_frame.play_mode);
-    g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Red : CRGB::Black;
-    g_leds[kBankLed] = (g_frame.active_bank == 1) ? CRGB(0, 0, 80) : CRGB::Black;
+    g_leds[kModeLed] = indicatorFor(PEDAL_BTN_MODE);
+    g_leds[kClearLed] = indicatorFor(PEDAL_BTN_CLEAR);
+    g_leds[kBankLed] = indicatorFor(PEDAL_BTN_BANK);
   } else {
     g_leds[kModeLed] = CRGB::Black;
     g_leds[kClearLed] = CRGB::Black;

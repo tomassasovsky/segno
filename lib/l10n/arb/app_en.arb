@@ -4854,5 +4854,112 @@
     "controlPedalSetupSub": "What each footswitch does on a press and on a hold",
     "@controlPedalSetupSub": {
         "description": "Subtitle of the row that opens the Pedals setup page."
+    },
+    "pedalSetupContextLeds": "LED colors",
+    "@pedalSetupContextLeds": {
+        "description": "Opens the LED colors context of the Pedals setup, where each footswitch's indicator colour is chosen."
+    },
+    "pedalSetupLedColor": "LED color",
+    "@pedalSetupLedColor": {
+        "description": "Label of the field that picks the selected footswitch's indicator colour."
+    },
+    "pedalSetupLedEdit": "Edit color",
+    "@pedalSetupLedEdit": {
+        "description": "Opens the colour editor on the custom colour the selected footswitch uses. Absent on the eight built-in colours, which cannot be edited."
+    },
+    "pedalSetupLedAdd": "Add custom color",
+    "@pedalSetupLedAdd": {
+        "description": "Accessible name of the + swatch that mixes a new reusable colour."
+    },
+    "pedalColorWhite": "White",
+    "@pedalColorWhite": {
+        "description": "Built-in LED colour, and the default on all ten footswitches."
+    },
+    "pedalColorAmber": "Amber",
+    "@pedalColorAmber": {
+        "description": "Built-in LED colour."
+    },
+    "pedalColorRed": "Red",
+    "@pedalColorRed": {
+        "description": "Built-in LED colour."
+    },
+    "pedalColorOrange": "Orange",
+    "@pedalColorOrange": {
+        "description": "Built-in LED colour."
+    },
+    "pedalColorGreen": "Green",
+    "@pedalColorGreen": {
+        "description": "Built-in LED colour."
+    },
+    "pedalColorCyan": "Cyan",
+    "@pedalColorCyan": {
+        "description": "Built-in LED colour."
+    },
+    "pedalColorBlue": "Blue",
+    "@pedalColorBlue": {
+        "description": "Built-in LED colour."
+    },
+    "pedalColorViolet": "Violet",
+    "@pedalColorViolet": {
+        "description": "Built-in LED colour."
+    },
+    "pedalColorCustom": "Custom {number}",
+    "@pedalColorCustom": {
+        "description": "Name of a colour the performer mixed. The number is the entry's own, stable for its life so that editing a colour never renames it.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "pedalColorAddTitle": "Add color",
+    "@pedalColorAddTitle": {
+        "description": "Title of the colour editor while mixing a new colour."
+    },
+    "pedalColorEditTitle": "Edit color",
+    "@pedalColorEditTitle": {
+        "description": "Title of the colour editor while changing a colour the palette already has."
+    },
+    "pedalColorAddConfirm": "Add color",
+    "@pedalColorAddConfirm": {
+        "description": "Commits a newly mixed colour to the palette and puts it on the selected footswitch."
+    },
+    "pedalColorEditConfirm": "Save color",
+    "@pedalColorEditConfirm": {
+        "description": "Commits a change to a colour the palette already has, moving every footswitch that uses it."
+    },
+    "pedalColorDialogLabel": "Custom LED color",
+    "@pedalColorDialogLabel": {
+        "description": "Accessible name of the colour editor dialog."
+    },
+    "pedalColorHue": "Hue",
+    "@pedalColorHue": {
+        "description": "Which colour it is, in degrees around the colour wheel."
+    },
+    "pedalColorSaturation": "Saturation",
+    "@pedalColorSaturation": {
+        "description": "How much colour there is, against white."
+    },
+    "pedalColorBrightness": "Brightness",
+    "@pedalColorBrightness": {
+        "description": "How hard the LED is driven."
+    },
+    "pedalColorDegrees": "{value}\u00b0",
+    "@pedalColorDegrees": {
+        "description": "The hue readout, in degrees.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
+    },
+    "pedalColorPercent": "{value}%",
+    "@pedalColorPercent": {
+        "description": "The saturation and brightness readouts, as percentages.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
     }
 }

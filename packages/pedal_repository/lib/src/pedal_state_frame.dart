@@ -173,6 +173,9 @@ class PedalStateFrame extends Equatable {
   /// The number of tracks carried in every frame (2 banks of 4).
   static const trackCount = 8;
 
+  /// How many of those tracks one bank reaches with its four footswitches.
+  static const int tracksPerBank = trackCount ~/ 2;
+
   /// The maximum encodable loop length (unsigned 32-bit microseconds).
   static const maxLoopLengthMicros = 0xFFFFFFFF;
 
@@ -244,6 +247,49 @@ class PedalStateFrame extends Equatable {
   /// lights it is still the frame's own state — the track LEDs, the mode, the
   /// clear fade — so this adds a dimension rather than replacing one.
   final List<PedalColor> pedalColors;
+
+  /// The hue [button]'s indicator uses when it is lit.
+  PedalColor colorFor(PedalButton button) => pedalColors[button.index];
+
+  /// Whether [button]'s indicator is lit right now.
+  ///
+  /// The accepted LED contract splits the two questions one indicator
+  /// answers: function state decides whether it is lit, and the performer's
+  /// configuration decides its hue ([colorFor]). This is the first half,
+  /// derived from the frame alone so that every renderer — the on-screen
+  /// plate, the setup screen's map, the firmware — answers it from the same
+  /// place rather than from its own reading of the rig.
+  ///
+  /// Stop and Undo are never lit. Both do a thing and finish, so an indicator
+  /// on them could only report that the function exists, which is true for
+  /// the whole set.
+  bool isLit(PedalButton button) {
+    // The shutdown frame darkens everything; that is the whole point of it.
+    if (isGoodbye) return false;
+    return switch (button) {
+      // A live take, which is what the transport's activity colour reports:
+      // red while recording, amber while overdubbing.
+      PedalButton.recPlay =>
+        globalColor == GlobalColor.red || globalColor == GlobalColor.amber,
+      PedalButton.stop => false,
+      PedalButton.undo => false,
+      // Lit in every mode but the normal one. MODE used to be lit always,
+      // with its HUE saying which mode; the hue is the performer's now, so
+      // the indicator says "you are somewhere other than Tracks" and the
+      // displays say where.
+      PedalButton.mode => mode != PedalMode.rec,
+      PedalButton.track1 => _trackLit(0),
+      PedalButton.track2 => _trackLit(1),
+      PedalButton.track3 => _trackLit(2),
+      PedalButton.track4 => _trackLit(3),
+      PedalButton.clear => clearFadeActive,
+      PedalButton.bank => activeBank == 1,
+    };
+  }
+
+  /// Whether the [slot]'th track switch of the active bank is lit.
+  bool _trackLit(int slot) =>
+      trackLeds[activeBank * tracksPerBank + slot] != PedalTrackLed.off;
 
   /// Returns a copy with the given fields replaced.
   PedalStateFrame copyWith({

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/control_action.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -105,6 +106,26 @@ void main() {
       expect(cleared.modePress, InteractionMode.fx);
       expect(cleared.trackHold, TrackHold.clearTrack);
     });
+
+    test('clearedCustom keeps the LED colours, which the confirmation '
+        'promises', () {
+      final setup = const PedalSetup()
+          .withCustom(
+            PedalButton.track2,
+            bank: 1,
+            pair: const ControlGesturePair(press: _mute),
+          )
+          .copyWith(
+            palette: const PedalPalette()
+                .withCustom(1, PedalColor.violet)
+                .withChoice(PedalButton.track2, const CustomPaletteEntry(1)),
+          );
+
+      final cleared = setup.clearedCustom();
+      expect(cleared.custom, isEmpty);
+      expect(cleared.palette, setup.palette);
+      expect(cleared.palette.colorFor(PedalButton.track2), PedalColor.violet);
+    });
   });
 
   group('encoding', () {
@@ -200,6 +221,43 @@ void main() {
       const blob =
           '{"custom":[{"button":"undo","bank":1,"press":"command:stop"}]}';
       expect(PedalSetup.decode(blob).custom, isEmpty);
+    });
+
+    test('round-trips the LED palette with the assignments', () {
+      final setup = const PedalSetup(modePress: InteractionMode.fx)
+          .withCustom(
+            PedalButton.stop,
+            bank: 0,
+            pair: const ControlGesturePair(press: _pedal1),
+          )
+          .copyWith(
+            palette: const PedalPalette()
+                .withCustom(1, const PedalColor(0xED, 0x63, 0x9B))
+                .withChoice(PedalButton.mode, const CustomPaletteEntry(1))
+                .withChoice(
+                  PedalButton.bank,
+                  const BuiltInPaletteEntry(PedalPaletteColor.green),
+                ),
+          );
+      final decoded = PedalSetup.decode(setup.encode());
+      expect(decoded, setup);
+      expect(decoded.palette.colorFor(PedalButton.mode).rgb, 0xED639B);
+      expect(decoded.palette.colorFor(PedalButton.bank), PedalColor.green);
+    });
+
+    test('a default palette adds nothing to the encoding', () {
+      expect(const PedalSetup().encode().contains('palette'), isFalse);
+    });
+
+    test('two setups differing only in a colour are not equal', () {
+      const setup = PedalSetup();
+      final coloured = setup.copyWith(
+        palette: const PedalPalette().withChoice(
+          PedalButton.track1,
+          const BuiltInPaletteEntry(PedalPaletteColor.red),
+        ),
+      );
+      expect(coloured, isNot(setup));
     });
   });
 }
