@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -88,12 +89,33 @@ void main() {
     when(
       () => looper.allTrackChains(),
     ).thenReturn(const {0: FxChainEnvelope()});
+    // One factory rack, so the rows draw the pictures the Effects page does:
+    // each pedal's own, and the rack's for the chain as a whole.
+    const rack = FxRack(id: 'rack-1', name: 'Clean Rhythm', art: 'guitar');
     when(() => looper.trackEffects(0)).thenReturn([
-      BuiltInEffect(type: TrackEffectType.drive, slotId: 'drive-1'),
-      BuiltInEffect(type: TrackEffectType.reverb, slotId: 'reverb-1'),
+      BuiltInEffect(
+        type: TrackEffectType.drive,
+        slotId: 'drive-1',
+        rack: rack,
+        module: 'Overdrive',
+      ),
+      BuiltInEffect(
+        type: TrackEffectType.reverb,
+        slotId: 'reverb-1',
+        rack: rack,
+        module: 'Reverb',
+      ),
     ]);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+    when(
+      () => looper.setTrackEffectParam(
+        channel: any(named: 'channel'),
+        index: any(named: 'index'),
+        param: any(named: 'param'),
+        value: any(named: 'value'),
+      ),
+    ).thenReturn(EngineResult.ok);
     when(
       () => looper.setVolume(any(), channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
@@ -185,6 +207,16 @@ void main() {
         const AssetImage(ExpressionPositionPanel.asset),
         context,
       );
+      for (final art in [
+        fxModuleArt('Overdrive')!,
+        fxModuleArt('Reverb')!,
+        fxFootswitchAsset('guitar'),
+      ]) {
+        await precacheImage(
+          AssetImage(art, package: FxCatalogueLoader.package),
+          context,
+        );
+      }
     });
     await tester.pumpAndSettle();
   }
@@ -217,12 +249,22 @@ void main() {
     await shot(tester, 'latching');
   }, skip: !hasScreenshotFonts);
 
-  /// A jack taught its whole travel, sweeping one track's fader.
+  /// A jack taught its whole travel, sweeping a pedal's parameter and one
+  /// track's fader.
   const taught = ExternalJackSetup(
     type: ExternalJackType.expression,
     expression: ExternalExpressionSetup(
       calibration: ExpressionCalibration(heel: 0, toe: 1),
-      mappings: [ExpressionMapping(target: TrackVolumeTarget(0))],
+      mappings: [
+        ExpressionMapping(
+          target: FxParamTarget(
+            address: FxAddress(stage: FxStage.track),
+            slotId: 'drive-1',
+            param: 1,
+          ),
+        ),
+        ExpressionMapping(target: TrackVolumeTarget(0)),
+      ],
     ),
   );
 
@@ -265,7 +307,7 @@ void main() {
     await pump(tester, jack: taught);
     await tap(tester, 'expression_add');
     await tap(tester, 'expression_kind_recordedTrack');
-    await tap(tester, 'expression_destination_track:1');
+    await tap(tester, 'expression_destination_track:0');
     await shot(tester, 'expression_controls');
   }, skip: !hasScreenshotFonts);
 

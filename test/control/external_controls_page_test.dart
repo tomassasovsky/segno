@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -53,7 +54,11 @@ void main() {
       () => looper.allTrackChains(),
     ).thenReturn(const {0: FxChainEnvelope()});
     when(() => looper.trackEffects(0)).thenReturn([
-      BuiltInEffect(type: TrackEffectType.drive, slotId: 'drive-1'),
+      BuiltInEffect(
+        type: TrackEffectType.drive,
+        slotId: 'drive-1',
+        module: 'Overdrive',
+      ),
     ]);
     when(() => looper.trackEffects(1)).thenReturn(const []);
     when(() => looper.monitorEffects(any())).thenReturn(const []);
@@ -326,6 +331,35 @@ void main() {
     await tap(tester, 'external_remove_control');
     await tap(tester, 'external_save');
     expect(saved().isEmpty, isTrue);
+  });
+
+  testWidgets('a row draws its pedal, and a fader row draws none', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      jack: const ExternalJackSetup(
+        single: ExternalSwitchSetup(
+          controls: ExternalControls(
+            activations: [ExternalActivation(target: drive)],
+            parameters: [
+              ExternalParameter(
+                target: TrackVolumeTarget(0),
+                active: 1,
+                inactive: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tap(tester, 'external_panel_controls');
+    final art = find.byKey(const Key('control_row_art'));
+    expect(art, findsOne, reason: 'the effect has a picture; the fader not');
+    expect(
+      (tester.widget<Image>(art).image as AssetImage).assetName,
+      fxModuleArt('Overdrive'),
+    );
   });
 
   testWidgets('an effect the rig has lost keeps its row and says so', (

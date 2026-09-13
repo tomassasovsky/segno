@@ -17,6 +17,7 @@ class ExternalControlRow {
     required this.destination,
     required this.name,
     required this.available,
+    this.art,
   }) : parameter = null;
 
   /// A row for a parameter the button sets.
@@ -25,6 +26,7 @@ class ExternalControlRow {
     required this.destination,
     required this.name,
     required this.available,
+    this.art,
   }) : activation = null;
 
   /// The activation, when this row is one.
@@ -41,6 +43,9 @@ class ExternalControlRow {
 
   /// Whether the rig still has it.
   final bool available;
+
+  /// The picture of the pedal or rack, in the catalogue package, or `null`.
+  final String? art;
 
   /// The row's identity: its target.
   Object get target => activation?.target ?? parameter!.target;
@@ -188,6 +193,7 @@ class ExternalControlsEditor extends StatelessWidget {
         return ControlRowTile(
           destination: row.destination,
           name: row.name,
+          art: row.art,
           selected: row.target == selected,
           available: row.available,
           valueKey: Key('external_control_value_${row.keyId}'),
@@ -464,26 +470,29 @@ class ExternalControlTargetList extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final entries = <({Object target, String name, VoidCallback pick})>[
-      for (final activation in destination.activations)
-        (
-          target: activation.target,
-          name: l10n.externalActivationRow(activation.label),
-          pick: () => onActivation(activation),
-        ),
-      // One flat list, with no section headings to say which effect a
-      // parameter belongs to — so the row says it, unless the group IS the
-      // destination (a track's own fader needs no second name).
-      for (final group in destination.groups)
-        for (final control in group.controls)
-          (
-            target: control.target,
-            name: group.label == destination.label
-                ? control.label
-                : '${group.label} · ${control.label}',
-            pick: () => onParameter(control),
-          ),
-    ];
+    final entries =
+        <({Object target, String name, String? art, VoidCallback pick})>[
+          for (final activation in destination.activations)
+            (
+              target: activation.target,
+              name: l10n.externalActivationRow(activation.label),
+              art: activation.art,
+              pick: () => onActivation(activation),
+            ),
+          // One flat list, with no section headings to say which effect a
+          // parameter belongs to — so the row says it, unless the group IS the
+          // destination (a track's own fader needs no second name).
+          for (final group in destination.groups)
+            for (final control in group.controls)
+              (
+                target: control.target,
+                name: group.label == destination.label
+                    ? control.label
+                    : '${group.label} · ${control.label}',
+                art: control.art,
+                pick: () => onParameter(control),
+              ),
+        ];
     if (entries.isEmpty) {
       return Align(
         alignment: Alignment.topLeft,
@@ -505,6 +514,7 @@ class ExternalControlTargetList extends StatelessWidget {
           key: Key('external_pick_${externalControlKey(entry.target)}'),
           destination: destination.label,
           name: entry.name,
+          art: entry.art,
           taken: taken.contains(entry.target),
           onTap: entry.pick,
         );

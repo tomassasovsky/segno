@@ -1,10 +1,12 @@
 import 'package:equatable/equatable.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/binding_labels.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 
@@ -22,7 +24,11 @@ import 'package:segno/looper/model/fx_destination.dart';
 /// One control a destination offers.
 class ExpressionControl extends Equatable {
   /// Creates an [ExpressionControl].
-  const ExpressionControl({required this.target, required this.label});
+  const ExpressionControl({
+    required this.target,
+    required this.label,
+    this.art,
+  });
 
   /// What it writes.
   final ControlValueTarget target;
@@ -30,8 +36,12 @@ class ExpressionControl extends Equatable {
   /// Its name within its group — the parameter, not the chain around it.
   final String label;
 
+  /// The picture of the effect it belongs to, in the catalogue package, or
+  /// `null` for a control that is not an effect's.
+  final String? art;
+
   @override
-  List<Object?> get props => [target, label];
+  List<Object?> get props => [target, label, art];
 }
 
 /// A heading and the controls under it: one effect's parameters, or the
@@ -53,7 +63,11 @@ class ExpressionControlGroup extends Equatable {
 /// One effect a destination offers to turn on and off.
 class ExpressionActivation extends Equatable {
   /// Creates an [ExpressionActivation].
-  const ExpressionActivation({required this.target, required this.label});
+  const ExpressionActivation({
+    required this.target,
+    required this.label,
+    this.art,
+  });
 
   /// The chain or the effect.
   final FxBindingTarget target;
@@ -61,8 +75,11 @@ class ExpressionActivation extends Equatable {
   /// Its name within the destination.
   final String label;
 
+  /// Its picture in the catalogue package, or `null`.
+  final String? art;
+
   @override
-  List<Object?> get props => [target, label];
+  List<Object?> get props => [target, label, art];
 }
 
 /// One place a pedal can reach, and everything it offers there.
@@ -192,7 +209,13 @@ List<ExpressionDestination> expressionDestinations(
     final names = expressionTargetName(l10n, trackNames, looper, target);
     draftFor(place, names.destination).groups
         .putIfAbsent(names.group, () => [])
-        .add(ExpressionControl(target: target, label: names.control));
+        .add(
+          ExpressionControl(
+            target: target,
+            label: names.control,
+            art: expressionTargetArt(looper, target),
+          ),
+        );
   }
   if (withActivations) {
     for (final target in looper.availableBindingTargets()) {
@@ -205,6 +228,7 @@ List<ExpressionDestination> expressionDestinations(
         ExpressionActivation(
           target: target,
           label: expressionActivationName(l10n, looper, target),
+          art: expressionTargetArt(looper, target),
         ),
       );
     }
@@ -224,6 +248,48 @@ List<ExpressionDestination> expressionDestinations(
         activations: draft.activations,
       ),
   ];
+}
+
+/// The picture a row draws for [target], as a path in the `fx_catalogue`
+/// package, or `null` for a target with none.
+///
+/// The catalogue's own factory illustrations, resolved the way the Effects
+/// page resolves them, so a pedal in a row here is the pedal on that page:
+///
+/// - a parameter, or one effect, draws the pedal it belongs to;
+/// - a whole chain draws its rack's picture when the chain IS one rack, and
+///   nothing when it is several, or none — there is no single pedal to show;
+/// - a fader or the master gain draws nothing, as the pen draws them.
+///
+/// A target the rig no longer has draws nothing: there is no entry left to
+/// ask what it was.
+String? expressionTargetArt(LooperRepository looper, Object target) {
+  String? entryArt(FxAddress address, String slotId) {
+    for (final fx in looper.chainEntriesAt(address) ?? const <TrackEffect>[]) {
+      if (fx.slotId != slotId) continue;
+      final module = fx.module;
+      return module == null ? null : fxModuleArt(module);
+    }
+    return null;
+  }
+
+  return switch (target) {
+    FxParamTarget(:final address, :final slotId) => entryArt(address, slotId),
+    FxSlotTarget(:final address, :final slotId) => entryArt(address, slotId),
+    FxChainTarget(:final address) => _rackArt(looper, address),
+    _ => null,
+  };
+}
+
+String? _rackArt(LooperRepository looper, FxAddress address) {
+  final entries = looper.chainEntriesAt(address);
+  if (entries == null || entries.isEmpty) return null;
+  final rack = entries.first.rack;
+  final art = rack?.art;
+  if (rack == null || art == null) return null;
+  // One rack, end to end: anything else is a chain the picture would misname.
+  if (entries.any((fx) => fx.rack?.id != rack.id)) return null;
+  return fxFootswitchAsset(art);
 }
 
 /// Names an activation within its destination: the effect's own name, or the

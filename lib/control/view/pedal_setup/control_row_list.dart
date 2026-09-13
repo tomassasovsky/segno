@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/view/pedal_setup/scroll_more_hint.dart';
 import 'package:segno/theme/theme.dart';
@@ -17,6 +18,8 @@ class ControlRowTile extends StatelessWidget {
     required this.onTap,
     this.value,
     this.valueKey,
+    this.art,
+    this.artSize = const Size(68, 68),
     this.selected = false,
     this.available = true,
     this.taken = false,
@@ -34,6 +37,14 @@ class ControlRowTile extends StatelessWidget {
 
   /// The key of the value text, for a test to read it by.
   final Key? valueKey;
+
+  /// The pedal or rack picture, as a path in the catalogue package, or `null`
+  /// for a row the pen draws without one.
+  final String? art;
+
+  /// The box the picture is fitted into — 68 square in a button's list, 52 by
+  /// 68 in the expression pedal's.
+  final Size artSize;
 
   /// Whether this row's rule is open.
   final bool selected;
@@ -81,6 +92,23 @@ class ControlRowTile extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 25),
                 child: Row(
                   children: [
+                    if (art case final asset?) ...[
+                      SizedBox.fromSize(
+                        size: artSize,
+                        child: ExcludeSemantics(
+                          child: Image.asset(
+                            asset,
+                            key: const Key('control_row_art'),
+                            package: FxCatalogueLoader.package,
+                            fit: BoxFit.contain,
+                            // A picture that fails to load leaves its space,
+                            // so the names of every row stay in one column.
+                            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 24),
+                    ],
                     Expanded(
                       child: ExcludeSemantics(
                         child: Column(
