@@ -95,6 +95,9 @@ void main() {
       midiDevices = _MockMidiDeviceRepository();
       connections = StreamController<MidiConnection>.broadcast();
       when(() => midiDevices.connections).thenAnswer((_) => connections.stream);
+      when(
+        () => midiDevices.messages,
+      ).thenAnswer((_) => const Stream<RawControllerInput>.empty());
       settings = SettingsRepository(store: FakeKeyValueStore());
       pedal = PedalRepository(
         FakePedalTransport(

@@ -588,6 +588,30 @@ class SettingsRepository {
   Future<void> saveControllerMappings(String encoded) =>
       _store.setString(_controllerMappingsKey, encoded);
 
+  static const String _midiMappingsKey = 'midi.mappings';
+
+  /// Loads the MIDI mappings blob, or `null` if unset.
+  ///
+  /// Opaque, like the controller mappings: a mapping's source and controls are
+  /// the MIDI package's model, and its control keys are strings only the app
+  /// decodes. Global to the rig, not to a session, because a controller belongs
+  /// to the rig it is plugged into.
+  Future<String?> loadMidiMappings() => _store.getString(_midiMappingsKey);
+
+  /// Saves the MIDI mappings blob.
+  Future<void> saveMidiMappings(String encoded) =>
+      _store.setString(_midiMappingsKey, encoded);
+
+  static const String _midiControlEnabledKey = 'midi.control_enabled';
+
+  /// Loads whether remote MIDI assignments dispatch. Defaults to `true`.
+  Future<bool> loadMidiControlEnabled() async =>
+      await _store.getBool(_midiControlEnabledKey) ?? true;
+
+  /// Saves whether remote MIDI assignments dispatch.
+  Future<void> saveMidiControlEnabled({required bool enabled}) =>
+      _store.setBool(_midiControlEnabledKey, value: enabled);
+
   static const String _refreshHzKey = 'ui.refresh_hz';
 
   /// Loads the UI snapshot-poll rate in Hz. Defaults to `60` when unset.

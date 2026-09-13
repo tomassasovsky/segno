@@ -19,6 +19,7 @@ import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/midi_learn.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_binding_set.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
@@ -220,6 +221,7 @@ class ControlCubit extends Cubit<ControlState> {
     _perfStatusSub = _performance.captureStatus.listen(_onPerformanceStatus);
     _bindingSub = controller?.bindingEvents.listen(_onControllerBindingEvent);
     _midiSub = midiDevices?.connections.listen(_onMidiConnection);
+    _midiMessageSub = midiDevices?.messages.listen(_onMidiMessage);
     // Re-push the current frame on a slow heartbeat so the pedal can tell a
     // live link (frames still arriving) from a dropped one (USB unplugged / app
     // closed) and blank its LEDs. Only on-change pushes happen otherwise, so a
@@ -326,6 +328,28 @@ class ControlCubit extends Cubit<ControlState> {
   /// is still down, but the switch may no longer mean what it meant, so it is
   /// treated as released until it physically is.
   final Set<PedalExternalSwitch> _externalSuppressed = {};
+
+  /// Reads MIDI in the explicit formats and turns it into writes and actions
+  /// for the saved mappings (part 4g). Pure: this cubit applies what it says.
+  late final MidiMappingEngine _midi = MidiMappingEngine(
+    clock: () => _midiClock.elapsed,
+    read: (key) {
+      final target = ControlValueTarget.tryParse(key);
+      return target == null ? null : _looper.readValueTarget(target);
+    },
+    // One step for every parameter until descriptors carry their own: the
+    // same default the accepted prototype falls back to.
+    step: (_) => 0.01,
+  );
+
+  /// A monotonic clock for the formats' pair freshness window.
+  final Stopwatch _midiClock = Stopwatch()..start();
+
+  /// The open MIDI device, while it is connected — the identity a mapping's
+  /// source has to name to dispatch.
+  String? _midiDevice;
+
+  StreamSubscription<RawControllerInput>? _midiMessageSub;
 
   /// The jack whose travel is being taught right now, or `null`.
   ///
@@ -479,7 +503,13 @@ class ControlCubit extends Cubit<ControlState> {
     final externalOn = _decodeExternalOn(
       await _settings.loadExternalSwitchStates(),
     );
+    final midiMappings = _decodeMidiMappings(
+      await _settings.loadMidiMappings(),
+    );
+    final midiControlEnabled = await _settings.loadMidiControlEnabled();
     if (isClosed) return;
+    _applyMidi(_midi.setMappings(midiMappings));
+    _applyMidi(_midi.setControlEnabled(enabled: midiControlEnabled));
     _externalOn
       ..clear()
       ..addAll(externalOn);
@@ -494,6 +524,8 @@ class ControlCubit extends Cubit<ControlState> {
         pedalSetup: setup,
         globalBindings: storedBindings,
         controllerBindings: storedControllerBindings,
+        midiMappings: midiMappings,
+        midiControlEnabled: midiControlEnabled,
       ),
     );
     setMode(defaultMode);
@@ -2464,8 +2496,157 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   void _onMidiConnection(MidiConnection connection) {
+    final device = connection.status == MidiConnectionStatus.connected
+        ? connection.selectedId
+        : null;
+    if (device != _midiDevice) {
+      // The device that went away, or was swapped out, ends its holds; the
+      // one that arrives starts from nothing. Neither runs an action.
+      final previous = _midiDevice;
+      if (previous != null) _applyMidi(_midi.connectionChanged(previous));
+      if (device != null) _applyMidi(_midi.connectionChanged(device));
+      _midiDevice = device;
+      // A Learn on a device that is no longer there has nothing to hear.
+      final learn = state.midiLearn;
+      if (learn != null && learn.device != device) {
+        emit(state.copyWith(clearMidiLearn: true));
+      }
+    }
     if (connection.status == MidiConnectionStatus.connected) return;
     releaseAllControllerMomentary();
+  }
+
+  // ---------------------------------------------------------------------------
+  // MIDI mappings (part 4g): explicit formats, several controls per source
+  // ---------------------------------------------------------------------------
+
+  void _onMidiMessage(RawControllerInput message) {
+    final device = _midiDevice;
+    if (device == null) return;
+    final learn = state.midiLearn;
+    if (learn != null && learn.device == device) {
+      if (!learn.isListening) return;
+      // The pedal's own traffic shares this capture and is never a control a
+      // mapping may take: the pedal setup already dispatches it.
+      if (isPedalProtocolInput(message)) return;
+      final reading = _midi.learn(device, message, learn.protocol);
+      if (reading == null) return;
+      final conflict = state.midiMappings.conflictWith(
+        reading.source,
+        exceptId: learn.editingId,
+      );
+      _log('midi learn ${reading.source.toJson()} conflict=${conflict?.id}');
+      emit(
+        state.copyWith(
+          midiLearn: learn.captured(reading, conflictId: conflict?.id),
+        ),
+      );
+      return;
+    }
+    _applyMidi(_midi.receive(device, message));
+  }
+
+  /// Applies what the MIDI engine asked for.
+  void _applyMidi(List<MidiOutput> outputs) {
+    for (final output in outputs) {
+      switch (output) {
+        case MidiParameterWrite(:final key, :final value):
+          final target = ControlValueTarget.tryParse(key);
+          if (target != null) _applyValueTarget(target, value);
+        case MidiActionRun(:final key):
+          // A MIDI action can start a take, so it is refused behind the
+          // power-off route the way a footswitch's is.
+          if (_takeLocked()) continue;
+          final action = ControlAction.tryParse(key);
+          if (action != null) _runAction(action);
+        case MidiActionEnd():
+          // No action in the shared catalogue holds anything past its press
+          // yet, so there is nothing to end. The engine sends these so an
+          // action that does hold can end on the edge it should.
+          break;
+      }
+    }
+  }
+
+  static MidiMappingSet _decodeMidiMappings(String? blob) {
+    if (blob == null) return const MidiMappingSet();
+    try {
+      return MidiMappingSet.fromJson(jsonDecode(blob));
+    } on FormatException {
+      return const MidiMappingSet();
+    }
+  }
+
+  Future<void> _persistMidiMappings(MidiMappingSet next) {
+    _applyMidi(_midi.setMappings(next));
+    emit(state.copyWith(midiMappings: next));
+    return _settings.saveMidiMappings(jsonEncode(next.toJson()));
+  }
+
+  /// Saves [mapping], adding it or replacing the one with its id — the MIDI
+  /// controls editor's Save.
+  ///
+  /// Refused, with nothing changed, when the mapping cannot be saved as it
+  /// stands or overlaps another mapping's source: the editor checks both
+  /// before it offers Save, so reaching this with either is a bug the
+  /// refusal must not turn into a corrupt set.
+  Future<void> saveMidiMapping(MidiMapping mapping) async {
+    final set = state.midiMappings;
+    if (mapping.problem != null) return;
+    if (set.conflictWith(mapping.source, exceptId: mapping.id) != null) return;
+    await _persistMidiMappings(set.withMapping(mapping));
+  }
+
+  /// Deletes the mapping [id], ending its holds.
+  Future<void> deleteMidiMapping(String id) async {
+    if (state.midiMappings.byId(id) == null) return;
+    await _persistMidiMappings(state.midiMappings.withoutMapping(id));
+  }
+
+  /// Turns the mapping [id] on or off without losing it. Off ends its holds.
+  Future<void> setMidiMappingEnabled(String id, {required bool enabled}) async {
+    final mapping = state.midiMappings.byId(id);
+    if (mapping == null || mapping.enabled == enabled) return;
+    await _persistMidiMappings(
+      state.midiMappings.withMapping(mapping.copyWith(enabled: enabled)),
+    );
+  }
+
+  /// Turns remote MIDI assignments on or off. Off keeps every mapping and ends
+  /// every hold.
+  Future<void> setMidiControlEnabled({required bool enabled}) async {
+    if (state.midiControlEnabled == enabled) return;
+    _applyMidi(_midi.setControlEnabled(enabled: enabled));
+    emit(state.copyWith(midiControlEnabled: enabled));
+    await _settings.saveMidiControlEnabled(enabled: enabled);
+  }
+
+  /// Starts listening for the next control from the open device, read in
+  /// [protocol]. The device dispatches nothing until [endMidiEdit].
+  ///
+  /// [editingId] is the mapping being edited, whose own source is not a
+  /// conflict. A no-op with no device connected: Learn needs one to hear.
+  void startMidiLearn(MidiProtocol protocol, {String? editingId}) {
+    final device = _midiDevice;
+    if (device == null) return;
+    _applyMidi(_midi.pause(device));
+    emit(
+      state.copyWith(
+        midiLearn: MidiLearn(
+          device: device,
+          protocol: protocol,
+          editingId: editingId,
+        ),
+      ),
+    );
+  }
+
+  /// Leaves the MIDI editor: Learn ends and the device dispatches again.
+  void endMidiEdit() {
+    final learn = state.midiLearn;
+    if (learn == null) return;
+    _midi.resume(learn.device);
+    emit(state.copyWith(clearMidiLearn: true));
   }
 
   // ---------------------------------------------------------------------------
@@ -2800,6 +2981,7 @@ class ControlCubit extends Cubit<ControlState> {
     await _perfStatusSub.cancel();
     await _bindingSub?.cancel();
     await _midiSub?.cancel();
+    await _midiMessageSub?.cancel();
     return super.close();
   }
 }
