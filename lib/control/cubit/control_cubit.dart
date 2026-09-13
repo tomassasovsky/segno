@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as dev;
 
 import 'package:bloc/bloc.dart';
@@ -14,6 +15,7 @@ import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/controller_learn.dart';
+import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
@@ -309,6 +311,22 @@ class ControlCubit extends Cubit<ControlState> {
   /// or a bouncing switch must not run an action twice.
   final Set<PedalExternalSwitch> _externalContacts = {};
 
+  /// The external buttons that are ON.
+  ///
+  /// Logical, not physical: each completed press flips it, a latching switch
+  /// sets it to its contact, and it is remembered across a restart because a
+  /// button's effect being on is part of how the rig sounds. Stored apart from
+  /// the setup, which is configuration a Cancel can undo; a stomp is not.
+  final Set<PedalExternalSwitch> _externalOn = {};
+
+  /// Momentary contacts that were down when their gestures were retired, and
+  /// have to come up before they count again.
+  ///
+  /// A hold is ended when the setup it was pressed under is replaced; the foot
+  /// is still down, but the switch may no longer mean what it meant, so it is
+  /// treated as released until it physically is.
+  final Set<PedalExternalSwitch> _externalSuppressed = {};
+
   /// The jack whose travel is being taught right now, or `null`.
   ///
   /// A field rather than part of [ControlState]: it is not something the
@@ -458,7 +476,13 @@ class ControlCubit extends Cubit<ControlState> {
       await _settings.loadDefaultInteractionMode(),
     );
     final setup = PedalSetup.decode(await _settings.loadPedalSetup() ?? '');
+    final externalOn = _decodeExternalOn(
+      await _settings.loadExternalSwitchStates(),
+    );
     if (isClosed) return;
+    _externalOn
+      ..clear()
+      ..addAll(externalOn);
     // The repository resolves inputs against the set, so it has to learn the
     // restored mappings too — otherwise external control stays dead until the
     // user happens to edit a row.
@@ -548,6 +572,15 @@ class ControlCubit extends Cubit<ControlState> {
     // side of this, so a gesture pressed under the old setup must not finish
     // under the new one.
     _invalidateGestures();
+    // And a hold on an external button ends here too, under the setup it was
+    // pressed under — Released is what THAT setup said to do when the foot
+    // came up. The foot is still down; it counts again once it lifts.
+    _endExternalHolds();
+    for (final id in _externalContacts) {
+      if (_externalSetupOf(id)?.hardware == ExternalSwitchHardware.momentary) {
+        _externalSuppressed.add(id);
+      }
+    }
     emit(state.copyWith(pedalSetup: setup));
     await _settings.savePedalSetup(setup.encode());
   }
@@ -1215,27 +1248,39 @@ class ControlCubit extends Cubit<ControlState> {
       _externalContacts.remove(switchId);
     }
 
-    // Named, not indexed: the wire enum and the app's jacks are declared in
-    // different packages, and a switch added to one would silently index past
-    // the other. This fails to compile instead.
-    final jack = state.pedalSetup.external.forJack(
-      switch (switchId) {
-        PedalExternalSwitch.ctrl1First ||
-        PedalExternalSwitch.ctrl1Second => ExternalJack.ctrl1,
-        PedalExternalSwitch.ctrl2First ||
-        PedalExternalSwitch.ctrl2Second => ExternalJack.ctrl2,
-      },
-    );
+    // A foot still down from before its hold was ended: the contact is
+    // tracked, and nothing else happens until it lifts.
+    if (_externalSuppressed.contains(switchId)) {
+      if (!closed) _externalSuppressed.remove(switchId);
+      return;
+    }
+
     // Only the ACTIVE type dispatches: a dual pedal's second switch is silent
-    // while the jack is set to a single one, whatever it still carries.
-    final setup = jack.switchAt(switchId.position);
+    // while the jack is set to a single one, whatever it still carries — and
+    // so is everything it controls. A missing source never writes, so an Off
+    // or Released control cannot turn an absent button into an active effect.
+    final setup = _externalSetupOf(switchId);
     if (setup == null) return;
 
     if (_takeLocked()) {
-      // The lock reaches the release for the reason it does on the plate: a
-      // press taken before a take started leaves a gesture armed, and running
-      // its tap when the foot comes up is the mid-take edit the lock refuses.
-      if (!closed) _gestures.of(switchId).cancel();
+      if (setup.hardware == ExternalSwitchHardware.momentary) {
+        if (closed) {
+          // Refused, and remembered as refused: the foot has to lift before
+          // this switch counts again, or its release would end a hold that
+          // never began.
+          _externalSuppressed.add(switchId);
+        } else {
+          // The lock reaches the release for the reason it does on the plate:
+          // a press taken before a take started leaves a gesture armed, and
+          // running its tap when the foot comes up is the mid-take edit the
+          // lock refuses.
+          _gestures.of(switchId).cancel();
+          // But a hold that began before the lock still ends with the foot.
+          // Released starts no take, and a Held effect left on under a dialog
+          // would outlive the gesture that turned it on.
+          _applyExternalControls(setup, heldBefore: true, heldAfter: false);
+        }
+      }
       return;
     }
 
@@ -1247,16 +1292,160 @@ class ControlCubit extends Cubit<ControlState> {
       case ExternalSwitchHardware.latching:
         // No press and no release: the contact changed, and that is the whole
         // gesture. A latching switch cannot report how long a foot stayed on
-        // it, so there is nothing to time a hold against.
+        // it, so there is nothing to time a hold against — and its ON state
+        // is simply its contact.
+        _setExternalOn(switchId, setup, on: closed);
         final action = setup.change;
         if (action != null) _runAction(action);
       case ExternalSwitchHardware.momentary:
+        // Held IS the contact, so it changes here, before the press decides
+        // anything: a foot on the button is on it whether or not it turns out
+        // to be a hold.
+        _applyExternalControls(setup, heldBefore: !closed, heldAfter: closed);
         if (closed) {
           _armExternalPress(switchId, setup);
         } else {
           _gestures.release(switchId);
         }
     }
+  }
+
+  /// The setup of [switchId] under its jack's ACTIVE type, or `null` when the
+  /// active type has no such switch.
+  ExternalSwitchSetup? _externalSetupOf(PedalExternalSwitch switchId) {
+    // Named, not indexed: the wire enum and the app's jacks are declared in
+    // different packages, and a switch added to one would silently index past
+    // the other. This fails to compile instead.
+    final jack = state.pedalSetup.external.forJack(switch (switchId) {
+      PedalExternalSwitch.ctrl1First ||
+      PedalExternalSwitch.ctrl1Second => ExternalJack.ctrl1,
+      PedalExternalSwitch.ctrl2First ||
+      PedalExternalSwitch.ctrl2Second => ExternalJack.ctrl2,
+    });
+    return jack.switchAt(switchId.position);
+  }
+
+  /// Flips [switchId]'s ON state — a completed short press.
+  void _toggleExternal(
+    PedalExternalSwitch switchId,
+    ExternalSwitchSetup setup,
+  ) => _setExternalOn(
+    switchId,
+    setup,
+    on: !_externalOn.contains(switchId),
+  );
+
+  /// Sets [switchId]'s ON state, persists it, and applies what changed.
+  void _setExternalOn(
+    PedalExternalSwitch switchId,
+    ExternalSwitchSetup setup, {
+    required bool on,
+  }) {
+    final before = _externalOn.contains(switchId);
+    if (before == on) return;
+    if (on) {
+      _externalOn.add(switchId);
+    } else {
+      _externalOn.remove(switchId);
+    }
+    unawaited(_settings.saveExternalSwitchStates(_encodeExternalOn()));
+    _applyExternalControls(setup, onBefore: before, onAfter: on);
+  }
+
+  /// Writes every control on [setup] whose condition changed between the
+  /// before and after states given.
+  ///
+  /// Edge-triggered, never level: a control is written when ITS fact changes,
+  /// and at no other time. Saving a mapping, opening the screen or plugging a
+  /// pedal in writes nothing — the accepted design is explicit that none of
+  /// those may invent a sound change — and a control the performer has since
+  /// moved by hand stays where they put it until the button next says
+  /// otherwise.
+  ///
+  /// A state not given did not change. Held and Released are skipped on a
+  /// latching switch, which has no contact duration to read.
+  void _applyExternalControls(
+    ExternalSwitchSetup setup, {
+    bool? onBefore,
+    bool? onAfter,
+    bool? heldBefore,
+    bool? heldAfter,
+  }) {
+    final momentary = setup.hardware == ExternalSwitchHardware.momentary;
+    // What a condition reads after a change, or null when it did not move.
+    bool? edge({bool? before, bool? after, bool invert = false}) {
+      if (before == null || after == null || before == after) return null;
+      return invert ? !after : after;
+    }
+
+    var toggledEffect = false;
+    for (final activation in setup.controls.activations) {
+      final change = switch (activation.condition) {
+        ExternalCondition.on => edge(before: onBefore, after: onAfter),
+        ExternalCondition.off => edge(
+          before: onBefore,
+          after: onAfter,
+          invert: true,
+        ),
+        ExternalCondition.held =>
+          momentary ? edge(before: heldBefore, after: heldAfter) : null,
+        ExternalCondition.released =>
+          momentary
+              ? edge(before: heldBefore, after: heldAfter, invert: true)
+              : null,
+      };
+      if (change == null) continue;
+      // An effect gone from the rig writes nothing and is never repointed; the
+      // resolver refuses it and says so.
+      if (_looper.setBindingEnabled(activation.target, enabled: change)) {
+        toggledEffect = true;
+      }
+    }
+    for (final parameter in setup.controls.parameters) {
+      final change = switch (parameter.condition) {
+        ExternalValueCondition.onOff => edge(before: onBefore, after: onAfter),
+        ExternalValueCondition.heldReleased =>
+          momentary ? edge(before: heldBefore, after: heldAfter) : null,
+      };
+      if (change == null) continue;
+      _applyValueTarget(
+        parameter.target,
+        change ? parameter.active : parameter.inactive,
+      );
+    }
+    // An effect's state is on the plate's LEDs in FX mode.
+    if (toggledEffect) _pushProjected();
+  }
+
+  /// Ends every hold a foot has on an external button: each held momentary
+  /// switch's controls see the foot come up.
+  void _endExternalHolds() {
+    for (final id in _externalContacts) {
+      if (_externalSuppressed.contains(id)) continue;
+      final setup = _externalSetupOf(id);
+      if (setup?.hardware != ExternalSwitchHardware.momentary) continue;
+      _applyExternalControls(setup!, heldBefore: true, heldAfter: false);
+    }
+  }
+
+  String _encodeExternalOn() => jsonEncode([
+    for (final id in PedalExternalSwitch.values)
+      if (_externalOn.contains(id)) id.name,
+  ]);
+
+  static Set<PedalExternalSwitch> _decodeExternalOn(String? blob) {
+    if (blob == null) return {};
+    final Object? raw;
+    try {
+      raw = jsonDecode(blob);
+    } on FormatException {
+      return {};
+    }
+    if (raw is! List) return {};
+    return {
+      for (final id in PedalExternalSwitch.values)
+        if (raw.contains(id.name)) id,
+    };
   }
 
   /// Arms a momentary external switch's press.
@@ -1272,6 +1461,9 @@ class ControlCubit extends Cubit<ControlState> {
     final press = setup.gestures.press;
     final hold = setup.gestures.hold;
     if (hold == null) {
+      // Nothing to wait for, so the press is complete on contact: it flips
+      // the button's ON state here, whether or not it also runs an action.
+      _toggleExternal(switchId, setup);
       if (press != null) _runAction(press);
       return;
     }
@@ -1280,8 +1472,16 @@ class ControlCubit extends Cubit<ControlState> {
         .press(
           threshold: _longPress,
           generation: _gestures.generation,
+          // A hold runs the hold and nothing else: it does not also flip the
+          // button, which is what makes a hold usable beside On / Off.
           onHold: () => _runAction(hold),
-          onTap: press == null ? null : () => _runAction(press),
+          // Always armed, even with no press action: the controls hang off the
+          // gesture, not off the action, so a short press flips ON / OFF on a
+          // button whose only assignment is a hold.
+          onTap: () {
+            _toggleExternal(switchId, setup);
+            if (press != null) _runAction(press);
+          },
         );
   }
 
@@ -2481,12 +2681,16 @@ class ControlCubit extends Cubit<ControlState> {
     // momentary would leave its target enabled forever (B1), and an armed
     // hold would fire into a rig with no pedal on it. Retire both now.
     _invalidateGestures();
+    // Disconnect ends every hold on the jacks: nothing is reporting the foot
+    // any more, so what Released means is applied now rather than never.
+    _endExternalHolds();
     // And forget what the jacks were doing. The register exists to tell a
     // change from a repeat, and across a link drop there is nothing to
     // compare against: a switch still down when the cable goes reports its
     // closure again on the way back, and a remembered "already closed" would
-    // swallow it.
+    // swallow it. The ON states stay: those are the rig's, not the wire's.
     _externalContacts.clear();
+    _externalSuppressed.clear();
   }
 
   void _detectLoopTop(LooperState s) {

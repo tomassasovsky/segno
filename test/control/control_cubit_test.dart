@@ -9,6 +9,7 @@ import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
@@ -3591,6 +3592,431 @@ void main() {
           expect(cubit.state.mode, InteractionMode.record);
         },
       );
+
+      group("a button's controls", () {
+        const chain0 = FxChainTarget(FxAddress(stage: FxStage.track));
+        const volume1 = TrackVolumeTarget(1);
+
+        setUp(() {
+          trackChains[0] = [BuiltInEffect(type: TrackEffectType.drive)];
+          when(
+            () => looper.setVolume(any(), channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.ok);
+        });
+
+        /// A single momentary switch on CTRL 1 carrying [controls].
+        ExternalJackSetup single(
+          ExternalControls controls, {
+          ControlGesturePair gestures = ControlGesturePair.empty,
+          ExternalSwitchHardware hardware = ExternalSwitchHardware.momentary,
+        }) => ExternalJackSetup(
+          single: ExternalSwitchSetup(
+            hardware: hardware,
+            gestures: gestures,
+            controls: controls,
+          ),
+        );
+
+        Future<void> stomp() async {
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+        }
+
+        test('a press turns an effect on and the next turns it off', () async {
+          chainEnabled[0] = false;
+          await configure(
+            single(
+              const ExternalControls(
+                activations: [ExternalActivation(target: chain0)],
+              ),
+            ),
+          );
+          await stomp();
+          expect(chainEnabled[0], isTrue);
+          await stomp();
+          expect(chainEnabled[0], isFalse);
+        });
+
+        test('Off is the same button with the effect the other way', () async {
+          await configure(
+            single(
+              const ExternalControls(
+                activations: [
+                  ExternalActivation(
+                    target: chain0,
+                    condition: ExternalCondition.off,
+                  ),
+                ],
+              ),
+            ),
+          );
+          await stomp();
+          expect(chainEnabled[0], isFalse, reason: 'the button is now on');
+          await stomp();
+          expect(chainEnabled[0], isTrue);
+        });
+
+        test('Held follows the foot, and does not flip On / Off', () async {
+          chainEnabled[0] = false;
+          await configure(
+            single(
+              const ExternalControls(
+                activations: [
+                  ExternalActivation(
+                    target: chain0,
+                    condition: ExternalCondition.held,
+                  ),
+                ],
+              ),
+            ),
+          );
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          expect(chainEnabled[0], isTrue);
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          expect(chainEnabled[0], isFalse);
+        });
+
+        test('Released is on until the foot comes down', () async {
+          await configure(
+            single(
+              const ExternalControls(
+                activations: [
+                  ExternalActivation(
+                    target: chain0,
+                    condition: ExternalCondition.released,
+                  ),
+                ],
+              ),
+            ),
+          );
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          expect(chainEnabled[0], isFalse);
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          expect(chainEnabled[0], isTrue);
+        });
+
+        test('with a hold, only a short press flips the button', () async {
+          chainEnabled[0] = false;
+          await configure(
+            single(
+              const ExternalControls(
+                activations: [ExternalActivation(target: chain0)],
+              ),
+              gestures: const ControlGesturePair(
+                hold: ModeAction(InteractionMode.mute),
+              ),
+            ),
+          );
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          expect(
+            chainEnabled[0],
+            isFalse,
+            reason: 'until the foot comes up this may still be a hold',
+          );
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          expect(
+            chainEnabled[0],
+            isTrue,
+            reason: 'a short press, with no press action',
+          );
+
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          await Future<void>.delayed(const Duration(milliseconds: 520));
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          expect(cubit.state.mode, InteractionMode.mute);
+          expect(
+            chainEnabled[0],
+            isTrue,
+            reason: 'running the hold does not also flip the button',
+          );
+        });
+
+        test('a latching switch is on while its contact is closed', () async {
+          chainEnabled[0] = false;
+          await configure(
+            single(
+              const ExternalControls(
+                activations: [
+                  ExternalActivation(target: chain0),
+                  // Unreadable on this hardware, and so never written.
+                  ExternalActivation(
+                    target: FxChainTarget(
+                      FxAddress(stage: FxStage.track, index: 5),
+                    ),
+                    condition: ExternalCondition.released,
+                  ),
+                ],
+              ),
+              hardware: ExternalSwitchHardware.latching,
+            ),
+          );
+          trackChains[5] = [BuiltInEffect(type: TrackEffectType.reverb)];
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          expect(chainEnabled[0], isTrue);
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          expect(chainEnabled[0], isFalse);
+          verifyNever(
+            () => looper.setTrackChainEnabled(
+              channel: 5,
+              enabled: any(named: 'enabled'),
+            ),
+          );
+        });
+
+        test('a parameter toggles between its two values', () async {
+          await configure(
+            single(
+              const ExternalControls(
+                parameters: [
+                  ExternalParameter(
+                    target: volume1,
+                    active: 0.65,
+                    inactive: 0.2,
+                  ),
+                ],
+              ),
+            ),
+          );
+          await stomp();
+          verify(() => looper.setVolume(0.65, channel: 1)).called(1);
+          await stomp();
+          verify(() => looper.setVolume(0.2, channel: 1)).called(1);
+        });
+
+        test('Held / Released does not wait for the hold threshold', () async {
+          await configure(
+            single(
+              const ExternalControls(
+                parameters: [
+                  ExternalParameter(
+                    target: volume1,
+                    active: 0.9,
+                    inactive: 0.1,
+                    condition: ExternalValueCondition.heldReleased,
+                  ),
+                ],
+              ),
+              gestures: const ControlGesturePair(
+                hold: ModeAction(InteractionMode.mute),
+              ),
+            ),
+          );
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          verify(() => looper.setVolume(0.9, channel: 1)).called(1);
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          verify(() => looper.setVolume(0.1, channel: 1)).called(1);
+        });
+
+        test('a missing button never turns an Off effect on', () async {
+          chainEnabled[0] = false;
+          // The second switch of a dual pedal, while the jack is a single one.
+          await configure(
+            const ExternalJackSetup(
+              dualSecond: ExternalSwitchSetup(
+                controls: ExternalControls(
+                  activations: [
+                    ExternalActivation(
+                      target: chain0,
+                      condition: ExternalCondition.off,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+          await contact(PedalExternalSwitch.ctrl1Second, closed: true);
+          await contact(PedalExternalSwitch.ctrl1Second, closed: false);
+          expect(chainEnabled[0], isFalse);
+          verifyNever(
+            () => looper.setTrackChainEnabled(
+              channel: 0,
+              enabled: any(named: 'enabled'),
+            ),
+          );
+        });
+
+        test('an effect gone from the rig is skipped', () async {
+          trackChains.remove(0);
+          await configure(
+            single(
+              const ExternalControls(
+                activations: [ExternalActivation(target: chain0)],
+              ),
+            ),
+          );
+          await stomp();
+          verifyNever(
+            () => looper.setTrackChainEnabled(
+              channel: 0,
+              enabled: any(named: 'enabled'),
+            ),
+          );
+        });
+
+        test(
+          'saving a mapping writes nothing until the button moves',
+          () async {
+            chainEnabled[0] = false;
+            await configure(
+              single(
+                const ExternalControls(
+                  activations: [
+                    ExternalActivation(
+                      target: chain0,
+                      condition: ExternalCondition.off,
+                    ),
+                  ],
+                  parameters: [
+                    ExternalParameter(
+                      target: volume1,
+                      active: 0.5,
+                      inactive: 0.5,
+                    ),
+                  ],
+                ),
+              ),
+            );
+            expect(
+              chainEnabled[0],
+              isFalse,
+              reason: 'Off would read as active, but nothing changed to say so',
+            );
+            verifyNever(
+              () => looper.setVolume(any(), channel: any(named: 'channel')),
+            );
+          },
+        );
+
+        test('On / Off survives a restart', () async {
+          chainEnabled[0] = false;
+          await configure(
+            single(
+              const ExternalControls(
+                activations: [ExternalActivation(target: chain0)],
+              ),
+            ),
+          );
+          await stomp();
+          expect(
+            await settings.loadExternalSwitchStates(),
+            contains('ctrl1First'),
+          );
+
+          // A fresh interpreter over the same settings: the button is still
+          // on, so the next press turns the effect OFF rather than on again.
+          final restarted = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: performance,
+            keepAliveInterval: Duration.zero,
+          );
+          addTearDown(restarted.close);
+          await cubit.close();
+          await restarted.load();
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          expect(chainEnabled[0], isFalse);
+        });
+
+        test(
+          'a take lock refuses a new hold but still ends an old one',
+          () async {
+            const held = ExternalControls(
+              parameters: [
+                ExternalParameter(
+                  target: volume1,
+                  active: 0.9,
+                  inactive: 0.1,
+                  condition: ExternalValueCondition.heldReleased,
+                ),
+              ],
+            );
+            await configure(single(held));
+
+            // Down before the lock, up during it: the hold ends with the foot.
+            await contact(PedalExternalSwitch.ctrl1First, closed: true);
+            verify(() => looper.setVolume(0.9, channel: 1)).called(1);
+            takeLocked = true;
+            await contact(PedalExternalSwitch.ctrl1First, closed: false);
+            verify(() => looper.setVolume(0.1, channel: 1)).called(1);
+
+            // Down during the lock: refused, and its release after the lock is
+            // not the end of a hold that never began.
+            await contact(PedalExternalSwitch.ctrl1First, closed: true);
+            takeLocked = false;
+            await contact(PedalExternalSwitch.ctrl1First, closed: false);
+            verifyNever(
+              () => looper.setVolume(any(), channel: any(named: 'channel')),
+            );
+          },
+        );
+
+        test('unplugging ends a hold and applies Released', () async {
+          await configure(
+            single(
+              const ExternalControls(
+                parameters: [
+                  ExternalParameter(
+                    target: volume1,
+                    active: 0.9,
+                    inactive: 0.1,
+                    condition: ExternalValueCondition.heldReleased,
+                  ),
+                ],
+              ),
+            ),
+          );
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          verify(() => looper.setVolume(0.9, channel: 1)).called(1);
+
+          pedal.unbind();
+          await pumpEventQueue();
+          verify(() => looper.setVolume(0.1, channel: 1)).called(1);
+        });
+
+        test('saving ends a hold, and the foot has to lift first', () async {
+          const held = ExternalControls(
+            parameters: [
+              ExternalParameter(
+                target: volume1,
+                active: 0.9,
+                inactive: 0.1,
+                condition: ExternalValueCondition.heldReleased,
+              ),
+            ],
+          );
+          await configure(single(held));
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          verify(() => looper.setVolume(0.9, channel: 1)).called(1);
+
+          // Released under the setup the hold was pressed under.
+          await configure(
+            single(
+              const ExternalControls(
+                parameters: [
+                  ExternalParameter(
+                    target: volume1,
+                    active: 0.7,
+                    inactive: 0.3,
+                    condition: ExternalValueCondition.heldReleased,
+                  ),
+                ],
+              ),
+            ),
+          );
+          verify(() => looper.setVolume(0.1, channel: 1)).called(1);
+
+          // The foot lifting is not a release of a hold that already ended.
+          await contact(PedalExternalSwitch.ctrl1First, closed: false);
+          verifyNever(
+            () => looper.setVolume(any(), channel: any(named: 'channel')),
+          );
+          // And the next press is an ordinary one, under the new setup.
+          await contact(PedalExternalSwitch.ctrl1First, closed: true);
+          verify(() => looper.setVolume(0.7, channel: 1)).called(1);
+        });
+      });
 
       group('an expression pedal', () {
         /// Moves the pedal on [jack] to a raw reading of [raw] out of 127.
