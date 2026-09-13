@@ -3,6 +3,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/binding_labels.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_destination.dart';
@@ -49,6 +50,21 @@ class ExpressionControlGroup extends Equatable {
   List<Object?> get props => [label, controls];
 }
 
+/// One effect a destination offers to turn on and off.
+class ExpressionActivation extends Equatable {
+  /// Creates an [ExpressionActivation].
+  const ExpressionActivation({required this.target, required this.label});
+
+  /// The chain or the effect.
+  final FxBindingTarget target;
+
+  /// Its name within the destination.
+  final String label;
+
+  @override
+  List<Object?> get props => [target, label];
+}
+
 /// One place a pedal can reach, and everything it offers there.
 class ExpressionDestination extends Equatable {
   /// Creates an [ExpressionDestination].
@@ -57,6 +73,7 @@ class ExpressionDestination extends Equatable {
     required this.kind,
     required this.label,
     required this.groups,
+    this.activations = const [],
   });
 
   /// A stable key for the screen to remember which destination is open. Not
@@ -72,12 +89,17 @@ class ExpressionDestination extends Equatable {
   /// Its controls, grouped under their headings.
   final List<ExpressionControlGroup> groups;
 
+  /// The effects here a button can turn on and off: the whole chain first,
+  /// then each effect in it. Empty unless the catalogue was asked for them —
+  /// an expression pedal sweeps values and has nothing to switch.
+  final List<ExpressionActivation> activations;
+
   /// Every control here, flattened.
   Iterable<ExpressionControl> get controls =>
       groups.expand((group) => group.controls);
 
   @override
-  List<Object?> get props => [id, kind, label, groups];
+  List<Object?> get props => [id, kind, label, groups, activations];
 }
 
 /// Names [target] in the three pieces the screen needs: the destination it
@@ -139,28 +161,53 @@ String expressionRowName(
 /// destination, because they are one thing to the performer — the rig reports
 /// them from different places, which is not a reason to ask for the track
 /// twice.
+///
+/// [withActivations] adds each destination's effects as things to turn on and
+/// off, which is what an external BUTTON can do and an expression pedal cannot.
+/// A destination whose chain offers only activations — a hosted plugin has no
+/// continuous parameters here — exists only when they are asked for.
 List<ExpressionDestination> expressionDestinations(
   AppLocalizations l10n,
   List<String> trackNames,
-  LooperRepository looper,
-) {
+  LooperRepository looper, {
+  bool withActivations = false,
+}) {
   final drafts = <String, _Draft>{};
+  _Draft draftFor(
+    ({String id, FxDestinationKind kind, int order}) place,
+    String label,
+  ) => drafts.putIfAbsent(
+    place.id,
+    () => _Draft(
+      id: place.id,
+      kind: place.kind,
+      order: place.order,
+      label: label,
+    ),
+  );
+
   for (final target in looper.availableValueTargets()) {
     final place = _placeOf(target);
     if (place == null) continue;
     final names = expressionTargetName(l10n, trackNames, looper, target);
-    final draft = drafts.putIfAbsent(
-      place.id,
-      () => _Draft(
-        id: place.id,
-        kind: place.kind,
-        order: place.order,
-        label: names.destination,
-      ),
-    );
-    draft.groups
+    draftFor(place, names.destination).groups
         .putIfAbsent(names.group, () => [])
         .add(ExpressionControl(target: target, label: names.control));
+  }
+  if (withActivations) {
+    for (final target in looper.availableBindingTargets()) {
+      final place = _placeOfAddress(target.address);
+      if (place == null) continue;
+      draftFor(
+        place,
+        _addressLabel(l10n, trackNames, target.address),
+      ).activations.add(
+        ExpressionActivation(
+          target: target,
+          label: expressionActivationName(l10n, looper, target),
+        ),
+      );
+    }
   }
   final ordered = drafts.values.toList()
     ..sort((a, b) => a.order.compareTo(b.order));
@@ -174,66 +221,88 @@ List<ExpressionDestination> expressionDestinations(
           for (final entry in draft.groups.entries)
             ExpressionControlGroup(label: entry.key, controls: entry.value),
         ],
+        activations: draft.activations,
       ),
   ];
 }
 
+/// Names an activation within its destination: the effect's own name, or the
+/// whole chain.
+String expressionActivationName(
+  AppLocalizations l10n,
+  LooperRepository looper,
+  FxBindingTarget target,
+) => switch (target) {
+  FxChainTarget() => l10n.externalActivationChain,
+  final FxSlotTarget slot => fxSlotName(looper, slot) ?? slot.slotId,
+};
+
+/// The destination's label for [address], the way [expressionTargetName] names
+/// it for a parameter on the same chain — so a track reached through its chain
+/// and through its fader reads as one place.
+String _addressLabel(
+  AppLocalizations l10n,
+  List<String> trackNames,
+  FxAddress address,
+) => fxStageLabel(l10n, trackNames, address);
+
 /// Where [target] belongs, or `null` for a target no destination covers.
 ({String id, FxDestinationKind kind, int order})? _placeOf(
   ControlValueTarget target,
-) {
-  // The bands keep the kinds apart and leave room inside each one, so a track
-  // sorts next to its own lanes however the rig happened to report them.
-  const input = 100000;
-  const recorded = 200000;
-  const allTracks = 290000;
-  const output = 300000;
-  const master = 390000;
-  return switch (target) {
-    TrackVolumeTarget(:final channel) => (
-      id: 'track:$channel',
-      kind: FxDestinationKind.recordedTrack,
-      order: recorded + channel * 100,
-    ),
-    MasterGainTarget() => (
-      id: 'master',
-      kind: FxDestinationKind.output,
-      order: master,
-    ),
-    FxParamTarget(address: FxAddress(stage: FxStage.input, :final index)) => (
-      id: 'input:$index',
-      kind: FxDestinationKind.liveInput,
-      order: input + index,
-    ),
-    FxParamTarget(address: FxAddress(stage: FxStage.track, :final index)) => (
-      id: 'track:$index',
-      kind: FxDestinationKind.recordedTrack,
-      order: recorded + index * 100,
-    ),
-    FxParamTarget(
-      address: FxAddress(stage: FxStage.loop, :final index, lane: final lane?),
-    ) =>
-      (
-        id: 'loop:$index:$lane',
-        kind: FxDestinationKind.recordedTrack,
-        // Straight after the track it is a part of, in lane order.
-        order: recorded + index * 100 + lane + 1,
-      ),
-    FxParamTarget(address: FxAddress(stage: FxStage.allTracks)) => (
-      id: 'allTracks',
-      kind: FxDestinationKind.recordedTrack,
-      order: allTracks,
-    ),
-    FxParamTarget(address: FxAddress(stage: FxStage.output, :final index)) => (
-      id: 'output:$index',
-      kind: FxDestinationKind.output,
-      order: output + index,
-    ),
-    // A Loop address with no lane names no chain, so it offers no control —
-    // the same nothing the resolver writes to it.
-    FxParamTarget() => null,
-  };
-}
+) => switch (target) {
+  TrackVolumeTarget(:final channel) => _trackPlace(channel),
+  MasterGainTarget() => (
+    id: 'master',
+    kind: FxDestinationKind.output,
+    order: _masterOrder,
+  ),
+  FxParamTarget(:final address) => _placeOfAddress(address),
+};
+
+// The bands keep the kinds apart and leave room inside each one, so a track
+// sorts next to its own lanes however the rig happened to report them.
+const int _inputOrder = 100000;
+const int _recordedOrder = 200000;
+const int _allTracksOrder = 290000;
+const int _outputOrder = 300000;
+const int _masterOrder = 390000;
+
+({String id, FxDestinationKind kind, int order}) _trackPlace(int channel) => (
+  id: 'track:$channel',
+  kind: FxDestinationKind.recordedTrack,
+  order: _recordedOrder + channel * 100,
+);
+
+/// Where a chain at [address] belongs, or `null` when it names no chain.
+({String id, FxDestinationKind kind, int order})? _placeOfAddress(
+  FxAddress address,
+) => switch (address) {
+  FxAddress(stage: FxStage.input, :final index) => (
+    id: 'input:$index',
+    kind: FxDestinationKind.liveInput,
+    order: _inputOrder + index,
+  ),
+  FxAddress(stage: FxStage.track, :final index) => _trackPlace(index),
+  FxAddress(stage: FxStage.loop, :final index, lane: final lane?) => (
+    id: 'loop:$index:$lane',
+    kind: FxDestinationKind.recordedTrack,
+    // Straight after the track it is a part of, in lane order.
+    order: _recordedOrder + index * 100 + lane + 1,
+  ),
+  FxAddress(stage: FxStage.allTracks) => (
+    id: 'allTracks',
+    kind: FxDestinationKind.recordedTrack,
+    order: _allTracksOrder,
+  ),
+  FxAddress(stage: FxStage.output, :final index) => (
+    id: 'output:$index',
+    kind: FxDestinationKind.output,
+    order: _outputOrder + index,
+  ),
+  // A Loop address with no lane names no chain, so it offers nothing — the
+  // same nothing the resolvers write to it.
+  FxAddress(stage: FxStage.loop) => null,
+};
 
 /// One destination under construction: a map keyed by heading, so groups keep
 /// the order their first control arrived in.
@@ -250,6 +319,7 @@ class _Draft {
   final int order;
   final String label;
   final Map<String, List<ExpressionControl>> groups = {};
+  final List<ExpressionActivation> activations = [];
 }
 
 /// What the picker's tab says for [kind] — the Effects page's own words.

@@ -5117,6 +5117,10 @@ class LooperRepository {
     return _engine.setRecDub(enabled: enabled);
   }
 
+  /// The master output gain last set, `0..1` — what the engine is told on
+  /// every (re)start, whether or not it is running now.
+  double get masterGain => _masterGain;
+
   /// Sets the global master output gain (`0..1`, clamped by the engine).
   /// Remembered and re-applied on every (re)start so it survives device changes
   /// and reconnects.

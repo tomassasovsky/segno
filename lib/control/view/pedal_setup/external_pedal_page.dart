@@ -5,18 +5,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/binding_labels.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
+import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
+import 'package:segno/control/binding/fx_binding_resolver.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/pedal_setup/expression_calibration_panel.dart';
 import 'package:segno/control/view/pedal_setup/expression_controls_panel.dart';
 import 'package:segno/control/view/pedal_setup/expression_position_panel.dart';
 import 'package:segno/control/view/pedal_setup/expression_target_picker.dart';
+import 'package:segno/control/view/pedal_setup/external_controls_editor.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_editor.dart';
@@ -40,6 +45,15 @@ class ExternalPedalPage extends StatefulWidget {
 
   @override
   State<ExternalPedalPage> createState() => _ExternalPedalPageState();
+}
+
+/// Which step of choosing a button's new control is showing.
+enum _ButtonPick {
+  /// Where the control lives.
+  destinations,
+
+  /// The control itself.
+  controls,
 }
 
 /// Which body the screen is showing.
@@ -98,6 +112,19 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   /// The cubit, remembered so [dispose] can reach it after the element is
   /// detached — `context.read` is not available by then.
   ControlCubit? _control;
+
+  /// Whether a button's editor shows its actions or its controls.
+  bool _showControls = false;
+
+  /// Where choosing a button's new control has got to: `null` when not
+  /// choosing, the destination list, or one destination's controls.
+  _ButtonPick? _buttonPick;
+
+  /// The destination whose controls are listed for a button.
+  ExpressionDestination? _buttonDestination;
+
+  /// The button control whose rule is open.
+  Object? _buttonControl;
 
   /// The pen's insets inside the 1920 x 984 main area.
   static const double _left = 100;
@@ -198,7 +225,11 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                 child: ExternalPedalArt(
                   type: jack.type,
                   selected: _button,
-                  onSelect: (index) => setState(() => _button = index),
+                  onSelect: (index) => setState(() {
+                    _button = index;
+                    _buttonControl = null;
+                    _buttonPick = null;
+                  }),
                   // Nothing drives a real jack yet: the contact dot is
                   // wired to the hardware it reports on, and there is no
                   // transport behind these jacks to report anything.
@@ -541,6 +572,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   /// Back steps out of a subview before it leaves the page.
   void _back() {
     switch (_view) {
+      case _ExternalView.main when _buttonPick == _ButtonPick.controls:
+        setState(() => _buttonPick = _ButtonPick.destinations);
+      case _ExternalView.main when _buttonPick != null:
+        setState(() => _buttonPick = null);
       case _ExternalView.main:
         Navigator.of(context).maybePop();
       case _ExternalView.calibrate:
@@ -680,6 +715,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
       _button = 0;
       // The other jack sweeps its own controls, and may sweep none.
       _selected = null;
+      // And a control being chosen for a button on the jack being left is
+      // not being chosen for the one being opened.
+      _buttonControl = null;
+      _buttonPick = null;
     });
   }
 
@@ -695,6 +734,8 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
       // Every type keeps its own assignments, so this selects nothing: the
       // expression panel opens on its own first row.
       _selected = null;
+      _buttonControl = null;
+      _buttonPick = null;
       _saved = false;
     });
   }
@@ -713,6 +754,8 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final button = jack.switchAt(_button);
     if (button == null) return const SizedBox(width: 1040, height: 722);
     final latching = button.hardware == ExternalSwitchHardware.latching;
+    if (_buttonPick != null) return _buttonPicker(context, setup, jack, button);
+    if (_showControls) return _controlsPanel(context, setup, jack, button);
     return SizedBox(
       width: 1040,
       height: ExternalPedalArt.penSize.height,
@@ -720,16 +763,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
         children: [
           Positioned(
             left: 0,
-            top: 149.41,
-            child: AppText(
-              l10n.externalButton(_button + 1),
-              key: const Key('external_selected'),
-              style: TextStyle(
-                color: surface.textPrimary,
-                fontSize: 36,
-                height: 1,
-              ),
-            ),
+            top: 138,
+            width: 1040,
+            child: _editorTitle(context),
           ),
           Positioned(
             left: 0,
@@ -764,6 +800,283 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
         ],
       ),
     );
+  }
+
+  /// The button's name, and the tab between its actions and its controls.
+  Widget _editorTitle(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    return SizedBox(
+      height: 64,
+      child: Row(
+        children: [
+          AppText(
+            l10n.externalButton(_button + 1),
+            key: const Key('external_selected'),
+            style: TextStyle(
+              color: surface.textPrimary,
+              fontSize: 36,
+              height: 1,
+            ),
+          ),
+          const Spacer(),
+          LoopChoiceButton(
+            key: const Key('external_panel_actions'),
+            label: l10n.externalPanelActions,
+            selected: !_showControls,
+            onTap: () => setState(() => _showControls = false),
+            width: 141,
+            height: 64,
+          ),
+          const SizedBox(width: 9),
+          LoopChoiceButton(
+            key: const Key('external_panel_controls'),
+            label: l10n.externalPanelControls,
+            selected: _showControls,
+            onTap: () => setState(() => _showControls = true),
+            width: 152,
+            height: 64,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _controlsPanel(
+    BuildContext context,
+    ExternalPedalSetup setup,
+    ExternalJackSetup jack,
+    ExternalSwitchSetup button,
+  ) {
+    final l10n = context.l10n;
+    final looper = context.read<LooperRepository>();
+    final names = context.watch<TracksCubit>().state.names;
+    final controls = button.controls;
+    final rows = [
+      for (final activation in controls.activations)
+        ExternalControlRow.activation(
+          activation: activation,
+          destination: fxStageLabel(l10n, names, activation.target.address),
+          name: expressionActivationName(l10n, looper, activation.target),
+          available: looper.bindingResolves(activation.target),
+        ),
+      for (final parameter in controls.parameters)
+        ExternalControlRow.parameter(
+          parameter: parameter,
+          destination: expressionTargetName(
+            l10n,
+            names,
+            looper,
+            parameter.target,
+          ).destination,
+          name: expressionRowName(l10n, names, looper, parameter.target),
+          available: looper.valueTargetResolves(parameter.target),
+        ),
+    ];
+    final open = rows.any((row) => row.target == _buttonControl)
+        ? _buttonControl
+        : rows.isEmpty
+        ? null
+        : rows.first.target;
+
+    void write(ExternalControls next) =>
+        _write(setup, jack, button.copyWith(controls: next));
+
+    return SizedBox(
+      width: 1040,
+      height: ExternalPedalArt.penSize.height,
+      child: Column(
+        children: [
+          _editorTitle(context),
+          const SizedBox(height: 24),
+          Expanded(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ExternalControlsEditor(
+                rows: rows,
+                selected: open,
+                latching: button.hardware == ExternalSwitchHardware.latching,
+                onSelect: (target) => setState(() => _buttonControl = target),
+                onAdd: () => setState(
+                  () => _buttonPick = _ButtonPick.destinations,
+                ),
+                onRemove: () {
+                  final next = switch (open) {
+                    final FxBindingTarget target => controls.withoutActivation(
+                      target,
+                    ),
+                    final ControlValueTarget target =>
+                      controls.withoutParameter(target),
+                    _ => controls,
+                  };
+                  setState(() => _buttonControl = null);
+                  write(next);
+                },
+                onCondition: (condition) {
+                  if (open is! FxBindingTarget) return;
+                  write(
+                    controls.withActivation(
+                      ExternalActivation(target: open, condition: condition),
+                    ),
+                  );
+                },
+                onValueCondition: (condition) {
+                  final parameter = _parameterOn(controls, open);
+                  if (parameter == null) return;
+                  write(
+                    controls.withParameter(
+                      parameter.copyWith(condition: condition),
+                    ),
+                  );
+                },
+                onValue: ({required active, required value}) {
+                  final parameter = _parameterOn(controls, open);
+                  if (parameter == null) return;
+                  write(
+                    controls.withParameter(
+                      active
+                          ? parameter.copyWith(active: value)
+                          : parameter.copyWith(inactive: value),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ExternalParameter? _parameterOn(ExternalControls controls, Object? target) {
+    for (final parameter in controls.parameters) {
+      if (parameter.target == target) return parameter;
+    }
+    return null;
+  }
+
+  /// Choosing a button's new control, inside its editor: the switch art stays
+  /// beside it, because the performer is still adding to THAT button.
+  Widget _buttonPicker(
+    BuildContext context,
+    ExternalPedalSetup setup,
+    ExternalJackSetup jack,
+    ExternalSwitchSetup button,
+  ) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final destination = _buttonDestination;
+    final choosingControl =
+        _buttonPick == _ButtonPick.controls && destination != null;
+    final controls = button.controls;
+    return SizedBox(
+      width: 1040,
+      height: ExternalPedalArt.penSize.height,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 64,
+            child: Row(
+              children: [
+                Expanded(
+                  child: AppText(
+                    choosingControl
+                        ? destination.label
+                        : l10n.expressionChooseDestination,
+                    key: const Key('external_pick_title'),
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: surface.textPrimary,
+                      fontSize: 32,
+                      height: 1.15,
+                    ),
+                  ),
+                ),
+                LoopOutlinedButton(
+                  key: const Key('external_pick_cancel'),
+                  width: 125,
+                  label: l10n.pedalSetupCancel,
+                  onTap: () => setState(() => _buttonPick = null),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: choosingControl
+                ? ExternalControlTargetList(
+                    destination: destination,
+                    taken: {
+                      for (final a in controls.activations) a.target,
+                      for (final p in controls.parameters) p.target,
+                    },
+                    onActivation: (activation) => _addButtonControl(
+                      setup,
+                      jack,
+                      button,
+                      controls.withActivation(
+                        ExternalActivation(target: activation.target),
+                      ),
+                      activation.target,
+                    ),
+                    onParameter: (control) {
+                      // Both values start at what the parameter holds NOW, so
+                      // adding the mapping invents no sound change.
+                      final now =
+                          context.read<LooperRepository>().readValueTarget(
+                            control.target,
+                          ) ??
+                          0;
+                      _addButtonControl(
+                        setup,
+                        jack,
+                        button,
+                        controls.withParameter(
+                          ExternalParameter(
+                            target: control.target,
+                            active: now,
+                            inactive: now,
+                          ),
+                        ),
+                        control.target,
+                      );
+                    },
+                  )
+                : ExpressionDestinationPicker(
+                    destinations: expressionDestinations(
+                      l10n,
+                      context.watch<TracksCubit>().state.names,
+                      context.read<LooperRepository>(),
+                      withActivations: true,
+                    ),
+                    kind: _kind,
+                    columns: 1,
+                    onKind: (kind) => setState(() => _kind = kind),
+                    onOpen: (destination) => setState(() {
+                      _buttonDestination = destination;
+                      _buttonPick = _ButtonPick.controls;
+                    }),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addButtonControl(
+    ExternalPedalSetup setup,
+    ExternalJackSetup jack,
+    ExternalSwitchSetup button,
+    ExternalControls next,
+    Object target,
+  ) {
+    setState(() {
+      _buttonPick = null;
+      _buttonControl = target;
+    });
+    _write(setup, jack, button.copyWith(controls: next));
   }
 
   Widget _hardware(
