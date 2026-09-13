@@ -3919,6 +3919,39 @@ void main() {
           expect(chainEnabled[0], isFalse);
         });
 
+        test(
+          'a take lock refuses a new hold but still ends an old one',
+          () async {
+            const held = ExternalControls(
+              parameters: [
+                ExternalParameter(
+                  target: volume1,
+                  active: 0.9,
+                  inactive: 0.1,
+                  condition: ExternalValueCondition.heldReleased,
+                ),
+              ],
+            );
+            await configure(single(held));
+
+            // Down before the lock, up during it: the hold ends with the foot.
+            await contact(PedalExternalSwitch.ctrl1First, closed: true);
+            verify(() => looper.setVolume(0.9, channel: 1)).called(1);
+            takeLocked = true;
+            await contact(PedalExternalSwitch.ctrl1First, closed: false);
+            verify(() => looper.setVolume(0.1, channel: 1)).called(1);
+
+            // Down during the lock: refused, and its release after the lock is
+            // not the end of a hold that never began.
+            await contact(PedalExternalSwitch.ctrl1First, closed: true);
+            takeLocked = false;
+            await contact(PedalExternalSwitch.ctrl1First, closed: false);
+            verifyNever(
+              () => looper.setVolume(any(), channel: any(named: 'channel')),
+            );
+          },
+        );
+
         test('unplugging ends a hold and applies Released', () async {
           await configure(
             single(
