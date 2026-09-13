@@ -366,6 +366,43 @@ void main() {
       expect(written, closeTo(0.5, 0.02));
     });
 
+    testWidgets('a performer scrolling the list is not snapped back', (
+      tester,
+    ) async {
+      // Four sweeps: more than the list shows, with the first one open.
+      await pump(
+        tester,
+        jack: const ExternalJackSetup(
+          type: ExternalJackType.expression,
+          expression: ExternalExpressionSetup(
+            calibration: ExpressionCalibration(heel: 0, toe: 1),
+            mappings: [
+              ExpressionMapping(target: TrackVolumeTarget(0)),
+              ExpressionMapping(target: TrackVolumeTarget(1)),
+              ExpressionMapping(target: MasterGainTarget()),
+              ExpressionMapping(
+                target: FxParamTarget(
+                  address: FxAddress(stage: FxStage.track),
+                  slotId: 'vanished',
+                  param: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      final last = find.text('vanished · #0');
+      expect(last.hitTestable(), findsNothing, reason: 'below the fold');
+      await tester.drag(find.text('Gain'), const Offset(0, -300));
+      await tester.pumpAndSettle();
+      expect(last.hitTestable(), findsOne);
+
+      // The pedal moving rebuilds the list. The first row is still the open
+      // one; the performer's scroll stays where they put it.
+      await sweep(tester, 100);
+      expect(last.hitTestable(), findsOne);
+    });
+
     testWidgets('a row shows what it is writing right now', (tester) async {
       await pump(tester, jack: taught);
       final key =

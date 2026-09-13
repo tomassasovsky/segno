@@ -352,6 +352,18 @@ void main() {
     expect(find.text('Unavailable'), findsOneWidget);
   });
 
+  testWidgets('opening the other jack closes the picker', (tester) async {
+    await pump(tester);
+    await openPicker(tester);
+    expect(find.byKey(const Key('external_pick_title')), findsOne);
+    await tap(tester, 'external_jack_ctrl2');
+    expect(
+      find.byKey(const Key('external_pick_title')),
+      findsNothing,
+      reason: 'a control chosen for a button on CTRL 1 is not for CTRL 2',
+    );
+  });
+
   testWidgets('Cancel in the picker adds nothing', (tester) async {
     await pump(tester);
     await openPicker(tester);
