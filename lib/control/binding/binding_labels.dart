@@ -119,6 +119,10 @@ String controlLabel(AppLocalizations l10n, MappingTrigger trigger) {
       trigger.id,
       channel,
     ),
+    ControllerSourceKind.midiProgram => l10n.midiLearnProgramControl(
+      trigger.id,
+      channel,
+    ),
   };
 }
 

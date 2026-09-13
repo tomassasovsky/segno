@@ -90,6 +90,30 @@ void main() {
       expect(events, isEmpty);
     });
 
+    test('a Program Change is neither learned nor mapped', () async {
+      // Carried for the explicit formats. A 7-bit binding reads a value and a
+      // release, and a Program has neither.
+      final repo = build();
+      addTearDown(repo.dispose);
+      final events = <ControllerEvent>[];
+      repo.events.listen(events.add);
+      final learned = repo.learnNext();
+
+      source.emit(
+        const RawControllerInput(
+          kind: ControllerSourceKind.midiProgram,
+          id: 80,
+          value: 0,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.isLearning, isTrue, reason: 'still waiting for a control');
+
+      source.press(ControllerSourceKind.midiCc, 80);
+      expect((await learned)?.kind, ControllerSourceKind.midiCc);
+      expect(events, isEmpty);
+    });
+
     test('bind updates the mapping and emits the change', () async {
       final repo = build(mapping: const ControllerMapping());
       addTearDown(repo.dispose);
