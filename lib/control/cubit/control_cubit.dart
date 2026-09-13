@@ -1263,10 +1263,24 @@ class ControlCubit extends Cubit<ControlState> {
     if (setup == null) return;
 
     if (_takeLocked()) {
-      // The lock reaches the release for the reason it does on the plate: a
-      // press taken before a take started leaves a gesture armed, and running
-      // its tap when the foot comes up is the mid-take edit the lock refuses.
-      if (!closed) _gestures.of(switchId).cancel();
+      if (setup.hardware == ExternalSwitchHardware.momentary) {
+        if (closed) {
+          // Refused, and remembered as refused: the foot has to lift before
+          // this switch counts again, or its release would end a hold that
+          // never began.
+          _externalSuppressed.add(switchId);
+        } else {
+          // The lock reaches the release for the reason it does on the plate:
+          // a press taken before a take started leaves a gesture armed, and
+          // running its tap when the foot comes up is the mid-take edit the
+          // lock refuses.
+          _gestures.of(switchId).cancel();
+          // But a hold that began before the lock still ends with the foot.
+          // Released starts no take, and a Held effect left on under a dialog
+          // would outlive the gesture that turned it on.
+          _applyExternalControls(setup, heldBefore: true, heldAfter: false);
+        }
+      }
       return;
     }
 
