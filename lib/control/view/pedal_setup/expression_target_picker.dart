@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
@@ -250,6 +251,21 @@ class ExpressionControlPicker extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 23),
                 child: Row(
                   children: [
+                    if (control.art case final asset?) ...[
+                      SizedBox(
+                        width: 42,
+                        height: 54,
+                        child: ExcludeSemantics(
+                          child: Image.asset(
+                            asset,
+                            package: FxCatalogueLoader.package,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 18),
+                    ],
                     Expanded(
                       child: ExcludeSemantics(
                         child: AppText(

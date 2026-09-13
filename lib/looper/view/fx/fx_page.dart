@@ -297,7 +297,7 @@ class _FxViewState extends State<FxView> {
                 name: fxGroupName(l10n, groups[i]),
                 art: groups[i].rack?.art == null
                     ? null
-                    : fxRackArtAsset(groups[i].rack!.art!),
+                    : fxFootswitchAsset(groups[i].rack!.art!),
                 stageTag: !showStage
                     ? null
                     : groups[i].placement == FxPlacement.pre

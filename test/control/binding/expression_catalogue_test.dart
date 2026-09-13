@@ -1,9 +1,11 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 
@@ -120,6 +122,112 @@ void main() {
       expect(name.destination, 'drums');
       expect(name.group, 'vanished');
       expect(name.control, '#3');
+    });
+  });
+
+  group('row pictures', () {
+    const rack = FxRack(id: 'rack-1', name: 'Clean Rhythm', art: 'guitar');
+    const address = FxAddress(stage: FxStage.track);
+
+    BuiltInEffect pedal(String slotId, String? module, {FxRack? on = rack}) =>
+        BuiltInEffect(
+          type: TrackEffectType.drive,
+          slotId: slotId,
+          rack: on,
+          module: module,
+        );
+
+    test("an effect's parameter and the effect draw its pedal", () {
+      trackChains = {
+        0: [pedal('d-1', 'Overdrive')],
+      };
+      final stomp = fxModuleArt('Overdrive');
+      expect(stomp, isNotNull);
+      expect(
+        expressionTargetArt(
+          looper,
+          const FxParamTarget(address: address, slotId: 'd-1', param: 0),
+        ),
+        stomp,
+      );
+      expect(
+        expressionTargetArt(
+          looper,
+          const FxSlotTarget(address: address, slotId: 'd-1'),
+        ),
+        stomp,
+      );
+    });
+
+    test('a chain that is one rack draws the rack', () {
+      trackChains = {
+        0: [pedal('d-1', 'Overdrive'), pedal('r-1', 'Reverb')],
+      };
+      expect(
+        expressionTargetArt(looper, const FxChainTarget(address)),
+        fxFootswitchAsset('guitar'),
+      );
+    });
+
+    test('a chain that is not one rack draws nothing', () {
+      // Two racks, or a rack beside a lone effect: no single picture names it.
+      trackChains = {
+        0: [
+          pedal('d-1', 'Overdrive'),
+          pedal(
+            'r-1',
+            'Reverb',
+            on: const FxRack(id: 'rack-2', name: 'Other', art: 'dub'),
+          ),
+        ],
+      };
+      expect(expressionTargetArt(looper, const FxChainTarget(address)), isNull);
+      trackChains = {
+        0: [pedal('d-1', 'Overdrive'), pedal('r-1', 'Reverb', on: null)],
+      };
+      expect(expressionTargetArt(looper, const FxChainTarget(address)), isNull);
+    });
+
+    test('a fader, a module-less effect and a gone one draw nothing', () {
+      trackChains = {
+        0: [pedal('d-1', null)],
+      };
+      expect(expressionTargetArt(looper, const TrackVolumeTarget(0)), isNull);
+      expect(
+        expressionTargetArt(
+          looper,
+          const FxSlotTarget(address: address, slotId: 'd-1'),
+        ),
+        isNull,
+      );
+      expect(
+        expressionTargetArt(
+          looper,
+          const FxSlotTarget(address: address, slotId: 'gone'),
+        ),
+        isNull,
+      );
+    });
+
+    test('the catalogue carries each control its picture', () {
+      trackChains = {
+        0: [pedal('d-1', 'Overdrive')],
+      };
+      final track = expressionDestinations(
+        l10n,
+        names,
+        looper,
+        withActivations: true,
+      ).firstWhere((d) => d.id == 'track:0');
+      expect(track.activations.first.art, fxFootswitchAsset('guitar'));
+      expect(
+        track.controls.firstWhere((c) => c.target is FxParamTarget).art,
+        fxModuleArt('Overdrive'),
+      );
+      expect(
+        track.controls.firstWhere((c) => c.target is TrackVolumeTarget).art,
+        isNull,
+      );
     });
   });
 
