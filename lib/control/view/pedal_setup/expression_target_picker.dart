@@ -19,11 +19,16 @@ class ExpressionDestinationPicker extends StatelessWidget {
     required this.kind,
     required this.onKind,
     required this.onOpen,
+    this.columns = 2,
     super.key,
   });
 
   /// Every destination the rig offers, in reading order.
   final List<ExpressionDestination> destinations;
+
+  /// How many columns of rows: two across the whole page, one inside a
+  /// button's editor.
+  final int columns;
 
   /// Which tab is open.
   final FxDestinationKind kind;
@@ -34,8 +39,7 @@ class ExpressionDestinationPicker extends StatelessWidget {
   /// Opens a destination's controls.
   final ValueChanged<ExpressionDestination> onOpen;
 
-  /// The pen's geometry: two columns of rows under a row of tabs.
-  static const double _rowWidth = 844;
+  /// The pen's geometry: rows under a row of tabs.
   static const double _rowHeight = 96;
   static const double _columnGap = 24;
   static const double _rowGap = 18;
@@ -91,8 +95,8 @@ class ExpressionDestinationPicker extends StatelessWidget {
                 )
               : GridView.builder(
                   padding: const EdgeInsets.all(4),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
                     crossAxisSpacing: _columnGap,
                     mainAxisSpacing: _rowGap,
                     mainAxisExtent: _rowHeight,
@@ -149,10 +153,6 @@ class ExpressionDestinationPicker extends StatelessWidget {
       ),
     );
   }
-
-  /// The pen's width for the two columns and their gap, so the page can size
-  /// the view it puts this in.
-  static double get penWidth => _rowWidth * 2 + _columnGap + 8;
 }
 
 /// Pick a control on one destination.

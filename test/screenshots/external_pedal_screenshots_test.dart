@@ -12,6 +12,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
@@ -20,6 +21,7 @@ import 'package:segno/control/view/pedal_setup/external_pedal_art.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -81,7 +83,15 @@ void main() {
     when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.allMonitors()).thenReturn(const {});
     when(() => looper.allLaneChains()).thenReturn(const {});
-    when(() => looper.allTrackChains()).thenReturn(const {});
+    // One recorded track carries two effects, so the pickers have a chain
+    // to offer and a parameter list to show.
+    when(
+      () => looper.allTrackChains(),
+    ).thenReturn(const {0: FxChainEnvelope()});
+    when(() => looper.trackEffects(0)).thenReturn([
+      BuiltInEffect(type: TrackEffectType.drive, slotId: 'drive-1'),
+      BuiltInEffect(type: TrackEffectType.reverb, slotId: 'reverb-1'),
+    ]);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
     when(
@@ -257,5 +267,65 @@ void main() {
     await tap(tester, 'expression_kind_recordedTrack');
     await tap(tester, 'expression_destination_track:1');
     await shot(tester, 'expression_controls');
+  }, skip: !hasScreenshotFonts);
+
+  /// A dual pedal whose first button turns two effects on and off and sets
+  /// one parameter.
+  const controlled = ExternalJackSetup(
+    type: ExternalJackType.dualSwitch,
+    dualFirst: ExternalSwitchSetup(
+      gestures: ControlGesturePair(hold: ModeAction(InteractionMode.mute)),
+      controls: ExternalControls(
+        activations: [
+          ExternalActivation(
+            target: FxSlotTarget(
+              address: FxAddress(stage: FxStage.track),
+              slotId: 'drive-1',
+            ),
+          ),
+          ExternalActivation(
+            target: FxSlotTarget(
+              address: FxAddress(stage: FxStage.track),
+              slotId: 'reverb-1',
+            ),
+            condition: ExternalCondition.held,
+          ),
+        ],
+        parameters: [
+          ExternalParameter(
+            target: TrackVolumeTarget(0),
+            active: 0.65,
+            inactive: 0.2,
+          ),
+        ],
+      ),
+    ),
+  );
+
+  testWidgets("a button's controls, with an effect's rule open", (
+    tester,
+  ) async {
+    await pump(tester, jack: controlled);
+    await tap(tester, 'external_panel_controls');
+    await shot(tester, 'controls');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets("a button's controls, with a parameter's values open", (
+    tester,
+  ) async {
+    await pump(tester, jack: controlled);
+    await tap(tester, 'external_panel_controls');
+    await tester.tap(find.text('Volume'));
+    await tester.pumpAndSettle();
+    await shot(tester, 'controls_parameter');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('choosing a control for a button', (tester) async {
+    await pump(tester, jack: controlled);
+    await tap(tester, 'external_panel_controls');
+    await tap(tester, 'external_add_control');
+    await tap(tester, 'expression_kind_recordedTrack');
+    await tap(tester, 'expression_destination_track:0');
+    await shot(tester, 'controls_pick');
   }, skip: !hasScreenshotFonts);
 }

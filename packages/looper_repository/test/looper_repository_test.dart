@@ -2049,8 +2049,10 @@ void main() {
       // Not running yet: the value is remembered but not pushed to the engine,
       // and the call still reports success.
       final repo = buildRepo();
+      expect(repo.masterGain, 1, reason: 'unity until someone sets it');
       expect(repo.setMasterGain(0.5), EngineResult.ok);
       expect(engine.lastMasterGain, isNull);
+      expect(repo.masterGain, 0.5, reason: 'readable before the engine runs');
 
       // A start re-applies the remembered gain so it survives device changes.
       repo.startEngine(const EngineConfig());
