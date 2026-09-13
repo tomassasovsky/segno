@@ -89,10 +89,24 @@ static void test_parse_note_on_and_off(void) {
   CHECK(p.channel == 3 && p.number == 64 && p.value == 40);
 }
 
+/* Program Change is a control message now: the explicit Bank + Program and
+ * Program formats need it. One data byte, so its value is always 0 — even when
+ * a backend hands over a stray second byte, which belongs to the next message. */
+static void test_parse_program_change(void) {
+  printf("test_parse_program_change\n");
+  le_midi_parsed p;
+  CHECK(le_midi_parse(0xC3, 8, 0, &p) == LE_MIDI_PROGRAM);
+  CHECK(p.channel == 3 && p.number == 8 && p.value == 0);
+  CHECK(le_midi_parse(0xC0, 127, 99, &p) == LE_MIDI_PROGRAM);
+  CHECK(p.number == 127 && p.value == 0);
+  /* Masked like every other data byte. */
+  CHECK(le_midi_parse(0xCF, 0x85, 0, &p) == LE_MIDI_PROGRAM);
+  CHECK(p.channel == 15 && p.number == 5);
+}
+
 static void test_parse_ignores_non_note_cc(void) {
   printf("test_parse_ignores_non_note_cc\n");
   CHECK(le_midi_parse(0xA0, 60, 10, NULL) == LE_MIDI_IGNORE); /* aftertouch */
-  CHECK(le_midi_parse(0xC0, 5, 0, NULL) == LE_MIDI_IGNORE);   /* program */
   CHECK(le_midi_parse(0xD0, 64, 0, NULL) == LE_MIDI_IGNORE);  /* chan press */
   CHECK(le_midi_parse(0xE0, 0, 64, NULL) == LE_MIDI_IGNORE);  /* pitch bend */
   CHECK(le_midi_parse(0xF0, 0, 0, NULL) == LE_MIDI_IGNORE);   /* SysEx start */
@@ -113,6 +127,8 @@ static void test_ring_push_filters_non_note_cc(void) {
   CHECK(le_midi_push_for_test(m, 0xB0, 80, 127, 1) == 1); /* CC kept */
   CHECK(le_midi_push_for_test(m, 0x90, 60, 100, 2) == 1); /* Note On kept */
   CHECK(le_midi_push_for_test(m, 0x80, 60, 0, 3) == 1);   /* Note Off kept */
+  CHECK(le_midi_push_for_test(m, 0xC2, 8, 0, 3) == 1);    /* Program kept */
+  CHECK(le_midi_push_for_test(m, 0xD0, 64, 0, 3) == 0);   /* pressure dropped */
   CHECK(le_midi_push_for_test(m, 0xF0, 0, 0, 4) == 0);    /* SysEx dropped */
   CHECK(le_midi_push_for_test(m, 0xF8, 0, 0, 5) == 0);    /* clock dropped */
   CHECK(le_midi_push_for_test(m, 0xE0, 0, 64, 6) == 0);   /* pitch dropped */
@@ -591,6 +607,7 @@ static void test_clock_null_and_degenerate_args_are_safe(void) {
 int main(void) {
   test_parse_control_change();
   test_parse_note_on_and_off();
+  test_parse_program_change();
   test_parse_ignores_non_note_cc();
   test_ring_push_filters_non_note_cc();
   test_drain_delivers_in_fifo_order();

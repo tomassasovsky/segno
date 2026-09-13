@@ -51,6 +51,26 @@ void main() {
         await sub.cancel();
       });
 
+      test('Program Change -> midiProgram, with no value', () async {
+        build();
+        final received = <RawControllerInput>[];
+        final sub = source.inputs.listen(received.add);
+
+        // A stray second byte belongs to the next message, never to this one.
+        source.pushForTest(0xC4, 8, 99);
+        await pumpEventQueue();
+
+        expect(received, const [
+          RawControllerInput(
+            kind: ControllerSourceKind.midiProgram,
+            id: 8,
+            value: 0,
+            midiChannel: 4,
+          ),
+        ]);
+        await sub.cancel();
+      });
+
       test('Note On -> midiNote with velocity', () async {
         build();
         final received = <RawControllerInput>[];
@@ -138,8 +158,8 @@ void main() {
           ..pushForTest(0xF8, 0, 0) // timing clock
           ..pushForTest(0xFE, 0, 0) // active sensing
           ..pushForTest(0xA0, 60, 10) // polyphonic aftertouch
-          ..pushForTest(0xE0, 0, 64) // pitch bend
-          ..pushForTest(0xC0, 5, 0); // program change
+          ..pushForTest(0xD0, 64, 0) // channel pressure
+          ..pushForTest(0xE0, 0, 64); // pitch bend
         await pumpEventQueue();
 
         expect(received, isEmpty);

@@ -18,17 +18,24 @@
 extern "C" {
 #endif
 
-/* Classification of a 3-byte MIDI channel-voice message. Everything the control
- * path cares about is Note On/Off and Control Change; all else is IGNORE. */
+/* Classification of a MIDI channel-voice message. The control path cares about
+ * Note On/Off, Control Change and Program Change; all else is IGNORE.
+ *
+ * Program Change is a TWO-byte message. It rides the same (status, data1,
+ * data2) triple with data2 always 0, so the ring, the drain and the callback
+ * need no second shape. Append-only: these values never cross the API header,
+ * but tests and backends compare against them. */
 typedef enum le_midi_kind {
   LE_MIDI_IGNORE = 0,   /* SysEx, real-time, aftertouch, pitch-bend, etc. */
   LE_MIDI_CC = 1,       /* Control Change */
   LE_MIDI_NOTE_ON = 2,  /* Note On with non-zero velocity */
   LE_MIDI_NOTE_OFF = 3, /* Note Off, or Note On with velocity 0 */
+  LE_MIDI_PROGRAM = 4,  /* Program Change */
 } le_midi_kind;
 
-/* Parsed channel-voice message. `channel` is 0..15; `number` is the CC number
- * or note number; `value` is the CC value or velocity. */
+/* Parsed channel-voice message. `channel` is 0..15; `number` is the CC number,
+ * note number or program; `value` is the CC value or velocity, and 0 for a
+ * Program Change, which carries none. */
 typedef struct le_midi_parsed {
   le_midi_kind kind;
   uint8_t channel;

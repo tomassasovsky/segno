@@ -94,7 +94,7 @@ class MidiControllerSource implements ControllerSource {
   }
 
   /// Maps a MIDI status/data triple to a [RawControllerInput], or `null` when
-  /// the message is not a Note On/Off or Control Change.
+  /// the message is not a Note On/Off, Control Change or Program Change.
   ///
   /// Channel (the status low nibble) is CARRIED, not dropped: the action
   /// mappings still key on the channel-agnostic `trigger`, while a learned
@@ -125,7 +125,14 @@ class MidiControllerSource implements ControllerSource {
           value: data2,
           midiChannel: channel,
         );
-      default: // SysEx / real-time / aftertouch / pitch bend / program change
+      case 0xC0: // Program Change: one data byte, and no value
+        return RawControllerInput(
+          kind: ControllerSourceKind.midiProgram,
+          id: data1,
+          value: 0,
+          midiChannel: channel,
+        );
+      default: // SysEx / real-time / aftertouch / pitch bend
         return null;
     }
   }

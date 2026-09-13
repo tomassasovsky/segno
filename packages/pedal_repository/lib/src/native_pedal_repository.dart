@@ -71,6 +71,9 @@ PedalTransport? _nativeTransport(
           ];
         case ControllerSourceKind.midiCc:
           return [(status: 0xB0, data1: raw.id, data2: raw.value)];
+        case ControllerSourceKind.midiProgram:
+          // The pedal sends no Program Change, so none is pedal input.
+          return const [];
       }
     });
     return transportFactory?.call(input) ?? NativePedalTransport(input: input);

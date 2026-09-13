@@ -106,7 +106,9 @@ static uint64_t le_core_ts_to_us(const le_core_midi_state* st,
 }
 
 /* Splits a packet's raw byte stream into complete channel-voice / system
- * messages and pushes the Note/CC ones (the ring filters the rest). */
+ * messages and pushes them; the ring keeps Note, CC and Program Change and
+ * filters the rest. A one-data-byte message (Program Change, channel pressure)
+ * is pushed with data2 = 0. */
 static void le_core_push_bytes(le_midi* owner, const Byte* data, UInt16 len,
                                uint64_t ts_us) {
   UInt16 i = 0;

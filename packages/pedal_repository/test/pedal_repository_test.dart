@@ -50,8 +50,9 @@ void main() {
           isNotNull,
         );
 
-        repo.bind('pedal-out');
-        repo.unbind();
+        repo
+          ..bind('pedal-out')
+          ..unbind();
         // A position is a claim about where a foot is, not a value the rig
         // sounds like: nothing is reporting it any more, so nobody should be
         // reading it.

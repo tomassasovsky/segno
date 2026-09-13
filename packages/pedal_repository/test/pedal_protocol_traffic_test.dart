@@ -33,11 +33,55 @@ void main() {
       expect(isPedalProtocolInput(cc(PedalCodec.encoderCc)), isTrue);
     });
 
+    test('claims the external jacks, switches and expression alike', () {
+      // The console board reports its CTRL jacks on the same link as the
+      // plate. A MIDI binding learned from one would run beside the pedal
+      // setup's own assignment — the same stomp, or the same sweep, twice.
+      for (final switchId in PedalExternalSwitch.values) {
+        expect(
+          isPedalProtocolInput(note(switchId.note)),
+          isTrue,
+          reason: '${switchId.name} (note ${switchId.note}) is pedal traffic',
+        );
+      }
+      for (final jack in PedalExpressionJack.values) {
+        expect(
+          isPedalProtocolInput(cc(jack.cc)),
+          isTrue,
+          reason: '${jack.name} (CC ${jack.cc}) is pedal traffic',
+        );
+      }
+    });
+
     test('leaves a third-party controller alone', () {
-      expect(isPedalProtocolInput(note(PedalButton.values.length)), isFalse);
+      expect(
+        isPedalProtocolInput(
+          note(
+            PedalExternalSwitchNote.firstNote +
+                PedalExternalSwitch.values.length,
+          ),
+        ),
+        isFalse,
+      );
       expect(isPedalProtocolInput(note(60)), isFalse);
-      expect(isPedalProtocolInput(cc(PedalCodec.encoderCc + 1)), isFalse);
+      expect(
+        isPedalProtocolInput(
+          cc(PedalExpressionJackCc.firstCc + PedalExpressionJack.values.length),
+        ),
+        isFalse,
+      );
       expect(isPedalProtocolInput(cc(11)), isFalse);
+      expect(
+        isPedalProtocolInput(
+          const RawControllerInput(
+            kind: ControllerSourceKind.midiProgram,
+            id: 3,
+            value: 0,
+          ),
+        ),
+        isFalse,
+        reason: 'the pedal sends no Program Change',
+      );
     });
 
     test('is channel-agnostic — wrong on one channel is wrong on all', () {

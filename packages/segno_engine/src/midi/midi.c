@@ -79,9 +79,14 @@ le_midi_kind le_midi_parse(uint8_t status, uint8_t data1, uint8_t data2,
         p.value = (uint8_t)(data2 & 0x7Fu);
         p.kind = LE_MIDI_CC;
         break;
+      case 0xC0u: /* Program Change: one data byte, and no value */
+        p.number = (uint8_t)(data1 & 0x7Fu);
+        p.value = 0u;
+        p.kind = LE_MIDI_PROGRAM;
+        break;
       default:
-        /* 0xA0 aftertouch, 0xC0 program change, 0xD0 channel pressure,
-         * 0xE0 pitch bend, 0xF0 system/real-time/SysEx: all ignored. */
+        /* 0xA0 aftertouch, 0xD0 channel pressure, 0xE0 pitch bend, 0xF0
+         * system/real-time/SysEx: all ignored. */
         p.kind = LE_MIDI_IGNORE;
         break;
     }

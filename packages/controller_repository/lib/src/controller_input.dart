@@ -6,7 +6,14 @@ enum ControllerSourceKind {
   midiNote,
 
   /// A MIDI Control Change message.
-  midiCc;
+  midiCc,
+
+  /// A MIDI Program Change message: a number with no value.
+  ///
+  /// Carried so the explicit Program and Bank + Program formats can see it.
+  /// The 7-bit bindings have no reading for a message with no value and no
+  /// release, so the repository does not learn or dispatch one through them.
+  midiProgram;
 
   /// Maps a persisted [name] back to a kind, or `null` when it names none.
   static ControllerSourceKind? fromName(String? name) {
