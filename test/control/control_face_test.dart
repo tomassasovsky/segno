@@ -104,6 +104,9 @@ void main() {
     connections = StreamController<MidiConnection>.broadcast();
     activity = StreamController<void>.broadcast();
     when(() => midiDevices.connections).thenAnswer((_) => connections.stream);
+    when(
+      () => midiDevices.messages,
+    ).thenAnswer((_) => const Stream<RawControllerInput>.empty());
     when(() => midiDevices.activity).thenAnswer((_) => activity.stream);
     when(() => midiDevices.connection).thenReturn(const MidiConnection());
     when(() => midiDevices.select(any())).thenAnswer((_) async {});
