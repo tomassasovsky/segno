@@ -5224,5 +5224,17 @@
     "externalValueHeldReleased": "Held / Released",
     "@externalValueHeldReleased": {
         "description": "Value behavior: one value while held, the other when released."
+    },
+    "midiLearnProgramControl": "Program {number} · ch {channel}",
+    "@midiLearnProgramControl": {
+        "description": "Names a Program Change control and the channel it arrives on.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            },
+            "channel": {
+                "type": "int"
+            }
+        }
     }
 }

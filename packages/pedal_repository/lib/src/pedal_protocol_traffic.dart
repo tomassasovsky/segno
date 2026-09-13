@@ -1,6 +1,8 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_codec.dart';
+import 'package:pedal_repository/src/pedal_expression_jack.dart';
+import 'package:pedal_repository/src/pedal_external_switch.dart';
 
 /// Whether [input] is the Segno pedal talking its own protocol — one of the
 /// fixed footswitch notes ([PedalButtonNote]) or the relative encoder CC
@@ -21,6 +23,14 @@ import 'package:pedal_repository/src/pedal_codec.dart';
 /// arrives on, since a capture that is wrong on channel 0 is wrong on all of
 /// them.
 bool isPedalProtocolInput(RawControllerInput input) => switch (input.kind) {
-  ControllerSourceKind.midiNote => PedalButtonNote.fromNote(input.id) != null,
-  ControllerSourceKind.midiCc => input.id == PedalCodec.encoderCc,
+  // The ten footswitches, and the two jacks' external switches after them:
+  // both are the console board's own traffic, dispatched by the pedal setup,
+  // and a learned MIDI binding on either would run the same stomp twice.
+  ControllerSourceKind.midiNote =>
+    PedalButtonNote.fromNote(input.id) != null ||
+        PedalExternalSwitchNote.fromNote(input.id) != null,
+  ControllerSourceKind.midiCc =>
+    input.id == PedalCodec.encoderCc ||
+        PedalExpressionJackCc.fromCc(input.id) != null,
+  ControllerSourceKind.midiProgram => false,
 };

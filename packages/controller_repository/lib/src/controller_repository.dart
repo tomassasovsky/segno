@@ -120,6 +120,10 @@ class ControllerRepository {
   bool get isLearning => _learnCompleter != null;
 
   void _onInput(RawControllerInput input) {
+    // A Program Change has no value and no release, which is all a 7-bit
+    // binding reads. It is carried for the explicit formats, and neither
+    // learned nor dispatched here.
+    if (input.kind == ControllerSourceKind.midiProgram) return;
     final learn = _learnCompleter;
     if (learn != null) {
       // The pedal's own protocol traffic can never be captured (B8): the pedal
