@@ -15,10 +15,14 @@ class ExpressionRow {
     required this.destination,
     required this.control,
     required this.available,
+    this.art,
   });
 
   /// The mapping itself.
   final ExpressionMapping mapping;
+
+  /// The picture of the pedal it sweeps, in the catalogue package, or `null`.
+  final String? art;
 
   /// Where it points — shown above the control's own name.
   final String destination;
@@ -171,6 +175,8 @@ class ExpressionControlsPanel extends StatelessWidget {
         return ControlRowTile(
           destination: row.destination,
           name: row.control,
+          art: row.art,
+          artSize: const Size(52, 68),
           selected: row.mapping.target == selected,
           available: row.available,
           valueKey: Key(

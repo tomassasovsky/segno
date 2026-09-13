@@ -449,6 +449,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           ).destination,
           control: expressionRowName(l10n, names, looper, mapping.target),
           available: looper.valueTargetResolves(mapping.target),
+          art: expressionTargetArt(looper, mapping.target),
         ),
     ];
   }
@@ -859,6 +860,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           destination: fxStageLabel(l10n, names, activation.target.address),
           name: expressionActivationName(l10n, looper, activation.target),
           available: looper.bindingResolves(activation.target),
+          art: expressionTargetArt(looper, activation.target),
         ),
       for (final parameter in controls.parameters)
         ExternalControlRow.parameter(
@@ -871,6 +873,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           ).destination,
           name: expressionRowName(l10n, names, looper, parameter.target),
           available: looper.valueTargetResolves(parameter.target),
+          art: expressionTargetArt(looper, parameter.target),
         ),
     ];
     final open = rows.any((row) => row.target == _buttonControl)
