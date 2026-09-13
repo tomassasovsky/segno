@@ -5151,5 +5151,78 @@
     "expressionNoControls": "Nothing here can be swept yet.",
     "@expressionNoControls": {
         "description": "Shown when a destination offers no continuous control."
+    },
+    "externalActivationChain": "Every effect",
+    "@externalActivationChain": {
+        "description": "An activation on a whole chain rather than one effect in it."
+    },
+    "externalActivationRow": "{name} · Activation",
+    "@externalActivationRow": {
+        "description": "Names an activation in the control picker.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "externalPanelActions": "Actions",
+    "@externalPanelActions": {
+        "description": "Tab showing a button's Press, Hold or On change."
+    },
+    "externalPanelControls": "Controls",
+    "@externalPanelControls": {
+        "description": "Tab showing the effects and parameters a button drives."
+    },
+    "externalControlsEmpty": "Choose what this button controls.",
+    "@externalControlsEmpty": {
+        "description": "Shown when a button drives no effects or parameters."
+    },
+    "externalActiveWhen": "Active when",
+    "@externalActiveWhen": {
+        "description": "Heading of an effect activation's condition."
+    },
+    "externalConditionOn": "On",
+    "@externalConditionOn": {
+        "description": "Condition: while the button is on."
+    },
+    "externalConditionOff": "Off",
+    "@externalConditionOff": {
+        "description": "Condition: while the button is off."
+    },
+    "externalConditionHeld": "Held",
+    "@externalConditionHeld": {
+        "description": "Condition: while a foot is on the button."
+    },
+    "externalConditionReleased": "Released",
+    "@externalConditionReleased": {
+        "description": "Condition: while no foot is on the button."
+    },
+    "externalConditionLatchingNote": "Held and Released need a momentary switch.",
+    "@externalConditionLatchingNote": {
+        "description": "Why two conditions are unavailable on a latching switch."
+    },
+    "externalConditionToggleNote": "Each press toggles On / Off.",
+    "@externalConditionToggleNote": {
+        "description": "Explains the On and Off conditions."
+    },
+    "externalConditionHeldNote": "Active while your foot is down.",
+    "@externalConditionHeldNote": {
+        "description": "Explains the Held condition."
+    },
+    "externalConditionReleasedNote": "Active while your foot is up.",
+    "@externalConditionReleasedNote": {
+        "description": "Explains the Released condition."
+    },
+    "externalButtonValues": "Button values",
+    "@externalButtonValues": {
+        "description": "Heading of a parameter's two values."
+    },
+    "externalValueOnOff": "On / Off",
+    "@externalValueOnOff": {
+        "description": "Value behavior: each press toggles between the two values."
+    },
+    "externalValueHeldReleased": "Held / Released",
+    "@externalValueHeldReleased": {
+        "description": "Value behavior: one value while held, the other when released."
     }
 }

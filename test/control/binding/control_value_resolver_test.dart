@@ -220,6 +220,32 @@ void main() {
     });
   });
 
+  group('reads', () {
+    test('an effect parameter reads its current value', () {
+      expect(looper.readValueTarget(laneParam), 0.2);
+    });
+
+    test('a track fader and the master read theirs', () {
+      when(() => looper.masterGain).thenReturn(0.8);
+      expect(looper.readValueTarget(const TrackVolumeTarget(0)), 0.5);
+      expect(looper.readValueTarget(const MasterGainTarget()), 0.8);
+    });
+
+    test('a target that does not resolve reads nothing', () {
+      expect(looper.readValueTarget(const TrackVolumeTarget(9)), isNull);
+      expect(
+        looper.readValueTarget(
+          const FxParamTarget(
+            address: FxAddress(stage: FxStage.loop, index: 1, lane: 0),
+            slotId: 'gone',
+            param: 0,
+          ),
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('writes', () {
     test('an FX param writes at the slot CURRENT position', () {
       // The bound slot moved to index 1 — the write must follow the id.

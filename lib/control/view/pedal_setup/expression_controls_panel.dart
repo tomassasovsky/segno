@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_expression.dart';
+import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -76,9 +77,6 @@ class ExpressionControlsPanel extends StatelessWidget {
 
   /// The pen's list geometry: rows this tall, this far apart, inside a region
   /// that never grows past this.
-  static const double _rowHeight = 96;
-  static const double _rowGap = 12;
-  static const double _listPadding = 4;
   static const double _listMax = 318;
   static const double _rangeHeight = 213;
 
@@ -87,7 +85,9 @@ class ExpressionControlsPanel extends StatelessWidget {
   /// takes the full height, because that is where its invitation sits.
   double get _listHeight {
     if (rows.isEmpty) return _listMax;
-    final wanted = rows.length * (_rowHeight + _rowGap) + _listPadding * 2;
+    final wanted =
+        rows.length * (ControlRowTile.height + ControlRowList.gap) +
+        ControlRowList.padding * 2;
     return wanted < _listMax ? wanted : _listMax;
   }
 
@@ -159,94 +159,31 @@ class ExpressionControlsPanel extends StatelessWidget {
         ),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.all(_listPadding),
-      itemCount: rows.length,
-      separatorBuilder: (_, _) => const SizedBox(height: _rowGap),
-      itemBuilder: (context, index) => _row(context, rows[index]),
+    final openIndex = rows.indexWhere(
+      (row) => row.mapping.target == selected,
     );
-  }
-
-  Widget _row(BuildContext context, ExpressionRow row) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final open = row.mapping.target == selected;
     final at = position;
-    return Semantics(
-      button: true,
-      selected: open,
-      label: '${row.destination} ${row.control}',
-      child: GestureDetector(
-        onTap: () => onSelect(row.mapping.target),
-        behavior: HitTestBehavior.opaque,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: open ? surface.accentSurface : surface.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: open ? surface.accent : surface.borderSubtle,
-            ),
+    return ControlRowList(
+      itemCount: rows.length,
+      selectedIndex: openIndex < 0 ? null : openIndex,
+      itemBuilder: (context, index) {
+        final row = rows[index];
+        return ControlRowTile(
+          destination: row.destination,
+          name: row.control,
+          selected: row.mapping.target == selected,
+          available: row.available,
+          valueKey: Key(
+            'expression_value_${row.mapping.target.canonicalString()}',
           ),
-          child: SizedBox(
-            height: _rowHeight,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 25),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ExcludeSemantics(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          AppText(
-                            row.destination,
-                            maxLines: 1,
-                            style: TextStyle(
-                              color: surface.textSecondary,
-                              fontSize: 20,
-                              height: 1.15,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          AppText(
-                            row.control,
-                            maxLines: 1,
-                            style: TextStyle(
-                              color: surface.textPrimary,
-                              fontSize: 27,
-                              height: 1.15,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 24),
-                  AppText(
-                    !row.available
-                        ? l10n.expressionUnavailable
-                        : at == null
-                        ? l10n.expressionNoReading
-                        : _percent(row.mapping.valueAt(at)),
-                    key: Key(
-                      'expression_value_'
-                      '${row.mapping.target.canonicalString()}',
-                    ),
-                    style: TextStyle(
-                      color: row.available
-                          ? surface.textPrimary
-                          : surface.textTertiary,
-                      fontSize: 27,
-                      height: 1.15,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+          value: !row.available
+              ? l10n.expressionUnavailable
+              : at == null
+              ? l10n.expressionNoReading
+              : _percent(row.mapping.valueAt(at)),
+          onTap: () => onSelect(row.mapping.target),
+        );
+      },
     );
   }
 
