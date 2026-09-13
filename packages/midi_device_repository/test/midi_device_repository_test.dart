@@ -111,6 +111,37 @@ void main() {
       expect(repository.connection.selectedId, '');
     });
 
+    test(
+      'republishes every raw message, undebounced, with its values',
+      () async {
+        final repository = await hydrated();
+        addTearDown(repository.dispose);
+        final received = <RawControllerInput>[];
+        final sub = repository.messages.listen(received.add);
+        addTearDown(sub.cancel);
+
+        // The two halves of a 14-bit value, and the same half again at once: a
+        // debounced stream would keep only the first CC 21.
+        const msb = RawControllerInput(
+          kind: ControllerSourceKind.midiCc,
+          id: 21,
+          value: 64,
+        );
+        const lsb = RawControllerInput(
+          kind: ControllerSourceKind.midiCc,
+          id: 53,
+          value: 1,
+        );
+        activity
+          ..add(msb)
+          ..add(lsb)
+          ..add(msb);
+        await pumpEventQueue();
+
+        expect(received, [msb, lsb, msb]);
+      },
+    );
+
     test('republishes raw source activity for the indicator', () async {
       final repository = await hydrated();
       addTearDown(repository.dispose);

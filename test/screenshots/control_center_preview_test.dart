@@ -458,6 +458,9 @@ void main() {
     addTearDown(connections.close);
     addTearDown(activity.close);
     when(() => devices.connections).thenAnswer((_) => connections.stream);
+    when(
+      () => devices.messages,
+    ).thenAnswer((_) => const Stream<RawControllerInput>.empty());
     when(() => devices.activity).thenAnswer((_) => activity.stream);
     when(() => devices.connection).thenReturn(connection);
 

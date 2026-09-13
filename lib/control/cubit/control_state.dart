@@ -24,6 +24,9 @@ class ControlState extends Equatable {
     this.heldMomentary = const <PedalBindingKey>{},
     this.controllerBindings = ControllerBindingSet.empty,
     this.controllerLearn,
+    this.midiMappings = const MidiMappingSet(),
+    this.midiControlEnabled = true,
+    this.midiLearn,
     this.clearAllPulse = 0,
   });
 
@@ -116,6 +119,16 @@ class ControlState extends Equatable {
   /// times out — never by engine truth.
   final ControllerLearn? controllerLearn;
 
+  /// Every MIDI mapping on the rig (part 4g). Global, like the controller it
+  /// belongs to.
+  final MidiMappingSet midiMappings;
+
+  /// Whether remote MIDI assignments dispatch. Off keeps every mapping.
+  final bool midiControlEnabled;
+
+  /// The MIDI Learn in progress, or `null`.
+  final MidiLearn? midiLearn;
+
   /// A monotonic pulse bumped each time a [ControlCubit.clearAll] leaves at
   /// least one track holding a clear restore point. NOT stored intent — an
   /// emitted-once cue a surface listens for (the tracks view's post-clear-all
@@ -180,6 +193,10 @@ class ControlState extends Equatable {
     ControllerBindingSet? controllerBindings,
     ControllerLearn? controllerLearn,
     bool clearControllerLearn = false,
+    MidiMappingSet? midiMappings,
+    bool? midiControlEnabled,
+    MidiLearn? midiLearn,
+    bool clearMidiLearn = false,
     int? clearAllPulse,
   }) => ControlState(
     mode: mode ?? this.mode,
@@ -198,6 +215,9 @@ class ControlState extends Equatable {
     controllerLearn: clearControllerLearn
         ? null
         : controllerLearn ?? this.controllerLearn,
+    midiMappings: midiMappings ?? this.midiMappings,
+    midiControlEnabled: midiControlEnabled ?? this.midiControlEnabled,
+    midiLearn: clearMidiLearn ? null : midiLearn ?? this.midiLearn,
     clearAllPulse: clearAllPulse ?? this.clearAllPulse,
   );
 
@@ -215,6 +235,9 @@ class ControlState extends Equatable {
     heldMomentary,
     controllerBindings,
     controllerLearn,
+    midiMappings,
+    midiControlEnabled,
+    midiLearn,
     clearAllPulse,
   ];
 }

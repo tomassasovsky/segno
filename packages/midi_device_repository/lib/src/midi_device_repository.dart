@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:controller_repository/controller_repository.dart';
 import 'package:midi_client/midi_client.dart';
 import 'package:midi_device_repository/src/models/midi_connection.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -95,6 +96,17 @@ class MidiDeviceRepository {
   /// for a UI input indicator. Empty when no MIDI backend is present.
   Stream<void> get activity =>
       _source?.activity.map((_) {}) ?? const Stream<void>.empty();
+
+  /// Every recognized message from the open device, with its values, and NOT
+  /// debounced.
+  ///
+  /// What the explicit MIDI formats read. The debounced input stream drops a
+  /// repeat of one control inside 30 ms so a bouncing footswitch cannot
+  /// double-toggle a take, and a knob sending 14-bit or NRPN pairs repeats its
+  /// controls far faster than that: reading pairs from the debounced stream
+  /// would lose halves and never complete a value. Empty with no MIDI backend.
+  Stream<RawControllerInput> get messages =>
+      _source?.activity ?? const Stream<RawControllerInput>.empty();
 
   void _emit(MidiConnection next) {
     _connection = next;

@@ -919,6 +919,20 @@ void main() {
     });
   });
 
+  group('MIDI mappings', () {
+    test('default to nothing mapped and Control on', () async {
+      expect(await repository.loadMidiMappings(), isNull);
+      expect(await repository.loadMidiControlEnabled(), isTrue);
+    });
+
+    test('round-trip', () async {
+      await repository.saveMidiMappings('[]');
+      await repository.saveMidiControlEnabled(enabled: false);
+      expect(await repository.loadMidiMappings(), '[]');
+      expect(await repository.loadMidiControlEnabled(), isFalse);
+    });
+  });
+
   group('external button states', () {
     test('defaults to null when unset', () async {
       expect(await repository.loadExternalSwitchStates(), isNull);
