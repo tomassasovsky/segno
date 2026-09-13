@@ -13,5 +13,7 @@ export 'src/controller_mapping.dart';
 export 'src/controller_repository.dart';
 export 'src/controller_source.dart';
 export 'src/looper_action.dart';
+export 'src/midi_mapping.dart';
+export 'src/midi_mapping_engine.dart';
 export 'src/midi_protocol.dart';
 export 'src/simulated_controller_source.dart';
