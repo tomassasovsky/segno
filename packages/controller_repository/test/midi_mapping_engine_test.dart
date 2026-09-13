@@ -481,6 +481,29 @@ void main() {
       );
     });
 
+    test('a stored mapping that could not be saved is dropped', () {
+      // Otherwise the next edit of anything in the set would throw.
+      final json = [
+        MidiMapping(
+          id: 'empty',
+          source: source(),
+          behavior: MidiBehavior.continuous,
+        ).toJson(),
+        MidiMapping(
+          id: 'ok',
+          source: source(number: 22),
+          behavior: MidiBehavior.continuous,
+          controls: const [MidiParameterControl(key: mix, low: 0, high: 1)],
+        ).toJson(),
+      ];
+      final set = MidiMappingSet.fromJson(json);
+      expect(set.mappings.map((m) => m.id), ['ok']);
+      expect(
+        () => set.withMapping(set.mappings.single.copyWith(enabled: false)),
+        returnsNormally,
+      );
+    });
+
     test('survives a round trip, disabled mappings included', () {
       final set = const MidiMappingSet()
           .withMapping(

@@ -301,6 +301,11 @@ class MidiMappingSet extends Equatable {
         if (raw is! Map<String, dynamic>) continue;
         final mapping = MidiMapping.fromJson(raw);
         if (mapping == null) continue;
+        // A stored mapping that could not be saved as it stands — nothing to
+        // drive, or an action on a knob — is dropped rather than kept: every
+        // later edit of the set goes through withMapping, which refuses it,
+        // so keeping it would make the whole set uneditable.
+        if (mapping.problem != null) continue;
         // A stored file that holds two overlapping sources is corruption, not
         // a choice: saving refuses it, so reading one keeps the first.
         if (kept.any((m) => m.id == mapping.id)) continue;
