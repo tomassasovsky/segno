@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:segno/control/binding/control_action.dart';
+import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 
@@ -73,15 +74,20 @@ class ExternalSwitchSetup extends Equatable {
     this.hardware = ExternalSwitchHardware.momentary,
     this.gestures = ControlGesturePair.empty,
     this.change,
+    this.controls = ExternalControls.empty,
   });
 
   /// Rebuilds a switch from its [toJson] map.
   factory ExternalSwitchSetup.fromJson(Map<String, dynamic> json) {
     final change = json['change'];
+    final controls = json['controls'];
     return ExternalSwitchSetup(
       hardware: ExternalSwitchHardware.fromName(json['hardware'] as String?),
       gestures: ControlGesturePair.fromJson(json),
       change: change is String ? ControlAction.tryParse(change) : null,
+      controls: controls is Map<String, dynamic>
+          ? ExternalControls.fromJson(controls)
+          : ExternalControls.empty,
     );
   }
 
@@ -97,6 +103,13 @@ class ExternalSwitchSetup extends Equatable {
   /// What a state change does, when [hardware] is latching.
   final ControlAction? change;
 
+  /// The effects and parameters this switch drives beside its actions.
+  ///
+  /// Beside, not instead: a press can run an action AND flip every effect
+  /// here in the same gesture, which is the accepted design's point of having
+  /// both panels on one button.
+  final ExternalControls controls;
+
   /// Whether this switch is exactly as it shipped, and so has nothing worth
   /// storing.
   ///
@@ -111,7 +124,8 @@ class ExternalSwitchSetup extends Equatable {
   bool get isEmpty =>
       hardware == ExternalSwitchHardware.momentary &&
       gestures.isEmpty &&
-      change == null;
+      change == null &&
+      controls.isEmpty;
 
   /// The action the ACTIVE hardware runs on a plain closure.
   ControlAction? get closureAction =>
@@ -123,11 +137,13 @@ class ExternalSwitchSetup extends Equatable {
     ExternalSwitchHardware? hardware,
     ControlGesturePair? gestures,
     ControlAction? change,
+    ExternalControls? controls,
     bool clearChange = false,
   }) => ExternalSwitchSetup(
     hardware: hardware ?? this.hardware,
     gestures: gestures ?? this.gestures,
     change: clearChange ? null : change ?? this.change,
+    controls: controls ?? this.controls,
   );
 
   /// Serializes this switch, omitting anything unassigned.
@@ -135,10 +151,11 @@ class ExternalSwitchSetup extends Equatable {
     'hardware': hardware.name,
     ...gestures.toJson(),
     if (change != null) 'change': change!.key,
+    if (!controls.isEmpty) 'controls': controls.toJson(),
   };
 
   @override
-  List<Object?> get props => [hardware, gestures, change];
+  List<Object?> get props => [hardware, gestures, change, controls];
 }
 
 /// One jack: which type is active, and the switches configured for each.

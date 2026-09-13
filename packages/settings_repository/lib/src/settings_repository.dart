@@ -432,6 +432,21 @@ class SettingsRepository {
   Future<void> savePedalSetup(String encoded) =>
       _store.setString(_pedalSetupKey, encoded);
 
+  static const String _externalSwitchStatesKey = 'pedal.external_on';
+
+  /// Loads which external buttons are ON, as the opaque blob the app wrote,
+  /// or `null` if unset.
+  ///
+  /// Kept apart from [loadPedalSetup] on purpose. The setup is configuration,
+  /// edited as a draft and committed by Save; this is what the performer's
+  /// foot last did, and a Cancel on the setup screen must not undo a stomp.
+  Future<String?> loadExternalSwitchStates() =>
+      _store.getString(_externalSwitchStatesKey);
+
+  /// Saves which external buttons are ON.
+  Future<void> saveExternalSwitchStates(String encoded) =>
+      _store.setString(_externalSwitchStatesKey, encoded);
+
   static const String _pedalClearFadeMsKey = 'pedal.clear_fade_ms';
 
   /// Loads the pedal clear-all fade/guard window in milliseconds (`0` disables
