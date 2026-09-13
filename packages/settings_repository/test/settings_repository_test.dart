@@ -919,6 +919,22 @@ void main() {
     });
   });
 
+  group('external button states', () {
+    test('defaults to null when unset', () async {
+      expect(await repository.loadExternalSwitchStates(), isNull);
+    });
+
+    test('round-trips a saved blob, apart from the setup', () async {
+      await repository.saveExternalSwitchStates('["ctrl1First"]');
+      expect(await repository.loadExternalSwitchStates(), '["ctrl1First"]');
+      expect(
+        await repository.loadPedalSetup(),
+        isNull,
+        reason: 'a stomp is not configuration',
+      );
+    });
+  });
+
   group('pedal timing', () {
     test('long-press defaults to 500 ms and round-trips', () async {
       expect(await repository.loadPedalLongPressMs(), 500);
