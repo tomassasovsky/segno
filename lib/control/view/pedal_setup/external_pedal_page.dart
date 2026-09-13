@@ -715,6 +715,10 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
       _button = 0;
       // The other jack sweeps its own controls, and may sweep none.
       _selected = null;
+      // And a control being chosen for a button on the jack being left is
+      // not being chosen for the one being opened.
+      _buttonControl = null;
+      _buttonPick = null;
     });
   }
 
@@ -730,6 +734,8 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
       // Every type keeps its own assignments, so this selects nothing: the
       // expression panel opens on its own first row.
       _selected = null;
+      _buttonControl = null;
+      _buttonPick = null;
       _saved = false;
     });
   }
@@ -852,7 +858,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           activation: activation,
           destination: fxStageLabel(l10n, names, activation.target.address),
           name: expressionActivationName(l10n, looper, activation.target),
-          available: looper.bindingEnabled(activation.target) != null,
+          available: looper.bindingResolves(activation.target),
         ),
       for (final parameter in controls.parameters)
         ExternalControlRow.parameter(

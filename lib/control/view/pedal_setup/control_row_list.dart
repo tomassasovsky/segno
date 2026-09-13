@@ -187,6 +187,14 @@ class _ControlRowListState extends State<ControlRowList> {
   @override
   void didUpdateWidget(ControlRowList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Only when WHICH row is selected, or how many there are, changed. A list
+    // that re-revealed on every rebuild would snap back under a performer
+    // scrolling it — and the expression pedal's list rebuilds each time the
+    // pedal reports a position.
+    if (oldWidget.selectedIndex == widget.selectedIndex &&
+        oldWidget.itemCount == widget.itemCount) {
+      return;
+    }
     _revealSelected();
   }
 
