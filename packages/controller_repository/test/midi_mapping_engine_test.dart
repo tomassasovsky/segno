@@ -434,6 +434,37 @@ void main() {
   });
 
   group('MidiMappingSet', () {
+    test('a new id is one past the largest numbered one', () {
+      expect(const MidiMappingSet().nextId, 'm1');
+      final set = const MidiMappingSet()
+          .withMapping(
+            MidiMapping(
+              id: 'm7',
+              source: source(),
+              behavior: MidiBehavior.continuous,
+              controls: const [MidiParameterControl(key: mix, low: 0, high: 1)],
+            ),
+          )
+          .withMapping(
+            MidiMapping(
+              id: 'm3',
+              source: source(number: 22),
+              behavior: MidiBehavior.continuous,
+              controls: const [MidiParameterControl(key: mix, low: 0, high: 1)],
+            ),
+          )
+          .withMapping(
+            MidiMapping(
+              id: 'knob',
+              source: source(number: 23),
+              behavior: MidiBehavior.continuous,
+              controls: const [MidiParameterControl(key: mix, low: 0, high: 1)],
+            ),
+          );
+      expect(set.nextId, 'm8');
+      expect(set.byId(set.nextId), isNull);
+    });
+
     test('refuses an overlap, disabled or not', () {
       final set = const MidiMappingSet().withMapping(
         MidiMapping(

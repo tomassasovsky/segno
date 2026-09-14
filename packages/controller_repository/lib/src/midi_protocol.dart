@@ -105,6 +105,18 @@ class MidiSource extends Equatable {
   /// The largest 14-bit value; NRPN reserves it as the null selection.
   static const int maxWord = 16383;
 
+  /// Returns this source listening on [channel] `0..15`, or on All when
+  /// [channel] is `null`.
+  MidiSource withChannel(int? channel) => MidiSource(
+    device: device,
+    kind: kind,
+    number: number,
+    channel: channel,
+    protocol: protocol,
+    parameter: parameter,
+    bank: bank,
+  );
+
   /// Whether every field is in range and the fields fit the protocol.
   bool get isValid {
     if (device.isEmpty || !_isByte(number)) return false;

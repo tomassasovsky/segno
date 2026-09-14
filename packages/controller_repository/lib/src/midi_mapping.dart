@@ -319,6 +319,20 @@ class MidiMappingSet extends Equatable {
   /// The mappings, in the order they were added.
   final List<MidiMapping> mappings;
 
+  /// An id no mapping in this set has: `m` and one more than the largest
+  /// number already used that way.
+  String get nextId {
+    var largest = 0;
+    for (final mapping in mappings) {
+      final match = _numberedId.firstMatch(mapping.id);
+      final number = match == null ? null : int.tryParse(match.group(1)!);
+      if (number != null && number > largest) largest = number;
+    }
+    return 'm${largest + 1}';
+  }
+
+  static final RegExp _numberedId = RegExp(r'^m(\d+)$');
+
   /// The mapping with [id], or `null`.
   MidiMapping? byId(String id) {
     for (final mapping in mappings) {

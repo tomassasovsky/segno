@@ -16,4 +16,5 @@ export 'src/looper_action.dart';
 export 'src/midi_mapping.dart';
 export 'src/midi_mapping_engine.dart';
 export 'src/midi_protocol.dart';
+export 'src/midi_signal_levels.dart';
 export 'src/simulated_controller_source.dart';

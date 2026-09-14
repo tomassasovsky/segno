@@ -290,6 +290,15 @@ void main() {
       expect(source(MidiProtocol.standard, channel: 16).isValid, isFalse);
     });
 
+    test('changing the channel keeps everything else', () {
+      final nrpn = source(MidiProtocol.nrpn, number: 6, parameter: 259);
+      final all = nrpn.withChannel(null);
+      expect(all.channel, isNull);
+      expect(all.withChannel(0), nrpn);
+      expect(all.parameter, 259);
+      expect(all.protocol, MidiProtocol.nrpn);
+    });
+
     test('a plain CC and a 14-bit CC on its footprint overlap', () {
       final plain = source(MidiProtocol.standard, number: 53);
       final wide = source(MidiProtocol.cc14);

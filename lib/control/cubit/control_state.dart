@@ -26,7 +26,7 @@ class ControlState extends Equatable {
     this.controllerLearn,
     this.midiMappings = const MidiMappingSet(),
     this.midiControlEnabled = true,
-    this.midiLearn,
+    this.midiEdit,
     this.clearAllPulse = 0,
   });
 
@@ -126,8 +126,11 @@ class ControlState extends Equatable {
   /// Whether remote MIDI assignments dispatch. Off keeps every mapping.
   final bool midiControlEnabled;
 
-  /// The MIDI Learn in progress, or `null`.
-  final MidiLearn? midiLearn;
+  /// The MIDI mapping editor while it is open, with its Learn, or `null`.
+  ///
+  /// Invalidation rule: cleared when the editor closes. A device going away
+  /// leaves it open, still paused, so the editor can say to reconnect.
+  final MidiEdit? midiEdit;
 
   /// A monotonic pulse bumped each time a [ControlCubit.clearAll] leaves at
   /// least one track holding a clear restore point. NOT stored intent — an
@@ -195,8 +198,8 @@ class ControlState extends Equatable {
     bool clearControllerLearn = false,
     MidiMappingSet? midiMappings,
     bool? midiControlEnabled,
-    MidiLearn? midiLearn,
-    bool clearMidiLearn = false,
+    MidiEdit? midiEdit,
+    bool clearMidiEdit = false,
     int? clearAllPulse,
   }) => ControlState(
     mode: mode ?? this.mode,
@@ -217,7 +220,7 @@ class ControlState extends Equatable {
         : controllerLearn ?? this.controllerLearn,
     midiMappings: midiMappings ?? this.midiMappings,
     midiControlEnabled: midiControlEnabled ?? this.midiControlEnabled,
-    midiLearn: clearMidiLearn ? null : midiLearn ?? this.midiLearn,
+    midiEdit: clearMidiEdit ? null : midiEdit ?? this.midiEdit,
     clearAllPulse: clearAllPulse ?? this.clearAllPulse,
   );
 
@@ -237,7 +240,7 @@ class ControlState extends Equatable {
     controllerLearn,
     midiMappings,
     midiControlEnabled,
-    midiLearn,
+    midiEdit,
     clearAllPulse,
   ];
 }

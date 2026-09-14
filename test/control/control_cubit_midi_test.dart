@@ -19,6 +19,23 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockMidiDeviceRepository extends Mock implements MidiDeviceRepository {}
 
+/// A settings store whose writes fail while [failing] is set.
+class _FailingStore extends FakeKeyValueStore {
+  bool failing = false;
+
+  @override
+  Future<void> setString(String key, String value) {
+    if (failing) throw const FileSystemException('disk full');
+    return super.setString(key, value);
+  }
+
+  @override
+  Future<void> setBool(String key, {required bool value}) {
+    if (failing) throw const FileSystemException('disk full');
+    return super.setBool(key, value: value);
+  }
+}
+
 const _device = 'usb:controller-1';
 
 RawControllerInput _cc(int number, int value) => RawControllerInput(
@@ -53,6 +70,7 @@ void main() {
   late _MockMidiDeviceRepository midiDevices;
   late StreamController<MidiConnection> connections;
   late StreamController<RawControllerInput> messages;
+  late _FailingStore store;
   late SettingsRepository settings;
   late PedalRepository pedal;
   late PerformanceRepository performance;
@@ -65,15 +83,17 @@ void main() {
 
   Future<void> settle() => Future<void>.delayed(Duration.zero);
 
-  ControlCubit build() => ControlCubit(
-    looper: looper,
-    pedal: pedal,
-    settings: settings,
-    performance: performance,
-    midiDevices: midiDevices,
-    keepAliveInterval: Duration.zero,
-    takeLocked: () => takeLocked,
-  );
+  ControlCubit build({Duration learnTimeout = const Duration(seconds: 15)}) =>
+      ControlCubit(
+        looper: looper,
+        pedal: pedal,
+        settings: settings,
+        performance: performance,
+        midiDevices: midiDevices,
+        keepAliveInterval: Duration.zero,
+        midiLearnTimeout: learnTimeout,
+        takeLocked: () => takeLocked,
+      );
 
   setUp(() async {
     takeLocked = false;
@@ -84,7 +104,8 @@ void main() {
     messages = StreamController<RawControllerInput>.broadcast();
     when(() => midiDevices.connections).thenAnswer((_) => connections.stream);
     when(() => midiDevices.messages).thenAnswer((_) => messages.stream);
-    settings = SettingsRepository(store: FakeKeyValueStore());
+    store = _FailingStore();
+    settings = SettingsRepository(store: store);
     pedal = PedalRepository(FakePedalTransport());
     volumeWrites = [];
 
@@ -140,6 +161,26 @@ void main() {
     inputs.forEach(messages.add);
     await settle();
   }
+
+  Future<void> connect({bool connected = true}) async {
+    connections.add(
+      MidiConnection(
+        selectedId: _device,
+        status: connected
+            ? MidiConnectionStatus.connected
+            : MidiConnectionStatus.deviceGone,
+      ),
+    );
+    await settle();
+  }
+
+  void learn(MidiProtocol protocol, {String? editingId}) {
+    cubit
+      ..beginMidiEdit(device: _device, editingId: editingId)
+      ..startMidiLearn(protocol);
+  }
+
+  MidiLearn? learning() => cubit.state.midiEdit?.learn;
 
   const knob = MidiMapping(
     id: 'knob',
@@ -268,29 +309,37 @@ void main() {
   group('Learn', () {
     test('reads in the chosen format and pauses dispatch meanwhile', () async {
       await cubit.saveMidiMapping(knobOn(volume0));
-      cubit.startMidiLearn(MidiProtocol.cc14);
+      learn(MidiProtocol.cc14);
       await send([_cc(21, 64), _cc(21, 100)]);
       expect(volumeWrites, isEmpty, reason: 'the device dispatches nothing');
-      expect(cubit.state.midiLearn?.isListening, isTrue);
+      expect(learning()?.isListening, isTrue);
 
       await send([_cc(53, 1)]);
-      final learn = cubit.state.midiLearn!;
+      final heard = learning()!;
       expect(
-        learn.reading?.value,
+        heard.reading?.value,
         100 * 128 + 1,
         reason: 'the MSB that was fresh when the LSB arrived',
       );
-      expect(learn.reading?.source.protocol, MidiProtocol.cc14);
+      expect(heard.reading?.source.protocol, MidiProtocol.cc14);
       expect(
-        learn.conflictId,
+        heard.conflictId,
         'knob',
         reason: 'CC 53 is the LSB of CC 21, which plain CC 21 already reads',
       );
 
       cubit.endMidiEdit();
-      expect(cubit.state.midiLearn, isNull);
+      expect(cubit.state.midiEdit, isNull);
       await send([_cc(21, 64)]);
       expect(volumeWrites, isNotEmpty, reason: 'dispatch resumed');
+    });
+
+    test('the mapping being edited is not its own conflict', () async {
+      await cubit.saveMidiMapping(knobOn(volume0));
+      learn(MidiProtocol.standard, editingId: 'knob');
+      await send([_cc(21, 64)]);
+      expect(learning()?.reading?.source.number, 21);
+      expect(learning()?.conflictId, isNull);
     });
 
     test('starting Learn releases a hold on that device', () async {
@@ -310,7 +359,7 @@ void main() {
       );
       await send([_note(60, 100)]);
       expect(volumeWrites.last.$2, 0.9);
-      cubit.startMidiLearn(MidiProtocol.standard);
+      learn(MidiProtocol.standard);
       expect(
         volumeWrites.last.$2,
         0.2,
@@ -319,7 +368,7 @@ void main() {
     });
 
     test("never learns the pedal's own traffic", () async {
-      cubit.startMidiLearn(MidiProtocol.standard);
+      learn(MidiProtocol.standard);
       await send([
         RawControllerInput(
           kind: ControllerSourceKind.midiNote,
@@ -327,23 +376,144 @@ void main() {
           value: 127,
         ),
       ]);
-      expect(cubit.state.midiLearn?.isListening, isTrue);
+      expect(learning()?.isListening, isTrue);
       await send([_note(60, 90)]);
-      expect(cubit.state.midiLearn?.reading?.source.number, 60);
+      expect(learning()?.reading?.source.number, 60);
     });
 
-    test('a device going away ends Learn', () async {
-      cubit.startMidiLearn(MidiProtocol.standard);
-      connections.add(const MidiConnection());
-      await settle();
-      expect(cubit.state.midiLearn, isNull);
+    test('Learning again drops a half the last Learn received', () async {
+      learn(MidiProtocol.cc14);
+      await send([_cc(21, 64)]);
+      cubit.startMidiLearn(MidiProtocol.cc14);
+      await send([_cc(53, 1)]);
+      expect(learning()?.isListening, isTrue);
     });
 
     test('with no device connected there is nothing to learn from', () async {
       connections.add(const MidiConnection());
       await settle();
+      learn(MidiProtocol.standard);
+      expect(cubit.state.midiEdit?.device, _device, reason: 'editor open');
+      expect(learning(), isNull);
+    });
+
+    test('Cancel Learn keeps the editor open and the device paused', () async {
+      await cubit.saveMidiMapping(knobOn(volume0));
+      learn(MidiProtocol.standard);
+      cubit.cancelMidiLearn();
+      expect(cubit.state.midiEdit?.device, _device);
+      expect(learning(), isNull);
+      await send([_cc(21, 64), _cc(21, 100)]);
+      expect(volumeWrites, isEmpty);
+    });
+
+    test('Learn that hears nothing times out and says so', () async {
+      await cubit.close();
+      cubit = build(learnTimeout: const Duration(milliseconds: 1));
+      await cubit.load();
+      await connect();
+      learn(MidiProtocol.standard);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(learning(), isNull);
+      expect(cubit.state.midiEdit?.learnTimedOut, isTrue);
+
       cubit.startMidiLearn(MidiProtocol.standard);
-      expect(cubit.state.midiLearn, isNull);
+      expect(cubit.state.midiEdit?.learnTimedOut, isFalse);
+      await send([_cc(21, 64)]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        learning()?.reading?.source.number,
+        21,
+        reason: 'a Learn that heard something does not time out',
+      );
+    });
+
+    test('Edit existing mapping moves the editor to it', () async {
+      await cubit.saveMidiMapping(knobOn(volume0));
+      learn(MidiProtocol.standard);
+      await send([_cc(21, 64)]);
+      expect(learning()?.conflictId, 'knob');
+      cubit.beginMidiEdit(device: _device, editingId: 'knob');
+      expect(cubit.state.midiEdit?.editingId, 'knob');
+      expect(learning(), isNull);
+    });
+  });
+
+  group('editing', () {
+    MidiMapping held() => MidiMapping(
+      id: 'held',
+      source: _source(kind: ControllerSourceKind.midiNote, number: 60),
+      behavior: MidiBehavior.momentary,
+      controls: [
+        MidiParameterControl(
+          key: volume0.canonicalString(),
+          low: 0.2,
+          high: 0.9,
+        ),
+      ],
+    );
+
+    test('opening a mapping without Learn pauses its device', () async {
+      await cubit.saveMidiMapping(held());
+      await send([_note(60, 100)]);
+      expect(volumeWrites.last.$2, 0.9);
+
+      cubit.beginMidiEdit(device: _device, editingId: 'held');
+      expect(volumeWrites.last.$2, 0.2, reason: 'its hold ends on entry');
+      volumeWrites.clear();
+      await send([_note(60, 0), _note(60, 100)]);
+      expect(volumeWrites, isEmpty);
+
+      cubit.endMidiEdit();
+      await send([_note(60, 0), _note(60, 100)]);
+      expect(volumeWrites.last.$2, 0.9);
+    });
+
+    test('a device that goes away and comes back while the editor is open '
+        'dispatches again once it closes', () async {
+      await cubit.saveMidiMapping(held());
+      learn(MidiProtocol.standard);
+      await connect(connected: false);
+      expect(cubit.state.midiEdit?.device, _device, reason: 'still open');
+      expect(learning()?.isListening, isTrue);
+
+      await connect();
+      await send([_note(61, 100)]);
+      expect(
+        learning()?.reading?.source.number,
+        61,
+        reason: 'Learn hears the device again',
+      );
+      volumeWrites.clear();
+      await send([_note(60, 100)]);
+      expect(volumeWrites, isEmpty, reason: 'still paused while editing');
+
+      cubit.endMidiEdit();
+      await send([_note(60, 0), _note(60, 100)]);
+      expect(volumeWrites.last.$2, 0.9, reason: 'not left paused');
+    });
+
+    test(
+      'an editor closed while its device was away does not strand it',
+      () async {
+        await cubit.saveMidiMapping(held());
+        cubit.beginMidiEdit(device: _device, editingId: 'held');
+        await connect(connected: false);
+        cubit.endMidiEdit();
+        await connect();
+        await send([_note(60, 100)]);
+        expect(volumeWrites.last.$2, 0.9);
+      },
+    );
+
+    test('opening an editor on another device lets the first one go', () async {
+      await cubit.saveMidiMapping(held());
+      cubit
+        ..beginMidiEdit(device: 'din:other')
+        ..beginMidiEdit(device: _device)
+        ..beginMidiEdit(device: 'din:other');
+      await send([_note(60, 100)]);
+      expect(volumeWrites.last.$2, 0.9);
     });
   });
 
@@ -379,6 +549,55 @@ void main() {
         ),
       );
       expect(cubit.state.midiMappings.mappings, isEmpty);
+    });
+
+    test('a failed write changes nothing', () async {
+      await cubit.saveMidiMapping(knobOn(volume0));
+      store.failing = true;
+      await cubit.saveMidiMapping(knobOn(volume0).copyWith(enabled: false));
+      expect(cubit.state.midiMappings.byId('knob')?.enabled, isTrue);
+      await send([_cc(21, 64), _cc(21, 100)]);
+      expect(volumeWrites, isNotEmpty, reason: 'the saved one still runs');
+
+      await cubit.deleteMidiMapping('knob');
+      await cubit.setMidiMappingEnabled('knob', enabled: false);
+      await cubit.setMidiControlEnabled(enabled: false);
+      expect(cubit.state.midiMappings.byId('knob')?.enabled, isTrue);
+      expect(cubit.state.midiControlEnabled, isTrue);
+
+      store.failing = false;
+      await cubit.deleteMidiMapping('knob');
+      expect(cubit.state.midiMappings.mappings, isEmpty);
+    });
+
+    test('quick edits run in order and none is lost', () async {
+      final first = knobOn(volume0);
+      final second = MidiMapping(
+        id: 'm2',
+        source: _source(number: 22),
+        behavior: MidiBehavior.continuous,
+        controls: [
+          MidiParameterControl(
+            key: volume0.canonicalString(),
+            low: 0,
+            high: 1,
+          ),
+        ],
+      );
+      await Future.wait([
+        cubit.saveMidiMapping(first),
+        cubit.saveMidiMapping(second),
+        cubit.setMidiMappingEnabled('knob', enabled: false),
+      ]);
+      expect(cubit.state.midiMappings.mappings.map((m) => m.id), [
+        'knob',
+        'm2',
+      ]);
+      expect(cubit.state.midiMappings.byId('knob')?.enabled, isFalse);
+      final restarted = build();
+      addTearDown(restarted.close);
+      await restarted.load();
+      expect(restarted.state.midiMappings, cubit.state.midiMappings);
     });
 
     test('deleting a mapping persists', () async {
