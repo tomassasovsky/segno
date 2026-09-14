@@ -440,22 +440,29 @@ world height 87 mm, with the rear-wall leg stopping at 85.34 mm to clear the
 chassis inner radius. Both retain their original world bottom at 4 mm.
 
 The current local frame after the fold has leg A (3 rivets) at Z=-2..0 mm
-and leg B (2 rivets) at X=11.910841..13.910841 mm, with holes along local Y.
+and leg B (2 rivets) at X=14.910841..16.910841 mm, with holes along local Y.
 It differs from the previous rectangular bracket's frame; use the corrected
-occurrence transforms below. Its local X bounds are 0..13.910841 mm.
+occurrence transforms below. Its local X bounds are 0..16.910841 mm.
+**`CORNER_LEG` went 12 -> 15 mm on 2026-09-10** so each rivet sits 7.0 mm from
+its leg's free edge instead of 4.0 (1.25 D, under the 2 D rule of thumb). The
+leg grows at the CORNER end, so every transform below moved 3 mm along x to keep
+the corner and every rivet where they were; the base did not change at all. To
+widen it, move the CUT and BEND sketch points in both brackets (they carry no
+constraints), call `design.computeAll()` -- the profile follows the move but the
+body does not rebuild until you do -- then shift the occurrence.
 Leg A goes on the REAR wall, leg B on the SIDE wall (the base drills 3 rivets
 in the rear wall and 2 in each side wall, staggered). The holes remain
 symmetric about the original 80 mm datum; the new upper-edge profile is handed:
 
 | corner (populated) | transform 2 |
 |---|---|
-| left (x≈0), **turned over** | `[-1,0,0,1.40108408853628 \| 0,0,-1,41.69008408853628 \| 0,-1,0,8.40]` |
-| right (x≈84.8), upright | `[1,0,0,83.19891591146372 \| 0,0,-1,41.69008408853628 \| 0,1,0,0.40]` |
+| left (x≈0), **turned over** | `[-1,0,0,1.70108408853628 \| 0,0,-1,41.69008408853628 \| 0,-1,0,8.40]` |
+| right (x≈84.8), upright | `[1,0,0,82.89891591146372 \| 0,0,-1,41.69008408853628 \| 0,1,0,0.40]` |
 
 Corresponding VSM transforms are left
-`[1,0,0,83.39891591146372 | 0,-1,0,8.4 | 0,0,-1,41.69008408853628]`
+`[1,0,0,83.09891591146372 | 0,-1,0,8.4 | 0,0,-1,41.69008408853628]`
 and right
-`[-1,0,0,1.60108408853628 | 0,1,0,0.4 | 0,0,-1,41.69008408853628]`.
+`[-1,0,0,1.90108408853628 | 0,1,0,0.4 | 0,0,-1,41.69008408853628]`.
 
 Rivet holes land at (1.00, 41.79, 1.20/4.40/7.60) and (0.11, 40.90,
 2.80/6.00) approximately on the left, mirrored on the right. The base and
@@ -768,7 +775,10 @@ native documents. Shop tooling acceptance remains separate from digital parity.
    nominal shim packs and washer references are generated directly. Shims and
    washers appear in the assembly only; neither standalone reference STEP is
    an additional laser, printing or painting archive member. The full package
-   plan remains five ZIPs /88 members.
+   plan is five ZIPs / 116 members: sheet metal 14, sheet-metal STEP 8, painting 8,
+   pedal tiles 22, 3D print 64. The 3D-print archive was 38 until 2026-09-10, when
+   the twelve floor rail segments and the lid prop were added; they had shipped in
+   no package at all. `test_export_plan_...` asserts these counts.
    Native/STEP volume agreement is checked to 10 ppm (minimum 0.05 mm³), with
    independent 0.005 mm bounds checks: an earlier approximately 936685 mm³ base
    export differed by 2.21 mm³ between the two kernels. Every release checks
