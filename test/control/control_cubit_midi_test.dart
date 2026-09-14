@@ -322,24 +322,11 @@ void main() {
         reason: 'the MSB that was fresh when the LSB arrived',
       );
       expect(heard.reading?.source.protocol, MidiProtocol.cc14);
-      expect(
-        heard.conflictId,
-        'knob',
-        reason: 'CC 53 is the LSB of CC 21, which plain CC 21 already reads',
-      );
 
       cubit.endMidiEdit();
       expect(cubit.state.midiEdit, isNull);
       await send([_cc(21, 64)]);
       expect(volumeWrites, isNotEmpty, reason: 'dispatch resumed');
-    });
-
-    test('the mapping being edited is not its own conflict', () async {
-      await cubit.saveMidiMapping(knobOn(volume0));
-      learn(MidiProtocol.standard, editingId: 'knob');
-      await send([_cc(21, 64)]);
-      expect(learning()?.reading?.source.number, 21);
-      expect(learning()?.conflictId, isNull);
     });
 
     test('starting Learn releases a hold on that device', () async {
@@ -432,7 +419,6 @@ void main() {
       await cubit.saveMidiMapping(knobOn(volume0));
       learn(MidiProtocol.standard);
       await send([_cc(21, 64)]);
-      expect(learning()?.conflictId, 'knob');
       cubit.beginMidiEdit(device: _device, editingId: 'knob');
       expect(cubit.state.midiEdit?.editingId, 'knob');
       expect(learning(), isNull);

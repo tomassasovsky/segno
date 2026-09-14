@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
 import 'package:segno/looper/model/fx_destination.dart';
@@ -33,11 +34,15 @@ const String segnoPedalSetupRouteName = 'segno/pedal-setup';
 /// The route name of the External pedals subview.
 const String segnoExternalPedalsRouteName = 'segno/external-pedals';
 
+/// Route name for the MIDI controls page.
+const String segnoMidiControlsRouteName = 'segno/midi-controls';
+
 bool _loopSettingsOpen = false;
 bool _audioRoutingOpen = false;
 bool _fxOpen = false;
 bool _pedalSetupOpen = false;
 bool _externalPedalsOpen = false;
+bool _midiControlsOpen = false;
 Future<FxCatalogue>? _fxCatalogue;
 
 /// The factory catalogue, loaded once and kept.
@@ -136,6 +141,24 @@ Future<void> openExternalPedals() async {
   }
 }
 
+/// Pushes the MIDI controls route onto the root navigator; guarded against
+/// stacking duplicates like [openPedalSetup].
+Future<void> openMidiControls() async {
+  final navigator = segnoNavigatorKey.currentState;
+  if (navigator == null || _midiControlsOpen) return;
+  _midiControlsOpen = true;
+  try {
+    await navigator.push(
+      desktopPageRoute<void>(
+        (_) => const MidiControlsPage(),
+        settings: const RouteSettings(name: segnoMidiControlsRouteName),
+      ),
+    );
+  } finally {
+    _midiControlsOpen = false;
+  }
+}
+
 /// Pushes the Loop settings route (the accepted hub and its submenus) onto
 /// the root navigator, opened at [initial]; guarded against stacking
 /// duplicates like [openSegnoSettings].
@@ -173,6 +196,7 @@ void resetSegnoNavigatorForTest() {
   _fxOpen = false;
   _pedalSetupOpen = false;
   _externalPedalsOpen = false;
+  _midiControlsOpen = false;
   _fxCatalogue = null;
 }
 
