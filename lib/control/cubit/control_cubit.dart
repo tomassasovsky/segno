@@ -19,6 +19,7 @@ import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/midi_edit.dart';
 import 'package:segno/control/binding/midi_learn.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_binding_set.dart';
@@ -185,6 +186,8 @@ class ControlCubit extends Cubit<ControlState> {
   /// its `sources` list, so a synthetic sweep/press enters exactly where a real
   /// CC would. [simulateTick] / [simulateSweepLeg] pace that synthetic sweep.
   ///
+  /// [midiLearnTimeout] is how long a MIDI Learn listens before it gives up.
+  ///
   /// [takeLocked] suppresses Rec / overdub / perf-arm while the power-off
   /// route is up, so a take cannot start behind the dialog.
   ControlCubit({
@@ -200,6 +203,7 @@ class ControlCubit extends Cubit<ControlState> {
     Duration mappingsWriteDebounce = const Duration(milliseconds: 400),
     Duration simulateTick = const Duration(milliseconds: 60),
     Duration simulateSweepLeg = const Duration(milliseconds: 1500),
+    Duration midiLearnTimeout = const Duration(seconds: 15),
     PerformanceChains Function() currentChains = _noChains,
     bool Function() takeLocked = _neverLocked,
   }) : _looper = looper,
@@ -212,6 +216,7 @@ class ControlCubit extends Cubit<ControlState> {
        _mappingsWriteDebounce = mappingsWriteDebounce,
        _simulateTick = simulateTick,
        _simulateSweepLeg = simulateSweepLeg,
+       _midiLearnTimeout = midiLearnTimeout,
        _currentChains = currentChains,
        _takeLocked = takeLocked,
        super(const ControlState()) {
@@ -262,6 +267,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// fake clock instead of sleeping.
   final Duration _simulateTick;
   final Duration _simulateSweepLeg;
+  final Duration _midiLearnTimeout;
   final PerformanceChains Function() _currentChains;
   final bool Function() _takeLocked;
 
@@ -350,6 +356,14 @@ class ControlCubit extends Cubit<ControlState> {
   String? _midiDevice;
 
   StreamSubscription<RawControllerInput>? _midiMessageSub;
+
+  /// Ends a MIDI Learn that hears nothing.
+  Timer? _midiLearnTimer;
+
+  /// The MIDI settings writes, one after another. Each edit reads the state
+  /// the previous one left, so two quick edits cannot both start from the
+  /// same set and lose one of them.
+  Future<void> _midiWrites = Future<void>.value();
 
   /// The jack whose travel is being taught right now, or `null`.
   ///
@@ -2505,12 +2519,10 @@ class ControlCubit extends Cubit<ControlState> {
       final previous = _midiDevice;
       if (previous != null) _applyMidi(_midi.connectionChanged(previous));
       if (device != null) _applyMidi(_midi.connectionChanged(device));
+      // An editor open on a device that went away stays open and paused: it
+      // says to reconnect, and a Learn still listening hears the device when
+      // it comes back, until it times out.
       _midiDevice = device;
-      // A Learn on a device that is no longer there has nothing to hear.
-      final learn = state.midiLearn;
-      if (learn != null && learn.device != device) {
-        emit(state.copyWith(clearMidiLearn: true));
-      }
     }
     if (connection.status == MidiConnectionStatus.connected) return;
     releaseAllControllerMomentary();
@@ -2523,9 +2535,10 @@ class ControlCubit extends Cubit<ControlState> {
   void _onMidiMessage(RawControllerInput message) {
     final device = _midiDevice;
     if (device == null) return;
-    final learn = state.midiLearn;
-    if (learn != null && learn.device == device) {
-      if (!learn.isListening) return;
+    final edit = state.midiEdit;
+    if (edit != null && edit.device == device) {
+      final learn = edit.learn;
+      if (learn == null || !learn.isListening) return;
       // The pedal's own traffic shares this capture and is never a control a
       // mapping may take: the pedal setup already dispatches it.
       if (isPedalProtocolInput(message)) return;
@@ -2533,12 +2546,15 @@ class ControlCubit extends Cubit<ControlState> {
       if (reading == null) return;
       final conflict = state.midiMappings.conflictWith(
         reading.source,
-        exceptId: learn.editingId,
+        exceptId: edit.editingId,
       );
       _log('midi learn ${reading.source.toJson()} conflict=${conflict?.id}');
+      _midiLearnTimer?.cancel();
       emit(
         state.copyWith(
-          midiLearn: learn.captured(reading, conflictId: conflict?.id),
+          midiEdit: edit.withLearn(
+            learn.captured(reading, conflictId: conflict?.id),
+          ),
         ),
       );
       return;
@@ -2577,76 +2593,139 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
-  Future<void> _persistMidiMappings(MidiMappingSet next) {
+  /// Runs [write] after every MIDI settings write before it.
+  Future<T> _serialMidiWrite<T>(Future<T> Function() write) {
+    final result = _midiWrites.then((_) => write());
+    _midiWrites = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
+
+  /// Writes [next], and only once it is written makes it the set that
+  /// dispatches — a failed write changes nothing, so the saved mapping and the
+  /// one on disk never disagree.
+  Future<void> _persistMidiMappings(MidiMappingSet next) async {
+    try {
+      await _settings.saveMidiMappings(jsonEncode(next.toJson()));
+    } on Object catch (error) {
+      _log('midi mappings not saved: $error');
+      return;
+    }
+    if (isClosed) return;
     _applyMidi(_midi.setMappings(next));
     emit(state.copyWith(midiMappings: next));
-    return _settings.saveMidiMappings(jsonEncode(next.toJson()));
   }
 
   /// Saves [mapping], adding it or replacing the one with its id — the MIDI
   /// controls editor's Save.
   ///
   /// Refused, with nothing changed, when the mapping cannot be saved as it
-  /// stands or overlaps another mapping's source: the editor checks both
-  /// before it offers Save, so reaching this with either is a bug the
-  /// refusal must not turn into a corrupt set.
-  Future<void> saveMidiMapping(MidiMapping mapping) async {
-    final set = state.midiMappings;
-    if (mapping.problem != null) return;
-    if (set.conflictWith(mapping.source, exceptId: mapping.id) != null) return;
-    await _persistMidiMappings(set.withMapping(mapping));
-  }
+  /// stands or overlaps another mapping's source; the editor checks both
+  /// before it offers Save. When writing fails nothing changes either, so the
+  /// editor tells a save from a failure by whether [ControlState.midiMappings]
+  /// now holds the mapping.
+  Future<void> saveMidiMapping(MidiMapping mapping) =>
+      _serialMidiWrite(() async {
+        final set = state.midiMappings;
+        if (mapping.problem != null) return;
+        if (set.conflictWith(mapping.source, exceptId: mapping.id) != null) {
+          return;
+        }
+        await _persistMidiMappings(set.withMapping(mapping));
+      });
 
-  /// Deletes the mapping [id], ending its holds.
-  Future<void> deleteMidiMapping(String id) async {
+  /// Deletes the mapping [id], ending its holds. When writing fails the
+  /// mapping stays.
+  Future<void> deleteMidiMapping(String id) => _serialMidiWrite(() async {
     if (state.midiMappings.byId(id) == null) return;
     await _persistMidiMappings(state.midiMappings.withoutMapping(id));
-  }
+  });
 
   /// Turns the mapping [id] on or off without losing it. Off ends its holds.
-  Future<void> setMidiMappingEnabled(String id, {required bool enabled}) async {
-    final mapping = state.midiMappings.byId(id);
-    if (mapping == null || mapping.enabled == enabled) return;
-    await _persistMidiMappings(
-      state.midiMappings.withMapping(mapping.copyWith(enabled: enabled)),
-    );
-  }
+  /// When writing fails nothing changes.
+  Future<void> setMidiMappingEnabled(String id, {required bool enabled}) =>
+      _serialMidiWrite(() async {
+        final mapping = state.midiMappings.byId(id);
+        if (mapping == null || mapping.enabled == enabled) return;
+        await _persistMidiMappings(
+          state.midiMappings.withMapping(mapping.copyWith(enabled: enabled)),
+        );
+      });
 
   /// Turns remote MIDI assignments on or off. Off keeps every mapping and ends
-  /// every hold.
-  Future<void> setMidiControlEnabled({required bool enabled}) async {
-    if (state.midiControlEnabled == enabled) return;
-    _applyMidi(_midi.setControlEnabled(enabled: enabled));
-    emit(state.copyWith(midiControlEnabled: enabled));
-    await _settings.saveMidiControlEnabled(enabled: enabled);
-  }
+  /// every hold. When writing fails nothing changes.
+  Future<void> setMidiControlEnabled({required bool enabled}) =>
+      _serialMidiWrite(() async {
+        if (state.midiControlEnabled == enabled) return;
+        try {
+          await _settings.saveMidiControlEnabled(enabled: enabled);
+        } on Object catch (error) {
+          _log('midi control setting not saved: $error');
+          return;
+        }
+        if (isClosed) return;
+        _applyMidi(_midi.setControlEnabled(enabled: enabled));
+        emit(state.copyWith(midiControlEnabled: enabled));
+      });
 
-  /// Starts listening for the next control from the open device, read in
-  /// [protocol]. The device dispatches nothing until [endMidiEdit].
+  /// Opens the MIDI mapping editor on [device], for the saved mapping
+  /// [editingId] or for a new one.
   ///
-  /// [editingId] is the mapping being edited, whose own source is not a
-  /// conflict. A no-op with no device connected: Learn needs one to hear.
-  void startMidiLearn(MidiProtocol protocol, {String? editingId}) {
-    final device = _midiDevice;
-    if (device == null) return;
+  /// The device dispatches nothing until [endMidiEdit], and every hold it had
+  /// ends now. Opening it again — Edit existing mapping after a conflict —
+  /// moves the editor to that mapping and ends any Learn.
+  void beginMidiEdit({required String device, String? editingId}) {
+    final open = state.midiEdit;
+    if (open != null && open.device != device) _midi.resume(open.device);
+    _midiLearnTimer?.cancel();
     _applyMidi(_midi.pause(device));
     emit(
       state.copyWith(
-        midiLearn: MidiLearn(
-          device: device,
-          protocol: protocol,
-          editingId: editingId,
-        ),
+        midiEdit: MidiEdit(device: device, editingId: editingId),
       ),
     );
   }
 
-  /// Leaves the MIDI editor: Learn ends and the device dispatches again.
+  /// Starts listening for the next control from the device being edited, read
+  /// in [protocol].
+  ///
+  /// A no-op when no editor is open, or when its device is not the one
+  /// connected: Learn needs the device to hear.
+  void startMidiLearn(MidiProtocol protocol) {
+    final edit = state.midiEdit;
+    if (edit == null || edit.device != _midiDevice) return;
+    // A half received before Learn starts belongs to the moment before it.
+    _midi.resetDecoder(edit.device);
+    _midiLearnTimer?.cancel();
+    _midiLearnTimer = Timer(_midiLearnTimeout, _onMidiLearnTimeout);
+    emit(
+      state.copyWith(midiEdit: edit.withLearn(MidiLearn(protocol: protocol))),
+    );
+  }
+
+  /// Every way a Learn ends cancels this timer, so it only fires on a Learn
+  /// still listening.
+  void _onMidiLearnTimeout() {
+    final edit = state.midiEdit;
+    if (isClosed || edit == null) return;
+    emit(state.copyWith(midiEdit: edit.withLearn(null, timedOut: true)));
+  }
+
+  /// Stops listening, keeping the editor open and its device paused.
+  void cancelMidiLearn() {
+    final edit = state.midiEdit;
+    if (edit == null || edit.learn == null) return;
+    _midiLearnTimer?.cancel();
+    emit(state.copyWith(midiEdit: edit.withLearn(null)));
+  }
+
+  /// Closes the MIDI mapping editor: Learn ends and the device dispatches
+  /// again.
   void endMidiEdit() {
-    final learn = state.midiLearn;
-    if (learn == null) return;
-    _midi.resume(learn.device);
-    emit(state.copyWith(clearMidiLearn: true));
+    final edit = state.midiEdit;
+    if (edit == null) return;
+    _midiLearnTimer?.cancel();
+    _midi.resume(edit.device);
+    emit(state.copyWith(clearMidiEdit: true));
   }
 
   // ---------------------------------------------------------------------------
@@ -2964,6 +3043,7 @@ class ControlCubit extends Cubit<ControlState> {
   Future<void> close() async {
     _keepAliveTimer?.cancel();
     _learnTimer?.cancel();
+    _midiLearnTimer?.cancel();
     // Stop any simulation in flight — its ticker must not outlive the cubit.
     _cancelSimulation();
     // A capture outlives this cubit otherwise: the controller repository is

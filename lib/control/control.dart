@@ -36,6 +36,8 @@ export 'binding/controller_learn.dart';
 export 'binding/fx_binding_resolver.dart';
 export 'binding/fx_binding_target.dart';
 export 'binding/fx_chain_lookup.dart';
+export 'binding/midi_edit.dart';
+export 'binding/midi_learn.dart';
 export 'binding/pedal_binding.dart';
 export 'binding/pedal_binding_set.dart';
 export 'binding/pedal_setup.dart';
