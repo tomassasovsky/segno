@@ -12602,6 +12602,69 @@ static void test_click_free_running_downbeat_vs_beat_frequency(void) {
   le_engine_destroy(e);
 }
 
+/* #1050: with sync off the defining loop gets no grid, and the click after it
+ * used to come from the free-running scheduler, which re-anchors its downbeat
+ * at every gate rise — so a second recording clicked from its record press,
+ * half a beat off the take in the bench report. The click now reads the beat
+ * off the loop position at the nominal tempo: the punch mid-beat waits for
+ * the loop's next beat, and the loop top (not a whole number of beats here)
+ * restarts the count with a downbeat. */
+static void test_click_sync_off_second_recording_follows_loop_beats(void) {
+  printf("test_click_sync_off_second_recording_follows_loop_beats\n");
+  le_engine* e = ck_make_engine(1);
+  le_snapshot s;
+  const int32_t len = CK_FPB * 5 / 2; /* 2.5 beats: no whole-beat loop */
+
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  /* The defining take with the click off, so positioning is exact. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, len, 1, NULL, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_SR / 100 + 64, 1, NULL, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == len);
+  CHECK(s.loop_bars == 0); /* sync off: grid-free */
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+
+  /* Park on the middle of beat 1, then record a second track there. */
+  const int32_t target = CK_FPB + CK_FPB / 2;
+  const int32_t to_target =
+      ((target - s.master_position_frames) % len + len) % len;
+  ck_run(e, to_target, 1, NULL, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == target);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+
+  /* Silent until the loop's beat 2 (CK_FPB / 2 away): the old free-run
+   * clicked the downbeat at the press itself. */
+  double energy[1] = {0};
+  ck_run(e, CK_FPB / 2, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  /* Beat 2 at loop position 2 * CK_FPB: a plain 1000 Hz beat. */
+  const int beat2 = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(beat2 > 45 && beat2 < 75);
+
+  /* The short last beat (CK_FPB / 2 long) ends at the loop top, which
+   * clicks the 1500 Hz downbeat, and beat 1 follows one full beat later. */
+  energy[0] = 0.0;
+  ck_run(e, len - 2 * CK_FPB - CK_CLICK_FRAMES, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+  const int down = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(down > 75 && down < 105);
+  ck_run(e, CK_FPB - CK_CLICK_FRAMES, 1, NULL, NULL);
+  const int beat1 = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(beat1 > 45 && beat1 < 75);
+
+  le_engine_destroy(e);
+}
+
 static void test_click_loop_locked_downbeat_vs_beat_frequency(void) {
   printf("test_click_loop_locked_downbeat_vs_beat_frequency\n");
   le_engine* e = ck_make_engine(1);
@@ -25637,6 +25700,7 @@ int main(void) {
   test_click_count_in_downbeat_vs_beat_frequency();
   test_click_free_running_downbeat_vs_beat_frequency();
   test_click_loop_locked_downbeat_vs_beat_frequency();
+  test_click_sync_off_second_recording_follows_loop_beats();
   test_count_in_delays_defining_record();
   test_count_in_record_press_cancels();
   test_count_in_stop_and_disable_cancel();

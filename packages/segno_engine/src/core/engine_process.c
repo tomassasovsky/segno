@@ -502,20 +502,40 @@ static void le_apply_length_preset_tempo(le_engine* e, int32_t len,
  * is already the CURRENT beat (continuous tracking, above) — so `beat !=
  * grid_prev_beat` below stays false and no spurious click fires; the click
  * naturally picks up at the next REAL boundary once the beat actually
- * changes. */
-static inline void grid_beat_frame(le_engine* e, int32_t pos, int click_on) {
-  if (e->grid_total_beats <= 0 || e->clock.length <= 0) return;
+ * changes.
+ *
+ * #1050: a loop with NO grid (sync off: sync_grid_to_loop left
+ * grid_total_beats at 0) takes the same path with the beat read off the loop
+ * position at the nominal tempo instead — beat k at k * nominal_fpb, the
+ * frames-per-beat the free-running scheduler clicked the defining take with
+ * (llround(60 * sr / bpm), the caller's per-block value; 0 when no tempo is
+ * set, which leaves this a no-op). Beat k of that take therefore lands where
+ * it was played, on every cycle and for every later recording, instead of
+ * the free-running scheduler re-anchoring at each record press. The loop top
+ * starts the count again, so a loop that is not a whole number of beats has
+ * a short last beat. */
+static inline void grid_beat_frame(le_engine* e, int32_t pos, int click_on,
+                                   int32_t nominal_fpb) {
+  if (e->clock.length <= 0) return;
+  if (e->grid_total_beats <= 0 && nominal_fpb <= 0) return;
   if (click_on != e->click_grid_gate) {
     if (click_on && pos == 0) e->grid_prev_beat = -1;
     e->click_grid_gate = click_on;
   }
   const int32_t beat =
-      le_grid_beat_at(pos, e->clock.length, e->grid_total_beats);
+      e->grid_total_beats > 0
+          ? le_grid_beat_at(pos, e->clock.length, e->grid_total_beats)
+          : pos / nominal_fpb;
   if (beat != e->grid_prev_beat) {
     e->grid_prev_beat = beat;
     const int32_t num = load_i32(&e->a_ts_num);
     const int32_t bar_beat = num > 0 ? beat % num : 0;
-    store_i32(&e->a_current_beat, bar_beat);
+    /* A grid-free loop publishes its beat only while the click sounds, as
+     * the free-running scheduler it replaces did: with the click off it has
+     * no beat to show (test_commit_session_resets_stale_grid). */
+    if (e->grid_total_beats > 0 || click_on) {
+      store_i32(&e->a_current_beat, bar_beat);
+    }
     if (click_on) trigger_click(e, bar_beat == 0);
   }
 }
@@ -2994,12 +3014,12 @@ static inline void click_frame(le_engine* e, float* out, uint32_t f,
       le_count_in_commit(e, frame); /* the downbeat: recording starts */
     }
   } else {
-    /* Free-running scheduler: with no loop-locked grid (defining recording,
-     * or sync-off playback) and a tempo set, the beat phase runs on the
-     * nominal grid, re-anchoring its downbeat whenever it activates. The
-     * loop-locked case is grid_beat_frame's. */
-    const int free_run =
-        click_on && (e->grid_total_beats <= 0 || e->clock.length <= 0);
+    /* Free-running scheduler: with no loop yet (the defining recording) and
+     * a tempo set, the beat phase runs on the nominal grid, re-anchoring its
+     * downbeat whenever it activates. Once a loop exists, grid_beat_frame
+     * schedules the click whether or not sync gave it a grid (#1050): a
+     * free-run there restarted the count at every record press. */
+    const int free_run = click_on && e->clock.length <= 0;
     if (!free_run) {
       e->click_free_running = 0;
     } else {
@@ -4432,6 +4452,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   if (lim_release > 1.0f) lim_release = 1.0f;
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  /* The nominal frames-per-beat grid_beat_frame counts a grid-free loop in
+   * (#1050), read once per block: the free-running scheduler's own formula,
+   * so the loop's beats sit where the defining take's clicks did. */
+  const float nominal_bpm = load_f32(&e->a_tempo_bpm_bits);
+  const int32_t nominal_fpb =
+      nominal_bpm > 0.0f
+          ? (int32_t)llround(60.0 * (double)sr / (double)nominal_bpm)
+          : 0;
   /* Overdub punch declick: ramp the layered input in/out over ~10 ms so a punch
    * (in or out, including the instant rec/dub auto-dub) never bakes a step into
    * the loop buffer. One linear step per frame, settling in od_fade_frames. */
@@ -4715,7 +4743,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     perf_tap_master_frame(e, out, f, ch_out);
     const int click_on =
         click_mode != LE_CLICK_OFF ? le_click_gate(e, click_mode, tc, st) : 0;
-    grid_beat_frame(e, pos, click_on); /* dormant-grid cost: one int compare */
+    grid_beat_frame(e, pos, click_on, nominal_fpb); /* dormant: two compares */
     /* click_mask & out_enabled (code-review fix): a structurally-disabled
      * output must never carry click energy even if the click's own routing
      * mask points at it — exactly like every other source's fan-out (lanes:
