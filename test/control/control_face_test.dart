@@ -251,6 +251,13 @@ void main() {
       }
     });
 
+    testWidgets('leads to Pedal setup and to MIDI controls', (tester) async {
+      await pump(tester);
+      expect(find.byKey(const Key('pedal_open_setup')), findsOneWidget);
+      expect(find.byKey(const Key('control_open_midi')), findsOneWidget);
+      expect(find.text('MIDI controls'), findsOneWidget);
+    });
+
     testWidgets('offers MODE and Bank nowhere — they can never hold one', (
       tester,
     ) async {

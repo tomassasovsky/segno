@@ -2544,16 +2544,14 @@ class ControlCubit extends Cubit<ControlState> {
       if (isPedalProtocolInput(message)) return;
       final reading = _midi.learn(device, message, learn.protocol);
       if (reading == null) return;
-      final conflict = state.midiMappings.conflictWith(
-        reading.source,
-        exceptId: edit.editingId,
-      );
-      _log('midi learn ${reading.source.toJson()} conflict=${conflict?.id}');
+      _log('midi learn ${reading.source.toJson()}');
       _midiLearnTimer?.cancel();
+      // Whether it overlaps a saved mapping is the editor's to say: the
+      // draft's channel can still change, and the conflict with it.
       emit(
         state.copyWith(
           midiEdit: edit.withLearn(
-            learn.captured(reading, conflictId: conflict?.id),
+            MidiLearn(protocol: learn.protocol, reading: reading),
           ),
         ),
       );
