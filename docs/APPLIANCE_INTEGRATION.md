@@ -1,5 +1,7 @@
 # Appliance integration — September 2026
 
+<!-- cspell:words Wrynose -->
+
 ## Source of the running release
 
 The appliance release `0.1.0-experimental.137` was built on September 4 from

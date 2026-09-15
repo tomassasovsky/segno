@@ -11,7 +11,7 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 ## September 2026 appliance integration
 
 The console link, CTRL jacks, and appliance delivery stack (#984, #986, #990)
-is being integrated with the newer master changes. See
+integrates with the newer master changes. See
 [the integration record](APPLIANCE_INTEGRATION.md) for release 137's verified
 source commit, retained v2 behavior, pending v3 firmware, and the separate
 software and device validation boundaries. Merging source does not publish or
