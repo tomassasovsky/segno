@@ -10,6 +10,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -64,6 +65,7 @@ void main() {
     late StreamController<MidiConnection> connections;
     late SettingsRepository settings;
     late PedalRepository pedal;
+    late FakePedalLink link;
     late PerformanceRepository performance;
     late ControlCubit cubit;
     late Directory tempDir;
@@ -85,8 +87,13 @@ void main() {
       looperStates = StreamController<LooperState>.broadcast(sync: true);
       source = _FakeSource();
       simulated = SimulatedControllerSource();
+      link = FakePedalLink();
+      pedal = PedalRepository(
+        link,
+        helloTimeout: const Duration(milliseconds: 100),
+      );
       controller = ControllerRepository(
-        sources: [source, simulated],
+        sources: [source, simulated, ConsoleCtrlSource(pedal)],
         // One tick per move: the ramp is covered under a fake clock in the
         // package suite; here what matters is the value reaching the rig.
         smoothing: const Duration(milliseconds: 1),
@@ -96,10 +103,6 @@ void main() {
       connections = StreamController<MidiConnection>.broadcast();
       when(() => midiDevices.connections).thenAnswer((_) => connections.stream);
       settings = SettingsRepository(store: FakeKeyValueStore());
-      pedal = PedalRepository(
-        FakePedalLink(),
-      );
-
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
       when(() => looper.state).thenReturn(
         LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
@@ -191,6 +194,151 @@ void main() {
     /// repository and the persisted blob stay in step.
     Future<void> use(List<ControllerBinding> bindings) =>
         cubit.setControllerBindings(ControllerBindingSet(bindings));
+
+    group('console source lifecycle', () {
+      const ctrl = MappingTrigger(
+        kind: ControllerSourceKind.consoleSwitch,
+        id: 0,
+      );
+
+      void pressCtrl({required bool down}) => link.emit(
+        CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.switchPedal,
+          value: down ? 255 : 0,
+        ),
+      );
+
+      void incompatible() => link.emit(
+        const HelloMessage(
+          protocolVersion: PedalLinkCodec.protocolVersion + 1,
+          firmwareMajor: 1,
+          firmwareMinor: 0,
+        ),
+      );
+
+      List<ControllerBinding> bindings({bool withMidi = false}) => [
+        DiscreteBinding(
+          trigger: ctrl,
+          target: chainTarget.canonicalString(),
+          behavior: BindingBehavior.momentary,
+        ),
+        if (withMidi)
+          DiscreteBinding(
+            trigger: stomp,
+            target: chainTarget.canonicalString(),
+            behavior: BindingBehavior.momentary,
+          ),
+      ];
+
+      test('HELLO timeout releases a CTRL momentary', () async {
+        await use(bindings());
+        chainEnabled[0] = false;
+        final disconnected = pedal.statusChanges.firstWhere(
+          (status) => status == PedalLinkStatus.disconnected,
+        );
+        link.hello();
+        pressCtrl(down: true);
+        await settle();
+        expect(chainEnabled[0], isTrue);
+
+        await disconnected;
+        await settle();
+        expect(chainEnabled[0], isFalse);
+      });
+
+      test('queued CTRL press cannot survive an incompatible hello', () async {
+        await use(bindings());
+        chainEnabled[0] = false;
+        link.hello();
+        await settle();
+        pressCtrl(down: true);
+        incompatible();
+        await settle();
+        expect(chainEnabled[0], isFalse);
+        link.hello();
+        pressCtrl(down: true);
+        await settle();
+        expect(chainEnabled[0], isTrue);
+      });
+
+      test(
+        'incompatible firmware releases CTRL and reconnect rearms it',
+        () async {
+          await use(bindings());
+          chainEnabled[0] = false;
+          link.hello();
+          pressCtrl(down: true);
+          await settle();
+          expect(chainEnabled[0], isTrue);
+
+          incompatible();
+          await settle();
+          expect(chainEnabled[0], isFalse);
+
+          link.hello();
+          pressCtrl(down: true);
+          await settle();
+          expect(
+            chainEnabled[0],
+            isTrue,
+            reason: 'no missing release strands the edge',
+          );
+        },
+      );
+
+      test('board loss preserves a MIDI holder on the same target', () async {
+        await use(bindings(withMidi: true));
+        chainEnabled[0] = false;
+        link.hello();
+        pressCtrl(down: true);
+        source.cc(21, 127);
+        await settle();
+        expect(chainEnabled[0], isTrue);
+
+        incompatible();
+        await settle();
+        expect(
+          chainEnabled[0],
+          isTrue,
+          reason: 'MIDI is still holding the target',
+        );
+        source.cc(21, 0);
+        await settle();
+        expect(
+          chainEnabled[0],
+          isFalse,
+          reason: 'the final holder restores the original state',
+        );
+      });
+
+      test('MIDI loss preserves a CTRL holder on the same target', () async {
+        await use(bindings(withMidi: true));
+        chainEnabled[0] = false;
+        link.hello();
+        pressCtrl(down: true);
+        source.cc(21, 127);
+        await settle();
+        expect(chainEnabled[0], isTrue);
+
+        connections.add(
+          const MidiConnection(status: MidiConnectionStatus.deviceGone),
+        );
+        await settle();
+        expect(
+          chainEnabled[0],
+          isTrue,
+          reason: 'CTRL is still holding the target',
+        );
+        pressCtrl(down: false);
+        await settle();
+        expect(
+          chainEnabled[0],
+          isFalse,
+          reason: 'the final holder restores the original state',
+        );
+      });
+    });
 
     group('continuous bindings', () {
       test('a CC sweep writes the mapped value into the rig', () async {

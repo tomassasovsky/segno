@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
+import 'package:pedal_repository/src/pedal_ctrl.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
 /// One message on the pedal link, in either direction.
@@ -36,6 +37,42 @@ final class EncoderMessage extends PedalLinkMessage {
 
   @override
   List<Object?> get props => [delta];
+}
+
+/// A CTRL jack reporting (board → segno): a footswitch edge, or an
+/// expression pedal's raw position.
+final class CtrlMessage extends PedalLinkMessage {
+  /// Creates a [CtrlMessage].
+  const CtrlMessage({
+    required this.jack,
+    required this.kind,
+    required this.value,
+    this.contact = PedalCtrlContact.tip,
+  }) : assert(value >= 0 && value <= 255, 'value must fit a byte'),
+       assert(
+         contact == PedalCtrlContact.tip || kind == PedalCtrlKind.switchPedal,
+         'the ring can only carry a switch',
+       ),
+       assert(
+         kind != PedalCtrlKind.none || value == 0,
+         'an empty jack carries no value',
+       );
+
+  /// Which jack reported.
+  final PedalCtrlJack jack;
+
+  /// Which contact of it.
+  final PedalCtrlContact contact;
+
+  /// What the board decided is plugged into it.
+  final PedalCtrlKind kind;
+
+  /// `0`..`255`: a switch sends the ends, an expression pedal its RAW
+  /// position — uncalibrated; see [PedalCtrlCalibration].
+  final int value;
+
+  @override
+  List<Object?> get props => [jack, contact, kind, value];
 }
 
 /// The board announcing itself (board → segno), at boot and once a second

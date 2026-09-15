@@ -241,4 +241,52 @@ void main() {
       expect(PedalLinkParser().push(state), hasLength(1));
     });
   });
+
+  group('CTRL frames', () {
+    test('carry jack, contact, kind and value', () {
+      const message = CtrlMessage(
+        jack: PedalCtrlJack.ctrl2,
+        contact: PedalCtrlContact.ring,
+        kind: PedalCtrlKind.switchPedal,
+        value: 255,
+      );
+      final bytes = PedalLinkCodec.encode(message);
+      expect(bytes.sublist(1, 7), [PedalLinkCodec.typeCtrl, 4, 1, 1, 0, 255]);
+      expect(PedalLinkParser().push(bytes), [message]);
+    });
+
+    test('an empty jack carries no value, and says so on the tip', () {
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeCtrl, [0, 0, 2, 0]),
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.none,
+          value: 0,
+        ),
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeCtrl, [0, 0, 2, 7]),
+        isNull,
+        reason: 'a value on an empty jack is a corrupt frame',
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeCtrl, [0, 1, 2, 0]),
+        isNull,
+        reason: 'the ring cannot be empty on its own',
+      );
+    });
+
+    test('an expression pedal on the ring is a corrupt frame', () {
+      // The ring is the pot's supply; a travel there cannot be real.
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeCtrl, [0, 1, 1, 128]),
+        isNull,
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeCtrl, [0, 2, 0, 255]),
+        isNull,
+        reason: 'no third contact',
+      );
+    });
+  });
 }

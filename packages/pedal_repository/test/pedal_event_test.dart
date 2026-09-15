@@ -80,10 +80,21 @@ void main() {
         ButtonPressed() => 'pressed',
         ButtonReleased() => 'released',
         EncoderDelta() => 'encoder',
+        CtrlChanged() => 'ctrl',
       };
 
       expect(describe(const ButtonPressed(PedalButton.recPlay)), 'pressed');
       expect(describe(const ButtonReleased(PedalButton.recPlay)), 'released');
+      expect(
+        describe(
+          const CtrlChanged(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 64,
+          ),
+        ),
+        'ctrl',
+      );
       expect(describe(const EncoderDelta(1)), 'encoder');
     });
   });

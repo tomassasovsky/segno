@@ -116,7 +116,7 @@ class ControllerRepository {
       // a real position, and refusing value 0 would make a heel-down sweep
       // uncapturable. A note still needs a press — notes arrive in press /
       // release pairs, and capturing the release would bind the wrong edge.
-      if (input.kind == ControllerSourceKind.midiCc || input.isPress) {
+      if (input.kind.isContinuous || input.isPress) {
         _learnCompleter = null;
         learn.complete(input);
       }
@@ -180,6 +180,30 @@ class ControllerRepository {
         pressed: next,
       ),
     );
+  }
+
+  /// Releases the discrete controls from [kinds] when their source goes away.
+  ///
+  /// Normal OFF edges let listeners release just those controls, preserving
+  /// a different source still holding the same target. Forgetting each edge
+  /// also lets the first press after reconnection act. Continuous bindings
+  /// retain their values: a disconnected pedal must not move a bound level.
+  void releaseSwitches(Set<ControllerSourceKind> kinds) {
+    for (final binding in _bindings.bindings) {
+      if (binding is! DiscreteBinding ||
+          !kinds.contains(binding.trigger.kind)) {
+        continue;
+      }
+      if (!(_switches.remove(binding.key) ?? false)) continue;
+      _bindingEvents.add(
+        ControllerSwitchEvent(
+          target: binding.target,
+          trigger: binding.trigger,
+          behavior: binding.behavior,
+          pressed: false,
+        ),
+      );
+    }
   }
 
   /// How many ticks a ramp takes — at least one, so a smoothing window shorter

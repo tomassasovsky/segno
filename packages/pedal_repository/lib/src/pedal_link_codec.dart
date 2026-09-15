@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:pedal_repository/src/pedal_button.dart';
+import 'package:pedal_repository/src/pedal_ctrl.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
@@ -44,11 +45,15 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
-  /// 2: the loop-top pulse (`0x11`) was retired when the ring stopped
-  /// tracking the loop. The board is flashed over SWD independently of the
-  /// app, so the two can drift; this is what makes that visible rather than
-  /// silent.
-  static const protocolVersion = 2;
+  /// 5: CTRL kind `none` — the board can say a jack is empty instead of
+  /// reporting an unplugged jack as a pedal at full toe. 4: CTRL (`0x04`)
+  /// grew a contact byte and reports an expression pedal's raw position;
+  /// calibration moved here, where it can be deliberate and survive a
+  /// reboot. 3: the CTRL jacks. 2: the loop-top pulse (`0x11`) was retired
+  /// when the ring stopped tracking the loop. The board is flashed over SWD
+  /// independently of the app, so the two can drift; this is what makes
+  /// that visible rather than silent.
+  static const protocolVersion = 5;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -58,6 +63,10 @@ abstract final class PedalLinkCodec {
 
   /// See [typeButton].
   static const typeHello = 0x03;
+
+  /// See [typeButton]. `[jack, contact, kind, value]` — one contact of one
+  /// of the two CTRL jacks reporting the pedal plugged into it.
+  static const typeCtrl = 0x04;
 
   /// The one message type segno → board.
   static const typeState = 0x10;
@@ -85,6 +94,7 @@ abstract final class PedalLinkCodec {
     typeButton => 2,
     typeEncoder => 1,
     typeHello => helloPayloadLength,
+    typeCtrl => 4,
     typeState => statePayloadLength,
     _ => null,
   };
@@ -103,6 +113,10 @@ abstract final class PedalLinkCodec {
         :final firmwareMinor,
       ) =>
         (typeHello, <int>[protocolVersion, firmwareMajor, firmwareMinor]),
+      CtrlMessage(:final jack, :final contact, :final kind, :final value) => (
+        typeCtrl,
+        <int>[jack.index, contact.index, kind.index, value],
+      ),
       StateMessage(:final frame) => (typeState, encodeStatePayload(frame)),
     };
     final out = Uint8List(4 + payload.length);
@@ -139,6 +153,24 @@ abstract final class PedalLinkCodec {
           protocolVersion: payload[0],
           firmwareMajor: payload[1],
           firmwareMinor: payload[2],
+        );
+      case typeCtrl:
+        final jack = PedalCtrlJack.values.elementAtOrNull(payload[0]);
+        final contact = PedalCtrlContact.values.elementAtOrNull(payload[1]);
+        final kind = PedalCtrlKind.values.elementAtOrNull(payload[2]);
+        if (jack == null || contact == null || kind == null) return null;
+        // The ring is the pot's supply: a travel there is a corrupt frame.
+        if (contact == PedalCtrlContact.ring &&
+            kind != PedalCtrlKind.switchPedal) {
+          return null;
+        }
+        // An empty jack is the whole jack, and carries nothing.
+        if (kind == PedalCtrlKind.none && payload[3] != 0) return null;
+        return CtrlMessage(
+          jack: jack,
+          contact: contact,
+          kind: kind,
+          value: payload[3],
         );
       case typeState:
         final frame = decodeStatePayload(payload);
