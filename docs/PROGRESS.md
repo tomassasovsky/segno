@@ -44,6 +44,10 @@ archive producer and installer from #990 stay authoritative. See the
 [integration record](APPLIANCE_INTEGRATION.md#startup-readiness-and-release-inspection)
 for checks and the remaining device boundary.
 
+Release runners explicitly install `squashfs-tools` for RAUC bundle inspection.
+Build 138 compiled successfully but failed during collection because the runner
+lacked the archive extractor; inspection remains required before publication.
+
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
