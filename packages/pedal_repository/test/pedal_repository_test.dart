@@ -511,14 +511,15 @@ void main() {
           PedalCtrlJack.ctrl1,
           const PedalCtrlCalibration(min: 24, max: 200),
         );
-        link.emit(
-          const CtrlMessage(
-            jack: PedalCtrlJack.ctrl1,
-            kind: PedalCtrlKind.none,
-            value: 0,
-          ),
-        );
-        link.emit(raw(200));
+        link
+          ..emit(
+            const CtrlMessage(
+              jack: PedalCtrlJack.ctrl1,
+              kind: PedalCtrlKind.none,
+              value: 0,
+            ),
+          )
+          ..emit(raw(200));
         async.flushMicrotasks();
         expect(seen.last.value, 255);
       });
