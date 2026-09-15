@@ -7,9 +7,13 @@ on:
       - '.github/workflows/segno-transfer.yaml'
   push:
     branches: [master]
+    tags: ['transfer-v*']
     paths:
       - 'apps/segno_transfer/**'
       - '.github/workflows/segno-transfer.yaml'
+
+permissions:
+  contents: read
 
 jobs:
   mac-app:
@@ -28,3 +32,40 @@ jobs:
         run: swift test --package-path apps/segno_transfer
       - name: Build the Mac app
         run: bash apps/segno_transfer/build-app.sh
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/transfer-v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 'apps/segno_transfer/dist/Segno Transfer.app/Contents/Info.plist')
+          test "$RELEASE_TAG" = "transfer-v$version"
+      - name: Package the download
+        run: bash apps/segno_transfer/package-app.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: segno-transfer-macos-arm64
+          path: |
+            apps/segno_transfer/dist/Segno-Transfer-*.dmg
+            apps/segno_transfer/dist/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/transfer-v')
+    needs: mac-app
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: segno-transfer-macos-arm64
+          path: release
+      - name: Publish Segno Transfer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/* --verify-tag --latest=false \
+            --title "Segno Transfer ${RELEASE_TAG#transfer-v}" \
+            --notes-file apps/segno_transfer/RELEASE_NOTES.md

@@ -25,6 +25,11 @@ source hashes, and Finder reveal. Automated checks cover the transfer failure
 paths, selection state and playback. Source review and product approval remain
 separate from this local app delivery; #1056 retains its merge gate.
 
+The owner approved free GitHub distribution with local signing and no paid
+Apple signing or notarization. Companion tags use `transfer-vVERSION`; their
+workflow tests and builds the Apple Silicon disk image, includes installation
+instructions and the license, and publishes a checksum alongside the download.
+
 ## September 2026 appliance integration
 
 The console link, CTRL jacks, and appliance delivery stack (#984, #986, #990)
