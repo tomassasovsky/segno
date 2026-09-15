@@ -85,12 +85,15 @@ space creation of the secondary native view after the main view mounts.
 The app honors the current preference when the delay ends and cancels a
 pending open when its owner unmounts.
 
-The release workflow requires RAUC and inspects the copied bundle before
-writing its publication manifest. It checks the selected board's compatible
-string, release version, exactly one rootfs image and one boot archive,
+The bundle recipe inspects the signed artifact before deployment, using the
+pinned Yocto-native RAUC, archive tools and jq. Native RAUC enables JSON
+support explicitly; the release host does not need RAUC. It checks the selected
+board's compatible string, release version, exactly one rootfs image and one boot archive,
 nonempty payload metadata and checksums, and the boot archive's `install`
-hook. This inspects the artifact rather than inferring its contents from the
-recipe. Signature trust remains the appliance's install-time check.
+hook. The boot archive retains meta-rauc’s `.tar.img` filename for file slots.
+This inspects the artifact rather than inferring its contents from the recipe.
+Collection requires the exact versioned bundle filename and fails if it is
+missing or empty. Signature trust remains the appliance's install-time check.
 
 Local behavior checks use real UNIX sockets, a sandboxed launch block,
 widget tests, and valid/invalid RAUC metadata. Linux CI additionally creates

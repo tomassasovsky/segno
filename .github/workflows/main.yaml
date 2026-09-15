@@ -378,6 +378,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq rauc squashfs-tools
       - name: Inspect update bundle test artifacts
         run: bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
+      - name: Run bundle collection tests
+        run: bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_collection_tests.sh
       - name: Run update bundle hook tests
         run: bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_hook_tests.sh
       - name: Run boot-slot recipe tests

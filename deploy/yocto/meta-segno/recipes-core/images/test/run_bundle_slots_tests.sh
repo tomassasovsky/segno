@@ -2,7 +2,7 @@
 # Contract failures use RAUC's JSON format; Linux CI also builds signed bundles.
 set -euo pipefail
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-python3 - "$here/check_bundle.sh" <<'PY'
+python3 - "$here/../files/check_bundle.sh" <<'PY'
 import copy
 import json
 import os
@@ -31,7 +31,7 @@ exit "${BUNDLE_TEST_STATUS:-0}"
         "format": "verity", "images": [
             {"rootfs": {"filename": "rootfs.ext4", "size": 4096,
                         "checksum": "a" * 64, "hooks": []}},
-            {"firmware": {"filename": "segno-bootfs-raspberrypi5.tar", "size": 10240,
+            {"firmware": {"filename": "segno-bootfs-raspberrypi5.tar.img", "size": 10240,
                           "checksum": "b" * 64, "hooks": ["install"]}},
         ],
     }
@@ -78,7 +78,8 @@ mkdir "$work/input" "$work/boot"
 openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=segno-test/ -days 1 \
     -keyout "$work/key.pem" -out "$work/cert.pem" >/dev/null 2>&1
 printf 'root=XXX\n' > "$work/boot/cmdline.txt"
-tar -cf "$work/input/boot.tar" -C "$work/boot" .
+# meta-rauc adds .img to file-slot payloads, including the boot tar archive.
+tar -cf "$work/input/segno-bootfs-raspberrypi5.tar.img" -C "$work/boot" .
 # Verity requires the compressed squashfs to exceed one 4096-byte block.
 # Incompressible fixture bytes exercise the real signed-bundle path.
 openssl rand 16384 > "$work/input/rootfs.ext4"
@@ -95,20 +96,28 @@ filename=install.sh
 [image.rootfs]
 filename=rootfs.ext4
 [image.firmware]
-filename=boot.tar
+filename=segno-bootfs-raspberrypi5.tar.img
 hooks=install
 EOF
 rauc bundle --cert="$work/cert.pem" --key="$work/key.pem" \
     --mksquashfs-args='-processors 1' "$work/input" "$work/good.raucb"
-bash "$here/check_bundle.sh" "$work/good.raucb" segno-raspberrypi5 0.1.0-test.1
+bash "$here/../files/check_bundle.sh" "$work/good.raucb" segno-raspberrypi5 0.1.0-test.1
+
+for expected in 'another-board 0.1.0-test.1' 'segno-raspberrypi5 old'; do
+    read -r compatible version <<< "$expected"
+    if bash "$here/../files/check_bundle.sh" "$work/good.raucb" "$compatible" "$version"; then
+        echo "FAIL: signed artifact passed with wrong board/version: $expected" >&2
+        exit 1
+    fi
+done
 
 # The original failure shape: a valid signed bundle carrying rootfs alone.
 sed '/^\[image.firmware\]/,$d' "$work/input/manifest.raucm" > "$work/manifest"
 mv "$work/manifest" "$work/input/manifest.raucm"
 rauc bundle --cert="$work/cert.pem" --key="$work/key.pem" \
     --mksquashfs-args='-processors 1' "$work/input" "$work/rootfs-only.raucb"
-if bash "$here/check_bundle.sh" "$work/rootfs-only.raucb" segno-raspberrypi5 0.1.0-test.1; then
+if bash "$here/../files/check_bundle.sh" "$work/rootfs-only.raucb" segno-raspberrypi5 0.1.0-test.1; then
     echo "FAIL: rootfs-only signed artifact passed inspection" >&2
     exit 1
 fi
-echo "signed-artifact inspection: 2 cases passed"
+echo "signed-artifact inspection: 4 cases passed"

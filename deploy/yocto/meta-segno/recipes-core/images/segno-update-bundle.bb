@@ -3,6 +3,11 @@ SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — boot + rootfs
 # `rauc install` writes it to the inactive A/B slot. CI publishes it per channel.
 inherit bundle
 
+# Inspect with the same pinned native tools that create the bundle. Host RAUC
+# versions can be too old to read verity bundles; bundle.bbclass already adds
+# rauc-native and squashfs-tools-native to the task's dependencies.
+DEPENDS += "jq-native"
+
 # The bundle carries this project's own images and one hook script. Declaring
 # it keeps the QA check that fires as soon as a recipe fetches any file — the
 # hook — from demanding a licence checksum for material we author.
@@ -19,6 +24,9 @@ RAUC_BUNDLE_COMPATIBLE = "${SEGNO_RAUC_COMPATIBLE}"
 # Deterministic — using ${DATETIME} makes the task basehash non-reproducible.
 SEGNO_BUILD_VERSION   ?= "0"
 RAUC_BUNDLE_VERSION    = "${SEGNO_BUILD_VERSION}"
+# Collection names the exact requested release instead of selecting an older
+# cached bundle when metadata did not reach this recipe.
+BUNDLE_NAME = "${BUNDLE_BASENAME}-${MACHINE}-${RAUC_BUNDLE_VERSION}"
 
 # Signing material. RAUC_KEYDIR holds development-1.{key,cert}.pem. Default is a
 # gitignored dir INSIDE meta-segno so it's visible inside the kas container (which
@@ -77,4 +85,9 @@ RAUC_SLOT_firmware[hooks] = "install"
 # points each slot at its own rootfs, the way the image build does per slot.
 # Only the file: the hook is per-SLOT (declared above), not a bundle-wide one.
 RAUC_BUNDLE_HOOKS[file] = "segno-bundle-hook.sh"
-SRC_URI += "file://segno-bundle-hook.sh"
+SRC_URI += "file://segno-bundle-hook.sh file://check_bundle.sh"
+
+do_bundle:append() {
+    bash "${UNPACKDIR}/check_bundle.sh" "${B}/bundle.raucb" \
+        "${RAUC_BUNDLE_COMPATIBLE}" "${RAUC_BUNDLE_VERSION}"
+}

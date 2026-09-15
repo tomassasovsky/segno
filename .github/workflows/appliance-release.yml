@@ -224,8 +224,8 @@ jobs:
           name: segno-console-board
           path: deploy/yocto/prebuilt/console-board
 
-      - name: Install bundle inspection tools
-        run: sudo apt-get update && sudo apt-get install -y rauc jq squashfs-tools
+      - name: Install release metadata tools
+        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Restore the app binary's executable bit
         # segno-bundle.bb's do_install checks `[ -x "${bundle}/segno" ]`; the
@@ -396,14 +396,12 @@ jobs:
           set -eu
           out=release-artifacts; mkdir -p "$out"
           machine='${{ needs.determine-meta.outputs.machine }}'
-          raucb=$(readlink -e "$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"/segno-update-bundle-"$machine".raucb 2>/dev/null \
-                  || find "$YOCTO_WORK_DIR" -name "segno-update-bundle-$machine-*.raucb" | sort | tail -1)
+          raucb="$YOCTO_WORK_DIR/build/tmp/deploy/images/$machine/segno-update-bundle-$machine-${{ needs.determine-meta.outputs.version }}.raucb"
+          test -s "$raucb"
           bundle="segno-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
-          compatible=$(sed -n 's/^[[:space:]]*SEGNO_RAUC_COMPATIBLE = "\([^"]*\)".*/\1/p' \
-            '${{ needs.determine-meta.outputs.kas }}')
-          bash deploy/yocto/meta-segno/recipes-core/images/test/check_bundle.sh \
-            "$out/$bundle" "$compatible" "${{ needs.determine-meta.outputs.version }}"
+          # segno-update-bundle validates this artifact with Yocto-native RAUC
+          # before deploying it; release hosts do not need a second RAUC.
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
           # version is a semver string (e.g. "0.2.0" / "0.2.0-experimental.9")
           # — must be JSON-quoted. The int-era unquoted form is no longer valid.
