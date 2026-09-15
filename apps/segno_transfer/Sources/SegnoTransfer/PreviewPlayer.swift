@@ -17,6 +17,7 @@ final class PreviewPlayer: ObservableObject {
   private var asset: AVURLAsset?
   private var loader: RemoteAudioLoader?
   private var pendingSeek: UUID?
+  private var cleanupTask: Task<Void, Never>?
 
   init(muted: Bool = false) { player.isMuted = muted }
 
@@ -119,7 +120,14 @@ final class PreviewPlayer: ObservableObject {
   func stop() {
     player.pause()
     asset?.cancelLoading()
-    loader?.stop()
+    if let loader {
+      loader.stop()
+      let previous = cleanupTask
+      cleanupTask = Task.detached {
+        await previous?.value
+        loader.waitForReads()
+      }
+    }
     loader = nil
     asset = nil
     pendingSeek = nil
@@ -137,6 +145,10 @@ final class PreviewPlayer: ObservableObject {
     isPlaying = false
     isBuffering = false
     error = nil
+  }
+
+  func waitForCleanup() async {
+    await cleanupTask?.value
   }
 
   static func timeLabel(_ seconds: Double) -> String {

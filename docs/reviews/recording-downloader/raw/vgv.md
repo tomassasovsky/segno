@@ -1,5 +1,7 @@
 ## VGV Code Review
 
+<!-- cspell:words hashlib -->
+
 ### Summary
 
 No unresolved VGV convention findings in the complete reviewed companion revision, including full-file preview playback and seeking. The native SwiftUI design remains appropriately small and layered: views dispatch actions; AppModel coordinates selection and transfers through the repository; TransferCore owns SSH and verified file publication; PreviewPlayer owns native local-file playback and observable playback state. The preview does not alter the selected download set or publish files into the chosen download folder. This is a source convention review, with live acceptance and the product merge gate tracked separately.

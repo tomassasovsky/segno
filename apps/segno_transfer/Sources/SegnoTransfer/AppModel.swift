@@ -252,6 +252,12 @@ final class AppModel: ObservableObject {
     previewTitle = nil
   }
 
+  func finishForTermination() async {
+    busy = true
+    closePreview()
+    await previewPlayer.waitForCleanup()
+  }
+
   func reveal() {
     if downloaded.isEmpty {
       NSWorkspace.shared.open(destination)

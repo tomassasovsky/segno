@@ -72,6 +72,11 @@ final class RemoteAudioLoader: NSObject, AVAssetResourceLoaderDelegate {
     queue.sync { failureHandler = handler }
   }
 
+  /// After stop(), wait off the main actor for child processes and temporary files to be cleaned up.
+  func waitForReads() {
+    workers.waitUntilAllOperationsAreFinished()
+  }
+
   private func supply(_ request: AVAssetResourceLoadingRequest, token: CancellationToken) {
     guard !request.isCancelled, !request.isFinished else {
       pending.removeValue(forKey: request)?.cancel()

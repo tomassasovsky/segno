@@ -31,8 +31,9 @@ Click the **Play** button beside any audio file to hear it before downloading.
 Playback streams small sections over the existing connection and starts before
 the whole file transfers. Use Play/Pause and the timeline to seek anywhere; the
 app fetches the requested section. A buffering message appears when more audio
-is needed. Closing the preview or quitting stops its reads. Listening does not
-change the download selection or add a copy to the chosen folder.
+is needed. Closing the preview stops its reads. Quitting waits for connection
+and temporary-file cleanup, including recently closed previews. Listening does
+not change the download selection or add a copy to the chosen folder.
 
 Streaming uses SSH transport integrity and checks that each section belongs to
 the listed source version. **Download** still retrieves and verifies a complete

@@ -1,5 +1,7 @@
 # Segno Transfer — Test Quality Review
 
+<!-- cspell:words coverdir hashlib -->
+
 ## Scope and revision
 
 Reviewed all new files under `apps/segno_transfer`, the Mac workflow, and the September 15 recording-downloader brainstorm/plan, against `origin/master` **848f1337251989f849c7851f72b6126b5c1712ea**. This refresh includes the appliance-tool correction, strengthened transfer/cancellation tests, and the owner's added full-file preview with seeking.

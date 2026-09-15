@@ -1,5 +1,7 @@
 ## Simplification Analysis
 
+<!-- cspell:words AVURL -->
+
 ### Core Purpose
 
 Start listening before an entire appliance recording transfers, seek to arbitrary positions by fetching the required sections, and stop obsolete network reads when the preview closes, changes or fails. Preserve the existing verified-download workflow for copies the user chooses to keep.
