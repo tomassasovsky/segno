@@ -61,7 +61,7 @@ tolerance only has to survive ~100 mm of internal wiring.
   PDO before first power-up.
 - **Is the contract really 20 V / 5 A?** The chip is I2C-readable: its RDO
   (`0x91`–`0x94`) carries the current the source actually granted and a
-  `capaMismatch` bit that is set when that was less than the PDO asked for;
+  capability mismatch bit that is set when that was less than the PDO asked for;
   `0x21` holds the negotiated voltage. A 65 W brick grants 20 V / 3.25 A with
   mismatch set: everything boots and the console browns out only when 26
   WS2812s go white under two lit screens. Console board **v3** has a 3-way
