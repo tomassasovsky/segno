@@ -29,6 +29,21 @@ existing loop (#1051), including loop-top downbeats for loops shorter than one
 beat. Native regression and sanitizer checks pass. The appliance listening
 check remains pending; this source change does not install an update.
 
+## Startup readiness and bundle inspection (#980 / #982)
+
+The remaining startup work from #982 now follows the current appliance stack:
+the launcher waits for a stable Wayland socket and stops if that wait fails,
+restarts pause for three seconds, and the secondary native window opens after
+a 750 ms startup delay. Preference changes cannot bypass that delay, and
+unmounting cancels it. These timings mitigate #970; they do not establish that
+EGL is ready or replace compositor-restart verification on the appliance.
+
+Release collection inspects the actual RAUC bundle for the selected board and
+version, its rootfs and boot archive, and the firmware install hook. The boot
+archive producer and installer from #990 stay authoritative. See the
+[integration record](APPLIANCE_INTEGRATION.md#startup-readiness-and-release-inspection)
+for checks and the remaining device boundary.
+
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
