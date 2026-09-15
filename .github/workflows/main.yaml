@@ -326,7 +326,11 @@ jobs:
           flutter-version: "3.47.x"
           channel: stable
       - name: Build the engine test library
-        run: echo "SEGNO_ENGINE_LIB=$(bash packages/segno_engine/tool/build_test_lib.sh)" >> "$GITHUB_ENV"
+        run: |
+          set -eu
+          engine_test_lib=$(bash packages/segno_engine/tool/build_test_lib.sh)
+          test -s "$engine_test_lib"
+          echo "SEGNO_ENGINE_LIB=$engine_test_lib" >> "$GITHUB_ENV"
       - name: Run the control-sequence fuzzer
         run: |
           flutter pub get
