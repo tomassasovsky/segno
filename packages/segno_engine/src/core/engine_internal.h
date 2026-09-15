@@ -175,6 +175,16 @@ int le_psola_detect(const float* x, int n, int sr, float* out_period,
 int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
                          float* out_period, float* out_voiced);
 
+/* The read side of the tuner's device-rate refinement ring: copies its
+ * LE_TUNER_RAW samples into `out` oldest-first, which is the contiguous
+ * chronological window the refinement pass walks. The ring is circular (a
+ * shifting FIFO cost 8188 bytes memmoved per frame — see tuner_raw in
+ * engine_private.h), so this is where the wrap is untangled, and exposing it
+ * is what lets a test pin that a wrapped ring reads back exactly what the
+ * shifting version did. Returns 0 and leaves `out` untouched until the ring
+ * has filled once. Defined in engine_process.c. */
+int le_tuner_raw_window(const le_engine* e, float* out);
+
 /* ---- ASIO bridge math (pure, platform-agnostic; defined in engine.c) ---- *
  *
  * ASIO hands the device callback non-interleaved, per-channel blocks in the
