@@ -1357,9 +1357,9 @@ struct le_engine {
    * click_remaining > 0 while a burst is decaying; click_grid_gate is last
    * frame's loop-locked gate (a rise re-arms grid_prev_beat so the current
    * beat clicks immediately). The free-running scheduler (click_free_*) runs
-   * the beat phase off the nominal grid whenever no loop-locked grid exists
-   * (defining recording, sync-off playback); it re-anchors its downbeat each
-   * time it activates. */
+   * the beat phase off the nominal grid while no loop exists (the defining
+   * recording); it re-anchors its downbeat each time it activates. Once a
+   * loop exists, grid_beat_frame schedules the click, sync on or off (#1050). */
   int32_t click_remaining;
   int32_t click_len;
   float click_phase;
