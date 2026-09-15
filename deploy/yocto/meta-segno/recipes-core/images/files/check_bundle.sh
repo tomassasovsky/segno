@@ -16,7 +16,7 @@ jq -e --arg compatible "$compatible" --arg version "$version" '
         (.filename | endswith(".ext4")) and .size > 0
         and (.checksum | test("^[0-9a-f]{64}$")))
     and (.images[] | select(has("firmware")) | .firmware |
-        (.filename | endswith(".tar")) and .size > 0
+        (.filename | endswith(".tar.img")) and .size > 0
         and (.checksum | test("^[0-9a-f]{64}$")) and .hooks == ["install"])
 ' <<< "$info" >/dev/null
 echo "bundle verified: $compatible $version, rootfs + boot archive with install hook"
