@@ -27,7 +27,7 @@ final class PreviewPlayerTests: XCTestCase {
       try file.write(from: buffer)
     }
     let player = PreviewPlayer(muted: true)
-    try await player.prepare(url)
+    try await player.prepare(AVURLAsset(url: url))
     XCTAssertEqual(player.duration, 2, accuracy: 0.02)
     player.playPause()
     XCTAssertTrue(player.isPlaying)
@@ -54,7 +54,7 @@ final class PreviewPlayerTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: url) }
     let player = PreviewPlayer(muted: true)
     do {
-      try await player.prepare(url)
+      try await player.prepare(AVURLAsset(url: url))
       XCTFail("Invalid audio must fail")
     } catch {
       XCTAssertFalse(player.isPlaying)

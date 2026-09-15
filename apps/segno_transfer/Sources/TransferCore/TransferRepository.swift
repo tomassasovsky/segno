@@ -4,6 +4,10 @@ import Foundation
 
 public protocol RecordingRepository {
   func catalog(connection: Connection, token: CancellationToken) throws -> RecordingCatalog
+  func read(
+    recording: Recording, file: RecordingFile, offset: Int64, length: Int,
+    connection: Connection, token: CancellationToken
+  ) throws -> Data
   func download(
     recording: Recording, file: RecordingFile, name: String, destination: URL,
     connection: Connection, token: CancellationToken,
@@ -19,6 +23,30 @@ public final class TransferRepository: RecordingRepository {
     let data = try response(
       ["action": "catalog", "root": connection.root], connection: connection, token: token)
     return try JSONDecoder().decode(RecordingCatalog.self, from: data)
+  }
+
+  public func read(
+    recording: Recording, file: RecordingFile, offset: Int64, length: Int,
+    connection: Connection, token: CancellationToken
+  ) throws -> Data {
+    guard offset >= 0, length > 0, length <= 1024 * 1024, file.bytes >= Int64(length),
+      offset <= file.bytes - Int64(length)
+    else { throw TransferError.message("The requested audio range is invalid.") }
+    let temporary = try TemporaryDownload(parent: FileManager.default.temporaryDirectory)
+    defer { temporary.remove() }
+    try ssh.request(
+      [
+        "action": "read", "root": connection.root, "recording": recording.id,
+        "file": file.path, "version": file.version, "offset": String(offset),
+        "length": String(length),
+      ],
+      connection: connection, to: temporary.file, token: token,
+      maximumBytes: Int64(length), inactivityTimeout: 15)
+    let data = try Data(contentsOf: temporary.file)
+    guard data.count == length else {
+      throw TransferError.message("The audio read was incomplete. Try the preview again.")
+    }
+    return data
   }
 
   private func response(

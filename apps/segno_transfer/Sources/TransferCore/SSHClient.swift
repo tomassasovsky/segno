@@ -3,7 +3,7 @@ import Foundation
 
 public final class SSHClient {
   private let executable: URL
-  private let helper: String
+  private let helper: URL
 
   public init(executable: URL = URL(fileURLWithPath: "/usr/bin/ssh")) throws {
     self.executable = executable
@@ -25,7 +25,7 @@ public final class SSHClient {
       throw TransferError.message(
         "The app is missing its appliance helper. Rebuild or reinstall Segno Transfer.")
     }
-    helper = try String(contentsOf: resource, encoding: .utf8)
+    helper = resource
   }
 
   public static func shellQuote(_ value: String) -> String {
@@ -34,13 +34,15 @@ public final class SSHClient {
 
   public func request(
     _ request: [String: String], connection: Connection, to output: URL,
-    token: CancellationToken, maximumBytes: Int64,
+    token: CancellationToken, maximumBytes: Int64, inactivityTimeout: TimeInterval = 120,
     progress: @escaping (Int64) -> Void = { _ in }
   ) throws {
     try connection.validate()
     try token.check()
-    let fields = ["action", "root", "recording", "file", "version"].map { request[$0] ?? "" }
-    let command = (["python3", "-c", helper] + fields).map(Self.shellQuote).joined(separator: " ")
+    let fields = ["action", "root", "recording", "file", "version", "offset", "length"].map {
+      request[$0] ?? ""
+    }
+    let command = (["python3", "-"] + fields).map(Self.shellQuote).joined(separator: " ")
     let process = Process()
     process.executableURL = executable
     var arguments = [
@@ -51,7 +53,9 @@ public final class SSHClient {
     if !connection.identityFile.isEmpty { arguments += ["-i", connection.identityFile] }
     arguments += ["-l", connection.user, connection.host, command]
     process.arguments = arguments
-    process.standardInput = FileHandle.nullDevice
+    let inputHandle = try FileHandle(forReadingFrom: helper)
+    defer { try? inputHandle.close() }
+    process.standardInput = inputHandle
     let outputHandle = try FileHandle(forWritingTo: output)
     let errors = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     FileManager.default.createFile(
@@ -82,7 +86,7 @@ public final class SSHClient {
         failure = TransferError.message(
           "The appliance returned more data than expected. Refresh and try again.")
       }
-      if Date().timeIntervalSince(lastChange) > 120 {
+      if Date().timeIntervalSince(lastChange) > inactivityTimeout {
         failure = TransferError.message(
           "The appliance stopped responding. Check its connection and try again.")
       }

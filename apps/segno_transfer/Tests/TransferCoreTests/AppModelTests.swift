@@ -10,12 +10,27 @@ private final class FixtureRepository: RecordingRepository {
   var holdDownloadAt: Int?
   private let startLock = NSLock()
   private var starts = 0
+  private var reads = 0
+  var readCount: Int {
+    startLock.lock()
+    defer { startLock.unlock() }
+    return reads
+  }
   var startedCount: Int {
     startLock.lock()
     defer { startLock.unlock() }
     return starts
   }
   var names: [String] = []
+  func read(
+    recording: Recording, file: RecordingFile, offset: Int64, length: Int,
+    connection: Connection, token: CancellationToken
+  ) throws -> Data {
+    startLock.lock()
+    reads += 1
+    startLock.unlock()
+    throw TransferError.message("Preview connection failed")
+  }
   func catalog(connection: Connection, token: CancellationToken) throws -> RecordingCatalog {
     if failCatalog { throw TransferError.message("Appliance offline") }
     return try JSONDecoder().decode(
@@ -156,13 +171,29 @@ final class AppModelTests: XCTestCase {
     try await waitUntilIdle(model)
     let before = model.selected
     let folder = model.destination
-    repository.failDownload = true
     let recording = try XCTUnwrap(model.recordings.first)
     model.preparePreview(recording, recording.files[0])
     try await waitUntilIdle(model)
     XCTAssertEqual(model.selected, before)
     XCTAssertEqual(model.destination, folder)
     XCTAssertNil(model.previewTitle)
-    XCTAssertEqual(model.error, "Verification failed")
+    XCTAssertNotNil(model.error)
+    XCTAssertTrue(repository.names.isEmpty)
+  }
+
+  func testImmediatePreviewCancellationDoesNotStartReading() async throws {
+    let (model, repository) = fixture()
+    model.connect()
+    try await waitUntilIdle(model)
+    let before = model.selected
+    let recording = try XCTUnwrap(model.recordings.first)
+    model.preparePreview(recording, recording.files[0])
+    model.cancel()
+    try await waitUntilIdle(model)
+    XCTAssertEqual(repository.readCount, 0)
+    XCTAssertEqual(model.selected, before)
+    XCTAssertNil(model.previewTitle)
+    XCTAssertNil(model.error)
+    XCTAssertEqual(model.status, "Preview cancelled")
   }
 }
