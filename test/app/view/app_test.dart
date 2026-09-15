@@ -276,6 +276,63 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    for (final redo in [false, true]) {
+      testWidgets('explains a refused ${redo ? 'redo' : 'undo'} without '
+          'leaving Tracks', (tester) async {
+        await pumpApp(tester, NoopWaveformWindowService());
+        engine.nextHistoryModeGate = EngineResult.modeMismatch;
+        final result = redo ? repository.redo() : repository.undo();
+        expect(result, EngineResult.modeMismatch);
+        await tester.pumpAndSettle();
+        expect(find.text('Loop does not fit this mode'), findsOneWidget);
+        expect(
+          find.text(
+            'Choose Free in Loop settings, then try '
+            '${redo ? 'Redo' : 'Undo'} again. Your session is unchanged.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.byType(TracksView), findsOneWidget);
+        expect(engine.historyModeGateCalls.last, (channels: 1, redo: redo));
+        // The message can be dismissed; it does not force a mode change.
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const Key(AppToastId.recoveryRefused)),
+            matching: find.byType(IconButton),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Loop does not fit this mode'), findsNothing);
+        expect(repository.settledLooperMode, LooperMode.multi);
+      });
+    }
+
+    testWidgets('a pending edit asks for a retry, not a different mode', (
+      tester,
+    ) async {
+      await pumpApp(tester, NoopWaveformWindowService());
+      engine.nextHistoryModeGate = EngineResult.notReady;
+      expect(repository.redo(), EngineResult.notReady);
+      await tester.pumpAndSettle();
+      expect(find.text('Recovery is not ready yet'), findsOneWidget);
+      expect(
+        find.text(
+          'Let the current change finish, then try again. '
+          'Your session is unchanged.',
+        ),
+        findsOneWidget,
+      );
+      // A different refusal replaces the message instead of stacking it.
+      engine.nextHistoryModeGate = EngineResult.modeMismatch;
+      repository.undo();
+      await tester.pumpAndSettle();
+      expect(find.text('Recovery is not ready yet'), findsNothing);
+      expect(find.text('Loop does not fit this mode'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 11));
+      await tester.pumpAndSettle();
+      expect(find.text('Loop does not fit this mode'), findsNothing);
+    });
+
     testWidgets('shows the startup update toast when a build is available', (
       tester,
     ) async {

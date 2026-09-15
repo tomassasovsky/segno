@@ -69,6 +69,14 @@ typedef struct le_command {
               * silence), and `position`/`iteration` are then both 0. */
       int32_t position, master_len, iteration;
     } perf_arm;
+    struct { /* Mode/crown/defining RECORD: acknowledge typed producers. */
+      int32_t value;
+      uint32_t sequence;
+    } clock;
+    struct { /* LE_EVT_CLEAR_FROZEN: a stopped take, tagged by its CLEAR. */
+      int32_t channel, len, master_len;
+      uint32_t generation;
+    } frozen;
     struct { /* LE_CMD_RESTORE_CLEAR: undo of an undoable clear. `state` is the
               * pre-clear LE_TRACK_*; `master_len` re-establishes the grid when
               * the clear emptied the last track and reset the clock (0 = the

@@ -37,6 +37,27 @@ import 'package:segno_engine/segno_engine.dart'
         TrackEffectParam,
         TrackEffectType;
 
+/// The history action the player requested.
+enum RecoveryAction {
+  /// Recover the previous edit.
+  undo,
+
+  /// Reapply the last undone edit.
+  redo,
+}
+
+/// A recovery refused before changing the current session.
+class RecoveryRefusal {
+  /// Creates a refusal for the requested [action].
+  const RecoveryRefusal({required this.action, required this.result});
+
+  /// The requested direction through history.
+  final RecoveryAction action;
+
+  /// Whether the recording does not fit or an earlier command is pending.
+  final EngineResult result;
+}
+
 /// Builds the production [AudioEngine] backed by the native segno engine.
 ///
 /// Lets the composition root obtain an engine without naming or importing the
@@ -470,6 +491,41 @@ class LooperRepository {
   final StreamController<void> _rigReplaced =
       StreamController<void>.broadcast();
 
+  /// Refused history operations from every control surface.
+  Stream<RecoveryRefusal> get recoveryRefusals => _recoveryRefusals.stream;
+
+  final StreamController<RecoveryRefusal> _recoveryRefusals =
+      StreamController<RecoveryRefusal>.broadcast();
+
+  EngineResult _reportRecoveryResult(
+    EngineResult result, {
+    required bool redo,
+  }) {
+    if (result == EngineResult.modeMismatch ||
+        result == EngineResult.notReady) {
+      _recoveryRefusals.add(
+        RecoveryRefusal(
+          action: redo ? RecoveryAction.redo : RecoveryAction.undo,
+          result: result,
+        ),
+      );
+    }
+    return result;
+  }
+
+  EngineResult _historyModeGate(Iterable<int> channels, {required bool redo}) {
+    var mask = 0;
+    for (final channel in channels) {
+      // The FFI mask is uint32; native validates the configured track count.
+      if (channel < 0 || channel >= 32) return EngineResult.invalid;
+      mask |= 1 << channel;
+    }
+    return _reportRecoveryResult(
+      _engine.historyModeGate(channels: mask, redo: redo),
+      redo: redo,
+    );
+  }
+
   /// Distinct stream of looper states.
   ///
   /// A new subscriber immediately receives the most recent state before live
@@ -651,8 +707,13 @@ class LooperRepository {
     if (snapshot.recordOffsetFrames > 0) {
       _recordOffset = snapshot.recordOffsetFrames;
     }
+    _settlePendingClearUndos();
     final next = _project(snapshot);
-    if (next == _last) return;
+    final modeWasPending = _requestedLooperMode != null;
+    _rememberLooperMode(next, snapshot.looperMode, poll: true);
+    final modeSettled = modeWasPending && _requestedLooperMode == null;
+    // Settlement also reaches persistence when the visible state is unchanged.
+    if (next == _last && !modeSettled) return;
     _last = next;
     _forgetEmptyWaveforms(next);
     // Before listeners see it: `auto` monitors resolve against the arm state
@@ -667,8 +728,13 @@ class LooperRepository {
   /// param the UI drives — reflects on the next frame rather than waiting for
   /// the next poll tick (which would make a dragged knob feel a tick behind).
   void _reproject() {
-    final next = _project(_engine.snapshot());
-    if (next == _last) return;
+    final snapshot = _engine.snapshot();
+    final next = _project(snapshot);
+    final modeWasPending = _requestedLooperMode != null;
+    _rememberLooperMode(next, snapshot.looperMode, poll: false);
+    final modeSettled = modeWasPending && _requestedLooperMode == null;
+    // Settlement also reaches persistence when the visible state is unchanged.
+    if (next == _last && !modeSettled) return;
     _last = next;
     _forgetEmptyWaveforms(next);
     _reconcileAutoMonitors();
@@ -942,6 +1008,11 @@ class LooperRepository {
         ..setClickVolume(_clickVolume)
         ..setCountIn(_countInBars)
         ..setLooperMode(_looperMode);
+      // The replay rides the ring like a call: armed as a request so the first
+      // report after the start (still the engine's default) does not overwrite
+      // the remembered mode before the replay has landed.
+      _requestedLooperMode = _looperMode;
+      _requestReports = 0;
       // A crown requested while stopped lands now, once. The engine owns the
       // crown from here (see [_pendingCrown]).
       final pendingCrown = _pendingCrown;
@@ -1239,6 +1310,12 @@ class LooperRepository {
         ? snapshot.tracks[channel].state
         : null;
     if (state == TrackState.empty) {
+      // A fresh take retires the clear's restore point (the engine's rule),
+      // and with it an undo still waiting for that point to land.
+      if (_pendingClearUndo.remove(channel)) _clearRestore.remove(channel);
+      if (_pendingClearAllUndo.contains(channel)) {
+        _pendingClearAllUndo = const {};
+      }
       _snapshotMonitorChainsOntoLanes(channel);
       // The engine unmutes every lane on a record-from-empty (a fresh take is
       // always audible); forget the remembered mutes too, or a device
@@ -1418,13 +1495,189 @@ class LooperRepository {
   /// This is the USER's clear. [applySession] uses [_clearDestructive]
   /// instead — loading a session must never be undoable.
   EngineResult clear({int channel = 0}) {
+    // A single clear is its own operation: whatever group the last clear-all
+    // left behind no longer describes one edit.
+    _clearAllGroup = const {};
+    _clearAllPending = const {};
+    _pendingClearAllUndo = const {};
+    return _clearTrack(channel);
+  }
+
+  EngineResult _clearTrack(int channel) {
+    _pendingClearUndo.remove(channel);
     _snapshotForClearRestore(channel);
     _dropTakeState(channel);
-    return _engine.clearUndoable(channel: channel);
+    final result = _engine.clearUndoable(channel: channel);
+    // A capture the clear froze comes back audible (a capturing track is
+    // never observed muted, and the engine files its point with every lane
+    // unmuted): remember it that way, or a restart would replay a mute the
+    // engine never restored.
+    if (result.isOk && _engine.clearRestorePending(channel: channel)) {
+      final snapshot = _clearRestore[channel];
+      if (snapshot != null) {
+        _clearRestore[channel] = {
+          for (final entry in snapshot.entries)
+            entry.key: (
+              effects: entry.value.effects,
+              chainEnabled: entry.value.chainEnabled,
+              inheritedFrom: entry.value.inheritedFrom,
+              muted: false,
+            ),
+        };
+      }
+    }
+    return result;
+  }
+
+  /// Clears every track in [channels] as ONE grouped edit (accepted design,
+  /// slice 2): the next [undo] on any of them restores the whole group —
+  /// each take's content, layers, length and previous playing or stopped
+  /// state — and the next [redo] after that re-clears the group. A track
+  /// caught capturing is frozen stopped at the clear and comes back stopped,
+  /// never as a resumed capture; a cancelled arm stays idle.
+  ///
+  /// The group holds only while every member still offers its restore point:
+  /// a fresh take on a member retires that member's point (the engine's
+  /// rule), and the group with it — the per-track history then answers as
+  /// usual, and nothing newer is overwritten.
+  EngineResult clearAll(Iterable<int> channels) {
+    _pendingClearAllUndo = const {};
+    final group = <int>{};
+    final pending = <int>{};
+    var result = EngineResult.ok;
+    for (final channel in channels) {
+      final rc = _clearTrack(channel);
+      if (!rc.isOk) {
+        result = rc;
+        continue;
+      }
+      // Members are the takes the clear can give back, by the engine's own
+      // account: a restore point filed now (a playing or stopped take), or
+      // one still to be filed (a capture the clear froze — confirmed once
+      // its report lands, dropped if the capture had nothing). A redo-only
+      // track is erased but has no restore point, so it is not what the
+      // group's undo restores.
+      if (_engine.undoRestoresClear(channel: channel)) {
+        group.add(channel);
+      } else if (_engine.clearRestorePending(channel: channel)) {
+        pending.add(channel);
+      }
+    }
+    _clearAllGroup = group;
+    _clearAllPending = pending;
+    _clearAllRedoGroup = const {};
+    return result;
+  }
+
+  /// The channels the last [clearAll] erased with a restore point.
+  Set<int> _clearAllGroup = const {};
+
+  /// Frozen captures of the last [clearAll] whose restore point is still to
+  /// be filed: promoted to [_clearAllGroup] when it lands, dropped when the
+  /// capture turned out to hold nothing.
+  Set<int> _clearAllPending = const {};
+
+  /// The channels an undone [clearAll] restored.
+  Set<int> _clearAllRedoGroup = const {};
+
+  /// A grouped undo waits for every frozen point before changing any member.
+  Set<int> _pendingClearAllUndo = const {};
+
+  /// Whether the next [undo] would restore a whole cleared group.
+  bool get undoRestoresClearAll {
+    _settlePendingClearUndos();
+    return _intactClearAllGroup().isNotEmpty;
+  }
+
+  /// Tracks whose undo waits for the clear's frozen restore point to land:
+  /// tapped at a frozen clear, restored on the first poll after the engine
+  /// files the point, forgotten when the capture held nothing (or a fresh
+  /// take retired the point first).
+  final Set<int> _pendingClearUndo = {};
+
+  /// Settles the deferred taps whose point has landed or never will: the
+  /// take comes back (audio from the engine, chains from the snapshot), or
+  /// nothing does and the snapshot is dropped so an empty track carries no
+  /// leftover chain (the rule [_dropTakeState] enforces at the clear).
+  void _settlePendingClearUndos() {
+    if (_pendingClearAllUndo.isNotEmpty &&
+        !_pendingClearAllUndo.any(
+          (channel) => _engine.clearRestorePending(channel: channel),
+        )) {
+      final requested = _pendingClearAllUndo;
+      _pendingClearAllUndo = const {};
+      final group = _intactClearAllGroup();
+      if (group.isNotEmpty && requested.containsAll(group)) {
+        _undoClearGroup(group);
+      }
+    }
+    if (_pendingClearUndo.isEmpty) return;
+    for (final channel in _pendingClearUndo.toList()) {
+      if (_engine.clearRestorePending(channel: channel)) continue;
+      _pendingClearUndo.remove(channel);
+      if (_engine.undoRestoresClear(channel: channel)) {
+        _undoTrack(channel);
+      } else {
+        _clearRestore.remove(channel);
+        // A void member has no re-clear to offer the restored group.
+        _clearAllRedoGroup = _clearAllRedoGroup.difference({channel});
+      }
+    }
+  }
+
+  /// The clear-all group while every member still restores a cleared take;
+  /// empty while one does not.
+  ///
+  /// A frozen member whose point is still to be filed counts as a member.
+  /// The repository parks the whole group's Undo until every point lands,
+  /// then asks the engine to check all recovered lengths before restoring.
+  Set<int> _intactClearAllGroup() {
+    // Frozen members first: a filed point makes a member; neither pending
+    // nor filed means the capture held nothing to give back.
+    if (_clearAllPending.isNotEmpty) {
+      final group = {..._clearAllGroup};
+      final pending = <int>{};
+      for (final channel in _clearAllPending) {
+        if (_engine.clearRestorePending(channel: channel)) {
+          pending.add(channel);
+        } else if (_engine.undoRestoresClear(channel: channel)) {
+          group.add(channel);
+        }
+      }
+      _clearAllGroup = group;
+      _clearAllPending = pending;
+    }
+    for (final channel in _clearAllGroup) {
+      if (_engine.undoRestoresClear(channel: channel)) continue;
+      // The engine retired the point (a fresh take): the group is gone, and
+      // a later single clear on that track must not re-form it.
+      _clearAllGroup = const {};
+      _clearAllPending = const {};
+      return const {};
+    }
+    return {..._clearAllGroup, ..._clearAllPending};
+  }
+
+  /// Whole-rig recovery from a clear-all: the intact group comes back as one
+  /// operation; otherwise every track that still holds a clear restore point
+  /// is restored on its own (a group the engine partly retired).
+  EngineResult undoClearAll() {
+    _settlePendingClearUndos();
+    final group = _intactClearAllGroup();
+    if (group.isNotEmpty) return undo(channel: group.first);
+    var result = EngineResult.ok;
+    for (final track in lastState.tracks) {
+      if (!track.clearRestore) continue;
+      final rc = undo(channel: track.channel);
+      if (!rc.isOk) result = rc;
+    }
+    return result;
   }
 
   /// The destructive clear: same erasure, no way back. Session load only.
   EngineResult _clearDestructive({int channel = 0}) {
+    _pendingClearAllUndo = const {};
+    _pendingClearUndo.remove(channel);
     _clearRestore.remove(channel);
     _dropTakeState(channel);
     return _engine.clear(channel: channel);
@@ -1497,8 +1750,48 @@ class LooperRepository {
   /// describes the next tap, and the snapshot it derives from does not flip
   /// until the audio thread applies the restore.
   EngineResult undo({int channel = 0}) {
+    _settlePendingClearUndos();
+    // A grouped clear comes back as one operation, whichever member is asked.
+    final group = _intactClearAllGroup();
+    if (group.contains(channel)) return _undoClearGroup(group);
+    return _undoTrack(channel);
+  }
+
+  EngineResult _undoClearGroup(Set<int> group) {
+    if (group.any((channel) => _engine.clearRestorePending(channel: channel))) {
+      _pendingClearAllUndo = group;
+      return EngineResult.ok;
+    }
+    final ordered = group.toList()..sort();
+    final gate = _historyModeGate(ordered, redo: false);
+    if (!gate.isOk) return gate;
+    for (final member in ordered) {
+      final result = _undoTrack(member);
+      if (!result.isOk) return result;
+    }
+    _clearAllRedoGroup = group;
+    _clearAllGroup = const {};
+    _clearAllPending = const {};
+    return EngineResult.ok;
+  }
+
+  /// One track's undo. A tap at a frozen clear (its point still to be filed)
+  /// is held here rather than handed to the engine, and taken on the first
+  /// poll after the point lands ([_settlePendingClearUndos]) so the chains
+  /// come back with the take; a capture that held nothing is then forgotten
+  /// instead of being restored onto an empty track.
+  EngineResult _undoTrack(int channel) {
+    if (_engine.clearRestorePending(channel: channel)) {
+      _pendingClearUndo.add(channel);
+      return EngineResult.ok;
+    }
+    final gate = _historyModeGate([channel], redo: false);
+    if (!gate.isOk) return gate;
     final restoresClear = _engine.undoRestoresClear(channel: channel);
-    final result = _engine.undo(channel: channel);
+    final result = _reportRecoveryResult(
+      _engine.undo(channel: channel),
+      redo: false,
+    );
     if (restoresClear && result == EngineResult.ok) {
       _restoreClearedTake(channel);
     }
@@ -1541,13 +1834,55 @@ class LooperRepository {
   /// A redo that resurrects an undone-to-empty track comes back unmuted
   /// engine-side; the remembered mutes are forgotten to match.
   EngineResult redo({int channel = 0}) {
+    // Cancel a grouped undo before settling it: every member is still clear.
+    if (_pendingClearAllUndo.contains(channel)) {
+      _pendingClearAllUndo = const {};
+      return EngineResult.ok;
+    }
+    if (_pendingClearUndo.remove(channel)) return EngineResult.ok;
+    _settlePendingClearUndos();
+    if (_clearAllRedoGroup.contains(channel)) {
+      final group = _clearAllRedoGroup;
+      if (group.every((member) => _engine.redoReclears(channel: member))) {
+        final ordered = group.toList()..sort();
+        final gate = _historyModeGate(ordered, redo: true);
+        if (!gate.isOk) return gate;
+        for (final member in ordered) {
+          final result = _redoTrack(member);
+          if (!result.isOk) return result;
+        }
+        _clearAllRedoGroup = const {};
+        _clearAllGroup = group;
+        _clearAllPending = const {};
+        return EngineResult.ok;
+      }
+      _clearAllRedoGroup = const {};
+    }
+    return _redoTrack(channel);
+  }
+
+  /// Changes cached take metadata only after the native history edit succeeds.
+  EngineResult _redoTrack(int channel) {
+    final gate = _historyModeGate([channel], redo: true);
+    if (!gate.isOk) return gate;
+    final reclears = _engine.redoReclears(channel: channel);
     final snapshot = _engine.snapshot();
-    if (channel >= 0 &&
+    final wasEmpty =
+        channel >= 0 &&
         channel < snapshot.tracks.length &&
-        snapshot.tracks[channel].state == TrackState.empty) {
+        snapshot.tracks[channel].state == TrackState.empty;
+    final result = _reportRecoveryResult(
+      _engine.redo(channel: channel),
+      redo: true,
+    );
+    if (!result.isOk) return result;
+    if (reclears) {
+      _snapshotForClearRestore(channel);
+      _dropTakeState(channel);
+    } else if (wasEmpty) {
       _forgetLaneMutes(channel);
     }
-    return _engine.redo(channel: channel);
+    return result;
   }
 
   /// Applies a loaded session [rig] to the engine THROUGH this repository —
@@ -1671,9 +2006,9 @@ class LooperRepository {
     }
 
     // Session-level mode + crown (B5c), applied here — before any content is
-    // imported below — because [setLooperMode] is REJECTED by the D4 content
-    // lock once a track holds audio (see [LooperModeControl]'s class doc);
-    // every track is guaranteed empty at this point. The mode is always
+    // imported below — so the mode lands on an empty rig with nothing to
+    // measure or stop (see [LooperModeControl]'s class doc for the content
+    // rules a switch over takes would apply). The mode is always
     // pushed (like [setLooperMode]'s own "no unset sentinel" posture — `multi`
     // IS the default), mirroring how the tempo grid's SETTINGS push
     // unconditionally elsewhere in this method. The crown is NOT gated by
@@ -3950,20 +4285,75 @@ class LooperRepository {
     );
   }
 
-  /// Sets the looper mode (B2a, D4). Remembered and re-applied on every
-  /// (re)start. Ignored by the engine while any track has content (see
-  /// [LooperModeControl]'s class doc) — locked, not queued: a rejected
-  /// switch here still overwrites the remembered value, so the NEXT
-  /// (re)start pushes the value the caller asked for, not the one the engine
-  /// is currently holding (matching [setTempo]'s "remembered ≠ live"
-  /// posture rather than [setCountIn]'s clamp-before-remember one, since
-  /// there is no invalid value to clamp here — every [LooperMode] is
-  /// in-range by construction).
+  /// The mode safe to persist: an offline choice or a confirmed engine mode.
+  /// Returns null while a running engine has not yet confirmed a request.
+  /// Enqueueing a command alone does not mean the audio thread accepted it.
+  LooperMode? get settledLooperMode =>
+      !_intendRunning || _requestedLooperMode == null ? _looperMode : null;
+
+  /// Requests a compatible looper mode and remembers it for engine restart.
+  /// Running-engine requests are reconciled with reports before persistence;
+  /// choices made while the engine is closed are remembered immediately.
   EngineResult setLooperMode(LooperMode mode) {
+    if (_intendRunning) {
+      final result = _engine.setLooperMode(mode);
+      if (!result.isOk) return result; // refused: the setting stays
+      // Remembered now (a restart right behind the call re-applies the
+      // intent) and confirmed by the reports: see [_rememberLooperMode].
+      _requestedLooperMode = mode;
+      _requestReports = 0;
+    }
     _looperMode = mode;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setLooperMode(mode);
+    return EngineResult.ok;
   }
+
+  /// A mode the engine accepted but has not yet reported, with how many
+  /// reports have come in since. The switch lands within one audio block,
+  /// so a request still unreported after the grace period was dropped on the
+  /// audio thread (a record press landed in the same block, which the gate
+  /// could not see); the remembered mode then follows the report.
+  LooperMode? _requestedLooperMode;
+  int _requestReports = 0;
+
+  /// Polls that may report a request unconfirmed before it is dropped
+  /// (about 200 ms at the default interval). The ring drains on the audio
+  /// callback, and a device's first callback after a start can come well
+  /// after the first polls; a switch the audio thread refused keeps
+  /// reporting the old mode for good, so dropping late costs nothing.
+  static const int _requestReportLimit = 12;
+
+  /// Keeps [_looperMode] equal to what the engine runs: a reported change
+  /// (the switch landing, a session load) is taken as is; a request the
+  /// reports never confirm is dropped in favour of the reported mode.
+  void _rememberLooperMode(
+    LooperState next,
+    LooperMode reported, {
+    required bool poll,
+  }) {
+    if (!_intendRunning || !next.status.isConnected) return;
+    final requested = _requestedLooperMode;
+    if (requested == null) {
+      _looperMode = reported;
+      return;
+    }
+    if (reported == requested) {
+      _requestedLooperMode = null;
+      return;
+    }
+    // Only polls count as reports: a local edit re-projects within the same
+    // block the request is still travelling in.
+    if (poll && ++_requestReports >= _requestReportLimit) {
+      _requestedLooperMode = null;
+      _looperMode = reported;
+    }
+  }
+
+  /// What [setLooperMode] would do with [mode] right now (accepted design,
+  /// slice 2): open, or the reason it is refused, or `playing` — the answer a
+  /// "stop loops and switch" confirmation stands for. A stopped engine holds
+  /// no takes to measure, so every change is open.
+  LooperModeGate looperModeGate(LooperMode mode) =>
+      _intendRunning ? _engine.looperModeGate(mode) : LooperModeGate.open;
 
   /// Crowns [channel] the primary track — the explicit timing handoff (D18).
   /// Held until the next start when the engine is not running (see
@@ -4009,6 +4399,7 @@ class LooperRepository {
     await _monitorChanges.close();
     await _monitorParamChanges.close();
     await _rigReplaced.close();
+    await _recoveryRefusals.close();
     await _controller.close();
   }
 }

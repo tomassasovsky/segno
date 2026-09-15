@@ -11,6 +11,8 @@ void main() {
       expect(EngineResult.fromCode(-4), EngineResult.device);
       expect(EngineResult.fromCode(-5), EngineResult.unsupported);
       expect(EngineResult.fromCode(-6), EngineResult.capacity);
+      expect(EngineResult.fromCode(-7), EngineResult.modeMismatch);
+      expect(EngineResult.fromCode(-8), EngineResult.notReady);
     });
 
     test('maps unknown codes to invalid', () {

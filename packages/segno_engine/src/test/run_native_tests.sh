@@ -109,7 +109,7 @@ fi
 
 echo "== building engine tests =="
 # shellcheck disable=SC2086
-$CC $STD $EXTRA_CFLAGS src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
+$CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
   -o "$OUT/segno_core_tests.exe"
 "$OUT/segno_core_tests.exe"
 

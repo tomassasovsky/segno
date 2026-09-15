@@ -80,7 +80,9 @@ static inline int32_t le_effective_state(le_track* t) {
       atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
     return t->pending_target;
   }
-  return load_i32(&t->a_state);
+  /* Record finalization does not post a state command; its release state
+   * store independently publishes the settled length and master clock. */
+  return atomic_load_explicit(&t->a_state, memory_order_acquire);
 }
 
 /* Publishes pool slot [slot] as every active lane's live buffer AND bumps the

@@ -453,6 +453,17 @@ class MockAudioEngine implements AudioEngine {
   bool undoRestoresClear({int channel = 0}) => false;
 
   @override
+  bool redoReclears({int channel = 0}) => false;
+
+  @override
+  bool clearRestorePending({int channel = 0}) => false;
+
+  /// The mock keeps no history that could conflict with the current mode.
+  @override
+  EngineResult historyModeGate({required int channels, required bool redo}) =>
+      EngineResult.ok;
+
+  @override
   EngineResult undo({int channel = 0}) => _requireRunning();
 
   @override
@@ -679,11 +690,15 @@ class MockAudioEngine implements AudioEngine {
 
   // ---- looper mode (LooperModeControl, B2a) ----
 
+  /// The mock keeps no takes, so every change is open.
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) => LooperModeGate.open;
+
   @override
   EngineResult setLooperMode(LooperMode mode) {
     final result = _requireRunning();
     if (!result.isOk) return result;
-    // No D4 content lock here — see _looperMode's doc.
+    // No content rules here — the mock holds no takes to measure.
     _looperMode = mode;
     return EngineResult.ok;
   }
