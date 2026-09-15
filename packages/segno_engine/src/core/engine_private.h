@@ -616,6 +616,10 @@ typedef struct le_track {
    * meter here. */
   _Atomic uint32_t a_trk_rms_bits;
   _Atomic uint32_t a_trk_peak_bits;
+  /* This track's own playhead (le_track_snapshot.position_frames): the mixer's
+   * read index for the last frame of the block, or the write head while
+   * RECORDING. Published once per block beside the level above. */
+  _Atomic int32_t a_play_pos;
   int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
                        * int, like track_count — not an atomic, not a ring
                        * command (set before the first record into a new lane). */
@@ -800,6 +804,10 @@ typedef struct le_track {
    * every mode but an active Sync/Band division is byte-for-byte the
    * pre-B3 seg_base/multiple path (see mix_tracks_frame). */
   _Atomic int32_t a_sync_divisor;
+  /* What the published arm waits for (le_track_snapshot.pending_trigger):
+   * pending_trigger's value, stored beside a_pending at arm time. Read only
+   * while a_pending is 1; -1 before any arm. */
+  _Atomic int32_t a_pending_trigger;
   _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
                               * to fire a quantized record action); read by the
                               * control thread to reconcile arm vs. fired. */
@@ -1066,6 +1074,7 @@ struct le_engine {
   _Atomic uint32_t a_in_rms_bits;
   _Atomic uint32_t a_in_peak_bits;
   _Atomic uint32_t a_out_rms_bits;
+  _Atomic uint32_t a_out_peak_bits; /* master-bus block peak, post gain+limiter */
 
 
   /* ---- Tuner (LE_CMD_SET_TUNER_INPUT) ----
@@ -1090,9 +1099,9 @@ struct le_engine {
   int tuner_fill;                /* samples written into tuner_win */
   float tuner_acc;               /* boxcar accumulator */
   int tuner_acc_n;               /* samples in the accumulator */
-  /* Loop-indexed visualization (float bits): one peak per loop bucket, spanning
-   * exactly one master loop and refreshed as the playhead sweeps. a_loop_viz is
-   * the mixed output; a_track_viz is each track's own contribution. */
+  /* Loop-indexed visualization (float bits), refreshed as each playhead sweeps.
+   * a_loop_viz spans one master loop of mixed output; a_track_viz spans that
+   * track's full recorded length, including multiples and divisions. */
   _Atomic uint32_t a_loop_viz[LE_VIZ_POINTS];
   _Atomic uint32_t a_track_viz[LE_MAX_TRACKS][LE_VIZ_POINTS];
   _Atomic int32_t a_latency_state;
@@ -1459,15 +1468,15 @@ struct le_engine {
   int32_t loop_viz_bucket;
   float loop_viz_accum;
   float track_viz_accum[LE_MAX_TRACKS];
-  /* Free mode (B2b): per-track bucket cursor, mirroring loop_viz_bucket but
-   * scoped to each track's own clock — Free mode has no single shared loop
-   * to bucket a_loop_viz against (a_loop_viz is simply not updated in Free
-   * mode; only the per-track a_track_viz waveforms are meaningful there).
-   * -1 = no bucket published yet, same convention as loop_viz_bucket.
-   * Dormant outside Free mode (see free_track_viz_tap_frame's mode guard,
-   * engine_process.c) — stays at its zero-initialized/reset value, which
-   * le_engine_configure and handle_clear explicitly re-arm to -1. */
+  /* Per-track bucket cursor over its full recorded length in every mode.
+   * -1 means no bucket accumulated yet; content removal resets the cursor,
+   * accumulator and published shape. Stopped tracks retain their last shape. */
   int32_t track_viz_bucket[LE_MAX_TRACKS];
+  /* Audio-thread scratch: each track's read index for the frame most recently
+   * mixed (seg_base + trk_pos — multiples, divisions and Free/Song clocks all
+   * applied). Published to a_play_pos once per block; stale (held) for a track
+   * the mixer skipped, which is what a stopped track should show anyway. */
+  int32_t trk_play_pos[LE_MAX_TRACKS];
 
   /* Latency harness (audio-thread-local + published state). The measurement
    * captures the input-magnitude envelope into lat_buf for a fixed window after

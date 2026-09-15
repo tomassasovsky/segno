@@ -1,5 +1,3 @@
-import 'dart:math' show sqrt;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
@@ -13,10 +11,14 @@ void main() {
       expect(peakMeterFill(-0.5), 0);
     });
 
-    test('maps full scale to 1 and uses sqrt compression', () {
+    test('maps full scale to 1 and is linear in dB over -60..0', () {
       expect(peakMeterFill(1), 1);
-      expect(peakMeterFill(0.25), closeTo(sqrt(0.25), 1e-12));
-      expect(peakMeterFill(0.5), closeTo(sqrt(0.5), 1e-12));
+      // -6.02 dBFS sits at 90% of a -60..0 scale; -20 dBFS at 2/3.
+      expect(peakMeterFill(0.5), closeTo(0.8997, 1e-3));
+      expect(peakMeterFill(0.1), closeTo(2 / 3, 1e-9));
+      // At and below the -60 dBFS floor there is no fill.
+      expect(peakMeterFill(0.001), closeTo(0, 1e-9));
+      expect(peakMeterFill(0.0001), 0);
     });
 
     test('clamps peaks above 1', () {
@@ -40,11 +42,6 @@ void main() {
       },
       muteMeterColors: {
         LooperMeterState.playing: Color(0xFF0000FF),
-      },
-      indicatorColors: {
-        TrackIndicator.idle: Color(0xFF3A3F49),
-        TrackIndicator.play: Color(0xFF4CDA4A),
-        TrackIndicator.record: Color(0xFFFF1744),
       },
       toolbarIconColor: Color(0xFFB0B3BC),
     );
@@ -82,21 +79,6 @@ void main() {
       );
     });
 
-    test('indicatorColor picks the color for the indicator', () {
-      expect(
-        theme.indicatorColor(TrackIndicator.idle),
-        const Color(0xFF3A3F49),
-      );
-      expect(
-        theme.indicatorColor(TrackIndicator.play),
-        const Color(0xFF4CDA4A),
-      );
-      expect(
-        theme.indicatorColor(TrackIndicator.record),
-        const Color(0xFFFF1744),
-      );
-    });
-
     test('waveformColor picks the color for the meter state', () {
       expect(
         theme.waveformColor(LooperMeterState.playing),
@@ -114,38 +96,12 @@ void main() {
       );
     });
 
-    test('indicatorColor resolves to transparent when the table omits it', () {
-      const sparse = LooperTheme(
-        tileBackground: Color(0xFF111111),
-        tileBorder: Color(0xFF222222),
-        waveformColors: {},
-        waveformBackground: Color(0xFF000000),
-        recordColor: Color(0xFFFF1744),
-        recordMeterColors: {},
-        muteMeterColors: {},
-        indicatorColors: {},
-        toolbarIconColor: Color(0xFFB0B3BC),
-      );
-      expect(sparse.indicatorColor(TrackIndicator.play), Colors.transparent);
-    });
-
     test('copyWith overrides only the given fields', () {
       final updated = theme.copyWith(recordColor: const Color(0xFFABCDEF));
       expect(updated.recordColor, const Color(0xFFABCDEF));
       expect(updated.waveformColors, theme.waveformColors);
       expect(updated.recordMeterColors, theme.recordMeterColors);
       expect(updated.muteMeterColors, theme.muteMeterColors);
-      expect(updated.indicatorColors, theme.indicatorColors);
-    });
-
-    test('copyWith replaces indicatorColors when given', () {
-      final updated = theme.copyWith(
-        indicatorColors: const {TrackIndicator.idle: Color(0xFF010203)},
-      );
-      expect(
-        updated.indicatorColor(TrackIndicator.idle),
-        const Color(0xFF010203),
-      );
     });
 
     test('lerp interpolates toward the other theme', () {
@@ -181,21 +137,6 @@ void main() {
         updated.waveformColor(LooperMeterState.playing),
         Colors.transparent,
       );
-    });
-
-    test('lerp carries indicatorColors toward the other theme', () {
-      final other = theme.copyWith(
-        indicatorColors: const {
-          TrackIndicator.idle: Color(0xFFFFFFFF),
-          TrackIndicator.play: Color(0xFFFFFFFF),
-          TrackIndicator.record: Color(0xFFFFFFFF),
-        },
-      );
-      final end = theme.lerp(other, 1);
-      const white = Color(0xFFFFFFFF);
-      expect(end.indicatorColor(TrackIndicator.idle), white);
-      expect(end.indicatorColor(TrackIndicator.play), white);
-      expect(end.indicatorColor(TrackIndicator.record), white);
     });
 
     test('lerp with a non-LooperTheme returns this', () {
@@ -236,134 +177,6 @@ void main() {
         LooperMeterState.of(TrackState.stopped, muted: false),
         LooperMeterState.stopped,
       );
-    });
-  });
-
-  group('TrackIndicator.of', () {
-    test('muted reads as idle regardless of state, selection, or mode', () {
-      for (final state in TrackState.values) {
-        expect(
-          TrackIndicator.of(
-            state,
-            muted: true,
-            hasContent: true,
-            selected: true,
-            mode: InteractionMode.record,
-          ),
-          TrackIndicator.idle,
-        );
-      }
-    });
-
-    test('live transport beats the armed derivation', () {
-      // Recording/overdubbing -> record, even when unselected in mute mode.
-      expect(
-        TrackIndicator.of(
-          TrackState.recording,
-          muted: false,
-          hasContent: false,
-          selected: false,
-          mode: InteractionMode.mute,
-        ),
-        TrackIndicator.record,
-      );
-      expect(
-        TrackIndicator.of(
-          TrackState.overdubbing,
-          muted: false,
-          hasContent: true,
-          selected: false,
-          mode: InteractionMode.mute,
-        ),
-        TrackIndicator.record,
-      );
-      // Playing -> play, even when selected in record mode.
-      expect(
-        TrackIndicator.of(
-          TrackState.playing,
-          muted: false,
-          hasContent: true,
-          selected: true,
-          mode: InteractionMode.record,
-        ),
-        TrackIndicator.play,
-      );
-    });
-
-    test('a stopped track that holds a loop is armed to play (green)', () {
-      // Regardless of selection or mode — it will sound on the next play-all,
-      // so the indicator stays lit after a stop rather than going dark.
-      for (final selected in [true, false]) {
-        for (final mode in [InteractionMode.mute, InteractionMode.record]) {
-          expect(
-            TrackIndicator.of(
-              TrackState.stopped,
-              muted: false,
-              hasContent: true,
-              selected: selected,
-              mode: mode,
-            ),
-            TrackIndicator.play,
-          );
-        }
-      }
-    });
-
-    test('empty/contentless + selected arms by mode', () {
-      // Empty is always contentless; a stopped track with no loop behaves the
-      // same (e.g. after a clear). Selected -> arm by mode.
-      for (final state in [TrackState.empty, TrackState.stopped]) {
-        expect(
-          TrackIndicator.of(
-            state,
-            muted: false,
-            hasContent: false,
-            selected: true,
-            mode: InteractionMode.record,
-          ),
-          TrackIndicator.record,
-          reason: 'record mode arms red',
-        );
-        expect(
-          TrackIndicator.of(
-            state,
-            muted: false,
-            hasContent: false,
-            selected: true,
-            mode: InteractionMode.mute,
-          ),
-          TrackIndicator.play,
-          reason: 'mute mode arms green',
-        );
-        expect(
-          TrackIndicator.of(
-            state,
-            muted: false,
-            hasContent: false,
-            selected: true,
-            mode: InteractionMode.fx,
-          ),
-          TrackIndicator.play,
-          reason: 'FX mode starts no take, so the cursor must not read red',
-        );
-      }
-    });
-
-    test('empty/contentless + unselected is idle in either mode', () {
-      for (final state in [TrackState.empty, TrackState.stopped]) {
-        for (final mode in [InteractionMode.mute, InteractionMode.record]) {
-          expect(
-            TrackIndicator.of(
-              state,
-              muted: false,
-              hasContent: false,
-              selected: false,
-              mode: mode,
-            ),
-            TrackIndicator.idle,
-          );
-        }
-      }
     });
   });
 
@@ -435,21 +248,6 @@ void main() {
         isNot(
           theme.meterColor(LooperMeterState.empty, mode: InteractionMode.mute),
         ),
-      );
-    }
-  });
-
-  test('both palettes map every indicator state, idle distinct from tile', () {
-    for (final data in [AppTheme.neon, AppTheme.highContrast]) {
-      final theme = data.extension<LooperTheme>()!;
-      for (final indicator in TrackIndicator.values) {
-        expect(theme.indicatorColors[indicator], isNotNull);
-      }
-      // The idle tone must be distinguishable from the tile surface, or the
-      // strip vanishes on inactive tiles.
-      expect(
-        theme.indicatorColor(TrackIndicator.idle),
-        isNot(theme.tileBackground),
       );
     }
   });

@@ -111,23 +111,6 @@ const _hcWaveformColors = <LooperMeterState, Color>{
   LooperMeterState.muted: Color(0x99FFFFFF),
 };
 
-/// Per-track status-indicator colors: a dim `idle` that still reads above the
-/// tile surface, reusing the meter green/red for the play/record states.
-const _indicatorColors = <TrackIndicator, Color>{
-  TrackIndicator.idle: Color(0xFF3D3F43), // dim, above tileBackground
-  TrackIndicator.play: Color(0xFF4CDA4A), // meter green
-  TrackIndicator.record: Color(0xFFFF1744), // meter red
-};
-
-/// High-contrast status-indicator colors: `idle` reuses the brighter HC
-/// "empty" tone so it clears the 3:1 non-text threshold (1.4.11) against the
-/// brighter tile, and play/record stay vivid.
-const _hcIndicatorColors = <TrackIndicator, Color>{
-  TrackIndicator.idle: Color(0xFF6E6E6E),
-  TrackIndicator.play: Color(0xFF6EE77F),
-  TrackIndicator.record: Color(0xFFFF5470),
-};
-
 /// Segno's visual themes — named for their palettes, not for any screen or
 /// mode they happen to dress.
 abstract final class AppTheme {
@@ -150,7 +133,6 @@ abstract final class AppTheme {
         recordColor: Color(0xFFFF1744),
         recordMeterColors: _recordMeterColors,
         muteMeterColors: _muteMeterColors,
-        indicatorColors: _indicatorColors,
         toolbarIconColor: Colors.white70,
       ),
     );
@@ -178,7 +160,6 @@ abstract final class AppTheme {
         recordColor: Color(0xFFFF5470),
         recordMeterColors: _hcRecordMeterColors,
         muteMeterColors: _hcMuteMeterColors,
-        indicatorColors: _hcIndicatorColors,
         // SurfaceTheme.highContrast.textSecondary — brighter than the neon
         // theme's white70 to clear the HC contrast threshold.
         toolbarIconColor: Color(0xFFD8D8D8),

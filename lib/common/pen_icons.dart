@@ -1,4 +1,5 @@
-/// The rail glyphs the pen draws itself, rather than names from an icon set.
+/// The glyphs the pen draws itself, rather than names from an icon set: the
+/// four rail icons and the stage top bar's Library, view and crown marks.
 ///
 /// Five of the nine rail icons are stock lucide and come from the font
 /// (`repeat`, `volume-2`, `wifi-high`, `cpu`, `sun`). These four are not: the
@@ -35,6 +36,19 @@ enum PenIcon {
 
   /// Tuner: four bars of differing height (`XRflJ`).
   tuner,
+
+  /// Library: the prototype's folder (`session:library`), a 24-unit source
+  /// path laid into the box at the rail's 11/12.
+  library,
+
+  /// The performance-view menu: three upright columns in a frame
+  /// (`stage-view-menu`), the same 24-unit source scale.
+  views,
+
+  /// The primary-track crown (`stage-primary`): a filled five-point crown
+  /// over a base line, in the prototype's 24x20 box. Filled, not stroked —
+  /// the stroke rounds the points and the fill makes the mark.
+  crown,
 }
 
 /// Draws [icon] in [color], scaled to whatever box it is given.
@@ -75,8 +89,77 @@ class PenIconPainter extends CustomPainter {
         _tracks(canvas, paint);
       case PenIcon.tuner:
         _tuner(canvas, paint);
+      case PenIcon.library:
+        _library(canvas, paint);
+      case PenIcon.views:
+        _views(canvas, paint);
+      case PenIcon.crown:
+        _crown(canvas, paint);
     }
     canvas.restore();
+  }
+
+  /// The rail's 11/12: a 24-unit source path drawn into the 22 box.
+  static const double _source = 22 / 24;
+
+  /// `M3 6 H10 L12 8 H21 V20 H3 Z M3 6 V4 H10 L12 6 H21 V8`, at [_source].
+  void _library(Canvas canvas, Paint paint) {
+    const k = _source;
+    final body = Path()
+      ..moveTo(3 * k, 6 * k)
+      ..lineTo(10 * k, 6 * k)
+      ..lineTo(12 * k, 8 * k)
+      ..lineTo(21 * k, 8 * k)
+      ..lineTo(21 * k, 20 * k)
+      ..lineTo(3 * k, 20 * k)
+      ..close();
+    final tab = Path()
+      ..moveTo(3 * k, 6 * k)
+      ..lineTo(3 * k, 4 * k)
+      ..lineTo(10 * k, 4 * k)
+      ..lineTo(12 * k, 6 * k)
+      ..lineTo(21 * k, 6 * k)
+      ..lineTo(21 * k, 8 * k);
+    canvas
+      ..drawPath(body, paint)
+      ..drawPath(tab, paint);
+  }
+
+  /// `M4 4 H20 V20 H4 Z M9 4 V20 M15 4 V20`, at [_source].
+  void _views(Canvas canvas, Paint paint) {
+    const k = _source;
+    canvas.drawRect(const Rect.fromLTRB(4 * k, 4 * k, 20 * k, 20 * k), paint);
+    for (final x in const [9.0, 15.0]) {
+      canvas.drawLine(Offset(x * k, 4 * k), Offset(x * k, 20 * k), paint);
+    }
+  }
+
+  /// `M3 15 1 5l6 4 5-7 5 7 6-4-2 10Z` filled, over a 24x20 source that the
+  /// box scales uniformly (the crown is wider than tall; the 20-unit height
+  /// sits centred), plus the `M3 18h18` base line, stroked.
+  void _crown(Canvas canvas, Paint paint) {
+    const k = _source;
+    const dy = (24 - 20) / 2 * k; // centre the 20-tall source in the box
+    final crown = Path()
+      ..moveTo(3 * k, 15 * k + dy)
+      ..lineTo(1 * k, 5 * k + dy)
+      ..lineTo(7 * k, 9 * k + dy)
+      ..lineTo(12 * k, 2 * k + dy)
+      ..lineTo(17 * k, 9 * k + dy)
+      ..lineTo(23 * k, 5 * k + dy)
+      ..lineTo(21 * k, 15 * k + dy)
+      ..close();
+    final fill = Paint()
+      ..style = PaintingStyle.fill
+      ..color = paint.color;
+    canvas
+      ..drawPath(crown, fill)
+      ..drawPath(crown, paint)
+      ..drawLine(
+        const Offset(3 * k, 18 * k + dy),
+        const Offset(21 * k, 18 * k + dy),
+        paint,
+      );
   }
 
   /// `M0 8c3 0 3-8 6-8 3 0 3 8 6 8 3 0 3-8 6-8` over an 18x8 span, laid into

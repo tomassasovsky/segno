@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/visualizer.dart';
 
@@ -207,84 +206,6 @@ void main() {
     }
   });
 
-  group('waveformStateOf', () {
-    ReadoutTrack track(
-      String state, {
-      bool selected = false,
-      bool muted = false,
-    }) => ReadoutTrack(
-      name: 'T',
-      state: state,
-      muted: muted,
-      selected: selected,
-    );
-
-    test('reads the cursor track, not whichever track is loudest', () {
-      // A track recording somewhere else on the stage must not recolour the
-      // waveform: the colour speaks for the same track the name label does.
-      expect(
-        waveformStateOf(
-          PerformanceReadout(
-            tracks: [
-              track('recording'),
-              track('playing', selected: true),
-            ],
-          ),
-        ),
-        LooperMeterState.playing,
-      );
-    });
-
-    test('muted overlays the cursor track state', () {
-      expect(
-        waveformStateOf(
-          PerformanceReadout(
-            tracks: [track('playing', selected: true, muted: true)],
-          ),
-        ),
-        LooperMeterState.muted,
-      );
-    });
-
-    test('maps every track state token the main window can send', () {
-      for (final state in TrackState.values) {
-        expect(
-          waveformStateOf(
-            PerformanceReadout(tracks: [track(state.name, selected: true)]),
-          ),
-          LooperMeterState.of(state, muted: false),
-          reason: '${state.name} must survive the trip across the channel',
-        );
-      }
-    });
-
-    test(
-      'degrades to empty rather than throwing on a readout it cannot use',
-      () {
-        // An empty readout is the window's own initial state, and an unknown
-        // token is what a version-skewed main window would send. Neither may
-        // take down a render.
-        expect(
-          waveformStateOf(const PerformanceReadout()),
-          LooperMeterState.empty,
-        );
-        expect(
-          waveformStateOf(PerformanceReadout(tracks: [track('playing')])),
-          LooperMeterState.empty,
-          reason: 'no cursor track means nothing to speak for',
-        );
-        expect(
-          waveformStateOf(
-            PerformanceReadout(
-              tracks: [track('transmogrifying', selected: true)],
-            ),
-          ),
-          LooperMeterState.empty,
-        );
-      },
-    );
-  });
-
   testWidgets('the window colours its waveform from the pushed readout', (
     tester,
   ) async {
@@ -298,7 +219,7 @@ void main() {
     addTearDown(frame.dispose);
     final readout = ValueNotifier(
       const PerformanceReadout(
-        tracks: [ReadoutTrack(name: 'T', state: 'recording', selected: true)],
+        selected: ReadoutTrack(channel: 0, name: 'T', state: 'recording'),
       ),
     );
     addTearDown(readout.dispose);
@@ -317,7 +238,7 @@ void main() {
     // The colour is live, not a one-shot at first build: a state change pushed
     // over the channel has to reach the stroke.
     readout.value = const PerformanceReadout(
-      tracks: [ReadoutTrack(name: 'T', state: 'playing', selected: true)],
+      selected: ReadoutTrack(channel: 0, name: 'T', state: 'playing'),
     );
     await tester.pump();
     expect(
@@ -377,6 +298,78 @@ void main() {
     test('repaints on a playhead change', () {
       expect(
         painterOf(progress: 0.2).shouldRepaint(painterOf(progress: 0.5)),
+        isTrue,
+      );
+    });
+  });
+
+  group('bar ruler', () {
+    Future<void> pumpBars(WidgetTester tester, int bars) => tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.neon,
+        home: Scaffold(
+          body: WaveformView(
+            samples: Float32List.fromList([0, 0.5, 1]),
+            state: LooperMeterState.playing,
+            progress: 0.3,
+            bars: bars,
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('is its own repaint layer over the wave, and absent '
+        'without bars', (tester) async {
+      await pumpBars(tester, 4);
+      final ruler = find.byKey(const Key('waveform_view_ruler'));
+      expect(ruler, findsOneWidget);
+      // The playhead repaints the wave every poll; the ruler's laid-out
+      // labels must not be re-shaped with it.
+      expect(
+        find.ancestor(of: ruler, matching: find.byType(RepaintBoundary)),
+        findsWidgets,
+      );
+      expect(
+        (tester.widget<CustomPaint>(ruler).painter! as BarRulerPainter).bars,
+        4,
+      );
+      // Over the wave, so its lines stay visible across loud bars: the last
+      // child of the stack, after the wave's own layer.
+      final stack = tester.widget<Stack>(
+        find.ancestor(of: ruler, matching: find.byType(Stack)).first,
+      );
+      expect(stack.children.length, 2);
+      expect(
+        find.descendant(
+          of: find.byWidget(stack.children.last),
+          matching: ruler,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byWidget(stack.children.first),
+          matching: find.byKey(const Key('waveform_view_paint')),
+        ),
+        findsOneWidget,
+      );
+
+      await pumpBars(tester, 0);
+      expect(find.byKey(const Key('waveform_view_ruler')), findsNothing);
+    });
+
+    test('repaints only when the bars or the colour change', () {
+      const grey = Color(0xFF888888);
+      final four = BarRulerPainter(bars: 4, color: grey);
+      expect(
+        four.shouldRepaint(BarRulerPainter(bars: 4, color: grey)),
+        isFalse,
+      );
+      expect(four.shouldRepaint(BarRulerPainter(bars: 8, color: grey)), isTrue);
+      expect(
+        four.shouldRepaint(
+          BarRulerPainter(bars: 4, color: const Color(0xFFFFFFFF)),
+        ),
         isTrue,
       );
     });

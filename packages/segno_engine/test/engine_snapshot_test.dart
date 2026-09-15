@@ -179,7 +179,10 @@ void main() {
           ..output_mask = 0x5
           ..length_preset_bars = 8
           ..settled_take_id = 4
-          ..restore_state = 2;
+          ..restore_state = 2
+          ..position_frames = 24000
+          ..pending = 1
+          ..pending_trigger = 2;
 
         final track = TrackSnapshot.fromNative(ptr.ref);
         expect(track.state, TrackState.playing);
@@ -196,9 +199,24 @@ void main() {
         expect(track.lengthPresetBars, 8);
         expect(track.settledTakeId, 4);
         expect(track.restoreState, TrackRestoreState.running);
+        expect(track.positionFrames, 24000);
+        expect(track.pending, isTrue);
+        expect(track.pendingTrigger, 2);
         // No lanes supplied => empty list, so the derived count is 0.
         expect(track.lanes, isEmpty);
         expect(track.laneCount, 0);
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('retains the unarmed native trigger sentinel', () {
+      final ptr = calloc<le_track_snapshot>();
+      try {
+        ptr.ref.pending_trigger = -1;
+        final track = TrackSnapshot.fromNative(ptr.ref);
+        expect(track.pending, isFalse);
+        expect(track.pendingTrigger, -1);
       } finally {
         calloc.free(ptr);
       }
@@ -270,18 +288,26 @@ void main() {
   });
 
   group('TrackSnapshot value semantics', () {
-    TrackSnapshot build({int inputMask = 0x1, int outputMask = 0x3}) =>
-        TrackSnapshot(
-          state: TrackState.playing,
-          volume: 0.5,
-          muted: false,
-          lengthFrames: 100,
-          undoDepth: 0,
-          rms: 0.1,
-          peak: 0.2,
-          inputMask: inputMask,
-          outputMask: outputMask,
-        );
+    TrackSnapshot build({
+      int inputMask = 0x1,
+      int outputMask = 0x3,
+      int positionFrames = 0,
+      bool pending = false,
+      int pendingTrigger = -1,
+    }) => TrackSnapshot(
+      state: TrackState.playing,
+      volume: 0.5,
+      muted: false,
+      lengthFrames: 100,
+      undoDepth: 0,
+      rms: 0.1,
+      peak: 0.2,
+      inputMask: inputMask,
+      outputMask: outputMask,
+      positionFrames: positionFrames,
+      pending: pending,
+      pendingTrigger: pendingTrigger,
+    );
 
     test('equal tracks are equal and share a hashCode', () {
       expect(build(), equals(build()));
@@ -291,6 +317,23 @@ void main() {
     test('a differing input or output mask breaks equality', () {
       expect(build(), isNot(equals(build(inputMask: 0x2))));
       expect(build(), isNot(equals(build(outputMask: 0x1))));
+    });
+
+    test('a playhead-only change breaks equality', () {
+      final earlier = build(positionFrames: 25);
+      final same = build(positionFrames: 25);
+      expect(earlier, same);
+      expect(earlier.hashCode, same.hashCode);
+      expect(earlier, isNot(build(positionFrames: 75)));
+    });
+
+    test('an arm-trigger-only change breaks equality', () {
+      final grid = build(pending: true, pendingTrigger: 0);
+      final same = build(pending: true, pendingTrigger: 0);
+      expect(grid, same);
+      expect(grid.hashCode, same.hashCode);
+      expect(grid, isNot(build(pending: true, pendingTrigger: 1)));
+      expect(grid, isNot(build(pending: true, pendingTrigger: 2)));
     });
 
     test('a differing length preset breaks equality', () {
@@ -471,6 +514,7 @@ void main() {
           ..input_rms = 0.25
           ..input_peak = 0.5
           ..output_rms = 0.125
+          ..output_peak = 0.75
           ..latency_state = 2
           ..measured_latency_ms = 7.5
           ..master_length_frames = 96000
@@ -522,6 +566,7 @@ void main() {
         expect(snapshot.inputClipMask, 0x3);
         expect(snapshot.inputCondMask, 0x5);
         expect(snapshot.framesProcessed, 123456);
+        expect(snapshot.outputPeak, closeTo(0.75, 1e-6));
         expect(snapshot.latencyState, LatencyState.done);
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
         expect(snapshot.masterLengthFrames, 96000);
@@ -675,6 +720,7 @@ void main() {
       bool devicePresent = true,
       AudioBackend activeBackend = AudioBackend.miniaudio,
       double masterGain = 1,
+      double outputPeak = 0,
       int fxAddedLatencyFrames = 0,
       int outputEnabledMask = 0xFFFFFFFF,
       bool isPerfArmed = false,
@@ -708,6 +754,7 @@ void main() {
       inputRms: 0,
       inputPeak: 0,
       outputRms: 0,
+      outputPeak: outputPeak,
       latencyState: LatencyState.idle,
       measuredLatencyMs: -1,
       masterGain: masterGain,
@@ -752,6 +799,14 @@ void main() {
 
     test('masterGain participates in equality', () {
       expect(build(), isNot(equals(build(masterGain: 0.5))));
+    });
+
+    test('an output-peak-only change breaks equality', () {
+      final quiet = build(outputPeak: 0.25);
+      final same = build(outputPeak: 0.25);
+      expect(quiet, same);
+      expect(quiet.hashCode, same.hashCode);
+      expect(quiet, isNot(build(outputPeak: 0.75)));
     });
 
     test('fxAddedLatencyFrames participates in equality', () {
@@ -1100,6 +1155,9 @@ void main() {
         'inputRms',
         'inputPeak',
         'outputRms',
+        // A block peak like outputRms: written once per block, read at render
+        // rate — not a per-callback counter.
+        'outputPeak',
         'latencyState',
         'measuredLatencyMs',
         'masterLengthFrames',

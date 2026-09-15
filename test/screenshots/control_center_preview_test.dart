@@ -424,6 +424,7 @@ void main() {
   /// up too.
   ({
     ControlCubit control,
+    PedalCubit pedal,
     MidiSetupCubit midi,
     LooperRepository looper,
     LooperBloc bloc,
@@ -509,9 +510,12 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
+    final pedalRepository = PedalRepository(NoopPedalLink());
+    final pedal = PedalCubit(pedal: pedalRepository);
+    addTearDown(pedal.close);
     final control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(NoopPedalLink()),
+      pedal: pedalRepository,
       settings: settings,
       performance: performance,
     );
@@ -551,6 +555,7 @@ void main() {
     addTearDown(() => unawaited(options.close()));
     return (
       control: control,
+      pedal: pedal,
       midi: midi,
       looper: looper,
       bloc: bloc,
@@ -634,6 +639,7 @@ void main() {
     system,
     ({
       ControlCubit control,
+      PedalCubit pedal,
       MidiSetupCubit midi,
       LooperRepository looper,
       LooperBloc bloc,
@@ -673,6 +679,7 @@ void main() {
             providers: [
               BlocProvider.value(value: cubit),
               BlocProvider.value(value: rig.control),
+              if (system == null) BlocProvider.value(value: rig.pedal),
               BlocProvider.value(value: rig.midi),
               BlocProvider<LooperBloc>.value(value: rig.bloc),
               BlocProvider.value(value: rig.tempo),
@@ -1435,6 +1442,7 @@ void main() {
   Future<
     ({
       ControlCubit control,
+      PedalCubit pedal,
       MidiSetupCubit midi,
       LooperRepository looper,
       LooperBloc bloc,
