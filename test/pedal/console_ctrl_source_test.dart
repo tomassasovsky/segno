@@ -14,6 +14,7 @@ void main() {
       link = FakePedalLink();
       pedal = PedalRepository(link);
       source = ConsoleCtrlSource(pedal);
+      link.hello();
     });
 
     tearDown(() async {

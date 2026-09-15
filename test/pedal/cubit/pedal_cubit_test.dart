@@ -62,6 +62,7 @@ void main() {
       link = FakePedalLink();
       pedal = PedalRepository(link);
       settings = SettingsRepository(store: FakeKeyValueStore());
+      link.hello();
     });
 
     CtrlMessage raw(int value) => CtrlMessage(
