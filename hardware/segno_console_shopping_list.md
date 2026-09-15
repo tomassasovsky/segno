@@ -44,6 +44,12 @@ Terminated by the **console board v2** (`hardware/kicad/console_board.py`, #747)
       ring PCB (also in `MANUFACTURING.md`)
 - [ ] Knob for the EC11 ×1
 - [ ] JST-XH pre-crimped 2-pin leads for the footswitch looms ×10
+- [ ] **CTRL jacks, board v3: Neutrik NJ6FD-V ×2** — D-series 6.35 mm TRS
+      **with switching contacts**. Same Ø24 D punch and M3 pair as the MEIRIYFA
+      jack it replaces; what it adds is the tip-normal contact the board reads as
+      "something is plugged in" (J20/J21 pin 4), which is what makes plugging a
+      pedal in or out clean. Four leads per jack: tip, ring, sleeve, TN. A v2
+      board keeps the plain jack (3 leads) and the firmware's heuristics.
 
 ## LEDs
 

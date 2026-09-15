@@ -174,7 +174,7 @@ def main():
     # applier mirrors. Mark + long legend, 4.5mm caps.
     back = []
     back += mark_polys(8.0, 10 + 4.5, 94.5)
-    leg, adv = text_polys(MONO, "segno console board v2", 3.2, 10 + 10.5, 96.9, tracking=0.15)
+    leg, adv = text_polys(MONO, "segno console board v3", 3.2, 10 + 10.5, 96.9, tracking=0.15)
     back += leg
     yr, _ = text_polys(MONO, "MMXXVI", 1.8, 10 + 10.7, 91.6, tracking=0.3)
     back += yr
