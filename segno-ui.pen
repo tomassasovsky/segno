@@ -298734,8 +298734,267 @@
       "fontFamily": "Inter",
       "fontSize": 13,
       "fontWeight": "normal"
+    },
+{
+  "type": "frame",
+  "id": "sgt-companion",
+  "name": "COMPANION / Segno Transfer — native Mac",
+  "x": 35024,
+  "y": 0,
+  "width": 1100,
+  "height": 810,
+  "fill": "#ffffff",
+  "layout": "none",
+  "children": [
+    {
+      "type": "frame",
+      "id": "sgt-head",
+      "name": "Connection bar",
+      "x": 0,
+      "y": 0,
+      "width": 1100,
+      "height": 84,
+      "fill": "#f5f5f5",
+      "layout": "none",
+      "children": []
+    },
+    {
+      "type": "frame",
+      "id": "sgt-side",
+      "name": "Performances sidebar",
+      "x": 0,
+      "y": 85,
+      "width": 340,
+      "height": 525,
+      "fill": "#f1f2f4",
+      "layout": "none",
+      "children": []
+    },
+    {
+      "type": "frame",
+      "id": "sgt-body",
+      "name": "Selected performance audio",
+      "x": 341,
+      "y": 85,
+      "width": 759,
+      "height": 525,
+      "fill": "#ffffff",
+      "layout": "none",
+      "children": []
+    },
+    {
+      "type": "frame",
+      "id": "sgt-foot",
+      "name": "Download destination and progress",
+      "x": 0,
+      "y": 689,
+      "width": 1100,
+      "height": 119,
+      "fill": "#f7f7f7",
+      "layout": "none",
+      "children": []
+    },
+    {
+      "type": "text",
+      "id": "sgt-name",
+      "name": "Segno Transfer",
+      "content": "Segno Transfer",
+      "x": 24,
+      "y": 20,
+      "fontFamily": "SF Pro",
+      "fontSize": 22,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-sub",
+      "name": "Your performances, on your Mac",
+      "content": "Your performances, on your Mac",
+      "x": 24,
+      "y": 50,
+      "fontFamily": "SF Pro",
+      "fontSize": 12,
+      "fill": "#777777"
+    },
+    {
+      "type": "text",
+      "id": "sgt-connect",
+      "name": "Appliance address     Connect     Settings",
+      "content": "Appliance address     Connect     Settings",
+      "x": 695,
+      "y": 35,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-list",
+      "name": "PERFORMANCES                       Select",
+      "content": "PERFORMANCES                       Select",
+      "x": 16,
+      "y": 106,
+      "fontFamily": "SF Pro",
+      "fontSize": 12,
+      "fill": "#666666"
+    },
+    {
+      "type": "text",
+      "id": "sgt-search",
+      "name": "Search recordings",
+      "content": "Search recordings",
+      "x": 16,
+      "y": 142,
+      "fontFamily": "SF Pro",
+      "fontSize": 14,
+      "fill": "#666666"
+    },
+    {
+      "type": "text",
+      "id": "sgt-row",
+      "name": "Selected   Today, 11:47\n8:26 · 13 audio files",
+      "content": "Selected   Today, 11:47\n8:26 · 13 audio files",
+      "x": 16,
+      "y": 188,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-row2",
+      "name": "Today, 10:55\n5:09 · 8 audio files",
+      "content": "Today, 10:55\n5:09 · 8 audio files",
+      "x": 42,
+      "y": 258,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-title",
+      "name": "Today at 11:47",
+      "content": "Today at 11:47",
+      "x": 367,
+      "y": 110,
+      "fontFamily": "SF Pro",
+      "fontSize": 22,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-meta",
+      "name": "8:26 · Choose the audio you want to keep",
+      "content": "8:26 · Choose the audio you want to keep",
+      "x": 367,
+      "y": 145,
+      "fontFamily": "SF Pro",
+      "fontSize": 14,
+      "fill": "#777777"
+    },
+    {
+      "type": "text",
+      "id": "sgt-choose",
+      "name": "Main recording only      Select all audio",
+      "content": "Main recording only      Select all audio",
+      "x": 367,
+      "y": 183,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-main",
+      "name": "Selected   Main recording                                       389 MB\nmaster.wav\nSave as    Rehearsal — take 3.wav",
+      "content": "Selected   Main recording                                       389 MB\nmaster.wav\nSave as    Rehearsal — take 3.wav",
+      "x": 367,
+      "y": 232,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-input",
+      "name": "Live input · live-input-0                                       389 MB\nlive-input-0.wav",
+      "content": "Live input · live-input-0                                       389 MB\nlive-input-0.wav",
+      "x": 392,
+      "y": 335,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-loop",
+      "name": "Loop · track2-lane0                                               4 MB\nloops/track2-lane0.wav",
+      "content": "Loop · track2-lane0                                               4 MB\nloops/track2-lane0.wav",
+      "x": 392,
+      "y": 407,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-note",
+      "name": "Names apply to your downloaded copies. Matching names get a numbered suffix.",
+      "content": "Names apply to your downloaded copies. Matching names get a numbered suffix.",
+      "x": 367,
+      "y": 564,
+      "fontFamily": "SF Pro",
+      "fontSize": 12,
+      "fill": "#777777"
+    },
+    {
+      "type": "text",
+      "id": "sgt-folder",
+      "name": "Save to Downloads     Change…\nDownloads",
+      "content": "Save to Downloads     Change…\nDownloads",
+      "x": 24,
+      "y": 719,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-dl",
+      "name": "Download 1 file\n389 MB",
+      "content": "Download 1 file\n389 MB",
+      "x": 922,
+      "y": 718,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
+    },
+    {
+      "type": "text",
+      "id": "sgt-preview",
+      "name": "Streaming recording preview",
+      "content": "Pause     Rehearsal — Main recording                                      Close\n0:32                     Playback timeline / seek slider                         8:26\nBuffering… (only while waiting for audio)",
+      "x": 24,
+      "y": 630,
+      "fontFamily": "SF Pro",
+      "fontSize": 15,
+      "fill": "#252525"
     }
-  ],
+  ]
+},
+{
+  "type": "text",
+  "id": "sgt-rationale",
+  "name": "c/ Segno Transfer: native Mac companion approved 2026-09-15. Native SwiftUI controls replace appliance touchscreen geometry. Browse performances, select audio files, edit download names, choose a folder, verify and reveal copies. Source recordings stay intact. Existing SSH authentication. Error and cancel states use the footer, with incomplete files never published. Issue #1056. Owner requested streaming preview with seeking: read only the audio sections the native player requests over SSH. Play/pause and seek in the footer; show Buffering while awaiting audio. Close, replacement or quit cancels pending reads. No full preview copy is saved. Download selection stays intact.",
+  "content": "c/ Segno Transfer: native Mac companion approved 2026-09-15. Native SwiftUI controls replace appliance touchscreen geometry. Browse performances, select audio files, edit download names, choose a folder, verify and reveal copies. Source recordings stay intact. Existing SSH authentication. Error and cancel states use the footer, with incomplete files never published. Issue #1056. Owner requested streaming preview with seeking: read only the audio sections the native player requests over SSH. Play/pause and seek in the footer; show Buffering while awaiting audio. Close, replacement or quit cancels pending reads. No full preview copy is saved. Download selection stays intact.",
+  "x": 35024,
+  "y": 860,
+  "fontFamily": "SF Pro",
+  "fontSize": 16,
+  "fill": "#d5ddf5"
+}
+],
   "variables": {
     "bg-base": {
       "type": "color",

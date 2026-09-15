@@ -1,5 +1,7 @@
 # Segno — Progress & Roadmap
 
+<!-- cspell:words hashlib -->
+
 Living status doc for the Flutter desktop loopstation. Pairs with the original
 plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
 Update this as work lands so any session (human or agent) can resume cold.
@@ -7,6 +9,29 @@ Update this as work lands so any session (human or agent) can resume cold.
 Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
+
+## September 2026 Mac recording companion
+
+The standalone [Segno Transfer app](../apps/segno_transfer/README.md) implements
+the owner-requested Mac workflow in #1056: connect using existing SSH access,
+browse and select performance audio, name downloaded copies, verify transfers,
+and stream recording previews with seeking. Its Swift package is independent
+of the instrument runtime. The helper uses the appliance's minimal Python with
+jq and sha256sum; Python json/hashlib modules are not required.
+
+The streaming update uses bounded SSH range reads through the native player,
+replacing full-file preview preparation. Local acceptance includes a real two-file download, custom filenames, matching
+source hashes, and Finder reveal. Automated checks cover the transfer failure
+paths, selection state and playback. Source review and product approval remain
+separate from this local app delivery; #1056 retains its merge gate.
+
+The owner approved free GitHub distribution with local signing and no paid
+Apple signing or notarization. Companion tags use `transfer-vVERSION`; their
+workflow tests and builds the Apple Silicon disk image, includes installation
+instructions and the license, and publishes a checksum alongside the download.
+Release review also corrected preview shutdown: quitting waits for cancelled
+reads to finish their connection and temporary-file cleanup, including previews
+closed or replaced just before quitting. Closing previews remains responsive.
 
 ## September 2026 appliance integration
 
