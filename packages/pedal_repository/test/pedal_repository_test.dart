@@ -21,6 +21,8 @@ void main() {
     tearDown(() => repo.dispose());
 
     test('button messages become timestamped press / release events', () async {
+      link.hello();
+      await pumpEventQueue();
       final events = <PedalEvent>[];
       repo.events.listen(events.add);
       now = const Duration(milliseconds: 10);
@@ -42,6 +44,8 @@ void main() {
     });
 
     test('encoder messages become deltas', () async {
+      link.hello();
+      await pumpEventQueue();
       final events = <PedalEvent>[];
       repo.events.listen(events.add);
       link
@@ -51,7 +55,9 @@ void main() {
       expect(events, const [EncoderDelta(1), EncoderDelta(-2)]);
     });
 
-    test('pushState goes out as a link message', () {
+    test('pushState goes out as a link message', () async {
+      link.hello();
+      await pumpEventQueue();
       final frame = PedalStateFrame.blank().copyWith(
         globalColor: GlobalColor.red,
       );
@@ -59,7 +65,9 @@ void main() {
       expect(link.sent, [StateMessage(frame)]);
     });
 
-    test('a frame identical to the last push is not sent again', () {
+    test('a frame identical to the last push is not sent again', () async {
+      link.hello();
+      await pumpEventQueue();
       final frame = PedalStateFrame.blank().copyWith(
         globalColor: GlobalColor.red,
       );
@@ -200,6 +208,66 @@ void main() {
       await pumpEventQueue();
       expect(link.sent, [StateMessage(frame)]);
     });
+
+    for (final protocol in [
+      PedalLinkCodec.protocolVersion,
+      PedalLinkCodec.protocolVersion + 1,
+    ]) {
+      test(
+        'only a live compatible hello enables traffic (protocol $protocol)',
+        () {
+          fakeAsync((async) {
+            final guardedLink = FakePedalLink();
+            final guarded = PedalRepository(guardedLink);
+            final events = <PedalEvent>[];
+            guarded.events.listen(events.add);
+            final frame = PedalStateFrame.blank();
+
+            // Unknown boards cannot send controls or receive cached state.
+            guarded.pushState(frame);
+            guardedLink
+              ..press(PedalButton.clear, down: true)
+              ..turn(1);
+            async.flushMicrotasks();
+            expect(events, isEmpty);
+            expect(guardedLink.sent, isEmpty);
+
+            guardedLink.emit(
+              HelloMessage(
+                protocolVersion: protocol,
+                firmwareMajor: 1,
+                firmwareMinor: 0,
+              ),
+            );
+            async
+              ..flushMicrotasks()
+              ..elapse(guarded.helloTimeout);
+            expect(guarded.status, PedalLinkStatus.disconnected);
+            guardedLink.sent.clear();
+
+            final latest = frame.copyWith(globalColor: GlobalColor.red);
+            guarded.pushState(latest);
+            guardedLink
+              ..press(PedalButton.clear, down: true)
+              ..turn(1);
+            async.flushMicrotasks();
+            expect(events, isEmpty);
+            expect(guardedLink.sent, isEmpty);
+
+            guardedLink
+              ..hello()
+              ..press(PedalButton.clear, down: true)
+              ..turn(1);
+            async.flushMicrotasks();
+            expect(guarded.status, PedalLinkStatus.connected);
+            expect(events, hasLength(2));
+            expect(guardedLink.sent, [StateMessage(latest)]);
+            unawaited(guarded.dispose());
+            async.flushMicrotasks();
+          });
+        },
+      );
+    }
 
     test('a hello with a new firmware version re-emits the status', () async {
       final statuses = <PedalLinkStatus>[];

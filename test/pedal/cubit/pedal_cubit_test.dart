@@ -42,6 +42,8 @@ void main() {
 
     test('close sends a goodbye frame and releases the link', () async {
       final cubit = PedalCubit(pedal: pedal);
+      link.hello();
+      await pumpEventQueue();
       await cubit.close();
       expect(link.lastFrame?.isGoodbye, isTrue);
       expect(link.disposed, isTrue);

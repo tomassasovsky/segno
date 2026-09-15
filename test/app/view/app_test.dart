@@ -404,6 +404,7 @@ void main() {
       );
       final link = FakePedalLink();
       final pedal = PedalRepository(link);
+      link.hello();
       await tester.pumpWidget(
         App(
           repository: repository,
@@ -431,6 +432,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const Key('sessions_manager')), findsNothing);
       expect(find.byType(LooperPage), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(pedal.helloTimeout);
     });
 
     testWidgets('always lands on the looper — no first-run gate', (

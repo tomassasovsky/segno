@@ -139,12 +139,14 @@ void main() {
       looperStates.add(state);
     }
 
-    setUp(() {
+    setUp(() async {
       looper = _MockLooperRepository();
       looperStates = StreamController<LooperState>.broadcast(sync: true);
       settings = SettingsRepository(store: FakeKeyValueStore());
       transport = FakePedalLink();
       pedal = PedalRepository(transport);
+      transport.hello();
+      await pumpEventQueue();
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
       for (final stub in [
         () => looper.record(channel: any(named: 'channel')),
@@ -1207,6 +1209,8 @@ void main() {
       test('takeLocked suppresses pedal Clear', () async {
         final lockedTransport = FakePedalLink();
         final lockedPedal = PedalRepository(lockedTransport);
+        lockedTransport.hello();
+        await pumpEventQueue();
         addTearDown(lockedPedal.dispose);
         final locked = ControlCubit(
           looper: looper,
@@ -2758,6 +2762,8 @@ void main() {
           // the shared one already holds this frame, and a repeat is dropped.
           final idleLink = FakePedalLink();
           final idlePedal = PedalRepository(idleLink);
+          idleLink.hello();
+          await pumpEventQueue();
           addTearDown(idlePedal.dispose);
           final idle = ControlCubit(
             looper: looper,

@@ -101,19 +101,18 @@ class PedalRepository {
   /// talking, or `null` while it is not.
   String? get firmwareVersion => _hello?.firmwareVersion;
 
-  /// Whether the board is talking a link protocol this build does not speak,
-  /// in which case its button table cannot be trusted: a reordered one could
-  /// map a stomp onto Clear.
-  bool get _incompatible => _disposed || status == PedalLinkStatus.incompatible;
+  /// Traffic is trusted only after a live, compatible hello. A stale or
+  /// unknown button table could map a stomp onto Clear.
+  bool get _connected => !_disposed && status == PedalLinkStatus.connected;
 
   /// Sends [frame] to the board unless it is the frame already showing, and
   /// remembers it as the frame every later hello is answered with. Recorded
-  /// but not sent while the board is [PedalLinkStatus.incompatible]; dropped
+  /// but not sent until the board is [PedalLinkStatus.connected]; dropped
   /// after [goodbye].
   void pushState(PedalStateFrame frame) {
     if (_disposed || _goodbye || frame == _lastFrame) return;
     _lastFrame = frame;
-    if (!_incompatible) _link.send(StateMessage(frame));
+    if (_connected) _link.send(StateMessage(frame));
   }
 
   /// Darkens the console for a shutdown and holds the mark: from here on
@@ -138,14 +137,14 @@ class PedalRepository {
   void _onMessage(PedalLinkMessage message) {
     switch (message) {
       case ButtonMessage(:final button, :final pressed):
-        if (_incompatible) return;
+        if (!_connected) return;
         _emit(
           pressed
               ? ButtonPressed(button, timestamp: _clock())
               : ButtonReleased(button, timestamp: _clock()),
         );
       case EncoderMessage(:final delta):
-        if (_incompatible) return;
+        if (!_connected) return;
         _emit(EncoderDelta(delta));
       case HelloMessage():
         _onHello(message);

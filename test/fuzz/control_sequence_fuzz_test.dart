@@ -723,6 +723,11 @@ class _Harness {
     bloc = LooperBloc(repository: repo);
     sim = FakePedalLink();
     pedalRepo = PedalRepository(sim);
+    sim.hello();
+    _helloTimer = Timer.periodic(
+      const Duration(milliseconds: PedalLinkCodec.helloIntervalMs),
+      (_) => sim.hello(),
+    );
     performance = PerformanceRepository(
       engine: engine,
       exportsRoot: () async => tempDir.path,
@@ -747,6 +752,7 @@ class _Harness {
   late final LooperBloc bloc;
   late final FakePedalLink sim;
   late final PedalRepository pedalRepo;
+  late final Timer _helloTimer;
   late final PerformanceRepository performance;
   late final ControlCubit control;
   late final PedalCubit cubit;
@@ -816,6 +822,7 @@ class _Harness {
   }
 
   void dispose(FakeAsync fa) {
+    _helloTimer.cancel();
     unawaited(control.close());
     unawaited(cubit.close());
     unawaited(bloc.close());
