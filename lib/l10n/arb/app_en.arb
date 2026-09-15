@@ -1849,6 +1849,10 @@
         }
     },
     "midiCtrlCalibrateWaiting": "Waiting for the pedal to move.",
+    "midiCtrlCalibrateSaving": "Saving…",
+    "midiCtrlCalibrateLoadError": "Saved pedal calibration could not be loaded. Calibrate the pedal again.",
+    "midiCtrlCalibrateSaveError": "Calibration could not be saved. Tap Done to try again.",
+    "midiCtrlCalibrateResetError": "Calibration could not be reset. Try again.",
     "midiCtrlCalibrateDone": "Done",
     "midiCtrlCalibrateCancel": "Cancel",
     "midiCtrlCalibrateReset": "Reset to automatic",

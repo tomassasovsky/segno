@@ -320,10 +320,86 @@ void main() {
     CtrlMessage raw(int value, {PedalCtrlJack jack = PedalCtrlJack.ctrl1}) =>
         CtrlMessage(jack: jack, kind: PedalCtrlKind.expression, value: value);
 
+    test('incompatible firmware cancels pending calibration readings', () {
+      fakeAsync((async) {
+        final link = FakePedalLink();
+        final repo = PedalRepository(link);
+        final seen = <CtrlChanged>[];
+        repo.events.listen((event) => seen.add(event as CtrlChanged));
+        link
+          ..hello()
+          ..emit(raw(24));
+        async
+          ..flushMicrotasks()
+          ..elapse(PedalRepository.settleTime);
+        link.emit(raw(200));
+        async.flushMicrotasks();
+        expect(seen.map((event) => event.value), [24, 200]);
+
+        link.emit(
+          const HelloMessage(
+            protocolVersion: PedalLinkCodec.protocolVersion + 1,
+            firmwareMajor: 2,
+            firmwareMinor: 0,
+          ),
+        );
+        async
+          ..flushMicrotasks()
+          ..elapse(PedalRepository.settleTime);
+        repo.setCtrlCalibration(
+          PedalCtrlJack.ctrl1,
+          const PedalCtrlCalibration(min: 24, max: 200),
+        );
+        async.flushMicrotasks();
+        expect(seen.map((event) => event.value), [24, 200]);
+
+        // The old pending reading and learned ends cannot reappear after
+        // recovery. A new reading still uses the explicit calibration.
+        link.hello();
+        async.flushMicrotasks();
+        expect(seen, hasLength(2));
+        link.emit(raw(200));
+        async.flushMicrotasks();
+        expect(seen.last.value, 255);
+        repo.setCtrlCalibration(PedalCtrlJack.ctrl1, null);
+        async.flushMicrotasks();
+        expect(seen.last.value, 200);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('CTRL inputs wait for a compatible hello after disconnection', () {
+      fakeAsync((async) {
+        final link = FakePedalLink();
+        final repo = PedalRepository(link);
+        final seen = <CtrlChanged>[];
+        repo.events.listen((event) => seen.add(event as CtrlChanged));
+        link.emit(raw(24));
+        async.flushMicrotasks();
+        expect(seen, isEmpty);
+        link.hello();
+        async
+          ..flushMicrotasks()
+          ..elapse(repo.helloTimeout);
+        link.emit(raw(255));
+        async.flushMicrotasks();
+        expect(seen, isEmpty);
+        link
+          ..hello()
+          ..emit(raw(200));
+        async.flushMicrotasks();
+        expect(seen.single.value, 200);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
     test('an explicit calibration maps every reading onto the travel', () {
       fakeAsync((async) {
         final link = FakePedalLink();
         final repo = PedalRepository(link);
+        link.hello();
         final seen = <CtrlChanged>[];
         repo.events.listen((e) => seen.add(e as CtrlChanged));
         repo.setCtrlCalibration(
@@ -347,6 +423,7 @@ void main() {
       fakeAsync((async) {
         final link = FakePedalLink();
         final repo = PedalRepository(link);
+        link.hello();
         final seen = <CtrlChanged>[];
         repo.events.listen((e) => seen.add(e as CtrlChanged));
 
@@ -378,6 +455,7 @@ void main() {
       fakeAsync((async) {
         final link = FakePedalLink();
         final repo = PedalRepository(link);
+        link.hello();
         final seen = <CtrlChanged>[];
         repo.events.listen((e) => seen.add(e as CtrlChanged));
 
@@ -406,6 +484,7 @@ void main() {
       fakeAsync((async) {
         final link = FakePedalLink();
         final repo = PedalRepository(link);
+        link.hello();
         final seen = <CtrlChanged>[];
         repo.events.listen((e) => seen.add(e as CtrlChanged));
         repo.setCtrlCalibration(
@@ -430,6 +509,7 @@ void main() {
         fakeAsync((async) {
           final link = FakePedalLink();
           final repo = PedalRepository(link);
+          link.hello();
           final seen = <CtrlChanged>[];
           repo.events.listen((e) => seen.add(e as CtrlChanged));
           repo.setCtrlCalibration(
@@ -454,6 +534,7 @@ void main() {
       fakeAsync((async) {
         final link = FakePedalLink();
         final repo = PedalRepository(link);
+        link.hello();
         final seen = <CtrlChanged>[];
         repo.events.listen((e) => seen.add(e as CtrlChanged));
         link.hello();
@@ -481,6 +562,7 @@ void main() {
       fakeAsync((async) {
         final link = FakePedalLink();
         final repo = PedalRepository(link);
+        link.hello();
         final seen = <CtrlChanged>[];
         repo.events.listen((e) => seen.add(e as CtrlChanged));
         for (final v in [24, 200]) {
@@ -528,6 +610,7 @@ void main() {
     test('a switch, on either contact, passes through untouched', () async {
       final link = FakePedalLink();
       final repo = PedalRepository(link);
+      link.hello();
       final seen = <CtrlChanged>[];
       repo.events.listen((e) => seen.add(e as CtrlChanged));
       link.emit(

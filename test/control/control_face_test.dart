@@ -31,6 +31,30 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
 
+class _CalibrationStore extends FakeKeyValueStore {
+  Completer<void>? pendingSave;
+  bool failRead = false;
+  bool failReset = false;
+
+  @override
+  Future<String?> getString(String key) async {
+    if (failRead) throw StateError('cannot read calibration');
+    return super.getString(key);
+  }
+
+  @override
+  Future<void> setString(String key, String value) async {
+    await pendingSave?.future;
+    await super.setString(key, value);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (failReset) throw StateError('cannot reset calibration');
+    await super.remove(key);
+  }
+}
+
 /// A controller source a test can move a control on, so a MIDI-learn capture
 /// can be COMPLETED here and not merely started.
 class _FakeControllerSource implements ControllerSource {
@@ -122,6 +146,8 @@ void main() {
     MidiConnection connection = const MidiConnection(),
     Size size = const Size(1600, 1400),
     PedalLink? pedalLink,
+    SettingsRepository? pedalSettings,
+    Locale? locale,
   }) async {
     tester.view
       ..physicalSize = size
@@ -169,6 +195,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
@@ -187,7 +214,12 @@ void main() {
               BlocProvider.value(value: tracks),
               // The tray asks the link whether a CTRL pedal could deliver: a
               // rig with no MIDI is still bindable from the console.
-              BlocProvider(create: (_) => PedalCubit(pedal: pedal)),
+              BlocProvider(
+                create: (_) => PedalCubit(
+                  pedal: pedal,
+                  settings: pedalSettings,
+                ),
+              ),
             ],
             child: const Scaffold(
               body: Padding(
@@ -702,6 +734,128 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsNothing);
 
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('calibration save waits, reports failure, and permits retry', (
+      tester,
+    ) async {
+      final store = _CalibrationStore()..pendingSave = Completer<void>();
+      final link = FakePedalLink();
+      await pump(
+        tester,
+        pedalLink: link,
+        pedalSettings: SettingsRepository(store: store),
+      );
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.expression,
+          value: 24,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl1')));
+      await tester.pumpAndSettle();
+      for (final value in [24, 255]) {
+        link.emit(
+          CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: value,
+          ),
+        );
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_done')));
+      await tester.pump();
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.midiCtrlCalibrateSaving), findsOneWidget);
+      for (final key in ['midi_ctrl_cal_done', 'midi_ctrl_cal_cancel']) {
+        expect(
+          tester.widget<ConsoleSmallButton>(find.byKey(Key(key))).onPressed,
+          isNull,
+        );
+      }
+      expect(store.values['pedal.ctrl_calibration.0'], isNull);
+
+      store.pendingSave!.completeError(StateError('storage unavailable'));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.midiCtrlCalibrateSaveError), findsOneWidget);
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsOneWidget);
+      expect(
+        tester
+            .widget<ConsoleSmallButton>(
+              find.byKey(const Key('midi_ctrl_cal_done')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      store.pendingSave = null;
+      link.hello();
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_done')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_error')), findsNothing);
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsNothing);
+      expect(store.values['pedal.ctrl_calibration.0'], '24,255');
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets(
+      'calibration read failure is localized without a connected board',
+      (tester) async {
+        await pump(
+          tester,
+          pedalSettings: SettingsRepository(
+            store: _CalibrationStore()..failRead = true,
+          ),
+          locale: const Locale('es'),
+        );
+        await showMidi(tester);
+        expect(
+          find.text(l10nOf(tester).midiCtrlCalibrateLoadError),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('calibration reset failure keeps the calibrated row', (
+      tester,
+    ) async {
+      final store = _CalibrationStore()
+        ..values['pedal.ctrl_calibration.0'] = '24,255'
+        ..failReset = true;
+      final link = FakePedalLink();
+      await pump(
+        tester,
+        pedalLink: link,
+        pedalSettings: SettingsRepository(store: store),
+      );
+      link
+        ..hello()
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 24,
+          ),
+        );
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_reset')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(l10nOf(tester).midiCtrlCalibrateResetError),
+        findsOneWidget,
+      );
+      expect(find.text(l10nOf(tester).midiCtrlCalibrated), findsOneWidget);
+      expect(store.values['pedal.ctrl_calibration.0'], '24,255');
       await tester.pump(const Duration(seconds: 4));
     });
 

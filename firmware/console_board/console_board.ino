@@ -26,7 +26,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 4;
+static const uint8_t FW_MINOR = 5;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -490,8 +490,11 @@ static void pollCtrl() {
         if (g_ctrlRailSinceMs[j] == 0) g_ctrlRailSinceMs[j] = now;
         if (now - g_ctrlRailSinceMs[j] >= CTRL_DETACH_MS) {
           ctrlDetach(j);
-          continue;
         }
+        // This may be an empty jack, not a pedal at full toe. Hold the last
+        // reported position throughout detection: sending 255 while waiting
+        // would turn a bound level fully up before NONE could preserve it.
+        continue;
       } else if (raw < CTRL_HIGH) {
         g_ctrlRailSinceMs[j] = 0;
         g_ctrlJumped[j] = false;   // it moved: it is a pedal, being played

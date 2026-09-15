@@ -1,5 +1,17 @@
 part of 'pedal_cubit.dart';
 
+/// The calibration storage operation that needs to be retried.
+enum PedalCalibrationError {
+  /// Saved calibrations could not be read.
+  load,
+
+  /// The new calibration could not be saved.
+  save,
+
+  /// The stored calibration could not be removed.
+  reset,
+}
+
 /// The pedal LINK state: whether the console board is on the other end of the
 /// link, the firmware it announced, and what its CTRL jacks report.
 /// Everything else about the pedal — mode, cursor, bank, LEDs — is control
@@ -13,6 +25,8 @@ class PedalState extends Equatable {
     this.calibrating,
     this.calibrationSeen,
     this.calibrated = const {},
+    this.calibrationBusy = false,
+    this.calibrationError,
   });
 
   /// Whether the board is talking.
@@ -38,6 +52,12 @@ class PedalState extends Equatable {
   /// from the pedal.
   final Set<PedalCtrlJack> calibrated;
 
+  /// A save or reset is waiting for storage; further edits must wait.
+  final bool calibrationBusy;
+
+  /// The failed storage operation, or `null` when none needs attention.
+  final PedalCalibrationError? calibrationError;
+
   /// A copy with the given fields replaced. Nullable fields take a thunk so
   /// that "set to null" and "leave alone" are different calls.
   PedalState copyWith({
@@ -47,6 +67,8 @@ class PedalState extends Equatable {
     PedalCtrlJack? Function()? calibrating,
     PedalCtrlCalibration? Function()? calibrationSeen,
     Set<PedalCtrlJack>? calibrated,
+    bool? calibrationBusy,
+    PedalCalibrationError? Function()? calibrationError,
   }) => PedalState(
     status: status ?? this.status,
     firmwareVersion: firmwareVersion != null
@@ -58,6 +80,10 @@ class PedalState extends Equatable {
         ? calibrationSeen()
         : this.calibrationSeen,
     calibrated: calibrated ?? this.calibrated,
+    calibrationBusy: calibrationBusy ?? this.calibrationBusy,
+    calibrationError: calibrationError != null
+        ? calibrationError()
+        : this.calibrationError,
   );
 
   @override
@@ -68,6 +94,8 @@ class PedalState extends Equatable {
     calibrating,
     calibrationSeen,
     calibrated,
+    calibrationBusy,
+    calibrationError,
   ];
 }
 

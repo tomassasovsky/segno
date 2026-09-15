@@ -488,6 +488,16 @@ class _ControllersTrayBodyState extends State<ControllersTrayBody> {
               _open = already ? null : _MappingOpen(binding.key);
             }),
           ),
+        if (pedalState.calibrationError case final error?)
+          ConsoleBanner(
+            key: const Key('midi_ctrl_cal_error'),
+            message: switch (error) {
+              PedalCalibrationError.load => l10n.midiCtrlCalibrateLoadError,
+              PedalCalibrationError.save => l10n.midiCtrlCalibrateSaveError,
+              PedalCalibrationError.reset => l10n.midiCtrlCalibrateResetError,
+            },
+            tone: ConsoleBannerTone.failure,
+          ),
         // What each CTRL jack is reporting right now, directly above the
         // buttons that bind it. A pedal is bound by moving it, so it has to be
         // visible WHILE it moves: without this there is no way to tell a
@@ -514,7 +524,9 @@ class _ControllersTrayBodyState extends State<ControllersTrayBody> {
                   reading: reading,
                   calibrating: pedalState.calibrating == input.jack,
                   calibrated: pedalState.calibrated.contains(input.jack),
-                  onTap: !_isCalibratable(input, reading)
+                  onTap:
+                      pedalState.calibrationBusy ||
+                          !_isCalibratable(input, reading)
                       ? null
                       : () => pedalState.calibrating == input.jack
                             ? pedalCubit.cancelCtrlCalibration()
@@ -536,6 +548,7 @@ class _ControllersTrayBodyState extends State<ControllersTrayBody> {
                               input.jack,
                             ),
                             cubit: pedalCubit,
+                            busy: pedalState.calibrationBusy,
                           ),
                   ),
               ],
@@ -1115,6 +1128,7 @@ class _CalibratePanel extends StatelessWidget {
     required this.seen,
     required this.calibrated,
     required this.cubit,
+    required this.busy,
   });
 
   final PedalCtrlJack jack;
@@ -1122,6 +1136,7 @@ class _CalibratePanel extends StatelessWidget {
   final PedalCtrlCalibration? seen;
   final bool calibrated;
   final PedalCubit cubit;
+  final bool busy;
 
   static int _percent(int raw) => (raw * 100 / 255).round();
 
@@ -1173,22 +1188,26 @@ class _CalibratePanel extends StatelessWidget {
                 ConsoleSmallButton(
                   key: const Key('midi_ctrl_cal_reset'),
                   label: l10n.midiCtrlCalibrateReset,
-                  onPressed: () => unawaited(cubit.resetCtrlCalibration(jack)),
+                  onPressed: busy
+                      ? null
+                      : () => unawaited(cubit.resetCtrlCalibration(jack)),
                 ),
                 const SizedBox(width: 10),
               ],
               ConsoleSmallButton(
                 key: const Key('midi_ctrl_cal_cancel'),
                 label: l10n.midiCtrlCalibrateCancel,
-                onPressed: cubit.cancelCtrlCalibration,
+                onPressed: busy ? null : cubit.cancelCtrlCalibration,
               ),
               const SizedBox(width: 10),
               // Done only once the sweep is wide enough to trust: a pedal that
               // was not moved must not be calibrated to a point.
               ConsoleSmallButton(
                 key: const Key('midi_ctrl_cal_done'),
-                label: l10n.midiCtrlCalibrateDone,
-                onPressed: seen == null || !seen.isUsable
+                label: busy
+                    ? l10n.midiCtrlCalibrateSaving
+                    : l10n.midiCtrlCalibrateDone,
+                onPressed: busy || seen == null || !seen.isUsable
                     ? null
                     : () => unawaited(cubit.finishCtrlCalibration()),
               ),

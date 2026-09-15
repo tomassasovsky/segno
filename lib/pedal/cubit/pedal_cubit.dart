@@ -32,20 +32,34 @@ class PedalCubit extends Cubit<PedalState> {
       ) {
     _statusSub = _pedal.statusChanges.listen(_onStatus);
     _eventsSub = _pedal.events.listen(_onEvent);
-    unawaited(_loadCalibrations());
+    _initialLoad = _loadCalibrations();
   }
 
   final PedalRepository _pedal;
   final SettingsRepository? _settings;
   late final StreamSubscription<PedalLinkStatus> _statusSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
+  late final Future<void> _initialLoad;
+  Future<void>? _pendingWrite;
+  bool _closing = false;
+
+  bool get _inactive => _closing || isClosed;
 
   Future<void> _loadCalibrations() async {
     final settings = _settings;
     if (settings == null) return;
     final calibrated = <PedalCtrlJack>{};
+    var failed = false;
     for (final jack in PedalCtrlJack.values) {
-      final stored = await settings.loadCtrlCalibration(jack.index);
+      if (_inactive) return;
+      (int, int)? stored;
+      try {
+        stored = await settings.loadCtrlCalibration(jack.index);
+      } on Object {
+        failed = true;
+        continue;
+      }
+      if (_inactive) return;
       if (stored == null) continue;
       final (min, max) = stored;
       if (min < 0 || max > 255 || min > max) continue;
@@ -55,12 +69,17 @@ class PedalCubit extends Cubit<PedalState> {
       );
       calibrated.add(jack);
     }
-    if (isClosed || calibrated.isEmpty) return;
-    emit(state.copyWith(calibrated: {...state.calibrated, ...calibrated}));
+    if (_inactive) return;
+    emit(
+      state.copyWith(
+        calibrated: {...state.calibrated, ...calibrated},
+        calibrationError: () => failed ? PedalCalibrationError.load : null,
+      ),
+    );
   }
 
   void _onStatus(PedalLinkStatus status) {
-    if (isClosed) return;
+    if (_inactive) return;
     emit(
       state.copyWith(
         status: status,
@@ -74,7 +93,7 @@ class PedalCubit extends Cubit<PedalState> {
   /// has reached. Only CTRL events land here: the footswitches and the
   /// encoder are the control cubit's.
   void _onEvent(PedalEvent event) {
-    if (isClosed || event is! CtrlChanged) return;
+    if (_inactive || event is! CtrlChanged) return;
     if (event.kind == PedalCtrlKind.none) {
       // The plug came out: every row of the jack goes, and a calibration in
       // progress on it is abandoned — there is no pedal to sweep any more.
@@ -118,14 +137,21 @@ class PedalCubit extends Cubit<PedalState> {
   /// [finishCtrlCalibration] the lowest and highest raw readings it reaches
   /// are collected as its ends. One jack at a time.
   void beginCtrlCalibration(PedalCtrlJack jack) {
-    if (isClosed) return;
-    emit(state.copyWith(calibrating: () => jack, calibrationSeen: () => null));
+    if (_inactive || state.calibrationBusy) return;
+    emit(
+      state.copyWith(
+        calibrating: () => jack,
+        calibrationSeen: () => null,
+        calibrationError: () => null,
+      ),
+    );
   }
 
   /// Ends the calibration and keeps what was seen, if the pedal was swept
   /// far enough to trust ([PedalCtrlCalibration.isUsable]); otherwise the
   /// session simply ends and the jack stays as it was. Persisted.
   Future<void> finishCtrlCalibration() async {
+    if (_inactive || state.calibrationBusy) return;
     final jack = state.calibrating;
     final seen = state.calibrationSeen;
     if (jack == null) return;
@@ -133,38 +159,90 @@ class PedalCubit extends Cubit<PedalState> {
       cancelCtrlCalibration();
       return;
     }
-    _pedal.setCtrlCalibration(jack, seen);
-    if (isClosed) return;
-    emit(
-      state.copyWith(
-        calibrating: () => null,
-        calibrationSeen: () => null,
-        calibrated: {...state.calibrated, jack},
-      ),
-    );
-    await _settings?.saveCtrlCalibration(
-      jack.index,
-      min: seen.min,
-      max: seen.max,
-    );
+    emit(state.copyWith(calibrationBusy: true, calibrationError: () => null));
+    try {
+      // A late startup read must never replace the user's newer choice.
+      await _initialLoad;
+      if (_inactive) return;
+      _pendingWrite = _settings?.saveCtrlCalibration(
+        jack.index,
+        min: seen.min,
+        max: seen.max,
+      );
+      await _pendingWrite;
+      if (_inactive) return;
+      _pedal.setCtrlCalibration(jack, seen);
+      emit(
+        state.copyWith(
+          calibrating: () => null,
+          calibrationSeen: () => null,
+          calibrated: {...state.calibrated, jack},
+          calibrationError: () => null,
+        ),
+      );
+    } on Object {
+      if (!_inactive) {
+        emit(
+          state.copyWith(calibrationError: () => PedalCalibrationError.save),
+        );
+      }
+    } finally {
+      _pendingWrite = null;
+      if (!_inactive) emit(state.copyWith(calibrationBusy: false));
+    }
   }
 
   /// Abandons a calibration in progress; nothing changes.
   void cancelCtrlCalibration() {
-    if (isClosed || state.calibrating == null) return;
-    emit(state.copyWith(calibrating: () => null, calibrationSeen: () => null));
+    if (_inactive || state.calibrationBusy || state.calibrating == null) return;
+    emit(
+      state.copyWith(
+        calibrating: () => null,
+        calibrationSeen: () => null,
+        calibrationError: () => null,
+      ),
+    );
   }
 
   /// Forgets [jack]'s calibration: its ends are learned from the pedal again.
   Future<void> resetCtrlCalibration(PedalCtrlJack jack) async {
-    _pedal.setCtrlCalibration(jack, null);
-    if (isClosed) return;
-    emit(state.copyWith(calibrated: {...state.calibrated}..remove(jack)));
-    await _settings?.clearCtrlCalibration(jack.index);
+    if (_inactive || state.calibrationBusy) return;
+    emit(state.copyWith(calibrationBusy: true, calibrationError: () => null));
+    try {
+      await _initialLoad;
+      if (_inactive) return;
+      _pendingWrite = _settings?.clearCtrlCalibration(jack.index);
+      await _pendingWrite;
+      if (_inactive) return;
+      _pedal.setCtrlCalibration(jack, null);
+      emit(
+        state.copyWith(
+          calibrated: {...state.calibrated}..remove(jack),
+          calibrationError: () => null,
+        ),
+      );
+    } on Object {
+      if (!_inactive) {
+        emit(
+          state.copyWith(calibrationError: () => PedalCalibrationError.reset),
+        );
+      }
+    } finally {
+      _pendingWrite = null;
+      if (!_inactive) emit(state.copyWith(calibrationBusy: false));
+    }
   }
 
   @override
   Future<void> close() async {
+    _closing = true;
+    // Storage has no cancellation API. Finish an already-started write before
+    // releasing the repository; a mutation still waiting for load never starts.
+    try {
+      await _pendingWrite;
+    } on Object {
+      // The mutation handles failure; shutdown must still release the link.
+    }
     await _statusSub.cancel();
     await _eventsSub.cancel();
     // Darken the console on shutdown, then release the link — this cubit is

@@ -218,9 +218,6 @@ class PedalRepository {
 
   void _onHelloTimeout() {
     _setHello(null, () => 'no hello for ${helloTimeout.inMilliseconds} ms');
-    // The board is gone, or rebooting: whatever was plugged in may not be
-    // what comes back. The learned ends go with it; a set calibration stays.
-    _forgetLearned();
   }
 
   void _onCtrl(
@@ -317,6 +314,10 @@ class PedalRepository {
   void _setHello(HelloMessage? hello, String Function() why) {
     if (hello == _hello) return;
     _hello = hello;
+    // A missing or incompatible board cannot supply trusted calibration
+    // readings, including readings still waiting for their settle timer.
+    // Whatever comes back may hold another pedal; explicit calibration stays.
+    if (status != PedalLinkStatus.connected) _forgetLearned();
     _log?.call('pedal link: ${status.name} (${why()})');
     if (!_statusChanges.isClosed) _statusChanges.add(status);
   }

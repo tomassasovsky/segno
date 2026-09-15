@@ -260,7 +260,7 @@ class ControlCubit extends Cubit<ControlState> {
       <PedalBindingKey, ({FxBindingTarget target, bool prior})>{};
 
   // The mid-gesture restore values for MOMENTARY bindings held from an
-  // external MIDI control: one entry per TARGET, carrying the state the first
+  // assignable control: one entry per TARGET, carrying the state the first
   // press found and the set of controls currently holding it.
   //
   // Reference-counted rather than one slot per control, because two switches
@@ -272,8 +272,8 @@ class ControlCubit extends Cubit<ControlState> {
   // only reading with no stranded state and no early release.
   //
   // Kept apart from `_heldRestore` because their release-all triggers differ: a
-  // MIDI momentary survives a mode change (external control is not mode-gated)
-  // but must release when its device unplugs, which the pedal's own held
+  // controller momentary survives a mode change (it is not mode-gated)
+  // but must release when its source unplugs, which the pedal's own held
   // presses have no reason to care about.
   final _heldControllerRestore =
       <
@@ -1771,8 +1771,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// Restores every MIDI-held momentary to the state its press captured — the
   /// external-control half of the ONE release-all rule (B1).
   ///
-  /// Reached from MIDI-source disconnect ([_onMidiConnection]) and from the
-  /// start of a learn capture, which swallows the release edge. A mapping EDIT
+  /// Reached from the start of a learn capture, which swallows the release
+  /// edge. A source disconnect releases only its controls through the
+  /// repository's normal OFF events. A mapping EDIT
   /// releases only what it strands — see
   /// [_releaseControllerMomentariesMissingFrom].
   ///
@@ -1794,7 +1795,10 @@ class ControlCubit extends Cubit<ControlState> {
 
   void _onMidiConnection(MidiConnection connection) {
     if (connection.status == MidiConnectionStatus.connected) return;
-    releaseAllControllerMomentary();
+    _controller?.releaseSwitches(const {
+      ControllerSourceKind.midiNote,
+      ControllerSourceKind.midiCc,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -2002,6 +2006,10 @@ class ControlCubit extends Cubit<ControlState> {
     // forever (B1). Restore now. A reconnect needs nothing from here: the
     // repository answers the board's hello with the current frame.
     releaseAllMomentary();
+    _controller?.releaseSwitches(const {
+      ControllerSourceKind.consoleSwitch,
+      ControllerSourceKind.consoleExpression,
+    });
   }
 
   /// Projects and pushes the current LED frame. The repository drops a frame
