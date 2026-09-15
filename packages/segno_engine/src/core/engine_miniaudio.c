@@ -240,8 +240,11 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
      * that threshold at 2 periods however deep the ring is; the SEGNO patch (#809)
      * in ma_device_init_by_type__alsa raises it to half the ring, still floored at
      * the two periods full-duplex needs — so it only moves at all from `periods`
-     * >= 5, and is 4 periods at the appliance's shipped 8. That is what makes this
-     * knob buy a playback cushion and not capture depth alone.
+     * >= 5. At the appliance's shipped 4 (#818) the patch is therefore a NO-OP:
+     * the threshold sits on that two-period floor, so at the depth that actually
+     * ships this knob buys capture ring only. The playback cushion it can buy
+     * — the +1.33ms this comment used to quote at 8 — exists in no shipping
+     * configuration today.
      *
      * At tiny periods (64 frames) a 2-period buffer runs the playback write side
      * right at the underrun edge: on an unlucky startup phase the capture->playback
