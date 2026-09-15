@@ -814,6 +814,150 @@ void main() {
     );
   });
 
+  group('buffer choices', () {
+    test('offers 32 frames, ascending, off ASIO (#893)', () {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      // The generic list is what a non-ASIO rig sees, and the ordering is what
+      // the picker renders, so a stray insert would show the tightest buffer
+      // in the wrong place. Ascending order is also what makes `.first` the
+      // tightest period, which is why `_snapRateAndBuffer` does not use it.
+      expect(cubit.state.bufferChoices, [32, 64, 128, 256, 512]);
+    });
+
+    test('an off-list buffer snaps to its neighbour, not to the tightest', () {
+      // 480 is a period the grid cannot show — an ALSA quantum negotiated by
+      // some device. The snap exists so a chip stays lit, so it has to land
+      // somewhere; `bufferChoices.first` is 32 now, and landing an UNCHOSEN
+      // selection on the least-proven deadline (then persisting it) is what
+      // the nearest-offered rule guards against. 512 is also what the user
+      // effectively had, which 128 would have thrown away.
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 480),
+      );
+      // mockAsioDriver publishes no buffer list of its own, so the snap runs
+      // against the generic grid rather than a driver set.
+      when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.bufferChoices, [32, 64, 128, 256, 512]);
+      expect(cubit.state.bufferFrames, 512);
+    });
+
+    test('a low-latency pick is approximated, not reset to the default', () {
+      // Someone who chose 32 and then switches to a driver that cannot do it
+      // should land on the closest thing it CAN do, not be silently bumped to
+      // the default two steps away.
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 32),
+      );
+      when(repository.asioDrivers).thenReturn(const [
+        AudioDevice(
+          id: 'Mid ASIO',
+          name: 'Mid ASIO',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+          bufferSizes: [64, 128, 256],
+          sampleRates: [48000],
+        ),
+      ]);
+
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.bufferFrames, 64);
+    });
+
+    test('a driver set below 128 snaps to its largest, not its first', () {
+      // The guard has to hold for every offered set, not only ones
+      // containing the default. A driver reporting [32, 64] would put
+      // `.first` straight back on the tightest period.
+      when(repository.asioDrivers).thenReturn(const [
+        AudioDevice(
+          id: 'Tight ASIO',
+          name: 'Tight ASIO',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+          bufferSizes: [32, 64],
+          sampleRates: [48000],
+        ),
+      ]);
+
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      // The default 128 is not on offer, so the snap takes the safest
+      // deadline available rather than the tightest.
+      expect(cubit.state.bufferChoices, [32, 64]);
+      expect(cubit.state.bufferFrames, 64);
+    });
+
+    test('a driver set above 128 snaps to its smallest, not its largest', () {
+      // The other direction, and the reason the fallback is not simply "the
+      // largest": a driver whose minimum is 256 reports [256 .. 2048], and
+      // landing a LOOPER on 2048 frames -- 42.7ms at 48kHz -- to avoid a
+      // tight deadline would trade one bad outcome for a worse one.
+      when(repository.asioDrivers).thenReturn(const [
+        AudioDevice(
+          id: 'Coarse ASIO',
+          name: 'Coarse ASIO',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+          bufferSizes: [256, 512, 1024, 2048],
+          sampleRates: [48000],
+        ),
+      ]);
+
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.bufferFrames, 256);
+    });
+
+    test('a NEGOTIATED 32 is adopted and persisted, by design', () async {
+      // Offering 32 also makes it offerable, so a device that opens at 32
+      // when 64 was asked now has 32 enter the selection and reach disk.
+      // That is the rule working rather than a leak: the engine IS running
+      // at 32, and a chip still reading 64 would be the lie the refused
+      // banner exists to correct. Pinned so the behaviour is a decision.
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 32,
+            isConnected: true,
+          ),
+        ),
+      );
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 64),
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit.setBufferFrames(64);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(cubit.state.bufferFrames, 32);
+      expect(cubit.state.requestedBuffer, 64);
+      expect(cubit.state.actualBuffer, 32);
+      // Named as a refusal, so the player is told rather than silently moved.
+      expect(cubit.state.phase, ConfigPhase.refused);
+      expect((await settings.loadAudioConfig())?.bufferFrames, 32);
+    });
+  });
+
   group('asio backend', () {
     test('loads drivers only when selectable', () {
       when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
