@@ -92,6 +92,19 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   /// detached.
   ControlCubit? _control;
 
+  /// What each mapping's control last sent, for the list's meters. Kept for
+  /// as long as the page is open, so a visit to the editor does not empty
+  /// them; read straight from the repository's messages, not from the control
+  /// state, so a moving fader redraws the meters and nothing else.
+  final Stopwatch _clock = Stopwatch()..start();
+  late final MidiSignalLevels _levels = MidiSignalLevels(
+    clock: () => _clock.elapsed,
+  );
+
+  /// Bumped when any meter's reading moves.
+  final ValueNotifier<int> _levelsMoved = ValueNotifier(0);
+  StreamSubscription<RawControllerInput>? _messages;
+
   /// The pen's insets inside the 1920 x 984 main area.
   static const double _left = 60;
   static const double _top = 140;
@@ -101,10 +114,30 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   static const double _pickerHeight = 808;
 
   @override
+  void initState() {
+    super.initState();
+    _messages = context.read<MidiDeviceRepository>().messages.listen(
+      _onMessage,
+    );
+  }
+
+  void _onMessage(RawControllerInput message) {
+    final device = context.read<MidiSetupCubit>().state.connection.selectedId;
+    final sources = [
+      for (final mapping
+          in context.read<ControlCubit>().state.midiMappings.mappings)
+        mapping.source,
+    ];
+    if (_levels.feed(device, message, sources)) _levelsMoved.value++;
+  }
+
+  @override
   void dispose() {
     // Leaving with the editor open must not leave the controller paused: the
     // page is gone, and nothing else would ever resume it.
     _control?.endMidiEdit();
+    unawaited(_messages?.cancel());
+    _levelsMoved.dispose();
     super.dispose();
   }
 
@@ -118,12 +151,28 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     );
     final draft = _draft;
     return Scaffold(
-      body: BlocListener<ControlCubit, ControlState>(
-        listenWhen: (previous, current) =>
-            previous.midiEdit?.learn?.reading !=
-                current.midiEdit?.learn?.reading ||
-            previous.midiEdit?.learnTimedOut != current.midiEdit?.learnTimedOut,
-        listener: _onLearn,
+      body: MultiBlocListener(
+        listeners: [
+          BlocListener<ControlCubit, ControlState>(
+            listenWhen: (previous, current) =>
+                previous.midiEdit?.learn?.reading !=
+                    current.midiEdit?.learn?.reading ||
+                previous.midiEdit?.learnTimedOut !=
+                    current.midiEdit?.learnTimedOut,
+            listener: _onLearn,
+          ),
+          // A controller that went away, or was swapped, cannot finish a pair
+          // it started: its half is dropped. The readings stay, as the last
+          // values received.
+          BlocListener<MidiSetupCubit, MidiSetupState>(
+            listenWhen: (previous, current) =>
+                previous.connection.selectedId !=
+                    current.connection.selectedId ||
+                previous.connection.status != current.connection.status,
+            listener: (context, state) =>
+                _levels.reset(state.connection.selectedId),
+          ),
+        ],
         child: LoopSettingsFrame(
           key: const Key('midi_controls_page'),
           crumb: l10n.midiControlsCrumb,
@@ -173,11 +222,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   ) {
     final l10n = context.l10n;
     final on = control.state.midiControlEnabled;
-    final notice = _notice;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (notice != null) _Notice(notice),
         LoopChoiceButton(
           key: const Key('midi_control_enabled'),
           width: 219,
@@ -250,22 +297,23 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
               Flexible(
                 child: MidiMappingRows(
                   rows: rows,
-                  device: device,
+                  lastOf: _levels.lastOf,
+                  moved: _levelsMoved,
                   onEdit: (mapping) => _edit(control, mapping),
                   onEnabled: (mapping, {required enabled}) => unawaited(
                     _setMappingEnabled(control, mapping, enabled: enabled),
                   ),
                 ),
               ),
+            // The page's notices sit under the rows, as the accepted design
+            // puts them, and are announced when they change.
             if (connection.hasSelection && !connected)
-              Padding(
-                padding: const EdgeInsets.only(top: 22),
-                child: AppText(
-                  l10n.midiControllerDisconnected,
-                  key: const Key('midi_controller_disconnected'),
-                  style: TextStyle(color: surface.warning, fontSize: 22),
-                ),
+              _Notice(
+                l10n.midiControllerDisconnected,
+                key: const Key('midi_controller_disconnected'),
               ),
+            if (_notice case final notice?)
+              _Notice(notice, key: const Key('midi_notice')),
           ],
         ),
       ),
@@ -302,7 +350,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     required bool enabled,
   }) async {
     await control.setMidiControlEnabled(enabled: enabled);
-    if (!mounted) return;
+    // Said on the list it was asked from, or not at all: an editor opened
+    // while the write was pending is not where this belongs.
+    if (!mounted || _view != _MidiView.list) return;
     final l10n = context.l10n;
     setState(() {
       _notice = control.state.midiControlEnabled != enabled
@@ -320,7 +370,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   }) async {
     setState(() => _notice = null);
     await control.setMidiMappingEnabled(mapping.id, enabled: enabled);
-    if (!mounted) return;
+    if (!mounted || _view != _MidiView.list) return;
     if (control.state.midiMappings.byId(mapping.id)?.enabled == enabled) {
       return;
     }
@@ -331,17 +381,16 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   void _add(ControlCubit control, MidiConnection connection) {
     final device = connection.selectedId;
     control.beginMidiEdit(device: device);
+    final draft = MidiMappingDraft(device: device);
     setState(() {
-      _draft = MidiMappingDraft(device: device);
-      _protocol = MidiProtocol.standard;
+      _draft = draft;
       _view = _MidiView.editor;
-      _notice = null;
     });
-    control.startMidiLearn(_protocol);
+    _learn(control, draft, MidiProtocol.standard);
   }
 
   void _edit(ControlCubit control, MidiMapping mapping) {
-    control.beginMidiEdit(device: mapping.source.device, editingId: mapping.id);
+    control.beginMidiEdit(device: mapping.source.device);
     setState(() {
       _draft = MidiMappingDraft.of(mapping);
       _protocol = mapping.source.protocol;
@@ -443,12 +492,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
               connected: connected,
               conflicting: draft.conflictIn(state.midiMappings) != null,
               notice: _notice,
-              onFormat: () => setState(() => _view = _MidiView.format),
-              onChannel: () => setState(() => _view = _MidiView.channel),
-              onLearn: () {
-                setState(() => _notice = null);
-                control.startMidiLearn(_protocol);
-              },
+              onFormat: () => _openPicker(control, _MidiView.format),
+              onChannel: () => _openPicker(control, _MidiView.channel),
+              onLearn: () => _learn(control, draft, _protocol),
               onCancelLearn: control.cancelMidiLearn,
               onEditExisting: () => _editExisting(control, draft),
               onBehavior: _behavior,
@@ -473,14 +519,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
               ],
               behavior: draft.behavior,
               program: draft.isProgram,
-              onAdd: () => setState(() {
-                _replacing = null;
-                _view = _MidiView.destinations;
-              }),
-              onChange: (key) => setState(() {
-                _replacing = key;
-                _view = _MidiView.destinations;
-              }),
+              onAdd: () => _openPicker(control, _MidiView.destinations),
+              onChange: (key) =>
+                  _openPicker(control, _MidiView.destinations, replacing: key),
               onRemove: (key) => _write(draft.without(key)),
               onRange: (key, {low, high}) =>
                   _write(draft.withRange(key, low: low, high: high)),
@@ -520,7 +561,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                       control.key != _replacing)
                     ?ControlValueTarget.tryParse(control.key),
               },
-              onPick: (target) => _pickParameter(draft, target),
+              onPick: (target) => _pickParameter(context, draft, target),
             ),
           ),
         ];
@@ -615,6 +656,16 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     ControlCubit control,
     MidiMappingDraft draft,
     MidiProtocol protocol,
+  ) => _learn(control, draft, protocol);
+
+  /// Starts Learn in [protocol], back on the editor — unless the draft drives
+  /// actions and [protocol] carries no press to run them on, which every
+  /// Learn start refuses, so no path can learn a control the draft's actions
+  /// could never run from.
+  void _learn(
+    ControlCubit control,
+    MidiMappingDraft draft,
+    MidiProtocol protocol,
   ) {
     if (!MidiMappingDraft.carriesActions(protocol) && draft.drivesActions) {
       setState(() {
@@ -631,6 +682,20 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     control.startMidiLearn(protocol);
   }
 
+  /// Opens a picker. A Learn still listening stops first, as it does in the
+  /// accepted design: a control moved while the performer is choosing
+  /// something else must not become the mapping's source out of sight. A
+  /// Learn that already heard its control keeps what it received on show.
+  void _openPicker(ControlCubit control, _MidiView view, {String? replacing}) {
+    if (control.state.midiEdit?.learn?.isListening ?? false) {
+      control.cancelMidiLearn();
+    }
+    setState(() {
+      _replacing = replacing;
+      _view = view;
+    });
+  }
+
   Future<void> _pickAction(BuildContext context) async {
     final l10n = context.l10n;
     final chosen = await showControlActionPicker(
@@ -639,22 +704,36 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
       current: null,
       trackNames: context.read<TracksCubit>().state.names,
     );
-    final action = chosen?.value;
     final draft = _draft;
-    if (action == null || draft == null || !mounted) return;
+    if (chosen == null || draft == null || !mounted) return;
+    // None adds nothing, and like any choice it ends the choosing.
+    final action = chosen.value;
     setState(() {
-      _draft = draft.withControl(MidiActionControl(key: action.key));
+      if (action != null) {
+        _draft = draft.withControl(MidiActionControl(key: action.key));
+      }
       _view = _MidiView.editor;
     });
   }
 
-  void _pickParameter(MidiMappingDraft draft, ControlValueTarget target) {
+  void _pickParameter(
+    BuildContext context,
+    MidiMappingDraft draft,
+    ControlValueTarget target,
+  ) {
     final key = target.canonicalString();
     final replacing = _replacing;
+    // A repair is only kept by Save; the editor says so, since a card that
+    // looks whole again reads as already done.
+    final repaired =
+        replacing != null &&
+        !_resolves(context.read<LooperRepository>(), replacing);
+    final l10n = context.l10n;
     setState(() {
       _draft = replacing == null
           ? draft.withControl(MidiParameterControl(key: key, low: 0, high: 1))
           : draft.repointing(replacing, key);
+      _notice = repaired ? l10n.midiRepairReady : null;
       _replacing = null;
       _destination = null;
       _view = _MidiView.editor;
@@ -685,10 +764,14 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     final mapping = draft.toMapping(control.state.midiMappings.nextId);
     if (mapping == null) return;
     await control.saveMidiMapping(mapping);
-    if (!mounted) return;
+    // An editor left, or replaced by another, while the write was pending is
+    // not this save's to close.
+    if (!mounted || !identical(_draft, draft)) return;
     // A save that did not land leaves the set as it was: the draft stays open
-    // with everything the performer did to it.
-    if (control.state.midiMappings.byId(mapping.id) == mapping) {
+    // with everything the performer did to it. Whether the mapping is enabled
+    // is the power button's, so it is not part of the comparison.
+    final saved = control.state.midiMappings.byId(mapping.id);
+    if (saved != null && saved.copyWith(enabled: mapping.enabled) == mapping) {
       _leaveEditor(control, notice: l10n.pedalSetupSaved);
     } else {
       setState(() => _notice = l10n.midiSaveFailed);
@@ -700,7 +783,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     if (id == null) return;
     final l10n = context.l10n;
     await control.deleteMidiMapping(id);
-    if (!mounted) return;
+    if (!mounted || !identical(_draft, draft)) return;
     if (control.state.midiMappings.byId(id) == null) {
       _leaveEditor(control, notice: l10n.midiMappingRemoved);
     } else {
@@ -765,25 +848,20 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   }
 }
 
-/// A notice beside the list's actions.
+/// One line of the list's notices: what just happened, or what is in the way.
 class _Notice extends StatelessWidget {
-  const _Notice(this.text);
+  const _Notice(this.text, {super.key});
 
   final String text;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: 24),
+    padding: const EdgeInsets.only(top: 22),
     child: Semantics(
       liveRegion: true,
       child: AppText(
         text,
-        key: const Key('midi_notice'),
-        style: TextStyle(
-          color: context.surface.textSecondary,
-          fontSize: 22,
-          height: 1,
-        ),
+        style: TextStyle(color: context.surface.warning, fontSize: 22),
       ),
     ),
   );

@@ -35,27 +35,28 @@ void main() {
   });
 
   test('is the last value a source received', () {
-    expect(levels.levelOf(knob), 0);
+    expect(levels.lastOf(knob), isNull);
     expect(levels.feed(device, cc(21, 127), [knob, wide]), isTrue);
-    expect(levels.levelOf(knob), 1);
-    expect(levels.levelOf(wide), 0);
+    expect(levels.lastOf(knob)?.value, 127);
+    expect(levels.lastOf(wide), isNull);
     expect(levels.feed(device, cc(21, 127), [knob]), isFalse);
     levels.feed(device, cc(21, 0), [knob]);
-    expect(levels.levelOf(knob), 0);
+    expect(levels.lastOf(knob)?.value, 0);
   });
 
   test('reads each source in its own format', () {
     levels
       ..feed(device, cc(22, 127), [knob, wide])
       ..feed(device, cc(54, 127), [knob, wide]);
-    expect(levels.levelOf(wide), 1);
-    expect(levels.levelOf(knob), 0);
+    expect(levels.lastOf(wide)?.value, 16383);
+    expect(levels.lastOf(wide)?.maximum, 16383);
+    expect(levels.lastOf(knob), isNull);
   });
 
   test('another device or channel moves nothing', () {
     expect(levels.feed('din:other', cc(21, 127), [knob]), isFalse);
     expect(levels.feed(device, cc(21, 127, channel: 4), [knob]), isFalse);
-    expect(levels.levelOf(knob), 0);
+    expect(levels.lastOf(knob), isNull);
   });
 
   test('a reset drops a half, and keeps the levels', () {
@@ -64,7 +65,7 @@ void main() {
       ..feed(device, cc(22, 127), [wide])
       ..reset(device)
       ..feed(device, cc(54, 127), [wide]);
-    expect(levels.levelOf(wide), 0);
-    expect(levels.levelOf(knob), 64 / 127);
+    expect(levels.lastOf(wide), isNull);
+    expect(levels.lastOf(knob)?.value, 64);
   });
 }

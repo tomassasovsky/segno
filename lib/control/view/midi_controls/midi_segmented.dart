@@ -72,7 +72,11 @@ class MidiSegmented<T> extends StatelessWidget {
                 selected: segment.value == selected,
                 width: segmentWidth,
                 height: segmentHeight,
-                onTap: () => onSelected(segment.value),
+                // Choosing what is already chosen changes nothing: Button
+                // tapped again must not turn a Toggle button Momentary.
+                onTap: () {
+                  if (segment.value != selected) onSelected(segment.value);
+                },
               ),
           ],
         ),
@@ -106,6 +110,7 @@ class _Segment extends StatelessWidget {
       button: true,
       selected: selected,
       label: label,
+      onTap: onTap,
       excludeSemantics: true,
       child: Material(
         color: selected ? surface.accentSurface : Colors.transparent,

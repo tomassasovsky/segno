@@ -15,7 +15,6 @@ class MidiMappingDraft extends Equatable {
     this.source,
     this.behavior = MidiBehavior.continuous,
     this.controls = const [],
-    this.enabled = true,
   });
 
   /// A draft of the saved [mapping].
@@ -25,7 +24,6 @@ class MidiMappingDraft extends Equatable {
     source: mapping.source,
     behavior: mapping.behavior,
     controls: mapping.controls,
-    enabled: mapping.enabled,
   );
 
   /// The device the mapping listens to.
@@ -42,9 +40,6 @@ class MidiMappingDraft extends Equatable {
 
   /// Everything it drives, in the order it was added.
   final List<MidiControl> controls;
-
-  /// Whether the saved mapping dispatches. The editor keeps what it was.
-  final bool enabled;
 
   /// Whether a control in [protocol] can run an action. A 14-bit, NRPN or
   /// relative control carries a position, not a press.
@@ -173,7 +168,9 @@ class MidiMappingDraft extends Equatable {
   );
 
   /// The mapping this draft saves as, given [newId] for a new one, or `null`
-  /// before a control is learned.
+  /// before a control is learned. Whether it is enabled is the power
+  /// button's, not the editor's: a new mapping is on, and saving an existing
+  /// one keeps what it was.
   MidiMapping? toMapping(String newId) {
     final learned = source;
     if (learned == null) return null;
@@ -182,7 +179,6 @@ class MidiMappingDraft extends Equatable {
       source: learned,
       behavior: behavior,
       controls: controls,
-      enabled: enabled,
     );
   }
 
@@ -213,9 +209,8 @@ class MidiMappingDraft extends Equatable {
     source: source ?? this.source,
     behavior: behavior ?? this.behavior,
     controls: List.unmodifiable(controls ?? this.controls),
-    enabled: enabled,
   );
 
   @override
-  List<Object?> get props => [device, id, source, behavior, controls, enabled];
+  List<Object?> get props => [device, id, source, behavior, controls];
 }

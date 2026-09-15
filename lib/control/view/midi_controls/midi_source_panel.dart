@@ -176,7 +176,7 @@ class MidiSourcePanel extends StatelessWidget {
               const SizedBox(height: 22),
               MidiSegmented<bool>(
                 keyPrefix: 'midi_knob',
-                semanticLabel: l10n.midiKnobOrFader,
+                semanticLabel: l10n.midiControlBehavior,
                 segmentWidth: 196,
                 selected: draft.behavior == MidiBehavior.continuous,
                 segments: [
@@ -192,7 +192,7 @@ class MidiSourcePanel extends StatelessWidget {
               const SizedBox(height: 22),
               MidiSegmented<MidiBehavior>(
                 keyPrefix: 'midi_behavior',
-                semanticLabel: l10n.midiButton,
+                semanticLabel: l10n.midiButtonBehavior,
                 segmentWidth: 196,
                 selected: draft.behavior,
                 segments: [

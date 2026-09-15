@@ -2442,5 +2442,8 @@
     "midiSourceRelative": "CC {number} · Relativo",
     "midiSourceBankProgram": "Banco {bank} · Programa {number}",
     "midiSourceOnChannel": "{source} · Can {channel}",
-    "midiSourceOnOmni": "{source} · Omni"
+    "midiSourceOnOmni": "{source} · Omni",
+    "midiControlBehavior": "Comportamiento del control",
+    "midiButtonBehavior": "Comportamiento del botón",
+    "midiRepairReady": "Reparación lista · Guarda para conservarla"
 }

@@ -225,6 +225,7 @@ class _Card extends StatelessWidget {
                 Semantics(
                   button: true,
                   label: l10n.a11yMidiRemoveControl(card.label),
+                  onTap: () => onRemove(key),
                   excludeSemantics: true,
                   child: InkWell(
                     key: Key('midi_control_remove_$key'),
