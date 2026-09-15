@@ -159,8 +159,9 @@ PedalStateFrame projectFrame(
     // The wire frame still calls mute mode PLAY: PedalMode is the pedal
     // firmware's protocol enum (its mode LED predates the rename), so the
     // mapping — not the wire token — carries the new name. FX rides protocol
-    // v3's 2-bit field; this projection is version-AGNOSTIC (B10) — the codec
-    // alone downgrades fx to play for a pre-v3 pedal, so nothing here branches
+    // the wire's mode byte; this projection is transport-AGNOSTIC (B10) — the
+    // codec alone decides how a mode reaches the board, so nothing here
+    // branches
     // on the negotiated version.
     mode: switch (overlay.mode) {
       InteractionMode.record => PedalMode.rec,

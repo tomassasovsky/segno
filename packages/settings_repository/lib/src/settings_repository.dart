@@ -355,35 +355,6 @@ class SettingsRepository {
     await _store.remove(_midiInputDeviceNameKey);
   }
 
-  static const String _pedalOutputDeviceIdKey = 'pedal.output_device_id';
-  static const String _pedalOutputDeviceNameKey = 'pedal.output_device_name';
-
-  /// Loads the pinned pedal MIDI *output* device as `(id, name)`, or `null`
-  /// when none has been selected. The pedal binds one output for its LED
-  /// state frames; this is the output counterpart of [loadMidiDevice] and pins
-  /// it so it auto-binds next launch. Additive flat keys, like `midi.*`.
-  Future<({String id, String name})?> loadPedalOutputDevice() async {
-    final id = await _store.getString(_pedalOutputDeviceIdKey);
-    if (id == null || id.isEmpty) return null;
-    final name = await _store.getString(_pedalOutputDeviceNameKey) ?? '';
-    return (id: id, name: name);
-  }
-
-  /// Pins the pedal output device [id]/[name] so it auto-binds next launch.
-  Future<void> savePedalOutputDevice({
-    required String id,
-    required String name,
-  }) async {
-    await _store.setString(_pedalOutputDeviceIdKey, id);
-    await _store.setString(_pedalOutputDeviceNameKey, name);
-  }
-
-  /// Clears the pinned pedal output device (the "None" selection).
-  Future<void> clearPedalOutputDevice() async {
-    await _store.remove(_pedalOutputDeviceIdKey);
-    await _store.remove(_pedalOutputDeviceNameKey);
-  }
-
   static const String _pedalLongPressMsKey = 'pedal.long_press_ms';
 
   /// Loads the pedal long-press threshold in milliseconds (Undo long-press =
@@ -418,28 +389,6 @@ class SettingsRepository {
   /// Saves the pedal clear-all fade/guard window in milliseconds.
   Future<void> savePedalClearFadeMs(int ms) =>
       _store.setInt(_pedalClearFadeMsKey, ms);
-
-  static const String _pedalFirmwareVersionKey = 'pedal.firmware_version';
-
-  /// Loads the manually-set pedal firmware wire-protocol version, or `null`
-  /// when unset (the default: version unknown).
-  ///
-  /// The pre-#331 version-discovery gate (R6): with no SysEx-capable inbound
-  /// path there is no handshake, so the user states what their pedal's
-  /// firmware speaks and `PedalRepository` encodes at that version — unknown
-  /// (`null`) means outbound frames stay at the v2 safety floor, never v3.
-  /// #331's identity-reply discovery will drive the same repository knob and
-  /// make this setting a fallback.
-  Future<int?> loadPedalFirmwareVersion() =>
-      _store.getInt(_pedalFirmwareVersionKey);
-
-  /// Saves the manually-set pedal firmware wire-protocol version.
-  Future<void> savePedalFirmwareVersion(int version) =>
-      _store.setInt(_pedalFirmwareVersionKey, version);
-
-  /// Clears the manual pedal firmware version (back to unknown ⇒ v2).
-  Future<void> clearPedalFirmwareVersion() =>
-      _store.remove(_pedalFirmwareVersionKey);
 
   static const String _showWaveformWindowKey = 'ui.waveform_window';
 

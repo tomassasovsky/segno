@@ -1,3 +1,15 @@
+import 'dart:io';
+
+/// Where the appliance image installs its privileged helper. Its presence is
+/// how the app knows it is running on the console rather than a desktop.
+const kApplianceHelperPath = '/usr/bin/segno-update-ctl';
+
+/// Whether this process runs on the console: Linux, with the appliance
+/// image's helper installed. The one predicate every appliance-only source
+/// (the pedal link, the power key) is gated on.
+bool isAppliance() =>
+    Platform.isLinux && File(kApplianceHelperPath).existsSync();
+
 /// The operating-system boundary the appliance update backend depends on,
 /// injected so the backend is fully testable without real files, network, or a
 /// device. The production implementation is `SystemApplianceEnv`.
@@ -38,18 +50,4 @@ abstract interface class ApplianceEnv {
   /// or already running the staged version. No-op when the helper is absent.
   /// Never throws.
   Future<void> reconcileStaged();
-
-  /// Runs the helper's `pedal-pending` verb: the firmware version a flash is
-  /// about to write, or null when none is coming. Never throws — the helper
-  /// answers "nothing" for every uncertain case, including no network.
-  Future<String?> pedalPending();
-
-  /// Runs the helper's `flash-pedal` verb, emitting progress in `[0, 1]`.
-  /// Throws with the collected stderr if it fails.
-  Stream<double> flashPedal();
-
-  /// Terminates a still-running `flash-pedal` helper, if any, and returns only
-  /// once it is dead (SIGTERM, then SIGKILL after a short grace). No-op when
-  /// nothing is running. Never throws.
-  Future<void> abortPedalFlash();
 }

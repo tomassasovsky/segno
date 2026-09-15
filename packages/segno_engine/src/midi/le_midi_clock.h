@@ -35,10 +35,10 @@ extern "C" {
 #endif
 
 /* MIDI System Real-Time status bytes this emitter sends. Standard values —
- * distinct from the pedal's own vendored reuse of 0xFA as a loop-top pulse to
- * FIRMWARE (pedal_repository's PedalCodec.loopTopPulse): that is a different
- * destination/protocol entirely, this module addresses a generic external
- * clock-sync destination with the bytes' real MIDI meaning. */
+ * these are their real MIDI meanings, addressed at a generic external
+ * clock-sync destination. The console board is NOT one: it speaks the binary
+ * pedal link (firmware/console_board/pedal_link.h), which shares no bytes with
+ * MIDI, so nothing here is reused by it. */
 #define LE_MIDI_CLOCK_TICK 0xF8  /* Timing Clock: one per PPQN pulse */
 #define LE_MIDI_CLOCK_START 0xFA /* Start: transport begins at position 0 */
 #define LE_MIDI_CLOCK_STOP 0xFC  /* Stop: transport halts */

@@ -172,8 +172,7 @@ void main() {
     );
     // The real control cubit: the View section reads the looper-wide default
     // mode from it. Its `const ControlState()` default (InteractionMode.record)
-    // is what the golden captures, so no stubbing is needed — only the
-    // keep-alive timer has to go, or it would pump frames under golden capture.
+    // is what the golden captures, so no stubbing is needed.
     final performance = PerformanceRepository(
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
@@ -182,14 +181,13 @@ void main() {
     // Disposed here rather than by PedalCubit (its lifecycle owner in the real
     // app, and in settings_page_test): the cubit above is a mock, so its close
     // is a no-op and would leave the transport and event streams open.
-    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
     control = ControlCubit(
       looper: repository,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     addTearDown(control.close);
     // Backs the Tempo section (reads live values from LooperBloc's

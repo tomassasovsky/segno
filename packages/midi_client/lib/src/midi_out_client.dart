@@ -17,9 +17,8 @@ import 'package:segno_engine/segno_engine_ffi.dart';
 /// `FakeSegnoEngineBindings`); when omitted the platform shared library is
 /// opened, exactly like `MidiClient`.
 ///
-/// segno uses this for the pedal's LED state frames and the loop-top pulse; the
-/// higher-level `NativePedalTransport` (in `pedal_repository`) owns one and
-/// reuses `MidiClient`'s single capture for the inbound direction.
+/// The pedal used to ride on this (its LED frames went out as SysEx); the
+/// console board now talks over its own UART, so this is for DIN MIDI OUT.
 class MidiOutClient {
   /// Creates a [MidiOutClient], allocating the native MIDI output handle.
   ///

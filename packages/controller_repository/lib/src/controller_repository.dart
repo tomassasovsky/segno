@@ -39,13 +39,6 @@ class ControllerRepository {
   /// action [mapping] (defaults to [ControllerMapping.defaults]) and
   /// [bindings].
   ///
-  /// [learnIgnore] filters MIDI-learn capture: an input it accepts is ignored
-  /// while learning, as if it had never arrived. The app passes the Segno
-  /// pedal's own protocol traffic (B8), so learning with the pedal connected
-  /// captures the controller the user is actually moving rather than pedal
-  /// chatter. Dispatch is unaffected — the filter is about what a capture may
-  /// CATCH.
-  ///
   /// [smoothing] is how long a ramp takes to reach a new value and
   /// [smoothingTick] the interval it advances on; both are injected so tests
   /// drive them under a fake clock instead of sleeping.
@@ -53,13 +46,11 @@ class ControllerRepository {
     required List<ControllerSource> sources,
     ControllerMapping? mapping,
     ControllerBindingSet bindings = ControllerBindingSet.empty,
-    bool Function(RawControllerInput input)? learnIgnore,
     this.smoothing = const Duration(milliseconds: 60),
     this.smoothingTick = const Duration(milliseconds: 10),
   }) : _sources = sources,
        _mapping = mapping ?? ControllerMapping.defaults(),
-       _bindings = bindings,
-       _learnIgnore = learnIgnore {
+       _bindings = bindings {
     for (final source in sources) {
       _subscriptions.add(source.inputs.listen(_onInput));
     }
@@ -73,7 +64,6 @@ class ControllerRepository {
       StreamController<ControllerMapping>.broadcast();
   final StreamController<ControllerBindingEvent> _bindingEvents =
       StreamController<ControllerBindingEvent>.broadcast();
-  final bool Function(RawControllerInput input)? _learnIgnore;
 
   /// How long a continuous binding takes to ramp to a newly received value.
   final Duration smoothing;
@@ -122,11 +112,6 @@ class ControllerRepository {
   void _onInput(RawControllerInput input) {
     final learn = _learnCompleter;
     if (learn != null) {
-      // The pedal's own protocol traffic can never be captured (B8): the pedal
-      // and the controller being learned share one MIDI input stream, so a
-      // stomp during a capture would otherwise bind a footswitch the app
-      // already owns.
-      if (_learnIgnore?.call(input) ?? false) return;
       // A CC is captured at ANY value: an expression pedal's rest position is
       // a real position, and refusing value 0 would make a heel-down sweep
       // uncapturable. A note still needs a press — notes arrive in press /

@@ -14,8 +14,9 @@ import 'package:segno/app/audio_bootstrap.dart';
 import 'package:segno/app/monitor_migration.dart';
 import 'package:segno/app/view/app.dart';
 import 'package:segno/bootstrap.dart';
-import 'package:segno/common/pedal_device.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:segno/session_directory.dart';
+import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/update_backend.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
@@ -113,20 +114,15 @@ Future<void> runSegno(
   final simulatedControllerSource = SimulatedControllerSource();
   final controllerRepository = ControllerRepository(
     sources: [?midiSource, simulatedControllerSource],
-    // MIDI-learn never captures the Segno pedal's own protocol traffic (B8):
-    // the pedal shares this input stream, so a stomp mid-capture would
-    // otherwise bind a footswitch the app already drives end to end. The
-    // predicate is stated against the real note/CC tables in the package that
-    // owns them.
-    learnIgnore: isPedalProtocolInput,
   );
-  // The bidirectional pedal reuses the MIDI source's single input capture and
-  // opens its own MIDI output for LED feedback. The repository is wrapped in a
-  // SimulatorPedalTransport so the on-screen faceplate is always available (it
-  // decorates a no-op transport when there is no MIDI backend); the repo + sim
-  // share one transport graph.
-  final (repo: pedalRepository, sim: pedalSimulator) =
-      createSimAwarePedalRepository(midiSource);
+  // The console board's pedal link: the Pi's uart3 to the board's Pico 2 on
+  // the appliance (the link owns the device node, retries until the overlay
+  // lands, and reports every state change to the log), or a board-less link
+  // everywhere else — a Linux desktop included, which has no board to find.
+  final pedalLink = isAppliance()
+      ? UartPedalLink(log: AppLog.info)
+      : NoopPedalLink();
+  final pedalRepository = PedalRepository(pedalLink, log: AppLog.info);
   final settings = SettingsRepository(
     store: SharedPreferencesKeyValueStore(),
     // The ALSA period count is part of the latency-calibration key: #809 made
@@ -160,8 +156,6 @@ Future<void> runSegno(
   final midiDeviceRepository = MidiDeviceRepository(
     source: midiSource,
     settings: settings,
-    // Redundant only on a desktop analysis run: the constant is null unless
-    autoBindProductNames: kPedalAutoBindProductNames,
   );
 
   // One-time courtesy migration from the removed global passthrough monitor to
@@ -196,7 +190,6 @@ Future<void> runSegno(
       simulatedControllerSource: simulatedControllerSource,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
-      pedalSimulator: pedalSimulator,
       displayCount: () =>
           WidgetsBinding.instance.platformDispatcher.displays.length,
       audioRecoveryConfig: audioRecoveryConfig,

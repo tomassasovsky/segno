@@ -93,10 +93,7 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # they're guaranteed in the image (hard `=`, so keep everything ON this line).
 # curl/jq/ca-certificates: the OTA client (segno-ota-check). rauc: the installer.
 # parted + e2fsprogs-resize2fs: segno-data-grow (expand /data to fill the SD card).
-# avrdude + coreutils: segno-update-ctl flash-pedal writes the published .hex to
-# the Pro Micro (avrdude -c avr109) after stty does the Caterina 1200bps touch
-# reset. avrdude comes from meta-segno's own recipe (#430) — no layer we use
-# ships one.
+# coreutils: the app's pedal link configures the pedal UART with stty.
 # iw: segno-wifi-regdom. NOT wireless-regdb — packagegroup-base-wifi already
 # pulls wireless-regdb-static and the two RCONFLICT, so requesting the modern
 # db here fails the rootfs outright. Whether this kernel reads the CRDA
@@ -116,7 +113,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   bluez5 ddcutil \
                   iw \
                   weston-examples \
-                  avrdude coreutils"
+                  coreutils"
 
 inherit systemd
 # App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and

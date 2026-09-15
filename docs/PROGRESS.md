@@ -162,7 +162,7 @@ packages/
   daw_export/          DATA  — pure-Dart Ableton Live 12 (.als) exporter for a performance capture
   midi_client/         DATA  — native USB-MIDI device client (ControllerSource) over the FFI seam
   midi_device_repository/ REPO — MIDI device enumeration/selection + hotplug (audio-independent)
-  pedal_repository/    REPO  — hardware pedal (footswitch/LED) protocol over MIDI SysEx
+  pedal_repository/    REPO  — console pedal-board link (footswitch/encoder in, LED frames out) over UART
   routing_graph/       UI KIT — reusable routing-graph canvas/wires/cards + theme (Signal, FX editor)
 lib/
   app/        App + MultiRepositoryProvider (looper, controller, settings)
@@ -608,15 +608,15 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   (`wav_codec` for the WAV side, new `performance_repository` for capture
   lifecycle — arm/finalize/recover-unfinalized/rename/discard), surfaced by a
   recorder UI + app state (record/play toolbar affordance).
-- **Performance recording — pedal firmware parity.** The pedal has no spare
-  footswitch, so arm/disarm rides the existing MODE button via a
+- **Performance recording — pedal firmware parity.** The console's pedal board
+  has no spare footswitch, so arm/disarm rides the existing MODE button via a
   tap-vs-long-press split (tap still toggles Rec/Play; a ≥500 ms hold
   arms/disarms). The armed state rides the wire but is **not** rendered on the
-  pedal: it once blinked the MODE LED red, dropped in #693 because armed
+  pedal board: it once blinked the MODE LED red, dropped in #693 because armed
   already shows on the screens and blink-vs-solid was too fine a distinction on
   one LED at stage distance. The MODE LED now reports the interaction mode
-  only — rec red / play green / FX blue, solid in every state — in both
-  sketches and on the on-screen `PedalFaceplate` simulator.
+  only — rec red / play green / FX blue, solid in every state — in
+  `firmware/console_board` and on the on-screen `PedalFaceplate` simulator.
 - **DAW export.** New `daw_export` package (pure Dart, no Flutter/engine
   dependency) turns a completed performance capture into a real **Ableton
   Live 12 `.als`** project: one audio track per non-empty track/live-input
@@ -699,7 +699,7 @@ remains open — see "On-hardware validations" below.
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
   `le_midi_*` capture seam → `MidiControllerSource` → `ControllerRepository`,
-  with a device-selection UI. Hardware-gated only for a live-pedal smoke test.
+  with a device-selection UI. Hardware-gated only for a live DIN-MIDI smoke test.
 - **VST3/CLAP plugin hosting — Linux (X11) port.** See the "Effects chain"
   Done entry above for macOS/Windows status; Linux needs an X11 embedding
   target, deferred to on-platform work.

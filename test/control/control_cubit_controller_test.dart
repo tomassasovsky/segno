@@ -7,12 +7,12 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
-import '../pedal/helpers/fake_pedal_transport.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -97,9 +97,7 @@ void main() {
       when(() => midiDevices.connections).thenAnswer((_) => connections.stream);
       settings = SettingsRepository(store: FakeKeyValueStore());
       pedal = PedalRepository(
-        FakePedalTransport(
-          outputs: const [MidiDevice(id: 'out', name: 'Pedal')],
-        ),
+        FakePedalLink(),
       );
 
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
@@ -168,7 +166,6 @@ void main() {
         controller: controller,
         midiDevices: midiDevices,
         simulatedSource: simulated,
-        keepAliveInterval: Duration.zero,
         learnTimeout: const Duration(milliseconds: 20),
         mappingsWriteDebounce: mappingsWriteDebounce,
         // A brisk synthetic sweep — a few ticks per leg — so a simulation
@@ -524,7 +521,6 @@ void main() {
           performance: performance,
           controller: controller,
           midiDevices: midiDevices,
-          keepAliveInterval: Duration.zero,
           mappingsWriteDebounce: mappingsWriteDebounce,
         );
         final binding = ContinuousBinding(
@@ -561,7 +557,6 @@ void main() {
           performance: performance,
           controller: controller,
           midiDevices: midiDevices,
-          keepAliveInterval: Duration.zero,
           mappingsWriteDebounce: mappingsWriteDebounce,
         );
         final binding = ContinuousBinding(
@@ -591,7 +586,6 @@ void main() {
             performance: performance,
             controller: controller,
             midiDevices: midiDevices,
-            keepAliveInterval: Duration.zero,
             mappingsWriteDebounce: mappingsWriteDebounce,
           );
           final binding = ContinuousBinding(
@@ -1003,7 +997,6 @@ void main() {
             controller: controller2,
             midiDevices: midiDevices,
             simulatedSource: sim2,
-            keepAliveInterval: Duration.zero,
             mappingsWriteDebounce: Duration.zero,
             simulateTick: const Duration(seconds: 1),
           );
@@ -1062,7 +1055,6 @@ void main() {
           controller: controller2,
           midiDevices: midiDevices,
           simulatedSource: sim2,
-          keepAliveInterval: Duration.zero,
           mappingsWriteDebounce: Duration.zero,
           // A full second between ticks: only the first push lands pre-close.
           simulateTick: const Duration(seconds: 1),
