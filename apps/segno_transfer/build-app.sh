@@ -4,6 +4,7 @@ cd "$(dirname "$0")"
 swift build -c release
 binary_dir=$(swift build -c release --show-bin-path)
 app="$PWD/dist/Segno Transfer.app"
+rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary_dir/SegnoTransfer" "$app/Contents/MacOS/SegnoTransfer"
 cp -R "$binary_dir/SegnoTransfer_TransferCore.bundle" "$app/Contents/Resources/"
@@ -24,4 +25,5 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - "$app"
+codesign --verify --deep --strict "$app"
 printf '%s\n' "$app"

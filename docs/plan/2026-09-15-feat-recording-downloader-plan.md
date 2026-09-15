@@ -22,6 +22,11 @@ Issue: #1056. Base: master. Scope: standalone Mac companion under
 5. Verify failure cases automatically and connect/download on the real appliance.
    Inspect the native UI and run the five independent build-review roles. Deliver
    the local `.app`; retain the product merge gate.
+6. Publish the owner-approved free release through GitHub. Package an Apple
+   Silicon disk image with installation instructions, Applications shortcut and
+   license. Verify it and generate a checksum. A matching `transfer-vVERSION`
+   tag runs the app checks and publishes the download. Paid Apple signing and
+   notarization are excluded by the owner's decision.
 
 ## Success Criteria
 

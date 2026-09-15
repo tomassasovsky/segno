@@ -5,6 +5,18 @@
 A native Mac app for downloading performance recordings from a Segno appliance.
 Requires macOS 14 or later. The app is separate from the Segno instrument runtime.
 
+## Install
+
+Download the Apple Silicon disk image from
+[GitHub Releases](https://github.com/tomassasovsky/segno/releases/tag/transfer-v0.1.0)
+and drag **Segno Transfer** into **Applications**. The image includes first-launch
+instructions and the project license.
+
+Releases use free local signing, without paid Apple signing or notarization.
+If macOS blocks the first launch, dismiss the warning, then open **System
+Settings → Privacy & Security → Open Anyway** for Segno Transfer and confirm.
+[Apple's instructions](https://support.apple.com/en-us/102445).
+
 ## Use
 
 1. Open **Segno Transfer** and enter the appliance's address. Both devices need
@@ -54,12 +66,25 @@ python3 -m unittest discover -s apps/segno_transfer/Tests/RemoteTests -v
 swift test --package-path apps/segno_transfer
 swift format lint --strict --recursive apps/segno_transfer/Sources apps/segno_transfer/Tests/TransferCoreTests apps/segno_transfer/Package.swift
 bash apps/segno_transfer/build-app.sh
+bash apps/segno_transfer/package-app.sh
 ```
 
 The build produces `apps/segno_transfer/dist/Segno Transfer.app` for the build
 Mac's architecture. Copy the whole app bundle to Applications or another folder.
 It is signed locally, without Apple notarization or an App Store distribution.
 Build on the intended architecture when preparing another Mac's copy.
+
+The release package currently targets Apple Silicon. The packaging script puts
+the app, an Applications shortcut, installation instructions and license into a
+compressed disk image and generates `SHA256SUMS`.
+
+## Publish
+
+Update the app version in `build-app.sh` and the release notes, then push a
+matching `transfer-vVERSION` tag. The Segno Transfer workflow runs its tests,
+builds and packages the app, and publishes the disk image and checksum on GitHub.
+It rejects a tag that differs from the app's version. Companion releases use
+their own tags and do not replace the repository's latest-release designation.
 
 ## Design and boundaries
 
