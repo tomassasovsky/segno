@@ -41,6 +41,64 @@ import 'helpers/fake_audio_engine.dart';
 
 final EngineSnapshot _playingSnapshot = _playingAt(24000);
 
+/// [n] playing takes of one master loop; [emptyRedoOnly] tracks are empty
+/// with one redo step instead, [clearRestore] tracks are empty with a clear
+/// restore point.
+EngineSnapshot _playingTracksSnapshot(
+  int n, {
+  Set<int> emptyRedoOnly = const {},
+  Set<int> clearRestore = const {},
+}) => EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  masterLengthFrames: 96000,
+  tracks: [
+    for (var i = 0; i < n; i++)
+      if (emptyRedoOnly.contains(i))
+        const TrackSnapshot(
+          state: TrackState.empty,
+          volume: 0.8,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          redoDepth: 1,
+          rms: 0,
+          peak: 0,
+        )
+      else if (clearRestore.contains(i))
+        const TrackSnapshot(
+          state: TrackState.empty,
+          volume: 0.8,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          clearRestore: true,
+          rms: 0,
+          peak: 0,
+        )
+      else
+        const TrackSnapshot(
+          state: TrackState.playing,
+          volume: 0.8,
+          muted: false,
+          lengthFrames: 96000,
+          undoDepth: 0,
+          rms: 0.3,
+          peak: 0.5,
+        ),
+  ],
+);
+
 /// One empty track with an arm as the engine publishes it: `pending` and the
 /// trailing `pending_trigger` code beside it.
 EngineSnapshot _pendingSnapshot({
@@ -708,6 +766,502 @@ void main() {
       });
     });
 
+    group('looper mode (accepted design, slice 2)', () {
+      test(
+        "the gate is the engine's answer while running, open otherwise",
+        () {
+          final repo = buildRepo();
+          engine.nextLooperModeGate = LooperModeGate.spans;
+          expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.open);
+          repo.startEngine(const EngineConfig());
+          expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.spans);
+        },
+      );
+
+      test('a refused change leaves the remembered mode alone', () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        engine.nextLooperModeGate = LooperModeGate.capturing;
+        expect(repo.setLooperMode(LooperMode.free), EngineResult.invalid);
+        // Re-applied on the next start: still the mode the engine accepted.
+        engine.nextLooperModeGate = LooperModeGate.open;
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastLooperMode, LooperMode.multi);
+      });
+
+      test(
+        'a switch identical reports never confirm is dropped in favour of the '
+        'reported mode',
+        () async {
+          final repo = buildRepo()..startEngine(const EngineConfig());
+          addTearDown(repo.dispose);
+          final sub = repo.looperState.listen((_) {});
+          addTearDown(sub.cancel);
+          expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
+          // The fake keeps reporting Multi: after enough polls of the running
+          // engine the request is taken as dropped on the audio thread.
+          engine.nextSnapshot = _playingAt(0);
+          expect(repo.settledLooperMode, isNull);
+          for (var i = 1; i <= 12; i++) {
+            ticker.add(null);
+            await Future<void>.delayed(Duration.zero);
+          }
+          expect(repo.settledLooperMode, LooperMode.multi);
+          repo
+            ..stopEngine()
+            ..startEngine(const EngineConfig());
+          expect(engine.lastLooperMode, LooperMode.multi);
+        },
+      );
+
+      test('the restart replay is armed as a request, so the first report '
+          'after a start does not overwrite the remembered mode', () async {
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
+        repo.startEngine(const EngineConfig());
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        // One report of the engine's default before the replay lands.
+        engine.nextSnapshot = _playingAt(100);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastLooperMode, LooperMode.band);
+      });
+
+      test('an accepted change is remembered and re-applied', () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        engine.nextLooperModeGate = LooperModeGate.playing;
+        expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastLooperMode, LooperMode.band);
+      });
+    });
+
+    group('clear all as one grouped edit (accepted design, slice 2)', () {
+      int calls(String name) => engine.calls.where((c) => c == name).length;
+
+      /// Three playing takes; the repository's last state names them.
+      LooperRepository rigOfThree() {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        return buildRepo()..startEngine(const EngineConfig());
+      }
+
+      test('undo on any member restores every member once', () {
+        final repo = rigOfThree();
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        expect(repo.clearAll([0, 1, 2]), EngineResult.ok);
+        expect(calls('clearUndoable'), 3);
+        expect(repo.undoRestoresClearAll, isTrue);
+        expect(repo.undo(channel: 2), EngineResult.ok);
+        expect(calls('undo'), 3);
+        // The group is spent: the next undo is the track's own.
+        expect(repo.undoRestoresClearAll, isFalse);
+        repo.undo(channel: 1);
+        expect(calls('undo'), 4);
+      });
+
+      test('only takes the clear can give back are members, by the '
+          "engine's own account", () {
+        // Track 1 had nothing to restore: no point filed, none pending.
+        engine
+          ..nextSnapshot = _playingTracksSnapshot(3, emptyRedoOnly: {1})
+          ..undoRestoresClearChannels = {0, 2};
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..clearAll([0, 1, 2]);
+        expect(calls('clearUndoable'), 3); // erased all the same
+        expect(repo.undoRestoresClearAll, isTrue);
+        repo.undo();
+        expect(calls('undo'), 2);
+      });
+
+      test('a frozen member is a member from the clear: the grouped undo '
+          'waits for every point before restoring any member', () {
+        // Track 1 was capturing: its point is filed a block after the clear.
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()..clearAll([0, 1, 2]);
+        expect(repo.undoRestoresClearAll, isTrue);
+        repo.undo();
+        expect(
+          calls('undo'),
+          0,
+        ); // No partial group before all lengths are known.
+        // The point lands: the next poll takes the waiting tap.
+        engine
+          ..undoRestoresClearChannels = {0, 1, 2}
+          ..clearRestorePendingChannels = {};
+        expect(repo.undoRestoresClearAll, isFalse); // spent, not re-formed
+        expect(calls('undo'), 3);
+        expect(engine.lastChannel, 2);
+      });
+
+      test('a frozen member whose capture held nothing is forgotten by the '
+          'waiting tap before the other members are restored', () {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(calls('undo'), 0);
+        // Reported void: no point, no longer pending.
+        engine.clearRestorePendingChannels = {};
+        expect(repo.undoRestoresClearAll, isFalse);
+        expect(calls('undo'), 2); // nothing to take
+        // The redo re-clears the two that came back, as one.
+        engine.redoReclearsChannels = {0, 2};
+        expect(repo.redo(channel: 2), EngineResult.ok);
+        expect(calls('redo'), 2);
+      });
+
+      test('redo cancels the entire waiting grouped undo', () {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(calls('undo'), 0);
+        expect(repo.redo(channel: 2), EngineResult.ok);
+        expect(calls('redo'), 0);
+
+        // Completion after cancellation cannot restore a track by itself.
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {0, 1, 2};
+        expect(repo.undoRestoresClearAll, isTrue);
+        expect(calls('undo'), 0);
+        repo.undo();
+        expect(calls('undo'), 3);
+      });
+
+      test('pending members retain chains and group membership through '
+          'repeated clear, undo, redo, and undo', () {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree();
+        final effects = [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.delay),
+          BuiltInEffect(type: TrackEffectType.reverb),
+        ];
+        for (var channel = 0; channel < 3; channel++) {
+          repo
+            ..setLaneEffects(
+              channel: channel,
+              lane: 0,
+              effects: [effects[channel]],
+            )
+            ..setLaneChainEnabled(channel: channel, lane: 0, enabled: false)
+            ..setLaneChainMeta(
+              channel: channel,
+              lane: 0,
+              inheritedFrom: [channel],
+            );
+        }
+        final saved = [
+          for (var channel = 0; channel < 3; channel++)
+            List<TrackEffect>.of(repo.laneEffects(channel, 0)),
+        ];
+        repo
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(calls('undo'), 0);
+        engine.redoReclearsChannels = {0, 2};
+        repo.redo(channel: 2);
+        expect(calls('redo'), 0);
+        expect(repo.undoRestoresClearAll, isTrue); // Must not dissolve it.
+        expect(repo.laneEffects(1, 0), isEmpty);
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {0, 1, 2};
+        repo.undo(channel: 1);
+        expect(calls('undo'), 3);
+        void expectChains() {
+          for (var channel = 0; channel < 3; channel++) {
+            expect(repo.laneEffects(channel, 0), saved[channel]);
+            expect(repo.laneChainEnabled(channel, 0), isFalse);
+            expect(repo.laneChainInheritedFrom(channel, 0), [channel]);
+          }
+        }
+
+        expectChains();
+        engine.redoReclearsChannels = {0, 1, 2};
+        repo
+          ..redo()
+          ..undo(channel: 2);
+        expect(calls('redo'), 3);
+        expect(calls('undo'), 6);
+        expectChains();
+      });
+
+      test('an incompatible group leaves every take and chain cleared '
+          'until a compatible retry', () async {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        final repo = rigOfThree();
+        final notices = <RecoveryRefusal>[];
+        final subscription = repo.recoveryRefusals.listen(notices.add);
+        addTearDown(subscription.cancel);
+        repo
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          )
+          ..setLaneMute(channel: 1, lane: 0, muted: true)
+          ..clearAll([2, 0, 1]);
+        engine.nextHistoryModeGate = EngineResult.modeMismatch;
+        expect(repo.undo(channel: 2), EngineResult.modeMismatch);
+        await Future<void>.delayed(Duration.zero);
+        expect(calls('undo'), 0);
+        expect(engine.historyModeGateCalls, [(channels: 7, redo: false)]);
+        expect(repo.undoRestoresClearAll, isTrue);
+        expect(repo.laneEffects(1, 0), isEmpty);
+        expect(notices.single.action, RecoveryAction.undo);
+        expect(notices.single.result, EngineResult.modeMismatch);
+
+        // A mode change permits the same history operation; it was not spent.
+        engine.nextHistoryModeGate = EngineResult.ok;
+        expect(repo.undo(channel: 1), EngineResult.ok);
+        expect(calls('undo'), 3);
+        expect(engine.lastChannel, 2);
+        expect(repo.laneEffects(1, 0), hasLength(1));
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.laneMute[(1, 0)], isTrue);
+      });
+
+      test('a frozen group is checked only when its final length lands', () {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1}
+          ..nextHistoryModeGate = EngineResult.modeMismatch;
+        final repo = rigOfThree()
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(engine.historyModeGateCalls, isEmpty);
+        expect(calls('undo'), 0);
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {0, 1, 2};
+        expect(repo.undoRestoresClearAll, isTrue);
+        expect(engine.historyModeGateCalls, [(channels: 7, redo: false)]);
+        expect(calls('undo'), 0);
+        engine.nextHistoryModeGate = EngineResult.ok;
+        expect(repo.undo(), EngineResult.ok);
+        expect(calls('undo'), 3);
+      });
+
+      test('a refused grouped redo keeps all restored chains and its '
+          'whole-group retry', () {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        final repo = rigOfThree()
+          ..setLaneEffects(
+            channel: 2,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+          )
+          ..clearAll([0, 1, 2])
+          ..undo();
+        engine
+          ..redoReclearsChannels = {0, 1, 2}
+          ..nextHistoryModeGate = EngineResult.notReady;
+        expect(repo.redo(channel: 1), EngineResult.notReady);
+        expect(calls('redo'), 0);
+        expect(engine.historyModeGateCalls.last, (channels: 7, redo: true));
+        expect(repo.laneEffects(2, 0), hasLength(1));
+        engine.nextHistoryModeGate = EngineResult.ok;
+        expect(repo.redo(channel: 2), EngineResult.ok);
+        expect(calls('redo'), 3);
+        expect(repo.laneEffects(2, 0), isEmpty);
+        expect(repo.undoRestoresClearAll, isTrue);
+      });
+
+      test('a frozen member is a member once its point is filed', () {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()..clearAll([0, 1, 2]);
+        engine
+          ..undoRestoresClearChannels = {0, 1, 2}
+          ..clearRestorePendingChannels = {};
+        expect(repo.undoRestoresClearAll, isTrue);
+        repo.undo(channel: 1);
+        expect(calls('undo'), 3);
+      });
+
+      test('an undo tapped at a single frozen clear restores the chains '
+          'the clear emptied', () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          );
+        engine.clearRestorePendingChannels = {1};
+        repo.clear(channel: 1);
+        expect(repo.laneEffects(1, 0), isEmpty);
+        repo.undo(channel: 1);
+        expect(calls('undo'), 0); // held until the point lands
+        expect(repo.laneEffects(1, 0), isEmpty);
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {1};
+        expect(repo.undoRestoresClearAll, isFalse); // settles the tap
+        expect(calls('undo'), 1);
+        expect(repo.laneEffects(1, 0), hasLength(1));
+      });
+
+      test('a waiting tap on a capture that held nothing restores no chain '
+          'onto the empty track', () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          );
+        engine.clearRestorePendingChannels = {1};
+        repo
+          ..clear(channel: 1)
+          ..undo(channel: 1);
+        engine.clearRestorePendingChannels = {}; // void: no point filed
+        expect(repo.undoRestoresClearAll, isFalse);
+        expect(calls('undo'), 0);
+        expect(repo.laneEffects(1, 0), isEmpty);
+      });
+
+      test('a frozen capture is remembered audible: its lane mutes do not '
+          'come back with the take', () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          )
+          ..setLaneMute(channel: 1, lane: 0, muted: true);
+        engine.clearRestorePendingChannels = {1};
+        repo
+          ..clear(channel: 1)
+          ..undo(channel: 1);
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {1};
+        expect(repo.undoRestoresClearAll, isFalse);
+        expect(calls('undo'), 1);
+        engine.laneMute.clear();
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.laneMute[(1, 0)] ?? false, isFalse);
+      });
+
+      test('a frozen member whose capture held nothing leaves the group '
+          'without ending it', () {
+        // Track 1 was a take with nothing captured yet: pending at the
+        // clear, then reported void (no point, no longer pending).
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()..clearAll([0, 1, 2]);
+        engine.clearRestorePendingChannels = {};
+        expect(repo.undoRestoresClearAll, isTrue);
+        repo.undo(channel: 2);
+        expect(calls('undo'), 2); // tracks 0 and 2, as one
+      });
+
+      test('a member whose point the engine retired ends the group, and a '
+          'later single clear on it does not re-form it', () {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        final repo = rigOfThree()..clearAll([0, 1, 2]);
+        engine.undoRestoresClearChannels = {0, 2}; // a fresh take on 1
+        expect(repo.undoRestoresClearAll, isFalse);
+        engine.undoRestoresClearChannels = {0, 1, 2}; // 1 cleared again
+        expect(repo.undoRestoresClearAll, isFalse);
+        repo.undo(channel: 1);
+        expect(calls('undo'), 1); // that single clear, alone
+      });
+
+      test('a single clear ends the group', () {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        final repo = rigOfThree()
+          ..clearAll([0, 1])
+          ..clear(channel: 2);
+        expect(repo.undoRestoresClearAll, isFalse);
+      });
+
+      test('undoClearAll restores the intact group, else each restore '
+          'point on its own', () {
+        engine
+          ..nextSnapshot = _playingTracksSnapshot(3)
+          ..undoRestoresClearChannels = {0, 1, 2};
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..clearAll([0, 1, 2]);
+        expect(repo.undoClearAll(), EngineResult.ok);
+        expect(calls('undo'), 3);
+
+        // A group the engine partly retired: the state reports two restore
+        // points, and both come back on their own.
+        engine
+          ..nextSnapshot = _playingTracksSnapshot(3, clearRestore: {0, 2})
+          ..undoRestoresClearChannels = {0, 2};
+        repo.clearAll([0, 1, 2]);
+        engine.undoRestoresClearChannels = {0}; // 2's point retired
+        expect(repo.undoClearAll(), EngineResult.ok);
+        expect(calls('undo'), 5);
+      });
+
+      test('redo after the grouped undo re-clears the group, doing the '
+          "clear's own bookkeeping", () {
+        engine.undoRestoresClearChannels = {0, 1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1])
+          ..undo();
+        // Every member's next redo is the re-clear: the group re-clears.
+        engine.redoReclearsChannels = {0, 1};
+        expect(repo.redo(channel: 1), EngineResult.ok);
+        expect(calls('redo'), 2);
+        expect(repo.undoRestoresClearAll, isTrue);
+      });
+
+      test('a member whose next redo is a layer stands the group down', () {
+        engine.undoRestoresClearChannels = {0, 1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1])
+          ..undo();
+        engine.redoReclearsChannels = {1}; // track 0 peeled a layer since
+        expect(repo.redo(channel: 1), EngineResult.ok);
+        expect(calls('redo'), 1); // track 1's own redo only
+        expect(repo.undoRestoresClearAll, isFalse);
+      });
+
+      test('a fresh clear all replaces the group', () {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        rigOfThree()
+          ..clearAll([0])
+          ..clearAll([1, 2])
+          ..undo(channel: 1);
+        expect(calls('undo'), 2);
+      });
+    });
+
     test('the master playhead moving does not change any track', () {
       // The transport position belongs to the TRANSPORT. Copying it onto every
       // `Track` (as `playheadFrames` once did) made all eight tracks compare
@@ -1242,6 +1796,90 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await sub2.cancel();
     });
+  });
+
+  group('recovery refusals', () {
+    test('undo preserves the clear snapshot when the native guard refuses '
+        'after preflight', () async {
+      engine
+        ..nextSnapshot = _playingTracksSnapshot(1)
+        ..undoRestoresClearChannels = {0};
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..clear();
+      final notices = <RecoveryRefusal>[];
+      final sub = repo.recoveryRefusals.listen(notices.add);
+      addTearDown(sub.cancel);
+      engine.nextUndoResult = EngineResult.modeMismatch;
+      expect(repo.undo(), EngineResult.modeMismatch);
+      await Future<void>.delayed(Duration.zero);
+      expect(notices.single.action, RecoveryAction.undo);
+      expect(repo.laneEffects(0, 0), isEmpty);
+      engine.nextUndoResult = EngineResult.ok;
+      expect(repo.undo(), EngineResult.ok);
+      expect(repo.laneEffects(0, 0), hasLength(1));
+    });
+
+    test('redo refusal preserves a mute on an empty track for restart', () {
+      engine.nextSnapshot = _playingTracksSnapshot(1, emptyRedoOnly: {0});
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneMute(channel: 0, lane: 0, muted: true);
+      engine.nextRedoResult = EngineResult.modeMismatch;
+      expect(repo.redo(), EngineResult.modeMismatch);
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.laneMute[(0, 0)], isTrue);
+      engine.nextRedoResult = EngineResult.ok;
+      repo.redo();
+      engine.laneMute.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.laneMute[(0, 0)] ?? false, isFalse);
+    });
+
+    test(
+      'not-ready redo is reported once and a later retry succeeds',
+      () async {
+        final repo = buildRepo();
+        final notices = <RecoveryRefusal>[];
+        final sub = repo.recoveryRefusals.listen(notices.add);
+        addTearDown(sub.cancel);
+        engine.nextHistoryModeGate = EngineResult.notReady;
+        expect(repo.redo(), EngineResult.notReady);
+        await Future<void>.delayed(Duration.zero);
+        expect(notices.single.action, RecoveryAction.redo);
+        expect(notices.single.result, EngineResult.notReady);
+        expect(engine.calls, isNot(contains('redo')));
+        engine.nextHistoryModeGate = EngineResult.ok;
+        expect(repo.redo(), EngineResult.ok);
+        expect(engine.calls, contains('redo'));
+      },
+    );
+
+    test(
+      'invalid channel masks do not alias other tracks or emit a notice',
+      () async {
+        final repo = buildRepo();
+        final notices = <RecoveryRefusal>[];
+        final sub = repo.recoveryRefusals.listen(notices.add);
+        addTearDown(sub.cancel);
+        for (final channel in [-1, 32, 100]) {
+          expect(repo.undo(channel: channel), EngineResult.invalid);
+          expect(repo.redo(channel: channel), EngineResult.invalid);
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.historyModeGateCalls, isEmpty);
+        expect(notices, isEmpty);
+      },
+    );
   });
 
   group('commands forward to the engine', () {
@@ -5349,7 +5987,7 @@ void main() {
 
     test(
       'pushes the looper mode BEFORE any content is imported, so a '
-      "content-bearing session's mode is never silently dropped by the D4 "
+      "content-bearing session's mode is never dropped by the content rules "
       'content lock (B5c)',
       () async {
         engine.nextSnapshot = clearedSnapshot(2);

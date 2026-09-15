@@ -316,6 +316,14 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 2a (#1012, epic #1009):** mode changes with
+  recorded audio follow the accepted contract (the engine measures the gate:
+  compatible spans switch on a stopped rig, playing loops are stopped first,
+  captures and queued arms refuse; nothing is cleared or resized); undo during
+  an overdub removes the pass, undo during a take cancels it with an
+  immediate-playback redo, a clear on a capturing track freezes the take
+  restorable, and Clear All is one grouped edit. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Accepted design, slice 1 (#1010, epic #1009):** the Tracks view is the
   accepted stage (four columns per bank with name/crown, number · bars ·
   layers · FX, one dB-linear whole-track meter with a clip cap, queued cue,
@@ -805,3 +813,26 @@ stacking, contextual dock**, session menu, **performance recorder UI +
 pedal arm/disarm**, **DAW device-chain export**). `flutter analyze` clean;
 macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
 `LE_FX_MAX = 8`, `kMaxOutputs = 8`.
+
+
+## Reversible-edits reconstruction (2026-09-15)
+
+The accepted mode-rules and reversible-edits slice is reconstructed on the
+reviewed Tracks/UART base (`09c8e9c2`), retaining original slice parent
+`6cdfb9fb`. Tracking: #1060, part of #1012 and integration #1058.
+
+The user approved refusing recovery of a completed recording that does not
+fit the current loop mode. Audio, history, effects and transport stay intact;
+the app explains how to select Free and retry. A pending clock or unfinished
+capture asks for a retry instead. No automatic mode change is made. Partial
+takes inside an established Multi cycle still retain the whole loop span,
+with silence outside the recorded fragment.
+
+Frozen-clear ownership/reset, grouped Undo/Redo metadata, confirmed-mode
+persistence and callback mode-fit races are repaired. Final validation passed:
+2,255 app tests, 1,610 package tests, native safety configurations, 150 FFI
+symbols, analysis, Bloc lint and formatting. Five review roles have no
+unresolved findings. The stacked PR still needs remote CI and its human merge
+gate; recording timing and later implementation slices remain in progress.
+Details and validation boundaries are in
+`docs/reviews/design-edits-restack/review.md` and `validation.md`.

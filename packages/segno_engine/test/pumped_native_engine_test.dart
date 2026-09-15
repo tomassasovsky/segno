@@ -544,18 +544,208 @@ void main() {
       }
     });
 
-    test('setLooperMode is rejected (D4) while a track has content', () {
+    test('setLooperMode over a playing take stops it and switches', () {
       expect(engine.record(), EngineResult.ok);
       engine.pump(frames: 256, input: 0.5);
       expect(engine.record(), EngineResult.ok); // finalize -> PLAYING
       engine.pump(frames: 0);
-      expect(engine.snapshot().tracks.first.state, isNot(TrackState.empty));
+      expect(engine.snapshot().tracks.first.state, TrackState.playing);
 
-      // Accepted by the exported wrapper (control-thread validation only);
-      // dropped by the audio thread's le_looper_mode_locked gate.
+      // The accepted rule: playing loops are stopped ahead of the switch,
+      // the take stays, the mode applies.
+      expect(engine.looperModeGate(LooperMode.sync), LooperModeGate.playing);
       expect(engine.setLooperMode(LooperMode.sync), EngineResult.ok);
       engine.pump(frames: 0);
+      final after = engine.snapshot();
+      expect(after.looperMode, LooperMode.sync);
+      expect(after.tracks.first.state, TrackState.stopped);
+      expect(after.tracks.first.lengthFrames, greaterThan(0));
+    });
+
+    test('setLooperMode is refused while a take records', () {
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 256, input: 0.5);
+      expect(engine.looperModeGate(LooperMode.free), LooperModeGate.capturing);
+      expect(engine.setLooperMode(LooperMode.free), EngineResult.invalid);
+      engine.pump(frames: 0);
       expect(engine.snapshot().looperMode, LooperMode.multi);
+      expect(engine.snapshot().tracks.first.state, TrackState.recording);
+    });
+  }, skip: skip);
+
+  group('history mode gate (real FFI)', () {
+    late PumpedNativeEngine engine;
+
+    setUp(() {
+      engine = PumpedNativeEngine();
+      expect(
+        engine.start(
+          const EngineConfig(
+            sampleRate: 48000,
+            inputChannels: 1,
+            outputChannels: 1,
+            maxLoopFrames: 48000,
+          ),
+        ),
+        EngineResult.ok,
+      );
+    });
+    tearDown(() => engine.dispose());
+
+    void recordFreeTracks() {
+      expect(engine.setLooperMode(LooperMode.free), EngineResult.ok);
+      expect(engine.setQuantize(enabled: false), EngineResult.ok);
+      engine.pump(frames: 0);
+      for (final (channel, frames) in [(0, 500), (1, 750)]) {
+        expect(engine.record(channel: channel), EngineResult.ok);
+        engine.pump(frames: frames, input: 0.25 * (channel + 1));
+        expect(engine.record(channel: channel), EngineResult.ok);
+        // Let Free mode's first-take seam finalization complete before edits.
+        engine.pump(frames: 480, input: 0.25 * (channel + 1));
+        expect(engine.stopTrack(channel: channel), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(engine.snapshot().tracks[channel].lengthFrames, frames);
+      }
+    }
+
+    test('preflights the full redo mask without consuming hidden history', () {
+      recordFreeTracks();
+      for (final channel in [0, 1]) {
+        expect(engine.undo(channel: channel), EngineResult.ok);
+        engine.pump(frames: 0);
+      }
+      expect(engine.setLooperMode(LooperMode.multi), EngineResult.ok);
+      engine.pump(frames: 0);
+      final before = engine.snapshot();
+      expect(before.tracks[0].state, TrackState.empty);
+      expect(before.tracks[1].state, TrackState.empty);
+      expect(before.tracks[0].redoDepth, 1);
+      expect(before.tracks[1].redoDepth, 1);
+
+      // Each take alone can define a grid. Together, 500 and 750 frames
+      // cannot both use Multi's integer multiples of one shared master.
+      for (final mask in [1, 2]) {
+        expect(
+          engine.historyModeGate(channels: mask, redo: true),
+          EngineResult.ok,
+        );
+      }
+      for (var query = 0; query < 2; query++) {
+        expect(
+          engine.historyModeGate(channels: 3, redo: true),
+          EngineResult.modeMismatch,
+        );
+      }
+      expect(
+        engine.historyModeGate(channels: 3, redo: false),
+        EngineResult.ok,
+      );
+      engine.pump(frames: 0);
+      final after = engine.snapshot();
+      expect(after.tracks[0], before.tracks[0]);
+      expect(after.tracks[1], before.tracks[1]);
+      expect(after.masterLengthFrames, before.masterLengthFrames);
+
+      expect(engine.redo(), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(
+        engine.historyModeGate(channels: 2, redo: true),
+        EngineResult.modeMismatch,
+      );
+      expect(engine.redo(channel: 1), EngineResult.modeMismatch);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tracks[1], before.tracks[1]);
+
+      // Refusal retained the take: after moving to Free the same redo works.
+      expect(engine.setLooperMode(LooperMode.free), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(
+        engine.historyModeGate(channels: 2, redo: true),
+        EngineResult.ok,
+      );
+      expect(engine.redo(channel: 1), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tracks[1].lengthFrames, 750);
+      expect(engine.snapshot().tracks[1].redoDepth, 0);
+      final restored = engine.exportTrack(1);
+      expect(restored, hasLength(750));
+      expect(restored, everyElement(closeTo(0.5, 1e-6)));
+    });
+
+    test(
+      'distinguishes undo restore from redo and preserves refused audio',
+      () {
+        recordFreeTracks();
+        expect(engine.clearUndoable(channel: 1), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(engine.setLooperMode(LooperMode.multi), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(engine.undoRestoresClear(channel: 1), isTrue);
+        final before = engine.snapshot();
+        expect(before.tracks[0].lengthFrames, 500);
+        expect(before.tracks[1].state, TrackState.empty);
+        expect(
+          engine.historyModeGate(channels: 2, redo: true),
+          EngineResult.ok,
+        );
+        expect(
+          engine.historyModeGate(channels: 2, redo: false),
+          EngineResult.modeMismatch,
+        );
+        expect(engine.undo(channel: 1), EngineResult.modeMismatch);
+        engine.pump(frames: 0);
+        expect(engine.snapshot().tracks[1], before.tracks[1]);
+        expect(engine.undoRestoresClear(channel: 1), isTrue);
+
+        expect(engine.setLooperMode(LooperMode.free), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(
+          engine.historyModeGate(channels: 2, redo: false),
+          EngineResult.ok,
+        );
+        expect(engine.undo(channel: 1), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(engine.snapshot().tracks[1].lengthFrames, 750);
+        final restored = engine.exportTrack(1);
+        expect(restored, hasLength(750));
+        expect(restored, everyElement(closeTo(0.5, 1e-6)));
+      },
+    );
+
+    test('reports pending mode work until the audio callback applies it', () {
+      recordFreeTracks();
+      expect(engine.clearUndoable(channel: 1), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.undoRestoresClear(channel: 1), isTrue);
+      expect(engine.setLooperMode(LooperMode.song), EngineResult.ok);
+      expect(
+        engine.historyModeGate(channels: 2, redo: false),
+        EngineResult.notReady,
+      );
+      expect(engine.snapshot().looperMode, LooperMode.free);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().looperMode, LooperMode.song);
+      expect(
+        engine.historyModeGate(channels: 2, redo: false),
+        EngineResult.ok,
+      );
+      expect(engine.undo(channel: 1), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tracks[1].lengthFrames, 750);
+    });
+
+    test('rejects calls after the native handle is disposed', () {
+      engine.dispose();
+      expect(
+        () => engine.historyModeGate(channels: 1, redo: false),
+        throwsA(
+          isA<EngineException>().having(
+            (error) => error.result,
+            'result',
+            EngineResult.invalid,
+          ),
+        ),
+      );
     });
   }, skip: skip);
 

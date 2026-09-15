@@ -599,6 +599,7 @@ class _AppViewState extends State<_AppView> {
   /// is closed. See [_requestWaveformFrame] for why the frames follow the poll
   /// rather than [_pushTimer].
   StreamSubscription<LooperState>? _pollSub;
+  StreamSubscription<RecoveryRefusal>? _recoverySub;
 
   /// Open between waveform frames — while it runs, a frame is held back
   /// rather than sent, and the last one held is sent when it fires. This is
@@ -643,6 +644,9 @@ class _AppViewState extends State<_AppView> {
   @override
   void initState() {
     super.initState();
+    _recoverySub = context.read<LooperRepository>().recoveryRefusals.listen(
+      _showRecoveryRefusal,
+    );
     widget.waveformWindow.onWindowReady = _onWindowReady;
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => unawaited(_bootstrapWindow()),
@@ -672,6 +676,8 @@ class _AppViewState extends State<_AppView> {
     _pushTimer?.cancel();
     _frameGate?.cancel();
     unawaited(_pollSub?.cancel());
+    unawaited(_recoverySub?.cancel());
+    dismissAppToast(AppToastId.recoveryRefused);
     widget.waveformWindow.onWindowReady = null;
     unawaited(widget.waveformWindow.close());
     super.dispose();
@@ -1033,6 +1039,29 @@ class _AppViewState extends State<_AppView> {
       // standing condition, so it never rides the readout.
       deviceLost: audio.deviceConnectivity == DeviceConnectivity.lost,
       goodbye: readoutGoodbyeOf(powerOff),
+    );
+  }
+
+  void _showRecoveryRefusal(RecoveryRefusal refusal) {
+    if (!mounted) return;
+    final l10n = _l10n;
+    final pending = refusal.result == EngineResult.notReady;
+    dismissAppToast(AppToastId.undoClearAll);
+    showAppToast(
+      id: AppToastId.recoveryRefused,
+      autoCloseDuration: const Duration(seconds: 10),
+      title: AppText(pending ? l10n.recoveryWaitTitle : l10n.recoveryModeTitle),
+      description: AppText(
+        pending
+            ? l10n.recoveryWaitBody
+            : switch (refusal.action) {
+                RecoveryAction.undo => l10n.recoveryModeUndoBody,
+                RecoveryAction.redo => l10n.recoveryModeRedoBody,
+              },
+      ),
+      icon: Icon(
+        refusal.action == RecoveryAction.undo ? Icons.undo : Icons.redo,
+      ),
     );
   }
 
