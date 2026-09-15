@@ -7,100 +7,65 @@ import 'package:midi_client/src/midi_client_base.dart';
 import 'package:midi_client/src/midi_device.dart';
 import 'package:segno_engine/segno_engine_ffi.dart';
 
-/// A [ControllerSource] backed by a native USB MIDI input device.
+/// A native USB MIDI input device, as a stream of messages.
 ///
-/// Long-lived by design: [inputs] is a persistent broadcast stream that
-/// survives device open/close/switch, so `ControllerRepository`'s single
-/// subscription is never torn down on replug (the structural prerequisite from
-/// the plan). The physical device is swapped *inside* the source via [open] /
+/// Long-lived by design: [activity] is a persistent broadcast stream that
+/// survives device open/close/switch, so its subscribers — the Segno pedal,
+/// the MIDI device repository and the MIDI mappings — are never torn down on
+/// replug. The physical device is swapped *inside* the source via [open] /
 /// [close].
 ///
 /// Raw `(status, data1, data2)` bytes from the native callback are normalized
-/// to [RawControllerInput]s (`midiCc` / `midiNote`) and pushed to [inputs]
-/// after a small same-trigger [debounce] (so a bouncing footswitch can't
-/// double-toggle a record). Every recognized message — pre-debounce,
-/// pre-mapping — is mirrored on [activity] for a UI input indicator.
-class MidiControllerSource implements ControllerSource {
+/// to [RawControllerInput]s and delivered on [activity] as they arrive, with
+/// nothing collapsed: a 14-bit or NRPN control sends its halves closer together
+/// than any footswitch debounce would allow.
+class MidiControllerSource {
   /// Creates a [MidiControllerSource] over [client] (defaults to a real
   /// [MidiClient] on the platform library).
-  ///
-  /// [debounce] is the minimum gap between two emitted inputs for the *same*
-  /// trigger; sub-[debounce] repeats collapse to one event on [inputs] (they
-  /// still blink [activity]). Defaults to 30 ms.
-  MidiControllerSource({
-    MidiClient? client,
-    this.debounce = const Duration(milliseconds: 30),
-  }) : _client = client ?? MidiClient() {
+  MidiControllerSource({MidiClient? client})
+    : _client = client ?? MidiClient() {
     _callable = NativeCallable<le_midi_event_cbFunction>.listener(_onMidiEvent);
   }
 
   final MidiClient _client;
 
-  /// The minimum gap between emitted inputs for the same trigger.
-  final Duration debounce;
-
   late final NativeCallable<le_midi_event_cbFunction> _callable;
 
-  final StreamController<RawControllerInput> _inputs =
-      StreamController<RawControllerInput>.broadcast();
   final StreamController<RawControllerInput> _activity =
       StreamController<RawControllerInput>.broadcast();
 
-  /// The capture timestamp (µs) of the last input *emitted* for each trigger,
-  /// keyed by `kind#id`. Leading-edge debounce: only emitted messages advance
-  /// the window, so a continuous bounce can't keep resetting it.
-  final Map<int, int> _lastEmitUs = {};
-
   bool _disposed = false;
 
-  @override
-  Stream<RawControllerInput> get inputs => _inputs.stream;
-
-  /// Every recognized Note/CC message, pre-debounce and pre-mapping, for a UI
-  /// activity indicator. Unrecognized traffic (SysEx, clock, active-sensing,
-  /// aftertouch, pitch bend, program change) never reaches here.
+  /// Every Note, Control Change and Program Change message, as it arrives.
+  /// Other traffic (SysEx, clock, active sensing, aftertouch, pitch bend)
+  /// never reaches here.
   Stream<RawControllerInput> get activity => _activity.stream;
 
   /// Lists the host's available MIDI input devices.
   List<MidiDevice> enumerate() => _client.enumerate();
 
   /// Opens (or switches to) the device with the given [id], routing its
-  /// messages into [inputs] / [activity]. Returns the native result code
+  /// messages into [activity]. Returns the native result code
   /// (`0` on success).
   int open(String id) => _client.open(id, _callable.nativeFunction);
 
-  /// Closes the currently open device. Idempotent; [inputs] stays open.
+  /// Closes the currently open device. Idempotent; [activity] stays open.
   int close() => _client.close();
 
-  /// Debounce window in microseconds, derived from [debounce].
-  int get _debounceUs => debounce.inMicroseconds;
-
   /// Handles one raw MIDI message from the native callback (or [pushForTest]).
+  /// The native timestamp is not needed: messages are delivered in order.
   void _onMidiEvent(int status, int data1, int data2, int tsUs) {
     final input = _parse(status, data1, data2);
-    if (input == null) return;
-
-    // Activity is the raw pre-mapping tap: every recognized message blinks it,
-    // even debounced duplicates, so the indicator reflects true device traffic.
-    if (!_activity.isClosed) _activity.add(input);
-
-    // Leading-edge same-trigger debounce on the inputs (action) stream.
-    final key = _triggerKey(input);
-    final last = _lastEmitUs[key];
-    if (last != null && tsUs - last < _debounceUs) return;
-    _lastEmitUs[key] = tsUs;
-
-    if (!_inputs.isClosed) _inputs.add(input);
+    if (input == null || _activity.isClosed) return;
+    _activity.add(input);
   }
 
   /// Maps a MIDI status/data triple to a [RawControllerInput], or `null` when
   /// the message is not a Note On/Off, Control Change or Program Change.
   ///
-  /// Channel (the status low nibble) is CARRIED, not dropped: the action
-  /// mappings still key on the channel-agnostic `trigger`, while a learned
-  /// controller binding can scope itself to the channel it was captured on.
-  /// A Note On with velocity 0 is the conventional Note Off, so it maps to
-  /// value 0 (a release, which the mapping treats as non-press).
+  /// Channel (the status low nibble) is carried, so a mapping can listen on
+  /// one channel. A Note On with velocity 0 is the conventional Note Off, so
+  /// it maps to value 0, a release.
   static RawControllerInput? _parse(int status, int data1, int data2) {
     final channel = status & 0x0F;
     switch (status & 0xF0) {
@@ -137,20 +102,16 @@ class MidiControllerSource implements ControllerSource {
     }
   }
 
-  /// A compact integer key for a trigger (kind + id), for the debounce map.
-  static int _triggerKey(RawControllerInput input) =>
-      input.kind.index << 16 | input.id;
-
   /// Drives the event path as if a native message arrived, without hardware.
   @visibleForTesting
-  void pushForTest(int status, int data1, int data2, {int tsUs = 0}) =>
-      _onMidiEvent(status, data1, data2, tsUs);
+  void pushForTest(int status, int data1, int data2) =>
+      _onMidiEvent(status, data1, data2, 0);
 
   /// Whether [dispose] has been called.
   @visibleForTesting
   bool get isDisposed => _disposed;
 
-  @override
+  /// Stops capture and closes [activity].
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
@@ -162,7 +123,6 @@ class MidiControllerSource implements ControllerSource {
       ..close()
       ..dispose();
     _callable.close();
-    await _inputs.close();
     await _activity.close();
   }
 }

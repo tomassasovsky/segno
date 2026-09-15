@@ -1,6 +1,6 @@
 /// Which tab the Audio domain is showing.
 ///
-/// Flutter-free, like `LoopTab`, `ControlTab` and `TracksTab` and for the same
+/// Flutter-free, like `LoopTab` and `TracksTab` and for the same
 /// reason: the value lives in `SettingsTrayState`, and the tray cubit must not
 /// import a widget library to name something it only stores.
 ///

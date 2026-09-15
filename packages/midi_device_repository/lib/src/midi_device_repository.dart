@@ -22,9 +22,9 @@ import 'package:settings_repository/settings_repository.dart';
 /// where the native library is absent) degrades gracefully: the picker shows an
 /// empty state and selection is a no-op, rather than crashing the app.
 ///
-/// **Disposal contract:** the source is *borrowed*. `ControllerRepository` owns
-/// it and disposes it; this repository must never dispose it — [dispose] only
-/// releases its own timer and stream.
+/// **Disposal contract:** the source is *borrowed*. It lives as long as the app
+/// and is shared with the Segno pedal, so this repository must never dispose
+/// it — [dispose] only releases its own timer and stream.
 class MidiDeviceRepository {
   /// Creates a [MidiDeviceRepository] over [source], persisting the selection
   /// through [settings].
@@ -97,14 +97,10 @@ class MidiDeviceRepository {
   Stream<void> get activity =>
       _source?.activity.map((_) {}) ?? const Stream<void>.empty();
 
-  /// Every recognized message from the open device, with its values, and NOT
-  /// debounced.
-  ///
-  /// What the explicit MIDI formats read. The debounced input stream drops a
-  /// repeat of one control inside 30 ms so a bouncing footswitch cannot
-  /// double-toggle a take, and a knob sending 14-bit or NRPN pairs repeats its
-  /// controls far faster than that: reading pairs from the debounced stream
-  /// would lose halves and never complete a value. Empty with no MIDI backend.
+  /// Every recognized message from the open device, with its values, as it
+  /// arrives: what the MIDI formats read. Nothing is collapsed, because a knob
+  /// sending 14-bit or NRPN pairs repeats its controls closer together than
+  /// any footswitch debounce would allow. Empty with no MIDI backend.
   Stream<RawControllerInput> get messages =>
       _source?.activity ?? const Stream<RawControllerInput>.empty();
 
@@ -330,10 +326,9 @@ class MidiDeviceRepository {
 
   /// Releases the timer and the connection stream.
   ///
-  /// The [MidiControllerSource] is **borrowed**, not owned:
-  /// `ControllerRepository` disposes it. This must never dispose it (or it
-  /// would tear down the shared input capture out from under the controller
-  /// pipeline).
+  /// The [MidiControllerSource] is **borrowed**, not owned. This must never
+  /// dispose it, or it would tear down the input capture the Segno pedal and
+  /// the MIDI mappings share.
   Future<void> dispose() async {
     _pollTimer?.cancel();
     await _controller.close();

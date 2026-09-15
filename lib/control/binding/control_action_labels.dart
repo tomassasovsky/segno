@@ -81,6 +81,7 @@ String _commandLabel(AppLocalizations l10n, ControlCommand command) =>
       ControlCommand.stop => l10n.actionStop,
       ControlCommand.undo => l10n.actionUndo,
       ControlCommand.redo => l10n.actionRedo,
+      ControlCommand.tapTempo => l10n.actionTapTempo,
       ControlCommand.clearAll => l10n.actionClearAll,
       ControlCommand.cutSound => l10n.actionCutSound,
       ControlCommand.recordPerformance => l10n.actionRecordPerformance,

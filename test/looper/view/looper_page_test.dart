@@ -1,5 +1,4 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -30,7 +29,6 @@ void main() {
         engine: FakeAudioEngine(),
         ticker: const Stream<void>.empty(),
       );
-      final controllerRepository = ControllerRepository(sources: const []);
       final sessionRepository = SessionRepository(engine: FakeAudioEngine());
       final performanceRepository = PerformanceRepository(
         engine: FakeAudioEngine(),
@@ -54,13 +52,11 @@ void main() {
         initialState: const AudioSetupState(),
       );
       addTearDown(repository.dispose);
-      addTearDown(controllerRepository.dispose);
 
       await tester.pumpApp(
         MultiRepositoryProvider(
           providers: [
             RepositoryProvider.value(value: repository),
-            RepositoryProvider.value(value: controllerRepository),
             RepositoryProvider.value(value: sessionRepository),
             RepositoryProvider.value(value: performanceRepository),
             RepositoryProvider.value(value: settings),

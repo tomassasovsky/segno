@@ -1,4 +1,3 @@
-import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -123,51 +122,33 @@ void main() {
     });
   });
 
-  group('valueTargetLabel', () {
-    test('names the rig-level controls', () {
-      expect(
-        valueTargetLabel(l10n, names, looper, const TrackVolumeTarget(2)),
-        l10n.midiLearnTargetVolume('rhythm'),
+  group('fxParamName', () {
+    test("names a live FX param with the effect type's own parameter name", () {
+      const target = FxParamTarget(
+        address: FxAddress(stage: FxStage.track, index: 3),
+        slotId: 't-1',
+        param: 1,
       );
+
       expect(
-        valueTargetLabel(l10n, names, looper, const MasterGainTarget()),
-        l10n.midiLearnTargetMaster,
+        fxParamName(looper, target),
+        TrackEffectType.drive.params[1].label,
       );
     });
 
-    test(
-      "names a live FX param with the effect type's own parameter name",
-      () {
-        const target = FxParamTarget(
-          address: FxAddress(stage: FxStage.track, index: 3),
-          slotId: 't-1',
-          param: 1,
-        );
-
-        expect(
-          valueTargetLabel(l10n, names, looper, target),
-          l10n.midiLearnTargetParam(
-            l10n.pedalAssignStageTrack('TRACK 4'),
-            't-1',
-            TrackEffectType.drive.params[1].label,
-          ),
-        );
-      },
-    );
-
-    test('falls back to the bare index when the slot is gone', () {
-      // A stale row still has to say what it used to drive, so the label never
-      // vanishes with the slot.
+    test('is null when the slot is gone', () {
+      // A caller falls back to the bare index, so a stale row still says what
+      // it used to drive.
       const target = FxParamTarget(
         address: FxAddress(stage: FxStage.track, index: 3),
         slotId: 'gone',
         param: 2,
       );
 
-      expect(valueTargetLabel(l10n, names, looper, target), contains('#2'));
+      expect(fxParamName(looper, target), isNull);
     });
 
-    test('falls back for a plugin slot and an out-of-range param', () {
+    test('is null for a plugin slot and an out-of-range param', () {
       const plugin = FxParamTarget(
         address: FxAddress(stage: FxStage.track, index: 3),
         slotId: 'plug-1',
@@ -179,60 +160,20 @@ void main() {
         param: 99,
       );
 
-      expect(valueTargetLabel(l10n, names, looper, plugin), contains('#0'));
-      expect(valueTargetLabel(l10n, names, looper, past), contains('#99'));
+      expect(fxParamName(looper, plugin), isNull);
+      expect(fxParamName(looper, past), isNull);
     });
 
-    test(
-      'a lane-less Loop address names no parameter, like the resolver',
-      () {
-        // The resolvers refuse to coerce it onto lane 0 (A9); a label naming
-        // lane 0's effect would describe a chain nothing ever writes to.
-        const laneless = FxParamTarget(
-          address: FxAddress(stage: FxStage.loop, index: 1),
-          slotId: 'l-1',
-          param: 0,
-        );
-
-        expect(valueTargetLabel(l10n, names, looper, laneless), contains('#0'));
-      },
-    );
-  });
-
-  group('controlLabel', () {
-    test('names a CC and a note by number and 1-based channel', () {
-      expect(
-        controlLabel(
-          l10n,
-          const MappingTrigger(
-            kind: ControllerSourceKind.midiCc,
-            id: 11,
-            midiChannel: 0,
-          ),
-        ),
-        l10n.midiLearnCcControl(11, 1),
+    test('a lane-less Loop address names no parameter, like the resolver', () {
+      // The resolvers refuse to coerce it onto lane 0 (A9); a label naming
+      // lane 0's effect would describe a chain nothing ever writes to.
+      const laneless = FxParamTarget(
+        address: FxAddress(stage: FxStage.loop, index: 1),
+        slotId: 'l-1',
+        param: 0,
       );
-      expect(
-        controlLabel(
-          l10n,
-          const MappingTrigger(
-            kind: ControllerSourceKind.midiNote,
-            id: 60,
-            midiChannel: 15,
-          ),
-        ),
-        l10n.midiLearnNoteControl(60, 16),
-      );
-    });
 
-    test('an omni trigger reads as channel 1', () {
-      expect(
-        controlLabel(
-          l10n,
-          const MappingTrigger(kind: ControllerSourceKind.midiCc, id: 11),
-        ),
-        l10n.midiLearnCcControl(11, 1),
-      );
+      expect(fxParamName(looper, laneless), isNull);
     });
   });
 }

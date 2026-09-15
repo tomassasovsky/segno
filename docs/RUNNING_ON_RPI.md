@@ -450,8 +450,8 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
 
 ### Goal 2 — USB-MIDI pedal
 
-- **Procedure.** Input arrives as **CC 80/81/82/83 on track 0**
-  (`MidiControllerSource`); LED-out runs `pedal_repository` →
+- **Procedure.** Input arrives as the pedal's footswitch Notes and encoder CC
+  (`MidiControllerSource` → `pedal_repository`); LED-out runs `pedal_repository` →
   `NativePedalTransport` → `MidiOutClient`
   (see [MIDI_FOOT_CONTROLLER.md](MIDI_FOOT_CONTROLLER.md)).
 - **Functional-smoke pass:** the pedal is auto-selected on each boot; every switch

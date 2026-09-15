@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
-import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -130,7 +129,6 @@ void main() {
   late ControlCubit controlCubit;
   late TracksCubit tracksCubit;
   late PerformanceRepository performance;
-  late ControllerRepository controller;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -154,13 +152,11 @@ void main() {
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
     );
-    controller = ControllerRepository(sources: const []);
     controlCubit = ControlCubit(
       looper: looper,
       pedal: PedalRepository(const NoopPedalTransport()),
       settings: settings,
       performance: performance,
-      controller: controller,
       keepAliveInterval: Duration.zero,
     );
     tracksCubit = TracksCubit(settings: settings);
@@ -171,7 +167,6 @@ void main() {
     await inputsCubit.close();
     unawaited(controlCubit.close());
     unawaited(tracksCubit.close());
-    unawaited(controller.dispose());
     performance.dispose();
     unawaited(looper.dispose());
   });

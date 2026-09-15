@@ -568,32 +568,12 @@ class SettingsRepository {
   Future<void> saveRecentPlugins(String encoded) =>
       _store.setString(recentPluginsKey, encoded);
 
-  static const String _controllerMappingsKey = 'controller.mappings';
-
-  /// Loads the external-MIDI mapping set as its opaque encoded string, or
-  /// `null` when none was ever saved (external control drives nothing).
-  ///
-  /// Opaque here for the same reason the pedal remap is: the binding model
-  /// lives in `controller_repository` and its TARGETS are canonical-JSON
-  /// strings only the app can decode, so this package persists the blob
-  /// without knowing its shape.
-  ///
-  /// GLOBAL-ONLY in v1 (R19), unlike the pedal remap: expression hardware is
-  /// per-rig, not per-song, so no session carries a copy of this key and a
-  /// session stays portable across machines with different controllers.
-  Future<String?> loadControllerMappings() =>
-      _store.getString(_controllerMappingsKey);
-
-  /// Saves the external-MIDI mapping set as its [encoded] string.
-  Future<void> saveControllerMappings(String encoded) =>
-      _store.setString(_controllerMappingsKey, encoded);
-
   static const String _midiMappingsKey = 'midi.mappings';
 
   /// Loads the MIDI mappings blob, or `null` if unset.
   ///
-  /// Opaque, like the controller mappings: a mapping's source and controls are
-  /// the MIDI package's model, and its control keys are strings only the app
+  /// Opaque, like the pedal remap: a mapping's source and controls are the
+  /// MIDI package's model, and its control keys are strings only the app
   /// decodes. Global to the rig, not to a session, because a controller belongs
   /// to the rig it is plugged into.
   Future<String?> loadMidiMappings() => _store.getString(_midiMappingsKey);

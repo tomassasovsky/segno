@@ -198,6 +198,10 @@ enum ControlCommand {
   /// Redo the latest undone audio edit on the selected track.
   redo('command:redo'),
 
+  /// Tap the tempo: two taps inside the engine's window set it from their
+  /// interval.
+  tapTempo('command:tap-tempo'),
+
   /// Clear every track, as one grouped edit with one undo.
   clearAll('command:clear-all'),
 

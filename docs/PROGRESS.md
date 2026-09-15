@@ -152,7 +152,7 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 ```
 packages/
   segno_engine/        DATA  — FFI plugin over a hand-written miniaudio engine (C)
-  controller_repository/ REPO — hardware-agnostic MIDI → looper actions
+  controller_repository/ REPO — MIDI formats, mappings and the mapping engine
   looper_repository/   REPO  — owns the engine; EngineSnapshot → LooperState
   settings_repository/ REPO  — per-device latency calibration persistence
   local_storage_client/ DATA — KeyValueStore (shared_preferences)
@@ -160,12 +160,12 @@ packages/
   performance_repository/ REPO — performance-recording capture lifecycle (arm/finalize/recover)
   wav_codec/           DATA  — 32-bit-float WAV encode/decode (pure Dart, no Flutter dep)
   daw_export/          DATA  — pure-Dart Ableton Live 12 (.als) exporter for a performance capture
-  midi_client/         DATA  — native USB-MIDI device client (ControllerSource) over the FFI seam
+  midi_client/         DATA  — native USB-MIDI device client over the FFI seam
   midi_device_repository/ REPO — MIDI device enumeration/selection + hotplug (audio-independent)
   pedal_repository/    REPO  — hardware pedal (footswitch/LED) protocol over MIDI SysEx
   routing_graph/       UI KIT — reusable routing-graph canvas/wires/cards + theme (Signal, FX editor)
 lib/
-  app/        App + MultiRepositoryProvider (looper, controller, settings)
+  app/        App + MultiRepositoryProvider (looper, MIDI devices, settings)
   looper/     LooperBloc + Chewie-2 track grid (home)
   audio_setup/ device/sr/buffer, engine start/stop, latency, loopback note
 ```
@@ -754,8 +754,8 @@ remains open — see "On-hardware validations" below.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
-  `le_midi_*` capture seam → `MidiControllerSource` → `ControllerRepository`,
-  with a device-selection UI. Hardware-gated only for a live-pedal smoke test.
+  `le_midi_*` capture seam → `MidiControllerSource` → the MIDI mappings in
+  `ControlCubit`, with the MIDI controls page. Hardware-gated only for a live-pedal smoke test.
 - **VST3/CLAP plugin hosting — Linux (X11) port.** See the "Effects chain"
   Done entry above for macOS/Windows status; Linux needs an X11 embedding
   target, deferred to on-platform work.

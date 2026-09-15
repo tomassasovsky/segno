@@ -232,6 +232,62 @@ void main() {
       expect(cubit.state.mode, InteractionMode.mute);
     });
 
+    test('Tap tempo reaches the engine', () async {
+      when(() => looper.tapTempo()).thenReturn(EngineResult.ok);
+      await cubit.saveMidiMapping(
+        MidiMapping(
+          id: 'tap',
+          source: _source(kind: ControllerSourceKind.midiNote, number: 61),
+          behavior: MidiBehavior.momentary,
+          controls: [
+            MidiActionControl(
+              key: const CommandAction(ControlCommand.tapTempo).key,
+            ),
+          ],
+        ),
+      );
+      await send([_note(61, 100), _note(61, 0), _note(61, 100)]);
+      verify(() => looper.tapTempo()).called(2);
+    });
+
+    test('master gain keeps the encoder accumulator in step', () async {
+      when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+      await cubit.saveMidiMapping(knobOn(const MasterGainTarget()));
+      // Master gain reads 1, so the knob takes over at the top and is then
+      // turned right down.
+      await send([_cc(21, 127), _cc(21, 0)]);
+      cubit.encoderTurned(1); // the next detent must step up FROM 0
+
+      final gains = verify(
+        () => looper.setMasterGain(captureAny()),
+      ).captured.cast<double>();
+      expect(gains, [1, 0, closeTo(1 / 64, 1e-9)]);
+    });
+
+    test('a parameter gone from the rig writes nothing and throws '
+        'nothing', () async {
+      when(() => looper.trackEffects(any())).thenReturn(const []);
+      when(() => looper.allTrackChains()).thenReturn(const {});
+      await cubit.saveMidiMapping(
+        knobOn(
+          const FxParamTarget(
+            address: FxAddress(stage: FxStage.track),
+            slotId: 'gone',
+            param: 0,
+          ),
+        ),
+      );
+      await send([_cc(21, 64), _cc(21, 127)]);
+      verifyNever(
+        () => looper.setTrackEffectParam(
+          channel: any(named: 'channel'),
+          index: any(named: 'index'),
+          param: any(named: 'param'),
+          value: any(named: 'value'),
+        ),
+      );
+    });
+
     test('a take lock refuses a MIDI action', () async {
       await cubit.saveMidiMapping(
         MidiMapping(
@@ -279,6 +335,21 @@ void main() {
         expect(cubit.state.midiMappings.mappings, hasLength(1));
       },
     );
+
+    test('a knob value holds when the controller disconnects', () async {
+      await cubit.saveMidiMapping(knobOn(volume0));
+      await send([_cc(21, 64), _cc(21, 127)]);
+      expect(volumeWrites.last.$2, 1);
+      final writes = volumeWrites.length;
+      connections.add(
+        const MidiConnection(
+          selectedId: _device,
+          status: MidiConnectionStatus.deviceGone,
+        ),
+      );
+      await settle();
+      expect(volumeWrites, hasLength(writes), reason: 'no snap-back');
+    });
 
     test('a disconnect releases a hold', () async {
       await cubit.saveMidiMapping(held());

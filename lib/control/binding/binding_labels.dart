@@ -1,4 +1,3 @@
-import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
@@ -10,8 +9,8 @@ import 'package:segno/l10n/l10n.dart';
 /// Pure functions of the target and the localizations, so the same words reach
 /// the picker entry, the row, and the Semantics announcement — three spellings
 /// of one target would read as three different mappings. Shared by the pedal
-/// assignment screen (part 6b) and the MIDI-learn section (part 7), which is
-/// why they live next to the binding model rather than inside either feature.
+/// assignment screen and the External pedals catalogue, which is why they
+/// live next to the binding model rather than inside either feature.
 
 /// Names the chain at [address] — its stage and position.
 ///
@@ -62,30 +61,6 @@ String bindingTargetLabel(
   };
 }
 
-/// Names a continuous (value-writing) [target].
-///
-/// [looper] is consulted for an FX parameter's own label, which only the live
-/// chain knows; a target whose slot is gone falls back to the bare parameter
-/// index rather than vanishing, since a stale row still has to say what it
-/// used to drive.
-String valueTargetLabel(
-  AppLocalizations l10n,
-  List<String> trackNames,
-  LooperRepository looper,
-  ControlValueTarget target,
-) => switch (target) {
-  TrackVolumeTarget(:final channel) => l10n.midiLearnTargetVolume(
-    l10n.trackName(trackNames, channel),
-  ),
-  MasterGainTarget() => l10n.midiLearnTargetMaster,
-  FxParamTarget(:final address, :final slotId, :final param) =>
-    l10n.midiLearnTargetParam(
-      fxStageLabel(l10n, trackNames, address),
-      slotId,
-      fxParamName(looper, target) ?? '#$param',
-    ),
-};
-
 /// The display name of the effect sitting in [target]'s slot, or `null` when
 /// the slot is gone.
 ///
@@ -103,27 +78,6 @@ String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
     };
   }
   return null;
-}
-
-/// Names the CONTROL a binding is keyed to — the CC/note number and the
-/// channel it was learned on.
-String controlLabel(AppLocalizations l10n, MappingTrigger trigger) {
-  // An omni trigger has no channel of its own; it is shown as channel 1, the
-  // one a user reading their controller's display would see first. Learned
-  // controller bindings always carry a channel, so this only covers a
-  // hand-written mapping.
-  final channel = (trigger.midiChannel ?? 0) + 1;
-  return switch (trigger.kind) {
-    ControllerSourceKind.midiCc => l10n.midiLearnCcControl(trigger.id, channel),
-    ControllerSourceKind.midiNote => l10n.midiLearnNoteControl(
-      trigger.id,
-      channel,
-    ),
-    ControllerSourceKind.midiProgram => l10n.midiLearnProgramControl(
-      trigger.id,
-      channel,
-    ),
-  };
 }
 
 /// The live label of the parameter [target] names, or `null` when the chain,

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:midi_client/midi_client.dart';
 
-/// Builds the long-lived [MidiControllerSource] for the controller pipeline,
+/// Builds the long-lived [MidiControllerSource] the app's MIDI input runs on,
 /// kept deliberately separate from audio bootstrap so the MIDI lifecycle is
 /// fully independent of the audio engine ("switching MIDI never restarts
 /// audio").

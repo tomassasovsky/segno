@@ -681,46 +681,6 @@
             }
         }
     },
-    "midiInputGroup": "PEDAL MIDI",
-    "midiNoDevicesFound": "No se encontraron dispositivos de entrada MIDI",
-    "midiNone": "Ninguno",
-    "midiDeviceNotFound": "{deviceName} (no encontrado)",
-    "@midiDeviceNotFound": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
-    "midiStatusNone": "Sin dispositivo MIDI: el looper funciona con teclado y ratón.",
-    "midiStatusConnecting": "Conectando…",
-    "midiStatusConnected": "Conectado: {deviceName}",
-    "@midiStatusConnected": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
-    "midiStatusDeviceGone": "{deviceName} no encontrado: se reconectará al conectarlo.",
-    "@midiStatusDeviceGone": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
-    "midiStatusOpenFailed": "No se pudo abrir {deviceName} (¿en uso por otra app?).",
-    "@midiStatusOpenFailed": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
-    "midiRequiredCcsHint": "CC 80 grabar · 81 detener · 82 deshacer · 83 borrar",
-    "midiActivityActive": "Actividad MIDI",
-    "midiActivityIdle": "Esperando entrada MIDI",
     "midiReconnectedSnackbar": "Controlador MIDI «{deviceName}» reconectado.",
     "@midiReconnectedSnackbar": {
         "placeholders": {
@@ -1068,37 +1028,6 @@
     "fxStompBound": "Pedal",
     "a11yFxStompBound": "Asignado al pedal {button}",
     "a11yFxStompBoundHeld": "Asignado al pedal {button}, mantenido",
-    "midiLearnGroup": "CONTROL MIDI EXTERNO",
-    "midiLearnHint": "Asigná un pedal de expresión o un switch MIDI a un parámetro o a una cadena FX. Las asignaciones son globales: acompañan al equipo, no a la sesión cargada.",
-    "midiLearnEmpty": "Todavía no hay nada asignado. Agregá una asignación y después mové el control que querés usar.",
-    "midiLearnAddSweep": "Agregar barrido",
-    "midiLearnAddSwitch": "Agregar switch",
-    "midiLearnLearn": "Aprender",
-    "midiLearnRelearn": "Reaprender",
-    "midiLearnClear": "Quitar",
-    "midiSimulate": "Simular",
-    "midiSimulateGlobal": "Simular entrada",
-    "midiLearnCancel": "Cancelar",
-    "midiLearnListening": "Escuchando… mové el control que querés usar.",
-    "midiLearnReplacePrompt": "{control} ya controla otra asignación. ¿Reemplazarla?",
-    "midiLearnReplace": "Reemplazar",
-    "midiLearnKeep": "Conservar",
-    "midiLearnLo": "MIN",
-    "midiLearnHi": "MAX",
-    "midiLearnThreshold": "UMBRAL",
-    "midiLearnBehavior": "Comportamiento",
-    "midiLearnStale": "Destino ausente",
-    "midiLearnStaleDetail": "Lo que esta asignación apuntaba ya no existe. No hace nada hasta que la apuntes a otra cosa o la quites.",
-    "midiLearnDeviceMissing": "No hay ninguna entrada MIDI conectada, así que estas asignaciones están inactivas. Conectá el controlador, o reaprendé una fila con el que estés usando ahora.",
-    "midiLearnCcControl": "CC {number} · canal {channel}",
-    "midiLearnNoteControl": "Nota {number} · canal {channel}",
-    "midiLearnTargetVolume": "Volumen de {trackName}",
-    "midiLearnTargetMaster": "Ganancia master",
-    "midiLearnTargetParam": "{stage} · {slot} · {param}",
-    "a11yMidiLearnRow": "{control} asignado a {target}",
-    "a11yMidiLearnLo": "Mínimo del rango",
-    "a11yMidiLearnHi": "Máximo del rango",
-    "a11yMidiLearnThreshold": "Umbral de activación",
     "wifiRescan": "Reescanear",
     "wifiUnsupported": "Tu computadora administra el Wi-Fi en esta versión.",
     "wifiNoNetworks": "No se encontraron redes.",
@@ -1510,14 +1439,6 @@
     "@trayControlLabel": {
         "description": "Navigation rail entry for the Control domain — the footswitch plate and the MIDI foot controller as two tabs of one destination."
     },
-    "controlPedalTab": "Pedal",
-    "@controlPedalTab": {
-        "description": "Tab of the Control domain: the footswitch plate's assignable switches."
-    },
-    "controlMidiTab": "MIDI",
-    "@controlMidiTab": {
-        "description": "Tab of the Control domain: the MIDI foot controller and its mappings."
-    },
     "controlTransportGroup": "CONMUTADORES DE TRANSPORTE",
     "@controlTransportGroup": {
         "description": "Group caption over the four transport footswitch cards. Upper case, as every group caption on the console is."
@@ -1592,91 +1513,6 @@
     "controlFxHoldSub": "Solo el pedal: una pulsación de Modo alterna entre Grabar y Silenciar, mantener Modo entra y sale de FX, y mantener Banco arma la grabación de actuación. Desactivado, una pulsación de Modo recorre los tres modos y mantener Modo arma la grabación.",
     "@controlFxHoldSub": {
         "description": "One-liner under the Hold-for-FX row: scoped to the pedal alone (keyboard and on-screen controls keep the three-way cycle either way), what the Mode hold gains, and where the recording hold moves (the Bank switch, #677)."
-    },
-    "midiDeviceGroup": "CONTROLADOR MIDI DE PIE",
-    "@midiDeviceGroup": {
-        "description": "Group caption over the MIDI device row and its status card."
-    },
-    "midiDeviceRow": "Dispositivo",
-    "@midiDeviceRow": {
-        "description": "Row that opens the MIDI input picker."
-    },
-    "midiDeviceNone": "Ninguno",
-    "@midiDeviceNone": {
-        "description": "Value of the MIDI device row when nothing is selected."
-    },
-    "midiStatusWaiting": "Esperando entrada MIDI",
-    "@midiStatusWaiting": {
-        "description": "Traffic line on a live link that has not delivered a message yet."
-    },
-    "midiStatusReceiving": "Recibiendo MIDI",
-    "@midiStatusReceiving": {
-        "description": "Traffic line on a live link that is delivering messages."
-    },
-    "midiTransportMap": "CC {map}",
-    "@midiTransportMap": {
-        "description": "The fixed transport CC map, stated and not editable. The list is built from the rig's own default mapping so the two cannot drift.",
-        "placeholders": {
-            "map": {
-                "type": "String"
-            }
-        }
-    },
-    "midiActionRecord": "grabar",
-    "@midiActionRecord": {
-        "description": "Name of the record/overdub transport action in the fixed CC map."
-    },
-    "midiActionStop": "parar",
-    "@midiActionStop": {
-        "description": "Name of the stop transport action in the fixed CC map."
-    },
-    "midiActionPlay": "reproducir",
-    "@midiActionPlay": {
-        "description": "Name of the play transport action in the fixed CC map."
-    },
-    "midiActionClear": "borrar",
-    "@midiActionClear": {
-        "description": "Name of the clear transport action in the fixed CC map."
-    },
-    "midiActionUndo": "deshacer",
-    "@midiActionUndo": {
-        "description": "Name of the undo transport action in the fixed CC map."
-    },
-    "midiActionPlayAll": "reproducir todo",
-    "@midiActionPlayAll": {
-        "description": "Name of the play-all transport action in the fixed CC map."
-    },
-    "midiActionStopAll": "parar todo",
-    "@midiActionStopAll": {
-        "description": "Name of the stop-all transport action in the fixed CC map."
-    },
-    "midiActionTapTempo": "marcar tempo",
-    "@midiActionTapTempo": {
-        "description": "Name of the tap-tempo action in the fixed CC map."
-    },
-    "midiActionMetronome": "clic",
-    "@midiActionMetronome": {
-        "description": "Name of the metronome-toggle action in the fixed CC map."
-    },
-    "midiActionCancelArm": "cancelar armado",
-    "@midiActionCancelArm": {
-        "description": "Name of the cancel-arm action in the fixed CC map."
-    },
-    "midiStateSweep": "barrido",
-    "@midiStateSweep": {
-        "description": "State word on a continuous mapping row."
-    },
-    "midiStateSwitch": "conmutador",
-    "@midiStateSwitch": {
-        "description": "State word on a discrete mapping row."
-    },
-    "midiMappingsEmpty": "Todavía no hay nada asignado. Añade un barrido o un conmutador y luego mueve el control que quieras usar.",
-    "@midiMappingsEmpty": {
-        "description": "Empty state at the head of the mapping list."
-    },
-    "midiDeviceUnplugged": "desconectado",
-    "@midiDeviceUnplugged": {
-        "description": "Trailing readout on a MIDI device the enumeration has lost — it is still listed, because the selection is what survives the cable being found again."
     },
     "controlTrackSwitchName": "Pista {number}",
     "@controlTrackSwitchName": {

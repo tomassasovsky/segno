@@ -185,7 +185,6 @@ void main() {
   group('App', () {
     late FakeAudioEngine engine;
     late LooperRepository repository;
-    late ControllerRepository controllerRepository;
     late MidiDeviceRepository midiDeviceRepository;
     late SettingsRepository settings;
     late SessionRepository sessionRepository;
@@ -206,7 +205,6 @@ void main() {
         engine: engine,
         ticker: const Stream<void>.empty(),
       );
-      controllerRepository = ControllerRepository(sources: const []);
       settings = SettingsRepository(store: FakeKeyValueStore());
       sessionRepository = SessionRepository(engine: FakeAudioEngine());
       performanceRepository = PerformanceRepository(
@@ -219,7 +217,6 @@ void main() {
         settings: settings,
       );
       addTearDown(repository.dispose);
-      addTearDown(controllerRepository.dispose);
       addTearDown(midiDeviceRepository.dispose);
     });
 
@@ -231,7 +228,6 @@ void main() {
       await tester.pumpWidget(
         App(
           repository: repository,
-          controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
           settings: settings,
           waveformWindow: windowService,
@@ -251,7 +247,6 @@ void main() {
       await tester.pumpWidget(
         App(
           repository: repository,
-          controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
@@ -371,7 +366,6 @@ void main() {
     ) async {
       App buildApp() => App(
         repository: repository,
-        controllerRepository: controllerRepository,
         midiDeviceRepository: midiDeviceRepository,
         settings: settings,
         waveformWindow: NoopWaveformWindowService(),
@@ -412,7 +406,6 @@ void main() {
       await tester.pumpWidget(
         App(
           repository: repository,
-          controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
@@ -447,7 +440,6 @@ void main() {
       await tester.pumpWidget(
         App(
           repository: repository,
-          controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
@@ -571,7 +563,6 @@ void main() {
         await tester.pumpWidget(
           App(
             repository: pinned,
-            controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
             settings: settings,
             waveformWindow: windowService,
@@ -653,7 +644,6 @@ void main() {
         await tester.pumpWidget(
           App(
             repository: repository,
-            controllerRepository: controllerRepository,
             midiDeviceRepository: midi,
             settings: settings,
             waveformWindow: windowService,
@@ -787,7 +777,6 @@ void main() {
         await tester.pumpWidget(
           App(
             repository: repository,
-            controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
             settings: settings,
             waveformWindow: windowService,
@@ -1005,7 +994,6 @@ void main() {
         await tester.pumpWidget(
           App(
             repository: driven,
-            controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
             settings: settings,
             waveformWindow: window,
@@ -1350,7 +1338,6 @@ void main() {
         await tester.pumpWidget(
           App(
             repository: repository,
-            controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
             settings: settings,
             waveformWindow: NoopWaveformWindowService(),

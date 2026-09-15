@@ -2913,14 +2913,14 @@ LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
 /* ---- native USB MIDI input (foot-pedal control) ---- *
  *
  * A self-contained capture seam, independent of the audio engine lifecycle: it
- * enumerates the host's MIDI *input* ports, opens one, and pushes raw Note/CC
- * messages to a registered callback for the Dart controller pipeline to map
- * (CC 80-83 -> record/stop/undo/clear by default). Captured natively on all
- * three desktop OSes (CoreMIDI / ALSA sequencer / WinMM) so the footswitch ->
- * action latency stays tight and consistent.
+ * enumerates the host's MIDI *input* ports, opens one, and pushes raw Note, CC
+ * and Program Change messages to a registered callback for the Segno pedal and
+ * the Dart MIDI mappings. Captured natively on all three desktop OSes
+ * (CoreMIDI / ALSA sequencer / WinMM) so the footswitch -> action latency stays
+ * tight and consistent.
  *
- * SysEx / real-time / aftertouch / pitch-bend / program-change are dropped at
- * the native layer, so the callback only ever sees Note On/Off and Control
+ * SysEx / real-time / aftertouch / pitch-bend are dropped at the native layer,
+ * so the callback only ever sees Note On/Off, Control Change and Program
  * Change. The OS MIDI callback does no allocation, locking, or blocking I/O on
  * its hot path (it parses + pushes to a lock-free SPSC ring); a drain step
  * invokes the callback off that thread. Entirely separate from the audio

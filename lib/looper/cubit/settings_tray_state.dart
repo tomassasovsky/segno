@@ -12,14 +12,8 @@ part of 'settings_tray_cubit.dart';
 /// placeholders, because a rail item that does nothing when tapped is worse
 /// than a two-line enum edit.
 enum SettingsTrayDestination {
-  /// In-tray Control domain — the footswitch plate and the MIDI foot
-  /// controller as tabs of one entry.
-  ///
-  /// One destination, not two: both tabs answer the same question — *what
-  /// outside this box is driving it?* — and they had been in two different
-  /// places, one a rail entry of its own (#440) and the other a group buried
-  /// in the Settings scroll. Which one is showing is
-  /// [SettingsTrayState.controlTab], not a destination of its own.
+  /// In-tray Control domain — the footswitch plate, and the ways to Pedal
+  /// setup and to MIDI controls: what outside this box is driving it.
   control,
 
   /// In-tray Tracks domain — names, lengths and routing as tabs of one entry.
@@ -81,7 +75,6 @@ class SettingsTrayState extends Equatable {
     this.brightness = kDefaultDisplayBrightness,
     this.destination = SettingsTrayDestination.control,
     this.networkTab = NetworkTab.wifi,
-    this.controlTab = ControlTab.pedal,
     this.audioTab = AudioTab.device,
     this.systemTab = SystemTab.display,
   });
@@ -111,9 +104,6 @@ class SettingsTrayState extends Equatable {
   /// left.
   final NetworkTab networkTab;
 
-  /// Which tab the Control domain shows. Same rule as [networkTab].
-  final ControlTab controlTab;
-
   /// Which tab the Audio domain shows. Same rule as [networkTab].
   final AudioTab audioTab;
 
@@ -126,7 +116,6 @@ class SettingsTrayState extends Equatable {
     double? brightness,
     SettingsTrayDestination? destination,
     NetworkTab? networkTab,
-    ControlTab? controlTab,
     AudioTab? audioTab,
     SystemTab? systemTab,
   }) => SettingsTrayState(
@@ -134,7 +123,6 @@ class SettingsTrayState extends Equatable {
     brightness: brightness ?? this.brightness,
     destination: destination ?? this.destination,
     networkTab: networkTab ?? this.networkTab,
-    controlTab: controlTab ?? this.controlTab,
     audioTab: audioTab ?? this.audioTab,
     systemTab: systemTab ?? this.systemTab,
   );
@@ -145,7 +133,6 @@ class SettingsTrayState extends Equatable {
     brightness,
     destination,
     networkTab,
-    controlTab,
     audioTab,
     systemTab,
   ];
