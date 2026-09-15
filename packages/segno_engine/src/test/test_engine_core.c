@@ -12665,6 +12665,40 @@ static void test_click_sync_off_second_recording_follows_loop_beats(void) {
   le_engine_destroy(e);
 }
 
+/* A grid-free loop shorter than one nominal beat still has a downbeat at
+ * every loop top, even though its beat index stays zero throughout. */
+static void test_click_sync_off_short_loop_repeats_downbeat(void) {
+  printf("test_click_sync_off_short_loop_repeats_downbeat\n");
+  le_engine* e = ck_make_engine(1);
+  const int32_t len = CK_FPB / 2;
+  le_snapshot s;
+
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, len, 1, NULL, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_SR / 100 + 64, 1, NULL, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == len);
+  CHECK(s.loop_bars == 0);
+
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
+  double energy[1] = {0};
+  ck_run(e, len - s.master_position_frames, 1, energy, NULL);
+  CHECK(energy[0] == 0.0); /* Enabling mid-beat waits for the loop top. */
+  for (int lap = 0; lap < 3; ++lap) {
+    const int down = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+    CHECK(down > 75 && down < 105);
+    energy[0] = 0.0;
+    ck_run(e, len - CK_CLICK_FRAMES, 1, energy, NULL);
+    CHECK(energy[0] == 0.0);
+  }
+
+  le_engine_destroy(e);
+}
+
 static void test_click_loop_locked_downbeat_vs_beat_frequency(void) {
   printf("test_click_loop_locked_downbeat_vs_beat_frequency\n");
   le_engine* e = ck_make_engine(1);
@@ -25701,6 +25735,7 @@ int main(void) {
   test_click_free_running_downbeat_vs_beat_frequency();
   test_click_loop_locked_downbeat_vs_beat_frequency();
   test_click_sync_off_second_recording_follows_loop_beats();
+  test_click_sync_off_short_loop_repeats_downbeat();
   test_count_in_delays_defining_record();
   test_count_in_record_press_cancels();
   test_count_in_stop_and_disable_cancel();

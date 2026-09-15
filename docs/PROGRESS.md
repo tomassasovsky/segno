@@ -22,6 +22,13 @@ The update helper now requests tryboot explicitly when an update is staged
 both paths. This source correction does not validate a new installed image or
 resolve the separate crash-loop health-gate issue (#976).
 
+## September 2026 click timing
+
+With Sync tempo off, later recordings now take their click timing from the
+existing loop (#1051), including loop-top downbeats for loops shorter than one
+beat. Native regression and sanitizer checks pass. The appliance listening
+check remains pending; this source change does not install an update.
+
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this

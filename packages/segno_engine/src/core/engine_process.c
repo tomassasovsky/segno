@@ -3258,7 +3258,13 @@ static inline void advance_transport_frame(le_engine* e, int tc,
     if (any_active) {
       e->transport_held = 0; /* #262: transport is running; re-arm the hold edge */
       const int wrapped = le_loop_clock_tick(&e->clock);
-      if (wrapped) e->loop_iteration++;
+      if (wrapped) {
+        e->loop_iteration++;
+        /* A grid-free loop can be shorter than one nominal beat, leaving
+         * its beat index at zero throughout. Re-arm on the actual wrap so
+         * every loop top clicks even without a beat-index transition. */
+        if (e->grid_total_beats <= 0) e->grid_prev_beat = -1;
+      }
       /* Grid-armed fire check. The loop top (wrap) is every division's
        * boundary AND the layer boundary, so it fires everything — the exact
        * pre-A3 behavior, and the whole behavior when the quantize division is
