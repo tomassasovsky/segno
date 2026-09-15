@@ -1,0 +1,30 @@
+name: Segno Transfer
+
+on:
+  pull_request:
+    paths:
+      - 'apps/segno_transfer/**'
+      - '.github/workflows/segno-transfer.yaml'
+  push:
+    branches: [master]
+    paths:
+      - 'apps/segno_transfer/**'
+      - '.github/workflows/segno-transfer.yaml'
+
+jobs:
+  mac-app:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install appliance fixture tools
+        run: |
+          brew install jq coreutils
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Check appliance file access
+        run: python3 -m unittest discover -s apps/segno_transfer/Tests/RemoteTests -v
+      - name: Check Swift formatting
+        run: swift format lint --strict --recursive apps/segno_transfer/Sources apps/segno_transfer/Tests/TransferCoreTests apps/segno_transfer/Package.swift
+      - name: Test transfer and app behavior
+        run: swift test --package-path apps/segno_transfer
+      - name: Build the Mac app
+        run: bash apps/segno_transfer/build-app.sh
