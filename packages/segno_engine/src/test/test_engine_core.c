@@ -15981,6 +15981,319 @@ static void test_octaver_added_latency(void) {
   le_engine_destroy(e);
 }
 
+/* ---- octaver analysis-hop stagger (#897) ---- */
+
+/* A mono monitor chain whose slot [slot] is a PV octaver at UNISON with mix
+ * [mix]; every earlier slot stays LE_FX_NONE (inert) so the octaver's own hop
+ * phase is the one belonging to `slot`, not to slot 0. Unison matters: at
+ * ratio 1 the phase vocoder is a transparent reconstruction, which is what
+ * makes the null test below possible at all. */
+static le_engine* oct_stagger_engine_at(int slot, float mix, int32_t seed) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, OCT_SR, 1, 1, OCT_SR * 4);
+  /* An explicit base phase, so a test can reach a phase the engine's own
+   * numbering never hands this chain — the monitor inputs sit in one corner
+   * of it. Written before the FX commands are even posted, and nothing has
+   * processed yet, so le_fx_entry_reset seeds from it when the type lands. */
+  if (seed >= 0) e->monitors[0].fx.hop_seed = seed;
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  for (int s = 0; s < slot; ++s) {
+    le_engine_set_monitor_input_fx(e, 0, s, LE_FX_NONE);
+  }
+  le_engine_set_monitor_input_fx(e, 0, slot, LE_FX_OCTAVER);
+  le_engine_set_monitor_input_fx_param(e, 0, slot, 0, 0.5f); /* unison */
+  le_engine_set_monitor_input_fx_param(e, 0, slot, 1, 1.0f); /* tone open */
+  le_engine_set_monitor_input_fx_param(e, 0, slot, 2, mix);
+  le_engine_set_monitor_input_fx_param(e, 0, slot, 3, 0.0f); /* PV mode */
+  le_engine_set_monitor_input_fx_count(e, 0, slot + 1);
+  return e;
+}
+
+static le_engine* oct_stagger_engine(int slot, float mix) {
+  return oct_stagger_engine_at(slot, mix, -1);
+}
+
+static void oct_stagger_run(le_engine* e, const float* in, float* out,
+                            int total) {
+  int done = 0;
+  const int blk = 512;
+  while (done < total) {
+    int n = total - done;
+    if (n > blk) n = blk;
+    le_engine_process(e, out + done, in + done, (uint32_t)n);
+    done += n;
+  }
+}
+
+/* Circular distance between two hop phases, in samples: how far apart in the
+ * LE_PV_HOP-long cycle two instances run their analysis frames. */
+static int oct_phase_gap(int32_t a, int32_t b) {
+  int d = (int)(a - b) % LE_PV_HOP;
+  if (d < 0) d += LE_PV_HOP;
+  return d < LE_PV_HOP - d ? d : LE_PV_HOP - d;
+}
+
+/* Normalized RMS error of out[t] against in[t - lag], over the settled tail
+ * (past four windows, so warm-up and ramp-in are excluded). */
+static double oct_null_err(const float* in, const float* out, int total,
+                           int lag) {
+  double num = 0.0;
+  double den = 0.0;
+  for (int t = 4 * OCT_PV_N; t < total; ++t) {
+    const double d = (double)out[t] - (double)in[t - lag];
+    num += d * d;
+    den += (double)in[t - lag] * (double)in[t - lag];
+  }
+  return den > 0.0 ? sqrt(num / den) : 0.0;
+}
+
+/* Hop-phase stagger: every octaver instance seeds its analysis hop counter at a
+ * PER-INSTANCE phase, so N instances spread their four length-LE_PV_N FFTs
+ * across N callbacks instead of running them all on the same sample index
+ * (before: 4 octavers cost an 8 us median with a ~330 us one-in-eight burst,
+ * against a 333 us deadline at 32 frames / 96 kHz).
+ *
+ * A phase offset is only safe if it moves NOTHING audible, and the three
+ * quantities that had to be re-derived with it are pinned here — at EVERY slot
+ * of the chain, i.e. at eight different phases:
+ *
+ *  1. The WET path is still a pure LE_PV_N - 1 delay. Unison PV reconstructs a
+ *     stationary two-tone almost exactly, so a full-wet output nulls against
+ *     in[t - (LE_PV_N - 1)]. The same null one HOP either side is asserted
+ *     LARGE, so this cannot pass by accident: the failure a wrong stagger
+ *     produces — a wet voice displaced by a hop — takes the error from ~0.002
+ *     to ~1.1, and a detuned octave is exactly what that would sound like.
+ *  2. The DELAY-MATCHED DRY tap has not moved with it (impulse at mix = 0
+ *     still emerges at ~LE_PV_N, never at t = 0), so le_octaver_latency's flat
+ *     LE_PV_N still describes both legs.
+ *  3. fx_apply_chain's LE_PV_N WARMUP still covers a phase-shifted first frame:
+ *     a bypass/re-enable at full wet never dips below the steady level. The
+ *     worst phase reaches full 4x overlap-add at exactly sample LE_PV_N, so
+ *     this has no margin to spare and is worth pinning.
+ *
+ * ...plus that the stagger is actually there: two slots of one chain hold
+ * different hop counters, while the two CHANNELS of one slot hold the same one
+ * (mono coherence, D5 — a per-channel phase would break test_octaver_mono_
+ * coherent, which is why the spread is per {chain, slot} only). */
+static void test_octaver_hop_stagger_alignment(void) {
+  printf("test_octaver_hop_stagger_alignment\n");
+  const int total = 24576;
+  float* in = (float*)calloc((size_t)total, sizeof(float));
+  float* out = (float*)calloc((size_t)total, sizeof(float));
+  /* Two inharmonic partials: a single sine's autocorrelation would make a
+   * one-hop displacement look like a plain phase rotation. */
+  for (int i = 0; i < total; ++i) {
+    in[i] = 0.4f * sinf(2.0f * LE_FFT_PI * 220.0f * (float)i / (float)OCT_SR) +
+            0.2f * sinf(2.0f * LE_FFT_PI * 517.0f * (float)i / (float)OCT_SR);
+  }
+
+  for (int slot = 0; slot < LE_FX_MAX; ++slot) {
+    /* (1) full wet: a pure LE_PV_N - 1 delay at this slot's phase. */
+    le_engine* e = oct_stagger_engine(slot, 1.0f);
+    oct_stagger_run(e, in, out, total);
+    le_engine_destroy(e);
+    const double at = oct_null_err(in, out, total, OCT_PV_N - 1);
+    const double early = oct_null_err(in, out, total, OCT_PV_N - 1 - 256);
+    const double late = oct_null_err(in, out, total, OCT_PV_N - 1 + 256);
+    printf("  slot %d wet null: on %.5f, -hop %.3f, +hop %.3f\n", slot, at,
+           early, late);
+    CHECK(at < 0.02);   /* aligned */
+    CHECK(early > 0.5); /* and the test can tell the difference */
+    CHECK(late > 0.5);
+  }
+
+  /* (2) the delay-matched dry tap, at a staggered slot. */
+  memset(in, 0, sizeof(float) * (size_t)total);
+  in[0] = 1.0f;
+  for (int slot = 0; slot < LE_FX_MAX; ++slot) {
+    le_engine* e = oct_stagger_engine(slot, 0.0f);
+    memset(out, 0, sizeof(float) * (size_t)total);
+    oct_stagger_run(e, in, out, 2 * OCT_PV_N);
+    le_engine_destroy(e);
+    int peak = 0;
+    for (int i = 0; i < 2 * OCT_PV_N; ++i) {
+      if (fabsf(out[i]) > fabsf(out[peak])) peak = i;
+    }
+    CHECK(abs(peak - OCT_PV_N) <= 2);
+    CHECK(out[0] == 0.0f);
+  }
+
+  /* (3) the re-enable warmup, at full wet, at EVERY phase. A constant is the
+   * one full-wet signal whose dry and wet legs are in phase, so a warmup that
+   * ended too early (partial overlap-add) reads as a plain level dip rather
+   * than as a crossfade artefact.
+   *
+   * Swept over all LE_PV_HOP phases rather than over the eight slots, because
+   * the slots cannot reach the case this is here to pin. The warmup argument
+   * in le_pv_tick says the worst phase is p = 1, which reaches full 4x
+   * overlap-add at sample LE_PV_N EXACTLY — zero margin — and the monitor
+   * chain's own eight slot phases (216, 248, 24, 56, ... at the seed
+   * le_fx_lane_hop_seed gives monitor 0) never include it: the smallest is
+   * 24, which still leaves 23 samples of slack. A sweep that stops at the
+   * slots would pass a change that pushed the first frame one tick later and
+   * broke the real worst case. */
+  for (int i = 0; i < total; ++i) in[i] = 0.5f;
+  {
+    float worst_drop = 0.0f;
+    int worst_phase = -1;
+    for (int32_t phase = 0; phase < LE_PV_HOP; ++phase) {
+      le_engine* e = oct_stagger_engine_at(0, 1.0f, phase);
+      /* Settle, and measure this run's OWN floor over a stretch with no
+       * warmup in it. The phase vocoder does not reconstruct a constant
+       * exactly, and how far off it sits is float/libm/arch dependent — so
+       * the dip is measured against this, never against the literal 0.5. */
+      oct_stagger_run(e, in, out, 4 * OCT_PV_N);
+      float steady = 1e9f;
+      for (int i = 2 * OCT_PV_N; i < 4 * OCT_PV_N; ++i) {
+        if (out[i] < steady) steady = out[i];
+      }
+      CHECK(fabsf(steady - 0.5f) < 0.01f);
+      le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0);
+      oct_stagger_run(e, in, out, OCT_PV_N);
+      le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1);
+      oct_stagger_run(e, in, out, 4 * OCT_PV_N);
+      float min = 1e9f;
+      for (int i = 0; i < 4 * OCT_PV_N; ++i) {
+        if (out[i] < min) min = out[i];
+      }
+      if (steady - min > worst_drop) {
+        worst_drop = steady - min;
+        worst_phase = (int)phase;
+      }
+      le_engine_destroy(e);
+    }
+    printf("  re-enable worst drop below steady %.7f at phase %d\n",
+           (double)worst_drop, worst_phase);
+    /* Tight on purpose, and calibrated: a warmup that covers every phase
+     * costs NOTHING relative to that run's own steady floor. Shortening
+     * fx_apply_chain's warmup by a SINGLE sample takes the drop to ~1.2e-4,
+     * by a hop to ~1.5e-2. A loose "no gross dip" bound would pass both. */
+    CHECK(worst_drop < 3.0e-5f);
+  }
+
+  /* (4) the stagger itself. hop_count advances one per sample from its seed, so
+   * two instances that started at different phases differ forever; two channels
+   * of one instance must not. */
+  {
+    le_engine* e = oct_stagger_engine(0, 1.0f);
+    le_engine_set_monitor_input_fx(e, 0, 3, LE_FX_OCTAVER);
+    le_engine_set_monitor_input_fx_param(e, 0, 3, 3, 0.0f);
+    le_engine_set_monitor_input_fx_count(e, 0, 4);
+    oct_stagger_run(e, in, out, 4096);
+    const le_fx_state* fx = &e->monitors[0].fx;
+    printf("  hop counters: slot0 %d, slot3 %d\n", fx->oct[0][0].hop_count,
+           fx->oct[3][0].hop_count);
+    CHECK(fx->oct[0][0].hop_count != fx->oct[3][0].hop_count);
+    CHECK(fx->oct[0][0].hop_count == fx->oct[0][1].hop_count);
+    CHECK(fx->oct[3][0].hop_count == fx->oct[3][1].hop_count);
+    le_engine_destroy(e);
+  }
+
+  /* (5) the phase is BOUNDED for any seed a caller can store, not just for the
+   * engine's own indices. hop_count indexes the OLA accumulator in le_pv_tick,
+   * so a negative or oversized phase reads outside it — and perf_render's
+   * track index comes from a manifest on disk that is only checked for being
+   * non-negative, so le_fx_lane_hop_seed can be handed an arbitrary int32. */
+  {
+    le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+    CHECK(fx != NULL);
+    if (fx != NULL) {
+      const int32_t tracks[] = {0, 1, LE_MAX_TRACKS, 100000001, 0x7FFFFFFF};
+      for (size_t k = 0; k < sizeof(tracks) / sizeof(tracks[0]); ++k) {
+        const int32_t seed = le_fx_lane_hop_seed(tracks[k], 0);
+        CHECK(seed >= 0 && seed < LE_PV_HOP);
+        fx->hop_seed = seed;
+        for (int slot = 0; slot < LE_FX_MAX; ++slot) {
+          le_fx_entry_reset(fx, slot); /* safe with NULL buffers */
+          CHECK(fx->oct[slot][0].hop_count >= 0);
+          CHECK(fx->oct[slot][0].hop_count < LE_PV_HOP);
+        }
+      }
+      /* And for a stored seed the helper would never produce — the field is
+       * plain state, and the bound must not depend on who wrote it. */
+      const int32_t raw[] = {-1, -12345, 0x7FFFFFFF};
+      for (size_t k = 0; k < sizeof(raw) / sizeof(raw[0]); ++k) {
+        fx->hop_seed = raw[k];
+        for (int slot = 0; slot < LE_FX_MAX; ++slot) {
+          le_fx_entry_reset(fx, slot);
+          CHECK(fx->oct[slot][0].hop_count >= 0);
+          CHECK(fx->oct[slot][0].hop_count < LE_PV_HOP);
+        }
+      }
+      le_fx_state_free_buffers(fx);
+      free(fx);
+    }
+  }
+
+  /* (6) the stagger STEPS themselves, which nothing else pins. Two slots of
+   * one chain differing (leg 4) does not catch an owner or lane step that has
+   * been "tidied" into a multiple of another axis: at OWNER_STEP 32 the owner
+   * and slot axes collapse, four per-track octavers on lane 0 hop on identical
+   * sample indices again — the exact defect the seed exists for — and every
+   * other leg here still passes. So assert the properties the steps were
+   * chosen for, directly. */
+  {
+    /* Every chain owner the engine holds: LE_MAX_TRACKS groups of
+     * (LE_MAX_LANES lanes + the track bus), then the monitors and the master
+     * insert as the group past the last track. */
+    const int owners = LE_MAX_TRACKS + 1;
+    const int lanes = LE_MAX_LANES + 1;
+    int32_t base[(LE_MAX_TRACKS + 1) * (LE_MAX_LANES + 1)];
+    int n = 0;
+    for (int t = 0; t < owners; ++t) {
+      for (int l = 0; l < lanes; ++l) {
+        base[n++] = le_fx_lane_hop_seed(t, l);
+      }
+    }
+    /* a. distinct: no two chains in the engine share a base phase, which is
+     *    what makes two octavers in DIFFERENT chains stagger at all (they are
+     *    both slot 0, so the slot step cannot separate them). */
+    int collisions = 0;
+    for (int i = 0; i < n; ++i) {
+      for (int j = i + 1; j < n; ++j) {
+        if (base[i] == base[j]) collisions++;
+      }
+    }
+    CHECK(collisions == 0);
+    /* b. and far enough apart along each axis that the runs which actually
+     *    run together do not share a 32-frame callback: one track's lanes and
+     *    bus, the same lane across every track, and one chain's slots. */
+    int min_lane = LE_PV_HOP;
+    int min_owner = LE_PV_HOP;
+    for (int l = 0; l + 1 < lanes; ++l) {
+      for (int k = l + 1; k < lanes; ++k) {
+        const int d = oct_phase_gap(le_fx_lane_hop_seed(0, l),
+                                    le_fx_lane_hop_seed(0, k));
+        if (d < min_lane) min_lane = d;
+      }
+    }
+    for (int t = 0; t + 1 < owners; ++t) {
+      for (int k = t + 1; k < owners; ++k) {
+        const int d = oct_phase_gap(le_fx_lane_hop_seed(t, 0),
+                                    le_fx_lane_hop_seed(k, 0));
+        if (d < min_owner) min_owner = d;
+      }
+    }
+    int min_slot = LE_PV_HOP;
+    for (int a = 0; a + 1 < LE_FX_MAX; ++a) {
+      for (int b = a + 1; b < LE_FX_MAX; ++b) {
+        const int d = oct_phase_gap(a * LE_PV_STAGGER_SLOT_STEP,
+                                    b * LE_PV_STAGGER_SLOT_STEP);
+        if (d < min_slot) min_slot = d;
+      }
+    }
+    printf("  stagger spacing: lanes %d, owners %d, slots %d\n", min_lane,
+           min_owner, min_slot);
+    CHECK(min_lane >= 24);
+    CHECK(min_owner >= 24);
+    CHECK(min_slot >= 32);
+  }
+
+  free(in);
+  free(out);
+}
+
 /* ---- FFT primitive (fft.h) ---- */
 
 /* Verifies the header-only FFT in isolation, before the phase vocoder (part 3)
@@ -16999,6 +17312,183 @@ static void test_perf_render_wet_fx_sweep(void) {
   }
 
   le_engine_destroy(e);
+}
+
+/* Runs `n` frames of `dry` through a one-slot octaver chain built on a fresh
+ * heap le_fx_state seeded with `hop_seed`, exactly as le_pr_render_wet_track
+ * does (unity volume, unmuted, all-effective bits), and returns the wet. The
+ * engine's own DSP, not a reimplementation — the only things this controls are
+ * the seed and whether the octaver runtime is settled at `params4`
+ * (le_fx_octaver_seed_settled) or left at le_fx_entry_reset's start-up state. */
+static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
+                                int32_t hop_seed, const float* params4,
+                                int settle) {
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  if (fx == NULL) return NULL;
+  fx->hop_seed = hop_seed;
+  le_fx_entry_reset(fx, 0);
+  CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, sr) == LE_OK);
+  if (settle) le_fx_octaver_seed_settled(fx, 0, params4);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  int32_t types[LE_FX_MAX];
+  int32_t enabled[LE_FX_MAX];
+  float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    types[s] = LE_FX_NONE;
+    enabled[s] = 1;
+    for (int q = 0; q < LE_FX_PARAMS; ++q) params[s][q] = 0.0f;
+  }
+  types[0] = LE_FX_OCTAVER;
+  for (int q = 0; q < LE_FX_PARAMS; ++q) params[0][q] = params4[q];
+  float* wet = (float*)malloc((size_t)n * sizeof(float));
+  CHECK(wet != NULL);
+  if (wet != NULL) {
+    for (int32_t f = 0; f < n; ++f) {
+      float l = dry[f];
+      float r = dry[f];
+      fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, enabled);
+      wet[f] = l;
+    }
+  }
+  le_fx_state_free_buffers(fx);
+  free(fx);
+  return wet;
+}
+
+/* The offline stem render stands in for a LIVE LANE, so a stateful effect has
+ * to be reconstructed at that lane's own state — not at whatever a calloc'd
+ * le_fx_state happens to be. The octaver is the case where the two differ
+ * invisibly: every instance seeds its analysis-hop counter at a per-lane phase
+ * (le_fx_lane_hop_seed / le_pv_hop_phase), so a render on a zeroed state is a
+ * DIFFERENT phase-vocoder realization of the same effect, at the same params —
+ * one that never played. An exported stem then does not reproduce what was
+ * heard, for every track but the one whose seed happens to be 0.
+ *
+ * Rendered on a NON-ZERO channel for exactly that reason, and pinned against
+ * the engine's own DSP driven over the render's own dry stem with the lane's
+ * seed. The wrong-seed reference is asserted to differ, so the comparison
+ * cannot pass by being insensitive to the seed. */
+static void run_perf_render_octaver_case(const char* name, float mode_p3) {
+  const char* dir = render_test_dir(name);
+  const int32_t sr = 48000;
+  const int32_t channel = 3; /* NOT 0: track 0 / lane 0 is the single lane a
+                              * calloc'd render reproduces by accident. */
+  const int32_t loop_len = 1024;
+  const int32_t capture_frames = 8192; /* well past the LE_PV_N warmup */
+  /* -1 octave, tone open, full wet; mode_p3 picks phase vocoder or PSOLA. */
+  const float params4[LE_FX_PARAMS] = {0.25f, 1.0f, 1.0f, mode_p3};
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  float* loop = (float*)malloc((size_t)loop_len * sizeof(float));
+  CHECK(loop != NULL);
+  if (loop == NULL) return;
+  /* Two partials at exact bin centres of the loop, so tiling the loop for the
+   * capture produces a continuous, stationary tone — the signal the phase
+   * vocoder reconstructs most exactly, and therefore the one where a wrong
+   * hop phase shows as a difference rather than as reconstruction noise. */
+  for (int32_t i = 0; i < loop_len; ++i) {
+    const float t = (float)i / (float)loop_len;
+    loop[i] = 0.4f * sinf(2.0f * LE_FFT_PI * 16.0f * t) +
+              0.2f * sinf(2.0f * LE_FFT_PI * 37.0f * t);
+  }
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track%d-lane0.wav", loops_dir,
+           channel);
+  test_write_wav_mono(wav_path, loop, loop_len, sr);
+  free(loop);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %d, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": [{\"channel\": %d, "
+           "\"volume\": 1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, "
+           "\"deferred\": false, \"pcmRef\": \"loops/track%d-lane0.wav\", "
+           "\"effects\": [{\"type\": %d, \"params\": [%f, %f, %f, %f]}]}]}]}, "
+           "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+           sr, capture_frames, channel, channel, LE_FX_OCTAVER,
+           (double)params4[0], (double)params4[1], (double)params4[2],
+           (double)params4[3]);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 20000);
+  int32_t done = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, NULL) == LE_OK);
+  CHECK(done == 1);
+
+  float* dry = (float*)malloc((size_t)capture_frames * sizeof(float));
+  float* wet = (float*)malloc((size_t)capture_frames * sizeof(float));
+  CHECK(dry != NULL && wet != NULL);
+  if (dry == NULL || wet == NULL) {
+    free(dry);
+    free(wet);
+    le_engine_destroy(e);
+    return;
+  }
+  /* The dry stem written for this channel IS the array the wet render was
+   * driven from (le_pr_worker_main), so the reference below sees exactly the
+   * renderer's own input — no reconstruction of loop phase needed. */
+  CHECK(test_read_stem(dir, channel, dry, capture_frames) == capture_frames);
+  CHECK(test_read_wet_stem(dir, channel, wet, capture_frames) ==
+        capture_frames);
+
+  float* ref = oct_reference_wet(dry, capture_frames, sr,
+                                 le_fx_lane_hop_seed(channel, 0), params4, 1);
+  float* wrong_seed = oct_reference_wet(dry, capture_frames, sr, 0, params4, 1);
+  float* unsettled = oct_reference_wet(
+      dry, capture_frames, sr, le_fx_lane_hop_seed(channel, 0), params4, 0);
+  CHECK(ref != NULL && wrong_seed != NULL && unsettled != NULL);
+  if (ref != NULL && wrong_seed != NULL && unsettled != NULL) {
+    float d_ref = 0.0f;
+    float d_seed = 0.0f;
+    float d_unsettled = 0.0f;
+    for (int32_t f = 0; f < capture_frames; ++f) {
+      const float a = fabsf(wet[f] - ref[f]);
+      const float b = fabsf(wet[f] - wrong_seed[f]);
+      const float c = fabsf(wet[f] - unsettled[f]);
+      if (a > d_ref) d_ref = a;
+      if (b > d_seed) d_seed = b;
+      if (c > d_unsettled) d_unsettled = c;
+    }
+    printf("  mode %d: stem vs lane ref %.7f, vs seed-0 %.4f, vs unsettled "
+           "%.4f\n",
+           params4[3] >= 0.5f ? 1 : 0, (double)d_ref, (double)d_seed,
+           (double)d_unsettled);
+    CHECK(d_ref < 1e-6f);       /* the render used THIS lane's hop phase */
+    CHECK(d_seed > 0.01f);      /* and can tell a wrong seed */
+    CHECK(d_unsettled > 0.01f); /* and a start-up state the live lane was not
+                                 * in — the ~5 ms shift ramp, and in PSOLA
+                                 * mode the ~30 ms mode crossfade */
+  }
+  free(ref);
+  free(wrong_seed);
+  free(unsettled);
+  free(dry);
+  free(wet);
+  le_engine_destroy(e);
+}
+
+/* Run at BOTH octaver modes: the phase vocoder and PSOLA read the shared hop
+ * counter differently, and only the PSOLA case exercises the mode crossfade
+ * that le_fx_octaver_seed_settled resolves. */
+static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
+  printf("test_perf_render_wet_octaver_matches_lane_hop_phase\n");
+  run_perf_render_octaver_case("wet-octaver-phase", 0.0f);
+  run_perf_render_octaver_case("wet-octaver-psola", 1.0f);
 }
 
 /* Regression: a dry-stem write failure must exclude that channel's wet
@@ -18092,6 +18582,164 @@ static void test_perf_render_golden_master_parity(void) {
     for (uint64_t f = 0; f < capture_frames; ++f) {
       CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
     }
+  }
+
+  free(live);
+  free(offline);
+  le_engine_destroy(e);
+}
+
+/* Pumps `frames` of a sine through the engine in 64-frame blocks, advancing
+ * *phase (in cycles) so successive calls are continuous. Output discarded —
+ * what this drives is the RECORDING and the performance capture. */
+static void oct_golden_pump(le_engine* e, double* phase, double cycles_per_frame,
+                            int frames) {
+  float in[64];
+  float out[64];
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    for (int i = 0; i < n; ++i) {
+      in[i] = 0.5f * sinf((float)(2.0 * 3.14159265358979 * *phase));
+      *phase += cycles_per_frame;
+      if (*phase >= 1.0) *phase -= 1.0;
+    }
+    le_engine_process(e, out, in, (uint32_t)n);
+    frames -= n;
+  }
+}
+
+/* Acceptance, and the one that pins the offline octaver against the LIVE
+ * engine rather than against another offline render: a real performance on a
+ * NON-ZERO track with an octaver engaged mid-capture through the public API,
+ * compared sample-by-sample against the live-captured master.
+ *
+ * This is the case the stem render CAN reproduce exactly, and the case the
+ * per-lane hop phase is load-bearing for. The type lands on the audio thread
+ * at a logged frame and the render replays le_fx_entry_reset at that same
+ * frame, so both chains seed their analysis-hop counter at the same instant —
+ * from the same lane's phase, once the render stops rendering on a calloc'd
+ * seed. Track 2, because track 0 / lane 0 is the single lane whose seed is 0,
+ * i.e. the one a calloc'd render reproduces by accident.
+ *
+ * (An octaver already in the chain AT arm is a different, weaker case: the
+ * live lane has been ticking it since the type landed, so its hop counter is
+ * that lane's phase plus an elapsed-frame count nothing records. That render
+ * stays an approximation of the same class as the empty delay ring the
+ * golden-parity protocol already excludes — see le_pr_render_wet_track.) */
+static void test_perf_render_golden_octaver_nonzero_track(void) {
+  printf("test_perf_render_golden_octaver_nonzero_track\n");
+  const char* dir = render_test_dir("golden-oct");
+  const int32_t sr = 48000;
+  const int32_t loop_len = 4096;
+  const int32_t channel = 2;
+  /* 16 whole cycles per loop, so the loop tiles seamlessly. */
+  const double cyc = 16.0 / (double)loop_len;
+  double phase = 0.0;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, sr);
+
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  CHECK(le_engine_record(e, channel) == LE_OK);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  CHECK(le_engine_record(e, channel) == LE_OK); /* finalize -> PLAYING */
+  drain(e);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+
+  /* Engage the octaver mid-performance, full wet, then let it run well past
+   * its LE_PV_N warmup so the compared window is steady-state phase-vocoder
+   * output, not a ramp. */
+  CHECK(le_engine_set_lane_fx(e, channel, 0, 0, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, channel, 0, 1) == LE_OK);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  CHECK(le_engine_set_lane_fx_param(e, channel, 0, 0, 2, 1.0f) == LE_OK);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const int32_t capture_frames = (int32_t)snap.perf_frames;
+  CHECK(capture_frames > 4 * loop_len);
+
+  float* exported = (float*)malloc((size_t)loop_len * sizeof(float));
+  CHECK(exported != NULL);
+  if (exported == NULL) {
+    le_engine_destroy(e);
+    return;
+  }
+  const int32_t exported_n =
+      le_engine_export_track_lane(e, channel, 0, exported, loop_len);
+  CHECK(exported_n == loop_len);
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track%d-lane0.wav", dir, channel);
+  test_write_wav_mono(wav_path, exported, loop_len, sr);
+  free(exported);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char manifest[1400];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %d, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": %d, \"volume\": "
+           "1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, \"deferred\": "
+           "false, \"takeId\": %d, \"pcmRef\": \"track%d-lane0.wav\", "
+           "\"effects\": []}]}]}, "
+           "\"layers\": []}",
+           sr, capture_frames, channel, snap.tracks[channel].settled_take_id,
+           channel);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 20000);
+  int32_t done = 0, track_count = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1);
+  CHECK(track_count == 1);
+  int32_t rendered_channel = -1, succeeded = 0;
+  CHECK(le_perf_render_track_status(e, 0, &rendered_channel, &succeeded) ==
+        LE_OK);
+  CHECK(rendered_channel == channel);
+  CHECK(succeeded == 1);
+
+  char master_pcm_path[700];
+  snprintf(master_pcm_path, sizeof(master_pcm_path), "%s/master.pcm", dir);
+  FILE* mf = fopen(master_pcm_path, "rb");
+  CHECK(mf != NULL);
+  float* live = (float*)malloc((size_t)capture_frames * sizeof(float));
+  float* offline = (float*)malloc((size_t)capture_frames * sizeof(float));
+  CHECK(live != NULL && offline != NULL);
+  size_t live_n = 0;
+  if (mf != NULL && live != NULL) {
+    live_n = fread(live, sizeof(float), (size_t)capture_frames, mf);
+  }
+  if (mf != NULL) fclose(mf);
+  CHECK(live_n == (size_t)capture_frames);
+
+  int32_t offline_n = 0;
+  if (offline != NULL) {
+    offline_n = test_read_master_stem(dir, offline, capture_frames);
+  }
+  CHECK(offline_n == capture_frames);
+
+  if (live_n == (size_t)capture_frames && offline_n == capture_frames &&
+      live != NULL && offline != NULL) {
+    float worst = 0.0f;
+    float peak = 0.0f;
+    for (int32_t f = 0; f < capture_frames; ++f) {
+      const float d = fabsf(offline[f] - live[f]);
+      if (d > worst) worst = d;
+      if (fabsf(live[f]) > peak) peak = fabsf(live[f]);
+    }
+    printf("  offline-vs-live max diff %.7f (live peak %.3f)\n", (double)worst,
+           (double)peak);
+    CHECK(peak > 0.1f); /* there IS a wet octave voice to compare */
+    CHECK(worst < 1e-4f);
   }
 
   free(live);
@@ -22938,10 +23586,25 @@ static float cache_max_diff(const float* x, const float* y, int n, int skip) {
  * window pumped, then A's render spun to CACHED. On return both engines sit
  * at position CACHE_SETTLE of a loop (A not yet engaged: engagement waits
  * for the next loop top). */
-static void cache_pair_prepare_chain(le_engine** pa, le_engine** pb,
-                                     const int32_t* types, int32_t count) {
+static void cache_pair_prepare_chain_lane(le_engine** pa, le_engine** pb,
+                                          const int32_t* types, int32_t count,
+                                          int32_t lane) {
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
   le_engine* b = cache_engine(0);
+  /* A non-zero lane has to exist and carry the SAME content as lane 0 before
+   * the defining loop is recorded, or its cached wet is silence-vs-silence
+   * and proves nothing. Both lanes record hardware input 0 (the harness is
+   * mono), so the two lanes hold identical audio. */
+  if (lane > 0) {
+    CHECK(le_engine_set_lane_count(a, 0, lane + 1) == LE_OK);
+    CHECK(le_engine_set_lane_count(b, 0, lane + 1) == LE_OK);
+    for (int32_t l = 1; l <= lane; ++l) {
+      CHECK(le_engine_set_lane_input(a, 0, l, 0) == LE_OK);
+      CHECK(le_engine_set_lane_input(b, 0, l, 0) == LE_OK);
+    }
+    drain(a);
+    drain(b);
+  }
   cache_record_loop(a, CACHE_LOOP, 1.0f);
   cache_record_loop(b, CACHE_LOOP, 1.0f);
   const int32_t need = (CACHE_LOOP - cache_master_pos(a)) % CACHE_LOOP;
@@ -22949,23 +23612,28 @@ static void cache_pair_prepare_chain(le_engine** pa, le_engine** pb,
     pump_frames(a, 0.0f, need);
     pump_frames(b, 0.0f, need);
   }
-  CHECK(le_engine_set_lane_fx_count(a, 0, 0, count) == LE_OK);
-  CHECK(le_engine_set_lane_fx_count(b, 0, 0, count) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, lane, count) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(b, 0, lane, count) == LE_OK);
   for (int32_t s = 0; s < count; ++s) {
-    CHECK(le_engine_set_lane_fx(a, 0, 0, s, types[s]) == LE_OK);
-    CHECK(le_engine_set_lane_fx(b, 0, 0, s, types[s]) == LE_OK);
+    CHECK(le_engine_set_lane_fx(a, 0, lane, s, types[s]) == LE_OK);
+    CHECK(le_engine_set_lane_fx(b, 0, lane, s, types[s]) == LE_OK);
   }
   drain(a);
   drain(b);
   /* One tick registers the new key (starts the settle window). */
   le_lane_cache_info info;
-  le_engine_get_lane_cache(a, 0, 0, &info);
+  le_engine_get_lane_cache(a, 0, lane, &info);
   pump_frames(a, 0.0f, CACHE_SETTLE);
   pump_frames(b, 0.0f, CACHE_SETTLE);
-  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
-  CHECK(cache_renders(a, 0, 0) == 1);
+  CHECK(cache_wait_state(a, 0, lane, LE_CACHE_CACHED, 3000));
+  CHECK(cache_renders(a, 0, lane) == 1);
   *pa = a;
   *pb = b;
+}
+
+static void cache_pair_prepare_chain(le_engine** pa, le_engine** pb,
+                                     const int32_t* types, int32_t count) {
+  cache_pair_prepare_chain_lane(pa, pb, types, count, 0);
 }
 
 static void cache_pair_prepare(le_engine** pa, le_engine** pb, int32_t type) {
@@ -22976,10 +23644,11 @@ static void cache_pair_prepare(le_engine** pa, le_engine** pb, int32_t type) {
  * seam (64 frames before the loop top, then the whole cached loop) from both
  * twins and compare sample-by-sample — boundary continuity and cached parity
  * in one assertion. */
-static void cache_check_chain_parity(const int32_t* types, int32_t count) {
+static void cache_check_chain_parity_lane(const int32_t* types, int32_t count,
+                                          int32_t lane) {
   le_engine* a;
   le_engine* b;
-  cache_pair_prepare_chain(&a, &b, types, count);
+  cache_pair_prepare_chain_lane(&a, &b, types, count, lane);
   const int32_t pre = 64;
   const int32_t n = pre + CACHE_LOOP;
   pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE - pre);
@@ -22988,21 +23657,25 @@ static void cache_check_chain_parity(const int32_t* types, int32_t count) {
   float* ob = (float*)malloc((size_t)n * sizeof(float));
   pump_capture(a, 0.0f, n, oa);
   pump_capture(b, 0.0f, n, ob);
-  CHECK(cache_engaged(a, 0, 0) == 1); /* swapped in at the boundary */
+  CHECK(cache_engaged(a, 0, lane) == 1); /* swapped in at the boundary */
   le_lane_cache_info info;
-  le_engine_get_lane_cache(a, 0, 0, &info);
+  le_engine_get_lane_cache(a, 0, lane, &info);
   CHECK(info.entry_frames == CACHE_LOOP);
   const float d = cache_max_diff(oa, ob, n, 0);
   if (d > CACHE_TOL) {
-    printf("  FAIL: chain [%d..] (%d slots) cached-vs-live max diff %g "
-           "(line %d)\n",
-           types[0], count, (double)d, __LINE__);
+    printf("  FAIL: chain [%d..] (%d slots) on lane %d cached-vs-live max diff "
+           "%g (line %d)\n",
+           types[0], count, lane, (double)d, __LINE__);
     g_failures++;
   }
   free(oa);
   free(ob);
   le_engine_destroy(a);
   le_engine_destroy(b);
+}
+
+static void cache_check_chain_parity(const int32_t* types, int32_t count) {
+  cache_check_chain_parity_lane(types, count, 0);
 }
 
 static void test_cache_cached_matches_live_every_builtin(void) {
@@ -23012,6 +23685,14 @@ static void test_cache_cached_matches_live_every_builtin(void) {
                            LE_FX_REVERB};
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
     cache_check_chain_parity(&types[i], 1);
+    /* ...and on a NON-ZERO lane. Lane 0 of track 0 is the one lane whose
+     * hop-stagger seed happens to be 0 (le_fx_lane_hop_seed), i.e. the one
+     * lane a render on a raw calloc'd le_fx_state reproduces by accident, so
+     * a lane-0-only sweep is blind to any per-lane state the render fails to
+     * carry over — the octaver's analysis-hop phase being the live example:
+     * seeded wrong, the cached wet is a DIFFERENT phase-vocoder realization
+     * of the same effect and swapping it in at the loop top steps (clicks). */
+    cache_check_chain_parity_lane(&types[i], 1, 1);
   }
 }
 
@@ -25950,6 +26631,7 @@ int main(void) {
   test_octaver_psola_voice_and_fallback();
   test_octaver_psola_no_chatter();
   test_octaver_added_latency();
+  test_octaver_hop_stagger_alignment();
   test_fft_roundtrip();
 
   test_json_read_parses_nested_objects_and_arrays();
@@ -25968,6 +26650,7 @@ int main(void) {
   test_perf_render_partial_success();
   test_perf_render_missing_or_corrupt_manifest();
   test_perf_render_wet_fx_sweep();
+  test_perf_render_wet_octaver_matches_lane_hop_phase();
   test_perf_render_dry_write_fail_excludes_from_master();
   test_perf_render_multi_channel_dry_fail_isolated();
   test_perf_render_wet_multi_slot_and_count_shrink();
@@ -25978,6 +26661,7 @@ int main(void) {
   test_finalize_take_ends_live_take_at_call_frame();
   test_finalize_take_aborts_count_in();
   test_perf_render_golden_master_parity();
+  test_perf_render_golden_octaver_nonzero_track();
   test_perf_render_quantized_round_down_truncation_log_frame();
   test_looper_mode_defaults_and_persistence();
   test_looper_mode_setter_validates_args();
