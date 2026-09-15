@@ -44,21 +44,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
   func applicationWillTerminate(_ notification: Notification) { model?.closePreview() }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    guard model?.busy == true else { return .terminateNow }
-    let alert = NSAlert()
-    alert.messageText = "A transfer is in progress"
-    alert.informativeText =
-      "Keep Segno Transfer open until it finishes, or cancel the transfer and quit."
-    alert.addButton(withTitle: "Keep Open")
-    alert.addButton(withTitle: "Cancel and Quit")
-    if alert.runModal() == .alertSecondButtonReturn {
-      model?.cancel()
-      Task {
-        while model?.busy == true { try? await Task.sleep(for: .milliseconds(100)) }
-        sender.reply(toApplicationShouldTerminate: true)
-      }
-      return .terminateLater
+    guard let model else { return .terminateNow }
+    if model.busy {
+      let alert = NSAlert()
+      alert.messageText = "A transfer is in progress"
+      alert.informativeText =
+        "Keep Segno Transfer open until it finishes, or cancel the transfer and quit."
+      alert.addButton(withTitle: "Keep Open")
+      alert.addButton(withTitle: "Cancel and Quit")
+      guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+      model.cancel()
     }
-    return .terminateCancel
+    Task {
+      while model.busy { try? await Task.sleep(for: .milliseconds(100)) }
+      await model.finishForTermination()
+      sender.reply(toApplicationShouldTerminate: true)
+    }
+    return .terminateLater
   }
 }

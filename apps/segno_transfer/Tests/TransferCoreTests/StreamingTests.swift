@@ -12,14 +12,22 @@ private final class AudioRanges {
   private var reads: [Range<Int64>] = []
   private var disconnected = false
   private let holdReads: Bool
+  private let cleanupGate: DispatchSemaphore?
+  private var finished = 0
+  var finishedReads: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return finished
+  }
   var ranges: [Range<Int64>] {
     lock.lock()
     defer { lock.unlock() }
     return reads
   }
 
-  init(holdReads: Bool = false) {
+  init(holdReads: Bool = false, cleanupGate: DispatchSemaphore? = nil) {
     self.holdReads = holdReads
+    self.cleanupGate = cleanupGate
     var data = Data("RIFF".utf8)
     func word<T: FixedWidthInteger>(_ value: T) {
       var v = value.littleEndian
@@ -51,6 +59,12 @@ private final class AudioRanges {
     reads.append(offset..<offset + Int64(length))
     let failed = disconnected
     lock.unlock()
+    defer {
+      if let cleanupGate { _ = cleanupGate.wait(timeout: .now() + 5) }
+      lock.lock()
+      finished += 1
+      lock.unlock()
+    }
     if failed { throw TransferError.message("Connection lost") }
     while holdReads && !token.isCancelled { Thread.sleep(forTimeInterval: 0.01) }
     Thread.sleep(forTimeInterval: 0.03)
@@ -66,6 +80,51 @@ private final class AudioRanges {
 
 @MainActor
 final class StreamingTests: XCTestCase {
+  func testShutdownWaitsForCleanupOfEveryClosedPreview() async throws {
+    let player = PreviewPlayer(muted: true)
+    let gates = [DispatchSemaphore(value: 0), DispatchSemaphore(value: 0)]
+    let sources = gates.map { AudioRanges(holdReads: true, cleanupGate: $0) }
+    var preparations: [Task<Void, Never>] = []
+    defer {
+      player.stop()
+      for gate in gates { gate.signal() }
+      for task in preparations { task.cancel() }
+    }
+    for source in sources {
+      let loader = RemoteAudioLoader(size: source.size, read: source.read)
+      preparations.append(Task { try? await player.prepare(loader.asset, loader: loader) })
+      let start = Date()
+      while source.ranges.isEmpty && Date().timeIntervalSince(start) < 3 {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      XCTAssertFalse(source.ranges.isEmpty)
+      player.stop()
+    }
+    var cleanedUp = false
+    let shutdown = Task {
+      await player.waitForCleanup()
+      cleanedUp = true
+    }
+    // Closing previews stays responsive while their cancelled reads finish cleanup.
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertFalse(cleanedUp)
+    XCTAssertTrue(sources.allSatisfy { $0.finishedReads == 0 })
+    gates[1].signal()
+    let newestCleanup = Date()
+    while sources[1].finishedReads == 0 && Date().timeIntervalSince(newestCleanup) < 3 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertGreaterThan(sources[1].finishedReads, 0)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertFalse(cleanedUp)
+    XCTAssertEqual(sources[0].finishedReads, 0)
+    gates[0].signal()
+    await shutdown.value
+    for task in preparations { await task.value }
+    XCTAssertTrue(cleanedUp)
+    for source in sources { XCTAssertEqual(source.finishedReads, source.ranges.count) }
+  }
+
   func testClosingDuringPreparationCancelsBlockedRead() async throws {
     let source = AudioRanges(holdReads: true)
     let loader = RemoteAudioLoader(size: source.size, read: source.read)

@@ -29,6 +29,9 @@ The owner approved free GitHub distribution with local signing and no paid
 Apple signing or notarization. Companion tags use `transfer-vVERSION`; their
 workflow tests and builds the Apple Silicon disk image, includes installation
 instructions and the license, and publishes a checksum alongside the download.
+Release review also corrected preview shutdown: quitting waits for cancelled
+reads to finish their connection and temporary-file cleanup, including previews
+closed or replaced just before quitting. Closing previews remains responsive.
 
 ## September 2026 appliance integration
 

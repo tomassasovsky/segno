@@ -1,5 +1,7 @@
 # Segno Transfer streaming — Test Quality Review
 
+<!-- cspell:words coverdir hashlib -->
+
 ## Scope and revision
 
 Reviewed the entire streaming delta from **f6c309244058a5856e9a558e210d352707c711cd**, including the new `RemoteAudioLoader.swift` and `StreamingTests.swift`, modified player/model/controls, range repository/helper/SSH transport, all affected tests, and the updated README, progress, brainstorm and plan. Read the existing Mac CI workflow and Swift package configuration. The revised design remains native-GUI author acceptance, outside automated view testing.

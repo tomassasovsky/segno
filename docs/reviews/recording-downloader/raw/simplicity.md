@@ -1,5 +1,7 @@
 ## Simplification Analysis
 
+<!-- cspell:words renamex EEXIST -->
+
 ### Core Purpose
 
 Use the Mac's existing SSH access to browse complete appliance audio, listen to a whole recording with seeking, choose and name files to keep, and produce verified local copies without changing source recordings or replacing existing destination files.

@@ -1,5 +1,7 @@
 ## VGV Code Review
 
+<!-- cspell:words conformances -->
+
 ### Summary
 
 No unresolved VGV convention findings in the final streaming delta. The native resource loader reads bounded sections through the repository, keeps request state on a serial queue, and delivers player state through the main actor. Whole-file preview preparation is removed. The kept-download path retains its source checks, complete SHA-256 verification and atomic publication. One immediate-cancellation race was independently reproduced during review and is resolved in the final source with a regression test.
