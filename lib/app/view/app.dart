@@ -508,8 +508,10 @@ class _AppState extends State<App> {
           // there) — the cubits know nothing of each other.
           BlocProvider(
             lazy: false,
-            create: (context) =>
-                PedalCubit(pedal: context.read<PedalRepository>()),
+            create: (context) => PedalCubit(
+              pedal: context.read<PedalRepository>(),
+              settings: context.read<SettingsRepository>(),
+            ),
           ),
           // Eager (not lazy): the recovery cubit must be watching at boot for a
           // pinned interface that was unplugged when auto-start ran, so it can

@@ -379,6 +379,34 @@ class SettingsRepository {
   Future<void> saveModeSwitchStyle(String style) =>
       _store.setString(_modeSwitchStyleKey, style);
 
+  static String _ctrlCalibrationKey(int jack) => 'pedal.ctrl_calibration.$jack';
+
+  /// Loads the calibrated ends of the expression pedal on CTRL jack [jack]
+  /// (`0` or `1`) as `(min, max)` in the board's raw `0`..`255`, or `null`
+  /// when the jack has never been calibrated and its ends are learned from
+  /// the pedal instead.
+  Future<(int, int)?> loadCtrlCalibration(int jack) async {
+    final stored = await _store.getString(_ctrlCalibrationKey(jack));
+    if (stored == null) return null;
+    final parts = stored.split(',');
+    if (parts.length != 2) return null;
+    final min = int.tryParse(parts[0]);
+    final max = int.tryParse(parts[1]);
+    if (min == null || max == null) return null;
+    return (min, max);
+  }
+
+  /// Saves the calibrated ends of the expression pedal on CTRL jack [jack].
+  Future<void> saveCtrlCalibration(
+    int jack, {
+    required int min,
+    required int max,
+  }) => _store.setString(_ctrlCalibrationKey(jack), '$min,$max');
+
+  /// Forgets the calibration of CTRL jack [jack]: its ends are learned again.
+  Future<void> clearCtrlCalibration(int jack) =>
+      _store.remove(_ctrlCalibrationKey(jack));
+
   static const String _pedalClearFadeMsKey = 'pedal.clear_fade_ms';
 
   /// Loads the pedal clear-all fade/guard window in milliseconds (`0` disables

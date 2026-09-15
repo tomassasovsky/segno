@@ -9,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
@@ -19,6 +20,7 @@ import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -28,6 +30,30 @@ import '../helpers/fake_key_value_store.dart';
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+
+class _CalibrationStore extends FakeKeyValueStore {
+  Completer<void>? pendingSave;
+  bool failRead = false;
+  bool failReset = false;
+
+  @override
+  Future<String?> getString(String key) async {
+    if (failRead) throw StateError('cannot read calibration');
+    return super.getString(key);
+  }
+
+  @override
+  Future<void> setString(String key, String value) async {
+    await pendingSave?.future;
+    await super.setString(key, value);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (failReset) throw StateError('cannot reset calibration');
+    await super.remove(key);
+  }
+}
 
 /// A controller source a test can move a control on, so a MIDI-learn capture
 /// can be COMPLETED here and not merely started.
@@ -61,6 +87,7 @@ void main() {
   late StreamController<MidiConnection> connections;
   late StreamController<void> activity;
   late ControlCubit control;
+  late PedalRepository pedal;
   late MidiSetupCubit midi;
   late SettingsTrayCubit tray;
   late SettingsRepository settings;
@@ -118,6 +145,9 @@ void main() {
     WidgetTester tester, {
     MidiConnection connection = const MidiConnection(),
     Size size = const Size(1600, 1400),
+    PedalLink? pedalLink,
+    SettingsRepository? pedalSettings,
+    Locale? locale,
   }) async {
     tester.view
       ..physicalSize = size
@@ -141,9 +171,11 @@ void main() {
     simulated = SimulatedControllerSource();
     final controller = ControllerRepository(sources: [source, simulated]);
     addTearDown(controller.dispose);
+    pedal = PedalRepository(pedalLink ?? NoopPedalLink());
+    addTearDown(pedal.dispose);
     control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(NoopPedalLink()),
+      pedal: pedal,
       settings: settings,
       performance: performance,
       controller: controller,
@@ -163,6 +195,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
@@ -179,6 +212,14 @@ void main() {
               BlocProvider.value(value: midi),
               BlocProvider.value(value: tray),
               BlocProvider.value(value: tracks),
+              // The tray asks the link whether a CTRL pedal could deliver: a
+              // rig with no MIDI is still bindable from the console.
+              BlocProvider(
+                create: (_) => PedalCubit(
+                  pedal: pedal,
+                  settings: pedalSettings,
+                ),
+              ),
             ],
             child: const Scaffold(
               body: Padding(
@@ -197,7 +238,7 @@ void main() {
       AppLocalizations.of(tester.element(find.byType(ControlTrayPanel)));
 
   Future<void> showMidi(WidgetTester tester) async {
-    tray.showControlTab(ControlTab.midi);
+    tray.showControlTab(ControlTab.controllers);
     await tester.pumpAndSettle();
   }
 
@@ -205,13 +246,13 @@ void main() {
     testWidgets('the tab strip swaps the body', (tester) async {
       await pump(tester);
       expect(find.byKey(const Key('pedal_tray_body')), findsOneWidget);
-      expect(find.byKey(const Key('midi_tray_body')), findsNothing);
+      expect(find.byKey(const Key('controllers_tray_body')), findsNothing);
 
-      await tester.tap(find.text(l10nOf(tester).controlMidiTab));
+      await tester.tap(find.text(l10nOf(tester).controlControllersTab));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('pedal_tray_body')), findsNothing);
-      expect(find.byKey(const Key('midi_tray_body')), findsOneWidget);
+      expect(find.byKey(const Key('controllers_tray_body')), findsOneWidget);
     });
 
     testWidgets('the domain names itself once, above the strip', (
@@ -483,7 +524,7 @@ void main() {
     });
   });
 
-  group('MIDI tab', () {
+  group('Controllers tab', () {
     const device = MidiDevice(id: 'dev-1', name: 'Nektar Pacer');
     const connected = MidiConnection(
       devices: [device],
@@ -534,6 +575,332 @@ void main() {
 
       verify(() => midiDevices.select('')).called(1);
       expect(find.byKey(const Key('midi_device_choice_dev-1')), findsNothing);
+    });
+
+    testWidgets('a CTRL pedal alone makes the add buttons usable', (
+      tester,
+    ) async {
+      // The complaint this fixes: with MIDI set to none, Add sweep and Add
+      // switch were inert, so a rig driven entirely from the console's CTRL
+      // jacks could not be bound at all.
+      final link = FakePedalLink();
+      await pump(tester, pedalLink: link);
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+
+      expect(find.byKey(const Key('midi_idle_notice')), findsNothing);
+
+      final target = const FxChainTarget(_master).canonicalString();
+      await tester.tap(find.byKey(const Key('midi_add_switch')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(Key('midi_add_target_$target')), findsOneWidget);
+
+      await tester.tap(find.byKey(Key('midi_add_target_$target')));
+      await tester.pumpAndSettle();
+      expect(control.state.controllerLearn?.target, target);
+
+      // End the capture and drain the link's hello watchdog: both outlive the
+      // widget tree otherwise, and a pending timer fails the test binding.
+      control.cancelControllerLearn();
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('a CTRL jack shows its value live, next to the add buttons', (
+      tester,
+    ) async {
+      // Where you are when binding a pedal is this card, so this is where
+      // the pedal's value has to be visible while it moves.
+      final link = FakePedalLink();
+      await pump(tester, pedalLink: link);
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+
+      // Nothing has reported yet: say so, rather than list a jack that may
+      // have nothing on it.
+      expect(find.byKey(const Key('midi_ctrl_idle')), findsOneWidget);
+
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl2,
+          kind: PedalCtrlKind.expression,
+          value: 255,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_ctrl2')), findsOneWidget);
+      expect(find.text('100%'), findsOneWidget);
+      expect(find.byKey(const Key('midi_ctrl_idle')), findsNothing);
+
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.switchPedal,
+          value: 255,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_ctrl1')), findsOneWidget);
+      expect(find.text('pressed'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('an expression pedal is calibrated from its row', (
+      tester,
+    ) async {
+      final link = FakePedalLink();
+      await pump(tester, pedalLink: link);
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+
+      // An uncalibrated EX-P at heel: raw 24, which with nothing learned yet
+      // is what the row shows.
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.expression,
+          value: 24,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('9%'), findsOneWidget);
+      expect(find.byKey(const Key('midi_ctrl_cal_done')), findsNothing);
+
+      // Open the calibration. Done is inert until the pedal has been swept.
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsOneWidget);
+      var done = tester.widget<ConsoleSmallButton>(
+        find.byKey(const Key('midi_ctrl_cal_done')),
+      );
+      expect(done.onPressed, isNull);
+
+      link
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 24,
+          ),
+        )
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 255,
+          ),
+        );
+      await tester.pumpAndSettle();
+      done = tester.widget<ConsoleSmallButton>(
+        find.byKey(const Key('midi_ctrl_cal_done')),
+      );
+      expect(done.onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_done')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsNothing);
+
+      // Heel now reads a hard zero, and the row says the ends are the user's.
+      // (Each open and close above animates on the fake clock, so keep the
+      // board's hello coming or the watchdog hides the rows.)
+      link
+        ..hello()
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 24,
+          ),
+        );
+      await tester.pumpAndSettle();
+      expect(find.text('0%'), findsOneWidget);
+      expect(find.text('cal'), findsOneWidget);
+
+      // Reopen: a calibrated jack offers its way back to automatic.
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl1')));
+      await tester.pumpAndSettle();
+      link.hello();
+      expect(find.byKey(const Key('midi_ctrl_cal_reset')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_reset')));
+      await tester.pumpAndSettle();
+      link.hello();
+      expect(find.byKey(const Key('midi_ctrl_ctrl1')), findsOneWidget);
+      expect(find.text('cal'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_cancel')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsNothing);
+
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('calibration save waits, reports failure, and permits retry', (
+      tester,
+    ) async {
+      final store = _CalibrationStore()..pendingSave = Completer<void>();
+      final link = FakePedalLink();
+      await pump(
+        tester,
+        pedalLink: link,
+        pedalSettings: SettingsRepository(store: store),
+      );
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.expression,
+          value: 24,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl1')));
+      await tester.pumpAndSettle();
+      for (final value in [24, 255]) {
+        link.emit(
+          CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: value,
+          ),
+        );
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_done')));
+      await tester.pump();
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.midiCtrlCalibrateSaving), findsOneWidget);
+      for (final key in ['midi_ctrl_cal_done', 'midi_ctrl_cal_cancel']) {
+        expect(
+          tester.widget<ConsoleSmallButton>(find.byKey(Key(key))).onPressed,
+          isNull,
+        );
+      }
+      expect(store.values['pedal.ctrl_calibration.0'], isNull);
+
+      store.pendingSave!.completeError(StateError('storage unavailable'));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.midiCtrlCalibrateSaveError), findsOneWidget);
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsOneWidget);
+      expect(
+        tester
+            .widget<ConsoleSmallButton>(
+              find.byKey(const Key('midi_ctrl_cal_done')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      store.pendingSave = null;
+      link.hello();
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_done')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_error')), findsNothing);
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsNothing);
+      expect(store.values['pedal.ctrl_calibration.0'], '24,255');
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets(
+      'calibration read failure is localized without a connected board',
+      (tester) async {
+        await pump(
+          tester,
+          pedalSettings: SettingsRepository(
+            store: _CalibrationStore()..failRead = true,
+          ),
+          locale: const Locale('es'),
+        );
+        await showMidi(tester);
+        expect(
+          find.text(l10nOf(tester).midiCtrlCalibrateLoadError),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('calibration reset failure keeps the calibrated row', (
+      tester,
+    ) async {
+      final store = _CalibrationStore()
+        ..values['pedal.ctrl_calibration.0'] = '24,255'
+        ..failReset = true;
+      final link = FakePedalLink();
+      await pump(
+        tester,
+        pedalLink: link,
+        pedalSettings: SettingsRepository(store: store),
+      );
+      link
+        ..hello()
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 24,
+          ),
+        );
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('midi_ctrl_cal_reset')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(l10nOf(tester).midiCtrlCalibrateResetError),
+        findsOneWidget,
+      );
+      expect(find.text(l10nOf(tester).midiCtrlCalibrated), findsOneWidget);
+      expect(store.values['pedal.ctrl_calibration.0'], '24,255');
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('a switch on the ring is its own row', (tester) async {
+      final link = FakePedalLink();
+      await pump(tester, pedalLink: link);
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl2,
+          contact: PedalCtrlContact.ring,
+          kind: PedalCtrlKind.switchPedal,
+          value: 255,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_ctrl2_ring')), findsOneWidget);
+      expect(find.text('CTRL 2 · footswitch B'), findsOneWidget);
+      // A switch has no ends: nothing to calibrate, nothing opens.
+      await tester.tap(find.byKey(const Key('midi_ctrl_ctrl2_ring')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_cal_seen')), findsNothing);
+
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('no CTRL readout without a link to read from', (tester) async {
+      await pump(tester);
+      await showMidi(tester);
+      expect(find.byKey(const Key('midi_ctrl_idle')), findsNothing);
+    });
+
+    testWidgets('with nothing connected at all the add buttons stay inert', (
+      tester,
+    ) async {
+      await pump(tester);
+      await showMidi(tester);
+
+      expect(find.byKey(const Key('midi_idle_notice')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('midi_add_switch')));
+      await tester.pumpAndSettle();
+      expect(control.state.controllerLearn, isNull);
     });
 
     testWidgets('an add button opens its target chooser in place', (

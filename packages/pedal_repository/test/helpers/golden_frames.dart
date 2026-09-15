@@ -123,6 +123,34 @@ final goldenMessages = <String, PedalLinkMessage>{
   'button_bank_up': const ButtonMessage(PedalButton.bank, pressed: false),
   'encoder_plus1': const EncoderMessage(1),
   'encoder_minus3': const EncoderMessage(-3),
+  'ctrl1_switch_down': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl1,
+    kind: PedalCtrlKind.switchPedal,
+    value: 255,
+  ),
+  'ctrl1_switch_up': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl1,
+    kind: PedalCtrlKind.switchPedal,
+    value: 0,
+  ),
+  'ctrl2_expression_mid': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl2,
+    kind: PedalCtrlKind.expression,
+    value: 128,
+  ),
+  // The jack went empty: a plug came out.
+  'ctrl1_none': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl1,
+    kind: PedalCtrlKind.none,
+    value: 0,
+  ),
+  // The second switch of a two-switch pedal, on the ring.
+  'ctrl2_ring_switch_down': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl2,
+    contact: PedalCtrlContact.ring,
+    kind: PedalCtrlKind.switchPedal,
+    value: 255,
+  ),
   'hello': const HelloMessage(
     protocolVersion: PedalLinkCodec.protocolVersion,
     firmwareMajor: 1,
