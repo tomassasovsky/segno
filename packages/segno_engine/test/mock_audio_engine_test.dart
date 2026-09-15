@@ -7,6 +7,22 @@ void main() {
 
     setUp(() => engine = MockAudioEngine());
 
+    test('history gate stays open because the mock keeps no edit history', () {
+      for (final redo in [false, true]) {
+        expect(
+          engine.historyModeGate(channels: 3, redo: redo),
+          EngineResult.ok,
+        );
+      }
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      final before = engine.snapshot();
+      expect(
+        engine.historyModeGate(channels: 3, redo: true),
+        EngineResult.ok,
+      );
+      expect(engine.snapshot().tracks, before.tracks);
+    });
+
     test('defaults to 18 inputs and 20 outputs', () {
       expect(engine.defaultConfig.inputChannels, 18);
       expect(engine.defaultConfig.outputChannels, 20);

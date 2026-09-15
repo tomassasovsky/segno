@@ -283,6 +283,17 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult clearUndoable({int channel = 0}) => EngineResult.ok;
   @override
   bool undoRestoresClear({int channel = 0}) => false;
+
+  @override
+  bool redoReclears({int channel = 0}) => false;
+
+  @override
+  bool clearRestorePending({int channel = 0}) => false;
+
+  @override
+  EngineResult historyModeGate({required int channels, required bool redo}) =>
+      EngineResult.ok;
+
   @override
   EngineResult setRecordOffset(int frames) => EngineResult.ok;
   @override
@@ -352,6 +363,8 @@ class FakePerformanceEngine implements AudioEngine {
     required int channel,
     required int bars,
   }) => EngineResult.ok;
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) => LooperModeGate.open;
   @override
   EngineResult setLooperMode(LooperMode mode) => EngineResult.ok;
   @override

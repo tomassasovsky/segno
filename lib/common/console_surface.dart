@@ -3002,22 +3002,35 @@ Future<bool> showConsoleConfirmDialog(
                 ),
               ),
               const SizedBox(height: 19),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  ConsoleDialogButton(
-                    key: const Key('console_confirm_cancel'),
-                    label: l10n.consoleKeepIt,
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                  ),
-                  const SizedBox(width: 10),
-                  ConsoleDialogButton(
-                    key: const Key('console_confirm_confirm'),
-                    label: confirmLabel,
-                    tone: ConsoleDialogTone.destructive,
-                    onPressed: () => Navigator.of(dialogContext).pop(true),
-                  ),
-                ],
+              // A Wrap, not a Row: a long confirm label ("Stop loops and
+              // switch") takes the next line instead of overflowing. Each
+              // button keeps its own width (a Wrap child would otherwise fill
+              // the line), so the ordinary pair still sits together at the
+              // right.
+              SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    IntrinsicWidth(
+                      child: ConsoleDialogButton(
+                        key: const Key('console_confirm_cancel'),
+                        label: l10n.consoleKeepIt,
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                      ),
+                    ),
+                    IntrinsicWidth(
+                      child: ConsoleDialogButton(
+                        key: const Key('console_confirm_confirm'),
+                        label: confirmLabel,
+                        tone: ConsoleDialogTone.destructive,
+                        onPressed: () => Navigator.of(dialogContext).pop(true),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

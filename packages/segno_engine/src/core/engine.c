@@ -343,6 +343,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_f32(&tr->a_trk_peak_bits, 0.0f);
     store_i32(&tr->a_play_pos, 0);
     store_i32(&tr->a_undo_depth, 0);
+    store_i32(&tr->a_clear_restore, 0);
     store_i32(&tr->a_redo_depth, 0);
     store_i32(&tr->a_multiple, 1);
     store_i32(&tr->a_sync_divisor, 0); /* B3: per-track, resets like a_multiple */
@@ -391,10 +392,19 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     atomic_store_explicit(&tr->a_layer_in_flight, 0, memory_order_relaxed);
     tr->outstanding_count = 0;
     tr->queued_undo = 0;
+    tr->dub_punch_out_posted = 0;
+    tr->clear_restore_pending = 0;
+    tr->clear_restore_slot = -1;
+    tr->clear_restore_generation = 0;
+    tr->cancel_pending = 0;
+    tr->depth_republish = 0;
     tr->empty_len = 0;
     tr->pending_lane_trim = 0; /* #595: no un-route pending a post-drain trim */
     tr->state_cmds_posted = 0;
+    tr->clear_cmd_ack = 0;
     tr->pending_target = LE_TRACK_EMPTY;
+    tr->pending_len = 0;
+    tr->pending_master_len = 0;
     store_i32(&tr->a_state_acks, 0);
     tr->dub_generation = 0;
     engine->track_quantize[t] = -1; /* inherit the global quantize default */
@@ -430,6 +440,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * (it would also make le_is_reestablishing_primary force that track's next
    * take to one base loop). Same rule the audio thread keeps live. */
   store_i32(&engine->a_primary_track, -1);
+  engine->clock_commands_posted = 0;
+  atomic_store_explicit(&engine->a_clock_commands_applied, 0, memory_order_relaxed);
 
   engine->sample_rate = sample_rate;
   engine->in_channels = input_channels;

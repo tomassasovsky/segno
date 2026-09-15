@@ -148,6 +148,8 @@ void main() {
       transport.hello();
       await pumpEventQueue();
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
+      when(() => looper.clearAll(any())).thenReturn(EngineResult.ok);
+      when(() => looper.undoClearAll()).thenReturn(EngineResult.ok);
       for (final stub in [
         () => looper.record(channel: any(named: 'channel')),
         () => looper.undo(channel: any(named: 'channel')),
@@ -1524,9 +1526,9 @@ void main() {
             ..selectTrack(5);
           unawaited(cubit.clearAll());
 
-          verify(() => looper.clear()).called(1);
-          verify(() => looper.clear(channel: 1)).called(1); // redo path wiped
-          verifyNever(() => looper.clear(channel: 2));
+          // One grouped edit: content AND the redo-able track, nothing else.
+          verify(() => looper.clearAll([0, 1])).called(1);
+          verifyNever(() => looper.clear(channel: any(named: 'channel')));
           verify(() => looper.setMute(muted: false)).called(1);
           verify(() => looper.setMute(muted: false, channel: 1)).called(1);
 
@@ -1568,16 +1570,14 @@ void main() {
               Track(state: TrackState.playing, lengthFrames: 48000),
             ]),
           );
-          when(() => looper.clear(channel: any(named: 'channel'))).thenAnswer((
-            _,
-          ) {
-            log.add('looper.clear');
+          when(() => looper.clearAll(any())).thenAnswer((_) {
+            log.add('looper.clearAll');
             return EngineResult.ok;
           });
 
           await armedCubit.clearAll();
 
-          expect(log, ['persistLiveLanes', 'looper.clear']);
+          expect(log, ['persistLiveLanes', 'looper.clearAll']);
         },
       );
 
@@ -1605,7 +1605,7 @@ void main() {
         await unarmedCubit.clearAll();
 
         expect(log, isEmpty);
-        verify(() => looper.clear()).called(1);
+        verify(() => looper.clearAll([0])).called(1);
       });
 
       // The armed path is the only one that awaits, so it is the only one whose
@@ -1645,58 +1645,26 @@ void main() {
           recordingPerformance.persistGate!.complete();
 
           await expectLater(pending, completes);
-          verify(() => looper.clear()).called(1);
+          verify(() => looper.clearAll([0])).called(1);
         },
       );
     });
 
     group('undoClearAll', () {
-      test(
-        'undoes every track holding a clear restore point, and only those',
-        () {
-          setEngine(
-            _tracksWith(const [
-              Track(clearRestore: true),
-              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
-              Track(channel: 2, clearRestore: true),
-              // Peelable layer, not a clear restore point.
-              Track(
-                channel: 3,
-                state: TrackState.playing,
-                lengthFrames: 48000,
-                undoDepth: 2,
-              ),
-            ]),
-          );
-
-          cubit.undoClearAll();
-
-          // Exactly the two pending-clear channels are restored.
-          verify(() => looper.undo()).called(1);
-          verify(() => looper.undo(channel: 2)).called(1);
-          verifyNever(() => looper.undo(channel: 1));
-          verifyNever(() => looper.undo(channel: 3));
-          for (var channel = 4; channel < 8; channel++) {
-            verifyNever(() => looper.undo(channel: channel));
-          }
-        },
-      );
-
-      test('is a no-op when no track holds a clear restore point', () {
+      test('delegates whole-rig recovery to the repository', () {
+        when(() => looper.undoClearAll()).thenReturn(EngineResult.ok);
         setEngine(
           _tracksWith(const [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-            Track(
-              channel: 1,
-              state: TrackState.playing,
-              lengthFrames: 48000,
-              undoDepth: 3,
-            ),
+            Track(clearRestore: true),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
           ]),
         );
 
         cubit.undoClearAll();
 
+        // The repository owns the group and the per-track fallback; the cubit
+        // never picks a channel itself.
+        verify(() => looper.undoClearAll()).called(1);
         verifyNever(() => looper.undo(channel: any(named: 'channel')));
         verifyNever(() => looper.undo());
       });
@@ -1980,9 +1948,9 @@ void main() {
         transport.press(PedalButton.clear, down: true);
         await pumpEventQueue();
 
-        verify(() => looper.clear()).called(1);
-        verify(() => looper.clear(channel: 1)).called(1);
-        verifyNever(() => looper.clear(channel: 2));
+        verify(() => looper.clearAll([0, 1])).called(1);
+        verifyNever(() => looper.clear(channel: any(named: 'channel')));
+        verify(() => looper.setMute(muted: false)).called(1);
         verify(() => looper.setMute(muted: false, channel: 1)).called(1);
         expect(cubit.state.mode, InteractionMode.record);
         expect(cubit.state.cursor, 0);

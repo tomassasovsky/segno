@@ -170,15 +170,39 @@ class FakeAudioEngine implements AudioEngine {
   bool undoRestoresClear({int channel = 0}) => undoRestoresClearResult;
 
   @override
+  bool redoReclears({int channel = 0}) => false;
+
+  @override
+  bool clearRestorePending({int channel = 0}) => false;
+
+  /// Result returned by the history preflight until a test changes it.
+  EngineResult nextHistoryModeGate = EngineResult.ok;
+
+  /// Ordered history preflights, retaining the full group mask and direction.
+  final List<({int channels, bool redo})> historyModeGateCalls = [];
+
+  /// Result returned by [undo] until a test changes it.
+  EngineResult nextUndoResult = EngineResult.ok;
+
+  /// Result returned by [redo] until a test changes it.
+  EngineResult nextRedoResult = EngineResult.ok;
+
+  @override
+  EngineResult historyModeGate({required int channels, required bool redo}) {
+    historyModeGateCalls.add((channels: channels, redo: redo));
+    return nextHistoryModeGate;
+  }
+
+  @override
   EngineResult undo({int channel = 0}) {
     undoCalls++;
-    return EngineResult.ok;
+    return nextUndoResult;
   }
 
   @override
   EngineResult redo({int channel = 0}) {
     redoCalls++;
-    return EngineResult.ok;
+    return nextRedoResult;
   }
 
   /// Per-channel active lane count passed to [setLaneCount].
@@ -402,6 +426,12 @@ class FakeAudioEngine implements AudioEngine {
 
   /// The last value passed to [setLooperMode].
   LooperMode? lastLooperMode;
+
+  /// What [looperModeGate] answers; tests set it to exercise a refusal.
+  LooperModeGate nextLooperModeGate = LooperModeGate.open;
+
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) => nextLooperModeGate;
 
   @override
   EngineResult setLooperMode(LooperMode mode) {

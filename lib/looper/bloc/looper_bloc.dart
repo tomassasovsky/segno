@@ -31,7 +31,15 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
        _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
        super(const LooperState()) {
-    on<LooperStateUpdated>((event, emit) => emit(event.state));
+    on<LooperStateUpdated>((event, emit) {
+      // Persist only settled reports from a connected engine. A settlement
+      // can repeat the visible state after a rejected request or boot replay.
+      final settled = _repository.settledLooperMode;
+      if (event.state.status.isConnected && settled != null) {
+        _persistLooperMode(settled);
+      }
+      emit(event.state);
+    });
     on<LooperRecordPressed>((event, _) {
       if (_takeLocked()) return;
       _repository.record(channel: event.channel);
@@ -484,7 +492,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     );
     on<LooperModeChanged>((event, _) {
       _repository.setLooperMode(event.mode);
-      unawaited(_settings?.saveLooperMode(event.mode.code));
+      // Offline choices are settled immediately. Running-engine choices
+      // reach persistence through the reported-state handler after acceptance.
+      final settled = _repository.settledLooperMode;
+      if (settled != null) {
+        _persistLooperMode(settled);
+      }
     });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
@@ -527,6 +540,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   final LooperRepository _repository;
   final SettingsRepository? _settings;
   final bool Function() _takeLocked;
+
+  LooperMode? _persistedLooperMode;
+
+  void _persistLooperMode(LooperMode mode) {
+    if (mode == _persistedLooperMode) return;
+    _persistedLooperMode = mode;
+    unawaited(_settings?.saveLooperMode(mode.code));
+  }
 
   static bool _neverLocked() => false;
 

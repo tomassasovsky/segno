@@ -130,25 +130,67 @@ class FakeAudioEngine implements AudioEngine {
   /// restore-point bookkeeping, which the real engine owns.
   bool undoRestoresClearResult = false;
 
+  /// Per-channel override of [undoRestoresClearResult]: when set, only these
+  /// channels restore a clear on their next undo.
+  Set<int>? undoRestoresClearChannels;
+
+  /// The channels whose next redo re-applies a clear.
+  Set<int> redoReclearsChannels = {};
+
+  /// The channels whose frozen restore point is still to be filed.
+  Set<int> clearRestorePendingChannels = {};
+
+  /// Result returned by the history preflight until a test changes it.
+  EngineResult nextHistoryModeGate = EngineResult.ok;
+
+  /// Ordered history preflights, retaining the full group mask and direction.
+  final List<({int channels, bool redo})> historyModeGateCalls = [];
+
+  /// Result returned by [undo] until a test changes it.
+  EngineResult nextUndoResult = EngineResult.ok;
+
+  /// Result returned by [redo] until a test changes it.
+  EngineResult nextRedoResult = EngineResult.ok;
+
+  @override
+  EngineResult historyModeGate({required int channels, required bool redo}) {
+    calls.add('historyModeGate');
+    historyModeGateCalls.add((channels: channels, redo: redo));
+    return nextHistoryModeGate;
+  }
+
+  @override
+  bool clearRestorePending({int channel = 0}) =>
+      clearRestorePendingChannels.contains(channel);
+
+  @override
+  bool redoReclears({int channel = 0}) {
+    calls.add('redoReclears');
+    return redoReclearsChannels.contains(channel);
+  }
+
   @override
   bool undoRestoresClear({int channel = 0}) {
     lastChannel = channel;
     calls.add('undoRestoresClear');
-    return undoRestoresClearResult;
+    final channels = undoRestoresClearChannels;
+    return channels == null
+        ? undoRestoresClearResult
+        : channels.contains(channel);
   }
 
   @override
   EngineResult undo({int channel = 0}) {
     lastChannel = channel;
     calls.add('undo');
-    return EngineResult.ok;
+    return nextUndoResult;
   }
 
   @override
   EngineResult redo({int channel = 0}) {
     lastChannel = channel;
     calls.add('redo');
-    return EngineResult.ok;
+    return nextRedoResult;
   }
 
   /// Per-channel active lane count passed to [setLaneCount].
@@ -376,11 +418,25 @@ class FakeAudioEngine implements AudioEngine {
 
   LooperMode? lastLooperMode;
 
+  /// What [looperModeGate] answers; tests set it to exercise a refusal.
+  LooperModeGate nextLooperModeGate = LooperModeGate.open;
+
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) {
+    calls.add('looperModeGate');
+    return nextLooperModeGate;
+  }
+
   @override
   EngineResult setLooperMode(LooperMode mode) {
     lastLooperMode = mode;
     calls.add('setLooperMode');
-    return EngineResult.ok;
+    return switch (nextLooperModeGate) {
+      LooperModeGate.capturing ||
+      LooperModeGate.queued ||
+      LooperModeGate.spans => EngineResult.invalid,
+      LooperModeGate.open || LooperModeGate.playing => EngineResult.ok,
+    };
   }
 
   /// The last channel passed to [crownPrimary].
