@@ -20,6 +20,7 @@ final class TransferTests: XCTestCase {
       #!/usr/bin/python3
       import os, shlex, sys
       command = shlex.split(sys.argv[-1])
+      assert len(sys.argv[-1]) < 4096, 'The helper must travel over stdin, not the command line'
       os.execv('/usr/bin/python3', ['/usr/bin/python3'] + command[1:])
       """)
     let take = root.appendingPathComponent("a 'quoted' take")
@@ -62,6 +63,40 @@ final class TransferTests: XCTestCase {
       repository.catalog(connection: connection, token: CancellationToken()).recordings.first)
   }
 
+  func testReadFetchesOnlyRequestedBytesAndRejectsChangedSource() throws {
+    let recording = try take()
+    let file = recording.files[0]
+    let source = root.appendingPathComponent(recording.id).appendingPathComponent(file.path)
+    let bytes = try Data(contentsOf: source)
+    for range in [0..<2, 40..<52, 160..<172] {
+      let data = try repository.read(
+        recording: recording, file: file, offset: Int64(range.lowerBound), length: range.count,
+        connection: connection, token: CancellationToken())
+      XCTAssertEqual(data, bytes[range])
+    }
+    try bytes.write(to: source)
+    XCTAssertThrowsError(
+      try repository.read(
+        recording: recording, file: file, offset: 0, length: 2,
+        connection: connection, token: CancellationToken()))
+  }
+
+  func testReadRejectsInvalidRangesAndShortResponses() throws {
+    let recording = try take()
+    let file = recording.files[0]
+    for (offset, length) in [(-1, 2), (0, 0), (0, 1_048_577), (171, 2), (Int64.max, 1)] {
+      XCTAssertThrowsError(
+        try repository.read(
+          recording: recording, file: file, offset: Int64(offset), length: length,
+          connection: connection, token: CancellationToken()))
+    }
+    try writeExecutable("#!/usr/bin/python3\nimport sys\nsys.stdout.buffer.write(b'x')\n")
+    XCTAssertThrowsError(
+      try repository.read(
+        recording: recording, file: file, offset: 0, length: 2,
+        connection: connection, token: CancellationToken()))
+  }
+
   func testDownloadVerifiesAndRenamesWithoutOverwriting() throws {
     let recording = try take()
     let file = try XCTUnwrap(recording.files.first)
@@ -101,7 +136,7 @@ final class TransferTests: XCTestCase {
       #!/usr/bin/python3
       import json, os, shlex, sys
       command = shlex.split(sys.argv[-1])
-      if command[3] == 'hash':
+      if command[2] == 'hash':
           print(json.dumps({'sha256': 'incorrect'}))
       else:
           os.execv('/usr/bin/python3', ['/usr/bin/python3'] + command[1:])
@@ -169,7 +204,7 @@ final class TransferTests: XCTestCase {
         """
         #!/usr/bin/python3
         import hashlib, json, shlex, sys
-        action = shlex.split(sys.argv[-1])[3]
+        action = shlex.split(sys.argv[-1])[2]
         payload = b'x' * \(size)
         if action == 'hash':
             print(json.dumps({'sha256': hashlib.sha256(payload).hexdigest()}))
@@ -220,8 +255,8 @@ final class TransferTests: XCTestCase {
               raise ImportError('Module not shipped by appliance: ' + name)
           return original_import(name, *args, **kwargs)
       builtins.__import__ = appliance_import
-      sys.argv = ['-c'] + command[3:]
-      exec(compile(command[2], '<appliance>', 'exec'), {'__name__': '__main__'})
+      sys.argv = ['-'] + command[2:]
+      exec(compile(sys.stdin.read(), '<appliance>', 'exec'), {'__name__': '__main__'})
       """)
     let recording = try take()
     let result = try repository.download(

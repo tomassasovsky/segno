@@ -15,11 +15,12 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 The standalone [Segno Transfer app](../apps/segno_transfer/README.md) implements
 the owner-requested Mac workflow in #1056: connect using existing SSH access,
 browse and select performance audio, name downloaded copies, verify transfers,
-and preview complete recordings with seeking. Its Swift package is independent
+and stream recording previews with seeking. Its Swift package is independent
 of the instrument runtime. The helper uses the appliance's minimal Python with
 jq and sha256sum; Python json/hashlib modules are not required.
 
-Local acceptance includes a real two-file download, custom filenames, matching
+The streaming update uses bounded SSH range reads through the native player,
+replacing full-file preview preparation. Local acceptance includes a real two-file download, custom filenames, matching
 source hashes, and Finder reveal. Automated checks cover the transfer failure
 paths, selection state and playback. Source review and product approval remain
 separate from this local app delivery; #1056 retains its merge gate.

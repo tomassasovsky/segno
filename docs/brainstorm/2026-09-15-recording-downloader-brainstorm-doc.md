@@ -29,8 +29,10 @@ while using SSH for Segno's existing network interface.
   rendered stem WAVs are individually selectable and labeled by their roles.
 - Names apply to downloaded files. Original appliance folders remain intact.
 - Owner also requested full-length listening with seeking before downloading.
-  Prepare a verified temporary copy, play it with AVFoundation, and remove it
-  when the preview closes or the app quits. The download selection stays intact.
+  The owner then requested streaming to remove the full-file preparation wait.
+  Use AVFoundation resource loading with bounded SSH byte-range reads. Seeking
+  fetches the target section; close, replacement and quit cancel pending reads.
+  The download selection stays intact.
 - Stream one file at a time, verify size and SHA-256, then publish the final file
   without replacing an existing file. Cancellation removes only our temporary copy.
 - Read finalized manifests and complete WAVs; an unfinished or corrupt capture

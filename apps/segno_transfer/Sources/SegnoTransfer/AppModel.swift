@@ -32,7 +32,7 @@ final class AppModel: ObservableObject {
   @Published var settingsPresented = false
   @Published private(set) var previewTitle: String?
   let previewPlayer = PreviewPlayer()
-  private var previewDirectory: URL?
+  private var preparingPreview = false
   private var token = CancellationToken()
   private let repository: RecordingRepository
   private let defaults: UserDefaults
@@ -206,7 +206,10 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func cancel() { token.cancel() }
+  func cancel() {
+    token.cancel()
+    if preparingPreview { previewPlayer.stop() }
+  }
 
   func preparePreview(_ recording: Recording, _ file: RecordingFile) {
     guard !busy else { return }
@@ -215,46 +218,30 @@ final class AppModel: ObservableObject {
     let cancellation = token
     let repository = repository
     let settings = connection
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "segno-preview-" + UUID().uuidString)
-    do {
-      try FileManager.default.createDirectory(
-        at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-    } catch {
-      self.error = error.localizedDescription
-      return
+    let loader = RemoteAudioLoader(size: file.bytes) { offset, length, token in
+      try repository.read(
+        recording: recording, file: file, offset: offset, length: length,
+        connection: settings, token: token)
     }
-    previewDirectory = folder
+    preparingPreview = true
     busy = true
     error = nil
     progress = 0
-    progressTitle = "Preparing preview · \(file.role)"
+    progressTitle = "Opening stream · \(file.role)"
     Task {
       do {
-        let url = try await Task.detached {
-          try repository.download(
-            recording: recording, file: file, name: "preview.wav", destination: folder,
-            connection: settings, token: cancellation
-          ) { bytes, phase in
-            Task { @MainActor in
-              guard self.busy, self.token === cancellation else { return }
-              self.progress = Double(bytes) / Double(max(1, file.bytes))
-              self.progressTitle =
-                "\(phase == "Verifying" ? "Verifying preview" : "Preparing preview") · \(file.role)"
-            }
-          }
-        }.value
         try cancellation.check()
-        try await previewPlayer.prepare(url)
+        try await previewPlayer.prepare(loader.asset, loader: loader)
         try cancellation.check()
         previewTitle = "\(recording.name) · \(file.role)"
         previewPlayer.playPause()
-        status = "Preview ready · Download to keep a copy"
+        status = "Streaming preview · Download to keep a copy"
       } catch {
         closePreview()
         if !cancellation.isCancelled { self.error = error.localizedDescription }
-        status = cancellation.isCancelled ? "Preview cancelled" : "Could not prepare preview"
+        status = cancellation.isCancelled ? "Preview cancelled" : "Could not open preview"
       }
+      preparingPreview = false
       busy = false
       progressTitle = ""
     }
@@ -263,8 +250,6 @@ final class AppModel: ObservableObject {
   func closePreview() {
     previewPlayer.stop()
     previewTitle = nil
-    if let previewDirectory { try? FileManager.default.removeItem(at: previewDirectory) }
-    previewDirectory = nil
   }
 
   func reveal() {

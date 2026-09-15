@@ -298973,8 +298973,8 @@
     {
       "type": "text",
       "id": "sgt-preview",
-      "name": "Full recording preview",
-      "content": "Pause     Rehearsal — Main recording                                      Close\n0:32                     Playback timeline / seek slider                         8:26",
+      "name": "Streaming recording preview",
+      "content": "Pause     Rehearsal — Main recording                                      Close\n0:32                     Playback timeline / seek slider                         8:26\nBuffering… (only while waiting for audio)",
       "x": 24,
       "y": 630,
       "fontFamily": "SF Pro",
@@ -298986,8 +298986,8 @@
 {
   "type": "text",
   "id": "sgt-rationale",
-  "name": "c/ Segno Transfer: native Mac companion approved 2026-09-15. Native SwiftUI controls replace appliance touchscreen geometry. Browse performances, select audio files, edit download names, choose a folder, verify and reveal copies. Source recordings stay intact. Existing SSH authentication. Error and cancel states use the footer, with incomplete files never published. Issue #1056. Owner also requested full recording preview with seeking: prepare a verified temporary copy, play/pause and seek in the footer; close or quit removes the preview. Download selection stays intact.",
-  "content": "c/ Segno Transfer: native Mac companion approved 2026-09-15. Native SwiftUI controls replace appliance touchscreen geometry. Browse performances, select audio files, edit download names, choose a folder, verify and reveal copies. Source recordings stay intact. Existing SSH authentication. Error and cancel states use the footer, with incomplete files never published. Issue #1056. Owner also requested full recording preview with seeking: prepare a verified temporary copy, play/pause and seek in the footer; close or quit removes the preview. Download selection stays intact.",
+  "name": "c/ Segno Transfer: native Mac companion approved 2026-09-15. Native SwiftUI controls replace appliance touchscreen geometry. Browse performances, select audio files, edit download names, choose a folder, verify and reveal copies. Source recordings stay intact. Existing SSH authentication. Error and cancel states use the footer, with incomplete files never published. Issue #1056. Owner requested streaming preview with seeking: read only the audio sections the native player requests over SSH. Play/pause and seek in the footer; show Buffering while awaiting audio. Close, replacement or quit cancels pending reads. No full preview copy is saved. Download selection stays intact.",
+  "content": "c/ Segno Transfer: native Mac companion approved 2026-09-15. Native SwiftUI controls replace appliance touchscreen geometry. Browse performances, select audio files, edit download names, choose a folder, verify and reveal copies. Source recordings stay intact. Existing SSH authentication. Error and cancel states use the footer, with incomplete files never published. Issue #1056. Owner requested streaming preview with seeking: read only the audio sections the native player requests over SSH. Play/pause and seek in the footer; show Buffering while awaiting audio. Close, replacement or quit cancels pending reads. No full preview copy is saved. Download selection stays intact.",
   "x": 35024,
   "y": 860,
   "fontFamily": "SF Pro",

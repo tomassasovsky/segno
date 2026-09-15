@@ -91,6 +91,18 @@ class ApplianceTests(unittest.TestCase):
                    "file": "master.wav", "version": appliance.version(source)}
         self.assertEqual(appliance.run(request)["sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
 
+    def test_read_ranges_are_exact_and_invalid_ranges_fail(self):
+        source = self.take / "master.wav"
+        command = [sys.executable, str(HELPER), "read", str(self.root), self.take.name,
+                   "master.wav", appliance.version(source)]
+        for offset, length in [(0, 2), (32, 16), (160, 12)]:
+            output = subprocess.check_output(command + [str(offset), str(length)])
+            self.assertEqual(output, source.read_bytes()[offset:offset + length])
+        for offset, length in [(-1, 2), (0, 0), (0, 1048577), (172, 1), (171, 2)]:
+            result = subprocess.run(command + [str(offset), str(length)], capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, b"")
+
     def test_raw_pcm_cannot_be_requested_as_audio(self):
         source = self.take / "master.pcm"
         source.write_bytes(b"not a WAV")

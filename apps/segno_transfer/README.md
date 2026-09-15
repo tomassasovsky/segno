@@ -16,10 +16,15 @@ Requires macOS 14 or later. The app is separate from the Segno instrument runtim
 5. Click **Download**. **Show in Finder** reveals the verified copies.
 
 Click the **Play** button beside any audio file to hear it before downloading.
-The app first prepares a verified temporary copy; large recordings take time to
-prepare. Use Play/Pause and the timeline to listen and seek through the whole
-file. Closing the preview or quitting removes that temporary copy. Listening
-does not change the download selection or add files to the chosen folder.
+Playback streams small sections over the existing connection and starts before
+the whole file transfers. Use Play/Pause and the timeline to seek anywhere; the
+app fetches the requested section. A buffering message appears when more audio
+is needed. Closing the preview or quitting stops its reads. Listening does not
+change the download selection or add a copy to the chosen folder.
+
+Streaming uses SSH transport integrity and checks that each section belongs to
+the listed source version. **Download** still retrieves and verifies a complete
+copy with SHA-256 before saving it.
 
 The app remembers the connection and download folder on this Mac. Source files
 are never renamed or deleted. Existing download names receive a numbered suffix.

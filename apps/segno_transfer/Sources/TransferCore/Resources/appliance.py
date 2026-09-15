@@ -143,12 +143,22 @@ def run(request):
     action = request["action"]
     if action == "catalog":
         return catalog(root)
-    if action not in ("download", "hash"):
+    if action not in ("download", "hash", "read"):
         raise ValueError("Unknown recording operation.")
     path = selected_file(root, request)
     with path.open("rb") as stream:
         if action == "hash":
             digest = subprocess.check_output(["sha256sum"], stdin=stream).split()[0].decode("ascii")
+        elif action == "read":
+            offset, length = int(request["offset"]), int(request["length"])
+            size = os.fstat(stream.fileno()).st_size
+            if offset < 0 or length <= 0 or length > 1024 * 1024 or offset > size - length:
+                raise ValueError("The requested audio range is invalid. Refresh and try again.")
+            stream.seek(offset)
+            chunk = stream.read(length)
+            if len(chunk) != length:
+                raise ValueError("The audio read was incomplete. Try the preview again.")
+            sys.stdout.buffer.write(chunk)
         else:
             while True:
                 chunk = stream.read(1024 * 1024)
@@ -157,7 +167,7 @@ def run(request):
                 sys.stdout.buffer.write(chunk)
     if version(path) != request["version"]:
         raise ValueError("The recording changed during transfer. Refresh and try again.")
-    return None if action == "download" else {"sha256": digest}
+    return {"sha256": digest} if action == "hash" else None
 
 
 def emit_catalog(result):
@@ -179,7 +189,7 @@ def emit_catalog(result):
 
 if __name__ == "__main__":
     try:
-        request = dict(zip(["action", "root", "recording", "file", "version"], sys.argv[1:]))
+        request = dict(zip(["action", "root", "recording", "file", "version", "offset", "length"], sys.argv[1:]))
         result = run(request)
         if request["action"] == "catalog":
             emit_catalog(result)
