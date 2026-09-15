@@ -579,6 +579,50 @@ static void regrid_surviving_master(le_engine* e) {
   e->grid_prev_beat = -1;
 }
 
+/* Primary-track reconcile (accepted design, slice 1; revises D18's
+ * never-auto-assign reading). a_primary_track is THE FIRST COMPLETED
+ * RECORDING until an explicit handoff (LE_CMD_CROWN_PRIMARY):
+ *   - nothing crowned and some track holds a completed take -> crown the
+ *     lowest such track. Called after every content change, so at a live
+ *     finalize exactly one track can have just completed, and "lowest"
+ *     only breaks the tie a session import (every track at once) creates;
+ *   - every track empty (or still on its first, uncompleted take) -> no crown.
+ *     An empty session has none, and a take in progress is not a recording
+ *     yet;
+ *   - otherwise the designation is left alone: clearing or undoing the
+ *     primary while a sibling holds audio keeps it crowned (D18's re-record
+ *     rule — its next take re-establishes it as exactly one base loop, see
+ *     le_is_reestablishing_primary), and the app draws the crown on the
+ *     lowest content-bearing track meanwhile.
+ * A completed take is any state but EMPTY and RECORDING: OVERDUBBING implies
+ * a finalized base. Audio thread only; eight relaxed loads, no allocation. */
+static void le_primary_reconcile(le_engine* e) {
+  int32_t first = -1;
+  for (int32_t k = 0; k < e->track_count; ++k) {
+    const int32_t st = load_i32(&e->tracks[k].a_state);
+    if (st != LE_TRACK_EMPTY && st != LE_TRACK_RECORDING) {
+      first = k;
+      break;
+    }
+  }
+  const int32_t primary = load_i32(&e->a_primary_track);
+  if (first < 0) {
+    if (primary >= 0) store_i32(&e->a_primary_track, -1);
+  } else if (primary < 0) {
+    store_i32(&e->a_primary_track, first);
+  }
+}
+
+/* Audio-thread reset when a track loses its take. Other tracks keep both
+ * their published waveform and their in-progress bucket. */
+static void reset_track_viz(le_engine* e, int32_t ch) {
+  e->track_viz_bucket[ch] = -1;
+  e->track_viz_accum[ch] = 0.0f;
+  for (int i = 0; i < LE_VIZ_POINTS; ++i) {
+    store_f32(&e->a_track_viz[ch][i], 0.0f);
+  }
+}
+
 static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
                             uint64_t frame) {
   /* A mute deferred during the take lands with the finalize (and blocks a
@@ -636,7 +680,9 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
   store_i32(&t->a_sync_divisor, 0); /* a defining track is never a division */
   le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
+  le_primary_reconcile(e); /* the first completed take takes the crown */
   t->start_iter = 0;
+  e->trk_play_pos[(int32_t)(t - e->tracks)] = 0; /* the loop (re)starts here */
   /* This track leaves RECORDING here regardless of end_state — even the
    * OVERDUBBING case is a record-to-overdub toggle, not a continuation of the
    * same recording. The take id (#819) both rides the RECORD_END payload and
@@ -990,6 +1036,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
     /* Drop (not apply) any mute deferred during the void take: an EMPTY
      * track always comes back unmuted. */
     le_consume_pending_mutes(e, t, end_state, 0, frame);
+    reset_track_viz(e, ch);
     le_audio_rev_bump(t); /* [R1] record finalize (void take -> EMPTY) */
     store_i32(&t->a_state, LE_TRACK_EMPTY);
     le_track_set_len(t, 0);
@@ -1084,6 +1131,10 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
   }
   le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
+  /* A non-defining take is a completed take too: if the crown went with a
+   * cleared or undone sibling while this take was in progress, it lands
+   * here (a defining take goes through finalize_master's own call). */
+  le_primary_reconcile(e);
   t->record_pos = 0;
   /* Take id (#819): logged in the RECORD_END payload and published as the
    * settled take so the disarm manifest can anchor by identity. */
@@ -1643,7 +1694,8 @@ static void handle_clear(le_engine* e, int32_t ch) {
    * LE_CMD_UNDO_TO_EMPTY below). */
   le_loop_clock_reset(&t->free_clock);
   t->free_iteration = 0;
-  e->track_viz_bucket[ch] = -1;
+  reset_track_viz(e, ch);
+  e->trk_play_pos[ch] = 0;
   /* Drop the per-pass capture wholesale: the control thread reclaimed every
    * posted shadow slot when it pushed this clear and bumped the generation (we
    * mirror the bump), so an already-pushed retire event from before the clear
@@ -1707,6 +1759,7 @@ static void handle_clear(le_engine* e, int32_t ch) {
       }
     }
   }
+  le_primary_reconcile(e); /* the last take's clear takes the crown with it */
   atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
   /* Undo/redo stacks and each lane's a_live are reset by le_engine_clear on the
    * control thread; the audio thread only resets the state/transport here. */
@@ -1933,7 +1986,11 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         }
         t->pending_record = 1;
         t->pending_trigger = trig;
-        store_i32(&t->a_pending, 1);
+        /* Trigger first, then the flag with release: the snapshot reads the
+         * flag with acquire and only then the trigger, so it never pairs a
+         * fresh arm with the previous arm's trigger. */
+        store_i32(&t->a_pending_trigger, trig);
+        atomic_store_explicit(&t->a_pending, 1, memory_order_release);
       }
       break;
     case LE_CMD_DISARM:
@@ -2005,13 +2062,15 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
        * Cheap no-op outside Free mode (already dormant there). */
       le_loop_clock_reset(&t->free_clock);
       t->free_iteration = 0;
-      e->track_viz_bucket[cmd->arg_i] = -1;
+      reset_track_viz(e, cmd->arg_i);
+      e->trk_play_pos[cmd->arg_i] = 0;
       /* The to-EMPTY edge case of undo (LE_PLOG_UNDO, not a raw copy of this
        * command — every undo path, common in-track swap or this one, logs
        * the same semantic code so a downstream consumer never needs to know
        * which internal path fired). */
       le_plog_push(e, frame,
                   (le_command){.code = LE_PLOG_UNDO, .arg_i = cmd->arg_i});
+      le_primary_reconcile(e); /* undoing the last take uncrowns */
       atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
       break;
     }
@@ -2045,6 +2104,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         le_track_set_len(t, len);
         t->start_iter = 0;
         store_i32(&t->a_state, LE_TRACK_PLAYING);
+        le_primary_reconcile(e); /* a redone first take is a first take */
         /* The from-EMPTY edge case of redo (LE_PLOG_REDO — see the UNDO_TO_
          * EMPTY case above for why every redo path logs the same code). */
         le_plog_push(e, frame, (le_command){.code = LE_PLOG_REDO, .arg_i = ch});
@@ -2109,6 +2169,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         le_track_set_len(t, len);
         t->start_iter = 0;
         store_i32(&t->a_state, cmd->restore.state);
+        le_primary_reconcile(e); /* a restored only take is crowned again */
         /* The clear-restore edge case of undo: same semantic code as every
          * other undo path (see LE_CMD_UNDO_TO_EMPTY), so a downstream consumer
          * never needs to know which internal path fired. */
@@ -2706,6 +2767,10 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         tr->start_iter = 0;
         store_i32(&tr->a_state, LE_TRACK_PLAYING);
       }
+      /* A session that saved no crown still gets one: its lowest recorded
+       * track. A saved crown is pushed by the control thread before or
+       * after this and wins either way (reconcile never moves a live crown). */
+      le_primary_reconcile(e);
       break;
     }
     default:
@@ -3068,52 +3133,37 @@ static inline void click_frame(le_engine* e, float* out, uint32_t f,
   }
 }
 
-/* Loop visualization tap for one frame: bucket the output (and per-track) peaks
- * by loop position. When the playhead crosses into a new bucket, publish the
- * peaks accumulated for the bucket it left, then start the new one — so each
- * bucket holds the most recent pass over that slice of the loop. RT-safe
- * (atomics only). Only meaningful once a master loop exists. */
-static inline void viz_tap_frame(le_engine* e, int tc, int32_t pos,
-                                 float frame_out_peak,
-                                 const float* frame_trk_peak) {
-  if (e->clock.length > 0) {
-    int32_t bucket = (int32_t)((int64_t)pos * LE_VIZ_POINTS / e->clock.length);
-    if (bucket >= LE_VIZ_POINTS) bucket = LE_VIZ_POINTS - 1;
-    if (bucket != e->loop_viz_bucket) {
-      const int32_t prev = e->loop_viz_bucket;
-      if (prev >= 0 && prev < LE_VIZ_POINTS) {
-        store_f32(&e->a_loop_viz[prev], e->loop_viz_accum);
-        for (int t = 0; t < tc; ++t) {
-          store_f32(&e->a_track_viz[t][prev], e->track_viz_accum[t]);
-        }
-      }
-      e->loop_viz_bucket = bucket;
-      e->loop_viz_accum = 0.0f;
-      for (int t = 0; t < tc; ++t) e->track_viz_accum[t] = 0.0f;
+/* Mixed output follows the master clock. Track waveforms below use their
+ * own full read coordinates, matching the playhead published in the snapshot. */
+static inline void viz_tap_frame(le_engine* e, int32_t pos,
+                                 float frame_out_peak) {
+  if (e->clock.length <= 0) return;
+  int32_t bucket = (int32_t)((int64_t)pos * LE_VIZ_POINTS / e->clock.length);
+  if (bucket >= LE_VIZ_POINTS) bucket = LE_VIZ_POINTS - 1;
+  if (bucket != e->loop_viz_bucket) {
+    const int32_t prev = e->loop_viz_bucket;
+    if (prev >= 0 && prev < LE_VIZ_POINTS) {
+      store_f32(&e->a_loop_viz[prev], e->loop_viz_accum);
     }
-    if (frame_out_peak > e->loop_viz_accum) e->loop_viz_accum = frame_out_peak;
-    for (int t = 0; t < tc; ++t) {
-      if (frame_trk_peak[t] > e->track_viz_accum[t]) {
-        e->track_viz_accum[t] = frame_trk_peak[t];
-      }
-    }
+    e->loop_viz_bucket = bucket;
+    e->loop_viz_accum = 0.0f;
   }
+  if (frame_out_peak > e->loop_viz_accum) e->loop_viz_accum = frame_out_peak;
 }
 
-/* Free/Song mode (B2b, broadened to SONG by B4): the per-track twin of
- * viz_tap_frame, above — bucketed against each track's OWN clock instead of
- * the (permanently dormant, Free/Song-mode) master. There is no single
- * shared loop in either mode, so a_loop_viz (the mixed/master waveform) is
- * simply never touched here — viz_tap_frame's own `e->clock.length > 0`
- * gate already keeps IT untouched for the exact same reason. Called as a
- * single guarded call from le_engine_process, immediately after
- * viz_tap_frame, only when a_looper_mode is FREE or SONG. */
-static inline void free_track_viz_tap_frame(le_engine* e, int tc,
-                                            const float* frame_trk_peak) {
+/* The mixer already resolves each track's multiple, division or private
+ * clock. Bucket that same read index over its full finalized length. Only
+ * sounding tracks sweep: a stopped track keeps its shape for later selection.
+ * A first recording gets its shape on playback, once its length is stable.
+ * Audio-thread local accumulation and bounded atomic publication only. */
+static inline void track_viz_tap_frame(le_engine* e, int tc,
+                                       const int32_t* st,
+                                       const float* frame_trk_peak) {
   for (int t = 0; t < tc; ++t) {
-    const le_loop_clock* c = &e->tracks[t].free_clock;
-    if (c->length <= 0) continue; /* this track's clock isn't established yet */
-    int32_t bucket = (int32_t)((int64_t)c->position * LE_VIZ_POINTS / c->length);
+    if (st[t] != LE_TRACK_PLAYING && st[t] != LE_TRACK_OVERDUBBING) continue;
+    const int32_t len = load_i32(&e->tracks[t].lanes[0].a_len);
+    if (len <= 0) continue;
+    int32_t bucket = (int32_t)((int64_t)e->trk_play_pos[t] * LE_VIZ_POINTS / len);
     if (bucket >= LE_VIZ_POINTS) bucket = LE_VIZ_POINTS - 1;
     if (bucket != e->track_viz_bucket[t]) {
       const int32_t prev = e->track_viz_bucket[t];
@@ -4077,6 +4127,14 @@ static inline void mix_tracks_frame(
    * exclusive with Free mode's per-track override above by construction —
    * see sync_division_positions_frame's doc). */
   sync_division_positions_frame(e, tc, pos, trk_pos, trk_len);
+  /* Each track's read index for THIS frame, kept for the block-end publish of
+   * a_play_pos (le_track_snapshot.position_frames): the one place the mode's
+   * position rule is already resolved, so the app never re-derives it. */
+  for (int t = 0; t < tc; ++t) {
+    if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) {
+      e->trk_play_pos[t] = seg_base[t] + trk_pos[t];
+    } /* a stopped track HOLDS its last read index; an empty one publishes 0 */
+  }
 
   /* The looper mix is additive: clear this output frame, then sum every active
    * lane's mono contribution into the output channels its mask selects. */
@@ -4581,6 +4639,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   float in_sumsq = 0.0f;
   float in_peak = 0.0f;
   float out_sumsq = 0.0f;
+  float out_peak = 0.0f;
   /* Per-lane metering accumulators (each track's snapshot mirrors lane 0). */
   float lane_sumsq[LE_MAX_TRACKS][LE_MAX_LANES] = {{0}};
   float lane_peak[LE_MAX_TRACKS][LE_MAX_LANES] = {{0}};
@@ -4746,6 +4805,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * fused compare. */
     master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
                      lim_release, &out_sumsq, &frame_out_peak);
+    if (frame_out_peak > out_peak) out_peak = frame_out_peak;
     perf_tap_master_frame(e, out, f, ch_out);
     const int click_on =
         click_mode != LE_CLICK_OFF ? le_click_gate(e, click_mode, tc, st) : 0;
@@ -4758,16 +4818,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * per block above. */
     click_frame(e, out, f, ch_out, click_on, click_mask & out_enabled,
                 click_vol, sr, perf_frame_base + f);
-    viz_tap_frame(e, tc, pos, frame_out_peak, frame_trk_peak);
-    /* Free/Song mode (B2b, broadened to SONG by B4): the per-track twin of
-     * the tap above, single guarded call — see free_track_viz_tap_frame's
-     * doc for why a_loop_viz itself stays untouched in either mode. */
-    {
-      const int32_t mode = load_i32(&e->a_looper_mode);
-      if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
-        free_track_viz_tap_frame(e, tc, frame_trk_peak);
-      }
-    }
+    viz_tap_frame(e, pos, frame_out_peak);
+    track_viz_tap_frame(e, tc, st, frame_trk_peak);
     advance_transport_frame(e, tc, st, perf_frame_base + f);
   }
 
@@ -4779,6 +4831,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   store_f32(&e->a_in_peak_bits, in_peak);
   store_f32(&e->a_out_rms_bits,
             total_out ? sqrtf(out_sumsq / (float)total_out) : 0.0f);
+  store_f32(&e->a_out_peak_bits, out_peak);
   /* The tuner reads the CONDITIONED input too — pitch detection benefits from
    * the hum notches exactly like the lane capture does. */
   tuner_tap_block(e, in_c, frames, ch_in, sr);
@@ -4813,6 +4866,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     store_f32(&e->tracks[t].a_trk_rms_bits,
               frames ? sqrtf(trk_sumsq[t] / (float)frames) : 0.0f);
     store_f32(&e->tracks[t].a_trk_peak_bits, trk_peak[t]);
+    /* The track's own playhead: the write head while its take is still being
+     * defined (no length to play against yet), the mixer's read index
+     * otherwise — see le_track_snapshot.position_frames. */
+    store_i32(&e->tracks[t].a_play_pos,
+              tstate == LE_TRACK_EMPTY ? 0
+              : recording              ? rp
+                                       : e->trk_play_pos[t]);
   }
   store_i32(&e->a_master_pos, e->clock.position);
   atomic_fetch_add_explicit(&e->a_frames, (uint64_t)frames,

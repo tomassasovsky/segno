@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:controller_repository/controller_repository.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -1763,9 +1764,8 @@ void main() {
   });
 
   group('knob-drag persistence is debounced', () {
-    // Short enough to keep the test quick, long enough that a burst of events
-    // lands inside one window. Same shape as ControlCubit's mapping-write
-    // debounce test.
+    // Advance the debounce clock explicitly so event processing cannot race
+    // the persistence deadline when the full suite runs under load.
     const debounce = Duration(milliseconds: 30);
     late SettingsRepository settings;
 
@@ -1810,70 +1810,76 @@ void main() {
 
     test(
       'a lane knob drag writes the engine per move and the store once',
-      () async {
+      () => fakeAsync((clock) {
         final bloc = buildDebounced();
-        addTearDown(bloc.close);
+        try {
+          for (var i = 0; i < 8; i++) {
+            bloc.add(LooperLaneEffectParamChanged(0, 1, 1, 2, i / 10));
+          }
+          clock.flushMicrotasks();
 
-        for (var i = 0; i < 8; i++) {
-          bloc.add(LooperLaneEffectParamChanged(0, 1, 1, 2, i / 10));
+          // Every move reached the engine: nothing audible waits on the timer.
+          verify(
+            () => repository.setLaneEffectParam(
+              channel: 0,
+              lane: 1,
+              index: 1,
+              param: 2,
+              value: any(named: 'value'),
+            ),
+          ).called(8);
+          verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
+
+          clock.elapse(debounce * 3);
+
+          verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+        } finally {
+          unawaited(bloc.close());
+          clock.flushMicrotasks();
         }
-        await pumpEventQueue();
-
-        // Every move reached the engine: nothing audible waits on the timer.
-        verify(
-          () => repository.setLaneEffectParam(
-            channel: 0,
-            lane: 1,
-            index: 1,
-            param: 2,
-            value: any(named: 'value'),
-          ),
-        ).called(8);
-        verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
-
-        await Future<void>.delayed(debounce * 3);
-
-        verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
-      },
+      }),
     );
 
     test(
       'a bus knob drag writes the engine per move and the store once',
-      () async {
+      () => fakeAsync((clock) {
         final bloc = buildDebounced();
-        addTearDown(bloc.close);
+        try {
+          for (var i = 0; i < 8; i++) {
+            bloc.add(
+              LooperBusEffectParamChanged(
+                const FxAddress(stage: FxStage.track),
+                0,
+                1,
+                i / 10,
+              ),
+            );
+          }
+          clock.flushMicrotasks();
 
-        for (var i = 0; i < 8; i++) {
-          bloc.add(
-            LooperBusEffectParamChanged(
-              const FxAddress(stage: FxStage.track),
-              0,
-              1,
-              i / 10,
+          verify(
+            () => repository.setTrackEffectParam(
+              channel: 0,
+              index: 0,
+              param: 1,
+              value: any(named: 'value'),
             ),
-          );
+          ).called(8);
+          verifyNever(() => settings.saveTrackFxChain(any(), any()));
+
+          clock.elapse(debounce * 3);
+
+          verify(() => settings.saveTrackFxChain(0, any())).called(1);
+        } finally {
+          unawaited(bloc.close());
+          clock.flushMicrotasks();
         }
-        await pumpEventQueue();
-
-        verify(
-          () => repository.setTrackEffectParam(
-            channel: 0,
-            index: 0,
-            param: 1,
-            value: any(named: 'value'),
-          ),
-        ).called(8);
-        verifyNever(() => settings.saveTrackFxChain(any(), any()));
-
-        await Future<void>.delayed(debounce * 3);
-
-        verify(() => settings.saveTrackFxChain(0, any())).called(1);
-      },
+      }),
     );
 
     test(
       'a bus PLUGIN knob drag writes the model per move and the store once',
-      () async {
+      () => fakeAsync((clock) {
         when(() => repository.trackEffects(0)).thenReturn(const [
           PluginEffect(
             ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
@@ -1881,138 +1887,169 @@ void main() {
           ),
         ]);
         final bloc = buildDebounced();
-        addTearDown(bloc.close);
+        try {
+          for (var i = 0; i < 8; i++) {
+            bloc.add(
+              LooperBusPluginParamChanged(
+                const FxAddress(stage: FxStage.track),
+                0,
+                7,
+                i / 10,
+              ),
+            );
+          }
+          clock.flushMicrotasks();
 
-        for (var i = 0; i < 8; i++) {
-          bloc.add(
-            LooperBusPluginParamChanged(
-              const FxAddress(stage: FxStage.track),
-              0,
-              7,
-              i / 10,
+          verify(
+            () => repository.setTrackPluginParam(
+              channel: 0,
+              index: 0,
+              paramId: 7,
+              value: any(named: 'value'),
             ),
-          );
+          ).called(8);
+          verifyNever(() => settings.saveTrackFxChain(any(), any()));
+
+          clock.elapse(debounce * 3);
+
+          verify(() => settings.saveTrackFxChain(0, any())).called(1);
+        } finally {
+          unawaited(bloc.close());
+          clock.flushMicrotasks();
         }
-        await pumpEventQueue();
-
-        verify(
-          () => repository.setTrackPluginParam(
-            channel: 0,
-            index: 0,
-            paramId: 7,
-            value: any(named: 'value'),
-          ),
-        ).called(8);
-        verifyNever(() => settings.saveTrackFxChain(any(), any()));
-
-        await Future<void>.delayed(debounce * 3);
-
-        verify(() => settings.saveTrackFxChain(0, any())).called(1);
-      },
+      }),
     );
 
-    test('drags on two lanes each get their own write', () async {
-      final bloc = buildDebounced();
-      addTearDown(bloc.close);
+    test(
+      'drags on two lanes each get their own write',
+      () => fakeAsync((clock) {
+        final bloc = buildDebounced();
+        try {
+          bloc
+            ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.2))
+            ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.3))
+            ..add(const LooperLaneEffectParamChanged(1, 0, 0, 0, 0.4));
+          clock
+            ..flushMicrotasks()
+            ..elapse(debounce * 3);
 
-      bloc
-        ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.2))
-        ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.3))
-        ..add(const LooperLaneEffectParamChanged(1, 0, 0, 0, 0.4));
-      await pumpEventQueue();
-      await Future<void>.delayed(debounce * 3);
+          verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+          verify(() => settings.saveLaneEffects(1, 0, any())).called(1);
+        } finally {
+          unawaited(bloc.close());
+          clock.flushMicrotasks();
+        }
+      }),
+    );
 
-      verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
-      verify(() => settings.saveLaneEffects(1, 0, any())).called(1);
-    });
-
-    test('a bus PLUGIN drag persists once too', () async {
-      when(() => repository.trackEffects(0)).thenReturn(const [
-        PluginEffect(
-          ref: PluginRef(format: PluginFormat.clap, id: 'p'),
-        ),
-      ]);
-      final bloc = buildDebounced();
-      addTearDown(bloc.close);
-
-      for (var i = 0; i < 6; i++) {
-        bloc.add(
-          LooperBusPluginParamChanged(
-            const FxAddress(stage: FxStage.track),
-            0,
-            100,
-            i / 10,
+    test(
+      'a bus PLUGIN drag persists once too',
+      () => fakeAsync((clock) {
+        when(() => repository.trackEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.clap, id: 'p'),
           ),
-        );
-      }
-      await pumpEventQueue();
+        ]);
+        final bloc = buildDebounced();
+        try {
+          for (var i = 0; i < 6; i++) {
+            bloc.add(
+              LooperBusPluginParamChanged(
+                const FxAddress(stage: FxStage.track),
+                0,
+                100,
+                i / 10,
+              ),
+            );
+          }
+          clock.flushMicrotasks();
 
-      // The engine still sees every move — now through the granular setter
-      // this PR adds, rather than a whole-chain push. That is the point of the
-      // change: re-pushing the chain reset the DSP of the built-ins sharing
-      // the bus.
-      verify(
-        () => repository.setTrackPluginParam(
-          channel: 0,
-          index: 0,
-          paramId: 100,
-          value: any(named: 'value'),
-        ),
-      ).called(6);
-      verifyNever(
-        () => repository.setTrackEffects(
-          channel: 0,
-          effects: any(named: 'effects'),
-        ),
-      );
-      verifyNever(() => settings.saveTrackFxChain(any(), any()));
+          // The engine still sees every move through the granular setter.
+          // Re-pushing the whole chain reset the DSP of the built-ins sharing
+          // the bus.
+          verify(
+            () => repository.setTrackPluginParam(
+              channel: 0,
+              index: 0,
+              paramId: 100,
+              value: any(named: 'value'),
+            ),
+          ).called(6);
+          verifyNever(
+            () => repository.setTrackEffects(
+              channel: 0,
+              effects: any(named: 'effects'),
+            ),
+          );
+          verifyNever(() => settings.saveTrackFxChain(any(), any()));
 
-      await Future<void>.delayed(debounce * 3);
+          clock.elapse(debounce * 3);
 
-      verify(() => settings.saveTrackFxChain(0, any())).called(1);
-    });
+          verify(() => settings.saveTrackFxChain(0, any())).called(1);
+        } finally {
+          unawaited(bloc.close());
+          clock.flushMicrotasks();
+        }
+      }),
+    );
 
-    test('a session load drops a knob write still in flight', () async {
-      // The session's chains are the new truth, and the resync sweep clears
-      // the keys it has no chain for — a pending write landing after it would
-      // resurrect one of them.
-      final bloc = buildDebounced()
-        ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
-      addTearDown(bloc.close);
-      await pumpEventQueue();
+    test(
+      'a session load drops a knob write still in flight',
+      () => fakeAsync((clock) {
+        // The session's chains are the new truth, and the resync sweep clears
+        // the keys it has no chain for — a pending write landing after it would
+        // resurrect one of them.
+        final bloc = buildDebounced()
+          ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
+        try {
+          clock.flushMicrotasks();
 
-      bloc.add(const LooperSessionLoaded());
-      await pumpEventQueue();
-      await Future<void>.delayed(debounce * 3);
+          bloc.add(const LooperSessionLoaded());
+          clock
+            ..flushMicrotasks()
+            ..elapse(debounce * 3);
 
-      verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
-    });
+          verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
+        } finally {
+          unawaited(bloc.close());
+          clock.flushMicrotasks();
+        }
+      }),
+    );
 
-    test('closing flushes a drag that ended inside the window', () async {
-      final bloc = buildDebounced()
-        ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
-      await pumpEventQueue();
-      verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
+    test(
+      'closing flushes a drag that ended inside the window',
+      () => fakeAsync((clock) {
+        final bloc = buildDebounced()
+          ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
+        clock.flushMicrotasks();
+        verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
 
-      await bloc.close();
+        unawaited(bloc.close());
+        clock.flushMicrotasks();
 
-      verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
-    });
+        verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+      }),
+    );
 
     test(
       'LooperPersistFlush writes a drag that ended inside the window',
-      () async {
+      () => fakeAsync((clock) {
         final bloc = buildDebounced()
           ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
-        addTearDown(bloc.close);
-        await pumpEventQueue();
-        verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
+        try {
+          clock.flushMicrotasks();
+          verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
 
-        bloc.add(const LooperPersistFlush());
-        await pumpEventQueue();
+          bloc.add(const LooperPersistFlush());
+          clock.flushMicrotasks();
 
-        verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
-      },
+          verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+        } finally {
+          unawaited(bloc.close());
+          clock.flushMicrotasks();
+        }
+      }),
     );
   });
 
