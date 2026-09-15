@@ -17,6 +17,11 @@ source commit, retained v2 behavior, pending v3 firmware, and the separate
 software and device validation boundaries. Merging source does not publish or
 install an appliance update.
 
+The update helper now requests tryboot explicitly when an update is staged
+(#977); an ordinary restart keeps the active slot. Isolated shell tests cover
+both paths. This source correction does not validate a new installed image or
+resolve the separate crash-loop health-gate issue (#976).
+
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
