@@ -224,6 +224,8 @@ void main() {
       WidgetTester tester,
       WaveformWindowService windowService, {
       Future<void> Function()? powerOff,
+      Duration waveformWindowOpenDelay = Duration.zero,
+      bool settle = true,
     }) async {
       await tester.pumpWidget(
         App(
@@ -236,9 +238,10 @@ void main() {
           performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
           powerOff: powerOff,
+          waveformWindowOpenDelay: waveformWindowOpenDelay,
         ),
       );
-      await tester.pumpAndSettle();
+      if (settle) await tester.pumpAndSettle();
     }
 
     Future<void> pumpAppWithUpdates(
@@ -471,6 +474,62 @@ void main() {
         find.byKey(const Key('app_waveformWindowFailed_banner')),
         findsNothing,
       );
+    });
+
+    testWidgets('waits before opening the second native view', (tester) async {
+      final window = _RecordingWindowService();
+      await pumpApp(
+        tester,
+        window,
+        waveformWindowOpenDelay: const Duration(milliseconds: 750),
+        settle: false,
+      );
+      await tester.pump();
+      expect(window.openCalls, 0);
+      await tester.pump(const Duration(milliseconds: 749));
+      expect(window.openCalls, 0);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(window.openCalls, 1);
+    });
+
+    testWidgets('preference changes cannot bypass the startup wait', (
+      tester,
+    ) async {
+      final window = _RecordingWindowService();
+      await pumpApp(
+        tester,
+        window,
+        waveformWindowOpenDelay: const Duration(milliseconds: 750),
+        settle: false,
+      );
+      await tester.pump();
+      final waveform = tester
+          .element(find.byType(LooperPage))
+          .read<WaveformWindowCubit>();
+      await waveform.setEnabled(value: false);
+      await waveform.setEnabled(value: true);
+      await tester.pump();
+      expect(window.openCalls, 0);
+      await waveform.setEnabled(value: false);
+      await tester.pump(const Duration(milliseconds: 750));
+      expect(window.openCalls, 0);
+      await waveform.setEnabled(value: true);
+      await tester.pump();
+      expect(window.openCalls, 1);
+    });
+
+    testWidgets('unmount cancels the delayed window open', (tester) async {
+      final window = _RecordingWindowService();
+      await pumpApp(
+        tester,
+        window,
+        waveformWindowOpenDelay: const Duration(milliseconds: 750),
+        settle: false,
+      );
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      expect(window.openCalls, 0);
     });
 
     testWidgets('does not open the waveform window when it is disabled', (

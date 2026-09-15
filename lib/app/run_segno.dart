@@ -203,6 +203,13 @@ Future<void> runSegno(
       audioRecoveryConfig: audioRecoveryConfig,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
+      waveformWindowOpenDelay: Duration(
+        milliseconds:
+            int.tryParse(
+              Platform.environment['SEGNO_WAVEFORM_OPEN_DELAY_MS'] ?? '',
+            ) ??
+            0,
+      ),
       sessionRepository: session,
       performanceRepository: performance,
       exportDirectory: defaultExportDirectory,

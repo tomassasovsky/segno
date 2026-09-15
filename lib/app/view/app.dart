@@ -66,6 +66,7 @@ class App extends StatefulWidget {
     this.simulatedControllerSource,
     this.pedalRepository,
     this.displayCount,
+    this.waveformWindowOpenDelay = Duration.zero,
     this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
     this.updates = const UpdateRepository(
@@ -136,6 +137,9 @@ class App extends StatefulWidget {
   /// (assumes the usual multi-window desktop); the Pi entrypoint wires the real
   /// platform display count.
   final int Function()? displayCount;
+
+  /// Startup spacing before the second native view opens under Weston.
+  final Duration waveformWindowOpenDelay;
 
   /// The pinned audio config a boot auto-start could not open, handed to the
   /// [AudioRecoveryCubit] so the engine auto-starts when that device reappears.
@@ -548,6 +552,7 @@ class _AppState extends State<App> {
           waveformWindow: widget.waveformWindow,
           exportDirectory: widget.exportDirectory,
           displayCount: widget.displayCount,
+          waveformWindowOpenDelay: widget.waveformWindowOpenDelay,
         ),
       ),
     );
@@ -579,12 +584,14 @@ class _AppView extends StatefulWidget {
   const _AppView({
     required this.waveformWindow,
     required this.exportDirectory,
+    required this.waveformWindowOpenDelay,
     this.displayCount,
   });
 
   final WaveformWindowService waveformWindow;
   final Future<String> Function() exportDirectory;
   final int Function()? displayCount;
+  final Duration waveformWindowOpenDelay;
 
   @override
   State<_AppView> createState() => _AppViewState();
@@ -592,6 +599,8 @@ class _AppView extends StatefulWidget {
 
 class _AppViewState extends State<_AppView> {
   Timer? _pushTimer;
+  Timer? _windowStartupTimer;
+  bool _windowStartupReady = false;
 
   /// Drives the waveform frames while the sub-window is open. `null` when it
   /// is closed. See [_requestWaveformFrame] for why the frames follow the poll
@@ -652,11 +661,20 @@ class _AppViewState extends State<_AppView> {
   Future<void> _bootstrapWindow() async {
     await context.read<WaveformWindowCubit>().load();
     if (!mounted) return;
-    await _syncWindow();
+    if (widget.waveformWindowOpenDelay > Duration.zero) {
+      _windowStartupTimer = Timer(widget.waveformWindowOpenDelay, () {
+        _windowStartupReady = true;
+        unawaited(_syncWindow());
+      });
+    } else {
+      _windowStartupReady = true;
+      await _syncWindow();
+    }
   }
 
   @override
   void dispose() {
+    _windowStartupTimer?.cancel();
     _pushTimer?.cancel();
     _frameGate?.cancel();
     unawaited(_pollSub?.cancel());
@@ -740,7 +758,8 @@ class _AppViewState extends State<_AppView> {
   /// Opens the secondary waveform window when it is enabled; closes it
   /// otherwise.
   Future<void> _syncWindow() async {
-    if (!mounted) return;
+    // Preference changes during bootstrap must not bypass the startup wait.
+    if (!mounted || !_windowStartupReady) return;
     final waveform = context.read<WaveformWindowCubit>();
     if (waveform.state.enabled) {
       // On a single-display console the waveform has nowhere to land: skip the

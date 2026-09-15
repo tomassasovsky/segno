@@ -171,4 +171,8 @@ export SEGNO_RT_AUDIO=1
 # to clear the capture case too, not just the monitor one. The engine's own
 # default stays 2; this override is appliance-only.
 export SEGNO_ALSA_PERIODS=8
+# Space the two native views after startup; this is a timing mitigation for
+# #970, not proof that the compositor's EGL state is ready.
+export SEGNO_WAVEFORM_OPEN_DELAY_MS=750
+/usr/bin/segno-wait-wayland || exit $?
 exec /opt/segno/segno "$@"

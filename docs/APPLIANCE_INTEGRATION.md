@@ -69,3 +69,40 @@ firmware contract and sketch behavior, appliance shell helpers, and the Linux
 builds in CI. Local screenshot comparisons had the same 52 failing tests on
 the unmodified master baseline; their results must stay separate from the
 functional checks and remote CI.
+
+## Startup readiness and release inspection
+
+The narrowed #982 work retains the startup mitigation from
+`7adfb722250078ab40c54274a39bf3b5e4ab43c7` on current master. It uses the boot
+archive and install hook delivered by #990; it does not add the old branch's
+alternate boot-image extraction or post-install hook.
+
+Before starting the app, `segno-wait-wayland` requires a UNIX socket with the
+same inode across an 800 ms settle interval. A missing or replaced socket
+keeps startup waiting; exhaustion fails the launcher so systemd retries after
+three seconds. The launcher also sets `SEGNO_WAVEFORM_OPEN_DELAY_MS=750` to
+space creation of the secondary native view after the main view mounts.
+The app honors the current preference when the delay ends and cancels a
+pending open when its owner unmounts.
+
+The release workflow requires RAUC and inspects the copied bundle before
+writing its publication manifest. It checks the selected board's compatible
+string, release version, exactly one rootfs image and one boot archive,
+nonempty payload metadata and checksums, and the boot archive's `install`
+hook. This inspects the artifact rather than inferring its contents from the
+recipe. Signature trust remains the appliance's install-time check.
+
+Local behavior checks use real UNIX sockets, a sandboxed launch block,
+widget tests, and valid/invalid RAUC metadata. Linux CI additionally creates
+signed test bundles and verifies that a rootfs-only bundle is rejected.
+Run the shell suites with:
+
+```sh
+bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wayland_wait_tests.sh
+bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
+```
+
+These checks do not establish compositor/EGL readiness, either screen's
+behavior after a Weston restart, or an installed update's boot/rollback
+behavior. Those remain device checks under #970 and the appliance integration
+boundary above. No operating-system migration is included.

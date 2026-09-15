@@ -374,8 +374,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install shell-test tools
+        run: sudo apt-get update && sudo apt-get install -y jq rauc squashfs-tools
+      - name: Inspect update bundle test artifacts
+        run: bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
       - name: Run update bundle hook tests
         run: bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_hook_tests.sh
       - name: Run boot-slot recipe tests
@@ -402,6 +404,8 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reboot_tests.sh
       - name: Run log-persistence tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_log_persist_tests.sh
+      - name: Run Wayland startup tests
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wayland_wait_tests.sh
       - name: Run weston log tests
         run: bash deploy/yocto/meta-segno/recipes-graphics/weston-init/test/run_weston_log_tests.sh
       - name: Run HDMI HPD force-on tests
