@@ -6,7 +6,7 @@ import 'package:settings_repository/settings_repository.dart';
 part 'tracks_state.dart';
 
 /// Tracks-view PREFERENCES: the persisted per-track display names and the
-/// indicator visibility toggle.
+/// lane-cache indicator toggle, plus the (unpersisted) stage view.
 ///
 /// The track cursor and active bank are NOT here — they are control state,
 /// owned (once, for every surface) by `ControlOverlayCubit`; the record/mute
@@ -28,8 +28,8 @@ class TracksCubit extends Cubit<TracksState> {
   Future<void>? _loadFuture;
   int _loadGeneration = 0;
 
-  /// Restores the persisted view state: track names and whether the per-track
-  /// indicators show.
+  /// Restores the persisted view state: track names and whether the lane-cache
+  /// indicators are wanted.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
@@ -48,7 +48,13 @@ class TracksCubit extends Cubit<TracksState> {
     }
   }
 
-  /// Sets and persists whether per-track status indicators are shown.
+  /// Shows [view] on the main display — a presentation change only.
+  void showView(StageView view) {
+    if (view != state.stageView) emit(state.copyWith(stageView: view));
+  }
+
+  /// Sets and persists whether the Signal face's lane-cache indicators are
+  /// wanted.
   Future<void> setShowIndicators({required bool value}) async {
     if (value != state.showIndicators) {
       emit(state.copyWith(showIndicators: value));

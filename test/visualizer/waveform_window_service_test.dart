@@ -93,9 +93,7 @@ void main() {
       }
       await Future<void>.delayed(Duration.zero);
       await service.close();
-      service
-        ..onWindowReady = null
-        ..onControl = null;
+      service.onWindowReady = null;
       messenger
         ..setMockMethodCallHandler(windows, null)
         ..setMockMethodCallHandler(channels, null);
@@ -109,11 +107,11 @@ void main() {
                 0.5,
                 'Track',
               )
-            : service.pushReadout(PerformanceReadout(elapsedSeconds: value));
+            : service.pushReadout(PerformanceReadout(tsNum: value));
 
         void expectFull(_Delivery delivery, int value) {
           expect(
-            delivery.payload[waveform ? 'samples' : 'elapsedSeconds'],
+            delivery.payload[waveform ? 'samples' : 'tsNum'],
             waveform ? Float32List.fromList([value.toDouble()]) : value,
           );
         }

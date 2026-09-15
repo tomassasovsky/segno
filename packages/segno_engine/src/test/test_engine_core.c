@@ -4022,6 +4022,13 @@ static void test_loop_multiple_records_two_loops(void) {
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 3.0f) < 1e-6f);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 4.0f) < 1e-6f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].position_frames == LOOP_N - 1);
+  CHECK(s.tracks[1].position_frames == 2 * LOOP_N - 1);
+  float visual[LE_VIZ_POINTS];
+  le_engine_read_track_visual(e, 1, visual, LE_VIZ_POINTS);
+  CHECK(fabsf(visual[LE_VIZ_POINTS / 4] - 2.0f) < 1e-6f);
+  CHECK(fabsf(visual[3 * LE_VIZ_POINTS / 4] - 3.0f) < 1e-6f);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 3.0f) < 1e-6f);
 
@@ -4460,6 +4467,51 @@ static void test_visualization_tap(void) {
   CHECK(le_engine_read_visual(NULL, viz, LE_VIZ_POINTS) == 0);
   CHECK(le_engine_read_track_visual(e, 99, tviz, LE_VIZ_POINTS) == 0);
 
+  le_engine_destroy(e);
+}
+
+/* A stopped track selected for the first time still has its waveform,
+ * even after a sibling has played several laps. Clear and undo-to-empty
+ * discard only that track's published shape; redo sweeps its audio again. */
+static void test_track_visual_retained_until_content_removed(void) {
+  printf("test_track_visual_retained_until_content_removed\n");
+  le_engine* e = make_configured_engine();
+  float out[64], before[LE_VIZ_POINTS], after[LE_VIZ_POINTS];
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.4f, 64, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.7f, 64, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  for (int i = 0; i < 3; ++i) process_const(e, 0, 64, out);
+  le_engine_read_track_visual(e, 0, before, LE_VIZ_POINTS);
+  CHECK(max_of(before, LE_VIZ_POINTS) > 0.3f);
+  le_snapshot snapshot;
+  le_engine_get_snapshot(e, &snapshot);
+  const int32_t held_position = snapshot.tracks[0].position_frames;
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  for (int i = 0; i < 3; ++i) process_const(e, 0, 64, out);
+  le_engine_get_snapshot(e, &snapshot);
+  CHECK(snapshot.tracks[0].position_frames == held_position);
+  CHECK(snapshot.tracks[1].state == LE_TRACK_PLAYING);
+  le_engine_read_track_visual(e, 0, after, LE_VIZ_POINTS);
+  CHECK(memcmp(before, after, sizeof(before)) == 0);
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_engine_read_track_visual(e, 0, after, LE_VIZ_POINTS);
+  CHECK(max_of(after, LE_VIZ_POINTS) == 0);
+  le_engine_read_track_visual(e, 1, before, LE_VIZ_POINTS);
+  CHECK(max_of(before, LE_VIZ_POINTS) > 0.6f);
+  CHECK(le_engine_undo(e, 1) == LE_OK);
+  drain(e);
+  le_engine_read_track_visual(e, 1, after, LE_VIZ_POINTS);
+  CHECK(max_of(after, LE_VIZ_POINTS) == 0);
+  CHECK(le_engine_redo(e, 1) == LE_OK);
+  for (int i = 0; i < 3; ++i) process_const(e, 0, 64, out);
+  le_engine_read_track_visual(e, 1, after, LE_VIZ_POINTS);
+  CHECK(max_of(after, LE_VIZ_POINTS) > 0.6f);
   le_engine_destroy(e);
 }
 
@@ -18797,6 +18849,13 @@ static void test_free_mode_per_track_viz_independent(void) {
   le_engine_read_visual(e, loopviz, LE_VIZ_POINTS);
   CHECK(max_of(loopviz, LE_VIZ_POINTS) < 1e-6f);
 
+  le_snapshot snapshot;
+  le_engine_get_snapshot(e, &snapshot);
+  CHECK(snapshot.tracks[0].position_frames ==
+        (e->tracks[0].free_clock.position + 899) % 900);
+  CHECK(snapshot.tracks[1].position_frames ==
+        (e->tracks[1].free_clock.position + 1099) % 1100);
+  CHECK(snapshot.tracks[0].position_frames != snapshot.tracks[1].position_frames);
   le_engine_destroy(e);
 }
 
@@ -18898,6 +18957,7 @@ static void test_free_mode_stopped_track_freezes_phase(void) {
   tg_advance(e, 5000);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].position_frames == pos_before_stop - 1);
   CHECK(e->tracks[0].free_clock.position == pos_before_stop);
   CHECK(e->tracks[0].free_iteration == iter_before_stop);
 
@@ -18907,6 +18967,7 @@ static void test_free_mode_stopped_track_freezes_phase(void) {
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].position_frames == pos_before_stop);
   CHECK(e->tracks[0].free_clock.position == (pos_before_stop + 1) % 900);
 
   le_engine_destroy(e);
@@ -19514,6 +19575,13 @@ static void test_song_mode_per_track_viz_independent(void) {
   le_engine_read_visual(e, loopviz, LE_VIZ_POINTS);
   CHECK(max_of(loopviz, LE_VIZ_POINTS) < 1e-6f);
 
+  le_snapshot snapshot;
+  le_engine_get_snapshot(e, &snapshot);
+  CHECK(snapshot.tracks[0].position_frames ==
+        (e->tracks[0].free_clock.position + 899) % 900);
+  CHECK(snapshot.tracks[1].position_frames ==
+        (e->tracks[1].free_clock.position + 1099) % 1100);
+  CHECK(snapshot.tracks[0].position_frames != snapshot.tracks[1].position_frames);
   le_engine_destroy(e);
 }
 
@@ -20010,10 +20078,13 @@ static void test_one_shot_wrap_mid_overdub_logs_stop_no_record_end(void) {
   le_engine_destroy(e);
 }
 
-/* ---- B3: primary track (D18), Sync mode (D16) ----
+/* ---- B3: primary track (D18, revised by the accepted design), Sync mode
+ * (D16) ----
  *
- * D18: a_primary_track (-1 = none) persists through a crowned track's
- * clear/undo-to-empty; only an explicit re-crown changes it. D16: Sync's
+ * D18 as revised: a_primary_track (-1 = none) is the FIRST COMPLETED TAKE
+ * until an explicit re-crown (the timing handoff); it persists through the
+ * crowned track's clear/undo-to-empty while a sibling still holds audio and
+ * dies with the last take (le_primary_reconcile). D16: Sync's
  * non-primary tracks snap their DEFINING recording to the nearest of
  * {1/4, 1/2, 1, 2, 4} times the primary's length once a primary is crowned
  * AND established (has content, exactly one base loop); with no primary
@@ -20080,46 +20151,260 @@ static void test_crown_primary_accepted_in_any_mode(void) {
   le_engine_destroy(e);
 }
 
-static void test_crown_primary_persists_through_clear(void) {
-  printf("test_crown_primary_persists_through_clear\n");
+/* Records one base loop on [ch] and finalizes it to PLAYING. */
+static void record_loop_on(le_engine* e, int32_t ch) {
+  float out[64];
+  le_engine_record(e, ch);
+  process_const(e, 1.0f, SB_BASE, out);
+  le_engine_record(e, ch); /* finalize -> PLAYING */
+  drain(e);
+}
+
+/* Accepted design: the first COMPLETED take is crowned, and a later,
+ * lower-numbered recording does not move it. */
+static void test_first_completed_take_is_crowned(void) {
+  printf("test_first_completed_take_is_crowned\n");
   le_engine* e = make_configured_engine();
   float out[64];
-  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
-  drain(e);
-  le_engine_record(e, 0);
-  process_const(e, 1.0f, SB_BASE, out);
-  le_engine_record(e, 0); /* finalize -> PLAYING */
-  drain(e);
-
-  CHECK(le_engine_clear(e, 0) == LE_OK);
-  drain(e);
   le_snapshot s;
+
+  le_engine_record(e, 2);
+  process_const(e, 1.0f, SB_BASE / 2, out);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
-  CHECK(s.primary_track == 0); /* D18: survives the clear */
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+  CHECK(s.primary_track == -1); /* a take in progress is not a recording */
+
+  le_engine_record(e, 2); /* finalize */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 2); /* the first completed take */
+
+  record_loop_on(e, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.primary_track == 2); /* a lower-numbered later take does not move it */
 
   le_engine_destroy(e);
 }
 
-static void test_crown_primary_persists_through_undo_to_empty(void) {
-  printf("test_crown_primary_persists_through_undo_to_empty\n");
+/* An explicit crown (the timing handoff) still overrides the automatic one,
+ * and reconcile never moves a live crown. */
+static void test_explicit_crown_is_the_handoff(void) {
+  printf("test_explicit_crown_is_the_handoff\n");
   le_engine* e = make_configured_engine();
-  float out[64];
+  le_snapshot s;
+  record_loop_on(e, 2);
+  record_loop_on(e, 0);
   CHECK(le_engine_crown_primary(e, 0) == LE_OK);
   drain(e);
-  le_engine_record(e, 0);
-  process_const(e, 1.0f, SB_BASE, out);
-  le_engine_record(e, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 0);
+  record_loop_on(e, 1); /* another finalize leaves the handoff alone */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 0);
+  le_engine_destroy(e);
+}
+
+/* Clearing the LAST take clears the crown: an empty session has none. */
+static void test_clearing_the_last_take_uncrowns(void) {
+  printf("test_clearing_the_last_take_uncrowns\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  record_loop_on(e, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 0);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK);
   drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.primary_track == -1); /* the session is empty again */
+
+  /* The next completed take is a new first take. */
+  record_loop_on(e, 3);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 3);
+  le_engine_destroy(e);
+}
+
+/* D18's surviving half: clearing the PRIMARY while a sibling still holds
+ * audio keeps the designation (its re-record re-establishes it — see
+ * le_is_reestablishing_primary); the app resolves the drawn crown onto the
+ * sibling meanwhile. */
+static void test_crown_persists_through_clear_with_a_sibling(void) {
+  printf("test_crown_persists_through_clear_with_a_sibling\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  record_loop_on(e, 0);
+  record_loop_on(e, 1);
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.primary_track == 0); /* designation survives, D18 */
+
+  CHECK(le_engine_clear(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == -1); /* ...until the last take goes */
+  le_engine_destroy(e);
+}
+
+/* Undo past the only take uncrowns; redo of that first take crowns it
+ * again — the crown follows the audio history, it is not a separate edit. */
+static void test_undo_to_empty_uncrowns_and_redo_recrowns(void) {
+  printf("test_undo_to_empty_uncrowns_and_redo_recrowns\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  record_loop_on(e, 0);
 
   /* No overdub layers yet, so the very first undo goes past the base layer
    * (UNDO_TO_EMPTY), not a layer peel. */
   CHECK(le_engine_undo(e, 0) == LE_OK);
   drain(e);
-  le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
-  CHECK(s.primary_track == 0); /* D18: survives undo-to-empty too */
+  CHECK(s.primary_track == -1);
+
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.primary_track == 0);
+  le_engine_destroy(e);
+}
+
+/* Undo of an undoable clear that erased the only take crowns it again on
+ * restore, like redo above. */
+static void test_clear_restore_recrowns(void) {
+  printf("test_clear_restore_recrowns\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  record_loop_on(e, 1);
+  CHECK(le_engine_clear_undoable(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.primary_track == -1);
+
+  CHECK(le_engine_undo(e, 1) == LE_OK); /* restores the cleared take */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state != LE_TRACK_EMPTY);
+  CHECK(s.primary_track == 1);
+  le_engine_destroy(e);
+}
+
+/* Reconfiguring empties every track, so it also drops the crown: the next
+ * completed take is a first take again, whichever channel it lands on. */
+static void test_configure_drops_the_crown(void) {
+  printf("test_configure_drops_the_crown\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  record_loop_on(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 1);
+
+  le_engine_configure(e, 48000, 1, 1, 1000); /* a device change */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.primary_track == -1);
+
+  record_loop_on(e, 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 0); /* the reconfigured rig's first take */
+  le_engine_destroy(e);
+}
+
+/* A take that finishes over a master a sibling kept alive is a completed
+ * take too: if the crown went with that sibling's clear while this take was
+ * still recording, the finalize crowns this one. */
+static void test_non_defining_finalize_crowns(void) {
+  printf("test_non_defining_finalize_crowns\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  record_loop_on(e, 0);
+  le_engine_record(e, 1); /* non-defining: the master is track 0's */
+  process_const(e, 1.0f, SB_BASE / 2, out);
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.primary_track == -1); /* only a take in progress remains */
+
+  process_const(e, 1.0f, SB_BASE / 2, out);
+  le_engine_record(e, 1); /* finalize -> PLAYING */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.primary_track == 1);
+  le_engine_destroy(e);
+}
+
+/* The snapshot names what a pending arm waits for. */
+static void test_snapshot_pending_trigger(void) {
+  printf("test_snapshot_pending_trigger\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[1].pending_trigger == -1);
+
+  /* Sync with an established primary force-arms the next track's record
+   * press to the grid (D16). */
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  record_loop_on(e, 0);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+  CHECK(s.tracks[1].pending_trigger == 0);
+
+  /* Cancel: nothing pending, and the trigger reads none again. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[1].pending_trigger == -1);
+  process_const(e, 0.0f, 4, out);
+  le_engine_destroy(e);
+}
+
+/* The snapshot's per-track playhead and master-bus peak (accepted design,
+ * slice 1): a playing track reports its own position, a recording track its
+ * write head, an empty track 0; the output peak is the mixed bus after gain. */
+static void test_snapshot_track_position_and_output_peak(void) {
+  printf("test_snapshot_track_position_and_output_peak\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.output_peak == 0.0f);
+  CHECK(s.tracks[0].position_frames == 0);
+
+  le_engine_record(e, 0);
+  process_const(e, 0.5f, 6, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].position_frames == 6); /* the write head */
+
+  process_const(e, 0.5f, SB_BASE - 6, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING, length SB_BASE */
+  drain(e);
+  process_const(e, 0.0f, 4, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == SB_BASE);
+  /* The read index of the block's LAST frame: one behind the master
+   * position, which advances after each frame is mixed. */
+  CHECK(s.master_position_frames == 4);
+  CHECK(s.tracks[0].position_frames == 3);
+  CHECK(s.output_peak > 0.4f && s.output_peak <= 1.0f); /* the 0.5 loop */
+  CHECK(s.tracks[1].position_frames == 0); /* empty track */
 
   le_engine_destroy(e);
 }
@@ -20169,32 +20454,39 @@ static void test_crown_primary_inert_outside_sync_band(void) {
   le_engine_destroy(e);
 }
 
-/* D16 fallback: Sync mode with NO primary yet (or an un-established one)
- * behaves exactly like Multi's AUTO round-up -- proven the same
- * discriminating way as the inert-outside-Sync/Band test above (a
- * nearest-ratio snap of 1.5x would round DOWN to 1; AUTO round-up gives 2). */
-static void test_sync_no_primary_behaves_like_multi(void) {
-  printf("test_sync_no_primary_behaves_like_multi\n");
+/* Accepted design: in Sync the first COMPLETED take is the primary, so the
+ * D16 "no primary yet" fallback lasts exactly as long as that first take is
+ * in progress (it starts immediately, like Multi). Once it completes, the
+ * next track's record press force-arms to the primary's loop top (D16)
+ * instead of starting immediately. */
+static void test_sync_first_completed_take_becomes_primary(void) {
+  printf("test_sync_first_completed_take_becomes_primary\n");
   le_engine* e = make_configured_engine();
   float out[64];
+  le_snapshot s;
   CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
   drain(e);
-  /* No crown at all. */
-
-  le_engine_record(e, 0);
-  process_const(e, 1.0f, SB_BASE, out);
-  le_engine_record(e, 0);
+  /* No crown at all: the first take starts immediately, like Multi. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
   drain(e);
-
-  le_engine_record(e, 1);
-  process_const(e, 2.0f, SB_BASE + SB_BASE / 2, out); /* 1.5x base */
-  le_engine_record(e, 1);
-  drain(e);
-
-  le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].multiple == 2); /* AUTO round-up fallback, not nearest */
-  CHECK(s.tracks[1].sync_divisor == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].pending == 0);
+  CHECK(s.primary_track == -1);
+
+  process_const(e, 1.0f, SB_BASE, out);
+  le_engine_record(e, 0); /* finalize */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.primary_track == 0); /* crowned by completing */
+
+  /* The primary is now established, so track 1 force-arms (D16). */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].pending == 1);
 
   le_engine_destroy(e);
 }
@@ -20320,6 +20612,13 @@ static void test_sync_nonprimary_division_half_phase_correct_two_cycles(void) {
     CHECK(fabsf(out[i] - pattern[i % 8]) < 1e-6f);
   }
 
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].position_frames == SB_BASE - 1);
+  CHECK(s.tracks[1].position_frames == SB_BASE / 2 - 1);
+  float visual[LE_VIZ_POINTS];
+  le_engine_read_track_visual(e, 1, visual, LE_VIZ_POINTS);
+  CHECK(fabsf(visual[LE_VIZ_POINTS / 4] - pattern[2]) < 1e-6f);
+  CHECK(fabsf(visual[3 * LE_VIZ_POINTS / 4] - pattern[6]) < 1e-6f);
   le_engine_destroy(e);
 }
 
@@ -25932,6 +26231,7 @@ int main(void) {
   test_routing_input_mask_clamped();
   test_routing_output_mask_clamped();
   test_visualization_tap();
+  test_track_visual_retained_until_content_removed();
   test_tempo_grid_math();
   test_tempo_grid_next_boundary();
   test_tempo_grid_signature_validation();
@@ -26128,11 +26428,19 @@ int main(void) {
   test_crown_primary_rejects_invalid_channel();
   test_crown_primary_sets_field();
   test_crown_primary_accepted_in_any_mode();
-  test_crown_primary_persists_through_clear();
-  test_crown_primary_persists_through_undo_to_empty();
+  test_first_completed_take_is_crowned();
+  test_explicit_crown_is_the_handoff();
+  test_clearing_the_last_take_uncrowns();
+  test_crown_persists_through_clear_with_a_sibling();
+  test_undo_to_empty_uncrowns_and_redo_recrowns();
+  test_clear_restore_recrowns();
+  test_snapshot_track_position_and_output_peak();
+  test_configure_drops_the_crown();
+  test_non_defining_finalize_crowns();
+  test_snapshot_pending_trigger();
   test_crown_primary_re_crown_changes_it();
   test_crown_primary_inert_outside_sync_band();
-  test_sync_no_primary_behaves_like_multi();
+  test_sync_first_completed_take_becomes_primary();
   test_sync_nonprimary_snaps_down_to_nearest_multiple();
   test_sync_nonprimary_division_half_phase_correct_two_cycles();
   test_sync_nonprimary_division_quarter();
