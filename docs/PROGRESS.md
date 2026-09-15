@@ -38,15 +38,18 @@ a 750 ms startup delay. Preference changes cannot bypass that delay, and
 unmounting cancels it. These timings mitigate #970; they do not establish that
 EGL is ready or replace compositor-restart verification on the appliance.
 
-Release collection inspects the actual RAUC bundle for the selected board and
+The bundle build inspects the actual RAUC artifact for the selected board and
 version, its rootfs and boot archive, and the firmware install hook. The boot
 archive producer and installer from #990 stay authoritative. See the
 [integration record](APPLIANCE_INTEGRATION.md#startup-readiness-and-release-inspection)
 for checks and the remaining device boundary.
 
-Release runners explicitly install `squashfs-tools` for RAUC bundle inspection.
-Build 138 compiled successfully but failed during collection because the runner
-lacked the archive extractor; inspection remains required before publication.
+Builds 138 and 139 compiled successfully but failed collection: the release
+host lacked an archive extractor, then its RAUC version could not read verity
+bundles. Inspection now runs before bundle deployment using the pinned
+Yocto-native RAUC with JSON support, archive tools and jq. The checker matches
+the existing boot archive filename ending in `.tar.img`; the producer and
+install hook remain unchanged. A failed inspection stops the release build.
 
 ## How to build / test (environment gotchas — read first)
 
