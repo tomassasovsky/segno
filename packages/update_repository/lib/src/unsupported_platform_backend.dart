@@ -1,5 +1,4 @@
 import 'package:pub_semver/pub_semver.dart';
-import 'package:update_repository/src/pedal_flash_failure.dart';
 import 'package:update_repository/src/platform_update_backend.dart';
 import 'package:update_repository/src/update_manifest.dart';
 
@@ -38,16 +37,4 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
   @override
   Future<void> applyAndRestart() async =>
       throw UnsupportedError('in-app updates are unsupported on this platform');
-
-  @override
-  Future<String?> pendingPedalFirmware() async => null;
-
-  @override
-  Stream<double> flashPedalFirmware() => const Stream<double>.empty();
-
-  @override
-  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => null;
-
-  @override
-  Future<void> abortPedalFlash() async {}
 }

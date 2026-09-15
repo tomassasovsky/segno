@@ -83,8 +83,7 @@ class _HoldGesture {
 /// Inputs arrive only through repository streams and its own methods:
 /// - `LooperRepository.looperState` drives [_reduce] — the invalidation
 ///   table every stored bit obeys (cursor clamps; excluded/parkedResume
-///   members drop when their track empties) — plus the loop-top pulse and
-///   the frame re-projection.
+///   members drop when their track empties) — plus the frame re-projection.
 /// - `PedalRepository.events` delivers the decoded footswitches, which call
 ///   the SAME intent methods the keyboard and on-screen widgets call — the
 ///   surfaces cannot diverge in the command sequences they issue.
@@ -133,7 +132,6 @@ class ControlCubit extends Cubit<ControlState> {
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     SimulatedControllerSource? simulatedSource,
-    Duration keepAliveInterval = const Duration(seconds: 1),
     Duration learnTimeout = const Duration(seconds: 15),
     Duration mappingsWriteDebounce = const Duration(milliseconds: 400),
     Duration simulateTick = const Duration(milliseconds: 60),
@@ -155,21 +153,10 @@ class ControlCubit extends Cubit<ControlState> {
        super(const ControlState()) {
     _looperSub = _looper.looperState.listen(_onLooperState);
     _eventsSub = _pedal.events.listen(_handleEvent);
-    _statusSub = _pedal.statusChanges.listen(_onBindStatus);
+    _statusSub = _pedal.statusChanges.listen(_onLinkStatus);
     _perfStatusSub = _performance.captureStatus.listen(_onPerformanceStatus);
     _bindingSub = controller?.bindingEvents.listen(_onControllerBindingEvent);
     _midiSub = midiDevices?.connections.listen(_onMidiConnection);
-    // Re-push the current frame on a slow heartbeat so the pedal can tell a
-    // live link (frames still arriving) from a dropped one (USB unplugged / app
-    // closed) and blank its LEDs. Only on-change pushes happen otherwise, so a
-    // stopped, idle loop would look identical to a dead link without this.
-    // Pass Duration.zero to disable (tests drive frames explicitly).
-    if (keepAliveInterval > Duration.zero) {
-      _keepAliveTimer = Timer.periodic(
-        keepAliveInterval,
-        (_) => _pushProjected(force: true),
-      );
-    }
   }
 
   /// The default `currentChains`: an empty rig, which is what
@@ -204,7 +191,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   late final StreamSubscription<LooperState> _looperSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
-  late final StreamSubscription<PedalBindStatus> _statusSub;
+  late final StreamSubscription<PedalLinkStatus> _statusSub;
   late final StreamSubscription<PerformanceCaptureStatus> _perfStatusSub;
   StreamSubscription<ControllerBindingEvent>? _bindingSub;
   StreamSubscription<MidiConnection>? _midiSub;
@@ -223,7 +210,6 @@ class ControlCubit extends Cubit<ControlState> {
   // deliberately introduces no second constant: one plate, one meaning of
   // "held", whatever the hold does on that switch.
   Duration _longPress = const Duration(milliseconds: 500);
-  Timer? _keepAliveTimer;
 
   // Undo: tap = undo, long-press = redo. The target channel is LATCHED at
   // press time (captured by the callbacks) — an on-screen click mid-hold must
@@ -343,10 +329,8 @@ class ControlCubit extends Cubit<ControlState> {
   // through `emit`.
   bool _performanceArmed = false;
 
-  // Latest looper snapshot + diff state for the frame push.
+  // Latest looper snapshot.
   LooperState? _looperState;
-  PedalStateFrame? _lastFrame;
-  int? _lastPosition;
 
   Future<void>? _loadFuture;
 
@@ -1338,7 +1322,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// Every path that can strand a press without its release funnels here:
   /// mode exit ([setMode]), a binding-set change ([setGlobalBindings] /
   /// [applySessionBindings], which covers the assignment screen's live edits
-  /// AND a session load), and pedal disconnect ([_onBindStatus]). A physical
+  /// AND a session load), and pedal disconnect ([_onLinkStatus]). A physical
   /// release goes through [_releaseBinding] instead, which restores just that
   /// one — but both write the captured state, so no target can be left
   /// enabled by a press whose release never arrived.
@@ -1837,9 +1821,8 @@ class ControlCubit extends Cubit<ControlState> {
   void simulateStatusRow((MappingTrigger, String)? openKey) {
     if (state.controllerLearn != null) {
       // A representative move the pending capture binds, exactly as a real one
-      // would — an expression control (mod wheel), not the pedal's own encoder
-      // CC, so `learnIgnore` never swallows it. Straight to the source, not the
-      // paced ticker: a capture ends on the first input it accepts.
+      // would — an expression control (mod wheel). Straight to the source, not
+      // the paced ticker: a capture ends on the first input it accepts.
       _simulatedSource?.push(
         const RawControllerInput(
           kind: ControllerSourceKind.midiCc,
@@ -2004,45 +1987,26 @@ class ControlCubit extends Cubit<ControlState> {
   void _onLooperState(LooperState looperState) {
     _looperState = looperState;
     _reduce(looperState);
-    _detectLoopTop(looperState);
     _pushProjected();
   }
 
-  void _onBindStatus(PedalBindStatus status) {
-    // A fresh bind has no last frame on the pedal — force the next push (it
-    // reads the CURRENT state, so a mode/cursor changed while unplugged
-    // shows correctly on replug).
-    if (status == PedalBindStatus.bound) {
-      _lastFrame = null;
-      _pushProjected();
-      return;
-    }
-    // Unplugged mid-hold: the release note-off is never coming, so a held
-    // momentary would leave its target enabled forever (B1). Restore now.
+  void _onLinkStatus(PedalLinkStatus status) {
+    if (isClosed || status == PedalLinkStatus.connected) return;
+    // The board went away (or stopped being trusted) mid-hold: the release is
+    // never coming, so a held momentary would leave its target enabled
+    // forever (B1). Restore now. A reconnect needs nothing from here: the
+    // repository answers the board's hello with the current frame.
     releaseAllMomentary();
   }
 
-  void _detectLoopTop(LooperState s) {
-    final position = s.transport.masterPositionFrames;
-    final previous = _lastPosition;
-    if (previous != null &&
-        position < previous &&
-        s.transport.masterLengthFrames > 0) {
-      _pedal.sendLoopTop();
-    }
-    _lastPosition = position;
-  }
-
-  /// Projects and pushes the current LED frame. Diffs against the last push so
-  /// steady state is silent; [force] re-sends unchanged (the keep-alive uses it
-  /// so the pedal's link watchdog keeps seeing frames while idle).
-  void _pushProjected({bool force = false}) {
+  /// Projects and pushes the current LED frame. The repository drops a frame
+  /// identical to the last one and re-sends that one whenever the board asks,
+  /// so this can be called freely.
+  void _pushProjected() {
     // Project from `_l` — the last streamed state, or the repository's current
-    // snapshot when no LooperState has streamed in yet. Reading `_l` (not the
-    // raw `_looperState`) lets the keep-alive light the pedal on bind even
-    // before the first stream event: an idle engine emits no LooperState, so
-    // gating on a null `_looperState` left the LEDs dark until some audio
-    // activity happened to push a state.
+    // snapshot when no LooperState has streamed in yet: an idle engine emits
+    // no LooperState, so gating on a null `_looperState` left the LEDs dark
+    // until some audio activity happened to push a state.
     final looperState = _l;
     final frame = projectFrame(
       looperState,
@@ -2052,8 +2016,6 @@ class ControlCubit extends Cubit<ControlState> {
       masterGain: _masterGain,
       boundChains: _boundChains(),
     );
-    if (!force && frame == _lastFrame) return; // diff: only push on change
-    _lastFrame = frame;
     _pedal.pushState(frame);
   }
 
@@ -2110,7 +2072,6 @@ class ControlCubit extends Cubit<ControlState> {
 
   @override
   Future<void> close() async {
-    _keepAliveTimer?.cancel();
     _learnTimer?.cancel();
     // Stop any simulation in flight — its ticker must not outlive the cubit.
     _cancelSimulation();

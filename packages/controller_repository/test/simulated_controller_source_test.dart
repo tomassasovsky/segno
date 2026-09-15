@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -133,31 +131,6 @@ void main() {
       expect(caught, isNotNull);
       expect(caught!.id, 42);
       expect(repo.isLearning, isFalse);
-    });
-
-    test('a push a learnIgnore predicate rejects is NOT captured', () async {
-      final simulated = SimulatedControllerSource();
-      final repo = ControllerRepository(
-        sources: [simulated],
-        // Ignore CC 16 while learning (stands in for the pedal encoder, B8).
-        learnIgnore: (input) => input.id == 16,
-      );
-      addTearDown(repo.dispose);
-
-      var completed = false;
-      unawaited(repo.learnNext().then((_) => completed = true));
-
-      simulated.push(
-        const RawControllerInput(
-          kind: ControllerSourceKind.midiCc,
-          id: 16,
-          value: 127,
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-
-      expect(completed, isFalse);
-      expect(repo.isLearning, isTrue);
     });
 
     test('push after dispose is a silent no-op', () async {

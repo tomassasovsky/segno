@@ -511,10 +511,9 @@ void main() {
     addTearDown(performance.dispose);
     final control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(const NoopPedalTransport()),
+      pedal: PedalRepository(NoopPedalLink()),
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     final midi = MidiSetupCubit(repository: devices);
     // The Loop face's own providers. A mock bloc rather than a real one over
@@ -596,9 +595,7 @@ void main() {
       settings: settings,
     );
     final pedal = PedalCubit(
-      pedal: PedalRepository(const NoopPedalTransport()),
-      settings: settings,
-      pollInterval: Duration.zero,
+      pedal: PedalRepository(NoopPedalLink()),
     );
     final update = _MockUpdateCubit();
     whenListen(

@@ -7,10 +7,10 @@ terminate on the **console board v2** — a Pico 2 (RP2350) board on a short
 keyed ribbon to the Pi's 40-pin header
 ([`hardware/kicad/console_board.py`](../kicad/console_board.py), #747). The Pi
 reads no controls directly and never bit-bangs WS2812; the earlier plan of a
-`segno_pedal_main` USB board plus a separate RP2040 LED driver is dead for the
-console (both survive only in the standalone pedal product and in
-[`firmware/led_driver`](../../firmware/led_driver/README.md), whose UART
-protocol the v2 board's firmware inherits).
+USB-MIDI pedal board plus a separate RP2040 LED driver is dead. The Pico runs
+[`firmware/console_board`](../../firmware/console_board/), and
+[`pedal_link.h`](../../firmware/console_board/pedal_link.h) is the wire format
+of the link to the Pi.
 
 > **Status:** the board is fab-ready (#747); the enclosure is designed under
 > `hardware/enclosure/`; the assembled-unit gates (latency soak, stage-abuse)

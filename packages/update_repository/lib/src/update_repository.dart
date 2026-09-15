@@ -1,5 +1,4 @@
 import 'package:pub_semver/pub_semver.dart';
-import 'package:update_repository/src/pedal_flash_failure.dart';
 import 'package:update_repository/src/platform_update_backend.dart';
 import 'package:update_repository/src/update_manifest.dart';
 
@@ -52,20 +51,4 @@ class UpdateRepository {
   /// Restarts into the staged update (reboot on the appliance, relaunch on
   /// desktop). Opt-in: only call in response to a user action.
   Future<void> applyAndRestart() => _backend.applyAndRestart();
-
-  /// The firmware the attached pedal is about to be flashed with, or null when
-  /// no flash is coming. See [PlatformUpdateBackend.pendingPedalFirmware].
-  Future<String?> pendingPedalFirmware() => _backend.pendingPedalFirmware();
-
-  /// Flashes the published pedal firmware, emitting progress in `[0, 1]`.
-  Stream<double> flashPedalFirmware() => _backend.flashPedalFirmware();
-
-  /// How far the last failed flash got, or `null` when there is no legible
-  /// record. See [PlatformUpdateBackend.lastPedalFlashFailure].
-  Future<PedalFlashFailureClass?> lastPedalFlashFailure() =>
-      _backend.lastPedalFlashFailure();
-
-  /// Terminates a still-running pedal flash, if any, returning once it is
-  /// dead. See [PlatformUpdateBackend.abortPedalFlash].
-  Future<void> abortPedalFlash() => _backend.abortPedalFlash();
 }

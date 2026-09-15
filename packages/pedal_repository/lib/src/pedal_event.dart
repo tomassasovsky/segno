@@ -3,14 +3,14 @@ import 'package:pedal_repository/src/pedal_button.dart';
 
 /// A decoded input from the pedal, hardware-agnostic.
 ///
-/// Produced by `PedalCodec.decode` from a raw MIDI message. The pedal cubit
-/// turns these into looper commands, timing tap / long-press / double-tap from
-/// the [ButtonPressed] / [ButtonReleased] timestamps.
+/// Produced by `PedalRepository` from the board's link messages. The control
+/// cubit turns these into looper commands, timing tap / long-press /
+/// double-tap from the [ButtonPressed] / [ButtonReleased] timestamps.
 sealed class PedalEvent extends Equatable {
   const PedalEvent();
 }
 
-/// A pedal button was pressed (MIDI NoteOn with velocity > 0).
+/// A pedal button was pressed.
 final class ButtonPressed extends PedalEvent {
   /// Creates a [ButtonPressed] event.
   const ButtonPressed(this.button, {this.timestamp = Duration.zero});
@@ -20,7 +20,7 @@ final class ButtonPressed extends PedalEvent {
 
   /// When the press was observed, relative to an arbitrary epoch.
   ///
-  /// Set by the caller of `decode`; the codec itself does not read a clock.
+  /// Stamped by the repository's clock when the message arrived.
   final Duration timestamp;
 
   @override
@@ -30,7 +30,7 @@ final class ButtonPressed extends PedalEvent {
   String toString() => 'ButtonPressed(${button.name}, $timestamp)';
 }
 
-/// A pedal button was released (MIDI NoteOff, or NoteOn with velocity 0).
+/// A pedal button was released.
 final class ButtonReleased extends PedalEvent {
   /// Creates a [ButtonReleased] event.
   const ButtonReleased(this.button, {this.timestamp = Duration.zero});
@@ -48,7 +48,7 @@ final class ButtonReleased extends PedalEvent {
   String toString() => 'ButtonReleased(${button.name}, $timestamp)';
 }
 
-/// The encoder was turned (relative MIDI CC).
+/// The encoder was turned.
 ///
 /// [delta] is signed: positive is clockwise, negative is counter-clockwise.
 final class EncoderDelta extends PedalEvent {

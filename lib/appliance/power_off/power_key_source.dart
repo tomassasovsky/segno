@@ -16,18 +16,13 @@ abstract interface class PowerKeySource {
   Future<void> close();
 }
 
-/// Opens an [EvdevPowerKeySource] on Linux when the update helper exists.
+/// Opens an [EvdevPowerKeySource] when [onAppliance] (see `isAppliance()`).
 ///
-/// Returns null on desktop, on a Linux image without the helper, and in
-/// tests that pass [isLinux] / [helperExists] false. Missing `pwr_button`
-/// is a silent no-op inside the source, not a null here.
-PowerKeySource? openAppliancePowerKeySource({
-  required bool isLinux,
-  required bool helperExists,
-}) {
-  if (!isLinux || !helperExists) return null;
-  return EvdevPowerKeySource();
-}
+/// Returns null everywhere else — desktop, a Linux image without the helper,
+/// tests. Missing `pwr_button` is a silent no-op inside the source, not a
+/// null here.
+PowerKeySource? openAppliancePowerKeySource({required bool onAppliance}) =>
+    onAppliance ? EvdevPowerKeySource() : null;
 
 /// Blocking evdev reader for the Pi 5 `pwr_button` node, on a background
 /// isolate in the **main** Flutter engine. The waveform window must never

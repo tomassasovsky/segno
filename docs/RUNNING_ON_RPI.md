@@ -410,18 +410,17 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
   `performance` to kill DVFS jitter.
 - **Power / USB (Pi 4 specifics).** Use a **powered USB hub** for the Focusrite —
   the Pi 4's per-port current budget is tight — and the official **5V/3A** PSU
-  (`vcgencmd get_throttled` must read `0x0`). The pedal's **LEDs need their
-  external 9V rail**: USB-MIDI carries only the LED *frames*, not power, so the LEDs
-  stay dark on USB alone even when the MIDI is correct.
+  (`vcgencmd get_throttled` must read `0x0`).
 - **USB audio glitches are a Pi 4 bus-contention artifact (expected here).** The
   Pi 4 funnels **all four USB-A ports through one shared USB2 hub**, so the audio
-  interface contends with every other USB device (wireless dongles, the USB-MIDI
-  pedal). Under contention — or at a small buffer — the kernel logs
+  interface contends with every other USB device (wireless dongles). Under
+  contention — or at a small buffer — the kernel logs
   `usb …: next package FIFO overflow` (see `dmesg`) and audio hiccups. Mitigations
   that *do* help: a **larger buffer** (trade latency for stability — latency is a
   non-goal here), and **taking devices off USB** — a powered hub adds *power* but
   not *bandwidth*, so it does not fix this; the shipped console puts the
-  footswitches/encoder on **GPIO** (`gpio_client`), leaving USB to the interface.
+  footswitches/encoder on the console board's UART link, leaving USB to the
+  interface.
   On the **Pi 5** the redesigned USB (RP1, dedicated controllers) largely removes
   this — another reason Pi 4B audio-timing is not representative.
 - **Connectors.** Pi 4 has 2× **micro-HDMI** → `HDMI-A-1` / `HDMI-A-2`. Set
@@ -430,9 +429,9 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
   turn **overscan** off ("Just Scan" / 1:1 in the TV's picture menu, or
   `disable_overscan=1` in `config.txt`) or the UI edges are clipped.
 - **First-run device setup.** There is no transport chrome, so the device
-  pickers live in **Settings** (right-click, or press `S`). Bind: (a) the
-  **MIDI FOOT CONTROLLER** input, (b) the **PEDAL LINK** output, and (c) the
-  **audio interface as both input and output @ 512 frames**. These persist
+  pickers live in **Settings** (right-click, or press `S`). Bind the
+  **audio interface as both input and output @ 512 frames** (the console's
+  pedal board needs no binding: it announces itself over the link). These persist
   across reboots (`tryAutoStartEngine` + hotplug reconnect). Settings must stay
   reachable on the console: with the desktop build gone there is no non-console
   bundle to fall back on for the first-run bind.
@@ -447,19 +446,6 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
 - **Isolate a failure:** confirm labwc is active; run the bundle by hand under a
   manual labwc session; check that the three window plugins (`desktop_multi_window`,
   `window_manager`, `screen_retriever`) load.
-
-### Goal 2 — USB-MIDI pedal
-
-- **Procedure.** Input arrives as **CC 80/81/82/83 on track 0**
-  (`MidiControllerSource`); LED-out runs `pedal_repository` →
-  `NativePedalTransport` → `MidiOutClient`
-  (see [MIDI_FOOT_CONTROLLER.md](MIDI_FOOT_CONTROLLER.md)).
-- **Functional-smoke pass:** the pedal is auto-selected on each boot; every switch
-  fires the correct action (**one stomp = one action**, no double-fire); the LEDs
-  track engine state; a hotplug re-attaches without an engine restart.
-- **Isolate a failure:** `aconnect -l` / `amidi -l` to confirm the OS sees the
-  device; confirm **PEDAL LINK** is bound and the **9V rail is on**; the on-screen
-  faceplate mirrors the intended LEDs, which isolates firmware from app.
 
 ### Goal 3 — Focusrite audio
 
@@ -485,6 +471,5 @@ A small `aarch64` plugin spike (find/compile one plugin, host it headless) is a
 | Check | Result | Notes (buffer, xruns, reboots, quirks) |
 |---|---|---|
 | Goal 1 — Dual-display (monitor + TV) | ☐ pass ☐ fail | |
-| Goal 2 — USB-MIDI pedal (in + LED out) | ☐ pass ☐ fail | |
 | Goal 3 — Focusrite audio (in + out @ 512) | ☐ pass ☐ fail | |
 | `aarch64` bundle builds from the Mac | ☐ pass ☐ fail | `deploy/rpi/build/build-arm64-bundle.sh` |

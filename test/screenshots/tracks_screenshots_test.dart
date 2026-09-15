@@ -138,7 +138,7 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
-    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),
@@ -149,7 +149,6 @@ void main() {
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     addTearDown(control.close);
     session = _MockSessionCubit();

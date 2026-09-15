@@ -128,3 +128,10 @@ local_conf_header:
     #
     # 2712 only; the Pi 4 image has no RTC and no J5. #995.
     RPI_EXTRA_CONFIG:append = "\ndtparam=rtc_bbat_vchg=3000000"
+
+  rpi5-console-board: |
+    # Console board v2 (#747) on the 40-pin header. uart3 (GPIO8/9, /dev/ttyAMA3)
+    # is the pedal link to the board's Pico 2. GPIO25 is SWDIO for cold-flashing
+    # that Pico over the ribbon; SWD wants the line idle high and the firmware
+    # defaults it to pull-down, so pin the pull-up here. GPIO24 (SWCLK) is fine.
+    RPI_EXTRA_CONFIG:append = "\ndtoverlay=uart3-pi5\ngpio=25=pu"

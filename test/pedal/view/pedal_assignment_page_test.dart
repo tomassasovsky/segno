@@ -75,10 +75,9 @@ void main() {
     addTearDown(performance.dispose);
     control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(const NoopPedalTransport()),
+      pedal: PedalRepository(NoopPedalLink()),
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     // unawaited: awaiting ControlCubit.close() inside a testWidgets body
     // deadlocks on the Flutter test binding's stream cancellation.

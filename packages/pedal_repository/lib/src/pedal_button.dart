@@ -1,11 +1,8 @@
-/// A physical control on the looper pedal.
+/// A footswitch on the console.
 ///
-/// Each button maps to one fixed MIDI note number (see [PedalButtonNote]); the
-/// pedal fires NoteOn on press and NoteOff (or NoteOn velocity 0) on release.
-/// segno times tap / long-press / double-tap from the press/release pair.
-///
-/// The note assignment is part of the wire contract shared with the firmware —
-/// do not renumber existing entries.
+/// The declaration order is the wire value (`ButtonMessage` carries the
+/// index, the firmware's `PEDAL_BTN_*` constants mirror it): do not reorder,
+/// and append rather than reshuffle if a switch is ever added.
 enum PedalButton {
   /// Record / Play footswitch (the cycling transport button).
   recPlay,
@@ -16,7 +13,7 @@ enum PedalButton {
   /// Undo footswitch (long-press = redo, derived in segno).
   undo,
 
-  /// Mode footswitch — toggles the pedal between Rec and Play behavior.
+  /// Mode footswitch — cycles the pedal's interaction mode.
   mode,
 
   /// Track 1 footswitch.
@@ -36,20 +33,4 @@ enum PedalButton {
 
   /// Bank toggle footswitch (A/B).
   bank,
-}
-
-/// The fixed MIDI note number assigned to each [PedalButton].
-///
-/// This table is the inbound half of the pedal protocol contract: the firmware
-/// sends these notes, segno decodes them. Numbers are stable; appending a new
-/// button must use the next free note rather than reshuffling.
-extension PedalButtonNote on PedalButton {
-  /// The MIDI note number this button transmits.
-  int get note => index;
-
-  /// The [PedalButton] for a MIDI [note], or `null` if it is unassigned.
-  static PedalButton? fromNote(int note) {
-    if (note < 0 || note >= PedalButton.values.length) return null;
-    return PedalButton.values[note];
-  }
 }

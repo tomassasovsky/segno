@@ -15,18 +15,19 @@ Run (from hardware/kicad/):
 Why this board exists
 ---------------------
 The Pi 5's four USB-A ports are exactly consumed -- two touchscreens, two rear
-panel couplers -- and a hub is ruled out, so the old Pro Micro could not have one.
-Its only hardware UART was already the DIN-5 pair (main_board.py:98), so MIDI moves
-to the Pi and the MCU gets a UART of its own. See
+panel couplers -- and a hub is ruled out, so the retired V1 pedal board could not
+have one. Its only hardware UART was already the DIN-5 pair, so MIDI moves to the
+Pi and the MCU gets a UART of its own. See
 docs/brainstorm/2026-08-17-console-board-v2-brainstorm-doc.md.
 
 An MCU still has to exist: rpi_ws281x drives the legacy PWM/PCM+DMA peripherals and
-does NOT support Pi 5, whose I/O moved to RP1. firmware/led_driver/ already offloads
-WS2812 timing to an RP2040 for exactly that reason.
+does NOT support Pi 5, whose I/O moved to RP1. The retired RP2040 LED driver already
+offloaded WS2812 timing to an MCU for exactly that reason; firmware/console_board/
+carries that job now (pedal_link.h is the wire format).
 
 THE PICO DELETED THE LEVEL-SHIFTING PROBLEM
 -------------------------------------------
-The old plan (a 5 V Pro Micro) needed a 1k8/3k3 divider and an AHCT gate on the
+The old plan (the 5 V AVR board of the retired pedal) needed a 1k8/3k3 divider and an AHCT gate on the
 MCU link; the RP2350 is **3.3 V, the same as the Pi**, so the link needs no
 level shifting in either direction. It is not bare wire, though: R17/R18 put
 10 k in series, bounding the current that flows when one power domain is up and
@@ -40,7 +41,7 @@ The 74AHCT125 is still here, but for the three places that genuinely cross 3.3 -
 MIDI IN needs no shifter at all: the H11L1 is a Schmitt LOGIC-output opto, so run
 it from 3.3 V and it feeds the Pi directly.
 
-Ref-designator blocks (allocated up front -- main_board.py had to pin ref="C16" to
+Ref-designator blocks (allocated up front -- the retired V1 generator had to pin ref="C16" to
 stop a late addition renumbering C1..C15 and invalidating a started layout):
     J1  Pico 2          J2  Pi ribbon      J3  power in     J4  MIDI OUT
     J5  MIDI IN         J6  ring/encoder   J7  indicators   J8  power button
@@ -191,7 +192,7 @@ pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 # Spare GPIO, brought out to nothing on purpose. ERC would otherwise report each
 # as an unconnected pin, and a wall of expected warnings is how a REAL one gets
 # missed -- so the exemptions are named here rather than tolerated in the log.
-# main_board.py does the same for its unused AHCT gates and MIDI IN's DIN pin 2.
+# The retired V1 generator did the same for its unused AHCT gates and MIDI IN's DIN pin 2.
 # GP0/GP1 are the only pins left with nothing on them (why: the EXPANSION_GPIO
 # note below). The other five unused GPIO go to the expansion header J22 rather
 # than being quietly ERC-exempted into thin air -- an unpopulated 2x4 costs a
@@ -373,8 +374,8 @@ j_ring[1, 2] += v5
 j_ring[3, 4] += gnd
 j_ring[5] += ring_out
 # The encoder pull-ups live HERE, at 3V3, and ring_board.py's two 10k to its 5 V
-# rail are deleted. Those were correct when the other end of this cable was a 5 V
-# Pro Micro (main_board.py); against an RP2350 they sat 1.4 V over the 3.6 V
+# rail are deleted. Those were correct when the other end of this cable was the
+# retired pedal's 5 V AVR board; against an RP2350 they sat 1.4 V over the 3.6 V
 # absolute maximum on GP13/GP14, continuously, whenever the console was powered.
 # Nothing caught it: PI_LEVELS guards the Pi, and no gate could see across into a
 # second generator's netlist. RING_LEVELS in _check() now reads ring_board.net
@@ -550,7 +551,7 @@ R("100k", ref="R16")[1, 2] += ind_data, gnd
 # RP1 publishes no continuous-injection rating, and the conservative line for an
 # unrated clamp is <=1 mA. 1 k bounded it at ~2.7 mA -- above that line, for
 # days at a stretch; 10 k bounds it at ~270 uA, and at the link's 115200 baud
-# (firmware/led_driver) the RC against ~20-50 pF is 0.2-0.5 us against an
+# (firmware/console_board/pedal_link.h) the RC against ~20-50 pF is 0.2-0.5 us against an
 # 8.7 us bit -- edges stay clean. The practical ceiling with 10 k is ~230 kbaud;
 # a faster link someday means a smaller R (and re-doing this arithmetic), not a
 # quiet baud bump. Firmware note: at soft-off the Pico's internal pull-up cannot

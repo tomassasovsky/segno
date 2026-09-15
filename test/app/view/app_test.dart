@@ -13,6 +13,7 @@ import 'package:midi_client/midi_client.dart' show MidiControllerSource;
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
@@ -40,16 +41,6 @@ import '../../helpers/helpers.dart';
 class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   bool get isSupported => true;
-  // No pending pedal firmware: the App tests are about the looper, and a gate
-  // over it would hide everything they assert on.
-  @override
-  Future<String?> pendingPedalFirmware() async => null;
-  @override
-  Stream<double> flashPedalFirmware() => const Stream.empty();
-  @override
-  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => null;
-  @override
-  Future<void> abortPedalFlash() async {}
   @override
   String get channel => 'experimental';
   @override
@@ -411,10 +402,9 @@ void main() {
         engine: FakeAudioEngine(),
         sessionsRoot: () async => sessionsRoot.path,
       );
-      final simulator = SimulatorPedalTransport(
-        inner: const NoopPedalTransport(),
-      );
-      final pedal = PedalRepository(simulator);
+      final link = FakePedalLink();
+      final pedal = PedalRepository(link);
+      link.hello();
       await tester.pumpWidget(
         App(
           repository: repository,
@@ -426,7 +416,6 @@ void main() {
           performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
           pedalRepository: pedal,
-          pedalSimulator: simulator,
         ),
       );
       await tester.pump();
@@ -437,12 +426,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
 
-      simulator.press(PedalButton.clear, down: true);
+      link.press(PedalButton.clear, down: true);
       await tester.pump();
-      simulator.press(PedalButton.clear, down: false);
+      link.press(PedalButton.clear, down: false);
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const Key('sessions_manager')), findsNothing);
       expect(find.byType(LooperPage), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(pedal.helloTimeout);
     });
 
     testWidgets('always lands on the looper — no first-run gate', (

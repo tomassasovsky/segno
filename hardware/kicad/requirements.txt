@@ -1,7 +1,7 @@
-# Board generators (main_board.py, ring_board.py, console_board.py).
+# Board generators (ring_board.py, console_board.py).
 #
 #   python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-#   cd hardware/kicad && ./.venv/bin/python main_board.py
+#   cd hardware/kicad && ./.venv/bin/python console_board.py
 #
 # Python 3.12 specifically: hardware/enclosure/.venv is 3.14 (despite its own
 # comment saying 3.12) and skidl is unproven there. 3.12 is what these generators
