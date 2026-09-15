@@ -120,8 +120,8 @@ void main() {
         final sub = repository.messages.listen(received.add);
         addTearDown(sub.cancel);
 
-        // The two halves of a 14-bit value, and the same half again at once: a
-        // debounced stream would keep only the first CC 21.
+        // The two halves of a 14-bit value, and the same half again at once:
+        // every one of them has to arrive.
         const msb = RawControllerInput(
           kind: ControllerSourceKind.midiCc,
           id: 21,
@@ -599,7 +599,7 @@ void main() {
 
       await repository.dispose();
 
-      // The source is owned by the ControllerRepository; the repository only
+      // The source is shared with the Segno pedal; the repository only
       // borrows it and must never tear it down.
       verifyNever(() => source.dispose());
     });

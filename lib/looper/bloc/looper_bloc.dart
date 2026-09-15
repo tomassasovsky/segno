@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
-import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/fx_chain_persistence.dart';
@@ -10,19 +9,15 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
 
-/// Drives the multi-track looper transport from UI and controller events, and
-/// mirrors the repository's [LooperState] stream as the bloc state.
+/// Drives the multi-track looper transport from UI events, and mirrors the
+/// repository's [LooperState] stream as the bloc state.
 ///
 /// Commands are forwarded to the repository; the resulting engine state flows
 /// back through the stream, keeping the repository the single source of truth.
-/// When a [ControllerRepository] is supplied, its hardware-agnostic events are
-/// translated into the same looper actions.
 class LooperBloc extends Bloc<LooperEvent, LooperState> {
-  /// Creates a [LooperBloc] backed by [repository], optionally fed by
-  /// [controller] (a MIDI foot controller).
+  /// Creates a [LooperBloc] backed by [repository].
   LooperBloc({
     required LooperRepository repository,
-    ControllerRepository? controller,
     SettingsRepository? settings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
     bool Function() takeLocked = _neverLocked,
@@ -764,7 +759,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
     );
-    _controllerSubscription = controller?.events.listen(_onControllerEvent);
     // Persist chains the repository mutates on its own — the record-time
     // snapshot-copy of a monitor chain onto the take's lanes (F3). The bloc
     // stays the single settings writer for chains.
@@ -781,7 +775,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// otherwise emit at pointer rate. Flushed in [close].
   final WriteDebouncer _fxPersist;
   late final StreamSubscription<LooperState> _subscription;
-  StreamSubscription<ControllerEvent>? _controllerSubscription;
 
   /// The inbound editor-sync poll cadence (D-SYNC: ≤10 Hz).
   static const Duration _editorPollInterval = Duration(milliseconds: 100);
@@ -968,8 +961,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     final lanes = _repository.allLaneChains();
     final tracks = _repository.allTrackChains();
     // The engine's track count, read fresh rather than from this bloc's
-    // state (only as current as the last poll tick) — same reasoning as
-    // [_cancelPendingArms].
+    // state, which is only as current as the last poll tick.
     final channels = _repository.state.tracks.length;
     for (var channel = 0; channel < channels; channel++) {
       unawaited(
@@ -1139,86 +1131,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     });
   }
 
-  void _onControllerEvent(ControllerEvent event) {
-    switch (event.action) {
-      case LooperAction.recordOverdub:
-        add(LooperRecordPressed(event.channel));
-      case LooperAction.stop:
-        add(LooperStopPressed(event.channel));
-      case LooperAction.play:
-        add(LooperPlayPressed(event.channel));
-      case LooperAction.clear:
-        add(LooperClearPressed(event.channel));
-      case LooperAction.undo:
-        add(LooperUndoPressed(event.channel));
-      case LooperAction.playAll:
-        add(const LooperPlayAllPressed());
-      case LooperAction.stopAll:
-        add(const LooperStopAllPressed());
-      case LooperAction.tapTempo:
-        _repository.tapTempo();
-      case LooperAction.toggleMetronome:
-        _toggleMetronome();
-      case LooperAction.cancelArm:
-        _cancelPendingArms();
-    }
-  }
-
-  /// Toggles the click between silent and audible (D20's `toggleMetronome`
-  /// action). A pedal/controller press has only one gesture to spend, so this
-  /// collapses the 4-value [ClickMode] to a simple on/off toggle — off vs.
-  /// [ClickMode.rec] — rather than trying to remember which of the three
-  /// audible modes was last selected; picking a *specific* mode is what the
-  /// tempo settings page (backed by `TempoCubit`) is for. Documented
-  /// simplification (A5): a controller press always lands on
-  /// [ClickMode.rec], never restoring [ClickMode.recFirst] /
-  /// [ClickMode.playRec].
-  ///
-  /// Persisted like every other bloc-driven mutation in this file (compare
-  /// [LooperTrackRecordTimingChanged]): safe to do here without a second
-  /// cache to
-  /// keep in sync, because the tempo settings UI reads the *live* click mode
-  /// from [TransportState] rather than from a cached cubit value — see
-  /// `TempoSettingsSection`'s class doc.
-  void _toggleMetronome() {
-    final off = state.transport.clickMode == ClickMode.off;
-    final next = off ? ClickMode.rec : ClickMode.off;
-    _repository.setClickMode(next);
-    unawaited(_settings?.saveClickMode(next.code));
-  }
-
-  /// Cancels every track's pending quantized/signal-triggered record arm
-  /// (D20's global `cancelArm` action).
-  ///
-  /// There is no standalone disarm entry point in the engine's public API:
-  /// `le_cancel_arm` (`engine_commands.c`) is file-private, invoked only as a
-  /// side effect of a second `RECORD` press on the SAME armed channel
-  /// (`engine_commands.c:699-751` — "second press before the boundary
-  /// cancels the pending action"). Re-pressing record on every pending track
-  /// reuses that existing toggle behavior instead of adding a new native
-  /// export/FFI passthrough for a single-purpose disarm call.
-  ///
-  /// Reads [LooperRepository.state] — a fresh synchronous engine
-  /// snapshot — rather than this bloc's own [state], which is only as
-  /// current as the last ~16 ms poll tick (`LooperRepository`'s snapshot
-  /// timer). That narrows, but cannot fully close, a TOCTOU race inherent
-  /// to any command that acts on a read of async engine state: if a
-  /// pending arm's boundary fires natively between this read and the
-  /// `record()` FFI call landing, the engine's own `armed[channel]`
-  /// staleness check (`engine_commands.c`) clears `armed` first and falls
-  /// through to arming a FRESH action instead of cancelling — so a cancel
-  /// press landing right at a boundary can rarely re-arm instead of
-  /// cancel. Accepted as-is (not a native-engine fix, out of scope for this
-  /// UI-layer PR): the window is now on the order of one synchronous call's
-  /// latency rather than a full poll interval, the failure is
-  /// self-correcting (a second cancel press works), and it never leaves a
-  /// track worse off than "still armed."
-  void _cancelPendingArms() {
-    for (final track in _repository.state.tracks) {
-      if (track.pending) _repository.record(channel: track.channel);
-    }
-  }
-
   @override
   Future<void> close() {
     // Before anything is torn down: a drag that ended in the debounce window
@@ -1234,7 +1146,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _repository.onLaneChainChanged = null;
     }
     unawaited(_subscription.cancel());
-    unawaited(_controllerSubscription?.cancel());
     return super.close();
   }
 }

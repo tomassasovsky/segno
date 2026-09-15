@@ -1,136 +1,109 @@
-# MIDI foot-controller setup
+# MIDI controllers
 
-Segno can be driven hands-free from a USB MIDI foot controller so you can
-record, stop, undo, and clear loops with your feet while both hands play — and,
-since FX v3 part 7, sweep parameters from an expression pedal and stomp FX
-chains from any MIDI switch.
+Segno can be played from any USB MIDI controller: knobs and faders change
+parameters, and buttons run the same performance actions the Segno pedal's
+footswitches do. A controller does nothing until you map it; there is no fixed
+set of CC commands.
 
 MIDI input is captured natively on each desktop OS (CoreMIDI on macOS, the ALSA
-sequencer on Linux, WinMM on Windows), so there is nothing extra to install —
-plug the controller in and pick it in settings.
+sequencer on Linux, WinMM on Windows), so there is nothing extra to install.
 
-## Selecting a device
+## Opening MIDI controls
 
-1. Open **Settings** (right-click the looper, or press <kbd>S</kbd>).
-2. Under **MIDI FOOT CONTROLLER**, choose your device from the dropdown.
-   - Pick **None** to run without MIDI (the looper is fully usable from the
-     keyboard and mouse).
-3. The status line shows the live connection; the activity indicator blinks on
-   every incoming MIDI message so you can confirm the pedal is talking.
+Open the settings tray, choose **Control**, and press **MIDI controls**.
 
-Your choice is remembered and reconnects automatically on the next launch. If
-the device is unplugged it is kept pinned — replug it and Segno re-attaches on
-its own. Switching or losing a MIDI device never restarts the audio engine, and
-the picker is available even on Windows (ASIO-only) builds.
+The page shows a card for every MIDI input. The input in use says **Connected**,
+**Connecting…**, **Disconnected** or **Could not open**; the others say
+**Available**. Choosing a card makes that input the one in use. Segno listens to
+one MIDI input at a time, and the Segno pedal shares it.
 
-## Built-in transport mapping
+Below the cards are the mappings of the input in use. Each row shows the control
+("CC 21 · Ch 1"), what it drives, a meter with the last value it received, and a
+power button that turns the mapping off without deleting it. A disabled mapping
+still keeps its control, so no other mapping can take it.
 
-The built-in transport mapping is fixed to these Control Change messages on
-track 0, and is channel-agnostic (it fires whatever MIDI channel the controller
-is set to):
+**MIDI control On / Off** pauses every mapping at once and keeps them all.
 
-| CC  | Action                                   |
-| --- | ---------------------------------------- |
-| 80  | Record → finalize → overdub (toggles)    |
-| 81  | Stop                                     |
-| 82  | Undo                                     |
-| 83  | Clear                                    |
-| 84  | Tap tempo                                |
-| 85  | Toggle the click                         |
-| 86  | Cancel a pending record arm              |
+## Mapping a control
 
-Configure your foot controller to send these CCs. Use **momentary** switches: a
-press (value > 0) triggers the action; a release (value 0) does nothing. A short
-same-trigger debounce collapses switch bounce so one stomp is one action.
+1. Press **Add mapping**. The editor opens and starts listening.
+2. Move the knob, fader or button you want to use. The editor shows the control
+   and the value it received.
+3. Press **Add control** and choose what it changes: a parameter on a live
+   input, a track or an output, or a **Performance action**.
+4. Press **Save**.
 
-## External MIDI control (mappings)
+While the editor is open, the controller being mapped changes nothing on the
+rig, and anything it was holding is released. Learn gives up after 15 seconds
+with no message, and says so.
 
-Everything below is configured under **EXTERNAL MIDI CONTROL**, in the same
-Audio settings section as the pickers above. A mapping has two halves: the
-control it listens to, and what that control drives.
+### Message formats
 
-### The two trigger shapes
+Choose the format before Learn, with the format button. One MIDI byte cannot say
+which format it belongs to, so Segno never guesses.
 
-- **Sweep (continuous)** — the CC's absolute `0..127` position is mapped onto a
-  **LO/HI** range and written to one target: an effect parameter, a track's
-  volume, or the master gain. This is what an expression pedal is for. LO and HI
-  are set with the two knobs on the row, in the target's own normalized `0..1`
-  domain; setting LO **above** HI inverts the pedal (heel-down loud).
-- **Switch (discrete)** — the CC crossing a **threshold** stomps an FX chain or
-  a single effect on and off, with the same **toggle / momentary** behaviors a
-  Segno pedal footswitch binding has. Toggle latches; momentary is held (the
-  press captures the target's state and the release puts it back). A small
-  hysteresis band under the threshold means a controller resting on the boundary
-  or dithering around it holds its state instead of chattering.
+| Format | What it reads |
+| --- | --- |
+| CC, Note or Program | Ordinary 7-bit messages |
+| 14-bit CC | A fresh MSB (CC 0-31) and LSB (CC 32-63) pair, within 100 ms |
+| NRPN | CC 99 / 98 parameter selection, then CC 6 / 38 Data Entry |
+| Bank + Program | Bank MSB + LSB (CC 0 / 32), then Program Change |
+| Relative CC | Two's complement steps: 1 is one up, 127 is one down |
 
-Values are smoothed: a 7-bit CC step ramps to its new value rather than jumping,
-so a filter sweep is smooth rather than stepped.
+14-bit, NRPN and relative controls carry a position, not a press, so they drive
+parameters only.
 
-### Learning a control
+### Knobs and buttons
 
-1. Press **Add sweep** or **Add switch** and pick the target from the list.
-2. The row says *"Listening… move the control you want to use"*. Move the
-   expression pedal, or stomp the switch.
-3. The mapping is created. Press **Learn** on an existing row to re-point it at
-   a different control — its LO/HI (or threshold and behavior) are kept.
+- A plain CC can be a **Knob / fader** or a **Button**. A Note is a button. A
+  Program Change runs on every message and has no release.
+- A button is **Momentary** (its values follow the press) or **Toggle** (each
+  press flips it).
+- A parameter's range is named by the behavior: **From / To** for a knob,
+  **Released / Held** for a momentary button, **Off / On** for a toggle, and a
+  single **Value** for a Program Change.
+- An action runs when the control is **Pressed** or **Released**.
 
-**Learn hygiene.** The Segno pedal's own protocol traffic — its footswitch notes
-and its encoder CC — is ignored while learning, so you can learn a third-party
-controller with the Segno pedal plugged in and stomping will not capture it.
+### Pickup
 
-If the control you move is already mapped, the row asks before replacing that
-mapping — **Replace** takes the control over, **Keep** leaves things as they
-were and ends the capture. A capture nobody feeds times out on its own (all MIDI
-is swallowed while one is pending, so it never stays open).
+A knob does not change a parameter until it reaches the parameter's current
+value, or passes it. Opening a session never makes a value jump. A relative
+control moves the parameter from where it is, one step at a time, inside its
+range.
 
-### Takeover, fan-out, and who wins
+### Receive channel
 
-- **Takeover is jump-on-first-move.** The first time a mapped control moves, the
-  target jumps straight to the mapped value. There is no pickup/catch mode in
-  v1 — a parameter goes wherever the control already is.
-- **Fan-out is allowed at the model level**: one control can drive several
-  targets (a single expression pedal sweeping more than one parameter). The
-  settings UI creates one mapping per learn and replaces on conflict; a fanned
-  out map is preserved if it exists.
-- **Many controls on one target are last-writer-wins**, and so is a CC racing an
-  on-screen knob: whichever moved last wins, with no reconciliation.
+A mapping listens on the channel it was learned on. **Receive · Channel** changes
+it, including to **Omni · All channels**.
 
-### Where mappings are stored
+### Controls that are already mapped
 
-Mappings are **global** — one `controller.mappings` blob in settings, not part
-of any session. Expression hardware belongs to the rig, not the song: the pedal
-plugged into this machine is the same one whatever session is loaded, and a
-session carrying its own CC map would either fight the rig it was opened on or
-stop being portable between machines. (The Segno pedal's own footswitch remap is
-the deliberate exception — its layout IS part of an arrangement, so a session
-can carry one.)
+If the learned control reads any of the same messages as a saved mapping on a
+channel it shares, the editor says so and Save stays off. **Edit existing
+mapping** opens that mapping instead. A disabled mapping counts.
 
-### Disconnects and missing targets
+## Disconnects and missing targets
 
-- **A held momentary releases when the MIDI device unplugs.** The release edge
-  is never coming, so the target is restored to what the press captured rather
-  than being left stuck on.
-- **A swept value HOLDS on unplug.** No snap-back: a filter stays exactly where
-  the last sweep left it, because a cable wobble silently rewriting your sound is
-  the louder failure.
-- **With no MIDI input connected**, every row renders inert with a note saying
-  so, and each row's button becomes **Relearn** — one tap re-points that mapping
-  at whatever controller is plugged in now.
-- **A mapping whose target no longer exists** (the effect was deleted, the chain
-  is gone) is kept and shown as *Missing target*. It does nothing until it is
-  re-pointed or removed — it never falls back to whatever effect took its place.
+- **Unplugging a controller releases what it was holding.** Momentary values go
+  back to Released and held actions end. No action is ever run by a disconnect.
+- **A knob value stays where it was** when its controller unplugs.
+- **A reconnected controller starts again from nothing**: toggles are Off and
+  knobs pick up again.
+- **A mapping whose parameter no longer exists** says **Missing control**. It
+  does nothing until it is repaired with **Repair control** or removed. It never
+  falls back to whatever took the parameter's place.
 
-Hosted VST3/CLAP plugin parameters cannot be mapped yet; built-in effect
-parameters, track volume, and master gain can.
+## Where mappings are stored
+
+Mappings and the MIDI control switch are stored in the app settings, not in a
+session.
 
 ## Troubleshooting
 
-- **"No MIDI input devices found"** — the host exposes no MIDI input ports. Plug
-  in the controller (and on Linux ensure it appears under `aconnect -i`).
-- **"Could not open … (in use?)"** — another application holds the port. Close
-  it and re-select the device; the pin is retained so a retry recovers.
-- **The activity indicator never blinks** — the pedal is connected but sending
-  something other than Note/CC (e.g. clock); check its CC assignments above.
-- **A learn never catches anything** — the control may be sending on a channel
-  the app never sees (check it is a CC or Note, not aftertouch or pitch bend),
-  or it may be the Segno pedal itself, which learn ignores by design.
+- **No cards** — the host exposes no MIDI input ports. Plug in the controller
+  (on Linux, check it appears under `aconnect -i`).
+- **Could not open** — another application holds the port. Close it and choose
+  the card again.
+- **Learn never hears anything** — check the controller sends Note, CC or
+  Program Change messages in the chosen format, and that it is the input in use.
+  The Segno pedal's own footswitch notes and encoder are never learned.

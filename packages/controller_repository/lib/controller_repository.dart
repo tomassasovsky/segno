@@ -1,20 +1,10 @@
-/// Hardware-agnostic controller abstraction: maps raw MIDI inputs to looper
-/// actions and to external-MIDI bindings (continuous CC ranges and discrete
-/// on/off stomps), with MIDI-learn capture.
+/// MIDI control for Segno: raw MIDI messages, the explicit formats they are
+/// read in, the mappings that turn a control into parameter writes and
+/// actions, and the engine that applies them.
 library;
 
-export 'src/binding_behavior.dart';
-export 'src/controller_binding.dart';
-export 'src/controller_binding_event.dart';
-export 'src/controller_binding_set.dart';
-export 'src/controller_event.dart';
 export 'src/controller_input.dart';
-export 'src/controller_mapping.dart';
-export 'src/controller_repository.dart';
-export 'src/controller_source.dart';
-export 'src/looper_action.dart';
 export 'src/midi_mapping.dart';
 export 'src/midi_mapping_engine.dart';
 export 'src/midi_protocol.dart';
 export 'src/midi_signal_levels.dart';
-export 'src/simulated_controller_source.dart';

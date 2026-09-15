@@ -4,7 +4,6 @@ import 'package:equatable/equatable.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
-import 'package:segno/control/control_tab.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:segno/system/system_tab.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -124,9 +123,6 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// while Network is already showing, so writing a destination here would
   /// give a tab a say in which domain is up.
   void showNetworkTab(NetworkTab tab) => emit(state.copyWith(networkTab: tab));
-
-  /// Moves the Control domain's tab. Same rule as [showNetworkTab].
-  void showControlTab(ControlTab tab) => emit(state.copyWith(controlTab: tab));
 
   /// Moves the Audio domain's tab. Same rule as [showNetworkTab].
   void showAudioTab(AudioTab tab) => emit(state.copyWith(audioTab: tab));

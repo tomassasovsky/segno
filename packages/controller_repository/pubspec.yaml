@@ -1,7 +1,7 @@
 name: controller_repository
 description: >-
-  Hardware-agnostic controller abstraction for Segno: maps raw MIDI inputs
-  to looper actions through a remappable mapping, with MIDI-learn capture.
+  MIDI control for Segno: raw messages, explicit MIDI formats, mappings and
+  the engine that applies them.
 version: 0.1.0
 publish_to: none
 
@@ -15,8 +15,6 @@ dependencies:
     sdk: flutter
 
 dev_dependencies:
-  fake_async: ^1.3.1
   flutter_test:
     sdk: flutter
-  mocktail: ^1.0.5
   very_good_analysis: ^10.2.0

@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
-import 'package:controller_repository/controller_repository.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -100,26 +99,11 @@ Future<void> runSegno(
     performance = performanceRepository;
   }
 
-  // The native MIDI source feeds the controller pipeline; it is null when no
-  // MIDI backend is available (e.g. the mock flavor), in which case the looper
-  // runs with no controller source. The waveform sub-window already returned
-  // above, so it never opens MIDI.
+  // The native MIDI input, shared by the Segno pedal, the MIDI device
+  // repository and the MIDI mappings; null when no MIDI backend is available
+  // (e.g. the mock flavor), in which case nothing receives MIDI. The waveform
+  // sub-window already returned above, so it never opens MIDI.
   final midiSource = createNativeMidiSource();
-  // The push seam behind "Simulate input" (#519): a plain source in the same
-  // list as the real MIDI one, so a synthetic sweep/press is indistinguishable
-  // downstream and works with nothing plugged in. Owned by the repository — it
-  // is disposed when the repository disposes its sources — and handed to
-  // ControlCubit, which paces the synthetic sequence.
-  final simulatedControllerSource = SimulatedControllerSource();
-  final controllerRepository = ControllerRepository(
-    sources: [?midiSource, simulatedControllerSource],
-    // MIDI-learn never captures the Segno pedal's own protocol traffic (B8):
-    // the pedal shares this input stream, so a stomp mid-capture would
-    // otherwise bind a footswitch the app already drives end to end. The
-    // predicate is stated against the real note/CC tables in the package that
-    // owns them.
-    learnIgnore: isPedalProtocolInput,
-  );
   // The bidirectional pedal reuses the MIDI source's single input capture and
   // opens its own MIDI output for LED feedback. The repository is wrapped in a
   // SimulatorPedalTransport so the on-screen faceplate is always available (it
@@ -154,9 +138,8 @@ Future<void> runSegno(
     capturesRoot: defaultExportDirectory,
   );
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
-  // persistence). Borrows the shared [midiSource] (owned by the controller
-  // pipeline) and never disposes it. Held independent of the engine so MIDI
-  // changes never restart audio.
+  // persistence). Borrows the shared [midiSource] and never disposes it. Held
+  // independent of the engine so MIDI changes never restart audio.
   final midiDeviceRepository = MidiDeviceRepository(
     source: midiSource,
     settings: settings,
@@ -192,8 +175,6 @@ Future<void> runSegno(
   await bootstrap(
     () => App(
       repository: looper,
-      controllerRepository: controllerRepository,
-      simulatedControllerSource: simulatedControllerSource,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
       pedalSimulator: pedalSimulator,

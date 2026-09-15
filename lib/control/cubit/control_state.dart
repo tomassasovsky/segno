@@ -22,8 +22,6 @@ class ControlState extends Equatable {
     this.globalBindings = PedalBindingSet.empty,
     this.sessionBindings = PedalBindingSet.empty,
     this.heldMomentary = const <PedalBindingKey>{},
-    this.controllerBindings = ControllerBindingSet.empty,
-    this.controllerLearn,
     this.midiMappings = const MidiMappingSet(),
     this.midiControlEnabled = true,
     this.midiEdit,
@@ -104,23 +102,9 @@ class ControlState extends Equatable {
   /// rule: emptied at the single release-all point (B1) and on each release.
   final Set<PedalBindingKey> heldMomentary;
 
-  /// The external-MIDI mapping set (part 7), restored from the global
-  /// `controller.mappings` settings blob at boot and edited by the MIDI-learn
-  /// settings section.
-  ///
-  /// GLOBAL-ONLY (R19): no session carries a copy, because expression hardware
-  /// belongs to the rig rather than the song. Invalidation rule: same as the
-  /// pedal remap — only an explicit edit writes it, and a target that no
-  /// longer exists goes INERT rather than being dropped.
-  final ControllerBindingSet controllerBindings;
-
-  /// The MIDI-learn capture in progress, or `null` when nothing is listening.
-  /// Invalidation rule: cleared when the capture applies, is cancelled, or
-  /// times out — never by engine truth.
-  final ControllerLearn? controllerLearn;
-
-  /// Every MIDI mapping on the rig (part 4g). Global, like the controller it
-  /// belongs to.
+  /// Every MIDI mapping on the rig. Global, like the controller it belongs
+  /// to. Invalidation rule: only an explicit edit writes it, and a mapping
+  /// whose target no longer exists goes inert rather than being dropped.
   final MidiMappingSet midiMappings;
 
   /// Whether remote MIDI assignments dispatch. Off keeps every mapping.
@@ -193,9 +177,6 @@ class ControlState extends Equatable {
     PedalBindingSet? globalBindings,
     PedalBindingSet? sessionBindings,
     Set<PedalBindingKey>? heldMomentary,
-    ControllerBindingSet? controllerBindings,
-    ControllerLearn? controllerLearn,
-    bool clearControllerLearn = false,
     MidiMappingSet? midiMappings,
     bool? midiControlEnabled,
     MidiEdit? midiEdit,
@@ -212,12 +193,6 @@ class ControlState extends Equatable {
     globalBindings: globalBindings ?? this.globalBindings,
     sessionBindings: sessionBindings ?? this.sessionBindings,
     heldMomentary: heldMomentary ?? this.heldMomentary,
-    controllerBindings: controllerBindings ?? this.controllerBindings,
-    // `clearControllerLearn` exists because a capture ENDING is a real edit:
-    // `??` alone could never write the null that "nothing is listening" is.
-    controllerLearn: clearControllerLearn
-        ? null
-        : controllerLearn ?? this.controllerLearn,
     midiMappings: midiMappings ?? this.midiMappings,
     midiControlEnabled: midiControlEnabled ?? this.midiControlEnabled,
     midiEdit: clearMidiEdit ? null : midiEdit ?? this.midiEdit,
@@ -236,8 +211,6 @@ class ControlState extends Equatable {
     globalBindings,
     sessionBindings,
     heldMomentary,
-    controllerBindings,
-    controllerLearn,
     midiMappings,
     midiControlEnabled,
     midiEdit,

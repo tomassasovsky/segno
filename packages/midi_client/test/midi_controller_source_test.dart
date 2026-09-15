@@ -15,7 +15,6 @@ void main() {
     late MidiControllerSource source;
 
     MidiControllerSource build({
-      Duration debounce = const Duration(milliseconds: 30),
       List<MidiDevice> devices = const [],
       int openResult = 0,
     }) {
@@ -23,10 +22,7 @@ void main() {
         devices: devices,
         openResult: openResult,
       );
-      source = MidiControllerSource(
-        client: MidiClient(bindings: bindings),
-        debounce: debounce,
-      );
+      source = MidiControllerSource(client: MidiClient(bindings: bindings));
       addTearDown(source.dispose);
       return source;
     }
@@ -35,7 +31,7 @@ void main() {
       test('Control Change -> midiCc with value', () async {
         build();
         final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
+        final sub = source.activity.listen(received.add);
 
         source.pushForTest(_cc, 80, 127);
         await pumpEventQueue();
@@ -47,14 +43,13 @@ void main() {
             value: 127,
           ),
         ]);
-        expect(received.single.isPress, isTrue);
         await sub.cancel();
       });
 
       test('Program Change -> midiProgram, with no value', () async {
         build();
         final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
+        final sub = source.activity.listen(received.add);
 
         // A stray second byte belongs to the next message, never to this one.
         source.pushForTest(0xC4, 8, 99);
@@ -74,7 +69,7 @@ void main() {
       test('Note On -> midiNote with velocity', () async {
         build();
         final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
+        final sub = source.activity.listen(received.add);
 
         source.pushForTest(_noteOn, 60, 100);
         await pumpEventQueue();
@@ -92,20 +87,19 @@ void main() {
       test('Note On with velocity 0 maps to a release (value 0)', () async {
         build();
         final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
+        final sub = source.activity.listen(received.add);
 
         source.pushForTest(_noteOn, 60, 0);
         await pumpEventQueue();
 
         expect(received.single.value, 0);
-        expect(received.single.isPress, isFalse);
         await sub.cancel();
       });
 
       test('Note Off maps to value 0', () async {
         build();
         final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
+        final sub = source.activity.listen(received.add);
 
         source.pushForTest(_noteOff, 60, 64);
         await pumpEventQueue();
@@ -117,27 +111,23 @@ void main() {
       test('carries the channel from the status low nibble', () async {
         build();
         final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
+        final sub = source.activity.listen(received.add);
 
-        // CC on channel 9 (0xB9). The channel rides along so a learned
-        // controller binding can scope itself to it...
+        // CC on channel 9 (0xB9). The channel rides along so a mapping can
+        // listen on it.
         source.pushForTest(0xB9, 80, 127);
         await pumpEventQueue();
 
         expect(received.single.id, 80);
         expect(received.single.kind, ControllerSourceKind.midiCc);
         expect(received.single.midiChannel, 9);
-        // ...while the trigger identity the built-in action mappings key on
-        // stays channel-agnostic.
-        expect(received.single.trigger.midiChannel, isNull);
-        expect(received.single.channelTrigger.midiChannel, 9);
         await sub.cancel();
       });
 
       test('channel 0 is reported as 0, never as absent', () async {
         build();
         final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
+        final sub = source.activity.listen(received.add);
 
         source.pushForTest(_noteOn, 60, 100);
         await pumpEventQueue();
@@ -148,9 +138,7 @@ void main() {
 
       test('drops SysEx / real-time / aftertouch / pitch bend', () async {
         build();
-        final received = <RawControllerInput>[];
         final activity = <RawControllerInput>[];
-        final inputSub = source.inputs.listen(received.add);
         final activitySub = source.activity.listen(activity.add);
 
         source
@@ -162,79 +150,33 @@ void main() {
           ..pushForTest(0xE0, 0, 64); // pitch bend
         await pumpEventQueue();
 
-        expect(received, isEmpty);
         expect(activity, isEmpty);
-        await inputSub.cancel();
         await activitySub.cancel();
       });
     });
 
-    group('debounce', () {
-      test('collapses sub-window repeats of the same trigger', () async {
+    group('delivery', () {
+      test('every message arrives, however close together', () async {
         build();
         final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
+        final sub = source.activity.listen(received.add);
 
+        // A 14-bit control sends its two halves back to back, and a knob
+        // repeats one CC quickly: collapsing either would lose a value.
         source
-          ..pushForTest(_cc, 80, 127) // emit (tsUs 0)
-          ..pushForTest(_cc, 80, 127, tsUs: 10000) // +10ms -> suppressed
-          ..pushForTest(_cc, 80, 0, tsUs: 20000) // +20ms -> suppressed
-          ..pushForTest(_cc, 80, 127, tsUs: 40000); // +40ms -> emit
+          ..pushForTest(_cc, 21, 64)
+          ..pushForTest(_cc, 53, 1)
+          ..pushForTest(_cc, 21, 64)
+          ..pushForTest(_cc, 21, 0);
         await pumpEventQueue();
 
-        expect(received.map((e) => e.value), [127, 127]);
+        expect(received.map((e) => (e.id, e.value)), [
+          (21, 64),
+          (53, 1),
+          (21, 64),
+          (21, 0),
+        ]);
         await sub.cancel();
-      });
-
-      test('debounces each trigger independently', () async {
-        build();
-        final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
-
-        source
-          ..pushForTest(_cc, 80, 127) // CC80 emit (tsUs 0)
-          ..pushForTest(_cc, 81, 127, tsUs: 5000) // CC81 emit (other trigger)
-          ..pushForTest(_cc, 80, 127, tsUs: 10000); // CC80 +10ms -> suppressed
-        await pumpEventQueue();
-
-        expect(received.map((e) => e.id), [80, 81]);
-        await sub.cancel();
-      });
-
-      test('leading-edge: a continuous bounce cannot keep resetting', () async {
-        build();
-        final received = <RawControllerInput>[];
-        final sub = source.inputs.listen(received.add);
-
-        // Five messages 10ms apart: the window is measured from the first
-        // *emit* (t=0), so t=40ms passes despite the steady stream between.
-        for (var t = 0; t <= 40000; t += 10000) {
-          source.pushForTest(_cc, 80, 127, tsUs: t);
-        }
-        await pumpEventQueue();
-
-        expect(received.length, 2); // t=0 and t=40000
-        await sub.cancel();
-      });
-    });
-
-    group('activity tap', () {
-      test('blinks on every recognized message, even debounced ones', () async {
-        build();
-        final inputs = <RawControllerInput>[];
-        final activity = <RawControllerInput>[];
-        final inputSub = source.inputs.listen(inputs.add);
-        final activitySub = source.activity.listen(activity.add);
-
-        source
-          ..pushForTest(_cc, 80, 127) // tsUs 0
-          ..pushForTest(_cc, 80, 127, tsUs: 10000); // debounced out of inputs
-        await pumpEventQueue();
-
-        expect(inputs.length, 1, reason: 'second is debounced');
-        expect(activity.length, 2, reason: 'activity is the raw pre-map tap');
-        await inputSub.cancel();
-        await activitySub.cancel();
       });
     });
 
@@ -290,10 +232,9 @@ void main() {
         },
       );
 
-      test('closes both streams', () async {
+      test('closes the stream', () async {
         build();
         await source.dispose();
-        await expectLater(source.inputs, emitsDone);
         await expectLater(source.activity, emitsDone);
       });
 
@@ -311,7 +252,7 @@ void main() {
         build();
         final received = <RawControllerInput>[];
         // Subscribe before dispose; the stream then closes.
-        final sub = source.inputs.listen(received.add);
+        final sub = source.activity.listen(received.add);
         await source.dispose();
 
         // Pushing post-dispose must be a safe no-op (no add to a closed sink).

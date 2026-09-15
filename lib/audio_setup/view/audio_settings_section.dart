@@ -7,7 +7,6 @@ import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_picker.dart';
 import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
 import 'package:segno/audio_setup/view/click_volume_section.dart';
-import 'package:segno/audio_setup/view/midi_learn_section.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
@@ -107,10 +106,6 @@ class AudioSettingsSection extends StatelessWidget {
           // not the same as choosing it, so the assignment route below stays.
           const SizedBox(height: 28),
           const PedalSettingsSection(),
-          const SizedBox(height: 28),
-          // External MIDI mappings (part 7) listen through the auto-detected
-          // bound input.
-          const MidiLearnSection(),
           const SizedBox(height: 28),
           SetupGroupLabel(l10n.sampleRateGroup),
           const SizedBox(height: 12),

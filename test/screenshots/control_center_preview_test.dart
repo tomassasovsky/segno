@@ -24,7 +24,6 @@ import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/control/control.dart';
-import 'package:segno/control/control_tab.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
@@ -891,88 +890,6 @@ void main() {
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_control_pedal_bank_b.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('control domain, midi tab on a live link', (tester) async {
-    await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
-      ..open()
-      ..showDestination(SettingsTrayDestination.control)
-      ..showControlTab(ControlTab.midi);
-    addTearDown(cubit.close);
-
-    final rig = controlProviders(
-      tester,
-      connection: const MidiConnection(
-        devices: [MidiDevice(id: 'dev-1', name: 'Nektar Pacer')],
-        selectedId: 'dev-1',
-        selectedName: 'Nektar Pacer',
-        status: MidiConnectionStatus.connected,
-      ),
-    );
-    await rig.control.setControllerBindings(
-      ControllerBindingSet([
-        ContinuousBinding(
-          trigger: const MappingTrigger(
-            kind: ControllerSourceKind.midiCc,
-            id: 11,
-            midiChannel: 0,
-          ),
-          target: const MasterGainTarget().canonicalString(),
-        ),
-        DiscreteBinding(
-          trigger: const MappingTrigger(
-            kind: ControllerSourceKind.midiNote,
-            id: 36,
-            midiChannel: 0,
-          ),
-          target: const FxChainTarget(_master).canonicalString(),
-        ),
-      ]),
-    );
-    await pumpTray(tester, cubit: cubit, control: rig);
-    await tester.pumpAndSettle();
-    // Past the mappings-write debounce, which would otherwise still be
-    // pending when the tree comes down.
-    await tester.pump(const Duration(milliseconds: 500));
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_control_midi.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('control domain, midi device chooser open', (tester) async {
-    await size(tester);
-    final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)
-      ..open()
-      ..showDestination(SettingsTrayDestination.control)
-      ..showControlTab(ControlTab.midi);
-    addTearDown(cubit.close);
-
-    final rig = controlProviders(
-      tester,
-      connection: const MidiConnection(
-        devices: [
-          MidiDevice(id: 'dev-1', name: 'Nektar Pacer'),
-          MidiDevice(id: 'dev-2', name: 'AirTurn BT-200'),
-        ],
-        selectedId: 'dev-1',
-        selectedName: 'Nektar Pacer',
-        status: MidiConnectionStatus.connected,
-      ),
-    );
-    await pumpTray(tester, cubit: cubit, control: rig);
-    await tester.pumpAndSettle();
-    // Opens in place, under the row — the shape `AUDIO / settings-device`
-    // draws for the same question.
-    await tester.tap(find.byKey(const Key('midi_device_row')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_control_midi_device.png'),
     );
   }, skip: !hasFonts);
 

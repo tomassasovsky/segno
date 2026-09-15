@@ -135,17 +135,6 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
-    // The Audio section's MIDI-learn block enumerates mappable targets from
-    // the live rig; the goldens capture an empty one.
-    when(() => repository.allMonitors()).thenAnswer((_) => const {});
-    when(() => repository.allLaneChains()).thenAnswer((_) => const {});
-    when(() => repository.allTrackChains()).thenAnswer((_) => const {});
-    when(() => repository.outputEffects(0)).thenAnswer((_) => const []);
-    when(() => repository.allTracksEffects).thenReturn(const []);
-    when(
-      () => repository.outputChainEnvelope(0),
-    ).thenReturn(const FxChainEnvelope());
-    when(() => repository.outputChainEnabled(any())).thenReturn(true);
     audioSetup = _MockAudioSetupCubit();
     when(() => audioSetup.state).thenReturn(runningAudio);
     midi = _MockMidiDeviceRepository();

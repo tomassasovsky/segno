@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
-import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -58,14 +57,12 @@ class App extends StatefulWidget {
   /// at startup, cached by the audio-setup cubit for the picker.
   const App({
     required this.repository,
-    required this.controllerRepository,
     required this.midiDeviceRepository,
     required this.settings,
     required this.waveformWindow,
     required this.sessionRepository,
     required this.performanceRepository,
     required this.exportDirectory,
-    this.simulatedControllerSource,
     this.pedalRepository,
     this.pedalSimulator,
     this.displayCount,
@@ -114,18 +111,9 @@ class App extends StatefulWidget {
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
 
-  /// The shared controller repository (MIDI → looper actions).
-  final ControllerRepository controllerRepository;
-
-  /// The push seam behind "Simulate input" (#519), registered in
-  /// [controllerRepository]'s sources. Handed to [ControlCubit] so a mapping
-  /// can prove itself with no controller attached. `null` (the default) in a
-  /// test that wires no simulation — the affordance is then inert.
-  final SimulatedControllerSource? simulatedControllerSource;
-
-  /// The MIDI input device repository (owns the foot-controller lifecycle). It
-  /// borrows the long-lived native MIDI source from [controllerRepository] and
-  /// never disposes it; the [MidiSetupCubit] projects its state.
+  /// The MIDI input device repository (owns the MIDI input lifecycle). It
+  /// borrows the long-lived native MIDI source and never disposes it; the
+  /// [MidiSetupCubit] projects its state.
   final MidiDeviceRepository midiDeviceRepository;
 
   /// The bidirectional pedal repository (MIDI output + reused input capture),
@@ -180,7 +168,6 @@ class _AppState extends State<App> {
   late final SimulatorPedalTransport _simulator;
   late final PedalRepository _pedal;
   PowerKeySource? _powerKeySource;
-  ControlCubit? _control;
 
   @override
   void initState() {
@@ -208,7 +195,6 @@ class _AppState extends State<App> {
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider.value(value: widget.repository),
-        RepositoryProvider.value(value: widget.controllerRepository),
         RepositoryProvider.value(value: widget.midiDeviceRepository),
         RepositoryProvider.value(value: widget.settings),
         RepositoryProvider.value(value: widget.sessionRepository),
@@ -269,9 +255,6 @@ class _AppState extends State<App> {
           // route — pushed on the root navigator, above the looper page — can
           // drive routing edits through the bloc, mirroring the in-view routing
           // controls. The TracksCubit below is hoisted for the same reason.
-          // No `controller:` — MIDI stays on the page LooperBloc, which
-          // injects the power-off take lock. A second subscriber here would
-          // fire Clear/Record twice and bypass that lock.
           BlocProvider(
             create: (context) {
               final bloc = LooperBloc(
@@ -492,8 +475,7 @@ class _AppState extends State<App> {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
-          // Above ControlCubit so take-start can read isUiUp. flushMappings
-          // cannot context.read a descendant — capture the instance below.
+          // Above ControlCubit so take-start can read isUiUp.
           BlocProvider(
             lazy: false,
             create: (context) => PowerOffCubit(
@@ -503,15 +485,6 @@ class _AppState extends State<App> {
                 } on Object catch (error, stack) {
                   AppLog.error(
                     'power-off monitor flush failed',
-                    error: error,
-                    stack: stack,
-                  );
-                }
-                try {
-                  _control?.flushMappings();
-                } on Object catch (error, stack) {
-                  AppLog.error(
-                    'power-off mappings flush failed',
                     error: error,
                     stack: stack,
                   );
@@ -547,21 +520,10 @@ class _AppState extends State<App> {
                 pedal: context.read<PedalRepository>(),
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
-                // Both of these were missing, and external MIDI mapping had
-                // therefore never worked in a shipped build: without
-                // `controller` nothing subscribes to the binding events and
-                // `learnControllerBinding` returns on its first line, so Add
-                // sweep / Add switch picked a target and then did nothing at
-                // all; without `midiDevices` a controller coming back re-armed
-                // nothing. Both repositories were already built and provided
-                // app-wide — they were simply never handed to the one cubit
-                // that owns controller intent.
-                controller: context.read<ControllerRepository>(),
+                // The MIDI input the saved MIDI mappings listen to.
                 midiDevices: context.read<MidiDeviceRepository>(),
-                simulatedSource: widget.simulatedControllerSource,
                 takeLocked: () => context.read<PowerOffCubit>().state.isUiUp,
               );
-              _control = cubit;
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
             },

@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
-import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
@@ -15,28 +14,18 @@ import '../../helpers/helpers.dart';
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
-class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
-    implements MidiSetupCubit {}
-
 class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
-
-class _MockControlCubit extends MockCubit<ControlState>
-    implements ControlCubit {}
 
 void main() {
   setUpAll(() => registerFallbackValue(RecordTiming.immediately));
 
   late AudioSetupCubit cubit;
-  late MidiSetupCubit midi;
   late PedalCubit pedal;
   late MonitorCubit monitor;
   late RecordTimingCubit quantize;
   late RecordOptionsCubit recordOptions;
-  // The MIDI-learn section (part 7) reads the mapping set off ControlCubit and
-  // enumerates its targets from the looper repository.
-  late ControlCubit control;
   late TracksCubit tracks;
   late TempoCubit tempo;
   late LooperRepository looper;
@@ -47,13 +36,6 @@ void main() {
       settings: SettingsRepository(store: FakeKeyValueStore()),
     );
     cubit = _MockAudioSetupCubit();
-    midi = _MockMidiSetupCubit();
-    when(() => midi.state).thenReturn(const MidiSetupState());
-    whenListen(
-      midi,
-      const Stream<MidiSetupState>.empty(),
-      initialState: const MidiSetupState(),
-    );
     pedal = _MockPedalCubit();
     when(() => pedal.state).thenReturn(const PedalState());
     whenListen(
@@ -86,13 +68,6 @@ void main() {
     ).thenReturn(EngineResult.ok);
     when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
     when(() => repository.setClickVolume(any())).thenReturn(EngineResult.ok);
-    control = _MockControlCubit();
-    when(() => control.state).thenReturn(const ControlState());
-    whenListen(
-      control,
-      const Stream<ControlState>.empty(),
-      initialState: const ControlState(),
-    );
     when(() => repository.monitorChanges).thenAnswer(
       (_) => const Stream<int>.empty(),
     );
@@ -132,12 +107,10 @@ void main() {
     MultiBlocProvider(
       providers: [
         BlocProvider<AudioSetupCubit>.value(value: cubit),
-        BlocProvider<MidiSetupCubit>.value(value: midi),
         BlocProvider<PedalCubit>.value(value: pedal),
         BlocProvider<MonitorCubit>.value(value: monitor),
         BlocProvider<RecordTimingCubit>.value(value: quantize),
         BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
-        BlocProvider<ControlCubit>.value(value: control),
         BlocProvider<TracksCubit>.value(value: tracks),
         BlocProvider<TempoCubit>.value(value: tempo),
       ],

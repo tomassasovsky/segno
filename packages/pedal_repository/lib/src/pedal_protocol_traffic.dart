@@ -8,11 +8,10 @@ import 'package:pedal_repository/src/pedal_external_switch.dart';
 /// fixed footswitch notes ([PedalButtonNote]) or the relative encoder CC
 /// ([PedalCodec.encoderCc]).
 ///
-/// MIDI-learn passes this to `ControllerRepository` as its ignore filter (B8).
-/// The pedal and any third-party controller share ONE MIDI input stream, so
-/// without it a stomp — or a nudge of the encoder — during a capture would
-/// bind a control the app already owns end to end, and the pedal would start
-/// doing two things at once.
+/// MIDI Learn skips what this accepts (B8). The pedal and any third-party
+/// controller share ONE MIDI input stream, so without it a stomp — or a nudge
+/// of the encoder — during Learn would map a control the app already owns end
+/// to end, and the pedal would start doing two things at once.
 ///
 /// It lives here because this package owns the wire contract those numbers come
 /// from: `pedal_repository` already depends on `controller_repository`, so the
