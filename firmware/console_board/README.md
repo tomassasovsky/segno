@@ -10,12 +10,15 @@ the state frames segno pushes back. segno runs the behavior machine.
 |---|---|---|
 | Link TX / RX | GP16 / GP17 | UART0 → Pi uart3 (GPIO8/9, `/dev/ttyAMA3`), 115200 8N1 |
 | Footswitches | GP2–GP11 | REC/PLAY, STOP, UNDO, MODE, TRACK1–4, CLEAR, BANK. Internal pull-up, active low, 8 ms stable-edge debounce |
-| Ring data | GP12 | via 74AHCT125 → J6 pin 5, NeoPixel Ring 24 |
-| Encoder A / B / SW | GP13 / GP14 / GP15 | Internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts |
+| Ring data | GP12 | **v2 only**: via 74AHCT125 → J6 pin 5, NeoPixel Ring 24. On v3 (#987) the ring board clocks its own LEDs and GP12 is on the expansion header |
+| Encoder A / B / SW | GP13 / GP14 / GP15 | **v2 only**: internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts |
+| Ring link | GP13 / GP14 | **v3** (#987): full-duplex UART to the ring board's XIAO RP2350 — GP13 drives, GP14 listens, 115200, PIO UART (neither pin is on a free hardware UART). The console board's 10 k pull-ups hold both lines. **Not implemented in this firmware yet**: it still drives GP12 and reads GP13–15 as an encoder, which is the v2 board |
 | Indicator data | GP18 | via 74AHCT125 → J7 pin 2, **seven** WS2812 pucks in chain order: MODE (above footswitch 1), TRACK1–4, CLEAR, BANK |
 | CTRL1 / CTRL2 tip | GP26 / GP27 | ADC0 / ADC1: a footswitch at the rails, an expression pedal's wiper between them. The first press on a jack the board has not yet classified is held 200 ms (a plug sliding in drags the tip low the same way); once the jack is known to hold a footswitch, edges are debounced at 8 ms and sent at once |
-| CTRL1 / CTRL2 ring | GP20 / GP21 | **not a trace on v2** — one wire from each jack's ring pin to the J22 expansion pads. With it, the B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B` (its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it); without it the pin's internal pull-up holds it open and nothing reports |
+| CTRL1 / CTRL2 ring | GP20 / GP21 | On v3 a trace from each jack's ring through 4.7 kΩ (R19/R20). **Not a trace on v2** — one wire from each jack's ring pin to the J22 expansion pads does the same. With it, the B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B` (its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it); without it the pin's internal pull-up holds it open and nothing reports |
+| CTRL1 / CTRL2 present | GP19 / GP22 | Internal pull-down, **present = low**. On v3 the switched jack's tip-normal contact (Neutrik NJ6FD-V, through 4.7 kΩ R21/R22) drives it high only while the jack is empty; an empty jack reports CTRL kind `NONE` and is classified afresh on the next plug. On v2 these are J22's unpopulated pads: they float low, every jack reads "plugged", and the firmware's plug heuristics (a 40% jump starts a 200 ms quiet period; a jump that parks on the top rail for 1 s is an empty jack) do the same job less certainly |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
+| PD trigger I2C | GP0 / GP1 | **v3** (J23): I2C0 SDA/SCL to the STUSB4500 on the SparkFun PD board, to read the negotiated contract (RDO 0x91–0x94, capaMismatch; voltage at 0x21) and report it up the pedal link. **Not implemented in this firmware yet.** On v2 the same read is possible from J22's GP20/GP21 when those pads are free |
 
 ## Wire format: the pedal link
 
@@ -64,50 +67,31 @@ arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --outpu
 `build/console_board.ino.elf` is what OpenOCD flashes; `.uf2` is for BOOTSEL drag-and-drop
 if the module's USB is ever reachable (it is not, once the board is in the console).
 
-## Flash from the Pi over SWD
+## Flashing
 
-The board routes the Pi's GPIO24 (SWCLK, ribbon pin 18) and GPIO25 (SWDIO, pin 22)
-straight to the module's debug pads, so the Pi is the programmer. This needs an
-OpenOCD that knows the RP2350 and can bit-bang SWD through the Pi 5's RP1 GPIO
-(`linuxgpiod`). Raspberry Pi ships one as a flat tarball (binary, `scripts/`, and
-its own `libgpiod.so.2`). It also wants `libftdi1.so.2` and `libhidapi-hidraw.so.0`,
-which the appliance image does not carry; the Debian arm64 packages `libftdi1-2`
-and `libhidapi-hidraw0` drop in beside the binary (extract the `.deb` with `ar x`
-and `tar xf data.tar.xz`, copy the two `.so.*` files and their symlinks). Put it
-all under `/data/bringup/openocd` on the unit (`/data` is the persistent partition):
+The appliance does it. The image carries this firmware, an OpenOCD built for
+the one adapter that reaches the board (`segno-openocd`), and a marker naming
+the firmware version and link protocol the app expects; a oneshot before
+`segno.service` listens for the board's `HELLO` and reprograms it over SWD only
+when it is not already running what shipped (#989). So the two halves of a
+build cannot ship out of step, and a board is repaired by a reboot rather than
+by a laptop.
 
-```sh
-# on the Pi (the appliance is root@<ip>, key login)
-mkdir -p /data/bringup/openocd && cd /data/bringup
-curl -LO https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.0-1/openocd-0.12.0+dev-aarch64-lin.tar.gz
-tar xzf openocd-0.12.0+dev-aarch64-lin.tar.gz -C openocd
-# + libftdi1.so.2* and libhidapi-hidraw.so.0* into openocd/
-LD_LIBRARY_PATH=openocd openocd/openocd --version
-```
+The board routes the Pi's GPIO24 (SWCLK, ribbon pin 18) and GPIO25 (SWDIO, pin
+22) straight to the module's debug pads, so the Pi is the programmer. SWDIO
+needs a pull-up the Pi firmware does not apply by default — `gpio=25=pu` in
+`config.txt`, which the image sets.
 
-The image config now carries `dtoverlay=uart3-pi5` and `gpio=25=pu`
-(`deploy/yocto/kas-segno-rpi5.yml`, `rpi5-console-board`). On a unit built before
-that, both can be applied at runtime without a reboot: the firmware partition
-holds the overlays, and `pinctrl` sets the pull.
+To flash by hand during bring-up, on the unit:
 
 ```sh
-mkdir -p /mnt/fw && mount -o ro /dev/nvme0n1p2 /mnt/fw      # the active firmware slot (rauc status)
-dtoverlay -d /mnt/fw/overlays uart3-pi5                     # -> /dev/ttyAMA3
-pinctrl set 25 pu                                           # SWDIO idle high; the Pi defaults it to pull-down
-echo performance > /sys/module/pcie_aspm/parameters/policy  # else the first SWD pulses clock at 20 MHz
+segno-openocd -f /usr/lib/segno/console-board/pi5-swd.cfg \
+  -c "program /usr/lib/segno/console-board/console_board.elf verify reset exit"
 ```
 
-Then, with the console board powered from BUCK_AUX and the ribbon on:
-
-```sh
-cd /data/bringup
-LD_LIBRARY_PATH=openocd openocd/openocd -s openocd/scripts -f pi5-swd.cfg \
-  -c "program console_board.ino.elf verify reset exit"
-```
-
-`pi5-swd.cfg` (in this directory) sources Raspberry Pi's `raspberrypi5-gpiod.cfg`,
-which locates the RP1 gpiochip from the device tree, and moves SWCLK/SWDIO to
-GPIO24/25. The Pico's green LED blinks at 1 Hz once the firmware runs.
+Point `program` at your own build to try a change; the next boot puts the
+shipped firmware back, which is the intended behaviour — the image is the
+source of truth for what the board runs.
 
 ## Talk to it from the Pi
 
