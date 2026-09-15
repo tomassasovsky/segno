@@ -225,7 +225,7 @@ jobs:
           path: deploy/yocto/prebuilt/console-board
 
       - name: Install bundle inspection tools
-        run: sudo apt-get update && sudo apt-get install -y rauc jq
+        run: sudo apt-get update && sudo apt-get install -y rauc jq squashfs-tools
 
       - name: Restore the app binary's executable bit
         # segno-bundle.bb's do_install checks `[ -x "${bundle}/segno" ]`; the
