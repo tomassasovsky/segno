@@ -79,7 +79,9 @@ openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=segno-test/ -days 1 \
     -keyout "$work/key.pem" -out "$work/cert.pem" >/dev/null 2>&1
 printf 'root=XXX\n' > "$work/boot/cmdline.txt"
 tar -cf "$work/input/boot.tar" -C "$work/boot" .
-printf 'test rootfs payload\n' > "$work/input/rootfs.ext4"
+# Verity requires the compressed squashfs to exceed one 4096-byte block.
+# Incompressible fixture bytes exercise the real signed-bundle path.
+openssl rand 16384 > "$work/input/rootfs.ext4"
 printf '#!/bin/sh\nexit 0\n' > "$work/input/install.sh"
 chmod +x "$work/input/install.sh"
 cat > "$work/input/manifest.raucm" <<'EOF'
