@@ -477,7 +477,6 @@ jobs:
           prerelease: ${{ needs.determine-meta.outputs.channel == 'experimental' }}
           files: |
             release-artifacts/*.raucb
-            release-artifacts/*.hex
             release-artifacts/manifest.json
 
       # Devices read from segno.aquiles.dev, not GitHub. Nudge the mirror now so

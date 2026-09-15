@@ -13,8 +13,9 @@ LICENSE = "CLOSED"
 
 inherit deploy nopackages
 
-# The files below are produced by these; deploy after they have deployed.
-do_deploy[depends] += "rpi-bootfiles:do_deploy rpi-config:do_deploy rpi-cmdline:do_deploy virtual/kernel:do_deploy"
+# do_compile copies these outputs. Wait for their producers here so a changed
+# kernel or boot configuration also invalidates the copied tree's signature.
+do_compile[depends] += "rpi-bootfiles:do_deploy rpi-config:do_deploy rpi-cmdline:do_deploy virtual/kernel:do_deploy"
 
 # cmdline.txt keeps its root=XXX placeholder here, exactly as the WIC image does
 # before tryboot-cmdline rewrites it per slot. The install hook does the same
