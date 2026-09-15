@@ -20,9 +20,9 @@
 #             slot is never tried, while RAUC still reports the install as a
 #             success. Note the argument goes through `--reboot-argument=`, NOT
 #             as the positional `systemctl reboot "0 tryboot"` the Pi docs and
-#             the RAUC backend comments describe: this image ships systemd 259,
-#             where the positional form is gone and the string is silently
-#             dropped. See #974 and run_reboot_tests.sh.
+#             the RAUC backend comments describe. The failed build 106 used
+#             systemd 259 and dropped that positional string. The named option
+#             also works on the retained walnascar target. See #974 and tests.
 #   poweroff  Clean halt (`systemctl start poweroff.target`). Does not go through
 #             logind — this image has none — so `systemctl poweroff` would fail.
 #   reconcile-staged

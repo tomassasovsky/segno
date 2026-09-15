@@ -16,8 +16,8 @@
 #
 # The second half matters and is easy to regress. `systemctl reboot "0 tryboot"`
 # is what the Raspberry Pi docs and the RAUC backend's own comments describe,
-# and it is what older systemd accepted — but the appliance ships systemd 259,
-# where the positional form is gone and the string is silently dropped. A
+# and it is what older systemd accepted — but failed build 106 used systemd 259,
+# where the positional form was dropped. The named option works on walnascar. A
 # dropped argument is invisible: the unit reboots, comes up on the old build,
 # and every layer above reports success.
 #
