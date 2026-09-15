@@ -5664,5 +5664,17 @@
                 "type": "String"
             }
         }
+    },
+    "midiControlBehavior": "Control behavior",
+    "@midiControlBehavior": {
+        "description": "Accessible name of the Knob / fader or Button choice."
+    },
+    "midiButtonBehavior": "Button behavior",
+    "@midiButtonBehavior": {
+        "description": "Accessible name of the Momentary or Toggle choice."
+    },
+    "midiRepairReady": "Repair ready · Save to keep",
+    "@midiRepairReady": {
+        "description": "Notice after a missing control is repointed, until Save keeps it."
     }
 }

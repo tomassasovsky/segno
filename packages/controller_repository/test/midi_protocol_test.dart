@@ -292,11 +292,18 @@ void main() {
 
     test('changing the channel keeps everything else', () {
       final nrpn = source(MidiProtocol.nrpn, number: 6, parameter: 259);
-      final all = nrpn.withChannel(null);
-      expect(all.channel, isNull);
-      expect(all.withChannel(0), nrpn);
-      expect(all.parameter, 259);
-      expect(all.protocol, MidiProtocol.nrpn);
+      final banked = source(
+        MidiProtocol.bankProgram,
+        kind: ControllerSourceKind.midiProgram,
+        number: 8,
+        bank: 260,
+      );
+      for (final original in [nrpn, banked]) {
+        final all = original.withChannel(null);
+        expect(all.channel, isNull);
+        expect(all.withChannel(0), original);
+        expect(all.withChannel(3).isValid, isTrue);
+      }
     });
 
     test('a plain CC and a 14-bit CC on its footprint overlap', () {

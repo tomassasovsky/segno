@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -15,6 +16,7 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
+import 'package:segno/control/view/pedal_tray_body.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -28,18 +30,25 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
 
-/// A settings store whose writes fail while [failing] is set.
+/// A settings store whose writes fail while [failing] is set, and wait for
+/// [gate] while one is set.
 class _FailingStore extends FakeKeyValueStore {
   bool failing = false;
+  Completer<void>? gate;
+  Completer<void>? boolGate;
 
   @override
-  Future<void> setString(String key, String value) {
+  Future<void> setString(String key, String value) async {
+    final pending = gate;
+    if (pending != null) await pending.future;
     if (failing) throw const FileSystemException('disk full');
     return super.setString(key, value);
   }
 
   @override
-  Future<void> setBool(String key, {required bool value}) {
+  Future<void> setBool(String key, {required bool value}) async {
+    final pending = boolGate;
+    if (pending != null) await pending.future;
     if (failing) throw const FileSystemException('disk full');
     return super.setBool(key, value: value);
   }
@@ -167,6 +176,8 @@ void main() {
     MidiConnection connection = _connected,
     List<MidiMapping> mappings = const [],
     Duration learnTimeout = const Duration(seconds: 15),
+    Widget? home,
+    bool open = true,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -229,21 +240,27 @@ void main() {
                 routingGraphThemeFromSurface(SurfaceTheme.dark),
               ],
             ),
-            home: Builder(
-              builder: (context) => Scaffold(
-                body: Center(
-                  child: TextButton(
-                    key: const Key('open'),
-                    onPressed: () => unawaited(openMidiControls()),
-                    child: const Text('open'),
+            home:
+                home ??
+                Builder(
+                  builder: (context) => Scaffold(
+                    body: Center(
+                      child: TextButton(
+                        key: const Key('open'),
+                        onPressed: () => unawaited(openMidiControls()),
+                        child: const Text('open'),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
           ),
         ),
       ),
     );
+    if (!open) {
+      await tester.pumpAndSettle();
+      return;
+    }
     await tester.tap(find.byKey(const Key('open')));
     await tester.pumpAndSettle();
   }
@@ -258,8 +275,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  String text(String key) =>
-      (find.byKey(Key(key)).evaluate().single.widget as AppText).data ?? '';
+  String text(String key) {
+    final keyed = find.byKey(Key(key));
+    final widget = keyed.evaluate().single.widget;
+    if (widget is AppText) return widget.data ?? '';
+    return (find
+                    .descendant(of: keyed, matching: find.byType(AppText))
+                    .evaluate()
+                    .first
+                    .widget
+                as AppText)
+            .data ??
+        '';
+  }
 
   bool enabled(WidgetTester tester, String key) {
     final button = find.descendant(
@@ -346,6 +374,80 @@ void main() {
       expect(find.bySemanticsLabel('Last received value 0'), findsOneWidget);
       await send(tester, [_cc(21, 127)]);
       expect(find.bySemanticsLabel('Last received value 127'), findsOneWidget);
+    });
+
+    testWidgets('the meter keeps its reading through a visit to the editor', (
+      tester,
+    ) async {
+      await pump(tester, mappings: [knob()]);
+      await send(tester, [_cc(21, 100)]);
+      await tap(tester, 'midi_row_edit_m1');
+      await tap(tester, 'midi_cancel');
+      expect(find.bySemanticsLabel('Last received value 100'), findsOneWidget);
+    });
+
+    testWidgets('a controller that goes away drops the half it sent', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        mappings: [
+          MidiMapping(
+            id: 'm1',
+            source: const MidiSource(
+              device: _usb,
+              kind: ControllerSourceKind.midiCc,
+              number: 22,
+              channel: 0,
+              protocol: MidiProtocol.cc14,
+            ),
+            behavior: MidiBehavior.continuous,
+            controls: [
+              MidiParameterControl(
+                key: volume.canonicalString(),
+                low: 0,
+                high: 1,
+              ),
+            ],
+          ),
+        ],
+      );
+      await send(tester, [_cc(22, 64)]);
+      final gone = _connected.copyWith(status: MidiConnectionStatus.deviceGone);
+      connections.add(gone);
+      await tester.pumpAndSettle();
+      connections.add(_connected);
+      await tester.pumpAndSettle();
+      await send(tester, [_cc(54, 1)]);
+      expect(find.bySemanticsLabel('Last received value 0'), findsOneWidget);
+    });
+
+    testWidgets('a screen reader can press every control on the page', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await pump(tester, mappings: [knob()]);
+      for (final label in [
+        'USB controller',
+        'CC 21 · Ch 1',
+        'Disable CC 21 · Ch 1',
+      ]) {
+        final node = tester.getSemantics(find.bySemanticsLabel(label));
+        expect(
+          node.getSemanticsData().hasAction(SemanticsAction.tap),
+          isTrue,
+          reason: label,
+        );
+      }
+      await tap(tester, 'midi_row_edit_m1');
+      final segment = tester.getSemantics(
+        find.bySemanticsLabel('Knob / fader'),
+      );
+      expect(
+        segment.getSemanticsData().hasAction(SemanticsAction.tap),
+        isTrue,
+      );
+      semantics.dispose();
     });
 
     testWidgets('the power button turns a mapping off and on', (tester) async {
@@ -502,8 +604,13 @@ void main() {
       expect(enabled(tester, 'midi_save'), isFalse);
 
       await tap(tester, 'midi_edit_existing');
-      expect(control.state.midiEdit?.editingId, 'm1');
+      expect(text('midi_source_name'), 'CC 21 · Ch 1');
       expect(find.byKey(const Key('midi_delete')), findsOneWidget);
+      expect(
+        find.byKey(Key('midi_control_${volume.canonicalString()}')),
+        findsOneWidget,
+        reason: 'the saved mapping, with its own controls',
+      );
       expect(find.byKey(const Key('midi_conflict')), findsNothing);
       expect(find.byKey(const Key('midi_received')), findsNothing);
     });
@@ -532,7 +639,7 @@ void main() {
     testWidgets('opens it with the controller paused', (tester) async {
       await pump(tester, mappings: [knob()]);
       await tap(tester, 'midi_row_edit_m1');
-      expect(control.state.midiEdit?.editingId, 'm1');
+      expect(control.state.midiEdit?.device, _usb);
       expect(control.state.midiEdit?.learn, isNull);
       expect(text('midi_source_name'), 'CC 21 · Ch 1');
       expect(enabled(tester, 'midi_save'), isTrue);
@@ -568,7 +675,7 @@ void main() {
       store.failing = true;
       await tap(tester, 'midi_delete');
       expect(control.state.midiMappings.byId('m1'), isNotNull);
-      expect(control.state.midiEdit?.editingId, 'm1');
+      expect(find.byKey(const Key('midi_delete')), findsOneWidget);
       expect(
         text('midi_editor_notice'),
         'Could not save. Your changes are still here.',
@@ -605,7 +712,11 @@ void main() {
       }
       await tap(tester, 'pedal_choice_$mute');
       expect(find.byKey(Key('midi_control_$mute')), findsOneWidget);
-      expect(find.byKey(const Key('midi_knob_false')), findsOneWidget);
+      expect(
+        find.byKey(const Key('midi_behavior_momentary')),
+        findsOneWidget,
+        reason: 'only a button offers Momentary or Toggle',
+      );
 
       await tap(tester, 'midi_knob_true');
       expect(text('midi_editor_notice'), 'Actions need a button.');
@@ -632,10 +743,30 @@ void main() {
       expect(find.text('Performance actions · use a button'), findsOneWidget);
     });
 
-    testWidgets('Change control repoints a parameter in place', (
-      tester,
-    ) async {
-      await pump(tester, mappings: [knob(target: gone)]);
+    testWidgets('Repair control repoints a parameter in place, and says '
+        'Save keeps it', (tester) async {
+      await pump(
+        tester,
+        mappings: [
+          MidiMapping(
+            id: 'm1',
+            source: _source(),
+            behavior: MidiBehavior.continuous,
+            controls: [
+              MidiParameterControl(
+                key: gone.canonicalString(),
+                low: 0.2,
+                high: 0.8,
+              ),
+              MidiParameterControl(
+                key: volume.canonicalString(),
+                low: 0,
+                high: 1,
+              ),
+            ],
+          ),
+        ],
+      );
       await tap(tester, 'midi_row_edit_m1');
       final key = gone.canonicalString();
       expect(find.text('Repair control'), findsOneWidget);
@@ -644,11 +775,156 @@ void main() {
       await tap(tester, 'expression_kind_recordedTrack');
       await tap(tester, 'expression_destination_track:0');
       await tap(tester, 'expression_target_${mix.canonicalString()}');
+      expect(text('midi_editor_notice'), 'Repair ready · Save to keep');
+      await tap(tester, 'midi_save');
+      final controls = control.state.midiMappings.byId('m1')!.controls;
+      final first = controls.first as MidiParameterControl;
+      expect(
+        (first.key, first.low, first.high),
+        (mix.canonicalString(), 0.2, 0.8),
+        reason: 'the same place and the same range',
+      );
+      expect(controls.last.key, volume.canonicalString());
+    });
+
+    testWidgets('a failed Save of an edited mapping keeps the edit', (
+      tester,
+    ) async {
+      await pump(tester, mappings: [knob()]);
+      await tap(tester, 'midi_row_edit_m1');
+      await tap(tester, 'midi_channel');
+      await tap(tester, 'midi_channel_3');
+      store.failing = true;
+      await tap(tester, 'midi_save');
+      expect(control.state.midiMappings.byId('m1')?.source.channel, 0);
+      expect(text('midi_source_name'), 'CC 21 · Ch 4');
+      expect(
+        text('midi_editor_notice'),
+        'Could not save. Your changes are still here.',
+      );
+    });
+
+    testWidgets('Button chosen again leaves a Toggle a Toggle', (tester) async {
+      await pump(
+        tester,
+        mappings: [
+          MidiMapping(
+            id: 'm1',
+            source: _source(),
+            behavior: MidiBehavior.toggle,
+            controls: [
+              MidiParameterControl(
+                key: volume.canonicalString(),
+                low: 0,
+                high: 1,
+              ),
+            ],
+          ),
+        ],
+      );
+      await tap(tester, 'midi_row_edit_m1');
+      await tap(tester, 'midi_knob_false');
       await tap(tester, 'midi_save');
       expect(
-        control.state.midiMappings.byId('m1')!.controls.single.key,
-        mix.canonicalString(),
+        control.state.midiMappings.byId('m1')?.behavior,
+        MidiBehavior.toggle,
       );
+    });
+
+    testWidgets('no path learns a relative control for a mapping with '
+        'actions', (tester) async {
+      await pump(tester, mappings: [knob()]);
+      await tap(tester, 'midi_row_edit_m1');
+      await tap(tester, 'midi_format');
+      await tap(tester, 'midi_format_relative');
+      await tap(tester, 'midi_cancel_learn');
+      // The control is still a plain CC, so an action can be added...
+      await tap(tester, 'midi_add_control');
+      await tap(tester, 'midi_performance_actions');
+      await tap(tester, 'pedal_choice_none');
+      expect(find.text('Mapping'), findsOneWidget, reason: 'None ends it');
+      await tap(tester, 'midi_add_control');
+      await tap(tester, 'midi_performance_actions');
+      final mute = const ModeAction(InteractionMode.mute).key;
+      final tab = find.byKey(const Key('pedal_choice_group_functions'));
+      if (tab.evaluate().isNotEmpty) {
+        await tester.tap(tab);
+        await tester.pumpAndSettle();
+      }
+      await tap(tester, 'pedal_choice_$mute');
+      // ...and Learn another control, still set to Relative, is refused.
+      await tap(tester, 'midi_learn');
+      expect(control.state.midiEdit?.learn, isNull);
+      expect(
+        text('midi_editor_notice'),
+        'Remove action targets before learning a high-resolution or relative '
+        'control.',
+      );
+    });
+
+    testWidgets('choosing what to add stops Learn, and keeps what it heard', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tap(tester, 'midi_add_mapping');
+      await tap(tester, 'midi_add_control');
+      expect(control.state.midiEdit?.learn, isNull);
+      await send(tester, [_cc(22, 64)]);
+      await tap(tester, 'loop_settings_back');
+      expect(text('midi_source_name'), 'No control selected');
+
+      await tap(tester, 'midi_learn');
+      await send(tester, [_cc(23, 90)]);
+      await tap(tester, 'midi_add_control');
+      await tap(tester, 'loop_settings_back');
+      expect(text('midi_received'), 'Received 90 / 127');
+    });
+
+    testWidgets('a Delete or a MIDI control switch that lands after the '
+        'editor moved on leaves the new editor alone', (tester) async {
+      await pump(tester, mappings: [knob()]);
+      await tap(tester, 'midi_row_edit_m1');
+      var gate = store.gate = Completer<void>();
+      await tester.tap(find.byKey(const Key('midi_delete')));
+      await tester.pump();
+      await tap(tester, 'midi_cancel');
+      await tap(tester, 'midi_add_mapping');
+      gate.complete();
+      store.gate = null;
+      await tester.pumpAndSettle();
+      expect(control.state.midiMappings.byId('m1'), isNull);
+      expect(control.state.midiEdit?.learn?.isListening, isTrue);
+      expect(find.byKey(const Key('midi_editor_notice')), findsNothing);
+
+      await tap(tester, 'midi_cancel');
+      store.boolGate = gate = Completer<void>();
+      await tester.tap(find.byKey(const Key('midi_control_enabled')));
+      await tester.pump();
+      await tap(tester, 'midi_add_mapping');
+      gate.complete();
+      store.boolGate = null;
+      await tester.pumpAndSettle();
+      expect(control.state.midiControlEnabled, isFalse);
+      expect(find.byKey(const Key('midi_editor_notice')), findsNothing);
+    });
+
+    testWidgets('a Save that lands after the editor moved on leaves the new '
+        'editor alone', (tester) async {
+      await pump(tester, mappings: [knob()]);
+      await tap(tester, 'midi_row_edit_m1');
+      await tap(tester, 'midi_channel');
+      await tap(tester, 'midi_channel_3');
+      final gate = store.gate = Completer<void>();
+      await tester.tap(find.byKey(const Key('midi_save')));
+      await tester.pump();
+      await tap(tester, 'midi_cancel');
+      await tap(tester, 'midi_add_mapping');
+      gate.complete();
+      store.gate = null;
+      await tester.pumpAndSettle();
+      expect(control.state.midiMappings.byId('m1')?.source.channel, 3);
+      expect(text('midi_source_name'), 'No control selected');
+      expect(control.state.midiEdit?.learn?.isListening, isTrue);
     });
 
     testWidgets('removing its last control leaves nothing to save', (
@@ -663,6 +939,16 @@ void main() {
   });
 
   group('leaving', () {
+    testWidgets('the Control face row opens it', (tester) async {
+      await pump(
+        tester,
+        open: false,
+        home: const Scaffold(body: PedalTrayBody()),
+      );
+      await tap(tester, 'control_open_midi');
+      expect(find.byType(MidiControlsPage), findsOneWidget);
+    });
+
     testWidgets('opening it again while it is open stacks nothing', (
       tester,
     ) async {

@@ -68,6 +68,7 @@ class MidiChoiceGrid<T> extends StatelessWidget {
           selected: isSelected,
           label: choice.label,
           value: detail,
+          onTap: () => onPick(choice.value),
           excludeSemantics: true,
           child: Material(
             key: Key('${keyPrefix}_${choice.id}'),

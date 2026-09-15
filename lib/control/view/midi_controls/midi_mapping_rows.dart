@@ -1,10 +1,6 @@
-import 'dart:async';
-
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -33,15 +29,12 @@ class MidiMappingRow {
 }
 
 /// The saved mappings of the input in use, with what each last received.
-///
-/// The meters read the controller's messages straight from the repository,
-/// not from the control state: a fader sends many messages a second, and a
-/// page rebuilt for each would pay for a readout. Only the meters redraw.
-class MidiMappingRows extends StatefulWidget {
+class MidiMappingRows extends StatelessWidget {
   /// Creates a [MidiMappingRows].
   const MidiMappingRows({
     required this.rows,
-    required this.device,
+    required this.lastOf,
+    required this.moved,
     required this.onEdit,
     required this.onEnabled,
     super.key,
@@ -50,8 +43,11 @@ class MidiMappingRows extends StatefulWidget {
   /// The rows, in the order the mappings were added.
   final List<MidiMappingRow> rows;
 
-  /// The input in use, whose messages the meters read.
-  final String device;
+  /// The last reading a control sent, or `null` before it sent one.
+  final MidiControlEvent? Function(MidiSource source) lastOf;
+
+  /// Notifies when any reading moves, so only the meters redraw.
+  final Listenable moved;
 
   /// Opens a mapping in the editor.
   final ValueChanged<MidiMapping> onEdit;
@@ -60,54 +56,19 @@ class MidiMappingRows extends StatefulWidget {
   final void Function(MidiMapping mapping, {required bool enabled}) onEnabled;
 
   @override
-  State<MidiMappingRows> createState() => _MidiMappingRowsState();
-}
-
-class _MidiMappingRowsState extends State<MidiMappingRows> {
-  final Stopwatch _clock = Stopwatch()..start();
-  late final MidiSignalLevels _levels = MidiSignalLevels(
-    clock: () => _clock.elapsed,
-  );
-
-  /// Bumped when any level moves; the meters listen to it.
-  final ValueNotifier<int> _moved = ValueNotifier(0);
-  StreamSubscription<RawControllerInput>? _messages;
-
-  @override
-  void initState() {
-    super.initState();
-    _messages = context.read<MidiDeviceRepository>().messages.listen(
-      _onMessage,
-    );
-  }
-
-  void _onMessage(RawControllerInput message) {
-    final sources = [for (final row in widget.rows) row.mapping.source];
-    if (_levels.feed(widget.device, message, sources)) _moved.value++;
-  }
-
-  @override
-  void dispose() {
-    unawaited(_messages?.cancel());
-    _moved.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) => ListView.separated(
     shrinkWrap: true,
     padding: EdgeInsets.zero,
-    itemCount: widget.rows.length,
+    itemCount: rows.length,
     separatorBuilder: (_, _) => const SizedBox(height: 14),
     itemBuilder: (context, index) {
-      final row = widget.rows[index];
+      final row = rows[index];
       return _Row(
         row: row,
-        moved: _moved,
-        levelOf: () => _levels.levelOf(row.mapping.source),
-        onEdit: () => widget.onEdit(row.mapping),
-        onEnabled: () =>
-            widget.onEnabled(row.mapping, enabled: !row.mapping.enabled),
+        moved: moved,
+        lastOf: () => lastOf(row.mapping.source),
+        onEdit: () => onEdit(row.mapping),
+        onEnabled: () => onEnabled(row.mapping, enabled: !row.mapping.enabled),
       );
     },
   );
@@ -117,14 +78,14 @@ class _Row extends StatelessWidget {
   const _Row({
     required this.row,
     required this.moved,
-    required this.levelOf,
+    required this.lastOf,
     required this.onEdit,
     required this.onEnabled,
   });
 
   final MidiMappingRow row;
-  final ValueNotifier<int> moved;
-  final double Function() levelOf;
+  final Listenable moved;
+  final MidiControlEvent? Function() lastOf;
   final VoidCallback onEdit;
   final VoidCallback onEnabled;
 
@@ -140,7 +101,7 @@ class _Row extends StatelessWidget {
     return Opacity(
       // A disabled mapping keeps its row, drawn back, so it can be turned on
       // again where it was.
-      opacity: enabled ? 1 : 0.5,
+      opacity: enabled ? 1 : surface.disabledOpacity,
       child: Container(
         key: Key('midi_row_$id'),
         height: _height,
@@ -157,6 +118,7 @@ class _Row extends StatelessWidget {
                 button: true,
                 label: row.name,
                 value: row.targets,
+                onTap: onEdit,
                 excludeSemantics: true,
                 child: InkWell(
                   key: Key('midi_row_edit_$id'),
@@ -193,12 +155,11 @@ class _Row extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 28),
-            ValueListenableBuilder<int>(
-              valueListenable: moved,
-              builder: (context, _, _) => _Meter(
+            ListenableBuilder(
+              listenable: moved,
+              builder: (context, _) => _Meter(
                 key: Key('midi_row_meter_$id'),
-                level: levelOf(),
-                maximum: _maximum(row.mapping.source),
+                reading: lastOf(),
               ),
             ),
             if (warning != null) ...[
@@ -223,28 +184,22 @@ class _Row extends StatelessWidget {
       ),
     );
   }
-
-  static int _maximum(MidiSource source) => switch (source.protocol) {
-    MidiProtocol.cc14 || MidiProtocol.nrpn => MidiSource.maxWord,
-    MidiProtocol.standard ||
-    MidiProtocol.bankProgram ||
-    MidiProtocol.relative => 127,
-  };
 }
 
 /// The last value a mapping received, as a bar.
 class _Meter extends StatelessWidget {
-  const _Meter({required this.level, required this.maximum, super.key});
+  const _Meter({required this.reading, super.key});
 
-  final double level;
-  final int maximum;
+  final MidiControlEvent? reading;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
+    final reading = this.reading;
+    final level = reading == null ? 0.0 : reading.value / reading.maximum;
     return Semantics(
-      label: l10n.a11yMidiLastReceived((level * maximum).round()),
+      label: l10n.a11yMidiLastReceived(reading?.value ?? 0),
       excludeSemantics: true,
       child: Container(
         width: 120,
@@ -285,6 +240,7 @@ class _PowerButton extends StatelessWidget {
       button: true,
       toggled: on,
       label: semanticLabel,
+      onTap: onTap,
       excludeSemantics: true,
       child: Material(
         color: on ? surface.accentSurface : Colors.transparent,

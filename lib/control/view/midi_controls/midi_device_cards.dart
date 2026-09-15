@@ -145,6 +145,7 @@ class _DeviceCard extends StatelessWidget {
       selected: card.selected,
       label: card.name,
       value: status,
+      onTap: onTap,
       excludeSemantics: true,
       child: Material(
         key: Key('midi_device_${card.id}'),

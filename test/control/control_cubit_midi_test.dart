@@ -174,9 +174,9 @@ void main() {
     await settle();
   }
 
-  void learn(MidiProtocol protocol, {String? editingId}) {
+  void learn(MidiProtocol protocol) {
     cubit
-      ..beginMidiEdit(device: _device, editingId: editingId)
+      ..beginMidiEdit(device: _device)
       ..startMidiLearn(protocol);
   }
 
@@ -415,12 +415,32 @@ void main() {
       );
     });
 
+    test(
+      'Cancel Learn and reopening the editor both stop the timeout',
+      () async {
+        await cubit.close();
+        cubit = build(learnTimeout: const Duration(milliseconds: 1));
+        await cubit.load();
+        await connect();
+
+        learn(MidiProtocol.standard);
+        cubit.cancelMidiLearn();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(cubit.state.midiEdit?.learnTimedOut, isFalse);
+
+        learn(MidiProtocol.standard);
+        cubit.beginMidiEdit(device: _device);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(cubit.state.midiEdit?.learnTimedOut, isFalse);
+      },
+    );
+
     test('Edit existing mapping moves the editor to it', () async {
       await cubit.saveMidiMapping(knobOn(volume0));
       learn(MidiProtocol.standard);
       await send([_cc(21, 64)]);
-      cubit.beginMidiEdit(device: _device, editingId: 'knob');
-      expect(cubit.state.midiEdit?.editingId, 'knob');
+      cubit.beginMidiEdit(device: _device);
+      expect(cubit.state.midiEdit?.device, _device);
       expect(learning(), isNull);
     });
   });
@@ -444,7 +464,7 @@ void main() {
       await send([_note(60, 100)]);
       expect(volumeWrites.last.$2, 0.9);
 
-      cubit.beginMidiEdit(device: _device, editingId: 'held');
+      cubit.beginMidiEdit(device: _device);
       expect(volumeWrites.last.$2, 0.2, reason: 'its hold ends on entry');
       volumeWrites.clear();
       await send([_note(60, 0), _note(60, 100)]);
@@ -483,7 +503,7 @@ void main() {
       'an editor closed while its device was away does not strand it',
       () async {
         await cubit.saveMidiMapping(held());
-        cubit.beginMidiEdit(device: _device, editingId: 'held');
+        cubit.beginMidiEdit(device: _device);
         await connect(connected: false);
         cubit.endMidiEdit();
         await connect();
@@ -540,8 +560,9 @@ void main() {
     test('a failed write changes nothing', () async {
       await cubit.saveMidiMapping(knobOn(volume0));
       store.failing = true;
-      await cubit.saveMidiMapping(knobOn(volume0).copyWith(enabled: false));
-      expect(cubit.state.midiMappings.byId('knob')?.enabled, isTrue);
+      final moved = knobOn(volume0).copyWith(source: _source(number: 30));
+      await cubit.saveMidiMapping(moved);
+      expect(cubit.state.midiMappings.byId('knob')?.source.number, 21);
       await send([_cc(21, 64), _cc(21, 100)]);
       expect(volumeWrites, isNotEmpty, reason: 'the saved one still runs');
 
@@ -550,10 +571,29 @@ void main() {
       await cubit.setMidiControlEnabled(enabled: false);
       expect(cubit.state.midiMappings.byId('knob')?.enabled, isTrue);
       expect(cubit.state.midiControlEnabled, isTrue);
+      volumeWrites.clear();
+      await send([_cc(21, 110)]);
+      expect(
+        volumeWrites,
+        isNotEmpty,
+        reason: 'a Control Off that was not written does not stop dispatch',
+      );
 
       store.failing = false;
       await cubit.deleteMidiMapping('knob');
       expect(cubit.state.midiMappings.mappings, isEmpty);
+    });
+
+    test('Save keeps whether a mapping is enabled', () async {
+      await cubit.saveMidiMapping(knobOn(volume0));
+      await cubit.setMidiMappingEnabled('knob', enabled: false);
+      // An editor opened before the toggle landed still holds enabled: true.
+      await cubit.saveMidiMapping(
+        knobOn(volume0).copyWith(source: _source(number: 30)),
+      );
+      final saved = cubit.state.midiMappings.byId('knob');
+      expect(saved?.source.number, 30);
+      expect(saved?.enabled, isFalse);
     });
 
     test('quick edits run in order and none is lost', () async {

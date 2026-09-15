@@ -2616,6 +2616,10 @@ class ControlCubit extends Cubit<ControlState> {
   /// Saves [mapping], adding it or replacing the one with its id — the MIDI
   /// controls editor's Save.
   ///
+  /// A saved mapping keeps whether it is enabled: that is the power button's
+  /// to change, and a toggle still being written when the editor opened must
+  /// not be undone by the editor's Save.
+  ///
   /// Refused, with nothing changed, when the mapping cannot be saved as it
   /// stands or overlaps another mapping's source; the editor checks both
   /// before it offers Save. When writing fails nothing changes either, so the
@@ -2628,7 +2632,12 @@ class ControlCubit extends Cubit<ControlState> {
         if (set.conflictWith(mapping.source, exceptId: mapping.id) != null) {
           return;
         }
-        await _persistMidiMappings(set.withMapping(mapping));
+        final saved = set.byId(mapping.id);
+        await _persistMidiMappings(
+          set.withMapping(
+            saved == null ? mapping : mapping.copyWith(enabled: saved.enabled),
+          ),
+        );
       });
 
   /// Deletes the mapping [id], ending its holds. When writing fails the
@@ -2665,22 +2674,17 @@ class ControlCubit extends Cubit<ControlState> {
         emit(state.copyWith(midiControlEnabled: enabled));
       });
 
-  /// Opens the MIDI mapping editor on [device], for the saved mapping
-  /// [editingId] or for a new one.
+  /// Opens the MIDI mapping editor on [device].
   ///
   /// The device dispatches nothing until [endMidiEdit], and every hold it had
-  /// ends now. Opening it again — Edit existing mapping after a conflict —
-  /// moves the editor to that mapping and ends any Learn.
-  void beginMidiEdit({required String device, String? editingId}) {
+  /// ends now. Opening it again — for another mapping, or Edit existing
+  /// mapping after a conflict — ends any Learn.
+  void beginMidiEdit({required String device}) {
     final open = state.midiEdit;
     if (open != null && open.device != device) _midi.resume(open.device);
     _midiLearnTimer?.cancel();
     _applyMidi(_midi.pause(device));
-    emit(
-      state.copyWith(
-        midiEdit: MidiEdit(device: device, editingId: editingId),
-      ),
-    );
+    emit(state.copyWith(midiEdit: MidiEdit(device: device)));
   }
 
   /// Starts listening for the next control from the device being edited, read

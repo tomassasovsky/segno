@@ -10,7 +10,6 @@ class MidiEdit extends Equatable {
   /// Creates a [MidiEdit] on [device].
   const MidiEdit({
     required this.device,
-    this.editingId,
     this.learn,
     this.learnTimedOut = false,
   });
@@ -18,10 +17,6 @@ class MidiEdit extends Equatable {
   /// The device whose mappings are being edited, by its stable identity. It
   /// stays paused while the editor is open, connected or not.
   final String device;
-
-  /// The saved mapping being edited, or `null` for a new one. Its own source
-  /// never counts as a conflict.
-  final String? editingId;
 
   /// The Learn in progress, or `null`.
   final MidiLearn? learn;
@@ -34,11 +29,10 @@ class MidiEdit extends Equatable {
   /// `null`.
   MidiEdit withLearn(MidiLearn? learn, {bool timedOut = false}) => MidiEdit(
     device: device,
-    editingId: editingId,
     learn: learn,
     learnTimedOut: timedOut,
   );
 
   @override
-  List<Object?> get props => [device, editingId, learn, learnTimedOut];
+  List<Object?> get props => [device, learn, learnTimedOut];
 }
