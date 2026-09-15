@@ -219,7 +219,7 @@ jobs:
           name: segno-app-bundle
           path: deploy/yocto/prebuilt/bundle
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: segno-console-board
           path: deploy/yocto/prebuilt/console-board
