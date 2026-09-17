@@ -19,4 +19,4 @@ Comment,Designator,Footprint,LCSC,Qty,Type
 "PILLS","J24",JST_VH_B3P-VH_1x03_P3.96mm_Vertical,,1,Component
 "EXPANSION","J22",PinHeader_2x03_P2.54mm_Vertical,,1,Component
 "330","R2",R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,,1,Component
-"Pico2","J1",RaspberryPi_Pico_SMD_HandSolder,,1,Component
+"Pico2","J1",RaspberryPi_Pico_SMD_or_THT_Debug,,1,Component

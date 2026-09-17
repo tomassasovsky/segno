@@ -180,8 +180,18 @@ link_to_console = Net("LINK_TO_CONSOLE")  # the XIAO drives, this board listens
 ctrl1, ctrl2 = Net("CTRL1_TIP"), Net("CTRL2_TIP")
 
 # ---- J1: Pico 2 (RP2350) ----------------------------------------------------
-# KiCad's own Module:RaspberryPi_Pico_Common_THT -- its description states it
-# "supports Raspberry Pi Pico 2". Nothing vendored, nothing hand-drawn.
+# EITHER WAY, on segno:RaspberryPi_Pico_SMD_or_THT_Debug (owner call, #1062):
+# KiCad's SMD hand-solder footprint -- pads, silk, courtyard, 3D model -- with a
+# through-hole added at every pin. Solder the module flat by its castellations,
+# or socket it on 2.54 mm headers and pull it out later; the board does not care,
+# and a socketed module can be lifted out to reach its own USB, which this board
+# no longer leaves a corridor for.
+#
+# The three debug holes land on D1/D2/D3, which the plain (headerless) Pico 2
+# carries as 0.1 in through-holes, so SWD stays on the board in both builds --
+# KiCad's own THT footprint drops those pads entirely, and SWD is how the
+# appliance flashes this board on every update. (The "H" variants ship a 1.0 mm
+# JST-SH connector there instead and do not fit.)
 # Pad numbers are the module's physical pins:
 #   1 GP0  2 GP1  3 GND  4 GP2  5 GP3  6 GP4  7 GP5  8 GND  9 GP6  10 GP7
 #  11 GP8 12 GP9 13 GND 14 GP10 15 GP11 16 GP12 17 GP13 18 GND 19 GP14 20 GP15
@@ -197,10 +207,10 @@ PICO = {  # GPIO number -> module pad
 ADC_GPIO = (26, 27, 28)          # the only ADC-capable pins on the module header
 
 pico = Part("Connector_Generic", "Conn_01x40",
-            footprint="Module:RaspberryPi_Pico_SMD_HandSolder", ref="J1", value="Pico2")
-# Conn_01x40 is the 40 castellated ways. The SMD footprint ALSO carries the three
-# debug pads (D1/D2/D3 along the module's bottom edge), which no generic connector
-# symbol has, so they are added to the part by hand -- otherwise SWD has nothing to
+            footprint="segno:RaspberryPi_Pico_SMD_or_THT_Debug", ref="J1", value="Pico2")
+# Conn_01x40 is the 40 ways. The footprint ALSO carries the three debug pads
+# (D1/D2/D3 along the module's bottom edge), which no generic connector symbol
+# has, so they are added to the part by hand -- otherwise SWD has nothing to
 # attach to and silently falls back to needing a header.
 pico.add_pins(Pin(num="D1", name="SWCLK", func=Pin.types.BIDIR),
               Pin(num="D2", name="GND", func=Pin.types.PASSIVE),
@@ -1034,9 +1044,10 @@ def _check(strict_stations=True):
     # against the dict that made the connections is a tautology, and it passed with
     # SWCLK and SWDIO swapped -- which is the mistake that actually happens, and
     # which bricks flashing rather than announcing itself.
-    assert pico.footprint.endswith("RaspberryPi_Pico_SMD_HandSolder"), (
-        f"SWD: J1 is on {pico.footprint}, which has no D1/D2/D3 debug pads -- SWD "
-        "would need a header and three flying wires again")
+    assert pico.footprint.endswith("RaspberryPi_Pico_SMD_or_THT_Debug"), (
+        f"SWD: J1 is on {pico.footprint}. Only the vendored SMD_or_THT_Debug "
+        "footprint carries D1/D2/D3 in both build styles -- KiCad's own THT one "
+        "drops them, and SWD would need a header and three flying wires again")
     for _pad, _want in (("D1", "SWCLK"), ("D2", "GND"), ("D3", "SWDIO")):
         got = {n.name for n in pico[_pad].nets}
         assert _want in got, (
@@ -1221,7 +1232,8 @@ def report():
     for name, gp in sorted(GPIO.items(), key=lambda kv: kv[1]):
         lay.append("  GP%-3d pad %-3d %s" % (gp, PICO[gp], name))
     return ("Segno CONSOLE board v2 (#747)\n"
-            "Pico 2 (RP2350) on Module:RaspberryPi_Pico_SMD_HandSolder\n"
+            "Pico 2 (RP2350) on segno:RaspberryPi_Pico_SMD_or_THT_Debug\n"
+            "        (surface-mount pads AND through-holes; solder it either way)\n"
             "\nPin map:\n" + "\n".join(lay) +
             "\n\nRails : +5V (logic AND WS2812; J3 in and J24 pill power on JST VH) | "
             "+3V3 (from the Pi)\n"

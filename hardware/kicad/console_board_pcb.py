@@ -162,6 +162,9 @@ def P(x, y):
 #   y 95   title block, between the two bottom mounting holes
 REAR_PANEL_ORDER = ["J8", "J5", "J4", "J20", "J21"]   # = the panel's own order
 
+# The module's CENTRE, not its origin: _load_fp places by extent centre, which is
+# what lets the THT footprint (origin at pin 1) sit exactly where the SMD one
+# (origin at the centre) did -- pads x 18.87..67.13, y 37.11..54.89.
 PICO_X, PICO_Y = 43.0, 46.0
 PLACEMENT = {
     "J1":  (PICO_X, PICO_Y, 90),   # Pico 2, rot 90 so the pad rows lie horizontal.
@@ -181,13 +184,12 @@ PLACEMENT = {
     # starts at 84.5 and comes up to y 10.2, so the last two headers would sit on
     # top of it. The corner mounting holes cap the other end the same way.
     "J8":  (18.1, 8.0, 0),
-    "J23": (27.5, 69.0, 0),        # I2C to the PD trigger, under the module's
+    "J23": (27.5, 68.2, 0),        # 0.8 up, ahead of the cap row (#1062)        # I2C to the PD trigger, under the module's
                                    # left end between 5V IN and EXP: GP0/GP1 are
                                    # pads 1/2, a 12 mm hop up. x 27.5, not 16.5
                                    # (#1062): J24 took the left edge beside it,
                                    # and its PILLS 5V label needs the strip J23
-                                   # vacated. (The pocket beside
-                                   # C30 is the USB-C cable corridor -- USB_CLEAR.)
+                                   # vacated.
     "J9":  (23.1, 30.0, 0),        # flying lead to the Pi 5's own J2 button pads
                                    # (NOT a header pin -- no GPIO wakes a Pi 5;
                                    # see PWR_BTN in console_board.py)
@@ -236,8 +238,12 @@ PLACEMENT = {
     # corridor (y 40..52); J24, the 3-way, runs to y 74.3, so the cap row sits at
     # CAP_Y 76.1 to clear it.
     # x 5.4: the 9.6 mm-wide pair spans x 0.6..10.2, 0.6 clear of R21.
-    "J3":  (5.4, 56.9, 90),       # 5 V in from BUCK_AUX, ~5.7 A at full white
-    "J24": (5.4, 67.84, 90),     # the pills: 5V/DATA/GND, 4.2 A at full white.
+    # Both moved up 8 mm (#1062, owner call) into what used to be the USB
+    # corridor: the module is socketed now, so reaching its USB means lifting it
+    # out, not threading a cable past these. The logo ends up partly under the
+    # two housings, which costs nothing but paint.
+    "J3":  (5.4, 48.9, 90),       # 5 V in from BUCK_AUX, ~5.7 A at full white
+    "J24": (5.4, 59.84, 90),     # the pills: 5V/DATA/GND, 4.2 A at full white.
                                   # Courtyard touching J3's: that is 1 mm between the
                                   # two bodies, and a VH housing is no longer than
                                   # its header, so both plugs still seat. It is what
@@ -340,7 +346,15 @@ PLACEMENT = {
 }
 # footswitches J10..J19 along the bottom, left-to-right in GPIO order -- that
 # ordering is what keeps the fan-out from crossing (gated in _check)
-FSW_Y = 85.0
+#
+# 84.2, not 85.0, since the module was socketed (#1062). Its through-holes sit
+# 0.8 mm inboard of the hand-solder pads they replace, so every hop from the
+# module's bottom row to this one grew by that, and SW_BANK -- the worst one,
+# already at 97% of MAX_HOP_MM -- went over. MAX_HOP_MM's own note says the next
+# millimetre comes from the floorplan rather than from the limit, so this row
+# gives it back. Below it there is room: the labels sit at 80.1 and the bottom
+# strip at 95.5.
+FSW_Y = 84.2
 FSW_X0, FSW_X1 = 8.0, 92.0     # THE constraint on the board's width. An 84 mm span
                                # of centres is the floor -- ten 8.5 mm JSTs plus the
                                # 0.8 mm keepout is 92.2 mm of outline, and the row is
@@ -354,7 +368,9 @@ FSW_X0, FSW_X1 = 8.0, 92.0     # THE constraint on the board's width. An 84 mm s
 # Per-cap overrides of the row. Empty: C1 once sat out of the row beside J24,
 # and the row moved down 1.1 mm instead so every cap stays over its own switch.
 CAP_AT = {}
-CAP_Y = 76.1                   # the debounce cap row, one cap directly above its
+CAP_Y = 75.3   # 0.8 up with the socketed module (#1062): the debounce cap, not
+               # the footswitch, is the nearest pad on each SW_ net, so it is the
+               # cap row that MAX_HOP_MM actually measures against                   # the debounce cap row, one cap directly above its
                                # own switch -- see _place_debounce_caps(). 76.1
                                # clears J24, the 3-way pill header at the left edge
                                # (#1062); the row was at 75
@@ -680,6 +696,29 @@ def _silk_items(board, fps):
     return out
 
 
+# Where the FRONT mark goes now that J3 and J24 have taken its corner (#1062,
+# owner call: move it, do not drop it). The box is the patch the two connectors
+# vacated -- board edge to J23's column, J24's courtyard down to the cap row --
+# and the art is scaled to fit it rather than to a guessed percentage, because
+# the patch is 7.3 mm tall against the mark's 9.4 and the number that matters is
+# whether it lands inside. The BACK mark is untouched.
+FRONT_ART_BOX = (1.2, 66.9, 20.0, 72.4)   # 72.4, not 74: C1's own silk
+                                          # outline reaches up to 73.4
+
+
+def _fit_front_art(polys):
+    """-> the same polygons, scaled about their own centre into FRONT_ART_BOX."""
+    xs = [p[0] for outer, _h in polys for p in outer]
+    ys = [p[1] for outer, _h in polys for p in outer]
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    bx0, by0, bx1, by1 = FRONT_ART_BOX
+    k = min((bx1 - bx0) / (x1 - x0), (by1 - by0) / (y1 - y0))
+    dx = (bx0 + bx1) / 2.0 - k * (x0 + x1) / 2.0
+    dy = (by0 + by1) / 2.0 - k * (y0 + y1) / 2.0
+    move = lambda pts: [(k * x + dx, k * y + dy) for x, y in pts]
+    return [(move(outer), [move(h) for h in holes]) for outer, holes in polys]
+
+
 def _silk_art(board):
     """The segno mark (Bravura, SMuFL U+E047) and JetBrains Mono legends as
     FILLED silkscreen polygons, front and back. The outlines live in
@@ -712,7 +751,7 @@ def _silk_art(board):
             sh.SetLayer(layer)
             board.Add(sh)
 
-    emit(FRONT_ART, pcbnew.F_SilkS)
+    emit(_fit_front_art(FRONT_ART), pcbnew.F_SilkS)
     emit(BACK_ART, pcbnew.B_SilkS, mirror=True)
 
 
@@ -1174,32 +1213,24 @@ def _check(fps, nets, board=None):
     # moment anything is surface-mount: an SMD pad tied straight into a plane wicks
     # the iron's heat away and cold-joints. That transition is exactly what happened
     # here and nothing caught it, so it is checked rather than remembered.
-    smd = [r for r, fp in fps.items()
-           if any(p.GetAttribute() == pcbnew.PAD_ATTRIB_SMD for p in fp.Pads())]
-    if smd and board:
+    # Every part on this board is hand-soldered, through-hole since the Pico was
+    # socketed (#1062), and a pad tied solid into a pour wicks the iron's heat
+    # away whether it is SMD or THT. The gate used to run only when an SMD pad
+    # existed; with none left that made it vacuous, which is worse than strict.
+    if board:
         for z in board.Zones():
             assert z.GetPadConnection() != pcbnew.ZONE_CONNECTION_FULL, (
-                f"THERMALS: the {z.GetNetname()} pour ties pads solid, but "
-                f"{sorted(smd)[:3]} are surface-mount -- SMD pads need thermal "
-                "relief or they cannot be hand-soldered reliably")
+                f"THERMALS: the {z.GetNetname()} pour ties pads solid -- a pad "
+                "with no thermal relief pulls the iron's heat into the plane and "
+                "cold-joints, and every part here is soldered by hand")
 
-    # Keep the corridor off the module's USB end clear. USB is not needed in normal
-    # operation, but a board that makes it physically impossible to plug in is a
-    # different claim -- and the 5 V inlet was sitting directly in front of the
-    # socket. The module's USB is at its LEFT end (it is rotated 90 deg), so the
-    # corridor is everything left of it within the connector's own height.
-    px0, py0, _px1, py1 = _extent(fps["J1"])
-    ucy = (py0 + py1) / 2.0
-    usb = (0.0, ucy - 6.0, px0, ucy + 6.0)
-    for ref, fp in fps.items():
-        if ref == "J1":
-            continue
-        x0, y0, x1, y1 = _extent(fp)
-        if not (x1 < usb[0] or usb[2] < x0 or y1 < usb[1] or usb[3] < y0):
-            raise AssertionError(
-                f"USB_CLEAR: {ref} sits in the corridor off the module's USB end "
-                f"(x<{usb[2]:.0f}, y {usb[1]:.0f}..{usb[3]:.0f}) -- a cable could "
-                "never be plugged in")
+    # USB_CLEAR is gone (owner call, #1062). It kept the strip in front of the
+    # module's USB end empty so a cable could always be plugged in; J3 and J24
+    # now sit in it. What paid for that is the socket: the module lifts out of
+    # its pin sockets, and its USB is reachable in the hand. A gate that forbids
+    # the placement the owner asked for is not a gate, and one kept "just in
+    # case" while the layout violates it is worse -- so it goes, and the reason
+    # lives here.
 
     # PILL_POWER (#1062): the pills' 4.2 A must go J3 -> J24 over the poured bar
     # and nowhere else. Both are JST VH, facing the same way, their +5V pads face
@@ -1357,7 +1388,7 @@ AUTOPLACE_REFS = True   # off = the designators stay where each library footprin
 # fallback for the handful of one-off headers.
 LABEL_ROW = dict(
     [(r, 3.0) for r in ("J8", "J5", "J4", "J20", "J21")]
-    + [("J%d" % (10 + i), 80.1) for i in range(10)]
+    + [("J%d" % (10 + i), 79.3) for i in range(10)]   # follows FSW_Y up (#1062)
 )
 SILK_PAD = 0.5
 # Pinned label CENTRES for connectors the four-sided search cannot serve. J3 sits
@@ -1367,11 +1398,14 @@ SILK_PAD = 0.5
 # against everything already on the silk, so a bad coordinate fails as SILK.
 # J24's label goes BESIDE the header's lower half rather than at its centre, so
 # the strip under R21 stays free for R21's own designator.
-LABEL_AT = {"J3": (12.95, 53.5), "J24": (13.9, 70.5)}
+# J3's and J24's labels were pinned when the two sat at the board's edge under
+# the logo with nowhere for the four-sided search to go. Eight millimetres up,
+# the search finds its own spots again, so they are back in its hands.
+LABEL_AT = {}
 # The same for designators. R11 is boxed in -- the module above, J3 left, R21
 # below, R12 right -- and with J3 at the edge the search had only found a spot
 # 19 mm away. The pocket above R11's left end, under the 5V IN label, is its own.
-REF_AT = {"R11": (12.85, 56.25), "J24": (12.0, 72.9)}
+REF_AT = {"R11": (12.85, 56.25)}
 # Per-pin legends for the two power headers, on the BACK silkscreen beside each pad.
 # J3 is +5V/GND from pin 1 and J24 is GND/DATA/+5V, so the two headers read in
 # opposite orders, and a harness crimped to the wrong one puts 5 V on the pill
@@ -1601,8 +1635,9 @@ def _selftest():
         # a control that overlaps trips PLACE and proves nothing about ISOLATION.
         ("opto barrier inside ISOLATION_GAP", "ISOLATION:", {"C20": (25.3, 21.0, 0)}, {}),
         # the exact mistake that was shipped: the 5 V inlet parked in front of USB
-        ("part blocking the USB corridor", "USB_CLEAR:", {"J3": (10.0, 46.0, 90)}, {}),
-        ("pill power header turned against J3", "PILL_POWER:", {"J24": (5.4, 67.84, 270)}, {}),
+        # Same spot, turned round -- the coordinates follow PLACEMENT, or the
+        # control lands on the cap row and trips PLACE instead of its own gate.
+        ("pill power header turned against J3", "PILL_POWER:", {"J24": (5.4, 59.84, 270)}, {}),
         ("footswitch fan-out out of order", "CROSSING:",
          {"J10": (FSW_X1, FSW_Y, 0), "J19": (FSW_X0, FSW_Y, 0)}, {}),
         # The pours tie SMD pads solid. This gate ran BEFORE the pours existed, so it
