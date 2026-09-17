@@ -1,8 +1,29 @@
 # DIN MIDI bench follow-up
 
-Parked on 2026-09-05 at the owner's request, pending an **SN74AHCT125N**.
+Parked on 2026-09-05 pending an **SN74AHCT125N**; **resolved on 2026-09-17**.
 Tracking: [issue #1007](https://github.com/tomassasovsky/segno/issues/1007).
-Branch: `codex/midi-out-ahct125-follow-up`.
+
+## Resolution: DIN pins 4 and 5 were swapped at the MIDI OUT socket
+
+The suspected chip was **not** the cause. With the SN74AHCT125N fitted, OUT still
+sent 48 bytes and the Scarlett still received none. Re-reading the socket's own
+pin numbers found the OUT socket's two loop wires reversed: the data line on DIN
+pin 4 and the +5 V leg on pin 5. That back-biases the receiver's optocoupler, so
+no current flows and nothing is received, while the sending UART reports every
+byte written -- exactly the symptom recorded below.
+
+Swapping the two wires passed on the first run and on two further runs:
+**48/48 bytes in both directions, no framing, parity or overrun errors.**
+
+Three things that had pointed away from the chip all along, worth remembering:
+the ring and the indicator pills run through two other gates of that same part
+and worked throughout; MIDI IN passing says nothing about how the OUT socket is
+wired; and a UART's TX counter only proves the driver wrote bytes.
+
+`hardware/bench/midi_din_test.py` is the test, and `hardware/bench/README.md` the
+runbook. The rest of this file is the September 4 record, kept as written.
+
+---
 
 This records the September 4 bench session. It is not a production integration
 change or a confirmed diagnosis of the output failure.

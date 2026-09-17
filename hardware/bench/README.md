@@ -11,6 +11,10 @@ rather than in `firmware/test/` because nothing in CI can run them.
 
 ## midi_din_test.py — DIN MIDI, after fitting the SN74AHCT125N
 
+**Resolved on 2026-09-17: the OUT socket had DIN pins 4 and 5 swapped.** The
+chip was not the cause. The test below is what proved it, and it is the test to
+re-run whenever this wiring is touched.
+
 The record of the September 4 session is
 [`docs/research/2026-09-05-din-midi-bench.md`](../../docs/research/2026-09-05-din-midi-bench.md):
 MIDI IN passed 48/48 bytes, MIDI OUT sent 48 bytes from the UART and the Scarlett

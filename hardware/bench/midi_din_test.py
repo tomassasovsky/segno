@@ -230,6 +230,22 @@ def test_in(uart, port, note):
             "counters": counter_delta(before, uart.counters())}
 
 
+def test_external_loop(uart, note):
+    """A cable from the board's own MIDI OUT to its own MIDI IN.
+
+    The two directions share one UART, so this is the one test that needs no
+    second device -- and with IN already proven, bytes arriving here mean the
+    OUT path works and the fault is at the other end of the bench.
+    """
+    want = sequence(note)
+    uart.flush_rx()
+    before = uart.counters()
+    uart.write(want)
+    got = uart.read_exact(len(want), timeout=2.0)
+    return {"want": want, "got": got,
+            "counters": counter_delta(before, uart.counters())}
+
+
 def test_loopback(uart, note):
     want = sequence(note)
     uart.loopback(True)
@@ -242,6 +258,27 @@ def test_loopback(uart, note):
         uart.loopback(False)
     return {"want": want, "got": got,
             "counters": counter_delta(before, uart.counters())}
+
+
+def stream(uart, seconds):
+    """Hold the line busy so a multimeter can see it move.
+
+    0x00 bytes are deliberate: a start bit plus eight zero bits is nine bit
+    times of current ON out of every ten, so the average at the buffer's output
+    (and at DIN pin 5) falls from about 5 V to under 1 V while this runs. A
+    meter on a UART's idle line tells you nothing; this gives it something to
+    average.
+    """
+    print("streaming 0x00 for %d s on %s -- measure now" % (seconds, uart.path))
+    print("  idle, before this started: DIN OUT pin 5 to ground should read ~5 V")
+    print("  while streaming:           it should fall to roughly 0.5-1.5 V")
+    end = time.monotonic() + seconds
+    sent = 0
+    while time.monotonic() < end:
+        uart.write(b"\x00" * 256)
+        sent += 256
+        time.sleep(0.08)             # 31250 baud is ~3.1 kB/s; do not queue up
+    print("sent %d bytes" % sent)
 
 
 # ---- reporting --------------------------------------------------------------
@@ -355,9 +392,15 @@ def main():
     ap.add_argument("--loopback", action="store_true",
                     help="internal UART loopback only -- proves this script, "
                          "not the board")
+    ap.add_argument("--external-loop", action="store_true",
+                    help="a cable from the board's own MIDI OUT to its own "
+                         "MIDI IN: splits the board from the gear at the other "
+                         "end, and needs no second device")
     ap.add_argument("--self-test", action="store_true",
                     help="check the script's own logic; no hardware needed")
     ap.add_argument("--only", choices=("in", "out"), help="one direction only")
+    ap.add_argument("--stream", type=int, metavar="SECONDS", nargs="?", const=20,
+                    help="transmit continuously so the line can be metered")
     args = ap.parse_args()
 
     if args.self_test:
@@ -376,9 +419,17 @@ def main():
     try:
         uart.configure()
         uart.loopback(False)
+        if args.stream:
+            stream(uart, args.stream)
+            print("\nUART settings restored.")
+            return 0
         if args.loopback:
             trials = [(n, test_loopback(uart, n)) for n in NOTES]
             ok = report("internal loopback (no board involved)", trials)
+        elif args.external_loop:
+            trials = [(n, test_external_loop(uart, n)) for n in NOTES]
+            ok = report("this board's MIDI OUT -> its own MIDI IN  (one cable)",
+                        trials)
         else:
             port, pname = pick_port(
                 amidi_ports(run(["amidi", "-l"]).stdout), args.port)
