@@ -1,10 +1,130 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
-**Process update, 2026-09-07:** the shop delivers matched parts untapped and
-unriveted. The owner rivets before painting, then cleans Ø2.5 body pilots and
-cuts all 32 M3 body threads after painting: 18 for the lid and 14 for the screen
-supports. This supersedes earlier instructions
-to tap at the shop/protect existing body threads. Geometry is unchanged.
+## Solid second-row platforms - 2026-09-15 (#1037)
+
+The solid CLEAR/BANK collar revision is now integrated in this manufacturing
+checkout and saved/reopened in Fusion: VAMP sheet metal 160 and populated 388.
+Each document retains its two `platform_mid_ring_short_screws` occurrences;
+their existing component identities, positions and appearance are preserved.
+
+The underside is filled, with four Ø12 mm driver bores reaching 30.345 mm to
+the deck underside. Outer dimensions, seating heights, insert pockets, both
+mounting patterns, the sleds and the cable opening are unchanged. Each collar
+now measures 420.870396 cm³. Both saved native bodies match the current STEP
+with zero volume difference in either Boolean direction. All 42 / 434
+occurrence positions, unrelated shapes and feature health remain unchanged.
+
+The generator, mid-ring STEP/STL and printing archive are synchronized. All
+other output files, including the metal STEP/DXF/PDF packages, are byte-identical
+to the state before this update. The full 134-test suite passes; the final
+expanded material probe also passes the seven focused mounting tests.
+CAD solid does not mean 100% slicer infill. The #1019 physical load hold remains.
+See [verification](reference/solid_mid_platform_verification.json).
+
+## Corner preparation - preceding saved state, 2026-09-15
+
+The owner authorized preparing the welder's joint detail while Dinacut confirms
+its tooling. This is a prepared design, not authorization to manufacture.
+The September 14 geometry/evidence below is historical where superseded here.
+
+The base now uses four angular corner reliefs, a nominal 0.50 mm root gap and
+1.00 mm projected overlap, following the supplied joint example. These are CAD
+nominals, not a new request for unusually tight shop tolerances. The rear web
+widens through its upper bend to retain the complete return and lid seating.
+The agreed weld scope is all four base corners, their lower relief openings and
+the two upper rear-return/side joints; filler 5356 was selected by the welder.
+Finish the exterior flush without thinning the sheet or weakening the joint.
+The lid stays removable. No other component, fixing pattern or placement changes.
+
+Both cloud documents are saved as **VAMP sheet metal 159 / populated 387**.
+Both bases have five healthy native folds and measure **945.049614091 cm³**.
+All 42 / 434 occurrence placements and unrelated body geometry, visibility and
+feature health were preserved. Both saved designs were closed and reopened;
+the temporary export state was discarded and the saved documents left open.
+See the current [verification record](reference/welder_corner_preparation_verification.json)
+for reopened geometry/flat comparisons, hashes and the remaining release holds.
+
+The full generator and **133 tests across 15 modules pass**. The base drawing
+and changed painter instructions were rendered and visually reviewed.
+The mass consistency check is now 50 ppm: independent surface integration and
+face/boundary comparisons qualified the small translation/integration
+discrepancy on the curved reliefs. The STEP reimport is not an identical mesh. This is not a manufacturing tolerance. Solid
+validity, one-body, 0.005 mm bounds, source hashes, forming data and the full
+0.01 mm² flat-profile checks remain independent requirements.
+
+Dinacut must confirm the angular reliefs, bending access/sequence and real
+radius/deduction before cut approval. Any changed tooling assumption requires
+rechecking and regenerating this prepared set. Fit and the nine front drilling
+stations are resolved after welding and before the separate painter. The
+independent **#1019 load/strength hold remains open**. Supplier confirmation
+alone does not release fabrication.
+
+## September 14 revision - historical digital evidence
+
+The owner authorized the #1025 welded-corner implementation. This section
+supersedes earlier riveted-corner, tight-gap and package instructions below;
+dated geometry, versions and test results remain evidence only for those
+revisions. Implementation approval is not fabrication release. The independent
+#1019 structural/load hold remains open, including the effect of welded corners.
+
+There are **five fabricated metal parts, one each**: base, faceplate and
+ring_disc in 2.0 mm 1100-H14 aluminium; rear_panel in **1.2 mm aluminium**
+(alloy/temper pending); and the 1.6 mm cold-rolled steel support beam (grade
+pending). Remove both rear corner brackets and all ten associated base rivet
+holes. Weld the two rear vertical corner joints after folding. Confirm joint
+preparation and distortion control with the separate welder before finalizing
+the cut files; no welding procedure is specified by this CAD record.
+
+The nine front lid/body stations are fitted and match-drilled **after welding
+and before painting**. The drilling provider is not yet agreed. The owner
+cleans the Ø2.5 body pilots and taps all **32 M3 threads after painting**
+(18 lid, 14 screen supports). No new holes or enlarged screw passages are
+planned after painting. All metal faces, seats, edges and clearance passages
+receive separate smooth matte black RAL 9005 coating, 0.06–0.10 mm locally per
+face; protect identified electrical-bond contacts only. Fit shims/felt after
+coating; none enter the oven.
+
+The current fit candidate uses nine rear **CUT slots 10 mm along depth ×6 mm
+wide**, with OD12 M3 washer references, and nine front Ø4.5 passages with OD7
+washers. The slot calculation covers simultaneous ±2.567 mm axial and
+±0.800 mm transverse displacement, size ±0.20 mm and 0.10 mm paint per wall,
+including 3° screw tilt through the lid. Remaining radial clearance is
+0.317 mm. An OD12 washer does not cover the entire slot at maximum offset;
+its bearing bridges and nonparallel seating require separate checks. These
+are candidates, not an accepted purchased-washer or assembled-joint fit.
+
+The front bare nominal target is **1.1 mm**, with candidate acceptance
+**0.70–1.50 mm inclusive of forming and fixture errors**. Coating alone then
+gives approximately **0.357–1.488 mm** front clearance. This does not qualify
+the actual welded fit or wedge contact. Resolve local metal seating/alignment
+before coating; do not defer drilling, enlargement or seat correction to the
+owner after paint. Source, occurrence placements and shim references must all
+follow the accepted fit calculation.
+
+Both documents were saved and reopened as **VAMP sheet metal 158 / populated
+386**. Pre-existing unsaved work was backed up before editing. Each base is
+**945.325929644 cm³**, each lid **403.112692575 cm³**, and each disc
+**3.918822676 cm³**. The two brackets and ten rivet holes are removed; both lids
+have nine rear slots, nine OD12 rear washers, nine OD7 front washers and nine
+nominal 1.1 mm front shims. All changed features are healthy. All 42 / 434
+final occurrence placements survived reopening; unrelated screens, platforms,
+electronics, beam and floor supports retain their original placements.
+
+The reopened base and lid exports match the verified formed solids face by
+face and vertex by vertex at 0.00001 mm coordinate precision. Both base flat
+comparisons are below 0.000619 mm² missing / 0.000310 mm² extra; the populated
+lid flat has zero missing and extra area. The sheet-metal lid has no stored
+flat pattern; its reopened 164-face solid matches the verified populated lid.
+Do not silently create a second lid development with different datums.
+
+Flat registration now uses round CUT/VENT holes and slot ends, excluding
+formed DRILL references as pose datums while still checking their geometry.
+The pre-existing 0.000273 mm front-drill residue was corrected in the lid row
+alone; the lid and controls were not moved to hide it. The full generator and
+all **126 tests across 14 modules pass**. The five individual metal drawings
+were rendered and visually inspected, and the 15-file archive contents were
+verified. See [machine-readable verification](reference/welded_revision_verification.json).
+These are digital checks; the manufacturing and structural holds above remain.
 
 The console lives in TWO cloud documents (Fusion Team, Default Project), edited
 through the Fusion MCP (`localhost:27182`, `fusion_mcp_execute` with a script
@@ -12,17 +132,15 @@ defining `def run(_context: str)`). This file is the contract for changing them.
 It was earned the hard way on 2026-08-18 (#753); every rule here broke something
 once.
 
-The fully coated revision has passed local source/export and native-model
-verification. Current saved versions and evidence are recorded in
-[the release review](RELEASE_REVIEW.md). Earlier dated results below apply only
-to their recorded revisions. Physical supplier and assembly acceptance remains
-required before production release.
+Current revision status and remaining gates are recorded in
+[the release review](RELEASE_REVIEW.md). Earlier successful source/export and
+native checks below apply only to their dated revisions.
 
 ## The two documents
 
 | doc | role | frame (world) |
 |---|---|---|
-| **VAMP sheet metal** | source parts: base, faceplate, brackets, rear_panel | x = 84.8 − u/10 (MIRRORED), y = height, z = depth |
+| **VAMP sheet metal** | source parts: base, faceplate, ring_disc, rear_panel, steel support beam | x = 84.8 − u/10 (MIRRORED), y = height, z = depth |
 | **VAMP console (populated)** | the full machine, the one that gets reviewed | x = u/10 (DIRECT), y = depth = v/10, z = height |
 
 `u`, `v` are the enclosure generator's mm coordinates (`segno_enclosure.py`:
@@ -30,9 +148,10 @@ u along the 850 width from the left wall, v along the 423 depth from the front).
 
 Populated-doc browser hygiene: root holds only the chassis (`VAMP sheet
 metal`, `base`, `faceplate`, `rear_panel`, `vent_foam`) plus identity-placed
-grouping components — `pedals` (10), `platforms` (20), `floor_rails` (10 bodies since #1019 — the
-`feet` group and its 60 occurrences are gone),
-`fasteners` (18 native ISO 7380-1 screws and 18 M3 Ø7 washers), `lid_stack` (screens, the
+grouping components — `pedals` (10), `platforms` (20), `floor_rails` (the
+#1019 printed segments and neoprene strips; the old `feet` group is removed),
+`fasteners` (18 native ISO 7380-1 screws; the welded-revision candidate uses
+nine front OD7 and nine rear OD12 M3 washers, synchronized), `lid_stack` (screens, the
 switched-off legacy `encoder`, texts (switched off), logo, and
 `diffusers` = the ten `led_diffuser_*` pills; the old `led_strips` bar
 component was deleted 2026-09-04), `electronics`
@@ -49,10 +168,14 @@ table, the placement is wrong, not the table.
 
 ### Canonical occurrence transforms (4×4 row-major, cm)
 
+These are the verified current transforms, re-queried after reopening the
+welded revision. The lid content shift is compensated by its occurrence
+placement, so the screens and other control-area components stay fixed.
+
 | component | populated | VAMP sheet metal |
 |---|---|---|
 | base | `[1,0,0,0 \| 0,1,0,0 \| 0,0,1,0.2]` | `[-1,0,0,84.8 \| 0,0,1,0.2 \| 0,1,0,0]` |
-| faceplate (lid) | `[1,0,0,-0.19 \| 0,c,-s,-1.4829540425030463 \| 0,s,c,1.1184681604973878]` | `[-1,0,0,84.99 \| 0,s,c,1.1184681604973878 \| 0,c,-s,-1.4829540425030463]` |
+| faceplate (lid) | `[1,0,0,-0.19 \| 0,c,-s,-1.5299694631998793 \| 0,s,c,1.1080466062875105]` | `[-1,0,0,84.99 \| 0,s,c,1.1080466062875105 \| 0,c,-s,-1.5299694631998793]` |
 | rear_panel (inside mount, **1.2 mm**, owner-approved 2026-09-05) | `[1,0,0,62.5286 \| 0,0,-1,41.771 \| 0,1,0,4.69]` | `[-1,0,0,22.2714 \| 0,1,0,4.69 \| 0,0,-1,41.771]` |
 | console_board_v4 (KiCad STEP) | `[1,0,0,36.225 \| 0,1,0,38.575 \| 0,0,1,1.7]` | — |
 
@@ -63,24 +186,13 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   extend below it to their floor-contact plane at z=-5 mm.
   There is **no y/depth offset** — an earlier `+0.2` there put the whole shell
   2 mm rearward of every mount.
-- **Lid seat:** the underside plane is `-s*y + c*z = 12.12889 mm`
-  in the populated frame, referenced to the floor bottom. The front wall outer
-  face is at y = -1.910841 mm; the revised lip inner face is at -2.410842 mm.
-  This gives **0.500 mm nominal bare clearance**. Fabrication acceptance is
-  0.50–0.60 mm bare. All enclosure faces and clearance bores are coated.
-  Independent 60–100 µm films at the side/rear seats permit approximately
-  0.157–0.588 mm front gap; accept 0.15–0.60 mm on the actual painted assembly. Fit nine
-  purchased metal shim packs Ø6.9–7.0 / ID 4.0–4.2 to those gaps after coating.
-  All 18 lid bores are Ø4.5 (+0.10/−0) before coating and use M3 Ø7 washers.
-  The nine front axes are 0.50 mm lower, world Z 6.455420 mm; rear axes are fixed.
-  Protect only identified electrical ground contacts; the owner cleans and taps
-  the 32 body pilots after painting. Solve the bare
-  lid placement from actual planes; the STEP remains the bare reference.
-  The blank gains `LID_FRONT_EXTRA` ahead of the controls, and its lip is
-  shortened to keep its tip at floor-bottom height. The control stations and
-  rear seam keep their existing positions. Native base/lid intersection is
-  about 5.52 mm³ of contact films at the side/lap seats, not a broad clash.
-  Use solid intersections for interference and `preciseBoundingBox` for extents.
+- **Lid seat:** use the current candidate and pending checks above. The old
+  0.500 mm nominal bare gap, 0.50–0.60 mm fit requirement and all-round rear
+  holes are superseded. Keep visible control stations fixed while solving the
+  bare lid placement, front lip and attached stack from actual planes. The
+  STEP remains a bare-metal reference. Use solid intersections for interference
+  and `preciseBoundingBox` for extents; earlier contact volumes do not qualify
+  the new wedge/washer seating.
 - **The lid stack moves together**: faceplate, ring_disc (both docs), plus in
   populated screen_16in/7in, the legacy `encoder`, texts, segno_logo, the ten
   pill diffusers, and the ROOT-level ring family (`ring_board_asm`,
@@ -252,30 +364,28 @@ Much simpler than the base — no wrap, two folds, one per call:
 2. Extrude the CUT max-area profile **-0.2 cm**; convert its top face to sheet
    metal with T2/R2/K0.33. Select rules by numeric values, not duplicate names.
    Thickness and radius are `.value` properties; K is a scalar.
-3. Fold the front lip at `LID_FRONT_FL` (12.082988 mm), rotation
+3. Fold the front lip at the current `LID_FRONT_FL`, rotation
    `-(90-SLOPE_ANGLE)` degrees, centered on its BEND line.
 4. Fold the rear lap at `LID_FRONT_FL + LID_FRONT_EXTRA + FP_V`
-   (419.231325 mm), rotation `-(SLOPE_ANGLE+TRANS_ANGLE)` degrees.
+   from the current generated handoff, rotation `-(SLOPE_ANGLE+TRANS_ANGLE)` degrees.
 5. Solve the placement using the lip plane's larger local constant
    `k = c*y-s*z`: `ty=(-DEV90-LIP_BARE_CLEAR)/10-k`,
-   `tz=(LID_UNDER_NORMAL/10+0.2+s*ty)/c` (cm). The current exact transform
-   is in the table above; the lip tip is within 0.001 mm of floor bottom.
+   `tz=(LID_UNDER_NORMAL/10+0.2+s*ty)/c` (cm). The table above records the
+   previous fit; query and verify the revised transform and lip-tip height.
 6. Add the nine front Ø4.5 mm holes after folding, using
-   `FRONT_DRILL_AFTER_FORMING`, current drawing X stations and nominal world
-   **z=6.455420 mm**. The construction may need the documented submicron
-   native-kernel compensation; that does not change the shop datum of
-   6.455±0.10 mm above the bare floor underside. Select only the circular
-   profiles, never the entire face perimeter. Also make the nine rear Ø4.5
-   holes from the current rear `DRILL` axes after folding. A fresh CUT extrusion
-   does not make either deferred row. Retain an existing valid hole feature
-   where its active geometry already matches; do not cut duplicate profiles.
-   The eighteen bores are nominal bare references, not a final drilling jig.
-   The shop locates them on the fitted bare pair before coating; all clearance
-   walls and seating surfaces receive paint. The owner cleans and taps the body
-   pilots after painting; only identified electrical ground contacts are protected.
+   `FRONT_DRILL_AFTER_FORMING` and the current handoff's nominal axes. Select
+   only the circular profiles, never the entire face perimeter. The nine rear
+   stadium slots belong to CUT and must already pass through the formed lap;
+   do not recreate the retired rear round-hole DRILL operation. Retain an
+   existing valid feature only where its actual geometry matches; avoid
+   duplicate cuts. Final front drilling follows the fitted **post-weld** bare
+   pair before coating, with its provider pending. The native front bores are
+   nominal references, not a final drilling jig. All clearance walls and seats
+   receive paint. The owner cleans and taps the body pilots after painting;
+   only identified electrical ground contacts are protected.
 7. Apply appearance, transform LAST and take a guarded snapshot. Check feature
    health, every final hole, flat parity and assembly fit before replacing an
-   occurrence. Match all front fastener/shim reference axes to the lowered
+   occurrence. Match all front fastener/shim reference axes to the current
    front row; place the eighteen purchased head washers from the actual lid faces.
 
 ## The base rebuild recipe (the ONLY supported way to change the base)
@@ -300,15 +410,16 @@ a single call have crashed Fusion):
    ("Aluminio (mm) (Convert)"; both docs already carry it). Folding at any
    other radius mis-lands every flap: the flat is developed for exactly these
    numbers (`dev_deduct` in the generator).
-4. One sketch `RELIEFS_AND_TRIMS`, one cut: the current DXF already has Ø6.5 mm
-   reliefs at (0,0) (84.6,0) (0,41.9) (84.6,41.9) cm and 0.15 mm front-end
-   trims. For the fold construction, trim the front ends to x=0.05/84.55 cm
-   (0.5 mm from the nominal ends, not an additional 0.5 mm); trim the
-   rear-block overhang back to the side bend lines
-   +0.6 mm (rects x∈[−0.21,0.06] and [84.54,84.81], y∈[41.85,53.1]).
-   These extra construction trims allow Fusion's fold checker to complete;
-   regrow them in step 7 so the final unfolded perimeter agrees with the DXF.
-   The Ø6.5 relief and net 0.15 mm front-end trim are fabrication geometry.
+4. The current DXF contains four angular weld reliefs: 0.50 mm nominal root
+   gap and 1.00 mm projected lap. Do not add the former circular reliefs or
+   front-end trims. For Fusion construction only, cut `RETURN_CONSTRUCTION_TRIM`
+   rectangles x∈[−0.21,0.06] and [84.54,84.81] cm,
+   y∈[50.5566828917,53.1] cm. The first y is the upper bend tangent,
+   `(D-2*T) + HR_FLAT + bend_allowance(90-TRANS_ANGLE)/2`, in mm (divide by 10 for Fusion), derived from the current generator; recompute it if
+   forming parameters change. This temporarily shortens only the planar return
+   ends. Preserve the rear web and the widening ramp through the upper bend.
+   Restore those two ends in step 7; the construction trim must not survive in
+   the exported flat.
 5. Folds, all `CenterFoldBendLinePositionType`, all POSITIVE angles, in this
    order: **left (x=0, 90°), right (x=84.6, 90°), lap (y=50.4045084367746,
    +1.1441688336680205 rad), rear (y=41.9, 90°), front (y=0, 90°) LAST**.
@@ -318,7 +429,7 @@ a single call have crashed Fusion):
    Ø2.5 pilots drilled after forming and fit, then owner-tapped M3 after coating,
    with Ø4.5 clearance in the lip. The REAR lap
    seam uses the IDENTICAL joint — Ø2.5 tap pilots in the transition flange,
-   Ø4.5 clearance in the lap, same 9 stations: PEM nuts were dropped so the
+   10×6 mm depthwise slots in the lap, same 9 stations: PEM nuts were dropped so the
    whole lid fixes with ONE M3 tap and ONE screw SKU, M3×8 ×18.)
    Stationary face = the big planar z=0 face whose XY bbox contains the bend
    line's midpoint. Verify the bbox after every fold.
@@ -329,12 +440,11 @@ a single call have crashed Fusion):
    the compensated occurrence transform instead (populated:
    `[1,0,0,0 | 0,0,1,0 | 0,−1,0,0.2]`) or delete/retry; fresh components have
    folded upright. Nothing you pass (face, line direction, trims) controls it.
-7. Regrow the rear wrap and lip with **OffsetFacesFeatures** (same body, no
-   patch bodies): the 6 planar end faces from the overhang trim
-   (|normal.x|=1, face-centre x in 0.04..0.1 / 84.5..84.58, bbox.y > 35 when
-   upright) offset **+0.250 cm**; the 2 lip-end slivers (x-centre 0.03..0.07 /
-   84.53..84.57, bbox.y < 0.5, bbox.z < 1.2) offset **+0.035**.
-   `createInput` takes a **Python list**, not an ObjectCollection.
+7. Restore only the **two planar return end faces** at x=0.06/84.54 cm,
+   |normal.x|=1 and minimum z>8 cm, using OffsetFaces +0.250 cm.
+   Name the operation `RESTORE_RETURN_ENDS`. Do not regrow the rear web,
+   upper bend ramp or front lip. `createInput` takes a Python list, not an
+   ObjectCollection. All five folds and the restoration must remain healthy.
 8. Add the nine Ø2.5 mm `FRONT_DRILL_AFTER_FORMING` holes from the formed
    datums, using only the circular profiles and `participantBodies=[body]`.
    Apply appearance, then the occurrence transform, then a snapshot guarded by
@@ -343,7 +453,11 @@ a single call have crashed Fusion):
    and require `compare_flat_pattern` to pass against CUT/VENT/DRILL before saving.
    Reopen the saved document and repeat the geometry and preservation checks.
 
-**Rear ridge closure, September 5 seam correction.** The old side contour
+**Rear ridge closure, September 5 seam correction — historical fit evidence.**
+Preserve the source-derived contour unless the current fit calculation changes
+it; repeat its seating and interference checks for the welded revision. The
+numerical acceptance and contact results below describe the former lid fit.
+The old side contour
 followed the rear return's underside plane before that return actually began,
 leaving a 2.18 mm opening beneath the lid bend. The canonical correction is
 `base_rear_ridge_profile()` in the generator: a line, concentric R1.70 arc,
@@ -410,10 +524,14 @@ without trapping the PCB below a closed annular bridge. The 0.25 mm shelf,
 1.05 mm roof and 0.50/1.10 mm inner/outer lens walls remain continuous.
 The modeled minimum PCB clearance is 0.134601 mm and LED clearance 0.332242 mm;
 do not describe these as 0.3 mm everywhere or treat them as physical qualification.
-The fully coated metal disc has bare OD51.20±0.05 and straight laser bore
-Ø8.50±0.05, without chamfer. Finished OD51.27–51.45 and bore8.25–8.43 preserve
-fit with the unchanged holder and owner-measured ID7.25/OD11.85 washer. Center
-the disc before clamping. Earlier chamfer profiles are historical.
+The September 14 revision uses bare OD50.70±0.20 and straight laser bore
+Ø8.70±0.20, without chamfer; the bore center is allowed ±0.20 per axis from
+the OD center. At 60–100 µm per painted wall, the finished ranges are
+OD50.62–51.10 and bore8.30–8.78. Let the disc settle in the holder before
+clamping; it need not be exactly centered in the pocket. The modeled fit leaves
+0.167 mm combined movement allowance after worst-case bore eccentricity,
+before print variation. Confirm the real holder/root fit and coverage by the
+owner-measured ID7.25/OD11.85 washer. Earlier disc/chamfer sizes are historical.
 
 The holder is now rotationally indexed to the ring's component gaps. Use
 [`reference/ring24_orientation.svg`](reference/ring24_orientation.svg), a top
@@ -425,7 +543,10 @@ numeric module envelopes for regression; the separate native review checks
 all 73 board bodies. Do not substitute a flat-soldered Ring 24 or rotate the
 selected board to avoid a holder error.
 
-### Corner brackets (both docs)
+### Corner brackets — historical, removed by the welded revision
+
+The following recipe records the former riveted design. Do not rebuild these
+brackets or include their holes, parts or hardware in the current revision.
 
 There are two handed brackets, quantity one each:
 `out/segno_corner_bracket_rear.dxf` for the upright right occurrence and
@@ -741,51 +862,61 @@ profile. On September 5 the source was corrected to Ø6.5 mm corner reliefs
 and 0.15 mm front-end trims; native rear regrowth changed from 2.51 to 2.50 mm.
 That revision’s actual base flats had zero missing or extra area against
 CUT/VENT plus deferred DRILL. No model-only corner exception is permitted;
-repeat the check for the current fully coated revision.
+repeat the check for the current welded revision.
 Changes that matter for fabrication belong in `segno_enclosure.py` and both
 native documents. Shop tooling acceptance remains separate from digital parity.
 
 
 ## Verified formed STEP release workflow
 
+This is the required workflow; it has not yet been completed for the welded
+revision. Keep generated artifacts local until the independent release holds
+and supplier process questions are resolved.
+
 1. Run `segno_enclosure.py --no-step` to generate the new flats and
    `out/fusion_formed_input.json`.
 2. Synchronize BOTH Fusion documents. Check native rules, all feature health,
    beam/lid normal gap, front-lip gap, hole registration and relevant component
    intersections. Rebuild in the target document if imported features lose refs.
-3. With **VAMP console (populated)** active, run `fusion_export_formed.py` as a
+   Preserve the #1019 beam, rails, lid prop and their fixings, plus unrelated
+   purchased references, placements, visibility and appearances. Recompute,
+   save and reopen both documents, then query actual geometry and occurrence
+   placements again. Record the reopened versions and repeat native-flat parity;
+   an in-memory check or a save response alone is insufficient.
+3. With the reopened **VAMP console (populated)** active, run
+   `fusion_export_formed.py` as a
    Fusion script. It compares operation sketches against the current handoff;
-   the lid's exact CUT+DRILL union allows the deferred rear-drilling operation
+   the lid's exact CUT+DRILL union allows the deferred front-drilling operation
    without changing the nominal geometry. The base's initial CUT sketch predates its
    construction trims, so its final CUT is checked by unfolding instead.
-   Bracket CUT construction edges retained for feature history are excluded;
-   every active CUT curve and each BEND reference must still match exactly.
+   Every active operation curve and each BEND reference must still match exactly.
    It checks each fold angle/direction/source line, sheet rules and actual
-   front through-hole axes, radii and sheet spans, then exports base, lid and
-   both handed brackets to `formed/`, with checksums and assembly placements.
-   Each of these four native components occurs once. Temporarily
+   front through-hole axes, radii and sheet spans, then exports base and lid
+   to `formed/`, with checksums and assembly placements. Each occurs once;
+   removed brackets must be absent. Temporarily
    show the occurrences and bodies during export and restore visibility after:
    Fusion can otherwise return success for an empty STEP of a hidden part.
 4. Run the full generator. It rejects stale flats or altered native exports,
-   compares all four checksummed native flats with complete CUT/VENT/DRILL geometry
+   compares both checksummed native flats with complete CUT/VENT/DRILL geometry
    by planar Boolean subtraction, validates solids and bounds in OpenCascade,
-   then builds the fabrication reference assembly: eight made metal pieces plus
-   nine purchased shim packs and eighteen purchased head washers (**34 solids;
-   seven unique fabricated part stems**). The beam, flat rear panel, ring disc,
-   nominal shim packs and washer references are generated directly. Shims and
-   washers appear in the assembly only; neither standalone reference STEP is
-   an additional laser, printing or painting archive member. The full package
-   plan is five ZIPs / 116 members: sheet metal 14, sheet-metal STEP 8, painting 8,
-   pedal tiles 22, 3D print 64. The 3D-print archive was 38 until 2026-09-10, when
-   the twelve floor rail segments and the lid prop were added; they had shipped in
-   no package at all. `test_export_plan_...` asserts these counts.
+   then builds the reference assembly. The beam, flat rear panel and ring disc
+   are generated directly and must agree with their native counterparts.
+   Publish **one metal fabrication archive with exactly 15 files**: STEP, DXF
+   and individual PDF for each of the five metal parts. Filenames identify
+   material, thickness and quantity, including the 1.2 mm rear panel. Missing,
+   empty or stale artifacts fail publication. Exclude assembly, README/drafts,
+   purchased hardware, printed parts, removed brackets and posts. Printing and
+   painting handoffs remain separate; the reference assembly is not a metal
+   fabrication instruction. Remove obsolete metal archives only after the
+   replacement passes exact membership/content verification.
    Native/STEP volume agreement is checked to 10 ppm (minimum 0.05 mm³), with
    independent 0.005 mm bounds checks: an earlier approximately 936685 mm³ base
    export differed by 2.21 mm³ between the two kernels. Every release checks
    its current native volume. Regenerate all vendor packs in this run.
-5. Render and inspect the changed drawings, run the enclosure tests and save
-   both Fusion documents. Shop bend/tooling acceptance and first-piece fit are
-   separate physical release checks.
+5. Render and inspect changed drawings and run the applicable enclosure tests
+   and package checks. If verification requires a native edit, repeat the
+   save/reopen and export sequence. Shop bend/tooling acceptance, welded fit,
+   washer seating and the #1019 structural hold remain separate release gates.
 
 The September 4 converter reference is the supplier's **63.7 ×57.6 ×22 mm**
 envelope with **53.9 mm pitch**, Ø6.5 ±0.3 mm holes and a hole line 31.3 mm from
@@ -859,7 +990,11 @@ Fresh source/native holder subtraction is zero in both directions. The former
 bottom-up insertion. The actual printed fit, angular indexing, retention and
 light diffusion still require the checks described in the ring-holder section.
 
-## Front support and head washers — current reference
+## Front support and head washers — historical pre-weld reference
+
+The dimensions and transforms in this section describe the former 0.50 mm
+front gap and eighteen OD7 washers. The current candidate above supersedes
+them; final shim range and rear washer seating are still being qualified.
 
 Nine purchased solid-metal shim packs support the front M3 fasteners. The
 shared native `front_shim_pack` component has one body named
@@ -922,7 +1057,7 @@ for that revision’s source/package hashes and saved-document checks. Previous 
 review counts are historical.
 
 
-## Tight riveted rear joint — September 6, 2026
+## Tight riveted rear joint — September 6, 2026 (historical)
 
 The selected rear/side faces still had a 0.610842 mm gap after the earlier
 ridge correction. The owner chose rivets with a tight, visible joint line.
@@ -1059,7 +1194,7 @@ OD51.20/ID8.50/T2, without conical faces. The owner-measured washer ID7.25/OD11.
 provides coverage; center before tightening. Earlier versions/chamfer checks
 remain historical, and all unrelated geometry is preserved.
 
-## September 8 floor supports — current native state
+## September 8 floor supports — historical native state
 
 Saved and reopened: sheet-metal139 and populated352. Both bases were rebuilt
 from the current generated DXF using the documented recipe, retaining the

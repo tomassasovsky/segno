@@ -1,4 +1,165 @@
-# Manufacturing release review — 2026-09-06
+# Manufacturing release review
+
+## Printed-platform synchronization - 2026-09-15 (#1037)
+
+The second-row CLEAR/BANK collars now use the solid version with four driver
+bores in the generator, STEP/STL, printing archive and saved/reopened Fusion
+models (sheet metal 160 / populated 388). All metal output bytes and all native
+placements are preserved. The 134-test suite passes, followed by seven passing
+mounting tests after strengthening the material probe. This update does not
+clear the #1019 structural/load hold or the fabrication/fit conditions below.
+See [verification](reference/solid_mid_platform_verification.json).
+
+## Corner preparation - preceding saved state, 2026-09-15
+
+The owner authorized preparing the welder's joint detail while Dinacut confirms
+its tooling. This is a prepared design, not authorization to manufacture.
+The September 14 geometry/evidence below is historical where superseded here.
+
+The base now uses four angular corner reliefs, a nominal 0.50 mm root gap and
+1.00 mm projected overlap, following the supplied joint example. These are CAD
+nominals, not a new request for unusually tight shop tolerances. The rear web
+widens through its upper bend to retain the complete return and lid seating.
+The agreed weld scope is all four base corners, their lower relief openings and
+the two upper rear-return/side joints; filler 5356 was selected by the welder.
+Finish the exterior flush without thinning the sheet or weakening the joint.
+The lid stays removable. No other component, fixing pattern or placement changes.
+
+Both cloud documents are saved as **VAMP sheet metal 159 / populated 387**.
+Both bases have five healthy native folds and measure **945.049614091 cm³**.
+All 42 / 434 occurrence placements and unrelated body geometry, visibility and
+feature health were preserved. Both saved designs were closed and reopened;
+the temporary export state was discarded and the saved documents left open.
+See the current [verification record](reference/welder_corner_preparation_verification.json)
+for reopened geometry/flat comparisons, hashes and the remaining release holds.
+
+The full generator and **133 tests across 15 modules pass**. The base drawing
+and changed painter instructions were rendered and visually reviewed.
+The mass consistency check is now 50 ppm: independent surface integration and
+face/boundary comparisons qualified the small translation/integration
+discrepancy on the curved reliefs. The STEP reimport is not an identical mesh. This is not a manufacturing tolerance. Solid
+validity, one-body, 0.005 mm bounds, source hashes, forming data and the full
+0.01 mm² flat-profile checks remain independent requirements.
+
+Dinacut must confirm the angular reliefs, bending access/sequence and real
+radius/deduction before cut approval. Any changed tooling assumption requires
+rechecking and regenerating this prepared set. Fit and the nine front drilling
+stations are resolved after welding and before the separate painter. The
+independent **#1019 load/strength hold remains open**. Supplier confirmation
+alone does not release fabrication.
+
+## September 14 revision - historical evidence; fabrication still held
+
+The owner authorized #1025's welded rear-corner direction and revised
+manufacturing tolerances. Work starts from `43c94a27` on
+`claude/sheet-metal-enclosure-analysis-6c2aa4`. Digital checks are complete; **fabrication release is not granted**. No files or messages have been sent for
+this revision. The independent **#1019 structural/load hold remains open**;
+the changed corner restraint and welding effects belong in that assessment.
+
+This section supersedes the riveted process, dimensions, package counts and
+release checklist in the dated history below. Earlier saved/native and test
+results establish only their recorded revisions.
+
+### Current manufacturing contract
+
+Dinacut cuts, folds and deburrs; a separate welder joins the two rear vertical
+corners. Remove both rear brackets and all ten associated base rivet holes.
+Confirm weld-joint preparation and distortion control before final cutting
+files. Fit and match-drill the **nine front lid/body stations after welding
+and before painting**; the provider of this operation is pending. Do not add
+an electronics trial, development prototype or second manufacture to the quote.
+
+The metal package contains **five distinct parts, quantity one each**:
+
+| Part | Material and bare thickness |
+|---|---|
+| Base | 1100-H14 aluminium, 2.0 mm |
+| Faceplate | 1100-H14 aluminium, 2.0 mm |
+| Ring disc | 1100-H14 aluminium, 2.0 mm |
+| Rear panel | Aluminium, **1.2 mm**; alloy/temper to confirm |
+| Support beam | Cold-rolled steel, 1.6 mm; grade to confirm |
+
+One reviewed metal archive must contain exactly **15 files**: one STEP, DXF
+and individual PDF per part, with material/thickness/quantity in filenames.
+No README, supplier drafts, assembly, purchased hardware, printed parts, old
+brackets or posts belong in it. Required missing, empty or stale files must
+stop publication. [Supplier drafts](SHOP_REVIEW.md) stay outside the archive.
+
+Use the separate painter for **smooth matte black RAL 9005, without texture**,
+on all faces, seats, edges and clearance passages. The design allowance is
+0.06–0.10 mm locally per face; protect defined electrical-bond contacts only.
+After painting the owner cleans the Ø2.5 body pilots and cuts **32 M3 threads:
+18 lid and 14 screen-support threads**. Shims and felt are fitted after coating.
+No new holes, enlarged clearance passages or corrective seat machining are
+assigned to the owner after paint.
+
+### Fit candidates and unresolved qualification
+
+The current rear candidate is **nine CUT slots, 10 mm along depth ×6 mm wide**,
+with OD12 M3 washers; the front remains **nine Ø4.5 passages with OD7 washers**.
+The rear slot calculation allows simultaneous ±2.567 mm axial and ±0.800 mm
+transverse displacement, size ±0.20 mm, paint 0.10 mm per wall and 3° screw
+tilt through the lid, leaving 0.317 mm radial clearance. With candidate purchased
+washer OD11.8–12.2 / ID3.20–3.40 mm, the conservative narrow-side bearing bridge
+is 1.80 mm and planar bearing area is at least 45.289 mm². The washer does
+**not** cover the entire slot at maximum offset. These calculations do not
+qualify nonparallel bearing, screw engagement or the actual purchased washer.
+Resolve local metal seating/alignment before coating.
+
+The front candidate is **1.1 mm nominal bare**, accepted at **0.70–1.50 mm
+including forming and fixture errors**. Applying the coating allowance alone
+gives approximately **0.357–1.488 mm** painted clearance. This is not a full
+welded-assembly tolerance guarantee: verify the actual fit, wedge contact and
+shim bearing. Final slot/washer specifications and shim range remain pending
+that qualification.
+
+Use a clearly identified project/shop tolerance table. The proposed custom
+rows are not the ISO 2768-m table. A general ±0.20 mm laser capability does
+not automatically apply to every connector, disc or purchased-hardware fit;
+keep necessary functional exceptions until their complete painted and positional
+budgets are checked. Statistical RSS is not a worst-case clearance guarantee.
+
+### Current evidence and remaining gates
+
+The saved geometry was reopened in **VAMP sheet metal 158 / populated 386**.
+All changed features are healthy, all 42 / 434 final occurrence positions
+survive reopening, and unrelated control-area/electronics/support positions
+remain unchanged. Both bases measure **945.325929644 cm³**, both lids
+**403.112692575 cm³**, and both discs **3.918822676 cm³**. Both rear bracket
+pairs and ten rivet holes per base are removed. The new slots, real washer
+bodies and nominal shims exist in both documents.
+
+Reopened base/lid exports match the verified native solids at every face and
+vertex (coordinates compared at 0.00001 mm). Both reopened base flats remain
+below 0.000619 mm² missing / 0.000310 mm² extra; the populated lid flat has
+zero missing/extra area. The source-document lid has no persistent flat;
+its solid matches the populated lid. Correcting the old front-drill residue
+and using slot-end datums kept the full-profile tolerance unchanged.
+
+The full generator reports ALL PASS. **126 regressions across 14 modules
+pass**, including rejected misplaced drilling, stale/partial archives and the
+simultaneous slot/washer tolerance envelope. Five single-part metal PDFs were
+rendered and visually reviewed. The archive contains exactly 15 STEP/DXF/PDF
+files for five metal parts; material, gauge and quantity are in every name.
+Timestamp-only STEP/PDF changes were restored after exact normalized comparison,
+and archives were rebuilt and checked against the retained bytes. No print or
+purchased-hardware references appear in the metal archive.
+
+Detailed evidence: [digital verification](reference/welded_revision_verification.json)
+and [fit calculations](../../docs/reviews/dinacut-fit-calculations.md). A digital
+pass does not qualify the physical welded enclosure or the purchased joints.
+
+Before fabrication release, resolve the post-weld fit/drilling provider,
+welder preparation and distortion allowance, stock/tooling and local coating
+capability, actual washer/joint and functional fits, and the independent #1019
+hold. These are not authorization for another manufacturing run or a promise
+that revised tolerances lower the quote.
+
+## September 6–9 release reviews — historical evidence only
+
+All status claims, manufacturing instructions, quantities and versions in the
+following dated records apply only to those earlier revisions. The current
+contract and pending gates above take precedence.
 
 September 9 supplier material correction: the provided Alcast certificate is
 for 1100-H14, 2.00 mm, lot 26E0269 (yield minimum 95 MPa, reported 127 MPa).
@@ -48,7 +209,7 @@ The owner measured the EC11 washer ID7.25/OD11.85. The disc now uses a straight
 recorded in [the straight-disc verification](../../docs/reviews/sheetmetal-release-fixes/straight-disc-verification.json).
 Current saves are sheet-metal138/populated351; all40 enclosure tests pass.
 
-## Current manufacturing contract
+### Historical manufacturing contract — pre-weld revision
 
 Complete cutting, forming, fitting, hole locating/drilling and
 deburring in one shop visit. Deliver untapped and unriveted. The owner
@@ -108,7 +269,7 @@ The tight riveted rear joint remains **0.05 mm nominal bare**, accepted at
 corner reliefs, **0.30–0.40 mm bare normal ridge clearance** and
 **0.20–0.40 mm bare vertical bracket-top clearance** in the seam region.
 
-## Required before releasing the full set
+### Historical release checklist — pre-weld revision
 
 1. Local source/export checks are complete: all 40 enclosure tests pass, the
    full generator reports ALL PASS, and five archives contain the verified

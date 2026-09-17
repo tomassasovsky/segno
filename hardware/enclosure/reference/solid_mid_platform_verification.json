@@ -1,0 +1,163 @@
+{
+  "date": "2026-09-15",
+  "issue": 1037,
+  "source_revision_integrated": "d632c951e7308ebb34fd6d7327428b25bc41d75a",
+  "scope": "Solid CLEAR/BANK mid platforms, preserving existing external and mounting interfaces.",
+  "source": {
+    "volume_cm3": 420.870396409416,
+    "area_mm2": 60670.703730646244,
+    "bounds_mm": [
+      -59.235000000001975,
+      59.235,
+      -44.375,
+      44.375,
+      0.0,
+      74.3450228962744
+    ],
+    "solid_count": 1,
+    "valid": true,
+    "center_10mm_inside": true,
+    "driver_bore_diameter_mm": 12.0,
+    "driver_bore_depth_mm": 30.345008866405408,
+    "changes": [
+      "segno_3dprint.zip",
+      "segno_platform_mid_ring.step",
+      "segno_platform_mid_ring.stl"
+    ],
+    "sha256": {
+      "segno_3dprint.zip": "d111dcd1029da54cb03d792cb1c93e1059f70c77d91cd337d4812631bbd42a8d",
+      "segno_platform_mid_ring.step": "a72576526d10cdaa8d6a51cda65d978a14cf674acc782146b8d9c683777079a6",
+      "segno_platform_mid_ring.stl": "44a3266d7fe152c0dc8213c6b90197ee5e79b4fa7765a64f47d40ab59de92016"
+    },
+    "archives": {
+      "segno_3dprint.zip": {
+        "member_count": 64,
+        "replaced_members": [
+          "segno_platform_mid_ring.step",
+          "segno_platform_mid_ring.stl"
+        ]
+      }
+    },
+    "bounds_source": "Reimported final STEP, before mesh triangulation",
+    "step_volume_cm3": 420.8703964094728,
+    "prior_solid_revision_parity_mm3": {
+      "current_minus_d632c951": 0.0,
+      "d632c951_minus_current": 0.0
+    },
+    "mesh": {
+      "triangle_count": 6640,
+      "closed_edge_incidence": true,
+      "signed_volume_mm3": 420876.45173144346,
+      "bounds_mm": [
+        [
+          -59.23500061035156,
+          -44.375,
+          0.0
+        ],
+        [
+          59.23500061035156,
+          44.375,
+          74.34502410888672
+        ]
+      ]
+    }
+  },
+  "native_saved_reopened": [
+    {
+      "document": "VAMP sheet metal",
+      "version": 160,
+      "cloud_complete": true,
+      "modified": false,
+      "occurrences": 42,
+      "collar_occurrences": 2,
+      "volume_cm3": 420.8703964095454,
+      "bounds_cm": [
+        [
+          -5.923500000000001,
+          -4.4375,
+          0.0
+        ],
+        [
+          5.923500000000001,
+          4.4375,
+          7.4345022896237
+        ]
+      ],
+      "native_minus_source_mm3": 0.0,
+      "source_minus_native_mm3": 0.0,
+      "other_geometry_preserved": true,
+      "all_positions_preserved": true,
+      "visibility_appearance_material_preserved": true,
+      "feature_health_preserved": true
+    },
+    {
+      "document": "VAMP console (populated)",
+      "version": 388,
+      "cloud_complete": true,
+      "modified": false,
+      "occurrences": 434,
+      "collar_occurrences": 2,
+      "volume_cm3": 420.8703964095454,
+      "bounds_cm": [
+        [
+          -5.923500000000001,
+          -4.4375,
+          0.0
+        ],
+        [
+          5.923500000000001,
+          4.4375,
+          7.4345022896237
+        ]
+      ],
+      "native_minus_source_mm3": 0.0,
+      "source_minus_native_mm3": 0.0,
+      "other_geometry_preserved": true,
+      "all_positions_preserved": true,
+      "visibility_appearance_material_preserved": true,
+      "feature_health_preserved": true
+    }
+  ],
+  "changed_output_files": [
+    "out/segno_platform_mid_ring.step",
+    "out/segno_3dprint.zip",
+    "out/segno_platform_mid_ring.stl"
+  ],
+  "all_other_output_files_byte_identical_to_pre_turn": true,
+  "test_results": {
+    "full_suite": {
+      "modules": 15,
+      "tests": 134,
+      "seconds": 89.533,
+      "passed": true
+    },
+    "final_strengthened_material_probe_rerun": {
+      "tests": 7,
+      "seconds": 6.565,
+      "passed": true
+    }
+  },
+  "release_holds": [
+    "#1019 assembled load/strength verification remains open.",
+    "Welder corner/tooling confirmation and post-weld assembly fit remain required."
+  ],
+  "note": "CAD solid defines the printable volume. It does not prescribe 100% slicer infill or prove printed-part strength.",
+  "sha256": {
+    "hardware/enclosure/segno_enclosure.py": "da61ae3722a9951c2b6ebac86255a35bc571115d91692a5ce0317c41902504d4",
+    "hardware/enclosure/tests/test_mid_platform_mount.py": "72957db62c7f25ab15b0231b20a17b737c53a8b2a21e5168fa61f6baed540d7c",
+    "hardware/enclosure/out/segno_platform_mid_ring.step": "a72576526d10cdaa8d6a51cda65d978a14cf674acc782146b8d9c683777079a6",
+    "hardware/enclosure/out/segno_platform_mid_ring.stl": "44a3266d7fe152c0dc8213c6b90197ee5e79b4fa7765a64f47d40ab59de92016",
+    "hardware/enclosure/out/segno_3dprint.zip": "d111dcd1029da54cb03d792cb1c93e1059f70c77d91cd337d4812631bbd42a8d"
+  },
+  "independent_review": {
+    "roles": [
+      "conventions",
+      "architecture",
+      "test quality",
+      "simplicity",
+      "PR readiness"
+    ],
+    "unresolved_findings": 0,
+    "report": "docs/reviews/solid-mid-platform-sync/review.md"
+  }
+}

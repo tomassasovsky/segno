@@ -23,6 +23,24 @@ from fusion_export_formed import _validate_forming
 
 
 class ManufacturingFitTest(unittest.TestCase):
+    def test_native_step_mass_guard_allows_kernel_integration_but_rejects_drift(self):
+        source = Path(enclosure.__file__).parent/'formed'
+        record = json.loads((source/'manifest.json').read_text())['segno_base']
+        solid = cq.importers.importStep(str(source/'segno_base.step')).val()
+        enclosure._validate_formed_solid('segno_base', solid, record)
+        for scale in (1-50.1e-6, 1+50.1e-6):
+            with self.subTest(volume_scale=scale):
+                changed = deepcopy(record)
+                changed['volume_mm3'] = solid.Volume()*scale
+                with self.assertRaisesRegex(AssertionError, 'STEP volume'):
+                    enclosure._validate_formed_solid('segno_base', solid, changed)
+        moved = solid.translate((.01, 0, 0))
+        with self.assertRaisesRegex(AssertionError, 'STEP bounds'):
+            enclosure._validate_formed_solid('segno_base', moved, record)
+        duplicate = cq.Compound.makeCompound([solid, solid.translate((1000, 0, 0))])
+        with self.assertRaises(AssertionError):
+            enclosure._validate_formed_solid('segno_base', duplicate, record)
+
     def test_rear_joint_line_matches_both_source_and_folded_side_edges(self):
         width = enclosure.W - 2*enclosure.T
         rear_inside_y = enclosure.D - 3*enclosure.T + enclosure.DEV90
@@ -38,7 +56,10 @@ class ManufacturingFitTest(unittest.TestCase):
                     side_edges.append(a[1])
             self.assertEqual(len(side_edges),2)
             for y in side_edges:
-                self.assertAlmostEqual(rear_inside_y-y,.05,places=7)
+                # Supplier sample: the side stops 0.50 mm short of the rear
+                # inner face; this is a nominal weld gap, not the old 0.10 mm
+                # maximum dry-fit acceptance criterion.
+                self.assertAlmostEqual(rear_inside_y-y,.50,places=7)
         base = cq.importers.importStep(str(Path(enclosure.HERE)/'formed/segno_base.step')).val()
         straight_faces = [f for f in base.Faces() if f.geomType() == 'PLANE'
                           and abs(f.normalAt().y) > .999999
@@ -47,9 +68,22 @@ class ManufacturingFitTest(unittest.TestCase):
         self.assertEqual(len(straight_faces),2)
         for face in straight_faces:
             gap = rear_inside_y-face.Center().y
-            self.assertAlmostEqual(gap,.05,places=4)
+            self.assertAlmostEqual(gap,.50,places=4)
             self.assertGreater(gap,0)
-            self.assertLessEqual(gap,.10)
+
+    def test_invalid_weld_corner_parameters_are_rejected_before_generation(self):
+        # Zero/reversed gaps join or overlap faces; a gap beyond the bend band
+        # no longer describes this relief. Overlap must end within the T2 edge.
+        invalid = {
+            'BASE_WELD_GAP': (0.0, -0.1, enclosure.BA90/2, math.inf, math.nan),
+            'BASE_WELD_OVERLAP': (0.0, -0.1, 2.0, math.inf, math.nan),
+        }
+        for parameter, values in invalid.items():
+            for value in values:
+                with self.subTest(parameter=parameter, value=value):
+                    with patch.object(enclosure, parameter, value):
+                        with self.assertRaisesRegex(AssertionError, 'weld corner'):
+                            enclosure._check()
 
     def test_rear_panel_allows_coating_within_ctrl_jack_range(self):
         enclosure._check()
@@ -104,14 +138,14 @@ class ManufacturingFitTest(unittest.TestCase):
             bore = min((f for f in disc.Faces() if f.geomType()=='CYLINDER'),
                        key=lambda f:f._geomAdaptor().Radius())
             self.assertAlmostEqual(bore.BoundingBox().zlen,2.0,places=6)
-            self.assertAlmostEqual(bore._geomAdaptor().Radius()*2,8.5,places=6)
+            self.assertAlmostEqual(bore._geomAdaptor().Radius()*2,8.7,places=6)
         # Minimum raw hole with maximum local paint; OD at largest coated size.
-        coated = cq.Workplane('XY').circle(25.725).circle(8.25/2).extrude(2.2).val()
+        coated = cq.Workplane('XY').circle(51.10/2).circle(8.30/2).extrude(2.2).val()
         self.assertLess(coated.intersect(root).Volume(),1e-7)
         washer = fixture['washer']; shaft = fixture['modeled_mount']['bushing_diameter_mm']
         # Even allow the bore and washer to move in opposite directions around
         # the bushing. This is more severe than the intended centered assembly.
-        for diameter, minimum_edge in ((8.55,.74),(8.43,.86)):
+        for diameter, minimum_edge in ((8.90,.39),(8.78,.51)):
             offset = (diameter-shaft)/2+(washer['inside_diameter_mm']-shaft)/2
             edge = (washer['outside_diameter_mm']-diameter)/2-offset
             self.assertGreater(edge,minimum_edge)
@@ -166,10 +200,10 @@ class ManufacturingFitTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure,'OUT',tmp):
             holder = cq.importers.importStep(enclosure.build_ring_diffuser_step()).val()
         # Saved disc/holder registration, independent of the generator. The
-        # Bare Ø51.20±0.05 plus 60–100 µm per side yields Ø51.27..51.45;
+        # Bare Ø50.70±0.20 plus 60–100 µm per side yields Ø50.62..51.10;
         # no perimeter mask is used. Retain the original too-large control.
         offset = (-.00143,-.00364390070516,.00012873401494)
-        for diameter in (51.27,51.45):
+        for diameter in (50.62,51.10):
             disc = (cq.Workplane('XY').circle(diameter/2).circle(4.1)
                     .extrude(2).translate(offset).val())
             self.assertLess(disc.intersect(holder).Volume(),1e-7)
@@ -177,103 +211,27 @@ class ManufacturingFitTest(unittest.TestCase):
                   .extrude(2).translate(offset).val())
         self.assertGreater(coated.intersect(holder).Volume(),.3)
 
-    def test_every_corner_rivet_in_the_base_has_its_mate_in_a_bracket(self):
-        """Ten rivets, drilled twice from two different developments.
-
-        The base draws them from ITS bend lines and the bracket from its own, so
-        the only thing making them meet is the pair of relations in dxf_base:
-        along the wall s = CORNER_RO + T, up the wall s = T + RI + z - DEV90.
-        An audit in 2026-09-04 found every one of them 2.0 mm off along the wall
-        and 1.9 mm low (#992). This rebuilds both flats and pairs them up.
-        """
-        radius = enclosure.D_RIVET/2.0
-
-        def circles(path):
-            return [(e.dxf.center.x, e.dxf.center.y)
-                    for e in ezdxf.readfile(path).modelspace()
-                    if e.dxftype() == 'CIRCLE' and abs(e.dxf.radius-radius) < 1e-9]
-
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)/'segno_base.dxf'
-            enclosure.dxf_base(str(base))
-            base_holes = circles(str(base))
-            bracket = Path(tmp)/'b.dxf'
-            enclosure.dxf_corner_bracket(str(bracket))
-            bracket_holes = circles(str(bracket))
-        self.assertEqual(len(base_holes), 10)
-        self.assertEqual(len(bracket_holes), 5)
-
-        bw, bd = enclosure.W-2*enclosure.T, enclosure.D-2*enclosure.T
-        along = enclosure.CORNER_RO + enclosure.T
-        up = lambda z: enclosure.T + enclosure.RI + z - enclosure.DEV90
-        want = set()
-        for sign, xc in ((+1, 0.0), (-1, bw)):
-            for z in enclosure.CORNER_ZR_WALL:          # rear-wall face
-                want.add((round(xc + sign*along, 6), round(bd + up(z), 6)))
-            for z in enclosure.CORNER_ZR_SIDE:          # side-wall face
-                want.add((round(xc - sign*up(z), 6), round(bd - along, 6)))
-        self.assertEqual({(round(x, 6), round(y, 6)) for x, y in base_holes}, want)
-
-        # the bracket's own five, measured from ITS bend line at CORNER_LEG
-        self.assertEqual(
-            sorted((round(x, 6), round(y, 6)) for x, y in bracket_holes),
-            sorted([(enclosure.CORNER_LEG-enclosure.CORNER_RO, float(z))
-                    for z in enclosure.CORNER_ZR_WALL]
-                   + [(enclosure.CORNER_LEG+enclosure.CORNER_RO, float(z))
-                      for z in enclosure.CORNER_ZR_SIDE]))
-
-    def test_the_mirrored_bracket_reuses_one_flat_and_still_lands(self):
-        """Both hands ship the same hole pattern; only the outline is mirrored.
-
-        That is sound only while the rivet heights are symmetric about
-        CORNER_HT/2, because the mirrored bracket's flat y reads as
-        CORNER_HT - y in the world. Break the symmetry and the left corner's
-        rivets miss the base by twice the asymmetry.
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            paths = []
-            for mirrored in (False, True):
-                path = Path(tmp)/('m.dxf' if mirrored else 'd.dxf')
-                enclosure.dxf_corner_bracket(str(path), mirrored=mirrored)
-                paths.append([(e.dxf.center.x, e.dxf.center.y)
-                              for e in ezdxf.readfile(str(path)).modelspace()
-                              if e.dxftype() == 'CIRCLE'
-                              and abs(e.dxf.radius-enclosure.D_RIVET/2.0) < 1e-9])
-        self.assertEqual(sorted(paths[0]), sorted(paths[1]))
-        for row in (enclosure.CORNER_ZR_WALL, enclosure.CORNER_ZR_SIDE):
-            self.assertEqual(sorted(row),
-                             sorted(enclosure.CORNER_HT-z for z in row))
-        # and no rivet from one leg shares a height with one from the other
-        self.assertFalse(set(enclosure.CORNER_ZR_WALL) & set(enclosure.CORNER_ZR_SIDE))
-
-    def test_rivet_edge_distances_clear_the_two_diameter_rule_on_both_parts(self):
-        """The bracket leg is the part that has to carry both clearances.
-
-        CORNER_RO holds the rivet off its own bend and CORNER_LEG - CORNER_RO
-        holds it off the leg's free edge. At the original 12 mm leg the free edge
-        was 4.0 mm, 1.25 x rivet diameter, which is under the 2 x rule of thumb
-        and barely enough metal to seat a blind rivet's set head. The 15 mm leg
-        makes it 7.0 without moving a single hole in the base.
-        """
-        radius = enclosure.D_RIVET/2.0
-        free_edge = enclosure.CORNER_LEG - enclosure.CORNER_RO
-        self.assertAlmostEqual(free_edge, 7.0, places=6)
-        self.assertGreaterEqual(free_edge, 2*enclosure.D_RIVET)
-        self.assertAlmostEqual(free_edge - radius, 5.35, places=6)
-        # the bend side has to clear the deformation zone, and does
-        self.assertGreaterEqual(enclosure.CORNER_RO,
-                                enclosure.RI + enclosure.T + radius)
+    def test_welded_base_has_no_corner_rivet_bores(self):
+        # The former joint had ten Ø3.3 holes through the rear and side walls.
+        # Welding must leave solid sheet at those locations, not empty rivet bores.
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'segno_base.dxf'
             enclosure.dxf_base(str(path))
-            document = ezdxf.readfile(str(path))
-            holes = [(e.dxf.center.x, e.dxf.center.y) for e in document.modelspace()
-                     if e.dxftype() == 'CIRCLE' and abs(e.dxf.radius-radius) < 1e-9]
-            outline = max((flat_pattern_check._face(e) for e in document.modelspace()
-                           if e.dxftype() == 'LWPOLYLINE' and e.dxf.layer == 'CUT'),
-                          key=lambda f: f.Area()).outerWire()
-        worst = min(outline.distance(cq.Vertex.makeVertex(x, y, 0)) for x, y in holes)
-        self.assertGreater(worst - radius, 8.0)     # 8.211 mm as drawn
+            doc = ezdxf.readfile(path)
+            self.assertFalse([e for e in doc.modelspace().query('CIRCLE')
+                              if e.dxf.layer == 'CUT' and abs(e.dxf.radius-1.65)<1e-9])
+            sheet = cq.importers.importDXF(str(path),include=['CUT','VENT']).extrude(2).val()
+        bw, bd = enclosure.W-2*enclosure.T, enclosure.D-2*enclosure.T
+        former_centres = []
+        for sign, xc in ((1,0),(-1,bw)):
+            for z in (8,40,72):
+                former_centres.append((xc+sign*10,bd+4+z-enclosure.DEV90))
+            for z in (24,56):
+                former_centres.append((xc-sign*(4+z-enclosure.DEV90),bd-10))
+        for x,y in former_centres:
+            with self.subTest(center=(x,y)):
+                former_bore = cq.Workplane('XY').center(x,y).circle(1.65).extrude(2).val()
+                self.assertLess(former_bore.cut(sheet).Volume(),1e-7)
 
     def test_formed_beam_clears_measured_lid_with_coating_allowance(self):
         beam = enclosure._beam_solid().translate((
@@ -305,7 +263,7 @@ class ManufacturingFitTest(unittest.TestCase):
                 path = Path(tmp)/f'{stem}.dxf'; writer(str(path))
                 entities = list(ezdxf.readfile(path).modelspace())
                 drills = [e for e in entities if e.dxf.layer == 'DRILL']
-                self.assertEqual(len(drills), 9 if stem == 'base' else 18)
+                self.assertEqual(len(drills),9)
                 self.assertTrue(all(e.dxftype() == 'CIRCLE' and
                                     abs(2*e.dxf.radius-diameter) < 1e-8 for e in drills))
                 cuts = [e for e in entities if e.dxf.layer == 'CUT' and e.dxftype() == 'CIRCLE']
@@ -348,7 +306,8 @@ class ManufacturingFitTest(unittest.TestCase):
                        (rear,fixture['rear_bore_yz'])]
         matrix = np.array([[*normal,normal@(cross@(np.array(point)-pivot))]
                            for normal,point in constraints])
-        front = np.array([fixture['front_lid_bore_y'],6.455420469476287])
+        # The revised front lip is0.60 mm farther forward; its main/rear seats stay put.
+        front = np.array([fixture['front_lid_bore_y']-.60,6.455420469476287])
         lap = np.array(fixture['rear_bore_yz'])
         cases = []
         # Independent film at both ends of the main seat and at the rear lap.
@@ -362,26 +321,26 @@ class ManufacturingFitTest(unittest.TestCase):
             cases.append((front_delta,tangent))
         return cases
 
-    def test_fully_coated_lid_holes_allow_seat_motion_and_assembly_variation(self):
+    def test_coated_front_holes_and_gap_allow_nominal_seating_motion(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'lid.dxf'; enclosure.dxf_faceplate(str(path))
             drills = [e for e in ezdxf.readfile(path).modelspace()
                       if e.dxf.layer == 'DRILL' and e.dxftype() == 'CIRCLE']
-        self.assertEqual(len(drills),18)
+        self.assertEqual(len(drills),9)
         clearance = min(e.dxf.radius for e in drills)-.10-1.50
         # ±.15 centering at each assembly, asymmetric coated edge datums,
         # local angular residue, and ±.10 opening/transfer position per axis.
         horizontal = .30+.04+.01+.10
         cases = self._fully_coated_seat_cases()
         front = max(math.hypot(horizontal,abs(d[1])+.10)for d,_ in cases)
-        rear = max(math.hypot(horizontal,abs(t)+.10)for _,t in cases)
         self.assertGreater(clearance-front,.08)
-        self.assertGreater(clearance-rear,.12)
         self.assertGreater(front,(3.4-.20-3.0)/2)  # former bore cannot meet it
         gaps = [bare-delta[0]-film for delta,_ in cases
-                for bare,film in itertools.product((.50,.60),(.12,.20))]
-        self.assertGreater(min(gaps),.15)
-        self.assertLess(max(gaps),.60)
+                for bare,film in itertools.product((.70,1.50),(.12,.20))]
+        # This accepts an already verified bare assembly; it does not show
+        # that ordinary bend tolerances produce this band or parallel faces.
+        self.assertGreater(min(gaps),.35)
+        self.assertLess(max(gaps),1.50)
 
     def test_painted_light_apertures_clear_existing_printed_lenses(self):
         from flat_pattern_check import _face
@@ -447,7 +406,7 @@ class ManufacturingFitTest(unittest.TestCase):
 
     def test_native_cache_rejects_changed_cut_geometry_and_altered_step(self):
         source = Path(enclosure.HERE)
-        stem = 'segno_corner_bracket_rear'
+        stem = 'segno_faceplate'
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); out = root/'out'; out.mkdir()
             shutil.copytree(source/'formed', root/'formed')
@@ -479,27 +438,27 @@ class ManufacturingFitTest(unittest.TestCase):
             assembly = cq.importers.importStep(path).val()
             self.assertTrue(assembly.isValid())
             solids = assembly.Solids()
-            self.assertEqual(len(solids),34)       # 33 + the one support beam (#1019)
+            self.assertEqual(len(solids),32)       # five metal parts and 27 purchased references
             names = re.findall(r"NEXT_ASSEMBLY_USAGE_OCCURRENCE\('[^']*',\s*'([^']*)'",
                                Path(path).read_text())
             purchased = {f'PURCHASED_FITTED_FRONT_SHIM_PACK_{i}' for i in range(1,10)}
             purchased |= {f'PURCHASED_M3_WASHER_{end}_{i}'
                           for end in ('FRONT','REAR')for i in range(1,10)}
             self.assertEqual(set(names),purchased | {
-                'segno_base_1','segno_faceplate_1','segno_corner_bracket_rear_1',
-                'segno_corner_bracket_rear_mirrored_1','segno_rear_panel',
+                'segno_base_1','segno_faceplate_1','segno_rear_panel',
                 'segno_ring_disc', 'segno_beam'})
-            self.assertEqual(len(names),34)
+            self.assertEqual(len(names),32)
             shims = [s for s in solids if len(self._cylinder_axes(s,2.05)) == 1
                      and s.BoundingBox().xlen < 10]
             washers = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 1
-                       and len(self._cylinder_axes(s,3.5)) == 1]
+                       and (len(self._cylinder_axes(s,3.5)) == 1
+                            or len(self._cylinder_axes(s,6.0)) == 1)]
             self.assertEqual(len(shims),9)
             self.assertEqual(len(washers),18)
-            self.assertEqual(len(solids)-len(shims)-len(washers),7)
+            self.assertEqual(len(solids)-len(shims)-len(washers),5)
             base, lid = sorted(solids,key=lambda s:s.Volume(),reverse=True)[:2]
             self.assertAlmostEqual(base.BoundingBox().zmin,0.0,places=5)
-            self.assertAlmostEqual(lid.BoundingBox().ymin,-4.4108425,places=4)
+            self.assertAlmostEqual(lid.BoundingBox().ymin,-5.0108425,places=4)
             self.assertLess(abs(lid.BoundingBox().zmin),.001)
             # the support beam is the only part with the steel bend radii: four
             # inside (1.6) and four outside (3.2) -- the two long folds and the
@@ -513,7 +472,8 @@ class ManufacturingFitTest(unittest.TestCase):
             unsupported = [shims[0].translate((0,-.05,0))]+shims[1:]
             with self.assertRaises(AssertionError):
                 self._assert_front_shim_seats(unsupported,base,lid)
-            displaced = [s.translate((100,0,0)) if len(self._cylinder_axes(s,1.65)) == 5
+            displaced = [s.translate((100,0,0))
+                         if abs(s.BoundingBox().xlen-402)<.001 and abs(s.BoundingBox().zlen-76)<.001
                          else s for s in solids]
             with self.assertRaises(AssertionError):
                 self._assert_remaining_seats(displaced,base,lid)
@@ -580,43 +540,73 @@ class ManufacturingFitTest(unittest.TestCase):
 
     def _assert_lid_washer_seats(self, washers, lid):
         self.assertEqual(len(washers),18)
-        holes = self._cylinder_axes(lid,2.25)
-        self.assertEqual(len(holes),18)
+        front_count = rear_count = 0
         for washer in washers:
             self.assertTrue(washer.isValid())
             axis = self._cylinder_axes(washer,1.6)[0]
-            same_direction = [h for h in holes if abs(axis.Direction().Dot(h.Direction()))>.999999]
-            self.assertEqual(len(same_direction),9)
-            distance = min(cq.Vector(axis.Location()).sub(cq.Vector(h.Location()))
-                           .cross(cq.Vector(h.Direction())).Length for h in same_direction)
-            self.assertLess(distance,.00001)
+            direction = cq.Vector(axis.Direction())
+            if self._cylinder_axes(washer,6.0):
+                rear_count += 1
+                end_axes = [h for h in self._cylinder_axes(lid,3.0)
+                            if abs(h.Location().X()-axis.Location().X())<.005]
+                offsets = []
+                for hole in end_axes:
+                    self.assertGreater(abs(axis.Direction().Dot(hole.Direction())),.999999)
+                    delta = cq.Vector(hole.Location()).sub(cq.Vector(axis.Location()))
+                    offset = delta-direction*delta.dot(direction)
+                    # Midpoint placement is independently checked against both
+                    # actual end axes, not the curved-face area centroids.
+                    self.assertAlmostEqual(offset.Length,2.0,places=4)
+                    offsets.append(tuple(round(v,4) for v in offset.toTuple()))
+                self.assertEqual(len(set(offsets)),2)
+                minimum_bearing = 45.0
+            else:
+                front_count += 1
+                holes = self._cylinder_axes(lid,2.25)
+                self.assertEqual(len(holes),9)
+                distance = min(cq.Vector(axis.Location()).sub(cq.Vector(h.Location()))
+                               .cross(cq.Vector(h.Direction())).Length for h in holes)
+                self.assertLess(distance,.00001)
+                minimum_bearing = 18.0
             self.assertLess(washer.intersect(lid).Volume(),.000001)
             planes = [f for f in washer.Faces()if f.geomType()=='PLANE']
             bearing = min(planes,key=lambda f:f.distance(lid))
             self.assertLess(bearing.distance(lid),.00001)
             probe = cq.Solid.extrudeLinear(bearing.outerWire(),bearing.innerWires(),
                                           bearing.normalAt()*.01)
-            self.assertGreater(probe.intersect(lid).Volume()/.01,18)
+            self.assertGreater(probe.intersect(lid).Volume()/.01,minimum_bearing)
+        self.assertEqual((front_count,rear_count),(9,9))
+
+    def test_washer_poses_use_actual_rear_slot_end_midpoints(self):
+        stations = [u-enclosure.FP_W/2 for u in enclosure.FRONT_SCREW_U]
+        front_plane = cq.Plane(origin=(enclosure.FP_W/2,-5.01,7),
+                               xDir=(1,0,0),normal=(0,-1,0))
+        rear_normal = (0,math.sin(enclosure._rth),math.cos(enclosure._rth))
+        rear_plane = cq.Plane(origin=(enclosure.FP_W/2,400,100),
+                              xDir=(1,0,0),normal=rear_normal)
+        front = cq.Workplane(front_plane).rect(enclosure.FP_W,14).extrude(-2)
+        front = front.cut(cq.Workplane(front_plane).pushPoints([(u,0) for u in stations])
+                          .circle(2.25).extrude(-2))
+        def rear(length):
+            plate = cq.Workplane(rear_plane).rect(enclosure.FP_W,30).extrude(-2)
+            return plate.cut(cq.Workplane(rear_plane).pushPoints([(u,0) for u in stations])
+                             .slot2D(length,6,90).extrude(-2)).val()
+        lid = cq.Compound.makeCompound([front.val(),rear(10)])
+        poses = enclosure._lid_washer_matrices(lid)
+        self.assertEqual(len(poses),18)
+        for end in ('FRONT','REAR'):
+            group = [(name,matrix) for where,name,matrix in poses if where == end]
+            self.assertEqual(len(group),9)
+            for u,(_name,matrix) in zip(enclosure.FRONT_SCREW_U,group):
+                expected = (u,-5.01,7) if end == 'FRONT' else (u,400,100)
+                for row,coordinate in zip(matrix[:3],expected):
+                    self.assertAlmostEqual(row[3],coordinate,places=5)
+        with self.assertRaisesRegex(AssertionError,'end-axis spacing'):
+            enclosure._lid_washer_matrices(cq.Compound.makeCompound([front.val(),rear(8)]))
 
     def _assert_remaining_seats(self, solids, base, lid):
         # Independent assembled Fusion measurements, September 4, mm.
-        brackets = sorted((s for s in solids if len(self._cylinder_axes(s,1.65)) == 5),
-                          key=lambda s:s.BoundingBox().xmin)
-        self.assertEqual(len(brackets),2)
-        for bracket, xmin in zip(brackets,(.1,828.989159)):
-            bb = bracket.BoundingBox()
-            self.assertAlmostEqual(bb.xmin,xmin,places=4)
-            self.assertAlmostEqual(bb.ymax,418.900841,places=4)
-            self.assertAlmostEqual(bb.zmin,4,places=4)
-            holes = self._cylinder_axes(bracket,1.65)
-            self.assertEqual(len(holes),5)
-            for hole in holes:
-                # Coaxial through-rivet holes on the rear and side faces.
-                candidates = [axis for axis in self._cylinder_axes(base,1.65)
-                              if abs(axis.Direction().Dot(hole.Direction()))>.999999]
-                offset = min(cq.Vector(axis.Location()).sub(cq.Vector(hole.Location()))
-                             .cross(cq.Vector(hole.Direction())).Length for axis in candidates)
-                self.assertLess(offset,.02)
+        self.assertEqual(self._cylinder_axes(base,1.65),[])
         panel = next(s for s in solids if abs(s.BoundingBox().xlen-402)<.001
                      and abs(s.BoundingBox().zlen-76)<.001)
         bb = panel.BoundingBox()
@@ -634,8 +624,8 @@ class ManufacturingFitTest(unittest.TestCase):
             offset = min(cq.Vector(axis.Location()).sub(cq.Vector(hole.Location()))
                          .cross(cq.Vector(hole.Direction())).Length for axis in candidates)
             self.assertLess(offset,.02)
-        ring = next(s for s in solids if abs(s.BoundingBox().xlen-51.2)<.001)
-        shaft = self._cylinder_axes(ring,4.25)[0]
+        ring = next(s for s in solids if abs(s.BoundingBox().xlen-50.7)<.001)
+        shaft = self._cylinder_axes(ring,4.35)[0]
         aperture = self._cylinder_axes(lid,33.7)[0]
         self.assertGreater(abs(shaft.Direction().Dot(aperture.Direction())),.999999)
         offset = cq.Vector(shaft.Location()).sub(cq.Vector(aperture.Location()))
@@ -656,20 +646,22 @@ class ManufacturingFitTest(unittest.TestCase):
         self.assertLessEqual(result['extra_area_mm2'], .01)
         with tempfile.TemporaryDirectory() as tmp:
             altered = Path(tmp)/'wrong.dxf'
-            for name in ('relief', 'front trim', 'hole', 'extra material'):
+            for name in ('weld gap', 'weld overlap', 'hole', 'extra material'):
                 with self.subTest(name=name):
                     doc = ezdxf.readfile(source)
-                    if name == 'relief':
-                        with patch.object(enclosure, 'BASE_CORNER_RELIEF_D', 6.7):
+                    if name == 'weld gap':
+                        # A valid but different 0.75 mm gap changes the actual
+                        # four corner edges while leaving the hole datums fixed.
+                        with patch.object(enclosure, 'BASE_WELD_GAP', .75):
                             enclosure.dxf_base(str(altered))
                         doc = ezdxf.readfile(altered)
-                    elif name == 'front trim':
-                        with patch.object(enclosure, 'BASE_FRONT_END_CLEAR', 0.0):
+                    elif name == 'weld overlap':
+                        with patch.object(enclosure, 'BASE_WELD_OVERLAP', .75):
                             enclosure.dxf_base(str(altered))
                         doc = ezdxf.readfile(altered)
                     elif name == 'hole':
                         e = next(e for e in doc.modelspace().query('CIRCLE')
-                                 if e.dxf.layer == 'CUT' and abs(e.dxf.radius-1.65)<.001)
+                                 if e.dxf.layer == 'CUT' and abs(e.dxf.radius-1.25)<.001)
                         e.dxf.center += (1,0,0)
                     else:
                         e = next(e for e in doc.modelspace().query('CIRCLE')
@@ -697,7 +689,7 @@ class ManufacturingFitTest(unittest.TestCase):
                 flat = root/'formed/segno_base_flat.dxf'
                 doc = ezdxf.readfile(flat)
                 hole = next(e for e in doc.modelspace().query('CIRCLE')
-                            if e.dxf.layer == 'INTERIOR_PROFILES' and abs(e.dxf.radius-1.65)<.001)
+                            if e.dxf.layer == 'INTERIOR_PROFILES' and abs(e.dxf.radius-1.25)<.001)
                 hole.dxf.center += (1,0,0)
                 doc.saveas(flat)
                 with self.assertRaisesRegex(AssertionError, 'flat pattern differs'):
@@ -708,6 +700,36 @@ class ManufacturingFitTest(unittest.TestCase):
                 manifest.write_text(json.dumps(data))
                 with self.assertRaisesRegex(AssertionError, 'flat-pattern mismatch'):
                     enclosure._formed_record('segno_base')
+
+    def test_slotted_lid_registration_preserves_deferred_drill_verification(self):
+        from ezdxf.math import Matrix44
+        source = Path(enclosure.HERE)/'out/segno_faceplate.dxf'
+        native = Path(enclosure.HERE)/'formed/segno_faceplate_flat.dxf'
+        with tempfile.TemporaryDirectory() as tmp:
+            altered = Path(tmp)/'lid.dxf'
+            doc = ezdxf.readfile(native)
+            # Export origin and orientation are arbitrary. The one round CUT
+            # aperture plus the slot ends must locate the sheet independently
+            # of its nine deferred front holes.
+            move = Matrix44.z_rotate(math.pi/2) @ Matrix44.translate(37, -23, 0)
+            for entity in doc.modelspace():
+                entity.transform(move)
+            drills = [entity for entity in doc.modelspace().query('CIRCLE')
+                      if entity.dxf.layer == 'INTERIOR_PROFILES'
+                      and abs(entity.dxf.radius-2.25) < .001]
+            self.assertEqual(len(drills), 9)
+            # A tolerated unfolding residue must stay local to this row. Using
+            # the nine drills to register would displace the entire sheet.
+            for hole in drills:
+                hole.dxf.center += (.0001, 0, 0)
+            doc.saveas(altered)
+            result = flat_pattern_check.compare_flat_pattern(source, altered, opposite_face=True)
+            self.assertGreater(result['missing_area_mm2'], .004)
+            self.assertLess(result['missing_area_mm2'], .005)
+            drills[0].dxf.center += (.10, 0, 0)
+            doc.saveas(altered)
+            with self.assertRaisesRegex(AssertionError, 'flat-pattern mismatch'):
+                flat_pattern_check.compare_flat_pattern(source, altered, opposite_face=True)
 
     def test_native_verification_rejects_wrong_rules_bends_and_drilling(self):
         root = Path(enclosure.HERE)

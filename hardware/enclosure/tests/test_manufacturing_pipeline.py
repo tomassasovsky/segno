@@ -19,11 +19,30 @@ from ezdxf.math import Matrix44
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import segno_enclosure as enclosure
+from manufacturing_package import METAL_ARCHIVE, OBSOLETE_METAL_ARCHIVES
 from flat_pattern_check import compare_flat_pattern, validate_cut_contours
 from fusion_export_formed import _sketch_curves, _validate_sketch_curves
 
 
 class ManufacturingPipelineTest(unittest.TestCase):
+    def test_saved_dxf_extents_include_annotations_and_handle_the_origin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for annotations in (False,True):
+                with self.subTest(annotations=annotations):
+                    doc = enclosure._doc()
+                    doc.modelspace().add_circle((2,2),2,dxfattribs={'layer':'CUT'})
+                    if annotations:
+                        doc.modelspace().add_line((-7,80),(12,80),
+                                                  dxfattribs={'layer':'NOTE'})
+                    path = Path(tmp)/'part.dxf'
+                    enclosure._save(doc,str(path))
+                    saved = ezdxf.readfile(path)
+                    expected = ((-7,0,0),(12,80,0)) if annotations else ((0,0,0),(4,4,0))
+                    self.assertEqual(tuple(saved.header['$EXTMIN']),expected[0])
+                    self.assertEqual(tuple(saved.header['$EXTMAX']),expected[1])
+                    self.assertEqual(tuple(saved.modelspace().dxf.extmin),expected[0])
+                    self.assertEqual(tuple(saved.modelspace().dxf.extmax),expected[1])
+
     def test_all_generated_metal_paths_are_clean_and_match_native_base(self):
         with tempfile.TemporaryDirectory() as tmp:
             for stem, writer in enclosure.DXF_PARTS:
@@ -132,23 +151,22 @@ class ManufacturingPipelineTest(unittest.TestCase):
         bend = line((0,0),(0,1),True)
         layers = {'CUT':SimpleNamespace(sketchCurves=Curves([active,old_profile])),
                   'BEND':SimpleNamespace(sketchCurves=Curves([bend]))}
-        component = SimpleNamespace(name='corner_bracket',
+        component = SimpleNamespace(name='base',
                                     sketches=SimpleNamespace(itemByName=layers.get))
         expected = {'CUT':[['L',[[0.0,0.0],[10.0,0.0]]]],
                     'BEND':[['L',[[0.0,0.0],[0.0,10.0]]]]}
         actual = _sketch_curves(component,expected)
-        _validate_sketch_curves('segno_corner_bracket_rear',expected,actual)
+        _validate_sketch_curves('segno_base',expected,actual)
         # The same old edge left as real CUT geometry is still a mismatch.
         old_profile.isConstruction = False
         with self.assertRaisesRegex(AssertionError,'CUT sketch differs'):
-            _validate_sketch_curves('segno_corner_bracket_rear',expected,
+            _validate_sketch_curves('segno_base',expected,
                                     _sketch_curves(component,expected))
 
-    def test_handed_bracket_split_does_not_leave_the_old_painting_quantity(self):
-        # Keeping the old x2 painter row after adding the left-hand x1 part
-        # would quote and request three brackets instead of the two made parts.
+    def test_painting_quantity_matches_the_single_support_beam(self):
+        # A stale quantity must not request more painted parts than are made.
         rows = [(row[0],row[1],2,*row[3:])
-                if row[0] == 'segno_corner_bracket_rear' else row
+                if row[0] == 'segno_beam' else row
                 for row in enclosure.PAINT_BOM]
         with patch.object(enclosure,'PAINT_BOM',rows):
             with self.assertRaisesRegex(AssertionError,'painting quantity differs'):
@@ -175,7 +193,7 @@ class ManufacturingPipelineTest(unittest.TestCase):
     @staticmethod
     def _previous_archives(out):
         archives = {name:b'previous complete package' for name in (
-            'segno_sheetmetal.zip','segno_sheetmetal_step.zip',
+            METAL_ARCHIVE, *OBSOLETE_METAL_ARCHIVES,
             'segno_pintura.zip','segno_3dprint.zip')}
         for name,data in archives.items():
             (out/name).write_bytes(data)
@@ -194,6 +212,45 @@ class ManufacturingPipelineTest(unittest.TestCase):
             self._generated_drawings(out)
             produced = enclosure.build_quote_packages(with_step=False,with_pdf=False)
             self.assertTrue(all(Path(path).name not in archives for path in produced))
+            for name,data in archives.items():
+                self.assertEqual((out/name).read_bytes(),data)
+
+    def test_metal_order_requires_both_step_and_individual_pdf_generation(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure,'OUT',tmp):
+            out = Path(tmp)
+            self._generated_drawings(out)
+            with (patch.object(enclosure,'_verify_drawing_package'),
+                  patch.object(enclosure,'_formed_record'),
+                  patch.object(enclosure,'_write_quote_archives',side_effect=lambda p:p)):
+                for with_step,with_pdf in ((False,False),(False,True),(True,False)):
+                    with self.subTest(with_step=with_step,with_pdf=with_pdf):
+                        packages = enclosure.build_quote_packages(
+                            with_step=with_step,with_pdf=with_pdf)
+                        self.assertNotIn(METAL_ARCHIVE,packages)
+                        self.assertFalse(set(OBSOLETE_METAL_ARCHIVES) & packages.keys())
+                        self.assertNotIn('segno_pintura.zip',packages)
+                        self.assertEqual('segno_3dprint.zip' in packages,with_step)
+                        self.assertIn('segno_pedal_tiles.zip',packages)
+
+    def test_main_partial_generation_does_not_reverify_retained_metal_archive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); out = root/'out'; out.mkdir()
+            archives = self._previous_archives(out)
+            # The prior ZIP bytes intentionally cannot be read as a new order.
+            # Stub only document rendering/validation: exercise main's complete
+            # no-STEP control flow, including its final verification request.
+            with (patch.object(enclosure,'HERE',str(root)),
+                  patch.object(enclosure,'OUT',str(out)),
+                  patch.object(enclosure,'dxf_to_pdf'),
+                  patch.object(enclosure,'build_pedal_tile_vectors',return_value=[]),
+                  patch.object(enclosure,'paint_quote_pdf'),
+                  patch.object(enclosure,'_write_quote_archives',return_value=[]),
+                  patch.object(enclosure,'_verify_drawing_package') as verify,
+                  redirect_stdout(io.StringIO())):
+                enclosure.main({'--no-step'})
+            self.assertGreaterEqual(verify.call_count,2)
+            for call in verify.call_args_list:
+                self.assertEqual(call.kwargs,{'with_pdf':True,'check_archives':False})
             for name,data in archives.items():
                 self.assertEqual((out/name).read_bytes(),data)
 
@@ -218,13 +275,15 @@ class ManufacturingPipelineTest(unittest.TestCase):
                   patch.object(enclosure,'_write_quote_archives',side_effect=lambda p:p)):
                 packages = enclosure.build_quote_packages(with_step=True,with_pdf=True)
             self.assertEqual({name:len(members) for name,members in packages.items()}, {
-                'segno_sheetmetal.zip':14, 'segno_sheetmetal_step.zip':8,
-                'segno_pintura.zip':8, 'segno_pedal_tiles.zip':22,
+                'segno_sheetmetal.zip':15,
+                'segno_pintura.zip':6, 'segno_pedal_tiles.zip':22,
                 # 38 until 2026-09-10, when the twelve floor rail segments and
                 # the mid-field prop were added. They had been generated into
                 # out/ and shipped in no package at all since #1019 created them.
                 'segno_3dprint.zip':64,
             })
+            for members in packages.values():
+                self.assertFalse([name for name in members if 'corner_bracket' in name])
             for part in ('segno_platform_sled', 'segno_platform_mid_sled',
                          'segno_lid_prop', 'segno_floor_rail_front_a_1',
                          'segno_floor_rail_rear_4'):
@@ -240,11 +299,22 @@ class ManufacturingPipelineTest(unittest.TestCase):
                 'segno_mini_console_tray',            # a different product
                 'segno_mini_console_lid',
                 'segno_mini_console_sled'})
-            members = [name for names in packages.values() for name in names]
+            metal_sources = packages[METAL_ARCHIVE].values()
+            self.assertEqual(set(metal_sources), {
+                stem+extension
+                for stem in ('segno_base','segno_faceplate','segno_ring_disc',
+                             'segno_rear_panel','segno_beam')
+                for extension in ('.step','.dxf','.pdf')})
+            for name in packages[METAL_ARCHIVE]:
+                self.assertIn('__qty1.',name)
+                if name.startswith('segno_rear_panel__'):
+                    self.assertIn('de-1.2-mm',name)
+            members = [source for names in packages.values() for source in names.values()]
             self.assertFalse(any('overlay' in name for name in members))
-            self.assertIn('segno_assembly.step',packages['segno_sheetmetal_step.zip'])
+            self.assertNotIn('segno_assembly.step',members)
             for reference in ('segno_front_shim_pack_reference.step',
-                              'segno_lid_washer_reference.step'):
+                              'segno_front_lid_washer_reference.step',
+                              'segno_rear_lid_washer_reference.step'):
                 self.assertNotIn(reference,members)
 
     def test_failed_native_gate_does_not_publish_new_metal_archive(self):
@@ -284,10 +354,9 @@ class ManufacturingPipelineTest(unittest.TestCase):
             for name,data in archives.items():
                 self.assertEqual((out/name).read_bytes(),data)
 
-    def test_lid_and_bracket_gate_checks_final_native_material(self):
+    def test_lid_gate_checks_final_native_material(self):
         source = Path(enclosure.HERE)
-        for stem in ('segno_faceplate','segno_corner_bracket_rear',
-                     'segno_corner_bracket_rear_mirrored'):
+        for stem in ('segno_faceplate',):
             with self.subTest(stem=stem), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp); out = root/'out'; out.mkdir()
                 shutil.copytree(source/'formed',root/'formed')
@@ -340,8 +409,8 @@ class ManufacturingPipelineTest(unittest.TestCase):
     def test_archive_set_survives_missing_members_and_failed_zip_writes(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure,'OUT',tmp):
             out = Path(tmp); archives = self._previous_archives(out)
-            packages = {'segno_sheetmetal.zip':['part.dxf'],
-                        'segno_pintura.zip':['paint.pdf']}
+            packages = {'segno_pedal_tiles.zip':{'part.dxf':'part.dxf'},
+                        'segno_pintura.zip':{'paint.pdf':'paint.pdf'}}
             (out/'part.dxf').write_bytes(b'current drawing')
             with self.assertRaisesRegex(AssertionError,'missing required paint.pdf'):
                 enclosure._write_quote_archives(packages)
@@ -362,7 +431,7 @@ class ManufacturingPipelineTest(unittest.TestCase):
             enclosure._write_quote_archives(packages)
             for name,members in packages.items():
                 with zipfile.ZipFile(out/name) as archive:
-                    self.assertEqual(archive.namelist(),members)
+                    self.assertEqual(archive.namelist(),list(members))
                     for member in members:
                         self.assertEqual(archive.read(member),(out/member).read_bytes())
 

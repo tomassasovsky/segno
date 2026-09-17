@@ -111,6 +111,21 @@ class MidPlatformMountTest(unittest.TestCase):
                                        cylinder(2.25, 6.0, x, y, 0))
                     self.assertGreaterEqual(6.0-insertion, 2.0)
 
+    def test_the_underside_is_solid_apart_from_its_pockets_and_driver_bores(self):
+        """Issue #1037: fill the old cavity while retaining assembly access."""
+        self.assertCountEqual(bore_spans(self.collar, 6.0), [
+            (x, y, 0.0, round(CEILING, 6), round(2*math.pi*6.0*CEILING, 6))
+            for x, y in DECK_AXES])
+        # Probe the filled region across both mounting patterns, excluding
+        # the driver bores and blind insert pockets.
+        filled = cq.Solid.makeBox(105, 60, CEILING-0.4,
+                                  cq.Vector(-52.5, -30, 0.2))
+        for x, y in DECK_AXES:
+            filled = filled.cut(cylinder(6.2, CEILING, x, y, 0))
+        for x, y in BASE_AXES:
+            filled = filled.cut(cylinder(2.45, 6.2, x, y, 0))
+        self.assert_inside(filled, self.collar)
+
     def test_independent_deck_pattern_allows_short_screws_and_straight_tools(self):
         self.assertCountEqual(bore_spans(self.collar, 1.85), [
             (x, y, round(CEILING, 6), round(SEAT, 6),
@@ -176,7 +191,7 @@ class MidPlatformMountTest(unittest.TestCase):
         # metal and electronics builders are excluded: reconstructing those
         # DXFs is unrelated to whether it picks the right printed variants.
         omitted = {name: Mock(return_value=[]) for name in (
-            'fold_base', 'corner_joins', 'pcb_parts', 'rear_panels', 'fold_faceplate')}
+            'fold_base', 'pcb_parts', 'rear_panels', 'fold_faceplate')}
         with patch.multiple(folded, **omitted):
             parts = dict(folded.build())
         self.assertCountEqual(parts, [f'{kind}{i}' for kind in ('ring', 'sled', 'pedal')

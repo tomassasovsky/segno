@@ -12,8 +12,10 @@
     "evidence": "Existing EC11 modeled interface; physical fit remains an assembly acceptance check"
   },
   "disc_bore": {
-    "raw_diameter_mm": 8.5,
-    "raw_tolerance_mm": 0.05,
+    "raw_diameter_mm": 8.7,
+    "raw_tolerance_mm": 0.2,
+    "center_position_tolerance_each_axis_mm": 0.2,
+    "center_datum": "Disc outside diameter center",
     "local_coating_per_wall_mm": [
       0.06,
       0.1

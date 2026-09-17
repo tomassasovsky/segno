@@ -76,17 +76,33 @@ def validate_cut_contours(path):
     _profile(document, ("CUT", "VENT"))
 
 
-def _circles(document, layers):
-    return [(e.dxf.radius, e.ocs().to_wcs(e.dxf.center))
-            for e in document.modelspace().query("CIRCLE") if e.dxf.layer in layers]
+def _round_centres(document, layers):
+    """Round holes and slot ends are rigid registration datums.
+
+    A semicircle may arrive as two quarter arcs; count its centre only once.
+    """
+    centres = {}
+    for entity in document.modelspace():
+        if entity.dxf.layer not in layers:
+            continue
+        curves = entity.virtual_entities() if entity.dxftype() == "LWPOLYLINE" else [entity]
+        for curve in curves:
+            if curve.dxftype() not in ("CIRCLE", "ARC"):
+                continue
+            radius = curve.dxf.radius
+            point = curve.ocs().to_wcs(curve.dxf.center)
+            key = tuple(round(value, 8) for value in (radius, point.x, point.y))
+            centres[key] = (radius, point)
+    return list(centres.values())
 
 
 def compare_flat_pattern(source_path, native_path, *, opposite_face=False):
     """Check all material, including holes drilled after forming.
 
     Fusion can rotate/translate its flat-pattern export. Register using matching
-    round holes, then compare every contour by planar Boolean subtraction. DRILL
-    is included only in this verification; it remains excluded from laser CUT.
+    round holes and slot ends, then compare every contour by planar Boolean
+    subtraction. Deferred DRILL holes are verified but cannot shift the rigid
+    registration: unfolding can leave tiny residues at a formed drill axis.
     An opposite-face view must be prescribed by the verified export setup;
     mirrored candidates are never searched for automatically.
     """
@@ -98,8 +114,8 @@ def compare_flat_pattern(source_path, native_path, *, opposite_face=False):
             entity.transform(Matrix44.scale(-1, 1, 1))
     source_layers = ("CUT", "VENT", "DRILL")
     native_layers = ("OUTER_PROFILES", "INTERIOR_PROFILES")
-    expected = _circles(source, source_layers)
-    actual = _circles(native, native_layers)
+    expected = _round_centres(source, ("CUT", "VENT"))
+    actual = _round_centres(native, native_layers)
     # Four proper in-plane rotations; a mirror is not an acceptable match.
     best = None
     for a, b, c, d in [(1, 0, 0, 1), (0, -1, 1, 0), (-1, 0, 0, -1), (0, 1, -1, 0)]:

@@ -2,9 +2,9 @@
 
 Run segno_enclosure.py --no-step first, synchronize the Fusion model, then run
 this script with the populated console active. It compares imported vent, bend
-and deferred-drill curves with the current DXF handoff, plus the lid and both bracket cut
-curves. The lid's CUT/DRILL union permits an existing nominal hole to move to a
-secondary operation. Every part exports its final unfolded contours; the base's
+and deferred-drill curves with the current DXF handoff, plus the lid cut curves.
+The lid's CUT/DRILL union permits an existing nominal hole to move to a secondary
+operation. Every part exports its final unfolded contours; the base's
 construction sketch precedes the corner trims. Finally run the full enclosure
 generator; CadQuery compares all final flats with CUT/VENT/DRILL geometry and
 validates the exported solids.
@@ -121,9 +121,7 @@ def run(_context):
     directory = HERE/"formed"
     directory.mkdir(exist_ok=True)
     manifest = {}
-    names = {"segno_base":"base", "segno_faceplate":"faceplate",
-             "segno_corner_bracket_rear":"corner_bracket",
-             "segno_corner_bracket_rear_mirrored":"corner_bracket_mirrored"}
+    names = {"segno_base":"base", "segno_faceplate":"faceplate"}
     assert set(expected) == set(names), "formed handoff part set differs from the exporter"
     # Validate the whole set before writing any output.
     parts = {}
