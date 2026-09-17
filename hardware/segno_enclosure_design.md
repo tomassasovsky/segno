@@ -45,14 +45,21 @@ override those dimensions or the separate metal-shop/painter sequence.
 | Top slope | **12.5°** | sloped length 407 mm |
 | Material | **2.0 mm 1100-H14 aluminium** (Alcast cert, lot 26E0269) | bend R 2.0, K 0.33 |
 
-**Construction = folded lower body + removable lid. Nothing is welded.**
-`segno_base` is one blank: floor, four walls and the rear transition shoulder.
-Only the two rear corners use internal riveted brackets, one right and one
-left with distinct upper profiles. Fit the straight rear seams to 0.00–0.10 mm
-bare gap (0.05 nominal) before riveting; keep the required corner reliefs.
+**Construction = folded lower body + removable lid.**
+`segno_base` is one blank: floor, four walls, the rear transition shoulder, a
+lid-seat flange on each side wall and a tab at each rear corner (#1067). The
+two front corners are fusion welded (0.50 mm nominal gap, 1.00 mm overlap; the
+front wall is too short for anything else). At each rear corner an 18 mm tab
+folds inward off the side wall onto the rear wall's inner face and takes three
+resistance spot welds, at 20, 42 and 64 mm above the floor. The electrode marks
+land on the rear face. 18 mm is the usual spot-weld flange for 2 mm sheet: a
+flat several mm wider than the ~7 mm nugget, plus the R2 + T2 bend zone. The
+spot welder still has to confirm it can weld 2 mm 1100 aluminium.
 
-The lid has two folds: a front lip and a rear lap. It rests on the side-wall
-top edges and rear transition, with nine M3 screws through each folded edge
+The lid has two folds: a front lip and a rear lap. It rests on a 15 mm inward
+flange along each side wall's sloped top (the old bare 2 mm edge line is that
+flange's top face, so the lid did not move) and on the rear transition. The
+support beam's pad stops 1.5 mm short of each flange. Nine M3 screws go through each folded edge
 into tapped body holes. It has no folded side skirts or side fixing screws.
 The eighteen lid bores are Ø4.50(+0.10/−0) before coating and use M3 OD 7 head
 washers. The front axes are 0.50 mm lower than the old pattern. Nine fitted

@@ -86,7 +86,7 @@ class WeldedCornerProfilesTest(unittest.TestCase):
                          if entity.dxf.layer in UNCHANGED_FEATURES)
         self.assertEqual(counts, {
             ('CUT', 'LWPOLYLINE'): 2, ('CUT', 'CIRCLE'): 106,
-            ('VENT', 'LWPOLYLINE'): 95, ('BEND', 'LWPOLYLINE'): 5,
+            ('VENT', 'LWPOLYLINE'): 95, ('BEND', 'LWPOLYLINE'): 9,
             ('DRILL', 'CIRCLE'): 9,
         })
 
@@ -177,11 +177,22 @@ class WeldedCornerProfilesTest(unittest.TestCase):
                                     or abs(start.x-847.9) < 1e-7)
 
     def test_every_existing_functional_cut_drill_and_fold_is_preserved(self):
+        # #1067 added four short folds (two lid-seat flanges, two rear tabs);
+        # the five folds that were already there must not move.
+        added = {row[3] for row in enclosure.BEND_TABLES['segno_base']
+                 if row[2] == 'seg'}
+
+        def is_added(entity):
+            return (entity.dxf.layer == 'BEND' and tuple(sorted(
+                (round(x, 3), round(y, 3)) for x, y in entity.get_points('xy')))
+                in added)
+        self.assertEqual(sum(map(is_added, self.entities)), 4)
         for layer, expected in UNCHANGED_FEATURES.items():
             with self.subTest(layer=layer):
                 actual = _feature_signature(entity for entity in self.entities
                                             if entity is not self.outline
-                                            and entity.dxf.layer == layer)
+                                            and entity.dxf.layer == layer
+                                            and not is_added(entity))
                 self.assertEqual(actual, expected,
                                  f'{layer} geometry changed beyond the four corners')
 

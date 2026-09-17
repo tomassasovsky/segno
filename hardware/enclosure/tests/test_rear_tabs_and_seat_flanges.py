@@ -1,0 +1,165 @@
+"""Rear corner tabs, lid-seat flanges and the beam notch they need (#1067).
+
+The development numbers are recomputed here from T2 / R2 / K0.33 rather than
+read from the generator, so a wrong constant there cannot pass by agreeing with
+itself.
+"""
+import math
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+
+import ezdxf
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import segno_enclosure as enclosure
+
+
+T, R, K = 2.0, 2.0, 0.33
+HALF_BEND = math.pi / 4 * (R + K * T)          # half of a 90 deg bend allowance
+DEV = (R + T) - HALF_BEND                      # bend line -> outer mold line
+BW, BD = 846.0, 419.0
+REAR_INSIDE_Y = BD + DEV - T                   # rear wall inner face, folded
+SLOPE = math.atan2(100.0 - 12.0, 397.0)
+
+
+def _lines(entities, layer):
+    for entity in entities:
+        if entity.dxf.layer != layer:
+            continue
+        curves = (entity.virtual_entities()
+                  if entity.dxftype() == 'LWPOLYLINE' else [entity])
+        for curve in curves:
+            if curve.dxftype() == 'LINE':
+                yield (curve.dxf.start.x, curve.dxf.start.y), (curve.dxf.end.x, curve.dxf.end.y)
+
+
+class RearTabsAndSeatFlangesTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.directory.cleanup)
+        path = Path(cls.directory.name) / 'base.dxf'
+        enclosure.dxf_base(str(path))
+        cls.entities = list(ezdxf.readfile(path).modelspace())
+        cls.bends = list(_lines(cls.entities, 'BEND'))
+        cls.cuts = list(_lines(cls.entities, 'CUT'))
+
+    def _tab_bends(self):
+        return [(a, b) for a, b in self.bends
+                if abs(a[1] - b[1]) < 1e-9 and (max(a[0], b[0]) < 0 or min(a[0], b[0]) > BW)]
+
+    def test_each_tab_lands_on_the_rear_wall_inner_face(self):
+        tabs = self._tab_bends()
+        self.assertEqual(len(tabs), 2)
+        for (a, b) in tabs:
+            with self.subTest(side='left' if a[0] < 0 else 'right'):
+                y = a[1]
+                # Folding puts the tab's outer face DEV past its bend line; it
+                # has to stop the nominal 0.20 mm gap short of the rear wall.
+                self.assertAlmostEqual(REAR_INSIDE_Y - (y + DEV), 0.20, places=6)
+                origin = 0.0 if a[0] < 0 else BW
+                heights = sorted(abs(x - origin) for x in (a[0], b[0]))
+                # A wall height z above the floor top sits T + z - DEV from the
+                # side bend line in the flat.
+                self.assertAlmostEqual(heights[0], T + 9.0 - DEV, places=6)
+                self.assertAlmostEqual(heights[1], T + 75.0 - DEV, places=6)
+                # The free edge: 18 mm from the side wall's outer face.
+                tips = [(p, q) for p, q in self.cuts
+                        if abs(p[1] - q[1]) < 1e-9 and abs(abs(p[0] - q[0]) - 66.0) < 1e-6
+                        and (p[0] < 0) == (a[0] < 0) and p[1] > y]
+                self.assertEqual(len(tips), 1)
+                self.assertAlmostEqual(tips[0][0][1] - y, 18.0 - DEV, places=6)
+
+    def test_tab_reliefs_reach_past_the_bend_band(self):
+        for (a, _b) in self._tab_bends():
+            y = a[1]
+            origin = 0.0 if a[0] < 0 else BW
+            near = [e for e in self.entities if e.dxf.layer == 'CUT'
+                    and e.dxftype() == 'LWPOLYLINE']
+            arcs = [c for e in near for c in e.virtual_entities()
+                    if c.dxftype() == 'ARC' and abs(c.dxf.radius - T / 2) < 1e-6
+                    and abs(c.dxf.center.y - y) < 10 and (c.dxf.center.x < 0) == (origin == 0)]
+            with self.subTest(side='left' if origin == 0 else 'right'):
+                self.assertEqual(len(arcs), 2)
+                for arc in arcs:
+                    lowest = arc.dxf.center.y - arc.dxf.radius
+                    self.assertLessEqual(lowest, y - HALF_BEND - 0.5 + 1e-9)
+
+    def test_seat_flange_bend_sits_one_development_inside_the_lid_seat_edge(self):
+        inclined = [(a, b) for a, b in self.bends
+                    if abs(a[0] - b[0]) > 1 and abs(a[1] - b[1]) > 1]
+        self.assertEqual(len(inclined), 2)
+        tan = math.tan(SLOPE)
+        for a, b in inclined:
+            origin, sign = (0.0, -1) if a[0] < 0 else (BW, 1)
+            # The old top edge, lid underside plane, as flat height h(y).
+            edge = lambda y: 12.0 + (y + DEV) * tan - DEV
+            with self.subTest(side='left' if sign < 0 else 'right'):
+                for x, y in (a, b):
+                    h = (x - origin) * sign
+                    perpendicular = (edge(y) - h) * math.cos(SLOPE)
+                    self.assertAlmostEqual(perpendicular, DEV, places=6)
+                # The flange's free edge: parallel, 15 mm from the wall's outer
+                # face once folded, i.e. 15 - 2 DEV outside the old edge line.
+                length = math.dist(a, b)
+                tips = [(p, q) for p, q in self.cuts
+                        if abs(math.dist(p, q) - length) < 1e-6 and (p[0] < 0) == (sign < 0)]
+                self.assertEqual(len(tips), 1)
+                for x, y in tips[0]:
+                    h = (x - origin) * sign
+                    self.assertAlmostEqual((h - edge(y)) * math.cos(SLOPE),
+                                           15.0 - 2 * DEV, places=6)
+
+    def test_seat_flange_ends_clear_the_lid_lip_cove_and_the_crease(self):
+        seat = enclosure.side_seat_flange()
+        self.assertGreaterEqual(seat['front_y'], 10.0)
+        # The flange's reliefs are the T-wide round-bottomed slots square to the
+        # sloped edge; the rearmost reach of any of them is its arc's top.
+        arcs = [c for e in self.entities if e.dxf.layer == 'CUT' and e.dxftype() == 'LWPOLYLINE'
+                for c in e.virtual_entities()
+                if c.dxftype() == 'ARC' and abs(c.dxf.radius - T / 2) < 1e-6
+                and 300 < c.dxf.center.y < 400]
+        self.assertEqual(len(arcs), 2)
+        crease = enclosure._side_wall_crease_y()
+        for arc in arcs:
+            self.assertAlmostEqual(crease - (arc.dxf.center.y + arc.dxf.radius), 3.0, places=6)
+
+    def test_spot_welds_sit_on_the_tab_away_from_its_ends(self):
+        lo, hi = enclosure.REAR_TAB_Z
+        self.assertEqual(len(enclosure.REAR_TAB_SPOTS_Z), 3)
+        for z in enclosure.REAR_TAB_SPOTS_Z:
+            self.assertGreaterEqual(z - lo, 10.0)
+            self.assertGreaterEqual(hi - z, 10.0)
+        spacing = [b - a for a, b in zip(enclosure.REAR_TAB_SPOTS_Z,
+                                         enclosure.REAR_TAB_SPOTS_Z[1:])]
+        self.assertGreaterEqual(min(spacing), 20.0)
+
+    def test_beam_stays_out_of_the_seat_flanges(self):
+        import cadquery as cq
+        solid = enclosure._beam_solid()
+        tilt = math.radians(enclosure.BEAM_TILT)
+        normal = cq.Vector(0, -math.sin(tilt), math.cos(tilt))
+        pads = [f for f in solid.Faces() if f.geomType() == 'PLANE'
+                and f.normalAt().dot(normal) > 0.99999]
+        pad = max(pads, key=lambda f: f.Area())
+        # The lid underside lies the bare support gap above the pad, along the
+        # pad normal; the flange and its inner bend occupy R + T below that.
+        lid = pad.Center().dot(normal) + enclosure.BEAM_BARE_GAP
+        flange_edge = 15.0 - DEV - enclosure.BEAM_U0        # beam local x
+        span = enclosure.BEAM_LEN
+        for x0, x1 in ((-5.0, flange_edge + 1.0), (span - flange_edge - 1.0, span + 5.0)):
+            zone = (cq.Workplane('XY').box(x1 - x0, 200, R + T + 1.0, centered=False)
+                    .translate((x0, -100, -(R + T + 1.0))).val()
+                    .rotate((0, 0, 0), (1, 0, 0), math.degrees(tilt))
+                    .translate(normal * lid))
+            with self.subTest(end='left' if x0 < 0 else 'right'):
+                self.assertLess(solid.intersect(zone).Volume(), 1e-6)
+        # ...and the pad still bears everywhere else.
+        self.assertAlmostEqual(pad.BoundingBox().xlen, span - 2 * enclosure.BEAM_PAD_X0,
+                               places=3)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -50,11 +50,13 @@ class ManufacturingFitTest(unittest.TestCase):
                            if e.dxf.layer == 'CUT'),key=lambda e:len(e))
             points = list(contour.get_points('xyb')); side_edges = []
             for a,b in zip(points,points[1:]+points[:1]):
-                if a[2] or abs(a[1]-b[1]) > 1e-7 or abs(a[0]-b[0]) < 70:
+                if a[2] or abs(a[1]-b[1]) > 1e-7 or abs(a[0]-b[0]) < 5:
                     continue
-                if a[1] > 400 and (max(a[0],b[0]) < 0 or min(a[0],b[0]) > width):
+                if 400 < a[1] < rear_inside_y and (max(a[0],b[0]) < 0 or min(a[0],b[0]) > width):
                     side_edges.append(a[1])
-            self.assertEqual(len(side_edges),2)
+            # The rear corner tab (#1067) splits each side wall's rear edge into
+            # the piece above the tab and the piece below it.
+            self.assertEqual(len(side_edges),4)
             for y in side_edges:
                 # Supplier sample: the side stops 0.50 mm short of the rear
                 # inner face; this is a nominal weld gap, not the old 0.10 mm
@@ -64,8 +66,8 @@ class ManufacturingFitTest(unittest.TestCase):
         straight_faces = [f for f in base.Faces() if f.geomType() == 'PLANE'
                           and abs(f.normalAt().y) > .999999
                           and abs(f.BoundingBox().xlen-2) < .001
-                          and 70 < f.BoundingBox().zlen < 90 and f.Center().y > 400]
-        self.assertEqual(len(straight_faces),2)
+                          and 5 < f.BoundingBox().zlen < 10 and f.Center().y > 400]
+        self.assertEqual(len(straight_faces),4)
         for face in straight_faces:
             gap = rear_inside_y-face.Center().y
             self.assertAlmostEqual(gap,.50,places=4)
