@@ -3,7 +3,7 @@
 ## Rear corner tabs and lid-seat flanges - 2026-09-17 (#1067)
 
 Built in a **clone**, not the populated document: **"VAMP console (populated) -
-1067 tabs + seat flanges"** (Loopy folder, version 9 at the end of that day). The
+1067 tabs + seat flanges"** (Loopy folder, version 10 at the end of that day). The
 original **VAMP console (populated)** stays at version 394, untouched. VAMP sheet
 metal is not updated. `formed/` and its manifest come from the clone;
 `fusion_export_formed.py` accepts either name. The clone is a `DataFile.copy` of
@@ -34,6 +34,14 @@ the component), as before, except the construction trim now reaches y = 53.2 cm
   underside, rear wall's R2 upper bend, 0.15 mm off) through the bend and across
   the tab (flat top 83.861 mm above the floor top). No slits, no loose piece, no
   rear fusion welds.
+
+- The faceplate is 853.8 mm wide (`LID_W`), 2 mm past each side skin; the rear
+  wall and its shoulder keep the base's 849.8 mm (`BASE_OUTER_W`). It was
+  rebuilt from `out/segno_faceplate.dxf` like the base (sketch API, two folds at
+  −1.3526609 and −0.644763 rad, the nine Ø4.5 front bores copied from the old lid
+  +2 mm in component x) and placed at x −0.39 cm, so every hole and slot stays
+  where it was in world space. Old lid kept hidden as `faceplate_pre_wide`.
+  `reference/coated_support_datums.json`'s `lid_matrix_mm` moved to x −3.9 with it.
 
 **Verified in the clone:** all features healthy; gap between the side wall top and
 the shoulder 0.02-0.21 mm along the corner, no step; tab gap open; rear wall at the
@@ -183,7 +191,7 @@ placement, so the screens and other control-area components stay fixed.
 | component | populated | VAMP sheet metal |
 |---|---|---|
 | base | `[1,0,0,0 \| 0,1,0,0 \| 0,0,1,0.2]` | `[-1,0,0,84.8 \| 0,0,1,0.2 \| 0,1,0,0]` |
-| faceplate (lid) | `[1,0,0,-0.19 \| 0,c,-s,-1.5299694631998793 \| 0,s,c,1.1080466062875105]` | `[-1,0,0,84.99 \| 0,s,c,1.1080466062875105 \| 0,c,-s,-1.5299694631998793]` |
+| faceplate (lid) | `[1,0,0,-0.39 \| 0,c,-s,-1.5299694631998793 \| 0,s,c,1.1080466062875105]` (the #1067 clone's 853.8 mm lid; the original populated doc's 849.8 mm lid sits at -0.19) | `[-1,0,0,84.99 \| 0,s,c,1.1080466062875105 \| 0,c,-s,-1.5299694631998793]` |
 | rear_panel (inside mount, **1.2 mm**, owner-approved 2026-09-05) | `[1,0,0,62.5286 \| 0,0,-1,41.771 \| 0,1,0,4.69]` | `[-1,0,0,22.2714 \| 0,1,0,4.69 \| 0,0,-1,41.771]` |
 | console_board_v4 (KiCad STEP) | `[1,0,0,36.225 \| 0,1,0,38.575 \| 0,0,1,1.7]` | — |
 

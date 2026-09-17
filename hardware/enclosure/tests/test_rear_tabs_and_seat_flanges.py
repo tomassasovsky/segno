@@ -176,6 +176,17 @@ class RearTabsAndSeatFlangesTest(unittest.TestCase):
         self.assertGreater(dot(along, tip), dot(along, seat_end))
 
 
+    def test_faceplate_overhangs_each_side_skin_by_one_sheet(self):
+        # Owner call: the lid runs 2 mm past each side skin; the rear wall and its
+        # shoulder stay at the base's outer width, and nothing on the lid moves.
+        self.assertAlmostEqual(enclosure.BASE_OUTER_W, 849.8, places=9)
+        self.assertAlmostEqual(enclosure.LID_W, 849.8 + 4.0, places=9)
+        self.assertAlmostEqual(enclosure.LID_OX, (enclosure.LID_W - BW) / 2, places=9)
+        shoulder = [row for row in enclosure.BEND_TABLES['segno_base'] if row[1].startswith('trasera')]
+        self.assertAlmostEqual(shoulder[0][4], 849.8, places=9)
+        for row in enclosure.BEND_TABLES['segno_faceplate']:
+            self.assertAlmostEqual(row[4], 853.8, places=9)
+
     def test_spot_welds_sit_on_the_tab_away_from_its_ends(self):
         lo, hi = enclosure.rear_tab_z()
         self.assertEqual(len(enclosure.REAR_TAB_SPOTS_Z), 3)

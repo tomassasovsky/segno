@@ -1,12 +1,12 @@
 {
-  "provenance": "Accepted populated Fusion348 and matching pre-full-coat generated supports; direct BRep floor, cylinder and occurrence measurements. Frame is millimetres. No support dimensions inferred from the revised implementation.",
+  "provenance": "Accepted populated Fusion348 and matching pre-full-coat generated supports; direct BRep floor, cylinder and occurrence measurements. Frame is millimetres. No support dimensions inferred from the revised implementation. #1067: the lid blank widened 2 mm per side (853.8), so its origin moved to x -3.9; lid content and all measured datums are unchanged.",
   "pre_coat_source_sha256": "76c275a7ced8e8b4ae10d2b784da181b49859d2a6341c986bad7d1ff699c23f1",
   "lid_matrix_mm": [
     [
       1.0,
       0.0,
       0.0,
-      -1.9
+      -3.9
     ],
     [
       0.0,

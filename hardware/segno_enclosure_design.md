@@ -62,7 +62,9 @@ side wall's folded edge shows as a rounded line beside the flush rear wall.
 the ~7 mm nugget, plus the R2 + T2 bend zone. The spot welder still has to
 confirm it can weld 2 mm 1100 aluminium.
 
-The lid has two folds: a front lip and a rear lap. It rests on a 15 mm inward
+The lid has two folds: a front lip and a rear lap. It is 853.8 mm wide, one
+sheet (2 mm) past each side skin, so its edge caps the side walls; the rear wall
+and its shoulder stay at the base's 849.8 mm outer width. It rests on a 15 mm inward
 flange along each side wall's sloped top (the old bare 2 mm edge line is that
 flange's top face, so the lid did not move) and on the rear transition. The
 flange runs the whole sloped top, from the wall's front edge to where the lid's
@@ -265,8 +267,8 @@ fully internal.
 ## 3. Top faceplate — control layout (Chewie-II)
 
 `u` =0…846 mm across the control schedule, `v` =0…406.636 mm along the
-slope. The full lid blank is 849.8 mm wide; do not confuse these schedule axes
-with its outer-edge dimensions.
+slope. The full lid blank is 853.8 mm wide, running 2 mm past each side skin
+(#1067); do not confuse these schedule axes with its outer-edge dimensions.
 
 | Feature | Qty | Current bare opening / interface (mm) | Position / retention |
 |---|---|---|---|

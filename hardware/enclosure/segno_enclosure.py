@@ -1088,8 +1088,11 @@ assert abs(FRONT_SCREW_Z - 4.545) <= 0.01, \
 # still lying flat on the flange.
 KNUCKLE_CLEAR = 3.5
 FP_W = W - 2.0 * T                    # control-area width (schedule coordinate frame)
-LID_W = W - 0.2                       # lid blank full outer width: covers the wall tops,
-                                      # flush with the side skins (issue #237)
+BASE_OUTER_W = W - 0.2                # the base's outer width across the side skins, which
+                                      # the rear wall and its shoulder span (issue #237)
+LID_OVERHANG = 2.0                    # the lid runs one sheet past each side skin (owner call,
+                                      # #1067): its edge caps the side walls and their flanges
+LID_W = BASE_OUTER_W + 2.0 * LID_OVERHANG   # lid blank full width
 LID_OX = (LID_W - FP_W) / 2.0         # schedule content offset inside the wider blank
 FP_V = L_SLOPE                        # faceplate length up the slope (control area)
 
@@ -3654,7 +3657,7 @@ def dxf_base(path):
     shf_r = lambda y: (RIDGE_Y - (y - RIDGE_Z) * tan_th
                        - 2.0 * T / math.cos(_rth)) - bdd
     front_edge = T - DEV90 + BASE_WELD_GAP
-    fext  = (LID_W - BW) / 2.0              # flange side extension past the wall webs
+    fext  = (BASE_OUTER_W - BW) / 2.0       # rear flap side extension past the wall webs
     web_ext = DEV90 - T + BASE_WELD_OVERLAP     # FRONT wall: welder's half-sheet overlap
     # The REAR flap runs the full outer width (fext) from its floor-bend tangent
     # up: it folds up outside the side walls' tabbed corners and covers them.
@@ -3951,8 +3954,8 @@ def _transition_face(cq):
     """The angled transition shoulder, located in the body: a flat facet from the peak
     line (X=FACE_RUN, Z=H_REAR) raked DOWN to the rear-panel top (X=D, Z=REAR_WALL_H).
     +TRANS_ANGLE so the +X (rearward) end DROPS (matches the side-panel profile)."""
-    box = cq.Workplane("XY").box(TRANS_LEN, LID_W, T, centered=False)  # X along the facet (FULL width)
-    loc = (cq.Location(cq.Vector(FACE_RUN, (W - LID_W) / 2.0, H_REAR))
+    box = cq.Workplane("XY").box(TRANS_LEN, BASE_OUTER_W, T, centered=False)  # X along the facet (FULL width)
+    loc = (cq.Location(cq.Vector(FACE_RUN, (W - BASE_OUTER_W) / 2.0, H_REAR))
            * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
     return box.val().moved(loc)
 
@@ -6613,7 +6616,7 @@ DN_AWAY   = "ABAJO, opuesto a la cara dibujada"
 
 def _bend_tables():
     BW, BD = W - 2*T, D - 2*T
-    lid_w  = LID_W                      # transition + both lid folds run the FULL blank width
+    lid_w  = LID_W                      # both lid folds run the FULL lid blank width
     ffl    = LID_FRONT_FL
     tabs = {}
     # Base, listed in the only fold order that is buildable on a brake: the
@@ -6628,7 +6631,7 @@ def _bend_tables():
     def _seg(points, sgn, x0):
         return tuple(sorted((round(x0 + sgn*h, 3), round(y, 3)) for h, y in points))
     tabs["segno_base"] = [
-        (1, "trasera -> transición", "y", BD + HR_FLAT, lid_w, 90.0 - TRANS_ANGLE, UP_TOWARD, RI, DD_TR),
+        (1, "trasera -> transición", "y", BD + HR_FLAT, BASE_OUTER_W, 90.0 - TRANS_ANGLE, UP_TOWARD, RI, DD_TR),
         (2, "asiento tapa izq.",     "seg", _seg(seat["bend"], -1, 0.0), seat["length"], 90.0, UP_TOWARD, RI, DEV90),
         (3, "asiento tapa der.",     "seg", _seg(seat["bend"], 1, BW),   seat["length"], 90.0, UP_TOWARD, RI, DEV90),
         (4, "lengüeta tras. izq.",   "seg", _seg([(h, tab["y_bend"]) for h in tab["h"]], -1, 0.0),
