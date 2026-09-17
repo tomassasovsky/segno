@@ -1,5 +1,48 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
+## Rear corner tabs and lid-seat flanges - 2026-09-17 (#1067)
+
+Built in a **clone**, not the populated document: **"VAMP console (populated) -
+1067 tabs + seat flanges"** (Loopy folder, version 2). The original **VAMP console
+(populated)** stays at version 394, untouched. VAMP sheet metal is not updated.
+`formed/` and its manifest now come from the clone; `fusion_export_formed.py`
+accepts either name.
+
+The clone is a `DataFile.copy` of populated 394. On a Personal license a copied
+file opens **read-only** until it is made editable in the Data Panel; the API has
+no call for that.
+
+In the clone:
+
+- `base` is a new component rebuilt from the #1067 flat with the base rebuild
+  recipe below, but with **nine** folds. The four new folds go first, while the
+  blank is flat: `FOLD_SEAT_L`, `FOLD_SEAT_R` (the inclined lid-seat bend lines),
+  `FOLD_TAB_L`, `FOLD_TAB_R` (y = 416.8, x = ∓9.089..∓75.089 and 855.089..921.089),
+  all 90° positive, Center, stationary face = the largest z = 0 face. Then
+  Fold1..Fold5 exactly as before (left, right, shoulder, rear, front). The rear
+  fold swings up against the standing tabs without complaint (0.2 mm gap), and
+  the front fold did not flip. `RETURN_CONSTRUCTION_TRIM`,
+  `RESTORE_RETURN_ENDS` and the nine front pilots (`FRONT_DRILL_AFTER_FORMING`,
+  z = 4.45542 mm in the component) as before.
+- The previous base is kept hidden as `base_pre1067`.
+- `faceplate_support_beam` and `beam_felt` had their base-feature bodies swapped
+  for the notched `out/segno_beam.step` / `segno_beam_felt.step` (STEP -> SMT
+  through a temporary document, `updateBody`). Placements unchanged.
+
+Verified in the clone: base 966,868.33 mm³ (was 945,049.61), same bounding box
+as before; everything more than 20 mm from the side walls is identical to the old
+base. Tab outer face at y 418.71, rear wall inner face 418.91, empty between;
+tab 9-75 mm above the floor top, 16.09 mm inboard. Against every other body the
+only intersections are the pre-existing ones (18 M3 thread overlaps at 3.64 mm³,
+the beam's 0.0069 mm³ floor contact) plus the lid seat: 1.129 mm³ per flange over
+~4,300 mm², a contact film like the old bare edge's. The new beam and felt clear
+the flanges. The exporter verified sketches, nine folds and drilling; the full
+generator and all 140 enclosure tests pass on its output.
+
+The faceplate was re-exported unchanged (volume equal to 1e-9 mm³); its verified
+September files and manifest entry were kept rather than committing a
+byte-different copy.
+
 ## Solid second-row platforms - 2026-09-15 (#1037)
 
 The solid CLEAR/BANK collar revision is now integrated in this manufacturing

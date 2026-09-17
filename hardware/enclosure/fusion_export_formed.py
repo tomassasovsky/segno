@@ -15,6 +15,10 @@ import math
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# The populated console, and the #1067 clone that carries the rear tabs and
+# lid-seat flanges until the owner promotes it.
+POPULATED_DOCUMENTS = ("VAMP console (populated)",
+                       "VAMP console (populated) - 1067 tabs + seat flanges")
 
 
 def _point(p):
@@ -115,7 +119,7 @@ def run(_context):
     import adsk.core
     import adsk.fusion
     app = adsk.core.Application.get()
-    assert app.activeDocument.name == "VAMP console (populated)", "Activate the populated console"
+    assert app.activeDocument.name in POPULATED_DOCUMENTS, "Activate the populated console"
     design = adsk.fusion.Design.cast(app.activeProduct)
     expected = json.loads((HERE/"out/fusion_formed_input.json").read_text())
     directory = HERE/"formed"
