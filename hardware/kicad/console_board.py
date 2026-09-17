@@ -162,6 +162,9 @@ midi_tx = Net("MIDI_TX")   # Pi uart0 TX -> AHCT125 -> DIN OUT
 midi_rx = Net("MIDI_RX")   # opto (3V3) -> Pi uart0 RX
 midi_out_buf = Net("MIDI_OUT_BUF")
 pwr_btn = Net("PWR_BTN")   # rear button -> the Pi's own PWR pads, NOT a GPIO
+# The button's other contact, carried through to the Pi's other pad. NOT GND (#1062):
+# see J9.
+pwr_btn_ret = Net("PWR_BTN_RET")
 swclk, swdio = Net("SWCLK"), Net("SWDIO")
 ind_data, ind_buf, ind_out = Net("IND_DATA"), Net("IND_DATA_BUF"), Net("IND_DATA_OUT")
 # #987 moved the encoder and the WS2812 timing onto the ring board, behind a XIAO
@@ -498,16 +501,25 @@ j_ring[4] += link_to_console
 # see the next block; on a Pi 5 no GPIO can do this job.
 j_btn = jst(2, "J8", "PWR_BTN")
 j_btn[1] += pwr_btn
-j_btn[2] += gnd
+j_btn[2] += pwr_btn_ret
 
 # ...and passed straight through to the Pi 5's own power-button pads. On a Pi 5 an
 # external button cannot be a GPIO: RP1 and the SoC are unpowered until the PMIC
 # brings them up, so nothing on the 40-way can wake the machine. Raspberry Pi break
 # the function out as two solder pads (J2, beside the RTC battery connector) and
 # that is the only thing that works. This header is a 2-pin flying lead to them.
+#
+# A FLOATING PAIR, not a signal and GND (#1062). J8 and J9 are wired pin to pin
+# and neither pin touches this board's ground, so the board is only a junction on
+# a two-wire button lead. With pin 2 on GND, a lead soldered to the Pi's J2 pads
+# the wrong way round held the button pad at ground forever -- the Pi reads that
+# as a button that never lets go. Floating, the button shorts the two pads together
+# whichever way the lead is fitted, exactly as a button wired straight to the Pi
+# would; the Pi's own ground pad is still the reference. Nothing here reads the
+# button, so ground bought nothing.
 j_pi_btn = jst(2, "J9", "PI_PWR_PADS")
 j_pi_btn[1] += pwr_btn
-j_pi_btn[2] += gnd
+j_pi_btn[2] += pwr_btn_ret
 
 # ---- SWD: straight onto the module's own debug pads, no connector -----------
 # The THT footprint does not carry the debug pads, so v1 of this board broke SWD
@@ -1063,6 +1075,14 @@ def _check(strict_stations=True):
         "on the Pi's own J2 solder pads, brought out as J9")
     assert {n.name for n in j_pi_btn[1].nets} == {"PWR_BTN"}, (
         "PWR_BTN: J9 must carry the button through to the Pi's J2 pads")
+    # ...as a floating pair: pin to pin with J8, and nothing else on either net.
+    for _pin, _net in ((1, pwr_btn), (2, pwr_btn_ret)):
+        _nodes = {(p.ref, str(pin.num)) for p in default_circuit.parts
+                  for pin in p.pins if _net in pin.nets}
+        assert _nodes == {("J8", str(_pin)), ("J9", str(_pin))}, (
+            f"PWR_BTN: {_net.name} touches {sorted(_nodes)}, expected only J8 and J9 "
+            f"pin {_pin} -- the button lead must stay a floating pair, or fitting it "
+            "to the Pi's J2 pads the wrong way round holds the button down forever")
 
     # Every part with a POLARISED footprint must use a polarised symbol and sit the
     # right way round: pin 1 (+) on a positive rail, pin 2 (-) on ground. A reversed
@@ -1112,7 +1132,8 @@ def _check(strict_stations=True):
     # it would overdrive an input. DIRECT contact only, deliberately: a resistor to
     # 5 V keeps the nets separate and passes here -- RING_LEVELS above walks the
     # ring netlist for that shape, and CONSOLE_LEVELS below walks this board's own.
-    for n in (link_tx_pi, link_rx_pi, midi_tx, midi_rx, pwr_btn, swclk, swdio):
+    for n in (link_tx_pi, link_rx_pi, midi_tx, midi_rx, pwr_btn, pwr_btn_ret,
+              swclk, swdio):
         assert v5 not in n.nets, (
             f"PI_LEVELS: {n.name} touches a 5 V rail -- Pi GPIO is not 5 V tolerant")
 
@@ -1127,7 +1148,8 @@ def _check(strict_stations=True):
     # without naming them. No allowlist: since R14 pulls DOWN, no legitimate
     # two-pin part on this board bridges +5V to any of these nets.
     _protected = {n.name for n in (link_tx, link_rx, link_tx_pi, link_rx_pi,
-                                   midi_tx, midi_rx, pwr_btn, swclk, swdio,
+                                   midi_tx, midi_rx, pwr_btn, pwr_btn_ret,
+                                   swclk, swdio,
                                    ind_data, link_to_ring, link_to_console,
                                    pd_sda, pd_scl,
                                    ctrl1_present, ctrl2_present,
@@ -1313,6 +1335,11 @@ def _selftest():
     def _btn_pin():
         PI_HDR[5] = gnd
 
+    def _btn_grounded():
+        # The v3 board as first drawn: the button's return on GND.
+        j_pi_btn[2].disconnect()
+        j_pi_btn[2] += gnd
+
     def _fsw_count():
         FSW_ORDER.append("EXTRA")
 
@@ -1360,6 +1387,7 @@ def _selftest():
     case("reservoir electrolytic fitted backwards", "POLARITY:", _cap_backwards)
     case("link on a pin the NVMe board owns", "PI_RESERVED:", _reserved_pin)
     case("power button off GPIO3", "PWR_BTN:", _btn_pin)
+    case("power button lead returned to GND", "PWR_BTN:", _btn_grounded)
     case("wrong footswitch count", "PIN_MAP:", _fsw_count)
     case("board terminates a station the panel lacks", "REAR_IO_COVER:", _station)
     case("pinned ref stolen by the auto counter", "PIN_REFS:", _ref_collision)
@@ -1399,6 +1427,9 @@ def _selftest():
             if mutate is _second_bond:
                 holes["H3"][1].disconnect()
                 holes["H3"][1] += Net("CHASSIS_H3")
+            if mutate is _btn_grounded:
+                j_pi_btn[2].disconnect()
+                j_pi_btn[2] += pwr_btn_ret
             if mutate is _cap_backwards:
                 _c30 = next(p for p in default_circuit.parts if p.ref == "C30")
                 _c30[1].disconnect(); _c30[2].disconnect()
