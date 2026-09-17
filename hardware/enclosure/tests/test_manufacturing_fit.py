@@ -103,7 +103,7 @@ class ManufacturingFitTest(unittest.TestCase):
             self.assertFalse(any(f.geomType()=='CONE' for f in disc.Faces()))
             bore = min((f for f in disc.Faces() if f.geomType()=='CYLINDER'),
                        key=lambda f:f._geomAdaptor().Radius())
-            self.assertAlmostEqual(bore.BoundingBox().zlen,2.0,places=6)
+            self.assertAlmostEqual(bore.BoundingBox().zlen,enclosure.DISC_T,places=6)
             self.assertAlmostEqual(bore._geomAdaptor().Radius()*2,8.5,places=6)
         # Minimum raw hole with maximum local paint; OD at largest coated size.
         coated = cq.Workplane('XY').circle(25.725).circle(8.25/2).extrude(2.2).val()
@@ -126,8 +126,11 @@ class ManufacturingFitTest(unittest.TestCase):
     def test_ring_holder_clears_selected_module_and_allows_bottom_insertion(self):
         # Independent numeric envelopes captured from the selected PR #990
         # module, including the actual header height and small centre offset.
+        # The release stack sits RING_DROP lower (flush lens, #1019), so the
+        # module is dropped with it; the envelopes themselves do not change.
         fixture = json.loads((Path(enclosure.HERE)/'reference'/
                               'ring24_interface.json').read_text())
+        drop = enclosure.RING_DROP
         module = []
         for item in fixture['components']:
             lo, hi = item['z_mm']
@@ -138,7 +141,7 @@ class ManufacturingFitTest(unittest.TestCase):
             else:
                 part = (cq.Workplane('XY').polyline(item['outline_mm'])
                         .close().extrude(hi-lo))
-            module.append(part.translate((0,0,lo)).val())
+            module.append(part.translate((0,0,lo-drop)).val())
         self.assertEqual(len(module),41)
         with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure,'OUT',tmp):
             holder = cq.importers.importStep(enclosure.build_ring_diffuser_step()).val()
@@ -150,13 +153,14 @@ class ManufacturingFitTest(unittest.TestCase):
                 self.assertLess(sum(part.translate((0,0,dz)).intersect(holder).Volume()
                                     for part in module),1e-6)
         # Filling the LED relief restores the original functional failure.
-        closed_lens = cq.Workplane('XY').circle(33.4).circle(25.85).extrude(2.4).val()
+        closed_lens = (cq.Workplane('XY').circle(33.4).circle(25.85)
+                       .extrude(2.4+drop).translate((0,0,-drop)).val())
         self.assertGreater(sum(part.intersect(closed_lens).Volume()
                                for part in module),500)
         # A continuous lower support can clear the final position yet trap the
         # PCB during assembly. Reject that failure independently of final fit.
         lower_bridge = (cq.Workplane('XY').circle(37.5).circle(24.2)
-                        .extrude(.75).translate((0,0,-3)).val())
+                        .extrude(.75).translate((0,0,-3-drop)).val())
         self.assertLess(sum(part.intersect(lower_bridge).Volume()
                             for part in module),1e-6)
         self.assertGreater(sum(part.translate((0,0,-1)).intersect(lower_bridge).Volume()
@@ -169,13 +173,98 @@ class ManufacturingFitTest(unittest.TestCase):
         # Bare Ø51.20±0.05 plus 60–100 µm per side yields Ø51.27..51.45;
         # no perimeter mask is used. Retain the original too-large control.
         offset = (-.00143,-.00364390070516,.00012873401494)
+        seat = enclosure.T - enclosure.DISC_T
         for diameter in (51.27,51.45):
             disc = (cq.Workplane('XY').circle(diameter/2).circle(4.1)
-                    .extrude(2).translate(offset).val())
+                    .extrude(enclosure.DISC_T).translate(offset)
+                    .translate((0,0,seat)).val())
             self.assertLess(disc.intersect(holder).Volume(),1e-7)
         coated = (cq.Workplane('XY').circle(51.7/2).circle(4.1)
-                  .extrude(2).translate(offset).val())
-        self.assertGreater(coated.intersect(holder).Volume(),.3)
+                  .extrude(enclosure.DISC_T).translate((0,0,seat)).translate(offset).val())
+        # Scaled with the disc (0.40 mm³ per 2 mm once), and lower since the lens
+        # went flush: its 0.3 top chamfer now sits at the disc's own height.
+        self.assertGreater(coated.intersect(holder).Volume(),.1*enclosure.DISC_T)
+
+    def test_ring_disc_rests_on_a_floor_that_clears_the_encoder_and_board(self):
+        """The disc sits on a floor, not on the 1.4 mm ledge it once had.
+
+        The owner's call (2026-09-16): a 1 mm disc on a printed floor that fills
+        the pocket out to a hole for the encoder, with a shim putting the EC11
+        shoulder back under the disc. This holds the floor to what it has to
+        clear: the encoder at any rotation, the shim, and the solder on the ring
+        board's top face under the disc.
+        """
+        fixture = json.loads((Path(enclosure.HERE)/'reference'/
+                              'ring24_interface.json').read_text())
+        pcb = next(c for c in fixture['components'] if c['kind'] == 'annulus')
+        board_top = pcb['z_mm'][0] - 2.54 - enclosure.RING_DROP   # pin strip, dropped
+        seat = enclosure.T - enclosure.DISC_T
+        with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure,'OUT',tmp):
+            holder = cq.importers.importStep(enclosure.build_ring_diffuser_step()).val()
+        # The disc bears on the floor across nearly the whole pocket.
+        footprint = (cq.Workplane('XY').circle(51.27/2).extrude(.01)
+                     .translate((0,0,seat-.01)).val())
+        bearing = footprint.intersect(holder).Volume()/.01
+        self.assertGreater(bearing, 1700)         # the ledge alone gave 225 mm²
+        # The shoulder is RING_DROP below where the 2 mm disc's underside was,
+        # so the spacer fills exactly the gap between it and the 1 mm disc.
+        self.assertAlmostEqual(enclosure.DISC_SPACER_T + enclosure.DISC_T,
+                               enclosure.T + enclosure.RING_DROP)
+        # Encoder body, swept through every rotation: the circle on its corner.
+        hx, hy = enclosure.ENC_BODY_HALF
+        body = (cq.Workplane('XY').circle(math.hypot(hx, hy))
+                .extrude(-board_top).translate((0,0,board_top)).val())
+        self.assertGreater(holder.distance(body), .3)
+        shim = (cq.Workplane('XY').circle(enclosure.DISC_SPACER_OD/2)
+                .circle(enclosure.DISC_SPACER_ID/2).extrude(enclosure.DISC_SPACER_T)
+                .translate((0,0,seat-enclosure.DISC_SPACER_T)).val())
+        self.assertLess(shim.intersect(holder).Volume(), 1e-7)
+        self.assertGreater(enclosure.DISC_SPACER_ID/2, 4.0)  # clears the O8 bushing root
+        # Solder under the floor: THT leads and wire pads at r 12..25 on the
+        # board's top copper. Keep 3 mm of air over it inside the old lip.
+        solder = (cq.Workplane('XY').circle(24.2).circle(enclosure.DISC_FLOOR_HOLE_D/2)
+                  .extrude(3.0).translate((0,0,board_top)).val())
+        self.assertLess(solder.intersect(holder).Volume(), 1e-7)
+        # Control: a floor carried down to the holder's own bottom would sit in it.
+        low = (cq.Workplane('XY').circle(24.2).circle(enclosure.DISC_FLOOR_HOLE_D/2)
+               .extrude(2.0).translate((0,0,-4.0-enclosure.RING_DROP)).val())
+        self.assertGreater(solder.intersect(low).Volume(), 100)
+
+    def test_ring_lens_is_flush_with_air_over_the_leds_and_thread_for_the_nut(self):
+        """The release ring holder: flush on top, air over the LEDs, nut still fits.
+
+        Owner call 2026-09-16: every top face flush (lens, disc, faceplate), air
+        over the LEDs, the Ring 24 still a press fit in its pocket. The air comes
+        from lowering the whole ring board RING_DROP on a thicker spacer, which
+        the EC11's thread caps: the nut has to keep most of its 2 mm.
+        """
+        fixture = json.loads((Path(enclosure.HERE)/'reference'/
+                              'ring24_interface.json').read_text())
+        drop = enclosure.RING_DROP
+        with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure,'OUT',tmp):
+            holder = cq.importers.importStep(enclosure.build_ring_diffuser_step()).val()
+        # Flush: nothing of the holder above the faceplate top.
+        self.assertAlmostEqual(holder.BoundingBox().zmax, enclosure.T, places=6)
+        # Air: the roof underside over the LED tops of the dropped ring.
+        led_top = max(c['z_mm'][1] for c in fixture['components']
+                      if c['component'].startswith('WS2812')) - drop
+        probe = cq.Workplane('XY').center(0, 29.2).circle(.2).extrude(10).translate(
+            (0, 0, led_top)).val()
+        roof = probe.intersect(holder).BoundingBox()
+        self.assertGreater(roof.zmin - led_top, 2.3)
+        # Press fit: the pocket keeps the printed radii, 1.75 deep, moved down.
+        pcb = next(c for c in fixture['components'] if c['kind'] == 'annulus')
+        mid = (pcb['z_mm'][0] + pcb['z_mm'][1]) / 2 - drop
+        for r, inside in ((33.05, False), (33.15, True), (25.85, False), (25.75, True)):
+            with self.subTest(radius=r):
+                pt = cq.Vector(r, 0, mid)
+                self.assertEqual(holder.isInside(pt), inside)
+        # Thread: ~6.75 mm of M7 bushing above the EC11 shoulder, the disc top
+        # flush, a 0.5 washer; the 2 mm nut must keep at least 1.5 mm.
+        shoulder = enclosure.T - enclosure.DISC_T - enclosure.DISC_SPACER_T
+        left_for_nut = shoulder + 6.75 - enclosure.T - 0.5
+        self.assertGreaterEqual(left_for_nut, 1.5)
+        self.assertLess(left_for_nut - 0.75, 1.5)   # a 0.75 mm deeper drop would not
 
     def test_every_corner_rivet_in_the_base_has_its_mate_in_a_bracket(self):
         """Ten rivets, drilled twice from two different developments.
@@ -643,7 +732,9 @@ class ManufacturingFitTest(unittest.TestCase):
         normal = cq.Vector(0,-.21640965505268422,.9763026483626777)
         planes = sorted(normal.dot(f.Center()) for f in ring.Faces()
                         if f.geomType() == 'PLANE')
-        self.assertAlmostEqual(planes[0],12.12889,places=5)
+        # Underside on the holder floor, top flush with the faceplate top: the
+        # 1 mm disc rises by the shim, its top face does not move.
+        self.assertAlmostEqual(planes[0],12.12889+enclosure.T-enclosure.DISC_T,places=5)
         self.assertAlmostEqual(planes[-1],14.12889,places=5)
 
     def test_native_base_flat_matches_all_cut_and_deferred_drill_geometry(self):

@@ -961,6 +961,32 @@ D_M3_METAL = 3.6     # bare +0.10/-0.00; fully coated M3 clearance
 D_LID_SCREW = 4.5    # bare +0.10/-0.00; accommodates painted lid seating shift
 DISC_BLANK_D = 51.20 # bare +/-0.05; keep printed ring pocket unchanged
 DISC_BORE_D = 8.50   # straight laser bore, bare +/-0.05; no secondary chamfer
+DISC_T = 1.0         # owner call 2026-09-16: the disc sits on a printed FLOOR, not
+                     # a 1.4 mm ledge. Halving the disc lifts that floor 1 mm, so it
+                     # bonds 1.25 mm deep into the lens wall instead of through a
+                     # 0.25 mm shelf, and clears the ring board's solder by 3.5 mm.
+RING_DROP = 2.5      # owner call 2026-09-16: the ring LENS is flush with the faceplate
+                     # top and still has air over the LEDs, so the whole ring board --
+                     # Ring 24 on its pin strip, EC11 and all -- sits this much lower
+                     # than the stack PR #990 was modelled at. 2.5 is the cap: the
+                     # EC11 has ~6.75 mm of threaded bushing above its shoulder, the
+                     # disc top is fixed flush, and at 2.5 the nut keeps 1.75 of its
+                     # 2 mm (about 2.3 turns of M7x0.75) over a 0.5 washer.
+DISC_SPACER_T = T - DISC_T + RING_DROP   # 3.5: spacer between the EC11 shoulder
+                     # and the disc. 1.0 of it replaces the 2 mm disc's missing
+                     # half, RING_DROP lowers the ring board. O10 bore clears the O8
+                     # bushing root, O16 sits on the 11.7x12 frame, inside the floor's
+                     # O18.5 hole.
+DISC_SPACER_ID, DISC_SPACER_OD = 10.0, 16.0
+# EC11 body in the floor's height band, off the vendor RotaryEncoder_EC11.step:
+# the frame and its side tabs span +-6.29 x +-6.0 up to the shoulder. The floor
+# hole is round so the encoder can sit at any rotation (half-diagonal 8.69).
+ENC_BODY_HALF = (6.29, 6.0)
+DISC_FLOOR_HOLE_D = 18.5
+DISC_FLOOR_Z0 = -1.0 # floor underside in the holder frame: 3.49 above the ring
+                     # board's top copper at the modelled stack, 5.99 with the board
+                     # RING_DROP lower -- clear of the THT leads and wire pads
+                     # soldered under the disc either way
 D_M3      = 3.2      # M3 clearance (Pi/board standoffs)
 D_RIVET   = 3.3      # 3.2 mm (1/8") pop rivets: the usual 3.3 drill. Was D_M3 = 3.2,
                      # zero clearance on a rivet that also has to find its hole while
@@ -4787,6 +4813,40 @@ def build_diffuser_step():
     return step
 
 
+def _check_stl_closed(path, volume):
+    """Refuse an STL whose mesh is not closed or does not hold the solid's volume.
+
+    A valid solid can still tessellate with a face missing. The ring diffuser
+    shipped that way for two revisions: its lens bore was absent from the STL,
+    the solid and its STEP were fine, and a slicer closed the hole by filling
+    the disc pocket. Every edge of a closed mesh is shared by exactly two
+    triangles, and its signed volume matches the solid.
+    """
+    import struct
+    from collections import Counter
+    import numpy as np
+    with open(path, "rb") as f:
+        data = f.read()
+    n = struct.unpack("<I", data[80:84])[0]
+    tris = np.frombuffer(data[84:84 + 50 * n], dtype=np.dtype(
+        [("n", "<3f4"), ("v", "<9f4"), ("a", "<u2")]))["v"].reshape(-1, 3, 3).astype(float)
+    keys = [tuple(p) for p in np.round(tris, 4).reshape(-1, 3)]
+    edges = Counter()
+    for i in range(0, len(keys), 3):
+        a, b, c = keys[i:i + 3]
+        for e in ((a, b), (b, c), (c, a)):
+            edges[tuple(sorted(e))] += 1
+    open_edges = sum(1 for count in edges.values() if count != 2)
+    mesh_volume = np.einsum("ij,ij->i", tris[:, 0],
+                            np.cross(tris[:, 1], tris[:, 2])).sum() / 6.0
+    assert open_edges == 0, (
+        f"{os.path.basename(path)}: {open_edges} mesh edges are not shared by two "
+        f"triangles -- the STL has a hole a slicer will fill")
+    assert abs(mesh_volume - volume) < 0.005 * volume, (
+        f"{os.path.basename(path)}: mesh volume {mesh_volume:.1f} against the "
+        f"solid's {volume:.1f} mm3")
+
+
 # --- pedal name tiles (#795, trapezoid #922) ---------------------------------
 # The WTB-006's top pad has a window through it, and the pad is a uniform 2.2
 # slab lying on a case top tilted to match -- so the window is a parallel-sided
@@ -5116,7 +5176,7 @@ def build_ring_disc_step():
     Generating it here is the whole point; do not go back to a checked-in file.
     """
     import cadquery as cq
-    d = (cq.Workplane("XY").circle(DISC_BLANK_D / 2.0).circle(DISC_BORE_D / 2.0).extrude(T))
+    d = (cq.Workplane("XY").circle(DISC_BLANK_D / 2.0).circle(DISC_BORE_D / 2.0).extrude(DISC_T))
     # A straight laser-cut hole clears the encoder root after coating.
     # The measured ID7.25/OD11.85 washer bridges it; center before clamping.
     step = os.path.join(OUT, "segno_ring_disc.step")
@@ -5163,57 +5223,100 @@ def build_encoder_knob_step():
     return step
 
 
-def build_ring_diffuser_step():
-    """Encoder ring DIFFUSER + DISC HOLDER, one piece (3D-print WHITE PLA, x1,
-    user call 2026-08-19): replaces the plain annular insert. From the top:
-    - the LENS annulus pushes into the coated, compensated ring window
-      (proud);
-    - the aluminium RING DISC (bare OD51.20 x2) drops into a front-side
-      pocket inside the lens bore and sits FLUSH with the faceplate top; the
-      EC11 clamps it (coated bore from raw O8.50, nut under the knob);
-    - a full BACK PLATE extends past the window to O75 -- the exposed front
-      ring (window edge r33.5 .. plate r37.5) is the CA-GLUE land against the
-      faceplate underside, 4.0 mm wide. NOTE: the back-plate/lip radii (37.5,
-      32.0, 25.6, 24.2) are hardcoded and were RE-DERIVED for the Ring 24;
-      they do not scale themselves -- re-derive them again with any window
-      resize, and keep plate_r > RING_OD/2 or the glue land vanishes.
-    The selected PR #990 Ring 24 stays on its 2.54 mm pin strip. The cavity
-    opens from below so the complete board can be installed without changing
-    its stack. Eight ribs occupy verified gaps between LEDs/passives and tie
-    the disc seat to the lens roof; no lower bridge traps the ring PCB.
+def build_ring_diffuser_step(ribs=False, stem="segno_ring_diffuser", extra_air=0.0,
+                             ring_drop=RING_DROP, proud=0.0):
+    """Encoder ring DIFFUSER + DISC HOLDER, one piece (3D-print WHITE PLA, x1).
+
+    The release part (owner, 2026-09-16) is the defaults: FLUSH, AIRED, NO RIBS.
+    - The LENS annulus pushes into the coated, compensated ring window and its
+      top is FLUSH with the faceplate top (proud=0), as is the disc's.
+    - The aluminium RING DISC (bare OD51.20 x DISC_T) drops into a pocket inside
+      the lens bore and rests on a FLOOR that fills it out to a
+      DISC_FLOOR_HOLE_D hole for the encoder; the EC11 clamps it over a
+      DISC_SPACER_T spacer (coated bore from raw O8.50, nut under the knob).
+    - A full BACK PLATE extends past the window to O75: the exposed ring
+      (window edge r33.5 .. plate r37.5) is the CA-GLUE land against the
+      faceplate underside, 4.0 mm wide. The plate/lip radii (37.5, 33.1, 25.8,
+      24.2) are hardcoded for the Ring 24 and do not scale themselves.
+    - The Ring 24 on its 2.54 mm pin strip is a PRESS FIT from below in a
+      pocket whose radii are the ones the owner printed and approved. The whole
+      ring board sits ring_drop lower than the PR #990 stack (RING_DROP, on the
+      thicker spacer), and the pocket moves down with it on a skirt below the
+      glue plate. That drop is what puts ~2.4 mm of air over the LEDs under a
+      flush 1.05 mm roof: a light-transport model puts the light between LEDs
+      at ~59 % of the peak against 9 % with the old 0.335 mm, for ~91 % of the
+      light.
+    Options kept for test prints: ribs=True (24 ribs, one per LED gap, only at
+    ring_drop=0); extra_air raises the roof and lens above the faceplate
+    instead; ring_drop=0 with proud=LED_INS_PROUD is the old 0.4 mm-proud
+    holder. The lens clears the O50 knob radially (bore r25.85 against r25).
     z=0 is the faceplate-underside/glue plane."""
     import cadquery as cq
     ro = (RING_OD - LED_INS_CLR) / 2.0
     ri = (RING_ID + LED_INS_CLR) / 2.0
     plate_t = 2.0
+    assert not (ribs and ring_drop), "the ribs are not drawn for a dropped ring"
+    lens_h = T + proud + extra_air
+    roof_under = lens_h - 1.05                     # the roof stays 1.05 thick
     lens = (cq.Workplane("XY").circle(ro).circle(ri)
-            .extrude(T + LED_INS_PROUD))
+            .extrude(lens_h))
     lens = lens.edges(">Z").chamfer(0.3)
     ins = lens.union(cq.Workplane("XY").circle(37.5).circle(24.2)
                      .extrude(-plate_t))
+    if ring_drop:
+        # the skirt that carries the press-fit pocket down with the ring
+        ins = ins.union(cq.Workplane("XY").workplane(offset=-plate_t)
+                        .circle(33.1 + 1.5).circle(24.2).extrude(-ring_drop))
     # Holder-local dimensions from the selected native Ring24, 2026-09-05:
     # PCB z=-1.954601..-0.384601; LED tops z=1.015399. The PCB pocket
     # therefore leaves 0.134601 nominal axial clearance, not 0.3 everywhere.
-    # Its 0.25 mm shelf and eight 1.2 mm ribs reinforce the inner disc seat.
+    # Its 0.25 mm shelf and 24 1.2 mm ribs reinforce the inner disc seat.
     # The visible lens has a 1.05 mm roof; inner/outer walls are 0.50/1.10 mm.
     # Qualify the actual printed fit and light diffusion before printing a set.
     # These are open-bottom reliefs: a continuous lower annular bridge would
     # trap the Ø65.532 Ring24 between openings too small for its insertion.
-    ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
-                  .circle(32.3).circle(26.35).extrude(3.35))
-    ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
+    bottom = -plate_t - ring_drop
+    ins = ins.cut(cq.Workplane("XY").workplane(offset=bottom)
+                  .circle(32.3).circle(26.35).extrude(roof_under - bottom))
+    ins = ins.cut(cq.Workplane("XY").workplane(offset=bottom)
                   .circle(33.1).circle(25.8).extrude(1.75))
-    for angle in (7.5, 82.5, 112.5, 187.5, 232.5, 262.5, 292.5, 322.5):
+    # The disc FLOOR: from the encoder hole out into the lens wall, top at the
+    # disc's underside. It reaches r25.9, 0.1 past the lip into the PCB relief,
+    # which still leaves 0.23 to the Ring 24's inner edge.
+    ins = ins.union(cq.Workplane("XY").workplane(offset=DISC_FLOOR_Z0)
+                    .circle(25.9).circle(DISC_FLOOR_HOLE_D / 2.0)
+                    .extrude(T - DISC_T - DISC_FLOOR_Z0))
+    # The ribs go in EVERY gap between the 24 LEDs at an even 15 deg pitch.
+    # They used to go only in the eight gaps with nothing in them (7.5, 82.5,
+    # 112.5, ...), which read as an irregular pattern: a rib touching the roof
+    # changes how much light reaches the gap above it, so eight gaps differed
+    # from the other sixteen. 16 gaps carry a component: fifteen
+    # C0603 (r30.13.., top z=0.515) and one 0603 pad at 97.5 deg (r29.24..,
+    # top z=-0.285). Every rib has the same notch from below that clears both,
+    # r29.0 outward up to z=0.82, so all 24 are identical and the notch opens
+    # downward for insertion. Full height r25.85..29.0, roof-hung beyond it.
+    rib_notch = (cq.Workplane("XY")
+                 .box(4.0, 1.4, 1.07, centered=(False, True, False))
+                 .translate((29.0, 0, -0.25)))
+    # Each rib starts at r26.0, inside the 0.50 mm inner lens wall (r25.85..
+    # 26.35), not on its bore at r25.85: a flat rib end on the bore cylinder
+    # touches it along a line, and the STL export then drops the whole bore
+    # face. That open mesh is what a slicer "repairs" into a solid centre.
+    # The solid is the same either way; only the tessellation cares.
+    for k in range(24 if ribs else 0):
         rib = (cq.Workplane("XY")
-               .box(6.95, 1.2, 1.6, centered=(False, True, False))
-               .translate((25.85, 0, -0.25))
-               .rotate((0, 0, 0), (0, 0, 1), angle))
+               .box(6.8, 1.2, 1.6 + extra_air, centered=(False, True, False))
+               .translate((26.0, 0, -0.25))
+               .cut(rib_notch)
+               .rotate((0, 0, 0), (0, 0, 1), 7.5 + 15.0 * k))
         ins = ins.union(rib)
     ins = ins.clean()
     assert len(ins.solids().vals()) == 1, "ring diffuser is not one solid -- the disc lip is severed"
-    step = os.path.join(OUT, "segno_ring_diffuser.step")
+    step = os.path.join(OUT, stem + ".step")
+    stl = os.path.join(OUT, stem + ".stl")
     cq.exporters.export(ins.val(), step)
-    cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
+    cq.exporters.export(ins.val(), stl)
+    _check_stl_closed(stl, ins.val().Volume())
     return step
 
 
@@ -6256,9 +6359,11 @@ def build_step():
             name="segno_beam")
     ring = cq.importers.importStep(os.path.join(OUT,"segno_ring_disc.step")).val()
     c, sn = math.cos(_ra), math.sin(_ra)
-    # Ring STEP is centred on its shaft, plate bottom at z=0, seated on the lid underside plane.
-    matrix = [[1,0,0,COL_U],[0,c,-sn,c*ENC_V-2.093],
-              [0,sn,c,LID_UNDER_Z0+sn*(ENC_V-2.093/c)], [0,0,0,1]]
+    # Ring STEP is centred on its shaft, plate bottom at z=0. It sits DISC_SPACER_T
+    # above the lid underside plane (on the holder floor), so its top is flush.
+    lift = T - DISC_T
+    matrix = [[1,0,0,COL_U],[0,c,-sn,c*ENC_V-2.093-sn*lift],
+              [0,sn,c,LID_UNDER_Z0+sn*(ENC_V-2.093/c)+c*lift], [0,0,0,1]]
     asm.add(ring, loc=_metal_location(matrix), name="segno_ring_disc")
     shim = _front_shim_pack_solid()
     cq.exporters.export(shim, os.path.join(OUT,"segno_front_shim_pack_reference.step"))
@@ -6292,6 +6397,7 @@ def build_step():
 # matches a sheet to a file by them. Numbers, units, symbols (Ø ± °) and standard
 # designations (5052-H32, M3, K, R2) are international and are left alone.
 AL_SHEET  = f"aluminio {ALLOY_2MM} de {T:.1f} mm"
+AL_DISC   = f"aluminio de {DISC_T:.1f} mm (aleación {ALLOY_REAR})"
 AL_REAR_PANEL = (f"aluminio de {REAR_PANEL_T:.1f} mm "
                  f"(aleación y temple {ALLOY_REAR})")
 STEEL_CR  = f"acero laminado en frío de {BEAM_T:.1f} mm"
@@ -6322,7 +6428,7 @@ PART_SPECS = {
     "segno_base":                (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_faceplate":           (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_rear_panel":          (AL_REAR_PANEL, 1, PKG_SHEETMETAL),
-    "segno_ring_disc":           (AL_SHEET, 1, PKG_SHEETMETAL),
+    "segno_ring_disc":           (AL_DISC, 1, PKG_SHEETMETAL),
     "segno_corner_bracket_rear": (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_corner_bracket_rear_mirrored": (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_beam":                (STEEL_CR, 1, PKG_SHEETMETAL),
@@ -6878,6 +6984,7 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
 # ===========================================================================
 
 AL_2MM = f"Aluminio {ALLOY_2MM} 2,0 mm"
+AL_DISC_PAINT = f"Aluminio {DISC_T:.1f} mm ({ALLOY_REAR})".replace(".",",")
 AL_PANEL_PAINT = f"Aluminio {REAR_PANEL_T:.1f} mm ({ALLOY_REAR})".replace(".",",")
 ST_16  = "Acero laminado en frío 1,6 mm"
 
@@ -6893,7 +7000,7 @@ PAINT_BOM = [
      "LLEVA MÁSCARA: land PANEL_BOND"),
     ("segno_corner_bracket_rear","Ángulo trasero derecho",                      1, AL_2MM, "Interno; perfil derecho"),
     ("segno_corner_bracket_rear_mirrored","Ángulo trasero izquierdo",           1, AL_2MM, "Interno; perfil izquierdo"),
-    ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM, "Pintar canto y paso recto; sin bisel: Ø final 51,27-51,45; paso 8,25-8,43 mm"),
+    ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_DISC_PAINT, "Pintar canto y paso recto; sin bisel: Ø final 51,27-51,45; paso 8,25-8,43 mm"),
     ("segno_beam",               "Viga de apoyo de la tapa",          1,           ST_16,  "ACERO: otro pretratamiento"),
 ]
 
@@ -7107,7 +7214,9 @@ def paint_quote_pdf(path):
         y -= 0.030
         fig.text(0.06, y, "-" * len(hdr), **mono, color="#999")
         for mat, m2 in sorted(tot.items()):
-            y -= 0.030
+            # 0.022 not 0.030: four materials since the 1 mm ring disc (8.6 pt
+            # mono is ~0.015 of the page tall, so lines still do not touch)
+            y -= 0.022
             fig.text(0.06, y, f"{'Subtotal ' + mat:<115}{m2:>10.4f}", **mono, weight="bold")
         y -= 0.032
         fig.text(0.06, y, f"{'TOTAL por equipo':<115}{grand:>10.4f}",
@@ -7421,7 +7530,7 @@ def dxf_ring_disc(path):
     doc = _doc(); msp = doc.modelspace()
     _circle(msp, 0, 0, DISC_BLANK_D)                 # outline: OD = ring inner diameter
     _circle(msp, 0, 0, DISC_BORE_D)                   # encoder bush hole (centre)
-    _note(msp, -DISC_BLANK_D/2, DISC_BLANK_D/2 + 6, "Segno DISCO CENTRAL (segno_ring_disc), aluminio 2.0 mm, CANT. 1. SIN PINTAR: Ø exterior 51.20 ±0.05; paso Ø8.50 ±0.05 pasante recto por láser; SIN BISEL. Cara superior hacia tuerca. Pintar TODAS las superficies y el paso. Final: Ø exterior 51.27-51.45; paso Ø8.25-8.43. SIN PLEGADOS.")
+    _note(msp, -DISC_BLANK_D/2, DISC_BLANK_D/2 + 6, f"Segno DISCO CENTRAL (segno_ring_disc), aluminio {DISC_T:.1f} mm, CANT. 1. SIN PINTAR: Ø exterior 51.20 ±0.05; paso Ø8.50 ±0.05 pasante recto por láser; SIN BISEL. Cara superior hacia tuerca. Pintar TODAS las superficies y el paso. Final: Ø exterior 51.27-51.45; paso Ø8.25-8.43. SIN PLEGADOS.")
     _save(doc, path); return {}
 
 

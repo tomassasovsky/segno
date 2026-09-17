@@ -400,6 +400,31 @@ Both PCBs (`segno_console_board_PCB`, `segno_pedal_ring_PCB`) wear the local
 appearance `PCB - purple` (74, 32, 112), a copy of Plastic - Matte (Black)
 with its colour changed — the boards are purple.
 
+**Flush ring holder, September 16 (release design).** `ring_holder24` is the
+flush holder: lens and disc tops level with the faceplate top, no ribs, the
+press-fit pocket and a skirt 2.5 mm lower. `ring_board_asm` (with its Ring 24 and
+EC11) moves **2.5 mm further along the faceplate's inward normal** than the
+PR #990 placement below, and the disc is the 1.0 mm `out/segno_ring_disc.step`
+on a 3.5 mm spacer. Re-import `out/segno_ring_diffuser.step`.
+
+**Ring holder floor and 1 mm disc, September 16.** The disc no longer sits on
+the 1.4 mm lip. `ring_holder24` gains a floor, r9.25..25.9 at z=-1.0..1.0 in
+its local frame, and `ring_disc_51_5` becomes **1.0 mm** thick with its underside
+on that floor (1.0 mm further out along the faceplate normal than the old 2.0
+mm disc's underside, so its top stays flush). A DIN 988 10×16×1.0 shim fills the
+gap to the EC11 shoulder, which does not move. Both documents still model the
+old stack; re-import `out/segno_ring_diffuser.step` and `out/segno_ring_disc.step`
+and apply the disc placement from `build_step()`.
+
+**Ring holder ribs, September 16.** The eight ribs below are replaced by 24
+identical ribs, one in every LED gap at 7.5° + 15°·k, same 1.2 mm width,
+r25.85..32.8 and z=-0.25..1.35. Each has a notch from below, r29.0 outward up to
+z=0.82, which clears the fifteen C0603 capacitors (0.305 mm) and the 0603 pad at
+97.5° (0.244 mm). The eight uneven ribs showed through the 1.05 mm roof as an
+irregular pattern of dark bars. PCB and LED clearances are unchanged. The
+`ring_holder24` body in the populated document still has the eight ribs and
+needs the new `out/segno_ring_diffuser.step` imported.
+
 **Ring holder, September 5 second review.** Keep this exact board/header stack
 and every visible ring/encoder position. The old printed holder intersected
 the Ring 24 PCB and LEDs. Its revised local reliefs are r25.8..33.1 at
