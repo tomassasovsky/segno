@@ -3,124 +3,58 @@
 ## Rear corner tabs and lid-seat flanges - 2026-09-17 (#1067)
 
 Built in a **clone**, not the populated document: **"VAMP console (populated) -
-1067 tabs + seat flanges"** (Loopy folder, version 2). The original **VAMP console
-(populated)** stays at version 394, untouched. VAMP sheet metal is not updated.
-`formed/` and its manifest now come from the clone; `fusion_export_formed.py`
-accepts either name.
+1067 tabs + seat flanges"** (Loopy folder, version 6 at the end of that day). The
+original **VAMP console (populated)** stays at version 394, untouched. VAMP sheet
+metal is not updated. `formed/` and its manifest come from the clone;
+`fusion_export_formed.py` accepts either name. The clone is a `DataFile.copy` of
+populated 394; on a Personal license a copied file opens **read-only** until it is
+made editable in the Data Panel, and the API has no call for that.
 
-The clone is a `DataFile.copy` of populated 394. On a Personal license a copied
-file opens **read-only** until it is made editable in the Data Panel; the API has
-no call for that.
+**What the base is.** Nine folds, all Center, all positive, stationary face = the
+largest z = 0 face, in this order: `FOLD_SEAT_L`, `FOLD_SEAT_R` (inclined lid-seat
+bend lines), `FOLD_TAB_L`, `FOLD_TAB_R` (y = 416.8, from the floor-bend tangent to
+the corner contour), then Fold1..Fold5 as before (left, right, shoulder 65.556°,
+rear, front; the front did not flip). `RETURN_CONSTRUCTION_TRIM` and its offset
+restore, and the nine front pilots (`FRONT_DRILL_AFTER_FORMING`, z = 4.45542 mm in
+the component), as before. Base 968,676.28 mm³.
 
-In the clone:
+- Lid-seat flanges run from y 10 to the lid's rear bend tangent; ends relieved by
+  0.20 mm straight cuts (`RELIEF_SLIT`).
+- Rear corners: the rear wall runs the full outer width (x −1.9..847.9 above its
+  floor-bend tangent). Each side wall's whole rear edge is a tab 0.20 mm off the
+  rear wall's inner face; its top follows `rear_corner_contour_z` (shoulder
+  underside, rear wall's R2 upper bend, 0.15 mm off) through the bend and across
+  the tab (flat top 83.861 mm above the floor top). No slits, no loose piece, no
+  rear fusion welds.
 
-- `base` is a new component rebuilt from the #1067 flat with the base rebuild
-  recipe below, but with **nine** folds. The four new folds go first, while the
-  blank is flat: `FOLD_SEAT_L`, `FOLD_SEAT_R` (the inclined lid-seat bend lines),
-  `FOLD_TAB_L`, `FOLD_TAB_R` (y = 416.8, x = ∓9.089..∓75.089 and 855.089..921.089),
-  all 90° positive, Center, stationary face = the largest z = 0 face. Then
-  Fold1..Fold5 exactly as before (left, right, shoulder, rear, front). The rear
-  fold swings up against the standing tabs without complaint (0.2 mm gap), and
-  the front fold did not flip. `RETURN_CONSTRUCTION_TRIM`,
-  `RESTORE_RETURN_ENDS` and the nine front pilots (`FRONT_DRILL_AFTER_FORMING`,
-  z = 4.45542 mm in the component) as before.
-- The previous base is kept hidden as `base_pre1067`.
-- `faceplate_support_beam` and `beam_felt` had their base-feature bodies swapped
-  for the notched `out/segno_beam.step` / `segno_beam_felt.step` (STEP -> SMT
-  through a temporary document, `updateBody`). Placements unchanged.
+**Verified in the clone:** all features healthy; gap between the side wall top and
+the shoulder 0.02-0.21 mm along the corner, no step; tab gap open; rear wall at the
+outer width at every height above its floor-bend relief; against every other body
+only the pre-existing intersections (18 M3 thread overlaps at 3.64 mm³, the
+beam's 0.0069 mm³ floor contact); lid contact 7.291 mm³ in total, a film. The
+exporter verified sketches, nine folds and drilling; the full generator and all
+140 enclosure tests pass on its output. The faceplate re-exports unchanged, so its
+verified September files and manifest entry are kept.
 
-Verified in the clone: base 966,868.33 mm³ (was 945,049.61), same bounding box
-as before; everything more than 20 mm from the side walls is identical to the old
-base. Tab outer face at y 418.71, rear wall inner face 418.91, empty between;
-tab 9-75 mm above the floor top, 16.09 mm inboard. Against every other body the
-only intersections are the pre-existing ones (18 M3 thread overlaps at 3.64 mm³,
-the beam's 0.0069 mm³ floor contact) plus the lid seat: 1.129 mm³ per flange over
-~4,300 mm², a contact film like the old bare edge's. The new beam and felt clear
-the flanges. The exporter verified sketches, nine folds and drilling; the full
-generator and all 140 enclosure tests pass on its output.
+**Superseded bases, hidden in the clone, in order:** `base_pre1067` (the welded
+revision), `base_1067_notched` (round-bottomed reliefs), `base_1067_slits` (slit
+reliefs, tab 9-75 mm), `base_1067_step` (full-height tab with a square step under
+the shoulder), `base_1067_hairline` (a slit under a loose wall piece). Each was
+rejected by the owner for how the corner looked.
 
-The faceplate was re-exported unchanged (volume equal to 1e-9 mm³); its verified
-September files and manifest entry were kept rather than committing a
-byte-different copy.
-
-**Slit reliefs, same day (clone version 4).** The owner did not want the
-round-bottomed relief slots showing as notches in the shell. Every flange and tab
-end is now a 0.20 mm straight cut (`RELIEF_SLIT`), and each flange's rear slit
-lands on the start of the ridge closure, so the short plain edge and small facet
-at the crease are gone. `base` was rebuilt again from that flat (same nine folds,
-same order, all healthy, no front flip): 967,313.83 mm³. The notched rebuild is
-kept hidden as `base_1067_notched`, next to `base_pre1067`. Tab gap, beam/felt
-clearance and the pre-existing intersections are unchanged; lid contact 7.278 mm³
-in total, a film.
+**Rear fold trap:** any side-wall metal that reaches behind the shoulder's bend
+tangent (y 417.74) above the rear wall's straight top (83.43 mm) sits inside the
+rear wall's upper bend radius, and Fold4 fails with ASM_UNFOLD_SELF_INTERSECTION.
+A square corner there did exactly that.
 
 **The DXF importer stopped working in this document** partway through the day:
 `importToTarget` returned success and created no sketches, while the same file
-imported normally into a new document. The rebuild drew the five layer sketches
-with the sketch API instead: `ezdxf` in the worktree venv turned the DXF into
-lines, bulge arcs (centre, start, sweep) and circles in cm, and the Fusion script
+imported normally into a new document. Rebuilds drew the five layer sketches with
+the sketch API instead: `ezdxf` in the worktree venv turned the DXF into lines,
+bulge arcs (centre, start, sweep) and circles in cm, and the Fusion script
 chained each polyline through its previous end point and merged the closing
-point. The curve and profile counts matched the importer's, and the exporter's
-sketch comparison (rounded to 0.0001 mm) passed, so this is a drop-in substitute
-when the importer misbehaves.
-
-## Solid second-row platforms - 2026-09-15 (#1037)
-
-The solid CLEAR/BANK collar revision is now integrated in this manufacturing
-checkout and saved/reopened in Fusion: VAMP sheet metal 160 and populated 388.
-Each document retains its two `platform_mid_ring_short_screws` occurrences;
-their existing component identities, positions and appearance are preserved.
-
-The underside is filled, with four Ø12 mm driver bores reaching 30.345 mm to
-the deck underside. Outer dimensions, seating heights, insert pockets, both
-mounting patterns, the sleds and the cable opening are unchanged. Each collar
-now measures 420.870396 cm³. Both saved native bodies match the current STEP
-with zero volume difference in either Boolean direction. All 42 / 434
-occurrence positions, unrelated shapes and feature health remain unchanged.
-
-The generator, mid-ring STEP/STL and printing archive are synchronized. All
-other output files, including the metal STEP/DXF/PDF packages, are byte-identical
-to the state before this update. The full 134-test suite passes; the final
-expanded material probe also passes the seven focused mounting tests.
-CAD solid does not mean 100% slicer infill. The #1019 physical load hold remains.
-See [verification](reference/solid_mid_platform_verification.json).
-
-## Corner preparation - preceding saved state, 2026-09-15
-
-The owner authorized preparing the welder's joint detail while Dinacut confirms
-its tooling. This is a prepared design, not authorization to manufacture.
-The September 14 geometry/evidence below is historical where superseded here.
-
-The base now uses four angular corner reliefs, a nominal 0.50 mm root gap and
-1.00 mm projected overlap, following the supplied joint example. These are CAD
-nominals, not a new request for unusually tight shop tolerances. The rear web
-widens through its upper bend to retain the complete return and lid seating.
-The agreed weld scope is all four base corners, their lower relief openings and
-the two upper rear-return/side joints; filler 5356 was selected by the welder.
-Finish the exterior flush without thinning the sheet or weakening the joint.
-The lid stays removable. No other component, fixing pattern or placement changes.
-
-Both cloud documents are saved as **VAMP sheet metal 159 / populated 387**.
-Both bases have five healthy native folds and measure **945.049614091 cm³**.
-All 42 / 434 occurrence placements and unrelated body geometry, visibility and
-feature health were preserved. Both saved designs were closed and reopened;
-the temporary export state was discarded and the saved documents left open.
-See the current [verification record](reference/welder_corner_preparation_verification.json)
-for reopened geometry/flat comparisons, hashes and the remaining release holds.
-
-The full generator and **133 tests across 15 modules pass**. The base drawing
-and changed painter instructions were rendered and visually reviewed.
-The mass consistency check is now 50 ppm: independent surface integration and
-face/boundary comparisons qualified the small translation/integration
-discrepancy on the curved reliefs. The STEP reimport is not an identical mesh. This is not a manufacturing tolerance. Solid
-validity, one-body, 0.005 mm bounds, source hashes, forming data and the full
-0.01 mm² flat-profile checks remain independent requirements.
-
-Dinacut must confirm the angular reliefs, bending access/sequence and real
-radius/deduction before cut approval. Any changed tooling assumption requires
-rechecking and regenerating this prepared set. Fit and the nine front drilling
-stations are resolved after welding and before the separate painter. The
-independent **#1019 load/strength hold remains open**. Supplier confirmation
-alone does not release fabrication.
+point. Curve and profile counts matched the importer's, and the exporter's sketch
+comparison (to 0.0001 mm) passed.
 
 ## September 14 revision - historical digital evidence
 

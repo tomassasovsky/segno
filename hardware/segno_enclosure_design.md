@@ -49,16 +49,24 @@ override those dimensions or the separate metal-shop/painter sequence.
 `segno_base` is one blank: floor, four walls, the rear transition shoulder, a
 lid-seat flange on each side wall and a tab at each rear corner (#1067). The
 two front corners are fusion welded (0.50 mm nominal gap, 1.00 mm overlap; the
-front wall is too short for anything else). At each rear corner an 18 mm tab
-folds inward off the side wall onto the rear wall's inner face and takes three
-resistance spot welds, at 20, 42 and 64 mm above the floor. The electrode marks
-land on the rear face. 18 mm is the usual spot-weld flange for 2 mm sheet: a
-flat several mm wider than the ~7 mm nugget, plus the R2 + T2 bend zone. The
-spot welder still has to confirm it can weld 2 mm 1100 aluminium.
+front wall is too short for anything else). The rear corners are not welded by
+fusion. The rear wall runs the full outer width, and each side wall's whole rear
+edge, from the floor bend up, folds inward as an 18 mm tab onto the rear wall's
+inner face (0.20 mm nominal gap) and takes three resistance spot welds, at 15,
+43 and 71 mm above the floor. The electrode marks land on the rear face. Where
+the side wall, rear wall and rear shoulder meet, the tab's top edge follows the
+inside of the rear wall and shoulder 0.15 mm away, through its own bend and
+across the tab, so the corner has no cut, step or loose piece; from outside the
+side wall's folded edge shows as a rounded line beside the flush rear wall.
+18 mm is the usual spot-weld flange for 2 mm sheet: a flat several mm wider than
+the ~7 mm nugget, plus the R2 + T2 bend zone. The spot welder still has to
+confirm it can weld 2 mm 1100 aluminium.
 
 The lid has two folds: a front lip and a rear lap. It rests on a 15 mm inward
 flange along each side wall's sloped top (the old bare 2 mm edge line is that
 flange's top face, so the lid did not move) and on the rear transition. The
+flange runs from 10 mm behind the front to where the lid's rear bend starts; its
+ends are relieved by single 0.20 mm laser cuts. The
 support beam's pad stops 1.5 mm short of each flange. Nine M3 screws go through each folded edge
 into tapped body holes. It has no folded side skirts or side fixing screws.
 The eighteen lid bores are Ø4.50(+0.10/−0) before coating and use M3 OD 7 head

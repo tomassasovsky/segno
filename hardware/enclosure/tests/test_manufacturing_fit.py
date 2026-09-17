@@ -41,37 +41,31 @@ class ManufacturingFitTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             enclosure._validate_formed_solid('segno_base', duplicate, record)
 
-    def test_rear_joint_line_matches_both_source_and_folded_side_edges(self):
+    def test_rear_tabs_replace_the_side_joint_line_in_source_and_formed_base(self):
+        # #1067: the side walls no longer stop at a 0.50 mm weld line; each
+        # whole rear edge folds in as a tab lying 0.20 mm off the rear wall.
         width = enclosure.W - 2*enclosure.T
         rear_inside_y = enclosure.D - 3*enclosure.T + enclosure.DEV90
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'base.dxf'; enclosure.dxf_base(str(path))
             contour = max((e for e in ezdxf.readfile(path).modelspace().query('LWPOLYLINE')
                            if e.dxf.layer == 'CUT'),key=lambda e:len(e))
-            points = list(contour.get_points('xyb')); side_edges = []
-            for a,b in zip(points,points[1:]+points[:1]):
-                if a[2] or abs(a[1]-b[1]) > 1e-7 or abs(a[0]-b[0]) < 5:
-                    continue
-                if 400 < a[1] < rear_inside_y and (max(a[0],b[0]) < 0 or min(a[0],b[0]) > width):
-                    side_edges.append(a[1])
-            # The rear corner tab (#1067) splits each side wall's rear edge into
-            # the piece above the tab and the piece below it.
-            self.assertEqual(len(side_edges),4)
-            for y in side_edges:
-                # Supplier sample: the side stops 0.50 mm short of the rear
-                # inner face; this is a nominal weld gap, not the old 0.10 mm
-                # maximum dry-fit acceptance criterion.
-                self.assertAlmostEqual(rear_inside_y-y,.50,places=7)
+            points = list(contour.get_points('xyb'))
+            old_line = [(a,b) for a,b in zip(points,points[1:]+points[:1])
+                        if abs(a[1]-(rear_inside_y-.50)) < 1e-7 and abs(a[1]-b[1]) < 1e-7
+                        and (max(a[0],b[0]) < 0 or min(a[0],b[0]) > width)]
+            self.assertEqual(old_line, [])
         base = cq.importers.importStep(str(Path(enclosure.HERE)/'formed/segno_base.step')).val()
-        straight_faces = [f for f in base.Faces() if f.geomType() == 'PLANE'
-                          and abs(f.normalAt().y) > .999999
-                          and abs(f.BoundingBox().xlen-2) < .001
-                          and 5 < f.BoundingBox().zlen < 10 and f.Center().y > 400]
-        self.assertEqual(len(straight_faces),4)
-        for face in straight_faces:
-            gap = rear_inside_y-face.Center().y
-            self.assertAlmostEqual(gap,.50,places=4)
-            self.assertGreater(gap,0)
+        tab_faces = [f for f in base.Faces() if f.geomType() == 'PLANE'
+                     and abs(f.normalAt().y) > .999999 and f.Area() > 1000
+                     and abs(f.Center().y-(rear_inside_y-.20)) < .01]
+        self.assertEqual(len(tab_faces),2)
+        for face in tab_faces:
+            box = face.BoundingBox()
+            self.assertAlmostEqual(rear_inside_y-face.Center().y, .20, places=4)
+            # the native base's frame has the floor TOP at z = 0
+            self.assertAlmostEqual(box.zmin, enclosure.rear_tab_z()[0], delta=.01)
+            self.assertAlmostEqual(box.zmax, enclosure.rear_tab_z()[1], delta=.01)
 
     def test_invalid_weld_corner_parameters_are_rejected_before_generation(self):
         # Zero/reversed gaps join or overlap faces; a gap beyond the bend band

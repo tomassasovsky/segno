@@ -61,34 +61,44 @@ class RearTabsAndSeatFlangesTest(unittest.TestCase):
                 self.assertAlmostEqual(REAR_INSIDE_Y - (y + DEV), 0.20, places=6)
                 origin = 0.0 if a[0] < 0 else BW
                 heights = sorted(abs(x - origin) for x in (a[0], b[0]))
-                # A wall height z above the floor top sits T + z - DEV from the
-                # side bend line in the flat.
-                self.assertAlmostEqual(heights[0], T + 9.0 - DEV, places=6)
-                self.assertAlmostEqual(heights[1], T + 75.0 - DEV, places=6)
+                # The tab takes the whole rear edge: it starts at the floor
+                # bend's tangent (half a 90 deg allowance up the flap).
+                self.assertAlmostEqual(heights[0], HALF_BEND, places=6)
                 # The free edge: 18 mm from the side wall's outer face.
                 tips = [(p, q) for p, q in self.cuts
-                        if abs(p[1] - q[1]) < 1e-9 and abs(abs(p[0] - q[0]) - 66.0) < 1e-6
-                        and (p[0] < 0) == (a[0] < 0) and p[1] > y]
+                        if abs(p[1] - q[1]) < 1e-9 and (p[0] < 0) == (a[0] < 0)
+                        and abs(p[1] - (y + 18.0 - DEV)) < 1e-6]
                 self.assertEqual(len(tips), 1)
-                self.assertAlmostEqual(tips[0][0][1] - y, 18.0 - DEV, places=6)
 
-    def test_tab_reliefs_are_hairline_slits_past_the_bend_band(self):
-        # No round-bottomed notches (owner call): each tab end is relieved by a
-        # 0.2 mm straight cut whose bottom lies past the bend band.
-        for (a, _b) in self._tab_bends():
-            y = a[1]
-            left = a[0] < 0
-            bottoms = [(p, q) for p, q in self.cuts
-                       if abs(p[1] - q[1]) < 1e-9 and abs(abs(p[0] - q[0]) - 0.2) < 1e-6
-                       and (p[0] < 0) == left and abs(p[1] - y) < 10]
-            with self.subTest(side='left' if left else 'right'):
-                self.assertEqual(len(bottoms), 2)
-                for p, _q in bottoms:
-                    self.assertAlmostEqual(p[1], y - HALF_BEND - 0.5, places=6)
-        self.assertFalse([e for e in self.entities if e.dxf.layer == 'CUT'
-                          and e.dxftype() == 'LWPOLYLINE'
-                          for c in e.virtual_entities()
-                          if c.dxftype() == 'ARC' and abs(c.dxf.radius - T / 2) < 1e-6])
+    def test_corner_top_edge_follows_the_rear_wall_inside_at_constant_clearance(self):
+        # Where side wall, rear wall and shoulder meet there is no slit, step or
+        # loose piece: through the tab's bend and across the tab, each flat
+        # station sits REAR_CORNER_CLR under the rear wall / shoulder inside
+        # contour at the depth its OUTER surface reaches once folded.
+        clr = enclosure.REAR_CORNER_CLR
+        yc = REAR_INSIDE_Y - R
+        zc = (enclosure.HR_FLAT - enclosure.bend_allowance(90.0 - enclosure.TRANS_ANGLE) / 2
+              + DEV - T)
+        tab = enclosure.rear_corner_tab()
+        y_s = tab['y_s']
+        stations = [(h, yf) for h, yf, _b in tab['section']
+                    if y_s - 1e-9 <= yf <= y_s + 2 * HALF_BEND + 1e-9]
+        self.assertGreaterEqual(len(stations), 9)
+        for h, yf in stations:
+            theta = (yf - y_s) / (R + K * T)
+            y_out = y_s + (R + T) * math.sin(theta)
+            z = h - T + DEV
+            if y_out >= yc + (R - clr) * math.cos(math.radians(90 - enclosure.TRANS_ANGLE)):
+                self.assertAlmostEqual(math.hypot(y_out - yc, z - zc), R - clr, places=6)
+            else:
+                self.assertLess(z, enclosure.rear_corner_contour_z(y_out, 0.0))
+        # ...and no 0.2 mm cut anywhere in the rear corner.
+        self.assertFalse([1 for p, q in self.cuts
+                          if p[1] > 405 and abs(math.dist(p, q) - 0.2) < 1e-6])
+        # The tab's flat part is capped by the same contour at its outer face.
+        self.assertAlmostEqual(enclosure.rear_tab_z()[1],
+                               zc + math.sqrt((R - clr) ** 2 - (REAR_INSIDE_Y - 0.2 - yc) ** 2),
+                               places=6)
 
     def test_seat_flange_bend_sits_one_development_inside_the_lid_seat_edge(self):
         inclined = [(a, b) for a, b in self.bends
@@ -115,7 +125,7 @@ class RearTabsAndSeatFlangesTest(unittest.TestCase):
                     self.assertAlmostEqual((h - edge(y)) * math.cos(SLOPE),
                                            15.0 - 2 * DEV, places=6)
 
-    def test_seat_flange_runs_to_the_ridge_closure_with_slit_ends(self):
+    def test_seat_flange_runs_to_the_lid_bend_with_slit_ends(self):
         seat = enclosure.side_seat_flange()
         self.assertGreaterEqual(seat['front_y'], 10.0)
         section = seat['section']
@@ -123,9 +133,9 @@ class RearTabsAndSeatFlangesTest(unittest.TestCase):
         for mouth, bottom in ((section[1], section[2]), (section[5], section[6])):
             self.assertAlmostEqual(math.dist(mouth[:2], bottom[:2]), 0.2, places=6)
         self.assertAlmostEqual(seat['relief'], DEV + HALF_BEND + 0.5, places=6)
-        # The rear slit's far side climbs straight to the ridge closure start,
-        # which sits 0.3 mm under the lid seat line: no leftover edge before it.
-        ridge = enclosure.base_rear_ridge_profile()[0]
+        # The rear slit's far side climbs straight to the start of the arc that
+        # clears the lid's rear bend by 0.3 mm: no dip or leftover edge before it.
+        ridge = enclosure.base_rear_ridge_profile()[1]
         start = (ridge[1] - DEV, ridge[0])
         self.assertEqual(seat['ridge_start'], start)
         far_side = (start[0] - section[-1][0], start[1] - section[-1][1])
@@ -134,7 +144,7 @@ class RearTabsAndSeatFlangesTest(unittest.TestCase):
         self.assertAlmostEqual(math.hypot(*far_side), seat['relief'] - 0.3, places=6)
 
     def test_spot_welds_sit_on_the_tab_away_from_its_ends(self):
-        lo, hi = enclosure.REAR_TAB_Z
+        lo, hi = enclosure.rear_tab_z()
         self.assertEqual(len(enclosure.REAR_TAB_SPOTS_Z), 3)
         for z in enclosure.REAR_TAB_SPOTS_Z:
             self.assertGreaterEqual(z - lo, 10.0)

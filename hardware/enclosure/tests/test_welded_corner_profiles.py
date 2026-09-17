@@ -119,8 +119,20 @@ class WeldedCornerProfilesTest(unittest.TestCase):
                 # Measure the specified gap and projected overlap from the
                 # actual cut edges, not from the generator's new parameters.
                 inner_plane = half_bend - 2.0
-                self.assertAlmostEqual(side_end[1] - inner_plane, 0.5, places=7)
-                self.assertAlmostEqual(inner_plane - web_end[0], 1.0, places=7)
+                if corner.startswith('front'):
+                    self.assertAlmostEqual(side_end[1] - inner_plane, 0.5, places=7)
+                else:
+                    # #1067: at the rear the side wall's whole edge is a tab 0.2 mm
+                    # off the rear wall; the flap stops 0.5 past that tab's bend band.
+                    dev = 4.0 - half_bend
+                    self.assertAlmostEqual(side_end[1] - inner_plane,
+                                           0.2 + dev + half_bend + 0.5, places=7)
+                if corner.startswith('front'):
+                    self.assertAlmostEqual(inner_plane - web_end[0], 1.0, places=7)
+                else:
+                    # #1067: the rear wall runs the full outer width, 1.9 past
+                    # the side bend line, covering the side walls' folded corners.
+                    self.assertAlmostEqual(web_end[0], -1.9, places=7)
 
     def test_front_lid_coves_keep_the_original_circle_and_upper_tangent(self):
         coves = [curve for curve in self.curves if curve.dxftype() == 'ARC'
@@ -145,36 +157,23 @@ class WeldedCornerProfilesTest(unittest.TestCase):
         self.assertAlmostEqual(min(y for _x, y, _b in self.points),
                                -8.183938958241146, places=7)
 
-    def test_rear_web_widens_only_through_the_upper_bend_band(self):
-        hinge = 504.04508436774597  # Saved upper-fold datum; lid seat is unchanged.
-        half_bend = math.radians(90-enclosure.TRANS_ANGLE) * (2+0.33*2) / 2
-        transitions = [curve for curve in self.curves
-                       if curve.dxftype() == 'LINE'
-                       and abs((curve.dxf.start.y+curve.dxf.end.y)/2-hinge) < 1e-7
-                       and abs(curve.dxf.start.x-curve.dxf.end.x) > 0.1]
-        self.assertEqual(len(transitions), 2)
-        for line in transitions:
-            lower, upper = sorted((line.dxf.start, line.dxf.end), key=lambda p: p.y)
-            self.assertAlmostEqual(lower.y, hinge-half_bend, places=7)
-            self.assertAlmostEqual(upper.y, hinge+half_bend, places=7)
-            origin, sign = (0, 1) if lower.x < 0 else (846, -1)
-            self.assertAlmostEqual((lower.x-origin)*sign, -0.910840885362787,
-                                   places=7)
-            self.assertAlmostEqual((upper.x-origin)*sign, -1.9, places=7)
+    def test_rear_wall_runs_the_full_outer_width_above_its_floor_bend(self):
+        # #1067: with the side walls' whole rear edges folded in as tabs, the rear
+        # wall is no longer cut back to half a sheet for a weld; from its floor
+        # bend's tangent to the tip of the shoulder it spans the outer width.
+        half_bend = math.pi / 4 * (2.0 + 0.33 * 2.0)
         tip_y = max(y for _x, y, _b in self.points)
-        tip = [x for x, y, _b in self.points if abs(y-tip_y) < 1e-7]
-        self.assertEqual(len(tip), 2)
-        self.assertAlmostEqual(max(tip)-min(tip), 849.8, places=7)
-        # Once outside the bend band, the return must be straight and full width.
-        for curve in self.curves:
-            if curve.dxftype() != 'LINE':
-                continue
-            start, end = curve.dxf.start, curve.dxf.end
-            if min(start.y, end.y) >= hinge+half_bend-1e-7:
-                if abs(start.y-end.y) > 1e-7:
-                    self.assertAlmostEqual(start.x, end.x, places=7)
-                    self.assertTrue(abs(start.x+1.9) < 1e-7
-                                    or abs(start.x-847.9) < 1e-7)
+        sides = [curve for curve in self.curves
+                 if curve.dxftype() == 'LINE'
+                 and abs(curve.dxf.start.x - curve.dxf.end.x) < 1e-7
+                 and min(curve.dxf.start.y, curve.dxf.end.y) > 419]
+        self.assertEqual(len(sides), 2)
+        for line in sides:
+            low, high = sorted((line.dxf.start.y, line.dxf.end.y))
+            self.assertAlmostEqual(low, 419 + half_bend, places=7)
+            self.assertAlmostEqual(high, tip_y, places=7)
+            self.assertTrue(abs(line.dxf.start.x + 1.9) < 1e-7
+                            or abs(line.dxf.start.x - 847.9) < 1e-7)
 
     def test_every_existing_functional_cut_drill_and_fold_is_preserved(self):
         # #1067 added four short folds (two lid-seat flanges, two rear tabs);
