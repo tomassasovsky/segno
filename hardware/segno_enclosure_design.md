@@ -66,7 +66,9 @@ The lid has two folds: a front lip and a rear lap. It rests on a 15 mm inward
 flange along each side wall's sloped top (the old bare 2 mm edge line is that
 flange's top face, so the lid did not move) and on the rear transition. The
 flange runs from 10 mm behind the front to where the lid's rear bend starts; its
-ends are relieved by single 0.20 mm laser cuts. The
+ends are relieved by single 0.20 mm laser cuts. The transition flange that takes
+the nine lap screws runs up to where the lid's lap bend starts, so it meets the
+lid-seat flange in a crease under the lid bend at the peak. The
 support beam's pad stops 1.5 mm short of each flange. Nine M3 screws go through each folded edge
 into tapped body holes. It has no folded side skirts or side fixing screws.
 The eighteen lid bores are Ø4.50(+0.10/−0) before coating and use M3 OD 7 head

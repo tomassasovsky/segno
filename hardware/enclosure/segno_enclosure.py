@@ -1145,23 +1145,31 @@ YC_TRANS = _y90 - T / math.cos(_rth)            # transition OUTSIDE mold corner
                                                 # flange outer sits ONE SHEET below
                                                 # the lap outer so the lap rests ON it
 HR_FLAT = YC_TRANS - DEV90 - DD_TR              # rear wall web, developed flat
-RIDGE_CLEAR = 2.0                               # flange tip stops this short of the
-                                                # ridge mold corner (lap-bend zone)
+RIDGE_CLEAR = 2.0                               # the flange tip's ORIGINAL station; the
+                                                # frozen seam-screw solve still uses it
+# The transition flange tip runs up to where the lid's lap bend starts: its top
+# face is the lap's underside, and the lid's inside radius begins at the bend's
+# tangent, (RI + T) tan(half the fold) down the facet from the outer mold corner.
+# There the flange tip and the side walls' lid-seat flange end meet at their
+# bottom corners, closing the joint under the lid bend (#1067). It used to stop
+# 2 mm down, and the side wall filled the widening gap with a hooked wedge.
+FLANGE_TIP_CLR = 0.10                           # kept down-facet of that tangent
+FLANGE_TIP_D = (RI + T) * math.tan(math.radians(SLOPE_ANGLE + TRANS_ANGLE) / 2.0) + FLANGE_TIP_CLR
 # along-facet axis d: from the ridge mold corner DOWN the lap/flange facet.
 # A point at flat distance f beyond a bend line lands at facet station f + DD
 # from that bend's mold corner (the straight flap starts sb past the corner but
 # only BA/2 past the line) -- so a target station d needs flat = d - DD.
 D_WALL    = (_zw - RIDGE_Z) * math.cos(_rth) + (RIDGE_Y - YC_TRANS) * math.sin(_rth)
-HT_FLAT   = (D_WALL - RIDGE_CLEAR) - DD_TR      # transition flange, developed flat:
-                                                # as LONG as possible (to the ridge
-                                                # clearance, NOT just TRANS_LEN --
+HT_FLAT   = (D_WALL - FLANGE_TIP_D) - DD_TR     # transition flange, developed flat:
+                                                # as LONG as possible (to the lid's
+                                                # lap-bend tangent, NOT just TRANS_LEN --
                                                 # development stretches the facet)
-D_FL_TIP  = D_WALL - (HT_FLAT + DD_TR)          # flange tip (= RIDGE_CLEAR)
+D_FL_TIP  = D_WALL - (HT_FLAT + DD_TR)          # flange tip (= FLANGE_TIP_D)
 D_LAP_TIP = D_WALL - KNUCKLE_CLEAR              # lap tip: clear of the wall knuckle
 # screw row: centred on the lap/flange overlap, pushed down-facet if needed to
 # keep PEM_EDGE from the flange tip (solved for the retired PEM scheme; frozen --
 # generous for a tapped hole, and every model carries these stations)
-D_SEAM_SCREW = max((D_FL_TIP + D_LAP_TIP) / 2.0, D_FL_TIP + PEM_EDGE)
+D_SEAM_SCREW = max((RIDGE_CLEAR + D_LAP_TIP) / 2.0, RIDGE_CLEAR + PEM_EDGE)
 LID_REAR_LAP = D_LAP_TIP - DD_LAP               # lap developed flat length
 LRL = LID_REAR_LAP
 SEAM_LAP_V = LID_FRONT_FL + LID_FRONT_EXTRA + FP_V + (D_SEAM_SCREW - DD_LAP)     # lap screw row (lid flat v)
@@ -3389,54 +3397,52 @@ def dxf_faceplate(path):
     _save(doc, path)
     return {"blank": (LW, yr1)}
 
-def base_rear_ridge_profile():
-    """Side-wall ridge closure as (world depth, world height, arc bulge).
+def lid_rear_bend_tangents():
+    """Where the lid's inside surface leaves its two flat faces at the ridge.
 
-    The side must meet the return flange only where that flange actually
-    exists. Ahead of its tip, follow the lid's inside bend with 0.30 mm bare
-    normal clearance; leave the same clearance to the fixed flange tip.
-    The five points replace a short section of the old flange-seat line.
-    For a native patch, close this wire from its last point to its first,
-    subtract T from world height, and extrude T along X on each side wall.
-    For the flat, height becomes (world height - DEV90); mapping it to X
-    swaps the axes, so the right-side DXF arc has the opposite bulge sign.
+    (front, rear) as (world depth, world height): the top plate's underside
+    tangent and the rear lap's underside tangent of the lid's inside bend radius.
+    The side walls' lid-seat flanges end at the first; the transition flange tip
+    sits just down-facet of the second.
     """
     a, b = math.radians(SLOPE_ANGLE), math.radians(TRANS_ANGLE)
     front = (-math.sin(a), math.cos(a))
     rear = (math.sin(b), math.cos(b))
-    tip = (-math.cos(b), math.sin(b))
-
-    def dot(n, p):
-        return n[0]*p[0] + n[1]*p[1]
-
-    def crossing(n, k, m, q):
-        det = n[0]*m[1] - n[1]*m[0]
-        return ((k*m[1] - n[1]*q)/det,
-                (n[0]*q - k*m[0])/det)
-
     corner = (RIDGE_Z, RIDGE_Y)
-    front_inner = dot(front, corner) - T
-    rear_inner = dot(rear, corner) - T
-    flange_bottom = rear_inner - T
-    flange_tip = dot(tip, corner) - D_FL_TIP
-    clearance = 0.30
-    center = crossing(front, front_inner-RI, rear, rear_inner-RI)
-    radius = RI-clearance
-    start = crossing(front, front_inner-clearance, rear, flange_bottom)
-    front_tangent = tuple(center[i]+radius*front[i] for i in (0, 1))
-    rear_tangent = tuple(center[i]+radius*rear[i] for i in (0, 1))
-    tip_top = crossing(rear, rear_inner-clearance, tip, flange_tip+clearance)
-    tip_bottom = crossing(rear, flange_bottom, tip, flange_tip+clearance)
-    return (start+(0.0,), front_tangent+(-math.tan((a+b)/4.0),),
-            rear_tangent+(0.0,), tip_top+(0.0,), tip_bottom+(0.0,))
+    k_f = front[0]*corner[0] + front[1]*corner[1] - T - RI
+    k_r = rear[0]*corner[0] + rear[1]*corner[1] - T - RI
+    det = front[0]*rear[1] - front[1]*rear[0]
+    centre = ((k_f*rear[1] - front[1]*k_r)/det, (front[0]*k_r - k_f*rear[0])/det)
+    return (tuple(centre[i] + RI*front[i] for i in (0, 1)),
+            tuple(centre[i] + RI*rear[i] for i in (0, 1)))
+
+
+def base_rear_ridge_profile():
+    """Side-wall top at the ridge, after the lid-seat flange's rear slit.
+
+    The wall carries the transition flange's underside to the back. At the
+    ridge it simply continues that line forward until it meets the far side of
+    the lid-seat flange's rear slit, which stands at the lid's front bend
+    tangent. The flange end and the transition flange tip meet at their bottom
+    corners just above this point, so nothing of the wall rises between them.
+    Returned as the one (world depth, world height, bulge) point where the
+    wall top leaves the slit. For the flat, height becomes (world height - DEV90).
+    """
+    a, b = math.radians(SLOPE_ANGLE), math.radians(TRANS_ANGLE)
+    along = (math.cos(a), math.sin(a))          # up the top plate, world (y, z)
+    rear = (math.sin(b), math.cos(b))
+    t1, _t2 = lid_rear_bend_tangents()
+    k_s = along[0]*t1[0] + along[1]*t1[1]
+    k_b = rear[0]*RIDGE_Z + rear[1]*RIDGE_Y - 2.0*T   # transition flange underside
+    det = along[0]*rear[1] - along[1]*rear[0]
+    point = ((k_s*rear[1] - along[1]*k_b)/det, (along[0]*k_b - k_s*rear[0])/det)
+    return (point + (0.0,),)
 
 
 def _base_ridge_peak_height():
-    """World height of the ridge arc apex, including its interior extremum."""
-    (_a, (fy, fz, bulge), (ry, rz, _b), _c, _d) = base_rear_ridge_profile()
-    center_z = (fz+rz)/2 + (1-bulge*bulge)*(ry-fy)/(4*bulge)
-    radius = math.hypot(ry-fy, rz-fz)*(1+bulge*bulge)/(4*abs(bulge))
-    return center_z+radius
+    """World height of the side wall's highest point at the ridge: the lid-seat
+    flange's rear end, on the lid underside at the front bend tangent."""
+    return lid_rear_bend_tangents()[0][1]
 
 
 def _base_side_flap_reach():
@@ -3477,9 +3483,9 @@ def side_seat_flange():
     reaches SIDE_SEAT_FLANGE - 2*DEV90 past it. Each end is relieved by a
     RELIEF_SLIT-wide straight cut, square to the edge, that runs past the bend
     band. The flange runs to where the lid's rear bend starts: the rear slit's
-    far side passes through the start of the lid-clearance arc
-    (base_rear_ridge_profile()[1]), which is concentric with that bend and
-    0.3 mm inside it, so the side wall has no dip before the arc.
+    far side stands at the lid's front bend tangent, and the wall's top joins
+    it where the transition flange's underside line crosses it
+    (base_rear_ridge_profile).
     """
     a = math.radians(SLOPE_ANGLE)
     along = (math.sin(a), math.cos(a))          # (h, y) unit vector up the edge
@@ -3494,10 +3500,10 @@ def side_seat_flange():
     def at(p, n, k):
         return (p[0] + k * n[0], p[1] + k * n[1])
 
-    ry, rz, _b = base_rear_ridge_profile()[1]   # clearance arc start, world
+    ry, rz, _b = base_rear_ridge_profile()[0]   # wall top leaves the slit here, world
     ridge_start = (rz - DEV90, ry)              # ...in flat terms
     below = ((_side_wall_top_flat(ry) - ridge_start[0]) * math.cos(a))
-    assert 0.0 <= below < relief, "ridge start is not just under the seat edge line"
+    assert 0.0 <= below < relief, "the wall top meets the slit below its bottom"
     p_rear = at(at(ridge_start, out, below), along, -w)
     assert abs(p_rear[0] - _side_wall_top_flat(p_rear[1])) < 1e-9
     p_front = edge(SIDE_SEAT_FRONT_Y)
@@ -3668,9 +3674,9 @@ def dxf_base(path):
     # Each relief is two straight developed edges meeting at the common
     # floor-bend tangent. Folding makes the small curved opening in the
     # welder's example; no circular corner hole or added weld bead is modeled.
-    # The lid-seat flange runs to the start of the lid-clearance arc, so the
-    # ridge closure's first point (where the old plain edge dipped 0.3 mm) is gone.
-    ridge = base_rear_ridge_profile()[1:]
+    # After the lid-seat flange's rear slit the wall top follows the transition
+    # flange's underside straight back; nothing rises between the two flanges.
+    ridge = base_rear_ridge_profile()
     seat, tab = side_seat_flange(), rear_corner_tab()
     assert y_T < seat["section"][0][1], "lid-seat flange front slit runs into the lip cove"
     assert tab["section"][0][1] > ridge[-1][0], "rear corner contour runs into the ridge closure"

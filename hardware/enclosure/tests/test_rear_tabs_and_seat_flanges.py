@@ -133,15 +133,48 @@ class RearTabsAndSeatFlangesTest(unittest.TestCase):
         for mouth, bottom in ((section[1], section[2]), (section[5], section[6])):
             self.assertAlmostEqual(math.dist(mouth[:2], bottom[:2]), 0.2, places=6)
         self.assertAlmostEqual(seat['relief'], DEV + HALF_BEND + 0.5, places=6)
-        # The rear slit's far side climbs straight to the start of the arc that
-        # clears the lid's rear bend by 0.3 mm: no dip or leftover edge before it.
-        ridge = enclosure.base_rear_ridge_profile()[1]
-        start = (ridge[1] - DEV, ridge[0])
+        # The rear slit's far side climbs straight to where the wall top picks
+        # up the transition flange's underside: nothing of the wall rises above.
+        ridge = enclosure.base_rear_ridge_profile()
+        self.assertEqual(len(ridge), 1)
+        start = (ridge[0][1] - DEV, ridge[0][0])
         self.assertEqual(seat['ridge_start'], start)
         far_side = (start[0] - section[-1][0], start[1] - section[-1][1])
         along = (math.sin(SLOPE), math.cos(SLOPE))
         self.assertAlmostEqual(far_side[0] * along[0] + far_side[1] * along[1], 0.0, places=6)
-        self.assertAlmostEqual(math.hypot(*far_side), seat['relief'] - 0.3, places=6)
+        edge = 12.0 + (start[1] + DEV) * math.tan(SLOPE) - DEV
+        depth = (edge - start[0]) * math.cos(SLOPE)
+        self.assertAlmostEqual(math.hypot(*far_side), seat['relief'] - depth, places=6)
+
+    def test_transition_flange_meets_the_seat_flange_under_the_lid_bend(self):
+        # The transition flange's tip runs to 0.1 mm down-facet of the lid's lap
+        # bend tangent, (R + T) tan(half the fold) from the outer mold corner.
+        fold = math.radians(enclosure.SLOPE_ANGLE + enclosure.TRANS_ANGLE)
+        self.assertAlmostEqual(enclosure.D_FL_TIP, (R + T) * math.tan(fold / 2) + 0.1, places=6)
+        # The nine lap screws did not move: both screw rows keep their solve.
+        self.assertAlmostEqual(enclosure.SEAM_TAP_V, 99.46275870925763, places=9)
+        self.assertAlmostEqual(enclosure.SEAM_LAP_V, 433.2058704837384, places=9)
+        # Its bottom tip corner and the seat flange's bottom end corner come
+        # within a few tenths of each other without touching: the joint closes
+        # under the lid bend instead of leaving a wedge for the wall to fill.
+        a, b = SLOPE, math.radians(enclosure.TRANS_ANGLE)
+        nf, nr = (-math.sin(a), math.cos(a)), (math.sin(b), math.cos(b))
+        along, up_facet = (math.cos(a), math.sin(a)), (-math.cos(b), math.sin(b))
+        dot = lambda n, p: n[0] * p[0] + n[1] * p[1]
+
+        def meet(n, k, m, q):
+            det = n[0] * m[1] - n[1] * m[0]
+            return ((k * m[1] - n[1] * q) / det, (n[0] * q - k * m[0]) / det)
+        corner = (enclosure.RIDGE_Z, enclosure.RIDGE_Y)
+        t1, _t2 = enclosure.lid_rear_bend_tangents()
+        seat_bottom = dot(nf, corner) - 2 * T
+        flange_bottom = dot(nr, corner) - 2 * T
+        seat_end = meet(nf, seat_bottom, along, dot(along, t1) - 0.2)
+        tip = meet(nr, flange_bottom, up_facet, dot(up_facet, corner) - enclosure.D_FL_TIP)
+        self.assertGreater(math.dist(seat_end, tip), 0.1)
+        self.assertLess(math.dist(seat_end, tip), 0.5)
+        self.assertGreater(dot(along, tip), dot(along, seat_end))
+
 
     def test_spot_welds_sit_on_the_tab_away_from_its_ends(self):
         lo, hi = enclosure.rear_tab_z()

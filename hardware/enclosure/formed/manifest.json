@@ -1,6 +1,6 @@
 {
   "segno_base": {
-    "flat_sha256": "3cf531088da4cd9db71968eb493f4ec4a72ad878c8b19548a10f487a73dea0ff",
+    "flat_sha256": "b3ff9d1ce8545e0e4765589f3d550f87acafb1512b4eea30922ac58272e968a7",
     "forming": {
       "rule": {
         "thickness_mm": 2.0,
@@ -219,7 +219,7 @@
         ]
       ]
     },
-    "step_sha256": "0075afe07f17d9a3f55f15e38e4fbbab485c7b0867e51ef8093634824da1e965",
+    "step_sha256": "31dae1efc749f1f9aa9087bc66bff64bf23ecebef664ca5e016dc595787249e5",
     "placements_mm": [
       [
         [
@@ -248,7 +248,7 @@
         ]
       ]
     ],
-    "volume_mm3": 968676.2759545811,
+    "volume_mm3": 969628.4143362211,
     "bounds_mm": [
       [
         -1.9108408853627878,
@@ -261,7 +261,7 @@
         97.72919501550078
       ]
     ],
-    "flat_pattern_sha256": "96c77eb612c2d99b4b873e55358300e27625a5055cd60ad236ad267810627e5d",
+    "flat_pattern_sha256": "fa30832055130b5ac83aceb5eb47df12e34169c4c29fc603da8fe204d5f73468",
     "flat_pattern_drawn_face": "same"
   },
   "segno_faceplate": {
