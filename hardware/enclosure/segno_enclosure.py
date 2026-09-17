@@ -139,10 +139,9 @@ REAR_TAB_SPOTS_Z = (15.0, 43.0, 71.0)  # spot welds per tab, height above the fl
 # The lid used to rest on the side walls' bare 2 mm top edges. Each side wall now
 # turns a return flange inward along its sloped top, and the lid rests on that
 # (#1067). Its top face is the old edge line, so the lid does not move. It runs
-# from behind the lid's front-lip knuckle to the start of the ridge closure,
-# where the side wall drops 0.3 mm under the lid's rear bend.
+# the whole sloped top: from the wall's front edge (the lid's front bend lies
+# ahead of it, so it needs no relief there) to where the lid's rear bend starts.
 SIDE_SEAT_FLANGE = 15.0     # wall OUTER face to the flange's free edge, mm
-SIDE_SEAT_FRONT_Y = 10.0    # flange front end, depth on the wall top line (flat y)
 # Where a lid-seat flange stops partway along the wall top, the bent and unbent
 # metal must be separated past the bend band or the corner tears. The owner did
 # not want round-bottomed slots showing as notches in the shell, so each relief is
@@ -3480,9 +3479,11 @@ def side_seat_flange():
 
     Development: the edge line is the flange's outer mold line, so the bend
     line sits DEV90 inside it, measured square to the edge, and the flange
-    reaches SIDE_SEAT_FLANGE - 2*DEV90 past it. Each end is relieved by a
-    RELIEF_SLIT-wide straight cut, square to the edge, that runs past the bend
-    band. The flange runs to where the lid's rear bend starts: the rear slit's
+    reaches SIDE_SEAT_FLANGE - 2*DEV90 past it. At the front it starts at the
+    wall's free front edge -- its bend line ends on that edge, so no relief --
+    and its end is cut square to the edge from there. At the rear it stops where
+    the lid's rear bend starts, relieved by a RELIEF_SLIT-wide straight cut past
+    the bend band: the rear slit's
     far side stands at the lid's front bend tangent, and the wall's top joins
     it where the transition flange's underside line crosses it
     (base_rear_ridge_profile).
@@ -3506,12 +3507,15 @@ def side_seat_flange():
     assert 0.0 <= below < relief, "the wall top meets the slit below its bottom"
     p_rear = at(at(ridge_start, out, below), along, -w)
     assert abs(p_rear[0] - _side_wall_top_flat(p_rear[1])) < 1e-9
-    p_front = edge(SIDE_SEAT_FRONT_Y)
-    r_front = at(p_front, along, -w)            # slit mouth, front side
+    # Front: the bend line's end sits on the wall's front edge (flat y = the weld
+    # gap edge), so the flange's end corner on the edge line is DEV90 sin(slope)
+    # ahead of it.
+    front_edge = T - DEV90 + BASE_WELD_GAP
+    p_front = edge(front_edge - DEV90 * math.sin(a))
+    b_front = at(p_front, out, -DEV90)
+    assert abs(b_front[1] - front_edge) < 1e-9
     section = [
-        (*r_front, 0.0),
-        (*at(r_front, out, -relief), 0.0),
-        (*at(p_front, out, -relief), 0.0),
+        (*b_front, 0.0),
         (*at(p_front, out, tip), 0.0),
         (*at(p_rear, out, tip), 0.0),
         (*at(p_rear, out, -relief), 0.0),
@@ -3616,9 +3620,11 @@ def dxf_base(path):
     # below the lid underside) rolls through the wall's top-corner band, and a
     # straight top edge across the T thickness only clears the roll below the
     # bend-axis height (the pocket is tangent to the lip plane exactly there).
-    # The sides already carry the LIPR_R cove for the same roll; the front wall
-    # takes a height drop instead (an edge bevel across 2mm is not a flat-pattern
-    # feature). The gap is invisible: the lip skirts down over it. (#760)
+    # The front wall takes a height drop instead (an edge bevel across 2mm is not
+    # a flat-pattern feature). The gap is invisible: the lip skirts down over it.
+    # (#760) The side walls no longer need their old R3 cove for that roll: the
+    # lip now stands LIP_BARE_CLEAR further forward, and the lid-seat flange runs
+    # right to the walls' front edges on the flat underside behind the bend.
     _axis_h = ((_cfy - T / math.cos(_ra))                       # underside @ lip corner
                + ((-DEV90 + RI) - _cfz) * math.tan(_ra)         # ...out to the bend axis
                - RI / math.cos(_ra))                            # RI perpendicular below
@@ -3636,9 +3642,6 @@ def dxf_base(path):
     Hr = HR_FLAT                             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     half_bend = BA90 / 2.0                 # tangent of each centered floor bend
-    LIPR_R = 3.0                            # lip-bend relief radius: a cove TANGENT
-                                            # to the top edge AND the front edge
-                                            # (mirrors the lid lip's roll)
     tan_a, tan_th = math.tan(_ra), math.tan(_rth)
     # side-wall wedge top, FRONT segment: ON the lid underside plane, anchored at
     # the front wall outer top corner (solver Z = -DEV90, i.e. flat y = -bdd -- the
@@ -3650,17 +3653,7 @@ def dxf_base(path):
     # segment ~0.87 low (caught by hand-editing the Fusion model).
     shf_r = lambda y: (RIDGE_Y - (y - RIDGE_Z) * tan_th
                        - 2.0 * T / math.cos(_rth)) - bdd
-    _hyp = math.hypot(1.0, tan_a)
-    h_F = (shf_f(0.0) + tan_a * LIPR_R - LIPR_R * _hyp)   # cove mouth on the front edge
-    y_T = LIPR_R * (1.0 - tan_a / _hyp)                   # tangency depth on the top line
-    h_T = shf_f(y_T)                                      # tangency height (on the line)
     front_edge = T - DEV90 + BASE_WELD_GAP
-    # Keep the lid's existing R3 cove, trimming only its leading end to the
-    # new side edge. Moving the whole cove would change the lid clearance.
-    h_F += math.sqrt(LIPR_R**2 - (LIPR_R-front_edge)**2)
-    cove_sweep = (math.asin((LIPR_R-front_edge)/LIPR_R)
-                  - math.radians(SLOPE_ANGLE))
-    lb = math.tan(cove_sweep / 4.0)
     fext  = (LID_W - BW) / 2.0              # flange side extension past the wall webs
     web_ext = DEV90 - T + BASE_WELD_OVERLAP     # FRONT wall: welder's half-sheet overlap
     # The REAR flap runs the full outer width (fext) from its floor-bend tangent
@@ -3678,7 +3671,6 @@ def dxf_base(path):
     # flange's underside straight back; nothing rises between the two flanges.
     ridge = base_rear_ridge_profile()
     seat, tab = side_seat_flange(), rear_corner_tab()
-    assert y_T < seat["section"][0][1], "lid-seat flange front slit runs into the lip cove"
     assert tab["section"][0][1] > ridge[-1][0], "rear corner contour runs into the ridge closure"
 
     def _mirror(section):
@@ -3701,11 +3693,8 @@ def dxf_base(path):
         (-web_ext, -Hf), (BW+web_ext, -Hf),
         (BW+web_ext, -half_bend), (BW-half_bend, half_bend),
         (BW+half_bend, front_edge),                              # FRONT flap + relief
-        (BW+h_F, front_edge, lb), (BW+h_T, y_T),                   # preserved lip relief cove
-                                                                       # to the front edge, sweeps
-                                                                       # up to kiss the top line
-        *right_seat,                                                   # lid-seat flange + slits, up
-        *right_ridge,                                                  # to the ridge closure,
+        *right_seat,                                                   # front edge up into the lid-seat
+        *right_ridge,                                                  # flange, rear slit, flange underside,
         *right_tab,                                                    # corner contour, full-height
         (BW-half_bend, BD-half_bend),                                  # tab, floor-corner relief
         (BW+fext, BD+half_bend),                                       # REAR flap, full outer width
@@ -3715,7 +3704,7 @@ def dxf_base(path):
         *left_tab,                                                     # LEFT flap: rear tab, corner,
         *left_ridge,                                                   # ridge closure
         *left_seat,
-        (-h_T, y_T, lb), (-h_F, front_edge), (-half_bend, front_edge),
+        (-half_bend, front_edge),
         (half_bend, half_bend), (-web_ext, -half_bend),
     ]
     msp.add_lwpolyline([(pt + (0.0,))[:3] for pt in outline], format="xyb",

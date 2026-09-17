@@ -3,7 +3,7 @@
 ## Rear corner tabs and lid-seat flanges - 2026-09-17 (#1067)
 
 Built in a **clone**, not the populated document: **"VAMP console (populated) -
-1067 tabs + seat flanges"** (Loopy folder, version 7 at the end of that day). The
+1067 tabs + seat flanges"** (Loopy folder, version 9 at the end of that day). The
 original **VAMP console (populated)** stays at version 394, untouched. VAMP sheet
 metal is not updated. `formed/` and its manifest come from the clone;
 `fusion_export_formed.py` accepts either name. The clone is a `DataFile.copy` of
@@ -17,10 +17,12 @@ the corner contour), then Fold1..Fold5 as before (left, right, shoulder 65.556°
 rear, front; the front did not flip). `RETURN_CONSTRUCTION_TRIM` and its offset
 restore, and the nine front pilots (`FRONT_DRILL_AFTER_FORMING`, z = 4.45542 mm in
 the component), as before, except the construction trim now reaches y = 53.2 cm
-(the longer transition flange's tip is at 53.0998). Base 969,628.41 mm³.
+(the longer transition flange's tip is at 53.0998). Base 970,106.90 mm³.
 
-- Lid-seat flanges run from y 10 to the lid's rear bend tangent; ends relieved by
-  0.20 mm straight cuts (`RELIEF_SLIT`).
+- Lid-seat flanges run the whole sloped wall top: from the wall's front edge
+  (their bend line ends on it, so no front relief; the old R3 lip cove is gone,
+  the lid's front bend ends at y −1.1) to the lid's rear bend tangent, where a
+  0.20 mm straight cut (`RELIEF_SLIT`) relieves them.
 - The transition flange (the 9 lap screws) runs up to 0.1 mm below the lid's
   lap-bend tangent (`FLANGE_TIP_D`, 1.436 mm down the facet, was 2.0). Its
   bottom tip corner and the seat flange's bottom end corner sit 0.29 mm apart, so
@@ -47,7 +49,8 @@ revision), `base_1067_notched` (round-bottomed reliefs), `base_1067_slits` (slit
 reliefs, tab 9-75 mm), `base_1067_step` (full-height tab with a square step under
 the shoulder), `base_1067_hairline` (a slit under a loose wall piece), `base_1067_wedge` (the
 side wall filling the gap between the seat flange and a transition flange that
-stopped 2 mm down the facet). Each was rejected by the owner for how the joint
+stopped 2 mm down the facet), `base_1067_front10` (flanges starting 10 mm behind
+the front with a slit and the R3 cove). Each was rejected by the owner for how the joint
 looked.
 
 **Rear fold trap:** any side-wall metal that reaches behind the shoulder's bend

@@ -134,24 +134,29 @@ class WeldedCornerProfilesTest(unittest.TestCase):
                     # the side bend line, covering the side walls' folded corners.
                     self.assertAlmostEqual(web_end[0], -1.9, places=7)
 
-    def test_front_lid_coves_keep_the_original_circle_and_upper_tangent(self):
-        coves = [curve for curve in self.curves if curve.dxftype() == 'ARC'
-                 and abs(curve.dxf.radius-3.0) < 1e-7
-                 and curve.dxf.center.y < 10]
-        self.assertEqual(len(coves), 2)
-        for cove in coves:
-            with self.subTest(center=cove.dxf.center):
-                # September 14 lid-clearance circle and upper tangent. Moving
-                # the whole cove with the side edge would encroach on the lid.
-                expected_x = (-8.104890587629825 if cove.dxf.center.x < 0
-                              else 854.1048905876298)
-                self.assertAlmostEqual(cove.dxf.center.x, expected_x, places=7)
-                self.assertAlmostEqual(cove.dxf.center.y, 3.0, places=7)
-                ends = sorted((cove.start_point, cove.end_point), key=lambda p: p.y)
-                self.assertAlmostEqual(ends[0].y, 0.589159114637213, places=7)
-                self.assertAlmostEqual(ends[1].y, 2.35077103484194, places=7)
-                self.assertAlmostEqual(abs(ends[1].x-(0 if expected_x < 0 else 846)),
-                                       11.03379853271799, places=7)
+    def test_front_edges_rise_straight_into_the_lid_seat_flange(self):
+        # #1067: the lid's front lip stands clear ahead of the side walls, so the
+        # old R3 cove is gone. Each side wall's front edge (the weld-gap edge)
+        # runs straight up until the lid-seat flange's bend line ends on it.
+        self.assertFalse([curve for curve in self.curves if curve.dxftype() == 'ARC'
+                          and abs(curve.dxf.radius-3.0) < 1e-7 and curve.dxf.center.y < 10])
+        front_edge = 0.589159114637213
+        half_bend = math.pi / 4 * (2.0 + 0.33 * 2.0)
+        bends = [line for line in (e for e in self.entities if e.dxf.layer == 'BEND')
+                 for line in [list(line.get_points('xy'))]
+                 if abs(line[0][0]-line[1][0]) > 1 and abs(line[0][1]-line[1][1]) > 1]
+        self.assertEqual(len(bends), 2)
+        for line in bends:
+            start = min(line, key=lambda p: p[1])
+            self.assertAlmostEqual(start[1], front_edge, places=7)
+            origin, sign = (0, -1) if start[0] < 0 else (846, 1)
+            edges = [c for c in self.curves if c.dxftype() == 'LINE'
+                     and abs(c.dxf.start.y-front_edge) < 1e-7 and abs(c.dxf.end.y-front_edge) < 1e-7
+                     and (c.dxf.start.x < 0) == (start[0] < 0)]
+            self.assertEqual(len(edges), 1)
+            heights = sorted((x-origin)*sign for x in (edges[0].dxf.start.x, edges[0].dxf.end.x))
+            self.assertAlmostEqual(heights[0], half_bend, places=7)
+            self.assertAlmostEqual(heights[1], (start[0]-origin)*sign, places=7)
         # The front wall must keep its existing top, despite the sample having
         # taller flanges. Its first/last drill remains in the original material.
         self.assertAlmostEqual(min(y for _x, y, _b in self.points),

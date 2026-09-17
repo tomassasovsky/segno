@@ -127,11 +127,11 @@ class RearTabsAndSeatFlangesTest(unittest.TestCase):
 
     def test_seat_flange_runs_to_the_lid_bend_with_slit_ends(self):
         seat = enclosure.side_seat_flange()
-        self.assertGreaterEqual(seat['front_y'], 10.0)
+        # Front: no relief; the bend line starts on the wall's front edge.
+        self.assertAlmostEqual(seat['bend'][0][1], 2.0 - DEV + 0.5, places=6)
         section = seat['section']
-        # Both slits: 0.2 mm wide along the edge, bottoms past the bend band.
-        for mouth, bottom in ((section[1], section[2]), (section[5], section[6])):
-            self.assertAlmostEqual(math.dist(mouth[:2], bottom[:2]), 0.2, places=6)
+        # Rear slit: 0.2 mm wide along the edge, bottom past the bend band.
+        self.assertAlmostEqual(math.dist(section[-2][:2], section[-1][:2]), 0.2, places=6)
         self.assertAlmostEqual(seat['relief'], DEV + HALF_BEND + 0.5, places=6)
         # The rear slit's far side climbs straight to where the wall top picks
         # up the transition flange's underside: nothing of the wall rises above.
