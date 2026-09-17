@@ -8,7 +8,94 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## Solid second-row enclosure platforms - 2026-09-15 (#1037)
+
+Integrated the existing solid CLEAR/BANK collar revision into the active
+manufacturing generator and print STEP/STL/archive. Both Fusion models are
+saved and reopened at sheet metal 160 / populated 388. The four driver bores,
+short-screw mounting patterns and all external interfaces are verified; other
+native geometry and all 42 / 434 positions are preserved. Metal outputs did
+not change. All 134 enclosure tests pass, plus the seven focused mounting
+tests after strengthening the solid-material check. The #1019 physical load
+hold remains. See [evidence](../hardware/enclosure/reference/solid_mid_platform_verification.json).
+
+## Enclosure corner preparation - 2026-09-15
+
+Prepared the welder's example on the existing #1025 branch while Dinacut's
+confirmation is pending. Four angular reliefs now provide a nominal 0.50 mm
+gap and 1.00 mm overlap. The rear upper return and all control/support mounting
+geometry remain intact. The weld scope includes all four corners, lower relief
+openings and the two upper rear joints, with the separately agreed 5356 filler
+and smooth exterior finish. No files were sent and no fabrication was authorized.
+
+Generator, native Fusion models (sheet metal 159 / populated 387), STEP, DXF and
+individual drawings are synchronized. Both saved models were reopened; all
+42 / 434 placements and unrelated body geometry/health are preserved. The full
+generator and 133 tests across 15 modules pass. Cross-kernel mass integration was
+qualified independently before changing its numerical consistency limit to
+50 ppm; dimensional, forming, source-hash and full-flat gates remain unchanged.
+
+The separate #1019 structural/load hold remains. Dinacut still needs to confirm
+the relief/tooling assumptions; post-weld fit and front drilling are completed
+before paint. See [current evidence](../hardware/enclosure/reference/welder_corner_preparation_verification.json)
+and [release review](../hardware/enclosure/RELEASE_REVIEW.md).
+
+## September 14 enclosure revision - historical digital evidence
+
+The owner authorized #1025's welded rear-corner direction and manufacturing
+tolerance revision from `43c94a27` on
+`claude/sheet-metal-enclosure-analysis-6c2aa4`. This supersedes the older riveted
+process below. It is implementation approval, not fabrication release; **#1019
+remains an independent structural/load hold**, including the changed corner
+restraint and welding effects.
+
+The new metal handoff has five parts, one each: base, faceplate and ring disc
+in 2.0 mm 1100-H14 aluminium, a **1.2 mm aluminium rear panel**, and a 1.6 mm
+cold-rolled steel beam. Rear-panel alloy/temper and steel grade remain to be
+confirmed. One metal archive carries exactly 15 STEP/DXF/individual-PDF
+files with material, thickness and quantity in their names; no assembly,
+hardware, printed parts, drafts, removed brackets or posts.
+
+Dinacut cuts/folds/deburrs; a separate welder joins both rear corners. The two
+brackets and ten base rivet holes are removed. Fit and match-drill nine front
+lid/body stations **after welding and before painting**; the provider is still
+pending. No electronics trial or second manufacture is requested. A separate
+painter coats all faces and clearance passages smooth matte black RAL 9005,
+0.06–0.10 mm locally per face, protecting identified electrical-bond contacts.
+The owner then cleans Ø2.5 pilots and taps **32 M3 threads** (18 lid, 14 screen
+supports), and fits shims/felt. No new holes or enlarged screw passages are
+planned after paint.
+
+The current fit candidate is rear **10 mm depth ×6 mm wide CUT slots / OD12
+washers**, front **Ø4.5 / OD7**, and **1.1 mm nominal bare front clearance**
+with **0.70–1.50 mm acceptance inclusive of forming/fixture errors**. Coating
+alone projects **0.357–1.488 mm** painted clearance. The slot passage calculation
+does not qualify washer seating, wedge contact or the welded assembly;
+final fit, washer selection and shim bearing remain pending.
+
+Fusion was saved and reopened as **VAMP sheet metal 158 / populated 386**.
+All changed features are healthy; all 42 / 434 final occurrence placements
+survive reopening. Both bases have the ten rivet holes removed and both bracket
+pairs are gone; each base measures **945.325929644 cm³**. The revised lids,
+discs, washers and nominal shims are present in both models. Reopened native
+solids match the verified exports; the populated lid flat comparison is exact
+and each base differs by less than 0.000619 mm². All **126 tests across 14
+modules** and the full generator pass. Five individual metal PDFs were visually
+reviewed; the exact 15-file metal archive was verified after removing only
+proven timestamp noise. The historical riveted guide was corrected.
+All five independent implementation reviews are complete with no unresolved
+findings; see the [consolidated review](reviews/dinacut-welded-revision/review.md).
+Physical fit and strength qualification still block fabrication; no supplier message
+or cutting authorization was sent. See the
+[current plan](plan/2026-09-14-fix-dinacut-manufacturing-tolerances-plan.md),
+[release review](../hardware/enclosure/RELEASE_REVIEW.md) and
+[internal supplier drafts](../hardware/enclosure/SHOP_REVIEW.md).
+
 ## Enclosure release corrections — local, 2026-09-05
+
+The following dated evidence records earlier revisions. Its riveted-corner
+process, fit dimensions, quantities and saved versions are historical; the
+September 14 status above governs the current revision.
 
 Prepared from `fix/drawing-legibility-1001` at `1d14d701` on
 `codex/sheetmetal-release-fixes`. Earlier converter, monitor support, post,
