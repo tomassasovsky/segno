@@ -128,7 +128,7 @@ per-quote artifact, same freshness gate as the other vendor packs (#236).
 | Board | Files | Qty | Notes |
 |---|---|---|---|
 | **Console board v3** (`console_board.py`, #990) | `kicad/out_console/segno_console_board_gerbers.zip` (run `route_console_board.sh` to produce) + `kicad/fab/segno_console_board_bom.csv` | 1 | Hardware work in progress: Pico 2, MIDI front end, sensed CTRL jacks, ring-board link and PD header. The ring-link and PD firmware are unfinished; this is not the v2 board running release 137. See the [integration record](../docs/APPLIANCE_INTEGRATION.md). |
-| Encoder ring PCB (#987) | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø68 Ring 24 board with a XIAO controller and a four-conductor link to v3 J6. The XIAO firmware and console-side ring link are unfinished. Existing direct-encoder v2 wiring does not apply to this board. See [the ring design](kicad/ring_board.py). |
+| Encoder ring PCB (#987) | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø80 Ring 24 board with a XIAO controller and a four-conductor link to v3 J6. The XIAO firmware and console-side ring link are unfinished. Existing direct-encoder v2 wiring does not apply to this board. See [the ring design](kicad/ring_board.py). |
 | LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 0 | **NOT ORDERED for the console.** Owner call 2026-08-28: the indicators are eight-LED segments cut from a **144 LEDs/m bare IP20 strip**, and the diffuser channel is sized for that (**12 mm wide, 0.53 thick**, 56.96 long), not for this 16×8 board. The design is kept because it is finished and the footprint may suit another build — but ordering it will not fit the current diffuser. |
 
 

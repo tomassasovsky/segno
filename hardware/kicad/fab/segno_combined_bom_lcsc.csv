@@ -1,5 +1,12 @@
 LCSC,Comment,Value,Package,Qty,Designator,Notes
-,Ceramic capacitor,100nF,C_Disc_D5.0mm_P5.00mm (THT),2,"RING:C2,C3",Any in-stock 100nF 50V THT disc or 5mm-pitch MLCC
+,Ceramic capacitor,100nF,C_Disc_D5.0mm_P5.00mm (THT),4,"RING:C2,C3,C4,C5","C2-C4 are the encoder filters, C5 decouples U2. Any in-stock 100nF 50V THT disc or 5mm-pitch MLCC"
 ,Electrolytic,470uF 16V low-ESR <=0.15R,CP_Radial_D8.0mm_P3.50mm,1,RING:C1,"Low-ESR grade (e.g. Panasonic FC / Nichicon PW) -- GP parts in the same can run ~0.5R and ripple the LED rail"
+,Resistor,330R,Axial 1/4W DIN0207,1,RING:R1,WS2812 data series resistor. Any in-stock 1/4W axial
+,Resistor,10k,Axial 1/4W DIN0207,3,"RING:R2,R3,R4",Encoder pull-ups to the XIAO's 3V3_OUT. Any in-stock 1/4W axial
+,Resistor,100k,Axial 1/4W DIN0207,1,RING:R5,Holds the level shifter input low while the XIAO is not driving it. Any in-stock 1/4W axial
+,Schottky diode,1N5819,DO-41,1,RING:D1,Series diode into the XIAO's VBUS pad (band = cathode toward the module)
+C354152,74AHCT125N,74AHCT125N,DIP-14,1,RING:U2,TI SN74AHCT125N quad buffer (3V3 -> 5V for the ring data)
+,Seeed Studio XIAO RP2350,XIAO RP2350,Castellated module 21x17.8mm,1,RING:U1,"Not an LCSC part -- Seeed, DigiKey or Mouser. Soldered by its 14 side pads; its underside pads stay unsoldered (a square of Kapton under it is cheap insurance)"
 C202365,Rotary encoder,EC11,EC11 vertical w/switch 20mm,1,RING:ENC1,ALPS EC11E type
-C157972,JST B8B-XH-A,8P 2.5mm,JST_XH vertical,1,RING:J1,Board-to-board link to J6 on the console board (one cable between them)
+C144395,JST B4B-XH-A,4P 2.5mm,JST_XH vertical,1,RING:J1,"Link to J6 on console board v3, wired 1:1 (+5V, GND, LINK_TO_RING, LINK_TO_CONSOLE). Also buy XHP-4 housings + SXH crimps"
+,NeoPixel Ring 24,Adafruit 1586,O65.5 / O52.3 ring module,1,RING:RING1,"Authentic Adafruit part (O65.5 OD). Pin-mounted on J3 with 4 pins snapped from a 2.54mm male strip; J4 (Ring 16 pads) and J2 (wire pads) stay empty. Clip U2's and R1's leads flush on the front -- they sit under the ring"

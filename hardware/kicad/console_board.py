@@ -44,7 +44,8 @@ it from 3.3 V and it feeds the Pi directly.
 Ref-designator blocks (allocated up front -- the retired V1 generator had to pin ref="C16" to
 stop a late addition renumbering C1..C15 and invalidating a started layout):
     J1  Pico 2          J2  Pi ribbon      J3  power in     J4  MIDI OUT
-    J5  MIDI IN         J6  ring/encoder   J7  indicators   J8  power button
+    J5  MIDI IN         J6  ring/encoder   J7  (retired, #1062) J8  power button
+    J24 pills: 5 V, data and GND on one JST VH, beside J3
     J9  Pi power-button pads (through-lead)                 J10..J19 footswitches
     J20/J21 CTRL 1/2    U1  74AHCT125      U2  H11L1
     R14..R16 idle-state pull-downs (U1's inputs)            R17/R18 link series
@@ -115,6 +116,16 @@ def CP(value, fp, **kw):
     return Part("Device", "C_Polarized", value=value, footprint=fp, **kw)
 
 
+# JST VH, 3.96 mm pitch, ~10 A per contact: the two connectors that carry the
+# pills' full-white current (#1062). XH is ~3 A per contact.
+JST_VH = "Connector_JST:JST_VH_B%dP-VH_1x%02d_P3.96mm_Vertical"
+
+
+def jst_vh(n, ref, value):
+    return Part("Connector_Generic", "Conn_01x%02d" % n,
+                footprint=JST_VH % (n, n), ref=ref, value=value)
+
+
 def jst(n, ref, value):
     return Part("Connector_Generic", "Conn_01x%02d" % n,
                 footprint=JST % (n, n), ref=ref, value=value)
@@ -129,9 +140,12 @@ v5 = Net("+5V")            # logic: Pico VSYS + the AHCT125
 # rail. Both rails come off the same 8-36V->5V 10A buck, so it was never redundancy
 # or headroom -- and the benefit it did have was half undone on this board anyway,
 # because GND is a single pour: the feeds were separated and the returns were not.
-# J3 keeps four ways, but as two PARALLEL pairs, which buys the thing that is
-# actually scarce: JST XH is rated ~3 A per contact and the LED chain alone
-# approaches that.
+# The current is what is scarce, not the rail count (#1062): at full white the ten
+# 7-LED pills draw 4.2 A and the Ring 24 1.44 A. The pills' share never crosses
+# the board: it comes in on J3 and leaves on J24, two JST VH headers stacked at
+# the left edge with their +5V pads joined by a few millimetres of copper. What
+# reaches the rest of the board -- the ring through J6 and the logic -- is ~1.6 A,
+# inside the 0.6 mm tracks' ~2 A.
 #
 # The ring board is unaffected. It declares its own single supply as Net("+5V_LED")
 # locally (ring_board.py:46); two netlists joined by a cable do not have to agree on
@@ -474,10 +488,9 @@ R("10k", ref="R12")[1, 2] += v3v3, link_to_console
 j_ring[3] += link_to_ring
 j_ring[4] += link_to_console
 
-j_ind = jst(3, "J7", "INDICATORS")
-j_ind[1] += v5
-j_ind[2] += ind_out
-j_ind[3] += gnd
+# No J7 since #1062: the pills' connector is J24, beside J3 (see there). J7 fed
+# the pills 5 V through the board's 0.6 mm +5V track from J3 -- ~2 A of copper
+# against 4.2 A of pills at full white.
 
 # ---- J8: rear power button -- passed STRAIGHT through to the Pi's PWR pads ---
 # Not via the MCU: a clean shutdown has to work when the MCU is wedged or
@@ -592,15 +605,29 @@ for _h in MOUNT_HOLES:
     _hole[1].do_erc = False      # one gets missed -- see the SPARE_GPIO note above
 
 # ---- J3: power in, 5 V from the external potted buck ------------------------
-# Four pins, doubled up: 1+3 are both +5V and 2+4 are both GND. This used to be a
-# separate LED pair; see the rail note at the top for why that was dropped.
+# JST VH, one contact each way at ~10 A: the whole 5.7 A full-white load (#1062).
+# It used to be a 4-way XH with pins doubled up, ~6 A, when the chain was 26 LEDs.
 # No series Schottky: V1's guards a barrel jack a user can plug anything into;
 # this is a keyed internal JST, and a diode would burn ~0.4 W of LED headroom.
-j_pwr = jst(4, "J3", "5V_IN")
+j_pwr = jst_vh(2, "J3", "5V_IN")
 j_pwr[1] += v5
 j_pwr[2] += gnd
-j_pwr[3] += v5          # pins 1/3 and 2/4 are PARALLEL, not two rails: XH is
-j_pwr[4] += gnd         # ~3 A per contact and the LED chain alone nears that
+
+# ---- J24: the pills -- 5 V, data and GND on one header ----------------------
+# JST VH stacked under J3 (#1062), so the pills' 4.2 A crosses a few millimetres of
+# poured copper instead of the board, and the pill harness is one cable. +5V is
+# pin 3 because pin 3 is the one beside J3's +5V pad: the bar between them stays
+# a straight link, and data and GND are left free to route. (Pin 1 = +5V would
+# put the bar round both of them and box the data pad in.) The 3-way plug cannot
+# be confused with J3's 2-way, so the pin order differing from J3's is safe.
+# The data line reaches here from U1 across the board, ~75 mm: an 800 kHz WS2812
+# line driven through R2 at the buffer end, which is fine at that length.
+# The harness from here is a 5 V bus with a tap to each pill: 4.2 A cannot run
+# through the strips in series.
+j_pill = jst_vh(3, "J24", "PILLS")
+j_pill[1] += gnd
+j_pill[2] += ind_out
+j_pill[3] += v5
 # The voltage AND the ESR grade are part of the VALUE because the value is what
 # the BOM prints, and both are load-bearing at purchase time: a common 16 V 470uF
 # is 8 x 11.5 mm on 3.5 mm pitch and does not fit this 10 mm / 5 mm land (25 V is
@@ -1174,7 +1201,7 @@ def report():
     return ("Segno CONSOLE board v2 (#747)\n"
             "Pico 2 (RP2350) on Module:RaspberryPi_Pico_SMD_HandSolder\n"
             "\nPin map:\n" + "\n".join(lay) +
-            "\n\nRails : +5V (logic AND WS2812, doubled contacts on J3) | "
+            "\n\nRails : +5V (logic AND WS2812; J3 in and J24 pill power on JST VH) | "
             "+3V3 (from the Pi)\n"
             "Link  : 3V3 <-> 3V3 via 10 k series (R17/R18) -- no level shifting,\n"
             "        the resistors only bound cross-domain current at soft-off\n"
