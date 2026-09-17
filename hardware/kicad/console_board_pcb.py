@@ -1745,7 +1745,9 @@ def build(quiet=False):
     # shortens it inward from that centre, so the clearance can only improve;
     # the SILK gates below re-measure it as rendered either way.
     _silk(board, "SEGNO CONSOLE v3", 33.0, 95.5, 1.6)
-    _silk(board, "MIDI IN: ISOLATED", 72.0, 95.5, 1.0)
+    # No "MIDI IN: ISOLATED" legend (owner call, #1062). It said something true
+    # about the circuit to nobody who needed it at the bench, and the bottom
+    # strip reads better with the title alone.
     _labels(board, fps)
     _pin_legend(board, fps)
 
