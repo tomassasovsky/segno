@@ -43,6 +43,26 @@ The faceplate was re-exported unchanged (volume equal to 1e-9 mm³); its verifie
 September files and manifest entry were kept rather than committing a
 byte-different copy.
 
+**Slit reliefs, same day (clone version 4).** The owner did not want the
+round-bottomed relief slots showing as notches in the shell. Every flange and tab
+end is now a 0.20 mm straight cut (`RELIEF_SLIT`), and each flange's rear slit
+lands on the start of the ridge closure, so the short plain edge and small facet
+at the crease are gone. `base` was rebuilt again from that flat (same nine folds,
+same order, all healthy, no front flip): 967,313.83 mm³. The notched rebuild is
+kept hidden as `base_1067_notched`, next to `base_pre1067`. Tab gap, beam/felt
+clearance and the pre-existing intersections are unchanged; lid contact 7.278 mm³
+in total, a film.
+
+**The DXF importer stopped working in this document** partway through the day:
+`importToTarget` returned success and created no sketches, while the same file
+imported normally into a new document. The rebuild drew the five layer sketches
+with the sketch API instead: `ezdxf` in the worktree venv turned the DXF into
+lines, bulge arcs (centre, start, sweep) and circles in cm, and the Fusion script
+chained each polyline through its previous end point and merged the closing
+point. The curve and profile counts matched the importer's, and the exporter's
+sketch comparison (rounded to 0.0001 mm) passed, so this is a drop-in substitute
+when the importer misbehaves.
+
 ## Solid second-row platforms - 2026-09-15 (#1037)
 
 The solid CLEAR/BANK collar revision is now integrated in this manufacturing

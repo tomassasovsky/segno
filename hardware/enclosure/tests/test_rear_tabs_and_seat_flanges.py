@@ -72,20 +72,23 @@ class RearTabsAndSeatFlangesTest(unittest.TestCase):
                 self.assertEqual(len(tips), 1)
                 self.assertAlmostEqual(tips[0][0][1] - y, 18.0 - DEV, places=6)
 
-    def test_tab_reliefs_reach_past_the_bend_band(self):
+    def test_tab_reliefs_are_hairline_slits_past_the_bend_band(self):
+        # No round-bottomed notches (owner call): each tab end is relieved by a
+        # 0.2 mm straight cut whose bottom lies past the bend band.
         for (a, _b) in self._tab_bends():
             y = a[1]
-            origin = 0.0 if a[0] < 0 else BW
-            near = [e for e in self.entities if e.dxf.layer == 'CUT'
-                    and e.dxftype() == 'LWPOLYLINE']
-            arcs = [c for e in near for c in e.virtual_entities()
-                    if c.dxftype() == 'ARC' and abs(c.dxf.radius - T / 2) < 1e-6
-                    and abs(c.dxf.center.y - y) < 10 and (c.dxf.center.x < 0) == (origin == 0)]
-            with self.subTest(side='left' if origin == 0 else 'right'):
-                self.assertEqual(len(arcs), 2)
-                for arc in arcs:
-                    lowest = arc.dxf.center.y - arc.dxf.radius
-                    self.assertLessEqual(lowest, y - HALF_BEND - 0.5 + 1e-9)
+            left = a[0] < 0
+            bottoms = [(p, q) for p, q in self.cuts
+                       if abs(p[1] - q[1]) < 1e-9 and abs(abs(p[0] - q[0]) - 0.2) < 1e-6
+                       and (p[0] < 0) == left and abs(p[1] - y) < 10]
+            with self.subTest(side='left' if left else 'right'):
+                self.assertEqual(len(bottoms), 2)
+                for p, _q in bottoms:
+                    self.assertAlmostEqual(p[1], y - HALF_BEND - 0.5, places=6)
+        self.assertFalse([e for e in self.entities if e.dxf.layer == 'CUT'
+                          and e.dxftype() == 'LWPOLYLINE'
+                          for c in e.virtual_entities()
+                          if c.dxftype() == 'ARC' and abs(c.dxf.radius - T / 2) < 1e-6])
 
     def test_seat_flange_bend_sits_one_development_inside_the_lid_seat_edge(self):
         inclined = [(a, b) for a, b in self.bends
@@ -112,19 +115,23 @@ class RearTabsAndSeatFlangesTest(unittest.TestCase):
                     self.assertAlmostEqual((h - edge(y)) * math.cos(SLOPE),
                                            15.0 - 2 * DEV, places=6)
 
-    def test_seat_flange_ends_clear_the_lid_lip_cove_and_the_crease(self):
+    def test_seat_flange_runs_to_the_ridge_closure_with_slit_ends(self):
         seat = enclosure.side_seat_flange()
         self.assertGreaterEqual(seat['front_y'], 10.0)
-        # The flange's reliefs are the T-wide round-bottomed slots square to the
-        # sloped edge; the rearmost reach of any of them is its arc's top.
-        arcs = [c for e in self.entities if e.dxf.layer == 'CUT' and e.dxftype() == 'LWPOLYLINE'
-                for c in e.virtual_entities()
-                if c.dxftype() == 'ARC' and abs(c.dxf.radius - T / 2) < 1e-6
-                and 300 < c.dxf.center.y < 400]
-        self.assertEqual(len(arcs), 2)
-        crease = enclosure._side_wall_crease_y()
-        for arc in arcs:
-            self.assertAlmostEqual(crease - (arc.dxf.center.y + arc.dxf.radius), 3.0, places=6)
+        section = seat['section']
+        # Both slits: 0.2 mm wide along the edge, bottoms past the bend band.
+        for mouth, bottom in ((section[1], section[2]), (section[5], section[6])):
+            self.assertAlmostEqual(math.dist(mouth[:2], bottom[:2]), 0.2, places=6)
+        self.assertAlmostEqual(seat['relief'], DEV + HALF_BEND + 0.5, places=6)
+        # The rear slit's far side climbs straight to the ridge closure start,
+        # which sits 0.3 mm under the lid seat line: no leftover edge before it.
+        ridge = enclosure.base_rear_ridge_profile()[0]
+        start = (ridge[1] - DEV, ridge[0])
+        self.assertEqual(seat['ridge_start'], start)
+        far_side = (start[0] - section[-1][0], start[1] - section[-1][1])
+        along = (math.sin(SLOPE), math.cos(SLOPE))
+        self.assertAlmostEqual(far_side[0] * along[0] + far_side[1] * along[1], 0.0, places=6)
+        self.assertAlmostEqual(math.hypot(*far_side), seat['relief'] - 0.3, places=6)
 
     def test_spot_welds_sit_on_the_tab_away_from_its_ends(self):
         lo, hi = enclosure.REAR_TAB_Z
