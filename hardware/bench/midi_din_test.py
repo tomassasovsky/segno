@@ -125,9 +125,18 @@ class Uart(object):
                 return
 
     def write(self, data):
+        """Write it all, waiting when the tty buffer is full.
+
+        The fd is non-blocking, and 31250 baud drains only ~3.1 kB/s: a long
+        --stream run fills the kernel buffer and os.write then raises EAGAIN.
+        Waiting for writability is the whole fix.
+        """
         sent = 0
         while sent < len(data):
-            sent += os.write(self.fd, data[sent:])
+            try:
+                sent += os.write(self.fd, data[sent:])
+            except BlockingIOError:
+                select.select([], [self.fd], [], 1.0)
 
     def read_exact(self, n, timeout):
         out, deadline = b"", time.monotonic() + timeout
@@ -139,8 +148,14 @@ class Uart(object):
         return out
 
     def close(self):
+        # Restoring the saved settings is the promise this class makes, so it
+        # does not ride on the modem-control ioctl succeeding: a driver that
+        # rejects TIOCMBIC would otherwise leave the port at 31250 baud raw.
         try:
-            self.loopback(False)
+            try:
+                self.loopback(False)
+            except OSError:
+                pass
             self._set(self.saved)
         finally:
             os.close(self.fd)
@@ -196,10 +211,14 @@ def test_out(uart, port, note, capture):
     before = uart.counters()
     if os.path.exists(capture):
         os.unlink(capture)
-    proc = subprocess.Popen(["amidi", "-p", port, "-r", capture, "-t", "1",
-                             "-a", "-c"],
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True)
+    try:
+        proc = subprocess.Popen(["amidi", "-p", port, "-r", capture, "-t", "1",
+                                 "-a", "-c"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True)
+    except FileNotFoundError:
+        raise SystemExit("amidi is not installed -- run --preflight to see what "
+                         "this image has")
     time.sleep(0.4)                      # let the capture open before sending
     if proc.poll() is not None:
         err = (proc.stderr.read() or "").strip()
@@ -275,9 +294,11 @@ def stream(uart, seconds):
     end = time.monotonic() + seconds
     sent = 0
     while time.monotonic() < end:
-        uart.write(b"\x00" * 256)
-        sent += 256
-        time.sleep(0.08)             # 31250 baud is ~3.1 kB/s; do not queue up
+        # 240 bytes per 80 ms is 3.0 kB/s, just under the line's 3.125 kB/s, so
+        # the kernel buffer drains rather than filling over a long run.
+        uart.write(b"\x00" * 240)
+        sent += 240
+        time.sleep(0.08)
     print("sent %d bytes" % sent)
 
 
