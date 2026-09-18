@@ -1831,6 +1831,10 @@ def build(quiet=False):
     # `pcb drc --refill-zones --save-board` pours and checks in one pass.
     os.makedirs(OUT, exist_ok=True)
     board.Save(PLACED_PATH)
+    # Purple mask, white silk. Written into the file because the bindings cannot
+    # set a stackup; the route script's load/save carries it to the routed board.
+    import board_stackup
+    board_stackup.apply(PLACED_PATH)
     write_mount_json()
     write_bom()
     print(f"placed {len(fps)} footprints | {n_vias} GND vias | "
