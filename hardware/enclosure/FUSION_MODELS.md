@@ -1173,33 +1173,43 @@ remain at eight pre-existing unique-component warnings in populated and zero
 in sheet metal. No metal part, mini-console or sheet-metal archive changed.
 See [the verification](../../docs/reviews/mid-platform-mount/final-verification.json).
 
-## Screen mounts: closed deck, mirrored stand, shims — #1070, NOT YET IN FUSION
+## Screen mounts: closed deck, mirrored stand, shims — #1070
 
-The generator changed on 2026-09-18 and **neither document has it yet**. The
-only populated document open at the time was the #1067 clone ("1067 tabs +
-seat flanges") with someone else's unsaved edits in it, so nothing was
-touched. Until the sync below is done, the full generator stops with
-"segno_base: native formed export is stale", and so do four tests.
+**In the #1067 clone only** ("VAMP console (populated) - 1067 tabs + seat
+flanges"), on the owner's instruction, 2026-09-18. Unsaved at the time of
+writing: the clone already had unsaved #1067 edits, and saving is the owner's
+call. The original "VAMP console (populated)" and "VAMP sheet metal" were not
+touched.
 
-What the sync has to do, in both documents unless noted:
+What was done in the clone:
 
-1. **Base: move four floor holes** (right 15.6in stand), M3 tap pilots as
-   before. Remove (739, 236), (739, 296), (765, 205), (765, 327); add
-   (770.571, 205.0), (770.571, 327.0), (796.571, 236.0), (796.571, 296.0),
-   floor-flat mm, u = x. Nothing else on the base changed: the DXF diff is
-   exactly these eight circles. Use the base rebuild recipe above, then
-   `fusion_export_formed.py` with the populated doc active.
-2. **Populated only: swap the printed bodies** (body-swap recipe) for
-   `segno_screen7_tower`, `segno_screen16_stand_L` and `_R`. Placements are
-   unchanged: the tower keeps `(11.95714, 32.1676, 0.2)` cm and the stands stay
-   at identity. The feet are now 1.0 mm up in the part files themselves (they
-   stand on the nominal shim stack), so do not move the occurrences to
-   compensate.
-3. **Populated only: add** `segno_screen16_splice` at identity, and the nominal
-   shim stacks: `segno_screen7_shim_0p2` + `_0p8` under the tower (tower
-   placement, the 0p8 raised 0.2 mm) and `segno_screen16_shim_0p2` + `_0p8`
-   under each stand (identity for the left; for the right, mirror about
-   x = 625.2857 mm).
-4. Re-probe the four stands' floor faces and anchor cylinders and replace
-   `screen_floor_interfaces` in `reference/coated_support_datums.json`; the
-   values there now come from the generator (see its provenance field).
+1. **`base:1` only**: the four right-stand pilots moved in its `CUT` sketch
+   (timeline marker rolled back to just after the sketch at index 1503, circle
+   centres moved, `moveToEnd`: 2.9 s, no errors). The formed body now has
+   Ø2.5 holes at (770.571, 205), (770.571, 327), (796.571, 236), (796.571, 296)
+   and none at the old stations. The seven `base_1067_*` trials and
+   `base_pre1067` were left as they were.
+2. **Body swaps** (base-feature `updateBody`, placements untouched):
+   `screen7_tower:1`, `screen16_stand_L:1`, `screen16_stand_R:1`. The tower keeps
+   `(11.95714, 32.1676, 0.2)` cm; the stands stay at identity. Their feet are at
+   world z 3.0 because the parts stand on the nominal shim stack.
+3. **New components**: `screen16_splice` (identity); `screen16_shim_{L,R}_{0p2,0p8}`
+   (world geometry, identity; the R ones are pre-mirrored bodies);
+   `screen7_shim_0p2` and `_0p8` (tower-local geometry, the 0p8 raised 0.2 mm,
+   at the tower's transform).
+4. **Interference sweep**: every new or changed part against every visible
+   body plus `base:1`, 699 bbox-overlapping pairs, found nothing except 0.859 mm³
+   against `screen7_module:1`. That is the four tab bosses touching the module
+   tabs they seat (about 0.004 mm over four faces), unchanged from v3.
+
+Still open:
+
+- The formed export was NOT rerun. `formed/` on the #1019 branch comes from the
+  original populated document, and exporting from the clone would bring the
+  #1067 tabs and flanges with it. Until the two lines of work are reconciled,
+  the generator stops on "segno_base: native formed export is stale", and so do
+  four tests.
+- `screen_floor_interfaces` in `reference/coated_support_datums.json` still
+  comes from the generator (see its provenance field). The clone's bodies are
+  exact imports of the same STEPs, so re-probing them would return the same
+  values.
