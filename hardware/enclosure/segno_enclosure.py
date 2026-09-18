@@ -454,6 +454,16 @@ S7T_H0     = 66.06     # deck-top height (mm, above the base floor TOP) under th
 # 3.75..11.65, backlight switch -7.75..1.25, receptacles from x 73.55 out to the
 # module edge at 85.25. The notch adds S7T_PLUG_MARGIN on each side for plug
 # overmoulds and stops short of the rear +x tab boss (y 50.25 at its edge).
+# Tab bosses (#1070): M3 x 5.0 x 5.0 heat-set inserts, the same part as the
+# pedal sleds and the 15.6in splice, so the build needs one insert. Their
+# O4.5 x 6.0 pilot needs a bigger boss than the old O9 (2.25 mm of wall);
+# O10.5 leaves 3.0. The vendor STEP shows nothing of the module within 6 mm of
+# a tab axis on the boss side, and the connector notch still clears the rear
+# +x boss.
+S7T_BOSS_D     = 10.5
+S7T_INSERT_D   = 4.5
+S7T_INSERT_L   = 6.0
+S7T_SCREW_CLR  = 3.4    # below the insert: a longer M3 passes, it does not self-tap
 S7C_PORTS_Y    = (-7.75, 45.95)
 S7C_PORTS_X0   = 73.55
 S7T_PLUG_MARGIN = 3.0
@@ -5990,8 +6000,8 @@ def build_screen7_tower_step():
     origin = the base-floor point under the display-window centre):
 
     - sloped, CLOSED deck (parallel to the faceplate underside) carrying the four
-      tab BOSSES (M3 x 8 through the O3.1 tabs into heat-set inserts / self-tap
-      pilots). Only the bosses touch the module;
+      tab BOSSES (M3 through the O3.1 tabs into M3 x 5 x 5 heat-set inserts).
+      Only the bosses touch the module;
     - 4 mm perimeter WALLS and S7T_RIBS front-to-back RIBS from the deck to the
       floor. The deck closes over the cells between them as 45 degree gables, so
       the part prints flange-down with no support;
@@ -6092,19 +6102,21 @@ def build_screen7_tower_step():
     py1 = S7C_PORTS_Y[1] + S7T_PLUG_MARGIN
     px0 = S7C_PORTS_X0 - S7T_PLUG_MARGIN
     rear_boss = max(y for x, y in S7C_HOLES if x > 0)
-    assert py1 < rear_boss - 4.5 - 0.5, (
+    assert py1 < rear_boss - S7T_BOSS_D / 2.0 - 0.5, (
         f"7in tower: the connector notch (to y {py1:.2f}) runs into the rear +x tab "
-        f"boss (edge at y {rear_boss - 4.5:.2f})")
+        f"boss (edge at y {rear_boss - S7T_BOSS_D / 2.0:.2f})")
     assert px0 > cells[-1][0], "7in tower: the connector notch cuts into the last rib"
     ports = (wp(1.0).center((px0 + mcx + W) / 2.0, (py0 + py1) / 2.0)
              .rect(mcx + W - px0, py1 - py0).extrude(-(1.0 + dt + gable)))
     tower = tower.cut(ports)
 
-    # tab bosses + heat-set counterbores + pilots (front-view positions)
+    # tab bosses + heat-set insert pilots + screw clearance (front-view positions)
+    assert boss_h > S7T_INSERT_L, "7in tower: tab boss shorter than its insert pilot"
     for (hx, hy) in S7C_HOLES:
-        tower = tower.union(wp().center(hx, hy).circle(4.5).extrude(boss_h))
-        tower = tower.cut(wp(boss_h).center(hx, hy).circle(4.0 / 2.0).extrude(-5.0))
-        tower = tower.cut(wp(boss_h).center(hx, hy).circle(2.6 / 2.0)
+        tower = tower.union(wp().center(hx, hy).circle(S7T_BOSS_D / 2.0).extrude(boss_h))
+        tower = tower.cut(wp(boss_h).center(hx, hy).circle(S7T_INSERT_D / 2.0)
+                          .extrude(-S7T_INSERT_L))
+        tower = tower.cut(wp(boss_h).center(hx, hy).circle(S7T_SCREW_CLR / 2.0)
                           .extrude(-(boss_h + dt + 2.0)))
     print("  tower: %d cells of %.1f mm, 45 degree gables %.1f deep" % (len(cells), cell, gable))
     print("  tower floor anchors (world mm, relative to the display-window centre):")

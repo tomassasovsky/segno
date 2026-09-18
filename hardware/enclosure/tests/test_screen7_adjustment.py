@@ -32,8 +32,11 @@ class ScreenAdjustmentTest(unittest.TestCase):
             # the measured in-plane mounting stations and the floor interface.
             plane = cq.Plane(origin=(x, c*y-s*7.8, 66.06+s*y+c*7.8),
                              xDir=(1, 0, 0), normal=(0, -s, c))
-            bore = cq.Workplane(plane).circle(1.99).extrude(-4.99).val()
-            seat = cq.Workplane(plane).circle(4.49).circle(2.01).extrude(-.1).val()
+            # M3 x 5 x 5 insert pilot (O4.5 x 6.0) in a O10.5 boss (#1070)
+            bore = (cq.Workplane(plane).circle(enclosure.S7T_INSERT_D / 2 - .01)
+                    .extrude(-enclosure.S7T_INSERT_L + .01).val())
+            seat = (cq.Workplane(plane).circle(enclosure.S7T_BOSS_D / 2 - .01)
+                    .circle(enclosure.S7T_INSERT_D / 2 + .01).extrude(-.1).val())
             self.assertLess(tower.intersect(bore).Volume(), 1e-7)
             self.assertLess(seat.cut(tower).Volume(), 1e-7)
             jig_bore = cq.Workplane('XY').center(x, y).circle(1.29).extrude(-5.4).val()
