@@ -1172,3 +1172,34 @@ baselines. Counts remain 452/1002 and 45/45 occurrences/bodies. Feature warnings
 remain at eight pre-existing unique-component warnings in populated and zero
 in sheet metal. No metal part, mini-console or sheet-metal archive changed.
 See [the verification](../../docs/reviews/mid-platform-mount/final-verification.json).
+
+## Screen mounts: closed deck, mirrored stand, shims — #1070, NOT YET IN FUSION
+
+The generator changed on 2026-09-18 and **neither document has it yet**. The
+only populated document open at the time was the #1067 clone ("1067 tabs +
+seat flanges") with someone else's unsaved edits in it, so nothing was
+touched. Until the sync below is done, the full generator stops with
+"segno_base: native formed export is stale", and so do four tests.
+
+What the sync has to do, in both documents unless noted:
+
+1. **Base: move four floor holes** (right 15.6in stand), M3 tap pilots as
+   before. Remove (739, 236), (739, 296), (765, 205), (765, 327); add
+   (770.571, 205.0), (770.571, 327.0), (796.571, 236.0), (796.571, 296.0),
+   floor-flat mm, u = x. Nothing else on the base changed: the DXF diff is
+   exactly these eight circles. Use the base rebuild recipe above, then
+   `fusion_export_formed.py` with the populated doc active.
+2. **Populated only: swap the printed bodies** (body-swap recipe) for
+   `segno_screen7_tower`, `segno_screen16_stand_L` and `_R`. Placements are
+   unchanged: the tower keeps `(11.95714, 32.1676, 0.2)` cm and the stands stay
+   at identity. The feet are now 1.0 mm up in the part files themselves (they
+   stand on the nominal shim stack), so do not move the occurrences to
+   compensate.
+3. **Populated only: add** `segno_screen16_splice` at identity, and the nominal
+   shim stacks: `segno_screen7_shim_0p2` + `_0p8` under the tower (tower
+   placement, the 0p8 raised 0.2 mm) and `segno_screen16_shim_0p2` + `_0p8`
+   under each stand (identity for the left; for the right, mirror about
+   x = 625.2857 mm).
+4. Re-probe the four stands' floor faces and anchor cylinders and replace
+   `screen_floor_interfaces` in `reference/coated_support_datums.json`; the
+   values there now come from the generator (see its provenance field).

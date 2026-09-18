@@ -41,9 +41,15 @@ class ScreenAdjustmentTest(unittest.TestCase):
         expected_floor = ((-93.775, -42.19668095881), (-93.775, 37.803319041184),
                           (98.225, -42.19668095881), (98.225, 37.803319041184),
                           (2.225, -75.56156369584), (2.225, 71.168201778209))
+        # #1070: float holes (O5.5, +-1.25 on an M3), flange on the 1.0 mm
+        # nominal shim stack. The O9 washer must still bear all round.
+        lift = enclosure.STAND_SHIM_NOM
+        float_r = enclosure.STAND_FLOAT_D / 2.0
         for x, y in expected_floor:
-            bore = cq.Workplane('XY').center(x, y).circle(1.59).extrude(5).val()
-            seat = cq.Workplane('XY').center(x, y).circle(3).circle(1.61).extrude(1).val()
+            bore = (cq.Workplane('XY').workplane(offset=lift).center(x, y)
+                    .circle(float_r - .01).extrude(5).val())
+            seat = (cq.Workplane('XY').workplane(offset=lift).center(x, y)
+                    .circle(4.5).circle(float_r + .01).extrude(1).val())
             self.assertLess(tower.intersect(bore).Volume(), 1e-7)
             self.assertLess(seat.cut(tower).Volume(), 1e-7)
 

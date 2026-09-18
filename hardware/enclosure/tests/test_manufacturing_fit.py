@@ -333,7 +333,9 @@ class ManufacturingFitTest(unittest.TestCase):
                 shape = cq.importers.importStep(path).val()
                 self.assertTrue(shape.isValid())
                 self.assertEqual(len(shape.Solids()),1)
-                self.assertAlmostEqual(shape.BoundingBox().zmin,2.0,places=6)
+                # feet on the nominal shim stack, not on the bare floor (#1070)
+                self.assertAlmostEqual(shape.BoundingBox().zmin,
+                                       2.0+enclosure.STAND_SHIM_NOM,places=6)
                 self.assertLess(shape.intersect(body.val().fuse(block.val())).Volume(),1.0)
 
     @staticmethod
