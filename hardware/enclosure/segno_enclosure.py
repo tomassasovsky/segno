@@ -5308,7 +5308,8 @@ def build_screen7_fit_test():
 #   1. The mount is a TWO-hole horizontal row at VESA-75 pitch, not a 75x75
 #      square -- the "2-hole ultra-slim variant" the release plan anticipated.
 #      The boss field is re-derived below; the metal is untouched, which is
-#      exactly what converting the bosses to O9.3 floats bought.
+#      exactly what converting the bosses to O9.3 floats bought. (#1070 made
+#      them fixed O4.8 clearance holes; the stands now adjust on the floor.)
 #   2. Those screws sit on a RAISED BLOCK 14.6 deep from the glass face, while
 #      the flat back around it is shallower. One plane no longer describes the
 #      monitor's back, so the deck now indexes off the BLOCK and the tower pads
@@ -5330,6 +5331,8 @@ assert abs(S16_BLOCK_D - 14.6) <= 0.2, (
 S16_VESA    = 75.0    # measured: horizontal pitch between the two screws (VESA-75)
 S16_VESA_ROWS = 1     # measured: ONE horizontal row, not a 75x75 square
 S16_VESA_UP = 76.5    # measured: screw axis height above the BODY's bottom edge
+S16_VESA_CLR_D  = 4.8 # M4 clearance, ISO 273 coarse; FIXED since #1070 (was a
+                      # O9.3 float). M4 x 16 with an M4 DIN 125 washer (O9).
 S16_DISPLAY_T   = 0.1     # decal-carrier lens thickness in the reference model (not a
                       # measurement -- just enough to give the visible image its own body)
 S16_BLOCK_H     = 83.0    # measured: the raised block's height (v)
@@ -5683,13 +5686,16 @@ def build_screen16_stand_steps():
         for sx in sxs:
             hx = xc + sx * S16_VESA / 2.0
             hy = boss_y
-            # O9.3 float hole: M4 + O12 fender washer gives +-2.5 of
-            # monitor position adjust in BOTH axes -- the metal aperture
-            # never depends on the panel's viewport offsets (11-day
-            # de-risk, user-approved 2026-08-19)
+            # FIXED M4 clearance (#1070). The monitor used to float +-2.5 on
+            # O9.3 holes, but an O12 washer cannot cover a O9.3 hole with the
+            # screw at the end of that travel, and a panel held at two points
+            # is the wrong place to adjust. The spliced stand pair is one rigid
+            # platform, and it adjusts on its floor float holes instead.
+            # O4.8 is ISO 273 coarse: enough for the 75 mm pitch across two
+            # printed halves and the splice, not an adjustment.
             d = d.union(wp().center(hx, hy).circle(9.0)
                         .extrude(S16_GAP - SCREEN_COATED_SETBACK))
-            d = d.cut(wp(S16_GAP).center(hx, hy).circle(9.3 / 2.0)
+            d = d.cut(wp(S16_GAP).center(hx, hy).circle(S16_VESA_CLR_D / 2.0)
                       .extrude(-(S16_GAP + S16_BEAM_T + 1.0)))
             d = d.cut(wp(-S16_BEAM_T).center(hx, hy).circle(14.0 / 2.0)
                       .extrude(-S16_RIB_H))

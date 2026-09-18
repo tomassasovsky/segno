@@ -16,6 +16,7 @@ import unittest
 from unittest.mock import patch
 
 import cadquery as cq
+from OCP.BRepAdaptor import BRepAdaptor_Surface
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import segno_enclosure as enclosure
@@ -150,6 +151,25 @@ class ScreenMountTest(unittest.TestCase):
         for y in (yc - 30.0, yc, yc + 30.0):
             for z in range(12, int(z_deck(y)) - 1, 3):
                 self.assertTrue(stand.isInside(cq.Vector(x, y, z)), (y, z))
+
+    def test_15in6_monitor_screws_are_fixed_and_the_washer_bears_all_round(self):
+        """#1070: no float at the monitor. The two VESA holes are M4 clearance,
+        75 mm apart, and an M4 DIN 125 washer (O9) covers either one fully even
+        with the screw pushed to the side of its clearance."""
+        d = enclosure.S16_VESA_CLR_D
+        self.assertLessEqual(d, 4.8 + 1e-9)
+        self.assertGreater(9.0 / 2.0, d / 2.0 + (d - 4.0) / 2.0)
+        holes = []
+        for side in ('L', 'R'):
+            stand = self.parts['segno_screen16_stand_' + side]
+            for f in stand.Faces():
+                if f.geomType() == 'CYLINDER':
+                    cyl = BRepAdaptor_Surface(f.wrapped).Cylinder()
+                    if abs(cyl.Radius() - d / 2.0) < 1e-6:
+                        holes.append(round(cyl.Location().X(), 2))
+        xs = sorted(set(holes))
+        self.assertEqual(len(xs), 2, xs)
+        self.assertAlmostEqual(xs[1] - xs[0], enclosure.S16_VESA, delta=0.05)
 
     # --- both: floor interface ---------------------------------------------
 
