@@ -243,7 +243,13 @@ PLACEMENT = {
     # out, not threading a cable past these. The logo ends up partly under the
     # two housings, which costs nothing but paint.
     "J3":  (5.4, 48.9, 90),       # 5 V in from BUCK_AUX, ~5.7 A at full white
-    "J24": (5.4, 59.84, 90),     # the pills: 5V/DATA/GND, 4.2 A at full white.
+    "J24": (5.4, 60.84, 90),     # the pills: 5V/DATA/GND, 4.2 A at full white.
+                                  # 1.0 mm below its first spot (#1062, owner
+                                  # call): the two plugs now clear by ~2.1 mm
+                                  # instead of 1.1, per JST's own housing
+                                  # lengths (VHR-2N 7.86, VHR-3N 11.82). Not
+                                  # 1.5: that puts the back DATA legend on
+                                  # R21's pad, and PIN_LEGEND refuses it.
                                   # Courtyard touching J3's: that is 1 mm between the
                                   # two bodies, and a VH housing is no longer than
                                   # its header, so both plugs still seat. It is what
@@ -696,14 +702,13 @@ def _silk_items(board, fps):
     return out
 
 
-# Where the FRONT mark goes now that J3 and J24 have taken its corner (#1062,
-# owner call: move it, do not drop it). The box is the patch the two connectors
-# vacated -- board edge to J23's column, J24's courtyard down to the cap row --
-# and the art is scaled to fit it rather than to a guessed percentage, because
-# the patch is 7.3 mm tall against the mark's 9.4 and the number that matters is
-# whether it lands inside. The BACK mark is untouched.
-FRONT_ART_BOX = (1.2, 66.9, 20.0, 72.4)   # 72.4, not 74: C1's own silk
-                                          # outline reaches up to 73.4
+# Where the FRONT mark goes now that J3 and J24 have taken its old corner (#1062,
+# owner call). The open patch under the PWR BTN header: C31's body to the left,
+# C20 and the PI PWR label to the right, J8's designator above. It is 9.8 x 9.1
+# against the mark's 9.0 x 9.4, so the mark lands at ~96% of its drawn size --
+# the corner below J24 it tried first only held it at 58%. The art is still
+# scaled to fit the box rather than to a guessed size. The BACK mark is separate.
+FRONT_ART_BOX = (10.6, 14.4, 20.4, 23.5)
 
 
 def _fit_front_art(polys):
@@ -1637,7 +1642,7 @@ def _selftest():
         # the exact mistake that was shipped: the 5 V inlet parked in front of USB
         # Same spot, turned round -- the coordinates follow PLACEMENT, or the
         # control lands on the cap row and trips PLACE instead of its own gate.
-        ("pill power header turned against J3", "PILL_POWER:", {"J24": (5.4, 59.84, 270)}, {}),
+        ("pill power header turned against J3", "PILL_POWER:", {"J24": (5.4, 60.84, 270)}, {}),
         ("footswitch fan-out out of order", "CROSSING:",
          {"J10": (FSW_X1, FSW_Y, 0), "J19": (FSW_X0, FSW_Y, 0)}, {}),
         # The pours tie SMD pads solid. This gate ran BEFORE the pours existed, so it
