@@ -5295,6 +5295,87 @@ def build_screen7_fit_test():
     return sp
 
 
+def build_screen7_deck_fit_test():
+    """7" DECK fit test (#1070): the tower's deck, printed FLAT, bosses up, no
+    support. The deck plate is the real 5 mm, and the four tab bosses match the
+    tower's: O10.5, full height, O4.5 x 6.0 pilots for the M3 5x5 inserts,
+    O3.4 below. The connector notch is cut through the +x edge, where the
+    module's HDMI, micro-USB and backlight switch are. The middle is open to
+    save filament; the tower's real deck is closed.
+    Checks: the inserts set flush; four M3 x 8 land through the tabs without
+    forcing; only the bosses touch the module (its tallest back part clears the
+    deck by the designed ~0.3 mm, so a 0.2 feeler passes under the connector
+    edge); your real cables plug in through the notch."""
+    import cadquery as cq
+    W, D = S7C_FRAME_W, S7C_FRAME_H
+    x0, y0, x1, y1 = S7C_MOD_BB
+    mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    dt = S7T_DECK
+    boss_h = (S7C_MOD_DEPTH + S7C_GAP - (S7C_GLASS_TO_TABF + S7C_TAB_T)
+              - SCREEN_COATED_SETBACK)
+    plate = cq.Workplane("XY").center(mcx, mcy).rect(W, D).extrude(dt)
+    # open middle, but keep the +x strip the connector notch runs through
+    plate = plate.cut(cq.Workplane("XY").center((-W / 2.0 + mcx + 16.0 + 55.0) / 2.0, mcy)
+                      .rect(55.0 - (mcx - W / 2.0 + 16.0), D - 32.0).extrude(dt))
+    py0 = S7C_PORTS_Y[0] - S7T_PLUG_MARGIN
+    py1 = S7C_PORTS_Y[1] + S7T_PLUG_MARGIN
+    px0 = S7C_PORTS_X0 - S7T_PLUG_MARGIN
+    plate = plate.cut(cq.Workplane("XY").center((px0 + mcx + W) / 2.0, (py0 + py1) / 2.0)
+                      .rect(mcx + W - px0, py1 - py0).extrude(dt))
+    for (hx, hy) in S7C_HOLES:
+        plate = plate.union(cq.Workplane("XY").workplane(offset=dt).center(hx, hy)
+                            .circle(S7T_BOSS_D / 2.0).extrude(boss_h))
+        plate = plate.cut(cq.Workplane("XY").workplane(offset=dt + boss_h).center(hx, hy)
+                          .circle(S7T_INSERT_D / 2.0).extrude(-S7T_INSERT_L))
+        plate = plate.cut(cq.Workplane("XY").center(hx, hy)
+                          .circle(S7T_SCREW_CLR / 2.0).extrude(dt + boss_h))
+    sp = os.path.join(OUT, "segno_screen7_deck_fit_test.step")
+    cq.exporters.export(plate.val(), sp)
+    cq.exporters.export(plate.val(), os.path.join(OUT, "segno_screen7_deck_fit_test.stl"))
+    return sp
+
+
+def build_screen16_vesa_fit_test():
+    """15.6" VESA fit test (#1070): a short piece of the stand deck across the
+    two monitor screws, printed FLAT, contact side up, no support. It is the
+    real 10 mm deck with fixed O4.8 M4 holes at S16_VESA pitch and the same
+    0.3 mm contact bosses; screw it on with M4 x 16 + DIN 125 washers from the
+    flat side, exactly as the stands go on.
+    The raised lip along the top edge stands S16_BLOCK_PROUD above the boss tops
+    and 1 mm beyond the raised block's top edge, so it should just touch the
+    monitor's FLAT back while the bosses sit on the block. This is the height
+    the stand's tower pads are built to.
+    Checks: the 75 mm pitch lands; M4 x 16 goes fully home without bottoming in
+    the monitor's threads; the bar sits on both bosses without rocking and the
+    lip touches (a gap means the block stands prouder than 7.8, a rock or a lip
+    clash means it is lower, or the screw row is not where it was measured)."""
+    import cadquery as cq
+    t = S16_BEAM_T
+    boss = S16_GAP - SCREEN_COATED_SETBACK            # what the stand's bosses rise
+    lip = S16_PAD_H - SCREEN_COATED_SETBACK           # what the tower pads rise
+    to_block_top = S16_BLOCK_INSET + S16_BLOCK_H - S16_VESA_UP   # from the screw row
+    lip_y0 = to_block_top + 1.0
+    lip_y1 = lip_y0 + 6.0
+    y_lo = -15.0
+    half = S16_VESA / 2.0 + 22.0
+    bar = (cq.Workplane("XY").center(0.0, (y_lo + lip_y1) / 2.0)
+           .rect(2 * half, lip_y1 - y_lo).extrude(t))
+    bar = bar.union(cq.Workplane("XY").workplane(offset=t)
+                    .center(0.0, (lip_y0 + lip_y1) / 2.0)
+                    .rect(2 * half, lip_y1 - lip_y0).extrude(lip))
+    for sx in (-1, 1):
+        hx = sx * S16_VESA / 2.0
+        bar = bar.union(cq.Workplane("XY").workplane(offset=t).center(hx, 0.0)
+                        .circle(9.0).extrude(boss))
+        bar = bar.cut(cq.Workplane("XY").center(hx, 0.0)
+                      .circle(S16_VESA_CLR_D / 2.0).extrude(t + boss))
+    assert lip - boss == S16_BLOCK_PROUD or abs(lip - boss - S16_BLOCK_PROUD) < 1e-9
+    sp = os.path.join(OUT, "segno_screen16_vesa_fit_test.step")
+    cq.exporters.export(bar.val(), sp)
+    cq.exporters.export(bar.val(), os.path.join(OUT, "segno_screen16_vesa_fit_test.stl"))
+    return sp
+
+
 # --- 15.6" screen stand (3D print x2, #762) -- the 7" tower concept, split for
 # the Ender 3 V3 bed (220^2) and bridging OVER the electronics bay (boards at
 # x 46-68, y 23-32: no floor there). LEFT part = end tower + half-deck; RIGHT
@@ -7976,6 +8057,8 @@ def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
         _not_a_console_part = {"segno_encoder_knob",            # purchased
                                "segno_pedal_base_fit_test",     # jig
                                "segno_screen7_fit_test",        # jig
+                               "segno_screen7_deck_fit_test",   # jig (#1070)
+                               "segno_screen16_vesa_fit_test",  # jig (#1070)
                                "segno_mini_console_tray",       # a different product
                                "segno_mini_console_lid",
                                "segno_mini_console_sled"}
@@ -8625,6 +8708,10 @@ def main(argv):
             build_buck_reference_step()
             ftp = build_screen7_fit_test()
             print("7in screen FIT TEST plate (3D print, x1): out/" + os.path.basename(ftp) + " (+ .stl)")
+            print("7in DECK fit test (3D print, x1): out/"
+                  + os.path.basename(build_screen7_deck_fit_test()) + " (+ .stl)")
+            print("15.6in VESA fit test (3D print, x1): out/"
+                  + os.path.basename(build_screen16_vesa_fit_test()) + " (+ .stl)")
             for pp in build_platform_steps():
                 print("Printed platform: out/" + os.path.basename(pp) + " (+ .stl)")
             build_mini_console()

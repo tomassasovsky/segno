@@ -34,6 +34,8 @@ class ScreenMountTest(unittest.TestCase):
             enclosure.build_screen7_tower_step()
             enclosure.build_screen16_stand_steps()
             enclosure.build_screen16_monitor_step()
+            enclosure.build_screen7_deck_fit_test()
+            enclosure.build_screen16_vesa_fit_test()
         cls.parts = {p.stem: cq.importers.importStep(str(p)).val()
                      for p in out.glob('*.step')}
         cls.tower = cls.parts['segno_screen7_tower']
@@ -170,6 +172,54 @@ class ScreenMountTest(unittest.TestCase):
         xs = sorted(set(holes))
         self.assertEqual(len(xs), 2, xs)
         self.assertAlmostEqual(xs[1] - xs[0], enclosure.S16_VESA, delta=0.05)
+
+    # --- fit tests -----------------------------------------------------------
+
+    def test_7in_deck_fit_test_has_the_towers_bosses_and_notch(self):
+        """The jig is only useful if its bosses are the tower's: same diameter,
+        height above the deck, insert pilot and screw clearance."""
+        jig = self.parts['segno_screen7_deck_fit_test']
+        self.assertTrue(jig.isValid())
+        self.assertEqual(len(jig.Solids()), 1)
+        dt = enclosure.S7T_DECK
+        top = dt + (enclosure.S7C_MOD_DEPTH + enclosure.S7C_GAP
+                    - enclosure.S7C_GLASS_TO_TABF - enclosure.S7C_TAB_T
+                    - enclosure.SCREEN_COATED_SETBACK)
+        self.assertAlmostEqual(jig.BoundingBox().zmax, top, places=6)
+        for x, y in enclosure.S7C_HOLES:
+            pilot = (cq.Workplane('XY').workplane(offset=top).center(x, y)
+                     .circle(enclosure.S7T_INSERT_D / 2 - .01)
+                     .extrude(-enclosure.S7T_INSERT_L + .01).val())
+            clear = (cq.Workplane('XY').center(x, y)
+                     .circle(enclosure.S7T_SCREW_CLR / 2 - .01).extrude(top).val())
+            ring = (cq.Workplane('XY').workplane(offset=top - .1).center(x, y)
+                    .circle(enclosure.S7T_BOSS_D / 2 - .01)
+                    .circle(enclosure.S7T_INSERT_D / 2 + .01).extrude(.1).val())
+            self.assertLess(jig.intersect(pilot).Volume(), 1e-7)
+            self.assertLess(jig.intersect(clear).Volume(), 1e-7)
+            self.assertLess(ring.cut(jig).Volume(), 1e-7)
+        # the connector notch goes through the +x edge
+        py = sum(enclosure.S7C_PORTS_Y) / 2.0
+        self.assertFalse(jig.isInside(cq.Vector(88.0, py, dt / 2.0)))
+        self.assertTrue(jig.isInside(cq.Vector(88.0, -40.0, dt / 2.0)))
+
+    def test_15in6_vesa_fit_test_matches_the_stand(self):
+        """Fixed M4 holes at the VESA pitch, and a lip that stands the block's
+        proud height above the bosses: the same step the stand's tower pads make
+        from its bosses."""
+        bar = self.parts['segno_screen16_vesa_fit_test']
+        self.assertTrue(bar.isValid())
+        self.assertEqual(len(bar.Solids()), 1)
+        xs = sorted(round(BRepAdaptor_Surface(f.wrapped).Cylinder().Location().X(), 3)
+                    for f in bar.Faces() if f.geomType() == 'CYLINDER'
+                    and abs(BRepAdaptor_Surface(f.wrapped).Cylinder().Radius()
+                            - enclosure.S16_VESA_CLR_D / 2) < 1e-6)
+        self.assertEqual(xs, [-enclosure.S16_VESA / 2, enclosure.S16_VESA / 2])
+        boss = enclosure.S16_BEAM_T + enclosure.S16_GAP - enclosure.SCREEN_COATED_SETBACK
+        lip = bar.BoundingBox().zmax
+        self.assertAlmostEqual(lip - boss, enclosure.S16_BLOCK_PROUD, places=6)
+        self.assertTrue(bar.isInside(cq.Vector(enclosure.S16_VESA / 2, 8.0, boss - .05)))
+        self.assertFalse(bar.isInside(cq.Vector(enclosure.S16_VESA / 2, 8.0, boss + .05)))
 
     # --- both: floor interface ---------------------------------------------
 
