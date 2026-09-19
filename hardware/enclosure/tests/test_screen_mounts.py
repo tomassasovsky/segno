@@ -228,8 +228,8 @@ class ScreenMountTest(unittest.TestCase):
                 .translate((0, 0, enclosure.S16_BEAM_T)))
 
     def test_15in6_whole_fit_test_is_the_stands_own_top(self):
-        """Each half is the stand above its deck's underside, nothing added or
-        lost: the monitor meets exactly what it will meet on the real stands,
+        """Each half is cut from the stand above its deck's underside, nothing
+        added: the monitor meets exactly what it will meet on the real stands,
         both bosses and both tower pads, and the real splice seats under it."""
         t = enclosure.S16_BEAM_T
         pad = t + enclosure.S16_PAD_H - enclosure.SCREEN_COATED_SETBACK
@@ -241,8 +241,10 @@ class ScreenMountTest(unittest.TestCase):
             stand = self.to_deck_frame(self.parts['segno_screen16_stand_' + side])
             above = stand.intersect(cq.Solid.makeBox(
                 2000, 2000, 100, cq.Vector(-1000, -1000, 0)))
+            # a skeleton of the stand's top: nothing added, most of the slab
+            # gone, every contact kept (below)
             self.assertLess(jig.cut(above).Volume(), 1e-3)
-            self.assertLess(above.cut(jig).Volume(), 1e-3)
+            self.assertLess(jig.Volume(), 0.5 * above.Volume())
             self.assertAlmostEqual(jig.BoundingBox().zmin, 0.0, places=6)
             self.assertAlmostEqual(jig.BoundingBox().zmax, pad, places=5)
             # the monitor rests on it: touching, never inside

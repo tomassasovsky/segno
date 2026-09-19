@@ -5341,11 +5341,62 @@ def _s16_deck_frame_z0():
     return LID_UNDER_Z0 - (S16_BLOCK_D + S16_GAP) / cs
 
 
+def _s16_deck_fit_skeleton(cq, deck):
+    """What of a deck half the whole-fit test keeps (#1070). The full slab was
+    200 cm3 of mostly solid 10 mm plate; a fit test only needs every CONTACT at
+    its true place and height. So: the tower pad on its own footprint, a column
+    round the VESA hole and round each splice insert, all full depth, and a
+    10 mm-deep open ladder -- both long edges, both ends, and a cross bar
+    through the VESA column -- to hold them where the stand holds them. All
+    vertical walls on the bed face: it still prints flat without support."""
+    bb = deck.BoundingBox()
+    h = 100.0
+    rail = 8.0
+    def box(x0, x1, y0, y1):
+        return cq.Solid.makeBox(x1 - x0, y1 - y0, h, cq.Vector(x0, y0, -1.0))
+    def column(x, y, r):
+        return cq.Solid.makeCylinder(r, h, cq.Vector(x, y, -1.0))
+    holes = {}
+    for f in deck.Faces():
+        if f.geomType() != "CYLINDER":
+            continue
+        from OCP.BRepAdaptor import BRepAdaptor_Surface
+        cyl = BRepAdaptor_Surface(f.wrapped).Cylinder()
+        loc = cyl.Location()
+        holes.setdefault(round(cyl.Radius(), 3), set()).add((round(loc.X(), 3), round(loc.Y(), 3)))
+    vesa = holes[round(S16_VESA_CLR_D / 2.0, 3)]
+    inserts = holes[round(S16_SPLICE_INSERT_D / 2.0, 3)]
+    assert len(vesa) == 1 and len(inserts) == 2, (vesa, inserts)
+    (vx, vy), = vesa
+    joint_x = SCREEN_16_U
+    outer = bb.xmin if abs(bb.xmax - joint_x) < 1e-3 else bb.xmax
+    sgn = 1.0 if outer < joint_x else -1.0          # direction from the outer end inward
+    pad_top = [f for f in deck.Faces() if f.geomType() == "PLANE" and f.normalAt().z > .99999
+               and abs(f.Center().z - bb.zmax) < 1e-6]
+    assert len(pad_top) == 1, "deck fit test: expected one tower pad"
+    pb = pad_top[0].BoundingBox()
+    parts = [box(pb.xmin - 2.0, pb.xmax + 2.0, pb.ymin - 2.0, pb.ymax + 2.0),
+             box(min(outer, outer + sgn * rail), max(outer, outer + sgn * rail),
+                 bb.ymin, bb.ymax),
+             box(bb.xmin, bb.xmax, bb.ymin, bb.ymin + rail),
+             box(bb.xmin, bb.xmax, bb.ymax - rail, bb.ymax),
+             box(min(joint_x, joint_x - sgn * rail), max(joint_x, joint_x - sgn * rail),
+                 bb.ymin, bb.ymax),
+             box(vx - rail / 2.0, vx + rail / 2.0, bb.ymin, bb.ymax),
+             column(vx, vy, 12.0)]
+    parts += [column(x, y, 7.0) for x, y in inserts]
+    mask = parts[0]
+    for p in parts[1:]:
+        mask = mask.fuse(p)
+    return mask.clean()
+
+
 def build_screen16_deck_fit_test():
     """15.6" WHOLE-FIT test (#1070): the real stands' top. Each half is the
     shipped stand half, turned into its deck frame and cut off at the deck's
-    underside, so what is left is exactly the deck plate the monitor rests on:
-    VESA bosses and fixed M4 holes, BOTH tower pads, the splice inserts. It
+    underside, then cut down to a skeleton (_s16_deck_fit_skeleton) that keeps
+    every contact the monitor meets exactly as the stand has it: VESA bosses
+    and fixed M4 holes, BOTH tower pads, the splice inserts. It
     prints flat (deck down, bosses and pads up, no support) and joins with the
     real segno_screen16_splice. Derived from the stand STEPs, so it cannot
     drift from them: build_screen16_stand_steps() must have run.
@@ -5362,6 +5413,7 @@ def build_screen16_deck_fit_test():
                 .rotate((0, 0, 0), (1, 0, 0), -SLOPE_ANGLE))
         keep = cq.Solid.makeBox(2000, 2000, 100, cq.Vector(-1000, -1000, -S16_BEAM_T))
         deck = deck.intersect(keep).translate((0, 0, S16_BEAM_T))
+        deck = deck.intersect(_s16_deck_fit_skeleton(cq, deck))
         assert deck.isValid() and len(deck.Solids()) == 1, f"deck fit test {side}"
         bb = deck.BoundingBox()
         assert abs(bb.zmin) < 1e-6 and max(bb.xlen, bb.ylen) <= ENDER_BED
