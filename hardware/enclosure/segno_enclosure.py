@@ -5335,6 +5335,43 @@ def build_screen7_deck_fit_test():
     return sp
 
 
+def _s16_deck_frame_z0():
+    """World z of the stand deck plane at y = 0 (see build_screen16_stand_steps)."""
+    cs = math.cos(math.radians(SLOPE_ANGLE))
+    return LID_UNDER_Z0 - (S16_BLOCK_D + S16_GAP) / cs
+
+
+def build_screen16_deck_fit_test():
+    """15.6" WHOLE-FIT test (#1070): the real stands' top. Each half is the
+    shipped stand half, turned into its deck frame and cut off at the deck's
+    underside, so what is left is exactly the deck plate the monitor rests on:
+    VESA bosses and fixed M4 holes, BOTH tower pads, the splice inserts. It
+    prints flat (deck down, bosses and pads up, no support) and joins with the
+    real segno_screen16_splice. Derived from the stand STEPs, so it cannot
+    drift from them: build_screen16_stand_steps() must have run.
+    Checks, monitor face-down, the spliced pair on its back, M4 x 16 in: both
+    screws start by hand; both bosses bear on the raised block; both pads
+    touch the flat back at the same time (a feeler under either pad is the
+    number to report); nothing touches the ports on the left edge."""
+    import cadquery as cq
+    out = []
+    for side in ("L", "R"):
+        stand = cq.importers.importStep(
+            os.path.join(OUT, f"segno_screen16_stand_{side}.step")).val()
+        deck = (stand.translate((0, 0, -_s16_deck_frame_z0()))
+                .rotate((0, 0, 0), (1, 0, 0), -SLOPE_ANGLE))
+        keep = cq.Solid.makeBox(2000, 2000, 100, cq.Vector(-1000, -1000, -S16_BEAM_T))
+        deck = deck.intersect(keep).translate((0, 0, S16_BEAM_T))
+        assert deck.isValid() and len(deck.Solids()) == 1, f"deck fit test {side}"
+        bb = deck.BoundingBox()
+        assert abs(bb.zmin) < 1e-6 and max(bb.xlen, bb.ylen) <= ENDER_BED
+        nm = f"segno_screen16_deck_fit_test_{side}"
+        cq.exporters.export(deck, os.path.join(OUT, nm + ".step"))
+        cq.exporters.export(deck, os.path.join(OUT, nm + ".stl"))
+        out.append(os.path.join(OUT, nm + ".step"))
+    return out
+
+
 def build_screen16_vesa_fit_test():
     """15.6" VESA fit test (#1070): a short piece of the stand deck across the
     two monitor screws, printed FLAT, contact side up, no support. It is the
@@ -8059,6 +8096,8 @@ def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
                                "segno_screen7_fit_test",        # jig
                                "segno_screen7_deck_fit_test",   # jig (#1070)
                                "segno_screen16_vesa_fit_test",  # jig (#1070)
+                               "segno_screen16_deck_fit_test_L",  # jig (#1070)
+                               "segno_screen16_deck_fit_test_R",
                                "segno_mini_console_tray",       # a different product
                                "segno_mini_console_lid",
                                "segno_mini_console_sled"}
@@ -8710,6 +8749,8 @@ def main(argv):
             print("7in screen FIT TEST plate (3D print, x1): out/" + os.path.basename(ftp) + " (+ .stl)")
             print("7in DECK fit test (3D print, x1): out/"
                   + os.path.basename(build_screen7_deck_fit_test()) + " (+ .stl)")
+            for p in build_screen16_deck_fit_test():
+                print("15.6in whole-fit test (3D print, x1): out/" + os.path.basename(p) + " (+ .stl)")
             print("15.6in VESA fit test (3D print, x1): out/"
                   + os.path.basename(build_screen16_vesa_fit_test()) + " (+ .stl)")
             for pp in build_platform_steps():

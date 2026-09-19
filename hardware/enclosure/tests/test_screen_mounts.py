@@ -36,6 +36,7 @@ class ScreenMountTest(unittest.TestCase):
             enclosure.build_screen16_monitor_step()
             enclosure.build_screen7_deck_fit_test()
             enclosure.build_screen16_vesa_fit_test()
+            enclosure.build_screen16_deck_fit_test()
         cls.parts = {p.stem: cq.importers.importStep(str(p)).val()
                      for p in out.glob('*.step')}
         cls.tower = cls.parts['segno_screen7_tower']
@@ -220,6 +221,42 @@ class ScreenMountTest(unittest.TestCase):
         self.assertAlmostEqual(lip - boss, enclosure.S16_BLOCK_PROUD, places=6)
         self.assertTrue(bar.isInside(cq.Vector(enclosure.S16_VESA / 2, 8.0, boss - .05)))
         self.assertFalse(bar.isInside(cq.Vector(enclosure.S16_VESA / 2, 8.0, boss + .05)))
+
+    def to_deck_frame(self, shape):
+        return (shape.translate((0, 0, -enclosure._s16_deck_frame_z0()))
+                .rotate((0, 0, 0), (1, 0, 0), -enclosure.SLOPE_ANGLE)
+                .translate((0, 0, enclosure.S16_BEAM_T)))
+
+    def test_15in6_whole_fit_test_is_the_stands_own_top(self):
+        """Each half is the stand above its deck's underside, nothing added or
+        lost: the monitor meets exactly what it will meet on the real stands,
+        both bosses and both tower pads, and the real splice seats under it."""
+        t = enclosure.S16_BEAM_T
+        pad = t + enclosure.S16_PAD_H - enclosure.SCREEN_COATED_SETBACK
+        boss = t + enclosure.S16_GAP - enclosure.SCREEN_COATED_SETBACK
+        splice = self.to_deck_frame(self.parts['segno_screen16_splice'])
+        monitor = self.to_deck_frame(self.parts['segno_screen16_monitor'])
+        for side in ('L', 'R'):
+            jig = self.parts['segno_screen16_deck_fit_test_' + side]
+            stand = self.to_deck_frame(self.parts['segno_screen16_stand_' + side])
+            above = stand.intersect(cq.Solid.makeBox(
+                2000, 2000, 100, cq.Vector(-1000, -1000, 0)))
+            self.assertLess(jig.cut(above).Volume(), 1e-3)
+            self.assertLess(above.cut(jig).Volume(), 1e-3)
+            self.assertAlmostEqual(jig.BoundingBox().zmin, 0.0, places=6)
+            self.assertAlmostEqual(jig.BoundingBox().zmax, pad, places=5)
+            # the monitor rests on it: touching, never inside
+            self.assertLess(jig.intersect(monitor).Volume(), 1e-6)
+            self.assertLess(jig.distance(monitor), 1e-6)
+            # ...on BOTH its boss (the block) and its pad (the flat back)
+            for z in (boss, pad):
+                tops = [f for f in jig.Faces() if f.geomType() == 'PLANE'
+                        and f.normalAt().z > .99999 and abs(f.Center().z - z) < 1e-5]
+                self.assertTrue(tops, (side, z))
+                self.assertLess(min(f.distance(monitor) for f in tops), 1e-6, (side, z))
+            self.assertLess(splice.intersect(jig).Volume(), 1e-6)
+            self.assertLess(splice.distance(jig), 1e-6)
+        self.assertGreater(pad, boss)
 
     # --- both: floor interface ---------------------------------------------
 

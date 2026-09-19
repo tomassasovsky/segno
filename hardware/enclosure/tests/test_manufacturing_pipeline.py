@@ -242,6 +242,8 @@ class ManufacturingPipelineTest(unittest.TestCase):
                 'segno_screen7_fit_test',             # jig
                 'segno_screen7_deck_fit_test',        # jig (#1070)
                 'segno_screen16_vesa_fit_test',       # jig (#1070)
+                'segno_screen16_deck_fit_test_L',     # jig (#1070)
+                'segno_screen16_deck_fit_test_R',
                 'segno_mini_console_tray',            # a different product
                 'segno_mini_console_lid',
                 'segno_mini_console_sled'})
