@@ -67,6 +67,7 @@ class Adafruit_NeoPixel {
     return (uint32_t)r << 16 | (uint32_t)g << 8 | b;
   }
   static uint32_t gamma32(uint32_t color) { return color; }
+  static uint8_t gamma8(uint8_t x) { return x; }
 };
 
 #endif

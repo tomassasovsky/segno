@@ -134,6 +134,12 @@ screens and the board, not measured; real draw is likely well under half, so the
 true headroom is larger than this table admits. Measure it on the bench before
 trusting either direction.
 
+**The console firmware drives every LED at `LED_BRIGHTNESS = 128`, half of full
+(#1064).** The table is at full, so each LED figure halves: normal ~0.6 A, pills
+amber with the ring one colour ~1.2 A, everything full white ~3.1 A. That last
+row is still past the 2 A track, so the open call stands. The ring's comet at 128
+draws ~0.1 A in green and ~0.2 A in yellow.
+
 - **The Pi is fed through its USB-C, not the header.** Ribbon pins 2/4 are
   deliberately not connected (`PI_POWER` gate): tying them would put BUCK_PI in
   hard parallel with the Pi's PMIC rail and land the WS2812 load on the Pi's
@@ -237,8 +243,9 @@ Notes that are load-bearing:
   never have carried the link anyway: it is the AHCT125's gate-B output with /OE
   tied low, so it is only ever driven by the console. On v3 the ring-data path
   (GP12, gate B, R1, R15) is gone and GP12/GP15 went to the expansion header.
-- One 5 V pair, not two: 24 LEDs at the firmware's brightness cap sit well under
-  the 1.44 A all-white figure the doubled pair was sized for. If a bench
+- One 5 V pair, not two: 24 LEDs at the firmware's brightness (128, #1064) are
+  0.72 A even all white, half the 1.44 A figure the doubled pair was sized for,
+  and the comet the firmware actually draws is ~0.2 A at most. If a bench
   measurement of the *capped* worst case exceeds ~0.7 A, a v2 console still has
   J6 pins 2/4 for a second pair; v3 would need a 6-way.
 
