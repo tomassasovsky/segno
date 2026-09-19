@@ -55,9 +55,12 @@ rail, so they cannot disagree. RING_LEVELS survives, re-pointed from the three
 encoder pins to the one line that still crosses the cable into a Pico input.
 
 **RP2350 erratum E9** (A2 silicon) latches an input HIGH when it is configured
-with a PULL-DOWN. Nothing here uses one: the encoder lines are pulled UP (R1-R3
-below), both link lines are pulled up by the console's existing 10 k, and the WS2812
-line is an output. Do not add a pull-down to this board without re-reading E9.
+with its INTERNAL PULL-DOWN enabled. Nothing here uses one: the encoder lines are
+pulled UP (R2-R4 below), both link lines are pulled up by the console's existing
+10 k, and the WS2812 line is an output. The one pull-down on the board, R5, is
+EXTERNAL and sits on that output -- the erratum's own workaround is an external
+pull-down, and an output's input buffer is never what the pin reads. Do not add
+an internal pull-down to any input here without re-reading E9.
 
 ## The board grew to O80, and it SNAP-MOUNTS -- no mounting holes (owner calls)
 
@@ -269,6 +272,13 @@ buf[4] += v5; buf[5] += gnd; buf[6].do_erc = False               # gate B unused
 buf[10] += v5; buf[9] += gnd; buf[8].do_erc = False              # gate C unused
 buf[13] += v5; buf[12] += gnd; buf[11].do_erc = False            # gate D unused
 R("330", "R1")[1, 2] += ring_data_5v, ring_data
+# R5: the idle state of the buffer's INPUT, same part and reason as console_board.py's
+# R16 on IND_DATA. Until the XIAO's firmware claims D0 -- power-up, its bootloader,
+# a reflash, a crash -- nothing drives this line, a CMOS input left floating drifts,
+# and the AHCT125 passes whatever it settles on to the ring as WS2812 data. The ring
+# then latches random colours, up to full white on all 24 LEDs. 100 k is weak
+# enough that the pin drives it without noticing (33 uA) and holds the input low.
+R("100k", "R5")[1, 2] += ring_data_3v3, gnd
 
 # ---- 4-pin header to the NeoPixel module (3 wires used: 5V/GND/DIN) ---------
 #   1 = +5V_LED   2 = GND   3 = DIN (<- RING_DATA)   4 = DOUT (spare)
@@ -465,6 +475,15 @@ def _check():
         f"POLARITY: the electrolytic's pin 2 (-) is on "
         f"{sorted(n.name for n in _pol[0][2].nets)}, expected GND")
 
+    # RING_DATA_IDLE: the buffer input must have its pull-down to GND, so the ring
+    # stays dark while the XIAO is not driving D0.
+    _idle = [p for p in default_circuit.parts if len(p.pins) == 2
+             and {n.name for pin in p.pins for n in pin.nets} == {"RING_DATA_3V3", "GND"}]
+    assert _idle, (
+        "RING_DATA_IDLE: nothing pulls RING_DATA_3V3 to GND -- while the XIAO is "
+        "not driving D0 the AHCT125's input floats and the ring latches random "
+        "colours (console_board.py's R16 is the same fix on IND_DATA)")
+
     # REFS runs LAST on purpose. It is the broadest assertion here, so ahead of
     # the others it fires first for every control that adds a part and masks the
     # gate that control exists to prove -- --selftest reported exactly that
@@ -476,7 +495,7 @@ def _check():
     # C2 in the netlist). Parts with no connections are skipped: --selftest's
     # controls are disconnected rather than deleted, and they are not the design.
     REFS = {"C1", "C2", "C3", "C4", "C5", "D1", "ENC1",
-            "J1", "J2", "J3", "J4", "R1", "R2", "R3", "R4", "U1", "U2"}
+            "J1", "J2", "J3", "J4", "R1", "R2", "R3", "R4", "R5", "U1", "U2"}
     _live = {p.ref for p in default_circuit.parts
              if any(pin.nets for pin in p.pins)}
     assert _live == REFS, (
@@ -508,6 +527,11 @@ def _selftest():
     def _exempt_live_pad():
         XIAO[5] += encA          # a spare, ERC-exempt pad quietly wired
 
+    def _no_idle_pulldown():
+        r5 = next(p for p in default_circuit.parts if p.ref == "R5")
+        r5[1].disconnect(); r5[2].disconnect()
+        added.append(("R5", r5))
+
     def _unpinned_part():
         # A part added the easy way, without ref= -- the counter names it and the
         # name it picks may already be on the fabbed board.
@@ -519,6 +543,9 @@ def _selftest():
 
     def _undo():
         for r in added:
+            if isinstance(r, tuple):     # a disconnected design part: put it back
+                r[1][1] += ring_data_3v3; r[1][2] += gnd
+                continue
             for pin in r.pins:
                 pin.disconnect()
         added.clear()
@@ -534,6 +561,7 @@ def _selftest():
         ("a second pull-up added to the link",       "LINK_BARE:",   _link_pullup),
         ("series Schottky fitted backwards",         "POLARITY:",    _diode_backwards),
         ("an ERC-exempt pad quietly wired",          "XIAO_PADS:",   _exempt_live_pad),
+        ("the LED buffer input left floating",       "RING_DATA_IDLE:", _no_idle_pulldown),
         ("a part declared without a pinned ref",      "REFS:",        _unpinned_part),
     ]
     ok = True

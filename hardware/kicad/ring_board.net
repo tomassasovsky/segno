@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "ring_board.py")
-    (date "09/03/2026 05:27 PM")
+    (date "09/16/2026 11:22 PM")
     (tool "SKiDL (2.3.0)")
     (sheet
       (number 1)
@@ -55,16 +55,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "A3UYTikSS8")
+          (name "SKiDL Tag") "1UW2QebK7D")
         (field
-          (name "SKiDL Line") "ring_board.py:348"))
+          (name "SKiDL Line") "ring_board.py:361"))
       (libsource
         (lib "Device")
         (part "C_Polarized"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "745c6447-5eae-52ad-a68b-a6ffcd9b9afc"))
+      (tstamps "90578534-282f-5fcf-af6b-6cc1c54e6913"))
     (comp
       (ref "C2")
       (value "100nF")
@@ -78,16 +78,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "wQJKYD7bF5")
+          (name "SKiDL Tag") "xKinSBn7iO")
         (field
-          (name "SKiDL Line") "ring_board.py:150"))
+          (name "SKiDL Line") "ring_board.py:155"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "8bfbf926-eb0e-5db1-aef9-9c9360b75f05"))
+      (tstamps "1596c4d3-e11b-527d-8575-bec771f8e0b4"))
     (comp
       (ref "C3")
       (value "100nF")
@@ -101,16 +101,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "ewLYdjHKvW")
+          (name "SKiDL Tag") "9oAprXRrQr")
         (field
-          (name "SKiDL Line") "ring_board.py:150"))
+          (name "SKiDL Line") "ring_board.py:155"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "78456f1c-cc48-557d-b489-d0fb632900e3"))
+      (tstamps "c037237b-cf51-5405-a6e1-b9a1b0553718"))
     (comp
       (ref "C4")
       (value "100nF")
@@ -124,16 +124,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "Pb7FSO1WV1")
+          (name "SKiDL Tag") "Fuv9L1zmpr")
         (field
-          (name "SKiDL Line") "ring_board.py:150"))
+          (name "SKiDL Line") "ring_board.py:155"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "108b6248-8db7-50f6-b88c-2fb31322fc3c"))
+      (tstamps "8d2a6674-d341-5e00-a9cc-cdcb46a85192"))
     (comp
       (ref "C5")
       (value "100nF")
@@ -147,16 +147,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "XMI8UU_KP8")
+          (name "SKiDL Tag") "Gf4lIZgxhz")
         (field
-          (name "SKiDL Line") "ring_board.py:150"))
+          (name "SKiDL Line") "ring_board.py:155"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "61c015b5-7216-562a-9d07-817a47c1feb9"))
+      (tstamps "dd032759-55aa-50e5-9074-410d10f2644f"))
     (comp
       (ref "D1")
       (value "1N5819")
@@ -170,16 +170,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "EH2M66QcHK")
+          (name "SKiDL Tag") "3coxB0BX0l")
         (field
-          (name "SKiDL Line") "ring_board.py:245"))
+          (name "SKiDL Line") "ring_board.py:251"))
       (libsource
         (lib "Device")
         (part "D_Schottky"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "eb02adb7-bb1d-5574-a7d3-9187737e484f"))
+      (tstamps "0f82a0c7-5ed0-5a88-8e60-a938e9c8ca6a"))
     (comp
       (ref "ENC1")
       (value "RotaryEncoder_Switch")
@@ -193,16 +193,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "7SaBANLWKi")
+          (name "SKiDL Tag") "pvg53dskeE")
         (field
-          (name "SKiDL Line") "ring_board.py:353"))
+          (name "SKiDL Line") "ring_board.py:366"))
       (libsource
         (lib "Device")
         (part "RotaryEncoder_Switch"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "5f69f643-a14e-5849-b792-eddd235700b6"))
+      (tstamps "d4de8e84-834f-589e-b989-5abbaf4db1b9"))
     (comp
       (ref "J1")
       (value "Conn_01x04")
@@ -216,16 +216,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "6sM0zLZzlx")
+          (name "SKiDL Tag") "w30zVTjzOT")
         (field
-          (name "SKiDL Line") "ring_board.py:177"))
+          (name "SKiDL Line") "ring_board.py:183"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "2d373fc6-c2e2-58a8-a816-74935778dedb"))
+      (tstamps "f4fee750-d0bd-50e0-9b32-647ec1926af3"))
     (comp
       (ref "J2")
       (value "NEOPIXEL")
@@ -239,16 +239,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "GwdOKEortv")
+          (name "SKiDL Tag") "67CT3Cbn53")
         (field
-          (name "SKiDL Line") "ring_board.py:272"))
+          (name "SKiDL Line") "ring_board.py:285"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "f5457d48-48ac-57fa-be44-d71358f7fd17"))
+      (tstamps "cdb9df5e-a088-5993-85d7-46cf8efcfd07"))
     (comp
       (ref "J3")
       (value "RINGPINS24")
@@ -262,16 +262,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "7Nd872Y4N5")
+          (name "SKiDL Tag") "4LWMLOYcmP")
         (field
-          (name "SKiDL Line") "ring_board.py:294"))
+          (name "SKiDL Line") "ring_board.py:307"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "6ff81b68-1672-55d7-9185-667e760ef4d5"))
+      (tstamps "1c372497-2b05-51b5-83ab-456b3be3593a"))
     (comp
       (ref "J4")
       (value "RINGPINS16")
@@ -285,16 +285,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "KtkKVGWuub")
+          (name "SKiDL Tag") "QAHEJTqXT0")
         (field
-          (name "SKiDL Line") "ring_board.py:314"))
+          (name "SKiDL Line") "ring_board.py:327"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "2bd6326f-fab5-5ff0-9fba-0cacfda4242d"))
+      (tstamps "a59e6aaa-0710-5881-a063-cf8f153d5c9c"))
     (comp
       (ref "R1")
       (value "330")
@@ -308,16 +308,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "rzy6TX_F54")
+          (name "SKiDL Tag") "KyTPt6r5Jt")
         (field
-          (name "SKiDL Line") "ring_board.py:145"))
+          (name "SKiDL Line") "ring_board.py:150"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "644ae3ca-9f80-5735-af35-502118e3a506"))
+      (tstamps "b53f8812-6a1e-50ff-beca-65c04e025c20"))
     (comp
       (ref "R2")
       (value "10k")
@@ -331,16 +331,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "IwhJmS_DVx")
+          (name "SKiDL Tag") "8Ys9HxAQYy")
         (field
-          (name "SKiDL Line") "ring_board.py:145"))
+          (name "SKiDL Line") "ring_board.py:150"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "71ef6cc4-b8aa-5c07-8b8e-31521b29117f"))
+      (tstamps "58403ce5-fa06-5343-b282-0113fb9fe3f0"))
     (comp
       (ref "R3")
       (value "10k")
@@ -354,16 +354,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "XIO49DJJur")
+          (name "SKiDL Tag") "jVXs91fQJ7")
         (field
-          (name "SKiDL Line") "ring_board.py:145"))
+          (name "SKiDL Line") "ring_board.py:150"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "c6051f5c-973a-51cd-8f0b-1fa4ece5092d"))
+      (tstamps "bce93470-734e-51dd-beab-6b92f90ce5ea"))
     (comp
       (ref "R4")
       (value "10k")
@@ -377,16 +377,39 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "gZ9d9mS36u")
+          (name "SKiDL Tag") "lIv8xqLlqJ")
         (field
-          (name "SKiDL Line") "ring_board.py:145"))
+          (name "SKiDL Line") "ring_board.py:150"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "b91309fa-1638-533d-8152-4395ea42a487"))
+      (tstamps "df568ff7-d383-58c6-bd51-b9801149a086"))
+    (comp
+      (ref "R5")
+      (value "100k")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "uAFegwI6Xi")
+        (field
+          (name "SKiDL Line") "ring_board.py:150"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (tstamps "34af42d1-482c-54c6-9006-b8817f09efe1"))
     (comp
       (ref "U1")
       (value "XIAO-RP2350")
@@ -400,16 +423,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "EbgTnO63pT")
+          (name "SKiDL Tag") "y8YnlNe0pr")
         (field
-          (name "SKiDL Line") "ring_board.py:216"))
+          (name "SKiDL Line") "ring_board.py:222"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x14"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "6973f81b-22cd-59d8-b8b3-a6bfb13ea1a6"))
+      (tstamps "c2102167-aac0-5d2f-b8b0-15e5de059e1f"))
     (comp
       (ref "U2")
       (value "74AHCT125N")
@@ -423,16 +446,16 @@
         (field
           (name "Datasheet") "https://www.ti.com/lit/ds/symlink/sn74ahct125.pdf")
         (field
-          (name "SKiDL Tag") "Reevxn4z4u")
+          (name "SKiDL Tag") "UmKqDXfwPn")
         (field
-          (name "SKiDL Line") "ring_board.py:259"))
+          (name "SKiDL Line") "ring_board.py:265"))
       (libsource
         (lib "74xx")
         (part "74AHCT125"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "61bd59f5-1e6f-5c51-9a4a-5ccfdd778dde")))
+      (tstamps "20c8127a-cd0d-5131-bdf0-a2f2ea80e291")))
   (nets
     (net
       (code 1)
@@ -623,6 +646,10 @@
         (pin "3")
         (pintype "PASSIVE"))
       (node
+        (ref "R5")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
         (ref "U1")
         (pin "13")
         (pintype "PASSIVE"))
@@ -694,6 +721,10 @@
       (code 11)
       (name "RING_DATA_3V3")
       (class "Default")
+      (node
+        (ref "R5")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "U1")
         (pin "1")

@@ -44,7 +44,8 @@ it from 3.3 V and it feeds the Pi directly.
 Ref-designator blocks (allocated up front -- the retired V1 generator had to pin ref="C16" to
 stop a late addition renumbering C1..C15 and invalidating a started layout):
     J1  Pico 2          J2  Pi ribbon      J3  power in     J4  MIDI OUT
-    J5  MIDI IN         J6  ring/encoder   J7  indicators   J8  power button
+    J5  MIDI IN         J6  ring/encoder   J7  (retired, #1062) J8  power button
+    J24 pills: 5 V, data and GND on one JST VH, beside J3
     J9  Pi power-button pads (through-lead)                 J10..J19 footswitches
     J20/J21 CTRL 1/2    U1  74AHCT125      U2  H11L1
     R14..R16 idle-state pull-downs (U1's inputs)            R17/R18 link series
@@ -115,6 +116,16 @@ def CP(value, fp, **kw):
     return Part("Device", "C_Polarized", value=value, footprint=fp, **kw)
 
 
+# JST VH, 3.96 mm pitch, ~10 A per contact: the two connectors that carry the
+# pills' full-white current (#1062). XH is ~3 A per contact.
+JST_VH = "Connector_JST:JST_VH_B%dP-VH_1x%02d_P3.96mm_Vertical"
+
+
+def jst_vh(n, ref, value):
+    return Part("Connector_Generic", "Conn_01x%02d" % n,
+                footprint=JST_VH % (n, n), ref=ref, value=value)
+
+
 def jst(n, ref, value):
     return Part("Connector_Generic", "Conn_01x%02d" % n,
                 footprint=JST % (n, n), ref=ref, value=value)
@@ -129,9 +140,12 @@ v5 = Net("+5V")            # logic: Pico VSYS + the AHCT125
 # rail. Both rails come off the same 8-36V->5V 10A buck, so it was never redundancy
 # or headroom -- and the benefit it did have was half undone on this board anyway,
 # because GND is a single pour: the feeds were separated and the returns were not.
-# J3 keeps four ways, but as two PARALLEL pairs, which buys the thing that is
-# actually scarce: JST XH is rated ~3 A per contact and the LED chain alone
-# approaches that.
+# The current is what is scarce, not the rail count (#1062): at full white the ten
+# 7-LED pills draw 4.2 A and the Ring 24 1.44 A. The pills' share never crosses
+# the board: it comes in on J3 and leaves on J24, two JST VH headers stacked at
+# the left edge with their +5V pads joined by a few millimetres of copper. What
+# reaches the rest of the board -- the ring through J6 and the logic -- is ~1.6 A,
+# inside the 0.6 mm tracks' ~2 A.
 #
 # The ring board is unaffected. It declares its own single supply as Net("+5V_LED")
 # locally (ring_board.py:46); two netlists joined by a cable do not have to agree on
@@ -148,6 +162,9 @@ midi_tx = Net("MIDI_TX")   # Pi uart0 TX -> AHCT125 -> DIN OUT
 midi_rx = Net("MIDI_RX")   # opto (3V3) -> Pi uart0 RX
 midi_out_buf = Net("MIDI_OUT_BUF")
 pwr_btn = Net("PWR_BTN")   # rear button -> the Pi's own PWR pads, NOT a GPIO
+# The button's other contact, carried through to the Pi's other pad. NOT GND (#1062):
+# see J9.
+pwr_btn_ret = Net("PWR_BTN_RET")
 swclk, swdio = Net("SWCLK"), Net("SWDIO")
 ind_data, ind_buf, ind_out = Net("IND_DATA"), Net("IND_DATA_BUF"), Net("IND_DATA_OUT")
 # #987 moved the encoder and the WS2812 timing onto the ring board, behind a XIAO
@@ -163,8 +180,18 @@ link_to_console = Net("LINK_TO_CONSOLE")  # the XIAO drives, this board listens
 ctrl1, ctrl2 = Net("CTRL1_TIP"), Net("CTRL2_TIP")
 
 # ---- J1: Pico 2 (RP2350) ----------------------------------------------------
-# KiCad's own Module:RaspberryPi_Pico_Common_THT -- its description states it
-# "supports Raspberry Pi Pico 2". Nothing vendored, nothing hand-drawn.
+# EITHER WAY, on segno:RaspberryPi_Pico_SMD_or_THT_Debug (owner call, #1062):
+# KiCad's SMD hand-solder footprint -- pads, silk, courtyard, 3D model -- with a
+# through-hole added at every pin. Solder the module flat by its castellations,
+# or socket it on 2.54 mm headers and pull it out later; the board does not care,
+# and a socketed module can be lifted out to reach its own USB, which this board
+# no longer leaves a corridor for.
+#
+# The three debug holes land on D1/D2/D3, which the plain (headerless) Pico 2
+# carries as 0.1 in through-holes, so SWD stays on the board in both builds --
+# KiCad's own THT footprint drops those pads entirely, and SWD is how the
+# appliance flashes this board on every update. (The "H" variants ship a 1.0 mm
+# JST-SH connector there instead and do not fit.)
 # Pad numbers are the module's physical pins:
 #   1 GP0  2 GP1  3 GND  4 GP2  5 GP3  6 GP4  7 GP5  8 GND  9 GP6  10 GP7
 #  11 GP8 12 GP9 13 GND 14 GP10 15 GP11 16 GP12 17 GP13 18 GND 19 GP14 20 GP15
@@ -180,10 +207,10 @@ PICO = {  # GPIO number -> module pad
 ADC_GPIO = (26, 27, 28)          # the only ADC-capable pins on the module header
 
 pico = Part("Connector_Generic", "Conn_01x40",
-            footprint="Module:RaspberryPi_Pico_SMD_HandSolder", ref="J1", value="Pico2")
-# Conn_01x40 is the 40 castellated ways. The SMD footprint ALSO carries the three
-# debug pads (D1/D2/D3 along the module's bottom edge), which no generic connector
-# symbol has, so they are added to the part by hand -- otherwise SWD has nothing to
+            footprint="segno:RaspberryPi_Pico_SMD_or_THT_Debug", ref="J1", value="Pico2")
+# Conn_01x40 is the 40 ways. The footprint ALSO carries the three debug pads
+# (D1/D2/D3 along the module's bottom edge), which no generic connector symbol
+# has, so they are added to the part by hand -- otherwise SWD has nothing to
 # attach to and silently falls back to needing a header.
 pico.add_pins(Pin(num="D1", name="SWCLK", func=Pin.types.BIDIR),
               Pin(num="D2", name="GND", func=Pin.types.PASSIVE),
@@ -474,10 +501,9 @@ R("10k", ref="R12")[1, 2] += v3v3, link_to_console
 j_ring[3] += link_to_ring
 j_ring[4] += link_to_console
 
-j_ind = jst(3, "J7", "INDICATORS")
-j_ind[1] += v5
-j_ind[2] += ind_out
-j_ind[3] += gnd
+# No J7 since #1062: the pills' connector is J24, beside J3 (see there). J7 fed
+# the pills 5 V through the board's 0.6 mm +5V track from J3 -- ~2 A of copper
+# against 4.2 A of pills at full white.
 
 # ---- J8: rear power button -- passed STRAIGHT through to the Pi's PWR pads ---
 # Not via the MCU: a clean shutdown has to work when the MCU is wedged or
@@ -485,16 +511,25 @@ j_ind[3] += gnd
 # see the next block; on a Pi 5 no GPIO can do this job.
 j_btn = jst(2, "J8", "PWR_BTN")
 j_btn[1] += pwr_btn
-j_btn[2] += gnd
+j_btn[2] += pwr_btn_ret
 
 # ...and passed straight through to the Pi 5's own power-button pads. On a Pi 5 an
 # external button cannot be a GPIO: RP1 and the SoC are unpowered until the PMIC
 # brings them up, so nothing on the 40-way can wake the machine. Raspberry Pi break
 # the function out as two solder pads (J2, beside the RTC battery connector) and
 # that is the only thing that works. This header is a 2-pin flying lead to them.
+#
+# A FLOATING PAIR, not a signal and GND (#1062). J8 and J9 are wired pin to pin
+# and neither pin touches this board's ground, so the board is only a junction on
+# a two-wire button lead. With pin 2 on GND, a lead soldered to the Pi's J2 pads
+# the wrong way round held the button pad at ground forever -- the Pi reads that
+# as a button that never lets go. Floating, the button shorts the two pads together
+# whichever way the lead is fitted, exactly as a button wired straight to the Pi
+# would; the Pi's own ground pad is still the reference. Nothing here reads the
+# button, so ground bought nothing.
 j_pi_btn = jst(2, "J9", "PI_PWR_PADS")
 j_pi_btn[1] += pwr_btn
-j_pi_btn[2] += gnd
+j_pi_btn[2] += pwr_btn_ret
 
 # ---- SWD: straight onto the module's own debug pads, no connector -----------
 # The THT footprint does not carry the debug pads, so v1 of this board broke SWD
@@ -592,15 +627,29 @@ for _h in MOUNT_HOLES:
     _hole[1].do_erc = False      # one gets missed -- see the SPARE_GPIO note above
 
 # ---- J3: power in, 5 V from the external potted buck ------------------------
-# Four pins, doubled up: 1+3 are both +5V and 2+4 are both GND. This used to be a
-# separate LED pair; see the rail note at the top for why that was dropped.
+# JST VH, one contact each way at ~10 A: the whole 5.7 A full-white load (#1062).
+# It used to be a 4-way XH with pins doubled up, ~6 A, when the chain was 26 LEDs.
 # No series Schottky: V1's guards a barrel jack a user can plug anything into;
 # this is a keyed internal JST, and a diode would burn ~0.4 W of LED headroom.
-j_pwr = jst(4, "J3", "5V_IN")
+j_pwr = jst_vh(2, "J3", "5V_IN")
 j_pwr[1] += v5
 j_pwr[2] += gnd
-j_pwr[3] += v5          # pins 1/3 and 2/4 are PARALLEL, not two rails: XH is
-j_pwr[4] += gnd         # ~3 A per contact and the LED chain alone nears that
+
+# ---- J24: the pills -- 5 V, data and GND on one header ----------------------
+# JST VH stacked under J3 (#1062), so the pills' 4.2 A crosses a few millimetres of
+# poured copper instead of the board, and the pill harness is one cable. +5V is
+# pin 3 because pin 3 is the one beside J3's +5V pad: the bar between them stays
+# a straight link, and data and GND are left free to route. (Pin 1 = +5V would
+# put the bar round both of them and box the data pad in.) The 3-way plug cannot
+# be confused with J3's 2-way, so the pin order differing from J3's is safe.
+# The data line reaches here from U1 across the board, ~75 mm: an 800 kHz WS2812
+# line driven through R2 at the buffer end, which is fine at that length.
+# The harness from here is a 5 V bus with a tap to each pill: 4.2 A cannot run
+# through the strips in series.
+j_pill = jst_vh(3, "J24", "PILLS")
+j_pill[1] += gnd
+j_pill[2] += ind_out
+j_pill[3] += v5
 # The voltage AND the ESR grade are part of the VALUE because the value is what
 # the BOM prints, and both are load-bearing at purchase time: a common 16 V 470uF
 # is 8 x 11.5 mm on 3.5 mm pitch and does not fit this 10 mm / 5 mm land (25 V is
@@ -995,9 +1044,10 @@ def _check(strict_stations=True):
     # against the dict that made the connections is a tautology, and it passed with
     # SWCLK and SWDIO swapped -- which is the mistake that actually happens, and
     # which bricks flashing rather than announcing itself.
-    assert pico.footprint.endswith("RaspberryPi_Pico_SMD_HandSolder"), (
-        f"SWD: J1 is on {pico.footprint}, which has no D1/D2/D3 debug pads -- SWD "
-        "would need a header and three flying wires again")
+    assert pico.footprint.endswith("RaspberryPi_Pico_SMD_or_THT_Debug"), (
+        f"SWD: J1 is on {pico.footprint}. Only the vendored SMD_or_THT_Debug "
+        "footprint carries D1/D2/D3 in both build styles -- KiCad's own THT one "
+        "drops them, and SWD would need a header and three flying wires again")
     for _pad, _want in (("D1", "SWCLK"), ("D2", "GND"), ("D3", "SWDIO")):
         got = {n.name for n in pico[_pad].nets}
         assert _want in got, (
@@ -1036,6 +1086,14 @@ def _check(strict_stations=True):
         "on the Pi's own J2 solder pads, brought out as J9")
     assert {n.name for n in j_pi_btn[1].nets} == {"PWR_BTN"}, (
         "PWR_BTN: J9 must carry the button through to the Pi's J2 pads")
+    # ...as a floating pair: pin to pin with J8, and nothing else on either net.
+    for _pin, _net in ((1, pwr_btn), (2, pwr_btn_ret)):
+        _nodes = {(p.ref, str(pin.num)) for p in default_circuit.parts
+                  for pin in p.pins if _net in pin.nets}
+        assert _nodes == {("J8", str(_pin)), ("J9", str(_pin))}, (
+            f"PWR_BTN: {_net.name} touches {sorted(_nodes)}, expected only J8 and J9 "
+            f"pin {_pin} -- the button lead must stay a floating pair, or fitting it "
+            "to the Pi's J2 pads the wrong way round holds the button down forever")
 
     # Every part with a POLARISED footprint must use a polarised symbol and sit the
     # right way round: pin 1 (+) on a positive rail, pin 2 (-) on ground. A reversed
@@ -1085,7 +1143,8 @@ def _check(strict_stations=True):
     # it would overdrive an input. DIRECT contact only, deliberately: a resistor to
     # 5 V keeps the nets separate and passes here -- RING_LEVELS above walks the
     # ring netlist for that shape, and CONSOLE_LEVELS below walks this board's own.
-    for n in (link_tx_pi, link_rx_pi, midi_tx, midi_rx, pwr_btn, swclk, swdio):
+    for n in (link_tx_pi, link_rx_pi, midi_tx, midi_rx, pwr_btn, pwr_btn_ret,
+              swclk, swdio):
         assert v5 not in n.nets, (
             f"PI_LEVELS: {n.name} touches a 5 V rail -- Pi GPIO is not 5 V tolerant")
 
@@ -1100,7 +1159,8 @@ def _check(strict_stations=True):
     # without naming them. No allowlist: since R14 pulls DOWN, no legitimate
     # two-pin part on this board bridges +5V to any of these nets.
     _protected = {n.name for n in (link_tx, link_rx, link_tx_pi, link_rx_pi,
-                                   midi_tx, midi_rx, pwr_btn, swclk, swdio,
+                                   midi_tx, midi_rx, pwr_btn, pwr_btn_ret,
+                                   swclk, swdio,
                                    ind_data, link_to_ring, link_to_console,
                                    pd_sda, pd_scl,
                                    ctrl1_present, ctrl2_present,
@@ -1172,9 +1232,10 @@ def report():
     for name, gp in sorted(GPIO.items(), key=lambda kv: kv[1]):
         lay.append("  GP%-3d pad %-3d %s" % (gp, PICO[gp], name))
     return ("Segno CONSOLE board v2 (#747)\n"
-            "Pico 2 (RP2350) on Module:RaspberryPi_Pico_SMD_HandSolder\n"
+            "Pico 2 (RP2350) on segno:RaspberryPi_Pico_SMD_or_THT_Debug\n"
+            "        (surface-mount pads AND through-holes; solder it either way)\n"
             "\nPin map:\n" + "\n".join(lay) +
-            "\n\nRails : +5V (logic AND WS2812, doubled contacts on J3) | "
+            "\n\nRails : +5V (logic AND WS2812; J3 in and J24 pill power on JST VH) | "
             "+3V3 (from the Pi)\n"
             "Link  : 3V3 <-> 3V3 via 10 k series (R17/R18) -- no level shifting,\n"
             "        the resistors only bound cross-domain current at soft-off\n"
@@ -1286,6 +1347,11 @@ def _selftest():
     def _btn_pin():
         PI_HDR[5] = gnd
 
+    def _btn_grounded():
+        # The v3 board as first drawn: the button's return on GND.
+        j_pi_btn[2].disconnect()
+        j_pi_btn[2] += gnd
+
     def _fsw_count():
         FSW_ORDER.append("EXTRA")
 
@@ -1333,6 +1399,7 @@ def _selftest():
     case("reservoir electrolytic fitted backwards", "POLARITY:", _cap_backwards)
     case("link on a pin the NVMe board owns", "PI_RESERVED:", _reserved_pin)
     case("power button off GPIO3", "PWR_BTN:", _btn_pin)
+    case("power button lead returned to GND", "PWR_BTN:", _btn_grounded)
     case("wrong footswitch count", "PIN_MAP:", _fsw_count)
     case("board terminates a station the panel lacks", "REAR_IO_COVER:", _station)
     case("pinned ref stolen by the auto counter", "PIN_REFS:", _ref_collision)
@@ -1372,6 +1439,9 @@ def _selftest():
             if mutate is _second_bond:
                 holes["H3"][1].disconnect()
                 holes["H3"][1] += Net("CHASSIS_H3")
+            if mutate is _btn_grounded:
+                j_pi_btn[2].disconnect()
+                j_pi_btn[2] += pwr_btn_ret
             if mutate is _cap_backwards:
                 _c30 = next(p for p in default_circuit.parts if p.ref == "C30")
                 _c30[1].disconnect(); _c30[2].disconnect()
