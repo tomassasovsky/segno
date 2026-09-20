@@ -26,7 +26,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 5;
+static const uint8_t FW_MINOR = 6;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -59,7 +59,7 @@ static const uint8_t PIN_SMPS_PWM = 23;
 // The encoder's NeoPixel Ring 24 on J6 (O65.5 / O52.3, the fitted part). Its
 // WS2812 index order runs clockwise seen from the front of the panel, which is
 // the direction the sweep travels, so pixel index IS ring position — no
-// reversal (bench-verified 2026-09-03: reversing it ran the hump backwards).
+// reversal (bench-verified 2026-09-03: reversing it ran the sweep backwards).
 static const uint16_t RING_N = 24;
 // The indicator pills on J7, one WS2812 puck each, chained in this order along
 // the faceplate. The first sits above footswitch 1 and is the mode indicator;
@@ -77,7 +77,10 @@ enum {
 };
 Adafruit_NeoPixel ring(RING_N, PIN_RING, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel ind(IND_N, PIN_IND, NEO_GRB + NEO_KHZ800);
-static const uint8_t LED_BRIGHTNESS = 64;
+// Half of full, chosen on the unit against 64, 90, 180 and 255 (#1064): 64 read
+// dim through the diffusers and 180 up was too much. It also sets the power
+// budget -- every LED full white at 128 is ~2.8 A (hardware/segno_wiring.md).
+static const uint8_t LED_BRIGHTNESS = 128;
 
 
 // ---- link ----------------------------------------------------------------------
@@ -535,9 +538,16 @@ static void pollCtrl() {
 static uint32_t rgb(uint8_t r, uint8_t g, uint8_t b) {
   return Adafruit_NeoPixel::gamma32(Adafruit_NeoPixel::Color(r, g, b));
 }
+// `level` dims a colour. Gamma goes on the colour and on the level separately,
+// and the two multiply, rounded: scaling before gamma, or truncating, drops a
+// mixed colour's weaker channel to 0 first, so a fading yellow went red at the
+// dim end. For pure red, green and blue the result is the same as before.
 static uint32_t scaled(uint8_t r, uint8_t g, uint8_t b, uint8_t level) {
-  return rgb((uint8_t)((r * (uint16_t)level) / 255), (uint8_t)((g * (uint16_t)level) / 255),
-             (uint8_t)((b * (uint16_t)level) / 255));
+  const uint16_t k = Adafruit_NeoPixel::gamma8(level);
+  const uint32_t c = rgb(r, g, b);
+  return Adafruit_NeoPixel::Color((uint8_t)((((c >> 16) & 0xFF) * k + 127) / 255),
+                                  (uint8_t)((((c >> 8) & 0xFF) * k + 127) / 255),
+                                  (uint8_t)(((c & 0xFF) * k + 127) / 255));
 }
 
 static Rgb ledColor(uint8_t led) {
@@ -561,54 +571,65 @@ static Rgb globalColor(uint8_t color) {
   switch (color) {
     case PEDAL_GLOBAL_GREEN: return {0, 255, 0};
     case PEDAL_GLOBAL_RED: return {255, 0, 0};
-    case PEDAL_GLOBAL_AMBER: return {255, 255, 0};  // yellow, on the owner's call
+    // Yellow, on the owner's call. Equal red and green read lime on these LEDs;
+    // green at 235 was matched by eye on the unit (#1064).
+    case PEDAL_GLOBAL_AMBER: return {255, 235, 0};
     case PEDAL_GLOBAL_BLUE: return {0, 0, 255};
     default: return {0, 0, 0};
   }
 }
 
-// A smooth brightness hump travels the ring at a FIXED cadence — it says
+// A comet travels the ring at a FIXED cadence — it says
 // "something is happening", in the activity colour, and deliberately does not
 // track the loop: one revolution per loop is unreadably slow at any musical
 // length, and the playhead is already on the screens (owner's call,
 // 2026-09-03).
 //
-// A Stop that leaves a loop loaded freezes the hump where it was. With nothing
+// A Stop that leaves a loop loaded freezes the comet where it was. With nothing
 // loaded and nothing playing the ring breathes green so it reads as alive; the
 // breathe never reaches black, so an idle panel still shows the board is up.
 static const unsigned long RING_MS_PER_REV = 700;
 static const unsigned long BREATHE_MS = 1200;
 // The dimmest the breathe goes, as a fraction of full: never off.
 static const float BREATHE_FLOOR = 0.35f;
-static const float RING_WIDTH = 11.0f;
-static float g_ringPhase = 0.0f;  // hump centre, 0..RING_N
+// The comet's shape, picked on the unit against an even fade, a fast drop and
+// four steps (#1064): the tail trails 3/4 of a turn behind the head, stays
+// bright for most of it and drops at the end. It fades to a floor, not to
+// black, because gamma plus LED_BRIGHTNESS turn anything under ~25% level off,
+// and a fade to 0 looked half as long as it was. The last quarter stays dark.
+static const float COMET_TAIL = RING_N * 0.75f;  // LEDs, head included
+static const float COMET_FLOOR = 0.3f;
+static float g_ringPhase = 0.0f;  // comet head, 0..RING_N
 static unsigned long g_ringLastMs = 0;
 // What the ring buffer currently holds. One question, asked once: every branch
 // of renderRing() states which view it just painted, and the caller pushes the
 // strip only when that key changed. Per-branch latches were tried and each one
 // grew its own reset rule — the arc forgot to restore what it painted over,
 // and the dark branch forgot to repaint at all.
-enum RingView : uint8_t { RING_NONE = 0, RING_DARK, RING_ARC, RING_HUMP, RING_BREATHE };
+enum RingView : uint8_t { RING_NONE = 0, RING_DARK, RING_ARC, RING_COMET, RING_BREATHE };
 static uint8_t g_ringView = RING_NONE;
-static uint8_t g_ringKeyA = 0;  // arc: lit pixels; hump: phase in whole pixels
+static uint8_t g_ringKeyA = 0;  // arc: lit pixels; comet: phase in whole pixels
 static uint8_t g_ringKeyB = 0;  // the colour that view was painted in
-// The colour the hump was last drawn in. A Stop freezes the hump but sends
+// The colour the comet was last drawn in. A Stop freezes the comet but sends
 // GLOBAL_OFF, so the frame no longer says what colour to freeze it at; without
-// remembering it, restoring the hump paints it black.
-static Rgb g_humpColour = {0, 255, 0};
+// remembering it, restoring the comet paints it black.
+static Rgb g_cometColour = {0, 255, 0};
 
-// Draws the hump at the current phase, in `c`.
-static void paintHump(Rgb c) {
+// Draws the comet with its head at the current phase, in `c`.
+static void paintComet(Rgb c) {
   for (uint16_t i = 0; i < RING_N; i++) {
-    float d = fabsf((float)i - g_ringPhase);
-    if (d > RING_N / 2.0f) d = RING_N - d;
-    const float dn = d / RING_WIDTH;
-    uint8_t level = 0;
-    if (dn < 1.0f) {
-      const float b = 1.0f - dn * sqrtf(dn);  // dn^1.5, without powf
-      level = (uint8_t)(b * 255.0f + 0.5f);
+    // How far this pixel trails the head, in the direction of travel.
+    const float behind = fmodf(g_ringPhase - (float)i + (float)RING_N, (float)RING_N);
+    float b = 0.0f;
+    if (behind <= COMET_TAIL - 1.0f) {
+      const float x = behind / (COMET_TAIL - 1.0f);  // 0 at the head, 1 at the tail's end
+      b = COMET_FLOOR + (1.0f - COMET_FLOOR) * (1.0f - x * x);
+    } else if (behind < COMET_TAIL) {
+      b = COMET_FLOOR * (COMET_TAIL - behind);  // the tail's last pixel, fading out
+    } else if (behind > RING_N - 1.0f) {
+      b = behind - (RING_N - 1.0f);  // the pixel the head is moving onto, fading in
     }
-    ring.setPixelColor(i, scaled(c.r, c.g, c.b, level));
+    ring.setPixelColor(i, scaled(c.r, c.g, c.b, (uint8_t)(b * 255.0f + 0.5f)));
   }
 }
 
@@ -652,13 +673,13 @@ static bool renderRing() {
   g_gainArmed = false;
 
   const bool active = (activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE;
-  // A Stop with a loop still loaded freezes the hump where it was — in the
+  // A Stop with a loop still loaded freezes the comet where it was — in the
   // colour it was playing in, which the frame no longer carries.
   if (!active && g_frame.loop_length_micros > 0) {
-    if (!settle(RING_HUMP, (uint8_t)g_ringPhase, PEDAL_GLOBAL_COUNT)) {
+    if (!settle(RING_COMET, (uint8_t)g_ringPhase, PEDAL_GLOBAL_COUNT)) {
       return false;
     }
-    paintHump(g_humpColour);
+    paintComet(g_cometColour);
     return true;
   }
   if (!active) {  // standby: breathe green
@@ -675,9 +696,9 @@ static bool renderRing() {
   }
   g_ringPhase =
       fmodf(g_ringPhase + (float)dt / (float)RING_MS_PER_REV * (float)RING_N, (float)RING_N);
-  g_humpColour = activity;
-  settle(RING_HUMP, (uint8_t)g_ringPhase, g_frame.global_color);
-  paintHump(activity);
+  g_cometColour = activity;
+  settle(RING_COMET, (uint8_t)g_ringPhase, g_frame.global_color);
+  paintComet(activity);
   return true;
 }
 

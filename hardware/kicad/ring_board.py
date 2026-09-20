@@ -114,13 +114,22 @@ against a cap:
 This used to read "the firmware caps ring brightness well under all-white -- the
 comet only ever lights part of the ring -- so one pair carries it with margin",
 with a trigger to add a second pair if a bench measurement of the CAPPED case
-exceeded ~0.7 A. Two things were wrong with resting on that. The firmware does
-not exist (the ring link is unwritten on both ends), and R5 below is fitted
-precisely because the ring CAN latch full white with nothing driving it, during
-power-up, the bootloader, a reflash or a crash. Full white is a state a v3 unit
-reaches on its own, so it is the state the copper is sized for, and the trigger
-is gone: nothing about the capped case can make one pair insufficient when the
-uncapped case already fits.
+exceeded ~0.7 A. The cap is real: console_board.ino sets LED_BRIGHTNESS = 128
+(#1064), which is 0.72 A all white and ~0.2 A for the comet. It is the wrong
+thing to size against anyway, for two reasons that hold whatever its value.
+
+It is the V2 path. console_board.ino generates the ring's WS2812 timing itself
+and calls ring.setBrightness(); on v3 the XIAO 20 mm from the LEDs does that
+instead, and firmware/ has no XIAO directory yet. The console's cap does not
+reach this board.
+
+And no cap covers the window before firmware runs. R5 below is fitted precisely
+because the ring CAN latch full white with nothing driving the buffer's input --
+power-up, the bootloader, a reflash, a crash. A console reflashed with a higher
+LED_BRIGHTNESS is the other uncapped case, and neither is exotic.
+
+So 1.44 A is the number, the trigger is gone, and nothing the capped case can do
+makes one pair insufficient when the uncapped case already fits.
 
 What does NOT fit one pair is a second ring chained off RING_DOUT, which J2, J3
 and J4 all carry a pad for. 2.88 A is past a single XH contact whatever the

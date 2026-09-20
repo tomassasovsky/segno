@@ -150,11 +150,19 @@ duty (62%) and "one channel per indicator" are how a pill is *intended* to be
 drawn; there is no console pixel renderer yet (`firmware/led_driver/` is the
 standalone RP2040 driver, sized 24 ring + 8 indicators, with a fixed
 `setBrightness(120)` ≈ 47%). So the numbers below are a design target for that
-renderer to hit, not a measurement — and the 2 A track is the number it has to
+renderer to hit, not a measurement — and the 1.85 A rail is the number it has to
 hit them against. And the 5.14 A non-LED baseline is **rated maxima** for two
 screens and the board, not measured; real draw is likely well under half, so the
 true headroom is larger than this table admits. Measure it on the bench before
 trusting either direction.
+
+**The console firmware drives every LED at `LED_BRIGHTNESS = 128`, half of full
+(#1064).** The table is at full, so each LED figure halves: normal ~0.6 A, pills
+amber with the ring one colour ~1.2 A, everything full white ~3.1 A. That last
+row is a BUCK_AUX question, not a track one: 2.8 A of it is the pills, and the
+pills reach J24 across the poured bar rather than over copper the router laid.
+What the 0.70 mm rail sees is the ring plus logic either way. The ring's comet at
+128 draws ~0.1 A in green and ~0.2 A in yellow.
 
 - **The Pi is fed through its USB-C, not the header.** Ribbon pins 2/4 are
   deliberately not connected (`PI_POWER` gate): tying them would put BUCK_PI in
@@ -259,14 +267,18 @@ Notes that are load-bearing:
   never have carried the link anyway: it is the AHCT125's gate-B output with /OE
   tied low, so it is only ever driven by the console. On v3 the ring-data path
   (GP12, gate B, R1, R15) is gone and GP12/GP15 went to the expansion header.
-- **One 5 V pair, not two, and it is sized for full white rather than for a cap.**
+- **One 5 V pair, not two, and it is sized for 1.44 A rather than for the cap.**
   24 LEDs at 60 mA is 1.44 A: 48% of an XH contact's ~3 A, and 21% inside the
-  ring board's `+5V_LED` at 0.65 mm. This used to justify the single pair with
-  "the firmware's brightness cap" and set a bench trigger at ~0.7 A. The cap does
-  not exist — the ring link is unwritten on both ends — and R5 on the ring board
-  is fitted precisely because the ring can latch full white with nothing driving
-  it, on power-up, in the bootloader, during a reflash or after a crash. So full
-  white is the state the copper is sized for and the trigger is gone.
+  ring board's `+5V_LED` at 0.65 mm. The cap is real — `LED_BRIGHTNESS = 128`
+  (#1064) puts all-white at 0.72 A and the comet at ~0.2 A — but it is the *v2*
+  path, where `console_board.ino` generates the ring's WS2812 timing itself. On
+  v3 the XIAO does, and that firmware is not written. Two states are outside any
+  cap in either generation: the window before firmware runs, which is why R5 sits
+  on `RING_DATA_3V3` at all (power-up, the bootloader, a reflash, a crash), and a
+  console flashed with a higher `LED_BRIGHTNESS`. Neither is exotic, both land on
+  1.44 A, and the copper now carries it, so the old bench trigger at ~0.7 A of the
+  capped case is gone: nothing the capped case can do makes one pair insufficient
+  when the uncapped case already fits.
 - **A second ring chained off `RING_DOUT` is a connector change, not a wider
   track.** 2.88 A is past one XH contact at any width; J1 and J6 would go JST VH,
   the way J3/J24 did on the console.
