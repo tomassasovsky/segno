@@ -117,8 +117,8 @@ that needs the thought.
 
 **The board path is sized for the last row now (#1062).** It was the binding
 limit: the LEDs reached BUCK_AUX through J3 (two JST-XH contacts, ~6 A) and the
-console board's 0.6 mm +5 V track (~2 A per IPC-2152), both sized when the chain
-was 26 WS2812, so anything above ~2 A of LED was past the track — including row 3,
+console board's 0.6 mm +5 V track (1.65 A per IPC-2221), both sized when the chain
+was 26 WS2812, so anything above ~1.6 A of LED was past the track — including row 3,
 an ordinary state. v3 fixes it with topology rather than width:
 
 - **J3** is a JST VH (~10 A per contact), carrying the whole 5.64 A.
@@ -127,8 +127,18 @@ an ordinary state. v3 fixes it with topology rather than width:
   each other across a bar poured on both copper layers, so the pills' 4.2 A never
   reaches a routed track. The data line crosses the board to it from the buffer,
   ~87 mm. J7 is gone.
-- What the 0.6 mm tracks carry is the ring (1.44 A at full white, through J6) and
-  the logic: ~1.6 A, inside the ~2 A.
+- What the tracks carry is the ring (1.44 A at full white, through J6) and the
+  logic: ~1.6 A. That is 3% inside 0.6 mm, so the +5 V rail is no longer left at
+  the routed width — `widen_power.py` grows it to 0.70 mm (1.85 A, 15%) between
+  the session import and the pour, on both boards. The ring board's own
+  `+5V_LED` goes 0.55 → 0.65 mm the same way.
+
+**One standard: IPC-2221, 10 °C rise, 1 oz external.** This page and
+`console_board_pcb.py` used to quote IPC-2152 (~2 A for 0.6 mm) while
+`route_ring_board.sh` quoted IPC-2221 (1.65 A for the same copper), and the two
+boards reported different margins for the same rail as a result. 2152 is newer,
+measurement-based and more generous, and it would credit the ground pour either
+side as a heat spreader. None of the numbers here take that credit.
 
 The rail becomes the limit instead: the last row is 108% of BUCK_AUX, and even
 row 4 leaves 8%. Those percentages use the screens' **rated** maxima, so measure
@@ -249,10 +259,17 @@ Notes that are load-bearing:
   never have carried the link anyway: it is the AHCT125's gate-B output with /OE
   tied low, so it is only ever driven by the console. On v3 the ring-data path
   (GP12, gate B, R1, R15) is gone and GP12/GP15 went to the expansion header.
-- One 5 V pair, not two: 24 LEDs at the firmware's brightness cap sit well under
-  the 1.44 A all-white figure the doubled pair was sized for. If a bench
-  measurement of the *capped* worst case exceeds ~0.7 A, a v2 console still has
-  J6 pins 2/4 for a second pair; v3 would need a 6-way.
+- **One 5 V pair, not two, and it is sized for full white rather than for a cap.**
+  24 LEDs at 60 mA is 1.44 A: 48% of an XH contact's ~3 A, and 21% inside the
+  ring board's `+5V_LED` at 0.65 mm. This used to justify the single pair with
+  "the firmware's brightness cap" and set a bench trigger at ~0.7 A. The cap does
+  not exist — the ring link is unwritten on both ends — and R5 on the ring board
+  is fitted precisely because the ring can latch full white with nothing driving
+  it, on power-up, in the bootloader, during a reflash or after a crash. So full
+  white is the state the copper is sized for and the trigger is gone.
+- **A second ring chained off `RING_DOUT` is a connector change, not a wider
+  track.** 2.88 A is past one XH contact at any width; J1 and J6 would go JST VH,
+  the way J3/J24 did on the console.
 
 ---
 

@@ -74,31 +74,40 @@ MOUNT_INSET = 5.0               # mounting-hole centres, in from each corner.
 # auto-placer sees them before it looks for slots -- which is what stopped a passive
 # landing on H2 back when they were added afterwards.
 
-# Widths per the pcb-layout skill (IPC-2152 rule of thumb): ~1.0 mm for
-# power/ground, ~0.6 mm for signal. The first cut used 0.35/0.8, which is
-# under-sized on both counts -- the +5V rail feeds the whole WS2812 chain as well
-# as logic.
+# Widths per the pcb-layout skill: ~1.0 mm for power/ground, ~0.6 mm for signal.
+# The first cut used 0.35/0.8, which is under-sized on both counts -- the +5V rail
+# feeds the whole WS2812 chain as well as logic.
 # ONE width, 0.6 mm, and it is what the board actually gets: Freerouting takes the
 # width from the DSN netclass, so this constant only reaches copper via the GND
 # stubs. There used to be a TRACK_PWR = 1.0 beside it "for +5V/+3V3" -- it was read
 # by _route(), the straight-line router that was retired when Freerouting took over,
 # so the rails have been 0.6 mm all along while a constant said otherwise.
 #
-# 0.6 mm is the right answer anyway, and this is the arithmetic rather than a shrug.
-# IPC-2152 gives a 0.6 mm external trace in 1 oz copper about 2 A for a 10 degC
-# rise. This board was sized against 26 WS2812s flat out (16 ring + 10 single-LED
-# indicators) at 60 mA = 1.56 A plus ~60 mA of logic -- ~20% of margin, and 81 mV
-# of IR drop over the ~60 mm from J3 to J6/J7.
+# 0.6 mm is what the ROUTER is given, and this is the arithmetic rather than a
+# shrug. ONE standard, IPC-2221, 10 degC rise, 1 oz external -- the conservative
+# one. This file used to quote IPC-2152 (~2 A for 0.6 mm) while route_ring_board.sh
+# quoted IPC-2221 (1.65 A for the same copper), which is how the two boards came to
+# report different margins for the same rail. 2152 is the newer and more generous
+# standard and it would credit the pour either side as a heat spreader; the numbers
+# below do not take that credit.
+#
+# This board was sized against 26 WS2812s flat out (16 ring + 10 single-LED
+# indicators) at 60 mA = 1.56 A plus ~60 mA of logic, and 81 mV of IR drop over the
+# ~60 mm from J3 to J6/J7.
 #
 # That premise stopped holding when the console went to 94 WS2812 -- ten 7-LED
 # pills plus a Ring 24 -- which is 5.7 A at full white (#930, settled by #1062).
 # The fix is topology, not a wider track: the pills' 4.2 A enters on J3 and leaves
 # on J24, two JST VH headers stacked at the left edge with their +5V pads joined by
 # a poured bar on both layers (_pill_power_bar). What reaches a track is the ring
-# (1.44 A through J6) and the logic, ~1.6 A, still inside this 0.6 mm width.
-# MIN_PWR_TRACK_W in export() is a WIDTH check, not a current one; PILL_POWER in
-# _check() is the gate that holds the topology.
-TRACK_W = 0.6                   # every routed track, signal and rail alike
+# (1.44 A through J6) and the logic, ~1.6 A.
+#
+# 1.6 A against 1.65 A is 3%, so the rail does not stay at the routed width: it is
+# grown to 0.70 mm (1.85 A, 15%) after the session import by widen_power.py, which
+# is where the 0.1 mm per side that the DSN's inflated clearance leaves unused gets
+# collected. See route_console_board.sh. MIN_RAIL_TRACK_W in export() is the gate
+# that holds it; PILL_POWER in _check() is the gate that holds the topology.
+TRACK_W = 0.6                   # what the router is asked for, signal and rail alike
 VIA_D, VIA_DRILL = 0.8, 0.4
 CLEARANCE = 0.25
 
@@ -390,7 +399,11 @@ for _i in range(10):
     PLACEMENT["J%d" % (10 + _i)] = (fsw_x(_i), FSW_Y, 0)
 
 PWR_NETS = {"+5V", "+3V3"}
-MIN_PWR_TRACK_W = 0.6           # see the TRACK_W note: 1.56 A of WS2812 needs it
+# Per rail, because they do not carry the same thing. +5V is the ring's 1.44 A
+# plus logic and is widened past the routed 0.6 mm by widen_power.py; +3V3 is the
+# MIDI front end off the Pi and never leaves the routed width. One number for both
+# would have to be the smaller one, which is no check on +5V at all.
+MIN_RAIL_TRACK_W = {"+5V": 0.70, "+3V3": 0.60}
 # Copper, mask, paste, silk, outline -- the layers a fab needs and nothing else.
 # Paste is in the list because the boards that were actually manufactured were
 # built from a set that carried it (43 front stencil apertures); leaving it out
@@ -1992,12 +2005,15 @@ def check_routed_board(path=None):
     # live somewhere else get checked HERE, on the real board, or not at all.
     thin = [(t.GetNetname(), ToMM(t.GetWidth())) for t in _b.GetTracks()
             if t.GetClass() != "PCB_VIA" and t.GetNetname() in PWR_NETS
-            and ToMM(t.GetWidth()) < MIN_PWR_TRACK_W - 1e-9]
+            and ToMM(t.GetWidth()) < MIN_RAIL_TRACK_W[t.GetNetname()] - 1e-9]
     if thin:
+        net, width = min(thin, key=lambda nw: nw[1])
         raise SystemExit(
-            f"FAB: {len(thin)} rail track(s) under {MIN_PWR_TRACK_W} mm, thinnest "
-            f"{min(w for _n, w in thin):.2f} mm on {thin[0][0]} -- the WS2812 chain "
-            "draws 1.56 A. Width comes from the DSN netclass in route_console_board.sh.")
+            f"FAB: {len(thin)} rail track(s) under their minimum, thinnest "
+            f"{width:.2f} mm on {net} (wants {MIN_RAIL_TRACK_W[net]} mm) -- the "
+            "ring draws 1.44 A through J6. Width comes from the DSN netclass in "
+            "route_console_board.sh and then from widen_power.py; if that step "
+            "did not run, this is what it looks like.")
     small = [(round(ToMM(t.GetWidth(pcbnew.F_Cu)), 3), round(ToMM(t.GetDrill()), 3))
              for t in _b.GetTracks() if t.GetClass() == "PCB_VIA"
              and (ToMM(t.GetWidth(pcbnew.F_Cu)) < MIN_VIA_D - 1e-9
