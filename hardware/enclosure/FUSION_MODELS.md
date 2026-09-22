@@ -203,8 +203,8 @@ inner face at 41.891), appearance, snapshot, save.
 owner's call to model it): Ø80 outline, no mounting holes, XIAO RP2350 on the
 underside, the Ring 24 carried IN the STEP on a 2.54 mm pin strip. Export it
 from that branch's `hardware/kicad/segno_pedal_ring.kicad_pcb` with
-`kicad-cli pcb export step --subst-models` (the tracked `out_ring` STEP on
-master is the Ø68 board). Placed at
+`kicad-cli pcb export step --subst-models` (the tracked `out_ring` STEP is
+this Ø80 board again since #1062, which added R5). Placed at
 `[1,0,0,8.3591 | 0,c,-s,25.8119 | 0,s,c,6.3401]`: the STEP's board centre is
 KiCad (36, 36) for the Ø60, Ø68 and Ø80 outlines alike, so the transform
 follows ENC_V only (+7.5 and +2.0 mm along the plate since 24.884 / 6.134).

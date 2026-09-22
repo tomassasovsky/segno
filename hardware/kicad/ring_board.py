@@ -55,9 +55,12 @@ rail, so they cannot disagree. RING_LEVELS survives, re-pointed from the three
 encoder pins to the one line that still crosses the cable into a Pico input.
 
 **RP2350 erratum E9** (A2 silicon) latches an input HIGH when it is configured
-with a PULL-DOWN. Nothing here uses one: the encoder lines are pulled UP (R1-R3
-below), both link lines are pulled up by the console's existing 10 k, and the WS2812
-line is an output. Do not add a pull-down to this board without re-reading E9.
+with its INTERNAL PULL-DOWN enabled. Nothing here uses one: the encoder lines are
+pulled UP (R2-R4 below), both link lines are pulled up by the console's existing
+10 k, and the WS2812 line is an output. The one pull-down on the board, R5, is
+EXTERNAL and sits on that output -- the erratum's own workaround is an external
+pull-down, and an output's input buffer is never what the pin reads. Do not add
+an internal pull-down to any input here without re-reading E9.
 
 ## The board grew to O80, and it SNAP-MOUNTS -- no mounting holes (owner calls)
 
@@ -90,14 +93,51 @@ to x=12.59, y +/-4.5). U1 therefore sits due east with that end facing the rim:
 
 ## Why the 5 V pins went from four to one
 
-Four ways (two pairs) were sized for 24 LEDs x 60 mA = 1.44 A all-white. Over
-~1.2 m of 26 AWG loop (~0.16 R) that is a 0.23 V drop on one pair, 0.12 V on
-two. The firmware caps ring brightness well under all-white -- the comet only
-ever lights part of the ring -- so one pair carries it with margin, and JST-XH
-is rated ~3 A per contact either way. If a bench measurement of the CAPPED worst
-case ever lands above ~0.7 A, the answer is a second pair (J6 pins 2/4 are still
-there), not a thinner cap. GND sits BETWEEN +5V and the link pair on J1 so the
-return is not the neighbour of the signal.
+Four ways (two pairs) were sized for 24 LEDs x 60 mA = 1.44 A all-white. One
+pair carries that, and the sizing is done against 1.44 A flat out rather than
+against a cap:
+
+  * J1 and the console's J6 are JST XH, ~3 A per contact. One +5V contact and
+    one GND contact at 1.44 A is 48% of rating.
+  * +5V_LED is 0.65 mm of 1 oz outer copper -- 1.75 A at a 10 degC rise by
+    IPC-2221, 21% of margin. It is routed at 0.55 and grown to 0.65 after the
+    fact; route_ring_board.sh step 5b says why, and widen_power.py does it.
+  * 96 mm of that from J1 to the Ring 24's VDD pad is 86 mohm, so 124 mV. With
+    the harness's 0.23 V over ~1.2 m of 26 AWG loop (~0.16 R) and ~30 mV of
+    contact resistance, the ring sees ~4.6 V of a 5.0 V rail. The WS2812B wants
+    3.5 V. U2 taps the rail 21 mm from J1, upstream of most of that drop, so its
+    VOH rises against the ring's 0.7 x VDD threshold: full white makes the data
+    margin better, not worse.
+  * GND is not a track at all -- the return is the pour on both layers, solid to
+    pads, 19 stitching vias.
+
+This used to read "the firmware caps ring brightness well under all-white -- the
+comet only ever lights part of the ring -- so one pair carries it with margin",
+with a trigger to add a second pair if a bench measurement of the CAPPED case
+exceeded ~0.7 A. The cap is real: console_board.ino sets LED_BRIGHTNESS = 128
+(#1064), which is 0.72 A all white and ~0.2 A for the comet. It is the wrong
+thing to size against anyway, for two reasons that hold whatever its value.
+
+It is the V2 path. console_board.ino generates the ring's WS2812 timing itself
+and calls ring.setBrightness(); on v3 the XIAO 20 mm from the LEDs does that
+instead, and firmware/ has no XIAO directory yet. The console's cap does not
+reach this board.
+
+And no cap covers the window before firmware runs. R5 below is fitted precisely
+because the ring CAN latch full white with nothing driving the buffer's input --
+power-up, the bootloader, a reflash, a crash. A console reflashed with a higher
+LED_BRIGHTNESS is the other uncapped case, and neither is exotic.
+
+So 1.44 A is the number, the trigger is gone, and nothing the capped case can do
+makes one pair insufficient when the uncapped case already fits.
+
+What does NOT fit one pair is a second ring chained off RING_DOUT, which J2, J3
+and J4 all carry a pad for. 2.88 A is past a single XH contact whatever the
+track width, and that needs VH on J1 and J6 the way J3/J24 went VH on the
+console. Chain a second ring and the connector is the change, not the copper.
+
+GND sits BETWEEN +5V and the link pair on J1 so the return is not the neighbour
+of the signal.
 
 Everything on this board is a module or through-hole. The XIAO and the ring are
 pre-assembled modules soldered down by their pads; nothing fine-pitch is
@@ -269,6 +309,13 @@ buf[4] += v5; buf[5] += gnd; buf[6].do_erc = False               # gate B unused
 buf[10] += v5; buf[9] += gnd; buf[8].do_erc = False              # gate C unused
 buf[13] += v5; buf[12] += gnd; buf[11].do_erc = False            # gate D unused
 R("330", "R1")[1, 2] += ring_data_5v, ring_data
+# R5: the idle state of the buffer's INPUT, same part and reason as console_board.py's
+# R16 on IND_DATA. Until the XIAO's firmware claims D0 -- power-up, its bootloader,
+# a reflash, a crash -- nothing drives this line, a CMOS input left floating drifts,
+# and the AHCT125 passes whatever it settles on to the ring as WS2812 data. The ring
+# then latches random colours, up to full white on all 24 LEDs. 100 k is weak
+# enough that the pin drives it without noticing (33 uA) and holds the input low.
+R("100k", "R5")[1, 2] += ring_data_3v3, gnd
 
 # ---- 4-pin header to the NeoPixel module (3 wires used: 5V/GND/DIN) ---------
 #   1 = +5V_LED   2 = GND   3 = DIN (<- RING_DATA)   4 = DOUT (spare)
@@ -465,6 +512,15 @@ def _check():
         f"POLARITY: the electrolytic's pin 2 (-) is on "
         f"{sorted(n.name for n in _pol[0][2].nets)}, expected GND")
 
+    # RING_DATA_IDLE: the buffer input must have its pull-down to GND, so the ring
+    # stays dark while the XIAO is not driving D0.
+    _idle = [p for p in default_circuit.parts if len(p.pins) == 2
+             and {n.name for pin in p.pins for n in pin.nets} == {"RING_DATA_3V3", "GND"}]
+    assert _idle, (
+        "RING_DATA_IDLE: nothing pulls RING_DATA_3V3 to GND -- while the XIAO is "
+        "not driving D0 the AHCT125's input floats and the ring latches random "
+        "colours (console_board.py's R16 is the same fix on IND_DATA)")
+
     # REFS runs LAST on purpose. It is the broadest assertion here, so ahead of
     # the others it fires first for every control that adds a part and masks the
     # gate that control exists to prove -- --selftest reported exactly that
@@ -476,7 +532,7 @@ def _check():
     # C2 in the netlist). Parts with no connections are skipped: --selftest's
     # controls are disconnected rather than deleted, and they are not the design.
     REFS = {"C1", "C2", "C3", "C4", "C5", "D1", "ENC1",
-            "J1", "J2", "J3", "J4", "R1", "R2", "R3", "R4", "U1", "U2"}
+            "J1", "J2", "J3", "J4", "R1", "R2", "R3", "R4", "R5", "U1", "U2"}
     _live = {p.ref for p in default_circuit.parts
              if any(pin.nets for pin in p.pins)}
     assert _live == REFS, (
@@ -508,6 +564,11 @@ def _selftest():
     def _exempt_live_pad():
         XIAO[5] += encA          # a spare, ERC-exempt pad quietly wired
 
+    def _no_idle_pulldown():
+        r5 = next(p for p in default_circuit.parts if p.ref == "R5")
+        r5[1].disconnect(); r5[2].disconnect()
+        added.append(("R5", r5))
+
     def _unpinned_part():
         # A part added the easy way, without ref= -- the counter names it and the
         # name it picks may already be on the fabbed board.
@@ -519,6 +580,9 @@ def _selftest():
 
     def _undo():
         for r in added:
+            if isinstance(r, tuple):     # a disconnected design part: put it back
+                r[1][1] += ring_data_3v3; r[1][2] += gnd
+                continue
             for pin in r.pins:
                 pin.disconnect()
         added.clear()
@@ -534,6 +598,7 @@ def _selftest():
         ("a second pull-up added to the link",       "LINK_BARE:",   _link_pullup),
         ("series Schottky fitted backwards",         "POLARITY:",    _diode_backwards),
         ("an ERC-exempt pad quietly wired",          "XIAO_PADS:",   _exempt_live_pad),
+        ("the LED buffer input left floating",       "RING_DATA_IDLE:", _no_idle_pulldown),
         ("a part declared without a pinned ref",      "REFS:",        _unpinned_part),
     ]
     ok = True

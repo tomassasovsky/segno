@@ -83,17 +83,18 @@ tolerance only has to survive ~100 mm of internal wiring.
 | buck | loads | design figure |
 |---|---|---|
 | **BUCK_PI** | Pi 5 (via its USB-C) + its USB devices + NVMe | 5.0 A / 25 W (worst case) |
-| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 104 WS2812 | 6.4 A / 32 W (**normal**, not worst case — see the state table) |
+| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 94 WS2812 | 6.3 A / 31 W (**normal**, not worst case — see the state table) |
 
 BUCK_PI's worst case is capped by device limits, not estimated: the Pi's own 5 A
 budget. BUCK_AUX's figure is the screens' ratings plus the LEDs **as they are
-actually driven** — see below, because the naive all-white number for 104 WS2812
+actually driven** — see below, because the naive all-white number for 94 WS2812
 is misleading in both directions.
 
 **The LED load is dominated by COLOUR and the pill gradient, not by the count
-(#930).** The pills went from 6 single LEDs to ten 8-LED segments of 144/m, and
-the ring is a Ring **24**, so BUCK_AUX carries **104 WS2812**. The naive
-"104 × 60 mA" reading of that is 6.2 A and it is wrong for two reasons: 60 mA is
+(#930).** The pills went from 6 single LEDs to ten 7-LED segments of 144/m (7, not
+8, for a centre pixel: #1062), and the ring is a Ring **24**, so BUCK_AUX carries
+**94 WS2812**. The naive "94 × 60 mA" reading of that is 5.6 A and it is wrong for
+two reasons: 60 mA is
 all three channels at full (an indicator is normally ONE channel, ~20 mA), and
 a pill is never all-on — it is rendered **centre-bright, dimming to both ends**,
 which sums to ~62% of all-at-full. The vendor's own figure agrees: 0.1 W per LED
@@ -101,34 +102,55 @@ per colour at 5 V is exactly 20 mA.
 
 | state | LED | BUCK_AUX | of 10 A |
 |---|---|---|---|
-| all off (controller quiescent only) | 0.10 A | 5.24 A | 52% |
-| **normal — pills one colour + gradient, ring half** | **1.24 A** | **6.38 A** | **64%** |
-| pills amber (2 ch) + gradient, ring one colour | 2.48 A | 7.62 A | 76% |
-| pills white + gradient, ring full white | 4.44 A | 9.58 A | 96% |
-| everything full white, no gradient | 6.24 A | 11.38 A | **114%** |
+| all off (controller quiescent only) | 0.09 A | 5.23 A | 52% |
+| **normal — pills one colour + gradient, ring half** | **1.11 A** | **6.25 A** | **62%** |
+| pills amber (2 ch) + gradient, ring one colour | 2.22 A | 7.36 A | 74% |
+| pills white + gradient, ring full white | 4.04 A | 9.18 A | 92% |
+| everything full white, no gradient | 5.64 A | 10.78 A | **108%** |
 
-Normal operation is **1.24 A of LED**, and **the rail does not need a brightness
+Normal operation is **1.11 A of LED**, and **the rail does not need a brightness
 cap** — the gradient is inherent to how a pill is drawn, not a limiter bolted on.
 Two things to keep in view: **white is the expensive colour**, and pills-white
-*and* ring-white together reach 96% with no margin — so if a white lamp test or a
+*and* ring-white together reach 92% with little margin — so if a white lamp test or a
 white "clipping" state is ever added, it is that combination, not the LED count,
 that needs the thought.
 
-**The rail is not the binding limit — the board path is.** BUCK_AUX is a 10 A
-buck, but the LEDs reach it through J3 (two parallel JST-XH contacts, ~6 A) and
-the console board's 0.6 mm +5 V track (~2 A per IPC-2152), both sized when the
-chain was 26 WS2812. **Anything above ~2 A of LED is already past the track** —
-which is rows 3, 4 and 5 of the table, and row 3 (pills amber, ring one colour)
-is an ordinary operating state, not a lamp test. Only the top two rows are
-comfortable. That is an **open call (#930)** and it is a board/firmware question,
-not a rail one — see the J3 bullet below.
+**The board path is sized for the last row now (#1062).** It was the binding
+limit: the LEDs reached BUCK_AUX through J3 (two JST-XH contacts, ~6 A) and the
+console board's 0.6 mm +5 V track (1.65 A per IPC-2221), both sized when the chain
+was 26 WS2812, so anything above ~1.6 A of LED was past the track — including row 3,
+an ordinary state. v3 fixes it with topology rather than width:
+
+- **J3** is a JST VH (~10 A per contact), carrying the whole 5.64 A.
+- **J24**, a 3-way JST VH stacked under J3 at the board's left edge, is the pills'
+  one connector: pin 1 GND, pin 2 data, pin 3 +5 V. J3's +5 V pad and J24's face
+  each other across a bar poured on both copper layers, so the pills' 4.2 A never
+  reaches a routed track. The data line crosses the board to it from the buffer,
+  ~87 mm. J7 is gone.
+- What the tracks carry is the ring (1.44 A at full white, through J6) and the
+  logic: ~1.6 A. That is 3% inside 0.6 mm, so the +5 V rail is no longer left at
+  the routed width — `widen_power.py` grows it to 0.70 mm (1.85 A, 15%) between
+  the session import and the pour, on both boards. The ring board's own
+  `+5V_LED` goes 0.55 → 0.65 mm the same way.
+
+**One standard: IPC-2221, 10 °C rise, 1 oz external.** This page and
+`console_board_pcb.py` used to quote IPC-2152 (~2 A for 0.6 mm) while
+`route_ring_board.sh` quoted IPC-2221 (1.65 A for the same copper), and the two
+boards reported different margins for the same rail as a result. 2152 is newer,
+measurement-based and more generous, and it would credit the ground pour either
+side as a heat spreader. None of the numbers here take that credit.
+
+The rail becomes the limit instead: the last row is 108% of BUCK_AUX, and even
+row 4 leaves 8%. Those percentages use the screens' **rated** maxima, so measure
+the real draw on the bench before deciding whether full white needs a firmware
+current limiter or a separate LED buck.
 
 **And the whole table is a model of software that does not exist.** The gradient
 duty (62%) and "one channel per indicator" are how a pill is *intended* to be
 drawn; there is no console pixel renderer yet (`firmware/led_driver/` is the
 standalone RP2040 driver, sized 24 ring + 8 indicators, with a fixed
 `setBrightness(120)` ≈ 47%). So the numbers below are a design target for that
-renderer to hit, not a measurement — and the 2 A track is the number it has to
+renderer to hit, not a measurement — and the 1.85 A rail is the number it has to
 hit them against. And the 5.14 A non-LED baseline is **rated maxima** for two
 screens and the board, not measured; real draw is likely well under half, so the
 true headroom is larger than this table admits. Measure it on the bench before
@@ -137,8 +159,10 @@ trusting either direction.
 **The console firmware drives every LED at `LED_BRIGHTNESS = 128`, half of full
 (#1064).** The table is at full, so each LED figure halves: normal ~0.6 A, pills
 amber with the ring one colour ~1.2 A, everything full white ~3.1 A. That last
-row is still past the 2 A track, so the open call stands. The ring's comet at 128
-draws ~0.1 A in green and ~0.2 A in yellow.
+row is a BUCK_AUX question, not a track one: 2.8 A of it is the pills, and the
+pills reach J24 across the poured bar rather than over copper the router laid.
+What the 0.70 mm rail sees is the ring plus logic either way. The ring's comet at
+128 draws ~0.1 A in green and ~0.2 A in yellow.
 
 - **The Pi is fed through its USB-C, not the header.** Ribbon pins 2/4 are
   deliberately not connected (`PI_POWER` gate): tying them would put BUCK_PI in
@@ -147,14 +171,14 @@ draws ~0.1 A in green and ~0.2 A in yellow.
 - A plain 5 V feed is not a PD source, so the Pi caps its downstream USB at
   600 mA unless **`usb_max_current_enable=1`** is set in `config.txt`. Required
   here: the touch panels and the audio interface hang off that budget.
-- The console board takes 5 V from **BUCK_AUX on J3** — four ways as two
-  parallel pairs, because JST-XH is ~3 A per contact. That pair is ~6 A, which
-  covered the chain when it was 26 WS2812. **It no longer covers the all-white
-  case**: 104 WS2812 flat out is 6.24 A through J3 *and* through the board's
-  0.6 mm +5 V track, which IPC-2152 rates at ~2 A. Normal draw (1.24 A) is
-  nowhere near either. **Open call (#930)** — cap global brightness in firmware,
-  feed the pills from BUCK_AUX directly rather than through the board, or respin
-  the board's 5 V path. See `kicad/console_board_pcb.py` (`TRACK_W`).
+- The console board takes 5 V from **BUCK_AUX on J3**, a 2-way **JST VH**
+  (~10 A per contact) since #1062; it was a 4-way XH with doubled pins (~6 A). The
+  pills' 5 V leaves on **J24**, the JST VH beside it, and their harness is a **5 V
+  bus with a tap to each pill**, not a daisy chain through the strips: 4.2 A in
+  series through the strip copper would drop enough to shift the far pills'
+  colour. Use 18 AWG for the bus and J3's feed. The data line and its GND ride the
+  same J24 plug (pins 2 and 1). See `kicad/console_board_pcb.py`
+  (`_pill_power_bar`, the `PILL_POWER` gate).
 - **Unverified until a build (carried from #754):** the UPERFECT 15.6" is a
   USB-C portable monitor, and many of those expect PD and run dim — or refuse
   to light — on a plain non-PD 5 V feed. BUCK_AUX is exactly that. Verify the
@@ -243,11 +267,21 @@ Notes that are load-bearing:
   never have carried the link anyway: it is the AHCT125's gate-B output with /OE
   tied low, so it is only ever driven by the console. On v3 the ring-data path
   (GP12, gate B, R1, R15) is gone and GP12/GP15 went to the expansion header.
-- One 5 V pair, not two: 24 LEDs at the firmware's brightness (128, #1064) are
-  0.72 A even all white, half the 1.44 A figure the doubled pair was sized for,
-  and the comet the firmware actually draws is ~0.2 A at most. If a bench
-  measurement of the *capped* worst case exceeds ~0.7 A, a v2 console still has
-  J6 pins 2/4 for a second pair; v3 would need a 6-way.
+- **One 5 V pair, not two, and it is sized for 1.44 A rather than for the cap.**
+  24 LEDs at 60 mA is 1.44 A: 48% of an XH contact's ~3 A, and 21% inside the
+  ring board's `+5V_LED` at 0.65 mm. The cap is real — `LED_BRIGHTNESS = 128`
+  (#1064) puts all-white at 0.72 A and the comet at ~0.2 A — but it is the *v2*
+  path, where `console_board.ino` generates the ring's WS2812 timing itself. On
+  v3 the XIAO does, and that firmware is not written. Two states are outside any
+  cap in either generation: the window before firmware runs, which is why R5 sits
+  on `RING_DATA_3V3` at all (power-up, the bootloader, a reflash, a crash), and a
+  console flashed with a higher `LED_BRIGHTNESS`. Neither is exotic, both land on
+  1.44 A, and the copper now carries it, so the old bench trigger at ~0.7 A of the
+  capped case is gone: nothing the capped case can do makes one pair insufficient
+  when the uncapped case already fits.
+- **A second ring chained off `RING_DOUT` is a connector change, not a wider
+  track.** 2.88 A is past one XH contact at any width; J1 and J6 would go JST VH,
+  the way J3/J24 did on the console.
 
 ---
 
@@ -276,7 +310,7 @@ source of truth.
 | station | wiring note |
 |---|---|
 | USB-C PD inlet (`PD_IN`) | D punch; coupler → STUSB4500 → fuse → both bucks. Never touches the console board |
-| power button (`POWER`) | momentary, **unlit** → J8, through the board to J9 → the Pi 5's own J2 solder pads. Two wires; no 5 V run to the rear panel. The machine has no power indicator — the screens are the indicator |
+| power button (`POWER`) | momentary, **unlit** → J8, through the board to J9 → the Pi 5's own J2 solder pads. Two wires, and neither end has a polarity: J8 and J9 are wired pin to pin as a floating pair that never touches the board's ground (#1062), so the lead works on the Pi's pads either way round. No 5 V run to the rear panel. The machine has no power indicator — the screens are the indicator |
 | fuse (`FUSE`) | 5×20 screw-cap holder — value and placement are §2's (T5A slow-blow, in the 20 V feed) |
 | MIDI DIN-5 ×2 (`MIDI_IN`/`MIDI_OUT`) | IN is opto-isolated **on the board** — the socket alone is not enough. IN's pin 2 stays unbonded (that isolation is the point) |
 | Neutrik NJ6FD-V ×2 (`CTRL_1`/`CTRL_2`) | 6-pole switching 1/4" jack, rear-mounted through a Ø12 hole with its snap cap (needs the 1.5 mm panel). Vertical PCB pins, no lugs. On v2 connect T / R / S and leave TN / RN / SN open. An expression pedal OR footswitch on the same jack, auto-detected (tip → ADC with pull-up, ring → 3V3 through 1 k). A two-switch pedal on one TRS plug (BOSS FS-6 A&B) puts its B switch on the ring, which firmware ≥ 1.1 reads on GP20/GP21: a trace through 4.7 kΩ on board v3 (R19/R20); on v2 one wire from each jack's ring pin (J20/J21 pin 2) to J22's GP20/GP21 pads. Without either, use the pedal's separate A and B mono jacks, one per CTRL. **v3 jacks are Neutrik NJ6FD-V** (switched): a fourth lead, the tip-normal contact, tells the board whether anything is plugged in (J20/J21 pin 4 → GP19/GP22), so an empty jack never reads as a pedal at full toe |
