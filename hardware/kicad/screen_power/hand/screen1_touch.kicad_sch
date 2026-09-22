@@ -5,8 +5,8 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / screen1 touch")
-    (rev "A prototype")
-    (comment 1 "Pi USB VBUS feeds only its RF relay coil; AUX powers screen and touch.")
+    (rev "B prototype")
+    (comment 1 "Discrete 5V switch. Host VBUS powers only its own RF relay coil.")
     (comment 2 "Physical verification required before release."))
   (lib_symbols
     (symbol "screen_symbols:screen_power_USB_B_Host"
@@ -684,341 +684,6 @@
               (font
                 (size 1.27 1.27))))))
       (embedded_fonts no))
-    (symbol "screen_symbols:Transistor_FET_2N7000"
-      (pin_names
-        (offset 0.508)
-        (hide yes))
-      (exclude_from_sim no)
-      (in_bom yes)
-      (on_board yes)
-      (property "Reference" "Q"
-        (at 2.032 0 90)
-        (effects
-          (font
-            (size 1.27 1.27))))
-      (property "Value" "2N7000"
-        (at 0 0 90)
-        (effects
-          (font
-            (size 1.27 1.27))))
-      (property "Footprint" ""
-        (at 0 0 0)
-        (effects
-          (font
-            (size 1.27 1.27))
-          (hide yes)))
-      (property "Datasheet" "https://www.vishay.com/docs/70226/70226.pdf"
-        (at 0 0 0)
-        (effects
-          (font
-            (size 1.27 1.27))
-          (hide yes)))
-      (property "Description" "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92"
-        (at 0 0 0)
-        (effects
-          (font
-            (size 1.27 1.27))
-          (hide yes)))
-      (symbol "Transistor_FET_2N7000_0_1"
-        (polyline
-          (pts
-            (xy 0.254 1.905)
-            (xy 0.254 -1.905))
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.254 0)
-            (xy -2.54 0))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.762 2.286)
-            (xy 0.762 1.27))
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.762 0.508)
-            (xy 0.762 -0.508))
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.762 -1.27)
-            (xy 0.762 -2.286))
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.762 -1.778)
-            (xy 3.302 -1.778)
-            (xy 3.302 1.778)
-            (xy 0.762 1.778))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 1.016 0)
-            (xy 2.032 0.381)
-            (xy 2.032 -0.381)
-            (xy 1.016 0))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type outline)))
-        (circle
-          (center 1.651 0)
-          (radius 2.794)
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 2.54 2.54)
-            (xy 2.54 1.778))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (circle
-          (center 2.54 1.778)
-          (radius 0.254)
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type outline)))
-        (circle
-          (center 2.54 -1.778)
-          (radius 0.254)
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type outline)))
-        (polyline
-          (pts
-            (xy 2.54 -2.54)
-            (xy 2.54 0)
-            (xy 0.762 0))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 2.794 0.508)
-            (xy 2.921 0.381)
-            (xy 3.683 0.381)
-            (xy 3.81 0.254))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 3.302 0.381)
-            (xy 2.921 -0.254)
-            (xy 3.683 -0.254)
-            (xy 3.302 0.381))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none))))
-      (symbol "Transistor_FET_2N7000_1_1"
-        (polyline
-          (pts
-            (xy 0.254 1.905)
-            (xy 0.254 -1.905))
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.254 0)
-            (xy -2.54 0))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.762 2.286)
-            (xy 0.762 1.27))
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.762 0.508)
-            (xy 0.762 -0.508))
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.762 -1.27)
-            (xy 0.762 -2.286))
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 0.762 -1.778)
-            (xy 3.302 -1.778)
-            (xy 3.302 1.778)
-            (xy 0.762 1.778))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 1.016 0)
-            (xy 2.032 0.381)
-            (xy 2.032 -0.381)
-            (xy 1.016 0))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type outline)))
-        (circle
-          (center 1.651 0)
-          (radius 2.794)
-          (stroke
-            (width 0.254)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 2.54 2.54)
-            (xy 2.54 1.778))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (circle
-          (center 2.54 1.778)
-          (radius 0.254)
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type outline)))
-        (circle
-          (center 2.54 -1.778)
-          (radius 0.254)
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type outline)))
-        (polyline
-          (pts
-            (xy 2.54 -2.54)
-            (xy 2.54 0)
-            (xy 0.762 0))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 2.794 0.508)
-            (xy 2.921 0.381)
-            (xy 3.683 0.381)
-            (xy 3.81 0.254))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (polyline
-          (pts
-            (xy 3.302 0.381)
-            (xy 2.921 -0.254)
-            (xy 3.683 -0.254)
-            (xy 3.302 0.381))
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
-        (pin passive line
-          (at 2.54 -5.08 90)
-          (length 2.54)
-          (name "S"
-            (effects
-              (font
-                (size 1.27 1.27))))
-          (number "1"
-            (effects
-              (font
-                (size 1.27 1.27)))))
-        (pin input line
-          (at -5.08 0 0)
-          (length 2.54)
-          (name "G"
-            (effects
-              (font
-                (size 1.27 1.27))))
-          (number "2"
-            (effects
-              (font
-                (size 1.27 1.27)))))
-        (pin passive line
-          (at 2.54 5.08 270)
-          (length 2.54)
-          (name "D"
-            (effects
-              (font
-                (size 1.27 1.27))))
-          (number "3"
-            (effects
-              (font
-                (size 1.27 1.27))))))
-      (embedded_fonts no))
     (symbol "screen_symbols:screen_power_G6K-2P-RF"
       (pin_names
         (offset 0.508)
@@ -1646,6 +1311,341 @@
               (font
                 (size 1 1))))))
       (embedded_fonts no))
+    (symbol "screen_symbols:Transistor_FET_2N7000"
+      (pin_names
+        (offset 0.508)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "Q"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "2N7000"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "https://www.vishay.com/docs/70226/70226.pdf"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Transistor_FET_2N7000_0_1"
+        (polyline
+          (pts
+            (xy 0.254 1.905)
+            (xy 0.254 -1.905))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.254 0)
+            (xy -2.54 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 2.286)
+            (xy 0.762 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 0.508)
+            (xy 0.762 -0.508))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.27)
+            (xy 0.762 -2.286))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.778)
+            (xy 3.302 -1.778)
+            (xy 3.302 1.778)
+            (xy 0.762 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.016 0)
+            (xy 2.032 0.381)
+            (xy 2.032 -0.381)
+            (xy 1.016 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 1.651 0)
+          (radius 2.794)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.54 2.54)
+            (xy 2.54 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 2.54 1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 2.54 -1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (polyline
+          (pts
+            (xy 2.54 -2.54)
+            (xy 2.54 0)
+            (xy 0.762 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.794 0.508)
+            (xy 2.921 0.381)
+            (xy 3.683 0.381)
+            (xy 3.81 0.254))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 3.302 0.381)
+            (xy 2.921 -0.254)
+            (xy 3.683 -0.254)
+            (xy 3.302 0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Transistor_FET_2N7000_1_1"
+        (polyline
+          (pts
+            (xy 0.254 1.905)
+            (xy 0.254 -1.905))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.254 0)
+            (xy -2.54 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 2.286)
+            (xy 0.762 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 0.508)
+            (xy 0.762 -0.508))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.27)
+            (xy 0.762 -2.286))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.778)
+            (xy 3.302 -1.778)
+            (xy 3.302 1.778)
+            (xy 0.762 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.016 0)
+            (xy 2.032 0.381)
+            (xy 2.032 -0.381)
+            (xy 1.016 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 1.651 0)
+          (radius 2.794)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.54 2.54)
+            (xy 2.54 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 2.54 1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 2.54 -1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (polyline
+          (pts
+            (xy 2.54 -2.54)
+            (xy 2.54 0)
+            (xy 0.762 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.794 0.508)
+            (xy 2.921 0.381)
+            (xy 3.683 0.381)
+            (xy 3.81 0.254))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 3.302 0.381)
+            (xy 2.921 -0.254)
+            (xy 3.683 -0.254)
+            (xy 3.302 0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at 2.54 -5.08 90)
+          (length 2.54)
+          (name "S"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -5.08 0 0)
+          (length 2.54)
+          (name "G"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 2.54 5.08 270)
+          (length 2.54)
+          (name "D"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
     (symbol "screen_symbols:Diode_1N4007"
       (pin_names
         (offset 0.508)
@@ -1858,6 +1858,133 @@
             (effects
               (font
                 (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Device_C_Polarized"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "C"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "C_Polarized"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Polarized capacitor"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Device_C_Polarized_0_1"
+        (rectangle
+          (start -2.286 0.508)
+          (end 2.286 1.016)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.778 2.286)
+            (xy -0.762 2.286))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.27 2.794)
+            (xy -1.27 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (rectangle
+          (start 2.286 -0.508)
+          (end -2.286 -1.016)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline))))
+      (symbol "Device_C_Polarized_1_1"
+        (rectangle
+          (start -2.286 0.508)
+          (end 2.286 1.016)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.778 2.286)
+            (xy -0.762 2.286))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.27 2.794)
+            (xy -1.27 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (rectangle
+          (start 2.286 -0.508)
+          (end -2.286 -1.016)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (pin passive line
+          (at 0 3.81 270)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
       (embedded_fonts no)))
   (wire
     (pts
@@ -1937,15 +2064,15 @@
     (stroke
       (width 0)
       (type default))
-    (uuid 1a1705dc-e480-59d3-b87c-0e3f9bd196a6))
-  (global_label "HOST1_5V"
+    (uuid a0f9431a-bbe6-5950-9cb2-db740507a332))
+  (global_label "S1_TOUCH_5V"
     (shape bidirectional)
     (at 143.51 63.5 180)
     (effects
       (font
         (size 1.0 1.0))
       (justify right))
-    (uuid 9e4dae38-91d3-55cc-8eab-0f3920a7792f))
+    (uuid 714d4a8f-2dab-544c-81a9-807250dee659))
   (wire
     (pts
       (xy 156.21 63.5)
@@ -1953,10 +2080,81 @@
     (stroke
       (width 0)
       (type default))
+    (uuid f32e470a-0a8d-5240-8fab-8c0b1a66b534))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 161.29 63.5 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid b2ddf437-eab1-536b-940a-3181c1de16ae))
+  (symbol
+    (lib_id "screen_symbols:Device_C_Polarized")
+    (at 152.39999999999998 63.5 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid c5eb2de6-b95e-53de-8534-d8afbea7c814)
+    (property "Reference" "C102"
+      (at 152.39999999999998 53.34 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "150uF 10V"
+      (at 152.39999999999998 55.88 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm"
+      (at 152.39999999999998 63.5 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "EEU-FR1A151"
+      (at 152.39999999999998 63.5 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid bc3ed740-798f-5f86-951c-e4c7c4e9b525))
+    (pin "2"
+      (uuid 8d9490de-e880-56b9-a392-ee9530c8a519))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
+          (reference "C102")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 250.19 63.5)
+      (xy 245.11 63.5))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 1a1705dc-e480-59d3-b87c-0e3f9bd196a6))
+  (global_label "HOST1_5V"
+    (shape bidirectional)
+    (at 245.11 63.5 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 9e4dae38-91d3-55cc-8eab-0f3920a7792f))
+  (wire
+    (pts
+      (xy 257.81 63.5)
+      (xy 262.89 63.5))
+    (stroke
+      (width 0)
+      (type default))
     (uuid 3f6caae4-eb50-56fc-b74b-36cd9e12a765))
   (global_label "S1_DATA_COIL_LOW"
     (shape bidirectional)
-    (at 161.29 63.5 0)
+    (at 262.89 63.5 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -1964,30 +2162,30 @@
     (uuid 788c3da2-1206-50d7-a5f4-ee89f860c436))
   (symbol
     (lib_id "screen_symbols:Diode_1N4007")
-    (at 152.39999999999998 63.5 0)
+    (at 254.0 63.5 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid b2bcc12f-3833-515a-8e79-e6b4ad583184)
     (property "Reference" "D101"
-      (at 152.39999999999998 53.34 0)
+      (at 254.0 53.34 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "1N4007"
-      (at 152.39999999999998 55.88 0)
+      (at 254.0 55.88 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal"
-      (at 152.39999999999998 63.5 0)
+      (at 254.0 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "1N4007-E3/54"
-      (at 152.39999999999998 63.5 0)
+      (at 254.0 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -2003,15 +2201,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 261.62 58.42)
-      (xy 266.7 58.42))
+      (xy 363.22 58.42)
+      (xy 368.3 58.42))
     (stroke
       (width 0)
       (type default))
     (uuid 574c639f-20fa-557d-9c24-370cfe0ea00c))
   (global_label "HOST1_5V"
     (shape bidirectional)
-    (at 266.7 58.42 0)
+    (at 368.3 58.42 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -2019,15 +2217,15 @@
     (uuid 4df9c426-eb78-55a0-8fc0-a43aa12549b4))
   (wire
     (pts
-      (xy 261.62 66.04)
-      (xy 266.7 66.04))
+      (xy 363.22 66.04)
+      (xy 368.3 66.04))
     (stroke
       (width 0)
       (type default))
     (uuid 4122037d-32d0-5ee4-a454-786e7f1af623))
   (global_label "S1_UP_N"
     (shape bidirectional)
-    (at 266.7 66.04 0)
+    (at 368.3 66.04 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -2035,15 +2233,15 @@
     (uuid 1a701fb3-e209-5b0b-b433-c93a4441dae4))
   (wire
     (pts
-      (xy 261.62 63.5)
-      (xy 266.7 63.5))
+      (xy 363.22 63.5)
+      (xy 368.3 63.5))
     (stroke
       (width 0)
       (type default))
     (uuid 8c1ca8fa-cab6-597c-a437-9235234c4b5c))
   (global_label "S1_UP_P"
     (shape bidirectional)
-    (at 266.7 63.5 0)
+    (at 368.3 63.5 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -2051,15 +2249,15 @@
     (uuid e6f5f12f-8462-5099-83b7-9673c998b591))
   (wire
     (pts
-      (xy 254.0 73.66)
-      (xy 254.0 78.74))
+      (xy 355.6 73.66)
+      (xy 355.6 78.74))
     (stroke
       (width 0)
       (type default))
     (uuid 193a7668-ad3e-5c22-8e3d-9abeedc86aa8))
   (global_label "GND"
     (shape bidirectional)
-    (at 254.0 78.74 270)
+    (at 355.6 78.74 270)
     (effects
       (font
         (size 1.0 1.0))
@@ -2067,15 +2265,15 @@
     (uuid b47c2331-f6a7-5ea4-b710-02da69bd45b6))
   (wire
     (pts
-      (xy 251.46 73.66)
-      (xy 251.46 78.74))
+      (xy 353.06 73.66)
+      (xy 353.06 78.74))
     (stroke
       (width 0)
       (type default))
     (uuid 3ba6e56b-e80f-539e-8e52-8588047f3d44))
   (global_label "GND"
     (shape bidirectional)
-    (at 251.46 78.74 270)
+    (at 353.06 78.74 270)
     (effects
       (font
         (size 1.0 1.0))
@@ -2083,30 +2281,30 @@
     (uuid 2fa2be89-f231-5a3c-864a-47b092051709))
   (symbol
     (lib_id "screen_symbols:screen_power_USB_B_Host")
-    (at 254.0 63.5 0)
+    (at 355.59999999999997 63.5 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid a734e692-b605-517f-9a91-8fefdc252f57)
     (property "Reference" "J101"
-      (at 276.86 48.260000000000005 0)
+      (at 378.46 48.260000000000005 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "PI USB"
-      (at 276.86 50.800000000000004 0)
+      (at 378.46 50.800000000000004 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "screen_power:USB_B_Lumberg_2411_06_Horizontal"
-      (at 276.86 63.5 0)
+      (at 378.46 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "2411 06"
-      (at 276.86 63.5 0)
+      (at 378.46 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -2128,15 +2326,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 363.22 58.42)
-      (xy 368.3 58.42))
+      (xy 58.42 109.22)
+      (xy 63.5 109.22))
     (stroke
       (width 0)
       (type default))
     (uuid 6ebe39dc-46f3-508f-b37f-083d815d3dd3))
   (global_label "S1_TOUCH_5V"
     (shape bidirectional)
-    (at 368.3 58.42 0)
+    (at 63.5 109.22 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -2144,15 +2342,15 @@
     (uuid bbf82352-6564-5a40-a648-131b181af99d))
   (wire
     (pts
-      (xy 363.22 66.04)
-      (xy 368.3 66.04))
+      (xy 58.42 116.84)
+      (xy 63.5 116.84))
     (stroke
       (width 0)
       (type default))
     (uuid 0e05f9d3-5c96-5c04-ae47-54128460aedd))
   (global_label "S1_DN_N"
     (shape bidirectional)
-    (at 368.3 66.04 0)
+    (at 63.5 116.84 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -2160,15 +2358,15 @@
     (uuid 06243769-42aa-5987-a678-f0fd8f39c760))
   (wire
     (pts
-      (xy 363.22 63.5)
-      (xy 368.3 63.5))
+      (xy 58.42 114.3)
+      (xy 63.5 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid 872a4c4b-3e08-551b-9a83-026a3ef86c6c))
   (global_label "S1_DN_P"
     (shape bidirectional)
-    (at 368.3 63.5 0)
+    (at 63.5 114.3 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -2176,15 +2374,15 @@
     (uuid 93b6fdf1-6791-51a6-843f-a9d3d0e69de3))
   (wire
     (pts
-      (xy 355.6 73.66)
-      (xy 355.6 78.74))
+      (xy 50.8 124.46)
+      (xy 50.8 129.54))
     (stroke
       (width 0)
       (type default))
     (uuid 0a0adcca-4bac-5091-83c4-567e0777c4c5))
   (global_label "GND"
     (shape bidirectional)
-    (at 355.6 78.74 270)
+    (at 50.8 129.54 270)
     (effects
       (font
         (size 1.0 1.0))
@@ -2192,15 +2390,15 @@
     (uuid 1715c014-0a26-5437-8428-824aad72d818))
   (wire
     (pts
-      (xy 353.06 73.66)
-      (xy 353.06 78.74))
+      (xy 48.26 124.46)
+      (xy 48.26 129.54))
     (stroke
       (width 0)
       (type default))
     (uuid 5df317ce-126a-5ac6-b679-b3b389303c15))
   (global_label "GND"
     (shape bidirectional)
-    (at 353.06 78.74 270)
+    (at 48.26 129.54 270)
     (effects
       (font
         (size 1.0 1.0))
@@ -2208,30 +2406,30 @@
     (uuid f46fba5e-7f5c-5fb2-a25e-2dbfc01f4c54))
   (symbol
     (lib_id "screen_symbols:Connector_USB_A")
-    (at 355.59999999999997 63.5 0)
+    (at 50.8 114.3 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 2304bdee-3aa4-5de6-b48e-04ea5773b8cb)
     (property "Reference" "J102"
-      (at 378.46 48.260000000000005 0)
+      (at 73.66 99.06 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "TOUCH"
-      (at 378.46 50.800000000000004 0)
+      (at 73.66 101.60000000000001 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Connector_USB:USB_A_Wuerth_614004134726_Horizontal"
-      (at 378.46 63.5 0)
+      (at 73.66 114.3 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "614004134726"
-      (at 378.46 63.5 0)
+      (at 73.66 114.3 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -2253,34 +2451,34 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 40.64 106.68)
-      (xy 40.64 101.6))
+      (xy 142.24 106.68)
+      (xy 142.24 101.6))
     (stroke
       (width 0)
       (type default))
     (uuid d85c25bf-741b-5e1e-b93e-db02be07e1a9))
   (global_label "HOST1_5V"
     (shape bidirectional)
-    (at 40.64 101.6 90)
+    (at 142.24 101.6 90)
     (effects
       (font
         (size 1.0 1.0))
       (justify left))
     (uuid 760e9fbb-ad26-5db6-8dc6-881e3de0acfd))
   (no_connect
-    (at 48.26 106.68)
+    (at 149.86 106.68)
     (uuid 56d4fa27-6d75-5984-946f-9c816e1f219a))
   (wire
     (pts
-      (xy 50.8 121.92)
-      (xy 50.8 127.0))
+      (xy 152.4 121.92)
+      (xy 152.4 127.0))
     (stroke
       (width 0)
       (type default))
     (uuid 9314c62d-19da-5b63-b302-816512247867))
   (global_label "S1_UP_N"
     (shape bidirectional)
-    (at 50.8 127.0 270)
+    (at 152.4 127.0 270)
     (effects
       (font
         (size 1.0 1.0))
@@ -2288,15 +2486,15 @@
     (uuid e5c01a36-5283-5d15-8645-a0a4b0fb2ea8))
   (wire
     (pts
-      (xy 53.34 106.68)
-      (xy 53.34 101.6))
+      (xy 154.94 106.68)
+      (xy 154.94 101.6))
     (stroke
       (width 0)
       (type default))
     (uuid 0a11e5c9-db0c-5db5-88db-c9e818770ec9))
   (global_label "S1_DN_N"
     (shape bidirectional)
-    (at 53.34 101.6 90)
+    (at 154.94 101.6 90)
     (effects
       (font
         (size 1.0 1.0))
@@ -2304,15 +2502,15 @@
     (uuid c54bd957-2e88-51c9-953d-03dedc9efff9))
   (wire
     (pts
-      (xy 63.5 106.68)
-      (xy 63.5 101.6))
+      (xy 165.1 106.68)
+      (xy 165.1 101.6))
     (stroke
       (width 0)
       (type default))
     (uuid 308ee13a-f611-54fe-9e71-7e24f73ae369))
   (global_label "S1_DN_P"
     (shape bidirectional)
-    (at 63.5 101.6 90)
+    (at 165.1 101.6 90)
     (effects
       (font
         (size 1.0 1.0))
@@ -2320,34 +2518,34 @@
     (uuid 3afe5e8d-edac-5e84-a124-aa8778ae9324))
   (wire
     (pts
-      (xy 60.96 121.92)
-      (xy 60.96 127.0))
+      (xy 162.56 121.92)
+      (xy 162.56 127.0))
     (stroke
       (width 0)
       (type default))
     (uuid 9e5baa73-d06d-527d-946f-50a88a8368d0))
   (global_label "S1_UP_P"
     (shape bidirectional)
-    (at 60.96 127.0 270)
+    (at 162.56 127.0 270)
     (effects
       (font
         (size 1.0 1.0))
       (justify right))
     (uuid 7c857c30-61ed-5f89-904a-6f6b2a602368))
   (no_connect
-    (at 58.42 106.68)
+    (at 160.02 106.68)
     (uuid 095e5cb8-56ef-531d-8a66-0cc4c52f1ffa))
   (wire
     (pts
-      (xy 40.64 121.92)
-      (xy 40.64 127.0))
+      (xy 142.24 121.92)
+      (xy 142.24 127.0))
     (stroke
       (width 0)
       (type default))
     (uuid a0f8d2ba-b9b7-5641-bb57-cc24e25f8504))
   (global_label "S1_DATA_COIL_LOW"
     (shape bidirectional)
-    (at 40.64 127.0 270)
+    (at 142.24 127.0 270)
     (effects
       (font
         (size 1.0 1.0))
@@ -2355,15 +2553,15 @@
     (uuid b50431f0-5df9-5f19-8538-b3c8d50494a1))
   (wire
     (pts
-      (xy 35.56 114.3)
-      (xy 30.48 114.3))
+      (xy 137.16 114.3)
+      (xy 132.08 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid e811cef0-cd69-5e0e-9a22-b86c45d32cc4))
   (global_label "GND"
     (shape bidirectional)
-    (at 30.48 114.3 180)
+    (at 132.08 114.3 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -2371,30 +2569,30 @@
     (uuid 3d078b58-80a8-58ea-88cb-6d04e22c4bbe))
   (symbol
     (lib_id "screen_symbols:screen_power_G6K-2P-RF")
-    (at 50.8 114.3 0)
+    (at 152.39999999999998 114.3 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 71ce4912-08d0-544f-9ca1-2c23b9b7876d)
     (property "Reference" "K101"
-      (at 73.66 96.52 0)
+      (at 175.26 96.52 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "G6K-2P-RF DC5"
-      (at 73.66 99.06 0)
+      (at 175.26 99.06 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "screen_power:Relay_DPDT_Omron_G6K-2P-RF"
-      (at 73.66 114.3 0)
+      (at 175.26 114.3 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "G6K-2P-RF DC5"
-      (at 73.66 114.3 0)
+      (at 175.26 114.3 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -2424,91 +2622,91 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 154.94 119.38)
-      (xy 154.94 124.46))
+      (xy 256.54 119.38)
+      (xy 256.54 124.46))
     (stroke
       (width 0)
       (type default))
-    (uuid 57036d20-3263-5853-9bb9-d70912665b65))
+    (uuid 5dab18e2-7831-5248-a38c-e8807b5ba789))
   (global_label "GND"
     (shape bidirectional)
-    (at 154.94 124.46 270)
+    (at 256.54 124.46 270)
     (effects
       (font
         (size 1.0 1.0))
       (justify right))
-    (uuid 97f07183-dff6-5eac-a4ca-7f9bc169daf8))
+    (uuid 9eb93e00-8277-51dd-8448-6081f8bb4c08))
   (wire
     (pts
-      (xy 147.32 114.3)
-      (xy 142.24 114.3))
+      (xy 248.92 114.3)
+      (xy 243.84 114.3))
     (stroke
       (width 0)
       (type default))
-    (uuid f50c44b3-f2d3-561a-bcf3-7db3bae71000))
-  (global_label "S1_TOUCH_EN"
+    (uuid 731797a3-de22-59f8-b008-ab1a41a8961e))
+  (global_label "DATA_ENABLE"
     (shape bidirectional)
-    (at 142.24 114.3 180)
+    (at 243.84 114.3 180)
     (effects
       (font
         (size 1.0 1.0))
       (justify right))
-    (uuid af46c256-aa9f-5530-be9e-80066d3fd619))
+    (uuid bef9d189-ef1c-552c-b0d7-0b1f058deb7c))
   (wire
     (pts
-      (xy 154.94 109.22)
-      (xy 154.94 104.14))
+      (xy 256.54 109.22)
+      (xy 256.54 104.14))
     (stroke
       (width 0)
       (type default))
-    (uuid 9e00851b-97fd-5e39-b06f-6883a9b4b975))
+    (uuid 7e404d52-114d-56ab-82e6-335728e15c1f))
   (global_label "S1_DATA_COIL_LOW"
     (shape bidirectional)
-    (at 154.94 104.14 90)
+    (at 256.54 104.14 90)
     (effects
       (font
         (size 1.0 1.0))
       (justify left))
-    (uuid 84334a49-b084-5f7f-9d44-877aeeec934f))
+    (uuid 566e1426-f707-5bbb-8520-09ef97f1e8b5))
   (symbol
     (lib_id "screen_symbols:Transistor_FET_2N7000")
-    (at 152.39999999999998 114.3 0)
+    (at 254.0 114.3 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
-    (uuid 6318e55a-7bd6-5fdb-8561-e5990612e24d)
-    (property "Reference" "Q104"
-      (at 175.26 99.06 0)
+    (uuid fb180e8c-e988-5104-a8dc-4081c0adb4c9)
+    (property "Reference" "Q101"
+      (at 276.86 99.06 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "2N7000"
-      (at 175.26 101.60000000000001 0)
+      (at 276.86 101.60000000000001 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Package_TO_SOT_THT:TO-92_Inline_Wide"
-      (at 175.26 114.3 0)
+      (at 276.86 114.3 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "2N7000"
-      (at 175.26 114.3 0)
+      (at 276.86 114.3 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (pin "1"
-      (uuid 7eaa5689-f6d7-5230-9be2-9f6de1f1f2da))
+      (uuid 8c9e8f2e-7355-5101-835b-8d039c43dade))
     (pin "2"
-      (uuid ec0ba76d-1158-5344-a58e-e938618d92f8))
+      (uuid c2f5185f-4ccd-591d-bf8e-bf96e5ae9ccf))
     (pin "3"
-      (uuid b3651e0a-1cb4-545b-ba33-8c164786c795))
+      (uuid c9f61c80-9e34-5ca9-8edc-f74fa468c0ee))
     (instances
       (project "screen_power_hand"
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
-          (reference "Q104")
+          (reference "Q101")
           (unit 1)))))
   (embedded_fonts no))

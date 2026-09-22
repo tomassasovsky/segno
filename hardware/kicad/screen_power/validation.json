@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-22T02:32:45.191449+00:00",
+  "generated_at": "2026-09-22T03:32:23.853208+00:00",
   "kicad_version": "10.0.4",
   "cad_ready": true,
   "hardware_qualification": "not performed",
@@ -14,93 +14,66 @@
         "../netlist.py": "565559b7751337c8930670658026715fa065138c846dd9784bbe4f06549bf1e3",
         "../out_console/segno_console_board.kicad_pcb": "d4a735337159ee083228dbfa23bc4f16c329b2a44fe26847d5a04fc99004b360",
         "build.sh": "ae5821c708b0aefd5192e126bc61fded08f7c0b98a59a5caa575077408fbbcb5",
-        "check.py": "7ea4ff595c8f09deb551ab4f899e4594b31cdd66bb94e3a6265a4b2ce237c697",
-        "circuit.py": "bb71e31c515d9a5321870b7772169f9069f94d811099d2f4470eccf48916a627",
-        "cleanup.py": "5e50d23156b182ea79efc09164ad884eae662e835441acb9bf29072c31745bcb",
-        "export.py": "21711b1eb73ea15f5a12a9c4e028e08d7e26d1c684afc8f3153d7cb96a6e7965",
-        "external_bom.csv": "c38bc9b1ae8bba54bd35bf862ce650102c573e509254215f6a74a80c58019f55",
-        "finish.py": "dc2dc4b7c91e6071b5318296c12719c61ebaeeca856e95f0a2c44914f0cb1d55",
-        "hand/bom.csv": "9ec5184b92aef88677c827356804b1910ee21aa3663227e1f9485549d4b014f6",
-        "hand/components.json": "75f8b39d5bb39c50318c1979013b95c20c2345d1194877803898725dab65d9c8",
+        "check.py": "4b9d51f2978657461c0abcf572f5efa6c861dcb1ed5dd8f13e4d320790a7e45c",
+        "circuit.py": "ce15ced01c26339f13e00f35b7a2e6d99158e33707b51cf0f906c090e423797a",
+        "cleanup.py": "250a4ca530796cded61d5d1b660b5d01d1ceff215e0ff44b1265c5a3e19ad93b",
+        "export.py": "4e753f3a70e00116eedc175abaf1278fe7b14495cf0386816d9c317502e11979",
+        "external_bom.csv": "4260d52e68e5c974319aff2036cfda06a7ced45887d495957189be9a43e8c040",
+        "finish.py": "c88c2d06c792de521458776d77b08772eaa6795426ae368d46261caffc8bd08c",
+        "hand/bom.csv": "d0a8b5f40a318ed21fc05b0c055870a952e4496a86a3eadacf67ae12355b06ca",
+        "hand/components.json": "a7cb4d8953823713f84854584063734d0322b9fb5ee261b5a8bc95161231b0f0",
         "hand/fp-lib-table": "590440cd229828cd8c6d6cc97b03e045898207b4ea07239e3f5616a7af084473",
-        "hand/screen1_power.kicad_sch": "36a8260a86ad1a30f4c6cbb1de0370de319475d16dd2ed0f01855b6a5046d854",
-        "hand/screen1_touch.kicad_sch": "cb4cd6f337a989996a87ae7d99f3b4b1b5af22b65ad311590aeaa6c9de849682",
-        "hand/screen2_power.kicad_sch": "70b3f557cb6993c99a89687636a7b674e2fca4e33b564c9af3101a4491409083",
-        "hand/screen2_touch.kicad_sch": "3d7be63595a3b65c3f55f4f3c95598dd2d53f85ff761018751cd80d765e5bfd3",
-        "hand/screen_power_hand.kicad_pcb": "0362adac5630fb1871472aeded0f62d113e94ccb73a770ef520a6ec007d757b3",
+        "hand/screen1_power.kicad_sch": "0a6b65ddd8a3aa0f0c4a11936a6986e59c31650218c9b0b37ac9455b656e36e8",
+        "hand/screen1_touch.kicad_sch": "e60b2563e63168f12870b61f5cad3c440a000f4529a52d4d3ed516b50a7daa8e",
+        "hand/screen2_power.kicad_sch": "91b9d3e2c97670df8d552852491f9007a2fbf9b71f4f8c9d41ade6e75df340bc",
+        "hand/screen2_touch.kicad_sch": "6ca2d335632cfa4a2ed3773513d89ca8b08ee298b2b48d0170e8321ecf1422b2",
+        "hand/screen_power_hand.kicad_pcb": "c061ea06f6c050f495df81d6b3aff7bd6acb7a920c102c1312c803920897831d",
         "hand/screen_power_hand.kicad_pro": "93b2c29201f7b2df20a8edacf21436de7d3afae0e817ed38c3c4b19b65844d18",
-        "hand/screen_power_hand.kicad_sch": "4f9f091b2dce261aa597a8aa1dd8fb96055b19b0a355e30e98934278aa4e46dd",
-        "hand/screen_power_hand.net": "049f5579c7e5c145d29a3fabe4b42166f166d0e04e3415ad119dfb8764b55117",
+        "hand/screen_power_hand.kicad_sch": "745a9ac1a802ed4aadf4b2a227885c78454e78a216216d982a0ae8c9bd8d901c",
+        "hand/screen_power_hand.net": "fb783127b1c29993253542482f56e3d897cca6232ac9ee9b4e7944c3b4e535af",
         "hand/screen_power_hand.placed.kicad_pro": "826d5348ebb42316d5521ed976e997ff3d493d343da4b459e395a760b407d3fc",
-        "hand/screen_symbols.kicad_sym": "fe8339ba425a664641b8ed28f263d80a01e2e036495252dfa407aa6bc5664e37",
+        "hand/screen_symbols.kicad_sym": "fc7304209770a0331e57e005855c638c690a8bff5b7254e31112442661138172",
+        "hand/shared_power.kicad_sch": "3174ecfe52fad745521c4d3a029a49a16eed78f0d7dfbc23880e06154dae1273",
         "hand/sym-lib-table": "070e6b5e2a9f44bcdeed6f57f9851fca4075a3e343216d6ce3e0ffa6abb317c9",
-        "hand_checks.py": "084d5dcdd63addb2ebfa6b21364909a3ddb32d674b31ef8bfdd9dbd5089239a6",
-        "hand_circuit.py": "7bd76765d3f9dbbf1710068330dcc0946a7fae0c8c3f1381e82d7d2a319b71e6",
-        "hand_layout.py": "d1b241a5ade4c3f3d367b091d642b671e7b3e01e3841c02a2231c005ad8052e1",
-        "pcb.py": "369f6083485dff8439ceb4f454cbf6c1d44be3bb069c8f63e50d98db1fa8dbeb",
-        "route_critical.py": "bab5cb5c65301095e6783ba40d494d94fa12b6ce3d189fdcdccd69bae525680b",
-        "router.py": "3209b6af268eb1d1e6c108d5486fb0325c13b89872475d5badd5ca338ec81f63",
-        "schematic.py": "6087ef98670b9e1973780487f2b2db58e119f3eb5b1f3a78324c748371f8dbb2",
-        "screen_power.kicad_sym": "41ea8feacb24f37144862c4c92072caa572d6a30f0e841bf7ba96b6b39f669b2",
+        "hand_checks.py": "f1810c3da62e948f0f1ca864936593218fe55c0b9fd2baa43782ddadf44db0ec",
+        "layout.py": "deeea167e469d4f115febf98ba91a6ada9f5cded22ce1c2fd743111b351cf739",
+        "pcb.py": "427899731ebce81782cf95813610851be82b421f678faa359321d007c8e1d8fe",
+        "route_critical.py": "6da8c96d3d45c2637012de054dc2a2bf883022598750d25170bc1aecc4b8a0ae",
+        "router.py": "9d98e807cc1abef9f3588f5e5f643ca460b8d939de6287fdd67f1b1a993f1188",
+        "schematic.py": "8853327a52cef163ef5829f327ae6583877ae2fa2ff9cf598fad55d80865a307",
+        "screen_power.kicad_sym": "2aff07d58066cffcabf1473734e53adfce7173bc3c3a7d7acb9ab47352ea28dc",
+        "screen_power.pretty/Fuse_Littelfuse_251_P12.70mm.kicad_mod": "78dc85457dff9dd66e543e545d7033531b9d0de4fea476e633baea202a66aa3d",
         "screen_power.pretty/Relay_DPDT_Omron_G6K-2P-RF.kicad_mod": "a2b1ca3c65b615a56df4f3685cb875aa624fc489b4a8d5ea80985bbde95e4b04",
-        "screen_power.pretty/USB_B_Lumberg_2411_06_Horizontal.kicad_mod": "9f7d60f3c664086783fff387d8d577a98069de178029628a935a5797942688ec"
+        "screen_power.pretty/TO-220-3_SUP70101EL.kicad_mod": "0566209e224dbf3c4e85ce20f55fe952db20cb2f4fd765e34b3a8854375b9cd0",
+        "screen_power.pretty/USB_B_Lumberg_2411_06_Horizontal.kicad_mod": "9f7d60f3c664086783fff387d8d577a98069de178029628a935a5797942688ec",
+        "switch_circuit.py": "d7a3ffd3175b880374513e974c96228c374434f0db1708cdefd801135f553c25"
       },
       "usb_track_lengths_mm": {
-        "S1_UP_P": 37.165252,
-        "S1_UP_N": 36.469374,
-        "S1_DN_P": 38.624116,
-        "S1_DN_N": 37.905128,
-        "S2_UP_P": 37.165252,
-        "S2_UP_N": 36.469374,
-        "S2_DN_P": 38.624116,
-        "S2_DN_N": 37.905128
+        "S1_UP_P": 28.551401,
+        "S1_UP_N": 27.855521,
+        "S1_DN_P": 27.163771,
+        "S1_DN_N": 27.859649,
+        "S2_UP_P": 28.5514,
+        "S2_UP_N": 27.855521,
+        "S2_DN_P": 27.163772,
+        "S2_DN_N": 27.859649
       },
       "numerical_checks": {
-        "hand_relay_checks": {
-          "channels": {
-            "1": {
-              "ufp_sink_maximum_mA": 0.9574314574314574,
-              "pnp_base_minimum_mA": 0.618056091323418,
-              "gate_static_load_maximum_mA": 0.05655555555555555,
-              "gate_assumed_minimum_on_V": 4.5,
-              "data_coil_minimum_V": 4.634835315645014,
-              "power_coil_minimum_V": 4.747069710055521,
-              "data_coil_nominal_mA": 21.09704641350211,
-              "power_coil_nominal_mA": 79.36507936507937,
-              "discharge_resistor_maximum_W": [
-                0.3055555555555556,
-                0.3055555555555556
-              ]
-            },
-            "2": {
-              "ufp_sink_maximum_mA": 0.9574314574314574,
-              "pnp_base_minimum_mA": 0.618056091323418,
-              "gate_static_load_maximum_mA": 0.05655555555555555,
-              "gate_assumed_minimum_on_V": 4.5,
-              "data_coil_minimum_V": 4.634835315645014,
-              "power_coil_minimum_V": 4.747069710055521,
-              "data_coil_nominal_mA": 21.09704641350211,
-              "power_coil_nominal_mA": 79.36507936507937,
-              "discharge_resistor_maximum_W": [
-                0.3055555555555556,
-                0.3055555555555556
-              ]
-            }
-          },
-          "touch_fuse_nominal_A": 0.8,
-          "touch_continuous_design_load_A": 0.5,
-          "touch_fuse_is_current_limiter": false,
-          "usb_suspend_compliance": "not established: host-powered relay coil exceeds 2.5mA",
-          "relay_pickup_conditions": "initial, approximately 23C; temperature testing required"
-        },
+        "aux_input_min_V": 5.0,
+        "aux_input_max_V": 5.25,
+        "combined_design_load_A": 6,
+        "gate_min_V_with_estimated_hot_Rds": 4.5804454407492,
+        "hot_Rds_factor_is_estimate": 1.7,
         "gpio_assumed_minimum_high_V": 2.4,
-        "enable_minimum_V": 2.0017323873948194,
-        "base_drive_minimum_mA": 0.09842644403260355,
-        "collector_maximum_mA": 0.5555555555555556,
-        "hand_external_EN_pulldowns_ohms": [
-          100000,
-          100000
-        ]
+        "gpio_base_min_mA": 1.426047604760476,
+        "collector_peak_mA": 2.075274016763378,
+        "bleeder_max_W": 0.2784090909090909,
+        "pair_loss_at_6A_25C_max_Rds_W": 1.08,
+        "relay_initial_coil_min_V": 4.634835315645014,
+        "host_relay_coil_nominal_mA": 21.09704641350211,
+        "main_continuous_fuse_design_A": 3,
+        "touch_continuous_fuse_design_A": 0.5,
+        "thermal_inrush_USB_suspend_and_fault_coordination": "require physical testing"
       },
       "drc": {
         "counts": {
@@ -113,7 +86,7 @@
         "report": {
           "$schema": "https://schemas.kicad.org/drc.v1.json",
           "coordinate_units": "mm",
-          "date": "2026-09-21T23:32:38",
+          "date": "2026-09-22T00:32:17",
           "ignored_checks": [
             {
               "description": "Footprint has no courtyard defined",
@@ -159,7 +132,7 @@
         "report": {
           "$schema": "https://schemas.kicad.org/erc.v1.json",
           "coordinate_units": "mm",
-          "date": "2026-09-21T23:32:39",
+          "date": "2026-09-22T00:32:18",
           "ignored_checks": [
             {
               "description": "Global label only appears once in the schematic",
@@ -191,6 +164,11 @@
               "violations": []
             },
             {
+              "path": "/shared power/",
+              "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/0157c963-12d5-5a27-8699-19e38824f98e",
+              "violations": []
+            },
+            {
               "path": "/screen1 power/",
               "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/2b4f2bc6-c7a6-56c4-ac6c-4e72a6852df9",
               "violations": []
@@ -218,6 +196,12 @@
         "console_control_cut_detected": true,
         "smd_footprint_detected": true,
         "smd_pad_detected": true,
+        "power_lead_hole_detected": true,
+        "wrong_relay_detected": true,
+        "wrong_driver_detected": true,
+        "wrong_tolerance_detected": true,
+        "weak_pulldown_detected": true,
+        "narrow_power_detected": true,
         "host_power_bridge_detected": true,
         "usb_cut_detected": true
       },
@@ -233,65 +217,66 @@
         "../netlist.py": "565559b7751337c8930670658026715fa065138c846dd9784bbe4f06549bf1e3",
         "../out_console/segno_console_board.kicad_pcb": "d4a735337159ee083228dbfa23bc4f16c329b2a44fe26847d5a04fc99004b360",
         "build.sh": "ae5821c708b0aefd5192e126bc61fded08f7c0b98a59a5caa575077408fbbcb5",
-        "check.py": "7ea4ff595c8f09deb551ab4f899e4594b31cdd66bb94e3a6265a4b2ce237c697",
-        "circuit.py": "bb71e31c515d9a5321870b7772169f9069f94d811099d2f4470eccf48916a627",
-        "cleanup.py": "5e50d23156b182ea79efc09164ad884eae662e835441acb9bf29072c31745bcb",
-        "export.py": "21711b1eb73ea15f5a12a9c4e028e08d7e26d1c684afc8f3153d7cb96a6e7965",
-        "external_bom.csv": "c38bc9b1ae8bba54bd35bf862ce650102c573e509254215f6a74a80c58019f55",
-        "factory/bom.csv": "d44e1a4c64a2dffff260c41f919bd3e9f3a6e957cb8c8d2df586d1699e08f57f",
-        "factory/components.json": "4fac6df8b60108a8d38540104aa406d9383b2eabe5a888897828bf90302072d8",
+        "check.py": "4b9d51f2978657461c0abcf572f5efa6c861dcb1ed5dd8f13e4d320790a7e45c",
+        "circuit.py": "ce15ced01c26339f13e00f35b7a2e6d99158e33707b51cf0f906c090e423797a",
+        "cleanup.py": "250a4ca530796cded61d5d1b660b5d01d1ceff215e0ff44b1265c5a3e19ad93b",
+        "export.py": "4e753f3a70e00116eedc175abaf1278fe7b14495cf0386816d9c317502e11979",
+        "external_bom.csv": "4260d52e68e5c974319aff2036cfda06a7ced45887d495957189be9a43e8c040",
+        "factory/bom.csv": "320afd8102eb53d8c0a018316d1f8e2016b63ff247d50f6c4a6ccb28d6674b26",
+        "factory/components.json": "ae742c97ce85b0d5239d0d66d40d0dc0112f55a9b89c99ae0700b21dd60e522b",
         "factory/fp-lib-table": "590440cd229828cd8c6d6cc97b03e045898207b4ea07239e3f5616a7af084473",
-        "factory/screen1_power.kicad_sch": "19dab0680a2abcca9440ec41a018ae4fa59d9bca2944b012ce8cfe02857e9fbe",
-        "factory/screen1_touch.kicad_sch": "c6b3989d946023cff9d93bd0a86cee283aa71a07b866b128036e29c9e40ca4b1",
-        "factory/screen2_power.kicad_sch": "a68398c053942a7f10bc751b4af3b66defd867883308afde4a92cc2a77b27c50",
-        "factory/screen2_touch.kicad_sch": "90cfc0a83c41bee1433ddac15d7ca9753a1d970abdb09aa868826fb248170f91",
-        "factory/screen_power_factory.kicad_pcb": "d047ab2bc52f89caec3ef808c306aa1cff9b533ac3ffef7bfe16c130e9def464",
+        "factory/screen1_power.kicad_sch": "e7a3f60d7de79fae701adb06886b5d634849318e1fe6b7c8706bb5930732f4fe",
+        "factory/screen1_touch.kicad_sch": "989acc75f6c5ae1d8140797bb68cc9bc4669ef4979ba6d25d890cd662757a892",
+        "factory/screen2_power.kicad_sch": "dd84e7aed7e398dcb18c8354e4dbb01a502d5cf7ffbb3ba34f201268546d11ae",
+        "factory/screen2_touch.kicad_sch": "7315edf7e4d372813fec588239c6780ff5e8baddb06ffdc77b33df14b0b15237",
+        "factory/screen_power_factory.kicad_pcb": "8f1bafef2a51b4fa090e2bb35ce266e421ed2f82aae7d9d2274d8e332bd01b8f",
         "factory/screen_power_factory.kicad_pro": "d5e6f071ed0e6910fe57a286bc0e8df731c104225ced5a3d119d7b8a6aaf8f7f",
-        "factory/screen_power_factory.kicad_sch": "6a7720bdd3eb3efe64dc723dcb579c830c892ca1e59510d5238e8a6916102db3",
-        "factory/screen_power_factory.net": "265635d18f0f7ecf3472b5c69420d9e6ac778353c416e426bf2bf3d78f6a552f",
+        "factory/screen_power_factory.kicad_sch": "0a01a75a327246ccb6da713458725d2d650e5ee209edcafa2e24425f60b53045",
+        "factory/screen_power_factory.net": "8cc025b0c17d9a56e3614432844d6130caa5dcabad315b6cd3765830c2f76758",
         "factory/screen_power_factory.placed.kicad_pro": "9f2df6aae2c9d2cda062349b8cbb87248d7a1251e7f6e1ebbbda4d2880a8b669",
-        "factory/screen_symbols.kicad_sym": "8f62602662013a71bea9009bb70400ccbcaead7da99d6abf1418aeee07ac4dc5",
+        "factory/screen_symbols.kicad_sym": "f07dd2c4e4ebb7ce9ec4efcabc3fd65ef7e3f78ea1131d684f693c41d54a9018",
+        "factory/shared_power.kicad_sch": "0621847329317080c742ce049076937d3abd0c35e8524e75f635def055a8fb26",
         "factory/sym-lib-table": "070e6b5e2a9f44bcdeed6f57f9851fca4075a3e343216d6ce3e0ffa6abb317c9",
-        "finish.py": "dc2dc4b7c91e6071b5318296c12719c61ebaeeca856e95f0a2c44914f0cb1d55",
-        "hand_checks.py": "084d5dcdd63addb2ebfa6b21364909a3ddb32d674b31ef8bfdd9dbd5089239a6",
-        "hand_circuit.py": "7bd76765d3f9dbbf1710068330dcc0946a7fae0c8c3f1381e82d7d2a319b71e6",
-        "hand_layout.py": "d1b241a5ade4c3f3d367b091d642b671e7b3e01e3841c02a2231c005ad8052e1",
-        "pcb.py": "369f6083485dff8439ceb4f454cbf6c1d44be3bb069c8f63e50d98db1fa8dbeb",
-        "route_critical.py": "bab5cb5c65301095e6783ba40d494d94fa12b6ce3d189fdcdccd69bae525680b",
-        "router.py": "3209b6af268eb1d1e6c108d5486fb0325c13b89872475d5badd5ca338ec81f63",
-        "schematic.py": "6087ef98670b9e1973780487f2b2db58e119f3eb5b1f3a78324c748371f8dbb2",
-        "screen_power.kicad_sym": "41ea8feacb24f37144862c4c92072caa572d6a30f0e841bf7ba96b6b39f669b2",
+        "finish.py": "c88c2d06c792de521458776d77b08772eaa6795426ae368d46261caffc8bd08c",
+        "hand_checks.py": "f1810c3da62e948f0f1ca864936593218fe55c0b9fd2baa43782ddadf44db0ec",
+        "layout.py": "deeea167e469d4f115febf98ba91a6ada9f5cded22ce1c2fd743111b351cf739",
+        "pcb.py": "427899731ebce81782cf95813610851be82b421f678faa359321d007c8e1d8fe",
+        "route_critical.py": "6da8c96d3d45c2637012de054dc2a2bf883022598750d25170bc1aecc4b8a0ae",
+        "router.py": "9d98e807cc1abef9f3588f5e5f643ca460b8d939de6287fdd67f1b1a993f1188",
+        "schematic.py": "8853327a52cef163ef5829f327ae6583877ae2fa2ff9cf598fad55d80865a307",
+        "screen_power.kicad_sym": "2aff07d58066cffcabf1473734e53adfce7173bc3c3a7d7acb9ab47352ea28dc",
+        "screen_power.pretty/Fuse_Littelfuse_251_P12.70mm.kicad_mod": "78dc85457dff9dd66e543e545d7033531b9d0de4fea476e633baea202a66aa3d",
         "screen_power.pretty/Relay_DPDT_Omron_G6K-2P-RF.kicad_mod": "a2b1ca3c65b615a56df4f3685cb875aa624fc489b4a8d5ea80985bbde95e4b04",
-        "screen_power.pretty/USB_B_Lumberg_2411_06_Horizontal.kicad_mod": "9f7d60f3c664086783fff387d8d577a98069de178029628a935a5797942688ec"
+        "screen_power.pretty/TO-220-3_SUP70101EL.kicad_mod": "0566209e224dbf3c4e85ce20f55fe952db20cb2f4fd765e34b3a8854375b9cd0",
+        "screen_power.pretty/USB_B_Lumberg_2411_06_Horizontal.kicad_mod": "9f7d60f3c664086783fff387d8d577a98069de178029628a935a5797942688ec",
+        "switch_circuit.py": "d7a3ffd3175b880374513e974c96228c374434f0db1708cdefd801135f553c25"
       },
       "usb_track_lengths_mm": {
-        "S1_UP_P": 39.432739,
-        "S1_UP_N": 37.896862,
-        "S1_DN_P": 36.748358,
-        "S1_DN_N": 38.284236,
-        "S2_UP_P": 39.43274,
-        "S2_UP_N": 37.896862,
-        "S2_DN_P": 36.748358,
-        "S2_DN_N": 38.284236
+        "S1_UP_P": 28.551401,
+        "S1_UP_N": 27.855521,
+        "S1_DN_P": 27.163771,
+        "S1_DN_N": 27.859649,
+        "S2_UP_P": 28.551399,
+        "S2_UP_N": 27.855521,
+        "S2_DN_P": 27.163771,
+        "S2_DN_N": 27.859649
       },
       "numerical_checks": {
-        "touch_current_limits": {
-          "R103": {
-            "minimum_mA": 603.9797690725567,
-            "nominal_mA": 682.20881045448,
-            "maximum_mA": 752.3237137602492
-          },
-          "R203": {
-            "minimum_mA": 603.9797690725567,
-            "nominal_mA": 682.20881045448,
-            "maximum_mA": 752.3237137602492
-          }
-        },
+        "aux_input_min_V": 5.0,
+        "aux_input_max_V": 5.25,
+        "combined_design_load_A": 6,
+        "gate_min_V_with_estimated_hot_Rds": 4.5804454407492,
+        "hot_Rds_factor_is_estimate": 1.7,
         "gpio_assumed_minimum_high_V": 2.4,
-        "enable_minimum_V": 2.0356543624161074,
-        "base_drive_minimum_mA": 0.10185674029587832,
-        "collector_maximum_mA": 0.5555555555555556,
-        "hand_external_EN_pulldowns_ohms": []
+        "gpio_base_min_mA": 1.426047604760476,
+        "collector_peak_mA": 2.075274016763378,
+        "bleeder_max_W": 0.2784090909090909,
+        "pair_loss_at_6A_25C_max_Rds_W": 1.08,
+        "relay_initial_coil_min_V": 4.634835315645014,
+        "host_relay_coil_nominal_mA": 21.09704641350211,
+        "main_continuous_fuse_design_A": 3,
+        "touch_continuous_fuse_design_A": 0.5,
+        "thermal_inrush_USB_suspend_and_fault_coordination": "require physical testing"
       },
       "drc": {
         "counts": {
@@ -304,7 +289,7 @@
         "report": {
           "$schema": "https://schemas.kicad.org/drc.v1.json",
           "coordinate_units": "mm",
-          "date": "2026-09-21T23:32:42",
+          "date": "2026-09-22T00:32:21",
           "ignored_checks": [
             {
               "description": "Footprint has no courtyard defined",
@@ -350,7 +335,7 @@
         "report": {
           "$schema": "https://schemas.kicad.org/erc.v1.json",
           "coordinate_units": "mm",
-          "date": "2026-09-21T23:32:44",
+          "date": "2026-09-22T00:32:22",
           "ignored_checks": [
             {
               "description": "Global label only appears once in the schematic",
@@ -382,6 +367,11 @@
               "violations": []
             },
             {
+              "path": "/shared power/",
+              "uuid_path": "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1",
+              "violations": []
+            },
+            {
               "path": "/screen1 power/",
               "uuid_path": "/164f651f-650b-5409-9ff6-bd70e288a5b2/f0aa658f-2b37-5395-ad1d-43ec007e1904",
               "violations": []
@@ -407,6 +397,11 @@
       },
       "self_test": {
         "console_control_cut_detected": true,
+        "wrong_relay_detected": true,
+        "wrong_driver_detected": true,
+        "wrong_tolerance_detected": true,
+        "weak_pulldown_detected": true,
+        "narrow_power_detected": true,
         "host_power_bridge_detected": true,
         "usb_cut_detected": true
       },

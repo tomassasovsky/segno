@@ -1,0 +1,1797 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid faa11794-0a9b-5e4e-8802-14b5160d8ef1)
+  (paper "A3")
+  (title_block
+    (title "Segno screen power / factory / shared power")
+    (rev "B prototype")
+    (comment 1 "Discrete 5V switch. Host VBUS powers only its own RF relay coil.")
+    (comment 2 "Physical verification required before release."))
+  (lib_symbols
+    (symbol "screen_symbols:Connector_Generic_Conn_01x02"
+      (pin_names
+        (offset 0.508)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "J"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "Conn_01x02"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Connector_Generic_Conn_01x02_1_1"
+        (rectangle
+          (start -1.27 1.27)
+          (end 1.27 -3.81)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (rectangle
+          (start -1.27 0.127)
+          (end 0 -0.127)
+          (stroke
+            (width 0.1524)
+            (type default))
+          (fill
+            (type none)))
+        (rectangle
+          (start -1.27 -2.413)
+          (end 0 -2.667)
+          (stroke
+            (width 0.1524)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at -5.08 0 0)
+          (length 3.81)
+          (name "Pin_1"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at -5.08 -2.54 0)
+          (length 3.81)
+          (name "Pin_2"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Device_R"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "R"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "R"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Resistor"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Device_R_0_1"
+        (rectangle
+          (start -1.016 -2.54)
+          (end 1.016 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Device_R_1_1"
+        (rectangle
+          (start -1.016 -2.54)
+          (end 1.016 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at 0 3.81 270)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Transistor_FET_Q_PMOS_GDS"
+      (pin_names
+        (offset 0.508)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "Q"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "Q_PMOS_GDS"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "P-MOSFET transistor, gate/drain/source"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Transistor_FET_Q_PMOS_GDS_0_1"
+        (polyline
+          (pts
+            (xy 0.254 1.905)
+            (xy 0.254 -1.905))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.254 0)
+            (xy -2.54 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 2.286)
+            (xy 0.762 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 1.778)
+            (xy 3.302 1.778)
+            (xy 3.302 -1.778)
+            (xy 0.762 -1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 0.508)
+            (xy 0.762 -0.508))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.27)
+            (xy 0.762 -2.286))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 1.651 0)
+          (radius 2.794)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.286 0)
+            (xy 1.27 0.381)
+            (xy 1.27 -0.381)
+            (xy 2.286 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (polyline
+          (pts
+            (xy 2.54 2.54)
+            (xy 2.54 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 2.54 1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 2.54 -1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (polyline
+          (pts
+            (xy 2.54 -2.54)
+            (xy 2.54 0)
+            (xy 0.762 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.921 -0.381)
+            (xy 3.683 -0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 3.302 -0.381)
+            (xy 2.921 0.254)
+            (xy 3.683 0.254)
+            (xy 3.302 -0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Transistor_FET_Q_PMOS_GDS_1_1"
+        (polyline
+          (pts
+            (xy 0.254 1.905)
+            (xy 0.254 -1.905))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.254 0)
+            (xy -2.54 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 2.286)
+            (xy 0.762 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 1.778)
+            (xy 3.302 1.778)
+            (xy 3.302 -1.778)
+            (xy 0.762 -1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 0.508)
+            (xy 0.762 -0.508))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.27)
+            (xy 0.762 -2.286))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 1.651 0)
+          (radius 2.794)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.286 0)
+            (xy 1.27 0.381)
+            (xy 1.27 -0.381)
+            (xy 2.286 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (polyline
+          (pts
+            (xy 2.54 2.54)
+            (xy 2.54 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 2.54 1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 2.54 -1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (polyline
+          (pts
+            (xy 2.54 -2.54)
+            (xy 2.54 0)
+            (xy 0.762 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.921 -0.381)
+            (xy 3.683 -0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 3.302 -0.381)
+            (xy 2.921 0.254)
+            (xy 3.683 0.254)
+            (xy 3.302 -0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (pin input line
+          (at -5.08 0 0)
+          (length 2.54)
+          (name "G"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 2.54 5.08 270)
+          (length 2.54)
+          (name "D"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 2.54 -5.08 90)
+          (length 2.54)
+          (name "S"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Device_C"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "C"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "C"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Unpolarized capacitor"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Device_C_0_1"
+        (polyline
+          (pts
+            (xy -2.032 0.762)
+            (xy 2.032 0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -2.032 -0.762)
+            (xy 2.032 -0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Device_C_1_1"
+        (polyline
+          (pts
+            (xy -2.032 0.762)
+            (xy 2.032 0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -2.032 -0.762)
+            (xy 2.032 -0.762))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at 0 3.81 270)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Device_C_Polarized"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "C"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "C_Polarized"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Polarized capacitor"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Device_C_Polarized_0_1"
+        (rectangle
+          (start -2.286 0.508)
+          (end 2.286 1.016)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.778 2.286)
+            (xy -0.762 2.286))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.27 2.794)
+            (xy -1.27 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (rectangle
+          (start 2.286 -0.508)
+          (end -2.286 -1.016)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline))))
+      (symbol "Device_C_Polarized_1_1"
+        (rectangle
+          (start -2.286 0.508)
+          (end 2.286 1.016)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.778 2.286)
+            (xy -0.762 2.286))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.27 2.794)
+            (xy -1.27 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (rectangle
+          (start 2.286 -0.508)
+          (end -2.286 -1.016)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (pin passive line
+          (at 0 3.81 270)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 2.794)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Mechanical_MountingHole"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "H"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "MountingHole"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Mounting Hole without connection"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Mechanical_MountingHole_0_1"
+        (circle
+          (center 0 0)
+          (radius 1.27)
+          (stroke
+            (width 1.27)
+            (type default))
+          (fill
+            (type none))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:power_PWR_FLAG"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "#FLG"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "PWR_FLAG"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Special symbol for telling ERC where power comes from"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "power_PWR_FLAG_0_1"
+        (polyline
+          (pts
+            (xy 0 0)
+            (xy 0 1.27)
+            (xy -1.016 1.905)
+            (xy 0 2.54)
+            (xy 1.016 1.905)
+            (xy 0 1.27))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "power_PWR_FLAG_1_1"
+        (polyline
+          (pts
+            (xy 0 0)
+            (xy 0 1.27)
+            (xy -1.016 1.905)
+            (xy 0 2.54)
+            (xy 1.016 1.905)
+            (xy 0 1.27))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (pin power_out line
+          (at 0 0 90)
+          (length 0)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no)))
+  (wire
+    (pts
+      (xy 50.8 63.5)
+      (xy 50.8 68.58))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 5b5e2dda-595a-53b7-8648-f0155daf85d5))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 50.8 68.58 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 1f7dab42-6574-5884-87f7-b143586a46a8))
+  (symbol
+    (lib_id "screen_symbols:power_PWR_FLAG")
+    (at 50.8 63.5 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (dnp no)
+    (uuid 3af9954c-5ec8-5ed2-b9d1-760c8578cda2)
+    (property "Reference" "#FLG1"
+      (at 50.8 53.34 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "PWR_FLAG"
+      (at 50.8 55.88 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 50.8 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" ""
+      (at 50.8 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 08bbec94-6e2b-5e8e-b0d7-2f689008e383))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "#FLG1")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 152.4 63.5)
+      (xy 152.4 68.58))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 5b4fa37a-3f1a-596b-8a7a-a823ce654619))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 152.4 68.58 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid f215fdad-614f-53a8-a204-d8f22528acb6))
+  (symbol
+    (lib_id "screen_symbols:power_PWR_FLAG")
+    (at 152.39999999999998 63.5 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (dnp no)
+    (uuid dbf47a22-6e00-5eed-93bc-df3e52530b72)
+    (property "Reference" "#FLG2"
+      (at 152.39999999999998 53.34 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "PWR_FLAG"
+      (at 152.39999999999998 55.88 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 152.39999999999998 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" ""
+      (at 152.39999999999998 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 3b904264-74ba-559a-9b38-1caac044b5ff))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "#FLG2")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 254.0 63.5)
+      (xy 254.0 68.58))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 3ce2110b-86b4-577e-acb7-7415086c0772))
+  (global_label "S1_TOUCH_5V"
+    (shape bidirectional)
+    (at 254.0 68.58 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 6a56eb70-3327-5153-83e3-a4f7cfbbb1ee))
+  (symbol
+    (lib_id "screen_symbols:power_PWR_FLAG")
+    (at 254.0 63.5 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (dnp no)
+    (uuid 0edc2097-b1d4-5236-90b2-ffed61060a9d)
+    (property "Reference" "#FLG3"
+      (at 254.0 53.34 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "PWR_FLAG"
+      (at 254.0 55.88 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 254.0 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" ""
+      (at 254.0 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid a502dd67-f85b-5604-b031-5af92d41e008))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "#FLG3")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 355.6 63.5)
+      (xy 355.6 68.58))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 20b03454-13e7-551d-ad1a-3b506b5f235a))
+  (global_label "S2_TOUCH_5V"
+    (shape bidirectional)
+    (at 355.6 68.58 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid b4bbf5a0-63c3-58b6-bf1a-53d29e991860))
+  (symbol
+    (lib_id "screen_symbols:power_PWR_FLAG")
+    (at 355.59999999999997 63.5 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (dnp no)
+    (uuid eede1c7f-3065-54ac-9437-4bddac286467)
+    (property "Reference" "#FLG4"
+      (at 355.59999999999997 53.34 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "PWR_FLAG"
+      (at 355.59999999999997 55.88 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 355.59999999999997 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" ""
+      (at 355.59999999999997 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 87906b66-2ab9-5c38-9295-184f4d1d8d87))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "#FLG4")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 46.99 114.3)
+      (xy 41.91 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 4d2a55d0-5475-556d-b060-25b8205f3903))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 41.91 114.3 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 2cb5982c-bc4d-5209-aae7-8ad5ebe8eea9))
+  (wire
+    (pts
+      (xy 54.61 114.3)
+      (xy 59.69 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 19dbe05e-a747-5d13-b8c2-a7bf52d1363a))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 59.69 114.3 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 2e785b41-637d-52da-9c4a-f3a9dafe6f53))
+  (symbol
+    (lib_id "screen_symbols:Device_C")
+    (at 50.8 114.3 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid d7036750-a029-5b34-9df3-7f63e3062102)
+    (property "Reference" "C1"
+      (at 50.8 104.14 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "100nF 50V"
+      (at 50.8 106.68 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+      (at 50.8 114.3 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "GRM21BR71H104KA01L"
+      (at 50.8 114.3 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid ee79446a-6103-54d5-8b30-9f343ec98e8a))
+    (pin "2"
+      (uuid 081af030-b6b4-5d8f-8334-af3c4718c032))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "C1")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 148.59 114.3)
+      (xy 143.51 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid fae7a288-38a8-5277-83ce-700f010e01da))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 143.51 114.3 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 39433f79-b99a-5de1-b944-655254ee79e4))
+  (wire
+    (pts
+      (xy 156.21 114.3)
+      (xy 161.29 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 6cc4ec22-15c9-5f98-9e4a-da00eca78ca3))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 161.29 114.3 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 8fcba89a-3b7c-54df-bb49-0573d4897529))
+  (symbol
+    (lib_id "screen_symbols:Device_C_Polarized")
+    (at 152.39999999999998 114.3 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid f13190ab-b7cd-50ee-ae38-a86d40671b24)
+    (property "Reference" "C2"
+      (at 152.39999999999998 104.14 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "220uF 10V"
+      (at 152.39999999999998 106.68 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm"
+      (at 152.39999999999998 114.3 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "EEU-FR1A221"
+      (at 152.39999999999998 114.3 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid c9749b18-f293-5d87-a11b-8afd4b060811))
+    (pin "2"
+      (uuid fc6ec373-deb5-54f1-9921-56268ced7466))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "C2")
+          (unit 1)))))
+  (symbol
+    (lib_id "screen_symbols:Mechanical_MountingHole")
+    (at 254.0 114.3 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 28c01b4a-3426-54c4-9fbc-6f73193cabac)
+    (property "Reference" "H1"
+      (at 254.0 104.14 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "M3"
+      (at 254.0 106.68 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
+      (at 254.0 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "NPTH"
+      (at 254.0 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "H1")
+          (unit 1)))))
+  (symbol
+    (lib_id "screen_symbols:Mechanical_MountingHole")
+    (at 355.59999999999997 114.3 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 7a189803-f229-5ed5-bc25-c4f065ca71b3)
+    (property "Reference" "H2"
+      (at 355.59999999999997 104.14 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "M3"
+      (at 355.59999999999997 106.68 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
+      (at 355.59999999999997 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "NPTH"
+      (at 355.59999999999997 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "H2")
+          (unit 1)))))
+  (symbol
+    (lib_id "screen_symbols:Mechanical_MountingHole")
+    (at 50.8 165.1 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 784c8385-7f1e-5d1f-b148-e80905ded447)
+    (property "Reference" "H3"
+      (at 50.8 154.94 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "M3"
+      (at 50.8 157.48 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
+      (at 50.8 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "NPTH"
+      (at 50.8 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "H3")
+          (unit 1)))))
+  (symbol
+    (lib_id "screen_symbols:Mechanical_MountingHole")
+    (at 152.39999999999998 165.1 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 985b1972-7be2-5fd2-a84d-d5a3b198d1f8)
+    (property "Reference" "H4"
+      (at 152.39999999999998 154.94 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "M3"
+      (at 152.39999999999998 157.48 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
+      (at 152.39999999999998 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "NPTH"
+      (at 152.39999999999998 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "H4")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 248.92 165.1)
+      (xy 243.84 165.1))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 103af33c-dd89-52d5-92b7-7412fc2caec6))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 243.84 165.1 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid c17f0edb-e5a6-5ac5-9ff1-e167f627f354))
+  (wire
+    (pts
+      (xy 248.92 167.64)
+      (xy 243.84 167.64))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid f29dc529-fbe1-5dff-a486-7ab33fdc1f61))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 243.84 167.64 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid b5874afd-9f6c-5708-b880-b172408b4372))
+  (symbol
+    (lib_id "screen_symbols:Connector_Generic_Conn_01x02")
+    (at 254.0 165.1 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid bfa3b80f-fd4d-5cd8-a46e-6f8b2084f079)
+    (property "Reference" "J1"
+      (at 254.0 154.94 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "AUX 5V INPUT"
+      (at 254.0 157.48 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical"
+      (at 254.0 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "B2P-VH(LF)(SN)"
+      (at 254.0 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 55284e07-f6b9-5f4d-8211-851c5ad449d3))
+    (pin "2"
+      (uuid eb8ac1f1-f1f3-59ed-87ee-f8c8ae702c41))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "J1")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 350.52 165.1)
+      (xy 345.44 165.1))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 4f19b03e-789c-5c92-a5a1-642203111cb3))
+  (global_label "POWER_GATE"
+    (shape bidirectional)
+    (at 345.44 165.1 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 87f0e56f-d986-5488-8b31-8daee316a2b6))
+  (wire
+    (pts
+      (xy 358.14 160.02)
+      (xy 358.14 154.94))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 9fe24fe4-ce86-5dc1-9fc4-b681593cdde5))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 358.14 154.94 90)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 23c61087-ec7b-59e4-8563-817207e3e3a1))
+  (wire
+    (pts
+      (xy 358.14 170.18)
+      (xy 358.14 175.26))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid bc72a333-286b-5259-85b9-1012b0e31829))
+  (global_label "COMMON_SOURCE"
+    (shape bidirectional)
+    (at 358.14 175.26 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid a6d3af0c-3a4b-594e-868e-cbc6ae73c90f))
+  (symbol
+    (lib_id "screen_symbols:Transistor_FET_Q_PMOS_GDS")
+    (at 355.59999999999997 165.1 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid bfec2ad8-4884-539a-8279-1855a96dc5fb)
+    (property "Reference" "Q3"
+      (at 378.46 149.85999999999999 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "SUM70101EL"
+      (at 378.46 152.39999999999998 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Package_TO_SOT_SMD:TO-263-3_TabPin2"
+      (at 378.46 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "SUM70101EL-GE3"
+      (at 378.46 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid f7986e37-f795-59f4-8dc5-441d300167fe))
+    (pin "2"
+      (uuid 953a6870-dce0-55a9-be2f-859f93773193))
+    (pin "3"
+      (uuid 314b6032-189b-5482-953e-67b94ea798a0))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "Q3")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 45.72 215.9)
+      (xy 40.64 215.9))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid d43129f4-fa27-5a79-a246-0296b828ded2))
+  (global_label "POWER_GATE"
+    (shape bidirectional)
+    (at 40.64 215.9 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid e3434efe-24d6-5a7c-befc-0b607a4b041b))
+  (wire
+    (pts
+      (xy 53.34 210.82)
+      (xy 53.34 205.74))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 265ad2e3-bfaf-58fc-ba2a-f30b9bf3526e))
+  (global_label "SWITCHED_5V"
+    (shape bidirectional)
+    (at 53.34 205.74 90)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 9491ef34-d4e3-5778-b110-4ccebbc039aa))
+  (wire
+    (pts
+      (xy 53.34 220.98)
+      (xy 53.34 226.06))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 0926eba6-a616-50d6-94f5-3980aa33de2c))
+  (global_label "COMMON_SOURCE"
+    (shape bidirectional)
+    (at 53.34 226.06 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 8a458c55-56a0-5bdb-825f-16d17a311ba4))
+  (symbol
+    (lib_id "screen_symbols:Transistor_FET_Q_PMOS_GDS")
+    (at 50.8 215.89999999999998 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 11d7af01-d988-5493-8679-b59ced8f6a81)
+    (property "Reference" "Q4"
+      (at 73.66 200.65999999999997 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "SUM70101EL"
+      (at 73.66 203.19999999999996 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Package_TO_SOT_SMD:TO-263-3_TabPin2"
+      (at 73.66 215.89999999999998 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "SUM70101EL-GE3"
+      (at 73.66 215.89999999999998 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 7d43bd1f-de1b-5aa4-a74b-3c3e2c856fcf))
+    (pin "2"
+      (uuid f7fae51d-a954-58a7-a256-585160c4ca6b))
+    (pin "3"
+      (uuid f82593d4-0696-5cce-9e19-c727d299e2ac))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "Q4")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 148.59 215.9)
+      (xy 143.51 215.9))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 9aff07b8-dfc7-51fe-b9cc-6a1f9a18e844))
+  (global_label "CONTROL_SINK"
+    (shape bidirectional)
+    (at 143.51 215.9 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 73ab219c-1b78-51ea-bba6-1277f65a818b))
+  (wire
+    (pts
+      (xy 156.21 215.9)
+      (xy 161.29 215.9))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 2c63c11f-6447-51af-841a-5c6e9f43812d))
+  (global_label "POWER_GATE"
+    (shape bidirectional)
+    (at 161.29 215.9 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid dab30e73-4143-584e-9868-3f1ac64bb449))
+  (symbol
+    (lib_id "screen_symbols:Device_R")
+    (at 152.39999999999998 215.89999999999998 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid edb87d15-11c6-5b28-831a-847db2a923df)
+    (property "Reference" "R3"
+      (at 152.39999999999998 205.73999999999998 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "4.7k 1%"
+      (at 152.39999999999998 208.27999999999997 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+      (at 152.39999999999998 215.89999999999998 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "RC0805FR-074K7L"
+      (at 152.39999999999998 215.89999999999998 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 38ef41bd-549f-52c0-9240-b51c076873e9))
+    (pin "2"
+      (uuid 4bc90c1d-d028-53ed-b6d7-35d3adde6aeb))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "R3")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 250.19 215.9)
+      (xy 245.11 215.9))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid a970677c-bb84-5bc4-8e09-e9aeaaf592ee))
+  (global_label "POWER_GATE"
+    (shape bidirectional)
+    (at 245.11 215.9 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid bf3b8194-e6bd-5236-9627-f7f171f4b71a))
+  (wire
+    (pts
+      (xy 257.81 215.9)
+      (xy 262.89 215.9))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 14203434-0d1c-521e-93b3-48f9b1bed4e2))
+  (global_label "COMMON_SOURCE"
+    (shape bidirectional)
+    (at 262.89 215.9 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 51bf1eea-719c-55db-a842-af3347071794))
+  (symbol
+    (lib_id "screen_symbols:Device_R")
+    (at 254.0 215.89999999999998 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 4df4daf2-e8c6-5ce2-bc28-415be23279bd)
+    (property "Reference" "R4"
+      (at 254.0 205.73999999999998 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "330k 1%"
+      (at 254.0 208.27999999999997 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+      (at 254.0 215.89999999999998 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "RC0805FR-07330KL"
+      (at 254.0 215.89999999999998 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid e7da48ca-9c42-549b-a784-9ca948419605))
+    (pin "2"
+      (uuid 1714ffd4-a946-52eb-8a06-78f0fe32c492))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "R4")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 351.79 215.9)
+      (xy 346.71 215.9))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 52943454-c9f5-59ba-8d46-79d939bcc30d))
+  (global_label "SWITCHED_5V"
+    (shape bidirectional)
+    (at 346.71 215.9 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid c4c9c860-71b3-574a-9242-fea0900451ad))
+  (wire
+    (pts
+      (xy 359.41 215.9)
+      (xy 364.49 215.9))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 971a9b57-e758-5c8c-9510-8d2ca84ba252))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 364.49 215.9 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 8c3be332-3af0-54c6-b986-e48419418b0f))
+  (symbol
+    (lib_id "screen_symbols:Device_R")
+    (at 355.59999999999997 215.89999999999998 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 0b521993-5481-55b0-9f4e-73d7002fc617)
+    (property "Reference" "R8"
+      (at 355.59999999999997 205.73999999999998 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "100R 1W 1%"
+      (at 355.59999999999997 208.27999999999997 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_2512_6332Metric"
+      (at 355.59999999999997 215.89999999999998 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "CRCW2512100RFKEG"
+      (at 355.59999999999997 215.89999999999998 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid b0b2b962-4165-5746-8024-944736f05e50))
+    (pin "2"
+      (uuid 4b05e2e8-c42d-51d5-913d-a0ef76de4987))
+    (instances
+      (project "screen_power_factory"
+        (path "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1"
+          (reference "R8")
+          (unit 1)))))
+  (embedded_fonts no))

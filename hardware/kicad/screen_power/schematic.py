@@ -52,25 +52,16 @@ def write_schematic(circuit, out, variant):
         (uri "${KIPRJMOD}/screen_symbols.kicad_sym")
         (options "") (descr "Project definitions generated from KiCad and manufacturer pin maps")))
 ''')
-    sheets = {"control": [], "screen1_power": [], "screen1_touch": [],
+    sheets = {"control": [], "shared_power": [], "screen1_power": [], "screen1_touch": [],
               "screen2_power": [], "screen2_touch": []}
     for part in circuit.parts:
         number = int(''.join(c for c in part.ref if c.isdigit()) or 0)
         channel, local = divmod(number, 100)
         if channel not in (1, 2):
-            section = "control"
+            section = "shared_power" if part.ref.startswith(("H", "#FLG")) or part.ref in {"Q3", "Q4", "R3", "R4", "R8", "C1", "C2", "J1"} else "control"
         else:
-            if variant == "hand":
-                touch = ((part.ref.startswith("J") and local in (1, 2))
-                         or (part.ref.startswith("K") and local == 1)
-                         or (part.ref.startswith("Q") and local == 4)
-                         or (part.ref.startswith("D") and local == 1)
-                         or (part.ref.startswith("C") and local == 1))
-            else:
-                touch = ((part.ref.startswith("U") and local == 1)
-                         or (part.ref.startswith("J") and local in (1, 2))
-                         or part.ref.startswith(("Y", "D"))
-                         or (part.ref.startswith("C") and local <= 6))
+            touch = ((part.ref.startswith("J") and local in (1, 2))
+                     or part.ref.startswith(("K", "Q", "D", "C")))
             section = f"screen{channel}_{'touch' if touch else 'power'}"
         sheets[section].append(part)
     for page, (section, parts) in enumerate(sheets.items(), 1):
@@ -79,10 +70,8 @@ def write_schematic(circuit, out, variant):
         title = f"Segno screen power / {variant} / {section.replace('_', ' ')}"
         sch = Sexp(["kicad_sch", ["version", 20250114], ["generator", "eeschema"],
                     ["uuid", sheet_id], ["paper", "A3"],
-                    ["title_block", ["title", title], ["rev", '"A prototype"'],
-                     ["comment", 1, ("Pi USB VBUS feeds only its RF relay coil; AUX powers screen and touch."
-                                     if variant == "hand" else
-                                     "5 V AUX only. Pi USB VBUS stays upstream of each ADuM3165.")],
+                    ["title_block", ["title", title], ["rev", '"B prototype"'],
+                     ["comment", 1, "Discrete 5V switch. Host VBUS powers only its own RF relay coil."],
                      ["comment", 2, "Physical verification required before release."]]])
         definitions = {}
         for part in parts:
@@ -155,7 +144,7 @@ def write_schematic(circuit, out, variant):
         if section == "control":
             for i, child in enumerate(list(sheets)[1:]):
                 child_id = uid(root_name + child)
-                sx, sy = 25.4 + (i % 2) * 139.7, 248.92 + (i // 2) * 20.32
+                sx, sy = 25.4 + (i % 2) * 139.7, 218.44 + (i // 2) * 20.32
                 sch.append(Sexp(["sheet", ["at", sx, sy], ["size", 101.6, 10.16],
                     ["stroke", ["width", 0], ["type", "default"]],
                     ["fill", ["color", 0, 0, 0, 0]], ["uuid", child_id],

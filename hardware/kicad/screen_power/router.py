@@ -20,7 +20,7 @@ def run(variant, action, exchange):
         # DSN coordinates round to 0.1um. Restore the original full precision
         # data/clock networks after import instead of retaining microscopic stubs.
         names = {f'S{ch}_{suffix}' for ch in [1,2]
-                 for suffix in ['UP_P','UP_N','DN_P','DN_N','XI','XO']}
+                 for suffix in ['UP_P','UP_N','DN_P','DN_N']}
         critical = [t.Duplicate() for t in board.GetTracks() if t.GetNetname() in names]
         if not p.ImportSpecctraSES(board,str(exchange)):
             raise RuntimeError('Could not import router session')

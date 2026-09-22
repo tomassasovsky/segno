@@ -16,7 +16,7 @@ sys.path.insert(0, str(HERE.parent))
 from netlist import parse_netlist
 
 FPDIR = Path(os.environ.get("KICAD_FOOTPRINT_DIR", "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints"))
-W, H = 130, 120
+from layout import DIMENSIONS, place_components
 
 
 def point(x, y):
@@ -28,6 +28,7 @@ def xy(position):
 
 
 def build(variant):
+    W, H = DIMENSIONS[variant]
     out = HERE / variant
     components, nets = parse_netlist(out / f"screen_power_{variant}.net")
     board = p.BOARD()
@@ -78,59 +79,7 @@ def build(variant):
         fps[ref] = fp
         return fp
 
-    if variant == "hand":
-        from hand_layout import place_components
-        place_components(place, fps)
-    else:
-        place("J1", 65, 47)
-        place("J2", 65, 20)
-        place("R1", 53, 40)
-        place("R2", 58, 40)
-        place("Q1", 64, 40)
-        place("R3", 74, 40)
-        place("R4", 80, 40)
-        place("R5", 86, 40)
-        for i, loc in enumerate([(5, 5), (125, 5), (5, 115), (125, 115)], 1):
-            place(f"H{i}", *loc)
-
-        # The factory version uses an isolated USB interface for each screen.
-        for channel, x in [(1, 38), (2, 93)]:
-            n = channel * 100
-            place(f"U{n+1}", x, 78, centre=False)
-            place(f"J{n+1}", x - 10.75, 103.7125, 270, centre=False)
-            place(f"J{n+2}", x + 12, 108.5, 90)
-            place(f"D{n+1}", x - 13, 88, 90)
-            place(f"D{n+2}", x + 10, 88, 90)
-            place(f"Y{n+1}", x - 11, 77, 270)
-            place(f"C{n+1}", x - 5, 72, 180)
-            place(f"C{n+2}", x - 6.5, 76.45, 180)
-            place(f"C{n+3}", x + 6.5, 76.45)
-            place(f"C{n+4}", x + 5, 72)
-            place(f"C{n+5}", x - 12.15, 71.5, 90)
-            place(f"C{n+6}", x - 9.85, 82, 270)
-            fps[f"Y{n+1}"].Reference().SetPosition(point(x-17, 77))
-            fps[f"Y{n+1}"].Reference().SetTextAngle(p.EDA_ANGLE(0, p.DEGREES_T))
-            fps[f"C{n+1}"].Reference().SetPosition(point(x-5, 69.8))
-            place(f"U{n+2}", x + 2, 57)
-            place(f"R{n+1}", x - 3, 54)
-            place(f"C{n+7}", x + 2, 53)
-            place(f"R{n+2}", x + 7, 57, 90)
-            place(f"U{n+3}", x + 2, 65)
-            place(f"C{n+8}", x - 2, 62, 90)
-            place(f"R{n+3}", x + 7, 65, 90)
-            place(f"C{n+9}", x + 15, 69)
-            dump_x = 15 if channel == 1 else 115
-            place(f"Q{n+1}", dump_x, 43)
-            place(f"Q{n+2}", x + 21, 62)
-            place(f"R{n+4}", dump_x, 37, 270)
-            place(f"R{n+5}", x + 21, 55, 90)
-            xpower = 17 if channel == 1 else 113
-            place(f"J{n+3}", xpower, 4, 180)
-            place(f"U{n+4}", xpower, 16, centre=False)
-            place(f"C{n+10}", xpower - 5, 14, 90)
-            place(f"C{n+11}", xpower, 26, 0 if channel == 1 else 180)
-            place(f"C{n+12}", xpower + 6, 12, 90)
-            place(f"R{n+6}", xpower + 3, 21)
+    place_components(variant, place, fps)
     assert set(fps) == set(components), set(components) - set(fps)
 
     for a, b in [((0, 0), (W, 0)), ((W, 0), (W, H)), ((W, H), (0, H)), ((0, H), (0, 0))]:

@@ -5,8 +5,8 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / control")
-    (rev "A prototype")
-    (comment 1 "Pi USB VBUS feeds only its RF relay coil; AUX powers screen and touch.")
+    (rev "B prototype")
+    (comment 1 "Discrete 5V switch. Host VBUS powers only its own RF relay coil.")
     (comment 2 "Physical verification required before release."))
   (lib_symbols
     (symbol "screen_symbols:Connector_Generic_Conn_01x02"
@@ -319,18 +319,19 @@
               (font
                 (size 1.27 1.27))))))
       (embedded_fonts no))
-    (symbol "screen_symbols:power_PWR_FLAG"
+    (symbol "screen_symbols:Diode_1N4148"
       (pin_names
-        (offset 0.508))
+        (offset 0.508)
+        (hide yes))
       (exclude_from_sim no)
       (in_bom yes)
       (on_board yes)
-      (property "Reference" "#FLG"
+      (property "Reference" "D"
         (at 2.032 0 90)
         (effects
           (font
             (size 1.27 1.27))))
-      (property "Value" "PWR_FLAG"
+      (property "Value" "1N4148"
         (at 0 0 90)
         (effects
           (font
@@ -341,70 +342,114 @@
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Datasheet" "~"
+      (property "Datasheet" "https://assets.nexperia.com/documents/data-sheet/1N4148_1N4448.pdf"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Description" "Special symbol for telling ERC where power comes from"
+      (property "Description" "100V 0.15A standard switching diode, DO-35"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (symbol "power_PWR_FLAG_0_1"
+      (symbol "Diode_1N4148_0_1"
         (polyline
           (pts
-            (xy 0 0)
-            (xy 0 1.27)
-            (xy -1.016 1.905)
-            (xy 0 2.54)
-            (xy 1.016 1.905)
-            (xy 0 1.27))
+            (xy -1.27 1.27)
+            (xy -1.27 -1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.27 1.27)
+            (xy 1.27 -1.27)
+            (xy -1.27 0)
+            (xy 1.27 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.27 0)
+            (xy -1.27 0))
           (stroke
             (width 0)
             (type default))
           (fill
             (type none))))
-      (symbol "power_PWR_FLAG_1_1"
+      (symbol "Diode_1N4148_1_1"
         (polyline
           (pts
-            (xy 0 0)
-            (xy 0 1.27)
-            (xy -1.016 1.905)
-            (xy 0 2.54)
-            (xy 1.016 1.905)
-            (xy 0 1.27))
+            (xy -1.27 1.27)
+            (xy -1.27 -1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.27 1.27)
+            (xy 1.27 -1.27)
+            (xy -1.27 0)
+            (xy 1.27 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.27 0)
+            (xy -1.27 0))
           (stroke
             (width 0)
             (type default))
           (fill
             (type none)))
-        (pin power_out line
-          (at 0 0 90)
-          (length 0)
-          (name ""
+        (pin passive line
+          (at -3.81 0 0)
+          (length 2.54)
+          (name "K"
             (effects
               (font
                 (size 1.27 1.27))))
           (number "1"
             (effects
               (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 3.81 0 180)
+          (length 2.54)
+          (name "A"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
                 (size 1.27 1.27))))))
       (embedded_fonts no))
-    (symbol "screen_symbols:Mechanical_MountingHole"
+    (symbol "screen_symbols:Transistor_BJT_2N3906"
       (pin_names
-        (offset 0.508))
+        (offset 0.508)
+        (hide yes))
       (exclude_from_sim no)
       (in_bom yes)
       (on_board yes)
-      (property "Reference" "H"
+      (property "Reference" "Q"
         (at 2.032 0 90)
         (effects
           (font
             (size 1.27 1.27))))
-      (property "Value" "MountingHole"
+      (property "Value" "2N3906"
         (at 0 0 90)
         (effects
           (font
@@ -415,356 +460,246 @@
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Datasheet" "~"
+      (property "Datasheet" "https://www.onsemi.com/pub/Collateral/2N3906-D.PDF"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Description" "Mounting Hole without connection"
+      (property "Description" "-0.2A Ic, -40V Vce, Small Signal PNP Transistor, TO-92"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (symbol "Mechanical_MountingHole_0_1"
-        (circle
-          (center 0 0)
-          (radius 1.27)
+      (symbol "Transistor_BJT_2N3906_0_1"
+        (polyline
+          (pts
+            (xy -2.54 0)
+            (xy 0.635 0))
           (stroke
-            (width 1.27)
+            (width 0)
             (type default))
           (fill
-            (type none))))
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.635 1.905)
+            (xy 0.635 -1.905))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.635 0.635)
+            (xy 2.54 2.54))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.635 -0.635)
+            (xy 2.54 -2.54))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 1.27 0)
+          (radius 2.8194)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.286 -1.778)
+            (xy 1.778 -2.286)
+            (xy 1.27 -1.27)
+            (xy 2.286 -1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline))))
+      (symbol "Transistor_BJT_2N3906_1_1"
+        (polyline
+          (pts
+            (xy -2.54 0)
+            (xy 0.635 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.635 1.905)
+            (xy 0.635 -1.905))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.635 0.635)
+            (xy 2.54 2.54))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.635 -0.635)
+            (xy 2.54 -2.54))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 1.27 0)
+          (radius 2.8194)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.286 -1.778)
+            (xy 1.778 -2.286)
+            (xy 1.27 -1.27)
+            (xy 2.286 -1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (pin passive line
+          (at 2.54 -5.08 90)
+          (length 2.54)
+          (name "E"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -5.08 0 0)
+          (length 2.54)
+          (name "B"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 2.54 5.08 270)
+          (length 2.54)
+          (name "C"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27))))))
       (embedded_fonts no)))
   (wire
     (pts
-      (xy 50.8 63.5)
-      (xy 50.8 68.58))
+      (xy 46.99 63.5)
+      (xy 41.91 63.5))
     (stroke
       (width 0)
       (type default))
-    (uuid 6ce620a2-b891-5a7a-b483-0d01727ef513))
-  (global_label "AUX_5V"
+    (uuid f6adb244-81fb-5383-88ba-8deac571b1d3))
+  (global_label "CONTROL_SINK"
     (shape bidirectional)
-    (at 50.8 68.58 270)
+    (at 41.91 63.5 180)
     (effects
       (font
         (size 1.0 1.0))
       (justify right))
-    (uuid d770191c-9f24-51f7-b211-e09402582ded))
+    (uuid 0d6b78f7-d1db-5259-9eac-3d713407e066))
+  (wire
+    (pts
+      (xy 54.61 63.5)
+      (xy 59.69 63.5))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid d39d50fc-ab7a-5113-8a3e-6a59e8b70892))
+  (global_label "BUFFER_SINK"
+    (shape bidirectional)
+    (at 59.69 63.5 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 5ed2c0aa-e274-5e1c-818d-cab02769da2b))
   (symbol
-    (lib_id "screen_symbols:power_PWR_FLAG")
+    (lib_id "screen_symbols:Diode_1N4148")
     (at 50.8 63.5 0)
     (unit 1)
-    (in_bom no)
-    (on_board no)
+    (in_bom yes)
+    (on_board yes)
     (dnp no)
-    (uuid c715ffbc-9e93-5b97-8f8f-b214e6669e86)
-    (property "Reference" "#FLG1"
+    (uuid bd6ae499-ed9d-5fdc-a2ae-f5f52f3999e9)
+    (property "Reference" "D1"
       (at 50.8 53.34 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "PWR_FLAG"
+    (property "Value" "1N4148"
       (at 50.8 55.88 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal"
       (at 50.8 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" ""
+    (property "MPN" "1N4148-TAP"
       (at 50.8 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (pin "1"
-      (uuid 210e83f4-81a8-51c1-a852-fc62e9378864))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "#FLG1")
-          (unit 1)))))
-  (wire
-    (pts
-      (xy 152.4 63.5)
-      (xy 152.4 68.58))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 1d1581f0-6b50-5d81-a967-4c65f90ff001))
-  (global_label "GND"
-    (shape bidirectional)
-    (at 152.4 68.58 270)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify right))
-    (uuid ce7955bd-f49a-57fd-b70e-be6b53eebd12))
-  (symbol
-    (lib_id "screen_symbols:power_PWR_FLAG")
-    (at 152.39999999999998 63.5 0)
-    (unit 1)
-    (in_bom no)
-    (on_board no)
-    (dnp no)
-    (uuid 8438014c-8438-5326-b8d3-9cbe29a3edf7)
-    (property "Reference" "#FLG2"
-      (at 152.39999999999998 53.34 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "PWR_FLAG"
-      (at 152.39999999999998 55.88 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" ""
-      (at 152.39999999999998 63.5 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" ""
-      (at 152.39999999999998 63.5 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (pin "1"
-      (uuid b2b45875-adfb-5823-ba52-754986dd9f61))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "#FLG2")
-          (unit 1)))))
-  (symbol
-    (lib_id "screen_symbols:Mechanical_MountingHole")
-    (at 254.0 63.5 0)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid b5f2c0d0-c429-58e5-84b5-98516fb1670a)
-    (property "Reference" "H1"
-      (at 254.0 53.34 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "M3"
-      (at 254.0 55.88 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
-      (at 254.0 63.5 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "NPTH"
-      (at 254.0 63.5 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "H1")
-          (unit 1)))))
-  (symbol
-    (lib_id "screen_symbols:Mechanical_MountingHole")
-    (at 355.59999999999997 63.5 0)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid 56525c1f-c1d5-5771-a924-7ce7be7727cc)
-    (property "Reference" "H2"
-      (at 355.59999999999997 53.34 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "M3"
-      (at 355.59999999999997 55.88 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
-      (at 355.59999999999997 63.5 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "NPTH"
-      (at 355.59999999999997 63.5 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "H2")
-          (unit 1)))))
-  (symbol
-    (lib_id "screen_symbols:Mechanical_MountingHole")
-    (at 50.8 114.3 0)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid 016828cf-5bb4-55a0-a0b7-15c03093e317)
-    (property "Reference" "H3"
-      (at 50.8 104.14 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "M3"
-      (at 50.8 106.68 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
-      (at 50.8 114.3 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "NPTH"
-      (at 50.8 114.3 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "H3")
-          (unit 1)))))
-  (symbol
-    (lib_id "screen_symbols:Mechanical_MountingHole")
-    (at 152.39999999999998 114.3 0)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid 4a037f3e-3c16-59c2-a807-7a8e7c332728)
-    (property "Reference" "H4"
-      (at 152.39999999999998 104.14 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "M3"
-      (at 152.39999999999998 106.68 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
-      (at 152.39999999999998 114.3 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "NPTH"
-      (at 152.39999999999998 114.3 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "H4")
-          (unit 1)))))
-  (wire
-    (pts
-      (xy 248.92 114.3)
-      (xy 243.84 114.3))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid d178a4d2-598e-5112-94e4-6fa8ec0c0cc3))
-  (global_label "AUX_5V"
-    (shape bidirectional)
-    (at 243.84 114.3 180)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify right))
-    (uuid 7d98e689-a3fb-5608-91bf-80085451ba4e))
-  (wire
-    (pts
-      (xy 248.92 116.84)
-      (xy 243.84 116.84))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 99970b53-6140-5219-8074-1e41d86af675))
-  (global_label "GND"
-    (shape bidirectional)
-    (at 243.84 116.84 180)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify right))
-    (uuid 4abb888c-67a3-510c-8b6e-db80f38c1d74))
-  (symbol
-    (lib_id "screen_symbols:Connector_Generic_Conn_01x02")
-    (at 254.0 114.3 0)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid 0dc90fde-5a58-5af1-a605-2ccc72bcd3d8)
-    (property "Reference" "J1"
-      (at 254.0 104.14 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "AUX 5V INPUT"
-      (at 254.0 106.68 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical"
-      (at 254.0 114.3 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "B2P-VH(LF)(SN)"
-      (at 254.0 114.3 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (pin "1"
-      (uuid ec839c5b-6696-5fcc-9852-13a5b281664e))
+      (uuid 2b4f1e92-f00b-53c4-af17-eb944dacc7ee))
     (pin "2"
-      (uuid bdea84d3-55c4-573d-bafd-18f410e5e5d1))
+      (uuid f715ea68-a409-540f-a139-63ad983fa4b6))
     (instances
       (project "screen_power_hand"
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "J1")
+          (reference "D1")
           (unit 1)))))
   (wire
     (pts
-      (xy 350.52 114.3)
-      (xy 345.44 114.3))
+      (xy 147.32 63.5)
+      (xy 142.24 63.5))
     (stroke
       (width 0)
       (type default))
     (uuid 8578b5d2-a34d-54e7-a11d-146b8df082e5))
   (global_label "PI_GPIO17"
     (shape bidirectional)
-    (at 345.44 114.3 180)
+    (at 142.24 63.5 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -772,15 +707,15 @@
     (uuid bb310183-6948-56cb-81f8-19b8bcdc6c30))
   (wire
     (pts
-      (xy 350.52 116.84)
-      (xy 345.44 116.84))
+      (xy 147.32 66.04)
+      (xy 142.24 66.04))
     (stroke
       (width 0)
       (type default))
     (uuid 413f2ec9-8f0f-530a-b617-25b107b11734))
   (global_label "GND"
     (shape bidirectional)
-    (at 345.44 116.84 180)
+    (at 142.24 66.04 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -788,30 +723,30 @@
     (uuid 72921964-8e14-5e42-b2e3-7e170e4ab853))
   (symbol
     (lib_id "screen_symbols:Connector_Generic_Conn_01x02")
-    (at 355.59999999999997 114.3 0)
+    (at 152.39999999999998 63.5 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 9f8c2883-4ea8-5cc2-9b45-ff5fed5849d0)
     (property "Reference" "J2"
-      (at 355.59999999999997 104.14 0)
+      (at 152.39999999999998 53.34 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "SCREEN CONTROL"
-      (at 355.59999999999997 106.68 0)
+    (property "Value" "GPIO17 / GND"
+      (at 152.39999999999998 55.88 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"
-      (at 355.59999999999997 114.3 0)
+      (at 152.39999999999998 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "B2B-XH-A(LF)(SN)"
-      (at 355.59999999999997 114.3 0)
+      (at 152.39999999999998 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -827,15 +762,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 53.34 170.18)
-      (xy 53.34 175.26))
+      (xy 256.54 68.58)
+      (xy 256.54 73.66))
     (stroke
       (width 0)
       (type default))
     (uuid 4a85737a-8ce8-5d8b-a19a-4d21dcb03ce5))
   (global_label "GND"
     (shape bidirectional)
-    (at 53.34 175.26 270)
+    (at 256.54 73.66 270)
     (effects
       (font
         (size 1.0 1.0))
@@ -843,15 +778,15 @@
     (uuid 2adfa8c3-4ba3-59ea-bbfb-ceca701285b6))
   (wire
     (pts
-      (xy 45.72 165.1)
-      (xy 40.64 165.1))
+      (xy 248.92 63.5)
+      (xy 243.84 63.5))
     (stroke
       (width 0)
       (type default))
     (uuid b12130b2-aef2-52eb-b627-cdf4ce4fea65))
-  (global_label "DUMP_BASE"
+  (global_label "CONTROL_BASE"
     (shape bidirectional)
-    (at 40.64 165.1 180)
+    (at 243.84 63.5 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -859,15 +794,15 @@
     (uuid da1a6f89-9242-5381-821d-a71f71a6800b))
   (wire
     (pts
-      (xy 53.34 160.02)
-      (xy 53.34 154.94))
+      (xy 256.54 58.42)
+      (xy 256.54 53.34))
     (stroke
       (width 0)
       (type default))
     (uuid 26d8aa24-7091-5865-80a8-a330df6aba5c))
-  (global_label "DISCHARGE"
+  (global_label "CONTROL_SINK"
     (shape bidirectional)
-    (at 53.34 154.94 90)
+    (at 256.54 53.34 90)
     (effects
       (font
         (size 1.0 1.0))
@@ -875,30 +810,30 @@
     (uuid 1e19d523-51a7-5509-ba90-8c32f8c03d82))
   (symbol
     (lib_id "screen_symbols:Transistor_BJT_2N3904")
-    (at 50.8 165.1 0)
+    (at 254.0 63.5 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid f3ced6b1-0928-54d3-afcf-1aa2ccb6153b)
     (property "Reference" "Q1"
-      (at 73.66 149.85999999999999 0)
+      (at 276.86 48.260000000000005 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "2N3904"
-      (at 73.66 152.39999999999998 0)
+      (at 276.86 50.800000000000004 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Package_TO_SOT_THT:TO-92_Inline_Wide"
-      (at 73.66 165.1 0)
+      (at 276.86 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "2N3904BU"
-      (at 73.66 165.1 0)
+      (at 276.86 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -916,15 +851,104 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 148.59 165.1)
-      (xy 143.51 165.1))
+      (xy 358.14 68.58)
+      (xy 358.14 73.66))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 80c29291-cb42-5231-895e-bf85dff1cad4))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 358.14 73.66 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 6d5a1ee1-3059-5299-8864-bcd27a9b36c9))
+  (wire
+    (pts
+      (xy 350.52 63.5)
+      (xy 345.44 63.5))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 5e435379-4d1d-597c-b42d-6bd91312eeda))
+  (global_label "BUFFER_BASE"
+    (shape bidirectional)
+    (at 345.44 63.5 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid f7079233-b51f-5283-adff-1f6ed88b996e))
+  (wire
+    (pts
+      (xy 358.14 58.42)
+      (xy 358.14 53.34))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 0daced14-d93b-5c99-8da8-d6313ef08602))
+  (global_label "DATA_ENABLE"
+    (shape bidirectional)
+    (at 358.14 53.34 90)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid b0c6df17-c117-5df2-a772-14c639ee9701))
+  (symbol
+    (lib_id "screen_symbols:Transistor_BJT_2N3906")
+    (at 355.59999999999997 63.5 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 682273ec-1708-5a67-be8a-bfdfdb1516d0)
+    (property "Reference" "Q2"
+      (at 378.46 48.260000000000005 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "2N3906"
+      (at 378.46 50.800000000000004 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Package_TO_SOT_THT:TO-92_Inline_Wide"
+      (at 378.46 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "2N3906BU"
+      (at 378.46 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 78b0b8a8-643e-50ac-b9dc-001d4df6c822))
+    (pin "2"
+      (uuid bd267174-1958-5a11-9b4f-1e108ad7b273))
+    (pin "3"
+      (uuid 41813007-baf3-5a1d-b6d6-6e3150772a30))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
+          (reference "Q2")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 46.99 114.3)
+      (xy 41.91 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid d0dcd387-e37f-5279-88fd-e35ee59f884b))
   (global_label "PI_GPIO17"
     (shape bidirectional)
-    (at 143.51 165.1 180)
+    (at 41.91 114.3 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -932,15 +956,15 @@
     (uuid 67861fa5-d34b-5f3b-9302-600beae2922d))
   (wire
     (pts
-      (xy 156.21 165.1)
-      (xy 161.29 165.1))
+      (xy 54.61 114.3)
+      (xy 59.69 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid baaddd37-07de-5e84-afde-96ab37679278))
-  (global_label "DISPLAY_ENABLE"
+  (global_label "CONTROL_BASE"
     (shape bidirectional)
-    (at 161.29 165.1 0)
+    (at 59.69 114.3 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -948,30 +972,30 @@
     (uuid 64d14270-996e-5b8b-9887-57d743ff5c6b))
   (symbol
     (lib_id "screen_symbols:Device_R")
-    (at 152.39999999999998 165.1 90)
+    (at 50.8 114.3 90)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid cbcde35e-4c2b-5037-b1cf-fad5bacfe2b1)
     (property "Reference" "R1"
-      (at 152.39999999999998 154.94 90)
+      (at 50.8 104.14 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "1k 1%"
-      (at 152.39999999999998 157.48 90)
+      (at 50.8 106.68 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-      (at 152.39999999999998 165.1 90)
+      (at 50.8 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "MFR-25FBF52-1K"
-      (at 152.39999999999998 165.1 90)
+      (at 50.8 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
@@ -987,15 +1011,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 250.19 165.1)
-      (xy 245.11 165.1))
+      (xy 148.59 114.3)
+      (xy 143.51 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid 5c971cdb-8b32-561b-affe-c2fa4e7e3e4c))
-  (global_label "DISPLAY_ENABLE"
+  (global_label "CONTROL_BASE"
     (shape bidirectional)
-    (at 245.11 165.1 180)
+    (at 143.51 114.3 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1003,15 +1027,15 @@
     (uuid a8e67dc4-b49c-5043-8deb-03ad87af983f))
   (wire
     (pts
-      (xy 257.81 165.1)
-      (xy 262.89 165.1))
+      (xy 156.21 114.3)
+      (xy 161.29 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid 47b778ca-d24b-513c-8329-c72910a13001))
   (global_label "GND"
     (shape bidirectional)
-    (at 262.89 165.1 0)
+    (at 161.29 114.3 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -1019,30 +1043,30 @@
     (uuid 61fcfbfe-1d22-58d4-8dfc-e05516d3c08e))
   (symbol
     (lib_id "screen_symbols:Device_R")
-    (at 254.0 165.1 90)
+    (at 152.39999999999998 114.3 90)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 10108d91-a39d-5ab6-9065-5d5e11154a82)
     (property "Reference" "R2"
-      (at 254.0 154.94 90)
+      (at 152.39999999999998 104.14 90)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "10k 1%"
-      (at 254.0 157.48 90)
+    (property "Value" "100k 1%"
+      (at 152.39999999999998 106.68 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-      (at 254.0 165.1 90)
+      (at 152.39999999999998 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "MFR-25FBF52-10K"
-      (at 254.0 165.1 90)
+    (property "MPN" "MFR-25FBF52-100K"
+      (at 152.39999999999998 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
@@ -1058,157 +1082,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 351.79 165.1)
-      (xy 346.71 165.1))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid ff3f8d77-3874-56bd-b29b-74196333e3cb))
-  (global_label "DISPLAY_ENABLE"
-    (shape bidirectional)
-    (at 346.71 165.1 180)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify right))
-    (uuid 33bbba0e-ee9d-5b33-9663-05a88eb1b1c4))
-  (wire
-    (pts
-      (xy 359.41 165.1)
-      (xy 364.49 165.1))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 51efb79f-417f-588d-a730-5302e90a40f3))
-  (global_label "DUMP_BASE"
-    (shape bidirectional)
-    (at 364.49 165.1 0)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify left))
-    (uuid 4d8bdbfb-270e-5219-9702-9e0fff3a57ba))
-  (symbol
-    (lib_id "screen_symbols:Device_R")
-    (at 355.59999999999997 165.1 90)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid 37e2e6f1-9326-55f9-8225-0164a711babe)
-    (property "Reference" "R3"
-      (at 355.59999999999997 154.94 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "10k 1%"
-      (at 355.59999999999997 157.48 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-      (at 355.59999999999997 165.1 90)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "MFR-25FBF52-10K"
-      (at 355.59999999999997 165.1 90)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (pin "1"
-      (uuid 470455c9-06dd-5dd7-9288-b2b2ae6d1a8b))
-    (pin "2"
-      (uuid 5d08f4a5-5f83-541c-91b5-08742a07273c))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "R3")
-          (unit 1)))))
-  (wire
-    (pts
-      (xy 46.99 215.9)
-      (xy 41.91 215.9))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 66ea778c-c780-5a89-a519-4117e7d602c2))
-  (global_label "DUMP_BASE"
-    (shape bidirectional)
-    (at 41.91 215.9 180)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify right))
-    (uuid 368217e6-9903-5632-b480-44b0e1f1bd1e))
-  (wire
-    (pts
-      (xy 54.61 215.9)
-      (xy 59.69 215.9))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 2770d43e-a887-522b-b65c-68d4714342fa))
-  (global_label "GND"
-    (shape bidirectional)
-    (at 59.69 215.9 0)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify left))
-    (uuid f4dd4c94-3b21-531d-a96d-a9869751f8e6))
-  (symbol
-    (lib_id "screen_symbols:Device_R")
-    (at 50.8 215.89999999999998 90)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid fe4afc32-81d1-534a-9415-92dc232526de)
-    (property "Reference" "R4"
-      (at 50.8 205.73999999999998 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "100k 1%"
-      (at 50.8 208.27999999999997 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-      (at 50.8 215.89999999999998 90)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "MFR-25FBF52-100K"
-      (at 50.8 215.89999999999998 90)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (pin "1"
-      (uuid 4cbcb8b5-741c-56aa-bbe2-f221b88c86b4))
-    (pin "2"
-      (uuid fe671fc0-9af8-553c-a08c-53c7efab1452))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "R4")
-          (unit 1)))))
-  (wire
-    (pts
-      (xy 148.59 215.9)
-      (xy 143.51 215.9))
+      (xy 250.19 114.3)
+      (xy 245.11 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid ff449007-df5d-5050-b003-0371581a2c1a))
-  (global_label "AUX_5V"
+  (global_label "BUFFER_SINK"
     (shape bidirectional)
-    (at 143.51 215.9 180)
+    (at 245.11 114.3 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1216,15 +1098,15 @@
     (uuid e3a9b492-40cb-52b8-8b50-fa9486913de6))
   (wire
     (pts
-      (xy 156.21 215.9)
-      (xy 161.29 215.9))
+      (xy 257.81 114.3)
+      (xy 262.89 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid 87740c9e-6f69-53ee-9cbc-d6162005c6e3))
-  (global_label "DISCHARGE"
+  (global_label "BUFFER_BASE"
     (shape bidirectional)
-    (at 161.29 215.9 0)
+    (at 262.89 114.3 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -1232,30 +1114,30 @@
     (uuid fed88084-db67-5298-8057-68427efe481f))
   (symbol
     (lib_id "screen_symbols:Device_R")
-    (at 152.39999999999998 215.89999999999998 90)
+    (at 254.0 114.3 90)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 5200829b-9ddb-53c7-be02-5d40536dc2ed)
     (property "Reference" "R5"
-      (at 152.39999999999998 205.73999999999998 90)
+      (at 254.0 104.14 90)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "10k 1%"
-      (at 152.39999999999998 208.27999999999997 90)
+    (property "Value" "5.6k 1%"
+      (at 254.0 106.68 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-      (at 152.39999999999998 215.89999999999998 90)
+      (at 254.0 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "MFR-25FBF52-10K"
-      (at 152.39999999999998 215.89999999999998 90)
+    (property "MPN" "MFR-25FBF52-5K6"
+      (at 254.0 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
@@ -1269,23 +1151,165 @@
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
           (reference "R5")
           (unit 1)))))
+  (wire
+    (pts
+      (xy 351.79 114.3)
+      (xy 346.71 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid c2cb97d6-19dc-51f9-bdad-66e533ef230a))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 346.71 114.3 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 0f3d47eb-3057-5e56-a403-a4d251f03f58))
+  (wire
+    (pts
+      (xy 359.41 114.3)
+      (xy 364.49 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid e2566d08-01a8-5466-b585-5744ba84f489))
+  (global_label "BUFFER_BASE"
+    (shape bidirectional)
+    (at 364.49 114.3 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 58153938-37e5-5985-9b0c-e14fd99a3b29))
+  (symbol
+    (lib_id "screen_symbols:Device_R")
+    (at 355.59999999999997 114.3 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 46ccfb92-5e95-5d9a-b65a-0e65f57f04ec)
+    (property "Reference" "R6"
+      (at 355.59999999999997 104.14 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "100k 1%"
+      (at 355.59999999999997 106.68 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+      (at 355.59999999999997 114.3 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "MFR-25FBF52-100K"
+      (at 355.59999999999997 114.3 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 5033dab7-7571-569a-8f5b-209ca2898fd1))
+    (pin "2"
+      (uuid 427b9a91-1333-5304-82b8-e90357b8665c))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
+          (reference "R6")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 46.99 165.1)
+      (xy 41.91 165.1))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 9707979b-91d2-514f-88fc-dbb779eb8ce0))
+  (global_label "DATA_ENABLE"
+    (shape bidirectional)
+    (at 41.91 165.1 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid ed061f43-2e6a-57b5-9495-a27030efcfbf))
+  (wire
+    (pts
+      (xy 54.61 165.1)
+      (xy 59.69 165.1))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 68ca739f-3a6c-5b06-a280-7257013e33ba))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 59.69 165.1 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 2bafe180-b7ce-5e13-b2f4-91974a93dea9))
+  (symbol
+    (lib_id "screen_symbols:Device_R")
+    (at 50.8 165.1 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid e158c486-a0d8-5bdb-89cb-e34f382ead8c)
+    (property "Reference" "R7"
+      (at 50.8 154.94 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "100k 1%"
+      (at 50.8 157.48 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+      (at 50.8 165.1 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "MFR-25FBF52-100K"
+      (at 50.8 165.1 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 11046006-066d-5e44-8463-c52a72aed8eb))
+    (pin "2"
+      (uuid d43d44ac-e7b3-5566-b07e-0352dccc3da9))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
+          (reference "R7")
+          (unit 1)))))
   (sheet
-    (at 25.4 248.92)
+    (at 25.4 218.44)
     (size 101.6 10.16)
     (stroke
       (width 0)
       (type default))
     (fill
       (color 0 0 0 0))
-    (uuid 2b4f2bc6-c7a6-56c4-ac6c-4e72a6852df9)
-    (property "Sheetname" "screen1 power"
-      (at 25.4 247.64999999999998 0)
+    (uuid 0157c963-12d5-5a27-8699-19e38824f98e)
+    (property "Sheetname" "shared power"
+      (at 25.4 217.17 0)
       (effects
         (font
           (size 1.27 1.27))
         (justify left)))
-    (property "Sheetfile" "screen1_power.kicad_sch"
-      (at 25.4 260.34999999999997 0)
+    (property "Sheetfile" "shared_power.kicad_sch"
+      (at 25.4 229.87 0)
       (effects
         (font
           (size 1.0 1.0))
@@ -1295,22 +1319,22 @@
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
           (page "2")))))
   (sheet
-    (at 165.1 248.92)
+    (at 165.1 218.44)
     (size 101.6 10.16)
     (stroke
       (width 0)
       (type default))
     (fill
       (color 0 0 0 0))
-    (uuid 480ecebe-e95e-539a-a92c-a9448db02fd9)
-    (property "Sheetname" "screen1 touch"
-      (at 165.1 247.64999999999998 0)
+    (uuid 2b4f2bc6-c7a6-56c4-ac6c-4e72a6852df9)
+    (property "Sheetname" "screen1 power"
+      (at 165.1 217.17 0)
       (effects
         (font
           (size 1.27 1.27))
         (justify left)))
-    (property "Sheetfile" "screen1_touch.kicad_sch"
-      (at 165.1 260.34999999999997 0)
+    (property "Sheetfile" "screen1_power.kicad_sch"
+      (at 165.1 229.87 0)
       (effects
         (font
           (size 1.0 1.0))
@@ -1320,22 +1344,22 @@
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
           (page "3")))))
   (sheet
-    (at 25.4 269.24)
+    (at 25.4 238.76)
     (size 101.6 10.16)
     (stroke
       (width 0)
       (type default))
     (fill
       (color 0 0 0 0))
-    (uuid ebf3d20f-1f2b-56bd-97a8-f1d013a08173)
-    (property "Sheetname" "screen2 power"
-      (at 25.4 267.97 0)
+    (uuid 480ecebe-e95e-539a-a92c-a9448db02fd9)
+    (property "Sheetname" "screen1 touch"
+      (at 25.4 237.48999999999998 0)
       (effects
         (font
           (size 1.27 1.27))
         (justify left)))
-    (property "Sheetfile" "screen2_power.kicad_sch"
-      (at 25.4 280.67 0)
+    (property "Sheetfile" "screen1_touch.kicad_sch"
+      (at 25.4 250.19 0)
       (effects
         (font
           (size 1.0 1.0))
@@ -1345,22 +1369,22 @@
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
           (page "4")))))
   (sheet
-    (at 165.1 269.24)
+    (at 165.1 238.76)
     (size 101.6 10.16)
     (stroke
       (width 0)
       (type default))
     (fill
       (color 0 0 0 0))
-    (uuid 54c97e4c-a9b4-50bc-a883-235682587f3a)
-    (property "Sheetname" "screen2 touch"
-      (at 165.1 267.97 0)
+    (uuid ebf3d20f-1f2b-56bd-97a8-f1d013a08173)
+    (property "Sheetname" "screen2 power"
+      (at 165.1 237.48999999999998 0)
       (effects
         (font
           (size 1.27 1.27))
         (justify left)))
-    (property "Sheetfile" "screen2_touch.kicad_sch"
-      (at 165.1 280.67 0)
+    (property "Sheetfile" "screen2_power.kicad_sch"
+      (at 165.1 250.19 0)
       (effects
         (font
           (size 1.0 1.0))
@@ -1369,6 +1393,31 @@
       (project "screen_power_hand"
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
           (page "5")))))
+  (sheet
+    (at 25.4 259.08)
+    (size 101.6 10.16)
+    (stroke
+      (width 0)
+      (type default))
+    (fill
+      (color 0 0 0 0))
+    (uuid 54c97e4c-a9b4-50bc-a883-235682587f3a)
+    (property "Sheetname" "screen2 touch"
+      (at 25.4 257.81 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (justify left)))
+    (property "Sheetfile" "screen2_touch.kicad_sch"
+      (at 25.4 270.51 0)
+      (effects
+        (font
+          (size 1.0 1.0))
+        (justify left)))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
+          (page "6")))))
   (sheet_instances
     (path "/"
       (page "1")))

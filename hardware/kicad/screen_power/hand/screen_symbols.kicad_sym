@@ -311,18 +311,19 @@
             (font
               (size 1.27 1.27))))))
     (embedded_fonts no))
-  (symbol "power_PWR_FLAG"
+  (symbol "Transistor_FET_Q_PMOS_GDS"
     (pin_names
-      (offset 0.508))
+      (offset 0.508)
+      (hide yes))
     (exclude_from_sim no)
     (in_bom yes)
     (on_board yes)
-    (property "Reference" "#FLG"
+    (property "Reference" "Q"
       (at 2.032 0 90)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "PWR_FLAG"
+    (property "Value" "Q_PMOS_GDS"
       (at 0 0 90)
       (effects
         (font
@@ -339,48 +340,825 @@
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "Description" "Special symbol for telling ERC where power comes from"
+    (property "Description" "P-MOSFET transistor, gate/drain/source"
       (at 0 0 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (symbol "power_PWR_FLAG_0_1"
+    (symbol "Transistor_FET_Q_PMOS_GDS_0_1"
       (polyline
         (pts
-          (xy 0 0)
-          (xy 0 1.27)
-          (xy -1.016 1.905)
-          (xy 0 2.54)
-          (xy 1.016 1.905)
-          (xy 0 1.27))
+          (xy 0.254 1.905)
+          (xy 0.254 -1.905))
         (stroke
-          (width 0)
+          (width 0.254)
           (type default))
         (fill
-          (type none))))
-    (symbol "power_PWR_FLAG_1_1"
+          (type none)))
       (polyline
         (pts
-          (xy 0 0)
-          (xy 0 1.27)
-          (xy -1.016 1.905)
-          (xy 0 2.54)
-          (xy 1.016 1.905)
-          (xy 0 1.27))
+          (xy 0.254 0)
+          (xy -2.54 0))
         (stroke
           (width 0)
           (type default))
         (fill
           (type none)))
-      (pin power_out line
-        (at 0 0 90)
-        (length 0)
+      (polyline
+        (pts
+          (xy 0.762 2.286)
+          (xy 0.762 1.27))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 1.778)
+          (xy 3.302 1.778)
+          (xy 3.302 -1.778)
+          (xy 0.762 -1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 0.508)
+          (xy 0.762 -0.508))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 -1.27)
+          (xy 0.762 -2.286))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (circle
+        (center 1.651 0)
+        (radius 2.794)
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 2.286 0)
+          (xy 1.27 0.381)
+          (xy 1.27 -0.381)
+          (xy 2.286 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (polyline
+        (pts
+          (xy 2.54 2.54)
+          (xy 2.54 1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (circle
+        (center 2.54 1.778)
+        (radius 0.254)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (circle
+        (center 2.54 -1.778)
+        (radius 0.254)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (polyline
+        (pts
+          (xy 2.54 -2.54)
+          (xy 2.54 0)
+          (xy 0.762 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 2.921 -0.381)
+          (xy 3.683 -0.381))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 3.302 -0.381)
+          (xy 2.921 0.254)
+          (xy 3.683 0.254)
+          (xy 3.302 -0.381))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none))))
+    (symbol "Transistor_FET_Q_PMOS_GDS_1_1"
+      (polyline
+        (pts
+          (xy 0.254 1.905)
+          (xy 0.254 -1.905))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.254 0)
+          (xy -2.54 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 2.286)
+          (xy 0.762 1.27))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 1.778)
+          (xy 3.302 1.778)
+          (xy 3.302 -1.778)
+          (xy 0.762 -1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 0.508)
+          (xy 0.762 -0.508))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 -1.27)
+          (xy 0.762 -2.286))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (circle
+        (center 1.651 0)
+        (radius 2.794)
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 2.286 0)
+          (xy 1.27 0.381)
+          (xy 1.27 -0.381)
+          (xy 2.286 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (polyline
+        (pts
+          (xy 2.54 2.54)
+          (xy 2.54 1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (circle
+        (center 2.54 1.778)
+        (radius 0.254)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (circle
+        (center 2.54 -1.778)
+        (radius 0.254)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (polyline
+        (pts
+          (xy 2.54 -2.54)
+          (xy 2.54 0)
+          (xy 0.762 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 2.921 -0.381)
+          (xy 3.683 -0.381))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 3.302 -0.381)
+          (xy 2.921 0.254)
+          (xy 3.683 0.254)
+          (xy 3.302 -0.381))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (pin input line
+        (at -5.08 0 0)
+        (length 2.54)
+        (name "G"
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "1"
+          (effects
+            (font
+              (size 1.27 1.27)))))
+      (pin passive line
+        (at 2.54 5.08 270)
+        (length 2.54)
+        (name "D"
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "2"
+          (effects
+            (font
+              (size 1.27 1.27)))))
+      (pin passive line
+        (at 2.54 -5.08 90)
+        (length 2.54)
+        (name "S"
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "3"
+          (effects
+            (font
+              (size 1.27 1.27))))))
+    (embedded_fonts no))
+  (symbol "Diode_1N4148"
+    (pin_names
+      (offset 0.508)
+      (hide yes))
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "D"
+      (at 2.032 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "1N4148"
+      (at 0 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" "https://assets.nexperia.com/documents/data-sheet/1N4148_1N4448.pdf"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Description" "100V 0.15A standard switching diode, DO-35"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (symbol "Diode_1N4148_0_1"
+      (polyline
+        (pts
+          (xy -1.27 1.27)
+          (xy -1.27 -1.27))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 1.27 1.27)
+          (xy 1.27 -1.27)
+          (xy -1.27 0)
+          (xy 1.27 1.27))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 1.27 0)
+          (xy -1.27 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none))))
+    (symbol "Diode_1N4148_1_1"
+      (polyline
+        (pts
+          (xy -1.27 1.27)
+          (xy -1.27 -1.27))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 1.27 1.27)
+          (xy 1.27 -1.27)
+          (xy -1.27 0)
+          (xy 1.27 1.27))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 1.27 0)
+          (xy -1.27 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (pin passive line
+        (at -3.81 0 0)
+        (length 2.54)
+        (name "K"
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "1"
+          (effects
+            (font
+              (size 1.27 1.27)))))
+      (pin passive line
+        (at 3.81 0 180)
+        (length 2.54)
+        (name "A"
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "2"
+          (effects
+            (font
+              (size 1.27 1.27))))))
+    (embedded_fonts no))
+  (symbol "Transistor_BJT_2N3906"
+    (pin_names
+      (offset 0.508)
+      (hide yes))
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "Q"
+      (at 2.032 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "2N3906"
+      (at 0 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" "https://www.onsemi.com/pub/Collateral/2N3906-D.PDF"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Description" "-0.2A Ic, -40V Vce, Small Signal PNP Transistor, TO-92"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (symbol "Transistor_BJT_2N3906_0_1"
+      (polyline
+        (pts
+          (xy -2.54 0)
+          (xy 0.635 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.635 1.905)
+          (xy 0.635 -1.905))
+        (stroke
+          (width 0.508)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.635 0.635)
+          (xy 2.54 2.54))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.635 -0.635)
+          (xy 2.54 -2.54))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (circle
+        (center 1.27 0)
+        (radius 2.8194)
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 2.286 -1.778)
+          (xy 1.778 -2.286)
+          (xy 1.27 -1.27)
+          (xy 2.286 -1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline))))
+    (symbol "Transistor_BJT_2N3906_1_1"
+      (polyline
+        (pts
+          (xy -2.54 0)
+          (xy 0.635 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.635 1.905)
+          (xy 0.635 -1.905))
+        (stroke
+          (width 0.508)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.635 0.635)
+          (xy 2.54 2.54))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.635 -0.635)
+          (xy 2.54 -2.54))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (circle
+        (center 1.27 0)
+        (radius 2.8194)
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 2.286 -1.778)
+          (xy 1.778 -2.286)
+          (xy 1.27 -1.27)
+          (xy 2.286 -1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (pin passive line
+        (at 2.54 -5.08 90)
+        (length 2.54)
+        (name "E"
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "1"
+          (effects
+            (font
+              (size 1.27 1.27)))))
+      (pin input line
+        (at -5.08 0 0)
+        (length 2.54)
+        (name "B"
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "2"
+          (effects
+            (font
+              (size 1.27 1.27)))))
+      (pin passive line
+        (at 2.54 5.08 270)
+        (length 2.54)
+        (name "C"
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "3"
+          (effects
+            (font
+              (size 1.27 1.27))))))
+    (embedded_fonts no))
+  (symbol "Device_C"
+    (pin_names
+      (offset 0.508))
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "C"
+      (at 2.032 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "C"
+      (at 0 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" "~"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Description" "Unpolarized capacitor"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (symbol "Device_C_0_1"
+      (polyline
+        (pts
+          (xy -2.032 0.762)
+          (xy 2.032 0.762))
+        (stroke
+          (width 0.508)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy -2.032 -0.762)
+          (xy 2.032 -0.762))
+        (stroke
+          (width 0.508)
+          (type default))
+        (fill
+          (type none))))
+    (symbol "Device_C_1_1"
+      (polyline
+        (pts
+          (xy -2.032 0.762)
+          (xy 2.032 0.762))
+        (stroke
+          (width 0.508)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy -2.032 -0.762)
+          (xy 2.032 -0.762))
+        (stroke
+          (width 0.508)
+          (type default))
+        (fill
+          (type none)))
+      (pin passive line
+        (at 0 3.81 270)
+        (length 2.794)
         (name ""
           (effects
             (font
               (size 1.27 1.27))))
         (number "1"
+          (effects
+            (font
+              (size 1.27 1.27)))))
+      (pin passive line
+        (at 0 -3.81 90)
+        (length 2.794)
+        (name ""
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "2"
+          (effects
+            (font
+              (size 1.27 1.27))))))
+    (embedded_fonts no))
+  (symbol "Device_C_Polarized"
+    (pin_names
+      (offset 0.508))
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "C"
+      (at 2.032 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "C_Polarized"
+      (at 0 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" "~"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Description" "Polarized capacitor"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (symbol "Device_C_Polarized_0_1"
+      (rectangle
+        (start -2.286 0.508)
+        (end 2.286 1.016)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy -1.778 2.286)
+          (xy -0.762 2.286))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy -1.27 2.794)
+          (xy -1.27 1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (rectangle
+        (start 2.286 -0.508)
+        (end -2.286 -1.016)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline))))
+    (symbol "Device_C_Polarized_1_1"
+      (rectangle
+        (start -2.286 0.508)
+        (end 2.286 1.016)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy -1.778 2.286)
+          (xy -0.762 2.286))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy -1.27 2.794)
+          (xy -1.27 1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (rectangle
+        (start 2.286 -0.508)
+        (end -2.286 -1.016)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (pin passive line
+        (at 0 3.81 270)
+        (length 2.794)
+        (name ""
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "1"
+          (effects
+            (font
+              (size 1.27 1.27)))))
+      (pin passive line
+        (at 0 -3.81 90)
+        (length 2.794)
+        (name ""
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "2"
           (effects
             (font
               (size 1.27 1.27))))))
@@ -1060,19 +1838,18 @@
             (font
               (size 1.27 1.27))))))
     (embedded_fonts no))
-  (symbol "Connector_Generic_Conn_01x04"
+  (symbol "Device_Fuse"
     (pin_names
-      (offset 0.508)
-      (hide yes))
+      (offset 0.508))
     (exclude_from_sim no)
     (in_bom yes)
     (on_board yes)
-    (property "Reference" "J"
+    (property "Reference" "F"
       (at 2.032 0 90)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "Conn_01x04"
+    (property "Value" "Fuse"
       (at 0 0 90)
       (effects
         (font
@@ -1089,173 +1866,16 @@
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "Description" "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)"
+    (property "Description" "Fuse"
       (at 0 0 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (symbol "Connector_Generic_Conn_01x04_1_1"
+    (symbol "Device_Fuse_0_1"
       (rectangle
-        (start -1.27 3.81)
-        (end 1.27 -6.35)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type background)))
-      (rectangle
-        (start -1.27 2.667)
-        (end 0 2.413)
-        (stroke
-          (width 0.1524)
-          (type default))
-        (fill
-          (type none)))
-      (rectangle
-        (start -1.27 0.127)
-        (end 0 -0.127)
-        (stroke
-          (width 0.1524)
-          (type default))
-        (fill
-          (type none)))
-      (rectangle
-        (start -1.27 -2.413)
-        (end 0 -2.667)
-        (stroke
-          (width 0.1524)
-          (type default))
-        (fill
-          (type none)))
-      (rectangle
-        (start -1.27 -4.953)
-        (end 0 -5.207)
-        (stroke
-          (width 0.1524)
-          (type default))
-        (fill
-          (type none)))
-      (pin passive line
-        (at -5.08 2.54 0)
-        (length 3.81)
-        (name "Pin_1"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "1"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at -5.08 0 0)
-        (length 3.81)
-        (name "Pin_2"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "2"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at -5.08 -2.54 0)
-        (length 3.81)
-        (name "Pin_3"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "3"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at -5.08 -5.08 0)
-        (length 3.81)
-        (name "Pin_4"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "4"
-          (effects
-            (font
-              (size 1.27 1.27))))))
-    (embedded_fonts no))
-  (symbol "Transistor_BJT_2N3906"
-    (pin_names
-      (offset 0.508)
-      (hide yes))
-    (exclude_from_sim no)
-    (in_bom yes)
-    (on_board yes)
-    (property "Reference" "Q"
-      (at 2.032 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "2N3906"
-      (at 0 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" ""
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Datasheet" "https://www.onsemi.com/pub/Collateral/2N3906-D.PDF"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Description" "-0.2A Ic, -40V Vce, Small Signal PNP Transistor, TO-92"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (symbol "Transistor_BJT_2N3906_0_1"
-      (polyline
-        (pts
-          (xy -2.54 0)
-          (xy 0.635 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.635 1.905)
-          (xy 0.635 -1.905))
-        (stroke
-          (width 0.508)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.635 0.635)
-          (xy 2.54 2.54))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.635 -0.635)
-          (xy 2.54 -2.54))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (circle
-        (center 1.27 0)
-        (radius 2.8194)
+        (start -0.762 -2.54)
+        (end 0.762 2.54)
         (stroke
           (width 0.254)
           (type default))
@@ -1263,278 +1883,17 @@
           (type none)))
       (polyline
         (pts
-          (xy 2.286 -1.778)
-          (xy 1.778 -2.286)
-          (xy 1.27 -1.27)
-          (xy 2.286 -1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline))))
-    (symbol "Transistor_BJT_2N3906_1_1"
-      (polyline
-        (pts
-          (xy -2.54 0)
-          (xy 0.635 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.635 1.905)
-          (xy 0.635 -1.905))
-        (stroke
-          (width 0.508)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.635 0.635)
-          (xy 2.54 2.54))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.635 -0.635)
-          (xy 2.54 -2.54))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (circle
-        (center 1.27 0)
-        (radius 2.8194)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.286 -1.778)
-          (xy 1.778 -2.286)
-          (xy 1.27 -1.27)
-          (xy 2.286 -1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (pin passive line
-        (at 2.54 -5.08 90)
-        (length 2.54)
-        (name "E"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "1"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin input line
-        (at -5.08 0 0)
-        (length 2.54)
-        (name "B"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "2"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at 2.54 5.08 270)
-        (length 2.54)
-        (name "C"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "3"
-          (effects
-            (font
-              (size 1.27 1.27))))))
-    (embedded_fonts no))
-  (symbol "Transistor_FET_IRLZ44N"
-    (pin_names
-      (offset 0.508)
-      (hide yes))
-    (exclude_from_sim no)
-    (in_bom yes)
-    (on_board yes)
-    (property "Reference" "Q"
-      (at 2.032 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "IRLZ44N"
-      (at 0 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" ""
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Datasheet" "http://www.irf.com/product-info/datasheets/data/irlz44n.pdf"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Description" "47A Id, 55V Vds, 22mOhm Rds Single N-Channel HEXFET Power MOSFET, TO-220AB"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (symbol "Transistor_FET_IRLZ44N_0_1"
-      (polyline
-        (pts
-          (xy 0.254 1.905)
-          (xy 0.254 -1.905))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.254 0)
-          (xy -2.54 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 2.286)
-          (xy 0.762 1.27))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 0.508)
-          (xy 0.762 -0.508))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 -1.27)
-          (xy 0.762 -2.286))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 -1.778)
-          (xy 3.302 -1.778)
-          (xy 3.302 1.778)
-          (xy 0.762 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 1.016 0)
-          (xy 2.032 0.381)
-          (xy 2.032 -0.381)
-          (xy 1.016 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (circle
-        (center 1.651 0)
-        (radius 2.794)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.54 2.54)
-          (xy 2.54 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (circle
-        (center 2.54 1.778)
-        (radius 0.254)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (circle
-        (center 2.54 -1.778)
-        (radius 0.254)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (polyline
-        (pts
-          (xy 2.54 -2.54)
-          (xy 2.54 0)
-          (xy 0.762 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.794 0.508)
-          (xy 2.921 0.381)
-          (xy 3.683 0.381)
-          (xy 3.81 0.254))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 3.302 0.381)
-          (xy 2.921 -0.254)
-          (xy 3.683 -0.254)
-          (xy 3.302 0.381))
+          (xy 0 2.54)
+          (xy 0 -2.54))
         (stroke
           (width 0)
           (type default))
         (fill
           (type none))))
-    (symbol "Transistor_FET_IRLZ44N_1_1"
-      (polyline
-        (pts
-          (xy 0.254 1.905)
-          (xy 0.254 -1.905))
+    (symbol "Device_Fuse_1_1"
+      (rectangle
+        (start -0.762 -2.54)
+        (end 0.762 2.54)
         (stroke
           (width 0.254)
           (type default))
@@ -1542,131 +1901,17 @@
           (type none)))
       (polyline
         (pts
-          (xy 0.254 0)
-          (xy -2.54 0))
+          (xy 0 2.54)
+          (xy 0 -2.54))
         (stroke
           (width 0)
           (type default))
         (fill
           (type none)))
-      (polyline
-        (pts
-          (xy 0.762 2.286)
-          (xy 0.762 1.27))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 0.508)
-          (xy 0.762 -0.508))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 -1.27)
-          (xy 0.762 -2.286))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 -1.778)
-          (xy 3.302 -1.778)
-          (xy 3.302 1.778)
-          (xy 0.762 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 1.016 0)
-          (xy 2.032 0.381)
-          (xy 2.032 -0.381)
-          (xy 1.016 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (circle
-        (center 1.651 0)
-        (radius 2.794)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.54 2.54)
-          (xy 2.54 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (circle
-        (center 2.54 1.778)
-        (radius 0.254)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (circle
-        (center 2.54 -1.778)
-        (radius 0.254)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (polyline
-        (pts
-          (xy 2.54 -2.54)
-          (xy 2.54 0)
-          (xy 0.762 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.794 0.508)
-          (xy 2.921 0.381)
-          (xy 3.683 0.381)
-          (xy 3.81 0.254))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 3.302 0.381)
-          (xy 2.921 -0.254)
-          (xy 3.683 -0.254)
-          (xy 3.302 0.381))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (pin input line
-        (at -5.08 0 0)
-        (length 2.54)
-        (name "G"
+      (pin passive line
+        (at 0 3.81 270)
+        (length 1.27)
+        (name ""
           (effects
             (font
               (size 1.27 1.27))))
@@ -1675,359 +1920,13 @@
             (font
               (size 1.27 1.27)))))
       (pin passive line
-        (at 2.54 5.08 270)
-        (length 2.54)
-        (name "D"
+        (at 0 -3.81 90)
+        (length 1.27)
+        (name ""
           (effects
             (font
               (size 1.27 1.27))))
         (number "2"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at 2.54 -5.08 90)
-        (length 2.54)
-        (name "S"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "3"
-          (effects
-            (font
-              (size 1.27 1.27))))))
-    (embedded_fonts no))
-  (symbol "Transistor_FET_2N7000"
-    (pin_names
-      (offset 0.508)
-      (hide yes))
-    (exclude_from_sim no)
-    (in_bom yes)
-    (on_board yes)
-    (property "Reference" "Q"
-      (at 2.032 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "2N7000"
-      (at 0 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" ""
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Datasheet" "https://www.vishay.com/docs/70226/70226.pdf"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Description" "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (symbol "Transistor_FET_2N7000_0_1"
-      (polyline
-        (pts
-          (xy 0.254 1.905)
-          (xy 0.254 -1.905))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.254 0)
-          (xy -2.54 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 2.286)
-          (xy 0.762 1.27))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 0.508)
-          (xy 0.762 -0.508))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 -1.27)
-          (xy 0.762 -2.286))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 -1.778)
-          (xy 3.302 -1.778)
-          (xy 3.302 1.778)
-          (xy 0.762 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 1.016 0)
-          (xy 2.032 0.381)
-          (xy 2.032 -0.381)
-          (xy 1.016 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (circle
-        (center 1.651 0)
-        (radius 2.794)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.54 2.54)
-          (xy 2.54 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (circle
-        (center 2.54 1.778)
-        (radius 0.254)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (circle
-        (center 2.54 -1.778)
-        (radius 0.254)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (polyline
-        (pts
-          (xy 2.54 -2.54)
-          (xy 2.54 0)
-          (xy 0.762 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.794 0.508)
-          (xy 2.921 0.381)
-          (xy 3.683 0.381)
-          (xy 3.81 0.254))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 3.302 0.381)
-          (xy 2.921 -0.254)
-          (xy 3.683 -0.254)
-          (xy 3.302 0.381))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none))))
-    (symbol "Transistor_FET_2N7000_1_1"
-      (polyline
-        (pts
-          (xy 0.254 1.905)
-          (xy 0.254 -1.905))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.254 0)
-          (xy -2.54 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 2.286)
-          (xy 0.762 1.27))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 0.508)
-          (xy 0.762 -0.508))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 -1.27)
-          (xy 0.762 -2.286))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.762 -1.778)
-          (xy 3.302 -1.778)
-          (xy 3.302 1.778)
-          (xy 0.762 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 1.016 0)
-          (xy 2.032 0.381)
-          (xy 2.032 -0.381)
-          (xy 1.016 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (circle
-        (center 1.651 0)
-        (radius 2.794)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.54 2.54)
-          (xy 2.54 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (circle
-        (center 2.54 1.778)
-        (radius 0.254)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (circle
-        (center 2.54 -1.778)
-        (radius 0.254)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (polyline
-        (pts
-          (xy 2.54 -2.54)
-          (xy 2.54 0)
-          (xy 0.762 0))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.794 0.508)
-          (xy 2.921 0.381)
-          (xy 3.683 0.381)
-          (xy 3.81 0.254))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 3.302 0.381)
-          (xy 2.921 -0.254)
-          (xy 3.683 -0.254)
-          (xy 3.302 0.381))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (pin passive line
-        (at 2.54 -5.08 90)
-        (length 2.54)
-        (name "S"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "1"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin input line
-        (at -5.08 0 0)
-        (length 2.54)
-        (name "G"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "2"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at 2.54 5.08 270)
-        (length 2.54)
-        (name "D"
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "3"
           (effects
             (font
               (size 1.27 1.27))))))
@@ -2659,19 +2558,19 @@
             (font
               (size 1 1))))))
     (embedded_fonts no))
-  (symbol "Relay_G5LE-1"
+  (symbol "Transistor_FET_2N7000"
     (pin_names
       (offset 0.508)
       (hide yes))
     (exclude_from_sim no)
     (in_bom yes)
     (on_board yes)
-    (property "Reference" "K"
+    (property "Reference" "Q"
       (at 2.032 0 90)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "G5LE-1"
+    (property "Value" "2N7000"
       (at 0 0 90)
       (effects
         (font
@@ -2682,41 +2581,23 @@
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "Datasheet" "http://www.omron.com/ecb/products/pdf/en-g5le.pdf"
+    (property "Datasheet" "https://www.vishay.com/docs/70226/70226.pdf"
       (at 0 0 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "Description" "Omron G5LE relay, Miniature Single Pole, SPDT, 10A"
+    (property "Description" "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92"
       (at 0 0 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (symbol "Relay_G5LE-1_0_1"
+    (symbol "Transistor_FET_2N7000_0_1"
       (polyline
         (pts
-          (xy 7.62 5.08)
-          (xy 7.62 2.54)
-          (xy 6.985 3.175)
-          (xy 7.62 3.81))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (rectangle
-        (start -10.16 5.08)
-        (end 10.16 -5.08)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type background)))
-      (rectangle
-        (start -8.255 1.905)
-        (end -1.905 -1.905)
+          (xy 0.254 1.905)
+          (xy 0.254 -1.905))
         (stroke
           (width 0.254)
           (type default))
@@ -2724,17 +2605,8 @@
           (type none)))
       (polyline
         (pts
-          (xy -7.62 -1.905)
-          (xy -2.54 1.905))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy -5.08 5.08)
-          (xy -5.08 1.905))
+          (xy 0.254 0)
+          (xy -2.54 0))
         (stroke
           (width 0)
           (type default))
@@ -2742,8 +2614,37 @@
           (type none)))
       (polyline
         (pts
-          (xy -5.08 -5.08)
-          (xy -5.08 -1.905))
+          (xy 0.762 2.286)
+          (xy 0.762 1.27))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 0.508)
+          (xy 0.762 -0.508))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 -1.27)
+          (xy 0.762 -2.286))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 -1.778)
+          (xy 3.302 -1.778)
+          (xy 3.302 1.778)
+          (xy 0.762 1.778))
         (stroke
           (width 0)
           (type default))
@@ -2751,8 +2652,18 @@
           (type none)))
       (polyline
         (pts
-          (xy -1.905 0)
-          (xy -1.27 0))
+          (xy 1.016 0)
+          (xy 2.032 0.381)
+          (xy 2.032 -0.381)
+          (xy 1.016 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (circle
+        (center 1.651 0)
+        (radius 2.794)
         (stroke
           (width 0.254)
           (type default))
@@ -2760,37 +2671,24 @@
           (type none)))
       (polyline
         (pts
-          (xy -0.635 0)
-          (xy 0 0))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.635 0)
-          (xy 1.27 0))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 1.905 0)
-          (xy 2.54 0))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.54 5.08)
           (xy 2.54 2.54)
-          (xy 3.175 3.175)
-          (xy 2.54 3.81))
+          (xy 2.54 1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (circle
+        (center 2.54 1.778)
+        (radius 0.254)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (circle
+        (center 2.54 -1.778)
+        (radius 0.254)
         (stroke
           (width 0)
           (type default))
@@ -2798,54 +2696,41 @@
           (type outline)))
       (polyline
         (pts
-          (xy 3.175 0)
-          (xy 3.81 0))
+          (xy 2.54 -2.54)
+          (xy 2.54 0)
+          (xy 0.762 0))
         (stroke
-          (width 0.254)
+          (width 0)
           (type default))
         (fill
           (type none)))
       (polyline
         (pts
-          (xy 5.08 -2.54)
-          (xy 3.175 3.81))
+          (xy 2.794 0.508)
+          (xy 2.921 0.381)
+          (xy 3.683 0.381)
+          (xy 3.81 0.254))
         (stroke
-          (width 0.508)
+          (width 0)
           (type default))
         (fill
           (type none)))
       (polyline
         (pts
-          (xy 5.08 -2.54)
-          (xy 5.08 -5.08))
+          (xy 3.302 0.381)
+          (xy 2.921 -0.254)
+          (xy 3.683 -0.254)
+          (xy 3.302 0.381))
         (stroke
           (width 0)
           (type default))
         (fill
           (type none))))
-    (symbol "Relay_G5LE-1_1_1"
+    (symbol "Transistor_FET_2N7000_1_1"
       (polyline
         (pts
-          (xy 7.62 5.08)
-          (xy 7.62 2.54)
-          (xy 6.985 3.175)
-          (xy 7.62 3.81))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (rectangle
-        (start -10.16 5.08)
-        (end 10.16 -5.08)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type background)))
-      (rectangle
-        (start -8.255 1.905)
-        (end -1.905 -1.905)
+          (xy 0.254 1.905)
+          (xy 0.254 -1.905))
         (stroke
           (width 0.254)
           (type default))
@@ -2853,17 +2738,8 @@
           (type none)))
       (polyline
         (pts
-          (xy -7.62 -1.905)
-          (xy -2.54 1.905))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy -5.08 5.08)
-          (xy -5.08 1.905))
+          (xy 0.254 0)
+          (xy -2.54 0))
         (stroke
           (width 0)
           (type default))
@@ -2871,8 +2747,37 @@
           (type none)))
       (polyline
         (pts
-          (xy -5.08 -5.08)
-          (xy -5.08 -1.905))
+          (xy 0.762 2.286)
+          (xy 0.762 1.27))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 0.508)
+          (xy 0.762 -0.508))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 -1.27)
+          (xy 0.762 -2.286))
+        (stroke
+          (width 0.254)
+          (type default))
+        (fill
+          (type none)))
+      (polyline
+        (pts
+          (xy 0.762 -1.778)
+          (xy 3.302 -1.778)
+          (xy 3.302 1.778)
+          (xy 0.762 1.778))
         (stroke
           (width 0)
           (type default))
@@ -2880,8 +2785,18 @@
           (type none)))
       (polyline
         (pts
-          (xy -1.905 0)
-          (xy -1.27 0))
+          (xy 1.016 0)
+          (xy 2.032 0.381)
+          (xy 2.032 -0.381)
+          (xy 1.016 0))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (circle
+        (center 1.651 0)
+        (radius 2.794)
         (stroke
           (width 0.254)
           (type default))
@@ -2889,37 +2804,24 @@
           (type none)))
       (polyline
         (pts
-          (xy -0.635 0)
-          (xy 0 0))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0.635 0)
-          (xy 1.27 0))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 1.905 0)
-          (xy 2.54 0))
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 2.54 5.08)
           (xy 2.54 2.54)
-          (xy 3.175 3.175)
-          (xy 2.54 3.81))
+          (xy 2.54 1.778))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (circle
+        (center 2.54 1.778)
+        (radius 0.254)
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type outline)))
+      (circle
+        (center 2.54 -1.778)
+        (radius 0.254)
         (stroke
           (width 0)
           (type default))
@@ -2927,35 +2829,40 @@
           (type outline)))
       (polyline
         (pts
-          (xy 3.175 0)
-          (xy 3.81 0))
+          (xy 2.54 -2.54)
+          (xy 2.54 0)
+          (xy 0.762 0))
         (stroke
-          (width 0.254)
+          (width 0)
           (type default))
         (fill
           (type none)))
       (polyline
         (pts
-          (xy 5.08 -2.54)
-          (xy 3.175 3.81))
+          (xy 2.794 0.508)
+          (xy 2.921 0.381)
+          (xy 3.683 0.381)
+          (xy 3.81 0.254))
         (stroke
-          (width 0.508)
+          (width 0)
           (type default))
         (fill
           (type none)))
       (polyline
         (pts
-          (xy 5.08 -2.54)
-          (xy 5.08 -5.08))
+          (xy 3.302 0.381)
+          (xy 2.921 -0.254)
+          (xy 3.683 -0.254)
+          (xy 3.302 0.381))
         (stroke
           (width 0)
           (type default))
         (fill
           (type none)))
       (pin passive line
-        (at 5.08 -7.62 90)
+        (at 2.54 -5.08 90)
         (length 2.54)
-        (name ""
+        (name "S"
           (effects
             (font
               (size 1.27 1.27))))
@@ -2963,10 +2870,10 @@
           (effects
             (font
               (size 1.27 1.27)))))
-      (pin passive line
-        (at -5.08 -7.62 90)
+      (pin input line
+        (at -5.08 0 0)
         (length 2.54)
-        (name ""
+        (name "G"
           (effects
             (font
               (size 1.27 1.27))))
@@ -2975,35 +2882,13 @@
             (font
               (size 1.27 1.27)))))
       (pin passive line
-        (at 7.62 7.62 270)
+        (at 2.54 5.08 270)
         (length 2.54)
-        (name ""
+        (name "D"
           (effects
             (font
               (size 1.27 1.27))))
         (number "3"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at 2.54 7.62 270)
-        (length 2.54)
-        (name ""
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "4"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at -5.08 7.62 270)
-        (length 2.54)
-        (name ""
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "5"
           (effects
             (font
               (size 1.27 1.27))))))
@@ -3126,321 +3011,6 @@
             (font
               (size 1.27 1.27))))))
     (embedded_fonts no))
-  (symbol "Device_Fuse"
-    (pin_names
-      (offset 0.508))
-    (exclude_from_sim no)
-    (in_bom yes)
-    (on_board yes)
-    (property "Reference" "F"
-      (at 2.032 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "Fuse"
-      (at 0 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" ""
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Datasheet" "~"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Description" "Fuse"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (symbol "Device_Fuse_0_1"
-      (rectangle
-        (start -0.762 -2.54)
-        (end 0.762 2.54)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0 2.54)
-          (xy 0 -2.54))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none))))
-    (symbol "Device_Fuse_1_1"
-      (rectangle
-        (start -0.762 -2.54)
-        (end 0.762 2.54)
-        (stroke
-          (width 0.254)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy 0 2.54)
-          (xy 0 -2.54))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (pin passive line
-        (at 0 3.81 270)
-        (length 1.27)
-        (name ""
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "1"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at 0 -3.81 90)
-        (length 1.27)
-        (name ""
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "2"
-          (effects
-            (font
-              (size 1.27 1.27))))))
-    (embedded_fonts no))
-  (symbol "Device_C"
-    (pin_names
-      (offset 0.508))
-    (exclude_from_sim no)
-    (in_bom yes)
-    (on_board yes)
-    (property "Reference" "C"
-      (at 2.032 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "C"
-      (at 0 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" ""
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Datasheet" "~"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Description" "Unpolarized capacitor"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (symbol "Device_C_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762))
-        (stroke
-          (width 0.508)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762))
-        (stroke
-          (width 0.508)
-          (type default))
-        (fill
-          (type none))))
-    (symbol "Device_C_1_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762))
-        (stroke
-          (width 0.508)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762))
-        (stroke
-          (width 0.508)
-          (type default))
-        (fill
-          (type none)))
-      (pin passive line
-        (at 0 3.81 270)
-        (length 2.794)
-        (name ""
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "1"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at 0 -3.81 90)
-        (length 2.794)
-        (name ""
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "2"
-          (effects
-            (font
-              (size 1.27 1.27))))))
-    (embedded_fonts no))
-  (symbol "Device_C_Polarized"
-    (pin_names
-      (offset 0.508))
-    (exclude_from_sim no)
-    (in_bom yes)
-    (on_board yes)
-    (property "Reference" "C"
-      (at 2.032 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "C_Polarized"
-      (at 0 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" ""
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Datasheet" "~"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Description" "Polarized capacitor"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (symbol "Device_C_Polarized_0_1"
-      (rectangle
-        (start -2.286 0.508)
-        (end 2.286 1.016)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy -1.778 2.286)
-          (xy -0.762 2.286))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy -1.27 2.794)
-          (xy -1.27 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (rectangle
-        (start 2.286 -0.508)
-        (end -2.286 -1.016)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline))))
-    (symbol "Device_C_Polarized_1_1"
-      (rectangle
-        (start -2.286 0.508)
-        (end 2.286 1.016)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy -1.778 2.286)
-          (xy -0.762 2.286))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (polyline
-        (pts
-          (xy -1.27 2.794)
-          (xy -1.27 1.778))
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
-      (rectangle
-        (start 2.286 -0.508)
-        (end -2.286 -1.016)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type outline)))
-      (pin passive line
-        (at 0 3.81 270)
-        (length 2.794)
-        (name ""
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "1"
-          (effects
-            (font
-              (size 1.27 1.27)))))
-      (pin passive line
-        (at 0 -3.81 90)
-        (length 2.794)
-        (name ""
-          (effects
-            (font
-              (size 1.27 1.27))))
-        (number "2"
-          (effects
-            (font
-              (size 1.27 1.27))))))
-    (embedded_fonts no))
   (symbol "Mechanical_MountingHole"
     (pin_names
       (offset 0.508))
@@ -3484,4 +3054,78 @@
           (type default))
         (fill
           (type none))))
+    (embedded_fonts no))
+  (symbol "power_PWR_FLAG"
+    (pin_names
+      (offset 0.508))
+    (exclude_from_sim no)
+    (in_bom yes)
+    (on_board yes)
+    (property "Reference" "#FLG"
+      (at 2.032 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "PWR_FLAG"
+      (at 0 0 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" "~"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Description" "Special symbol for telling ERC where power comes from"
+      (at 0 0 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (symbol "power_PWR_FLAG_0_1"
+      (polyline
+        (pts
+          (xy 0 0)
+          (xy 0 1.27)
+          (xy -1.016 1.905)
+          (xy 0 2.54)
+          (xy 1.016 1.905)
+          (xy 0 1.27))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none))))
+    (symbol "power_PWR_FLAG_1_1"
+      (polyline
+        (pts
+          (xy 0 0)
+          (xy 0 1.27)
+          (xy -1.016 1.905)
+          (xy 0 2.54)
+          (xy 1.016 1.905)
+          (xy 0 1.27))
+        (stroke
+          (width 0)
+          (type default))
+        (fill
+          (type none)))
+      (pin power_out line
+        (at 0 0 90)
+        (length 0)
+        (name ""
+          (effects
+            (font
+              (size 1.27 1.27))))
+        (number "1"
+          (effects
+            (font
+              (size 1.27 1.27))))))
     (embedded_fonts no)))

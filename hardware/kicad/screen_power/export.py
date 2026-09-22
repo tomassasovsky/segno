@@ -10,6 +10,7 @@ import sys
 import tempfile
 import zipfile
 from check import source_hashes
+import pcbnew as p
 
 HERE = Path(__file__).resolve().parent
 CLI = os.environ.get('KICAD_CLI','/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli')
@@ -71,7 +72,20 @@ def export(variant):
         run('pcb','export','pos','--format','csv','--units','mm','-o',out/'positions-all.csv',board)
         run('pcb','export','pos','--format','csv','--units','mm','--smd-only','--exclude-fp-th','-o',out/'positions-smd.csv',board)
         run('sch','export','pdf','-o',out/'schematic.pdf',schematic)
-        run('pcb','export','pdf','--layers','F.Fab,F.SilkS,Edge.Cuts','--mode-single','-o',out/'assembly.pdf',board)
+        # Use the finished silkscreen references once, with fab body outlines
+        # and numbered pad sketches. Blank duplicate fab reference text only
+        # in a disposable drawing copy; never alter manufacturing input.
+        with tempfile.TemporaryDirectory(prefix='screen-assembly-') as drawing:
+            drawing_board=p.LoadBoard(str(board))
+            for footprint in drawing_board.GetFootprints():
+                for item in footprint.GraphicalItems():
+                    if isinstance(item,p.PCB_TEXT) and item.GetLayer()==p.F_Fab:
+                        item.SetText('')
+            drawing_path=Path(drawing)/'assembly.kicad_pcb'
+            drawing_board.Save(str(drawing_path))
+            run('pcb','export','pdf','--layers','F.Fab,F.SilkS,Edge.Cuts',
+                '--sketch-pads-on-fab-layers','--black-and-white','--scale','0',
+                '--mode-single','-o',out/'assembly.pdf',drawing_path)
         run('pcb','export','step','--force','-D','KICAD10_3DMODEL_DIR='+MODELS,'-o',out/'board.step',board)
         for side in ['top','bottom']:
             run('pcb','render','--side',side,'--quality','high','--width','1600','--height','1600',

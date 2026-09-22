@@ -25,11 +25,14 @@ def covered_by_track(track, other):
     start,end=other.GetStart(),other.GetEnd()
     dx,dy=end.x-start.x,end.y-start.y
     length2=dx*dx+dy*dy
+    if not length2:return False
+    # A track is a capsule. Its eroded capsule is convex, so containing both
+    # endpoints of the narrower centerline proves the entire copper is covered.
+    margin=(other.GetWidth()-track.GetWidth())/2+2000
     for point in (track.GetStart(),track.GetEnd()):
         px,py=point.x-start.x,point.y-start.y
-        projection=px*dx+py*dy
-        if not 0<=projection<=length2:return False
-        if (px*dy-py*dx)**2>2000**2*length2:return False
+        factor=max(0,min(1,(px*dx+py*dy)/length2))
+        if (px-factor*dx)**2+(py-factor*dy)**2>margin**2:return False
     return True
 
 
