@@ -18,31 +18,30 @@ KiCad checks with zero violations and zero unconnected items, and exact circuit
 netlist parity. See the [routing verification](reviews/routing-1062-2026-09-21/verification.md).
 The PR remains open and hardware validation is still required. Screen power
 switching has completed prototype CAD under [issue #1072](https://github.com/tomassasovsky/segno/issues/1072).
-The [hand version](../hardware/kicad/screen_power/README.md) uses only
-through-hole carrier components, two external assembled USB-C power modules,
-and relays for USB data and touch power. The factory version integrates the
-source controllers, USB isolators, and electronic touch-current limiters.
-Both take display power from AUX and leave Pi USB VBUS separate.
+Revision B removes the external USB-C modules and source controllers. Both
+variants now share a discrete back-to-back MOSFET power switch and two RF
+USB-data relays, with host VBUS confined to its own relay coil. Two fused
+5 V outputs feed the existing screen power connections. The
+[hand version](../hardware/kicad/screen_power/README.md) is entirely through-hole
+at 72 × 84 mm; factory assembly is 72 × 74 mm. Each has 41 components including
+mounting holes. These areas are 61.2% and 65.8% smaller than revision A.
 
-The existing Pi-to-console ribbon remains direct. Console J25 adds only
-GPIO17 and GND, connected pin-for-pin to the screen board's two-pin J2.
-The console change preserves all existing copper routes and passes author CAD
-checks; see [console validation](reviews/screen-power-1072/raw/console-control-validation.md).
-Both corrected screen boards now pass fresh native ERC/DRC with zero
-findings and unconnected items, circuit/schematic/pad parity, USB routing,
-and control-connection checks. Fault injection detects USB power bridges,
-cut USB/control traces, and surface-mount parts on the hand carrier. The
-through-hole relay and two-wire outputs supersede the earlier screen packages.
-Both prototype export packages include refreshed schematics, assembly drawings,
-BOMs, Gerbers, STEP files, previews and matching source/output hashes. See the
-[verification record](reviews/screen-power-1072/verification.md).
+The existing Pi-to-console ribbon remains direct. Console J25 carries GPIO17
+and GND to screen J2 through one two-wire cable. The previously verified
+console routes are unchanged by revision B. Both screen boards pass fresh
+native ERC/DRC with zero violations and unconnected items, full component/net
+parity, USB continuity and skew, control continuity, and minimum power-copper
+path checks. Negative controls cover broken USB/control copper, host-power
+bridges, undersized power traces, accidental hand SMD pads, unsupported
+components, resistor tolerances and weak default-off pulls. See
+[revision B verification](reviews/screen-power-layout-1072/verification.md).
+Earlier revision A manufacturing packages are superseded.
 
-These are unassembled prototypes. Bench work still covers both touch devices,
-USB suspend behavior with the hand relay's host-coil load, fuse response,
-HDMI back-power, AUX capacity, temperatures, impedance, and enclosure fit.
-The hand touch fuse is overload protection, not an electronic current limiter.
-Early-boot enable and shutdown-before-HDMI software integration are specified
-but not implemented. The issue remains `autonomy:blocked-verify`.
+The boards remain unassembled prototypes. Actual power-harness connectors,
+USB operation/suspend, inrush, fuse coordination, HDMI residual power,
+voltage drop, temperature, impedance and enclosure fit need physical checks.
+Early-boot enable and shutdown-before-HDMI integration are specified but not
+implemented. Issue #1072 remains `autonomy:blocked-verify`.
 
 ## September 2026 Mac recording companion
 
