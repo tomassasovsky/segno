@@ -10,6 +10,16 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## September 2026 PCB routing completion
+
+The console and ring boards for #1062 / PR #1066 now carry the wider power
+rails in their routed files and manufacturing exports. Both pass full-severity
+KiCad checks with zero violations and zero unconnected items, and exact circuit
+netlist parity. See the [routing verification](reviews/routing-1062-2026-09-21/verification.md).
+The PR remains open and hardware validation is still required. Screen power
+switching is proposed separately in [#1072](https://github.com/tomassasovsky/segno/issues/1072)
+and the [screen-power brainstorm](brainstorm/2026-09-21-screen-power-switching-brainstorm-doc.md).
+
 ## September 2026 Mac recording companion
 
 The standalone [Segno Transfer app](../apps/segno_transfer/README.md) implements
