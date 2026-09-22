@@ -1005,6 +1005,83 @@ typedef struct le_perf_capture {
  * coarse estimate is already sub-cent and the refinement declines to run. */
 #define LE_TUNER_RAW 2048
 
+/* Work the sliced tuner analysis is allowed to do per DEVICE frame, in
+ * difference-function inner iterations. A whole pass (coarse + refinement) is
+ * at most ~184k iterations and fires once per LE_TUNER_HOP * LE_TUNER_DECIM =
+ * 2048 device frames, i.e. ~90 iterations per frame; budgeting 192 leaves
+ * roughly 2x headroom, which is what makes a pass finish inside its own hop at
+ * BOTH ends of the block-size range — at 32 frames a hop is 64 blocks, at 1024
+ * frames it is two. Below that headroom the large-block end would silently
+ * halve the tuner's refresh rate.
+ *
+ * Budgeting per FRAME rather than per block is the point: the per-block slice
+ * scales with the block exactly as the DSP around it does, so the tuner costs
+ * the same per frame at every period instead of dumping a whole pass into one
+ * callback. Worst case for one block is this budget plus one integration
+ * length of overshoot (a lag is never split). See tuner_slice. */
+#define LE_TUNER_WORK_PER_FRAME 192
+
+/* ---- Resumable YIN difference-function pass -------------------------------
+ *
+ * The cumulative-mean-normalized difference function is (lags x integration)
+ * serial double accumulates: at 96 kHz the tuner's is 384 x 384 = 147k, which
+ * on one callback is the entire 333 us budget of a 32-frame period on the
+ * appliance's A76. The pass is therefore resumable — the tuner advances it a
+ * slice at a time across callbacks, and its result is consumed at a ~43 ms
+ * cadence, so spreading it over a few dozen blocks changes nothing observable.
+ *
+ * le_psola_detect_band is le_yin_begin + one unbounded le_yin_step +
+ * le_yin_finish, so the sliced and the one-shot paths run the same arithmetic
+ * in the same order and cannot drift apart. `x` and `dp` are borrowed, not
+ * owned: the caller keeps both alive and unchanged for the life of the pass
+ * (the one-shot form uses stack buffers; the tuner uses a frozen snapshot in
+ * le_tuner_pass). No array member, so this type carries none of the octaver's
+ * tuning constants and can live beside the rest of the DSP state here. */
+typedef struct le_yin_pass {
+  const float* x; /* analysis window; maxlag + integ contiguous samples */
+  float* dp;      /* d'(tau) output, at least maxlag + 1 floats */
+  int32_t minlag;
+  int32_t maxlag;
+  int32_t integ; /* difference-function integration length (n - maxlag) */
+  int32_t tau;   /* next lag to accumulate; > maxlag once the pass is done */
+  double cum;    /* running sum of d(1..tau-1) — YIN's normalizer */
+} le_yin_pass;
+
+/* Where a sliced tuner detection has got to. IDLE also means "no pass in
+ * flight", which is what a hop boundary tests before starting one. */
+typedef enum le_tuner_phase {
+  LE_TUNER_PHASE_IDLE = 0,
+  LE_TUNER_PHASE_COARSE, /* the decimated YIN pass */
+  LE_TUNER_PHASE_REFINE, /* the narrow device-rate difference function */
+} le_tuner_phase;
+
+/* One in-flight tuner detection, sliced across callbacks.
+ *
+ * Both analysis windows are FROZEN copies taken at the hop boundary that
+ * started the pass: the live ring and the live decimated window keep advancing
+ * underneath while the pass runs, and a difference function computed over a
+ * moving window is not a difference function. `sr` is frozen for the same
+ * reason — the published Hz must be divided by the rate the samples were
+ * captured at, not by whatever the device is running at when the pass ends. */
+typedef struct le_tuner_pass {
+  int32_t phase;           /* le_tuner_phase */
+  int32_t sr;              /* device rate this pass was started at */
+  float win[LE_TUNER_WIN]; /* frozen decimated window */
+  float raw[LE_TUNER_RAW]; /* frozen device-rate window, oldest sample first */
+  int32_t raw_valid;       /* 0 until the device-rate ring has filled once */
+  le_yin_pass yin;
+  float dp[LE_TUNER_WIN / 2 + 1]; /* the tuner's maxlag is clamped to n/2 */
+  float conf;   /* coarse voicing confidence, published with the refined Hz */
+  float coarse; /* coarse period, rescaled to DEVICE-rate samples */
+  /* Refinement state (tuner_refine_*): lags [lo, hi] over `integ` samples. */
+  int32_t lo;
+  int32_t hi;
+  int32_t integ;
+  int32_t tau;  /* next lag to accumulate */
+  int32_t best; /* index into d[] of the smallest lag seen so far */
+  float d[2 * LE_TUNER_DECIM + 2];
+} le_tuner_pass;
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -1085,11 +1162,20 @@ struct le_engine {
   _Atomic uint32_t a_tuner_conf_bits; /* float 0..1 */
   /* RT-only decimation + analysis state; touched on the audio thread alone. */
   float tuner_win[LE_TUNER_WIN]; /* decimated analysis window */
-  float tuner_raw[LE_TUNER_RAW]; /* device-rate window, for refinement */
-  int tuner_raw_fill;            /* samples written into tuner_raw */
-  int tuner_fill;                /* samples written into tuner_win */
-  float tuner_acc;               /* boxcar accumulator */
-  int tuner_acc_n;               /* samples in the accumulator */
+  /* Device-rate ring feeding the refinement pass. CIRCULAR, not a shifting
+   * FIFO: sliding 2048 floats down by one every frame moved 8188 bytes per
+   * frame (~786 MB/s at 96 kHz) and doubled the whole callback's mean cost
+   * whenever the Tuner face was open. A write index costs one store instead;
+   * the reader pays two memcpys, once per detection rather than once per
+   * frame. le_tuner_raw_window is the only read side, and it hands back
+   * exactly the window the FIFO used to. */
+  float tuner_raw[LE_TUNER_RAW];
+  int tuner_raw_pos;  /* next write index — and, once full, the oldest sample */
+  int tuner_raw_fill; /* samples written into tuner_raw; saturates at RAW */
+  int tuner_fill;     /* samples written into tuner_win */
+  float tuner_acc;    /* boxcar accumulator */
+  int tuner_acc_n;    /* samples in the accumulator */
+  le_tuner_pass tuner_pass; /* the sliced detection in flight, if any */
   /* Loop-indexed visualization (float bits): one peak per loop bucket, spanning
    * exactly one master loop and refreshed as the playhead sweeps. a_loop_viz is
    * the mixed output; a_track_viz is each track's own contribution. */
