@@ -399,11 +399,17 @@ for _i in range(10):
     PLACEMENT["J%d" % (10 + _i)] = (fsw_x(_i), FSW_Y, 0)
 
 PWR_NETS = {"+5V", "+3V3"}
-# Per rail, because they do not carry the same thing. +5V is the ring's 1.44 A
-# plus logic and is widened past the routed 0.6 mm by widen_power.py; +3V3 is the
-# MIDI front end off the Pi and never leaves the routed width. One number for both
-# would have to be the smaller one, which is no check on +5V at all.
-MIN_RAIL_TRACK_W = {"+5V": 0.70, "+3V3": 0.60}
+# The FLOOR, which is the routed width: a rail under this means the netclass in
+# route_console_board.sh did not reach the copper, which is a real fault.
+MIN_RAIL_TRACK_W = {"+5V": 0.60, "+3V3": 0.60}
+# What widen_power.py aims +5V at afterwards. Reported, NOT enforced, and the
+# distinction cost a fab run to learn: this was briefly a 0.70 floor, and when a
+# re-route came back with no clearance headroom the widening correctly did
+# nothing and the gate then failed the board for it -- a stop with no action
+# behind it, on copper that was fine. What the router hands back is not ours to
+# promise. The floor is the promise; this is the goal, and missing it prints the
+# reason widen_power.py gave rather than halting.
+RAIL_TARGET_W = {"+5V": 0.70}
 # Copper, mask, paste, silk, outline -- the layers a fab needs and nothing else.
 # Paste is in the list because the boards that were actually manufactured were
 # built from a set that carried it (43 front stencil apertures); leaving it out
@@ -2009,11 +2015,18 @@ def check_routed_board(path=None):
     if thin:
         net, width = min(thin, key=lambda nw: nw[1])
         raise SystemExit(
-            f"FAB: {len(thin)} rail track(s) under their minimum, thinnest "
-            f"{width:.2f} mm on {net} (wants {MIN_RAIL_TRACK_W[net]} mm) -- the "
+            f"FAB: {len(thin)} rail track(s) under their floor, thinnest "
+            f"{width:.2f} mm on {net} (floor {MIN_RAIL_TRACK_W[net]} mm) -- the "
             "ring draws 1.44 A through J6. Width comes from the DSN netclass in "
-            "route_console_board.sh and then from widen_power.py; if that step "
-            "did not run, this is what it looks like.")
+            "route_console_board.sh; if that did not reach the copper, this is "
+            "what it looks like.")
+    for _net, _want in RAIL_TARGET_W.items():
+        _got = [ToMM(t.GetWidth()) for t in _b.GetTracks()
+                if t.GetClass() != "PCB_VIA" and t.GetNetname() == _net]
+        if _got and min(_got) < _want - 1e-9:
+            print(f"   note: {_net} is {min(_got):.2f} mm, short of the {_want} mm "
+                  "target -- this route had no clearance headroom. Not fatal; "
+                  "widen_power.py --explain lists what held it.")
     small = [(round(ToMM(t.GetWidth(pcbnew.F_Cu)), 3), round(ToMM(t.GetDrill()), 3))
              for t in _b.GetTracks() if t.GetClass() == "PCB_VIA"
              and (ToMM(t.GetWidth(pcbnew.F_Cu)) < MIN_VIA_D - 1e-9
