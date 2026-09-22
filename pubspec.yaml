@@ -84,7 +84,7 @@ dev_dependencies:
   mocktail: ^1.0.5
   segno_engine:
     path: packages/segno_engine
-  very_good_analysis: ^10.3.0
+  very_good_analysis: ^11.0.0
   wifi_client:
     path: packages/wifi_client
 
