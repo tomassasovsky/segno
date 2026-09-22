@@ -1,6 +1,6 @@
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib -->
+<!-- cspell:words hashlib unassembled -->
 
 Living status doc for the Flutter desktop loopstation. Pairs with the original
 plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
@@ -17,8 +17,32 @@ rails in their routed files and manufacturing exports. Both pass full-severity
 KiCad checks with zero violations and zero unconnected items, and exact circuit
 netlist parity. See the [routing verification](reviews/routing-1062-2026-09-21/verification.md).
 The PR remains open and hardware validation is still required. Screen power
-switching is proposed separately in [#1072](https://github.com/tomassasovsky/segno/issues/1072)
-and the [screen-power brainstorm](brainstorm/2026-09-21-screen-power-switching-brainstorm-doc.md).
+switching has completed prototype CAD under [issue #1072](https://github.com/tomassasovsky/segno/issues/1072).
+The [hand version](../hardware/kicad/screen_power/README.md) uses only
+through-hole carrier components, two external assembled USB-C power modules,
+and relays for USB data and touch power. The factory version integrates the
+source controllers, USB isolators, and electronic touch-current limiters.
+Both take display power from AUX and leave Pi USB VBUS separate.
+
+The existing Pi-to-console ribbon remains direct. Console J25 adds only
+GPIO17 and GND, connected pin-for-pin to the screen board's two-pin J2.
+The console change preserves all existing copper routes and passes author CAD
+checks; see [console validation](reviews/screen-power-1072/raw/console-control-validation.md).
+Both corrected screen boards now pass fresh native ERC/DRC with zero
+findings and unconnected items, circuit/schematic/pad parity, USB routing,
+and control-connection checks. Fault injection detects USB power bridges,
+cut USB/control traces, and surface-mount parts on the hand carrier. The
+through-hole relay and two-wire outputs supersede the earlier screen packages.
+Both prototype export packages include refreshed schematics, assembly drawings,
+BOMs, Gerbers, STEP files, previews and matching source/output hashes. See the
+[verification record](reviews/screen-power-1072/verification.md).
+
+These are unassembled prototypes. Bench work still covers both touch devices,
+USB suspend behavior with the hand relay's host-coil load, fuse response,
+HDMI back-power, AUX capacity, temperatures, impedance, and enclosure fit.
+The hand touch fuse is overload protection, not an electronic current limiter.
+Early-boot enable and shutdown-before-HDMI software integration are specified
+but not implemented. The issue remains `autonomy:blocked-verify`.
 
 ## September 2026 Mac recording companion
 
