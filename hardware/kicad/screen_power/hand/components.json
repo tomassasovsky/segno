@@ -1,0 +1,703 @@
+[
+  {
+    "ref": "J1",
+    "value": "AUX 5V INPUT",
+    "footprint": "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical",
+    "mpn": "B2P-VH(LF)(SN)",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "J2",
+    "value": "SCREEN CONTROL",
+    "footprint": "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical",
+    "mpn": "B2B-XH-A(LF)(SN)",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "PI_GPIO17",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "R1",
+    "value": "1k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-1K",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "PI_GPIO17",
+      "2": "DISPLAY_ENABLE"
+    }
+  },
+  {
+    "ref": "R2",
+    "value": "10k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-10K",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "DISPLAY_ENABLE",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "Q1",
+    "value": "2N3904",
+    "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
+    "mpn": "2N3904BU",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "GND",
+      "2": "DUMP_BASE",
+      "3": "DISCHARGE"
+    }
+  },
+  {
+    "ref": "R3",
+    "value": "10k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-10K",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "DISPLAY_ENABLE",
+      "2": "DUMP_BASE"
+    }
+  },
+  {
+    "ref": "R4",
+    "value": "100k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-100K",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "DUMP_BASE",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "R5",
+    "value": "10k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-10K",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "DISCHARGE"
+    }
+  },
+  {
+    "ref": "J101",
+    "value": "PI USB",
+    "footprint": "screen_power:USB_B_Lumberg_2411_06_Horizontal",
+    "mpn": "2411 06",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST1_5V",
+      "2": "S1_UP_N",
+      "3": "S1_UP_P",
+      "4": "GND",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "J102",
+    "value": "TOUCH",
+    "footprint": "Connector_USB:USB_A_Wuerth_614004134726_Horizontal",
+    "mpn": "614004134726",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_TOUCH_5V",
+      "2": "S1_DN_N",
+      "3": "S1_DN_P",
+      "4": "GND",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "J103",
+    "value": "EVM 5V",
+    "footprint": "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical",
+    "mpn": "B2P-VH(LF)(SN)",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "J104",
+    "value": "EVM CONTROL",
+    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
+    "mpn": "B4B-XH-A(LF)(SN)",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "DISPLAY_ENABLE",
+      "2": "S1_UFP_N",
+      "3": "S1_MAIN_5V",
+      "4": "GND"
+    }
+  },
+  {
+    "ref": "R101",
+    "value": "100k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-100K",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S1_UFP_N"
+    }
+  },
+  {
+    "ref": "R102",
+    "value": "5.6k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-5K6",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_UFP_N",
+      "2": "S1_ATTACH_BASE"
+    }
+  },
+  {
+    "ref": "R103",
+    "value": "100k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-100K",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S1_ATTACH_BASE"
+    }
+  },
+  {
+    "ref": "R104",
+    "value": "100k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-100K",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_TOUCH_EN",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "Q102",
+    "value": "2N3906",
+    "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
+    "mpn": "2N3906BU",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S1_ATTACH_BASE",
+      "3": "S1_TOUCH_EN"
+    }
+  },
+  {
+    "ref": "Q103",
+    "value": "IRLZ44NPBF",
+    "footprint": "Package_TO_SOT_THT:TO-220-3_Vertical",
+    "mpn": "IRLZ44NPBF",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_TOUCH_EN",
+      "2": "S1_POWER_COIL_LOW",
+      "3": "GND"
+    }
+  },
+  {
+    "ref": "Q104",
+    "value": "2N7000",
+    "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
+    "mpn": "2N7000",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "GND",
+      "2": "S1_TOUCH_EN",
+      "3": "S1_DATA_COIL_LOW"
+    }
+  },
+  {
+    "ref": "K101",
+    "value": "G6K-2P-RF DC5",
+    "footprint": "screen_power:Relay_DPDT_Omron_G6K-2P-RF",
+    "mpn": "G6K-2P-RF DC5",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST1_5V",
+      "8": "S1_DATA_COIL_LOW",
+      "3": "S1_UP_N",
+      "4": "S1_DN_N",
+      "6": "S1_UP_P",
+      "5": "S1_DN_P",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "K102",
+    "value": "G5LE-1 DC5",
+    "footprint": "Relay_THT:Relay_SPDT_Omron-G5LE-1",
+    "mpn": "G5LE-1 DC5",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_TOUCH_5V",
+      "2": "AUX_5V",
+      "3": "S1_TOUCH_FUSED",
+      "4": "S1_TOUCH_DUMP",
+      "5": "S1_POWER_COIL_LOW"
+    }
+  },
+  {
+    "ref": "D101",
+    "value": "1N4007",
+    "footprint": "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal",
+    "mpn": "1N4007-E3/54",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST1_5V",
+      "2": "S1_DATA_COIL_LOW"
+    }
+  },
+  {
+    "ref": "D102",
+    "value": "1N4007",
+    "footprint": "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal",
+    "mpn": "1N4007-E3/54",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S1_POWER_COIL_LOW"
+    }
+  },
+  {
+    "ref": "F101",
+    "value": "0.8A fast / two clips",
+    "footprint": "Fuse:Fuseholder_Clip-5x20mm_Littelfuse_111_Lateral_P18.80x5.00mm_D1.17mm_Horizontal",
+    "mpn": "01110501Z",
+    "group": "Screen 1",
+    "quantity": 2,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S1_TOUCH_FUSED"
+    }
+  },
+  {
+    "ref": "R105",
+    "value": "100R 1W 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "PR01000101000FA100",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_MAIN_5V",
+      "2": "S1_MAIN_DUMP"
+    }
+  },
+  {
+    "ref": "Q101",
+    "value": "2N7000",
+    "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
+    "mpn": "2N7000",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "GND",
+      "2": "DISCHARGE",
+      "3": "S1_MAIN_DUMP"
+    }
+  },
+  {
+    "ref": "R106",
+    "value": "100R 1W 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "PR01000101000FA100",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_TOUCH_DUMP",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C101",
+    "value": "100nF 63V",
+    "footprint": "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm",
+    "mpn": "MKS2C031001A00KSSD",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST1_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C102",
+    "value": "100nF 63V",
+    "footprint": "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm",
+    "mpn": "MKS2C031001A00KSSD",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C103",
+    "value": "150uF 10V",
+    "footprint": "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm",
+    "mpn": "EEU-FR1A151",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_TOUCH_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "J201",
+    "value": "PI USB",
+    "footprint": "screen_power:USB_B_Lumberg_2411_06_Horizontal",
+    "mpn": "2411 06",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST2_5V",
+      "2": "S2_UP_N",
+      "3": "S2_UP_P",
+      "4": "GND",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "J202",
+    "value": "TOUCH",
+    "footprint": "Connector_USB:USB_A_Wuerth_614004134726_Horizontal",
+    "mpn": "614004134726",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_TOUCH_5V",
+      "2": "S2_DN_N",
+      "3": "S2_DN_P",
+      "4": "GND",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "J203",
+    "value": "EVM 5V",
+    "footprint": "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical",
+    "mpn": "B2P-VH(LF)(SN)",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "J204",
+    "value": "EVM CONTROL",
+    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
+    "mpn": "B4B-XH-A(LF)(SN)",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "DISPLAY_ENABLE",
+      "2": "S2_UFP_N",
+      "3": "S2_MAIN_5V",
+      "4": "GND"
+    }
+  },
+  {
+    "ref": "R201",
+    "value": "100k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-100K",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S2_UFP_N"
+    }
+  },
+  {
+    "ref": "R202",
+    "value": "5.6k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-5K6",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_UFP_N",
+      "2": "S2_ATTACH_BASE"
+    }
+  },
+  {
+    "ref": "R203",
+    "value": "100k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-100K",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S2_ATTACH_BASE"
+    }
+  },
+  {
+    "ref": "R204",
+    "value": "100k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-100K",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_TOUCH_EN",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "Q202",
+    "value": "2N3906",
+    "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
+    "mpn": "2N3906BU",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S2_ATTACH_BASE",
+      "3": "S2_TOUCH_EN"
+    }
+  },
+  {
+    "ref": "Q203",
+    "value": "IRLZ44NPBF",
+    "footprint": "Package_TO_SOT_THT:TO-220-3_Vertical",
+    "mpn": "IRLZ44NPBF",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_TOUCH_EN",
+      "2": "S2_POWER_COIL_LOW",
+      "3": "GND"
+    }
+  },
+  {
+    "ref": "Q204",
+    "value": "2N7000",
+    "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
+    "mpn": "2N7000",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "GND",
+      "2": "S2_TOUCH_EN",
+      "3": "S2_DATA_COIL_LOW"
+    }
+  },
+  {
+    "ref": "K201",
+    "value": "G6K-2P-RF DC5",
+    "footprint": "screen_power:Relay_DPDT_Omron_G6K-2P-RF",
+    "mpn": "G6K-2P-RF DC5",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST2_5V",
+      "8": "S2_DATA_COIL_LOW",
+      "3": "S2_UP_N",
+      "4": "S2_DN_N",
+      "6": "S2_UP_P",
+      "5": "S2_DN_P",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "K202",
+    "value": "G5LE-1 DC5",
+    "footprint": "Relay_THT:Relay_SPDT_Omron-G5LE-1",
+    "mpn": "G5LE-1 DC5",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_TOUCH_5V",
+      "2": "AUX_5V",
+      "3": "S2_TOUCH_FUSED",
+      "4": "S2_TOUCH_DUMP",
+      "5": "S2_POWER_COIL_LOW"
+    }
+  },
+  {
+    "ref": "D201",
+    "value": "1N4007",
+    "footprint": "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal",
+    "mpn": "1N4007-E3/54",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST2_5V",
+      "2": "S2_DATA_COIL_LOW"
+    }
+  },
+  {
+    "ref": "D202",
+    "value": "1N4007",
+    "footprint": "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal",
+    "mpn": "1N4007-E3/54",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S2_POWER_COIL_LOW"
+    }
+  },
+  {
+    "ref": "F201",
+    "value": "0.8A fast / two clips",
+    "footprint": "Fuse:Fuseholder_Clip-5x20mm_Littelfuse_111_Lateral_P18.80x5.00mm_D1.17mm_Horizontal",
+    "mpn": "01110501Z",
+    "group": "Screen 2",
+    "quantity": 2,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S2_TOUCH_FUSED"
+    }
+  },
+  {
+    "ref": "R205",
+    "value": "100R 1W 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "PR01000101000FA100",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_MAIN_5V",
+      "2": "S2_MAIN_DUMP"
+    }
+  },
+  {
+    "ref": "Q201",
+    "value": "2N7000",
+    "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
+    "mpn": "2N7000",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "GND",
+      "2": "DISCHARGE",
+      "3": "S2_MAIN_DUMP"
+    }
+  },
+  {
+    "ref": "R206",
+    "value": "100R 1W 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "PR01000101000FA100",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_TOUCH_DUMP",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C201",
+    "value": "100nF 63V",
+    "footprint": "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm",
+    "mpn": "MKS2C031001A00KSSD",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST2_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C202",
+    "value": "100nF 63V",
+    "footprint": "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm",
+    "mpn": "MKS2C031001A00KSSD",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C203",
+    "value": "150uF 10V",
+    "footprint": "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm",
+    "mpn": "EEU-FR1A151",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_TOUCH_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "H1",
+    "value": "M3",
+    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "mpn": "NPTH",
+    "group": "Mechanical",
+    "quantity": 1,
+    "pins": {}
+  },
+  {
+    "ref": "H2",
+    "value": "M3",
+    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "mpn": "NPTH",
+    "group": "Mechanical",
+    "quantity": 1,
+    "pins": {}
+  },
+  {
+    "ref": "H3",
+    "value": "M3",
+    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "mpn": "NPTH",
+    "group": "Mechanical",
+    "quantity": 1,
+    "pins": {}
+  },
+  {
+    "ref": "H4",
+    "value": "M3",
+    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "mpn": "NPTH",
+    "group": "Mechanical",
+    "quantity": 1,
+    "pins": {}
+  }
+]

@@ -1,0 +1,2281 @@
+(export 
+  (version "D")
+  (design
+    (source "circuit.py")
+    (date "09/21/2026 11:13 PM")
+    (tool "SKiDL (2.3.0)")
+    (sheet
+      (number 1)
+      (name "/")
+      (tstamps "/")
+      (title_block
+        (title)
+        (company)
+        (rev)
+        (date)
+        (source "circuit.py")
+        (comment
+          (number "1")
+          (value ""))
+        (comment
+          (number "2")
+          (value ""))
+        (comment
+          (number "3")
+          (value ""))
+        (comment
+          (number "4")
+          (value ""))
+        (comment
+          (number "5")
+          (value ""))
+        (comment
+          (number "6")
+          (value ""))
+        (comment
+          (number "7")
+          (value ""))
+        (comment
+          (number "8")
+          (value ""))
+        (comment
+          (number "9")
+          (value "")))))
+  (components
+    (comp
+      (ref "#FLG1")
+      (value "PWR_FLAG")
+      (description "Special symbol for telling ERC where power comes from")
+      (footprint "")
+      (fields
+        (field
+          (name "Description") "Special symbol for telling ERC where power comes from")
+        (field
+          (name "Footprint"))
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "flag-AUX_5V")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:63"))
+      (libsource
+        (lib "power")
+        (part "PWR_FLAG"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "83041945-d603-5f12-b544-02f3c5f2d2f3"))
+    (comp
+      (ref "#FLG100")
+      (value "PWR_FLAG")
+      (description "Special symbol for telling ERC where power comes from")
+      (footprint "")
+      (fields
+        (field
+          (name "Description") "Special symbol for telling ERC where power comes from")
+        (field
+          (name "Footprint"))
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "flag-S1_MAIN_5V")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:63"))
+      (libsource
+        (lib "power")
+        (part "PWR_FLAG"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "303e634d-23b0-5bd3-a20c-93d0718a35b1"))
+    (comp
+      (ref "#FLG101")
+      (value "PWR_FLAG")
+      (description "Special symbol for telling ERC where power comes from")
+      (footprint "")
+      (fields
+        (field
+          (name "Description") "Special symbol for telling ERC where power comes from")
+        (field
+          (name "Footprint"))
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "flag-S1_TOUCH_5V")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:63"))
+      (libsource
+        (lib "power")
+        (part "PWR_FLAG"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "559a86e7-06ad-5fe1-92b5-eee36fe2c1f1"))
+    (comp
+      (ref "#FLG2")
+      (value "PWR_FLAG")
+      (description "Special symbol for telling ERC where power comes from")
+      (footprint "")
+      (fields
+        (field
+          (name "Description") "Special symbol for telling ERC where power comes from")
+        (field
+          (name "Footprint"))
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "flag-GND")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:63"))
+      (libsource
+        (lib "power")
+        (part "PWR_FLAG"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "4071b10b-0bd7-52fa-a834-f9ff5b161786"))
+    (comp
+      (ref "#FLG200")
+      (value "PWR_FLAG")
+      (description "Special symbol for telling ERC where power comes from")
+      (footprint "")
+      (fields
+        (field
+          (name "Description") "Special symbol for telling ERC where power comes from")
+        (field
+          (name "Footprint"))
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "flag-S2_MAIN_5V")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:63"))
+      (libsource
+        (lib "power")
+        (part "PWR_FLAG"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "17d24a7f-c192-5758-abe2-eda8fc2381f3"))
+    (comp
+      (ref "#FLG201")
+      (value "PWR_FLAG")
+      (description "Special symbol for telling ERC where power comes from")
+      (footprint "")
+      (fields
+        (field
+          (name "Description") "Special symbol for telling ERC where power comes from")
+        (field
+          (name "Footprint"))
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "flag-S2_TOUCH_5V")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:63"))
+      (libsource
+        (lib "power")
+        (part "PWR_FLAG"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "5f3c0e6f-cb65-5442-8b0d-ad44ad5775d2"))
+    (comp
+      (ref "C101")
+      (value "100nF 63V")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "C101")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "dbf43955-bbee-59c8-9622-c01129f63d78"))
+    (comp
+      (ref "C102")
+      (value "100nF 63V")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "C102")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "acf82da9-5509-5f6a-9bf2-b99e2a1a7eb5"))
+    (comp
+      (ref "C103")
+      (value "150uF 10V")
+      (description "Polarized capacitor")
+      (footprint "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm")
+      (fields
+        (field
+          (name "Description") "Polarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "C103")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "C_Polarized"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "51841464-19b9-563a-9a3c-72c663f70891"))
+    (comp
+      (ref "C201")
+      (value "100nF 63V")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "C201")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "0961185b-ecfd-509c-9efc-f097d7a3caa5"))
+    (comp
+      (ref "C202")
+      (value "100nF 63V")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "C202")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "0c14b922-86a6-572c-ae4c-8e9b91488a80"))
+    (comp
+      (ref "C203")
+      (value "150uF 10V")
+      (description "Polarized capacitor")
+      (footprint "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm")
+      (fields
+        (field
+          (name "Description") "Polarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "C203")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "C_Polarized"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "2eb7185a-6f14-5d8f-a5f7-6686ac277089"))
+    (comp
+      (ref "D101")
+      (value "1N4007")
+      (description "1000V 1A General Purpose Rectifier Diode, DO-41")
+      (footprint "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "1000V 1A General Purpose Rectifier Diode, DO-41")
+        (field
+          (name "Footprint") "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet") "http://www.vishay.com/docs/88503/1n4001.pdf")
+        (field
+          (name "SKiDL Tag") "D101")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Diode")
+        (part "1N4007"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "73b19c03-225d-5375-8bb5-615ef2f565de"))
+    (comp
+      (ref "D102")
+      (value "1N4007")
+      (description "1000V 1A General Purpose Rectifier Diode, DO-41")
+      (footprint "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "1000V 1A General Purpose Rectifier Diode, DO-41")
+        (field
+          (name "Footprint") "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet") "http://www.vishay.com/docs/88503/1n4001.pdf")
+        (field
+          (name "SKiDL Tag") "D102")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Diode")
+        (part "1N4007"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1f0f6951-9620-51ea-8ce2-e63360582f89"))
+    (comp
+      (ref "D201")
+      (value "1N4007")
+      (description "1000V 1A General Purpose Rectifier Diode, DO-41")
+      (footprint "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "1000V 1A General Purpose Rectifier Diode, DO-41")
+        (field
+          (name "Footprint") "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet") "http://www.vishay.com/docs/88503/1n4001.pdf")
+        (field
+          (name "SKiDL Tag") "D201")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Diode")
+        (part "1N4007"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1be7e6a3-628f-57b2-b556-fc98d1667417"))
+    (comp
+      (ref "D202")
+      (value "1N4007")
+      (description "1000V 1A General Purpose Rectifier Diode, DO-41")
+      (footprint "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "1000V 1A General Purpose Rectifier Diode, DO-41")
+        (field
+          (name "Footprint") "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet") "http://www.vishay.com/docs/88503/1n4001.pdf")
+        (field
+          (name "SKiDL Tag") "D202")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Diode")
+        (part "1N4007"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "3ca247e1-d0a8-5556-b708-e6f09e13ed91"))
+    (comp
+      (ref "F101")
+      (value "0.8A fast / two clips")
+      (description "Fuse")
+      (footprint "Fuse:Fuseholder_Clip-5x20mm_Littelfuse_111_Lateral_P18.80x5.00mm_D1.17mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Fuse")
+        (field
+          (name "Footprint") "Fuse:Fuseholder_Clip-5x20mm_Littelfuse_111_Lateral_P18.80x5.00mm_D1.17mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "F101")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "Fuse"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "8edd247e-7c67-57b7-8f48-2850914259ce"))
+    (comp
+      (ref "F201")
+      (value "0.8A fast / two clips")
+      (description "Fuse")
+      (footprint "Fuse:Fuseholder_Clip-5x20mm_Littelfuse_111_Lateral_P18.80x5.00mm_D1.17mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Fuse")
+        (field
+          (name "Footprint") "Fuse:Fuseholder_Clip-5x20mm_Littelfuse_111_Lateral_P18.80x5.00mm_D1.17mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "F201")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "Fuse"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "c8bef40d-a143-5106-b9fc-d87911638394"))
+    (comp
+      (ref "H1")
+      (value "M3")
+      (description "Mounting Hole without connection")
+      (footprint "MountingHole:MountingHole_3.2mm_M3")
+      (fields
+        (field
+          (name "Description") "Mounting Hole without connection")
+        (field
+          (name "Footprint") "MountingHole:MountingHole_3.2mm_M3")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "H1")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Mechanical")
+        (part "MountingHole"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "4346372e-b487-58d7-bb7a-35d182fa1b2e"))
+    (comp
+      (ref "H2")
+      (value "M3")
+      (description "Mounting Hole without connection")
+      (footprint "MountingHole:MountingHole_3.2mm_M3")
+      (fields
+        (field
+          (name "Description") "Mounting Hole without connection")
+        (field
+          (name "Footprint") "MountingHole:MountingHole_3.2mm_M3")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "H2")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Mechanical")
+        (part "MountingHole"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "0edb43ef-5ede-5ff4-8b77-07bb3d82b998"))
+    (comp
+      (ref "H3")
+      (value "M3")
+      (description "Mounting Hole without connection")
+      (footprint "MountingHole:MountingHole_3.2mm_M3")
+      (fields
+        (field
+          (name "Description") "Mounting Hole without connection")
+        (field
+          (name "Footprint") "MountingHole:MountingHole_3.2mm_M3")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "H3")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Mechanical")
+        (part "MountingHole"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "bd944ac4-6bb1-5a9e-8f09-1ff91f139dbd"))
+    (comp
+      (ref "H4")
+      (value "M3")
+      (description "Mounting Hole without connection")
+      (footprint "MountingHole:MountingHole_3.2mm_M3")
+      (fields
+        (field
+          (name "Description") "Mounting Hole without connection")
+        (field
+          (name "Footprint") "MountingHole:MountingHole_3.2mm_M3")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "H4")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Mechanical")
+        (part "MountingHole"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "06da5295-48dd-5f5e-a314-66b923e79308"))
+    (comp
+      (ref "J1")
+      (value "AUX 5V INPUT")
+      (description "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical")
+      (fields
+        (field
+          (name "Description") "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)")
+        (field
+          (name "Footprint") "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "J1")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Connector_Generic")
+        (part "Conn_01x02"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "d7608689-a7d2-514c-aa16-0f8bde5cf213"))
+    (comp
+      (ref "J101")
+      (value "PI USB")
+      (description "USB Type B connector")
+      (footprint "screen_power:USB_B_Lumberg_2411_06_Horizontal")
+      (fields
+        (field
+          (name "Description") "USB Type B connector")
+        (field
+          (name "Footprint") "screen_power:USB_B_Lumberg_2411_06_Horizontal")
+        (field
+          (name "Datasheet") "~")
+        (field
+          (name "SKiDL Tag") "J101")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "screen_power")
+        (part "USB_B_Host"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "73f566de-b027-5486-affb-6cd7f626dfae"))
+    (comp
+      (ref "J102")
+      (value "TOUCH")
+      (description "USB Type A connector")
+      (footprint "Connector_USB:USB_A_Wuerth_614004134726_Horizontal")
+      (fields
+        (field
+          (name "Description") "USB Type A connector")
+        (field
+          (name "Footprint") "Connector_USB:USB_A_Wuerth_614004134726_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "J102")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Connector")
+        (part "USB_A"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "58933113-4e71-558e-9249-d842646fc16f"))
+    (comp
+      (ref "J103")
+      (value "EVM 5V")
+      (description "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical")
+      (fields
+        (field
+          (name "Description") "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)")
+        (field
+          (name "Footprint") "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "J103")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Connector_Generic")
+        (part "Conn_01x02"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "f4173829-dff7-5861-adef-6166b8c17526"))
+    (comp
+      (ref "J104")
+      (value "EVM CONTROL")
+      (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+      (fields
+        (field
+          (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+        (field
+          (name "Footprint") "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "J104")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Connector_Generic")
+        (part "Conn_01x04"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "6607b5e0-d383-56b2-aab9-57205ce4847d"))
+    (comp
+      (ref "J2")
+      (value "SCREEN CONTROL")
+      (description "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical")
+      (fields
+        (field
+          (name "Description") "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)")
+        (field
+          (name "Footprint") "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "J2")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Connector_Generic")
+        (part "Conn_01x02"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "5e0b731b-c654-5cf6-8847-00f2f042255c"))
+    (comp
+      (ref "J201")
+      (value "PI USB")
+      (description "USB Type B connector")
+      (footprint "screen_power:USB_B_Lumberg_2411_06_Horizontal")
+      (fields
+        (field
+          (name "Description") "USB Type B connector")
+        (field
+          (name "Footprint") "screen_power:USB_B_Lumberg_2411_06_Horizontal")
+        (field
+          (name "Datasheet") "~")
+        (field
+          (name "SKiDL Tag") "J201")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "screen_power")
+        (part "USB_B_Host"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ed19d927-26d8-5559-bc45-6d31787664c5"))
+    (comp
+      (ref "J202")
+      (value "TOUCH")
+      (description "USB Type A connector")
+      (footprint "Connector_USB:USB_A_Wuerth_614004134726_Horizontal")
+      (fields
+        (field
+          (name "Description") "USB Type A connector")
+        (field
+          (name "Footprint") "Connector_USB:USB_A_Wuerth_614004134726_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "J202")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Connector")
+        (part "USB_A"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ba74f1a8-eb14-554d-9eb6-de82b9c16b31"))
+    (comp
+      (ref "J203")
+      (value "EVM 5V")
+      (description "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical")
+      (fields
+        (field
+          (name "Description") "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)")
+        (field
+          (name "Footprint") "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "J203")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Connector_Generic")
+        (part "Conn_01x02"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "c7e4333a-e913-5d0a-9d2d-ba7d0260d29e"))
+    (comp
+      (ref "J204")
+      (value "EVM CONTROL")
+      (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+      (fields
+        (field
+          (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+        (field
+          (name "Footprint") "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "J204")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Connector_Generic")
+        (part "Conn_01x04"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "e1ecb2c0-4317-51c1-a9f5-5f4242ca3d75"))
+    (comp
+      (ref "K101")
+      (value "G6K-2P-RF DC5")
+      (description "Miniature 2-pole relay, Single-side Stable")
+      (footprint "screen_power:Relay_DPDT_Omron_G6K-2P-RF")
+      (fields
+        (field
+          (name "Description") "Miniature 2-pole relay, Single-side Stable")
+        (field
+          (name "Footprint") "screen_power:Relay_DPDT_Omron_G6K-2P-RF")
+        (field
+          (name "Datasheet") "http://omronfs.omron.com/en_US/ecb/products/pdf/en-g6k.pdf")
+        (field
+          (name "SKiDL Tag") "K101")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "screen_power")
+        (part "G6K-2P-RF"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "97dcead1-0a31-5bea-b21a-e72b4600bb4e"))
+    (comp
+      (ref "K102")
+      (value "G5LE-1 DC5")
+      (description "Omron G5LE relay, Miniature Single Pole, SPDT, 10A")
+      (footprint "Relay_THT:Relay_SPDT_Omron-G5LE-1")
+      (fields
+        (field
+          (name "Description") "Omron G5LE relay, Miniature Single Pole, SPDT, 10A")
+        (field
+          (name "Footprint") "Relay_THT:Relay_SPDT_Omron-G5LE-1")
+        (field
+          (name "Datasheet") "http://www.omron.com/ecb/products/pdf/en-g5le.pdf")
+        (field
+          (name "SKiDL Tag") "K102")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Relay")
+        (part "G5LE-1"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "efeaa5de-bcda-5f70-83b0-b96e3f18a223"))
+    (comp
+      (ref "K201")
+      (value "G6K-2P-RF DC5")
+      (description "Miniature 2-pole relay, Single-side Stable")
+      (footprint "screen_power:Relay_DPDT_Omron_G6K-2P-RF")
+      (fields
+        (field
+          (name "Description") "Miniature 2-pole relay, Single-side Stable")
+        (field
+          (name "Footprint") "screen_power:Relay_DPDT_Omron_G6K-2P-RF")
+        (field
+          (name "Datasheet") "http://omronfs.omron.com/en_US/ecb/products/pdf/en-g6k.pdf")
+        (field
+          (name "SKiDL Tag") "K201")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "screen_power")
+        (part "G6K-2P-RF"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ef6e57c2-b19d-587c-bcc6-cd86d43686ba"))
+    (comp
+      (ref "K202")
+      (value "G5LE-1 DC5")
+      (description "Omron G5LE relay, Miniature Single Pole, SPDT, 10A")
+      (footprint "Relay_THT:Relay_SPDT_Omron-G5LE-1")
+      (fields
+        (field
+          (name "Description") "Omron G5LE relay, Miniature Single Pole, SPDT, 10A")
+        (field
+          (name "Footprint") "Relay_THT:Relay_SPDT_Omron-G5LE-1")
+        (field
+          (name "Datasheet") "http://www.omron.com/ecb/products/pdf/en-g5le.pdf")
+        (field
+          (name "SKiDL Tag") "K202")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Relay")
+        (part "G5LE-1"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ad655c8b-ac28-57ed-90a6-fecde6ee22c5"))
+    (comp
+      (ref "Q1")
+      (value "2N3904")
+      (description "0.2A Ic, 40V Vce, Small Signal NPN Transistor, TO-92")
+      (footprint "Package_TO_SOT_THT:TO-92_Inline_Wide")
+      (fields
+        (field
+          (name "Description") "0.2A Ic, 40V Vce, Small Signal NPN Transistor, TO-92")
+        (field
+          (name "Footprint") "Package_TO_SOT_THT:TO-92_Inline_Wide")
+        (field
+          (name "Datasheet") "https://www.onsemi.com/pub/Collateral/2N3903-D.PDF")
+        (field
+          (name "SKiDL Tag") "Q1")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Transistor_BJT")
+        (part "2N3904"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "9699dfdd-a6d3-59e3-8793-7f24db869fba"))
+    (comp
+      (ref "Q101")
+      (value "2N7000")
+      (description "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
+      (footprint "Package_TO_SOT_THT:TO-92_Inline_Wide")
+      (fields
+        (field
+          (name "Description") "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
+        (field
+          (name "Footprint") "Package_TO_SOT_THT:TO-92_Inline_Wide")
+        (field
+          (name "Datasheet") "https://www.vishay.com/docs/70226/70226.pdf")
+        (field
+          (name "SKiDL Tag") "Q101")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "2N7000"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "e501cb0a-d421-554a-9d60-c58aaa2a991d"))
+    (comp
+      (ref "Q102")
+      (value "2N3906")
+      (description "-0.2A Ic, -40V Vce, Small Signal PNP Transistor, TO-92")
+      (footprint "Package_TO_SOT_THT:TO-92_Inline_Wide")
+      (fields
+        (field
+          (name "Description") "-0.2A Ic, -40V Vce, Small Signal PNP Transistor, TO-92")
+        (field
+          (name "Footprint") "Package_TO_SOT_THT:TO-92_Inline_Wide")
+        (field
+          (name "Datasheet") "https://www.onsemi.com/pub/Collateral/2N3906-D.PDF")
+        (field
+          (name "SKiDL Tag") "Q102")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Transistor_BJT")
+        (part "2N3906"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "eeb41b61-f5f9-530b-a85c-ba670134ce6a"))
+    (comp
+      (ref "Q103")
+      (value "IRLZ44NPBF")
+      (description "47A Id, 55V Vds, 22mOhm Rds Single N-Channel HEXFET Power MOSFET, TO-220AB")
+      (footprint "Package_TO_SOT_THT:TO-220-3_Vertical")
+      (fields
+        (field
+          (name "Description") "47A Id, 55V Vds, 22mOhm Rds Single N-Channel HEXFET Power MOSFET, TO-220AB")
+        (field
+          (name "Footprint") "Package_TO_SOT_THT:TO-220-3_Vertical")
+        (field
+          (name "Datasheet") "http://www.irf.com/product-info/datasheets/data/irlz44n.pdf")
+        (field
+          (name "SKiDL Tag") "Q103")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "IRLZ44N"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "8db0a5f0-5224-5e25-a33a-c65fab58faca"))
+    (comp
+      (ref "Q104")
+      (value "2N7000")
+      (description "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
+      (footprint "Package_TO_SOT_THT:TO-92_Inline_Wide")
+      (fields
+        (field
+          (name "Description") "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
+        (field
+          (name "Footprint") "Package_TO_SOT_THT:TO-92_Inline_Wide")
+        (field
+          (name "Datasheet") "https://www.vishay.com/docs/70226/70226.pdf")
+        (field
+          (name "SKiDL Tag") "Q104")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "2N7000"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1ce3f2e7-8639-5a12-81fc-c3d24f42ae63"))
+    (comp
+      (ref "Q201")
+      (value "2N7000")
+      (description "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
+      (footprint "Package_TO_SOT_THT:TO-92_Inline_Wide")
+      (fields
+        (field
+          (name "Description") "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
+        (field
+          (name "Footprint") "Package_TO_SOT_THT:TO-92_Inline_Wide")
+        (field
+          (name "Datasheet") "https://www.vishay.com/docs/70226/70226.pdf")
+        (field
+          (name "SKiDL Tag") "Q201")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "2N7000"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "24604655-a755-584e-82ca-55f41e3265e1"))
+    (comp
+      (ref "Q202")
+      (value "2N3906")
+      (description "-0.2A Ic, -40V Vce, Small Signal PNP Transistor, TO-92")
+      (footprint "Package_TO_SOT_THT:TO-92_Inline_Wide")
+      (fields
+        (field
+          (name "Description") "-0.2A Ic, -40V Vce, Small Signal PNP Transistor, TO-92")
+        (field
+          (name "Footprint") "Package_TO_SOT_THT:TO-92_Inline_Wide")
+        (field
+          (name "Datasheet") "https://www.onsemi.com/pub/Collateral/2N3906-D.PDF")
+        (field
+          (name "SKiDL Tag") "Q202")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Transistor_BJT")
+        (part "2N3906"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "6c32f476-40ae-5950-8c88-935ccb1184ee"))
+    (comp
+      (ref "Q203")
+      (value "IRLZ44NPBF")
+      (description "47A Id, 55V Vds, 22mOhm Rds Single N-Channel HEXFET Power MOSFET, TO-220AB")
+      (footprint "Package_TO_SOT_THT:TO-220-3_Vertical")
+      (fields
+        (field
+          (name "Description") "47A Id, 55V Vds, 22mOhm Rds Single N-Channel HEXFET Power MOSFET, TO-220AB")
+        (field
+          (name "Footprint") "Package_TO_SOT_THT:TO-220-3_Vertical")
+        (field
+          (name "Datasheet") "http://www.irf.com/product-info/datasheets/data/irlz44n.pdf")
+        (field
+          (name "SKiDL Tag") "Q203")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "IRLZ44N"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "f823b937-90ab-57d4-a7a4-1d54d6ec1aec"))
+    (comp
+      (ref "Q204")
+      (value "2N7000")
+      (description "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
+      (footprint "Package_TO_SOT_THT:TO-92_Inline_Wide")
+      (fields
+        (field
+          (name "Description") "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
+        (field
+          (name "Footprint") "Package_TO_SOT_THT:TO-92_Inline_Wide")
+        (field
+          (name "Datasheet") "https://www.vishay.com/docs/70226/70226.pdf")
+        (field
+          (name "SKiDL Tag") "Q204")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "2N7000"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ca0fb2d9-7d30-5670-9a6f-2d38cdd50b7d"))
+    (comp
+      (ref "R1")
+      (value "1k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R1")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "91628e47-8f83-5ba1-abed-4cb134d83eea"))
+    (comp
+      (ref "R101")
+      (value "100k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R101")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "cbbfe08f-9971-599f-95a0-8b8d1d17da66"))
+    (comp
+      (ref "R102")
+      (value "5.6k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R102")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "512dfac9-2282-5e04-ab3d-01449730d0bf"))
+    (comp
+      (ref "R103")
+      (value "100k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R103")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "daef6bc7-d32b-5862-9616-0b2b172a689e"))
+    (comp
+      (ref "R104")
+      (value "100k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R104")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "89ff2102-2e9e-50e5-9a0b-cf25129bcaa2"))
+    (comp
+      (ref "R105")
+      (value "100R 1W 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R105")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "54c63b9a-b9e8-5355-ad0b-0df07588ecf7"))
+    (comp
+      (ref "R106")
+      (value "100R 1W 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R106")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "5e610f04-5fc9-5b1a-b29b-13b39c4ee6d3"))
+    (comp
+      (ref "R2")
+      (value "10k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R2")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "91c587b0-c855-58aa-84a9-2ba4ce88549e"))
+    (comp
+      (ref "R201")
+      (value "100k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R201")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "6717dbd5-aa7b-5a35-9907-4690f95d0122"))
+    (comp
+      (ref "R202")
+      (value "5.6k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R202")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ebaed951-c546-5d55-b36d-0fa94c690b0d"))
+    (comp
+      (ref "R203")
+      (value "100k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R203")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ffc173d4-fadf-51aa-9dd0-74c1462f2f28"))
+    (comp
+      (ref "R204")
+      (value "100k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R204")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "5ed96b66-f394-55d7-a627-b9e502a020a6"))
+    (comp
+      (ref "R205")
+      (value "100R 1W 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R205")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "db67cbd2-f0f7-5268-b25f-63d759166ffb"))
+    (comp
+      (ref "R206")
+      (value "100R 1W 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R206")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ef7f7fb7-e8dc-5d86-abae-feae67324bd7"))
+    (comp
+      (ref "R3")
+      (value "10k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R3")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "9000ab58-0faa-55db-ba96-c3a9c048b920"))
+    (comp
+      (ref "R4")
+      (value "100k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R4")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "a3a00a8b-c8d1-582e-9de2-300987de8d24"))
+    (comp
+      (ref "R5")
+      (value "10k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R5")
+        (field
+          (name "SKiDL Line") "hand_circuit.py:32"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "29f79588-e279-5ce8-b215-982a9074cc1e")))
+  (nets
+    (net
+      (code 1)
+      (name "AUX_5V")
+      (class "Default")
+      (node
+        (ref "#FLG1")
+        (pin "1")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "C102")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C202")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D102")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D202")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "F101")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "F201")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J1")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J103")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J203")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K102")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K202")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q102")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q202")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R101")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R103")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R201")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R203")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R5")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 2)
+      (name "DISCHARGE")
+      (class "Default")
+      (node
+        (ref "Q1")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q101")
+        (pin "2")
+        (pintype "INPUT"))
+      (node
+        (ref "Q201")
+        (pin "2")
+        (pintype "INPUT"))
+      (node
+        (ref "R5")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 3)
+      (name "DISPLAY_ENABLE")
+      (class "Default")
+      (node
+        (ref "J104")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J204")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R1")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R2")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R3")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 4)
+      (name "DUMP_BASE")
+      (class "Default")
+      (node
+        (ref "Q1")
+        (pin "2")
+        (pintype "INPUT"))
+      (node
+        (ref "R3")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R4")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 5)
+      (name "GND")
+      (class "Default")
+      (node
+        (ref "#FLG2")
+        (pin "1")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "C101")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C102")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C103")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C201")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C202")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C203")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J1")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J101")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J101")
+        (pin "SH")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J102")
+        (pin "4")
+        (pintype "POWER-IN"))
+      (node
+        (ref "J102")
+        (pin "SH")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J103")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J104")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J2")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J201")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J201")
+        (pin "SH")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J202")
+        (pin "4")
+        (pintype "POWER-IN"))
+      (node
+        (ref "J202")
+        (pin "SH")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J203")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J204")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K101")
+        (pin "SH")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K201")
+        (pin "SH")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q1")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q101")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q103")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q104")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q201")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q203")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q204")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R104")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R106")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R2")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R204")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R206")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R4")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 6)
+      (name "HOST1_5V")
+      (class "Default")
+      (node
+        (ref "C101")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D101")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J101")
+        (pin "1")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "K101")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 7)
+      (name "HOST2_5V")
+      (class "Default")
+      (node
+        (ref "C201")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D201")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J201")
+        (pin "1")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "K201")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 8)
+      (name "PI_GPIO17")
+      (class "Default")
+      (node
+        (ref "J2")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R1")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 9)
+      (name "S1_ATTACH_BASE")
+      (class "Default")
+      (node
+        (ref "Q102")
+        (pin "2")
+        (pintype "INPUT"))
+      (node
+        (ref "R102")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R103")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 10)
+      (name "S1_DATA_COIL_LOW")
+      (class "Default")
+      (node
+        (ref "D101")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K101")
+        (pin "8")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q104")
+        (pin "3")
+        (pintype "PASSIVE")))
+    (net
+      (code 11)
+      (name "S1_DN_N")
+      (class "Default")
+      (node
+        (ref "J102")
+        (pin "2")
+        (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "K101")
+        (pin "4")
+        (pintype "PASSIVE")))
+    (net
+      (code 12)
+      (name "S1_DN_P")
+      (class "Default")
+      (node
+        (ref "J102")
+        (pin "3")
+        (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "K101")
+        (pin "5")
+        (pintype "PASSIVE")))
+    (net
+      (code 13)
+      (name "S1_MAIN_5V")
+      (class "Default")
+      (node
+        (ref "#FLG100")
+        (pin "1")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "J104")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R105")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 14)
+      (name "S1_MAIN_DUMP")
+      (class "Default")
+      (node
+        (ref "Q101")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R105")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 15)
+      (name "S1_POWER_COIL_LOW")
+      (class "Default")
+      (node
+        (ref "D102")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K102")
+        (pin "5")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q103")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 16)
+      (name "S1_TOUCH_5V")
+      (class "Default")
+      (node
+        (ref "#FLG101")
+        (pin "1")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "C103")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J102")
+        (pin "1")
+        (pintype "POWER-IN"))
+      (node
+        (ref "K102")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 17)
+      (name "S1_TOUCH_DUMP")
+      (class "Default")
+      (node
+        (ref "K102")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R106")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 18)
+      (name "S1_TOUCH_EN")
+      (class "Default")
+      (node
+        (ref "Q102")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q103")
+        (pin "1")
+        (pintype "INPUT"))
+      (node
+        (ref "Q104")
+        (pin "2")
+        (pintype "INPUT"))
+      (node
+        (ref "R104")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 19)
+      (name "S1_TOUCH_FUSED")
+      (class "Default")
+      (node
+        (ref "F101")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K102")
+        (pin "3")
+        (pintype "PASSIVE")))
+    (net
+      (code 20)
+      (name "S1_UFP_N")
+      (class "Default")
+      (node
+        (ref "J104")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R101")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R102")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 21)
+      (name "S1_UP_N")
+      (class "Default")
+      (node
+        (ref "J101")
+        (pin "2")
+        (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "K101")
+        (pin "3")
+        (pintype "PASSIVE")))
+    (net
+      (code 22)
+      (name "S1_UP_P")
+      (class "Default")
+      (node
+        (ref "J101")
+        (pin "3")
+        (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "K101")
+        (pin "6")
+        (pintype "PASSIVE")))
+    (net
+      (code 23)
+      (name "S2_ATTACH_BASE")
+      (class "Default")
+      (node
+        (ref "Q202")
+        (pin "2")
+        (pintype "INPUT"))
+      (node
+        (ref "R202")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R203")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 24)
+      (name "S2_DATA_COIL_LOW")
+      (class "Default")
+      (node
+        (ref "D201")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K201")
+        (pin "8")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q204")
+        (pin "3")
+        (pintype "PASSIVE")))
+    (net
+      (code 25)
+      (name "S2_DN_N")
+      (class "Default")
+      (node
+        (ref "J202")
+        (pin "2")
+        (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "K201")
+        (pin "4")
+        (pintype "PASSIVE")))
+    (net
+      (code 26)
+      (name "S2_DN_P")
+      (class "Default")
+      (node
+        (ref "J202")
+        (pin "3")
+        (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "K201")
+        (pin "5")
+        (pintype "PASSIVE")))
+    (net
+      (code 27)
+      (name "S2_MAIN_5V")
+      (class "Default")
+      (node
+        (ref "#FLG200")
+        (pin "1")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "J204")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R205")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 28)
+      (name "S2_MAIN_DUMP")
+      (class "Default")
+      (node
+        (ref "Q201")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R205")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 29)
+      (name "S2_POWER_COIL_LOW")
+      (class "Default")
+      (node
+        (ref "D202")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K202")
+        (pin "5")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q203")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 30)
+      (name "S2_TOUCH_5V")
+      (class "Default")
+      (node
+        (ref "#FLG201")
+        (pin "1")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "C203")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J202")
+        (pin "1")
+        (pintype "POWER-IN"))
+      (node
+        (ref "K202")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 31)
+      (name "S2_TOUCH_DUMP")
+      (class "Default")
+      (node
+        (ref "K202")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R206")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 32)
+      (name "S2_TOUCH_EN")
+      (class "Default")
+      (node
+        (ref "Q202")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q203")
+        (pin "1")
+        (pintype "INPUT"))
+      (node
+        (ref "Q204")
+        (pin "2")
+        (pintype "INPUT"))
+      (node
+        (ref "R204")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 33)
+      (name "S2_TOUCH_FUSED")
+      (class "Default")
+      (node
+        (ref "F201")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K202")
+        (pin "3")
+        (pintype "PASSIVE")))
+    (net
+      (code 34)
+      (name "S2_UFP_N")
+      (class "Default")
+      (node
+        (ref "J204")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R201")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R202")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 35)
+      (name "S2_UP_N")
+      (class "Default")
+      (node
+        (ref "J201")
+        (pin "2")
+        (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "K201")
+        (pin "3")
+        (pintype "PASSIVE")))
+    (net
+      (code 36)
+      (name "S2_UP_P")
+      (class "Default")
+      (node
+        (ref "J201")
+        (pin "3")
+        (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "K201")
+        (pin "6")
+        (pintype "PASSIVE")))))

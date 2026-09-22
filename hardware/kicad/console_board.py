@@ -46,6 +46,7 @@ stop a late addition renumbering C1..C15 and invalidating a started layout):
     J1  Pico 2          J2  Pi ribbon      J3  power in     J4  MIDI OUT
     J5  MIDI IN         J6  ring/encoder   J7  (retired, #1062) J8  power button
     J24 pills: 5 V, data and GND on one JST VH, beside J3
+    J25 screen-power control: Pi GPIO17 and GND, on a 2-pin JST XH
     J9  Pi power-button pads (through-lead)                 J10..J19 footswitches
     J20/J21 CTRL 1/2    U1  74AHCT125      U2  H11L1
     R14..R16 idle-state pull-downs (U1's inputs)            R17/R18 link series
@@ -158,6 +159,7 @@ link_tx = Net("LINK_TX")   # Pico -> Pi   (3V3 both ends: no level shifting...)
 link_rx = Net("LINK_RX")   # Pi   -> Pico (3V3 both ends)
 link_tx_pi = Net("LINK_TX_PI")   # ...but 10 k in series (R17/R18): these are the
 link_rx_pi = Net("LINK_RX_PI")   # two nets that cross power domains -- see below
+pi_gpio17 = Net("PI_GPIO17")  # screen-power daughterboard enable, 3.3 V only
 midi_tx = Net("MIDI_TX")   # Pi uart0 TX -> AHCT125 -> DIN OUT
 midi_rx = Net("MIDI_RX")   # opto (3V3) -> Pi uart0 RX
 midi_out_buf = Net("MIDI_OUT_BUF")
@@ -796,6 +798,7 @@ PI_HDR = {
     1: v3v3, 17: v3v3,
     6: gnd, 9: gnd, 14: gnd, 20: gnd, 25: gnd, 30: gnd, 34: gnd, 39: gnd,
     8: midi_tx, 10: midi_rx,
+    11: pi_gpio17,  # GPIO17 enables the separate screen-power board
     # LINK sits MID-HEADER, on `dtoverlay=uart3-pi5` -- "Enable uart 3 on GPIOs 8-9.
     # Pi 5 only." Physical pins 24 and 21 are positions 11 and 12 of their rows, as
     # far from both ends as this header gets.
@@ -820,6 +823,12 @@ for _pin in range(1, 41):
         j_pi[_pin] += PI_HDR[_pin]
     else:
         j_pi[_pin].do_erc = False
+
+# Control only: the daughterboard takes its power directly from BUCK_AUX.
+# Its input series resistor and pull-down keep both screens off by default.
+j_screen = jst(2, "J25", "SCREEN_ENABLE")
+j_screen[1] += pi_gpio17
+j_screen[2] += gnd
 
 # ---- gates ------------------------------------------------------------------
 
@@ -1123,6 +1132,11 @@ def _check(strict_stations=True):
             "already uses it -- two drivers on one pin is a link that never comes up")
 
     # ...and the buck must not be paralleled with the Pi's own 5 V rail.
+    assert {(p.part.ref, str(p.num)) for p in pi_gpio17.get_pins()} == {
+        ("J2", "11"), ("J25", "1")
+    }, "SCREEN_ENABLE: GPIO17 must connect only Pi physical pin 11 to J25 pin 1"
+    assert {n.name for n in j_screen[2].nets} == {"GND"}, (
+        "SCREEN_ENABLE: J25 pin 2 must be GND")
     for _pin in (2, 4):
         assert _pin not in PI_HDR, (
             f"PI_POWER: Pi header pin {_pin} is a 5 V SUPPLY pin. Connecting it ties "
@@ -1382,6 +1396,10 @@ def _selftest():
         # the 5 V rail to a Pico line. Every direct-contact gate stays green.
         R("10k", ref="R99")[1, 2] += v5, link_to_console
 
+    def _screen_wrong_gpio():
+        j_pi[11].disconnect()
+        j_pi[12] += pi_gpio17
+
     # Each control names the gate it must trip. A control that trips some OTHER
     # gate proves nothing about its own and reads as a pass -- console_board_pcb.py
     # gained this check after two of its controls silently did exactly that, and
@@ -1404,6 +1422,7 @@ def _selftest():
     case("board terminates a station the panel lacks", "REAR_IO_COVER:", _station)
     case("pinned ref stolen by the auto counter", "PIN_REFS:", _ref_collision)
     case("console board pulls a Pico line to 5 V", "CONSOLE_LEVELS:", _console_pullup)
+    case("screen enable moved to wrong Pi pin", "SCREEN_ENABLE:", _screen_wrong_gpio)
 
     ok = True
     ring_net_saved = RING_NET
@@ -1442,6 +1461,9 @@ def _selftest():
             if mutate is _btn_grounded:
                 j_pi_btn[2].disconnect()
                 j_pi_btn[2] += pwr_btn_ret
+            if mutate is _screen_wrong_gpio:
+                j_pi[12].disconnect()
+                j_pi[11] += pi_gpio17
             if mutate is _cap_backwards:
                 _c30 = next(p for p in default_circuit.parts if p.ref == "C30")
                 _c30[1].disconnect(); _c30[2].disconnect()

@@ -1,0 +1,901 @@
+[
+  {
+    "ref": "J1",
+    "value": "AUX 5V INPUT",
+    "footprint": "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical",
+    "mpn": "B2P-VH(LF)(SN)",
+    "group": "",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "J2",
+    "value": "SCREEN CONTROL",
+    "footprint": "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical",
+    "mpn": "B2B-XH-A(LF)(SN)",
+    "group": "Control",
+    "pins": {
+      "1": "PI_GPIO17",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "R1",
+    "value": "1k",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-071KL",
+    "group": "",
+    "pins": {
+      "1": "PI_GPIO17",
+      "2": "DISPLAY_ENABLE"
+    }
+  },
+  {
+    "ref": "R2",
+    "value": "10k",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-0710KL",
+    "group": "",
+    "pins": {
+      "1": "DISPLAY_ENABLE",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "Q1",
+    "value": "MMBT3904,215",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "mpn": "MMBT3904,215",
+    "group": "",
+    "pins": {
+      "1": "DUMP_BASE",
+      "2": "GND",
+      "3": "DISCHARGE"
+    }
+  },
+  {
+    "ref": "R3",
+    "value": "10k",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-0710KL",
+    "group": "",
+    "pins": {
+      "1": "DISPLAY_ENABLE",
+      "2": "DUMP_BASE"
+    }
+  },
+  {
+    "ref": "R4",
+    "value": "100k",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-07100KL",
+    "group": "",
+    "pins": {
+      "1": "DUMP_BASE",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "R5",
+    "value": "10k",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-0710KL",
+    "group": "",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "DISCHARGE"
+    }
+  },
+  {
+    "ref": "J101",
+    "value": "PI USB",
+    "footprint": "screen_power:USB_B_Lumberg_2411_06_Horizontal",
+    "mpn": "2411 06",
+    "group": "Screen 1",
+    "pins": {
+      "1": "HOST1_5V",
+      "2": "S1_UP_N",
+      "3": "S1_UP_P",
+      "4": "GND",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "J102",
+    "value": "TOUCH",
+    "footprint": "Connector_USB:USB_A_Wuerth_614004134726_Horizontal",
+    "mpn": "614004134726",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_TOUCH_5V",
+      "2": "S1_DN_N",
+      "3": "S1_DN_P",
+      "4": "GND",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "U101",
+    "value": "ADuM3165BRSZ",
+    "footprint": "Package_SO:SSOP-20_5.3x7.2mm_P0.65mm",
+    "mpn": "ADuM3165BRSZ",
+    "group": "Screen 1",
+    "pins": {
+      "1": "HOST1_5V",
+      "2": "GND",
+      "3": "S1_VDD1",
+      "4": "GND",
+      "5": "S1_XI",
+      "6": "S1_XO",
+      "7": "GND",
+      "8": "S1_UP_P",
+      "9": "S1_UP_N",
+      "10": "GND",
+      "11": "GND",
+      "12": "S1_DN_P",
+      "13": "S1_DN_N",
+      "15": "GND",
+      "16": "GND",
+      "17": "GND",
+      "18": "S1_VDD2",
+      "19": "GND",
+      "20": "S1_TOUCH_5V"
+    }
+  },
+  {
+    "ref": "C101",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 1",
+    "pins": {
+      "1": "HOST1_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C102",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_VDD1",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C103",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_VDD2",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C104",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_TOUCH_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "Y101",
+    "value": "24MHz 10pF",
+    "footprint": "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
+    "mpn": "ABM8-24.000MHZ-10-B1U-T",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_XI",
+      "2": "GND",
+      "3": "S1_XO",
+      "4": "GND"
+    }
+  },
+  {
+    "ref": "C105",
+    "value": "8pF C0G",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "CC0805DRNPO9BN8R0",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_XI",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C106",
+    "value": "8pF C0G",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "CC0805DRNPO9BN8R0",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_XO",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "D101",
+    "value": "USBLC6-2SC6",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+    "mpn": "USBLC6-2SC6",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_UP_P",
+      "6": "S1_UP_P",
+      "3": "S1_UP_N",
+      "4": "S1_UP_N",
+      "2": "GND",
+      "5": "HOST1_5V"
+    }
+  },
+  {
+    "ref": "D102",
+    "value": "USBLC6-2SC6",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+    "mpn": "USBLC6-2SC6",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_DN_P",
+      "6": "S1_DN_P",
+      "3": "S1_DN_N",
+      "4": "S1_DN_N",
+      "2": "GND",
+      "5": "S1_TOUCH_5V"
+    }
+  },
+  {
+    "ref": "U102",
+    "value": "SN74LVC1G14DBVR",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+    "mpn": "SN74LVC1G14DBVR",
+    "group": "Screen 1",
+    "pins": {
+      "2": "S1_UFP_N",
+      "3": "GND",
+      "4": "S1_TOUCH_EN",
+      "5": "AUX_5V"
+    }
+  },
+  {
+    "ref": "C107",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 1",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "R101",
+    "value": "10k",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-0710KL",
+    "group": "Screen 1",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S1_UFP_N"
+    }
+  },
+  {
+    "ref": "R102",
+    "value": "10k",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-0710KL",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_TOUCH_EN",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "U103",
+    "value": "TPS25221DBVR",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+    "mpn": "TPS25221DBVR",
+    "group": "Screen 1",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND",
+      "3": "S1_TOUCH_EN",
+      "5": "S1_ILIM",
+      "6": "S1_TOUCH_5V"
+    }
+  },
+  {
+    "ref": "R103",
+    "value": "80.6k 1%",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-0780K6L",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_ILIM",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C108",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 1",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C109",
+    "value": "150uF 10V",
+    "footprint": "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm",
+    "mpn": "EEU-FR1A151",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_TOUCH_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "R104",
+    "value": "100R 0.75W",
+    "footprint": "Resistor_SMD:R_2010_5025Metric",
+    "mpn": "CRCW2010100RFKEF",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_MAIN_5V",
+      "2": "S1_DUMP0"
+    }
+  },
+  {
+    "ref": "Q101",
+    "value": "2N7002",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "mpn": "2N7002,215",
+    "group": "Screen 1",
+    "pins": {
+      "1": "DISCHARGE",
+      "2": "GND",
+      "3": "S1_DUMP0"
+    }
+  },
+  {
+    "ref": "R105",
+    "value": "100R 0.75W",
+    "footprint": "Resistor_SMD:R_2010_5025Metric",
+    "mpn": "CRCW2010100RFKEF",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_TOUCH_5V",
+      "2": "S1_DUMP1"
+    }
+  },
+  {
+    "ref": "Q102",
+    "value": "2N7002",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "mpn": "2N7002,215",
+    "group": "Screen 1",
+    "pins": {
+      "1": "DISCHARGE",
+      "2": "GND",
+      "3": "S1_DUMP1"
+    }
+  },
+  {
+    "ref": "U104",
+    "value": "TPS25810RVCR",
+    "footprint": "Package_DFN_QFN:Texas_RVC0020A_WQFN-20-1EP_3x4mm_P0.5mm_EP1.6x2.6mm_ThermalVias",
+    "mpn": "TPS25810RVCR",
+    "group": "Screen 1",
+    "pins": {
+      "2": "AUX_5V",
+      "3": "AUX_5V",
+      "4": "AUX_5V",
+      "5": "AUX_5V",
+      "6": "DISPLAY_ENABLE",
+      "7": "AUX_5V",
+      "8": "AUX_5V",
+      "9": "S1_REF_RTN",
+      "10": "S1_REF",
+      "11": "S1_CC1",
+      "12": "GND",
+      "13": "S1_CC2",
+      "14": "S1_MAIN_5V",
+      "15": "S1_MAIN_5V",
+      "19": "S1_UFP_N",
+      "21": "GND"
+    }
+  },
+  {
+    "ref": "R106",
+    "value": "100k 1%",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-07100KL",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_REF",
+      "2": "S1_REF_RTN"
+    }
+  },
+  {
+    "ref": "J103",
+    "value": "SCREEN POWER 5V 3A",
+    "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4125-xx-x_6P_TopMnt_Horizontal",
+    "mpn": "USB4125-GF-A",
+    "group": "Screen 1",
+    "pins": {
+      "A9": "S1_MAIN_5V",
+      "B9": "S1_MAIN_5V",
+      "A12": "GND",
+      "B12": "GND",
+      "A5": "S1_CC1",
+      "B5": "S1_CC2",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "C110",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 1",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C111",
+    "value": "220uF 10V",
+    "footprint": "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm",
+    "mpn": "EEU-FR1A221",
+    "group": "Screen 1",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C112",
+    "value": "10uF 25V X7R",
+    "footprint": "Capacitor_SMD:C_1210_3225Metric",
+    "mpn": "GRM32ER71E106KA12L",
+    "group": "Screen 1",
+    "pins": {
+      "1": "S1_MAIN_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "J201",
+    "value": "PI USB",
+    "footprint": "screen_power:USB_B_Lumberg_2411_06_Horizontal",
+    "mpn": "2411 06",
+    "group": "Screen 2",
+    "pins": {
+      "1": "HOST2_5V",
+      "2": "S2_UP_N",
+      "3": "S2_UP_P",
+      "4": "GND",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "J202",
+    "value": "TOUCH",
+    "footprint": "Connector_USB:USB_A_Wuerth_614004134726_Horizontal",
+    "mpn": "614004134726",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_TOUCH_5V",
+      "2": "S2_DN_N",
+      "3": "S2_DN_P",
+      "4": "GND",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "U201",
+    "value": "ADuM3165BRSZ",
+    "footprint": "Package_SO:SSOP-20_5.3x7.2mm_P0.65mm",
+    "mpn": "ADuM3165BRSZ",
+    "group": "Screen 2",
+    "pins": {
+      "1": "HOST2_5V",
+      "2": "GND",
+      "3": "S2_VDD1",
+      "4": "GND",
+      "5": "S2_XI",
+      "6": "S2_XO",
+      "7": "GND",
+      "8": "S2_UP_P",
+      "9": "S2_UP_N",
+      "10": "GND",
+      "11": "GND",
+      "12": "S2_DN_P",
+      "13": "S2_DN_N",
+      "15": "GND",
+      "16": "GND",
+      "17": "GND",
+      "18": "S2_VDD2",
+      "19": "GND",
+      "20": "S2_TOUCH_5V"
+    }
+  },
+  {
+    "ref": "C201",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 2",
+    "pins": {
+      "1": "HOST2_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C202",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_VDD1",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C203",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_VDD2",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C204",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_TOUCH_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "Y201",
+    "value": "24MHz 10pF",
+    "footprint": "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
+    "mpn": "ABM8-24.000MHZ-10-B1U-T",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_XI",
+      "2": "GND",
+      "3": "S2_XO",
+      "4": "GND"
+    }
+  },
+  {
+    "ref": "C205",
+    "value": "8pF C0G",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "CC0805DRNPO9BN8R0",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_XI",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C206",
+    "value": "8pF C0G",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "CC0805DRNPO9BN8R0",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_XO",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "D201",
+    "value": "USBLC6-2SC6",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+    "mpn": "USBLC6-2SC6",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_UP_P",
+      "6": "S2_UP_P",
+      "3": "S2_UP_N",
+      "4": "S2_UP_N",
+      "2": "GND",
+      "5": "HOST2_5V"
+    }
+  },
+  {
+    "ref": "D202",
+    "value": "USBLC6-2SC6",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+    "mpn": "USBLC6-2SC6",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_DN_P",
+      "6": "S2_DN_P",
+      "3": "S2_DN_N",
+      "4": "S2_DN_N",
+      "2": "GND",
+      "5": "S2_TOUCH_5V"
+    }
+  },
+  {
+    "ref": "U202",
+    "value": "SN74LVC1G14DBVR",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+    "mpn": "SN74LVC1G14DBVR",
+    "group": "Screen 2",
+    "pins": {
+      "2": "S2_UFP_N",
+      "3": "GND",
+      "4": "S2_TOUCH_EN",
+      "5": "AUX_5V"
+    }
+  },
+  {
+    "ref": "C207",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 2",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "R201",
+    "value": "10k",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-0710KL",
+    "group": "Screen 2",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "S2_UFP_N"
+    }
+  },
+  {
+    "ref": "R202",
+    "value": "10k",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-0710KL",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_TOUCH_EN",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "U203",
+    "value": "TPS25221DBVR",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+    "mpn": "TPS25221DBVR",
+    "group": "Screen 2",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND",
+      "3": "S2_TOUCH_EN",
+      "5": "S2_ILIM",
+      "6": "S2_TOUCH_5V"
+    }
+  },
+  {
+    "ref": "R203",
+    "value": "80.6k 1%",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-0780K6L",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_ILIM",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C208",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 2",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C209",
+    "value": "150uF 10V",
+    "footprint": "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm",
+    "mpn": "EEU-FR1A151",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_TOUCH_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "R204",
+    "value": "100R 0.75W",
+    "footprint": "Resistor_SMD:R_2010_5025Metric",
+    "mpn": "CRCW2010100RFKEF",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_MAIN_5V",
+      "2": "S2_DUMP0"
+    }
+  },
+  {
+    "ref": "Q201",
+    "value": "2N7002",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "mpn": "2N7002,215",
+    "group": "Screen 2",
+    "pins": {
+      "1": "DISCHARGE",
+      "2": "GND",
+      "3": "S2_DUMP0"
+    }
+  },
+  {
+    "ref": "R205",
+    "value": "100R 0.75W",
+    "footprint": "Resistor_SMD:R_2010_5025Metric",
+    "mpn": "CRCW2010100RFKEF",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_TOUCH_5V",
+      "2": "S2_DUMP1"
+    }
+  },
+  {
+    "ref": "Q202",
+    "value": "2N7002",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "mpn": "2N7002,215",
+    "group": "Screen 2",
+    "pins": {
+      "1": "DISCHARGE",
+      "2": "GND",
+      "3": "S2_DUMP1"
+    }
+  },
+  {
+    "ref": "U204",
+    "value": "TPS25810RVCR",
+    "footprint": "Package_DFN_QFN:Texas_RVC0020A_WQFN-20-1EP_3x4mm_P0.5mm_EP1.6x2.6mm_ThermalVias",
+    "mpn": "TPS25810RVCR",
+    "group": "Screen 2",
+    "pins": {
+      "2": "AUX_5V",
+      "3": "AUX_5V",
+      "4": "AUX_5V",
+      "5": "AUX_5V",
+      "6": "DISPLAY_ENABLE",
+      "7": "AUX_5V",
+      "8": "AUX_5V",
+      "9": "S2_REF_RTN",
+      "10": "S2_REF",
+      "11": "S2_CC1",
+      "12": "GND",
+      "13": "S2_CC2",
+      "14": "S2_MAIN_5V",
+      "15": "S2_MAIN_5V",
+      "19": "S2_UFP_N",
+      "21": "GND"
+    }
+  },
+  {
+    "ref": "R206",
+    "value": "100k 1%",
+    "footprint": "Resistor_SMD:R_0805_2012Metric",
+    "mpn": "RC0805FR-07100KL",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_REF",
+      "2": "S2_REF_RTN"
+    }
+  },
+  {
+    "ref": "J203",
+    "value": "SCREEN POWER 5V 3A",
+    "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4125-xx-x_6P_TopMnt_Horizontal",
+    "mpn": "USB4125-GF-A",
+    "group": "Screen 2",
+    "pins": {
+      "A9": "S2_MAIN_5V",
+      "B9": "S2_MAIN_5V",
+      "A12": "GND",
+      "B12": "GND",
+      "A5": "S2_CC1",
+      "B5": "S2_CC2",
+      "SH": "GND"
+    }
+  },
+  {
+    "ref": "C210",
+    "value": "100nF",
+    "footprint": "Capacitor_SMD:C_0805_2012Metric",
+    "mpn": "C0805C104K5RAC",
+    "group": "Screen 2",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C211",
+    "value": "220uF 10V",
+    "footprint": "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm",
+    "mpn": "EEU-FR1A221",
+    "group": "Screen 2",
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "C212",
+    "value": "10uF 25V X7R",
+    "footprint": "Capacitor_SMD:C_1210_3225Metric",
+    "mpn": "GRM32ER71E106KA12L",
+    "group": "Screen 2",
+    "pins": {
+      "1": "S2_MAIN_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "H1",
+    "value": "M3",
+    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "mpn": "NPTH",
+    "group": "Mechanical",
+    "pins": {}
+  },
+  {
+    "ref": "H2",
+    "value": "M3",
+    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "mpn": "NPTH",
+    "group": "Mechanical",
+    "pins": {}
+  },
+  {
+    "ref": "H3",
+    "value": "M3",
+    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "mpn": "NPTH",
+    "group": "Mechanical",
+    "pins": {}
+  },
+  {
+    "ref": "H4",
+    "value": "M3",
+    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "mpn": "NPTH",
+    "group": "Mechanical",
+    "pins": {}
+  }
+]

@@ -194,7 +194,7 @@ What the 0.70 mm rail sees is the ring plus logic either way. The ring's comet a
 One **keyed 2×20 IDC ribbon, ~10 cm** — both boards sit under the 16" screen
 and the Pi is ~30 mm from the board (`board_mounts()` in `segno_enclosure.py`).
 J2 is rotated so both connectors' pin-1 ends face the front: pin 1 meets pin 1
-with no fold in the cable. 16 of the 40 ways carry something;
+with no fold in the cable. 17 of the 40 ways carry something;
 `console_board.py`'s `PI_HDR` is the authority:
 
 | Pi pins | signal |
@@ -202,9 +202,16 @@ with no fold in the cable. 16 of the 40 ways carry something;
 | 1, 17 | 3V3 — the board's 3V3 rail (opto + pull-up bias, ~15 mA) |
 | 6, 9, 14, 20, 25, 30, 34, 39 | GND |
 | 8 / 10 | uart0 TX / RX = MIDI OUT / MIDI IN (GPIO14/15) |
+| 11 | GPIO17 = screen-power enable, through J25 pin 1 |
 | 21 / 24 | uart3 RX / TX = pedal link (GPIO9/8, `dtoverlay=uart3-pi5`), **10 k series** |
 | 18 / 22 | GPIO24/25 = SWD to the Pico's debug pads (flashing only) |
 | 2, 4 | 5 V — deliberately **not connected** (`PI_POWER`) |
+
+**J25 is the two-wire screen-power control connector:** pin 1 is GPIO17
+(physical pin 11 on J2), and pin 2 is GND. Connect it pin-for-pin to J2 on the
+[screen-power board](kicad/screen_power/README.md). The existing Pi ribbon stays
+between the Pi and console board. Screen power comes directly from BUCK_AUX to
+the new board; J25 carries no 5 V. The new board provides the enable pull-down.
 
 The link needs **no level shifting**: RP2350 and Pi are both 3.3 V. The old
 1k8/3k3 divider and the AHCT gate on this path were the retired 5 V board's needs

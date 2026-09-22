@@ -199,6 +199,12 @@ housing flat while reheating it, then solder the rest.
 | J6 | 8-pin | `RING`, under the Pico | Left |
 | J7 | 3-pin | `LEDS`, right of J6 | Left |
 | J10 … J19 | 2-pin | `REC STOP UNDO MODE TRK1 TRK2 TRK3 TRK4 CLR BANK` (bottom edge) | Left |
+| J25 | 2-pin | `SCREEN 1=GPIO17 2=GND` on the back, below the right end of the Pico | Left |
+
+J25 is the screen-power addition to the current console board and is absent
+from the older v2 illustration above. Fit a JST XH B2B-XH-A vertical header:
+pin 1 carries Pi GPIO17 and pin 2 is GND. Its cable connects pin-for-pin to
+the screen-power board's J2; neither contact supplies screen power.
 
 ### Step 6 — J2, the Pi ribbon header
 
@@ -208,7 +214,8 @@ Shrouded, keyed 2×20 box header on the right edge, silk `PI`.
   the right-hand column, even pins up the left-hand column.
 - The shroud's polarising notch faces the board's right edge; the silk outline of the
   shroud shows the notch, so match the plastic to the silk.
-- Only 16 of the 40 pins carry anything. Pins 2 and 4 (the Pi's 5 V) are deliberately
+- With J25 fitted, 17 of the 40 pins carry a signal or supply. Physical pin 11
+  carries GPIO17 to J25 pin 1. Pins 2 and 4 (the Pi's 5 V) are deliberately
   **not connected** on this board and must never be jumpered to `+5V`.
 
 Solder two diagonal corner pins, check it is flat and square, then the other 38. The

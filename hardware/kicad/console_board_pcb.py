@@ -193,6 +193,7 @@ PLACEMENT = {
     # starts at 84.5 and comes up to y 10.2, so the last two headers would sit on
     # top of it. The corner mounting holes cap the other end the same way.
     "J8":  (18.1, 8.0, 0),
+    "J25": (68.0, 69.0, 0),       # GPIO17 / GND to screen-power daughterboard
     "J23": (27.5, 68.2, 0),        # 0.8 up, ahead of the cap row (#1062)        # I2C to the PD trigger, under the module's
                                    # left end between 5V IN and EXP: GP0/GP1 are
                                    # pads 1/2, a 12 mm hop up. x 27.5, not 16.5
@@ -1423,7 +1424,7 @@ LABEL_AT = {}
 # The same for designators. R11 is boxed in -- the module above, J3 left, R21
 # below, R12 right -- and with J3 at the edge the search had only found a spot
 # 19 mm away. The pocket above R11's left end, under the 5V IN label, is its own.
-REF_AT = {"R11": (12.85, 56.25)}
+REF_AT = {"R11": (12.85, 56.25), "J25": (62.0, 65.8)}
 # Per-pin legends for the two power headers, on the BACK silkscreen beside each pad.
 # J3 is +5V/GND from pin 1 and J24 is GND/DATA/+5V, so the two headers read in
 # opposite orders, and a harness crimped to the wrong one puts 5 V on the pill
@@ -1544,6 +1545,12 @@ def _labels(board, fps):
 
 def _pin_legend(board, fps):
     """Name each pad of the power headers on B.Silkscreen, to the pad's right."""
+    if "J25" in fps:
+        # This header fills the last front-side label gap. Its function and
+        # numbered pinout share the clear strip on the solder side instead.
+        t = _silk(board, "SCREEN 1=GPIO17 2=GND", 68.0, 66.0, 0.8)
+        t.SetLayer(pcbnew.B_SilkS)
+        t.SetMirrored(True)
     for ref in PIN_LEGEND_REFS:
         if ref not in fps:
             continue
@@ -1706,6 +1713,25 @@ def _selftest():
     return ok
 
 
+def _route_screen_control(board, net):
+    """One added control trace, preserving every pre-existing console route.
+
+    The two vias cross the indicator trace below the ribbon. Coordinates are
+    board-local; both existing copper layers retain a ground return beneath it.
+    """
+    paths = (
+        (pcbnew.F_Cu, [(90.77, 53.43), (92.2, 53.43), (94.2, 55.43),
+                      (94.2, 67.7), (93.3, 68.6)]),
+        (pcbnew.F_Cu, [(66.75, 69.0), (66.75, 69.9), (70.05, 73.2), (76.0, 73.2)]),
+        (pcbnew.B_Cu, [(93.3, 68.6), (88.7, 73.2), (76.0, 73.2)]),
+    )
+    for layer, points in paths:
+        for start, end in zip(points, points[1:]):
+            _track(board, net, layer, 0.6, start, end)
+    for x, y in ((76.0, 73.2), (93.3, 68.6)):
+        _via(board, net, x, y)
+
+
 def build(quiet=False):
     comps, nets = parse_netlist(NETLIST)
     board = pcbnew.BOARD()
@@ -1843,6 +1869,7 @@ def build(quiet=False):
               for x0, y0, x1, y1 in _pill_bar_rects(fps)]
     n_vias = _stitch_gnd(board, fps, nets, netmap, boxes)
     n_vias += _stitch_grid(board, netmap[POUR_NET], fps, boxes)
+    _route_screen_control(board, netmap["PI_GPIO17"])
 
     # NOT pcbnew.ZONE_FILLER here: in-process it segfaults with no wxApp. The
     # LED-strip generator hit the same wall and fills via kicad-cli instead --

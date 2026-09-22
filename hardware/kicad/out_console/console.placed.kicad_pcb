@@ -959,6 +959,280 @@
 			)
 		)
 	)
+	(footprint "JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"
+		(layer "F.Cu")
+		(uuid "119be8c0-ee72-4db7-856b-3af15bd80344")
+		(at 166.75 129)
+		(descr "JST XH series connector, B2B-XH-A (http://www.jst-mfg.com/product/pdf/eng/eXH.pdf)")
+		(tags "connector JST XH vertical")
+		(property "Reference" "J25"
+			(at -4.75 -3.2 0)
+			(layer "F.SilkS")
+			(uuid "4224f4f0-813d-49d7-9693-216f48d5ce9b")
+			(effects
+				(font
+					(size 0.8 0.8)
+					(thickness 0.16)
+				)
+			)
+		)
+		(property "Value" "SCREEN_ENABLE"
+			(at 1.25 4.6 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "691d27d7-efdc-485a-a124-9c752d10229e")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "250ccbbb-f746-4212-a1ae-478b02626b9b")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "e3d5c6d1-cfb7-46a1-bfa7-aa1e2c6cbb6d")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "KiLib_Generator" "connector/JST"
+			(at 0 0 0)
+			(layer "F.SilkS")
+			(hide yes)
+			(uuid "0dfa22a9-a170-4dd8-8473-7fd28a577032")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(attr through_hole)
+		(duplicate_pad_numbers_are_jumpers no)
+		(fp_line
+			(start -2.85 -2.75)
+			(end -2.85 -1.5)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "d0311a62-cf48-43fe-8f58-2f2c6cdcabd4")
+		)
+		(fp_line
+			(start -2.55 -0.2)
+			(end -1.8 -0.2)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "cab5883e-729d-41e4-9a2a-4c0538d6aa4d")
+		)
+		(fp_line
+			(start -1.8 -0.2)
+			(end -1.8 2.75)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "9fddf39d-b3b8-4243-93a6-f35fb2177110")
+		)
+		(fp_line
+			(start -1.8 2.75)
+			(end 1.25 2.75)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "9c04e297-f7cb-49bf-92a0-abfe9cbcf88b")
+		)
+		(fp_line
+			(start -1.6 -2.75)
+			(end -2.85 -2.75)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "99c1e3ed-9c0c-49e7-a66d-1acc44a7d0ac")
+		)
+		(fp_line
+			(start 4.3 -0.2)
+			(end 4.3 2.75)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "e8cdd172-8cda-4d2a-98a3-d2538f9083b7")
+		)
+		(fp_line
+			(start 4.3 2.75)
+			(end 1.25 2.75)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "c7ee5272-2701-4e5f-b1a6-408590fcc24c")
+		)
+		(fp_line
+			(start 5.05 -0.2)
+			(end 4.3 -0.2)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "068ee8c6-392e-48ef-ab3f-2f737a646bfb")
+		)
+		(fp_rect
+			(start -2.56 -2.46)
+			(end 5.06 3.51)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(fill no)
+			(layer "F.SilkS")
+			(uuid "b3fdad48-9fe0-441a-834d-9f27e9a8b800")
+		)
+		(fp_rect
+			(start -2.55 -2.45)
+			(end -0.75 -1.7)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(fill no)
+			(layer "F.SilkS")
+			(uuid "bf07385f-70e6-480e-93a5-b705639c0748")
+		)
+		(fp_rect
+			(start 0.75 -2.45)
+			(end 1.75 -1.7)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(fill no)
+			(layer "F.SilkS")
+			(uuid "9619e480-f691-4647-906f-9839ff934483")
+		)
+		(fp_rect
+			(start 3.25 -2.45)
+			(end 5.05 -1.7)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(fill no)
+			(layer "F.SilkS")
+			(uuid "c66d026d-ee9e-48ea-9e0f-e64624e3a725")
+		)
+		(fp_rect
+			(start -2.95 -2.85)
+			(end 5.45 3.9)
+			(stroke
+				(width 0.05)
+				(type solid)
+			)
+			(fill no)
+			(layer "F.CrtYd")
+			(uuid "3bc9343e-090b-4bbd-86b6-fd4b39c8c456")
+		)
+		(fp_line
+			(start -0.625 -2.35)
+			(end 0 -1.35)
+			(stroke
+				(width 0.1)
+				(type solid)
+			)
+			(layer "F.Fab")
+			(uuid "d967cdb5-d86d-4392-8368-6cebde7568c3")
+		)
+		(fp_line
+			(start 0 -1.35)
+			(end 0.625 -2.35)
+			(stroke
+				(width 0.1)
+				(type solid)
+			)
+			(layer "F.Fab")
+			(uuid "20db58de-e8c5-4b6c-a18d-7833b75b1f5c")
+		)
+		(fp_rect
+			(start -2.45 -2.35)
+			(end 4.95 3.4)
+			(stroke
+				(width 0.1)
+				(type solid)
+			)
+			(fill no)
+			(layer "F.Fab")
+			(uuid "b06c51be-13d1-4bbf-aef8-c5ee5cee64e0")
+		)
+		(fp_text user "${REFERENCE}"
+			(at 1.25 2.7 0)
+			(layer "F.Fab")
+			(uuid "3676c0db-0144-49df-9775-87d8d2142c77")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+			)
+		)
+		(pad "1" thru_hole roundrect
+			(at 0 0)
+			(size 1.7 2)
+			(drill 1)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(roundrect_rratio 0.147059)
+			(net "PI_GPIO17")
+			(uuid "c93f762a-d7db-4cc8-8a30-ffc030cbffa7")
+		)
+		(pad "2" thru_hole oval
+			(at 2.5 0)
+			(size 1.7 2)
+			(drill 1)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net "GND")
+			(uuid "1513e45a-a519-47f6-a515-822407321e96")
+		)
+		(embedded_fonts no)
+		(model "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes/JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical.step"
+			(offset
+				(xyz 0 0 0)
+			)
+			(scale
+				(xyz 1 1 1)
+			)
+			(rotate
+				(xyz 0 0 0)
+			)
+		)
+	)
 	(footprint "C_Disc_D5.0mm_W2.5mm_P2.50mm"
 		(layer "F.Cu")
 		(uuid "196f287d-cfa7-4ba6-b4dc-bbc0d02276de")
@@ -1402,7 +1676,7 @@
 		(descr "C, Disc series, Radial, pin pitch=2.50mm, diameter*width=5*2.5mm^2, Capacitor, http://cdn-reichelt.de/documents/datenblatt/B300/DS_KERKO_TC.pdf")
 		(tags "C Disc series Radial pin pitch 2.50mm diameter 5mm width 2.5mm Capacitor")
 		(property "Reference" "C7"
-			(at 1.25 -3.043801 0)
+			(at 5.735952 0 0)
 			(layer "F.SilkS")
 			(uuid "1c70b689-4300-42df-8c3c-16186fbd4455")
 			(effects
@@ -7354,7 +7628,7 @@
 		(descr "JST XH series connector, B4B-XH-A (http://www.jst-mfg.com/product/pdf/eng/eXH.pdf)")
 		(tags "connector JST XH vertical")
 		(property "Reference" "J6"
-			(at -4.590715 0 0)
+			(at 12.090714 0 0)
 			(layer "F.SilkS")
 			(uuid "5f4346b4-80e0-4619-bede-938f5322fbfd")
 			(effects
@@ -13901,6 +14175,7 @@
 			(drill 1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
+			(net "PI_GPIO17")
 			(uuid "99f6744f-1951-4b13-9f85-304ead35b893")
 		)
 		(pad "12" thru_hole circle
@@ -22895,6 +23170,17 @@
 			)
 		)
 	)
+	(gr_text "RING"
+		(at 142.793095 129 0)
+		(layer "F.SilkS")
+		(uuid "8171d652-7f32-4cfd-9f11-6a05941851ef")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.2)
+			)
+		)
+	)
 	(gr_text "TRK1"
 		(at 145.333332 139.3 0)
 		(layer "F.SilkS")
@@ -22932,17 +23218,6 @@
 		(at 154.666666 139.3 0)
 		(layer "F.SilkS")
 		(uuid "a7bd410f-28c9-4df1-a90d-d349ebc6037a")
-		(effects
-			(font
-				(size 1 1)
-				(thickness 0.2)
-			)
-		)
-	)
-	(gr_text "RING"
-		(at 162.206904 129 0)
-		(layer "F.SilkS")
-		(uuid "8171d652-7f32-4cfd-9f11-6a05941851ef")
 		(effects
 			(font
 				(size 1 1)
@@ -23036,6 +23311,18 @@
 				(size 1.6 1.6)
 				(thickness 0.32)
 			)
+		)
+	)
+	(gr_text "SCREEN 1=GPIO17 2=GND"
+		(at 168 126 0)
+		(layer "B.SilkS")
+		(uuid "1d32aa97-e392-4125-8ed7-38d42029245a")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.16)
+			)
+			(justify mirror)
 		)
 	)
 	(gr_text "GND"
@@ -24145,6 +24432,94 @@
 		(layers "F.Cu" "B.Cu")
 		(net "GND")
 		(uuid "f8caf784-ab82-4477-8033-c76e95aa4818")
+	)
+	(segment
+		(start 166.75 129.9)
+		(end 170.05 133.199999)
+		(width 0.6)
+		(layer "F.Cu")
+		(net "PI_GPIO17")
+		(uuid "192d742e-31d4-498a-b88d-141d3499eb04")
+	)
+	(segment
+		(start 192.2 113.43)
+		(end 194.2 115.43)
+		(width 0.6)
+		(layer "F.Cu")
+		(net "PI_GPIO17")
+		(uuid "222d8e02-064f-4307-a91c-06b6d3885f6c")
+	)
+	(segment
+		(start 170.05 133.199999)
+		(end 176 133.199999)
+		(width 0.6)
+		(layer "F.Cu")
+		(net "PI_GPIO17")
+		(uuid "5ca68163-5aa5-4537-9385-ce015118a02c")
+	)
+	(segment
+		(start 166.75 129)
+		(end 166.75 129.9)
+		(width 0.6)
+		(layer "F.Cu")
+		(net "PI_GPIO17")
+		(uuid "6ceb9c0d-331b-4cad-a156-b7d538b865a3")
+	)
+	(segment
+		(start 194.2 127.7)
+		(end 193.3 128.6)
+		(width 0.6)
+		(layer "F.Cu")
+		(net "PI_GPIO17")
+		(uuid "6e0e14ff-e486-4569-8f70-0556add55f1b")
+	)
+	(segment
+		(start 190.769999 113.43)
+		(end 192.2 113.43)
+		(width 0.6)
+		(layer "F.Cu")
+		(net "PI_GPIO17")
+		(uuid "77827dd4-3c69-4d30-9558-86dab3afc661")
+	)
+	(segment
+		(start 194.2 115.43)
+		(end 194.2 127.7)
+		(width 0.6)
+		(layer "F.Cu")
+		(net "PI_GPIO17")
+		(uuid "d2302980-a033-4700-b58a-02bb5dad4eeb")
+	)
+	(via
+		(at 176 133.199999)
+		(size 0.8)
+		(drill 0.4)
+		(layers "F.Cu" "B.Cu")
+		(net "PI_GPIO17")
+		(uuid "ba35b1d9-e076-469d-9243-b3def0b3b3e3")
+	)
+	(via
+		(at 193.3 128.6)
+		(size 0.8)
+		(drill 0.4)
+		(layers "F.Cu" "B.Cu")
+		(net "PI_GPIO17")
+		(uuid "e281abbb-271c-4bd3-be2d-6d7bcc4ebd29")
+	)
+	(segment
+		(start 188.7 133.199999)
+		(end 176 133.199999)
+		(width 0.6)
+		(layer "B.Cu")
+		(net "PI_GPIO17")
+		(uuid "8cfbd603-3e7e-4269-9c26-ff954c473a09")
+	)
+	(segment
+		(start 193.3 128.6)
+		(end 188.7 133.199999)
+		(width 0.6)
+		(layer "B.Cu")
+		(net "PI_GPIO17")
+		(uuid "94e6eef8-1339-4c26-a163-028a3c1e6b1d")
 	)
 	(zone
 		(net "+5V")
