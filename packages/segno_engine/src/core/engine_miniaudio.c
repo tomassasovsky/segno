@@ -40,8 +40,10 @@
  * harness and by the ASIO bridge's own conversion wrapper, mixing three
  * different timelines into one gap detector. The cost added to the RT path is
  * two monotonic clock reads (vDSO/commpage, no kernel entry) and ~10 relaxed
- * atomic adds — well under a microsecond against a 667 us period at 64 frames /
- * 96 kHz — and -DLE_CALLBACK_TELEMETRY=0 removes even that. */
+ * atomic adds — well under a microsecond, i.e. under 1% of the deadline even
+ * at the SHORTEST period the appliance offers (32 frames / 96 kHz = 333 us;
+ * 64 frames = 667 us is merely the default, not the floor) — and
+ * -DLE_CALLBACK_TELEMETRY=0 removes even that. */
 static void data_callback(ma_device* device, void* output, const void* input,
                           ma_uint32 frame_count) {
   le_engine* e = (le_engine*)device->pUserData;
