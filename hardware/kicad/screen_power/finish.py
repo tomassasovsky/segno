@@ -42,20 +42,23 @@ def finish(variant):
     board = p.LoadBoard(str(path))
     title=board.GetTitleBlock()
     title.SetTitle('Segno screen power')
-    title.SetRevision('K')
+    title.SetRevision('L')
     board.SetTitleBlock(title)
     for item in list(board.GetDrawings()):
         if isinstance(item, p.PCB_TEXT):
             board.RemoveNative(item)
-    def label(text, x, y, size=1.0, layer=p.F_SilkS):
+    def label(text, x, y, size=1.0, layer=p.F_SilkS, angle=0):
         t=p.PCB_TEXT(board);t.SetText(text);t.SetPosition(point(x,y))
         t.SetTextSize(point(size,size));t.SetTextThickness(p.FromMM(.15))
+        t.SetTextAngle(p.EDA_ANGLE(angle,p.DEGREES_T))
         t.SetLayer(layer);t.SetMirrored(layer==p.B_SilkS);board.Add(t)
     from layout import DIMENSIONS, USB_ROWS
     w,h = DIMENSIONS[variant]
-    label('SEGNO SCREEN POWER / REV K',32,1.4,.8,p.B_SilkS)
-    label('SEGNO SCREEN POWER',26,50.5,.9)
-    label('REV K',27,h-2.5,.8)
+    label('SEGNO SCREEN POWER / REV L',32,1.4,.8,p.B_SilkS)
+    # The revision L control section fills the old mid-board name strip, so
+    # the front identification moves to the clear lower edge.
+    label('SEGNO SCREEN POWER',28.5,h-2.4,.9)
+    label('REV L',8.5,h-2.4,.8)
     label('5V IN',56,6.5,1.0)
     label('CTRL J25',6,8,1.0)
     label('5V IN',56,6.5,1.0,p.B_SilkS)
@@ -63,7 +66,9 @@ def finish(variant):
     label('GPIO17 / GND',8,18,1.0,p.B_SilkS)
     for ch,y in enumerate(USB_ROWS[variant],1):
         screen='15.6"' if ch==1 else '7"'
-        label(f'PI USB {ch}',7,y-10.5,1.0)
+        # The bay above each Pi plug now carries control parts; read this one
+        # along the left edge instead.
+        label(f'PI USB {ch}',2.2,y,1.0,angle=90)
         label(f'{screen} TOUCH',45,y+1.5,1.0)
         label(f'{screen} POWER',41.5,y-8,1.0)
         label(f'S{ch} PI',7,y-8,1.0,p.B_SilkS)

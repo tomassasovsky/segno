@@ -1,4 +1,4 @@
-"""Explicit USB pairs, high-current paths and local relay loops."""
+"""Explicit USB pairs, high-current paths and local relay/gate-drive loops."""
 import math
 from pathlib import Path
 import sys
@@ -8,6 +8,9 @@ from layout import USB_ROWS, POWER_BUS_X, USB_WIDTH, USB_GAP
 HERE=Path(__file__).resolve().parent
 # Shared-load neck at the TO-220 terminals.
 NECK=1.9
+# Charge-pump/negative-rail supply and gate-drive signal widths.
+SUPPLY=.5
+CTRL=.25
 
 
 def route(variant):
@@ -87,6 +90,42 @@ def route(variant):
         join((relay,8),(f'Q{n+1}',3),
              [(23.2,y-4.6),(23.9,y-5.3),(28.75,y-5.3),
               (29.75,y-4.3),(29.75,y+6.2)],.25,p.F_Cu)
+    # Revision L gate driver. Every loop that carries pump or negative-rail
+    # current is placed here instead of being autorouted, and all of it stays
+    # north of the first USB row so no inverter loop runs under a data pair.
+    # GND returns close through the filled pours: U1.3, C3/C4/C5 and D2 all
+    # sit on them, so only the driven nodes need copper.
+    def miter(a,b):
+        """Knee for one axial leg followed by a 45 degree approach to b."""
+        dx,dy=b[0]-a[0],b[1]-a[1]
+        if abs(dy)>=abs(dx):
+            return (a[0],b[1]-math.copysign(abs(dx),dy))
+        return (b[0]-math.copysign(abs(dy),dx),a[1])
+    def bend(a_ref,a_pin,b_ref,b_pin,width):
+        join((a_ref,a_pin),(b_ref,b_pin),
+             [miter(at(a_ref,a_pin),at(b_ref,b_pin))],width,p.F_Cu)
+    # Pump capacitor: symmetric legs from pins 2 and 4 to the 2mm terminals.
+    for pin,pad in (('2','1'),('4','2')):
+        bend('U1',pin,'C3',pad,SUPPLY)
+    # AUX bypass at pin 8 and the reservoir/clamp on pin 5's negative rail.
+    for nodes in (('C5','1','U1','8'),('U1','5','C4','2'),('D2','2','C4','2')):
+        bend(*nodes,SUPPLY)
+    # Carry the negative rail to the optocoupler emitter through the clear
+    # channel above the DIP row, not across pin 4 of the coupler.
+    u1_5,u2_3=at('U1','5'),at('U2','3')
+    channel=u1_5[1]-.98
+    join(('U1','5'),('U2','3'),
+         [(u1_5[0],channel+.5),(u1_5[0]+.5,channel),
+          (u2_3[0]-.5,channel),(u2_3[0],channel+.5)],SUPPLY,p.F_Cu)
+    # Gate drive: coupler collector to its series resistor above the FETs,
+    # threaded between the reservoir can and the Q4 courtyard.
+    u2_4,r3_1=at('U2','4'),at('R3','1')
+    join(('U2','4'),('R3','1'),
+         [(u2_4[0],r3_1[1]+2),(u2_4[0]+2,r3_1[1])],CTRL,p.F_Cu)
+    # LED network and the sink node shared with Q1.
+    for nodes in (('U2','1','R10','1'),('U2','2','R10','2')):
+        bend(*nodes,CTRL)
+    join(('R10','1'),('R9','2'),[],CTRL,p.F_Cu)
     # The front carries the 4.5mm shared trunk; main outputs use 2mm
     # bottom branches. Keep the narrower approaches local to closely spaced
     # device pins, then widen smoothly into the 3mm common-source bridge.
