@@ -16,6 +16,13 @@ circuit, pinout, polarity, relay-contact or artwork defect. It did not qualify
 assembled production hardware. No circuit, geometry, component or manufacturing
 archive change follows from the verified findings below.
 
+The owner's subsequent request to resolve the findings is recorded in the
+[implementation follow-up](../screen-power-claude-fixes-1072/verification.md).
+It specifies the missing external fuse/holder, exposes the supply-loss budget
+and replaces the approximate R8 model. The initial dispositions below are
+retained as review history; F1's missing-part selection and F6's preview
+approximation are superseded by that follow-up.
+
 ## What Claude actually checked
 
 The cloud reviewer parsed the native PCB, netlist, symbols and custom footprints

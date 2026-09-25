@@ -10,7 +10,7 @@ not included in the populated board model.
 
 ## Custom models
 
-These six models were drawn for Segno with `model_geometry.py` and CadQuery
+These seven models were drawn for Segno with `model_geometry.py` and CadQuery
 2.8. They are original simplified assembly geometry under the repository's
 GPL-3.0 license, not manufacturer-supplied CAD. Dimensions are nominal except
 where explicitly described as maximum; molded details and lead bends are
@@ -24,6 +24,7 @@ simplified. Use the linked manufacturer drawings for mechanical qualification.
 | Panasonic_EEUFR1A221 | Nominal diameter 6.3 × height 11.2 mm, 2.5 mm pitch, 0.5 mm leads; body center between pads | [Panasonic FR-A, pages 1 and 4](https://industrial.panasonic.com/cdbs/www-data/pdf/RDF0000/ABA0000C1259.pdf) |
 | Panasonic_EEUFR1A151 | Nominal diameter 5.0 × height 11.0 mm, 2.0 mm pitch, 0.5 mm leads; body center between pads | [Panasonic FR-A, pages 1 and 4](https://industrial.panasonic.com/cdbs/www-data/pdf/RDF0000/ABA0000C1259.pdf) |
 | WIMA_MKS2C031001A00KSSD | Nominal 7.2 × 2.5 × 6.5 mm body, 5.0 mm pitch, 0.5 mm leads | [WIMA catalogue, printed page 35](https://www.wima.de/wp-content/uploads/media/WIMA_Main_Catalogue_2026.pdf) |
+| Vishay_PR01_P10.16mm | Maximum 6.5 mm main body, 8.0 mm coating extent, diameter 2.5 mm and 0.63 mm leads; formed at 10.16 mm pitch with 0.5 mm body standoff | [Vishay PR01 drawing, page 16](https://www.vishay.com/docs/28729/pr010203.pdf) |
 
 The capacitor models show bodies seated at the PCB surface and leads trimmed to
 3 mm below that surface for assembly. They do not show the much longer stock
@@ -37,6 +38,13 @@ Revision K replaces the generic capacitor models: those previously understated
 the two electrolytic heights and overstated the film-capacitor height. C1 moves
 1.5 mm left to clear the published mated VH housing envelope; the other
 component positions and connectors remain unchanged.
+
+The PR01 model replaces R8's generic 6.3 mm resistor preview. Its end coating
+uses the full 2.5 mm diameter as a conservative envelope. Separate solids show
+the main body and coating extensions; this is simplified maximum-envelope
+geometry, not the manufacturer's exact surface shape. Leads are simplified
+and trimmed to 3 mm below the board's top surface. The unchanged footprint
+and formed-lead clearance were checked independently.
 
 Insulation, relay markings and connector latches are represented
 only sufficiently to identify orientation and occupied space. Models do not
@@ -52,14 +60,6 @@ retained in `licenses/`. They are redistributed under CC-BY-SA 4.0 with KiCad's
 library exception, as reproduced in [LIBRARY_LICENSE.txt](../LIBRARY_LICENSE.txt).
 Sources are the matching libraries in the
 [KiCad 3D models collection](https://gitlab.com/kicad/libraries/kicad-packages3D).
-
-R8 is a documented approximation: its generic DIN0207 model has a 6.3 mm body.
-The selected Vishay PR01 has a 6.5 mm maximum main-body length, an 8.0 mm
-maximum coating extent, 2.5 mm maximum diameter and 0.63 mm maximum lead
-diameter. The 10.16 mm footprint pitch and finished holes
-were checked against the purchased part separately; the generic preview is
-not its maximum assembly envelope. See the
-[Vishay PR01 drawing](https://www.vishay.com/docs/28729/pr010203.pdf).
 
 | Files | Upstream library |
 | --- | --- |

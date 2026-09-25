@@ -12688,7 +12688,7 @@
 			(uuid "32c53f7a-2f7b-47ca-abc5-ea08fc1ca528")
 		)
 		(embedded_fonts no)
-		(model "${KIPRJMOD}/../models/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step"
+		(model "${KIPRJMOD}/../models/Vishay_PR01_P10.16mm.step"
 			(offset
 				(xyz 0 0 0)
 			)

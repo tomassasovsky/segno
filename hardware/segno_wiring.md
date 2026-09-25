@@ -1,4 +1,4 @@
-<!-- cspell:words derating unswitched Reterminate -->
+<!-- cspell:words derating unswitched Reterminate Littelfuse PXCN FHAC -->
 # Segno console — system wiring plan
 
 How the console's subsystems connect: the **console board v3** (Pico 2 / RP2350,
@@ -22,9 +22,10 @@ longer applies to anything.
               |   fuse, T5A slow-blow, in series with the 20 V feed
               +--> BUCK_PI  (20->5 V) --> Pi 5 via its USB-C  --> Pi USB + NVMe
               +--> BUCK_AUX (20->5 V) --+--> console J3 --> pills + ring
-                                       +--> screen-power J1 --> switched rail
-                                            +--> J103/J203 --> screen power
-                                            +--> J102/J202 --> touch VBUS
+                                       +--> 7.5 A inline fuse --> screen-power J1
+                                                                  | switched rail
+                                                                  +--> J103/J203 --> screen power
+                                                                  +--> J102/J202 --> touch VBUS
 
    DATA / CONTROL
      console board <---- keyed 2x20 ribbon, ~10 cm ----> Pi 40-pin header
@@ -58,8 +59,8 @@ retained bucks. The 20 V / 5 A / 100 W contract accommodates this model; it
 does not establish enclosed thermal capacity or startup response.
 
 The screen switch calculations assume **5.0–5.25 V at its J1 under load**.
-The retained fixed nominal 5 V buck plus cable and connector losses does not
-guarantee that minimum. Further voltage is lost through the switch, fuses and
+The retained fixed nominal 5 V buck plus input fuse, cable and connector losses
+does not guarantee that minimum. Further voltage is lost through the switch, fuses and
 screen leads. The 6 A shared screen-board allowance therefore remains
 conditional on its stated electrical and thermal assumptions; neither a
 regulated 5.0 V at each screen nor an adjustable buck is implied.
@@ -89,6 +90,12 @@ regulated 5.0 V at each screen nor an adjustable buck is implied.
 - **Two bucks (B0GGHN97TK ×2), split BY RAIL, never paralleled.** Two outputs
   tied together have no current sharing: one hogs the load until it limits,
   then they hunt.
+- **Screen branch fuse:** one Littelfuse **028707.5PXCN** in **FHAC0001ZXJ**
+  inline holder, immediately after the AUX positive split near the buck.
+  Connect its output to screen J1 pin 1; ground goes directly to J1 pin 2.
+  Keep the console/ring branch separate. The
+  [required harness specification](kicad/screen_power/README.md#required-aux-branch-protection)
+  defines the parts, wiring and limits of this supplementary protection.
 
 | Buck | Loads | Design figure |
 | --- | --- | --- |
@@ -214,7 +221,7 @@ remain connected in parallel.
 
 | Connection | Pin map and harness |
 | --- | --- |
-| AUX buck → screen J1 | Pin 1 +5 V, pin 2 GND; dedicated short 16 AWG pair with VHR-2N housing and SVH-41T-P1.1 contacts. |
+| AUX buck → input fuse → screen J1 | Positive split → 028707.5PXCN in FHAC0001ZXJ near buck → J1 pin 1; ground direct to J1 pin 2. Dedicated short 16 AWG pair with VHR-2N housing and SVH-41T-P1.1 contacts; console/ring stay on their separate branch. |
 | Console J25 → screen J2 | Pin 1 GPIO17, pin 2 GND, straight pin-for-pin; one short 22 AWG XH2 lead. |
 | Pi USB 2.0 ports → J101/J201 | Two USB-A male-to-XH4 leads: 1 VBUS, 2 D−, 3 D+, 4 GND. Host VBUS feeds each relay coil only. |
 | J102 → UPERFECT touch | XH4-to-USB-C male: 1 fused switched VBUS, 2 D−, 3 D+, 4 GND. Preserve the source-role CC resistor in the plug. |
@@ -274,8 +281,9 @@ with no fold in the cable. 17 of the 40 ways carry something;
 **J25 is the two-wire screen-power control connector:** pin 1 is GPIO17
 (physical pin 11 on J2), and pin 2 is GND. Connect it pin-for-pin to J2 on the
 [screen-power board](kicad/screen_power/README.md). The existing Pi ribbon stays
-between the Pi and console board. Screen power comes directly from BUCK_AUX to
-the new board; J25 carries no 5 V. The new board provides the enable pull-down.
+between the Pi and console board. Screen power comes from BUCK_AUX through
+the dedicated inline fuse to the new board; J25 carries no 5 V. The new board
+provides the enable pull-down.
 
 The link needs **no level shifting**: RP2350 and Pi are both 3.3 V. The old
 1k8/3k3 divider and the AHCT gate on this path were the retired 5 V board's needs

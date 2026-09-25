@@ -34,9 +34,12 @@ Earlier screen-board readiness claims below are historical and superseded.
 
 The [completed Claude cloud review](reviews/screen-power-rev-k-1072/claude-cloud-assessment.md)
 found no verified K circuit/artwork defect and recommended first-prototype
-fabrication. Its two documentation corrections are applied; the board and
-Gerber archive are unchanged. Normal assembled operation still requires
-coordinated upstream 5 V protection and the previously documented qualification.
+fabrication. The [implemented follow-up](reviews/screen-power-claude-fixes-1072/verification.md)
+specifies an exact external screen-branch fuse/holder, includes its voltage
+drop in the conditional gate-drive calculation and replaces R8's approximate
+assembly model. Circuit values and manufacturing artwork remain unchanged.
+The fuse adds harness protection, not guaranteed MOSFET fault survival;
+assembled operation still needs the documented qualification.
 OpenCode Go reviews remain incomplete after provider limits.
 
 The 6 A shared switch allowance includes both main outputs, both touch outputs

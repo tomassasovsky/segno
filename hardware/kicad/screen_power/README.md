@@ -1,6 +1,6 @@
 <!-- cspell:words preorder Axicom Mbps energization Digi typec mrico kilohm -->
 <!-- cspell:words overvoltage derate autosuspend overmolds fanouts onsemi Nexperia Omron derating autoroutes pulldowns -->
-<!-- cspell:words SUP SUM Rds backfeed Micro pulldown Vgs Littelfuse Lumberg MMBT DMODEL stackup microstrip heatsinks -->
+<!-- cspell:words SUP SUM Rds backfeed Micro pulldown Vgs Littelfuse Lumberg MMBT DMODEL stackup microstrip heatsinks eleUniverse ATOF PXCN FHAC overcurrent -->
 # Screen power and touch switch
 
 Revision K retains the **two-layer, 68 × 76 mm** hand-soldered board with **3 mm
@@ -56,7 +56,7 @@ the removed factory variant, are historical only.
 
 | Connector | Function |
 | --- | --- |
-| J1, JST VH 2-pin | Dedicated buck AUX input. Pin 1 = +5 V; pin 2 = ground. The provisional electrical check assumes **5.0–5.25 V here under load**. The retained fixed 5 V buck has not been shown to meet that floor after wiring drop; verify this during assembled validation. Do not assume it is adjustable. |
+| J1, JST VH 2-pin | Dedicated buck AUX input through the required inline fuse below. Pin 1 = +5 V; pin 2 = ground. The provisional electrical check assumes **5.0–5.25 V here under load**. The retained fixed 5 V buck has not been shown to meet that floor after fuse and wiring drop; verify this during assembled validation. Do not assume it is adjustable. |
 | J2, JST XH 2-pin | Console J25 control. Pin 1 = BCM GPIO17; pin 2 = ground. One two-wire cable, numbered pins connected 1:1. |
 | J101 / J201, JST XH 4-pin | USB-A male to XH cable from each Pi USB 2.0 host port; channels 1 / 2. |
 | J102 / J202, JST XH 4-pin | Direct XH-to-USB-C male cable to UPERFECT (channel 1), and XH-to-Micro-B male cable to APROTII (channel 2). |
@@ -157,6 +157,28 @@ Never connect a direct Pi-to-display touch cable around this board: that would
 restore the observed alternate power path. Upstream USB VBUS only feeds its own
 relay coil and bypass capacitor, and never connects to a screen supply.
 
+### Required AUX branch protection
+
+Fit one **Littelfuse 028707.5PXCN, 7.5 A / 32 VDC ATOF fuse**, in a
+**FHAC0001ZXJ** covered inline holder. The
+[holder datasheet](https://www.littelfuse.com/assetdocs/littelfuse-fuse-holder-ato-fhac-datasheet-rd1?assetguid=272e0b1a-a576-4173-8740-c1eb469efd79)
+specifies **20 A and 16 AWG leads**. Wire **AUX positive split → fuse near the
+buck → J1 pin 1**; connect ground directly to **J1 pin 2**. Use 16 AWG for
+both conductors, insulate and strain-relieve splices, and identify both black
+holder leads as positive. Console/ring power stays on its separate branch.
+
+The [fuse's typical derating table](https://www.littelfuse.com/assetdocs/littelfuse-datasheet-287-atof?assetguid=43dcdce8-8ca2-426f-8998-7e566f048d40)
+allows 6 A at 65 °C and 5 A at 85 °C; final terminals and wiring affect this.
+Specified maximum opening times are 600 s at 10.125 A, 50 s at 12 A and 5 s
+at 15 A. These do not establish clearing from a nominal 10 A source.
+
+The retained [eleUniverse B0GGHN97TK buck](https://www.amazon.com/dp/B0GGHN97TK)
+advertises overcurrent, short-circuit and thermal protection without thresholds
+or response curves. The added fuse provides supplementary harness coverage
+upstream of the board's four branch fuses. It is not an active current limiter
+or a guarantee of MOSFET survival, startup coordination or isolation after a
+shorted switch. The existing assembled qualification still applies.
+
 ## Circuit and limits
 
 Q3/Q4 are common-source, back-to-back P-channel MOSFETs. Their gates pull up
@@ -208,8 +230,8 @@ an eye/signal-integrity check and functional tests with the actual cables.
   0.25 mm annulus for the selected part's maximum rectangular leads.
 - TO-220 tabs are electrically live drains. Prevent contact with each other,
   the enclosure and mounting hardware. Do not fit an uninsulated shared heatsink.
-- Provide suitable protection upstream of J1 and appropriately rated wiring.
-  The on-board fuses do not protect the shared input cable or the entire switch.
+- Fit the specified AUX harness fuse and holder upstream of J1. The on-board
+  fuses alone do not cover the shared input cable or the entire switch.
 
 ## Placement and routing
 
@@ -284,7 +306,8 @@ bottom) and [Sierra Circuits' placement guidance](https://www.protoexpress.com/b
   and [JST XH control harness](https://www.jst.com/wp-content/uploads/2021/01/eXH.pdf).
 
 `hand/bom.csv` lists every populated component. `external_bom.csv`
-lists harness housings, contacts, existing cables and mounting hardware.
+lists the required input fuse and holder, harness housings, contacts, existing
+cables and mounting hardware.
 All 37 populated components have bundled STEP models; the four bare mounting
 holes have no separate solid body. Custom models are simplified dimensioned
 assembly models, not vendor CAD. See [model sources and limitations](models/README.md).
@@ -342,11 +365,25 @@ startup safe operating area nor fuse-clearing behavior is proven by the review.
 
 The resistance estimate requires at least −4.5 V gate drive, for which the
 Vishay part specifies its 15 mΩ maximum. The calculation uses 5.0–5.25 V **at
-J1**, not merely the buck label. A fixed 5 V buck plus connector and wire drop
-does not establish that lower bound; below it, the guaranteed-resistance
+J1**, not merely the buck label. The input fuse's typical 10.91 mΩ cold
+resistance adds about **46 mV at 4.25 A**, before holder, connector, wire and
+temperature effects. A fixed 5 V buck does not establish the assumed J1 lower
+bound after these drops; below it, the guaranteed-resistance
 calculation needs measured gate voltage. This is a qualification limit, not
 evidence that the switch stops working immediately below 5.0 V. See the
 [power and wiring audit](../../../docs/reviews/screen-power-rev-k-1072/wiring-and-power.md).
+
+Using the same estimated hot resistance, 1% resistor tolerances and 0.2 V
+Q1 saturation assumption, `check.py` reports the following supply margins:
+
+| Shared load | Model-required J1 minimum for 4.5 V gate drive | Cold fuse drop | Remaining loss budget from an ideal 5.000 V buck |
+| --- | ---: | ---: | ---: |
+| 4.25 A | 4.874 V | 46 mV | 80 mV |
+| 6 A | 4.918 V | 65 mV | 16 mV |
+
+The remaining budget must cover the warmer fuse's extra resistance, holder,
+wire, crimps and buck tolerance. It does not establish an actual source floor;
+the 6 A case has very little margin even before these additional losses.
 
 No heatsinks are expected for these screens; Q3/Q4 remain upright in their
 existing positions. Confirm temperature at maximum brightness in the warmed

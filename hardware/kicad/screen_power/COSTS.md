@@ -1,6 +1,6 @@
 # Screen-power revision K component cost estimate
 
-<!-- cspell:words DigiKey MOSFETs onsemi Littelfuse VHR SXH XHP SVH SUP -->
+<!-- cspell:words DigiKey MOSFETs onsemi Littelfuse VHR SXH XHP SVH SUP PXCN FHAC -->
 
 **USD, checked 22 September 2026.** The 37 populated through-hole components
 cost **$33.66** using published single-unit distributor prices. Allow **$35–40
@@ -79,12 +79,29 @@ DigiKey listed 2,000 in stock at $5.10 each on 22 September 2026. The other
 line items retain the earlier same-day price snapshot; they were not refreshed
 by this relay change.
 
+## Required AUX input protection
+
+These two external harness parts are required in addition to the 37 PCB
+components. **Single-unit USD prices checked 25 September 2026**; both were
+listed in stock. The existing buck is reused.
+
+| Item | Exact ordering number | Qty | Unit / total USD | Price source |
+| --- | --- | ---: | ---: | --- |
+| Screen input fuse | Littelfuse 028707.5PXCN | 1 | $0.44 | [DigiKey](https://www.digikey.com/en/products/detail/littelfuse-inc/028707-5PXCN/2519829) |
+| Covered inline holder | Littelfuse FHAC0001ZXJ | 1 | $7.37 | [DigiKey](https://www.digikey.com/en/products/detail/littelfuse-commercial-vehicle-products/FHAC0001ZXJ/2004062) |
+| **Required input protection** | | **2** | **$7.81** | |
+
+The [wiring instructions](README.md#required-aux-branch-protection) locate this
+fuse near the AUX buck on the dedicated screen branch. Its holder includes
+the leads; the wire allowance below covers the remaining harness material.
+
 ## External wiring and mounting allowance
 
-These are **planning allowances, not supplier quotes**. They cover all rows
-of the external wiring BOM while the final power-lead termination and enclosure
-mounting lengths remain unselected. Do not add a second set of XH4 housings
-to the ready-made data cables: their housings are already included.
+These are **planning allowances, not supplier quotes**. Together with the
+priced input-protection parts above, they cover the external wiring BOM while
+the final power-lead termination and enclosure mounting lengths remain
+unselected. Do not add a second set of XH4 housings to the ready-made data
+cables: their housings are already included.
 
 | Item | Quantity | Estimated total USD |
 | --- | ---: | ---: |
@@ -98,9 +115,9 @@ to the ready-made data cables: their housings are already included.
 | Existing HDMI cables | 2 reused | $0 additional |
 | **External wiring and mounting allowance** | | **$23–48** |
 
-That gives **about $57–82 for fitted electronic parts, wiring and mounting**,
-before the bare PCB, any upstream protection not already present, shipping
-and taxes. An order with spare electronic parts is closer to **$58–88**.
+That gives **$64.47–89.47 for fitted electronic parts, required input
+protection, wiring and mounting**, before the bare PCB, shipping and taxes.
+An order with spare electronic parts is closer to **$66–96**.
 PCB fabrication is not quoted here: it needs the selected two-layer stackup,
 copper weights and order quantity. Existing Pi, screens, buck converter and
 HDMI cables are reused and excluded from the new-build component subtotal.

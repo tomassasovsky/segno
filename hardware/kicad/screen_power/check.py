@@ -511,7 +511,21 @@ def numerical_checks(variant, components, errors):
     # Defined operating envelope: AUX 5.0–5.25V at the board, 6A maximum
     # combined design load. Hot resistance factor is an estimate, not a rating.
     v_source_min = 5.0 - 6*.015*1.7
-    gate_min = (v_source_min-.2)*(r[4]*.99)/(r[4]*.99+r[3]*1.01)
+    gate_divider = (r[4]*.99)/(r[4]*.99+r[3]*1.01)
+    gate_min = (v_source_min-.2)*gate_divider
+    # The retained buck is nominally 5V BEFORE the external fuse/harness.
+    # Littelfuse ATOF 287: 7.5A fuse cold resistance is typically 10.91mOhm.
+    # These scenarios expose the missing loss budget; they are not a source
+    # tolerance, hot resistance bound, or qualification of actual hardware.
+    supply_margin = []
+    for load in (4.25, 6):
+        required_j1 = 4.5/gate_divider + .2 + load*.015*1.7
+        cold_fuse_drop = load*.01091
+        supply_margin.append({
+            "load_A":load,
+            "required_J1_V_for_4_5V_gate_with_estimated_hot_Rds":required_j1,
+            "typical_cold_input_fuse_drop_V":cold_fuse_drop,
+            "remaining_loss_budget_from_ideal_5V_buck_V":5-cold_fuse_drop-required_j1})
     base_min = (2.4-.95)/(r[1]*1.01)-.95/(r[2]*.99)
     sink_peak = 5.25/(r[3]*.99)+5.25/(r[5]*.99)
     pnp_base_min = (5.0-.95-1.0-.2)/(r[5]*1.01)-.95/(r[6]*.99)
@@ -534,6 +548,8 @@ def numerical_checks(variant, components, errors):
     if relay_coil_min < 3.38:
         fail(errors,"relay_pickup","IM02TS initial coil voltage is below its 3.38V operate threshold")
     return {"aux_input_min_V":5.0,"aux_input_max_V":5.25,"combined_design_load_A":6,
+            "aux_voltage_reference":"J1 under load; not the nominal buck label",
+            "nominal_supply_scenarios_not_qualified":supply_margin,
             "gate_min_V_with_estimated_hot_Rds":gate_min,"hot_Rds_factor_is_estimate":1.7,
             "gpio_assumed_minimum_high_V":2.4,"gpio_base_min_mA":base_min*1000,
             "collector_peak_mA":sink_peak*1000,"bleeder_max_W":bleed_max,

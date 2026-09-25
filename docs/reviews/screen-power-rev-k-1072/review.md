@@ -5,12 +5,14 @@
 Six confirmed findings resolved: 0 critical, 4 important, 2 suggestions.
 Zero unresolved findings in the original local implementation reviews. The
 subsequent Claude cloud report produced two accepted documentation corrections
-and reiterated the open upstream-protection assembly requirement. OpenCode Go
+and reiterated the upstream-protection assembly requirement. The
+[implemented follow-up](../screen-power-claude-fixes-1072/verification.md) now
+specifies that external fuse/holder and replaces the R8 preview. OpenCode Go
 coverage remains incomplete; this is not a complete multi-model sign-off.
 
 Scope: intended working diff from `9a5798be6c4ea9b0aae2a88fe7168b6751cab441`,
 including new models and documents, plus a fresh complete circuit, datasheet,
-system-wiring and assembly audit. Final native board:
+system-wiring and assembly audit. Originally reviewed native board:
 `d35484d551cf8f526f62c4356accbff0492c28999beb0e8830801c39f00c83da`.
 
 ## Findings index
@@ -53,9 +55,9 @@ local session exhaustion and the retried DeepSeek/Kimi/Grok Go quota failures.
 A later owner-authorized Claude cloud session completed on the exact K board
 and ZIP. Its [assessment](claude-cloud-assessment.md) accepts the Gerber-job
 wording and R8 model-coverage corrections, while rejecting unsupported fuse,
-startup and body-clearance conclusions. No PCB change was justified. Upstream
-5 V protection remains an assembly requirement; no generic fuse is represented
-as a verified solution. No incomplete external run was relabeled as clean.
+startup and body-clearance conclusions. No circuit or routing change was justified. The later
+follow-up specifies exact external protection parts and corrects the preview;
+source coordination and actual hardware qualification remain unproven. No incomplete external run was relabeled as clean.
 
 ## Validation and release boundary
 

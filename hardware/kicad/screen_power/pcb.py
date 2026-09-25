@@ -128,6 +128,8 @@ def build(variant):
                     filename = "Panasonic_EEUFR1A151.step"
                 elif ref in ("C1", "C101", "C201"):
                     filename = "WIMA_MKS2C031001A00KSSD.step"
+                elif ref == "R8":
+                    filename = "Vishay_PR01_P10.16mm.step"
                 if not (HERE / "models" / filename).is_file():
                     raise ValueError(f"3D model missing for {ref}: {filename}")
                 model.m_Filename = "${KIPRJMOD}/../models/" + filename

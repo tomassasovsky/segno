@@ -92,6 +92,29 @@ def film_capacitor():
     save(a, "WIMA_MKS2C031001A00KSSD")
 
 
+def power_resistor():
+    a = cq.Assembly(name="Vishay_PR01_P10_16mm")
+    # Vishay 28729 p16: maximum 6.5mm main body, 8mm coating extent,
+    # 2.5mm diameter and 0.63mm leads. The end coating deliberately uses
+    # the full diameter as a conservative envelope, not a vendor shape.
+    pitch, height = 10.16, 1.75
+    start = (pitch - 8) / 2
+    for name, x, length, color in (
+            ("coating_left", start, .75, cq.Color(.48, .08, .06)),
+            ("main_body", start+.75, 6.5, cq.Color(.65, .10, .07)),
+            ("coating_right", start+7.25, .75, cq.Color(.48, .08, .06))):
+        body = cq.Workplane("YZ").circle(1.25).extrude(length)
+        add(a, body.translate((x, 0, height)), name, color)
+    # Simplified formed leads: 0.5mm body standoff, trimmed at z=-3mm.
+    for i, (x, end) in enumerate(((0, start), (start+8, pitch))):
+        wire = cq.Workplane("YZ").circle(.315).extrude(end-x)
+        add(a, wire.translate((x, 0, height)), f"wire_{i}")
+    for i, x in enumerate((0, pitch)):
+        leg = cq.Workplane("XY").circle(.315).extrude(height+3)
+        add(a, leg.translate((x, 0, -3)), f"lead_{i}")
+    save(a, "Vishay_PR01_P10.16mm")
+
+
 if __name__ == "__main__":
     relay()
     fuse()
@@ -99,3 +122,4 @@ if __name__ == "__main__":
     electrolytic("Panasonic_EEUFR1A221", 6.3, 11.2, 2.5, .5)
     electrolytic("Panasonic_EEUFR1A151", 5, 11, 2, .5)
     film_capacitor()
+    power_resistor()
