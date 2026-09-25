@@ -62,7 +62,7 @@ do_install() {
 
     # What the app expects of the board, recorded where the flasher can read it.
     # Both come from the firmware source in this same commit; see
-    # firmware/console_board/pedal_link.h.
+    # firmware/libraries/SegnoPanel/src/pedal_link.h.
     install -m 0644 "$fw/version" ${D}${libdir}/segno/console-board/version
 
     install -d ${D}${bindir}

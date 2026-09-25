@@ -28,7 +28,9 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 5: CTRL kind NONE -- the board can now say a jack is EMPTY (a plug pulled
+/* 7: STATE carries the engine-owned Song queue target and completion.
+ * 6: PD_STATUS reports the inlet contract and explicitly unknown readings.
+ * 5: CTRL kind NONE -- the board can now say a jack is EMPTY (a plug pulled
  * out, or the tip-normal contact on a switched jack), instead of reporting an
  * unplugged jack as a pedal at full toe. 4: CTRL (0x04) grew a contact byte
  * and reports an expression pedal's RAW position; calibration moved to segno.
@@ -36,7 +38,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 5u
+#define PEDAL_LINK_PROTOCOL_VERSION 7u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -47,10 +49,12 @@ extern "C" {
  * adds a message type, never a hello byte. */
 #define PEDAL_LINK_TYPE_HELLO 0x03u    /* [protocol, fw major, fw minor] */
 #define PEDAL_LINK_TYPE_CTRL 0x04u     /* [jack, contact, kind, value] */
+#define PEDAL_LINK_TYPE_PD_STATUS 0x05u /* [state, flags, mV LE16, mA LE16] */
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
 
-#define PEDAL_LINK_STATE_LEN 19u
+#define PEDAL_LINK_STATE_LEN 21u
+#define PEDAL_LINK_PD_STATUS_LEN 6u
 #define PEDAL_LINK_MAX_PAYLOAD 32u
 #define PEDAL_LINK_MAX_FRAME (4u + PEDAL_LINK_MAX_PAYLOAD)
 
@@ -80,6 +84,8 @@ enum {
 };
 
 #define PEDAL_TRACK_COUNT 8u
+/* Zero means no queue; 1..8 addresses logical tracks 0..7. */
+#define PEDAL_NO_QUEUED_TRACK 0u
 
 /* The two CTRL jacks, in wire order. Each takes an expression pedal OR a
  * footswitch; the board tells them apart by what the tip does (a switch sits
@@ -111,6 +117,29 @@ enum {
   PEDAL_CTRL_KIND_COUNT
 };
 
+enum {
+  PEDAL_PD_UNKNOWN = 0,
+  PEDAL_PD_UNATTACHED,
+  PEDAL_PD_NEGOTIATING,
+  PEDAL_PD_CONTRACT,
+  PEDAL_PD_READ_ERROR,
+  PEDAL_PD_STALE,
+  PEDAL_PD_COUNT
+};
+#define PEDAL_PD_CAPABILITY_MISMATCH 0x01u
+
+/* A current contract is not a measurement of consumption. voltage_mv == 0
+ * explicitly means that voltage is not observable; never infer 20 V from
+ * programmed sink PDOs. Only CONTRACT may carry flags/current/voltage.
+ * Fixed voltage: 5000..20000 mV in 50 mV steps, or 0 unknown.
+ * Requested operating current: 10..5000 mA in 10 mA steps. */
+typedef struct pedal_pd_status {
+  uint8_t state;
+  uint8_t flags;
+  uint16_t voltage_mv;
+  uint16_t current_ma;
+} pedal_pd_status;
+
 /* Enum wire values, mirroring the Dart enums' declaration order. */
 enum { PEDAL_MODE_REC = 0, PEDAL_MODE_PLAY, PEDAL_MODE_FX, PEDAL_MODE_COUNT };
 enum {
@@ -139,6 +168,10 @@ enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_
  *   6..13  track_leds[0..7]
  *   14..17 loop_length_micros, uint32 little-endian
  *   18     master_gain, 0..255
+ *   19     queued_track: 0 none, 1..8 logical track index + 1
+ *   20     queued_progress: 0..254 of 255; 0 when no queue
+ * Completion never promotes playback locally. The engine commits at the
+ * source loop boundary and sends ordinary playing LEDs with no queue.
  */
 typedef struct pedal_state {
   uint8_t clear_fade;
@@ -153,6 +186,8 @@ typedef struct pedal_state {
   uint8_t track_leds[PEDAL_TRACK_COUNT];
   uint32_t loop_length_micros;
   uint8_t master_gain;
+  uint8_t queued_track;
+  uint8_t queued_progress;
 } pedal_state;
 
 /* Frame a payload. `out` must hold PEDAL_LINK_MAX_FRAME bytes. Returns the
@@ -164,12 +199,16 @@ size_t pedal_link_encode_encoder(int8_t delta, uint8_t *out);
 size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out);
 size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8_t value,
                               uint8_t *out);
+/* Returns 0 for an invalid status, without emitting a partial frame. */
+size_t pedal_link_encode_pd_status(const pedal_pd_status *status, uint8_t *out);
 size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
  * out-of-range enum, a reserved flag bit, an active_bank > 1 or a
  * selected_track >= PEDAL_TRACK_COUNT - the same rejections as the Dart side. */
 int pedal_link_decode_state(const uint8_t *payload, uint8_t len, pedal_state *out);
+int pedal_link_decode_pd_status(const uint8_t *payload, uint8_t len,
+                                pedal_pd_status *out);
 
 /* The payload length a message type carries, or -1 for a type this codec does
  * not know. Every message is fixed-length, so a parser can reject a corrupted

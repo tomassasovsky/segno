@@ -252,7 +252,7 @@ enum LooperMode {
   /// land in part B3; unimplemented here.
   sync,
 
-  /// Section sequencing. Semantics land in part B4; unimplemented here.
+  /// Section sequencing, with play requests handed off at the next loop wrap.
   song,
 
   /// Primary track plus independently start/stoppable, quantized section
@@ -925,6 +925,8 @@ class EngineSnapshot {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.songQueuedTrack,
+    this.songQueueProgress = 0,
     this.tracks = const [],
   });
 
@@ -977,6 +979,8 @@ class EngineSnapshot {
       countInBeatsLeft = 0,
       looperMode = LooperMode.multi,
       primaryTrack = -1,
+      songQueuedTrack = null,
+      songQueueProgress = 0,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -1035,6 +1039,10 @@ class EngineSnapshot {
     countInBeatsLeft: native.count_in_beats_left,
     looperMode: LooperMode.fromCode(native.looper_mode),
     primaryTrack: native.primary_track,
+    songQueuedTrack: native.song_queued_track < 0
+        ? null
+        : native.song_queued_track,
+    songQueueProgress: native.song_queue_progress,
     tracks: tracks,
   );
 
@@ -1259,6 +1267,13 @@ class EngineSnapshot {
   /// in-range channel, never back to `-1`, once first crowned.
   final int primaryTrack;
 
+  /// Song section waiting for the current section's next wrap, or `null`.
+  final int? songQueuedTrack;
+
+  /// Fraction of the queued wait elapsed, measured by the audio engine.
+  /// Zero when no section is queued; the target starts at the next wrap.
+  final double songQueueProgress;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -1341,6 +1356,8 @@ class EngineSnapshot {
           countInBeatsLeft == other.countInBeatsLeft &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
+          songQueuedTrack == other.songQueuedTrack &&
+          songQueueProgress == other.songQueueProgress &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -1392,6 +1409,8 @@ class EngineSnapshot {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    songQueuedTrack,
+    songQueueProgress,
     ...tracks,
   ]);
 

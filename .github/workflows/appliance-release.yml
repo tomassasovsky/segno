@@ -178,20 +178,22 @@ jobs:
         run: |
           set -eu
           arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-          arduino-cli core install rp2040:rp2040 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-          arduino-cli lib install "Adafruit NeoPixel"
+          arduino-cli core install rp2040:rp2040@6.0.0 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli lib install "Adafruit NeoPixel@1.15.5" "NeoPixelBus by Makuna@2.8.4"
 
       - name: Compile the firmware and record what it speaks
         run: |
           set -eu
-          arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir fw-out
+          arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir fw-out
+          arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:seeed_xiao_rp2350 firmware/ring_board --output-dir ring-board
+          test -s ring-board/ring_board.ino.uf2
           mkdir -p console-board
           cp fw-out/console_board.ino.elf console-board/console_board.elf
 
           # The marker the boot-time flasher compares the board against. Both
           # numbers come from the firmware source in this same commit, so they
           # cannot drift from what was just compiled.
-          header=firmware/console_board/pedal_link.h
+          header=firmware/libraries/SegnoPanel/src/pedal_link.h
           protocol=$(sed -n 's/^#define PEDAL_LINK_PROTOCOL_VERSION \([0-9]*\)u.*/\1/p' "$header")
           major=$(sed -n 's/^static const uint8_t FW_MAJOR = \([0-9]*\);.*/\1/p' firmware/console_board/console_board.ino)
           minor=$(sed -n 's/^static const uint8_t FW_MINOR = \([0-9]*\);.*/\1/p' firmware/console_board/console_board.ino)
@@ -204,6 +206,14 @@ jobs:
           name: segno-console-board
           path: console-board
           retention-days: 1
+
+      # Ring firmware is loaded through the XIAO's USB BOOTSEL before mounting;
+      # the console SWD flasher cannot reach this independent module.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: segno-ring-board
+          path: ring-board/ring_board.ino.uf2
+          retention-days: 30
 
   build-image:
     needs: [determine-meta, build-app, build-console-firmware]

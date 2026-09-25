@@ -43,7 +43,40 @@ size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8
   return pedal_link_encode(PEDAL_LINK_TYPE_CTRL, payload, 4, out);
 }
 
+static int pd_status_valid(const pedal_pd_status *s) {
+  if (s->state >= PEDAL_PD_COUNT || (s->flags & ~PEDAL_PD_CAPABILITY_MISMATCH)) return 0;
+  if (s->state != PEDAL_PD_CONTRACT) {
+    return s->flags == 0 && s->voltage_mv == 0 && s->current_ma == 0;
+  }
+  if (s->current_ma < 10 || s->current_ma > 5000 || s->current_ma % 10) return 0;
+  return s->voltage_mv == 0 || (s->voltage_mv >= 5000 && s->voltage_mv <= 20000 &&
+                               s->voltage_mv % 50 == 0);
+}
+
+size_t pedal_link_encode_pd_status(const pedal_pd_status *s, uint8_t *out) {
+  if (!pd_status_valid(s)) return 0;
+  const uint8_t p[PEDAL_LINK_PD_STATUS_LEN] = {
+    s->state, s->flags,
+    (uint8_t)s->voltage_mv, (uint8_t)(s->voltage_mv >> 8),
+    (uint8_t)s->current_ma, (uint8_t)(s->current_ma >> 8)
+  };
+  return pedal_link_encode(PEDAL_LINK_TYPE_PD_STATUS, p, PEDAL_LINK_PD_STATUS_LEN, out);
+}
+
+int pedal_link_decode_pd_status(const uint8_t *p, uint8_t len, pedal_pd_status *out) {
+  if (len != PEDAL_LINK_PD_STATUS_LEN) return 0;
+  const pedal_pd_status s = {
+    p[0], p[1], (uint16_t)(p[2] | (uint16_t)p[3] << 8),
+    (uint16_t)(p[4] | (uint16_t)p[5] << 8)
+  };
+  if (!pd_status_valid(&s)) return 0;
+  *out = s;
+  return 1;
+}
+
 size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
+  if (s->queued_track > PEDAL_TRACK_COUNT || s->queued_progress == 255 ||
+      (!s->queued_track && s->queued_progress)) return 0;
   uint8_t p[PEDAL_LINK_STATE_LEN];
   p[0] = (uint8_t)((s->clear_fade ? 0x01u : 0u) | (s->goodbye ? 0x02u : 0u) |
                    (s->performance_armed ? 0x04u : 0u) | (s->counting_in ? 0x08u : 0u));
@@ -58,6 +91,8 @@ size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
   p[16] = (uint8_t)((s->loop_length_micros >> 16) & 0xFFu);
   p[17] = (uint8_t)((s->loop_length_micros >> 24) & 0xFFu);
   p[18] = s->master_gain;
+  p[19] = s->queued_track;
+  p[20] = s->queued_progress;
   return pedal_link_encode(PEDAL_LINK_TYPE_STATE, p, PEDAL_LINK_STATE_LEN, out);
 }
 
@@ -69,6 +104,7 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   if (p[3] >= PEDAL_GLOBAL_COUNT) return 0;
   if (p[4] > 1) return 0;
   if (p[5] >= PEDAL_TRACK_COUNT) return 0;
+  if (p[19] > PEDAL_TRACK_COUNT || p[20] == 255 || (!p[19] && p[20])) return 0;
   for (uint8_t i = 0; i < PEDAL_TRACK_COUNT; i++) {
     if (p[6 + i] >= PEDAL_LED_COUNT) return 0;
   }
@@ -85,6 +121,8 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   out->loop_length_micros = (uint32_t)p[14] | ((uint32_t)p[15] << 8) |
                             ((uint32_t)p[16] << 16) | ((uint32_t)p[17] << 24);
   out->master_gain = p[18];
+  out->queued_track = p[19];
+  out->queued_progress = p[20];
   return 1;
 }
 
@@ -94,6 +132,7 @@ int pedal_link_payload_len(uint8_t type) {
     case PEDAL_LINK_TYPE_ENCODER: return 1;
     case PEDAL_LINK_TYPE_HELLO: return 3;
     case PEDAL_LINK_TYPE_CTRL: return 4;
+    case PEDAL_LINK_TYPE_PD_STATUS: return (int)PEDAL_LINK_PD_STATUS_LEN;
     case PEDAL_LINK_TYPE_STATE: return (int)PEDAL_LINK_STATE_LEN;
     default: return -1;
   }

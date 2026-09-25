@@ -30,6 +30,8 @@ void main() {
       expect(blank.performanceArmed, isFalse);
       expect(blank.looperMode, PedalLooperMode.multi);
       expect(blank.countingIn, isFalse);
+      expect(blank.queuedTrack, isNull);
+      expect(blank.queuedProgress, 0);
     });
 
     test('sets isGoodbye when requested', () {
@@ -74,6 +76,19 @@ void main() {
   });
 
   group('copyWith', () {
+    test('queue progress changes equality and can be cleared together', () {
+      final queued = sample().copyWith(queuedTrack: 7, queuedProgress: 127);
+      expect(queued.queuedTrack, 7);
+      expect(queued.queuedProgress, 127);
+      expect(queued.copyWith(), queued);
+      expect(queued, isNot(queued.copyWith(queuedProgress: 128)));
+      expect(queued, isNot(queued.copyWith(queuedTrack: 6)));
+      expect(queued.copyWith(clearQueue: true), sample());
+      expect(
+        queued.toString(),
+        contains('queuedTrack: 7, queuedProgress: 127'),
+      );
+    });
     test('replaces only the given fields', () {
       final updated = sample().copyWith(
         globalColor: GlobalColor.red,
@@ -110,6 +125,26 @@ void main() {
   });
 
   group('assertions', () {
+    test('rejects invalid queue targets and completion without a queue', () {
+      for (final target in [-1, 8]) {
+        expect(
+          () => sample().copyWith(queuedTrack: target),
+          throwsA(isA<AssertionError>()),
+        );
+      }
+      expect(
+        () => sample().copyWith(queuedProgress: 1),
+        throwsA(isA<AssertionError>()),
+      );
+      expect(
+        () => sample().copyWith(queuedTrack: 0, queuedProgress: 255),
+        throwsA(isA<AssertionError>()),
+      );
+      expect(
+        () => sample().copyWith(queuedTrack: 0, queuedProgress: -1),
+        throwsA(isA<AssertionError>()),
+      );
+    });
     test('rejects the wrong number of track LEDs', () {
       expect(
         () => PedalStateFrame(

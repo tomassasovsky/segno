@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../console_board/pedal_link.h"
+#include "../libraries/SegnoPanel/src/pedal_link.h"
 
 #define DEFAULT_FIXTURES "packages/pedal_repository/test/fixtures"
 
@@ -77,6 +77,10 @@ static const enum_pin GLOBAL_PINS[] = {
 static const enum_pin LED_PINS[] = {
   {"off", PEDAL_LED_OFF}, {"green", PEDAL_LED_GREEN}, {"red", PEDAL_LED_RED},
   {"blue", PEDAL_LED_BLUE}};
+static const enum_pin PD_PINS[] = {
+  {"unknown", PEDAL_PD_UNKNOWN}, {"unattached", PEDAL_PD_UNATTACHED},
+  {"negotiating", PEDAL_PD_NEGOTIATING}, {"contract", PEDAL_PD_CONTRACT},
+  {"readError", PEDAL_PD_READ_ERROR}, {"stale", PEDAL_PD_STALE}};
 
 typedef struct { const char *table; const enum_pin *pins; size_t n; int count; } enum_table;
 static const enum_table TABLES[] = {
@@ -85,6 +89,7 @@ static const enum_table TABLES[] = {
   {"looper", LOOPER_PINS, sizeof(LOOPER_PINS) / sizeof(*LOOPER_PINS), PEDAL_LOOPER_COUNT},
   {"global", GLOBAL_PINS, sizeof(GLOBAL_PINS) / sizeof(*GLOBAL_PINS), PEDAL_GLOBAL_COUNT},
   {"led", LED_PINS, sizeof(LED_PINS) / sizeof(*LED_PINS), PEDAL_LED_COUNT},
+  {"pd", PD_PINS, sizeof(PD_PINS) / sizeof(*PD_PINS), PEDAL_PD_COUNT},
 };
 
 static int g_enum_seen[sizeof(TABLES) / sizeof(*TABLES)];
@@ -110,6 +115,9 @@ static void check_enum_fixture(const char *name, uint8_t type, const uint8_t *pa
     int got;
     if (strcmp(tab->table, "button") == 0) {
       CHECK(type == PEDAL_LINK_TYPE_BUTTON, "%s: not a BUTTON frame", name);
+      got = payload[0];
+    } else if (strcmp(tab->table, "pd") == 0) {
+      CHECK(type == PEDAL_LINK_TYPE_PD_STATUS, "%s: not a PD_STATUS frame", name);
       got = payload[0];
     } else {
       CHECK(type == PEDAL_LINK_TYPE_STATE, "%s: not a STATE frame", name);
@@ -179,6 +187,26 @@ static void check_fixture(const char *dir, const char *name) {
       CHECK(len == 3 && payload[0] == PEDAL_LINK_PROTOCOL_VERSION, "%s: bad hello", name);
       m = pedal_link_encode_hello(payload[1], payload[2], again);
       break;
+    case PEDAL_LINK_TYPE_PD_STATUS: {
+      pedal_pd_status status;
+      if (!pedal_link_decode_pd_status(payload, len, &status)) {
+        CHECK(0, "%s: decode_pd_status rejected it", name);
+        return;
+      }
+      m = pedal_link_encode_pd_status(&status, again);
+      if (strcmp(name, "pd_contract_20v_5a.bin") == 0) {
+        CHECK(status.state == PEDAL_PD_CONTRACT && status.voltage_mv == 20000 &&
+              status.current_ma == 5000 && status.flags == 0, "PD known fields differ");
+      } else if (strcmp(name, "pd_contract_unknown_voltage.bin") == 0) {
+        CHECK(status.state == PEDAL_PD_CONTRACT && status.voltage_mv == 0 &&
+              status.current_ma == 5000 && status.flags == 0, "PD unknown voltage lost");
+      } else if (strcmp(name, "pd_mismatch.bin") == 0) {
+        CHECK(status.state == PEDAL_PD_CONTRACT && status.voltage_mv == 0 &&
+              status.current_ma == 3000 && status.flags == PEDAL_PD_CAPABILITY_MISMATCH,
+              "PD mismatch fields differ");
+      }
+      break;
+    }
     default:
       CHECK(0, "%s: unknown type 0x%02X", name, type);
       return;
@@ -219,10 +247,32 @@ static void check_fixture(const char *dir, const char *name) {
   } else if (strcmp(name, "mode_counting_in.bin") == 0) {
     CHECK(st.counting_in == 1 && st.looper_mode == PEDAL_LOOPER_BAND && st.global_color == PEDAL_GLOBAL_RED,
           "mode_counting_in: fields differ");
+  } else if (strncmp(name, "song_queue_", 11) == 0) {
+    const int cancelled = strcmp(name, "song_queue_cancelled.bin") == 0;
+    const int progress = cancelled ? 0 : atoi(name + 11);
+    CHECK(st.looper_mode == PEDAL_LOOPER_SONG && st.mode == PEDAL_MODE_PLAY &&
+              st.queued_track == (cancelled ? 0 : 8) && st.queued_progress == progress,
+          "%s: queued track or progress differs", name);
   }
 }
 
 static void check_rejections(void) {
+  /* Zero-initialized state is no queue. Never accept a timer claiming 100%%. */
+  pedal_state queued = {0}, decoded;
+  uint8_t state_frame[PEDAL_LINK_MAX_FRAME];
+  CHECK(pedal_link_encode_state(&queued, state_frame) == PEDAL_LINK_STATE_LEN + 4,
+        "blank state does not encode");
+  const uint8_t invalid_queue[][2] = {{9, 0}, {255, 0}, {1, 255}, {0, 1}};
+  for (size_t i = 0; i < sizeof(invalid_queue) / sizeof(*invalid_queue); ++i) {
+    state_frame[3 + 19] = invalid_queue[i][0];
+    state_frame[3 + 20] = invalid_queue[i][1];
+    CHECK(!pedal_link_decode_state(state_frame + 3, PEDAL_LINK_STATE_LEN, &decoded),
+          "invalid queue was decoded");
+    queued.queued_track = invalid_queue[i][0];
+    queued.queued_progress = invalid_queue[i][1];
+    CHECK(pedal_link_encode_state(&queued, state_frame) == 0,
+          "invalid queue was encoded");
+  }
   uint8_t frame[PEDAL_LINK_MAX_FRAME];
   size_t n = pedal_link_encode_button(PEDAL_BTN_UNDO, 1, frame);
   CHECK(n == 6, "button frame is %zu bytes, want 6", n);

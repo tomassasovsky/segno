@@ -528,10 +528,12 @@ class ControlCubit extends Cubit<ControlState> {
           state.copyWith(
             mode: InteractionMode.mute,
             excluded: const <int>{},
-            parkedResume: {
-              for (final track in _tracks)
-                if (_playable(track)) track.channel,
-            },
+            parkedResume: _l.transport.looperMode == LooperMode.song
+                ? _running()
+                : {
+                    for (final track in _tracks)
+                      if (_playable(track)) track.channel,
+                  },
           ),
         );
       case InteractionMode.fx:
@@ -670,6 +672,23 @@ class ControlCubit extends Cubit<ControlState> {
   /// Mute mode Rec/Play: resume while parked; while running, expand to the
   /// whole content set (a no-op when everything audible is already in).
   void _muteRecPlay() {
+    if (_l.transport.looperMode == LooperMode.song) {
+      // Song has one current section. Expanding to the full content set would
+      // turn stopped sections into successive queue/replacement commands.
+      if (!isParked(_l)) return;
+      final remembered = state.parkedResume
+          .where((channel) => _playable(_trackAt(channel)))
+          .firstOrNull;
+      final selected = _playable(_trackAt(state.cursor)) ? state.cursor : null;
+      final channel =
+          remembered ??
+          selected ??
+          _tracks.where((track) => track.hasContent).firstOrNull?.channel;
+      if (channel == null) return;
+      _playSongSection(channel);
+      emit(state.copyWith(parkedResume: const <int>{}));
+      return;
+    }
     if (isParked(_l)) {
       final resume = state.parkedResume.isNotEmpty
           ? state.parkedResume
@@ -762,7 +781,9 @@ class ControlCubit extends Cubit<ControlState> {
     if (running.isEmpty) return; // already parked: keep the resume set
     emit(
       state.copyWith(
-        parkedResume: {...running}..removeWhere(state.excluded.contains),
+        parkedResume: _l.transport.looperMode == LooperMode.song
+            ? running
+            : ({...running}..removeWhere(state.excluded.contains)),
       ),
     );
     for (final channel in running) {
@@ -782,10 +803,25 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.record:
         _recTrackPressed(channel);
       case InteractionMode.mute:
-        _muteTrackPressed(channel);
+        if (_l.transport.looperMode == LooperMode.song) {
+          _playSongSection(channel);
+        } else {
+          _muteTrackPressed(channel);
+        }
       case InteractionMode.fx:
         toggleTrackChain(channel);
     }
+  }
+
+  // The engine owns queue/cancel/replace and the sample-accurate wrap.
+  // Multi's mute/resume membership must not change a Song section.
+  void _playSongSection(int channel) {
+    final track = _trackAt(channel);
+    if (!_playable(track)) return;
+    if (track!.state == TrackState.stopped && track.muted) {
+      _looper.setMute(muted: false, channel: channel);
+    }
+    _looper.play(channel: channel);
   }
 
   /// Rec mode: select the track, or hand off a live recording to it.

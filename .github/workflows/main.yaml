@@ -192,7 +192,7 @@ jobs:
       - name: Build + run the pedal-link contract test (firmware C vs Dart fixtures)
         run: bash firmware/test/run_tests.sh
 
-  # Proves the console board firmware (Pico 2 / RP2350) still compiles. Without
+  # Proves console Pico 2 and ring XIAO RP2350 firmware still compile. Without
   # this a sketch that no longer builds would land on master green and only
   # surface at the next bench flash. The arduino-pico core is what the local
   # build uses (firmware/console_board/README.md).
@@ -209,14 +209,16 @@ jobs:
         run: |
           set -eu
           arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-          arduino-cli core install rp2040:rp2040 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-          arduino-cli lib install "Adafruit NeoPixel"
+          arduino-cli core install rp2040:rp2040@6.0.0 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli lib install "Adafruit NeoPixel@1.15.5" "NeoPixelBus by Makuna@2.8.4"
       - name: Compile the console board firmware
         run: |
           set -eu
-          arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir fw-out
+          arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir fw-out
           test -s fw-out/console_board.ino.elf
           test -s fw-out/console_board.ino.uf2
+          arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:seeed_xiao_rp2350 firmware/ring_board --output-dir ring-out
+          test -s ring-out/ring_board.ino.uf2
 
   # The same engine/MIDI suites under AddressSanitizer (#227): the strongest
   # net for buffer-sizing bugs — the class that stays green through every

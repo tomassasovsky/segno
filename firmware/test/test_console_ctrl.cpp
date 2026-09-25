@@ -48,6 +48,8 @@ static void bootAt(uint16_t raw) {
   fake_arduino::analog[CTRL_PIN[0]] = raw;
   fake_arduino::analog[CTRL_PIN[1]] = CTRL_MAX;
   g_ctrlLastSampleMs = 0;
+  fake_arduino::digital[CTRL_PRESENT_PIN[0]] = LOW;
+  fake_arduino::digital[CTRL_PRESENT_PIN[1]] = LOW;
   setup();
   advance(1000);
   fake_arduino::sent.clear();
@@ -57,9 +59,10 @@ static void testUnplugHoldsTheLastValue() {
   bootAt(2048);
   CHECK(g_ctrlKind[0] == CTRL_EXPRESSION, "mid-scale must identify an expression pedal");
   fake_arduino::analog[CTRL_PIN[0]] = CTRL_MAX;
-  advance(300);  // Past the quiet period, still waiting to confirm detachment.
-  CHECK(readings().empty(), "an unplug must not send full toe while detach is pending");
-  advance(1200);
+  fake_arduino::digital[CTRL_PRESENT_PIN[0]] = HIGH;
+  advance(30);
+  CHECK(readings().empty(), "an unplug must not send full toe while presence debounce is pending");
+  advance(50);
   const auto events = readings();
   CHECK(events.size() == 1, "an unplug must report NONE once, with no expression jump");
   CHECK(events[0].kind == PEDAL_CTRL_KIND_NONE, "the unplug must resolve to NONE");
@@ -83,17 +86,14 @@ static void testOrdinaryToeTravelStillReportsFullScale() {
   CHECK(events.back().value == 255, "normal toe travel must reach full scale");
 }
 
-static void testMovementCancelsPendingDetach() {
+static void testFastToeDoesNotFakeAnUnplug() {
   bootAt(2048);
   fake_arduino::analog[CTRL_PIN[0]] = CTRL_MAX;
-  advance(600);
-  CHECK(readings().empty(), "the candidate detach must hold its previous value");
-  fake_arduino::analog[CTRL_PIN[0]] = 1400;
-  advance(2000);
+  advance(1600);
   const auto events = readings();
-  CHECK(events.size() == 1, "movement must cancel detach and resume reporting");
-  CHECK(events[0].kind == PEDAL_CTRL_KIND_EXPRESSION, "a moving pedal is still attached");
-  CHECK(events[0].value == (1400 >> 4), "report the current raw position after settling");
+  CHECK(events.size() == 1, "fast toe travel reports one position");
+  CHECK(events[0].kind == PEDAL_CTRL_KIND_EXPRESSION && events[0].value == 255,
+        "physical presence prevents full toe from being mistaken for unplug");
 }
 
 static void testKnownSwitchEdgesRemainPrompt() {
@@ -113,7 +113,7 @@ static void testKnownSwitchEdgesRemainPrompt() {
 int main() {
   testUnplugHoldsTheLastValue();
   testOrdinaryToeTravelStillReportsFullScale();
-  testMovementCancelsPendingDetach();
+  testFastToeDoesNotFakeAnUnplug();
   testKnownSwitchEdgesRemainPrompt();
   std::puts("Console sketch CTRL tests: ALL PASSED");
 }

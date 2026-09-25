@@ -4,10 +4,11 @@ import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_ctrl.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
+import 'package:pedal_repository/src/pedal_pd_status.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
 /// The pedal link wire format, shared byte for byte with the console board
-/// firmware (`firmware/console_board/pedal_link.h`).
+/// firmware (`firmware/libraries/SegnoPanel/src/pedal_link.h`).
 ///
 /// Every message is one frame:
 ///
@@ -36,6 +37,8 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// | 6..13  | [PedalTrackLed] index for tracks 0..7                      |
 /// | 14..17 | loop length, microseconds, unsigned 32-bit little-endian   |
 /// | 18     | master gain, `round(masterGain * 255)`                     |
+/// | 19     | queued track: 0 none, 1..8 logical track index + 1          |
+/// | 20     | queue completion: 0..254 / 255; 0 without a queue           |
 ///
 /// Enum indices are the wire values: none of those enums may be reordered.
 abstract final class PedalLinkCodec {
@@ -45,6 +48,8 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
+  /// 7: STATE carries the engine-owned Song queue target and completion.
+  /// 6: PD_STATUS reports the inlet contract and explicitly unknown readings.
   /// 5: CTRL kind `none` — the board can say a jack is empty instead of
   /// reporting an unplugged jack as a pedal at full toe. 4: CTRL (`0x04`)
   /// grew a contact byte and reports an expression pedal's raw position;
@@ -53,7 +58,7 @@ abstract final class PedalLinkCodec {
   /// when the ring stopped tracking the loop. The board is flashed over SWD
   /// independently of the app, so the two can drift; this is what makes
   /// that visible rather than silent.
-  static const protocolVersion = 5;
+  static const protocolVersion = 7;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -68,11 +73,17 @@ abstract final class PedalLinkCodec {
   /// of the two CTRL jacks reporting the pedal plugged into it.
   static const typeCtrl = 0x04;
 
+  /// Inlet status: state, flags, voltage (mV LE16), current (mA LE16).
+  static const typePdStatus = 0x05;
+
+  /// A voltage of zero on the wire explicitly means unobservable.
+  static const pdStatusPayloadLength = 6;
+
   /// The one message type segno → board.
   static const typeState = 0x10;
 
   /// The number of payload bytes in a [StateMessage].
-  static const statePayloadLength = 19;
+  static const statePayloadLength = 21;
 
   /// How often the board sends [HelloMessage], in milliseconds
   /// (`PEDAL_LINK_HELLO_MS`). The liveness clocks on both ends derive from
@@ -95,6 +106,7 @@ abstract final class PedalLinkCodec {
     typeEncoder => 1,
     typeHello => helloPayloadLength,
     typeCtrl => 4,
+    typePdStatus => pdStatusPayloadLength,
     typeState => statePayloadLength,
     _ => null,
   };
@@ -118,6 +130,10 @@ abstract final class PedalLinkCodec {
         <int>[jack.index, contact.index, kind.index, value],
       ),
       StateMessage(:final frame) => (typeState, encodeStatePayload(frame)),
+      PdStatusMessage(:final status) => (
+        typePdStatus,
+        encodePdStatusPayload(status),
+      ),
     };
     final out = Uint8List(4 + payload.length);
     out[0] = sync;
@@ -175,13 +191,65 @@ abstract final class PedalLinkCodec {
       case typeState:
         final frame = decodeStatePayload(payload);
         return frame == null ? null : StateMessage(frame);
+      case typePdStatus:
+        final status = decodePdStatusPayload(payload);
+        return status == null ? null : PdStatusMessage(status);
       default:
         return null;
     }
   }
 
+  /// Serializes only coherent status; unavailable states carry no old values.
+  static Uint8List encodePdStatusPayload(PedalPdStatus status) {
+    if (!status.isValid) throw ArgumentError.value(status, 'status');
+    final voltage = status.voltageMillivolts ?? 0;
+    final current = status.currentMilliamps ?? 0;
+    return Uint8List.fromList([
+      status.state.index,
+      if (status.capabilityMismatch) 1 else 0,
+      voltage & 0xff,
+      voltage >> 8,
+      current & 0xff,
+      current >> 8,
+    ]);
+  }
+
+  /// Rejects partial, out-of-range or contradictory PD observations.
+  static PedalPdStatus? decodePdStatusPayload(List<int> payload) {
+    if (payload.length != pdStatusPayloadLength ||
+        payload.any((byte) => byte < 0 || byte > 255)) {
+      return null;
+    }
+    final state = PedalPdState.values.elementAtOrNull(payload[0]);
+    if (state == null || payload[1] & ~1 != 0) return null;
+    final voltage = payload[2] | payload[3] << 8;
+    final current = payload[4] | payload[5] << 8;
+    if (state != PedalPdState.contract) {
+      if (payload[1] != 0 || voltage != 0 || current != 0) return null;
+      return PedalPdStatus.unavailable(state);
+    }
+    if (current < 10 || current > 5000 || current % 10 != 0) return null;
+    if (voltage != 0 &&
+        (voltage < 5000 || voltage > 20000 || voltage % 50 != 0)) {
+      return null;
+    }
+    return PedalPdStatus.contract(
+      currentMilliamps: current,
+      voltageMillivolts: voltage == 0 ? null : voltage,
+      capabilityMismatch: payload[1] & 1 != 0,
+    );
+  }
+
   /// The [statePayloadLength]-byte payload for [frame].
   static Uint8List encodeStatePayload(PedalStateFrame frame) {
+    final queuedTrack = frame.queuedTrack;
+    if ((queuedTrack != null &&
+            (queuedTrack < 0 || queuedTrack >= PedalStateFrame.trackCount)) ||
+        frame.queuedProgress < 0 ||
+        frame.queuedProgress >= 255 ||
+        (queuedTrack == null && frame.queuedProgress != 0)) {
+      throw ArgumentError.value(frame, 'frame', 'Invalid Song queue');
+    }
     final p = Uint8List(statePayloadLength);
     p[0] =
         (frame.clearFadeActive ? 0x01 : 0) |
@@ -202,6 +270,8 @@ abstract final class PedalLinkCodec {
     p[16] = (us >> 16) & 0xFF;
     p[17] = (us >> 24) & 0xFF;
     p[18] = (frame.masterGain.clamp(0.0, 1.0) * 255).round();
+    p[19] = queuedTrack == null ? 0 : queuedTrack + 1;
+    p[20] = frame.queuedProgress;
     return p;
   }
 
@@ -209,13 +279,21 @@ abstract final class PedalLinkCodec {
   /// (wrong length, an out-of-range enum index, a reserved flag bit set).
   /// Mirrors what the firmware does, so the golden fixtures pin both.
   static PedalStateFrame? decodeStatePayload(List<int> p) {
-    if (p.length != statePayloadLength) return null;
+    if (p.length != statePayloadLength ||
+        p.any((byte) => byte < 0 || byte > 255)) {
+      return null;
+    }
     if (p[0] & ~0x0F != 0) return null;
     if (p[1] >= PedalMode.values.length) return null;
     if (p[2] >= PedalLooperMode.values.length) return null;
     if (p[3] >= GlobalColor.values.length) return null;
     if (p[4] > 1) return null;
     if (p[5] >= PedalStateFrame.trackCount) return null;
+    if (p[19] > PedalStateFrame.trackCount ||
+        p[20] == 255 ||
+        (p[19] == 0 && p[20] != 0)) {
+      return null;
+    }
     final leds = <PedalTrackLed>[];
     for (var i = 0; i < PedalStateFrame.trackCount; i++) {
       final index = p[6 + i];
@@ -235,6 +313,8 @@ abstract final class PedalLinkCodec {
       masterGain: p[18] / 255.0,
       looperMode: PedalLooperMode.values[p[2]],
       countingIn: p[0] & 0x08 != 0,
+      queuedTrack: p[19] == 0 ? null : p[19] - 1,
+      queuedProgress: p[20],
     );
   }
 }

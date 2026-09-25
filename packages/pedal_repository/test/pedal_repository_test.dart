@@ -174,9 +174,12 @@ void main() {
       await pumpEventQueue();
       expect(logged.status, PedalLinkStatus.incompatible);
       expect(logged.firmwareVersion, '2.0');
-      expect(lines.single, contains('incompatible'));
+      final linkLog = lines
+          .where((line) => line.startsWith('pedal link:'))
+          .single;
+      expect(linkLog, contains('incompatible'));
       expect(
-        lines.single,
+        linkLog,
         contains('protocol ${PedalLinkCodec.protocolVersion + 1}'),
       );
 

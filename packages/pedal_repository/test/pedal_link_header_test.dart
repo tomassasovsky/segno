@@ -11,7 +11,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 void main() {
   group('pedal_link.h', () {
     final header = File(
-      '../../firmware/console_board/pedal_link.h',
+      '../../firmware/libraries/SegnoPanel/src/pedal_link.h',
     ).readAsStringSync();
 
     int define(String name) {
@@ -48,6 +48,14 @@ void main() {
       () =>
           expect(define('PEDAL_LINK_HELLO_MS'), PedalLinkCodec.helloIntervalMs),
     );
+
+    test('PD type and payload length', () {
+      expect(define('PEDAL_LINK_TYPE_PD_STATUS'), PedalLinkCodec.typePdStatus);
+      expect(
+        define('PEDAL_LINK_PD_STATUS_LEN'),
+        PedalLinkCodec.pdStatusPayloadLength,
+      );
+    });
 
     test('hello is the frozen three-byte message', () {
       // The one frame shape no protocol revision may change: it is how a

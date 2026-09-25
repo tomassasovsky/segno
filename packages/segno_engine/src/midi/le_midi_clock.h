@@ -37,7 +37,7 @@ extern "C" {
 /* MIDI System Real-Time status bytes this emitter sends. Standard values —
  * these are their real MIDI meanings, addressed at a generic external
  * clock-sync destination. The console board is NOT one: it speaks the binary
- * pedal link (firmware/console_board/pedal_link.h), which shares no bytes with
+ * pedal link (firmware/libraries/SegnoPanel/src/pedal_link.h), which shares no bytes with
  * MIDI, so nothing here is reused by it. */
 #define LE_MIDI_CLOCK_TICK 0xF8  /* Timing Clock: one per PPQN pulse */
 #define LE_MIDI_CLOCK_START 0xFA /* Start: transport begins at position 0 */
