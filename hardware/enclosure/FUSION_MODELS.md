@@ -400,6 +400,31 @@ Both PCBs (`segno_console_board_PCB`, `segno_pedal_ring_PCB`) wear the local
 appearance `PCB - purple` (74, 32, 112), a copy of Plastic - Matte (Black)
 with its colour changed — the boards are purple.
 
+**Flush ring holder, September 16 (release design).** `ring_holder24` is the
+flush holder: lens and disc tops level with the faceplate top, no ribs, the
+press-fit pocket and a skirt 2.5 mm lower. `ring_board_asm` (with its Ring 24 and
+EC11) moves **2.5 mm further along the faceplate's inward normal** than the
+PR #990 placement below, and the disc is the 1.0 mm `out/segno_ring_disc.step`
+on a 3.5 mm spacer. Re-import `out/segno_ring_diffuser.step`.
+
+**Ring holder floor and 1 mm disc, September 16.** The disc no longer sits on
+the 1.4 mm lip. `ring_holder24` gains a floor, r9.25..25.9 at z=-1.0..1.0 in
+its local frame, and `ring_disc_51_5` becomes **1.0 mm** thick with its underside
+on that floor (1.0 mm further out along the faceplate normal than the old 2.0
+mm disc's underside, so its top stays flush). A DIN 988 10×16×1.0 shim fills the
+gap to the EC11 shoulder, which does not move. Both documents still model the
+old stack; re-import `out/segno_ring_diffuser.step` and `out/segno_ring_disc.step`
+and apply the disc placement from `build_step()`.
+
+**Ring holder ribs, September 16.** The eight ribs below are replaced by 24
+identical ribs, one in every LED gap at 7.5° + 15°·k, same 1.2 mm width,
+r25.85..32.8 and z=-0.25..1.35. Each has a notch from below, r29.0 outward up to
+z=0.82, which clears the fifteen C0603 capacitors (0.305 mm) and the 0603 pad at
+97.5° (0.244 mm). The eight uneven ribs showed through the 1.05 mm roof as an
+irregular pattern of dark bars. PCB and LED clearances are unchanged. The
+`ring_holder24` body in the populated document still has the eight ribs and
+needs the new `out/segno_ring_diffuser.step` imported.
+
 **Ring holder, September 5 second review.** Keep this exact board/header stack
 and every visible ring/encoder position. The old printed holder intersected
 the Ring 24 PCB and LEDs. Its revised local reliefs are r25.8..33.1 at
@@ -440,22 +465,29 @@ world height 87 mm, with the rear-wall leg stopping at 85.34 mm to clear the
 chassis inner radius. Both retain their original world bottom at 4 mm.
 
 The current local frame after the fold has leg A (3 rivets) at Z=-2..0 mm
-and leg B (2 rivets) at X=11.910841..13.910841 mm, with holes along local Y.
+and leg B (2 rivets) at X=14.910841..16.910841 mm, with holes along local Y.
 It differs from the previous rectangular bracket's frame; use the corrected
-occurrence transforms below. Its local X bounds are 0..13.910841 mm.
+occurrence transforms below. Its local X bounds are 0..16.910841 mm.
+**`CORNER_LEG` went 12 -> 15 mm on 2026-09-10** so each rivet sits 7.0 mm from
+its leg's free edge instead of 4.0 (1.25 D, under the 2 D rule of thumb). The
+leg grows at the CORNER end, so every transform below moved 3 mm along x to keep
+the corner and every rivet where they were; the base did not change at all. To
+widen it, move the CUT and BEND sketch points in both brackets (they carry no
+constraints), call `design.computeAll()` -- the profile follows the move but the
+body does not rebuild until you do -- then shift the occurrence.
 Leg A goes on the REAR wall, leg B on the SIDE wall (the base drills 3 rivets
 in the rear wall and 2 in each side wall, staggered). The holes remain
 symmetric about the original 80 mm datum; the new upper-edge profile is handed:
 
 | corner (populated) | transform 2 |
 |---|---|
-| left (x≈0), **turned over** | `[-1,0,0,1.40108408853628 \| 0,0,-1,41.69008408853628 \| 0,-1,0,8.40]` |
-| right (x≈84.8), upright | `[1,0,0,83.19891591146372 \| 0,0,-1,41.69008408853628 \| 0,1,0,0.40]` |
+| left (x≈0), **turned over** | `[-1,0,0,1.70108408853628 \| 0,0,-1,41.69008408853628 \| 0,-1,0,8.40]` |
+| right (x≈84.8), upright | `[1,0,0,82.89891591146372 \| 0,0,-1,41.69008408853628 \| 0,1,0,0.40]` |
 
 Corresponding VSM transforms are left
-`[1,0,0,83.39891591146372 | 0,-1,0,8.4 | 0,0,-1,41.69008408853628]`
+`[1,0,0,83.09891591146372 | 0,-1,0,8.4 | 0,0,-1,41.69008408853628]`
 and right
-`[-1,0,0,1.60108408853628 | 0,1,0,0.4 | 0,0,-1,41.69008408853628]`.
+`[-1,0,0,1.90108408853628 | 0,1,0,0.4 | 0,0,-1,41.69008408853628]`.
 
 Rivet holes land at (1.00, 41.79, 1.20/4.40/7.60) and (0.11, 40.90,
 2.80/6.00) approximately on the left, mirrored on the right. The base and
@@ -768,7 +800,10 @@ native documents. Shop tooling acceptance remains separate from digital parity.
    nominal shim packs and washer references are generated directly. Shims and
    washers appear in the assembly only; neither standalone reference STEP is
    an additional laser, printing or painting archive member. The full package
-   plan remains five ZIPs /88 members.
+   plan is five ZIPs / 116 members: sheet metal 14, sheet-metal STEP 8, painting 8,
+   pedal tiles 22, 3D print 64. The 3D-print archive was 38 until 2026-09-10, when
+   the twelve floor rail segments and the lid prop were added; they had shipped in
+   no package at all. `test_export_plan_...` asserts these counts.
    Native/STEP volume agreement is checked to 10 ppm (minimum 0.05 mm³), with
    independent 0.005 mm bounds checks: an earlier approximately 936685 mm³ base
    export differed by 2.21 mm³ between the two kernels. Every release checks

@@ -213,6 +213,14 @@ force vector as if it were stress resultants gives stresses twenty times too hig
 that scale with mesh size, and a load patch applied to a simply supported plate
 puts its true peak at the corners, not under the load.
 
+The model lives beside the old one in `hardware/enclosure/`, run with the
+enclosure venv from that directory: `_stomp_fea_nl.py` is the shell wrapper,
+`_stomp_fea_cases.py` prints the support-layout table below, `_stomp_fea_beam.py`
+the beam-on-fourteen-bolts table and `_stomp_fea_slip.py` the bolt slip check. They
+were written in a session scratch directory and only moved into the repo on
+2026-09-14. The RC-600 benchmark panel was run inline and never saved as a
+script, so its row below is a recorded result, not a reproducible one.
+
 Numbers from the validated model, all at 1000 N on one pedal, each against its
 own material's yield:
 

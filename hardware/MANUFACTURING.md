@@ -35,7 +35,7 @@ Labels are carried by the individual pedal tiles; there is no faceplate overlay.
 | `segno_rear_panel` | 1 | **1.2 Al** | Flat I/O sub-panel. Owner-approved 1.2 mm stock plus 0.06–0.10 mm coating per face; nominal finished 1.32–1.40 mm. Measure actual finished thickness at CTRL jacks: 1.20–1.50 mm required by NJ6FD-V. |
 | `segno_corner_bracket_rear` | 1 | 2.0 Al | Right rear internal L-bracket; use its handed upper profile and STEP placement. |
 | `segno_corner_bracket_rear_mirrored` | 1 | 2.0 Al | Left rear internal L-bracket; cut its separate file and mount inverted as shown in STEP. |
-| `segno_ring_disc` | 1 | 2.0 Al | Encoder LED-ring centre disc. |
+| `segno_ring_disc` | 1 | **1.0 Al** | Encoder LED-ring centre disc. **1.0 mm**, not the 2.0 of the shell (owner call 2026-09-16): it sits on a printed floor in the ring holder, with a 3.5 mm spacer under it. Alloy to be confirmed by the shop. |
 | `segno_beam` | 1 | **1.6 CR steel** | Faceplate support beam, wall to wall — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. Blank 877.9 × 75.5 mm; four folds, the two wall ears FIRST. **Grade is the shop's choice**: the worst stress in the part is 78 MPa and the softest cold-rolled mild steel yields around 140. Finished separately from the aluminium and bolted in after coating. |
 
 (The old `segno_screen_bracket` ×8 row is gone deliberately: the screens mount
@@ -83,10 +83,11 @@ sheet claimed "2.0 mm 5052-H32 Al, qty 1" — including the steel support, ×2.
 
 The bottom plate carries **no vents**; the openings are in the side and rear walls.
 
-Material: **2.0 mm 1100-H14 aluminium** for base, lid, brackets and ring disc
+Material: **2.0 mm 1100-H14 aluminium** for base, lid and brackets
 (Alcast certificate, lot 26E0269 -- the stock was ordered as 1050 and is not);
 **1.2 mm aluminium, alloy and temper to be confirmed by the shop**, for the flat
-rear panel; **1.6 mm cold-rolled steel** for the support beam. The development assumes K=0.33, R2 for folded aluminium and
+rear panel; **1.0 mm aluminium, alloy to be confirmed**, for the ring disc;
+**1.6 mm cold-rolled steel** for the support beam. The development assumes K=0.33, R2 for folded aluminium and
 R1.6 for the beam. The shop must confirm stock temper, gauge and actual bend
 development with its tools.
 **Current source, exports and native metal models have passed local checks.**
@@ -210,8 +211,18 @@ movement leaves at least **0.87 mm** radial coverage around the largest finished
 hole (0.75 mm on the largest bare hole). The smallest finished bore clears the
 modeled Ø8 root when centered. Center the disc in the holder before tightening
 the original washer/nut; the enlarged bore is a clearance hole, not a locating
-fit. Keep the existing thickness, encoder/knob positions and fastening stack.
-Check actual clamping, push-button action and free knob rotation during assembly.
+fit. The disc is **1.0 mm** and rests on the ring holder's printed floor, its
+top flush with the faceplate. A **3.5 mm spacer, Ø10 bore × Ø16** (aluminium or
+brass; a stack of 10×16 washers to 3.5 mm works) goes on the EC11 shoulder under
+it. 1.0 mm of it replaces the old 2.0 mm disc's missing half; the other **2.5 mm
+lowers the whole ring board** (Ring 24 on its pin strip, EC11 and all), which is
+what puts ~2.4 mm of air over the LEDs under the flush lens. That drop is capped
+by the EC11's thread: about 6.75 mm of bushing above the shoulder leaves the 2 mm
+nut **1.75 mm of thread** (about 2.3 turns) over a 0.5 mm washer. Check the nut
+starts cleanly and clamps before gluing anything. The spacer's Ø10 bore clears
+the Ø8 bushing root; its Ø16 sits on the 11.7 × 12 mm frame inside the floor's
+Ø18.5 hole. Check actual clamping, push-button action and free knob rotation
+during assembly.
 
 **Separate coating handoff.** Finish is **smooth matte black powder coat,
 RAL 9005, without texture**, **60–100 µm on every coated face and clearance
@@ -301,22 +312,20 @@ unchanged by these console paint allowances.
 | `segno_floor_rail_front` | 8 | **BLACK PETG**, ≥40% infill | Front floor rails (issue #1019), 201.79 mm, four screws. **Every segment of a rail is the same part** — eight of this one and four of the rear — because the rail span comes from the pedal pitch, so each segment is exactly two pedals wide and the screw pattern repeats. **Print flat, channel side up**: the channel needs no support and the floor face is the bed face. Each carries a 19.05 × 3.2 mm self-adhesive SOLID neoprene strip (3/4" × 1/8") pressed into its 18.85 × 1.5 mm channel — 0.2 mm under size on purpose, so the walls hold it and the adhesive is not in the load path. **Not grit tape**: this gets dragged across floors. The strip stands 1.7 mm proud and is the only thing touching the ground. Ends are **square** with a 1 mm corner break and the segments **butt**, so the strip is a plain scissors cut that fills the channel corner to corner. **Fit the rails first, then press the strip in** — the M3 heads sink into counterbores inside the PETG, above the channel roof, so the strip runs over them unbroken and never needs punching. 2,385 mm of strip for the set. |
 | `segno_floor_rail_rear` | 4 | as above | Rear floor rails, 201.79 mm, two screws at 63.5 and 109.5 mm from the low-u end — **not** a symmetric pair, so all four go on the same way round. The rail sits at v 343.25, **not** where the rubber feet were: the buck converters bolt through v 367.5 with a floor-side washer and nut, so hardware protrudes there. At 21 mm wide it clears the screen-stand pilots by 3.5 mm each side. |
 | `segno_lid_prop` | 1 | **BLACK PETG**, ≥40% infill | Mid-field lid prop (issue #1019). A pure compression column, which is why it is printed rather than another shop part number. It stands in the one clear lane between BANK's pedestal and the 16in module body — 31.5 mm wide, so the 24 mm column has 3.7 mm each side and there is no room to improvise on the bench. Two M4 into the floor through the tongue; the top face is already cut to the 12.5° slope, so print it **tongue-down, flat on the bed** and let the sloped face be the top surface. Fit felt on that face to the measured gap after coating, the same rule as the steel beam. It carries the strip beside the BANK slot from 8 kg of point load to 131 kg. |
-| `segno_ring_diffuser` | 1 | **WHITE translucent** (exception to the all-black rule: it is a lens) | Ø67-window lens and disc holder for the selected PR #990 Ring 24 on its 2.54 mm pin strip. The open-bottom cavity has eight 1.2 mm ribs in verified component gaps, a 0.25 mm shelf and a 1.05 mm lens roof. Nominal minimum PCB clearance is **0.135 mm**, LED clearance 0.332 mm; qualify one actual print and its light diffusion before ordering a set. Orient and dry-fit it as described below before gluing. |
+| `segno_ring_diffuser` | 1 | **WHITE translucent** (exception to the all-black rule: it is a lens) | Ø67-window lens and disc holder for the selected PR #990 Ring 24 on its 2.54 mm pin strip. **Flush:** the lens top and the 1.0 mm disc's top are level with the faceplate top. The Ring 24 is a **press fit from below** in a pocket with the radii of the approved test print; the whole ring board sits **2.5 mm lower** on the 3.5 mm encoder spacer, and the pocket rides down with it on a skirt below the glue plate (the part is 6.5 mm tall, 4.5 mm of it below the faceplate). That puts **~2.4 mm of air** over the LEDs under a 1.05 mm roof; a light-transport model gives ~59 % of the peak between LEDs (9 % with the old 0.4 mm-proud lens) at ~91 % of the light. No ribs. The disc rests on a **floor** filling the pocket out to a Ø18.5 hole for the encoder, ~6 mm above the ring board's top copper. Nominal minimum PCB clearance **0.135 mm**. **Print BACK-DOWN** (skirt on the bed) **with support under the disc floor and under the glue plate's outer rim**, which overhangs the skirt by ~3 mm; the LED cavity needs none, and the roof prints as a bridge. Both supported faces are hidden once fitted. |
 | `segno_screen7_tower` | 1 | **BLACK PETG**, ≥40% infill | 7-inch screen support tower (#762). One piece, closed wedge box, six M3 to the floor. Was printed but had no row here and no colour called out. |
 | `segno_screen16_stand_L` | 1 | **BLACK PETG**, ≥40% infill | Left 15.6-inch stand. Splices to the right half; the pair is not interchangeable. |
 | `segno_screen16_stand_R` | 1 | **BLACK PETG**, ≥40% infill | Right 15.6-inch stand. |
 
-**Ring-holder orientation and fit.** The ribs make this part rotationally
-indexed. Use the [top-view alignment reference](enclosure/reference/ring24_orientation.svg):
-holder +X points toward the 15.6-inch screen, with the PCB/encoder in the
-selected Fusion orientation. The view from underneath is mirrored. Present the
-complete Ring 24 board upward from below before gluing the holder; all eight
-ribs must enter unoccupied gaps between LEDs and small components. Do not glue
-the holder at an arbitrary rotation or force the PCB against its shelf. Fit the
-finished 51.27–51.45 mm disc, verify the real header stack and unobstructed
-insertion/removal, then check nut clamping, holder retention and light diffusion.
-The minimum nominal PCB gap is small enough that printer and purchased-part
-variation must be checked on the actual assembly; CAD alone does not qualify it.
+**Ring-holder fit.** The release holder has no ribs, so it is not indexed: any
+rotation fits. Press the complete Ring 24 board upward from below into its pocket
+before gluing the holder, with the 3.5 mm spacer already on the encoder, and check
+the ring seats fully without forcing the PCB. Fit the finished 51.27–51.45 mm disc
+flush in its pocket, then check the nut starts and clamps, holder retention and
+light diffusion. The minimum nominal PCB gap is small enough that printer and
+purchased-part variation must be checked on the actual assembly; CAD alone does
+not qualify it. (`enclosure/reference/ring24_orientation.svg` belongs to the
+earlier ribbed holder.)
 
 Console collar update, September 9: the front and rear light-baffle walls are
 2.4 mm thick, growing outward to an overall depth of 118.47 mm. The sled bore,
@@ -454,7 +463,7 @@ finished stack, actual insert depth and screw-tip clearance. Rows marked
 | PD and MIDI connectors → rear panel | **6 M3 fixing sets**, each screw plus matching nut as required by the purchased part | Two for the PD coupler and two for each of the two MIDI sockets. Confirm the real flange thickness, screw-head style, washers and whether matching fasteners are supplied before choosing lengths. |
 | Other rear connectors | **2 NJ6FD-V caps; 2 USB bulkhead retaining nuts; 1 power-button nut; 1 fuse-holder nut** | Use the matching hardware supplied for each purchased connector. The USB apertures must follow the owner's verified four-flat profile; verify all finished openings against the purchased parts. The CTRL caps require the specified finished panel thickness. |
 | Rubber feet → base | **15 mechanical foot-fixing sets; measure before ordering** | Four original corner feet plus eleven additions: four front, four rear and three staggered near CLEAR/BANK and the steel beam. Screws enter from inside through Ø4.80 pre-coating floor holes. The clearance review assumes Ø18 ×5 mm feet and top screw/washer envelopes no larger than Ø9 ×5 mm. Check the actual retention method and screw-tip recess; the modeled washer insert does not establish a thread. Fit before installing the screen supports, check access, and verify loaded floor contact. This count does not imply equal load sharing or a strength rating. |
-| Encoder / ring assembly | **1 matching EC11 bushing nut and washer; supplied knob retaining hardware** | The EC11 nut clamps the centre disc into the holder; the holder's outer land is glued to the faceplate underside. Verify this assembled retention and the knob's underside relief. Fusion deliberately uses the owner's PR #990 Ø80 board without mounting holes, as recorded in `enclosure/FUSION_MODELS.md`; the checked-in Ø68/three-hole PCB is a different revision. Reconcile the electronics order with that chosen revision; no three-M3-screw set is implied for the native assembly. |
+| Encoder / ring assembly | **1 matching EC11 bushing nut and washer; 1 spacer 3.5 mm × Ø10 bore × Ø16; supplied knob retaining hardware** | The spacer goes on the EC11 shoulder under the 1.0 mm disc and sets the ring board 2.5 mm lower than the PR #990 stack. The EC11 nut clamps the centre disc onto the spacer; the holder's outer land is glued to the faceplate underside. Verify this assembled retention and the knob's underside relief. Fusion deliberately uses the owner's PR #990 Ø80 board without mounting holes, as recorded in `enclosure/FUSION_MODELS.md`; the checked-in Ø68/three-hole PCB is a different revision. Reconcile the electronics order with that chosen revision; no three-M3-screw set is implied for the native assembly. |
 | Chassis bonding | **1 M6 stud fixing set**, with the nuts, locking washers, lugs and straps required by the agreed bonding arrangement | Select the complete stack and its length against the actual lug arrangement and verify continuity. Keep the defined rear-panel bond; do not add parallel grounding connections by assumption. |
 
 The split CLEAR/BANK joints add eight screws and eight inserts to the previous
