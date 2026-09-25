@@ -12,6 +12,15 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+September 25 update: the owner requested unrestricted full-white operation for
+one 40-pixel ring strip. The console and ring carrier now have dedicated wider
+power paths, sized independently of firmware brightness. Board outlines,
+placements, two layers, 1 oz copper and purple-console/white-ring colours remain.
+The screen-power board is unchanged. The new
+[full-white fabrication review](reviews/ring40-full-white-1072/verification.md)
+supersedes the earlier 24-pixel/current-limited power assessment and order ZIPs.
+It preserves first-assembly validation and the separate 10 A whole-system limit.
+
 Publication is split by hardware generation. This branch includes the screen
 power PCB, console connectors and power-domain corrections, white XIAO ring carrier (module footprints or external strip), and GPIO17 lifecycle service. The current old-console
 ten-pill/40-LED-strip firmware is tracked separately under #1076 and #1077.

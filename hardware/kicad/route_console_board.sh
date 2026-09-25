@@ -15,16 +15,10 @@ PLACED="$OUT/console.placed.kicad_pcb"                        # what the generat
 # operator has to decide about is a chance to decide wrong.
 FAB_LAYERS="F.Cu,B.Cu,F.Mask,B.Mask,F.Paste,B.Paste,F.Silkscreen,B.Silkscreen,Edge.Cuts"
 
-# Every net is routed at 0.6 mm (see the netclass below), and +5V is the one that
-# is not a signal: it carries the ring's 1.44 A through J6 plus the logic, ~1.6 A,
-# against 1.65 A for 0.6 mm at a 10 C rise (IPC-2221, 1 oz external). 3% is not a
-# margin. Raising the netclass width is the wrong lever -- it re-poses the routing
-# problem rather than widening this board, and this router already needs five
-# attempts to come back clean. The rail is widened AFTER the session import
-# instead, on the geometry that routed, by widen_power.py; it measures its own
-# clearance and stops where the layout stops it. 0.70 mm is 1.85 A, 15% of margin.
-# The measured ceiling on the committed route is 0.803 mm, so the guard band is
-# what caps this at 0.70 and not the copper.
+# Placement hand-routes the ring's 2.64 A supply at 1.7 mm before DSN export.
+# Freerouting handles the remaining signals and low-current logic rails.
+# Widening those rails to 0.70 mm must preserve the wider hand-routed branch;
+# console_ring_power.check validates its copper and parallel vias before export.
 POWER_NET="+5V"
 POWER_FINAL_MM=0.70
 

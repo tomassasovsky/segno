@@ -30,6 +30,7 @@ import sys
 
 import pcbnew
 
+import console_ring_power
 from netlist import parse_netlist
 
 FromMM, ToMM = pcbnew.FromMM, pcbnew.ToMM
@@ -95,18 +96,13 @@ MOUNT_INSET = 5.0               # mounting-hole centres, in from each corner.
 # indicators) at 60 mA = 1.56 A plus ~60 mA of logic, and 81 mV of IR drop over the
 # ~60 mm from J3 to J6/J7.
 #
-# That premise stopped holding when the console went to 94 WS2812 -- ten 7-LED
-# pills plus a Ring 24 -- which is 5.7 A at full white (#930, settled by #1062).
-# The fix is topology, not a wider track: the pills' 4.2 A enters on J3 and leaves
-# on J24, two JST VH headers stacked at the left edge with their +5V pads joined by
-# a poured bar on both layers (_pill_power_bar). What reaches a track is the ring
-# (1.44 A through J6) and the logic, ~1.6 A.
-#
-# 1.6 A against 1.65 A is 3%, so the rail does not stay at the routed width: it is
-# grown to 0.70 mm (1.85 A, 15%) after the session import by widen_power.py, which
-# is where the 0.1 mm per side that the DSN's inflated clearance leaves unused gets
-# collected. See route_console_board.sh. MIN_RAIL_TRACK_W in export() is the gate
-# that holds it; PILL_POWER in _check() is the gate that holds the topology.
+# Ten 8-LED pills and one 40-LED strip draw up to 7.2 A at full white.
+# The pills' 4.8 A enters on J3 and leaves on J24 across a 5 mm bar on both
+# copper layers. console_ring_power installs a separate 1.7 mm hand-routed
+# supply for 2.4 A LED channels, 0.04 A idle and 0.2 A controller before signal
+# autorouting. Four parallel 0.5 mm drill vias carry its layer transition.
+# The remaining 0.70 mm +5V tracks supply only console logic. The critical
+# supply and ground ties are checked again on the actual board before export.
 TRACK_W = 0.6                   # what the router is asked for, signal and rail alike
 VIA_D, VIA_DRILL = 0.8, 0.4
 CLEARANCE = 0.25
@@ -253,8 +249,8 @@ PLACEMENT = {
     # corridor: the module is socketed now, so reaching its USB means lifting it
     # out, not threading a cable past these. The logo ends up partly under the
     # two housings, which costs nothing but paint.
-    "J3":  (5.4, 48.9, 90),       # 5 V in from BUCK_AUX, ~5.7 A at full white
-    "J24": (5.4, 60.84, 90),     # the pills: 5V/DATA/GND, 4.2 A at full white.
+    "J3":  (5.4, 48.9, 90),       # AUX: 7.2 A full-white LEDs plus controllers
+    "J24": (5.4, 60.84, 90),     # the pills: 5V/DATA/GND, 4.8 A at full white.
                                   # 1.0 mm below its first spot (#1062, owner
                                   # call): the two plugs now clear by ~2.1 mm
                                   # instead of 1.1, per JST's own housing
@@ -688,7 +684,7 @@ def _pour_gnd(board, net, layer=pcbnew.B_Cu):
 
 # The pills' current path (#1062). J3 pin 1 and J24 pin 3 (both +5V) face each
 # other a few mm apart in one column at the left edge; this pours a bar between
-# them on BOTH copper layers so the 4.2 A of pills never has to find its way along
+# them on BOTH copper layers so the 4.8 A of pills never has to find its way along
 # a routed track. Priority over the GND pours, thermal relief because THERMALS
 # forbids solid ties on a board with SMD parts, and spokes wide enough that relief
 # is not the bottleneck: ~2.9 mm of spoke copper a layer round each pad.
@@ -1306,7 +1302,7 @@ def _check(fps, nets, board=None):
     # case" while the layout violates it is worse -- so it goes, and the reason
     # lives here.
 
-    # PILL_POWER (#1062): the pills' 4.2 A must go J3 -> J24 over the poured bar
+    # PILL_POWER (#1062): the pills' 4.8 A must go J3 -> J24 over the poured bar
     # and nowhere else. Both are JST VH, facing the same way, their +5V pads face
     # each other within reach of one bar, J24 is the pills' only connector (5V,
     # data, GND), and (with a board) the bar exists on both copper layers. A J24
@@ -1937,9 +1933,11 @@ def build(quiet=False):
     # pills' current runs through.
     boxes += [(x0 - VIA_KEEPOUT, y0 - VIA_KEEPOUT, x1 + VIA_KEEPOUT, y1 + VIA_KEEPOUT)
               for x0, y0, x1, y1 in _pill_bar_rects(fps)]
+    boxes += console_ring_power.stitch_keepouts(ORIGIN)
     n_vias = _stitch_gnd(board, fps, nets, netmap, boxes)
     n_vias += _stitch_grid(board, netmap[POUR_NET], fps, boxes)
     _route_screen_control(board, netmap["PI_GPIO17"])
+    console_ring_power.install(board)
 
     # NOT pcbnew.ZONE_FILLER here: in-process it segfaults with no wxApp. The
     # LED-strip generator hit the same wall and fills via kicad-cli instead --
@@ -2086,6 +2084,7 @@ def check_routed_board(path=None):
     """
     _b = pcbnew.LoadBoard(path or BOARD_PATH)
     _check_connector_drills(_b)
+    console_ring_power.check(_b)
     # REFUSE to plot an unrouted board. Running this module without --no-export
     # produced a JLCPCB-ready zip, "ALL PASS", "0 violations" and exit 0 from a board
     # with ZERO tracks and 80 unconnected items: build() stopped routing when that
@@ -2112,7 +2111,7 @@ def check_routed_board(path=None):
         raise SystemExit(
             f"FAB: {len(thin)} rail track(s) under their floor, thinnest "
             f"{width:.2f} mm on {net} (floor {MIN_RAIL_TRACK_W[net]} mm) -- the "
-            "ring draws 1.44 A through J6. Width comes from the DSN netclass in "
+            "logic supply is below its floor. Width comes from the DSN netclass in "
             "route_console_board.sh; if that did not reach the copper, this is "
             "what it looks like.")
     for _net, _want in RAIL_TARGET_W.items():
@@ -2177,8 +2176,9 @@ def export():
     # DRC first: it is what pours the zone (--refill-zones --save-board), so
     # plotting before it would ship gerbers with an empty ground plane.
     drc = subprocess.run([KICAD_CLI, "pcb", "drc", "--refill-zones", "--save-board",
-                          "--severity-all", "--exit-code-violations", BOARD_PATH],
-                         capture_output=True, text=True)
+                          "--severity-all", "--all-track-errors",
+                          "--exit-code-violations", BOARD_PATH],
+                         check=True, capture_output=True, text=True)
     tail = [ln for ln in drc.stdout.splitlines() if ln.strip()][-4:]
     print("DRC:", " | ".join(tail) if tail else "(clean)")
 

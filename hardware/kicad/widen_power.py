@@ -60,11 +60,10 @@ The deciding reason is that this has to be testable without a KiCad install --
 see --selftest, which is the only part of either routing script that can run in
 CI or on a machine that is not the one Mac with KiCad on it.
 
-The result is ONE width for the net, the narrowest the layout allows, because a
-series rail is only as good as its tightest section and a rail that changes width
-six times is a rail nobody can reason about. The ceiling is printed alongside it,
-so a single pinched segment holding the whole net back is visible rather than
-silent.
+The result is one minimum width for the net, limited by available clearance.
+Existing wider hand-routed branches stay wide: the 40-pixel feed must not be
+shrunk to the width of the lower-current module and logic branches. The ceiling
+is printed so a pinched segment holding the remaining tracks back is visible.
 
     python3 widen_power.py BOARD.kicad_pcb --net +5V_LED --target 0.65
     python3 widen_power.py --selftest
@@ -354,10 +353,10 @@ class Board:
         return out
 
     def set_width(self, net, width):
-        """Rewrite (width ...) on every segment of `net`. Returns count."""
+        """Grow narrower segments of `net`, preserving wider power branches."""
         edits = []
         for (i, j, n, _layer, *_rest) in self.segments:
-            if n == net:
+            if n == net and _rest[-1] < width:
                 edits.append((i, j))
         if not edits:
             return 0
@@ -441,7 +440,8 @@ def selftest():
     import os
     failures = []
 
-    def case(name, text, expect_allowed=None, expect_width=None, target=0.65):
+    def case(name, text, expect_allowed=None, expect_width=None, target=0.65,
+             expect_widths=None):
         fd, p = tempfile.mkstemp(suffix='.kicad_pcb')
         os.write(fd, text.encode())
         os.close(fd)
@@ -451,13 +451,18 @@ def selftest():
             allowed = min(2 * ((g + w / 2) - 0.25) for g, w, _o, _l, _n in rows)
             if expect_allowed is not None and abs(allowed - expect_allowed) > 1e-6:
                 failures.append("%s: allowed %.4f, expected %.4f" % (name, allowed, expect_allowed))
-            if expect_width is not None:
+            if expect_width is not None or expect_widths is not None:
                 import contextlib, io
                 with contextlib.redirect_stdout(io.StringIO()):
                     widen(p, '+5V_LED', target, 0.2, 0.05, 0.5, False, 0)
                 got = float(re.search(r'\(width ([\d.]+)\)', open(p).read()).group(1))
-                if abs(got - expect_width) > 1e-6:
+                if expect_width is not None and abs(got - expect_width) > 1e-6:
                     failures.append("%s: wrote %.4f, expected %.4f" % (name, got, expect_width))
+                if expect_widths is not None:
+                    widths = sorted({row[-1] for row in Board(open(p).read()).segments
+                                     if row[2] == '+5V_LED'})
+                    if widths != expect_widths:
+                        failures.append("%s: widths %r, expected %r" % (name, widths, expect_widths))
         finally:
             os.unlink(p)
 
@@ -466,6 +471,12 @@ def selftest():
     # half-space and 0.25 must stay -- 2 * 0.600 = 1.200 mm allowed. Target wins.
     case('same layer, roomy', _STUB % {'y': 1.0, 'layer': 'F.Cu'},
          expect_allowed=1.2, expect_width=0.65)
+    mixed = (_STUB % {'y': 1.0, 'layer': 'F.Cu'}).rstrip()[:-1] + '''
+    (segment (start 0 10) (end 10 10) (width 1.5)
+        (layer "F.Cu") (net "+5V_LED"))
+    )'''
+    case('preserve hand-routed high-current branch', mixed,
+         expect_width=0.65, expect_widths=[0.65, 1.5])
 
     # Same neighbour on the OTHER layer cannot constrain anything.
     case('other layer ignored', _STUB % {'y': 1.0, 'layer': 'B.Cu'},

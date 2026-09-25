@@ -74,51 +74,52 @@ tolerance only has to survive ~100 mm of internal wiring.
   tied together have no current sharing: one hogs the load until it limits,
   then they hunt.
 
-| buck | loads | design figure |
-|---|---|---|
-| **BUCK_PI** | Pi 5 (via its USB-C) + its USB devices + NVMe | 5.0 A / 25 W (worst case) |
-| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 104 WS2812 | 5.83 A / 29 W for the single-colour example below; 8.38 A / 42 W for capped full white |
+| Buck | Loads | Design figure |
+| --- | --- | --- |
+| **BUCK_PI** | Pi 5, its USB devices and NVMe | 5.0 A / 25 W device budget |
+| **BUCK_AUX** | Both screens, console, 80 pill LEDs and 40 ring LEDs | About 9.41 A / 47 W for a full-white ring with normal pill indications and the allowances below |
 
-BUCK_PI's worst case is capped by device limits, not estimated: the Pi's own 5 A
-budget. BUCK_AUX's figures combine a **5.14 A rated non-LED baseline** (screens
-and console logic) with an LED current estimate. They are not measurements of
-the assembled device or guarantees of the buck's sustained output.
+The selected ring is a **40-pixel strip**, giving 120 LEDs with the ten
+8-pixel pills. The updated v3 console/carrier copper supports the ring at
+unrestricted RGB white. Its electrical design no longer depends on the ring
+firmware's brightness limit. The old v2 console on the current pedal is not
+upgraded by changing the new PCB files.
 
-**There are ten eight-pixel pills and a 24-pixel ring: 104 LEDs.** The owner
-confirmed eight pixels per pill; the earlier seven-pixel assumption was wrong.
-The pill gradient is `38, 92, 201, 255, 255, 201, 92, 38`, giving two central
-peaks and a mean of `1172 / (8 × 255) = 57.45%`. Console v3 and ring firmware
-both use `LED_BRIGHTNESS = 128`, so the channel values are also scaled by
-approximately `128/255`. They start dark until valid app state arrives. See
-`firmware/console_board/README.md` for the chain order and pixel directions.
+Use 60 mA per RGB-white LED as the conservative planning model from
+[Adafruit's power guide](https://learn.adafruit.com/adafruit-neopixel-uberguide/powering-neopixels).
+Add 1 mA per pixel as a separate idle allowance. These are design assumptions,
+not measurements or a guaranteed rating of a particular LED batch.
 
-The planning model uses 20 mA per fully driven colour channel, derived from
-the conventional 60 mA RGB-white budget in
-[Adafruit's NeoPixel power guide](https://learn.adafruit.com/adafruit-neopixel-uberguide/powering-neopixels).
-It adds a separate **1 mA per pixel idle allowance** (104 mA total), including
-when the LEDs are dark. This is a conservative budgeting assumption, not an
-identified LED variant's measured or guaranteed current. Brightness scaling
-reduces the colour-channel term, not that idle allowance; gamma correction,
-integer rounding and actual LED variants further affect the real draw.
+The v3 firmware preserved in PR #1082 still uses brightness 128 and the pill
+weights `38, 92, 201, 255, 255, 201, 92, 38`. Its normal indications have at most
+nine single-channel pills and one amber REC/PLAY pill. With its actual integer
+scaling and gamma table, their maximum channel-current estimate is 0.498 A.
+This PCB change does not alter those animations or command a full-white mode.
 
-**Example patterns at the current 128/255 cap:**
+| AUX load allowance | Current |
+| --- | ---: |
+| Both screens, combined screen-board design envelope | 6.00 A |
+| 40 ring pixels, all RGB channels at 255 | 2.40 A |
+| All ten pills displaying their brightest normal indications | 0.498 A |
+| Idle allowance for 120 pixels | 0.120 A |
+| Console logic | 0.140 A |
+| Additional XIAO ring controller and buffer | 0.200 A |
+| Screen-rail 100 ohm bleeder | 0.050 A |
+| **Planning total** | **9.408 A** |
 
-| state | LED estimate | BUCK_AUX estimate | of 10 A |
-|---|---|---|---|
-| all off (idle allowance only) | 0.10 A | 5.24 A | 52% |
-| pills one colour + gradient, ring half a single-colour load | 0.69 A | 5.83 A | 58% |
-| pills two full channels + gradient, ring one colour | 1.27 A | 6.41 A | 64% |
-| pills white + gradient, ring white | 2.21 A | 7.35 A | 74% |
-| all LEDs white, no gradient (hypothetical stress pattern) | 3.24 A | 8.38 A | 84% |
+The nominal 10 A buck has approximately 0.59 A headroom against this model.
+That is not a guarantee of transient response, capacity at high temperature
+or screen current; physical validation remains part of the first assembled build.
+Relay coils take their power from Pi USB VBUS, not AUX.
 
-For example, the single-colour row is
-`0.104 + (80 × 0.020 × 0.5745 + 24 × 0.020 × 0.5) × 128/255` amps of LEDs.
-These patterns illustrate the budget; they do not assert that every pill is
-normally lit or that the ring always occupies half its available pixels.
-With the cap removed, white pills with the gradient and a white ring would be
-approximately **9.44 A AUX**. Uncapped white without the gradient would be
-approximately **11.48 A AUX**, above the buck's 10 A rating. Keep the current
-brightness cap; a future brighter mode must be budgeted separately.
+Allowing **all 80 pill LEDs as well as the ring** to display flat unrestricted
+white is a different requirement: 7.2 A of LED channels plus the screens and
+allowances above totals about **13.71 A**. That exceeds the retained 10 A AUX
+supply. The ring PCB upgrade does not authorize that simultaneous system load.
+Normal pill rendering remains within the modeled budget with a full-white ring.
+
+See the [40-pixel power-path verification](../docs/reviews/ring40-full-white-1072/verification.md)
+for conductor widths, connector limits and the source-pinned runtime arithmetic.
 
 **The old v2 board and new v3 board have different power paths (#1062).** On
 v2, the LEDs share the console's 0.6 mm +5 V track, estimated at 1.65 A by the
@@ -133,18 +134,17 @@ V3 sends pill power through a copper bar instead:
   routed track. The 80 pill LEDs have a 4.8 A uncapped RGB-white channel
   budget (about 4.88 A including the idle allowance). The data line crosses
   the board to J24 from the buffer, ~87 mm. J7 is gone.
-- What the tracks carry is the ring (1.44 A at full white, through J6) and the
-  logic: ~1.6 A. That is 3% inside 0.6 mm, so the +5 V rail is no longer left at
-  the routed width — `widen_power.py` grows it to 0.70 mm (1.85 A, 15%) between
-  the session import and the pour, on both boards. The ring board's own
-  `+5V_LED` goes 0.55 → 0.65 mm the same way.
+- The console ring feed is a dedicated **1.7 mm** route to J6, with four
+  parallel 0.5 mm drilled power vias. The carrier has a **1.5 mm** direct feed
+  from J1 to J2 and three parallel ground vias at the strip wire pad. Console
+  input, pill-output and ring-output ground connections have wider thermal spokes.
+  Lower-current logic and alternative 24/16-pixel module branches retain their
+  existing tracks. The routing/export guards preserve this separation.
 
-**One standard: IPC-2221, 10 °C rise, 1 oz external.** This page and
-`console_board_pcb.py` used to quote IPC-2152 (~2 A for 0.6 mm) while
-`route_ring_board.sh` quoted IPC-2221 (1.65 A for the same copper), and the two
-boards reported different margins for the same rail as a result. 2152 is newer,
-measurement-based and more generous, and it would credit the ground pour either
-side as a heat spreader. None of the numbers here take that credit.
+The conductor estimates use **IPC-2221, 10 °C rise, 1 oz external copper**,
+including a 20% negative width tolerance for the new high-current feeds.
+They take no credit for adjacent ground copper as a heat spreader. These
+calculations support the design; they are not a measured thermal qualification.
 
 **Testing the existing ten-pill chain on v2:** use a temporary diagnostic that
 keeps the ring dark and lights only one eight-pixel pill at a time, with one
@@ -265,20 +265,17 @@ Notes that are load-bearing:
   never have carried the link anyway: it is the AHCT125's gate-B output with /OE
   tied low, so it is only ever driven by the console. On v3 the ring-data path
   (GP12, gate B, R1, R15) is gone and GP12/GP15 went to the expansion header.
-- **One 5 V pair, not two, and it is sized for 1.44 A rather than for the cap.**
-  24 LEDs at 60 mA is 1.44 A: 48% of an XH contact's ~3 A, and 21% inside the
-  ring board's `+5V_LED` at 0.65 mm. The cap is real — `LED_BRIGHTNESS = 128`
-  (#1064) puts all-white at 0.72 A and the comet at ~0.2 A — and the current v3
-  XIAO firmware applies the same cap with PIO/DMA output. Two states are outside any
-  cap in either generation: the window before firmware runs, which is why R5 sits
-  on `RING_DATA_3V3` at all (power-up, the bootloader, a reflash, a crash), and a
-  console flashed with a higher `LED_BRIGHTNESS`. Neither is exotic, both land on
-  1.44 A, and the copper now carries it, so the old bench trigger at ~0.7 A of the
-  capped case is gone: nothing the capped case can do makes one pair insufficient
-  when the uncapped case already fits.
-- **A second ring chained off `RING_DOUT` is a connector change, not a wider
-  track.** 2.88 A is past one XH contact at any width; J1 and J6 would go JST VH,
-  the way J3/J24 did on the console.
+- **One 5 V pair supports the 40-pixel strip without a brightness restriction.**
+  The design budget is 2.4 A LED channels, 40 mA pixel idle and 200 mA ring
+  controller, within the XH connector's 3 A rating with 22 AWG power leads.
+  The console now has a dedicated 1.7 mm feed; the carrier's J2 pads have a
+  direct 1.5 mm feed and three ground-return vias. This avoids routing strip
+  power through the older 0.65 mm module branch. Firmware still chooses its
+  display brightness, but that setting is not the hardware's current limit.
+- **Only one ring or strip is supported.** Use J2 for the 40-pixel strip, J3
+  for one 24-pixel module, or J4 for one 16-pixel module. Do not populate the
+  alternatives together or chain an additional ring from DOUT. Extra LEDs
+  require a new connector, copper and whole-system power assessment.
 
 ---
 

@@ -141,12 +141,12 @@ v5 = Net("+5V")            # logic: Pico VSYS + the AHCT125
 # rail. Both rails come off the same 8-36V->5V 10A buck, so it was never redundancy
 # or headroom -- and the benefit it did have was half undone on this board anyway,
 # because GND is a single pour: the feeds were separated and the returns were not.
-# The current is what is scarce, not the rail count (#1062): at full white the ten
-# 7-LED pills draw 4.2 A and the Ring 24 1.44 A. The pills' share never crosses
-# the board: it comes in on J3 and leaves on J24, two JST VH headers stacked at
+# At full white the ten 8-LED pills draw 4.8 A and the 40-LED strip draws 2.4 A.
+# The pills' share comes in on J3 and leaves on J24, two JST VH headers stacked at
 # the left edge with their +5V pads joined by a few millimetres of copper. What
-# reaches the rest of the board -- the ring through J6 and the logic -- is ~1.6 A,
-# inside the 0.6 mm tracks' ~2 A.
+# reaches J6 uses a dedicated 1.7 mm supply with four parallel power vias, sized
+# for 2.64 A including LED idle current and the ring controller. Console logic
+# has its own branch.
 #
 # The ring board is unaffected. It declares its own single supply as Net("+5V_LED")
 # locally (ring_board.py:46); two netlists joined by a cable do not have to agree on
@@ -492,7 +492,7 @@ j_ring[4] += link_to_console
 
 # No J7 since #1062: the pills' connector is J24, beside J3 (see there). J7 fed
 # the pills 5 V through the board's 0.6 mm +5V track from J3 -- ~2 A of copper
-# against 4.2 A of pills at full white.
+# against 4.8 A of pills at full white.
 
 # ---- J8: rear power button -- passed STRAIGHT through to the Pi's PWR pads ---
 # Not via the MCU: a clean shutdown has to work when the MCU is wedged or
@@ -616,7 +616,7 @@ for _h in MOUNT_HOLES:
     _hole[1].do_erc = False      # one gets missed -- see the SPARE_GPIO note above
 
 # ---- J3: power in, 5 V from the external potted buck ------------------------
-# JST VH, one contact each way at ~10 A: the whole 5.7 A full-white load (#1062).
+# JST VH, 10 A with 16 AWG: 7.2 A full-white LEDs plus controller current.
 # It used to be a 4-way XH with pins doubled up, ~6 A, when the chain was 26 LEDs.
 # No series Schottky: V1's guards a barrel jack a user can plug anything into;
 # this is a keyed internal JST, and a diode would burn ~0.4 W of LED headroom.
@@ -625,7 +625,7 @@ j_pwr[1] += v5
 j_pwr[2] += gnd
 
 # ---- J24: the pills -- 5 V, data and GND on one header ----------------------
-# JST VH stacked under J3 (#1062), so the pills' 4.2 A crosses a few millimetres of
+# JST VH stacked under J3 (#1062), so the pills' 4.8 A crosses a few millimetres of
 # poured copper instead of the board, and the pill harness is one cable. +5V is
 # pin 3 because pin 3 is the one beside J3's +5V pad: the bar between them stays
 # a straight link, and data and GND are left free to route. (Pin 1 = +5V would
@@ -633,7 +633,7 @@ j_pwr[2] += gnd
 # be confused with J3's 2-way, so the pin order differing from J3's is safe.
 # The data line reaches here from U1 across the board, ~75 mm: an 800 kHz WS2812
 # line driven through R2 at the buffer end, which is fine at that length.
-# The harness from here is a 5 V bus with a tap to each pill: 4.2 A cannot run
+# The harness from here is a 5 V bus with a tap to each pill: 4.8 A cannot run
 # through the strips in series.
 j_pill = jst_vh(3, "J24", "PILLS")
 j_pill[1] += gnd

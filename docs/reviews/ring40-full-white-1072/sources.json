@@ -1,0 +1,14 @@
+{
+  "hardware/kicad/segno_pedal_ring.kicad_pcb": "c14247f8c6ecf4498af8158de2b28fd5a9f19a3dc75e795a232f1a032a9c7be1",
+  "hardware/kicad/out_console/segno_console_board.kicad_pcb": "9b9854170d005b1721c22a0b0e70114da0d0ab5ff08946c4cbfc255fc76b46c0",
+  "hardware/kicad/ring_power.py": "4797431861cb60def77ed9776fc59f6d4551aa7a367500363535a9f23e255ac8",
+  "hardware/kicad/console_ring_power.py": "374c784bf025ccd26b604b6d63040cb4eed4e93da85ed32576b51f84259993b2",
+  "hardware/kicad/widen_power.py": "123a9a1099380560383a2e998982be635e508b6bd4642ab68096e675e35ba612",
+  "hardware/kicad/console_board_pcb.py": "f70d3b4154fdc88ab89f68a2a0c3ea13b88af1e67d0b19e3c9d7a05d8f1bc94c",
+  "hardware/kicad/route_ring_board.sh": "64ab902f3adf6d19ec1afbe0d81c47195054ec80ef5e24e71560184b8b06ffd3",
+  "hardware/kicad/route_console_board.sh": "457e0b61f68f799625e6046a8f612c14db0d9174749a03ef4f78a196d614d8e2",
+  "hardware/kicad/ring_board.net": "7760982472f448cf3b811a0f9a71d5d7a9122665311d130c561f767dcf3e379a",
+  "hardware/kicad/console_board.net": "bc07049c367f126779b20d11e765ed4a3d3c2436d94a56eb9b40c926958f1d6b",
+  "hardware/kicad/ring_board.py": "ccffc72aec110fffb18a20e2158b11a27a45e1d3ddceacc6b2e3c5cc30c30260",
+  "hardware/kicad/console_board.py": "6d5a60e679292bb18959cee76e5d6e6a0da4b1c722737e3351b92c08700a2176"
+}
