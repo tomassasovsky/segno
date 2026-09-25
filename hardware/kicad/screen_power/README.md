@@ -3,7 +3,7 @@
 <!-- cspell:words SUP SUM Rds backfeed Micro pulldown Vgs Littelfuse Lumberg MMBT DMODEL stackup microstrip heatsinks -->
 # Screen power and touch switch
 
-Revision I is a **two-layer, 68 × 76 mm** hand-soldered board with **3 mm
+Revision J retains the **two-layer, 68 × 76 mm** hand-soldered board with **3 mm
 rounded corners**, purple solder mask and white silkscreen. The extra 4 mm
 of width gives the shared power rail its own strip beyond the USB connectors.
 The control section stays at the upper left, power enters above the screen
@@ -21,12 +21,20 @@ switched USB touch paths. The current revision uses pin-compatible 4.5 V
 IM02TS relays to improve pickup margin on the Pi's 5 V USB supply. The APROTII can stay lit from touch alone, so both
 its main feed and touch supply must turn off.
 
-**Revision I is ready for first fabrication; assembled operation is unverified.**
+**Revision I screen Gerbers are withdrawn. Revision J corrects the relay wiring.**
+The September 25 [independent review and assessment](../../../docs/reviews/screen-power-claude-1072/assessment.md)
+found both relay commons disconnected, leaving both USB touch paths open in
+either relay state. This supersedes the earlier screen-board readiness claim.
+Revision J moves the upstream data nets to commons 3/6, retaining normally open
+contacts 4/5 and leaving normally closed contacts 2/7 unused.
+
+Use the Revision J archive identified in the [verification record](../../../docs/reviews/screen-power-rev-j-1072/verification.md),
+which records the corrected checks, independent reviews and export hashes.
+No additional owner measurements are prerequisites for buying the bare PCBs.
 The September 24 [first-fabrication decision](../../../docs/reviews/pcb-completion-1072/first-fabrication.md)
-supersedes the earlier blanket measurement hold. No additional owner measurements
-are prerequisites for buying the bare PCBs. The pre-order audit corrected
-lead-hole fit, metal-fastener clearance and a separate console ADC power-domain
-fault. Earlier exports are superseded.
+remains the basis for that scope, with its Revision I screen-board approval
+superseded. Its lead-hole, metal-fastener and console ADC power-domain corrections
+are retained. The full-white console and ring designs are unchanged by Revision J.
 CAD validation does not establish thermal performance, USB compliance, screen
 compatibility, enclosure fit, or shutdown timing. Issue: [#1072](https://github.com/tomassasovsky/segno/issues/1072).
 
@@ -35,9 +43,9 @@ holes**, with no surface-mount parts or external electronic modules. Both
 outer copper layers, `F.Cu` and `B.Cu`, have filled GND pours. There are no
 inner copper layers. Select purple solder mask and white silkscreen when ordering.
 The mounting holes are at (4, 4), (64, 4), (4, 72) and (64, 72) mm; the two
-right-hand holes move with the wider edge. Revision I uses 3.5 mm unplated
+right-hand holes move with the wider edge. Revision J retains 3.5 mm unplated
 holes and 4.25 mm copper/track/via keepouts on both faces, allowing M3 hardware
-with a maximum 7 mm washer/head diameter. It reroutes the lower power branch
+with a maximum 7 mm washer/head diameter and the lower power branch routed
 above this clearance. Older revision packages, including
 the removed factory variant, are historical only.
 
@@ -159,14 +167,17 @@ for this part. That supports its selection for the prototype, but does not
 establish differential USB performance. The 480 Mbps hub path needs
 an eye/signal-integrity check and functional tests with the actual cables.
 
-- Shared design load: up to **6 A combined**, provisional until thermal tests.
-  The SUP70101EL pair dissipates up to 1.08 W at 6 A using the
-  specified 25 °C maximum 15 mΩ per device at −4.5 V gate drive. Hot resistance
-  and cable/copper losses increase the drop. Do not infer a rated 6 A assembly
-  from the transistor's headline current rating.
-- Each main branch uses a 4 A Littelfuse 251 fuse; design for 3 A continuous at
-  the reference ambient and derate further with temperature. Each touch branch
-  uses a 750 mA fuse for a nominal 500 mA load. These are overload fuses, not
+- Shared design allowance: **6 A through Q3/Q4 in total**, including both
+  main outputs, both touch outputs and R8's approximately **0.05 A** bleeder
+  load. Thus the four external loads together must remain within 5.95 A at
+  5 V. Ring and console current use a separate path and are not part of this
+  switch allowance. This remains a provisional design allowance, not a
+  thermally qualified assembly rating.
+- Each main branch retains a 4 A Littelfuse 251 fuse and a **3 A branch
+  ceiling** at the reference ambient, with further temperature derating. Each
+  touch branch retains a 750 mA fuse and a **500 mA branch ceiling**. These
+  ceilings are not simultaneous or additive guarantees: their 7 A sum exceeds
+  the shared allowance before the bleeder is counted. The fuses are not
   active current limiters. Check actual screen inrush against fuse I²t and
   upstream protection. A screen internally joining its two power ports may
   feed a fault through both branches; test that specific fault path.
@@ -223,10 +234,13 @@ track at 0.1 mm intervals, excluding only 1.35 mm around its through-hole
 terminals. Native DRC separately verifies ground connectivity.
 
 The shared rail runs along the right edge at 4.5 mm width. The MOSFET feed and
-fuse branches use 3 mm copper, with short 1.5 mm device-pin necks, 2 mm main
-outputs and 0.8 mm touch-power connections. Through-hole fuse pads transfer
-power between faces without power vias. Copper current capacity and temperature
-rise remain physical acceptance items.
+fuse branches use 3 mm copper, with 2 mm main outputs and 0.8 mm touch-power
+connections. Revision J widens the short MOSFET necks to 1.9 mm and the C2 feed
+to 1.5 mm, and adds three dedicated shared-power stitching vias alongside the
+existing plated-through fuse-pad connection. Its relay reroute retains paired
+USB geometry and the front-side ground reference. The Revision J
+record contains its CAD and export checks; copper temperature rise remains an
+assembled acceptance item.
 
 These choices follow [TI's USB layout guidance](https://www.ti.com/lit/an/slla414/slla414.pdf)
 (short pairs, continuous return planes, through-hole connector signals on the
@@ -242,9 +256,10 @@ bottom) and [Sierra Circuits' placement guidance](https://www.protoexpress.com/b
   gate-drive conditions differ.
 - [TE/Axicom IM02TS, part 1-1462037-3](https://www.te.com/en/product-1-1462037-3.html):
   standard non-latching 4.5 V through-hole relay. TE data sheet 108-98001 gives
-  the coil limits on page 3 and top-view pinout on page 4. Coil 1+/8−;
-  commons 2/7; normally open 4/5; unused normally closed 3/6. The project
-  footprint derives from KiCad IMSeries with drills enlarged from 0.70 to
+  the coil limits and the non-latching terminal assignment in top view.
+  Coil 1+/8−; commons **3/6**; normally open **4/5**; unused normally closed
+  **2/7**. Revision I incorrectly used the normally closed terminals as commons.
+  The project footprint derives from KiCad IMSeries with drills enlarged from 0.70 to
   **0.90 mm**; allowing JLCPCB's −0.08 mm finished-hole tolerance leaves
   0.82 mm, above TE's 0.75 mm minimum.
 - [Littelfuse 251 fuse dimensions, derating and solder limits](https://www.littelfuse.com/assetdocs/fuse-251-datasheet?assetguid=f47a0bb7-8ede-4679-9646-7114c3787688).
@@ -290,16 +305,31 @@ The lower price does not remove the physical USB acceptance gate.
 
 Q3 and Q4 are power MOSFETs, not the expensive relays. The
 [SUP70101EL-GE3 was listed at US$4.70 each](https://www.digikey.com/en/products/detail/vishay-siliconix/SUP70101EL-GE3/7622840).
-At 3 A combined, their calculated pair loss is 0.27 W; at 6 A it is 1.08 W,
-or 0.54 W per part, using 15 mΩ each at 25 °C. Resistance rises as they heat.
-These are dissipation calculations, not measured temperatures. The datasheet's
-40 °C/W junction-to-ambient figure uses a specified board mounting condition;
-it does not establish this enclosed assembly's temperature or heatsink need.
-Start the prototype without heatsinks and measure Q3/Q4 at maximum screen
-brightness in the warmed enclosure. At 3 A combined, the calculated loss is
-0.135 W per device; at 6 A, 0.54 W per device at 25 °C, increasing with heat.
-If cooling is required, keep the electrically live drain tabs isolated:
-a shared metal heatsink must not join them and bypass the switch.
+Available screen/charger readings imply about **2.2 A** from their current
+fields, or **3.2 A** from the power fields at 5 V. Those fields are inconsistent
+and do not establish a simultaneous measured bound. Allowing a conservative
+extra 1 A for touch, if not already included, plus the 0.05 A bleeder gives
+**3.25–4.25 A** through each MOSFET.
+
+The [qualified thermal assessment](../../../docs/reviews/screen-power-claude-1072/assessment.md)
+supports retaining the upright parts without heatsinks for these expected screen
+loads. Using 15 mΩ per device at 25 °C and −4.5 V gate drive, a
+temperature-dependent resistance estimate, 60 °C ambient and an assumed
+75 °C/W thermal resistance gives about
+**0.20–0.36 W per device**, with estimated junction temperatures of **75–87 °C**.
+At the full 6 A allowance, the same estimate gives **0.81 W per device** and
+**121 °C** junction temperature; the simpler 25 °C calculation is 0.54 W per
+device, or 1.08 W for the pair. These estimates are engineering judgment, not
+thermal qualification. The datasheet's 40 °C/W value uses a specified board
+mounting condition and is not established for this upright assembly. Neither
+startup safe operating area nor fuse-clearing behavior is proven by the review.
+
+No heatsinks are expected for these screens; Q3/Q4 remain upright in their
+existing positions. Confirm temperature at maximum brightness in the warmed
+assembly as part of the existing acceptance checks. No exact optional heatsink
+fit is validated. Q3's tab is `AUX_5V` and Q4's is `SWITCHED_5V`: any later cooling
+hardware must preserve their isolation from each other, ground and the enclosure.
+Never join the different drain nets with an uninsulated shared heatsink.
 
 ## Physical acceptance before release
 
@@ -333,6 +363,9 @@ adds the stack and labels; `cleanup.py` removes verified redundant tails.
 Run `check.py hand --self-test --output validation.json` with KiCad Python.
 It checks native ERC/DRC, full schematic/netlist/PCB parity, actual USB and
 console GPIO connectivity, circuit boundaries, assembly types and drive margins.
+Revision J adds an independent relay contact-state check and fault injection
+for the disconnected-common error; verification results are in the
+[Revision J record](../../../docs/reviews/screen-power-rev-j-1072/verification.md).
 Fault injection checks that missing, disabled or unresolved 3D models,
 broken USB/control copper, missing USB ground reference, extra copper layers,
 a host power bridge,
@@ -343,8 +376,8 @@ fresh successful check and unchanged input hashes.
 
 ## First assembly and acceptance
 
-The bare PCB can be ordered under the first-fabrication decision above. The
-following checks apply to its assembly and system acceptance:
+The Revision J verification record identifies the checked bare-board archive.
+The following existing checks apply to its assembly and system acceptance:
 
 1. **HDMI-only visual check passed (owner report, 2026-09-22).** With the Pi
    on, both displays go fully dark when power and touch USB are removed while
@@ -373,5 +406,7 @@ Some measurements can use the existing displays and reusable components
 before PCBs are bought. Final USB, heating and assembly validation require
 the actual assembly; neither simulation nor a breadboard proves its USB path.
 The [publication record](../../../docs/reviews/hardware-publication-1072/verification.md)
-identifies the current files, checks and retained design alternatives. CAD
+records the broader hardware package; its earlier screen-board readiness is
+superseded by the [Revision J record](../../../docs/reviews/screen-power-rev-j-1072/verification.md),
+which identifies the corrected checks and exports. CAD
 checks establish fabrication geometry; they do not establish assembled behavior.

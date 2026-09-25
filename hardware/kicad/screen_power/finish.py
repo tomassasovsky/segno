@@ -40,6 +40,10 @@ def stackup(path):
 def finish(variant):
     path = HERE / variant / f'screen_power_{variant}.kicad_pcb'
     board = p.LoadBoard(str(path))
+    title=board.GetTitleBlock()
+    title.SetTitle('Segno screen power')
+    title.SetRevision('J')
+    board.SetTitleBlock(title)
     for item in list(board.GetDrawings()):
         if isinstance(item, p.PCB_TEXT):
             board.RemoveNative(item)
@@ -49,9 +53,9 @@ def finish(variant):
         t.SetLayer(layer);t.SetMirrored(layer==p.B_SilkS);board.Add(t)
     from layout import DIMENSIONS, USB_ROWS
     w,h = DIMENSIONS[variant]
-    label('SEGNO SCREEN POWER / REV I',32,1.4,.8,p.B_SilkS)
+    label('SEGNO SCREEN POWER / REV J',32,1.4,.8,p.B_SilkS)
     label('SEGNO SCREEN POWER',26,50.5,.9)
-    label('REV I',27,h-2.5,.8)
+    label('REV J',27,h-2.5,.8)
     label('5V IN',56,6.5,1.0)
     label('CTRL J25',6,8,1.0)
     label('5V IN',56,6.5,1.0,p.B_SilkS)
@@ -68,7 +72,6 @@ def finish(variant):
             for text,dy in [('1 +5V',3.75),('2 D-',1.25),('3 D+',-1.25),('4 GND',-3.75)]:
                 label(text,x-4,y+dy,1.0,p.B_SilkS)
         label(f'S{ch} 5V OUT',55,y-8.2,1.0,p.B_SilkS)
-    label('2 LAYERS',27,h-2.5,.8,p.B_SilkS)
     # Merge almost-coincident router nodes within 2um. A single grid rounding
     # could put opposite sides of a tiny gap into adjacent rounding cells.
     precise={f'S{ch}_{suffix}' for ch in [1,2] for suffix in ['UP_P','UP_N','DN_P','DN_N']}

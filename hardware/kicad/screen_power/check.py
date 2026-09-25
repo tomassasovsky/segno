@@ -138,15 +138,92 @@ def check_contract(variant, pins, nets, errors):
         require(f"J{n+3}", {1:pre+"_MAIN_5V",2:"GND"})
         require(f"F{n+1}", {1:"SWITCHED_5V",2:pre+"_MAIN_5V"})
         require(f"F{n+2}", {1:"SWITCHED_5V",2:pre+"_TOUCH_5V"})
-        require(f"K{n+1}", {1:host,8:coil,2:pre+"_UP_N",7:pre+"_UP_P",4:pre+"_DN_N",5:pre+"_DN_P"})
-        if any((f"K{n+1}",pin) in pins for pin in ("3","6")):
+        require(f"K{n+1}", {1:host,8:coil,3:pre+"_UP_N",6:pre+"_UP_P",4:pre+"_DN_N",5:pre+"_DN_P"})
+        if any((f"K{n+1}",pin) in pins for pin in ("2","7")):
             fail(errors,"relay_contacts",f"K{n+1}: normally closed and unused terminals must be unconnected")
         require(f"Q{n+1}", ({1:"GND",2:"DATA_ENABLE",3:coil}))
         require(f"D{n+1}", {1:host,2:coil})
         nodes(host, {(f"J{n+1}","1"),(f"K{n+1}","1"),(f"D{n+1}","1"),(f"C{n+1}","1")})
-        for side, j, terminals in (("UP",n+1,{"P":7,"N":2}),("DN",n+2,{"P":5,"N":4})):
+        for side, j, terminals in (("UP",n+1,{"P":6,"N":3}),("DN",n+2,{"P":5,"N":4})):
             for polarity, pin in (("P",3),("N",2)):
                 nodes(f"{pre}_{side}_{polarity}",{(f"J{j}",str(pin)),(f"K{n+1}",str(terminals[polarity]))})
+
+
+def check_relay_contacts(raw_nets, errors):
+    """Exercise the IM contact mechanism against actual netlist connectivity.
+
+    TE 108-98001 / KiCad IM00: off closes 3-2 and 6-7; energized closes
+    3-4 and 6-5. Physical terminals are graph vertices, so absent pins and
+    grouped no-connect markers never become a shared artificial net.
+    """
+    wiring = {}
+    for raw, nodes in raw_nets.items():
+        physical = [node for node in nodes if not node[0].startswith("#FLG")]
+        for node in physical:
+            wiring.setdefault(node, set())
+        name = net_name(raw)
+        if name == "NC" or name.startswith("unconnected-(") or not physical:
+            continue
+        for node in physical[1:]:
+            wiring[physical[0]].add(node)
+            wiring[node].add(physical[0])
+    endpoints = {(f"J{100*ch+side}", pin) for ch in (1, 2)
+                 for side in (1, 2) for pin in ("2", "3")}
+    for node in endpoints | {(f"K{100*ch+1}", str(pin))
+                             for ch in (1, 2) for pin in range(2, 8)}:
+        wiring.setdefault(node, set())
+    for energized in itertools.product((False, True), repeat=2):
+        graph = {node: set(neighbors) for node, neighbors in wiring.items()}
+        for ch, enabled in enumerate(energized, 1):
+            relay = f"K{100*ch+1}"
+            for common, throw in (("3", "4" if enabled else "2"),
+                                  ("6", "5" if enabled else "7")):
+                a, b = (relay, common), (relay, throw)
+                graph[a].add(b); graph[b].add(a)
+        for ch, pin in itertools.product((1, 2), ("2", "3")):
+            source, target = (f"J{100*ch+1}", pin), (f"J{100*ch+2}", pin)
+            reached, pending = set(), [source]
+            while pending:
+                node = pending.pop()
+                if node not in reached:
+                    reached.add(node)
+                    pending.extend(graph[node] - reached)
+            expected = {source, target} if energized[ch-1] else {source}
+            actual = reached & endpoints
+            if actual != expected:
+                fail(errors, "relay_behavior", f"Coils {energized}, {source}: reached {sorted(actual)}, required {sorted(expected)}")
+    return {"coil_states_checked": 4, "upstream_paths_checked": 16,
+            "off_contacts": [[3, 2], [6, 7]], "on_contacts": [[3, 4], [6, 5]]}
+
+
+def relay_contact_self_test(raw_nets):
+    baseline = []
+    check_relay_contacts(raw_nets, baseline)
+    results = {"relay_contact_baseline_passes": not baseline}
+    mutations = {
+        "relay_old_host_pins_detected": {"2": "3", "3": "2", "6": "7", "7": "6"},
+        "relay_wrong_throw_detected": {"2": "4", "4": "2", "5": "7", "7": "5"},
+        "relay_polarity_swap_detected": {"4": "5", "5": "4"},
+    }
+    for name, mapping in mutations.items():
+        changed = {net: [(ref, mapping.get(pin, pin) if ref == "K101" else pin)
+                         for ref, pin in nodes] for net, nodes in raw_nets.items()}
+        issues = []; check_relay_contacts(changed, issues)
+        results[name] = not baseline and bool(issues)
+    changed = {net: list(nodes) for net, nodes in raw_nets.items()}
+    # Join actual connector nets, independent of their generated names.
+    first = next(net for net, nodes in changed.items() if ("J101", "2") in nodes)
+    second = next(net for net, nodes in changed.items() if ("J201", "2") in nodes)
+    if first != second:
+        changed[first].extend(changed.pop(second))
+    issues = []; check_relay_contacts(changed, issues)
+    results["relay_cross_channel_detected"] = not baseline and bool(issues)
+    changed = {net: list(nodes) for net, nodes in raw_nets.items()
+               if net_name(net) != "NC" and not net_name(net).startswith("unconnected-(")}
+    changed["NC"] = [(f"K{100*ch+1}", pin) for ch in (1, 2) for pin in ("2", "7")]
+    issues = []; check_relay_contacts(changed, issues)
+    results["relay_no_connects_isolated"] = not baseline and not issues
+    return results
 
 
 def check_console_control(errors, board_path=None):
@@ -329,10 +406,11 @@ def check_power(board_path, errors, variant):
     KiCad's geometric connectivity then proves a path between physical pads.
     This checks copper geometry, not its thermal/current rating.
     """
-    paths=[(1.5,("J1","1"),("Q3","2")),((1.5),("Q3","3"),("Q4","3"))]
+    paths=[(1.9,("J1","1"),("Q3","2")),(1.9,("Q3","3"),("Q4","3")),
+           (1.5,("J1","1"),("C2","1"))]
     for ch in (1,2):
         n=ch*100
-        paths += [(1.5,("Q4","2"),(f"F{n+i}","1")) for i in (1,2)]
+        paths += [(1.9,("Q4","2"),(f"F{n+i}","1")) for i in (1,2)]
         paths += [(2.0,(f"F{n+1}","2"),(f"J{n+3}","1")),
                   (.8,(f"F{n+2}","2"),(f"J{n+2}","1"))]
     for minimum in sorted({path[0] for path in paths}):
@@ -352,6 +430,45 @@ def check_power(board_path, errors, variant):
             reached={item.m_Uuid.AsString() for item in connectivity.GetConnectedItems(terminals[a])}
             if terminals[b].m_Uuid.AsString() not in reached:
                 fail(errors,"power_copper",f"{a} → {b}: no continuous {minimum} mm copper path")
+    board=load_board(board_path)
+    terminals={(fp.GetReference(),pad.GetNumber()):pad
+               for fp in board.GetFootprints() for pad in fp.Pads()}
+    tracks=[t for t in board.GetTracks() if not isinstance(t,p.PCB_VIA)
+            and net_name(t.GetNetname())=="SWITCHED_5V" and t.GetWidth()>=p.FromMM(1.9)-1]
+    connectivity=board.GetConnectivity();connectivity.Build(board)
+    required={terminals[key].m_Uuid.AsString() for key in (("Q4","2"),("F201","1"))}
+    dedicated=set()
+    for via in board.GetTracks():
+        if (not isinstance(via,p.PCB_VIA) or net_name(via.GetNetname())!="SWITCHED_5V"
+                or via.GetViaType()!=p.VIATYPE_THROUGH or via.GetDrillValue()<p.FromMM(.45)-1):
+            continue
+        # A via must land inside wide copper on each face, and belong to the
+        # physical device-to-distribution path; spare or dangling vias do not count.
+        c=via.GetPosition();layers=set()
+        for track in tracks:
+            a,b=track.GetStart(),track.GetEnd();dx,dy=b.x-a.x,b.y-a.y
+            length2=dx*dx+dy*dy
+            u=max(0,min(1,((c.x-a.x)*dx+(c.y-a.y)*dy)/length2)) if length2 else 0
+            if math.hypot(c.x-a.x-u*dx,c.y-a.y-u*dy)<=track.GetWidth()/2:
+                layers.add(track.GetLayer())
+        reached={item.m_Uuid.AsString() for item in connectivity.GetConnectedItems(via)}
+        if {p.F_Cu,p.B_Cu}<=layers and required<=reached:
+            dedicated.add(via.m_Uuid.AsString())
+    if len(dedicated)<3:
+        fail(errors,"power_vias",f"Shared SWITCHED_5V transition needs 3 connected through vias with at least 0.45 mm drills; found {len(dedicated)}")
+    # Prove the added vias actually bypass the fuse barrel. A via on a top
+    # island can otherwise reach both endpoints by returning to the bottom
+    # feeder and crossing the original F101 plated pad.
+    fuse=next(fp for fp in board.GetFootprints() if fp.GetReference()=="F101")
+    fuse.RemoveNative(terminals.pop(("F101","1")))
+    for item in list(board.GetTracks()):
+        if ((isinstance(item,p.PCB_VIA) and item.m_Uuid.AsString() not in dedicated)
+                or (not isinstance(item,p.PCB_VIA) and item.GetWidth()<p.FromMM(1.9)-1)):
+            board.RemoveNative(item)
+    connectivity=board.GetConnectivity();connectivity.Build(board)
+    reached={item.m_Uuid.AsString() for item in connectivity.GetConnectedItems(terminals[("Q4","2")])}
+    if terminals[("F201","1")].m_Uuid.AsString() not in reached:
+        fail(errors,"power_via_bypass","Qualifying SWITCHED_5V vias do not provide a continuous 1.9 mm Q4.2 to F201.1 path without the F101.1 barrel")
 
 
 def resistor_value(components, ref):
@@ -417,7 +534,7 @@ def numerical_checks(variant, components, errors):
             "relay_initial_pickup_margin_23C_V":relay_coil_min-3.38,
             "relay_coil_rated_V":4.5,
             "relay_coil_max_applied_over_rated_ratio":5.25/4.5,
-            "relay_hot_restart":"measure coil voltage and qualify hot re-enable before fabrication release",
+            "relay_hot_restart":"measure coil voltage and qualify hot re-enable on first assembly",
             "host_relay_coil_nominal_mA":5000/145,
             "main_continuous_fuse_design_A":3,"touch_continuous_fuse_design_A":.5,
             "thermal_inrush_USB_suspend_and_fault_coordination":"require physical testing"}
@@ -466,7 +583,8 @@ def rule_check(kind, source, destination, errors):
 
 
 def self_test(board_path, components, expected, temp, variant="hand"):
-    results = {}
+    _, raw_nets = parse_netlist(HERE / variant / f"screen_power_{variant}.net")
+    results = relay_contact_self_test(raw_nets)
     altered = load_board(board_path)
     header = next(f for f in altered.GetFootprints() if f.GetReference() == "J101")
     terminal = next(pad for pad in header.Pads() if pad.GetNumber() == "2")
@@ -547,6 +665,53 @@ def self_test(board_path, components, expected, temp, variant="hand"):
     narrow_path=temp/"narrow-power.kicad_pcb";narrowed.Save(str(narrow_path))
     power_errors=[];check_power(narrow_path,power_errors,variant)
     results["narrow_power_detected"]=any(e["check"]=="power_copper" for e in power_errors)
+    for ref,number,width,name in (("Q3","2",1.5,"narrow_fet_neck_detected"),
+                                  ("C2","1",.25,"narrow_bulk_feed_detected")):
+        altered=load_board(board_path)
+        terminal=next(pad for fp in altered.GetFootprints() if fp.GetReference()==ref
+                      for pad in fp.Pads() if pad.GetNumber()==number)
+        at=terminal.GetPosition();changed=False
+        for track in altered.GetTracks():
+            if isinstance(track,p.PCB_VIA):continue
+            attached=any(end.x==at.x and end.y==at.y for end in (track.GetStart(),track.GetEnd()))
+            # Adjacent wide segments can overlap the capacitor pad even if
+            # its final segment is narrowed. Narrow the whole 1.5 mm branch.
+            selected=track.GetWidth()<=p.FromMM(1.5) if ref=="C2" else attached
+            if net_name(track.GetNetname())==net_name(terminal.GetNetname()) and selected:
+                track.SetWidth(p.FromMM(width));changed=True
+        target=temp/f"{name}.kicad_pcb";altered.Save(str(target))
+        issues=[];check_power(target,issues,variant)
+        results[name]=changed and any(e["check"]=="power_copper" and ref in e["detail"] for e in issues)
+    for fault in ("missing", "small_drill", "disconnected"):
+        altered=load_board(board_path)
+        changed=False
+        for via in list(altered.GetTracks()):
+            if not isinstance(via,p.PCB_VIA) or net_name(via.GetNetname())!="SWITCHED_5V":continue
+            changed=True
+            if fault=="missing":altered.RemoveNative(via)
+            elif fault=="small_drill":via.SetDrill(p.FromMM(.3))
+            else:via.SetPosition(p.VECTOR2I(p.FromMM(-10),p.FromMM(-10)))
+        target=temp/f"{fault}-power-vias.kicad_pcb";altered.Save(str(target))
+        issues=[];check_power(target,issues,variant)
+        results[f"{fault}_power_vias_detected"]=changed and any(e["check"]=="power_vias" for e in issues)
+    altered=load_board(board_path)
+    net=altered.GetNetsByName()["SWITCHED_5V"]
+    for via in list(altered.GetTracks()):
+        if isinstance(via,p.PCB_VIA) and net_name(via.GetNetname())=="SWITCHED_5V":
+            altered.RemoveNative(via)
+    # All three vias touch the bottom feeder and wide top copper, but the
+    # top island has no onward connection to the distribution bus.
+    for x in (39,40.1,41.2):
+        via=p.PCB_VIA(altered);via.SetPosition(p.VECTOR2I(p.FromMM(x),p.FromMM(20)))
+        via.SetWidth(p.FromMM(.9));via.SetDrill(p.FromMM(.45))
+        via.SetViaType(p.VIATYPE_THROUGH);via.SetLayerPair(p.F_Cu,p.B_Cu)
+        via.SetNet(net);altered.Add(via)
+    island=p.PCB_TRACK(altered);island.SetStart(p.VECTOR2I(p.FromMM(39),p.FromMM(20)))
+    island.SetEnd(p.VECTOR2I(p.FromMM(41.2),p.FromMM(20)));island.SetWidth(p.FromMM(3))
+    island.SetLayer(p.F_Cu);island.SetNet(net);altered.Add(island)
+    target=temp/"redundant-power-vias.kicad_pcb";altered.Save(str(target))
+    issues=[];check_power(target,issues,variant)
+    results["redundant_power_vias_detected"]=({e["check"] for e in issues}=={"power_via_bypass"})
     board = load_board(board_path)
     fp = next(fp for fp in board.GetFootprints() if fp.GetReference() == "J101")
     pad = next(pad for pad in fp.Pads() if pad.GetNumber() == "1")
@@ -626,6 +791,7 @@ def validate(variant, board_override=None, run_self_test=False):
         board = load_board(board_path)
         check_pad_map(board, components, pins, errors)
         check_contract(variant, pins, expected, errors)
+        summary["relay_contact_behavior"] = check_relay_contacts(raw_nets, errors)
         check_geometry(board, errors, variant)
         check_mounting_clearance(board, errors)
         check_relay_holes(board, errors)
@@ -650,6 +816,7 @@ def validate(variant, board_override=None, run_self_test=False):
             else:
                 native_components, native_raw = parse_netlist(exported)
                 native = semantic_nets(native_raw)
+                check_relay_contacts(native_raw, errors)
                 if native_components != components:
                     fail(errors, "native_parity", "Native schematic components differ from generated netlist")
                 for name in sorted(set(expected) | set(native)):
@@ -662,6 +829,12 @@ def validate(variant, board_override=None, run_self_test=False):
                 required_faults += ["smd_footprint_detected", "smd_pad_detected", "power_lead_hole_detected", "four_layers_detected", "missing_usb_reference_detected"]
                 required_faults += [f'{ref}_hole_tolerance_detected' for ref in ('J101','J2','J1','Q1','H1')]
                 required_faults += ['fastener_short_detected']
+                required_faults += ["relay_contact_baseline_passes", "relay_old_host_pins_detected",
+                                    "relay_wrong_throw_detected", "relay_polarity_swap_detected",
+                                    "relay_cross_channel_detected", "relay_no_connects_isolated",
+                                    "narrow_fet_neck_detected", "narrow_bulk_feed_detected",
+                                    "missing_power_vias_detected", "small_drill_power_vias_detected",
+                                    "disconnected_power_vias_detected", "redundant_power_vias_detected"]
                 if not all(summary["self_test"].get(k) for k in required_faults):
                     fail(errors, "self_test", "A deliberate fault was not detected")
     except (OSError, ValueError, AssertionError, KeyError, StopIteration, RuntimeError) as exc:

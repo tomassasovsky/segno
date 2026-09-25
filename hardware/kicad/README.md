@@ -16,6 +16,15 @@ September 24 hole allowances, order settings and USB programming connection.
 
 ## Console connection to the screen-power board
 
+**Revision I screen Gerbers are withdrawn.** The independent review found
+disconnected relay commons, so neither touch path could conduct. Revision J
+corrects the common contacts to 3/6 and retains normally open contacts 4/5;
+corrected checks and exports are recorded in the
+[Revision J verification](../../docs/reviews/screen-power-rev-j-1072/verification.md).
+Use the archive identified in that record. No additional owner measurements
+are prerequisites for bare-board fabrication. The full-white console and ring
+designs are unchanged.
+
 Use **J25**, the two-pin through-hole JST XH connector beside the Pi ribbon
 connector. It is already included in the console source, routed PCB and BOM
 under #1072. The top-side label reads `SCREEN`; the pin map is documented below.
@@ -43,6 +52,12 @@ The latest [placement verification](../../docs/reviews/console-pi-power-placemen
 covers the PI PWR move and retained PD alignment. The subsequent
 [top-label verification](../../docs/reviews/console-screen-label-1072/verification.md)
 covers the `SCREEN` text change and current exports.
+
+The screen switch's provisional **6 A shared allowance includes both main
+outputs, both touch outputs and the 0.05 A bleeder**. Its 3 A main and 500 mA
+touch branch ceilings are not additive or simultaneous guarantees. Ring current
+uses its separate console power path and does not pass through Q3/Q4. See the
+[screen-board limits and thermal estimate](screen_power/README.md#circuit-and-limits).
 
 The ring's J6 connector is JST XH, rated **3 A with 22 AWG wire**. Use 22 AWG
 for its +5V and GND leads with SXH-001T-P0.6 contacts. The updated console

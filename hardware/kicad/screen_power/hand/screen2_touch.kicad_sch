@@ -5,7 +5,7 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / screen2 touch")
-    (rev "G prototype")
+    (rev "J prototype")
     (comment 1 "Discrete 5V switch. Host VBUS powers only its own signal relay coil.")
     (comment 2 "Physical verification required before release."))
   (lib_symbols
@@ -1864,25 +1864,25 @@
         (size 1.0 1.0))
       (justify left))
     (uuid 56512bc2-34cd-5098-98b4-eae784bd7459))
+  (no_connect
+    (at 149.86 106.68)
+    (uuid 15bf39cd-1950-5af2-9b01-8c210c5ded0f))
   (wire
     (pts
-      (xy 149.86 106.68)
-      (xy 149.86 101.6))
+      (xy 152.4 121.92)
+      (xy 152.4 127.0))
     (stroke
       (width 0)
       (type default))
-    (uuid 3a2821cb-4362-56b3-a904-7ee31001aea1))
+    (uuid ad4149d9-407d-55f6-b032-8c4644f8919a))
   (global_label "S2_UP_N"
     (shape bidirectional)
-    (at 149.86 101.6 90)
+    (at 152.4 127.0 270)
     (effects
       (font
         (size 1.0 1.0))
-      (justify left))
-    (uuid 4c942ac0-7ba9-5aa4-b38c-d51b551eeb34))
-  (no_connect
-    (at 152.4 121.92)
-    (uuid e930f063-1ebe-56ae-8723-2d2112049bbf))
+      (justify right))
+    (uuid a4d59f7a-abba-51e9-a1cc-be940c7ce746))
   (wire
     (pts
       (xy 154.94 106.68)
@@ -1915,25 +1915,25 @@
         (size 1.0 1.0))
       (justify left))
     (uuid 94505a71-d7fc-5a1d-99e7-f1862f44ae30))
-  (no_connect
-    (at 162.56 121.92)
-    (uuid f2c152a5-a885-5918-aea8-ae754bf093f8))
   (wire
     (pts
-      (xy 160.02 106.68)
-      (xy 160.02 101.6))
+      (xy 162.56 121.92)
+      (xy 162.56 127.0))
     (stroke
       (width 0)
       (type default))
-    (uuid 6362134d-d12b-55f1-bb2d-13734ab192ff))
+    (uuid ab0b11b2-f511-554b-8ea8-d0e1aff7d54d))
   (global_label "S2_UP_P"
     (shape bidirectional)
-    (at 160.02 101.6 90)
+    (at 162.56 127.0 270)
     (effects
       (font
         (size 1.0 1.0))
-      (justify left))
-    (uuid f6c96aa1-a70c-5269-970e-972e340d7353))
+      (justify right))
+    (uuid fa295c83-7b7c-5950-aa8d-06213a94b185))
+  (no_connect
+    (at 160.02 106.68)
+    (uuid 2b9fde94-9c79-5a1e-82ef-a0d0ceb2b622))
   (wire
     (pts
       (xy 142.24 121.92)

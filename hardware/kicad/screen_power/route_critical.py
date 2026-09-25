@@ -6,6 +6,8 @@ import pcbnew as p
 from pcb import point, xy
 from layout import USB_ROWS, POWER_BUS_X, USB_WIDTH, USB_GAP
 HERE=Path(__file__).resolve().parent
+# Shared-load neck at the TO-220 terminals.
+NECK=1.9
 
 
 def route(variant):
@@ -20,7 +22,7 @@ def route(variant):
     def join(a,b,bends=(),width=USB_WIDTH,layer=p.B_Cu):
         assert pad(*a).GetNetname()==pad(*b).GetNetname(),(a,b)
         track(pad(*a).GetNetname(),[at(*a),*bends,at(*b)],width,layer)
-    def pair(a,b,centre):
+    def pair(a,b,centre,breakout=False):
         # Mitered parallel offsets for the two-layer coupled microstrip.
         normals=[]
         for x,y in zip(centre,centre[1:]):
@@ -40,36 +42,60 @@ def route(variant):
                 knee=(pad_xy[0],coupled[1]-dy*abs(coupled[0]-pad_xy[0]))
             assert (knee[0]-pad_xy[0])*dx+(knee[1]-pad_xy[1])*dy>=0
             return knee
+        def spread(pad_xy, coupled):
+            # Break out across the run instead of along it: one 45-degree miter
+            # then an axial drop onto a terminal that sits past the coupled
+            # section, where an along-axis miter would cross its neighbour pad.
+            reach=pad_xy[0]-coupled[0]
+            assert abs(reach)<=abs(pad_xy[1]-coupled[1])
+            return (pad_xy[0],coupled[1]+math.copysign(abs(reach),pad_xy[1]-coupled[1]))
         for i,sign in enumerate((1,-1)):
             pts=[(c[0]+n[0]*(USB_WIDTH+USB_GAP)/2*sign,c[1]+n[1]*(USB_WIDTH+USB_GAP)/2*sign) for c,n in zip(centre,offsets)]
             ap,bp=at(*a[i]),at(*b[i]);first,last=normals[0],normals[-1]
-            bends=[fanout(ap,pts[0],(-first[1],first[0])),*pts,
-                   fanout(bp,pts[-1],(last[1],-last[0]))]
+            tail=spread(bp,pts[-1]) if breakout else fanout(bp,pts[-1],(last[1],-last[0]))
+            bends=[fanout(ap,pts[0],(-first[1],first[0])),*pts,tail]
             join(a[i],b[i],bends)
     for ch,y in enumerate(USB_ROWS[variant],1):
         n=ch*100;host=f'J{n+1}';touch=f'J{n+2}';relay=f'K{n+1}'
-        pair([(host,3),(host,2)],[(relay,7),(relay,2)],
-             [(11,y),(24,y)])
+        # The host side lands on the changeover commons 6/3, one terminal
+        # column further in than the unused breaks 7/2. The pair therefore
+        # stays coupled past those idle pads and separates across the row.
+        pair([(host,3),(host,2)],[(relay,6),(relay,3)],
+             [(11,y),(27.6,y)],breakout=True)
         pair([(relay,5),(relay,4)],[(touch,3),(touch,2)],
              [(35,y),(52,y)])
         # Keep the relay-drive return between contact columns, never beneath
         # the USB fanouts. This narrow control channel is routed explicitly.
+        # The commons now carry the host pair, so the channel sits between the
+        # common column and the make column and is recentred on that gap.
         join((relay,8),(f'Q{n+1}',3),
-             [(23.2,y-4.6),(23.9,y-5.3),(28.7,y-5.3),
-              (29.7,y-4.3),(29.7,y+6.2)],.25,p.F_Cu)
+             [(23.2,y-4.6),(23.9,y-5.3),(28.75,y-5.3),
+              (29.75,y-4.3),(29.75,y+6.2)],.25,p.F_Cu)
     # The front carries the 4.5mm shared trunk; main outputs use 2mm
-    # bottom branches. Short device-pin necks are 1.5mm, not signal tracks.
+    # bottom branches. The device-pin necks carry the whole shared load, so
+    # they run at the 1.9mm the 1.905mm TO-220 pads allow between neighbours.
     q3d,q3s,q4d,q4s=at('Q3',2),at('Q3',3),at('Q4',2),at('Q4',3)
     track('AUX_5V',[at('J1',1),(55,14),(52,11),(47,11)],3,p.F_Cu)
-    track('AUX_5V',[(47,11),(45.5,11),(44,9.5),q3d],1.5,p.F_Cu)
-    track('COMMON_SOURCE',[q3s,(41.46,10.5),(39.96,12)],1.5,p.F_Cu)
-    track('COMMON_SOURCE',[q4s,(33.54,10.5),(35.04,12)],1.5,p.F_Cu)
+    track('AUX_5V',[(47,11),(45.5,11),(44,9.5),q3d],NECK,p.F_Cu)
+    # The input bulk capacitor gets its own short wide branch above the can
+    # instead of a routed signal-width tail; it is the only local reservoir.
+    cap=at('C2',1)
+    track('AUX_5V',[(47,11),(45.5,12.5),(44.4,12.5),
+                    (cap[0],12.5+44.4-cap[0]),cap],1.5,p.F_Cu)
+    track('COMMON_SOURCE',[q3s,(41.46,10.5),(39.96,12)],NECK,p.F_Cu)
+    track('COMMON_SOURCE',[q4s,(33.54,10.5),(35.04,12)],NECK,p.F_Cu)
     track('COMMON_SOURCE',[(35.04,12),(39.96,12)],3,p.F_Cu)
-    # Feed the edge bus through the plated fuse terminal. The shared rail
-    # never crosses the USB return corridors on F.Cu; no power vias are used.
-    track('SWITCHED_5V',[q4d,(31,12)],1.5,p.B_Cu)
+    # Feed the edge bus through the plated fuse terminal, and stitch that
+    # transition with dedicated vias for parallel copper paths independent
+    # of the fuse terminal's plated barrel.
+    track('SWITCHED_5V',[q4d,(31,12)],NECK,p.B_Cu)
     f=at('F101',1)
     track('SWITCHED_5V',[(31,12),(36,17),(36,18.5),(37.5,20),(43,20),(47,24),(f[0]-1,24),f],3,p.B_Cu)
+    track('SWITCHED_5V',[f,(f[0]-1,24),(46.6,24)],3,p.F_Cu)
+    for stitch in ((46.4,24.5),(47.5,24.5),(48.6,24.5)):
+        v=p.PCB_VIA(board);v.SetPosition(point(*stitch));v.SetWidth(p.FromMM(.9));v.SetDrill(p.FromMM(.45))
+        v.SetViaType(p.VIATYPE_THROUGH);v.SetLayerPair(p.F_Cu,p.B_Cu)
+        v.SetNet(nets['SWITCHED_5V']);v.SetLocked(True);board.Add(v)
     track('SWITCHED_5V',[(POWER_BUS_X,28),(POWER_BUS_X,65.25)],4.5,p.F_Cu)
     for ch,y in enumerate(USB_ROWS[variant],1):
         n=100*ch
@@ -115,9 +141,15 @@ def route(variant):
         z.SetDoNotAllowTracks(True);z.SetDoNotAllowVias(True)
         z.SetDoNotAllowZoneFills(False);z.SetDoNotAllowPads(False);z.SetDoNotAllowFootprints(False)
         poly=z.Outline();poly.NewOutline()
-        for endpoint,along,side in ((a,-1,1),(b,1,1),(b,1,-1),(a,-1,-1)):
-            v=point(endpoint[0]+.95*(along*ux-side*uy),
-                    endpoint[1]+.95*(along*uy+side*ux));poly.Append(v.x,v.y)
+        # Rounded ends avoid a diagonal rectangle's oversized corners in the
+        # relay's 2.2mm contact pitch. The 0.8mm radius exceeds the 0.425mm
+        # track half-width; the filled-plane check still samples every edge.
+        angle=math.atan2(uy,ux)
+        for endpoint,start in ((a,angle+math.pi/2),(b,angle-math.pi/2)):
+            for step in range(17):
+                theta=start+math.pi*step/16
+                v=point(endpoint[0]+.8*math.cos(theta),
+                        endpoint[1]+.8*math.sin(theta));poly.Append(v.x,v.y)
         board.Add(z)
     # Ground stitching beside the data corridors and around the power ports.
     for y in USB_ROWS[variant]:

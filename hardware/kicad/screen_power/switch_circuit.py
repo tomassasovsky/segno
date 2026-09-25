@@ -109,10 +109,15 @@ def build_switch(variant, schematic=False):
                  {1: "SWITCHED_5V", 2: rail}, mpn, group)
         # IM02TS is the pin-compatible 4.5 V coil option. The lower pickup
         # threshold improves warm restart margin on the Pi's 5 V USB supply.
+        # TE 108-98001 terminal assignment: each changeover set is driven from
+        # the middle terminal. Set A is common 3 with break 2 / make 4; set B is
+        # common 6 with break 7 / make 5. The host side therefore lands on the
+        # commons and the screen side on the makes, so an unpowered coil leaves
+        # both data lines open. Terminals 2 and 7 stay unconnected.
         part("Relay", "IM03", f"K{n+1}", "IM02TS",
              "screen_power:Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm",
-             {1: host, 8: coil, 2: pre+"_UP_N", 4: pre+"_DN_N",
-              7: pre+"_UP_P", 5: pre+"_DN_P"}, "1-1462037-3", group)
+             {1: host, 8: coil, 3: pre+"_UP_N", 4: pre+"_DN_N",
+              6: pre+"_UP_P", 5: pre+"_DN_P"}, "1-1462037-3", group)
         part("Transistor_FET", ("2N7000"), f"Q{n+1}", ("2N7000"),
              (TO92),
              ({1: "GND", 2: "DATA_ENABLE", 3: coil}),

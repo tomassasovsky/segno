@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "circuit.py")
-    (date "09/22/2026 05:07 PM")
+    (date "09/25/2026 03:44 PM")
     (tool "SKiDL (2.3.0)")
     (sheet
       (number 1)
@@ -13,7 +13,7 @@
         (company)
         (rev)
         (date)
-        (source "circuit.py")
+        (source "../../../circuit.py")
         (comment
           (number "1")
           (value ""))
@@ -57,7 +57,7 @@
         (field
           (name "SKiDL Tag") "flag-AUX_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:130"))
+          (name "SKiDL Line") "switch_circuit.py:135"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -81,7 +81,7 @@
         (field
           (name "SKiDL Tag") "flag-GND")
         (field
-          (name "SKiDL Line") "switch_circuit.py:130"))
+          (name "SKiDL Line") "switch_circuit.py:135"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -105,7 +105,7 @@
         (field
           (name "SKiDL Tag") "flag-HOST1_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:130"))
+          (name "SKiDL Line") "switch_circuit.py:135"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -129,7 +129,7 @@
         (field
           (name "SKiDL Tag") "flag-HOST2_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:130"))
+          (name "SKiDL Line") "switch_circuit.py:135"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -153,7 +153,7 @@
         (field
           (name "SKiDL Tag") "flag-S1_TOUCH_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:130"))
+          (name "SKiDL Line") "switch_circuit.py:135"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -177,7 +177,7 @@
         (field
           (name "SKiDL Tag") "flag-S2_TOUCH_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:130"))
+          (name "SKiDL Line") "switch_circuit.py:135"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -1549,7 +1549,7 @@
         (pintype "PASSIVE"))
       (node
         (ref "K101")
-        (pin "2")
+        (pin "3")
         (pintype "PASSIVE")))
     (net
       (code 19)
@@ -1561,7 +1561,7 @@
         (pintype "PASSIVE"))
       (node
         (ref "K101")
-        (pin "7")
+        (pin "6")
         (pintype "PASSIVE")))
     (net
       (code 20)
@@ -1645,7 +1645,7 @@
         (pintype "PASSIVE"))
       (node
         (ref "K201")
-        (pin "2")
+        (pin "3")
         (pintype "PASSIVE")))
     (net
       (code 26)
@@ -1657,7 +1657,7 @@
         (pintype "PASSIVE"))
       (node
         (ref "K201")
-        (pin "7")
+        (pin "6")
         (pintype "PASSIVE")))
     (net
       (code 27)
