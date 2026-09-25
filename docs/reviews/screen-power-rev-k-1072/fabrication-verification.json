@@ -1,6 +1,6 @@
 {
   "passed": true,
-  "finished_at": "2026-09-25T19:33:11.310603+00:00",
+  "finished_at": "2026-09-25T20:33:15.082922+00:00",
   "board_sha256": "d35484d551cf8f526f62c4356accbff0492c28999beb0e8830801c39f00c83da",
   "screen_zip_sha256": "171034c87f3d371db9f7017a196960bdb7e01c249c1178eba90abb3ab2f05e3c",
   "checks_passed": 358,
@@ -67,7 +67,7 @@
     "models/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step": "7eb17ded8ec4a3216753a234254e22a2d8e07826f0816045bfb803a19cac75ea",
     "models/Panasonic_EEUFR1A151.step": "2162715725a2bee92472f5025b88b04305f4e1ae584b1a552765c288df6dde4e",
     "models/Panasonic_EEUFR1A221.step": "af0aa040439004602375439464b7de656ed8544b64959c8f1b029cd9dd998336",
-    "models/README.md": "0407125acec2e92b5aca50b8baa179de2b553a6a5e008f0c98d36eb03d8dfcdb",
+    "models/README.md": "d943d0242e2faf05f2d4c7e126ae0f14eaaf67d30313c93eb0da7de4708e1541",
     "models/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step": "85bdadc9190739c38429da06b1d9c76ccf33aef9a0794a2e7a9dd5b58d9d05fe",
     "models/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm.step": "ef14b7f12cdde58ff2c770df5e726c11bb1ad801956d525273855cfa84f90633",
     "models/TO-220-3_Vertical.step": "7cb065d935df5771f0ba6e48ddd180863a121af76483dad7f18e667a7b68204a",
@@ -86,7 +86,7 @@
     "screen_power.pretty/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm.kicad_mod": "75b6991cb1ba1a8efdefdadd548c3edc078e441a79532e26a9f71f638beafdf0",
     "screen_power.pretty/TO-220-3_SUP70101EL.kicad_mod": "0566209e224dbf3c4e85ce20f55fe952db20cb2f4fd765e34b3a8854375b9cd0",
     "switch_circuit.py": "cbd54d055e2bb21a4449cac956bdd4779d39da548193661550dc2e43117395ad",
-    "README.md": "1f23b35c3e4a1715250152071807c9a5466501195d468cef3f5452530354f8d0",
+    "README.md": "22b44538c358e0dafd5a64f228660d2e59d81a0c1285c244f67ebb392a69f760",
     "COSTS.md": "913e5cb5b67d418770dcb37857dc5d065acf7fa96b4b8bd687362e8c80a125bd",
     "LIBRARY_LICENSE.txt": "45d2bce75e5a4208f5afb01b8fb2c406e700371c4fe2b5f5cd5c443d46db4d8f",
     "../../../LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
@@ -96,7 +96,7 @@
     "B-copper.svg": "7550f07df46e91bc4cc9421b9e0960c0f54f2a65bbf89279b71ddeea60ce4e18",
     "COSTS.md": "913e5cb5b67d418770dcb37857dc5d065acf7fa96b4b8bd687362e8c80a125bd",
     "F-copper.svg": "44da750a228998bf68478b34e6b6c23e3bb2cfb985bc71d8c0eefc29daa20e04",
-    "README.md": "0aab4deccc3d923b3322aba76c887364f777b48aa38c7030d19b17687b5119e6",
+    "README.md": "386b9bb2278cdaf50bd3103fb1777a7c6db634776004ce6e4149e647f7c68877",
     "assembly.pdf": "d353a501372982343bf7bfbcacb3c64a90bac9ba68357d40a983cb38e9a9a8d8",
     "board.step": "b2e8ef75dbaeb82caf7fb577fee522b323893c5236d57bd9a28567a0865a7235",
     "bom.csv": "fd32ffd7b7b1a10a15dc8d1d2f04899b91bf42847445cee7d8c83774fd23249a",
@@ -138,7 +138,7 @@
     "native/models/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step": "7eb17ded8ec4a3216753a234254e22a2d8e07826f0816045bfb803a19cac75ea",
     "native/models/Panasonic_EEUFR1A151.step": "2162715725a2bee92472f5025b88b04305f4e1ae584b1a552765c288df6dde4e",
     "native/models/Panasonic_EEUFR1A221.step": "af0aa040439004602375439464b7de656ed8544b64959c8f1b029cd9dd998336",
-    "native/models/README.md": "0407125acec2e92b5aca50b8baa179de2b553a6a5e008f0c98d36eb03d8dfcdb",
+    "native/models/README.md": "d943d0242e2faf05f2d4c7e126ae0f14eaaf67d30313c93eb0da7de4708e1541",
     "native/models/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step": "85bdadc9190739c38429da06b1d9c76ccf33aef9a0794a2e7a9dd5b58d9d05fe",
     "native/models/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm.step": "ef14b7f12cdde58ff2c770df5e726c11bb1ad801956d525273855cfa84f90633",
     "native/models/TO-220-3_Vertical.step": "7cb065d935df5771f0ba6e48ddd180863a121af76483dad7f18e667a7b68204a",
@@ -156,7 +156,7 @@
     "schematic.pdf": "ccb2641904e14a4fe0955266a7367e189b41de42055de87d3ecbbb7075e0582b",
     "screen_power_hand_prototype_gerbers.zip": "171034c87f3d371db9f7017a196960bdb7e01c249c1178eba90abb3ab2f05e3c",
     "top.png": "5572f6f535d9ed62fefd18415b9d9dd59eb2ac4af5a355bbde7366e57fbc5e24",
-    "validation.json": "7f551833970da7a8cf0cfa7c0cbeb34be93dfc6f4463aa9b1670044681f6623e"
+    "validation.json": "ad13fa3146a6a0909f485fa7d02ecad2ea41bde2da8e15ce67fc3dc34ad6b76f"
   },
   "limits": [
     "Fresh independent comparison covers seven Gerbers, two drill files and the job JSON; only creation timestamps are normalized.",
