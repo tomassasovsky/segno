@@ -1,0 +1,22 @@
+{
+  "generated_at": "2026-09-22T15:48:14.941279+00:00",
+  "console_board_sha256": "d4a735337159ee083228dbfa23bc4f16c329b2a44fe26847d5a04fc99004b360",
+  "screen_board_sha256": "b1a404b92166151ec2b43589d48c5fb3be94028b295cf2be9c71cd7ab7630e91",
+  "packaged_console_sha256": "d871d5de3b906a274312584a56056c01ecf938050f85fdfe60d359493eb54d71",
+  "j25_was_already_present": true,
+  "source_board_unchanged": true,
+  "native_copy_only_changes_model_paths": true,
+  "j25_matches_screen_j2": {
+    "1": "PI_GPIO17",
+    "2": "GND"
+  },
+  "gpio17_copper_continuity": "pass",
+  "console_fabrication_checks": "pass",
+  "native_drc_violations": 0,
+  "native_drc_unconnected": 0,
+  "bundled_model_files": 15,
+  "gerber_archive_contents_match": true,
+  "author_visual_check": "top, bottom, J25 and solder-side pin label inspected",
+  "physical_validation": "not performed",
+  "package": "2026-09-22-console-screen-control"
+}

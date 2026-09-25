@@ -1,0 +1,84 @@
+{
+  "baseline_board_sha256": "951b477d7144d42cb221cb1893ff1f359717532c2259cbfc384f792feb4d714e",
+  "final_board_sha256": "1a5bf4ba7b27691f746d61e82fbbe0708b205a57688299a56e4da3a1a88947c6",
+  "changed_footprints": [
+    "J9",
+    "R18",
+    "R2"
+  ],
+  "affected_nets": [
+    "GND",
+    "IND_DATA_BUF",
+    "IND_DATA_OUT",
+    "LINK_RX",
+    "LINK_RX_PI",
+    "PWR_BTN",
+    "PWR_BTN_RET"
+  ],
+  "removed_ground_stitch_vias": 1,
+  "removed_copper_geometries": 38,
+  "added_copper_geometries": 67,
+  "unchanged_other_components": true,
+  "pd_ring_screen_pi_power_row_y_mm": 69,
+  "unchanged_all_other_copper": true,
+  "unchanged_label_text": true,
+  "netlist_pin_parity": "pass",
+  "floating_button_pair": "pass",
+  "generator_placement_and_labels": "pass",
+  "saved_board_placement_and_labels": "pass",
+  "saved_board_fabrication_checks": "pass",
+  "native_drc_violations": 0,
+  "native_drc_unconnected": 0,
+  "routes": {
+    "PWR_BTN": {
+      "length_mm": 128.2,
+      "vias": 2,
+      "widths_mm": [
+        0.4
+      ]
+    },
+    "PWR_BTN_RET": {
+      "length_mm": 159.69,
+      "vias": 2,
+      "widths_mm": [
+        0.4
+      ]
+    },
+    "IND_DATA_BUF": {
+      "length_mm": 18.55,
+      "vias": 0,
+      "widths_mm": [
+        0.4
+      ]
+    },
+    "IND_DATA_OUT": {
+      "length_mm": 108.43,
+      "vias": 2,
+      "widths_mm": [
+        0.4
+      ]
+    },
+    "LINK_RX_PI": {
+      "length_mm": 37.08,
+      "vias": 1,
+      "widths_mm": [
+        0.4
+      ]
+    },
+    "LINK_RX": {
+      "length_mm": 36.6,
+      "vias": 0,
+      "widths_mm": [
+        0.4
+      ]
+    }
+  },
+  "physical_qualification": "not performed",
+  "generated_at": "2026-09-22T16:41:57.384688+00:00",
+  "screen_board_cad_and_gpio_regression": "pass",
+  "screen_board_sha256": "b1a404b92166151ec2b43589d48c5fb3be94028b295cf2be9c71cd7ab7630e91",
+  "package": "2026-09-22-console-pi-power",
+  "top_and_bottom_visual_review": "pass",
+  "portable_models": 15,
+  "package_native_copy": "bundled model paths only"
+}

@@ -1,0 +1,159 @@
+#!/usr/bin/python3
+"""Keep GPIO17 owned; acknowledge screen-off only after discharge time."""
+
+import errno
+import glob
+import os
+import signal
+import socket
+import sys
+import time
+
+SOCKET = "/run/segno-screen-power/control"
+LINE = "GPIO17"
+# Provisional upper wait, NOT a measured screen discharge specification.
+# Qualify both actual panels during assembled-system validation.
+OFF_DELAY = 5.0
+ON_DELAY = 1.0
+RECLAIM_TIMEOUT = 10.0
+
+
+def request_gpio():
+    import gpiod
+    from gpiod.line import Direction, Value
+
+    # Pi 5's RP1 gpiochip number changes across kernels. Identify the controller
+    # and named header line rather than assuming gpiochip0 or gpiochip4.
+    for path in sorted(glob.glob("/dev/gpiochip*")):
+        with gpiod.Chip(path) as chip:
+            if chip.get_info().label != "pinctrl-rp1":
+                continue
+            return gpiod.request_lines(
+                path,
+                consumer="segno-screen-power",
+                config={LINE: gpiod.LineSettings(
+                    direction=Direction.OUTPUT, output_value=Value.INACTIVE,
+                )},
+            )
+    raise RuntimeError("Pi 5 RP1 GPIO controller not found")
+
+
+def set_power(request, enabled):
+    from gpiod.line import Value
+
+    request.set_value(LINE, Value.ACTIVE if enabled else Value.INACTIVE)
+    time.sleep(ON_DELAY if enabled else OFF_DELAY)
+
+
+def notify_ready():
+    address = os.environ["NOTIFY_SOCKET"]
+    if address.startswith("@"):
+        address = "\0" + address[1:]
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notify:
+        notify.connect(address)
+        notify.sendall(b"READY=1")
+
+
+def daemon():
+    def stop(_signal, _frame):
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    with request_gpio() as request:
+        enabled = None
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+                # RuntimeDirectory is root-owned, private, and cleared by systemd.
+                if os.path.exists(SOCKET):
+                    os.unlink(SOCKET)
+                server.bind(SOCKET)
+                os.chmod(SOCKET, 0o600)
+                server.listen(4)
+                notify_ready()
+                while True:
+                    connection, _ = server.accept()
+                    with connection:
+                        connection.settimeout(2)
+                        try:
+                            with connection.makefile("rb") as incoming:
+                                command = incoming.readline(16)
+                        except TimeoutError:
+                            continue
+                        if command not in (b"on\n", b"off\n"):
+                            continue
+                        desired = command == b"on\n"
+                        if desired != enabled:
+                            # A signal can interrupt the settling wait after the
+                            # pin changes. Only a completed OFF may skip cleanup.
+                            enabled = None
+                            set_power(request, desired)
+                            enabled = desired
+                        try:
+                            connection.sendall(b"ok\n")
+                        except (BrokenPipeError, ConnectionResetError):
+                            pass
+        finally:
+            # A normal stop/error drives low before releasing ownership.
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            if enabled is not False:
+                set_power(request, False)
+
+
+def command(value):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(15)
+        client.connect(SOCKET)
+        client.sendall(value.encode() + b"\n")
+        with client.makefile("rb") as incoming:
+            if incoming.readline(16) != b"ok\n":
+                raise RuntimeError("screen power command was not acknowledged")
+
+
+def force_off():
+    # A killed keeper's systemd cleanup and Weston's stop hook may both arrive.
+    # Only one owns the GPIO at a time; wait for that low-holding request to
+    # release before taking it. Never pretend an unacknowledged off succeeded.
+    deadline = time.monotonic() + RECLAIM_TIMEOUT
+    while True:
+        try:
+            request = request_gpio()
+            break
+        except OSError as error:
+            if error.errno != errno.EBUSY or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+    with request:
+        set_power(request, False)
+
+
+def main():
+    if len(sys.argv) != 2:
+        raise ValueError("usage: segno-screen-power {daemon|on|off|force-off}")
+    action = sys.argv[1]
+    if action == "daemon":
+        daemon()
+    elif action == "on":
+        command(action)
+    elif action == "off":
+        try:
+            command(action)
+        except (OSError, RuntimeError):
+            force_off()
+    elif action == "force-off":
+        # ExecStopPost also runs after SIGKILL/startup failure. Reclaiming the
+        # released line ensures a killed keeper cannot leave an output high.
+        # A successful daemon exit already completed its low/discharge path.
+        if os.environ.get("SERVICE_RESULT") != "success":
+            force_off()
+    else:
+        raise ValueError("unknown screen power action")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(f"segno-screen-power: {error}", file=sys.stderr)
+        sys.exit(1)

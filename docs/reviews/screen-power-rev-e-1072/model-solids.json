@@ -1,0 +1,54 @@
+{
+  "CP_Radial_D5.0mm_P2.00mm.step": {
+    "solids": 1,
+    "valid": true
+  },
+  "CP_Radial_D6.3mm_P2.50mm.step": {
+    "solids": 1,
+    "valid": true
+  },
+  "C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2.step": {
+    "solids": 1,
+    "valid": true
+  },
+  "D_DO-35_SOD27_P7.62mm_Horizontal.step": {
+    "solids": 2,
+    "valid": true
+  },
+  "D_DO-41_SOD81_P10.16mm_Horizontal.step": {
+    "solids": 1,
+    "valid": true
+  },
+  "Fuse_Littelfuse_251_P12.70mm.step": {
+    "solids": 5,
+    "valid": true
+  },
+  "JST_VH_B2P-VH_1x02_P3.96mm_Vertical.step": {
+    "solids": 5,
+    "valid": true
+  },
+  "JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical.step": {
+    "solids": 1,
+    "valid": true
+  },
+  "JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step": {
+    "solids": 1,
+    "valid": true
+  },
+  "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step": {
+    "solids": 1,
+    "valid": true
+  },
+  "Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm.step": {
+    "solids": 10,
+    "valid": true
+  },
+  "TO-220-3_Vertical.step": {
+    "solids": 1,
+    "valid": true
+  },
+  "TO-92_Inline_Wide.step": {
+    "solids": 1,
+    "valid": true
+  }
+}

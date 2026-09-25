@@ -1,0 +1,49 @@
+{
+  "board_sha256": "3f3c358761979b5cbe2cf3301113f75ef2e8fb3a259d4150858d79a3a0f3ce02",
+  "original_board_sha256": "d3a55b2ed007f8f790e85ce406c5b5eb6d07fcb800f283f26d7ec4e824cfbcef",
+  "netlist_pin_parity": 63,
+  "changes": "4 stackup colors; 4 J1 drills 0.95 to 1.10mm; 8 J3/J4 drills 1.00 to 1.25mm; zone refill",
+  "tracks_positions_nets_pads_and_outline_unchanged_except_listed_drills": true,
+  "drill_counts_changed": {
+    "J3": 4,
+    "J4": 4,
+    "J1": 4
+  },
+  "drc": {
+    "$schema": "https://schemas.kicad.org/drc.v1.json",
+    "coordinate_units": "mm",
+    "date": "2026-09-24T02:06:51",
+    "ignored_checks": [
+      {
+        "description": "Footprint has no courtyard defined",
+        "key": "missing_courtyard"
+      },
+      {
+        "description": "Track endpoint not centered on via",
+        "key": "track_not_centered_on_via"
+      },
+      {
+        "description": "Tuning profile track geometries",
+        "key": "tuning_profile_track_geometries"
+      },
+      {
+        "description": "Footprint doesn't match symbol's footprint filters",
+        "key": "footprint_filters_mismatch"
+      },
+      {
+        "description": "Footprint component type doesn't match footprint pads",
+        "key": "footprint_type_mismatch"
+      }
+    ],
+    "included_severities": [
+      "error",
+      "warning",
+      "exclusion"
+    ],
+    "kicad_version": "10.0.4",
+    "schematic_parity": [],
+    "source": "segno_pedal_ring.kicad_pcb",
+    "unconnected_items": [],
+    "violations": []
+  }
+}

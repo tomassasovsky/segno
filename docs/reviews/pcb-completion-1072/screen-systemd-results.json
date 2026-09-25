@@ -1,0 +1,43 @@
+{
+  "orderly_stop": [
+    "gpio 1",
+    "settled 1",
+    "weston start",
+    "app start",
+    "app stop",
+    "gpio 0",
+    "settled 0",
+    "weston stop"
+  ],
+  "restart": [
+    "gpio 1",
+    "settled 1",
+    "weston start",
+    "app start",
+    "app stop",
+    "gpio 0",
+    "settled 0",
+    "weston stop",
+    "gpio 1",
+    "settled 1",
+    "weston start",
+    "app start"
+  ],
+  "keeper_sigkill": [
+    "gpio 1",
+    "settled 1",
+    "weston start",
+    "app start",
+    "app stop",
+    "gpio 0",
+    "settled 0",
+    "release",
+    "gpio 0",
+    "settled 0",
+    "release",
+    "weston stop",
+    "gpio 0",
+    "settled 0",
+    "release"
+  ]
+}
