@@ -8,20 +8,16 @@ from pcb import point
 HERE = Path(__file__).resolve().parent
 STACK = '''
     (stackup
-      (layer "F.SilkS" (type "Top Silk Screen"))
+      (layer "F.SilkS" (type "Top Silk Screen") (color "White"))
       (layer "F.Paste" (type "Top Solder Paste"))
-      (layer "F.Mask" (type "Top Solder Mask") (thickness 0.01524) (epsilon_r 3.8))
+      (layer "F.Mask" (type "Top Solder Mask") (color "Purple") (thickness 0.01524) (epsilon_r 3.8))
       (layer "F.Cu" (type "copper") (thickness 0.035))
-      (layer "dielectric 1" (type "prepreg") (thickness 0.2104) (material "7628") (epsilon_r 4.4))
-      (layer "In1.Cu" (type "copper") (thickness 0.0152))
-      (layer "dielectric 2" (type "core") (thickness 1.065) (material "FR4") (epsilon_r 4.6))
-      (layer "In2.Cu" (type "copper") (thickness 0.0152))
-      (layer "dielectric 3" (type "prepreg") (thickness 0.2104) (material "7628") (epsilon_r 4.4))
+      (layer "dielectric 1" (type "core") (thickness 1.53) (material "FR4") (epsilon_r 4.4))
       (layer "B.Cu" (type "copper") (thickness 0.035))
-      (layer "B.Mask" (type "Bottom Solder Mask") (thickness 0.01524) (epsilon_r 3.8))
+      (layer "B.Mask" (type "Bottom Solder Mask") (color "Purple") (thickness 0.01524) (epsilon_r 3.8))
       (layer "B.Paste" (type "Bottom Solder Paste"))
-      (layer "B.SilkS" (type "Bottom Silk Screen"))
-      (copper_finish "ENIG") (dielectric_constraints yes)
+      (layer "B.SilkS" (type "Bottom Silk Screen") (color "White"))
+      (copper_finish "ENIG") (dielectric_constraints no)
     )
 '''
 
@@ -38,7 +34,7 @@ def stackup(path):
                 text = text[:start] + text[end+1:]
                 break
     text = text.replace('(setup', '(setup' + STACK, 1)
-    path.write_text(text)
+    path.write_text("\n".join(line.rstrip() for line in text.splitlines())+"\n")
 
 
 def finish(variant):
@@ -53,18 +49,26 @@ def finish(variant):
         t.SetLayer(layer);t.SetMirrored(layer==p.B_SilkS);board.Add(t)
     from layout import DIMENSIONS, USB_ROWS
     w,h = DIMENSIONS[variant]
-    label('SEGNO SCREEN POWER / REV B',36,1.4,.8)
-    if variant=='factory':
-        next(f for f in board.GetFootprints() if f.GetReference()=='Q3').Reference().SetPosition(point(29,16))
-    label('5V IN',13,14,.8,p.B_SilkS)
-    label('1=5V 2=GND',13,2,.8,p.B_SilkS)
-    label('GPIO17 / GND',9,52 if variant=='hand' else 48,.8,p.B_SilkS)
+    label('SEGNO SCREEN POWER / REV I',32,1.4,.8,p.B_SilkS)
+    label('SEGNO SCREEN POWER',26,50.5,.9)
+    label('REV I',27,h-2.5,.8)
+    label('5V IN',56,6.5,1.0)
+    label('CTRL J25',6,8,1.0)
+    label('5V IN',56,6.5,1.0,p.B_SilkS)
+    label('1=5V 2=GND',55,17.5,1.0,p.B_SilkS)
+    label('GPIO17 / GND',8,18,1.0,p.B_SilkS)
     for ch,y in enumerate(USB_ROWS[variant],1):
-        label(f'S{ch} PI',6,y,.85,p.B_SilkS)
-        label(f'S{ch} TOUCH',65,y,.8,p.B_SilkS)
-        label(f'S{ch} 5V OUT',63,y-19,.8,p.B_SilkS)
-    label('4L / GND L2 L3',29,h-3,.8,p.B_SilkS)
-    label('USB 90 OHM',28,h-5.5,.8,p.B_SilkS)
+        screen='15.6"' if ch==1 else '7"'
+        label(f'PI USB {ch}',7,y-10.5,1.0)
+        label(f'{screen} TOUCH',45,y+1.5,1.0)
+        label(f'{screen} POWER',41.5,y-8,1.0)
+        label(f'S{ch} PI',7,y-8,1.0,p.B_SilkS)
+        label(f'S{ch} TOUCH',56,y-6.5,1.0,p.B_SilkS)
+        for x in (7,56):
+            for text,dy in [('1 +5V',3.75),('2 D-',1.25),('3 D+',-1.25),('4 GND',-3.75)]:
+                label(text,x-4,y+dy,1.0,p.B_SilkS)
+        label(f'S{ch} 5V OUT',55,y-8.2,1.0,p.B_SilkS)
+    label('2 LAYERS',27,h-2.5,.8,p.B_SilkS)
     # Merge almost-coincident router nodes within 2um. A single grid rounding
     # could put opposite sides of a tiny gap into adjacent rounding cells.
     precise={f'S{ch}_{suffix}' for ch in [1,2] for suffix in ['UP_P','UP_N','DN_P','DN_N']}

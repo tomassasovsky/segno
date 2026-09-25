@@ -107,6 +107,11 @@ board's BOM.
 - [ ] **100 W-class USB-C PD supply** (20 V / 5 A capable) + 5 A-rated C-to-C
       cable ×1 — the external brick; no mains enters the enclosure
 - [ ] **2×20 keyed IDC ribbon**, ~10 cm ×1 — console board J2 → Pi header
+- [ ] **Würth 61204021621** vertical keyed 2×20 board header ×1 — J2.
+      The console footprint uses 1.25 mm finished holes and 1.80 mm minimum pads
+      for this part’s maximum post size; a generic substitute needs its own fit check.
+- [ ] **Würth 61300621121** vertical 2×3 pin header ×1, optional — J22 expansion;
+      the same 1.25 mm holes / 1.80 mm pads apply.
 - [ ] **Panel fuse holder**, generic 5×20 screw-cap, 10 A / 250 VAC, **Ø12.0**
       aperture ×1 — e.g. [NeoLum 4-pack](https://www.amazon.com/dp/B0GF33P9FF).
       Generic by decision. NOTE the aperture: the SCI R3-11 upgrade wants

@@ -14,9 +14,9 @@ Comment,Designator,Footprint,LCSC,Qty,Type
 "74AHCT125N","U1",DIP-14_W7.62mm,,1,Component
 "H11L1","U2",DIP-6_W7.62mm,,1,Component
 "1N4148","D1",D_DO-35_SOD27_P7.62mm_Horizontal,,1,Component
-"PI_RIBBON","J2",IDC-Header_2x20_P2.54mm_Vertical,,1,Component
+"PI_RIBBON; Wurth 61204021621","J2",IDC-Header_2x20_P2.54mm_Vertical,,1,Component
 "5V_IN","J3",JST_VH_B2P-VH_1x02_P3.96mm_Vertical,,1,Component
 "PILLS","J24",JST_VH_B3P-VH_1x03_P3.96mm_Vertical,,1,Component
-"EXPANSION","J22",PinHeader_2x03_P2.54mm_Vertical,,1,Component
+"EXPANSION; Wurth 61300621121","J22",PinHeader_2x03_P2.54mm_Vertical,,1,Component
 "330","R2",R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,,1,Component
 "Pico2","J1",RaspberryPi_Pico_SMD_or_THT_Debug,,1,Component

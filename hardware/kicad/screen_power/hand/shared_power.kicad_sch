@@ -5,8 +5,8 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / shared power")
-    (rev "B prototype")
-    (comment 1 "Discrete 5V switch. Host VBUS powers only its own RF relay coil.")
+    (rev "G prototype")
+    (comment 1 "Discrete 5V switch. Host VBUS powers only its own signal relay coil.")
     (comment 2 "Physical verification required before release."))
   (lib_symbols
     (symbol "screen_symbols:Connector_Generic_Conn_01x02"
@@ -952,7 +952,7 @@
       (width 0)
       (type default))
     (uuid 0ece38ca-b9dd-5f46-b26b-466698676bd0))
-  (global_label "S1_TOUCH_5V"
+  (global_label "HOST1_5V"
     (shape bidirectional)
     (at 254.0 68.58 270)
     (effects
@@ -1005,7 +1005,7 @@
       (width 0)
       (type default))
     (uuid 01b5fa64-882c-562e-be7e-c8be2069647e))
-  (global_label "S2_TOUCH_5V"
+  (global_label "HOST2_5V"
     (shape bidirectional)
     (at 355.6 68.58 270)
     (effects
@@ -1052,15 +1052,121 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 46.99 114.3)
-      (xy 41.91 114.3))
+      (xy 50.8 114.3)
+      (xy 50.8 119.38))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid b602a9a1-f35a-5a6c-b61a-665c64579a00))
+  (global_label "S1_TOUCH_5V"
+    (shape bidirectional)
+    (at 50.8 119.38 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 11bc6bf5-4a38-5c50-9e3b-b78f5dad2319))
+  (symbol
+    (lib_id "screen_symbols:power_PWR_FLAG")
+    (at 50.8 114.3 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (dnp no)
+    (uuid 3794ab46-43b7-54f2-8575-781423925247)
+    (property "Reference" "#FLG5"
+      (at 50.8 104.14 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "PWR_FLAG"
+      (at 50.8 106.68 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 50.8 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" ""
+      (at 50.8 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid cb691903-4917-567e-9464-c13f66c3c2ed))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/0157c963-12d5-5a27-8699-19e38824f98e"
+          (reference "#FLG5")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 152.4 114.3)
+      (xy 152.4 119.38))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 46e28cd3-8504-5c63-87f2-e7d5af2675b9))
+  (global_label "S2_TOUCH_5V"
+    (shape bidirectional)
+    (at 152.4 119.38 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 0b6e5cb0-4cd5-510d-a5ed-98bf87f3664d))
+  (symbol
+    (lib_id "screen_symbols:power_PWR_FLAG")
+    (at 152.39999999999998 114.3 0)
+    (unit 1)
+    (in_bom no)
+    (on_board no)
+    (dnp no)
+    (uuid a7d0fd57-17f5-5f27-92d3-4563161e28e6)
+    (property "Reference" "#FLG6"
+      (at 152.39999999999998 104.14 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "PWR_FLAG"
+      (at 152.39999999999998 106.68 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 152.39999999999998 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" ""
+      (at 152.39999999999998 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid aa26b599-de18-5f0b-ac63-6ef9a7bf1bd1))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/0157c963-12d5-5a27-8699-19e38824f98e"
+          (reference "#FLG6")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 250.19 114.3)
+      (xy 245.11 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid c7d026b5-d655-5d0d-a054-2af851c9bc01))
   (global_label "AUX_5V"
     (shape bidirectional)
-    (at 41.91 114.3 180)
+    (at 245.11 114.3 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1068,15 +1174,15 @@
     (uuid bfceff78-b510-53de-8edf-26d6976d54a3))
   (wire
     (pts
-      (xy 54.61 114.3)
-      (xy 59.69 114.3))
+      (xy 257.81 114.3)
+      (xy 262.89 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid ecf1d1da-7162-570b-b65c-3104a61b9b02))
   (global_label "GND"
     (shape bidirectional)
-    (at 59.69 114.3 0)
+    (at 262.89 114.3 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -1084,30 +1190,30 @@
     (uuid 350f9c93-2cce-510d-b82e-d907d3943adb))
   (symbol
     (lib_id "screen_symbols:Device_C")
-    (at 50.8 114.3 90)
+    (at 254.0 114.3 90)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 7d952706-1ccd-5166-a953-bc233ec6abf8)
     (property "Reference" "C1"
-      (at 50.8 104.14 90)
+      (at 254.0 104.14 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "100nF 63V"
-      (at 50.8 106.68 90)
+      (at 254.0 106.68 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm"
-      (at 50.8 114.3 90)
+      (at 254.0 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "MKS2C031001A00KSSD"
-      (at 50.8 114.3 90)
+      (at 254.0 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
@@ -1123,15 +1229,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 148.59 114.3)
-      (xy 143.51 114.3))
+      (xy 351.79 114.3)
+      (xy 346.71 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid 2b63c6e0-c969-5965-8542-d84f68fd7633))
   (global_label "AUX_5V"
     (shape bidirectional)
-    (at 143.51 114.3 180)
+    (at 346.71 114.3 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1139,15 +1245,15 @@
     (uuid b307f42b-e09a-598b-9730-b687b50c943e))
   (wire
     (pts
-      (xy 156.21 114.3)
-      (xy 161.29 114.3))
+      (xy 359.41 114.3)
+      (xy 364.49 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid 7045a566-6047-5416-ac69-e3bd7db15f7d))
   (global_label "GND"
     (shape bidirectional)
-    (at 161.29 114.3 0)
+    (at 364.49 114.3 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -1155,30 +1261,30 @@
     (uuid 8fffe1da-a5a9-57c8-93fb-abbc8fac10b4))
   (symbol
     (lib_id "screen_symbols:Device_C_Polarized")
-    (at 152.39999999999998 114.3 90)
+    (at 355.59999999999997 114.3 90)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid a2fb6983-67bb-5993-8708-d47bd6140ea6)
     (property "Reference" "C2"
-      (at 152.39999999999998 104.14 90)
+      (at 355.59999999999997 104.14 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "220uF 10V"
-      (at 152.39999999999998 106.68 90)
+      (at 355.59999999999997 106.68 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm"
-      (at 152.39999999999998 114.3 90)
+      (at 355.59999999999997 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "EEU-FR1A221"
-      (at 152.39999999999998 114.3 90)
+      (at 355.59999999999997 114.3 90)
       (effects
         (font
           (size 1.27 1.27))
@@ -1194,30 +1300,30 @@
           (unit 1)))))
   (symbol
     (lib_id "screen_symbols:Mechanical_MountingHole")
-    (at 254.0 114.3 0)
+    (at 50.8 165.1 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid b5f2c0d0-c429-58e5-84b5-98516fb1670a)
     (property "Reference" "H1"
-      (at 254.0 104.14 0)
+      (at 50.8 154.94 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "M3"
-      (at 254.0 106.68 0)
+      (at 50.8 157.48 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
-      (at 254.0 114.3 0)
+    (property "Footprint" "MountingHole:MountingHole_3.5mm"
+      (at 50.8 165.1 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "NPTH"
-      (at 254.0 114.3 0)
+      (at 50.8 165.1 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -1229,30 +1335,30 @@
           (unit 1)))))
   (symbol
     (lib_id "screen_symbols:Mechanical_MountingHole")
-    (at 355.59999999999997 114.3 0)
+    (at 152.39999999999998 165.1 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 56525c1f-c1d5-5771-a924-7ce7be7727cc)
     (property "Reference" "H2"
-      (at 355.59999999999997 104.14 0)
+      (at 152.39999999999998 154.94 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "M3"
-      (at 355.59999999999997 106.68 0)
+      (at 152.39999999999998 157.48 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
-      (at 355.59999999999997 114.3 0)
+    (property "Footprint" "MountingHole:MountingHole_3.5mm"
+      (at 152.39999999999998 165.1 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "NPTH"
-      (at 355.59999999999997 114.3 0)
+      (at 152.39999999999998 165.1 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -1264,30 +1370,30 @@
           (unit 1)))))
   (symbol
     (lib_id "screen_symbols:Mechanical_MountingHole")
-    (at 50.8 165.1 0)
+    (at 254.0 165.1 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 016828cf-5bb4-55a0-a0b7-15c03093e317)
     (property "Reference" "H3"
-      (at 50.8 154.94 0)
+      (at 254.0 154.94 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "M3"
-      (at 50.8 157.48 0)
+      (at 254.0 157.48 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
-      (at 50.8 165.1 0)
+    (property "Footprint" "MountingHole:MountingHole_3.5mm"
+      (at 254.0 165.1 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "NPTH"
-      (at 50.8 165.1 0)
+      (at 254.0 165.1 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -1299,30 +1405,30 @@
           (unit 1)))))
   (symbol
     (lib_id "screen_symbols:Mechanical_MountingHole")
-    (at 152.39999999999998 165.1 0)
+    (at 355.59999999999997 165.1 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 4a037f3e-3c16-59c2-a807-7a8e7c332728)
     (property "Reference" "H4"
-      (at 152.39999999999998 154.94 0)
+      (at 355.59999999999997 154.94 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "M3"
-      (at 152.39999999999998 157.48 0)
+      (at 355.59999999999997 157.48 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" "MountingHole:MountingHole_3.2mm_M3"
-      (at 152.39999999999998 165.1 0)
+    (property "Footprint" "MountingHole:MountingHole_3.5mm"
+      (at 355.59999999999997 165.1 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "NPTH"
-      (at 152.39999999999998 165.1 0)
+      (at 355.59999999999997 165.1 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -1334,15 +1440,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 248.92 165.1)
-      (xy 243.84 165.1))
+      (xy 45.72 215.9)
+      (xy 40.64 215.9))
     (stroke
       (width 0)
       (type default))
     (uuid d178a4d2-598e-5112-94e4-6fa8ec0c0cc3))
   (global_label "AUX_5V"
     (shape bidirectional)
-    (at 243.84 165.1 180)
+    (at 40.64 215.9 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1350,15 +1456,15 @@
     (uuid 7d98e689-a3fb-5608-91bf-80085451ba4e))
   (wire
     (pts
-      (xy 248.92 167.64)
-      (xy 243.84 167.64))
+      (xy 45.72 218.44)
+      (xy 40.64 218.44))
     (stroke
       (width 0)
       (type default))
     (uuid 99970b53-6140-5219-8074-1e41d86af675))
   (global_label "GND"
     (shape bidirectional)
-    (at 243.84 167.64 180)
+    (at 40.64 218.44 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1366,30 +1472,30 @@
     (uuid 4abb888c-67a3-510c-8b6e-db80f38c1d74))
   (symbol
     (lib_id "screen_symbols:Connector_Generic_Conn_01x02")
-    (at 254.0 165.1 0)
+    (at 50.8 215.89999999999998 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 0dc90fde-5a58-5af1-a605-2ccc72bcd3d8)
     (property "Reference" "J1"
-      (at 254.0 154.94 0)
+      (at 50.8 205.73999999999998 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "AUX 5V INPUT"
-      (at 254.0 157.48 0)
+      (at 50.8 208.27999999999997 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical"
-      (at 254.0 165.1 0)
+      (at 50.8 215.89999999999998 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "B2P-VH(LF)(SN)"
-      (at 254.0 165.1 0)
+      (at 50.8 215.89999999999998 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -1405,15 +1511,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 350.52 165.1)
-      (xy 345.44 165.1))
+      (xy 147.32 215.9)
+      (xy 142.24 215.9))
     (stroke
       (width 0)
       (type default))
     (uuid e535201a-6f97-536a-ba44-d59530a0a714))
   (global_label "POWER_GATE"
     (shape bidirectional)
-    (at 345.44 165.1 180)
+    (at 142.24 215.9 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1421,15 +1527,15 @@
     (uuid 5f6eeaab-7935-5915-9d4a-fb4dd69c8487))
   (wire
     (pts
-      (xy 358.14 160.02)
-      (xy 358.14 154.94))
+      (xy 154.94 210.82)
+      (xy 154.94 205.74))
     (stroke
       (width 0)
       (type default))
     (uuid bc690da2-2b7e-5c7b-a916-fe172e0f499f))
   (global_label "AUX_5V"
     (shape bidirectional)
-    (at 358.14 154.94 90)
+    (at 154.94 205.74 90)
     (effects
       (font
         (size 1.0 1.0))
@@ -1437,15 +1543,15 @@
     (uuid a631872f-1278-5804-a068-8f63f84b024c))
   (wire
     (pts
-      (xy 358.14 170.18)
-      (xy 358.14 175.26))
+      (xy 154.94 220.98)
+      (xy 154.94 226.06))
     (stroke
       (width 0)
       (type default))
     (uuid b6a6caf0-0a1c-516f-a228-5152e743d23f))
   (global_label "COMMON_SOURCE"
     (shape bidirectional)
-    (at 358.14 175.26 270)
+    (at 154.94 226.06 270)
     (effects
       (font
         (size 1.0 1.0))
@@ -1453,30 +1559,30 @@
     (uuid ca68a52c-a4d8-5aee-931a-68b9599e2da9))
   (symbol
     (lib_id "screen_symbols:Transistor_FET_Q_PMOS_GDS")
-    (at 355.59999999999997 165.1 0)
+    (at 152.39999999999998 215.89999999999998 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 2fb7a459-c15f-5cea-a798-1a07273dbd0b)
     (property "Reference" "Q3"
-      (at 378.46 149.85999999999999 0)
+      (at 175.26 200.65999999999997 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "SUP70101EL"
-      (at 378.46 152.39999999999998 0)
+      (at 175.26 203.19999999999996 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "screen_power:TO-220-3_SUP70101EL"
-      (at 378.46 165.1 0)
+      (at 175.26 215.89999999999998 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "SUP70101EL-GE3"
-      (at 378.46 165.1 0)
+      (at 175.26 215.89999999999998 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -1494,15 +1600,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 45.72 215.9)
-      (xy 40.64 215.9))
+      (xy 248.92 215.9)
+      (xy 243.84 215.9))
     (stroke
       (width 0)
       (type default))
     (uuid d2fddf99-0048-50e4-bf5e-bf556c5f01fe))
   (global_label "POWER_GATE"
     (shape bidirectional)
-    (at 40.64 215.9 180)
+    (at 243.84 215.9 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1510,15 +1616,15 @@
     (uuid 51ffab00-302c-5d76-b62b-42f14049f4de))
   (wire
     (pts
-      (xy 53.34 210.82)
-      (xy 53.34 205.74))
+      (xy 256.54 210.82)
+      (xy 256.54 205.74))
     (stroke
       (width 0)
       (type default))
     (uuid 6ec0c626-6385-59a5-a7eb-8a089255779f))
   (global_label "SWITCHED_5V"
     (shape bidirectional)
-    (at 53.34 205.74 90)
+    (at 256.54 205.74 90)
     (effects
       (font
         (size 1.0 1.0))
@@ -1526,15 +1632,15 @@
     (uuid 406b0883-af1f-5bc9-bb87-b2f0e60d5b9a))
   (wire
     (pts
-      (xy 53.34 220.98)
-      (xy 53.34 226.06))
+      (xy 256.54 220.98)
+      (xy 256.54 226.06))
     (stroke
       (width 0)
       (type default))
     (uuid 0c4206cd-80c3-5568-9575-356ade473e4b))
   (global_label "COMMON_SOURCE"
     (shape bidirectional)
-    (at 53.34 226.06 270)
+    (at 256.54 226.06 270)
     (effects
       (font
         (size 1.0 1.0))
@@ -1542,30 +1648,30 @@
     (uuid 70721034-0e00-5fd4-b2fc-4f84a00ee679))
   (symbol
     (lib_id "screen_symbols:Transistor_FET_Q_PMOS_GDS")
-    (at 50.8 215.89999999999998 0)
+    (at 254.0 215.89999999999998 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 446810b4-081c-5357-9a82-3e96e21281fc)
     (property "Reference" "Q4"
-      (at 73.66 200.65999999999997 0)
+      (at 276.86 200.65999999999997 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "SUP70101EL"
-      (at 73.66 203.19999999999996 0)
+      (at 276.86 203.19999999999996 0)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "screen_power:TO-220-3_SUP70101EL"
-      (at 73.66 215.89999999999998 0)
+      (at 276.86 215.89999999999998 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "SUP70101EL-GE3"
-      (at 73.66 215.89999999999998 0)
+      (at 276.86 215.89999999999998 0)
       (effects
         (font
           (size 1.27 1.27))
@@ -1583,15 +1689,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 148.59 215.9)
-      (xy 143.51 215.9))
+      (xy 351.79 215.9)
+      (xy 346.71 215.9))
     (stroke
       (width 0)
       (type default))
     (uuid ff3f8d77-3874-56bd-b29b-74196333e3cb))
   (global_label "CONTROL_SINK"
     (shape bidirectional)
-    (at 143.51 215.9 180)
+    (at 346.71 215.9 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1599,15 +1705,15 @@
     (uuid 33bbba0e-ee9d-5b33-9663-05a88eb1b1c4))
   (wire
     (pts
-      (xy 156.21 215.9)
-      (xy 161.29 215.9))
+      (xy 359.41 215.9)
+      (xy 364.49 215.9))
     (stroke
       (width 0)
       (type default))
     (uuid 51efb79f-417f-588d-a730-5302e90a40f3))
   (global_label "POWER_GATE"
     (shape bidirectional)
-    (at 161.29 215.9 0)
+    (at 364.49 215.9 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -1615,30 +1721,30 @@
     (uuid 4d8bdbfb-270e-5219-9702-9e0fff3a57ba))
   (symbol
     (lib_id "screen_symbols:Device_R")
-    (at 152.39999999999998 215.89999999999998 90)
+    (at 355.59999999999997 215.89999999999998 90)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 37e2e6f1-9326-55f9-8225-0164a711babe)
     (property "Reference" "R3"
-      (at 152.39999999999998 205.73999999999998 90)
+      (at 355.59999999999997 205.73999999999998 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "4.7k 1%"
-      (at 152.39999999999998 208.27999999999997 90)
+      (at 355.59999999999997 208.27999999999997 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-      (at 152.39999999999998 215.89999999999998 90)
+      (at 355.59999999999997 215.89999999999998 90)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "MFR-25FBF52-4K7"
-      (at 152.39999999999998 215.89999999999998 90)
+      (at 355.59999999999997 215.89999999999998 90)
       (effects
         (font
           (size 1.27 1.27))
@@ -1654,15 +1760,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 250.19 215.9)
-      (xy 245.11 215.9))
+      (xy 46.99 266.7)
+      (xy 41.91 266.7))
     (stroke
       (width 0)
       (type default))
     (uuid 66ea778c-c780-5a89-a519-4117e7d602c2))
   (global_label "POWER_GATE"
     (shape bidirectional)
-    (at 245.11 215.9 180)
+    (at 41.91 266.7 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1670,15 +1776,15 @@
     (uuid 368217e6-9903-5632-b480-44b0e1f1bd1e))
   (wire
     (pts
-      (xy 257.81 215.9)
-      (xy 262.89 215.9))
+      (xy 54.61 266.7)
+      (xy 59.69 266.7))
     (stroke
       (width 0)
       (type default))
     (uuid 2770d43e-a887-522b-b65c-68d4714342fa))
   (global_label "COMMON_SOURCE"
     (shape bidirectional)
-    (at 262.89 215.9 0)
+    (at 59.69 266.7 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -1686,30 +1792,30 @@
     (uuid f4dd4c94-3b21-531d-a96d-a9869751f8e6))
   (symbol
     (lib_id "screen_symbols:Device_R")
-    (at 254.0 215.89999999999998 90)
+    (at 50.8 266.7 90)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid fe4afc32-81d1-534a-9415-92dc232526de)
     (property "Reference" "R4"
-      (at 254.0 205.73999999999998 90)
+      (at 50.8 256.53999999999996 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "330k 1%"
-      (at 254.0 208.27999999999997 90)
+      (at 50.8 259.08 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-      (at 254.0 215.89999999999998 90)
+      (at 50.8 266.7 90)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "MFR-25FBF52-330K"
-      (at 254.0 215.89999999999998 90)
+      (at 50.8 266.7 90)
       (effects
         (font
           (size 1.27 1.27))
@@ -1725,15 +1831,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 351.79 215.9)
-      (xy 346.71 215.9))
+      (xy 148.59 266.7)
+      (xy 143.51 266.7))
     (stroke
       (width 0)
       (type default))
     (uuid 66b66efb-0074-5f2b-80c8-ba5628695733))
   (global_label "SWITCHED_5V"
     (shape bidirectional)
-    (at 346.71 215.9 180)
+    (at 143.51 266.7 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1741,15 +1847,15 @@
     (uuid 1ec4e26b-995c-524b-a9d2-b5e38a26d5c0))
   (wire
     (pts
-      (xy 359.41 215.9)
-      (xy 364.49 215.9))
+      (xy 156.21 266.7)
+      (xy 161.29 266.7))
     (stroke
       (width 0)
       (type default))
     (uuid 5f2e95f4-6b1b-5cb0-ba14-0d656000e158))
   (global_label "GND"
     (shape bidirectional)
-    (at 364.49 215.9 0)
+    (at 161.29 266.7 0)
     (effects
       (font
         (size 1.0 1.0))
@@ -1757,30 +1863,30 @@
     (uuid e94f7171-51e9-5399-a069-3c828623abad))
   (symbol
     (lib_id "screen_symbols:Device_R")
-    (at 355.59999999999997 215.89999999999998 90)
+    (at 152.39999999999998 266.7 90)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid efda3eb4-b1df-51e5-9be2-372a3163b3c8)
     (property "Reference" "R8"
-      (at 355.59999999999997 205.73999999999998 90)
+      (at 152.39999999999998 256.53999999999996 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Value" "100R 1W 1%"
-      (at 355.59999999999997 208.27999999999997 90)
+      (at 152.39999999999998 259.08 90)
       (effects
         (font
           (size 1.27 1.27))))
     (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-      (at 355.59999999999997 215.89999999999998 90)
+      (at 152.39999999999998 266.7 90)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
     (property "MPN" "PR01000101000FA100"
-      (at 355.59999999999997 215.89999999999998 90)
+      (at 152.39999999999998 266.7 90)
       (effects
         (font
           (size 1.27 1.27))

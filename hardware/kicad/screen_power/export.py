@@ -10,6 +10,7 @@ import sys
 import tempfile
 import zipfile
 from check import source_hashes
+from models import check_models
 import pcbnew as p
 
 HERE = Path(__file__).resolve().parent
@@ -56,8 +57,8 @@ def export(variant):
     destination=source/'fabrication'
     def inputs():
         hashes=source_hashes(source,board)
-        for path in [HERE/'README.md',HERE/'external_bom.csv',*sorted((HERE/'screen_power.pretty').glob('*.kicad_mod'))]:
-            hashes[str(path.relative_to(HERE))]=hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in [HERE/'README.md',HERE/'COSTS.md',HERE/'external_bom.csv',HERE/'LIBRARY_LICENSE.txt',HERE.parents[2]/'LICENSE',*sorted((HERE/'screen_power.pretty').glob('*.kicad_mod'))]:
+            hashes[os.path.relpath(path,HERE)]=hashlib.sha256(path.read_bytes()).hexdigest()
         return hashes
     before=inputs()
     # Build in a temporary directory. A failed check/export never replaces the
@@ -65,12 +66,11 @@ def export(variant):
     with tempfile.TemporaryDirectory(prefix='screen-power-export-') as folder:
         out=Path(folder);gerbers=out/'gerbers';gerbers.mkdir()
         subprocess.run([sys.executable,str(HERE/'check.py'),variant,'--output',str(out/'validation.json')],check=True)
-        run('pcb','export','gerbers','--layers','F.Cu,In1.Cu,In2.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,F.Paste,Edge.Cuts',
+        run('pcb','export','gerbers','--layers','F.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,Edge.Cuts',
             '--no-protel-ext','--subtract-soldermask','--check-zones','-o',str(gerbers)+'/',board)
         run('pcb','export','drill','--excellon-separate-th','--generate-map','--generate-report',
             '--report-path',out/'drill-report.txt','-o',str(gerbers)+'/',board)
         run('pcb','export','pos','--format','csv','--units','mm','-o',out/'positions-all.csv',board)
-        run('pcb','export','pos','--format','csv','--units','mm','--smd-only','--exclude-fp-th','-o',out/'positions-smd.csv',board)
         run('sch','export','pdf','-o',out/'schematic.pdf',schematic)
         # Use the finished silkscreen references once, with fab body outlines
         # and numbered pad sketches. Blank duplicate fab reference text only
@@ -81,19 +81,50 @@ def export(variant):
                 for item in footprint.GraphicalItems():
                     if isinstance(item,p.PCB_TEXT) and item.GetLayer()==p.F_Fab:
                         item.SetText('')
+            # The source board starts at (0,0). Keep a full-size paper template
+            # inside printable A4 margins; only the disposable drawing moves.
+            offset=p.VECTOR2I(p.FromMM(100),p.FromMM(60))
+            for item in [*drawing_board.GetFootprints(),*drawing_board.GetDrawings(),
+                         *drawing_board.GetTracks(),*drawing_board.Zones()]:
+                item.Move(offset)
             drawing_path=Path(drawing)/'assembly.kicad_pcb'
             drawing_board.Save(str(drawing_path))
             run('pcb','export','pdf','--layers','F.Fab,F.SilkS,Edge.Cuts',
                 '--sketch-pads-on-fab-layers','--black-and-white','--scale','0',
                 '--mode-single','-o',out/'assembly.pdf',drawing_path)
+            run('pcb','export','pdf','--layers','F.Fab,F.SilkS,Edge.Cuts',
+                '--sketch-pads-on-fab-layers','--black-and-white','--scale','1',
+                '--mode-single','-o',out/'fit-template-1to1.pdf',drawing_path)
         run('pcb','export','step','--force','-D','KICAD10_3DMODEL_DIR='+MODELS,'-o',out/'board.step',board)
         for side in ['top','bottom']:
             run('pcb','render','--side',side,'--quality','high','--width','1600','--height','1600',
                 '-D','KICAD10_3DMODEL_DIR='+MODELS,'-o',out/(side+'.png'),board)
+        run('pcb','render','--side','top','--perspective','--rotate','25,0,20',
+            '--zoom','0.65','--quality','high','--width','1600','--height','1600',
+            '-o',out/'perspective.png',board)
+        for face in ['F','B']:
+            run('pcb','export','svg','--layers',f'{face}.Cu,{face}.Silkscreen,Edge.Cuts',
+                '--page-size-mode','2','--exclude-drawing-sheet','--mode-single',
+                '-o',out/f'{face}-copper.svg',board)
+        # Keep the original project/model relative paths in the portable copy.
+        native=out/'native';project=native/variant;project.mkdir(parents=True)
+        for pattern in ['*.kicad_pro','*.kicad_sch','*.kicad_sym','*.kicad_dru','*-lib-table','*.net']:
+            for path in source.glob(pattern):
+                if ".placed." not in path.name:
+                    shutil.copy2(path,project/path.name)
+        shutil.copy2(board,project/board.name)
+        for name in ['models','screen_power.pretty']:shutil.copytree(HERE/name,native/name)
+        shutil.copy2(HERE/'LIBRARY_LICENSE.txt',native/'LIBRARY_LICENSE.txt')
+        shutil.copy2(HERE.parents[2]/'LICENSE',native/'LICENSE')
+        model_errors=[]
+        check_models(p.LoadBoard(str(project/board.name)),project,model_errors)
+        if model_errors:raise RuntimeError('Portable project has missing models: '+str(model_errors))
         shutil.copy2(source/'bom.csv',out/'bom.csv')
         shutil.copy2(HERE/'external_bom.csv',out/'external_bom.csv')
-        shutil.copy2(HERE/'README.md',out/'README.md')
-        layers=['F_Cu.gbr','In1_Cu.gbr','In2_Cu.gbr','B_Cu.gbr','Edge_Cuts.gbr']
+        shutil.copy2(HERE/'COSTS.md',out/'COSTS.md')
+        (out/'README.md').write_text((HERE/'README.md').read_text().replace(
+            '(models/README.md)', '(native/models/README.md)'))
+        layers=['F_Cu.gbr','B_Cu.gbr','Edge_Cuts.gbr']
         for suffix in layers:
             matches=list(gerbers.glob('*'+suffix))
             if len(matches)!=1 or matches[0].stat().st_size<500:
@@ -103,7 +134,7 @@ def export(variant):
         with zipfile.ZipFile(out/f'screen_power_{variant}_prototype_gerbers.zip','w',zipfile.ZIP_DEFLATED) as z:
             for path in sorted(gerbers.iterdir()):
                 z.write(path,path.name)
-        manifest={'status':'CAD verified prototype; physical acceptance pending',
+        manifest={'status':'First fabrication: assembled hardware and shutdown timing unverified',
                   'source_sha256':before,
                   'board_sha256':hashlib.sha256(board.read_bytes()).hexdigest(),
                   'files':{str(path.relative_to(out)):hashlib.sha256(path.read_bytes()).hexdigest()
@@ -115,4 +146,4 @@ def export(variant):
         print('Verified prototype package:',destination)
 
 if __name__=='__main__':
-    a=argparse.ArgumentParser();a.add_argument('variant',choices=['hand','factory']);export(a.parse_args().variant)
+    a=argparse.ArgumentParser();a.add_argument('variant',choices=['hand']);export(a.parse_args().variant)

@@ -5,10 +5,31 @@ issue #747): the Pico 2 / RP2350 control board that lies beside the Raspberry Pi
 floor console. Everything on it is through-hole except the Pico 2 module itself, which is
 soldered down by its castellations.
 
+
+For the current v3 board, use the current generated BOM for quantities and connector
+sizes; the v2 illustration and v2-only rows below are historical. J2 is Würth
+61204021621 and J22 is Würth 61300621121, with 1.25 mm finished holes and minimum
+1.80 mm pads. The Pico is soldered by its castellations, not an unspecified header.
+
+The CTRL bias resistors R7–R10 now use **Pico pin 36 (`+3V3_PICO`)**. This supply is
+separate from the Pi's `+3V3`, which still supplies the MIDI receiver, expansion pin
+and ring-link pull-ups. Before fitting the modules, verify that those two 3.3 V nets
+are not shorted. This prevents the expression inputs from powering an unpowered
+Pico through its analog pads when the Pi remains on. Use the Pi's SWD programming
+connection for the assembled board; the Pico USB supply can energize the auxiliary
+5 V rail through its onboard diode, so do not connect a USB programmer with the
+auxiliary harness attached.
+
+At H2/H3/H4, keep conductive screw heads and standoff contact surfaces at or
+below 6 mm diameter on **both faces**, or use insulating washers. Larger metal
+washers can bridge the isolated mounting pad to GND and defeat the single chassis
+bond at H1.
+
 ![Soldering order, annotated top view](segno_console_board_v2_soldering_guide.png)
 
-The image is the routed board (`kicad/out_console/segno_console_board.kicad_pcb`, DRC
-0 / 0) rendered from the top with every part outlined in the colour of its step. Every resistor, capacitor,
+The image is the historical v2 illustration, rendered from the top with each part
+outlined in its assembly-step colour. For v3, use the freshly exported assembly PDF
+and BOM in the current review package. Every resistor, capacitor,
 diode and IC has its **value printed on its body** in the image, so you can solder straight
 from the picture. A filled dot is pin 1, the half-disc on a DIP is its notch, `+`/`−` are
 the electrolytic leads, and the bar on D1 is its cathode band.
@@ -199,7 +220,7 @@ housing flat while reheating it, then solder the rest.
 | J6 | 8-pin | `RING`, under the Pico | Left |
 | J7 | 3-pin | `LEDS`, right of J6 | Left |
 | J10 … J19 | 2-pin | `REC STOP UNDO MODE TRK1 TRK2 TRK3 TRK4 CLR BANK` (bottom edge) | Left |
-| J25 | 2-pin | `SCREEN 1=GPIO17 2=GND` on the back, below the right end of the Pico | Left |
+| J25 | 2-pin | `SCREEN` on the top, beside J25 | Left |
 
 J25 is the screen-power addition to the current console board and is absent
 from the older v2 illustration above. Fit a JST XH B2B-XH-A vertical header:
@@ -295,7 +316,7 @@ Keep the Pi out of it until the board has run on its own.
    fold), then power the Pi from its own supply and the board from BUCK_AUX per
    `segno_wiring.md` §2.
 
-Firmware note: the Pico runs `firmware/console_board/`; `firmware/console_board/pedal_link.h`
+Firmware note: the Pico runs `firmware/console_board/`; `firmware/libraries/SegnoPanel/src/pedal_link.h`
 is the wire-protocol reference. Whatever runs on the Pico
 must enable the internal pull-ups on the ten footswitch inputs, the encoder inputs and
 the two CTRL tips, or those inputs float (see the notes in `console_board.py`).

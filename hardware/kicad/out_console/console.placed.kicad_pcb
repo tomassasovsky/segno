@@ -554,7 +554,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -564,7 +564,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "J21_REF")
@@ -573,7 +573,7 @@
 		(pad "3" thru_hole oval
 			(at 5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -582,7 +582,7 @@
 		(pad "4" thru_hole oval
 			(at 7.5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "J21_TN")
@@ -604,11 +604,11 @@
 	(footprint "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
 		(layer "F.Cu")
 		(uuid "0e0e3754-d4b4-43f5-bfa8-bb9b3129f504")
-		(at 166.519999 123)
+		(at 166.37 123)
 		(descr "Resistor, Axial_DIN0207 series, Axial, Horizontal, pin pitch=10.16mm, 0.25W = 1/4W, length*diameter=6.3*2.5mm^2, http://cdn-reichelt.de/documents/datenblatt/B400/1_4W%23YAG.pdf")
 		(tags "Resistor Axial_DIN0207 series Axial Horizontal pin pitch 10.16mm 0.25W = 1/4W length 6.3mm diameter 2.5mm")
 		(property "Reference" "R18"
-			(at 5.08 2.7938 0)
+			(at 15.83 -1.1 0)
 			(layer "F.SilkS")
 			(uuid "b03b14db-1824-4f6a-85f0-e1d219ffb207")
 			(effects
@@ -966,7 +966,7 @@
 		(descr "JST XH series connector, B2B-XH-A (http://www.jst-mfg.com/product/pdf/eng/eXH.pdf)")
 		(tags "connector JST XH vertical")
 		(property "Reference" "J25"
-			(at -4.75 -3.2 0)
+			(at -4.8 -2.2 0)
 			(layer "F.SilkS")
 			(uuid "4224f4f0-813d-49d7-9693-216f48d5ce9b")
 			(effects
@@ -1204,7 +1204,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -1214,7 +1214,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -1631,7 +1631,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0 90)
 			(size 2.7 2.7)
-			(drill 1.7)
+			(drill 1.8)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.092593)
@@ -1641,7 +1641,7 @@
 		(pad "2" thru_hole circle
 			(at 3.96 0 90)
 			(size 2.7 2.7)
-			(drill 1.7)
+			(drill 1.8)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "IND_DATA_OUT")
@@ -1650,7 +1650,7 @@
 		(pad "3" thru_hole circle
 			(at 7.92 0 90)
 			(size 2.7 2.7)
-			(drill 1.7)
+			(drill 1.8)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "+5V")
@@ -1991,7 +1991,7 @@
 			(drill 0.8)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net "+3V3")
+			(net "+3V3_PICO")
 			(uuid "7dc7de47-1e33-404a-8edb-a51d569a99ff")
 		)
 		(pad "2" thru_hole circle
@@ -2260,7 +2260,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -2270,7 +2270,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -2891,7 +2891,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -2901,7 +2901,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -2927,7 +2927,7 @@
 		(descr "14-lead though-hole mounted DIP package, row spacing 7.62mm (300 mils)")
 		(tags "THT DIP DIL PDIP 2.54mm 7.62mm 300mil")
 		(property "Reference" "U1"
-			(at 3.81 18.3138 0)
+			(at 10.43 18.3138 0)
 			(layer "F.SilkS")
 			(uuid "50c4649a-4424-4f05-8ce2-9ebf00cf1c44")
 			(effects
@@ -3995,7 +3995,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0 90)
 			(size 2.7 2.7)
-			(drill 1.7)
+			(drill 1.8)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.092593)
@@ -4005,7 +4005,7 @@
 		(pad "2" thru_hole circle
 			(at 3.96 0 90)
 			(size 2.7 2.7)
-			(drill 1.7)
+			(drill 1.8)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -4031,7 +4031,7 @@
 		(descr "C, Disc series, Radial, pin pitch=2.50mm, diameter*width=5*2.5mm^2, Capacitor, http://cdn-reichelt.de/documents/datenblatt/B300/DS_KERKO_TC.pdf")
 		(tags "C Disc series Radial pin pitch 2.50mm diameter 5mm width 2.5mm Capacitor")
 		(property "Reference" "C8"
-			(at 1.249999 -3.043801 0)
+			(at 5.735952 0 0)
 			(layer "F.SilkS")
 			(uuid "71b760c8-16cf-4258-a583-c165f800ec90")
 			(effects
@@ -4615,7 +4615,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -4625,7 +4625,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "PWR_BTN_RET")
@@ -4888,7 +4888,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -4898,7 +4898,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -5547,7 +5547,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -5557,7 +5557,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -6364,11 +6364,11 @@
 	(footprint "JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"
 		(layer "F.Cu")
 		(uuid "83cef717-5848-460d-84d7-fc9bf6678da3")
-		(at 121.85 90)
+		(at 178.25 129)
 		(descr "JST XH series connector, B2B-XH-A (http://www.jst-mfg.com/product/pdf/eng/eXH.pdf)")
 		(tags "connector JST XH vertical")
 		(property "Reference" "J9"
-			(at -4.590715 0 0)
+			(at -4.5 0 0)
 			(layer "F.SilkS")
 			(uuid "5bb4f287-f2c4-4809-9f77-861e628ed477")
 			(effects
@@ -6605,7 +6605,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -6615,7 +6615,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "PWR_BTN_RET")
@@ -6637,11 +6637,11 @@
 	(footprint "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
 		(layer "F.Cu")
 		(uuid "860faf72-8725-4c16-a29d-66e1f54842f2")
-		(at 179.5 128.079999 90)
+		(at 172.32 118.9)
 		(descr "Resistor, Axial_DIN0207 series, Axial, Horizontal, pin pitch=10.16mm, 0.25W = 1/4W, length*diameter=6.3*2.5mm^2, http://cdn-reichelt.de/documents/datenblatt/B400/1_4W%23YAG.pdf")
 		(tags "Resistor Axial_DIN0207 series Axial Horizontal pin pitch 10.16mm 0.25W = 1/4W length 6.3mm diameter 2.5mm")
 		(property "Reference" "R2"
-			(at 12.7538 0 0)
+			(at 5.08 -3.0438 0)
 			(layer "F.SilkS")
 			(uuid "055d7df4-9e0b-4f9f-bba4-19d250336342")
 			(effects
@@ -6652,7 +6652,7 @@
 			)
 		)
 		(property "Value" "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-			(at 5.08 2.37 90)
+			(at 5.08 2.37 0)
 			(layer "F.Fab")
 			(uuid "d86f3bdf-09d4-4bfb-8568-48ccdc827953")
 			(effects
@@ -6663,7 +6663,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 90)
+			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "0f1ef2d1-f281-4b08-ab6f-0c288db27bf8")
@@ -6674,7 +6674,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 90)
+			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "18011e4e-3b90-4fed-adb7-c1f83b9f74dd")
@@ -6685,7 +6685,7 @@
 			)
 		)
 		(property "KiLib_Generator" "resistor/THT"
-			(at 0 0 90)
+			(at 0 0 0)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "4376fd12-52f2-433c-a212-64867148a8f0")
@@ -6699,16 +6699,6 @@
 		(attr through_hole)
 		(duplicate_pad_numbers_are_jumpers no)
 		(fp_line
-			(start 9.12 0)
-			(end 8.35 0)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "d8c642a5-aa70-41b9-9782-b199552e2b9d")
-		)
-		(fp_line
 			(start 1.04 0)
 			(end 1.81 0)
 			(stroke
@@ -6717,6 +6707,16 @@
 			)
 			(layer "F.SilkS")
 			(uuid "e75040f2-d78c-4f32-a3a4-b94f556b1ee9")
+		)
+		(fp_line
+			(start 9.12 0)
+			(end 8.35 0)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "d8c642a5-aa70-41b9-9782-b199552e2b9d")
 		)
 		(fp_rect
 			(start 1.81 -1.37)
@@ -6741,16 +6741,6 @@
 			(uuid "762f517c-5fa4-444b-a590-3e95383ceca0")
 		)
 		(fp_line
-			(start 10.16 0)
-			(end 8.23 0)
-			(stroke
-				(width 0.1)
-				(type solid)
-			)
-			(layer "F.Fab")
-			(uuid "1045ace4-f9a3-456d-bfb5-082555eebdb2")
-		)
-		(fp_line
 			(start 0 0)
 			(end 1.93 0)
 			(stroke
@@ -6759,6 +6749,16 @@
 			)
 			(layer "F.Fab")
 			(uuid "f03eda09-e3e7-4089-bdc5-5f90d7df0a7a")
+		)
+		(fp_line
+			(start 10.16 0)
+			(end 8.23 0)
+			(stroke
+				(width 0.1)
+				(type solid)
+			)
+			(layer "F.Fab")
+			(uuid "1045ace4-f9a3-456d-bfb5-082555eebdb2")
 		)
 		(fp_rect
 			(start 1.93 -1.25)
@@ -6772,7 +6772,7 @@
 			(uuid "e9423d8b-d47d-434c-9a1d-02852771da69")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 5.08 0 90)
+			(at 5.08 0 0)
 			(layer "F.Fab")
 			(uuid "4586d758-8b66-4706-8364-d7e7f8cc5ee7")
 			(effects
@@ -6783,7 +6783,7 @@
 			)
 		)
 		(pad "1" thru_hole circle
-			(at 0 0 90)
+			(at 0 0)
 			(size 1.6 1.6)
 			(drill 0.8)
 			(layers "*.Cu" "*.Mask")
@@ -6792,7 +6792,7 @@
 			(uuid "9d0a2cd2-eb98-4e04-a88c-193aca0339d0")
 		)
 		(pad "2" thru_hole circle
-			(at 10.16 0 90)
+			(at 10.16 0)
 			(size 1.6 1.6)
 			(drill 0.8)
 			(layers "*.Cu" "*.Mask")
@@ -6820,7 +6820,7 @@
 		(descr "C, Disc series, Radial, pin pitch=2.50mm, diameter*width=5*2.5mm^2, Capacitor, http://cdn-reichelt.de/documents/datenblatt/B300/DS_KERKO_TC.pdf")
 		(tags "C Disc series Radial pin pitch 2.50mm diameter 5mm width 2.5mm Capacitor")
 		(property "Reference" "C9"
-			(at 1.25 -3.043801 0)
+			(at 5.735952 0 0)
 			(layer "F.SilkS")
 			(uuid "7e23aa2b-0a82-4c16-95ed-0501f6d7f503")
 			(effects
@@ -6988,7 +6988,7 @@
 		(descr "Resistor, Axial_DIN0207 series, Axial, Horizontal, pin pitch=10.16mm, 0.25W = 1/4W, length*diameter=6.3*2.5mm^2, http://cdn-reichelt.de/documents/datenblatt/B400/1_4W%23YAG.pdf")
 		(tags "Resistor Axial_DIN0207 series Axial Horizontal pin pitch 10.16mm 0.25W = 1/4W length 6.3mm diameter 2.5mm")
 		(property "Reference" "R16"
-			(at 5.08 3.0438 0)
+			(at -3.166905 3.0438 0)
 			(layer "F.SilkS")
 			(uuid "d8a93152-753c-48f5-86ee-d4f89c1dd2d2")
 			(effects
@@ -7583,7 +7583,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -7593,7 +7593,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "N$2")
@@ -7602,7 +7602,7 @@
 		(pad "3" thru_hole oval
 			(at 5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -7865,7 +7865,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -7875,7 +7875,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -7884,7 +7884,7 @@
 		(pad "3" thru_hole oval
 			(at 5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "LINK_TO_RING")
@@ -7893,7 +7893,7 @@
 		(pad "4" thru_hole oval
 			(at 7.5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "LINK_TO_CONSOLE")
@@ -7919,7 +7919,7 @@
 		(descr "Resistor, Axial_DIN0207 series, Axial, Horizontal, pin pitch=10.16mm, 0.25W = 1/4W, length*diameter=6.3*2.5mm^2, http://cdn-reichelt.de/documents/datenblatt/B400/1_4W%23YAG.pdf")
 		(tags "Resistor Axial_DIN0207 series Axial Horizontal pin pitch 10.16mm 0.25W = 1/4W length 6.3mm diameter 2.5mm")
 		(property "Reference" "R20"
-			(at 13.326904 3.0438 0)
+			(at -2.42 6.4 0)
 			(layer "F.SilkS")
 			(uuid "603e24e1-656d-4815-87c6-d1598db063da")
 			(effects
@@ -8245,7 +8245,7 @@
 			(drill 0.8)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net "+3V3")
+			(net "+3V3_PICO")
 			(uuid "e22740bd-5f7d-4aad-8907-deaebf84f826")
 		)
 		(pad "2" thru_hole circle
@@ -8776,7 +8776,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -8786,7 +8786,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -11143,6 +11143,7 @@
 			(drill 1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
+			(net "+3V3_PICO")
 			(uuid "720fcb62-b574-40a6-8638-f631ffc4d9c8")
 		)
 		(pad "36" smd roundrect
@@ -11150,6 +11151,7 @@
 			(size 3.2 1.6)
 			(layers "F.Cu" "F.Mask")
 			(roundrect_rratio 0.5)
+			(net "+3V3_PICO")
 			(uuid "adbc1e25-ebc3-4317-b175-04071b921382")
 		)
 		(pad "37" thru_hole circle
@@ -11893,7 +11895,7 @@
 		(descr "Resistor, Axial_DIN0207 series, Axial, Horizontal, pin pitch=10.16mm, 0.25W = 1/4W, length*diameter=6.3*2.5mm^2, http://cdn-reichelt.de/documents/datenblatt/B400/1_4W%23YAG.pdf")
 		(tags "Resistor Axial_DIN0207 series Axial Horizontal pin pitch 10.16mm 0.25W = 1/4W length 6.3mm diameter 2.5mm")
 		(property "Reference" "R22"
-			(at 15.076904 4.7938 0)
+			(at 18.576904 8.2938 0)
 			(layer "F.SilkS")
 			(uuid "bdc74a13-ae59-4da9-9065-dbf8e817d348")
 			(effects
@@ -12283,8 +12285,8 @@
 		)
 		(pad "1" thru_hole rect
 			(at 0 0)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "+3V3")
@@ -12292,8 +12294,8 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "+5V")
@@ -12301,8 +12303,8 @@
 		)
 		(pad "3" thru_hole circle
 			(at 0 2.54)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "EXP_GP12")
@@ -12310,8 +12312,8 @@
 		)
 		(pad "4" thru_hole circle
 			(at 2.54 2.54)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "EXP_GP15")
@@ -12319,8 +12321,8 @@
 		)
 		(pad "5" thru_hole circle
 			(at 0 5.08)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "EXP_GP28")
@@ -12328,8 +12330,8 @@
 		)
 		(pad "6" thru_hole circle
 			(at 2.54 5.08)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -12701,7 +12703,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -12711,7 +12713,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -12974,7 +12976,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -12984,7 +12986,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "N$5")
@@ -13247,7 +13249,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -13257,7 +13259,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -13279,7 +13281,7 @@
 	(footprint "JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical"
 		(layer "F.Cu")
 		(uuid "c87ea5ab-5642-4878-a755-4cf22220ee41")
-		(at 125 128.199999)
+		(at 125 128.999999)
 		(descr "JST XH series connector, B3B-XH-A (http://www.jst-mfg.com/product/pdf/eng/eXH.pdf)")
 		(tags "connector JST XH vertical")
 		(property "Reference" "J23"
@@ -13520,7 +13522,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -13530,7 +13532,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "PD_SDA")
@@ -13539,7 +13541,7 @@
 		(pad "3" thru_hole oval
 			(at 5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "PD_SCL")
@@ -14085,8 +14087,8 @@
 		)
 		(pad "1" thru_hole roundrect
 			(at 0 0 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -14095,40 +14097,40 @@
 		)
 		(pad "2" thru_hole circle
 			(at 2.54 0 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "8e45836f-1e83-4c83-92cd-0ee1ec46d348")
 		)
 		(pad "3" thru_hole circle
 			(at 0 2.54 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "cbd9971a-e46a-4564-ae4a-bcccd430f102")
 		)
 		(pad "4" thru_hole circle
 			(at 2.54 2.54 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "c5dd1b75-b40c-4a46-bc64-a7b03baeb5d9")
 		)
 		(pad "5" thru_hole circle
 			(at 0 5.08 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "6d0af023-2277-431a-ae11-1754f4821c29")
 		)
 		(pad "6" thru_hole circle
 			(at 2.54 5.08 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -14136,16 +14138,16 @@
 		)
 		(pad "7" thru_hole circle
 			(at 0 7.62 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "8d03d020-d028-4190-9eaf-10a4a18d7f3c")
 		)
 		(pad "8" thru_hole circle
 			(at 2.54 7.62 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "MIDI_TX")
@@ -14153,8 +14155,8 @@
 		)
 		(pad "9" thru_hole circle
 			(at 0 10.16 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -14162,8 +14164,8 @@
 		)
 		(pad "10" thru_hole circle
 			(at 2.54 10.16 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "MIDI_RX")
@@ -14171,8 +14173,8 @@
 		)
 		(pad "11" thru_hole circle
 			(at 0 12.7 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "PI_GPIO17")
@@ -14180,24 +14182,24 @@
 		)
 		(pad "12" thru_hole circle
 			(at 2.54 12.7 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "d8f7d3cf-5a37-4a58-917f-a974e72cdf09")
 		)
 		(pad "13" thru_hole circle
 			(at 0 15.24 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "db2c4d87-3b60-4a12-ae71-3581619e5fc0")
 		)
 		(pad "14" thru_hole circle
 			(at 2.54 15.24 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -14205,24 +14207,24 @@
 		)
 		(pad "15" thru_hole circle
 			(at 0 17.78 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "ccf8faef-3809-4f1c-bf20-75850679ea66")
 		)
 		(pad "16" thru_hole circle
 			(at 2.54 17.78 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "49feef5d-f953-44d1-85e5-631f186b742b")
 		)
 		(pad "17" thru_hole circle
 			(at 0 20.32 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "+3V3")
@@ -14230,8 +14232,8 @@
 		)
 		(pad "18" thru_hole circle
 			(at 2.54 20.32 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "SWCLK")
@@ -14239,16 +14241,16 @@
 		)
 		(pad "19" thru_hole circle
 			(at 0 22.86 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "cf018f4e-38d7-4c6c-959c-41aaf23730d9")
 		)
 		(pad "20" thru_hole circle
 			(at 2.54 22.86 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -14256,8 +14258,8 @@
 		)
 		(pad "21" thru_hole circle
 			(at 0 25.4 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "LINK_TX_PI")
@@ -14265,8 +14267,8 @@
 		)
 		(pad "22" thru_hole circle
 			(at 2.54 25.4 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "SWDIO")
@@ -14274,16 +14276,16 @@
 		)
 		(pad "23" thru_hole circle
 			(at 0 27.94 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "7042baee-ecf2-489b-a671-2a84f0067b1a")
 		)
 		(pad "24" thru_hole circle
 			(at 2.54 27.94 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "LINK_RX_PI")
@@ -14291,8 +14293,8 @@
 		)
 		(pad "25" thru_hole circle
 			(at 0 30.48 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -14300,40 +14302,40 @@
 		)
 		(pad "26" thru_hole circle
 			(at 2.54 30.48 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "a955b0f5-58bd-4fa6-9cdd-2e1f3c4b50a3")
 		)
 		(pad "27" thru_hole circle
 			(at 0 33.02 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "25468032-971e-44e6-9cb8-7ef9b51f0f76")
 		)
 		(pad "28" thru_hole circle
 			(at 2.54 33.02 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "c0513e8d-66d5-4895-8d5e-7bcc8e26a4e9")
 		)
 		(pad "29" thru_hole circle
 			(at 0 35.56 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "7e94e01d-d5d9-49bd-a727-68a3292f816d")
 		)
 		(pad "30" thru_hole circle
 			(at 2.54 35.56 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -14341,32 +14343,32 @@
 		)
 		(pad "31" thru_hole circle
 			(at 0 38.1 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "40d8a066-eec5-442e-8af0-112559b22ca8")
 		)
 		(pad "32" thru_hole circle
 			(at 2.54 38.1 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "f4f9c323-d369-4151-a09a-ffd72f8b17de")
 		)
 		(pad "33" thru_hole circle
 			(at 0 40.64 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "a1ed3943-9453-4999-9130-073554c61b2b")
 		)
 		(pad "34" thru_hole circle
 			(at 2.54 40.64 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -14374,40 +14376,40 @@
 		)
 		(pad "35" thru_hole circle
 			(at 0 43.18 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "a8193fe1-87b9-4e60-8106-dc724b10534e")
 		)
 		(pad "36" thru_hole circle
 			(at 2.54 43.18 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "0b14a01f-22b3-4f43-8830-bbfeb814920c")
 		)
 		(pad "37" thru_hole circle
 			(at 0 45.72 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "edb60360-5232-4283-a681-75587818df49")
 		)
 		(pad "38" thru_hole circle
 			(at 2.54 45.72 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "27baae6e-abbe-4cbe-a98d-9bab8e85182b")
 		)
 		(pad "39" thru_hole circle
 			(at 0 48.26 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -14415,8 +14417,8 @@
 		)
 		(pad "40" thru_hole circle
 			(at 2.54 48.26 180)
-			(size 1.7 1.7)
-			(drill 1)
+			(size 1.8 1.8)
+			(drill 1.25)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(uuid "332014fb-406f-4c96-b208-596fa936e9f4")
@@ -17094,7 +17096,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -17104,7 +17106,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -19234,7 +19236,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -19244,7 +19246,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -19417,7 +19419,7 @@
 			(drill 0.8)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net "+3V3")
+			(net "+3V3_PICO")
 			(uuid "7619f4df-87ed-40e7-b0f2-b39b780bb131")
 		)
 		(pad "2" thru_hole circle
@@ -19686,7 +19688,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -19696,7 +19698,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 2)
-			(drill 1)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -19869,7 +19871,7 @@
 			(drill 0.8)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net "+3V3")
+			(net "+3V3_PICO")
 			(uuid "f4253cec-554f-4e86-81c0-7105116f98e2")
 		)
 		(pad "2" thru_hole circle
@@ -20415,7 +20417,7 @@
 		(pad "1" thru_hole roundrect
 			(at 0 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(roundrect_rratio 0.147059)
@@ -20425,7 +20427,7 @@
 		(pad "2" thru_hole oval
 			(at 2.5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "J20_REF")
@@ -20434,7 +20436,7 @@
 		(pad "3" thru_hole oval
 			(at 5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "GND")
@@ -20443,7 +20445,7 @@
 		(pad "4" thru_hole oval
 			(at 7.5 0)
 			(size 1.7 1.95)
-			(drill 0.95)
+			(drill 1.1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
 			(net "J20_TN")
@@ -23115,17 +23117,6 @@
 			)
 		)
 	)
-	(gr_text "PI PWR"
-		(at 123.1 85.08 0)
-		(layer "F.SilkS")
-		(uuid "d1d4bde1-aae7-4908-855d-0c22fc49a121")
-		(effects
-			(font
-				(size 1 1)
-				(thickness 0.2)
-			)
-		)
-	)
 	(gr_text "UNDO"
 		(at 126.666665 139.3 0)
 		(layer "F.SilkS")
@@ -23149,7 +23140,7 @@
 		)
 	)
 	(gr_text "PD"
-		(at 135.195 128.199998 0)
+		(at 135.195 128.999998 0)
 		(layer "F.SilkS")
 		(uuid "41895674-569b-4e01-a537-fdfa30e0c73f")
 		(effects
@@ -23225,6 +23216,17 @@
 			)
 		)
 	)
+	(gr_text "SCREEN"
+		(at 161.4 124.1 0)
+		(layer "F.SilkS")
+		(uuid "f4b2cfd9-1caa-418b-acb9-74294362fe2b")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.2)
+			)
+		)
+	)
 	(gr_text "CTRL 1"
 		(at 163.4 63 0)
 		(layer "F.SilkS")
@@ -23262,6 +23264,17 @@
 		(at 177.7 63 0)
 		(layer "F.SilkS")
 		(uuid "ff2947fb-be37-4729-8496-4a03b358a7c6")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.2)
+			)
+		)
+	)
+	(gr_text "PI PWR"
+		(at 181.1 124.1 0)
+		(layer "F.SilkS")
+		(uuid "d1d4bde1-aae7-4908-855d-0c22fc49a121")
 		(effects
 			(font
 				(size 1 1)
@@ -23311,18 +23324,6 @@
 				(size 1.6 1.6)
 				(thickness 0.32)
 			)
-		)
-	)
-	(gr_text "SCREEN 1=GPIO17 2=GND"
-		(at 168 126 0)
-		(layer "B.SilkS")
-		(uuid "1d32aa97-e392-4125-8ed7-38d42029245a")
-		(effects
-			(font
-				(size 0.8 0.8)
-				(thickness 0.16)
-			)
-			(justify mirror)
 		)
 	)
 	(gr_text "GND"
@@ -23888,14 +23889,6 @@
 		(layers "F.Cu" "B.Cu")
 		(net "GND")
 		(uuid "0eb6d146-7015-46ba-babe-664f5118fd19")
-	)
-	(via
-		(at 172 120)
-		(size 0.8)
-		(drill 0.4)
-		(layers "F.Cu" "B.Cu")
-		(net "GND")
-		(uuid "13f53e85-4188-4cea-a935-acdd98a909cf")
 	)
 	(via
 		(at 162.05 99.06)

@@ -1,10 +1,11 @@
-"""Place components for both screen-power board variants.
+"""Place components for the hand-soldered screen-power board.
 
 Run with KiCad's Python. The placed board never overwrites a routed deliverable.
 Low-priority remaining connections may subsequently use Freerouting.
 """
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -16,7 +17,7 @@ sys.path.insert(0, str(HERE.parent))
 from netlist import parse_netlist
 
 FPDIR = Path(os.environ.get("KICAD_FOOTPRINT_DIR", "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints"))
-from layout import DIMENSIONS, place_components
+from layout import CORNER_RADIUS, DIMENSIONS, place_components
 
 
 def point(x, y):
@@ -27,17 +28,58 @@ def xy(position):
     return (p.ToMM(position.x), p.ToMM(position.y))
 
 
+def set_outline(board, variant):
+    """Use tangent corner arcs, matching the console board's outline method."""
+    w, h = DIMENSIONS[variant]
+    r = CORNER_RADIUS
+    for item in list(board.GetDrawings()):
+        if item.GetLayer() == p.Edge_Cuts:
+            board.RemoveNative(item)
+    for start, end in [((r, 0), (w-r, 0)), ((w, r), (w, h-r)),
+                       ((w-r, h), (r, h)), ((0, h-r), (0, r))]:
+        line = p.PCB_SHAPE(board, p.SHAPE_T_SEGMENT)
+        line.SetStart(point(*start)); line.SetEnd(point(*end))
+        line.SetLayer(p.Edge_Cuts); line.SetWidth(p.FromMM(0.05))
+        board.Add(line)
+    for center, start, end in [((r, r), (0, r), (r, 0)),
+                               ((w-r, r), (w-r, 0), (w, r)),
+                               ((w-r, h-r), (w, h-r), (w-r, h)),
+                               ((r, h-r), (r, h), (0, h-r))]:
+        arc = p.PCB_SHAPE(board, p.SHAPE_T_ARC)
+        arc.SetCenter(point(*center)); arc.SetStart(point(*start)); arc.SetEnd(point(*end))
+        arc.SetLayer(p.Edge_Cuts); arc.SetWidth(p.FromMM(0.05))
+        board.Add(arc)
+
+
+def protect_mounting_hardware(board, width, height):
+    # Keep copper clear of M3 screw heads and washers up to 7 mm OD,
+    # including hole/bolt eccentricity. The NPTH drill alone is insufficient.
+    for cx, cy in ((4, 4), (width-4, 4), (4, height-4), (width-4, height-4)):
+        for layer in (p.F_Cu, p.B_Cu):
+            area = p.ZONE(board)
+            area.SetLayer(layer); area.SetIsRuleArea(True)
+            area.SetDoNotAllowTracks(True); area.SetDoNotAllowVias(True)
+            area.SetDoNotAllowZoneFills(True)
+            area.SetDoNotAllowPads(False); area.SetDoNotAllowFootprints(False)
+            outline = area.Outline(); outline.NewOutline()
+            for i in range(64):
+                angle = i*math.tau/64
+                v = point(cx+4.25*math.cos(angle), cy+4.25*math.sin(angle))
+                outline.Append(v.x, v.y)
+            board.Add(area)
+
+
 def build(variant):
     W, H = DIMENSIONS[variant]
     out = HERE / variant
     components, nets = parse_netlist(out / f"screen_power_{variant}.net")
     board = p.BOARD()
     ds = board.GetDesignSettings()
-    ds.SetCopperLayerCount(4)
+    ds.SetCopperLayerCount(2)
     ds.m_MinClearance = p.FromMM(0.15)
     ds.m_TrackMinWidth = p.FromMM(0.15)
     ds.m_ViasMinSize = p.FromMM(0.6)
-    ds.m_MinThroughDrill = p.FromMM(0.2 if variant == "factory" else 0.3)
+    ds.m_MinThroughDrill = p.FromMM(0.3)
     ds.m_SolderMaskMinWidth = p.FromMM(0.08)
     ds.m_SolderMaskExpansion = p.FromMM(0.025)
     for nc in board.GetAllNetClasses().values():
@@ -61,6 +103,31 @@ def build(variant):
             raise ValueError(f"Footprint missing: {ref} {lib}:{name}")
         fp.SetReference(ref)
         fp.SetValue(value)
+        # Nominal drills include JLCPCB's -0.08 mm finished-hole tolerance.
+        # Larger XH/VH holes also ease hand insertion into rigid FR-4.
+        drill = (1.10 if name.startswith("JST_XH_") else
+                 1.80 if name.startswith("JST_VH_") else
+                 .95 if name == "TO-92_Inline_Wide" else None)
+        if drill:
+            for pad in fp.Pads():
+                pad.SetDrillSize(point(drill, drill))
+        # Every populated component has a bundled model. Keep model placement
+        # from the library, but resolve files relative to this project.
+        if not ref.startswith("H"):
+            models = list(fp.Models())
+            if not models:
+                model = p.FP_3DMODEL()
+                model.m_Filename = name + ".step"
+                models = [model]
+            fp.Models().clear()
+            for model in models:
+                filename = Path(model.m_Filename).name
+                if filename == "C_Rect_L7.2mm_W2.5mm_P5.00mm.step":
+                    filename = "C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2.step"
+                if not (HERE / "models" / filename).is_file():
+                    raise ValueError(f"3D model missing for {ref}: {filename}")
+                model.m_Filename = "${KIPRJMOD}/../models/" + filename
+                fp.Add3DModel(model)
         fp.SetOrientationDegrees(angle)
         if centre:
             box = fp.GetBoundingBox(False, False)
@@ -82,11 +149,9 @@ def build(variant):
     place_components(variant, place, fps)
     assert set(fps) == set(components), set(components) - set(fps)
 
-    for a, b in [((0, 0), (W, 0)), ((W, 0), (W, H)), ((W, H), (0, H)), ((0, H), (0, 0))]:
-        line = p.PCB_SHAPE(board)
-        line.SetShape(p.SHAPE_T_SEGMENT); line.SetStart(point(*a)); line.SetEnd(point(*b))
-        line.SetLayer(p.Edge_Cuts); line.SetWidth(p.FromMM(0.05)); board.Add(line)
-    for layer in [p.In1_Cu, p.In2_Cu]:
+    set_outline(board, variant)
+    protect_mounting_hardware(board, W, H)
+    for layer in [p.F_Cu, p.B_Cu]:
         zone = p.ZONE(board)
         zone.SetLayer(layer); zone.SetNet(netmap["GND"])
         zone.SetLocalClearance(p.FromMM(0.2)); zone.SetMinThickness(p.FromMM(0.15))
@@ -108,5 +173,5 @@ def build(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("variant", choices=["hand", "factory"])
+    parser.add_argument("variant", choices=["hand"], nargs="?", default="hand")
     build(parser.parse_args().variant)

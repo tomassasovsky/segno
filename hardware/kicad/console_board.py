@@ -155,6 +155,7 @@ v5 = Net("+5V")            # logic: Pico VSYS + the AHCT125
 v3v3 = Net("+3V3")         # from the Pi ribbon -- the MIDI front end is the Pi's,
                            # so it runs on the Pi's rail and works whenever the Pi
                            # is up, regardless of the MCU
+v3v3_pico = Net("+3V3_PICO")  # Pico pin 36: CTRL bias follows its ADC supply
 link_tx = Net("LINK_TX")   # Pico -> Pi   (3V3 both ends: no level shifting...)
 link_rx = Net("LINK_RX")   # Pi   -> Pico (3V3 both ends)
 link_tx_pi = Net("LINK_TX_PI")   # ...but 10 k in series (R17/R18): these are the
@@ -223,7 +224,7 @@ pico[39] += v5                   # VSYS: 5 V in, onboard reg makes 3V3
 pico[40].do_erc = False          # VBUS -- USB only, unused
 pico[30].do_erc = False          # RUN  -- BOOTSEL/RUN not brought out
 pico[35].do_erc = False          # ADC_VREF -- left on the module's own reference
-pico[36].do_erc = False          # 3V3_OUT -- the board takes 3V3 from the Pi instead
+pico[36] += v3v3_pico             # CTRL bias uses the ADC owner's supply
 pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 
 # Spare GPIO, brought out to nothing on purpose. ERC would otherwise report each
@@ -437,29 +438,15 @@ for _ref, _net, _ring, _present in (("J20", ctrl1, ctrl1_ring, ctrl1_present),
     # resistor exists for -- shorts ring to sleeve and drags the OTHER jack's pot
     # top to ground, so an expression pedal there reads a constant. Two pedals also
     # loaded each other's full scale. Separate resistors, separate nets.
-    # TWO RAILS, ON PURPOSE-ENOUGH. The pot's top comes from the PI's 3V3 (this
-    # whole board's 3V3 does), while the ADC reading it references the PICO's own
-    # rail: "ADC_VREF is the ADC power supply (and reference) voltage, and is
-    # generated on Pico 2 by filtering the 3.3 V supply" (Pico 2 datasheet). So the
-    # measurement is the ratio of two different regulators, which is not ideal.
-    #
-    # It is left alone deliberately. The same datasheet puts an inherent ~30 mV
-    # (~1%) offset on ADC_VREF from its own 200R filter, drifting with temperature
-    # and sample rate, plus SMPS ripple in PFM mode -- so rail mismatch is one error
-    # among several of the same size, and every one of them is absorbed by the
-    # calibration an expression pedal needs anyway (pot travel varies far more).
-    # The 1k below also keeps the top of travel at 3.3 x 10k/11k = ~3.0 V against a
-    # ~3.27 V reference, so the sweep cannot clip at the top whichever rail is high.
-    #
-    # Firmware notes: enable the RP2350's INTERNAL pull-ups (the encoder and these
-    # jacks lose their bias if the Pi is down while the console is up), and consider
-    # driving the module's GPIO23 high to force the SMPS into PWM mode while
-    # sampling, which the datasheet says "can greatly reduce the inherent ripple".
+    # Bias the pedal from the Pico's own 3V3 output. GPIO26/27 are standard
+    # analogue pads, unlike the RP2350's failsafe digital pins: when AUX is off,
+    # Pi-sourced bias would feed their protection clamps. Sharing the ADC's rail
+    # also makes expression readings independent of the Pi regulator's tolerance.
     _ref_net = Net(_ref + "_REF")
-    R("1k", ref="R7" if _ref == "J20" else "R9")[1, 2] += v3v3, _ref_net
+    R("1k", ref="R7" if _ref == "J20" else "R9")[1, 2] += v3v3_pico, _ref_net
     j[2] += _ref_net                           # ring  = pot top, current-limited
     j[3] += gnd                                # sleeve
-    R("10k", ref="R8" if _ref == "J20" else "R10")[1, 2] += v3v3, _net
+    R("10k", ref="R8" if _ref == "J20" else "R10")[1, 2] += v3v3_pico, _net
     C("10nF")[1, 2] += _net, gnd               # anti-alias / debounce
     # The ring-sense and presence resistors are declared with the other PINNED
     # refs further down (R19..R22): a pinned ref declared here, ahead of
@@ -493,8 +480,8 @@ RING_PINMAP = {1: 1, 2: 2, 3: 3, 4: 4}
 j_ring = jst(4, "J6", "RING_LINK")
 j_ring[1] += v5
 j_ring[2] += gnd
-# The link's pull-ups live HERE, on this board's 3V3 -- the rail GP13/GP14 belong
-# to. The ring board deliberately fits none: a second pull-up on another board's
+# The link's pull-ups use the Pi's 3V3 rail; GP13/GP14 are 3V3-tolerant
+# digital pads even when their Pico is unpowered. The ring board deliberately fits none: a second pull-up on another board's
 # rail is the split-rail hazard RING_LEVELS exists to catch (its ancestors were
 # 10k to a 5 V rail that sat 1.4 V over the RP2350's absolute maximum, and no
 # gate could see across two generators' netlists until RING_LEVELS was written).
@@ -712,7 +699,7 @@ R("100k", ref="R16")[1, 2] += ind_data, gnd
 # RP1 publishes no continuous-injection rating, and the conservative line for an
 # unrated clamp is <=1 mA. 1 k bounded it at ~2.7 mA -- above that line, for
 # days at a stretch; 10 k bounds it at ~270 uA, and at the link's 115200 baud
-# (firmware/console_board/pedal_link.h) the RC against ~20-50 pF is 0.2-0.5 us against an
+# (firmware/libraries/SegnoPanel/src/pedal_link.h) the RC against ~20-50 pF is 0.2-0.5 us against an
 # 8.7 us bit -- edges stay clean. The practical ceiling with 10 k is ~230 kbaud;
 # a faster link someday means a smaller R (and re-doing this arithmetic), not a
 # quiet baud bump. Firmware note: at soft-off the Pico's internal pull-up cannot
@@ -725,11 +712,8 @@ R("10k", ref="R17")[1, 2] += link_tx, link_tx_pi
 R("10k", ref="R18")[1, 2] += link_rx_pi, link_rx
 
 # CTRL ring sense (see J20/J21 above), through 4.7k. Not a bare trace: the ring
-# is a panel jack, so this is the one GPIO a plug (and whatever static it
-# carries) touches directly, and the ring's 3V3 is the PI's rail -- at soft-off
-# the Pico may be up with that rail dead, or the Pi up with the Pico dead, and
-# either way the resistor caps what flows through a GPIO's protection diode to
-# well under a milliamp. 4.7k against the RP2350's internal pull-up (50-80k,
+# is a panel jack, so a plug can expose it to transients. The ring bias now
+# follows the Pico's own 3V3, and the resistor limits current into the sense pin. 4.7k against the RP2350's internal pull-up (50-80k,
 # which firmware enables so an unwired v2 pin reads open) still divides a closed
 # switch down to ~0.3 V, a clean low. Pinned: the soldering guide names them.
 for _ref, (_ref_net, _ring) in zip(("R19", "R20"), _ring_sense):
@@ -1131,6 +1115,15 @@ def _check(strict_stations=True):
             f"PI_RESERVED: Pi header pin {_pin} carries {_n.name}, but {_who} "
             "already uses it -- two drivers on one pin is a link that never comes up")
 
+    # ADC pads lack the RP2350 digital pins' unpowered 3V3 tolerance. Prove
+    # the complete bias island follows the Pico, with no link to the Pi rail.
+    _ctrl_bias = {(p.part.ref, str(p.num)) for p in v3v3_pico.get_pins()}
+    assert _ctrl_bias == {("J1", "36"), ("R7", "1"), ("R8", "1"),
+                          ("R9", "1"), ("R10", "1")}, (
+        f"CTRL_SUPPLY: ADC bias must come only from Pico pin 36: {_ctrl_bias}")
+    assert {n.name for n in pico[36].nets} == {"+3V3_PICO"}, (
+        "CTRL_SUPPLY: Pico 3V3 must not be tied to the Pi 3V3 rail")
+
     # ...and the buck must not be paralleled with the Pi's own 5 V rail.
     assert {(p.part.ref, str(p.num)) for p in pi_gpio17.get_pins()} == {
         ("J2", "11"), ("J25", "1")
@@ -1245,15 +1238,16 @@ def report():
     lay = []
     for name, gp in sorted(GPIO.items(), key=lambda kv: kv[1]):
         lay.append("  GP%-3d pad %-3d %s" % (gp, PICO[gp], name))
-    return ("Segno CONSOLE board v2 (#747)\n"
+    return ("Segno CONSOLE board v3 (#747, #987)\n"
             "Pico 2 (RP2350) on segno:RaspberryPi_Pico_SMD_or_THT_Debug\n"
             "        (surface-mount pads AND through-holes; solder it either way)\n"
             "\nPin map:\n" + "\n".join(lay) +
             "\n\nRails : +5V (logic AND WS2812; J3 in and J24 pill power on JST VH) | "
-            "+3V3 (from the Pi)\n"
+            "+3V3 (Pi: MIDI, expansion and link pull-ups) | "
+            "+3V3_PICO (Pico pin 36: CTRL bias)\n"
             "Link  : 3V3 <-> 3V3 via 10 k series (R17/R18) -- no level shifting,\n"
             "        the resistors only bound cross-domain current at soft-off\n"
-            "AHCT  : MIDI OUT, ring, indicators (the three real 3V3->5V crossings)\n")
+            "AHCT  : MIDI OUT and indicators (3V3->5V crossings)\n")
 
 
 def _selftest():
@@ -1404,6 +1398,17 @@ def _selftest():
     # gate proves nothing about its own and reads as a pass -- console_board_pcb.py
     # gained this check after two of its controls silently did exactly that, and
     # this side was catching a bare AssertionError and never asking which one.
+    def _ctrl_pi_bias():
+        resistor = next(p for p in default_circuit.parts if p.ref == "R7")
+        resistor[1].disconnect()
+        resistor[1] += v3v3
+
+    def _ctrl_supply_short():
+        pico[36].disconnect()
+        pico[36] += v3v3
+
+    case("CTRL bias connected to Pi supply", "CTRL_SUPPLY:", _ctrl_pi_bias)
+    case("Pico output on wrong supply", "CTRL_SUPPLY:", _ctrl_supply_short)
     case("duplicate GPIO", "PIN_MAP:", _dup_gpio)
     case("expansion pin fighting an on-board function", "PIN_MAP:", _exp_collide)
     case("LINK on a pin with no UART", "LINK_UART:", _uart_split)
@@ -1455,6 +1460,13 @@ def _selftest():
             FSW_ORDER[:] = saved[2]
             STATION_HEADERS.clear(); STATION_HEADERS.update(saved[3])
             RING_NET = ring_net_saved
+            if mutate is _ctrl_pi_bias:
+                resistor = next(p for p in default_circuit.parts if p.ref == "R7")
+                resistor[1].disconnect()
+                resistor[1] += v3v3_pico
+            if mutate is _ctrl_supply_short:
+                pico[36].disconnect()
+                pico[36] += v3v3_pico
             if mutate is _second_bond:
                 holes["H3"][1].disconnect()
                 holes["H3"][1] += Net("CHASSIS_H3")
@@ -1507,7 +1519,7 @@ print("Board assertions ...", end=" ")
 _check()
 print("ALL PASS")
 
-for _n in (gnd, v5, v3v3):
+for _n in (gnd, v5, v3v3, v3v3_pico):
     _n.drive = POWER
 
 ERC()

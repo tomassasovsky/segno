@@ -23,6 +23,9 @@ SEGNO_BUILD_VERSION ?= "0.0.0"
 SEGNO_UPDATE_CHANNEL ?= "production"
 
 SRC_URI = "file://segno.service \
+           file://segno-screen-power \
+           file://segno-screen-power.service \
+           file://30-segno-screen-power.conf \
            file://segno-kiosk-launch \
            file://segno-wait-wayland \
            file://segno-runtime.conf \
@@ -114,7 +117,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   bluez5 ddcutil \
                   iw \
                   weston-examples \
-                  coreutils"
+                  coreutils python3-core python3-io python3-gpiod"
 
 inherit systemd
 # App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and
@@ -125,7 +128,10 @@ inherit systemd
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
 SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount"
 
-FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-wayland ${bindir}/segno-rtirq \
+FILES:${PN} += "/opt/segno ${bindir}/segno-screen-power \
+                ${systemd_system_unitdir}/segno-screen-power.service \
+                ${systemd_system_unitdir}/weston.service.d/30-segno-screen-power.conf \
+                ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-wayland ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
                 ${bindir}/segno-ota-check \
                 ${bindir}/segno-update-ctl \
@@ -204,6 +210,11 @@ do_install() {
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/segno.service ${D}${systemd_system_unitdir}/segno.service
+
+    install -m 0755 ${UNPACKDIR}/segno-screen-power ${D}${bindir}/segno-screen-power
+    install -m 0644 ${UNPACKDIR}/segno-screen-power.service ${D}${systemd_system_unitdir}/segno-screen-power.service
+    install -d ${D}${systemd_system_unitdir}/weston.service.d
+    install -m 0644 ${UNPACKDIR}/30-segno-screen-power.conf ${D}${systemd_system_unitdir}/weston.service.d/30-segno-screen-power.conf
 
     # rtirq: oneshot that raises the USB (xhci) sound-card IRQ thread to SCHED_FIFO
     # (above the app's audio thread) so the interrupt delivering a period preempts

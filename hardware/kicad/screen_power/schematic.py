@@ -70,8 +70,8 @@ def write_schematic(circuit, out, variant):
         title = f"Segno screen power / {variant} / {section.replace('_', ' ')}"
         sch = Sexp(["kicad_sch", ["version", 20250114], ["generator", "eeschema"],
                     ["uuid", sheet_id], ["paper", "A3"],
-                    ["title_block", ["title", title], ["rev", '"B prototype"'],
-                     ["comment", 1, "Discrete 5V switch. Host VBUS powers only its own RF relay coil."],
+                    ["title_block", ["title", title], ["rev", '"G prototype"'],
+                     ["comment", 1, "Discrete 5V switch. Host VBUS powers only its own signal relay coil."],
                      ["comment", 2, "Physical verification required before release."]]])
         definitions = {}
         for part in parts:

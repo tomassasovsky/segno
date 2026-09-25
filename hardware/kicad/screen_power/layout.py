@@ -1,73 +1,66 @@
-"""Connector-led floorplans: power across top, two straight USB channels."""
-DIMENSIONS = {"hand": (72, 84), "factory": (72, 74)}
-USB_ROWS = {"hand": (29, 68), "factory": (29, 58)}
+"""Hand-soldered floorplan: compact control, accessible plugs, straight USB."""
+DIMENSIONS = {"hand": (68, 76)}
+CORNER_RADIUS = 3
+USB_ROWS = {"hand": (36, 61)}
+POWER_BUS_X = 64
+USB_WIDTH = 0.85
+USB_GAP = 0.16
 
 
 def place_components(variant, place, fps):
-    hand = variant == "hand"
     w, h = DIMENSIONS[variant]
     for i, at in enumerate(((4, 4), (w-4, 4), (4, h-4), (w-4, h-4)), 1):
         place(f"H{i}", *at)
-    place("J1", 13, 8)
-    place("J2", 7, 46 if hand else 43)
-    if hand:
-        place("Q3", 32, 9)
-        place("Q4", 46, 9, 180)
-        place("C1", 11, 18)
-        place("C2", 21, 10)
-        place("R3", 28, 16)
-        place("R4", 43, 5)
-        place("R8", 46, 81)
-        place("R1", 19, 44)
-        place("R2", 19, 49)
-        place("Q1", 31, 43)
-        place("Q2", 42, 43)
-        place("D1", 30, 49)
-        place("R5", 42, 49)
-        place("R6", 30, 54)
-        place("R7", 56, 46, 90)
-    else:
-        place("Q3", 29, 9, 0)
-        place("Q4", 46, 9, 0)
-        place("C1", 19, 18, 90)
-        place("C2", 14, 17)
-        place("R3", 25, 19)
-        place("R4", 34, 19)
-        place("R8", 46, 71)
-        place("R1", 16, 40)
-        place("R2", 19, 40, 90)
-        place("Q1", 23, 40)
-        place("Q2", 36, 40)
-        place("D1", 27, 44)
-        place("R5", 31, 40)
-        place("R6", 36, 36)
-        place("R7", 40, 40, 90)
+    # All keyed headers have vertical pin rows, pin 1 at the bottom and
+    # their retaining wall on the left. Keep the two edge columns aligned.
+    place("J1", 56, 14, 90, centre=False)
+    place("J2", 7, 14.25, 90, centre=False)
+    place("Q3", 44, 8, 180)
+    place("Q4", 31, 8)
+    place("C1", 50, 16.5, 90)
+    place("C2", 43, 16.5)
+    place("R3", 17.25, 3.5)
+    place("R4", 38, 3.5)
+    place("R8", 44, 73)
+    place("R1", 17.25, 9)
+    place("R2", 17.25, 14)
+    place("Q1", 27, 14)
+    place("D1", 29, 19)
+    place("R5", 29, 23)
+    place("R6", 16, 23)
+    place("R7", 18, 28)
+    place("Q2", 29, 28)
     for ch, y in enumerate(USB_ROWS[variant], 1):
         n = 100 * ch
-        place(f"J{n+1}", 15.4, y+1.25, 180, centre=False)
-        place(f"J{n+2}", w-12.8, y, 180, centre=False)
-        place(f"K{n+1}", 32, y, 0, centre=False)
-        place(f"J{n+3}", 64, y-13)
-        place(f"F{n+1}", 46, y-9 if not hand and ch==1 else y-12)
-        place(f"F{n+2}", 46, y+7)
-        place(f"C{n+2}", 57 if not hand else 60, y+9)
-        if hand:
-            place(f"D{n+1}", 26, y-8.5)
-            place(f"Q{n+1}", 26, y+8)
-            place(f"C{n+1}", 17, y+11)
-        else:
-            place(f"D{n+1}", 26.5, y-6)
-            place(f"Q{n+1}", 27, y+6)
-            place(f"C{n+1}", 21, y+4)
+        place(f"J{n+1}", 7, y+3.75, 90, centre=False)
+        place(f"J{n+2}", 56, y+3.75, 90, centre=False)
+        place(f"K{n+1}", 23.2, y+2.54, 90, centre=False)
+        place(f"J{n+3}", 56, y-11, 90, centre=False)
+        place(f"F{n+1}", 43, y-13, 180)
+        place(f"F{n+2}", 43, y+7, 180)
+        place(f"C{n+2}", 47, y-4)
+        place(f"D{n+1}", 17, y, 90)
+        place(f"Q{n+1}", 25, y+8)
+        place(f"C{n+1}", 15.5, y+9)
 
     from pcb import point
     import pcbnew as p
     for ref in ("H1", "H2", "H3", "H4"):
         fps[ref].Reference().SetVisible(False)
-    refs = {"R1":(19,46.2),"R2":(19,51.4)} if hand else {"R2":(19,37),"C1":(22,18),"C2":(20,15)}
-    for ch,y in enumerate(USB_ROWS[variant],1):
-        refs[f"J{ch*100+2}"]=(65,y+6)
-        if not hand: refs[f"Q{ch*100+1}"]=(31, y+7.5)
-    for ref,at in refs.items():
+    refs = {"R1": (17, 11.3), "R2": (17, 16.3), "R3": (17, 1.2),
+            "R4": (38, 1.2), "Q1": (27, 11), "D1": (34, 16.7),
+            "R5": (35, 25), "R6": (16, 20.5), "R7": (18, 25.6),
+            "Q2": (34, 28), "C1": (50, 11.4), "C2": (38, 16.5),
+            "J1": (51, 8), "J2": (6, 18), "R8": (44, 75)}
+    for ch, y in enumerate(USB_ROWS[variant], 1):
+        refs[f"J{ch*100+1}"] = (7, y+8)
+        refs[f"J{ch*100+2}"] = (49, y+4.5)
+        refs[f"J{ch*100+3}"] = (50, y-10)
+        refs[f"D{ch*100+1}"] = (13.5, y+1)
+        refs[f"Q{ch*100+1}"] = (31, y+8)
+        refs[f"K{ch*100+1}"] = (27, y+5)
+        refs[f"C{ch*100+1}"] = (15.5, y+12)
+        refs[f"C{ch*100+2}"] = (50, y-8)
+    for ref, at in refs.items():
         fps[ref].Reference().SetPosition(point(*at))
-        fps[ref].Reference().SetTextAngle(p.EDA_ANGLE(0,p.DEGREES_T))
+        fps[ref].Reference().SetTextAngle(p.EDA_ANGLE(0, p.DEGREES_T))

@@ -1,4 +1,4 @@
-"""Freerouting bridge: reserve both ground planes, retain precise USB geometry."""
+"""Freerouting bridge: reserve USB return paths, retain precise USB geometry."""
 import argparse
 from pathlib import Path
 import pcbnew as p
@@ -12,10 +12,6 @@ def run(variant, action, exchange):
         for nc in board.GetAllNetClasses().values():
             nc.SetClearance(p.FromMM(.2))
         p.ExportSpecctraDSN(board, str(exchange))
-        text = exchange.read_text()
-        for name in ['In1.Cu','In2.Cu']:
-            text=text.replace(f'(layer {name}\n      (type signal)',f'(layer {name}\n      (type power)')
-        exchange.write_text(text)
     else:
         # DSN coordinates round to 0.1um. Restore the original full precision
         # data/clock networks after import instead of retaining microscopic stubs.
@@ -33,7 +29,7 @@ def run(variant, action, exchange):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
-    parser.add_argument('variant',choices=['hand','factory'])
+    parser.add_argument('variant',choices=['hand'])
     parser.add_argument('action',choices=['export','import'])
     parser.add_argument('exchange',type=Path)
     a=parser.parse_args();run(a.variant,a.action,a.exchange)

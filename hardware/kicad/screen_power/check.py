@@ -1,6 +1,6 @@
 """Validate delivered screen-power boards with KiCad's Python and CLI.
 
-Usage: python3 check.py [hand|factory|all] [--output report.json] [--self-test]
+Usage: python3 check.py [hand] [--output report.json] [--self-test]
 KICAD_CLI may select another KiCad 10 executable. Reports describe CAD checks,
 not hardware qualification. No generated board or schematic is modified.
 """
@@ -23,6 +23,7 @@ import pcbnew as p
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 from netlist import parse_netlist
+from models import check_models
 
 CLI = os.environ.get(
     "KICAD_CLI", "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
@@ -103,7 +104,6 @@ def check_pad_map(board, components, expected, errors):
 
 def check_contract(variant, pins, nets, errors):
     """Check independent pin-level power and touch supply boundaries."""
-    hand = variant == "hand"
     def require(ref, mapping):
         for pin, name in mapping.items():
             actual = pins.get((ref, str(pin)))
@@ -117,7 +117,7 @@ def check_contract(variant, pins, nets, errors):
     nodes("PI_GPIO17", {("J2","1"),("R1","1")})
     require("R1", {1:"PI_GPIO17",2:"CONTROL_BASE"})
     require("R2", {1:"CONTROL_BASE",2:"GND"})
-    require("Q1", {1:"GND",2:"CONTROL_BASE",3:"CONTROL_SINK"} if hand else {1:"CONTROL_BASE",2:"GND",3:"CONTROL_SINK"})
+    require("Q1", ({1:"GND",2:"CONTROL_BASE",3:"CONTROL_SINK"}))
     require("R3", {1:"CONTROL_SINK",2:"POWER_GATE"})
     require("R4", {1:"POWER_GATE",2:"COMMON_SOURCE"})
     require("D1", {1:"CONTROL_SINK",2:"BUFFER_SINK"})
@@ -125,7 +125,7 @@ def check_contract(variant, pins, nets, errors):
     require("R6", {1:"AUX_5V",2:"BUFFER_BASE"})
     require("R7", {1:"DATA_ENABLE",2:"GND"})
     require("R8", {1:"SWITCHED_5V",2:"GND"})
-    require("Q2", {1:"AUX_5V",2:"BUFFER_BASE",3:"DATA_ENABLE"} if hand else {1:"BUFFER_BASE",2:"AUX_5V",3:"DATA_ENABLE"})
+    require("Q2", ({1:"AUX_5V",2:"BUFFER_BASE",3:"DATA_ENABLE"}))
     for ref, drain in (("Q3","AUX_5V"),("Q4","SWITCHED_5V")):
         require(ref, {1:"POWER_GATE",2:drain,3:"COMMON_SOURCE"})
     nodes("COMMON_SOURCE", {("Q3","3"),("Q4","3"),("R4","2")})
@@ -134,17 +134,17 @@ def check_contract(variant, pins, nets, errors):
     for ch in (1,2):
         n=100*ch; pre=f"S{ch}"; host=f"HOST{ch}_5V"; coil=f"{pre}_DATA_COIL_LOW"
         for offset, rail, side in ((1,host,"UP"),(2,pre+"_TOUCH_5V","DN")):
-            require(f"J{n+offset}", {1:rail,2:pre+f"_{side}_N",3:pre+f"_{side}_P",4:"GND","SH":"GND"})
+            require(f"J{n+offset}", {1:rail,2:pre+f"_{side}_N",3:pre+f"_{side}_P",4:"GND"})
         require(f"J{n+3}", {1:pre+"_MAIN_5V",2:"GND"})
         require(f"F{n+1}", {1:"SWITCHED_5V",2:pre+"_MAIN_5V"})
         require(f"F{n+2}", {1:"SWITCHED_5V",2:pre+"_TOUCH_5V"})
-        require(f"K{n+1}", {1:host,8:coil,3:pre+"_UP_N",6:pre+"_UP_P",4:pre+"_DN_N",5:pre+"_DN_P","SH":"GND"})
-        if any((f"K{n+1}",pin) in pins for pin in ("2","7")):
-            fail(errors,"relay_contacts",f"K{n+1}: normally closed contacts must be unconnected")
-        require(f"Q{n+1}", {1:"GND",2:"DATA_ENABLE",3:coil} if hand else {1:"DATA_ENABLE",2:"GND",3:coil})
+        require(f"K{n+1}", {1:host,8:coil,2:pre+"_UP_N",7:pre+"_UP_P",4:pre+"_DN_N",5:pre+"_DN_P"})
+        if any((f"K{n+1}",pin) in pins for pin in ("3","6")):
+            fail(errors,"relay_contacts",f"K{n+1}: normally closed and unused terminals must be unconnected")
+        require(f"Q{n+1}", ({1:"GND",2:"DATA_ENABLE",3:coil}))
         require(f"D{n+1}", {1:host,2:coil})
         nodes(host, {(f"J{n+1}","1"),(f"K{n+1}","1"),(f"D{n+1}","1"),(f"C{n+1}","1")})
-        for side, j, terminals in (("UP",n+1,{"P":6,"N":3}),("DN",n+2,{"P":5,"N":4})):
+        for side, j, terminals in (("UP",n+1,{"P":7,"N":2}),("DN",n+2,{"P":5,"N":4})):
             for polarity, pin in (("P",3),("N",2)):
                 nodes(f"{pre}_{side}_{polarity}",{(f"J{j}",str(pin)),(f"K{n+1}",str(terminals[polarity]))})
 
@@ -173,31 +173,85 @@ def check_console_control(errors, board_path=None):
 
 
 def check_geometry(board, errors, variant):
-    from layout import DIMENSIONS
+    from layout import CORNER_RADIUS, DIMENSIONS
     w, h = DIMENSIONS[variant]
-    if board.GetCopperLayerCount() != 4:
-        fail(errors, "geometry", "Board must have four copper layers")
+    r = CORNER_RADIUS
+    if board.GetCopperLayerCount() != 2:
+        fail(errors, "geometry", "Board must have exactly two copper layers")
     edges = [d for d in board.GetDrawings() if d.GetLayer() == p.Edge_Cuts]
     expected = {frozenset((a, b)) for a, b in (
-        ((0, 0), (w, 0)), ((w, 0), (w, h)),
-        ((w, h), (0, h)), ((0, h), (0, 0)))}
+        ((r, 0), (w-r, 0)), ((w, r), (w, h-r)),
+        ((w-r, h), (r, h)), ((0, h-r), (0, r)))}
     actual = {frozenset((tuple(round(p.ToMM(v), 5) for v in (d.GetStart().x, d.GetStart().y)),
                          tuple(round(p.ToMM(v), 5) for v in (d.GetEnd().x, d.GetEnd().y))))
               for d in edges if d.GetShape() == p.SHAPE_T_SEGMENT}
-    if len(edges) != 4 or actual != expected:
-        fail(errors, "geometry", f"Edge.Cuts must be the closed {w} × {h} mm rectangle")
+    arcs = [d for d in edges if d.GetShape() == p.SHAPE_T_ARC]
+    centers = {(round(p.ToMM(a.GetCenter().x), 5), round(p.ToMM(a.GetCenter().y), 5)) for a in arcs}
+    endpoints = [tuple(round(p.ToMM(v), 5) for v in (point.x, point.y))
+                 for d in edges for point in (d.GetStart(), d.GetEnd())]
+    if (len(edges) != 8 or actual != expected or len(arcs) != 4
+            or centers != {(r, r), (w-r, r), (r, h-r), (w-r, h-r)}
+            or any(abs(p.ToMM(a.GetRadius())-r) > 0.00001
+                   or abs(abs(a.GetArcAngle().AsDegrees())-90) > 0.0001 for a in arcs)
+            or any(endpoints.count(point) != 2 for point in endpoints)):
+        fail(errors, "geometry", f"Edge.Cuts must be the closed {w} × {h} mm outline with R{r} corners")
     zones = [z for z in board.Zones() if not z.GetIsRuleArea()]
-    if {z.GetLayer() for z in zones} != {p.In1_Cu, p.In2_Cu} or any(
+    if {z.GetLayer() for z in zones} != {p.F_Cu, p.B_Cu} or any(
             net_name(z.GetNetname()) != "GND" for z in zones):
-        fail(errors, "ground_planes", "Copper zones must be GND on In1.Cu and In2.Cu only")
+        fail(errors, "ground_planes", "Copper zones must be GND on F.Cu and B.Cu only")
+    if any(not z.GetFilledPolysList(z.GetLayer()).OutlineCount() for z in zones):
+        fail(errors, "ground_planes", "Both outer GND pours must be filled")
     for track in board.GetTracks():
-        if not isinstance(track, p.PCB_VIA) and track.GetLayer() in (p.In1_Cu, p.In2_Cu):
-            if net_name(track.GetNetname()) != "GND":
-                fail(errors, "ground_planes", "A signal/power track interrupts an inner ground layer")
+        if not isinstance(track, p.PCB_VIA) and track.GetLayer() not in (p.F_Cu, p.B_Cu):
+            fail(errors, "ground_planes", "Copper exists outside the two outer layers")
 
 
-def check_usb(board, errors, variant="factory"):
+def check_relay_holes(board, errors):
+    # TE 108-98001 minimum PCB drill is 0.75 mm for standard THT IM.
+    for fp in board.GetFootprints():
+        if fp.GetReference() not in ("K101", "K201"):
+            continue
+        for pad in fp.Pads():
+            if pad.GetAttribute() != p.PAD_ATTRIB_PTH or min(pad.GetDrillSize().x, pad.GetDrillSize().y) < p.FromMM(.75+.08):
+                fail(errors,"relay_assembly",f"{fp.GetReference()}.{pad.GetNumber()}: IM02TS requires at least 0.75 mm after -0.08 mm hole tolerance")
+
+
+def check_mounting_clearance(board, errors):
+    """A metal fastener can short copper well outside the drilled hole."""
+    holes=[f for f in board.GetFootprints() if f.GetReference().startswith('H')]
+    for hole in holes:
+        c=next(iter(hole.Pads())).GetPosition()
+        for t in board.GetTracks():
+            a,b=t.GetStart(),t.GetEnd()
+            dx,dy=b.x-a.x,b.y-a.y
+            length2=dx*dx+dy*dy
+            u=max(0,min(1,((c.x-a.x)*dx+(c.y-a.y)*dy)/length2)) if length2 else 0
+            clearance=p.ToMM(math.hypot(c.x-a.x-u*dx,c.y-a.y-u*dy)-t.GetWidth()/2)
+            if clearance < 4.20:
+                fail(errors,'mounting_clearance',f'{hole.GetReference()}: {t.GetNetname()} copper only {clearance:.3f} mm from M3 center')
+
+
+def check_usb_headers(board, errors):
+    """Verify the chosen cable interface against JST's XH drawing."""
+    for fp in board.GetFootprints():
+        if fp.GetReference() not in ("J101", "J102", "J201", "J202"):
+            continue
+        pads = {pad.GetNumber(): pad for pad in fp.Pads()}
+        if set(pads) != {"1", "2", "3", "4"}:
+            fail(errors, "usb_header", f"{fp.GetReference()}: expected four XH terminals")
+            continue
+        for number, pad in pads.items():
+            if pad.GetAttribute() != p.PAD_ATTRIB_PTH or min(pad.GetDrillSize().x, pad.GetDrillSize().y) < p.FromMM(.9):
+                fail(errors, "usb_header", f"{fp.GetReference()}.{number}: XH requires at least 0.9 mm plated holes")
+        for a, b in (("1", "2"), ("2", "3"), ("3", "4")):
+            delta = pads[a].GetPosition() - pads[b].GetPosition()
+            if abs(math.hypot(delta.x, delta.y) - p.FromMM(2.5)) > 1:
+                fail(errors, "usb_header", f"{fp.GetReference()}: XH pitch must be 2.50 mm")
+
+
+def check_usb(board, errors, variant="hand"):
     """Check physical connectivity, not just matching net labels."""
+    from layout import USB_WIDTH
     connectivity = board.GetConnectivity()
     connectivity.Build(board)
     lengths = {}
@@ -218,8 +272,8 @@ def check_usb(board, errors, variant="factory"):
             if isinstance(track, p.PCB_VIA):
                 fail(errors, "usb_geometry", f"{name}: data via is prohibited")
                 continue
-            if track.GetLayer() != p.B_Cu or abs(p.ToMM(track.GetWidth()) - 0.26) > 0.00001:
-                fail(errors, "usb_geometry", f"{name}: data must use 0.26 mm B.Cu tracks")
+            if track.GetLayer() != p.B_Cu or abs(p.ToMM(track.GetWidth()) - USB_WIDTH) > 0.00001:
+                fail(errors, "usb_geometry", f"{name}: data must use {USB_WIDTH} mm B.Cu tracks")
             length += p.ToMM(track.GetLength())
         lengths[name] = round(length, 6)
     for ch, side in itertools.product((1, 2), ("UP", "DN")):
@@ -230,6 +284,44 @@ def check_usb(board, errors, variant="factory"):
     return lengths
 
 
+def check_usb_reference(board, errors):
+    """Sample actual filled F.Cu under each B.Cu trace, including fanouts.
+
+    The 1.35 mm terminal exclusion covers the through-hole pad and its
+    unavoidable antipad. It does not exempt crossings elsewhere on a route.
+    Native DRC separately checks GND connectivity and fabrication clearance.
+    """
+    from pcb import point, xy
+    planes = [z.GetFilledPolysList(p.F_Cu) for z in board.Zones()
+              if not z.GetIsRuleArea() and z.GetLayer() == p.F_Cu
+              and net_name(z.GetNetname()) == "GND"]
+    names = {f"S{ch}_{side}_{pol}" for ch in (1, 2)
+             for side in ("UP", "DN") for pol in ("P", "N")}
+    checked = 0
+    for name in sorted(names):
+        pads = [xy(pad.GetPosition()) for fp in board.GetFootprints()
+                for pad in fp.Pads() if net_name(pad.GetNetname()) == name]
+        missing = []
+        for track in board.GetTracks():
+            if net_name(track.GetNetname()) != name or isinstance(track, p.PCB_VIA):continue
+            a, b = xy(track.GetStart()), xy(track.GetEnd())
+            length = math.dist(a, b)
+            if not length:continue
+            nx, ny = -(b[1]-a[1])/length, (b[0]-a[0])/length
+            steps = max(1, math.ceil(length/.1))
+            for i in range(steps+1):
+                for offset in (-p.ToMM(track.GetWidth())/2, 0, p.ToMM(track.GetWidth())/2):
+                    at = (a[0]+(b[0]-a[0])*i/steps+nx*offset,
+                          a[1]+(b[1]-a[1])*i/steps+ny*offset)
+                    if any(math.dist(at, pad)<1.35 for pad in pads):continue
+                    checked += 1
+                    if not any(plane.Contains(point(*at)) for plane in planes):missing.append(at)
+        if missing:
+            fail(errors, "usb_reference", f"{name}: {len(missing)} samples lack F.Cu GND; first at {missing[0]}")
+    return {"samples": checked, "interval_mm": .1, "terminal_exclusion_mm": 1.35,
+            "sample_offsets": "centerline and both copper edges"}
+
+
 def check_power(board_path, errors, variant):
     """Require continuous copper at the specified minimum power-path width.
 
@@ -237,7 +329,7 @@ def check_power(board_path, errors, variant):
     KiCad's geometric connectivity then proves a path between physical pads.
     This checks copper geometry, not its thermal/current rating.
     """
-    paths=[(1.5,("J1","1"),("Q3","2")),(3 if variant=="factory" else 1.5,("Q3","3"),("Q4","3"))]
+    paths=[(1.5,("J1","1"),("Q3","2")),((1.5),("Q3","3"),("Q4","3"))]
     for ch in (1,2):
         n=ch*100
         paths += [(1.5,("Q4","2"),(f"F{n+i}","1")) for i in (1,2)]
@@ -278,13 +370,12 @@ def numerical_checks(variant, components, errors):
         return {}
     if any("1%" not in components[f"R{i}"][2] for i in r):
         fail(errors,"resistor_model","Drive margins require 1% resistors")
-    hand=variant=="hand"
-    models={"Q1":"2N3904" if hand else "MMBT3904", "Q2":"2N3906" if hand else "MMBT3906",
-            "D1":"1N4148" if hand else "1N4148W"}
+    models={"Q1":("2N3904"), "Q2":("2N3906"),
+            "D1":("1N4148")}
     for ch in (1,2):
         n=100*ch
-        models.update({f"Q{n+1}":"2N7000" if hand else "2N7002",f"K{n+1}":"G6K-2P-RF DC5",
-                       f"D{n+1}":"1N4007" if hand else "1N4148W"})
+        models.update({f"Q{n+1}":("2N7000"),f"K{n+1}":"IM02TS",
+                       f"D{n+1}":("1N4007")})
     for ref,model in models.items():
         if components[ref][2]!=model:
             fail(errors,"driver_model",f"{ref}: calculations require {model}")
@@ -305,20 +396,29 @@ def numerical_checks(variant, components, errors):
         fail(errors,"driver_margin","Insufficient gate or transistor drive in the stated envelope")
     if bleed_max > .5 or "1W" not in components['R8'][2]:
         fail(errors,"discharge","Bleeder must dissipate below 0.5W in its 1W part")
-    model = "SUP70101EL" if variant=="hand" else "SUM70101EL"
+    model = ("SUP70101EL")
     for ref in ("Q3","Q4"):
         if components[ref][2] != model:
             fail(errors,"power_device",f"{ref}: calculations require {model}")
     for ch in (1,2):
         if components[f"F{ch*100+1}"][2] != "4A fast" or components[f"F{ch*100+2}"][2] != "750mA fast":
             fail(errors,"fuse_rating","Unexpected branch fuse rating")
+    # TE 108-98001: initial pickup at 23 C, without pre-energization.
+    # This does not qualify a warm coil or an elevated enclosure temperature.
+    relay_coil_min = 4.75*(145*.9)/(145*.9+5.3)
+    if relay_coil_min < 3.38:
+        fail(errors,"relay_pickup","IM02TS initial coil voltage is below its 3.38V operate threshold")
     return {"aux_input_min_V":5.0,"aux_input_max_V":5.25,"combined_design_load_A":6,
             "gate_min_V_with_estimated_hot_Rds":gate_min,"hot_Rds_factor_is_estimate":1.7,
             "gpio_assumed_minimum_high_V":2.4,"gpio_base_min_mA":base_min*1000,
             "collector_peak_mA":sink_peak*1000,"bleeder_max_W":bleed_max,
             "pair_loss_at_6A_25C_max_Rds_W":2*6**2*.015,
-            "relay_initial_coil_min_V":4.75*(237*.9)/(237*.9+5.3),
-            "host_relay_coil_nominal_mA":5000/237,
+            "relay_initial_coil_min_V":relay_coil_min,
+            "relay_initial_pickup_margin_23C_V":relay_coil_min-3.38,
+            "relay_coil_rated_V":4.5,
+            "relay_coil_max_applied_over_rated_ratio":5.25/4.5,
+            "relay_hot_restart":"measure coil voltage and qualify hot re-enable before fabrication release",
+            "host_relay_coil_nominal_mA":5000/145,
             "main_continuous_fuse_design_A":3,"touch_continuous_fuse_design_A":.5,
             "thermal_inrush_USB_suspend_and_fault_coordination":"require physical testing"}
 
@@ -365,8 +465,35 @@ def rule_check(kind, source, destination, errors):
     return {"counts": counts, "report": report}
 
 
-def self_test(board_path, components, expected, temp, variant="factory"):
+def self_test(board_path, components, expected, temp, variant="hand"):
     results = {}
+    altered = load_board(board_path)
+    header = next(f for f in altered.GetFootprints() if f.GetReference() == "J101")
+    terminal = next(pad for pad in header.Pads() if pad.GetNumber() == "2")
+    terminal.SetPosition(terminal.GetPosition() + p.VECTOR2I(0, p.FromMM(.04)))
+    header_errors = []
+    check_usb_headers(altered, header_errors)
+    results["wrong_xh_pitch_detected"] = any(e["check"] == "usb_header" for e in header_errors)
+    for fault in ("unassigned", "missing", "disabled"):
+        altered = load_board(board_path)
+        fp = next(f for f in altered.GetFootprints() if f.GetReference() == "K101")
+        model = list(fp.Models())[0]
+        fp.Models().clear()
+        if fault != "unassigned":
+            if fault == "missing":
+                model.m_Filename = "${KIPRJMOD}/missing-model.step"
+            else:
+                model.m_Show = False
+            fp.Add3DModel(model)
+        model_errors = []
+        check_models(altered, HERE / variant, model_errors)
+        results[f"model_{fault}_detected"] = any(e["check"] == "model_coverage" for e in model_errors)
+    altered = load_board(board_path)
+    relay = next(f for f in altered.GetFootprints() if f.GetReference() == "K101")
+    next(iter(relay.Pads())).SetDrillSize(p.VECTOR2I(p.FromMM(.80),p.FromMM(.80)))
+    hole_errors = []
+    check_relay_holes(altered,hole_errors)
+    results["relay_hole_detected"] = any(e["check"] == "relay_assembly" for e in hole_errors)
     console = load_board(HERE.parent / "out_console/segno_console_board.kicad_pcb")
     for item in list(console.GetTracks()):
         if net_name(item.GetNetname()) == "PI_GPIO17":
@@ -376,30 +503,40 @@ def self_test(board_path, components, expected, temp, variant="factory"):
     console_errors = []
     check_console_control(console_errors, cut_console)
     results["console_control_cut_detected"] = any(e["check"] == "console_control" for e in console_errors)
-    if variant == "hand":
-        from hand_checks import check_through_hole
-        for mode in ("footprint", "pad"):
-            altered = load_board(board_path)
-            component = next(f for f in altered.GetFootprints() if f.GetReference() == "R1")
-            if mode == "footprint":
-                component.SetAttributes(component.GetAttributes() | p.FP_SMD)
-            else:
-                next(iter(component.Pads())).SetAttribute(p.PAD_ATTRIB_SMD)
-            assembly_errors = []
-            check_through_hole(altered, assembly_errors)
-            results[f"smd_{mode}_detected"] = any(e["check"] == "hand_assembly" for e in assembly_errors)
-    if variant=="hand":
+    from hand_checks import check_through_hole
+    for ref,old_drill in [('J101',.95),('J2',1.0),('J1',1.7),('Q1',.8),('H1',3.2)]:
         altered=load_board(board_path)
-        device=next(f for f in altered.GetFootprints() if f.GetReference()=="Q3")
-        next(iter(device.Pads())).SetDrillSize(p.VECTOR2I(p.FromMM(1.1),p.FromMM(1.1)))
+        fp=next(f for f in altered.GetFootprints() if f.GetReference()==ref)
+        next(iter(fp.Pads())).SetDrillSize(p.VECTOR2I(p.FromMM(old_drill),p.FromMM(old_drill)))
         hole_errors=[];check_through_hole(altered,hole_errors)
-        results["power_lead_hole_detected"]=any(e["check"]=="hand_assembly" for e in hole_errors)
+        results[f'{ref}_hole_tolerance_detected']=any(e['check']=='hole_tolerance' for e in hole_errors)
+    altered=load_board(board_path)
+    t=p.PCB_TRACK(altered);t.SetStart(p.VECTOR2I(p.FromMM(64),p.FromMM(68)))
+    t.SetEnd(p.VECTOR2I(p.FromMM(64),p.FromMM(69)));t.SetWidth(p.FromMM(3));t.SetLayer(p.F_Cu)
+    t.SetNet(altered.GetNetsByName()['SWITCHED_5V']);altered.Add(t)
+    mounting_errors=[];check_mounting_clearance(altered,mounting_errors)
+    results['fastener_short_detected']=any(e['check']=='mounting_clearance' for e in mounting_errors)
+    for mode in ("footprint", "pad"):
+        altered = load_board(board_path)
+        component = next(f for f in altered.GetFootprints() if f.GetReference() == "R1")
+        if mode == "footprint":
+            component.SetAttributes(component.GetAttributes() | p.FP_SMD)
+        else:
+            next(iter(component.Pads())).SetAttribute(p.PAD_ATTRIB_SMD)
+        assembly_errors = []
+        check_through_hole(altered, assembly_errors)
+        results[f"smd_{mode}_detected"] = any(e["check"] == "hand_assembly" for e in assembly_errors)
+    altered=load_board(board_path)
+    device=next(f for f in altered.GetFootprints() if f.GetReference()=="Q3")
+    next(iter(device.Pads())).SetDrillSize(p.VECTOR2I(p.FromMM(1.1),p.FromMM(1.1)))
+    hole_errors=[];check_through_hole(altered,hole_errors)
+    results["power_lead_hole_detected"]=any(e["check"]=="hand_assembly" for e in hole_errors)
     def numeric_mutation(ref,value):
         changed=dict(components)
         changed[ref]=(*components[ref][:2],value)
         issues=[];numerical_checks(variant,changed,issues)
         return bool(issues)
-    results["wrong_relay_detected"]=numeric_mutation("K101","G6K-2P-RF DC24")
+    results["wrong_relay_detected"]=numeric_mutation("K101","IM06TS")
     results["wrong_driver_detected"]=numeric_mutation("Q101","BS170")
     results["wrong_tolerance_detected"]=numeric_mutation("R3","4.7k 20%")
     results["weak_pulldown_detected"]=numeric_mutation("R7","100M 1%")
@@ -442,12 +579,23 @@ def self_test(board_path, components, expected, temp, variant="factory"):
         if any(e["check"] == "usb_connectivity" for e in errors):
             results["usb_cut_detected"] = True
             break
+    altered = load_board(board_path)
+    altered.GetDesignSettings().SetCopperLayerCount(4)
+    layer_errors = []; check_geometry(altered, layer_errors, variant)
+    results["four_layers_detected"] = any(e["check"] == "geometry" for e in layer_errors)
+    altered = load_board(board_path)
+    for zone in list(altered.Zones()):
+        if not zone.GetIsRuleArea() and zone.GetLayer() == p.F_Cu:altered.RemoveNative(zone)
+    ground_errors = []; check_usb_reference(altered, ground_errors)
+    results["missing_usb_reference_detected"] = any(e["check"] == "usb_reference" for e in ground_errors)
     return results
 
 
 def source_hashes(folder, board_path):
-    paths = {HERE / name for name in ("check.py", "circuit.py", "pcb.py", "route_critical.py", "schematic.py", "finish.py", "router.py", "export.py", "cleanup.py", "build.sh", "screen_power.kicad_sym", "switch_circuit.py", "layout.py")}
+    paths = {HERE / name for name in ("check.py", "circuit.py", "pcb.py", "route_critical.py", "schematic.py", "finish.py", "router.py", "export.py", "cleanup.py", "build.sh", "switch_circuit.py", "layout.py")}
     paths.update(HERE.glob("hand_*.py"))
+    paths.update(HERE / name for name in ("models.py", "model_geometry.py"))
+    paths.update(path for path in (HERE / "models").rglob("*") if path.is_file())
     paths.add(HERE / "external_bom.csv")
     paths.update((HERE / "screen_power.pretty").glob("*.kicad_mod"))
     paths.add(HERE.parent / "netlist.py")
@@ -479,11 +627,15 @@ def validate(variant, board_override=None, run_self_test=False):
         check_pad_map(board, components, pins, errors)
         check_contract(variant, pins, expected, errors)
         check_geometry(board, errors, variant)
+        check_mounting_clearance(board, errors)
+        check_relay_holes(board, errors)
+        check_usb_headers(board, errors)
+        summary["model_coverage"] = check_models(board, folder, errors)
         summary["usb_track_lengths_mm"] = check_usb(board, errors, variant)
+        summary["usb_ground_reference"] = check_usb_reference(board, errors)
         check_power(board_path, errors, variant)
-        if variant == "hand":
-            from hand_checks import check_through_hole
-            check_through_hole(board, errors)
+        from hand_checks import check_through_hole
+        check_through_hole(board, errors)
         check_console_control(errors)
         summary["numerical_checks"] = numerical_checks(variant, components, errors)
         with tempfile.TemporaryDirectory(prefix=f"screen-power-check-{variant}-") as directory:
@@ -506,8 +658,10 @@ def validate(variant, board_override=None, run_self_test=False):
             if run_self_test:
                 summary["self_test"] = self_test(board_path, components, pins, temp, variant)
                 required_faults = ["wrong_relay_detected", "wrong_driver_detected", "wrong_tolerance_detected", "weak_pulldown_detected", "narrow_power_detected", "host_power_bridge_detected", "usb_cut_detected", "console_control_cut_detected"]
-                if variant == "hand":
-                    required_faults += ["smd_footprint_detected", "smd_pad_detected", "power_lead_hole_detected"]
+                required_faults += ["relay_hole_detected", "model_unassigned_detected", "model_missing_detected", "model_disabled_detected", "wrong_xh_pitch_detected"]
+                required_faults += ["smd_footprint_detected", "smd_pad_detected", "power_lead_hole_detected", "four_layers_detected", "missing_usb_reference_detected"]
+                required_faults += [f'{ref}_hole_tolerance_detected' for ref in ('J101','J2','J1','Q1','H1')]
+                required_faults += ['fastener_short_detected']
                 if not all(summary["self_test"].get(k) for k in required_faults):
                     fail(errors, "self_test", "A deliberate fault was not detected")
     except (OSError, ValueError, AssertionError, KeyError, StopIteration, RuntimeError) as exc:
@@ -520,39 +674,12 @@ def validate(variant, board_override=None, run_self_test=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("variant", choices=("hand", "factory", "all"), nargs="?", default="all")
-    parser.add_argument("--board", type=Path, help="Explicit board input; requires one variant")
+    parser.add_argument("variant", choices=("hand",), nargs="?", default="hand")
+    parser.add_argument("--board", type=Path, help="Explicit hand-soldered board input")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
-    if args.board and args.variant == "all":
-        parser.error("--board requires hand or factory")
-    if args.variant == "all":
-        # Native connectivity/self-test wrappers can invalidate KiCad SWIG type
-        # registrations before the next board is loaded. Isolate each variant.
-        results = []
-        with tempfile.TemporaryDirectory(prefix="screen-power-all-") as directory:
-            for variant in ("hand", "factory"):
-                destination = Path(directory) / f"{variant}.json"
-                command = [sys.executable, str(Path(__file__).resolve()), variant,
-                           "--output", str(destination)]
-                if args.self_test:
-                    command.append("--self-test")
-                try:
-                    process = subprocess.run(command, capture_output=True, text=True, timeout=480)
-                    if process.returncode not in (0, 1) or not destination.is_file():
-                        raise RuntimeError(f"Variant process exited {process.returncode} without a valid report")
-                    child = json.loads(destination.read_text())
-                    result, = child["variants"]
-                    if result["variant"] != variant or bool(child["cad_ready"]) != (process.returncode == 0):
-                        raise ValueError("Variant report disagrees with process result")
-                    results.append(result)
-                except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired) as exc:
-                    results.append({"variant": variant, "cad_ready": False,
-                                    "hardware_qualification": "not performed",
-                                    "errors": [{"check": "variant_process", "detail": str(exc)}]})
-    else:
-        results = [validate(args.variant, args.board, args.self_test)]
+    results = [validate(args.variant, args.board, args.self_test)]
     report = {"generated_at": datetime.now(timezone.utc).isoformat(),
               "kicad_version": p.GetBuildVersion(), "cad_ready": all(r["cad_ready"] for r in results),
               "hardware_qualification": "not performed", "variants": results}

@@ -1,6 +1,6 @@
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib unassembled -->
+<!-- cspell:words hashlib unassembled Axicom Mbps -->
 
 Living status doc for the Flutter desktop loopstation. Pairs with the original
 plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
@@ -12,36 +12,96 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+Publication is split by hardware generation. This branch includes the screen
+power PCB, console connectors and power-domain corrections, white XIAO ring carrier (module footprints or external strip), and GPIO17 lifecycle service. The current old-console
+ten-pill/40-LED-strip firmware is tracked separately under #1076 and #1077.
+New-v3 console/ring firmware and PD diagnostics remain separate unpublished
+work; historical reports below are evidence of local checks, not code included
+in this hardware publication. See the [publication record](reviews/hardware-publication-1072/verification.md).
+
+The populated screen-power board has a proposed position behind CLEAR, left of
+the buck pair, on 15 mm standoffs. Four floor mounts still need to be integrated
+and actual harness/assembly fit checked; the CAD placement is not a physical
+fit test. See the [placement study](reviews/pcb-completion-1072/screen-power-placement.md).
+
+The September 24 order package includes all three designs: console, screen
+power and ring. The ring carrier now uses white solder mask and black
+silkscreen, with larger J1 and module-support holes. Its routes and placement
+are retained; refilled-zone DRC has zero violations or unconnected items, and
+all 63 connected pads match the circuit. See the
+[ring order verification](reviews/ring-order-ready-1072/verification.md).
+
 The console and ring boards for #1062 / PR #1066 now carry the wider power
 rails in their routed files and manufacturing exports. Both pass full-severity
 KiCad checks with zero violations and zero unconnected items, and exact circuit
 netlist parity. See the [routing verification](reviews/routing-1062-2026-09-21/verification.md).
 The PR remains open and hardware validation is still required. Screen power
 switching has completed prototype CAD under [issue #1072](https://github.com/tomassasovsky/segno/issues/1072).
-Revision B removes the external USB-C modules and source controllers. Both
-variants now share a discrete back-to-back MOSFET power switch and two RF
-USB-data relays, with host VBUS confined to its own relay coil. Two fused
-5 V outputs feed the existing screen power connections. The
-[hand version](../hardware/kicad/screen_power/README.md) is entirely through-hole
-at 72 × 84 mm; factory assembly is 72 × 74 mm. Each has 41 components including
-mounting holes. These areas are 61.2% and 65.8% smaller than revision A.
+Revision E retains **hand-soldered assembly only** and removes the factory
+variant. The new 64 × 76 mm board uses 19.6% less area than revision D's
+72 × 84 mm hand board, with the same 37 populated through-hole parts and
+four M3 mounting holes. All populated parts have portable STEP models.
+Revision F added 3 mm rounded corners and a complete component cost estimate.
+Revision G implements the requested two-layer board with purple solder mask.
+Its 68 × 76 mm outline gives the power rail space beyond the USB connectors;
+the two right-hand mounting holes move 4 mm with that edge.
+Revision H aligns all eight keyed connector housings and vertical pin rows,
+rotating the four two-pin headers and rerouting their connections.
 
-The existing Pi-to-console ribbon remains direct. Console J25 carries GPIO17
-and GND to screen J2 through one two-wire cable. The previously verified
-console routes are unchanged by revision B. Both screen boards pass fresh
-native ERC/DRC with zero violations and unconnected items, full component/net
-parity, USB continuity and skew, control continuity, and minimum power-copper
-path checks. Negative controls cover broken USB/control copper, host-power
-bridges, undersized power traces, accidental hand SMD pads, unsupported
-components, resistor tolerances and weak default-off pulls. See
-[revision B verification](reviews/screen-power-layout-1072/verification.md).
-Earlier revision A manufacturing packages are superseded.
+Four-pin JST XH data connectors retain the selected direct USB-A / USB-C /
+Micro-USB leads and pin map: 1 = VBUS, 2 = D−, 3 = D+, 4 = GND. Separate
+screen-power leads retain two-pin JST VH connectors. The 28 AWG data leads
+are not specified for the screens' full power loads; suitable main-power
+leads and their final termination remain to be selected.
 
-The boards remain unassembled prototypes. Actual power-harness connectors,
-USB operation/suspend, inrush, fuse coordination, HDMI residual power,
-voltage drop, temperature, impedance and enclosure fit need physical checks.
-Early-boot enable and shutdown-before-HDMI integration are specified but not
-implemented. Issue #1072 remains `autonomy:blocked-verify`.
+The control section is more compact, power enters at the upper-right edge,
+and the two USB paths stay straight. Main power uses a wide
+front-side rail at the right edge; USB stays on bottom copper without data
+vias, with filled front-side ground underneath. Both outer faces have ground
+pours; the board has no inner copper layers. The existing Pi-to-console ribbon remains direct; console
+J25 carries GPIO17 and GND to screen J2. Console PD connector J23 now aligns
+with RING J6 and screen-control J25 on one row. Its 0.8 mm move updates the
+local PD/ground connections and clears two adjacent switch traces. PI PWR J9
+now sits beside the ribbon on that same row, with PWR BTN J8 kept in place.
+R2 turns horizontally below the buffer and R18 shifts 0.15 mm to clear the
+existing PI PWR label. The floating button pair and affected signal routes
+are complete; KiCad reports zero violations and zero unconnected items.
+The underside screen pinout text is replaced by a top-side `SCREEN` label.
+Ring routing is unchanged; its 3 A JST XH rating
+requires 22 AWG power and ground leads for the 1.44 A LED budget plus controller.
+See the [console placement verification](reviews/console-pi-power-placement-1072/verification.md)
+and the [interface pinout](reviews/console-screen-connector-1072/verification.md).
+
+Live USB inspection identified APROTII touch at 12 Mbps and UPERFECT touch
+at 12 Mbps behind a 480 Mbps hub. Both connect directly to the Pi, so the
+UPERFECT path still needs 480 Mbps qualification through the IM02TS relay
+and selected cables. The relay footprint and default-off switch geometry are unchanged; the
+4.5 V IM02TS relay now improves pickup margin on the 5 V host supply.
+
+See [revision H verification](reviews/screen-power-rev-h-1072/verification.md)
+and the [connector map and assembly notes](../hardware/kicad/screen_power/README.md).
+Revision I supersedes those exports. The September 24
+[first-fabrication review](reviews/pcb-completion-1072/first-fabrication.md)
+removes the blanket pre-order measurement requirement; the existing circuit
+is retained for first fabrication. Assembled hardware remains unverified. The pre-order
+audit corrected finished-hole allowances, added metal-fastener copper
+clearance on the screen board, and moved console CTRL analogue pull-ups to
+the Pico supply so Pi power cannot feed its unpowered ADC inputs. See the
+[completion and pre-order status](reviews/pcb-completion-1072/verification.md) for final checks and
+remaining physical and firmware acceptance items.
+
+The board remains an unassembled prototype. Cable mating, polarity, shielding,
+USB-C source configuration, USB operation/suspend, hot relay restart, inrush,
+fuse coordination, voltage drop, temperature, impedance and enclosure fit
+need physical checks. The owner confirmed on 2026-09-22 that both screens go
+fully dark with power/touch USB disconnected and HDMI retained, following the
+Pi-on test. The HDMI-only visual check therefore passes; GPIO cutoff and
+discharge timing remain unverified. The included GPIO17 lifecycle service
+passes its host tests; the five-second wait remains provisional. Local new-v3
+firmware/PD work described in the historical completion report is outside
+this publication. Issue #1072 remains `autonomy:blocked-verify` for assembled
+validation and merge.
+
 
 ## September 2026 Mac recording companion
 

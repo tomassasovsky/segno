@@ -209,32 +209,30 @@
   },
   {
     "ref": "J101",
-    "value": "PI USB",
-    "footprint": "screen_power:USB_B_Lumberg_2411_06_Horizontal",
-    "mpn": "2411 06",
+    "value": "PI USB / XH4",
+    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
+    "mpn": "B4B-XH-A(LF)(SN)",
     "group": "Screen 1",
     "quantity": 1,
     "pins": {
       "1": "HOST1_5V",
       "2": "S1_UP_N",
       "3": "S1_UP_P",
-      "4": "GND",
-      "SH": "GND"
+      "4": "GND"
     }
   },
   {
     "ref": "J102",
-    "value": "TOUCH",
-    "footprint": "Connector_USB:USB_A_Wuerth_614004134726_Horizontal",
-    "mpn": "614004134726",
+    "value": "TOUCH / XH4",
+    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
+    "mpn": "B4B-XH-A(LF)(SN)",
     "group": "Screen 1",
     "quantity": 1,
     "pins": {
       "1": "S1_TOUCH_5V",
       "2": "S1_DN_N",
       "3": "S1_DN_P",
-      "4": "GND",
-      "SH": "GND"
+      "4": "GND"
     }
   },
   {
@@ -275,19 +273,18 @@
   },
   {
     "ref": "K101",
-    "value": "G6K-2P-RF DC5",
-    "footprint": "screen_power:Relay_DPDT_Omron_G6K-2P-RF",
-    "mpn": "G6K-2P-RF DC5",
+    "value": "IM02TS",
+    "footprint": "screen_power:Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm",
+    "mpn": "1-1462037-3",
     "group": "Screen 1",
     "quantity": 1,
     "pins": {
       "1": "HOST1_5V",
       "8": "S1_DATA_COIL_LOW",
-      "3": "S1_UP_N",
+      "2": "S1_UP_N",
       "4": "S1_DN_N",
-      "6": "S1_UP_P",
-      "5": "S1_DN_P",
-      "SH": "GND"
+      "7": "S1_UP_P",
+      "5": "S1_DN_P"
     }
   },
   {
@@ -341,32 +338,30 @@
   },
   {
     "ref": "J201",
-    "value": "PI USB",
-    "footprint": "screen_power:USB_B_Lumberg_2411_06_Horizontal",
-    "mpn": "2411 06",
+    "value": "PI USB / XH4",
+    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
+    "mpn": "B4B-XH-A(LF)(SN)",
     "group": "Screen 2",
     "quantity": 1,
     "pins": {
       "1": "HOST2_5V",
       "2": "S2_UP_N",
       "3": "S2_UP_P",
-      "4": "GND",
-      "SH": "GND"
+      "4": "GND"
     }
   },
   {
     "ref": "J202",
-    "value": "TOUCH",
-    "footprint": "Connector_USB:USB_A_Wuerth_614004134726_Horizontal",
-    "mpn": "614004134726",
+    "value": "TOUCH / XH4",
+    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
+    "mpn": "B4B-XH-A(LF)(SN)",
     "group": "Screen 2",
     "quantity": 1,
     "pins": {
       "1": "S2_TOUCH_5V",
       "2": "S2_DN_N",
       "3": "S2_DN_P",
-      "4": "GND",
-      "SH": "GND"
+      "4": "GND"
     }
   },
   {
@@ -407,19 +402,18 @@
   },
   {
     "ref": "K201",
-    "value": "G6K-2P-RF DC5",
-    "footprint": "screen_power:Relay_DPDT_Omron_G6K-2P-RF",
-    "mpn": "G6K-2P-RF DC5",
+    "value": "IM02TS",
+    "footprint": "screen_power:Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm",
+    "mpn": "1-1462037-3",
     "group": "Screen 2",
     "quantity": 1,
     "pins": {
       "1": "HOST2_5V",
       "8": "S2_DATA_COIL_LOW",
-      "3": "S2_UP_N",
+      "2": "S2_UP_N",
       "4": "S2_DN_N",
-      "6": "S2_UP_P",
-      "5": "S2_DN_P",
-      "SH": "GND"
+      "7": "S2_UP_P",
+      "5": "S2_DN_P"
     }
   },
   {
@@ -474,7 +468,7 @@
   {
     "ref": "H1",
     "value": "M3",
-    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "footprint": "MountingHole:MountingHole_3.5mm",
     "mpn": "NPTH",
     "group": "Mechanical",
     "quantity": 1,
@@ -483,7 +477,7 @@
   {
     "ref": "H2",
     "value": "M3",
-    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "footprint": "MountingHole:MountingHole_3.5mm",
     "mpn": "NPTH",
     "group": "Mechanical",
     "quantity": 1,
@@ -492,7 +486,7 @@
   {
     "ref": "H3",
     "value": "M3",
-    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "footprint": "MountingHole:MountingHole_3.5mm",
     "mpn": "NPTH",
     "group": "Mechanical",
     "quantity": 1,
@@ -501,7 +495,7 @@
   {
     "ref": "H4",
     "value": "M3",
-    "footprint": "MountingHole:MountingHole_3.2mm_M3",
+    "footprint": "MountingHole:MountingHole_3.5mm",
     "mpn": "NPTH",
     "group": "Mechanical",
     "quantity": 1,

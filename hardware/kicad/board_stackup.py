@@ -1,7 +1,8 @@
 """Give a 2-layer board an explicit stackup: the solder mask and silk colours.
 
-The boards are ordered PURPLE with white silk (owner call, #1062). KiCad keeps the
-colour in the board's stackup, and a board with no stackup renders green -- in
+The console is purple with white silk; the ring carrier is white with black
+silk to avoid a coloured reflection around the LEDs (owner call, #1072).
+KiCad keeps the colour in the board's stackup, and a board with no stackup renders green -- in
 the 3D viewer, in `kicad-cli pcb render`, and in the STEP that goes to Fusion.
 
 KiCad's Python bindings do not expose BOARD_STACKUP (GetStackupDescriptor comes
@@ -16,6 +17,7 @@ order form, not from these files; the gerber job file does record it.
 """
 import re
 import sys
+from pathlib import Path
 
 MASK, SILK = "Purple", "White"
 BLOCK = """\t\t(stackup
@@ -61,16 +63,18 @@ BLOCK = """\t\t(stackup
 \t\t\t(copper_finish "None")
 \t\t\t(dielectric_constraints no)
 \t\t)
-""".format(mask=MASK, silk=SILK)
+"""
 
 
 def apply(path):
+    mask, silk = ("White", "Black") if Path(path).name == "segno_pedal_ring.kicad_pcb" else (MASK, SILK)
+    block = BLOCK.format(mask=mask, silk=silk)
     s = open(path).read()
     if "(stackup" in s:
-        s = re.sub(r'\t\t\(stackup\n.*?\n\t\t\)\n', lambda m: BLOCK, s, count=1, flags=re.S)
+        s = re.sub(r'\t\t\(stackup\n.*?\n\t\t\)\n', lambda m: block, s, count=1, flags=re.S)
     else:
         i = s.index("\t(setup\n") + len("\t(setup\n")
-        s = s[:i] + BLOCK + s[i:]
+        s = s[:i] + block + s[i:]
     open(path, "w").write(s)
 
 
