@@ -76,6 +76,20 @@ Yocto-native RAUC with JSON support, archive tools and jq. The checker matches
 the existing boot archive filename ending in `.tar.img`; the producer and
 install hook remain unchanged. A failed inspection stops the release build.
 
+
+## September 2026 pill housing and simulator (#1074)
+
+`hardware/pill_light_mask/` contains the eight-LED visual simulator, the flush
+bench/panel lens and solid carrier, and the current angled friction-fit cradle
+housing. Fit revision 2 adds 0.30 mm across the housing ribs and narrows the
+platform throat by 0.30 mm after the measured loose fit. The current sample
+parts and full STEP/STL exports are checked against pinned front/mid cradles.
+The deeper grip, supported diffuser and open wire slots retain the accepted
+12 mm strip and 12.5-degree face angle. Earlier snap variants remain historical
+local artifacts and are excluded from this release. Physical fit, wear, pedal
+travel and diffuser bridge anchoring still require validation; #1074 stays
+`autonomy:blocked-verify`. The simulator is illustrative, with no device link.
+
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
