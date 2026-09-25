@@ -131,6 +131,81 @@ void main() {
       skip: skip,
     );
 
+    for (final afterHandoff in [false, true]) {
+      test(
+        'Song Stop covers an unpolled replacement '
+        '${afterHandoff ? 'after' : 'before'} handoff',
+        () {
+          _inHarness((h, fa) {
+            h.engine.setLooperMode(LooperMode.song);
+            h.settle(fa);
+            for (var channel = 0; channel < 3; channel++) {
+              h.engine.record(channel: channel);
+              h.engine.pump(frames: 256, input: 0.5);
+              h.engine.stopTrack(channel: channel);
+              h.settle(fa);
+            }
+            for (var channel = 0; channel < 3; channel++) {
+              h.engine.stopTrack(channel: channel);
+            }
+            h.settle(fa);
+            h.engine.play();
+            h.engine.pump(frames: 64);
+            h.settle(fa);
+            h.control
+              ..setMode(InteractionMode.mute)
+              ..trackPressed(1);
+            h.settle(fa);
+            expect(h.frame.queuedTrack, 1);
+
+            h.control.trackPressed(2);
+            h.engine.pump(frames: afterHandoff ? 192 : 0);
+            // The engine can replace and commit the request before the next
+            // repository poll. The pedal still displays the previous target.
+            expect(h.frame.queuedTrack, 1);
+            expect(
+              h.looper.tracks[2].state,
+              afterHandoff ? TrackState.playing : TrackState.stopped,
+            );
+            h
+              ..run(const [_Tap(PedalButton.stop)], fa)
+              ..settle(fa);
+            expect(h.looper.transport.songQueuedTrack, isNull);
+            for (final track in h.looper.tracks.take(3)) {
+              expect(track.state, TrackState.stopped);
+            }
+            expect(h.frame.globalColor, GlobalColor.off);
+          });
+        },
+        skip: skip,
+      );
+    }
+
+    test('Song Stop covers playback started before the first playing poll', () {
+      _inHarness((h, fa) {
+        h.engine.setLooperMode(LooperMode.song);
+        h.settle(fa);
+        h.engine.record();
+        h.engine.pump(frames: 256, input: 0.5);
+        h.engine.stopTrack();
+        h.settle(fa);
+        h.engine.stopTrack();
+        h.settle(fa);
+        h.control.setMode(InteractionMode.mute);
+        h.settle(fa);
+        expect(h.frame.globalColor, GlobalColor.off);
+        h.control.trackPressed(0);
+        h.engine.pump(frames: 0);
+        expect(h.looper.tracks[0].state, TrackState.playing);
+        expect(h.frame.globalColor, GlobalColor.off);
+        h
+          ..run(const [_Tap(PedalButton.stop)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.stopped);
+        expect(h.looper.transport.songQueuedTrack, isNull);
+      });
+    }, skip: skip);
+
     test('redo after undo-to-empty relights the LED (2026-07-04)', () {
       _inHarness((h, fa) {
         h

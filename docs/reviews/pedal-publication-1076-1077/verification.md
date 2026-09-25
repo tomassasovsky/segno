@@ -1,6 +1,6 @@
 # Current-console firmware publication — #1076 and #1077
 
-This branch publishes the cumulative work running on the existing v2 console:
+This branch publishes the cumulative work developed for the existing v2 console:
 all ten eight-pixel indicator pills, native-engine Song queue completion, and
 the sustained comet for the connected 40-pixel strip. Firmware 1.11 and protocol
 7 are the final target. The app/native library and firmware require the matching
@@ -42,6 +42,20 @@ The standalone previews were checked in a browser: loop-end handoff, queue and
 cancel, pause/resume and individual-pixel views work; both pages render clearly.
 Their embedded JavaScript parses and preserves the approved animation source.
 Hosted CI status and the cumulative current-head review are reported on the PR.
+
+## Stop timing correction found during publication review
+
+A Song handoff can occur between repository polls. Stop previously addressed
+only the old running section from the cached snapshot, allowing the newly
+playing section to continue. A quick Play/Stop before the next poll could also
+leave playback running. Two real-engine regressions reproduced those failures.
+
+Song Stop now also addresses stopped content sections that may have started
+since the poll. It preserves the resume intent, defining recordings, count-in
+and behavior in other modes. All 197 tests in the control and real-engine
+corpus files pass, including three new race regressions; analysis, formatting
+and Bloc lint pass on the three changed files. This application correction and
+the bench diagnostic correction have not been deployed by this publication.
 
 ## Device state and remaining checks
 

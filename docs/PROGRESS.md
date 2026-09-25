@@ -13,7 +13,9 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 ## Song queue completion on the current console — #1077
 
 The cumulative firmware, app/native changes and bench diagnostic are now
-prepared for publication together under #1076 and #1077. See the
+published together in PR #1079 under #1076 and #1077. The publication review
+also fixed Song Stop missing an unpolled handoff or start; that application
+correction is tested but not yet deployed. See the
 [publication record](reviews/pedal-publication-1076-1077/verification.md) for
 current scope and remaining physical checks.
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -1507,6 +1508,60 @@ void main() {
         cubit.recPlay();
         verifyNever(() => looper.play(channel: any(named: 'channel')));
       });
+
+      blocTest<ControlCubit, ControlState>(
+        'Stop covers stopped playback targets while leaving a recording alone',
+        build: () => cubit,
+        act: (cubit) {
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.recording, lengthFrames: 48000),
+              Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+              Track(
+                channel: 2,
+                state: TrackState.overdubbing,
+                lengthFrames: 48000,
+              ),
+            ]),
+            looperMode: LooperMode.song,
+          );
+          cubit
+            ..setMode(InteractionMode.mute)
+            ..stop();
+        },
+        verify: (cubit) {
+          verifyNever(() => looper.stopTrack());
+          verify(() => looper.stopTrack(channel: 1)).called(1);
+          verify(() => looper.stopTrack(channel: 2)).called(1);
+          verifyNever(() => looper.stopTrack(channel: 3));
+          expect(cubit.state.parkedResume, {2});
+        },
+      );
+
+      blocTest<ControlCubit, ControlState>(
+        'Stop leaves a count-in intact while the Song transport is parked',
+        build: () => cubit,
+        act: (cubit) {
+          final engineState = _stateWith(
+            _tracksWith(const [
+              Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+            ]),
+            looperMode: LooperMode.song,
+            countingIn: true,
+          );
+          when(() => looper.state).thenReturn(engineState);
+          looperStates.add(engineState);
+          cubit
+            ..setMode(InteractionMode.mute)
+            ..stop();
+        },
+        verify: (_) {
+          verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+          verifyNever(
+            () => looper.finalizeTake(channel: any(named: 'channel')),
+          );
+        },
+      );
 
       test('Stop then Rec/Play resumes only the actual last section', () {
         setEngine(

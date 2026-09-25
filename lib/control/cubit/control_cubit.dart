@@ -778,15 +778,28 @@ class ControlCubit extends Cubit<ControlState> {
   /// back at INTENT time, before engine truth catches up with the stops.
   void parkAll() {
     final running = _running();
-    if (running.isEmpty) return; // already parked: keep the resume set
-    emit(
-      state.copyWith(
-        parkedResume: _l.transport.looperMode == LooperMode.song
-            ? running
-            : ({...running}..removeWhere(state.excluded.contains)),
-      ),
-    );
-    for (final channel in running) {
+    final song = _l.transport.looperMode == LooperMode.song;
+    if (running.isNotEmpty) {
+      emit(
+        state.copyWith(
+          parkedResume: song
+              ? running
+              : ({...running}..removeWhere(state.excluded.contains)),
+        ),
+      );
+    }
+    // A Song handoff or play can land between polls. Any stopped section
+    // with content may now be playing, even if the cached queue is different
+    // or the cached transport is parked. Stop every possible playback target;
+    // defining recordings and their count-in stay intact, as in other modes.
+    final stopping = {
+      ...running,
+      if (song && !_l.transport.countingIn)
+        for (final track in _tracks)
+          if (track.state == TrackState.stopped && track.hasContent)
+            track.channel,
+    };
+    for (final channel in stopping) {
       _looper.stopTrack(channel: channel);
     }
   }
