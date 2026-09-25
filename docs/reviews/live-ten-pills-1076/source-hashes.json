@@ -1,0 +1,7 @@
+{
+  "firmware/console_board/console_board.ino": "c6ca66016b1e32922fd1b8df98a1554ad1ce593e8c28ddcca7f90881186f31ba",
+  "firmware/test/test_console_pill.cpp": "41c067e4f29e657bcfd751427485e10e88506d6f220a229b8cf4efbd722f8a28",
+  "firmware/test/stubs/NeoPixelBus.h": "35e850e83db98cdfad53345eb87a45ac98aabdf8c46690b38f176ffe2231beef",
+  ".github/workflows/main.yaml": "a311ff1df937ca6df367021dc529c243f06ece53f7a34b206fe79c4d75c51978",
+  ".github/workflows/appliance-release.yml": "90c90ccbf73786c1cd6aed91b823d39f51512a9d874dc287f705c31a30747607"
+}

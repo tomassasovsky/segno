@@ -98,6 +98,23 @@ final goldenMessages = <String, PedalLinkMessage>{
       countingIn: true,
     ),
   ),
+  for (final progress in [0, 127, 254])
+    'song_queue_$progress': StateMessage(
+      PedalStateFrame.blank().copyWith(
+        mode: PedalMode.play,
+        looperMode: PedalLooperMode.song,
+        globalColor: GlobalColor.green,
+        queuedTrack: 7,
+        queuedProgress: progress,
+      ),
+    ),
+  'song_queue_cancelled': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      mode: PedalMode.play,
+      looperMode: PedalLooperMode.song,
+      globalColor: GlobalColor.green,
+    ),
+  ),
   'fx_mode': StateMessage(
     PedalStateFrame(
       globalColor: GlobalColor.green,

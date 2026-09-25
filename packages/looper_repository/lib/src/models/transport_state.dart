@@ -29,6 +29,8 @@ class TransportState extends Equatable {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.songQueuedTrack,
+    this.songQueueProgress = 0,
   });
 
   /// Whether the audio device is open and processing.
@@ -84,14 +86,20 @@ class TransportState extends Equatable {
   final int countInBeatsLeft;
 
   /// The five-mode axis (default [LooperMode.multi]). Locked (rejected,
-  /// no-op) while any track has content (D4). No semantics beyond the field
-  /// exist yet for the non-multi values (B2a — see [LooperMode]'s class doc).
+  /// no-op) while any track has content (D4). Song queue timing is exposed
+  /// separately by [songQueuedTrack] and [songQueueProgress].
   final LooperMode looperMode;
 
   /// The crowned primary track's channel index (Sync/Band, D18), or `-1`
   /// when none has ever been crowned (default). See
   /// [EngineSnapshot.primaryTrack]'s doc.
   final int primaryTrack;
+
+  /// Song section waiting for the running section's next wrap, or `null`.
+  final int? songQueuedTrack;
+
+  /// Fraction of that queued wait elapsed, directly from the audio engine.
+  final double songQueueProgress;
 
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
@@ -121,5 +129,7 @@ class TransportState extends Equatable {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    songQueuedTrack,
+    songQueueProgress,
   ];
 }

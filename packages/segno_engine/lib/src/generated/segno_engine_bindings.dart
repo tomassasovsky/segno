@@ -114,18 +114,10 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
       >();
 
-  /// Enumerates the installed ASIO drivers into `out` (room for `max`), writing the
-  /// count into *count. Each entry is one duplex driver: `id` and `name` are the
-  /// driver name and `input_channels`/`output_channels` are probed from the driver
-  /// (so the picker can show "18 in / 20 out" before opening). A driver that fails
-  /// to probe is omitted; the call degrades to *count = 0 rather than erroring.
-  ///
-  /// Only the SEGNO_ENABLE_ASIO Windows build enumerates real drivers; every other
-  /// build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
-  /// loads a single process-global driver, so this MUST NOT be called while an ASIO
-  /// device is open (it would tear down the live stream) — the Dart layer only
-  /// enumerates while stopped or running on the miniaudio backend. Returns LE_OK,
-  /// or LE_ERR_INVALID for a null argument / non-positive `max`.
+  /// Reserved: always writes *count = 0 and returns LE_OK. ASIO was the Windows
+  /// duplex backend and went with the desktop targets; the symbol stays exported so
+  /// the Dart layer can keep calling it unconditionally. Returns LE_ERR_INVALID for
+  /// a null argument / non-positive `max`.
   int le_enumerate_asio_drivers(
     ffi.Pointer<le_device_info> out,
     int max,
@@ -1146,6 +1138,11 @@ class SegnoEngineBindings {
   late final _le_engine_stop_track = _le_engine_stop_trackPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// In Song, starts a stopped section alone from its beginning when idle, or
+  /// queues it for the next wrap of the currently playing section. Requesting
+  /// the queued target again, or the playing source, cancels the queue. A new
+  /// target replaces it. Captures are never interrupted by this action. Other
+  /// modes retain immediate play/resume behavior.
   int le_engine_play(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -4724,15 +4721,12 @@ final class le_config extends ffi.Struct {
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> capture_device_id;
 
-  /// le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
-  /// miniaudio path, LE_BACKEND_ASIO the Windows ASIO backend. Honored at start
-  /// via le_select_backend (a SEGNO_ENABLE_ASIO Windows build); elsewhere every
-  /// value resolves to miniaudio.
+  /// le_audio_backend to open. Every value resolves to miniaudio via
+  /// le_select_backend; the field stays so persisted configs still round-trip.
   @ffi.Int32()
   external int backend;
 
-  /// Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
-  /// ignored on the default path.
+  /// Reserved, alongside LE_BACKEND_ASIO. Always empty and ignored.
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> asio_driver;
 }
@@ -5317,6 +5311,16 @@ final class le_snapshot extends ffi.Struct {
   /// excluded channel reads 0 here because it never runs).
   @ffi.Uint32()
   external int input_cond_mask;
+
+  /// Song playback request awaiting the source section's next wrap. These two
+  /// fields are decoded from ONE atomic publication, so target and progress
+  /// cannot belong to different requests. Progress is elapsed / remaining-at-
+  /// enqueue (0..1); no queue means track -1 and progress 0.
+  @ffi.Int32()
+  external int song_queued_track;
+
+  @ffi.Float()
+  external double song_queue_progress;
 }
 
 /// The plugin format a descriptor was discovered in.

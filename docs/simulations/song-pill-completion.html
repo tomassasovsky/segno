@@ -1,0 +1,230 @@
+<!doctype html>
+<!-- cspell:ignore white-space -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Song queue completion — Segno</title>
+<style>
+:root { color-scheme: dark; --green: #36d77c; --muted: #24302a; }
+* { box-sizing: border-box; }
+body { margin: 0 auto; max-width: 940px; padding: 32px 24px; background: #111713; color: #e7efe9; font: 16px/1.5 system-ui, sans-serif; }
+h3 { margin: 0; font-size: 21px; } a { color: #80eaa9; }
+.text-small { font-size: 13px; } .text-muted { color: #a5b5aa; }
+.tabular-nums { font-variant-numeric: tabular-nums; }
+.viz-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.btn { padding: 9px 14px; border: 1px solid #526358; border-radius: 7px; color: inherit; background: #24302a; font: inherit; cursor: pointer; }
+.btn-primary { background: #234e34; } .btn:disabled { opacity: .65; cursor: default; }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid #80eaa9; outline-offset: 3px; }
+.form-check { display: inline-flex; gap: 8px; align-items: center; } input { accent-color: var(--green); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.preview-note { margin: 28px 0 0; font-size: 13px; color: #a5b5aa; }
+</style>
+</head>
+<body>
+<main>
+<div id="song-pill-completion" role="group" aria-label="Eight-LED completion animation with automatic loop handoff">
+  <style>
+    #song-pill-completion .pill-tracks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px; margin:24px 0; }
+    #song-pill-completion .pill-label { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+    #song-pill-completion .pill-label strong { font-weight:500; }
+    #song-pill-completion .pill-light { width:100%; display:block; overflow:visible; color:var(--green); }
+    #song-pill-completion .pill-motion-label { margin-top:10px; min-height:1.5em; }
+    #song-pill-completion .pill-title { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    #song-pill-completion .pill-bottom { display:flex; flex-wrap:wrap; gap:12px 24px; align-items:center; justify-content:space-between; margin-top:18px; }
+    #song-pill-completion .pill-controls { margin-top:16px; }
+    @media(max-width:480px) { #song-pill-completion .pill-tracks { grid-template-columns:1fr; gap:22px; margin:20px 0; } }
+  </style>
+  <div class="pill-title"><h3>Fill → automatic handoff</h3><span class="text-small text-muted">8-second example loop</span></div>
+  <div class="pill-tracks">
+    <div>
+      <div class="pill-label"><strong>Track 1</strong><span data-state="0">Playing</span></div>
+      <svg class="pill-light" data-pill="0" role="img" aria-label="Track 1 playing: steady green across eight LEDs"></svg>
+      <div class="pill-motion-label text-small text-muted" data-motion="0">Steady green</div>
+    </div>
+    <div>
+      <div class="pill-label"><strong>Track 2</strong><span data-state="1">Queued</span></div>
+      <svg class="pill-light" data-pill="1" role="img" aria-label="Track 2 queued: eight LEDs gradually fill from left to right until the loop ends"></svg>
+      <div class="pill-motion-label text-small text-muted" data-motion="1">Filling left → right</div>
+    </div>
+  </div>
+  <div class="viz-controls pill-controls">
+    <button type="button" class="btn btn-primary" data-action="queue" disabled>Track 2 queued</button>
+    <button type="button" class="btn" data-action="cancel">Cancel queue</button>
+    <button type="button" class="btn btn-ghost" data-action="pause">Pause simulation</button>
+  </div>
+  <div class="pill-bottom">
+    <span class="text-small text-muted tabular-nums" data-timing>Handoff at loop end · 6.0 s</span>
+    <label class="form-check"><input class="form-check-input" type="checkbox" data-action="pixels"><span class="form-check-label">Show individual LEDs</span></label>
+  </div>
+  <span class="sr-only" role="status" aria-live="polite" data-announcement>Track 1 is playing. Track 2 will start automatically when the current loop ends.</span>
+  <script>
+  (() => {
+    const root = document.getElementById('song-pill-completion');
+    if (!root) return;
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+    const weights = [38,92,201,255,255,201,92,38].map(v => v / 255);
+    const loopDuration = 8000;
+    const stateVersion = 'completion-at-loop-end-v1';
+    const svgs = [...root.querySelectorAll('[data-pill]')];
+    const stateLabels = [...root.querySelectorAll('[data-state]')];
+    const motionLabels = [...root.querySelectorAll('[data-motion]')];
+    const queueButton = root.querySelector('[data-action="queue"]');
+    const cancelButton = root.querySelector('[data-action="cancel"]');
+    const pauseButton = root.querySelector('[data-action="pause"]');
+    const pixelsCheckbox = root.querySelector('[data-action="pixels"]');
+    const timing = root.querySelector('[data-timing]');
+    const announcement = root.querySelector('[data-announcement]');
+    const ns = 'http://www.w3.org/2000/svg';
+    const marks = [];
+    let playing = 0, queued = 1, paused = reducedMotion.matches, raw = false;
+    let elapsed = 2000, queueStarted = 2000, deadline = loopDuration;
+    let lastTime = null, requestId = 0, lastTiming = '', completed = false;
+
+    function svgNode(tag, attrs) {
+      const node = document.createElementNS(ns, tag);
+      for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
+      return node;
+    }
+    function buildPill(svg, track) {
+      const width = Math.max(160, svg.getBoundingClientRect().width);
+      const margin = 8;
+      const pillWidth = width - margin * 2;
+      const height = pillWidth / 10;
+      const outerHeight = height + 34;
+      const y = 17;
+      svg.setAttribute('viewBox', `0 0 ${width} ${outerHeight}`);
+      svg.style.height = `${outerHeight}px`;
+      svg.replaceChildren();
+      const clipId = `completion-clip-${track}`;
+      const blurId = `completion-blur-${track}`;
+      const defs = svgNode('defs', {});
+      const clip = svgNode('clipPath', {id:clipId});
+      clip.append(svgNode('rect', {x:margin,y,width:pillWidth,height,rx:height/2}));
+      const blur = svgNode('filter', {id:blurId,x:'-30%',y:'-100%',width:'160%',height:'300%'});
+      blur.append(svgNode('feGaussianBlur', {stdDeviation:height*.21}));
+      defs.append(clip,blur);
+      svg.append(defs, svgNode('rect', {x:margin,y,width:pillWidth,height,rx:height/2,fill:'var(--muted)'}));
+      const light = svgNode('g', {'clip-path':`url(#${clipId})`});
+      const blurGroup = svgNode('g', {filter:`url(#${blurId})`});
+      const dotsGroup = svgNode('g', {});
+      const glows = [], dots = [];
+      for (let i=0;i<8;i++) {
+        const x = margin + (i + .5) * pillWidth / 8;
+        const glow = svgNode('ellipse', {cx:x,cy:y+height/2,rx:pillWidth/8*.86,ry:height*.59,fill:'currentColor'});
+        const dot = svgNode('circle', {cx:x,cy:y+height/2,r:height*.25,fill:'currentColor'});
+        glows.push(glow); dots.push(dot); blurGroup.append(glow); dotsGroup.append(dot);
+      }
+      light.append(blurGroup,dotsGroup); svg.append(light);
+      marks[track] = {glows,dots,blurGroup,dotsGroup};
+    }
+    function completionLevels() {
+      if (queued===null) return weights.map(() => 0);
+      const progress = Math.max(0, Math.min(1, (elapsed-queueStarted)/(deadline-queueStarted)));
+      return weights.map((weight,i) => weight * Math.max(0,Math.min(1,progress*8-i)));
+    }
+    function paint() {
+      const queuedLevels = completionLevels();
+      for (let track=0;track<2;track++) {
+        const mark = marks[track];
+        if (!mark) continue;
+        const levels = track===playing ? weights : track===queued ? queuedLevels : weights.map(() => 0);
+        mark.blurGroup.style.display = raw ? 'none' : '';
+        mark.dotsGroup.style.display = raw ? '' : 'none';
+        levels.forEach((level,i) => {
+          // Installed brightness envelope. Diffusion is an illustration, not
+          // a calibrated prediction of the physical pill's light output.
+          const value = Math.round(level * 191) / 255;
+          mark.glows[i].setAttribute('opacity', value.toFixed(3));
+          mark.dots[i].setAttribute('opacity', value.toFixed(3));
+        });
+      }
+      const remaining = Math.max(0,deadline-elapsed);
+      const nextTiming = queued===null
+        ? (completed ? `Track ${playing+1} took over at loop end` : 'Queue cancelled · playback continues')
+        : `${paused ? 'Paused' : 'Handoff at loop end'} · ${(Math.ceil(remaining/100)/10).toFixed(1)} s`;
+      if (nextTiming!==lastTiming) {timing.textContent=nextTiming; lastTiming=nextTiming;}
+    }
+    function updateLabels(announce=false) {
+      for (let track=0;track<2;track++) {
+        const state = track===playing ? 'Playing' : track===queued ? 'Queued' : 'Stopped';
+        const motion = track===playing ? 'Steady green' : track===queued ? 'Filling left → right' : 'Dark';
+        stateLabels[track].textContent = state;
+        motionLabels[track].textContent = motion;
+        svgs[track].setAttribute('aria-label', `Track ${track+1}: ${state.toLowerCase()}. ${motion}. Eight LEDs.`);
+      }
+      queueButton.disabled = queued!==null;
+      queueButton.textContent = queued===null ? `Queue track ${2-playing}` : `Track ${queued+1} queued`;
+      cancelButton.disabled = queued===null;
+      pauseButton.textContent = paused ? 'Resume simulation' : 'Pause simulation';
+      pauseButton.setAttribute('aria-pressed',String(paused));
+      pixelsCheckbox.checked = raw;
+      if (announce) announcement.textContent = `Track ${playing+1} is playing. ${queued===null ? 'No track is queued.' : `Track ${queued+1} will start automatically at the next loop boundary.`}`;
+      paint();
+    }
+    function save() {
+      const host = window.openai;
+      if (host && typeof host.setWidgetState==='function') {
+        host.setWidgetState({
+          modelContent:{proposal:'queued pill fills left to right, automatic handoff at next loop',playingTrack:playing+1,queuedTrack:queued===null?null:queued+1},
+          privateContent:{version:stateVersion,playing,queued,paused,raw,elapsed,queueStarted,deadline,completed}
+        }).catch(() => {});
+      }
+    }
+    function restore(snapshot) {
+      const s = snapshot && snapshot.privateContent;
+      if (!s || s.version!==stateVersion || (s.playing!==0 && s.playing!==1)) return;
+      playing=s.playing;
+      queued=(s.queued===0 || s.queued===1) && s.queued!==playing ? s.queued : null;
+      raw=s.raw===true;
+      paused=reducedMotion.matches || s.paused===true;
+      completed=s.completed===true;
+      if (Number.isFinite(s.elapsed) && s.elapsed>=0) elapsed=s.elapsed;
+      if (queued!==null && Number.isFinite(s.queueStarted) && Number.isFinite(s.deadline) && s.queueStarted<=elapsed && s.deadline>elapsed) {
+        queueStarted=s.queueStarted; deadline=s.deadline;
+      } else if (queued!==null) {
+        queueStarted=elapsed; deadline=(Math.floor(elapsed/loopDuration)+1)*loopDuration;
+      }
+      lastTime=null;
+    }
+    function frame(now) {
+      if (!root.isConnected) return;
+      if (lastTime!==null && !paused && !document.hidden) elapsed+=Math.max(0,now-lastTime);
+      lastTime=now;
+      if (queued!==null && elapsed>=deadline) {
+        playing=queued; queued=null; completed=true;
+        updateLabels(true); save();
+      }
+      paint();
+      requestId=requestAnimationFrame(frame);
+    }
+    queueButton.addEventListener('click', () => {
+      queued=1-playing; queueStarted=elapsed;
+      // Queueing preserves the current loop phase: it never starts a new wait loop.
+      deadline=(Math.floor(elapsed/loopDuration)+1)*loopDuration;
+      completed=false; updateLabels(true); save();
+    });
+    cancelButton.addEventListener('click', () => {queued=null; completed=false; updateLabels(true); save();});
+    pauseButton.addEventListener('click', () => {paused=!paused; lastTime=null; updateLabels(); save();});
+    pixelsCheckbox.addEventListener('change', () => {raw=pixelsCheckbox.checked; paint(); save();});
+    document.addEventListener('visibilitychange', () => {lastTime=null;});
+    window.addEventListener('openai:set_globals', event => {
+      if (event.detail && event.detail.globals && event.detail.globals.widgetState) {
+        restore(event.detail.globals.widgetState); updateLabels();
+      }
+    });
+    reducedMotion.addEventListener('change', event => {if(event.matches) {paused=true; lastTime=null; updateLabels();}});
+    const resize = new ResizeObserver(() => {svgs.forEach(buildPill); paint();});
+    svgs.forEach(svg => resize.observe(svg));
+    restore(window.openai && window.openai.widgetState);
+    svgs.forEach(buildPill); updateLabels();
+    requestId=requestAnimationFrame(frame);
+    window.addEventListener('pagehide', () => {cancelAnimationFrame(requestId); resize.disconnect();},{once:true});
+  })();
+  </script>
+</div>
+
+<p class="preview-note">Design preview: diffusion and displayed brightness are illustrative. The firmware tests verify transmitted LED values and engine-owned handoff. <a href="README.md">About these simulations</a></p>
+</main>
+</body>
+</html>

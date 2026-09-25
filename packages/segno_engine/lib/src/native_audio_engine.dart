@@ -1752,6 +1752,8 @@ class PumpedNativeEngine extends NativeAudioEngine {
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
       looperMode: s.looperMode,
+      songQueuedTrack: s.songQueuedTrack,
+      songQueueProgress: s.songQueueProgress,
       tracks: s.tracks,
     );
   }

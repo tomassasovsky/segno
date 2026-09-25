@@ -35,6 +35,14 @@ extern "C" {
 /* Input level (0..1) that triggers sound-activated recording (~-34 dBFS). */
 #define LE_AUTO_RECORD_THRESHOLD 0.02f
 
+/* Audio thread, or lifecycle code after the callback has stopped. */
+static inline void le_song_cancel(le_engine* e) {
+  e->song_source = -1;
+  e->song_target = -1;
+  e->song_wait_frames = 0;
+  atomic_store_explicit(&e->a_song_queue, 0, memory_order_relaxed);
+}
+
 /* Wraps `pos - offset` into [0, len). Used to write captured input at the
  * latency-compensated loop position so overdubs align with what was heard. */
 static inline int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {

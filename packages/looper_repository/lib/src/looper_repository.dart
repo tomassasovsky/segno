@@ -786,6 +786,8 @@ class LooperRepository {
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
       looperMode: s.looperMode,
+      songQueuedTrack: s.songQueuedTrack,
+      songQueueProgress: s.songQueueProgress,
       // Project from the repository's own re-apply CACHE, not the raw
       // `s.primaryTrack` (independent review of #295, D18): the native
       // engine has no "un-crown" call, so a channel crowned by a prior/live

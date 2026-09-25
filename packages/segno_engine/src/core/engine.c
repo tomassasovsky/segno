@@ -462,6 +462,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   if (engine->lat_buf == NULL) engine->lat_buf_cap = 0;
   le_loop_clock_reset(&engine->clock);
   engine->loop_iteration = 0;
+  le_song_cancel(engine);
   engine->transport_held = 0; /* #262: fresh transport, no hold latched */
   /* Free mode (B2b): each track's own clock resets alongside the master's —
    * a fresh configure/session must never carry a stale established length
@@ -823,6 +824,7 @@ le_engine* le_engine_create(void) {
    * kept explicit anyway, matching every sibling setting here, so the
    * default is legible at the seed site rather than implied by calloc. */
   store_i32(&engine->a_looper_mode, LE_LOOPER_MODE_MULTI);
+  le_song_cancel(engine);
   /* Primary track SETTING (B3, D18): same seeded-once persistence as the
    * looper mode above — -1 (none) until an explicit crown, surviving both
    * configure() and any track clear (D18: no auto-reassignment). Unlike
@@ -1031,6 +1033,7 @@ int32_t le_engine_stop(le_engine* engine) {
     engine->backend->stop(engine);
   }
   engine->device_name[0] = '\0';
+  le_song_cancel(engine);
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_release);
   atomic_store_explicit(&engine->a_running, 0, memory_order_release);
   /* Settle every DISABLED fx slot's enable ramp at bypass now that the audio
@@ -1121,4 +1124,3 @@ int32_t le_engine_begin_latency_for_test(le_engine* engine) {
    * detection can be driven without opening a device. */
   return le_push(engine, LE_CMD_MEASURE_LATENCY, 0, 0.0f);
 }
-

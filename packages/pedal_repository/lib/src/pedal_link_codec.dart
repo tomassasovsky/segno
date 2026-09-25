@@ -36,6 +36,8 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// | 6..13  | [PedalTrackLed] index for tracks 0..7                      |
 /// | 14..17 | loop length, microseconds, unsigned 32-bit little-endian   |
 /// | 18     | master gain, `round(masterGain * 255)`                     |
+/// | 19     | queued track: 0 none, 1..8 logical track index + 1          |
+/// | 20     | queue completion: 0..254 / 255; 0 without a queue           |
 ///
 /// Enum indices are the wire values: none of those enums may be reordered.
 abstract final class PedalLinkCodec {
@@ -45,6 +47,7 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
+  /// 7: STATE carries the engine-owned Song queue target and completion.
   /// 5: CTRL kind `none` — the board can say a jack is empty instead of
   /// reporting an unplugged jack as a pedal at full toe. 4: CTRL (`0x04`)
   /// grew a contact byte and reports an expression pedal's raw position;
@@ -53,7 +56,7 @@ abstract final class PedalLinkCodec {
   /// when the ring stopped tracking the loop. The board is flashed over SWD
   /// independently of the app, so the two can drift; this is what makes
   /// that visible rather than silent.
-  static const protocolVersion = 5;
+  static const protocolVersion = 7;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -72,7 +75,7 @@ abstract final class PedalLinkCodec {
   static const typeState = 0x10;
 
   /// The number of payload bytes in a [StateMessage].
-  static const statePayloadLength = 19;
+  static const statePayloadLength = 21;
 
   /// How often the board sends [HelloMessage], in milliseconds
   /// (`PEDAL_LINK_HELLO_MS`). The liveness clocks on both ends derive from
@@ -182,6 +185,14 @@ abstract final class PedalLinkCodec {
 
   /// The [statePayloadLength]-byte payload for [frame].
   static Uint8List encodeStatePayload(PedalStateFrame frame) {
+    final queuedTrack = frame.queuedTrack;
+    if ((queuedTrack != null &&
+            (queuedTrack < 0 || queuedTrack >= PedalStateFrame.trackCount)) ||
+        frame.queuedProgress < 0 ||
+        frame.queuedProgress >= 255 ||
+        (queuedTrack == null && frame.queuedProgress != 0)) {
+      throw ArgumentError.value(frame, 'frame', 'Invalid Song queue');
+    }
     final p = Uint8List(statePayloadLength);
     p[0] =
         (frame.clearFadeActive ? 0x01 : 0) |
@@ -202,6 +213,8 @@ abstract final class PedalLinkCodec {
     p[16] = (us >> 16) & 0xFF;
     p[17] = (us >> 24) & 0xFF;
     p[18] = (frame.masterGain.clamp(0.0, 1.0) * 255).round();
+    p[19] = queuedTrack == null ? 0 : queuedTrack + 1;
+    p[20] = frame.queuedProgress;
     return p;
   }
 
@@ -209,13 +222,21 @@ abstract final class PedalLinkCodec {
   /// (wrong length, an out-of-range enum index, a reserved flag bit set).
   /// Mirrors what the firmware does, so the golden fixtures pin both.
   static PedalStateFrame? decodeStatePayload(List<int> p) {
-    if (p.length != statePayloadLength) return null;
+    if (p.length != statePayloadLength ||
+        p.any((byte) => byte < 0 || byte > 255)) {
+      return null;
+    }
     if (p[0] & ~0x0F != 0) return null;
     if (p[1] >= PedalMode.values.length) return null;
     if (p[2] >= PedalLooperMode.values.length) return null;
     if (p[3] >= GlobalColor.values.length) return null;
     if (p[4] > 1) return null;
     if (p[5] >= PedalStateFrame.trackCount) return null;
+    if (p[19] > PedalStateFrame.trackCount ||
+        p[20] == 255 ||
+        (p[19] == 0 && p[20] != 0)) {
+      return null;
+    }
     final leds = <PedalTrackLed>[];
     for (var i = 0; i < PedalStateFrame.trackCount; i++) {
       final index = p[6 + i];
@@ -235,6 +256,8 @@ abstract final class PedalLinkCodec {
       masterGain: p[18] / 255.0,
       looperMode: PedalLooperMode.values[p[2]],
       countingIn: p[0] & 0x08 != 0,
+      queuedTrack: p[19] == 0 ? null : p[19] - 1,
+      queuedProgress: p[20],
     );
   }
 }

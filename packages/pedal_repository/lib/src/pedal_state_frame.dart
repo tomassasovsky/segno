@@ -100,6 +100,8 @@ class PedalStateFrame extends Equatable {
     this.masterGain = 1,
     this.looperMode = PedalLooperMode.multi,
     this.countingIn = false,
+    this.queuedTrack,
+    this.queuedProgress = 0,
   }) : assert(
          trackLeds.length == trackCount,
          'a frame must carry exactly $trackCount track LEDs',
@@ -119,6 +121,16 @@ class PedalStateFrame extends Equatable {
        assert(
          loopLengthMicros >= 0 && loopLengthMicros <= maxLoopLengthMicros,
          'loopLengthMicros out of range',
+       ),
+       assert(
+         queuedTrack == null || (queuedTrack >= 0 && queuedTrack < trackCount),
+         'queuedTrack must be null or a valid logical track',
+       ),
+       assert(
+         queuedProgress >= 0 &&
+             queuedProgress < 255 &&
+             (queuedTrack != null || queuedProgress == 0),
+         'queuedProgress must be 0..254, and zero without a queue',
        );
 
   /// A blank, all-off frame.
@@ -188,6 +200,15 @@ class PedalStateFrame extends Equatable {
   /// (A2/D9). On the wire; the console board does not render it.
   final bool countingIn;
 
+  /// Song track waiting for the current track's next loop boundary, or null.
+  /// Logical track index, independent of the visible bank and harness order.
+  final int? queuedTrack;
+
+  /// Engine-derived completion across the remaining loop at enqueue time.
+  /// Uses 255 as the denominator but stops at 254 while the track is queued.
+  /// Only a subsequent engine state can confirm playback has started.
+  final int queuedProgress;
+
   /// Returns a copy with the given fields replaced.
   PedalStateFrame copyWith({
     GlobalColor? globalColor,
@@ -202,6 +223,9 @@ class PedalStateFrame extends Equatable {
     double? masterGain,
     PedalLooperMode? looperMode,
     bool? countingIn,
+    int? queuedTrack,
+    int? queuedProgress,
+    bool clearQueue = false,
   }) {
     return PedalStateFrame(
       globalColor: globalColor ?? this.globalColor,
@@ -216,6 +240,8 @@ class PedalStateFrame extends Equatable {
       masterGain: masterGain ?? this.masterGain,
       looperMode: looperMode ?? this.looperMode,
       countingIn: countingIn ?? this.countingIn,
+      queuedTrack: clearQueue ? null : queuedTrack ?? this.queuedTrack,
+      queuedProgress: clearQueue ? 0 : queuedProgress ?? this.queuedProgress,
     );
   }
 
@@ -233,6 +259,8 @@ class PedalStateFrame extends Equatable {
     masterGain,
     looperMode,
     countingIn,
+    queuedTrack,
+    queuedProgress,
   ];
 
   @override
@@ -243,5 +271,6 @@ class PedalStateFrame extends Equatable {
       'mode: ${mode.name}, loopUs: $loopLengthMicros, '
       'clearFade: $clearFadeActive, goodbye: $isGoodbye, '
       'performanceArmed: $performanceArmed, masterGain: $masterGain, '
-      'looperMode: ${looperMode.name}, countingIn: $countingIn)';
+      'looperMode: ${looperMode.name}, countingIn: $countingIn, '
+      'queuedTrack: $queuedTrack, queuedProgress: $queuedProgress)';
 }
