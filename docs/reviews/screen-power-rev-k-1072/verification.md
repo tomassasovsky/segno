@@ -9,9 +9,10 @@ PR [#1080](https://github.com/tomassasovsky/segno/pull/1080).
 The screen board now has gradual power-copper transitions, accurate capacitor
 assembly models and clearance for the plugged-in power connector. The complete
 circuit and its integration were independently checked, beyond design-rule
-checking. **Local CAD and fabrication checks pass. The newly requested external
-multi-model reviews remain incomplete because both providers reached usage
-limits; no external approval of Revision K is claimed.**
+checking. **Local CAD and fabrication checks pass. Claude's completed cloud
+review found no verified circuit/artwork defect and recommended first-prototype
+fabrication. The OpenCode Go reviews remain incomplete after provider limits;
+assembled-production qualification is still outstanding.**
 
 Revision K supersedes J as the current screen package. Revision I remains
 withdrawn for its disconnected relay commons. The corrected J contact mapping
@@ -71,8 +72,18 @@ covers this revision's intended diff, not every older change in the stacked PR.
 Actual Claude Code and OpenCode Go DeepSeek, Kimi and Grok attempts are recorded
 in [external-model-reviews.md](external-model-reviews.md). DeepSeek's regional
 restriction was resolved on retry, but all three Go reviews subsequently hit
-the shared usage limit before a final report. Claude was already session-limited.
-A partial inspection is not counted as a clean review.
+the shared usage limit before a final report. Claude's local session limit was
+avoided through an owner-authorized cloud session, which completed a report on
+the final K files. Its [assessment](claude-cloud-assessment.md) records two
+documentation corrections and independently checked dispositions of its other
+recommendations. A partial inspection is not counted as a clean review.
+
+The cloud follow-up changes documentation only: the Gerber-job field is absent,
+and R8's generic model is explicitly distinguished from the purchased part's
+maximum body/coating dimensions. Package documentation and verification hashes
+were refreshed; the native board, models, artwork and manufacturing ZIP remain
+byte-for-byte unchanged. The independent fabrication check was repeated against
+the refreshed package.
 
 No additional owner measurements are prerequisites for buying bare prototype
 PCBs under the existing first-fabrication decision. This is not qualification
@@ -96,4 +107,7 @@ archives. The local delivery retains J only in a clearly superseded folder;
 I remains quarantined as do-not-order. No order, merge, deployment or flash
 was performed. PR labels remain `ci:pending`, `review:pending` and
 `autonomy:blocked-verify`: feature-base CI has not established a green gate,
-and external review plus assembled validation remain incomplete.
+and the full requested multi-model coverage plus assembled validation remain
+incomplete. In particular, the upstream 5 V protection requirement is still
+open for normal assembled operation; a nominal fuse rating alone is not a
+coordinated protection design.

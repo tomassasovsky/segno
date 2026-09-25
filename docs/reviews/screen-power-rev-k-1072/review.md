@@ -3,8 +3,10 @@
 # Review — Revision K screen-power completion
 
 Six confirmed findings resolved: 0 critical, 4 important, 2 suggestions.
-Zero unresolved findings in the completed local reviews. External adversarial
-review coverage remains incomplete; this is not a complete multi-model sign-off.
+Zero unresolved findings in the original local implementation reviews. The
+subsequent Claude cloud report produced two accepted documentation corrections
+and reiterated the open upstream-protection assembly requirement. OpenCode Go
+coverage remains incomplete; this is not a complete multi-model sign-off.
 
 Scope: intended working diff from `9a5798be6c4ea9b0aae2a88fe7168b6751cab441`,
 including new models and documents, plus a fresh complete circuit, datasheet,
@@ -44,12 +46,16 @@ the parent implementation they reviewed. The system auditor corrected only
 its explicitly assigned wiring documents; those changes received a separate
 parent review. Its independent test/simplicity verdict excludes its own prose.
 
-## Incomplete external coverage
+## External coverage and follow-up
 
 [Actual external model attempts](external-model-reviews.md) document Claude
-session exhaustion and the retried DeepSeek/Kimi/Grok Go quota failures.
-No incomplete external run was relabeled as a clean review. The historical
-completed Claude audit found the relay defect fixed in J; it does not approve K.
+local session exhaustion and the retried DeepSeek/Kimi/Grok Go quota failures.
+A later owner-authorized Claude cloud session completed on the exact K board
+and ZIP. Its [assessment](claude-cloud-assessment.md) accepts the Gerber-job
+wording and R8 model-coverage corrections, while rejecting unsupported fuse,
+startup and body-clearance conclusions. No PCB change was justified. Upstream
+5 V protection remains an assembly requirement; no generic fuse is represented
+as a verified solution. No incomplete external run was relabeled as clean.
 
 ## Validation and release boundary
 

@@ -225,8 +225,9 @@ FR-4 core, with nominal relative permittivity 4.4. USB pairs use **B.Cu**,
 **0.85 mm width / 0.16 mm gap**, without data vias. KiCad 10's coupled-microstrip
 calculator estimates **89.64 Ω differential** at 1 GHz for this nominal geometry.
 This calculation omits solder mask and finite adjacent copper. JLCPCB lists controlled-impedance service for four or more layers; this
-two-layer board does not order that service. The Gerber job accordingly sets
-`ImpedanceControlled` to false. The estimate is a design target, not a promised
+two-layer board does not order that service. The Gerber job omits the
+`ImpedanceControlled` field; it makes no impedance-control declaration.
+The estimate is a design target, not a promised
 manufactured impedance or USB compliance result. Ordinary thickness and trace
 tolerances, and the published two-layer material value of 4.5, still require
 actual-link qualification. See [JLCPCB capabilities](https://jlcpcb.com/capabilities/pcb-capabilities). Connector and relay pad

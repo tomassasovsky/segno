@@ -32,6 +32,13 @@ Use the archive in the [Revision K verification](reviews/screen-power-rev-k-1072
 No additional owner measurements are prerequisites for bare-board fabrication.
 Earlier screen-board readiness claims below are historical and superseded.
 
+The [completed Claude cloud review](reviews/screen-power-rev-k-1072/claude-cloud-assessment.md)
+found no verified K circuit/artwork defect and recommended first-prototype
+fabrication. Its two documentation corrections are applied; the board and
+Gerber archive are unchanged. Normal assembled operation still requires
+coordinated upstream 5 V protection and the previously documented qualification.
+OpenCode Go reviews remain incomplete after provider limits.
+
 The 6 A shared switch allowance includes both main outputs, both touch outputs
 and the 0.05 A bleeder. The 3 A main and 500 mA touch branch ceilings are not
 additive or simultaneous guarantees; ring current follows a separate path.

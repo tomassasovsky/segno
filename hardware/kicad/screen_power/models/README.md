@@ -53,6 +53,14 @@ library exception, as reproduced in [LIBRARY_LICENSE.txt](../LIBRARY_LICENSE.txt
 Sources are the matching libraries in the
 [KiCad 3D models collection](https://gitlab.com/kicad/libraries/kicad-packages3D).
 
+R8 is a documented approximation: its generic DIN0207 model has a 6.3 mm body.
+The selected Vishay PR01 has a 6.5 mm maximum main-body length, an 8.0 mm
+maximum coating extent, 2.5 mm maximum diameter and 0.63 mm maximum lead
+diameter. The 10.16 mm footprint pitch and finished holes
+were checked against the purchased part separately; the generic preview is
+not its maximum assembly envelope. See the
+[Vishay PR01 drawing](https://www.vishay.com/docs/28729/pr010203.pdf).
+
 | Files | Upstream library |
 | --- | --- |
 | D_DO-* | Diode_THT.3dshapes |
