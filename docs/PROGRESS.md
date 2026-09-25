@@ -13,6 +13,13 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+The [design-margin follow-up](reviews/screen-power-design-margin-1072/verification.md)
+records the owner's one-order requirement and rejection of a pre-PCB prototype
+build. No replacement power circuit was adopted. A small USB routing candidate
+passed an isolated rebuild and remains an unapplied patch; published Revision K
+source and manufacturing files are unchanged. New Claude and DeepSeek follow-up
+attempts did not produce completed reviews. This is not a new production approval.
+
 September 25 screen-power correction: **Revision I screen Gerbers are withdrawn**.
 The [independent Claude review and assessment](reviews/screen-power-claude-1072/assessment.md)
 confirmed that relay commons 3/6 were floating: upstream data used normally
