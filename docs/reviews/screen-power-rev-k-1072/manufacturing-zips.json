@@ -1,6 +1,6 @@
 {
   "date": "2026-09-25",
-  "purpose": "Finished Revision K screen power copper and corrected assembly models; unchanged full-white console/ring exports",
+  "purpose": "Revision K manufacturing artwork retained; Claude follow-up specifies inline protection and updates R8 assembly preview",
   "archives": {
     "console-v3": {
       "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
@@ -62,8 +62,8 @@
     }
   },
   "hardware_pr": "https://github.com/tomassasovsky/segno/pull/1080",
-  "screen_board_sha256": "d35484d551cf8f526f62c4356accbff0492c28999beb0e8830801c39f00c83da",
-  "screen_source_baseline_commit": "9a5798be6c4ea9b0aae2a88fe7168b6751cab441",
+  "screen_board_sha256": "f5d86257daeb4ca4a534eade7fb7163ddc2a30684de504a2670f663bb7e724fa",
+  "screen_source_baseline_commit": "ffaa9552c8f2a07bcc67f53ee6568d5dc6e2a83a",
   "withdrawn_screen_rev_i_sha256": "25370578cbb1184f6d2bc1913c88746ff87ce91809779c7878d62f4af735a878",
   "screen_verification": "docs/reviews/screen-power-rev-k-1072/verification.md",
   "superseded_screen_rev_j_sha256": "9905da38f648b6d1726805055df89a5082520ff9954127e79b8a4b4746b63c98"

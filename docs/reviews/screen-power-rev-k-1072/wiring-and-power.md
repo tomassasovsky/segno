@@ -4,6 +4,12 @@
 25 September 2026. This records the assembly contract and available evidence
 for #1072. Final native Revision K board SHA-256:
 `d35484d551cf8f526f62c4356accbff0492c28999beb0e8830801c39f00c83da`.
+
+The [subsequent Claude follow-up](../screen-power-claude-fixes-1072/verification.md)
+adds a specified inline screen fuse/holder and R8 assembly model; this is the
+original K audit. Current assembly instructions supersede its unspecified
+upstream-protection entry below.
+
 It does not certify assembled operation or replace manufacturing-export
 correspondence checks. The detailed independent audit is in
 [raw/system-wiring-audit.md](raw/system-wiring-audit.md); the complete wiring

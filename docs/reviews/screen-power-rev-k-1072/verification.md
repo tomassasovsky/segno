@@ -59,7 +59,7 @@ No firmware or device setting changed.
 | Regression checks | 36/36 existing fault controls pass. Independent additional mutations prove the new C1 minimum-width guard, rejection of wrong taper names/nets/layers and missing front GND. Tests also prove that removing all eight tapers does not break power continuity. [Test review](raw/test-quality.md). |
 | Mechanical/assembly | Lead dimensions versus finished-hole tolerance, polarity, 37 THT parts, two layers, M3 keepouts, connector orientation, maximum capacitor envelopes and full mated VH envelope checked. Corrected populated STEP and renders inspected. [Assembly audit](raw/assembly-audit.md). |
 | Shutdown integration | Existing GPIO lifecycle host tests pass 12/12; startup and normal shutdown call sites were traced. The five-second discharge delay remains provisional. Actual screen darkness before HDMI loss is not proven by host tests. |
-| Fabrication correspondence | Independent fresh export matches seven Gerbers, two drill files and job JSON after creation timestamps only. All 59 source hashes, 64 artifacts and 12 ZIP members match; 358 assertions pass. Drill-map PDFs receive identity checks, not independent content checks. [Machine record](fabrication-verification.json). |
+| Fabrication correspondence | Independent fresh export matches seven Gerbers, two drill files and job JSON after creation timestamps only. All 60 source hashes, 65 artifacts and 12 ZIP members match; 379 assertions pass. Drill-map PDFs also match in decoded drawing content, page geometry and resources. [Machine record](fabrication-verification.json). |
 
 ## Review coverage and remaining boundary
 
@@ -78,12 +78,12 @@ the final K files. Its [assessment](claude-cloud-assessment.md) records two
 documentation corrections and independently checked dispositions of its other
 recommendations. A partial inspection is not counted as a clean review.
 
-The cloud follow-up changes documentation only: the Gerber-job field is absent,
-and R8's generic model is explicitly distinguished from the purchased part's
-maximum body/coating dimensions. Package documentation and verification hashes
-were refreshed; the native board, models, artwork and manufacturing ZIP remain
-byte-for-byte unchanged. The independent fabrication check was repeated against
-the refreshed package.
+The [implemented Claude follow-up](../screen-power-claude-fixes-1072/verification.md)
+now specifies the exact input fuse/holder, includes its voltage drop in the
+conditional calculation and replaces R8's generic preview with a conservative
+PR01 envelope. Only the R8 model filename changes in the native board; circuit,
+pads, copper and outline are unchanged. Refreshed STEP, renders, package
+metadata and independent checks are recorded in that follow-up.
 
 No additional owner measurements are prerequisites for buying bare prototype
 PCBs under the existing first-fabrication decision. This is not qualification
@@ -99,7 +99,7 @@ contains seven Gerber layers, two separate drill files, two drill maps and the
 job file. Select bare PCB, two-layer FR4, 1.6 mm, 1 oz outer copper, ENIG,
 purple solder mask and white silkscreen. No stencil or assembly service.
 
-- Native board SHA-256: `d35484d551cf8f526f62c4356accbff0492c28999beb0e8830801c39f00c83da`.
+- Native board SHA-256: `f5d86257daeb4ca4a534eade7fb7163ddc2a30684de504a2670f663bb7e724fa`.
 - Screen ZIP SHA-256: `171034c87f3d371db9f7017a196960bdb7e01c249c1178eba90abb3ab2f05e3c`.
 
 [manufacturing-zips.json](manufacturing-zips.json) identifies all three current
@@ -108,6 +108,5 @@ I remains quarantined as do-not-order. No order, merge, deployment or flash
 was performed. PR labels remain `ci:pending`, `review:pending` and
 `autonomy:blocked-verify`: feature-base CI has not established a green gate,
 and the full requested multi-model coverage plus assembled validation remain
-incomplete. In particular, the upstream 5 V protection requirement is still
-open for normal assembled operation; a nominal fuse rating alone is not a
-coordinated protection design.
+incomplete. Exact upstream protection parts are now specified for assembly;
+their nominal rating alone does not prove fault coordination or MOSFET survival.
