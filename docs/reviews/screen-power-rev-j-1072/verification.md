@@ -1,3 +1,5 @@
+> Superseded by [Revision K](../screen-power-rev-k-1072/verification.md). This record describes the earlier checked package.
+
 <!-- cspell:words centerlines heatsinks -->
 # Screen-power Revision J verification — 25 September 2026
 
@@ -113,7 +115,7 @@ from this first-fabrication package.
 
 ## Replacement upload package
 
-Upload [segno_screen_power_rev_j_gerbers.zip](../../../hardware/kicad/fab/segno_screen_power_rev_j_gerbers.zip).
+Upload [segno_screen_power_rev_j_gerbers.zip](https://github.com/tomassasovsky/segno/blob/9a5798be6c4ea9b0aae2a88fe7168b6751cab441/hardware/kicad/fab/segno_screen_power_rev_j_gerbers.zip).
 The archive contains seven Gerber layers, separate plated/non-plated drill files,
 two drill-map PDFs and the Gerber job file. Use ENIG, purple mask and white
 silkscreen; the board remains two-layer FR4, 1.6 mm, 1 oz. No assembly service
