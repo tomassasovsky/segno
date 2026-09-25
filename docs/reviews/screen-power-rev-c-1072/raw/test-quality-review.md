@@ -1,3 +1,6 @@
+<!-- cspell:words Mbps nonplated Omron relpath -->
+> **Screen-board correction, 25 September 2026:** This is a historical report. Its screen relay-pinout approval is superseded: IM02TS commons are 3/6, NC contacts are 2/7, and NO contacts are 4/5. Revision I Gerbers are withdrawn. Use the [corrected Revision J record](../../screen-power-rev-j-1072/verification.md). Console and ring findings are unaffected.
+
 ## Test Quality Review
 
 ### Coverage Summary

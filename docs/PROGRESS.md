@@ -1,3 +1,4 @@
+<!-- cspell:words heatsinks -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib unassembled Axicom Mbps -->
@@ -12,11 +13,34 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+September 25 screen-power correction: **Revision I screen Gerbers are withdrawn**.
+The [independent Claude review and assessment](reviews/screen-power-claude-1072/assessment.md)
+confirmed that relay commons 3/6 were floating: upstream data used normally
+closed contacts 2/7, so neither USB touch path could conduct in either state.
+Revision J corrects that pinout, retains normally open contacts 4/5, and adds an
+independent contact-state regression guard. It also widens MOSFET necks to 1.9 mm
+and the C2 feed to 1.5 mm, with three dedicated shared-power stitching vias.
+Checks and replacement exports are recorded in the
+[Revision J verification](reviews/screen-power-rev-j-1072/verification.md).
+Use the corrected archive identified there; no additional owner measurements
+are prerequisites for bare-board fabrication. Earlier screen-board readiness claims
+below are historical and superseded by this correction.
+
+The 6 A shared switch allowance includes both main outputs, both touch outputs
+and the 0.05 A bleeder. The 3 A main and 500 mA touch branch ceilings are not
+additive or simultaneous guarantees; ring current follows a separate path.
+Expected screen loads support retaining upright Q3/Q4 without heatsinks under
+the stated thermal estimates, not an assembled thermal or startup qualification.
+Parts, fuses, connector positions, the 68 × 76 mm through-hole board, purple
+mask and two copper layers remain unchanged, as do the full-white console/ring
+designs. The [screen-board notes](../hardware/kicad/screen_power/README.md) give
+the current budget and unchanged post-assembly acceptance checks.
+
 September 25 update: the owner requested unrestricted full-white operation for
 one 40-pixel ring strip. The console and ring carrier now have dedicated wider
 power paths, sized independently of firmware brightness. Board outlines,
 placements, two layers, 1 oz copper and purple-console/white-ring colours remain.
-The screen-power board is unchanged. The new
+That full-white change left the screen-power board unchanged. The
 [full-white fabrication review](reviews/ring40-full-white-1072/verification.md)
 supersedes the earlier 24-pixel/current-limited power assessment and order ZIPs.
 It preserves first-assembly validation and the separate 10 A whole-system limit.
@@ -33,8 +57,9 @@ the buck pair, on 15 mm standoffs. Four floor mounts still need to be integrated
 and actual harness/assembly fit checked; the CAD placement is not a physical
 fit test. See the [placement study](reviews/pcb-completion-1072/screen-power-placement.md).
 
-The September 24 order package includes all three designs: console, screen
-power and ring. The ring carrier now uses white solder mask and black
+The historical September 24 order package included all three designs: console,
+screen power and ring; its Revision I screen Gerbers are now withdrawn. The ring
+carrier now uses white solder mask and black
 silkscreen, with larger J1 and module-support holes. Its routes and placement
 are retained; refilled-zone DRC has zero violations or unconnected items, and
 all 63 connected pads match the circuit. See the
@@ -76,23 +101,27 @@ R2 turns horizontally below the buffer and R18 shifts 0.15 mm to clear the
 existing PI PWR label. The floating button pair and affected signal routes
 are complete; KiCad reports zero violations and zero unconnected items.
 The underside screen pinout text is replaced by a top-side `SCREEN` label.
-Ring routing is unchanged; its 3 A JST XH rating
-requires 22 AWG power and ground leads for the 1.44 A LED budget plus controller.
+At that earlier placement review, ring routing was unchanged and the LED budget
+was 1.44 A plus controller; the full-white review above supersedes that budget.
+Its 3 A JST XH rating still requires 22 AWG power and ground leads.
 See the [console placement verification](reviews/console-pi-power-placement-1072/verification.md)
 and the [interface pinout](reviews/console-screen-connector-1072/verification.md).
 
 Live USB inspection identified APROTII touch at 12 Mbps and UPERFECT touch
 at 12 Mbps behind a 480 Mbps hub. Both connect directly to the Pi, so the
 UPERFECT path still needs 480 Mbps qualification through the IM02TS relay
-and selected cables. The relay footprint and default-off switch geometry are unchanged; the
+and selected cables. The relay footprint and default-off intent are retained;
+Revision J corrects the contact wiring described above. The
 4.5 V IM02TS relay now improves pickup margin on the 5 V host supply.
 
 See [revision H verification](reviews/screen-power-rev-h-1072/verification.md)
 and the [connector map and assembly notes](../hardware/kicad/screen_power/README.md).
-Revision I supersedes those exports. The September 24
+Revision I superseded those exports, but is itself withdrawn following the
+September 25 relay finding. The historical September 24
 [first-fabrication review](reviews/pcb-completion-1072/first-fabrication.md)
-removes the blanket pre-order measurement requirement; the existing circuit
-is retained for first fabrication. Assembled hardware remains unverified. The pre-order
+removed the blanket pre-order measurement requirement; that decision remains,
+subject to completing the Revision J correction and checks. Assembled hardware
+remains unverified. The pre-order
 audit corrected finished-hole allowances, added metal-fastener copper
 clearance on the screen board, and moved console CTRL analogue pull-ups to
 the Pico supply so Pi power cannot feed its unpowered ADC inputs. See the
