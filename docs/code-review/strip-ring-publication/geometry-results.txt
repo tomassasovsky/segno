@@ -1,0 +1,15 @@
+  strip_ring_diffuser.stl: closed, positive volume, bed-oriented
+  strip_ring_cup.stl: closed, positive volume, bed-oriented
+  strip_ring_shield.stl: closed, positive volume, bed-oriented
+  strip_ring_encoder_spacer.stl: closed, positive volume, bed-oriented
+  strip_ring_encoder_retainer.stl: closed, positive volume, bed-oriented
+  strip_ring_top_cover.stl: closed, positive volume, bed-oriented
+  strip_ring_centre_disc.stl: closed, positive volume, bed-oriented
+  strip_ring_bottom_cover.stl: closed, positive volume, bed-oriented
+PASS: 8 parts; 40 LEDs; 277.78 mm strip; minimum LED gap 1.66 mm; OD 96.62 mm
+PASS: coplanar face and supported cap/retainer, controller/strip clearance, removable base, opaque roof coverage, screw/cable paths, continuous board withdrawal, delivered assembly and 40 open light paths
+PASS: entire LED face 3.185 mm above PCB and 3.185 mm above highest board material in optical annulus; old elevation rejected; whole knob above face
+PASS: knob running gap 0.5 mm; nominal gross shaft insertion 8.00 mm; independent screw hold-down, nut access and cap removal checked; recessed knob rejected
+PASS: cap M3 x 5 / Ø7 head envelopes; 1 mm flat bearing webs, 4 mm thread engagement, 0.4 mm tip-to-floor clearance, 0.2 mm head recess at maximum 2.4 mm head height
+PASS: all five screws use M3 x 5 / Ø7 heads; three blind base pilots have 0.4 mm tip reserve; both Ø60 and Ø68 passive PCB references clear the enclosure and removal path
+NOT VERIFIED: actual strip dimensions/bend rating, print fit, adhesion, solder/wires, actual D-bore depth/grip/travel, installed enclosure, thermal/electrical load, optical output

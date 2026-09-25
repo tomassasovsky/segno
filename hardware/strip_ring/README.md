@@ -57,11 +57,13 @@ annulus. The encoder stays at its existing height.
 The standalone case is **Ø96.6 × 31.8 mm overall**, excluding the knob.
 Its flat bottom rests on the bench. Its nominal gap to the screen-bezel boundary at radius
 58.6 mm is 10.3 mm; that is a layout envelope check, not a complete current
-Fusion assembly clearance certification. The owner is using the **older,
+Fusion assembly clearance certification. This print set targets the **older,
 smaller passive encoder PCB**, with its 8-pin
 console header. Both documented **Ø60 mm and Ø68 mm** layouts have been checked;
 they share the same encoder and mounting height, so one print set fits either.
-The preview uses the Ø68 mm board. Its three PCB mounting holes are not used:
+The preview uses the Ø68 mm board. The newer carrier with direct-ring
+mounting pads and a strip connection is a separate board design; its fit is
+not represented by these historical references. Its three PCB mounting holes are not used:
 the existing encoder nut clamps the assembly. Remove the old LED ring and its
 mounting pins/posts before fitting the strip version.
 
@@ -204,10 +206,12 @@ metal over the printed top and assume the encoder stack will still fit.
 
 ## Electronics handoff — not changed by this prototype
 
-This version uses **40 pixels instead of 24**. Firmware pixel count and angular
-mapping must change before it becomes the operational console ring. The seam
+This version uses **40 pixels instead of 24**. The separate firmware
+publication [#1079](https://github.com/tomassasovsky/segno/pull/1079) owns
+the matching pixel count and angular mapping; use a verified 40-pixel build
+for operation. The seam
 has a longer LED-to-LED gap, so evaluate both a full ring and moving segments.
-The existing brightness/current limit must be reviewed for the larger count;
+The supply and brightness/current limit must support the larger count;
 do not run an unrestricted full-white test on the existing ring supply path.
 Use the established current-limited strip test setup for the first optical
 trial. No firmware, board wiring, or production enclosure files are modified
