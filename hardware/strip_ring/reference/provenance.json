@@ -1,0 +1,138 @@
+{
+  "assembly_family": "Passive EC11 encoder/ring interface PCB, 8-pin console header, no XIAO or USB connector",
+  "preview_reference": "controller_without_ring.step (68 mm passive PCB)",
+  "additional_fit_reference": "controller_60mm_without_ring.step (60 mm manufactured passive PCB)",
+  "translation_mm": [
+    -35.9825,
+    36.0175,
+    -8.595
+  ],
+  "datum": "Encoder shaft centred at XY=0. Historical encoder shoulder Z6.095 is placed at Z-2.5, preserving the 3.5 mm spacer and lower-retainer underside at Z1. The shaft top remains Z17.5. The slight PCB centre offset (+0.0175,+0.0175) is retained.",
+  "flush_stack_source": "#1063: 1 mm lower encoder retainer, 3.5 mm spacer, 2.5 mm board drop; the same EC11 footprint and vendor model are used by both passive revisions and the later 80 mm design.",
+  "encoder_step_git_blob": "b1a23a0a894048243b91f7768f33f10cbba7f933",
+  "encoder_footprint_git_blob": "7e6621b48d556176da95d5cd02d121a37dc945cc",
+  "sources": {
+    "68mm": {
+      "revision": "945803798481e00a468002d5c9cc531a55a346bb",
+      "source_pcb": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "source_pcb_sha256": "167aa7d9c317995c190e72d501aeb3621120f8a5862728ab9abc742ac6a1f02e",
+      "source_step": "hardware/kicad/out_ring/segno_ring_board.step",
+      "source_step_sha256": "3d8ffe86dcb24963000012f37558a55140672a4c5b1893bcd3e9033a53aedcfa",
+      "reference_file": "controller_without_ring.step",
+      "reference_sha256": "843a75cbbc29a4c2cbc8a33d799405acad0b2e2f547facf1be3e517bfe93e584",
+      "exported_solids": 23,
+      "retained_solids": 10,
+      "removed_solids": 13,
+      "removed": "13 negligible embossed encoder-lettering solids, each under 0.01 mm3; no functional STEP component removed. LED ring/pins already absent from the historical export.",
+      "pcb_outline_diameter_mm": 68,
+      "pcb_mounting_holes": "Three M3 clearance holes at radius 22 mm; not used by this enclosure",
+      "bounds_mm": {
+        "xmin": -33.9825,
+        "xmax": 34.0175,
+        "ymin": -33.9825,
+        "ymax": 34.0175,
+        "zmin": -16.68,
+        "zmax": 17.5
+      },
+      "bare_pcb_bounds_mm": {
+        "xmin": -33.9825,
+        "xmax": 34.0175,
+        "ymin": -33.9825,
+        "ymax": 34.0175,
+        "zmin": -8.595,
+        "zmax": -7.085
+      },
+      "shaft_bounds_mm": {
+        "xmin": -3.0,
+        "xmax": 3.0,
+        "ymin": -3.0,
+        "ymax": 3.0,
+        "zmin": 5.5,
+        "zmax": 17.5
+      },
+      "non_encoder_component_bounds_mm": {
+        "xmin": -17.0798,
+        "xmax": 14.7675,
+        "ymin": -18.8575,
+        "ymax": 4.0175,
+        "zmin": -16.68,
+        "zmax": -5.28
+      },
+      "encoder_shoulder_z_mm": -2.5,
+      "encoder_shaft_top_z_mm": 17.5,
+      "pcb_top_z_mm": -7.085,
+      "pcb_bottom_z_mm": -8.595,
+      "lowest_component_z_mm": -16.68
+    },
+    "60mm": {
+      "revision": "b8de6810a0ebfc3c6de6b4ab92736e02e295bbc3",
+      "source_pcb": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "source_pcb_sha256": "118e75a6ccddc6d7184eea73a2dc69f5c38aba9ce485bcd3d6fed76df8dc4ee2",
+      "source_step": "hardware/kicad/out_ring/segno_ring_board.step",
+      "source_step_sha256": "f5aa7feb8d08580e90e7083b63d2605a95dcf701d40bdb8960bc9553374d039a",
+      "reference_file": "controller_60mm_without_ring.step",
+      "reference_sha256": "7c1c51eb7587c3e31d10428f7bdaf956d662aaa80548b8f2e7ff0d574cfed417",
+      "exported_solids": 23,
+      "retained_solids": 10,
+      "removed_solids": 13,
+      "removed": "13 negligible embossed encoder-lettering solids, each under 0.01 mm3; no functional STEP component removed. LED ring/pins already absent from the historical export.",
+      "pcb_outline_diameter_mm": 60,
+      "pcb_mounting_holes": "Three M3 clearance holes at radius 26 mm; not used by this enclosure",
+      "bounds_mm": {
+        "xmin": -29.9825,
+        "xmax": 30.0175,
+        "ymin": -29.9825,
+        "ymax": 30.0175,
+        "zmin": -16.68,
+        "zmax": 17.5
+      },
+      "bare_pcb_bounds_mm": {
+        "xmin": -29.9825,
+        "xmax": 30.0175,
+        "ymin": -29.9825,
+        "ymax": 30.0175,
+        "zmin": -8.595,
+        "zmax": -7.085
+      },
+      "shaft_bounds_mm": {
+        "xmin": -3.0,
+        "xmax": 3.0,
+        "ymin": -3.0,
+        "ymax": 3.0,
+        "zmin": 5.5,
+        "zmax": 17.5
+      },
+      "non_encoder_component_bounds_mm": {
+        "xmin": -17.0798,
+        "xmax": 14.7675,
+        "ymin": -18.8575,
+        "ymax": 4.0175,
+        "zmin": -16.68,
+        "zmax": -5.28
+      },
+      "encoder_shoulder_z_mm": -2.5,
+      "encoder_shaft_top_z_mm": 17.5,
+      "pcb_top_z_mm": -7.085,
+      "pcb_bottom_z_mm": -8.595,
+      "lowest_component_z_mm": -16.68
+    }
+  },
+  "source_limitations": "Historical exports omit the LED ring module and its mount posts; they are not represented in either reference and must be removed from the physical PCB for the strip version. Wires, solder blobs, actual cable plugs, adhesive and print tolerances are not represented. Both files are board-layout references, not a measurement identifying which smaller revision the owner has. Physical fit remains unverified.",
+  "geometric_fit_verification": {
+    "date": "2026-09-23",
+    "layouts_checked": [
+      "68mm",
+      "60mm"
+    ],
+    "checks": "Both normalized passive layouts clear every current printed part, strip FPC, 40 LED packages and cap fasteners. Conservative continuous downward removal envelopes clear the retained housing after removal of the base, spacer, encoder retainer and centre cap.",
+    "minimum_component_to_case_floor_mm": 2.52,
+    "lowest_led_face_z_mm": -3.9,
+    "highest_board_material_in_optical_annulus_z_mm": -7.085,
+    "optical_annulus_inner_outer_radius_mm": [
+      26.65,
+      43.1
+    ],
+    "full_led_face_clearance_in_optical_annulus_mm": 3.185,
+    "physical_fit_verified": false
+  }
+}

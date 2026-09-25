@@ -1,0 +1,6 @@
+__pycache__/
+out/*.png
+out/*.zip
+out/*/
+!out/strip_ring_preview.png
+!out/strip_ring_print_colours.png

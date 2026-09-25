@@ -810,3 +810,15 @@ stacking, contextual dock**, session menu, **performance recorder UI +
 pedal arm/disarm**, **DAW device-chain export**). `flutter analyze` clean;
 macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
 `LE_FX_MAX = 8`, `kMaxOutputs = 8`.
+
+## September 2026 strip-fed encoder housing (#1075)
+
+`hardware/strip_ring/` contains the standalone 40-LED enclosure for the 50 mm
+encoder knob and both historical smaller passive PCBs. The current eight-part
+print set uses five M3 × 5 mm SSD screws: two hold the removable centre cap and
+three hold the bottom. Six parts are black; the diffuser and mixing cup are
+white. Source, oriented STLs, STEP assemblies, board references and geometry
+checks are included. This is a pre-sheet-metal optical prototype; the #1063
+Ring24 production stack and firmware are unchanged. Actual screw heads, knob
+grip/push travel, strip bend, wiring, opacity and diffusion remain physical
+gates under #1075 `autonomy:blocked-verify`.
