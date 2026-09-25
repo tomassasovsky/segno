@@ -12,7 +12,9 @@ The firmware, native engine, generated bindings, repository/control projections,
 Dart/C fixtures, behavioral tests and both firmware build workflows belong in
 one pull request because the Song state crosses all of those boundaries.
 The standalone eight-pixel diagnostic and its tests are included as the bench
-source from which the approved pill output was developed.
+source from which the approved pill output was developed. The approved
+[queue-fill and sustained-comet simulations](../../simulations/README.md) are
+also retained as standalone browser pages; their animation scripts are unchanged.
 
 This work closes #1076 and #1077 when merged. It retains
 `autonomy:blocked-verify`: physical Song handoff and the final ring appearance
@@ -36,6 +38,9 @@ clear all 40 connected ring pixels; its test seeds prior colour and verifies
 the complete blackout. The application/native source is unchanged since the recorded
 passing native, sanitizer, telemetry-disabled, real-library integration,
 Dart analysis, formatting, Bloc lint and package/application coverage checks.
+The standalone previews were checked in a browser: loop-end handoff, queue and
+cancel, pause/resume and individual-pixel views work; both pages render clearly.
+Their embedded JavaScript parses and preserves the approved animation source.
 Hosted CI status and the cumulative current-head review are reported on the PR.
 
 ## Device state and remaining checks
