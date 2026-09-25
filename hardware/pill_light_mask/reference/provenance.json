@@ -1,0 +1,35 @@
+{
+  "source_revision": "c95be92b (sheet-metal release, September 9 collar/cable/mid-mount updates)",
+  "source_generator_sha256": "e4d20000e15af4a4d7ad4f6d006029a5bd3d50372919f3a520835f4f767a0023",
+  "outer_width_mm": 88.75,
+  "outer_depth_mm": 118.47,
+  "inner_width_mm": 79.14999999999999,
+  "inner_depth_mm": 113.67,
+  "rear_wall_mm": 2.4,
+  "slope_degrees": 12.498241812070852,
+  "pedal_width_mm": 76.35,
+  "pedal_depth_mm": 109.87,
+  "pedal_height_mm": 27.099999999999998,
+  "cable_opening_width_mm": 8.6,
+  "cable_opening_height_mm": 13.5,
+  "rows": {
+    "front": {
+      "reference_sha256": "0b2efb2817d9ce7579c1853459b69964994ebbcb470da161efbebf8c7888abe5",
+      "release_step_sha256": "a842948cf8932b9553341da66ab617bd35a1bac1bf78174f2d0e4c6bbca299f2",
+      "rim_top_z_mm": 38.04315340151755,
+      "pedal_bottom_local_z_mm": -23.367014029832017,
+      "cable_bottom_local_z_mm": -16.417014029832018,
+      "cable_top_local_z_mm": -2.9170140298320177,
+      "volume_mm3": 53550.48356474517
+    },
+    "mid": {
+      "reference_sha256": "2c59668a12370650ab0c702d04843ca0ba168afaa483e4b1b0e6ddcd938c1571",
+      "release_step_sha256": "2644b6c200c11aa3871d1a5cdd530e57075295e7137b43d471a8804f44ba6c3b",
+      "rim_top_z_mm": 74.34502289623741,
+      "pedal_bottom_local_z_mm": -23.367014029832006,
+      "cable_bottom_local_z_mm": -16.417014029832004,
+      "cable_top_local_z_mm": -2.9170140298320035,
+      "volume_mm3": 165908.17817344517
+    }
+  }
+}
