@@ -183,10 +183,39 @@ final List<ControlInvariant> controlInvariants = [
     }
     return null;
   }),
+  ControlInvariant('song-queue-mirrors-engine', (c) {
+    final transport = c.looper.transport;
+    final queued = transport.songQueuedTrack;
+    final target = queued == null ? null : _trackAt(c.looper, queued);
+    final visible =
+        c.overlay.mode == InteractionMode.mute &&
+        transport.looperMode == LooperMode.song &&
+        queued != null &&
+        queued < PedalStateFrame.trackCount &&
+        (target?.hasContent ?? false);
+    if (c.frame.queuedTrack != (visible ? queued : null)) {
+      return 'queued track does not match visible Song queue';
+    }
+    if (!visible) {
+      return c.frame.queuedProgress == 0 ? null : 'hidden queue has progress';
+    }
+    final progress = (transport.songQueueProgress * 255).floor().clamp(0, 254);
+    if (c.frame.queuedProgress != progress) {
+      return 'queued fill does not match the engine wait';
+    }
+    if (c.frame.trackLeds[queued] != PedalTrackLed.green) {
+      return 'queued Song section is not green';
+    }
+    return null;
+  }),
   ControlInvariant('muted-dark-in-mute', (c) {
     if (c.overlay.mode != InteractionMode.mute) return null;
     for (final t in c.looper.tracks) {
+      final queuedSong =
+          c.looper.transport.looperMode == LooperMode.song &&
+          c.frame.queuedTrack == t.channel;
       if (t.muted &&
+          !queuedSong &&
           t.channel < c.frame.trackLeds.length &&
           c.frame.trackLeds[t.channel] != PedalTrackLed.off) {
         return 'muted track ${t.channel} shows '
@@ -214,7 +243,9 @@ final List<ControlInvariant> controlInvariants = [
   }),
   // While parked, the LEDs preview exactly what Rec/Play resumes.
   ControlInvariant('parked-preview-matches-resume', (c) {
-    if (c.overlay.mode != InteractionMode.mute || !_parked(c.looper)) {
+    if (c.overlay.mode != InteractionMode.mute ||
+        c.looper.transport.looperMode == LooperMode.song ||
+        !_parked(c.looper)) {
       return null;
     }
     for (var ch = 0; ch < c.frame.trackLeds.length; ch++) {

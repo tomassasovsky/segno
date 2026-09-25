@@ -8,10 +8,16 @@ LooperState _stateWith(
   List<Track> tracks, {
   int masterLengthFrames = 48000,
   int sampleRate = 48000,
+  LooperMode looperMode = LooperMode.multi,
+  int? songQueuedTrack,
+  double songQueueProgress = 0,
 }) => LooperState(
   transport: TransportState(
     isRunning: true,
     masterLengthFrames: masterLengthFrames,
+    looperMode: looperMode,
+    songQueuedTrack: songQueuedTrack,
+    songQueueProgress: songQueueProgress,
   ),
   tracks: tracks,
   status: EngineStatus(sampleRate: sampleRate),
@@ -214,6 +220,102 @@ void main() {
         ]),
       );
       expect(projectTrackLed(resurrected, overlay, 0), PedalTrackLed.green);
+    });
+  });
+
+  group('Song queued section projection', () {
+    LooperState song({
+      int? queued = 5,
+      double progress = 0,
+      bool committed = false,
+      LooperMode mode = LooperMode.song,
+    }) => _stateWith(
+      _tracksWith([
+        Track(
+          state: committed ? TrackState.stopped : TrackState.playing,
+          lengthFrames: 48000,
+        ),
+        Track(
+          channel: 5,
+          state: committed ? TrackState.playing : TrackState.stopped,
+          muted: !committed,
+          lengthFrames: 48000,
+        ),
+      ]),
+      looperMode: mode,
+      songQueuedTrack: queued,
+      songQueueProgress: progress,
+    );
+    const mute = ControlState(mode: InteractionMode.mute);
+
+    test('projects measured wait in either bank while source stays green', () {
+      for (final bank in [0, 1]) {
+        for (final pair in [(0.0, 0), (0.5, 127), (0.999, 254), (1.0, 254)]) {
+          final frame = projectFrame(
+            song(progress: pair.$1),
+            ControlState(mode: InteractionMode.mute, activeBank: bank),
+          );
+          expect(frame.looperMode, PedalLooperMode.song);
+          expect(frame.queuedTrack, 5);
+          expect(frame.queuedProgress, pair.$2);
+          expect(frame.trackLeds[0], PedalTrackLed.green);
+          expect(frame.trackLeds[5], PedalTrackLed.green);
+          expect(frame.activeBank, bank);
+        }
+      }
+    });
+
+    test(
+      'cancellation clears queued target; handoff extinguishes old source',
+      () {
+        final cancelled = projectFrame(song(queued: null), mute);
+        expect(cancelled.queuedTrack, isNull);
+        expect(cancelled.queuedProgress, 0);
+        expect(cancelled.trackLeds[0], PedalTrackLed.green);
+        expect(cancelled.trackLeds[5], PedalTrackLed.off);
+        final committed = projectFrame(
+          song(queued: null, committed: true),
+          mute,
+        );
+        expect(committed.queuedTrack, isNull);
+        expect(committed.trackLeds[0], PedalTrackLed.off);
+        expect(committed.trackLeds[5], PedalTrackLed.green);
+      },
+    );
+
+    test('queue is hidden outside Song/Mute and for cleared targets', () {
+      for (final mode in InteractionMode.values) {
+        if (mode == InteractionMode.mute) continue;
+        final frame = projectFrame(
+          song(progress: 0.5),
+          ControlState(mode: mode),
+        );
+        expect(frame.queuedTrack, isNull);
+        expect(frame.queuedProgress, 0);
+      }
+      for (final mode in LooperMode.values) {
+        if (mode == LooperMode.song) continue;
+        final frame = projectFrame(song(mode: mode, progress: 0.5), mute);
+        expect(frame.queuedTrack, isNull);
+        expect(frame.queuedProgress, 0);
+        expect(frame.looperMode.index, mode.code);
+      }
+      final emptyTarget = projectFrame(song(queued: 2), mute);
+      expect(emptyTarget.queuedTrack, isNull);
+      expect(emptyTarget.trackLeds[2], PedalTrackLed.off);
+    });
+
+    test('Song ignores Multi exclusion and parked-resume membership', () {
+      final frame = projectFrame(
+        song(),
+        const ControlState(
+          mode: InteractionMode.mute,
+          excluded: {0, 5},
+          parkedResume: {0},
+        ),
+      );
+      expect(frame.trackLeds[0], PedalTrackLed.green);
+      expect(frame.trackLeds[5], PedalTrackLed.green);
     });
   });
 

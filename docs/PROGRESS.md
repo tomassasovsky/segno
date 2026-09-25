@@ -10,6 +10,47 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## Song queue completion on the current console — #1077
+
+The cumulative firmware, app/native changes and bench diagnostic are now
+prepared for publication together under #1076 and #1077. See the
+[publication record](reviews/pedal-publication-1076-1077/verification.md) for
+current scope and remaining physical checks.
+
+Firmware 1.11 runs with the matching app/native update installed for 1.10 on the
+existing v2 console. Song playback queues the selected section until the current loop's
+next wrap; the queued pill fills over the remaining time, then changes to
+steady green only after the actual audio handoff. Cancellation and replacement
+follow engine state. The owner confirmed the continuous 40-pixel strip is fitted.
+Its sustained comet now has a brighter 192-output head, a gradual 30-pixel fade
+and a 1100 ms turn. A total ring-channel budget preserves the earlier current
+ceiling; startup, volume and breathing keep their former output. It retains
+the approved ten-pill behavior and
+original wiring. Native, app, protocol, real cross-layer integration and MCU
+build checks pass. The device reports firmware 1.11, audio started and zero
+restarts; recovery is disarmed and firmware 1.10 is retained for rollback.
+The pre-existing large-recording recovery memory fault is tracked as #1078;
+recordings were left untouched. See [verification](reviews/song-pill-completion-1077/verification.md)
+for review evidence, installation status and physical validation limits.
+The [sustained ring follow-up](reviews/sustained-ring-fade-1077/verification.md)
+records its firmware tests, five independent reviews and successful device trial;
+the owner still needs to judge the new appearance on the physical diffuser.
+
+## Ten live indicator pills — #1076
+
+Firmware 1.9 expands the existing console PCB to the owner-verified ten-pill
+chain of eight LEDs each. REC/PLAY keeps its approved loop-status behavior;
+MODE, four tracks, CLEAR and BANK use existing app state; STOP/UNDO acknowledge
+physical presses. The pill output now uses PIO/DMA, with a shared brightness
+budget suited to the old PCB power path. Protocol 5 and the existing ring and
+encoder wiring remain. This is separate from the new v3 PCB firmware.
+Firmware 1.9 was installed with its matching startup marker before the
+1.10 update above. All ten physical
+controls registered in the app, and the owner confirmed every pill looks
+correct after raising BANK to match the other status lights. The original
+firmware is retained for recovery. See
+[validation and device status](reviews/live-ten-pills-1076/verification.md).
+
 ## September 2026 Mac recording companion
 
 The standalone [Segno Transfer app](../apps/segno_transfer/README.md) implements

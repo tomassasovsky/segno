@@ -50,6 +50,20 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
   };
 }
 
+int? _queuedSongTrack(LooperState looper, ControlState overlay) {
+  final queued = looper.transport.songQueuedTrack;
+  if (overlay.mode != InteractionMode.mute ||
+      looper.transport.looperMode != LooperMode.song ||
+      queued == null ||
+      queued < 0 ||
+      queued >= looper.tracks.length ||
+      queued >= PedalStateFrame.trackCount ||
+      !looper.tracks[queued].hasContent) {
+    return null;
+  }
+  return queued;
+}
+
 /// The pedal-track LED for [channel] under the current mode.
 ///
 /// [boundChains] carries the resolved `enabled` of every track button that
@@ -80,6 +94,12 @@ PedalTrackLed projectTrackLed(
       : null;
   switch (overlay.mode) {
     case InteractionMode.mute:
+      if (looper.transport.looperMode == LooperMode.song) {
+        return channel == _queuedSongTrack(looper, overlay) ||
+                (track != null && isSounding(track))
+            ? PedalTrackLed.green
+            : PedalTrackLed.off;
+      }
       final armed = armedTracks(looper, overlay).contains(channel);
       return armed && !(track?.muted ?? false)
           ? PedalTrackLed.green
@@ -151,8 +171,20 @@ PedalStateFrame projectFrame(
   final lengthMicros = sampleRate > 0 && anyLoop
       ? (looper.transport.masterLengthFrames * 1000000 / sampleRate).round()
       : 0;
+  final queued = _queuedSongTrack(looper, overlay);
   final frame = PedalStateFrame(
     globalColor: global,
+    looperMode: switch (looper.transport.looperMode) {
+      LooperMode.multi => PedalLooperMode.multi,
+      LooperMode.sync => PedalLooperMode.sync,
+      LooperMode.song => PedalLooperMode.song,
+      LooperMode.band => PedalLooperMode.band,
+      LooperMode.free => PedalLooperMode.free,
+    },
+    queuedTrack: queued,
+    queuedProgress: queued == null
+        ? 0
+        : (looper.transport.songQueueProgress * 255).floor().clamp(0, 254),
     trackLeds: leds,
     activeBank: overlay.activeBank,
     selectedTrack: overlay.cursor,

@@ -44,6 +44,8 @@ size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8
 }
 
 size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
+  if (s->queued_track > PEDAL_TRACK_COUNT || s->queued_progress == 255 ||
+      (!s->queued_track && s->queued_progress)) return 0;
   uint8_t p[PEDAL_LINK_STATE_LEN];
   p[0] = (uint8_t)((s->clear_fade ? 0x01u : 0u) | (s->goodbye ? 0x02u : 0u) |
                    (s->performance_armed ? 0x04u : 0u) | (s->counting_in ? 0x08u : 0u));
@@ -58,6 +60,8 @@ size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
   p[16] = (uint8_t)((s->loop_length_micros >> 16) & 0xFFu);
   p[17] = (uint8_t)((s->loop_length_micros >> 24) & 0xFFu);
   p[18] = s->master_gain;
+  p[19] = s->queued_track;
+  p[20] = s->queued_progress;
   return pedal_link_encode(PEDAL_LINK_TYPE_STATE, p, PEDAL_LINK_STATE_LEN, out);
 }
 
@@ -69,6 +73,7 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   if (p[3] >= PEDAL_GLOBAL_COUNT) return 0;
   if (p[4] > 1) return 0;
   if (p[5] >= PEDAL_TRACK_COUNT) return 0;
+  if (p[19] > PEDAL_TRACK_COUNT || p[20] == 255 || (!p[19] && p[20])) return 0;
   for (uint8_t i = 0; i < PEDAL_TRACK_COUNT; i++) {
     if (p[6 + i] >= PEDAL_LED_COUNT) return 0;
   }
@@ -85,6 +90,8 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   out->loop_length_micros = (uint32_t)p[14] | ((uint32_t)p[15] << 8) |
                             ((uint32_t)p[16] << 16) | ((uint32_t)p[17] << 24);
   out->master_gain = p[18];
+  out->queued_track = p[19];
+  out->queued_progress = p[20];
   return 1;
 }
 

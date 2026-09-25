@@ -28,7 +28,8 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 5: CTRL kind NONE -- the board can now say a jack is EMPTY (a plug pulled
+/* 7: STATE carries the engine-owned Song queue target and completion.
+ * 5: CTRL kind NONE -- the board can now say a jack is EMPTY (a plug pulled
  * out, or the tip-normal contact on a switched jack), instead of reporting an
  * unplugged jack as a pedal at full toe. 4: CTRL (0x04) grew a contact byte
  * and reports an expression pedal's RAW position; calibration moved to segno.
@@ -36,7 +37,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 5u
+#define PEDAL_LINK_PROTOCOL_VERSION 7u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -50,7 +51,7 @@ extern "C" {
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
 
-#define PEDAL_LINK_STATE_LEN 19u
+#define PEDAL_LINK_STATE_LEN 21u
 #define PEDAL_LINK_MAX_PAYLOAD 32u
 #define PEDAL_LINK_MAX_FRAME (4u + PEDAL_LINK_MAX_PAYLOAD)
 
@@ -80,6 +81,8 @@ enum {
 };
 
 #define PEDAL_TRACK_COUNT 8u
+/* Zero means no queue; 1..8 addresses logical tracks 0..7. */
+#define PEDAL_NO_QUEUED_TRACK 0u
 
 /* The two CTRL jacks, in wire order. Each takes an expression pedal OR a
  * footswitch; the board tells them apart by what the tip does (a switch sits
@@ -139,6 +142,10 @@ enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_
  *   6..13  track_leds[0..7]
  *   14..17 loop_length_micros, uint32 little-endian
  *   18     master_gain, 0..255
+ *   19     queued_track: 0 none, 1..8 logical track index + 1
+ *   20     queued_progress: 0..254 of 255; 0 when no queue
+ * Completion never promotes playback locally. The engine commits at the
+ * source loop boundary and sends ordinary playing LEDs with no queue.
  */
 typedef struct pedal_state {
   uint8_t clear_fade;
@@ -153,6 +160,8 @@ typedef struct pedal_state {
   uint8_t track_leds[PEDAL_TRACK_COUNT];
   uint32_t loop_length_micros;
   uint8_t master_gain;
+  uint8_t queued_track;
+  uint8_t queued_progress;
 } pedal_state;
 
 /* Frame a payload. `out` must hold PEDAL_LINK_MAX_FRAME bytes. Returns the

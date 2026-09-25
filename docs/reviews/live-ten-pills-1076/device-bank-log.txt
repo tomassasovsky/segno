@@ -1,0 +1,10 @@
+** Programming Started **
+** Programming Finished **
+** Verify Started **
+** Verified OK **
+VERIFIED_HELLO protocol=5 firmware=1.9
+protocol=5 firmware=1.9
+2026-09-24T05:46:36.028542Z I pedal link: connected (firmware 1.9)
+LIVE_PILLS_1.9_INSTALLED_AND_CONNECTED
+NRestarts=0
+ActiveState=active

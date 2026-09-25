@@ -15,6 +15,8 @@ void main() {
     int loopLengthMicros = 0,
     int selectedTrack = 0,
     int activeBank = 0,
+    int? queuedTrack,
+    int queuedProgress = 0,
   }) => PedalStateFrame(
     globalColor: GlobalColor.off,
     trackLeds:
@@ -24,6 +26,8 @@ void main() {
     mode: mode,
     loopLengthMicros: loopLengthMicros,
     clearFadeActive: false,
+    queuedTrack: queuedTrack,
+    queuedProgress: queuedProgress,
   );
 
   List<PedalTrackLed> ledsWith(int channel, PedalTrackLed led) => [
@@ -34,10 +38,16 @@ void main() {
   LooperState looper({
     List<Track>? tracks,
     int masterLengthFrames = 0,
+    LooperMode looperMode = LooperMode.multi,
+    int? songQueuedTrack,
+    double songQueueProgress = 0,
   }) => LooperState(
     transport: TransportState(
       isRunning: true,
       masterLengthFrames: masterLengthFrames,
+      looperMode: looperMode,
+      songQueuedTrack: songQueuedTrack,
+      songQueueProgress: songQueueProgress,
     ),
     tracks: tracks ?? [for (var i = 0; i < 8; i++) Track(channel: i)],
   );
@@ -53,6 +63,81 @@ void main() {
     ).where((v) => v.startsWith('$name:')).toList();
     return hits.isEmpty ? null : hits.first;
   }
+
+  group('song-queue-mirrors-engine', () {
+    final song = looper(
+      tracks: tracksWith(
+        const Track(
+          channel: 5,
+          state: TrackState.stopped,
+          lengthFrames: 48000,
+          muted: true,
+        ),
+      ),
+      looperMode: LooperMode.song,
+      songQueuedTrack: 5,
+      songQueueProgress: 0.5,
+    );
+    const mute = ControlState(mode: InteractionMode.mute);
+
+    test(
+      'accepts engine progress and green queued target, including muted',
+      () {
+        final context = ControlContext(
+          looper: song,
+          overlay: mute,
+          frame: frame(
+            mode: PedalMode.play,
+            queuedTrack: 5,
+            queuedProgress: 127,
+            leds: ledsWith(5, PedalTrackLed.green),
+          ),
+        );
+        expect(violation(context, 'song-queue-mirrors-engine'), isNull);
+        expect(violation(context, 'muted-dark-in-mute'), isNull);
+      },
+    );
+
+    test('rejects missing queue, wrong progress and dark queued target', () {
+      for (final invalid in [
+        frame(mode: PedalMode.play),
+        frame(
+          mode: PedalMode.play,
+          queuedTrack: 5,
+          queuedProgress: 42,
+          leds: ledsWith(5, PedalTrackLed.green),
+        ),
+        frame(mode: PedalMode.play, queuedTrack: 5, queuedProgress: 127),
+      ]) {
+        expect(
+          violation(
+            ControlContext(looper: song, overlay: mute, frame: invalid),
+            'song-queue-mirrors-engine',
+          ),
+          isNotNull,
+        );
+      }
+    });
+
+    test('rejects queue metadata while the interaction mode hides it', () {
+      expect(
+        violation(
+          ControlContext(
+            looper: song,
+            overlay: const ControlState(mode: InteractionMode.fx),
+            frame: frame(
+              mode: PedalMode.fx,
+              queuedTrack: 5,
+              queuedProgress: 127,
+              leds: ledsWith(5, PedalTrackLed.blue),
+            ),
+          ),
+          'song-queue-mirrors-engine',
+        ),
+        isNotNull,
+      );
+    });
+  });
 
   group('depths-sane', () {
     test('rejects an EMPTY track with residual length', () {

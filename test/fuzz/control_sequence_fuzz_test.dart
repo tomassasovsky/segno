@@ -53,6 +53,84 @@ void main() {
       : null;
 
   group('corpus (found-bug regressions, replayed every run)', () {
+    test(
+      'Song queue fills over remaining time and hands off on the boundary',
+      () {
+        _inHarness((h, fa) {
+          h.engine.setLooperMode(LooperMode.song);
+          h.settle(fa);
+          for (var channel = 0; channel < 2; channel++) {
+            h.engine.record(channel: channel);
+            h.engine.pump(frames: 256, input: 0.5);
+            h.engine.stopTrack(channel: channel);
+            h.settle(fa);
+          }
+          // Stopping capture finalizes into playback; park both takes first.
+          for (var channel = 0; channel < 2; channel++) {
+            h.engine.stopTrack(channel: channel);
+          }
+          h.settle(fa);
+          h.engine.play();
+          h.engine.pump(frames: 64);
+          h.settle(fa);
+          expect(h.looper.transport.looperMode, LooperMode.song);
+          expect(h.looper.tracks[0].state, TrackState.playing);
+          expect(h.looper.tracks[1].state, TrackState.stopped);
+          expect(h.looper.tracks[0].lengthFrames, 256);
+          expect(h.looper.tracks[1].lengthFrames, 256);
+          h.control.setMode(InteractionMode.mute);
+          h
+            ..settle(fa)
+            ..run(const [_Tap(PedalButton.track2)], fa)
+            ..settle(fa);
+          expect(h.looper.transport.songQueuedTrack, 1);
+          expect(h.frame.queuedTrack, 1);
+          expect(h.frame.queuedProgress, 0);
+          expect(h.frame.trackLeds[0], PedalTrackLed.green);
+          expect(h.looper.tracks[1].state, TrackState.stopped);
+
+          // Half of the 192 remaining frames, not half of a fresh
+          // 256-frame loop.
+          h.engine.pump(frames: 96);
+          h.settle(fa);
+          expect(h.frame.queuedProgress, 127);
+          h
+            ..run(const [_Tap(PedalButton.recPlay)], fa)
+            ..settle(fa);
+          expect(h.frame.queuedTrack, 1);
+          expect(h.frame.queuedProgress, 127);
+
+          // Press the queued target again to cancel, then requeue from now.
+          h
+            ..run(const [_Tap(PedalButton.track2)], fa)
+            ..settle(fa);
+          expect(h.frame.queuedTrack, isNull);
+          expect(h.frame.queuedProgress, 0);
+          expect(h.looper.tracks[0].state, TrackState.playing);
+          h
+            ..run(const [_Tap(PedalButton.track2)], fa)
+            ..settle(fa);
+          expect(h.frame.queuedTrack, 1);
+          expect(h.frame.queuedProgress, 0);
+          h.engine.pump(frames: 95);
+          h.settle(fa);
+          expect(h.looper.tracks[0].state, TrackState.playing);
+          expect(h.looper.tracks[1].state, TrackState.stopped);
+          expect(h.frame.queuedProgress, lessThan(255));
+
+          h.engine.pump(frames: 1);
+          h.settle(fa);
+          expect(h.looper.tracks[0].state, TrackState.stopped);
+          expect(h.looper.tracks[1].state, TrackState.playing);
+          expect(h.frame.queuedTrack, isNull);
+          expect(h.frame.queuedProgress, 0);
+          expect(h.frame.trackLeds[0], PedalTrackLed.off);
+          expect(h.frame.trackLeds[1], PedalTrackLed.green);
+        });
+      },
+      skip: skip,
+    );
+
     test('redo after undo-to-empty relights the LED (2026-07-04)', () {
       _inHarness((h, fa) {
         h

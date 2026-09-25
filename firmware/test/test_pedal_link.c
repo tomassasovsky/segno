@@ -219,10 +219,47 @@ static void check_fixture(const char *dir, const char *name) {
   } else if (strcmp(name, "mode_counting_in.bin") == 0) {
     CHECK(st.counting_in == 1 && st.looper_mode == PEDAL_LOOPER_BAND && st.global_color == PEDAL_GLOBAL_RED,
           "mode_counting_in: fields differ");
+  } else if (strncmp(name, "song_queue_", 11) == 0) {
+    const int cancelled = strcmp(name, "song_queue_cancelled.bin") == 0;
+    const int progress = cancelled ? 0 : atoi(name + 11);
+    CHECK(st.looper_mode == PEDAL_LOOPER_SONG && st.mode == PEDAL_MODE_PLAY &&
+              st.queued_track == (cancelled ? 0 : 8) && st.queued_progress == progress,
+          "%s: queued track or progress differs", name);
   }
 }
 
 static void check_rejections(void) {
+  /* No queue is zero in both fields. Every track can report a partial fill;
+   * only the engine's subsequent playing state can report the handoff. */
+  pedal_state queued = {0}, decoded;
+  uint8_t state_frame[PEDAL_LINK_MAX_FRAME];
+  const uint8_t progress_values[] = {0, 127, 254};
+  for (uint8_t track = 0; track <= PEDAL_TRACK_COUNT; ++track) {
+    for (size_t i = 0; i < sizeof(progress_values); ++i) {
+      if (!track && i) continue;
+      queued.queued_track = track;
+      queued.queued_progress = progress_values[i];
+      CHECK(pedal_link_encode_state(&queued, state_frame) == PEDAL_LINK_STATE_LEN + 4,
+            "valid queue does not encode");
+      CHECK(pedal_link_decode_state(state_frame + 3, PEDAL_LINK_STATE_LEN, &decoded),
+            "valid queue does not decode");
+      CHECK(decoded.queued_track == track && decoded.queued_progress == progress_values[i],
+            "valid queue differs after round trip");
+    }
+  }
+  CHECK(!pedal_link_decode_state(state_frame + 3, 19, &decoded),
+        "obsolete STATE length accepted");
+  const uint8_t invalid_queue[][2] = {{9, 0}, {255, 0}, {1, 255}, {0, 1}};
+  for (size_t i = 0; i < sizeof(invalid_queue) / sizeof(*invalid_queue); ++i) {
+    state_frame[3 + 19] = invalid_queue[i][0];
+    state_frame[3 + 20] = invalid_queue[i][1];
+    CHECK(!pedal_link_decode_state(state_frame + 3, PEDAL_LINK_STATE_LEN, &decoded),
+          "invalid queue was decoded");
+    queued.queued_track = invalid_queue[i][0];
+    queued.queued_progress = invalid_queue[i][1];
+    CHECK(pedal_link_encode_state(&queued, state_frame) == 0,
+          "invalid queue was encoded");
+  }
   uint8_t frame[PEDAL_LINK_MAX_FRAME];
   size_t n = pedal_link_encode_button(PEDAL_BTN_UNDO, 1, frame);
   CHECK(n == 6, "button frame is %zu bytes, want 6", n);
