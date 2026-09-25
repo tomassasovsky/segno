@@ -190,23 +190,23 @@ within 0.0006 mm². Re-check before relying on them.
 
 ## How to run
 
-From `hardware/enclosure/` in a checkout of the branch, with
-`PY=/Users/Tomas/Documents/Work/opensource/loopy/hardware/enclosure/.venv/bin/python`:
+From `hardware/enclosure/` in a checkout of the branch, using its configured
+virtual environment. Set `ENCLOSURE_PYTHON=.venv/bin/python` from that directory:
 
 ```bash
-$PY segno_enclosure.py --report
+$ENCLOSURE_PYTHON segno_enclosure.py --report
 ```
 
 ```bash
-$PY segno_enclosure.py
+$ENCLOSURE_PYTHON segno_enclosure.py
 ```
 
 ```bash
-$PY -m unittest $(cd tests && ls test_*.py | sed 's/\.py$//;s/^/tests./')
+$ENCLOSURE_PYTHON -m unittest $(cd tests && ls test_*.py | sed 's/\.py$//;s/^/tests./')
 ```
 
 ```bash
-$PY _stomp_fea_beam.py
+$ENCLOSURE_PYTHON _stomp_fea_beam.py
 ```
 
 The full generator stops with "native formed export is stale" whenever a formed
