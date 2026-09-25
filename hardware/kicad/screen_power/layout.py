@@ -17,7 +17,9 @@ def place_components(variant, place, fps):
     place("J2", 7, 14.25, 90, centre=False)
     place("Q3", 44, 8, 180)
     place("Q4", 31, 8)
-    place("C1", 50, 16.5, 90)
+    # Leave room for the complete VHR mating-housing envelope, not just the
+    # bare header. The adjacent electrolytic retains its body clearance.
+    place("C1", 48.5, 16.5, 90)
     place("C2", 43, 16.5)
     place("R3", 17.25, 3.5)
     place("R4", 38, 3.5)

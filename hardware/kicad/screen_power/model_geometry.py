@@ -63,7 +63,39 @@ def vh():
     save(a, "JST_VH_B2P-VH_1x02_P3.96mm_Vertical")
 
 
+def electrolytic(name, diameter, height, pitch, lead):
+    # Panasonic FR nominal body dimensions; the footprint origin is pin 1.
+    # Worst-case body envelopes are documented separately for fit review.
+    a = cq.Assembly(name=name)
+    center = pitch / 2
+    can = cq.Workplane("XY").circle(diameter / 2).extrude(height-.2).translate((center, 0, 0))
+    # Split the sleeve surface so the polarity stripe is visible without
+    # increasing the published body envelope or hiding it inside the can.
+    stripe = can.intersect(box(center+diameter/2, 0, height/2, .2, .5, height-.4))
+    add(a, can.cut(stripe), "sleeve", cq.Color(.08, .25, .48))
+    add(a, stripe, "negative_stripe", IVORY)
+    top = cq.Workplane("XY").circle(diameter / 2-.1).extrude(.2)
+    add(a, top.translate((center, 0, height-.2)), "top")
+    for i, x in enumerate((0, pitch)):
+        leg = cq.Workplane("XY").circle(lead / 2).extrude(3)
+        add(a, leg.translate((x, 0, -3)), f"lead_{i}")
+    save(a, name)
+
+
+def film_capacitor():
+    a = cq.Assembly(name="WIMA_MKS2C031001A00KSSD")
+    # WIMA MKS2 100nF/63V: 7.2 x 2.5 x 6.5 body, 5mm pitch, 0.5mm leads.
+    add(a, box(2.5, 0, 3.25, 7.2, 2.5, 6.5), "body", cq.Color(.72, .04, .04))
+    for i, x in enumerate((0, 5)):
+        leg = cq.Workplane("XY").circle(.25).extrude(3)
+        add(a, leg.translate((x, 0, -3)), f"lead_{i}")
+    save(a, "WIMA_MKS2C031001A00KSSD")
+
+
 if __name__ == "__main__":
     relay()
     fuse()
     vh()
+    electrolytic("Panasonic_EEUFR1A221", 6.3, 11.2, 2.5, .5)
+    electrolytic("Panasonic_EEUFR1A151", 5, 11, 2, .5)
+    film_capacitor()

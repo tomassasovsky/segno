@@ -5,7 +5,7 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / screen1 power")
-    (rev "J prototype")
+    (rev "K prototype")
     (comment 1 "Discrete 5V switch. Host VBUS powers only its own signal relay coil.")
     (comment 2 "Physical verification required before release."))
   (lib_symbols

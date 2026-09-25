@@ -122,8 +122,12 @@ def build(variant):
             fp.Models().clear()
             for model in models:
                 filename = Path(model.m_Filename).name
-                if filename == "C_Rect_L7.2mm_W2.5mm_P5.00mm.step":
-                    filename = "C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2.step"
+                if ref == "C2":
+                    filename = "Panasonic_EEUFR1A221.step"
+                elif ref in ("C102", "C202"):
+                    filename = "Panasonic_EEUFR1A151.step"
+                elif ref in ("C1", "C101", "C201"):
+                    filename = "WIMA_MKS2C031001A00KSSD.step"
                 if not (HERE / "models" / filename).is_file():
                     raise ValueError(f"3D model missing for {ref}: {filename}")
                 model.m_Filename = "${KIPRJMOD}/../models/" + filename

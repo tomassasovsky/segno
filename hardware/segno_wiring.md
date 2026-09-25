@@ -1,3 +1,4 @@
+<!-- cspell:words derating unswitched Reterminate -->
 # Segno console — system wiring plan
 
 How the console's subsystems connect: the **console board v3** (Pico 2 / RP2350,
@@ -20,7 +21,10 @@ longer applies to anything.
               |   STUSB4500 trigger: ONE 20 V / 5 A contract
               |   fuse, T5A slow-blow, in series with the 20 V feed
               +--> BUCK_PI  (20->5 V) --> Pi 5 via its USB-C  --> Pi USB + NVMe
-              +--> BUCK_AUX (20->5 V) --> 7" + 16" screens | board J3 | WS2812
+              +--> BUCK_AUX (20->5 V) --+--> console J3 --> pills + ring
+                                       +--> screen-power J1 --> switched rail
+                                            +--> J103/J203 --> screen power
+                                            +--> J102/J202 --> touch VBUS
 
    DATA / CONTROL
      console board <---- keyed 2x20 ribbon, ~10 cm ----> Pi 40-pin header
@@ -29,7 +33,9 @@ longer applies to anything.
               Pi uart0 TX (GPIO14) -> 74AHCT125 -> 220R loop -> DIN OUT
         SWD   Pi GPIO24/25 -> the Pico's debug pads (cold flashing)
      console board <-- footswitches x10 | ring board (4-way) | CTRL TRS x2
-     Pi --HDMI x2--> 7" + 16" screens ;  screen touch --USB--> Pi (2 of 4 ports)
+     Pi --HDMI x2--> 7" + 15.6" screens
+     Pi USB2 x2 --> screen J101/J201 --> relays --> J102/J202 --> screen touch
+     Pi GPIO17 --> ribbon --> console J25 --> screen J2 (GPIO17 + GND)
      Pi's other 2 USB --> internal leads to the rear USB couplers
                           (the audio interface plugs in there, outside the box)
      power button --J8 -> board -> J9 flying lead--> the Pi 5's own J2 pads
@@ -43,14 +49,20 @@ longer applies to anything.
 
 ## 2. Power distribution (#754)
 
-**20 V in, 5 V made next to the loads.** 5 V at the inlet was tried and dropped:
-the usable window is **5.0–5.25 V** (the Pi 5 browns out under ~4.8 V and it and
-both screens cap at 5.25 V, so trimming low eats brown-out margin and trimming
-high eats the ceiling), and at the console's ~12 A even a heavy 1.5 m lead drops
-~0.3 V — *load-dependently*, so no single supply trim holds both idle and
-full-tilt inside that 250 mV band without remote sense. At 20 V the same 59 W is
-under 3 A, the lead drop is regulated away by the bucks, and the tight 5 V
-tolerance only has to survive ~100 mm of internal wiring.
+**20 V in, 5 V made next to the loads.** Local bucks keep the high-current
+5 V wiring short. The current design allowances total **71.79 W** at their
+outputs: 25 W for the Pi rail and 46.79 W for AUX. At an illustrative 85–90%
+buck efficiency, that needs approximately **79.8–84.5 W**, or **3.99–4.22 A at
+20 V**. These efficiencies are planning assumptions, not measurements of the
+retained bucks. The 20 V / 5 A / 100 W contract accommodates this model; it
+does not establish enclosed thermal capacity or startup response.
+
+The screen switch calculations assume **5.0–5.25 V at its J1 under load**.
+The retained fixed nominal 5 V buck plus cable and connector losses does not
+guarantee that minimum. Further voltage is lost through the switch, fuses and
+screen leads. The 6 A shared screen-board allowance therefore remains
+conditional on its stated electrical and thermal assumptions; neither a
+regulated 5.0 V at each screen nor an adjustable buck is implied.
 
 - **Inlet:** panel-mount USB-C coupler on a D punch (QIANRENON B0CQ4VD2N2,
   100 W, 10 Gbps). The 10 Gbps matters only because it means **all 24 ways are
@@ -68,8 +80,12 @@ tolerance only has to survive ~100 mm of internal wiring.
   unknown: verify 20 V with a meter/PD analyzer before claiming 100 W readiness.
   Twist the approximately 250 mm I2C run with ground past the bucks.
 - **Fuse:** 5×20 **T5A slow-blow** in the 20 V feed, ahead of both bucks.
-  Worst-case draw is ~3 A at 20 V, the PD contract ceiling is 5 A, and buck
-  inrush wants the slow curve.
+  The revised planning load is approximately 4.0–4.2 A at 20 V before startup
+  transients; the PD contract ceiling is 5 A. The exact fuse/holder and its
+  ambient derating must support that duty. This existing fuse choice has no
+  documented part-specific coordination with buck inrush/current limiting;
+  do not treat its 5 A marking as an active current limit or guaranteed clearing
+  time for a fault on the 5 V side.
 - **Two bucks (B0GGHN97TK ×2), split BY RAIL, never paralleled.** Two outputs
   tied together have no current sharing: one hogs the load until it limits,
   then they hunt.
@@ -77,7 +93,7 @@ tolerance only has to survive ~100 mm of internal wiring.
 | Buck | Loads | Design figure |
 | --- | --- | --- |
 | **BUCK_PI** | Pi 5, its USB devices and NVMe | 5.0 A / 25 W device budget |
-| **BUCK_AUX** | Both screens, console, 80 pill LEDs and 40 ring LEDs | About 9.41 A / 47 W for a full-white ring with normal pill indications and the allowances below |
+| **BUCK_AUX** | Both screens, console, 80 pill LEDs and 40 ring LEDs | 9.358 A / 46.79 W for a full-white ring with normal pill indications and the allowances below |
 
 The selected ring is a **40-pixel strip**, giving 120 LEDs with the ten
 8-pixel pills. The updated v3 console/carrier copper supports the ring at
@@ -98,23 +114,25 @@ This PCB change does not alter those animations or command a full-white mode.
 
 | AUX load allowance | Current |
 | --- | ---: |
-| Both screens, combined screen-board design envelope | 6.00 A |
+| Screen board: both main feeds, both touch feeds and its 0.05 A bleeder | 6.000 A |
 | 40 ring pixels, all RGB channels at 255 | 2.40 A |
 | All ten pills displaying their brightest normal indications | 0.498 A |
 | Idle allowance for 120 pixels | 0.120 A |
 | Console logic | 0.140 A |
 | Additional XIAO ring controller and buffer | 0.200 A |
-| Screen-rail 100 ohm bleeder | 0.050 A |
-| **Planning total** | **9.408 A** |
+| **Planning total** | **9.358 A** |
 
-The nominal 10 A buck has approximately 0.59 A headroom against this model.
+The nominal 10 A buck has approximately 0.64 A headroom against this model.
 That is not a guarantee of transient response, capacity at high temperature
 or screen current; physical validation remains part of the first assembled build.
-Relay coils take their power from Pi USB VBUS, not AUX.
+The bleeder is included once, inside the 6 A screen-board allowance. Relay coils
+take their power from Pi USB VBUS, not AUX. The 3 A main and 0.5 A touch branch
+ceilings cannot all be used simultaneously: their sum exceeds the shared 6 A
+allowance before the bleeder is counted.
 
 Allowing **all 80 pill LEDs as well as the ring** to display flat unrestricted
 white is a different requirement: 7.2 A of LED channels plus the screens and
-allowances above totals about **13.71 A**. That exceeds the retained 10 A AUX
+allowances above totals **13.66 A**. That exceeds the retained 10 A AUX
 supply. The ring PCB upgrade does not authorize that simultaneous system load.
 Normal pill rendering remains within the modeled budget with a full-white ring.
 
@@ -161,20 +179,75 @@ must not be flashed onto the old board.
   5 V pin.
 - A plain 5 V feed is not a PD source, so the Pi caps its downstream USB at
   600 mA unless **`usb_max_current_enable=1`** is set in `config.txt`. Required
-  here: the touch panels and the audio interface hang off that budget.
+  for the existing peripheral budget: the audio interface and rear USB ports
+  use Pi USB power. After the screen switch is fitted, each touch cable draws
+  only its approximately 34 mA relay-coil load from Pi VBUS; screen touch power
+  comes from switched AUX.
 - The console board takes 5 V from **BUCK_AUX on J3**, a 2-way **JST VH**
   (~10 A per contact) since #1062; it was a 4-way XH with doubled pins (~6 A). The
   pills' 5 V leaves on **J24**, the JST VH beside it, and their harness is a **5 V
   bus with a tap to each pill**, not a daisy chain through the strips: 4.8 A in
   series through the strip copper would drop enough to shift the far pills'
-  colour. Use 18 AWG for the bus and J3's feed. The data line and its GND ride the
+  colour. Use 18 AWG for the pill bus and **16 AWG for J3's input feed**, with
+  SVH-41T-P1.1 contacts for the latter. The selected standard VH connector's
+  10 A rating is specified with 16 AWG. The data line and its GND ride the
   same J24 plug (pins 2 and 1). See `kicad/console_board_pcb.py`
   (`_pill_power_bar`, the `PILL_POWER` gate).
-- **Unverified until a build (carried from #754):** the UPERFECT 15.6" is a
-  USB-C portable monitor, and many of those expect PD and run dim — or refuse
-  to light — on a plain non-PD 5 V feed. BUCK_AUX is exactly that. Verify the
-  panel at full brightness on bench 5 V **before** committing the harness; the
-  fallback is a dedicated PD trigger for the screen off the 20 V rail.
+- **Screen evidence (owner report, 25 September 2026):** the UPERFECT ran at
+  full brightness on a 5 V supply, showing about 1.3–1.4 A and up to 9 W in the
+  pattern sweep, with no startup reading above 10 W. APROTII showed about
+  0.8 A, up to 4 W at startup and 6 W in the sweep. The current and power fields
+  disagree, so they are not a precise simultaneous-current measurement. The
+  current fields imply 2.2 A combined; the steady power maxima imply 3.0 A at
+  5 V. Using 10 W plus 6 W gives a conservative 3.2 A screen allowance before
+  any separately counted touch current. Adding up to 1 A for both touch paths
+  and 0.05 A for the bleeder gives a **3.25–4.25 A screen-board planning bracket**,
+  or about **6.61–7.61 A AUX** with a full-white ring and normal pills. This does
+  not qualify the buck, new-board voltage drop, thermal behavior or inrush.
+
+### Screen power and touch harness
+
+Both main-power leads and both touch leads pass through the screen-power
+board. Keep the existing HDMI connections. A direct Pi-to-screen touch cable
+or unswitched AUX-to-screen power lead would bypass the cutoff and must not
+remain connected in parallel.
+
+| Connection | Pin map and harness |
+| --- | --- |
+| AUX buck → screen J1 | Pin 1 +5 V, pin 2 GND; dedicated short 16 AWG pair with VHR-2N housing and SVH-41T-P1.1 contacts. |
+| Console J25 → screen J2 | Pin 1 GPIO17, pin 2 GND, straight pin-for-pin; one short 22 AWG XH2 lead. |
+| Pi USB 2.0 ports → J101/J201 | Two USB-A male-to-XH4 leads: 1 VBUS, 2 D−, 3 D+, 4 GND. Host VBUS feeds each relay coil only. |
+| J102 → UPERFECT touch | XH4-to-USB-C male: 1 fused switched VBUS, 2 D−, 3 D+, 4 GND. Preserve the source-role CC resistor in the plug. |
+| J202 → APROTII touch | XH4-to-Micro-B male, same four-pin map. |
+| J103 → UPERFECT power | Pin 1 fused switched +5 V, pin 2 GND; separate main-power lead retaining the working USB-C screen termination. |
+| J203 → APROTII power | Pin 1 fused switched +5 V, pin 2 GND; separate main-power lead retaining the working Micro-B connection. Power pads are an alternative only after verifying their polarity and layout. |
+
+The two main-power leads must each be **no more than 30 cm**, with **20 AWG or
+larger copper conductors for both positive and return** and **3 A-rated
+terminations**. At the PCB use VHR-2N housings and SVH-41T-P1.1 contacts, which
+accept 20–16 AWG; match the specified insulation diameter. Reterminate the
+source end of the known-working screen power connection, preserving the
+screen-side USB-C/Micro-B plug and any CC/attachment electronics. The exact
+existing lead gauge has not been recorded: reuse is conditional on these
+requirements, not an assertion that any existing cable meets them. An
+unspecified charge-only cable or the selected 28 AWG XH data cable is not a
+substitute. [JST VH specifications](https://www.jst-mfg.com/product/pdf/eng/eVH.pdf).
+
+The selected 28 AWG leads are for touch/data only. Both screen ports may join
+internally, so the 750 mA touch fuse does not force screen current into the
+main lead or limit it actively to 500 mA. Keep the main leads connected and
+their ground returns intact. Pi USB ground and GPIO ground are signal
+references, not substitutes for the screen power-return pair. The board and
+all equipment still share ground; it is not galvanically isolated.
+
+The GPIO owner enables the board before Weston starts and requests off before
+normal HDMI shutdown, with a provisional five-second discharge wait. A powered
+but halted Pi needs those software hooks; the PCB does not detect missing HDMI.
+The owner confirmed both screens go fully dark when power and touch are
+removed while HDMI stays attached. Actual GPIO-controlled timing, touch
+enumeration and warm operation remain first-assembly checks. See the
+[connector and power acceptance matrix](../docs/reviews/screen-power-rev-k-1072/wiring-and-power.md)
+and the [board instructions](kicad/screen_power/README.md).
 
 ---
 
@@ -282,10 +355,13 @@ Notes that are load-bearing:
 ## 4. Raspberry Pi connections
 
 - **Power** — BUCK_PI into the Pi's USB-C. Not the header, not BUCK_AUX.
-- **USB** — the four ports are exactly consumed: 2× screen touch, 2× internal
-  A-to-A leads to the rear-panel couplers. No hub, no hat. The audio interface
+- **USB** — the four ports are exactly consumed: 2× screen touch through the
+  screen-power board, 2× internal A-to-A leads to the rear-panel couplers.
+  No separate hub or HAT is added; the UPERFECT has its own internal USB hub.
+  The audio interface
   plugs into a rear coupler from outside the box.
-- **Screens** — 2× micro-HDMI out; touch comes back over USB.
+- **Screens** — 2× micro-HDMI out; touch comes back over USB through the
+  screen-power board's switched data paths.
 - **Storage** — NVMe on the N07 board under the Pi (PCIe — no GPIO use beyond
   the GPIO4 claim noted above).
 - **Position** — under the 16" screen (#743, #753). Its own ports face inward

@@ -273,11 +273,19 @@ def check_geometry(board, errors, variant):
             or any(endpoints.count(point) != 2 for point in endpoints)):
         fail(errors, "geometry", f"Edge.Cuts must be the closed {w} × {h} mm outline with R{r} corners")
     zones = [z for z in board.Zones() if not z.GetIsRuleArea()]
-    if {z.GetLayer() for z in zones} != {p.F_Cu, p.B_Cu} or any(
-            net_name(z.GetNetname()) != "GND" for z in zones):
-        fail(errors, "ground_planes", "Copper zones must be GND on F.Cu and B.Cu only")
+    ground = [z for z in zones if net_name(z.GetNetname()) == "GND"]
+    if {z.GetLayer() for z in ground} != {p.F_Cu, p.B_Cu}:
+        fail(errors, "ground_planes", "Both outer layers need GND pours")
+    power_layers = {"AUX_5V": {p.F_Cu}, "COMMON_SOURCE": {p.F_Cu},
+                    "SWITCHED_5V": {p.F_Cu, p.B_Cu}}
+    if any(z.GetLayer() not in (p.F_Cu, p.B_Cu) or
+           (net_name(z.GetNetname()) != "GND" and
+            (z.GetZoneName() != "POWER_TAPER" or
+             z.GetLayer() not in power_layers.get(net_name(z.GetNetname()), set())))
+           for z in zones):
+        fail(errors, "ground_planes", "Only outer GND pours and explicit power tapers on their routed layer are allowed")
     if any(not z.GetFilledPolysList(z.GetLayer()).OutlineCount() for z in zones):
-        fail(errors, "ground_planes", "Both outer GND pours must be filled")
+        fail(errors, "ground_planes", "All GND pours and power tapers must be filled")
     for track in board.GetTracks():
         if not isinstance(track, p.PCB_VIA) and track.GetLayer() not in (p.F_Cu, p.B_Cu):
             fail(errors, "ground_planes", "Copper exists outside the two outer layers")
@@ -407,7 +415,7 @@ def check_power(board_path, errors, variant):
     This checks copper geometry, not its thermal/current rating.
     """
     paths=[(1.9,("J1","1"),("Q3","2")),(1.9,("Q3","3"),("Q4","3")),
-           (1.5,("J1","1"),("C2","1"))]
+           (1.5,("J1","1"),("C2","1")),(.8,("J1","1"),("C1","1"))]
     for ch in (1,2):
         n=ch*100
         paths += [(1.9,("Q4","2"),(f"F{n+i}","1")) for i in (1,2)]

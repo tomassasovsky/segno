@@ -1,0 +1,70 @@
+{
+  "date": "2026-09-25",
+  "purpose": "Finished Revision K screen power copper and corrected assembly models; unchanged full-white console/ring exports",
+  "archives": {
+    "console-v3": {
+      "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
+      "sha256": "88960bd4d96e7f06e7c9a60fb59f99a8735a10ec35e0865b3b64e40c7efab2eb",
+      "members_checked": 12,
+      "members": {
+        "segno_console_board-B_Silkscreen.gbr": "0591da4c51f61e284f60c6583ea5e9039db926f6d46efd5fc72d1547da0c742e",
+        "segno_console_board-B_Cu.gbr": "70048026f31c8315c2774acdcaef7290822c9060355fba077dd5ff03ff72fcfd",
+        "segno_console_board-Edge_Cuts.gbr": "a8ae0f60c2c83b6abf5029a2c8c6cfd5ee6c78fc510f0a597930307480b59876",
+        "segno_console_board-B_Mask.gbr": "0124557ef3423206d744a5b1adcca23b9fa4145c47f6c5aaaa594dcad4358ecc",
+        "segno_console_board-B_Paste.gbr": "290fc1d9805cdc8a9ade7f295ffd5c56ef159dc30ac99be2f9b92d43c6c6868b",
+        "segno_console_board-F_Silkscreen.gbr": "e36b418a0782826632052af51e78c2c6ad492b79e9ae2087b77ca354e8e2dc71",
+        "segno_console_board-F_Cu.gbr": "2826c906f50b3b0aafd5c6fa1272920693c8f9df953acca2299b098ad9d35c4b",
+        "segno_console_board-PTH.drl": "bdc1ef7c2594f017ad7079c0ad97a40d23a5a9335fb541b5235981f81ad24a43",
+        "segno_console_board-F_Mask.gbr": "56de45636de035b3457f32552ba7ef9c32eb19f85db294cf506e5d17729ee161",
+        "segno_console_board-NPTH.drl": "c1ac4847726c9d796276034c432ee528b2a906c17c72eb357d9878761510f41f",
+        "segno_console_board-job.gbrjob": "347793822fcab776829896862a8d7b8cdd393967e547f37c97493d03c6977799",
+        "segno_console_board-F_Paste.gbr": "21a153691d9d0e7bcd7a731d276388abce8ba22b87532509d4614836b9d68626"
+      },
+      "upload_name": "segno-console-v3-gerbers.zip"
+    },
+    "ring-white": {
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "sha256": "d27aff2c3694b6c0f48cedd2f0bf6e9b38093dabef02558c775b456732f006ef",
+      "members_checked": 10,
+      "members": {
+        "segno_pedal_ring-B_Cu.gbr": "73bffa327fe55c8e448bc520c9a9037b1864dac6fbe3106bfa19a725054d9113",
+        "segno_pedal_ring-B_Mask.gbr": "d048dad40b1481c5e0157512e1759c9f46fb8eb3712fadaddecb989e670e2a49",
+        "segno_pedal_ring-B_Silkscreen.gbr": "824c8ac016cd024a78f74f7c8d39bf72c83bc66815956a65ff95660317b3d3e1",
+        "segno_pedal_ring-Edge_Cuts.gbr": "7bebcae36447340b8849b653c99689e98b01366d1789835aa75b21ace0864ebe",
+        "segno_pedal_ring-F_Cu.gbr": "d2b3fdecd724345d7d7e83fca0cf447eeb9c813405266ef567476ebe060b1132",
+        "segno_pedal_ring-F_Mask.gbr": "47b3f0167f81cb7121f15b7e6e9e037883553dd6ba858186c93013b5296f8f59",
+        "segno_pedal_ring-F_Silkscreen.gbr": "1abe0786f4a2580073190aad37f4817952695056c32b919984fd239315c06aa5",
+        "segno_pedal_ring-NPTH.drl": "70a731c739437c608146612c1115e7944db1d1985b9afedc49e450b85034af1f",
+        "segno_pedal_ring-PTH.drl": "51375b7c3c174e00e37ca4bc871a0a21742c71b4cc5d224e60755926d099ff53",
+        "segno_pedal_ring-job.gbrjob": "b99bb1a41a6d3fd9b8e0b8113702a7e9b117c0b59fc502a39fbe90cb6e2e2852"
+      },
+      "upload_name": "segno-ring-white-gerbers.zip"
+    },
+    "screen-power-rev-k": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_k_gerbers.zip",
+      "sha256": "171034c87f3d371db9f7017a196960bdb7e01c249c1178eba90abb3ab2f05e3c",
+      "members_checked": 12,
+      "members": {
+        "screen_power_hand-B_Cu.gbr": "b9727ed248d8b8e60002289789cf5bb0011651fa17213f2ad61a6fdc9ea9ad12",
+        "screen_power_hand-B_Mask.gbr": "c2f5a343ae9fc63d7dadee6a721e43a767a8860c69c670af2066389f1c47c62c",
+        "screen_power_hand-B_Silkscreen.gbr": "f79bd8457d920ce7653df37c72904350cead249579f84a045566c1e42723098a",
+        "screen_power_hand-Edge_Cuts.gbr": "0a9bcef560b4e253e3971ff5fb02b6987c4448cc9dd755411ae8d138daafb360",
+        "screen_power_hand-F_Cu.gbr": "940c9311f3171640d7f5bac9e895937183f827056af70364fabf815ab1052bed",
+        "screen_power_hand-F_Mask.gbr": "8156b7be158bc67fbc3c89c38501859a5a34c7669789fe92c7554af8bb0abfe7",
+        "screen_power_hand-F_Silkscreen.gbr": "6c7a01a3064ae2f4840d563ac5a2188afc10481963e966c6c119e4554cb37c9d",
+        "screen_power_hand-NPTH-drl_map.pdf": "066c678e5e37f0ad391166c2d4d7a3d26cdc36c781f2d7deb7dcd47960a3b6f0",
+        "screen_power_hand-NPTH.drl": "ef751c30652c98b79fb91e9e62557dabd8d006141f5dd7238a5a57a845c2c408",
+        "screen_power_hand-PTH-drl_map.pdf": "3734ad760549c9636e62ca44ba210a5b80266d989b4cfc8e671201a101b144c9",
+        "screen_power_hand-PTH.drl": "450c26c810bffafe38edc09fd57bb2daebc1e45848cd50cf5d4179678a845504",
+        "screen_power_hand-job.gbrjob": "183b8bf78051fc03483b65ae6aec294694c8b488f693d0325ff80f900b3e5cc8"
+      },
+      "upload_name": "segno-screen-power-rev-k-gerbers.zip"
+    }
+  },
+  "hardware_pr": "https://github.com/tomassasovsky/segno/pull/1080",
+  "screen_board_sha256": "d35484d551cf8f526f62c4356accbff0492c28999beb0e8830801c39f00c83da",
+  "screen_source_baseline_commit": "9a5798be6c4ea9b0aae2a88fe7168b6751cab441",
+  "withdrawn_screen_rev_i_sha256": "25370578cbb1184f6d2bc1913c88746ff87ce91809779c7878d62f4af735a878",
+  "screen_verification": "docs/reviews/screen-power-rev-k-1072/verification.md",
+  "superseded_screen_rev_j_sha256": "9905da38f648b6d1726805055df89a5082520ff9954127e79b8a4b4746b63c98"
+}

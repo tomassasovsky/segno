@@ -1,3 +1,4 @@
+<!-- cspell:words EEUFR WIMA KSSD -->
 <!-- cspell:words DPDT AXICOM Littelfuse Lumberg Wuerth dshapes -->
 # Screen-power assembly models
 
@@ -9,7 +10,7 @@ not included in the populated board model.
 
 ## Custom models
 
-These three models were drawn for Segno with `model_geometry.py` and CadQuery
+These six models were drawn for Segno with `model_geometry.py` and CadQuery
 2.8. They are original simplified assembly geometry under the repository's
 GPL-3.0 license, not manufacturer-supplied CAD. Dimensions are nominal except
 where explicitly described as maximum; molded details and lead bends are
@@ -20,6 +21,22 @@ simplified. Use the linked manufacturer drawings for mechanical qualification.
 | Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm | 10 × 6 × 5.65 mm; 0.25 mm standoff; eight 0.4 × 0.2 mm leads, 5.08 mm row spacing, 3.2 mm lead projection | [TE IM02TS, customer drawing 1462037-4](https://www.te.com/en/product-1-1462037-3.html) |
 | Fuse_Littelfuse_251_P12.70mm | Maximum 7.11 × diameter 2.8 mm body; 0.64 mm leads formed at 12.7 mm pitch; 0.4 mm assembly standoff | [Littelfuse 251](https://www.littelfuse.com/assetdocs/fuse-251-datasheet?assetguid=f47a0bb7-8ede-4679-9646-7114c3787688) |
 | JST_VH_B2P-VH_1x02_P3.96mm_Vertical | 7.86 × 8.5 × 10.9 mm header envelope, 3.96 mm pitch | [JST VH standard header](https://www.jst-mfg.com/product/pdf/eng/eVH.pdf) |
+| Panasonic_EEUFR1A221 | Nominal diameter 6.3 × height 11.2 mm, 2.5 mm pitch, 0.5 mm leads; body center between pads | [Panasonic FR-A, pages 1 and 4](https://industrial.panasonic.com/cdbs/www-data/pdf/RDF0000/ABA0000C1259.pdf) |
+| Panasonic_EEUFR1A151 | Nominal diameter 5.0 × height 11.0 mm, 2.0 mm pitch, 0.5 mm leads; body center between pads | [Panasonic FR-A, pages 1 and 4](https://industrial.panasonic.com/cdbs/www-data/pdf/RDF0000/ABA0000C1259.pdf) |
+| WIMA_MKS2C031001A00KSSD | Nominal 7.2 × 2.5 × 6.5 mm body, 5.0 mm pitch, 0.5 mm leads | [WIMA catalogue, printed page 35](https://www.wima.de/wp-content/uploads/media/WIMA_Main_Catalogue_2026.pdf) |
+
+The capacitor models show bodies seated at the PCB surface and leads trimmed to
+3 mm below that surface for assembly. They do not show the much longer stock
+Panasonic leads or the WIMA stock 6−2 mm lead option. The stripe marks the
+Panasonic negative pin 2. Model dimensions are nominal; fit review uses the
+Panasonic maximum diameter/height envelopes of 6.8 × 12.7 mm (C2) and
+5.5 × 12.5 mm (C102/C202). These include the published +0.5 mm diameter and
++1.5 mm body-length tolerances. No unspecified WIMA body tolerance is assumed.
+
+Revision K replaces the generic capacitor models: those previously understated
+the two electrolytic heights and overstated the film-capacitor height. C1 moves
+1.5 mm left to clear the published mated VH housing envelope; the other
+component positions and connectors remain unchanged.
 
 Insulation, relay markings and connector latches are represented
 only sufficiently to identify orientation and occupied space. Models do not
@@ -38,7 +55,6 @@ Sources are the matching libraries in the
 
 | Files | Upstream library |
 | --- | --- |
-| CP_Radial*, C_Rect* | Capacitor_THT.3dshapes |
 | D_DO-* | Diode_THT.3dshapes |
 | JST_XH* | Connector_JST.3dshapes |
 | R_Axial* | Resistor_THT.3dshapes |

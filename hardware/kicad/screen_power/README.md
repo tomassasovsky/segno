@@ -3,7 +3,7 @@
 <!-- cspell:words SUP SUM Rds backfeed Micro pulldown Vgs Littelfuse Lumberg MMBT DMODEL stackup microstrip heatsinks -->
 # Screen power and touch switch
 
-Revision J retains the **two-layer, 68 × 76 mm** hand-soldered board with **3 mm
+Revision K retains the **two-layer, 68 × 76 mm** hand-soldered board with **3 mm
 rounded corners**, purple solder mask and white silkscreen. The extra 4 mm
 of width gives the shared power rail its own strip beyond the USB connectors.
 The control section stays at the upper left, power enters above the screen
@@ -28,13 +28,16 @@ either relay state. This supersedes the earlier screen-board readiness claim.
 Revision J moves the upstream data nets to commons 3/6, retaining normally open
 contacts 4/5 and leaving normally closed contacts 2/7 unused.
 
-Use the Revision J archive identified in the [verification record](../../../docs/reviews/screen-power-rev-j-1072/verification.md),
-which records the corrected checks, independent reviews and export hashes.
+Revision K retains that correction and finishes the power routing, capacitor
+models and mated-connector clearance. Use the Revision K archive identified in
+the [verification record](../../../docs/reviews/screen-power-rev-k-1072/verification.md),
+which records the checks, independent reviews and export hashes. Revision J
+is superseded; Revision I remains withdrawn.
 No additional owner measurements are prerequisites for buying the bare PCBs.
 The September 24 [first-fabrication decision](../../../docs/reviews/pcb-completion-1072/first-fabrication.md)
 remains the basis for that scope, with its Revision I screen-board approval
 superseded. Its lead-hole, metal-fastener and console ADC power-domain corrections
-are retained. The full-white console and ring designs are unchanged by Revision J.
+are retained. The full-white console and ring designs are unchanged by Revision K.
 CAD validation does not establish thermal performance, USB compliance, screen
 compatibility, enclosure fit, or shutdown timing. Issue: [#1072](https://github.com/tomassasovsky/segno/issues/1072).
 
@@ -43,7 +46,7 @@ holes**, with no surface-mount parts or external electronic modules. Both
 outer copper layers, `F.Cu` and `B.Cu`, have filled GND pours. There are no
 inner copper layers. Select purple solder mask and white silkscreen when ordering.
 The mounting holes are at (4, 4), (64, 4), (4, 72) and (64, 72) mm; the two
-right-hand holes move with the wider edge. Revision J retains 3.5 mm unplated
+right-hand holes move with the wider edge. Revision K retains 3.5 mm unplated
 holes and 4.25 mm copper/track/via keepouts on both faces, allowing M3 hardware
 with a maximum 7 mm washer/head diameter and the lower power branch routed
 above this clearance. Older revision packages, including
@@ -143,8 +146,11 @@ The new output connectors provide ordinary 5 V. They do not implement USB PD
 or USB-C current advertisement. Reuse the **existing working power connection**
 to each screen; preserve any USB-C attachment/current-signaling parts in that
 connection. Do not attach an arbitrary bare USB-C receptacle to the two pins.
-The exact existing buck-to-screen connector arrangement remains to be confirmed
-before specifying the final power harness. APROTII power pads may be used only
+Each main-power lead must be at most **30 cm**, with **20 AWG or larger
+conductors for both +5 V and ground** and terminations rated for **3 A**. At
+the PCB, use VHR-2N housings with SVH-41T-P1.1 contacts within their 20–16 AWG
+crimp range. The existing screen-end termination must meet these conditions;
+its wire gauge is not yet recorded. APROTII power pads may be used only
 after checking polarity, cable rating, strain relief and the screen's pad layout.
 
 Never connect a direct Pi-to-display touch cable around this board: that would
@@ -235,12 +241,21 @@ terminals. Native DRC separately verifies ground connectivity.
 
 The shared rail runs along the right edge at 4.5 mm width. The MOSFET feed and
 fuse branches use 3 mm copper, with 2 mm main outputs and 0.8 mm touch-power
-connections. Revision J widens the short MOSFET necks to 1.9 mm and the C2 feed
-to 1.5 mm, and adds three dedicated shared-power stitching vias alongside the
-existing plated-through fuse-pad connection. Its relay reroute retains paired
-USB geometry and the front-side ground reference. The Revision J
-record contains its CAD and export checks; copper temperature rise remains an
-assembled acceptance item.
+connections. Revision K keeps 1.9 mm approaches local to the MOSFET pins and
+widens the entire central source bridge, including its bends, to 3 mm. Eight
+small filled copper tapers make the pin-to-bridge and branch-to-bus transitions
+gradual. They overlay continuous tracks, so the minimum-width connectivity
+check does not depend on a pour alone. These tapers are the only power zones;
+both outer GND pours remain filled.
+
+The 1.5 mm C2 feed and three dedicated shared-power stitching vias are retained.
+C1 moves 1.5 mm left for the full mated VH housing, with a deliberate 0.8 mm
+local supply route. The revised capacitor models use the actual BOM body
+sizes; the maximum envelopes were checked separately. USB copper is unchanged:
+paired bottom-layer routing, no data vias and a checked front-side GND return.
+The [Revision K record](../../../docs/reviews/screen-power-rev-k-1072/verification.md)
+contains the CAD/export evidence; copper temperature rise remains an assembled
+acceptance item.
 
 These choices follow [TI's USB layout guidance](https://www.ti.com/lit/an/slla414/slla414.pdf)
 (short pairs, continuous return planes, through-hole connector signals on the
@@ -324,6 +339,14 @@ thermal qualification. The datasheet's 40 °C/W value uses a specified board
 mounting condition and is not established for this upright assembly. Neither
 startup safe operating area nor fuse-clearing behavior is proven by the review.
 
+The resistance estimate requires at least −4.5 V gate drive, for which the
+Vishay part specifies its 15 mΩ maximum. The calculation uses 5.0–5.25 V **at
+J1**, not merely the buck label. A fixed 5 V buck plus connector and wire drop
+does not establish that lower bound; below it, the guaranteed-resistance
+calculation needs measured gate voltage. This is a qualification limit, not
+evidence that the switch stops working immediately below 5.0 V. See the
+[power and wiring audit](../../../docs/reviews/screen-power-rev-k-1072/wiring-and-power.md).
+
 No heatsinks are expected for these screens; Q3/Q4 remain upright in their
 existing positions. Confirm temperature at maximum brightness in the warmed
 assembly as part of the existing acceptance checks. No exact optional heatsink
@@ -365,7 +388,7 @@ It checks native ERC/DRC, full schematic/netlist/PCB parity, actual USB and
 console GPIO connectivity, circuit boundaries, assembly types and drive margins.
 Revision J adds an independent relay contact-state check and fault injection
 for the disconnected-common error; verification results are in the
-[Revision J record](../../../docs/reviews/screen-power-rev-j-1072/verification.md).
+[Revision K record](../../../docs/reviews/screen-power-rev-k-1072/verification.md).
 Fault injection checks that missing, disabled or unresolved 3D models,
 broken USB/control copper, missing USB ground reference, extra copper layers,
 a host power bridge,
@@ -376,7 +399,7 @@ fresh successful check and unchanged input hashes.
 
 ## First assembly and acceptance
 
-The Revision J verification record identifies the checked bare-board archive.
+The Revision K verification record identifies the checked bare-board archive.
 The following existing checks apply to its assembly and system acceptance:
 
 1. **HDMI-only visual check passed (owner report, 2026-09-22).** With the Pi

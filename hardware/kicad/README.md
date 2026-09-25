@@ -19,8 +19,10 @@ September 24 hole allowances, order settings and USB programming connection.
 **Revision I screen Gerbers are withdrawn.** The independent review found
 disconnected relay commons, so neither touch path could conduct. Revision J
 corrects the common contacts to 3/6 and retains normally open contacts 4/5;
-corrected checks and exports are recorded in the
-[Revision J verification](../../docs/reviews/screen-power-rev-j-1072/verification.md).
+Revision K retains that correction, finishes the power-trace transitions,
+and corrects assembly models and mated-connector clearance. Current checks
+and exports are recorded in the
+[Revision K verification](../../docs/reviews/screen-power-rev-k-1072/verification.md).
 Use the archive identified in that record. No additional owner measurements
 are prerequisites for bare-board fabrication. The full-white console and ring
 designs are unchanged.

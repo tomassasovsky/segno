@@ -22,6 +22,22 @@ def route(variant):
     def join(a,b,bends=(),width=USB_WIDTH,layer=p.B_Cu):
         assert pad(*a).GetNetname()==pad(*b).GetNetname(),(a,b)
         track(pad(*a).GetNetname(),[at(*a),*bends,at(*b)],width,layer)
+    def taper(net,a,b,start_width,end_width,layer=p.F_Cu):
+        # Add a gradual copper transition over an already continuous track.
+        # The underlying track retains the validated minimum power width.
+        dx,dy=b[0]-a[0],b[1]-a[1];length=math.hypot(dx,dy)
+        nx,ny=-dy/length,dx/length
+        zone=p.ZONE(board);zone.SetLayer(layer);zone.SetNet(nets[net])
+        zone.SetZoneName('POWER_TAPER');zone.SetAssignedPriority(20)
+        zone.SetLocalClearance(p.FromMM(.2));zone.SetMinThickness(p.FromMM(.05))
+        zone.SetPadConnection(p.ZONE_CONNECTION_FULL)
+        zone.SetIslandRemovalMode(p.ISLAND_REMOVAL_MODE_ALWAYS);zone.SetLocked(True)
+        poly=zone.Outline();poly.NewOutline()
+        for at,width,sign in ((a,start_width,1),(b,end_width,1),
+                              (b,end_width,-1),(a,start_width,-1)):
+            v=point(at[0]+sign*nx*width/2,at[1]+sign*ny*width/2)
+            poly.Append(v.x,v.y)
+        board.Add(zone)
     def pair(a,b,centre,breakout=False):
         # Mitered parallel offsets for the two-layer coupled microstrip.
         normals=[]
@@ -72,23 +88,32 @@ def route(variant):
              [(23.2,y-4.6),(23.9,y-5.3),(28.75,y-5.3),
               (29.75,y-4.3),(29.75,y+6.2)],.25,p.F_Cu)
     # The front carries the 4.5mm shared trunk; main outputs use 2mm
-    # bottom branches. The device-pin necks carry the whole shared load, so
-    # they run at the 1.9mm the 1.905mm TO-220 pads allow between neighbours.
+    # bottom branches. Keep the narrower approaches local to closely spaced
+    # device pins, then widen smoothly into the 3mm common-source bridge.
     q3d,q3s,q4d,q4s=at('Q3',2),at('Q3',3),at('Q4',2),at('Q4',3)
     track('AUX_5V',[at('J1',1),(55,14),(52,11),(47,11)],3,p.F_Cu)
     track('AUX_5V',[(47,11),(45.5,11),(44,9.5),q3d],NECK,p.F_Cu)
+    taper('AUX_5V',(45.5,11),(47,11),NECK,3)
     # The input bulk capacitor gets its own short wide branch above the can
     # instead of a routed signal-width tail; it is the only local reservoir.
     cap=at('C2',1)
     track('AUX_5V',[(47,11),(45.5,12.5),(44.4,12.5),
                     (cap[0],12.5+44.4-cap[0]),cap],1.5,p.F_Cu)
-    track('COMMON_SOURCE',[q3s,(41.46,10.5),(39.96,12)],NECK,p.F_Cu)
-    track('COMMON_SOURCE',[q4s,(33.54,10.5),(35.04,12)],NECK,p.F_Cu)
-    track('COMMON_SOURCE',[(35.04,12),(39.96,12)],3,p.F_Cu)
+    # The film bypass also has a deliberate local feed around its GND pad.
+    film=at('C1',1)
+    film_x=film[0]-1.7
+    track('AUX_5V',[(47,11),(film_x,11+47-film_x),
+                    (film_x,film[1]-1.7),film],.8,p.F_Cu)
+    track('COMMON_SOURCE',[q3s,(41.46,10.5)],NECK,p.F_Cu)
+    track('COMMON_SOURCE',[q4s,(33.54,10.5)],NECK,p.F_Cu)
+    track('COMMON_SOURCE',[(33.54,10.5),(35.04,12),(39.96,12),(41.46,10.5)],3,p.F_Cu)
+    taper('COMMON_SOURCE',(41.46,9),(41.46,10.5),NECK,3)
+    taper('COMMON_SOURCE',(33.54,9.5),(33.54,10.5),NECK,3)
     # Feed the edge bus through the plated fuse terminal, and stitch that
     # transition with dedicated vias for parallel copper paths independent
     # of the fuse terminal's plated barrel.
     track('SWITCHED_5V',[q4d,(31,12)],NECK,p.B_Cu)
+    taper('SWITCHED_5V',(31,10.3),(31,12),NECK,3,p.B_Cu)
     f=at('F101',1)
     track('SWITCHED_5V',[(31,12),(36,17),(36,18.5),(37.5,20),(43,20),(47,24),(f[0]-1,24),f],3,p.B_Cu)
     track('SWITCHED_5V',[f,(f[0]-1,24),(46.6,24)],3,p.F_Cu)
@@ -96,7 +121,9 @@ def route(variant):
         v=p.PCB_VIA(board);v.SetPosition(point(*stitch));v.SetWidth(p.FromMM(.9));v.SetDrill(p.FromMM(.45))
         v.SetViaType(p.VIATYPE_THROUGH);v.SetLayerPair(p.F_Cu,p.B_Cu)
         v.SetNet(nets['SWITCHED_5V']);v.SetLocked(True);board.Add(v)
-    track('SWITCHED_5V',[(POWER_BUS_X,28),(POWER_BUS_X,65.25)],4.5,p.F_Cu)
+    track('SWITCHED_5V',[(POWER_BUS_X,29),(POWER_BUS_X,65.25)],4.5,p.F_Cu)
+    for y in (29,43,54,65.25):
+        taper('SWITCHED_5V',(61.25 if y==65.25 else 60.5,y),(POWER_BUS_X,y),3,4.5)
     for ch,y in enumerate(USB_ROWS[variant],1):
         n=100*ch
         for offset in (1,2):

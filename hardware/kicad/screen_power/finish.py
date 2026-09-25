@@ -42,7 +42,7 @@ def finish(variant):
     board = p.LoadBoard(str(path))
     title=board.GetTitleBlock()
     title.SetTitle('Segno screen power')
-    title.SetRevision('J')
+    title.SetRevision('K')
     board.SetTitleBlock(title)
     for item in list(board.GetDrawings()):
         if isinstance(item, p.PCB_TEXT):
@@ -53,9 +53,9 @@ def finish(variant):
         t.SetLayer(layer);t.SetMirrored(layer==p.B_SilkS);board.Add(t)
     from layout import DIMENSIONS, USB_ROWS
     w,h = DIMENSIONS[variant]
-    label('SEGNO SCREEN POWER / REV J',32,1.4,.8,p.B_SilkS)
+    label('SEGNO SCREEN POWER / REV K',32,1.4,.8,p.B_SilkS)
     label('SEGNO SCREEN POWER',26,50.5,.9)
-    label('REV J',27,h-2.5,.8)
+    label('REV K',27,h-2.5,.8)
     label('5V IN',56,6.5,1.0)
     label('CTRL J25',6,8,1.0)
     label('5V IN',56,6.5,1.0,p.B_SilkS)

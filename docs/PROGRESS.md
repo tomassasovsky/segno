@@ -22,9 +22,15 @@ independent contact-state regression guard. It also widens MOSFET necks to 1.9 m
 and the C2 feed to 1.5 mm, with three dedicated shared-power stitching vias.
 Checks and replacement exports are recorded in the
 [Revision J verification](reviews/screen-power-rev-j-1072/verification.md).
-Use the corrected archive identified there; no additional owner measurements
-are prerequisites for bare-board fabrication. Earlier screen-board readiness claims
-below are historical and superseded by this correction.
+Revision K retains that correction and replaces the current screen archive.
+It uses short 1.9 mm MOSFET approaches, a full 3 mm central bridge and gradual
+transitions into the 4.5 mm distribution rail. Correct BOM-sized capacitor
+models replace undersized previews, and C1 moves 1.5 mm to clear the mated
+power plug. The system wiring diagram now routes both screens through this
+board, specifies the main-power leads and accounts for the full AUX/PD budget.
+Use the archive in the [Revision K verification](reviews/screen-power-rev-k-1072/verification.md).
+No additional owner measurements are prerequisites for bare-board fabrication.
+Earlier screen-board readiness claims below are historical and superseded.
 
 The 6 A shared switch allowance includes both main outputs, both touch outputs
 and the 0.05 A bleeder. The 3 A main and 500 mA touch branch ceilings are not

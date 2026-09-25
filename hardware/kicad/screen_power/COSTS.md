@@ -1,4 +1,4 @@
-# Screen-power revision I component cost estimate
+# Screen-power revision K component cost estimate
 
 <!-- cspell:words DigiKey MOSFETs onsemi Littelfuse VHR SXH XHP SVH SUP -->
 
@@ -7,6 +7,10 @@ cost **$33.66** using published single-unit distributor prices. Allow **$35–40
 for board components**, including modest price movement and spare small parts.
 This excludes the bare PCB, wiring, mounting hardware, assembly labor, tools,
 shipping, taxes and import charges. It is an estimate, not a reserved basket.
+
+Revision K uses the same 37 components and quantities as Revision J. The
+prices below retain the dated September 22 snapshot; they were not refreshed
+by the routing and model corrections.
 
 The four mounting holes are PCB features, not four purchased components.
 No USB-C modules or additional Pi ribbon are required.
