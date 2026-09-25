@@ -1,5 +1,10 @@
-<!-- cspell:words MOSFET MOSFETs SUP Rds onsemi -->
+<!-- cspell:words MOSFET MOSFETs SUP Rds onsemi milliohm kilohms kilohm unassembled -->
 # First-fabrication decision — 24 September 2026
+
+**September 25 update:** the console and ring archives below are superseded by
+the [40-pixel full-white revision](../ring40-full-white-1072/verification.md).
+Use that revision's hashes and exports for a new order. The screen archive and
+the decision to proceed without further pre-order measurements remain unchanged.
 
 No pre-order voltage measurement is required from the owner. The earlier
 blanket requirement for cable, current, temperature and shutdown measurements
