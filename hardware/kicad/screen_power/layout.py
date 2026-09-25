@@ -45,9 +45,11 @@ def place_components(variant, place, fps):
     place("R10", 28.89, 23.0)
     place("R9", 28.89, 26.6, 180)
     # GPIO input stage keeps its own bay between the two left-hand plugs.
+    # Q1 sits at the bay's east end: the only front-copper channel past the
+    # USB rows runs up the left edge, so its terminals stay out of it.
     place("R1", 6.65, 19.16, 180)
     place("R2", 6.65, 22.42)
-    place("Q1", 4.54, 26.54)
+    place("Q1", 8.54, 26.54)
     # The relay-enable buffer moves between the two relay channels: the
     # control area cannot hold it once the gate driver is in place, and the
     # gates it drives sit either side of this band.
@@ -75,7 +77,7 @@ def place_components(variant, place, fps):
     # Reference designators sit in the clear gaps left by the packing above:
     # every one is outside its own courtyard, so no designator hides under a
     # body in the 3D view, and none overlaps another footprint's silkscreen.
-    refs = {"R1": (2.84, 16.8), "R2": (8.2, 24.61), "Q1": (2.79, 29.67),
+    refs = {"R1": (2.84, 16.8), "R2": (2.75, 24.67), "Q1": (4.88, 25.21),
             "R3": (37.39, 5.2), "R4": (50.36, 5.3), "R8": (44, 75),
             "C5": (15.7, 6.1), "C4": (24.21, 10.44), "D2": (18.64, 3.99),
             "U1": (17.94, 9.82), "C3": (20.29, 26.65), "U2": (30.77, 16.2),
