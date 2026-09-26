@@ -1,0 +1,17 @@
+{
+  "revision": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+  "sha256": {
+    "hardware/kicad/screen_power/check.py": "606f16b80779c4362920c209bdcd1473acfb9b95b705500d4d3b9108fc0f7093",
+    "hardware/kicad/screen_power/export.py": "533651f48a44ecd498c3993e362eb75aaabda1d3d982343b86d88eb718c9f105",
+    "hardware/kicad/screen_power/build.sh": "58c506aaf72675b578f0ad8d7f533877cd2e77b72d9adecd32742643637a6424",
+    "hardware/kicad/screen_power/router.py": "37f7cfeac163f80c62a940455b88ea82d4aaec6cb28ea7eea566330795d4cdf7",
+    "hardware/kicad/screen_power/cleanup.py": "250a4ca530796cded61d5d1b660b5d01d1ceff215e0ff44b1265c5a3e19ad93b",
+    "hardware/kicad/screen_power/finish.py": "f230664f50047ed983798e4c5d2056457f55775f45311b6daea5dc6aaf7f786e",
+    "hardware/kicad/screen_power/pcb.py": "7d50aacdb44947ba1fc7beb3006c4c8eee2b8cc140dfdc713899f5b6a7d46d9a",
+    "hardware/kicad/screen_power/hand_checks.py": "92e6f017791bd62e2accb6adf20ade2c4ad0ea7652942574c6d03fb5ae35e655",
+    "hardware/kicad/round_routes.py": "0de2ded7f6c115f5465c98f6408e9514169ed63ffa6335a147ceea692bfd0a05",
+    "hardware/kicad/board_stackup.py": "f7630440e8c489f82db1597320dffb9161fac4240202d5cc446474a8cff88f65",
+    "docs/reviews/screen-power-rev-l-1072/verify_fabrication.py": "c8476a670c4ff269025df60cc2cd0bbd4121c4abb46b3e5c297496b56c53f5a1",
+    ".github/workflows/main.yaml": "a12ab483cf4a4632ecaa17cee18f26b86ef0ac976ea504ae4bad958df4c85666"
+  }
+}

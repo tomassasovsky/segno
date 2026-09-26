@@ -1,0 +1,25 @@
+{
+  "reference_count": 66,
+  "reference_differences": {},
+  "board_text_exact": false,
+  "board_text_source_only": [
+    [
+      "PD",
+      135195000,
+      129000000,
+      1000000,
+      200000,
+      5
+    ]
+  ],
+  "board_text_native_only": [
+    [
+      "PD",
+      135195000,
+      128999998,
+      1000000,
+      200000,
+      5
+    ]
+  ]
+}

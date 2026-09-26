@@ -1,0 +1,32 @@
+{
+  "screen": {
+    "path": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+    "before_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+    "after_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
+    "non_silk_sexpression_exact": true
+  },
+  "screen-placed": {
+    "path": "hardware/kicad/screen_power/hand/screen_power_hand.placed.kicad_pcb",
+    "before_sha256": "c14921ed198b39ea02ae1413d99dc5b53f258d42e8076e0640f4d6744b51b63a",
+    "after_sha256": "e1a6ca142fcb4fd2d765c5b1acab74d7173e3495e22f473a9d22a3771810ec41",
+    "non_silk_sexpression_exact": true
+  },
+  "console": {
+    "path": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+    "before_sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+    "after_sha256": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
+    "non_silk_sexpression_exact": true
+  },
+  "console-placed": {
+    "path": "hardware/kicad/out_console/console.placed.kicad_pcb",
+    "before_sha256": "4e062733930f25758f6ce0c46119e2ec2168bbdb5a091a4bcd06880b5e81fb6b",
+    "after_sha256": "f159f366e441a95a3e55892ba032c0eb33f20c0913ed866cf44239a746f93ad9",
+    "non_silk_sexpression_exact": true
+  },
+  "ring": {
+    "path": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+    "before_sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+    "after_sha256": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+    "non_silk_sexpression_exact": true
+  }
+}

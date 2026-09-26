@@ -1,0 +1,34 @@
+{
+  "review_head": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+  "component_count": 48,
+  "populated_component_count": 44,
+  "connected_pad_count": 115,
+  "net_count": 31,
+  "manual_contract_matches_generated_netlist": true,
+  "manual_contract_matches_fresh_schematic_export": true,
+  "manual_contract_matches_native_pads": true,
+  "bom_values_mpn_footprint_parity": true,
+  "host_vbus_exact_boundaries": true,
+  "unconnected_pad_tracks": {
+    "U1.1": 0,
+    "U1.6": 0,
+    "U1.7": 0,
+    "K101.2": 0,
+    "K101.7": 0,
+    "K201.2": 0,
+    "K201.7": 0
+  },
+  "sha256": {
+    "circuit.py": "5fb3b82bc4f65d7a3bd8ed4abbdba5ffd497cf17e5acc1ffc4ae6eb00957083f",
+    "switch_circuit.py": "9869038ee6a4a3c8d7459db4d09ee7e4bdb20d54c6102d3a10e4fd16c95164ec",
+    "hand/components.json": "d7314facfc086f053da13be9d093f5889c60a5170ff76e1ba23706386e596e0d",
+    "hand/bom.csv": "f526c41466273c6bd22cd753778475238d4949eb94a3b37b53c47955c0b0e664",
+    "hand/screen_power_hand.net": "09dd14c271635261a5b8b2875c93a834915cb1b4450afd092bcca72012c5d955",
+    "hand/screen_power_hand.kicad_pcb": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+    "hand/screen_power_hand.kicad_sch": "620a12d07661fe1cdd2413112878c3b24136ca4971517fed1e569a1e52378b41",
+    "hand/gate_drive.kicad_sch": "83fe0aaf838c6b0b10031fe11e0132c9617b18769137d7aef61d9bf830f81770",
+    "hand/shared_power.kicad_sch": "bf355c84f74c61a1b18120ed0cf0e8aa34a0f4497037e7647b96d1f34f1a9a0b",
+    "hand/screen1_touch.kicad_sch": "b74ed1678db3dd780d755441b2538b6ec4e74d465c3cacea5a787a5d4d4d27c9",
+    "hand/screen2_touch.kicad_sch": "5a523d2a51ae35288018b40b846903c4d1a4267c39f3f97f8f0a97203362972e"
+  }
+}

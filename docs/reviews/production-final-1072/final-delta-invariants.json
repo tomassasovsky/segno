@@ -1,0 +1,32 @@
+{
+  "baseline": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+  "boards": {
+    "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb": {
+      "baseline_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+      "current_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
+      "equal": true,
+      "compared_groups": 1679,
+      "removed": [],
+      "added": [],
+      "changed": []
+    },
+    "hardware/kicad/out_console/segno_console_board.kicad_pcb": {
+      "baseline_sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+      "current_sha256": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
+      "equal": true,
+      "compared_groups": 3556,
+      "removed": [],
+      "added": [],
+      "changed": []
+    },
+    "hardware/kicad/segno_pedal_ring.kicad_pcb": {
+      "baseline_sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+      "current_sha256": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+      "equal": true,
+      "compared_groups": 590,
+      "removed": [],
+      "added": [],
+      "changed": []
+    }
+  }
+}
