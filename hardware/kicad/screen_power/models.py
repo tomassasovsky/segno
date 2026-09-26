@@ -8,6 +8,10 @@ def check_models(board, project_dir, errors):
         ref = fp.GetReference()
         if ref.startswith("H"):
             continue  # Bare mounting holes intentionally have no solid body.
+        if (ref in ("TP101", "TP102", "TP201", "TP202") and
+                str(fp.GetFPID().GetLibItemName()) ==
+                "TestPoint_THTPad_D2.0mm_Drill1.0mm"):
+            continue  # Bare shield-drain solder pads have no component body.
         models = list(fp.Models())
         reason = None
         if not models:

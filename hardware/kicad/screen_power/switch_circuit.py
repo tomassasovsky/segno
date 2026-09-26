@@ -1,7 +1,7 @@
 """Hand-soldered screen-power circuit.
 
 Opposed P-channel MOSFETs switch AUX while blocking either direction when off.
-The USB host's VBUS never reaches a panel; it powers only its signal relay coil.
+The USB host's VBUS never reaches a panel; it only qualifies its AUX-powered relay.
 """
 import builtins
 import csv
@@ -38,7 +38,7 @@ def build_switch(variant, schematic=False):
                             pins={str(k): v for k, v in pins.items() if v}))
         return obj
 
-    def resistor(ref, value, a, b, power=False):
+    def resistor(ref, value, a, b, power=False, group="Control"):
         footprint = (AXIAL)
         spelling = {"1k": "1K", "100k": "100K", "4.7k": "4K7", "22k": "22K",
                     "5.6k": "5K6", "2.4k": "2K4", "10k": "10K"}
@@ -47,7 +47,7 @@ def build_switch(variant, schematic=False):
         else:
             mpn = ("MFR-25FBF52-" + spelling[value])
         part("Device", "R", ref, value + (" 1W 1%" if power else " 1%"), footprint,
-             {1: a, 2: b}, mpn)
+             {1: a, 2: b}, mpn, group)
 
     def bypass(ref, rail, group="Control"):
         part("Device", "C", ref, ("100nF 63V"),
@@ -125,13 +125,17 @@ def build_switch(variant, schematic=False):
                  "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
                  {1: rail, 2: pre+f"_{side}_N", 3: pre+f"_{side}_P", 4: "GND"},
                  "B4B-XH-A(LF)(SN)", group)
+            part("Connector", "TestPoint", f"TP{n+offset}", "SHIELD",
+                 "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm", {1: "GND"},
+                 "PCB pad", group)
+            records[-1]["quantity"] = 0
         header(f"J{n+3}", f"SCREEN {ch} POWER", pre+"_MAIN_5V", group=group)
         for offset, value, rail, mpn in [(1, "4A fast", pre+"_MAIN_5V", "0251004.MXL"),
                                         (2, "750mA fast", pre+"_TOUCH_5V", "0251.750MXL")]:
             part("Device", "Fuse", f"F{n+offset}", value, "screen_power:Fuse_Littelfuse_251_P12.70mm",
                  {1: "SWITCHED_5V", 2: rail}, mpn, group)
-        # IM02TS is the pin-compatible 4.5 V coil option. The lower pickup
-        # threshold improves warm restart margin on the Pi's 5 V USB supply.
+        # AUX supplies the coil, including during USB suspend. Host VBUS only
+        # drives a 10k/100k presence divider, independently of GPIO enable.
         # TE 108-98001 terminal assignment: each changeover set is driven from
         # the middle terminal. Set A is common 3 with break 2 / make 4; set B is
         # common 6 with break 7 / make 5. The host side therefore lands on the
@@ -139,16 +143,22 @@ def build_switch(variant, schematic=False):
         # both data lines open. Terminals 2 and 7 stay unconnected.
         part("Relay", "IM03", f"K{n+1}", "IM02TS",
              "screen_power:Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm",
-             {1: host, 8: coil, 3: pre+"_UP_N", 4: pre+"_DN_N",
+             {1: "AUX_5V", 8: coil, 3: pre+"_UP_N", 4: pre+"_DN_N",
               6: pre+"_UP_P", 5: pre+"_DN_P"}, "1-1462037-3", group)
         part("Transistor_FET", "2N7000", f"Q{n+1}", "TN0702",
              (TO92),
-             ({1: "GND", 2: "DATA_ENABLE", 3: coil}),
+             ({1: "GND", 2: "DATA_ENABLE", 3: pre+"_RELAY_STACK"}),
              "TN0702N3-G", group)
+        part("Transistor_FET", "2N7000", f"Q{n+2}", "TN0702",
+             TO92, {1: pre+"_RELAY_STACK", 2: pre+"_HOST_PRESENT", 3: coil},
+             "TN0702N3-G", group)
+        resistor(f"R{n+1}", "10k", host, pre+"_HOST_PRESENT", group=group)
+        resistor(f"R{n+2}", "100k", pre+"_HOST_PRESENT", "GND", group=group)
         part("Diode", ("1N4007"), f"D{n+1}", ("1N4007"),
              ("Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal"),
-             {1: host, 2: coil}, ("1N4007-E3/54"), group)
-        bypass(f"C{n+1}", host, group)
+             {1: "AUX_5V", 2: coil}, ("1N4007-E3/54"), group)
+        # Do not retain a host-side reservoir that delays VBUS-loss detection.
+        bypass(f"C{n+1}", "AUX_5V", group)
         part("Device", "C_Polarized", f"C{n+2}", "150uF 10V", "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm",
              {1: pre+"_TOUCH_5V", 2: "GND"}, "EEU-FR1A151", group)
 
@@ -165,7 +175,8 @@ def build_switch(variant, schematic=False):
     with (out / "bom.csv").open("w") as stream:
         writer = csv.DictWriter(stream, fieldnames=["ref", "value", "footprint", "mpn", "group", "quantity"], lineterminator="\n")
         writer.writeheader()
-        writer.writerows({key: row[key] for key in writer.fieldnames} for row in records)
+        writer.writerows({key: row[key] for key in writer.fieldnames}
+                         for row in records if row["quantity"] > 0)
     if schematic:
         from schematic import write_schematic
         write_schematic(builtins.default_circuit, out, variant)

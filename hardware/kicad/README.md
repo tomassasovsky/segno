@@ -16,7 +16,11 @@ September 24 hole allowances, order settings and USB programming connection.
 
 ## Console connection to the screen-power board
 
-**Revision L is the current screen-board design.** It adds a through-hole
+**Revision M is in progress; screen ordering remains on hold.** It corrects
+USB suspend current with AUX-powered coils and per-host presence detection,
+and adds shield-drain pads. The retained Revision L Gerbers must not be ordered.
+See the [revision status](../../docs/reviews/screen-power-usb-revision-1072/review.md).
+The board retains the through-hole
 negative gate supply to improve MOSFET drive margin, retaining the two-layer
 68 × 76 mm outline, direct USB-to-XH leads and existing connector anchors.
 The corrected relay contact mapping from Revision J remains. Use only the

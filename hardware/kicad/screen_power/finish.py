@@ -12,7 +12,7 @@ STACK = '''
       (layer "F.Paste" (type "Top Solder Paste"))
       (layer "F.Mask" (type "Top Solder Mask") (color "Purple") (thickness 0.01524) (epsilon_r 3.8))
       (layer "F.Cu" (type "copper") (thickness 0.035))
-      (layer "dielectric 1" (type "core") (thickness 1.53) (material "FR4") (epsilon_r 4.4))
+      (layer "dielectric 1" (type "core") (thickness 1.53) (material "FR4") (epsilon_r 4.5))
       (layer "B.Cu" (type "copper") (thickness 0.035))
       (layer "B.Mask" (type "Bottom Solder Mask") (color "Purple") (thickness 0.01524) (epsilon_r 3.8))
       (layer "B.Paste" (type "Bottom Solder Paste"))
@@ -42,7 +42,7 @@ def finish(variant):
     board = p.LoadBoard(str(path))
     title=board.GetTitleBlock()
     title.SetTitle('Segno screen power')
-    title.SetRevision('L')
+    title.SetRevision('M')
     board.SetTitleBlock(title)
     for item in list(board.GetDrawings()):
         if isinstance(item, p.PCB_TEXT):
@@ -58,9 +58,9 @@ def finish(variant):
     # its top-edge parts reach the row the back title used to sit on, so both
     # identifications move to the clear lower edge and the control marking
     # reads up the left edge beside its plug, clear of the M3 washers.
-    label('SEGNO SCREEN POWER / REV L',32,h-1.2,1.0,p.B_SilkS)
+    label('SEGNO SCREEN POWER / REV M',32,h-1.2,1.0,p.B_SilkS)
     label('SEGNO SCREEN POWER',28.5,h-2.4,1.0)
-    label('REV L',11,h-2.4,1.0)
+    label('REV M',11,h-2.4,1.0)
     label('5V IN',56,6.5,1.0)
     label('J25',2.2,10.1,1.0,angle=90)
     label('CTRL',2.2,14,1.0,angle=90)

@@ -153,12 +153,20 @@ def check_contract(variant, pins, nets, errors):
         require(f"J{n+3}", {1:pre+"_MAIN_5V",2:"GND"})
         require(f"F{n+1}", {1:"SWITCHED_5V",2:pre+"_MAIN_5V"})
         require(f"F{n+2}", {1:"SWITCHED_5V",2:pre+"_TOUCH_5V"})
-        require(f"K{n+1}", {1:host,8:coil,3:pre+"_UP_N",6:pre+"_UP_P",4:pre+"_DN_N",5:pre+"_DN_P"})
+        require(f"K{n+1}", {1:"AUX_5V",8:coil,3:pre+"_UP_N",6:pre+"_UP_P",4:pre+"_DN_N",5:pre+"_DN_P"})
         if any((f"K{n+1}",pin) in pins for pin in ("2","7")):
             fail(errors,"relay_contacts",f"K{n+1}: normally closed and unused terminals must be unconnected")
-        require(f"Q{n+1}", ({1:"GND",2:"DATA_ENABLE",3:coil}))
-        require(f"D{n+1}", {1:host,2:coil})
-        nodes(host, {(f"J{n+1}","1"),(f"K{n+1}","1"),(f"D{n+1}","1"),(f"C{n+1}","1")})
+        require(f"Q{n+1}", {1:"GND",2:"DATA_ENABLE",3:pre+"_RELAY_STACK"})
+        require(f"Q{n+2}", {1:pre+"_RELAY_STACK",2:pre+"_HOST_PRESENT",3:coil})
+        require(f"R{n+1}", {1:host,2:pre+"_HOST_PRESENT"})
+        require(f"R{n+2}", {1:pre+"_HOST_PRESENT",2:"GND"})
+        require(f"D{n+1}", {1:"AUX_5V",2:coil})
+        require(f"C{n+1}", {1:"AUX_5V",2:"GND"})
+        for offset in (1,2):require(f"TP{n+offset}", {1:"GND"})
+        nodes(host, {(f"J{n+1}","1"),(f"R{n+1}","1")})
+        nodes(pre+"_HOST_PRESENT", {(f"R{n+1}","2"),(f"R{n+2}","1"),(f"Q{n+2}","2")})
+        nodes(pre+"_RELAY_STACK", {(f"Q{n+1}","3"),(f"Q{n+2}","1")})
+        nodes(coil, {(f"K{n+1}","8"),(f"Q{n+2}","3"),(f"D{n+1}","2")})
         for side, j, terminals in (("UP",n+1,{"P":6,"N":3}),("DN",n+2,{"P":5,"N":4})):
             for polarity, pin in (("P",3),("N",2)):
                 nodes(f"{pre}_{side}_{polarity}",{(f"J{j}",str(pin)),(f"K{n+1}",str(terminals[polarity]))})
@@ -566,19 +574,126 @@ def resistor_value(components, ref):
                              "M": 1000000, "m": 0.001}[match[2]]
 
 
+def usb_power_margins(components, errors):
+    """DC design bounds; hot resistance/leakage allowances are estimates."""
+    channels = {}
+    for ch in (1, 2):
+        n = ch * 100
+        try:
+            series, pull = (resistor_value(components, f"R{n+i}") for i in (1, 2))
+        except (KeyError, ValueError) as exc:
+            fail(errors, "usb_sense_components", str(exc))
+            continue
+        if (series, pull) != (10000, 100000) or any(
+                re.findall(r"[\d.]+%", components[f"R{n+i}"][2]) != ["1%"] for i in (1, 2)):
+            fail(errors, "usb_sense_components", f"Channel {ch}: require 10k/100k 1% sense divider")
+        if min(series, pull) <= 0 or not all(math.isfinite(v) for v in (series, pull)):
+            continue
+        # TN0702: 2.5 ohm maximum at VGS=3 V, 25 C. Use twice that
+        # resistance per FET as an explicit hot engineering allowance.
+        driver_hot = 5.0
+        coil_low = 145 * .9
+        peak = 5.25 / (coil_low + 2 * driver_hot)
+        ratio = pull * .99 / (pull * .99 + series * 1.01)
+        # 1 uA gate-leakage sensitivity exceeds the 100 nA 25 C rating.
+        leakage_drop = 1e-6 * (series * 1.01 * pull * 1.01) / (series * 1.01 + pull * 1.01)
+        upper_gate_min = 4.4 * ratio - leakage_drop - peak * driver_hot
+        bottom_gate_min = 4.75 - .4
+        current_max = 5.5 / ((series + pull) * .99) + 1e-6
+        # Even if the sense node sinks to ground, the series resistor alone
+        # bounds the host's DC load, independent of a hot gate-leakage model.
+        grounded_node_max = 5.5 / (series * .99)
+        absent_gate = 1e-6 * pull * 1.01
+        coil_min = 4.75 * coil_low / (coil_low + 2 * driver_hot)
+        if (min(upper_gate_min, bottom_gate_min) < 3 or grounded_node_max >= .0025
+                or absent_gate >= .25 or coil_min < 3.38):
+            fail(errors, "usb_power_margin", f"Channel {ch}: presence/drive/suspend margin failed")
+        channels[str(ch)] = {
+            "host_valid_min_V":4.4, "host_budget_max_V":5.5,
+            "host_divider_max_mA_with_1uA_allowance":current_max*1000,
+            "host_grounded_sense_node_bound_mA":grounded_node_max*1000,
+            "host_absent_gate_V_at_1uA_allowance":absent_gate,
+            "upper_Vgs_min_at_host_4p4V":upper_gate_min,
+            "upper_Vgs_min_at_host_4p75V":4.75*ratio-leakage_drop-peak*driver_hot,
+            "bottom_Vgs_min_V":bottom_gate_min,
+            "coil_initial_min_V_at_AUX_4p75V":coil_min,
+            "coil_initial_pickup_margin_23C_V":coil_min-3.38,
+            "coil_peak_mA_with_hot_driver_estimate":peak*1000,
+            "coil_max_mA_ignoring_driver_drop":5.25/coil_low*1000,
+            "coil_voltage_at_125C_zero_gate_Idss_benchmark":145*1.1*1.4*100e-6,
+            "hot_coil_resistance_factor_estimate":1.4,
+            "hot_driver_ohms_each_estimate":driver_hot,
+            "gate_leakage_allowance_uA_estimate":1,
+        }
+    return channels
+
+
+def check_usb_power_states(pins, components, errors):
+    """Ideal switch/body-diode state proof, not an analog/timing simulation.
+
+    Derive paths from actual S/G/D pin nets, including source-to-drain body
+    diodes. A reversed off FET can therefore no longer hide behind AND logic.
+    """
+    required = [(f"{kind}{100*ch+i}", str(pin)) for ch in (1,2)
+                for kind, i, numbers in (("R",1,(1,2)),("R",2,(1,2)),
+                                         ("Q",1,(1,2,3)),("Q",2,(1,2,3)),
+                                         ("K",1,(1,8))) for pin in numbers]
+    if any(key not in pins for key in required):
+        fail(errors,"usb_relay_state","Missing physical terminal in relay qualification circuit")
+        return {}
+    states = paths = 0
+    for aux, gpio, host1, host2, suspended in itertools.product(
+            (False,True), ("low","high","floating"), (False,True), (False,True), (False,True)):
+        voltages = {"GND":0, "AUX_5V":4.75 if aux else 0,
+                    "HOST1_5V":4.4 if host1 else 0, "HOST2_5V":4.4 if host2 else 0,
+                    "DATA_ENABLE":4.35 if aux and gpio=="high" else 0}
+        for ch in (1,2):
+            n=100*ch
+            series,pull=(resistor_value(components,f"R{n+i}") for i in (1,2))
+            if min(series,pull)<=0:return {}
+            high,gate=pins[(f"R{n+1}","1")],pins[(f"R{n+1}","2")]
+            # A rail short is a fixed voltage, not a divider output.
+            if gate not in voltages:
+                voltages[gate]=voltages.get(high,0)*pull/(series+pull)
+        graph={}
+        def edge(a,b):graph.setdefault(a,set()).add(b)
+        for ch,i in itertools.product((1,2),(1,2)):
+            ref=f"Q{100*ch+i}"
+            source,gate,drain=(pins[(ref,str(pin))] for pin in (1,2,3))
+            edge(source,drain)  # intrinsic N-channel body diode
+            if voltages.get(gate,0)>=3:
+                edge(drain,source)
+        for ch,host in ((1,host1),(2,host2)):
+            relay=f"K{100*ch+1}"
+            pending=[pins[(relay,"8")]];reached=set()
+            while pending:
+                node=pending.pop()
+                if node not in reached:
+                    reached.add(node);pending.extend(graph.get(node,set())-reached)
+            actual=voltages.get(pins[(relay,"1")],0)>3 and "GND" in reached
+            wanted=aux and gpio=="high" and host
+            if actual!=wanted:
+                fail(errors,"usb_relay_state",f"{relay}: AUX={aux}, GPIO={gpio}, hosts={host1,host2}, suspend={suspended}: coil={actual}, required={wanted}")
+            paths+=1
+        states+=1
+    return {"supply_gpio_host_suspend_states":states,"coil_paths_checked":paths,
+            "model":"ideal switches with directed body diodes; numerical drive checked separately",
+            "suspend_behavior":"relay may stay on; its energy comes from AUX, not host VBUS"}
+
+
 def numerical_checks(variant, components, errors):
     r = {i: resistor_value(components,f"R{i}") for i in range(1,11)}
     if any(value<=0 for value in r.values()):
         fail(errors,"resistor_model","Control resistances must be positive")
         return {}
-    if any("1%" not in components[f"R{i}"][2] for i in r):
+    if any(re.findall(r"[\d.]+%", components[f"R{i}"][2]) != ["1%"] for i in r):
         fail(errors,"resistor_model","Drive margins require 1% resistors")
     models={"Q1":"2N3904", "Q2":"2N3906", "U1":"LMC7660IN",
             "U2":"TLP627M", "D2":"BAT85S",
             "C3":"10uF 25V bipolar", "C4":"10uF 25V bipolar"}
     for ch in (1,2):
         n=100*ch
-        models.update({f"Q{n+1}":"TN0702",f"K{n+1}":"IM02TS",
+        models.update({f"Q{n+1}":"TN0702",f"Q{n+2}":"TN0702",f"K{n+1}":"IM02TS",
                        f"D{n+1}":("1N4007")})
     for ref,model in models.items():
         if components[ref][2]!=model:
@@ -629,7 +744,7 @@ def numerical_checks(variant, components, errors):
     # This does not qualify a warm coil or an elevated enclosure temperature.
     # TN0702 is specified at 3V drive. Double its 2.5ohm 25C maximum
     # for the same explicitly estimated hot margin used in this review.
-    relay_coil_min = 4.75*(145*.9)/(145*.9+2*2.5)
+    relay_coil_min = 4.75*(145*.9)/(145*.9+2*2*2.5)
     if relay_coil_min < 3.38:
         fail(errors,"relay_pickup","IM02TS initial coil voltage is below its 3.38V operate threshold")
     return {"aux_input_min_V":aux_min,"aux_input_max_V":aux_max,"combined_design_load_A":load,
@@ -649,7 +764,8 @@ def numerical_checks(variant, components, errors):
             "relay_coil_rated_V":4.5,
             "relay_coil_max_applied_over_rated_ratio":5.25/4.5,
             "relay_hot_restart":"measure coil voltage and qualify hot re-enable on first assembly",
-            "host_relay_coil_nominal_mA":5000/145,
+            "aux_relay_coil_nominal_mA_each":5000/145,
+            "usb_presence_and_relay_margins":usb_power_margins(components,errors),
             "main_continuous_fuse_design_A":3,"touch_continuous_fuse_design_A":.5,
             "startup":"bounded SOA assessment in rev-l-1072/startup.md; no active current limiter",
             "assembled_qualification":"not performed; CAD and calculations do not establish USB compliance"}
@@ -697,9 +813,57 @@ def rule_check(kind, source, destination, errors):
     return {"counts": counts, "report": report}
 
 
+USB_POWER_FAULTS = (
+    "usb_power_baseline_passes", "host_coil_supply_detected",
+    "presence_gate_bypass_detected", "cross_host_presence_detected",
+    "missing_presence_pulldown_detected", "missing_presence_series_detected",
+    "weak_presence_pulldown_detected", "short_presence_series_detected",
+    "upper_driver_body_diode_detected", "lower_driver_body_diode_detected",
+    "wrong_shield_net_detected", "host_reservoir_detected",
+    "presence_tolerance_suffix_detected",
+)
+
+
+def usb_power_self_test(variant, pins, components):
+    def inspect(wiring, parts):
+        nets={}
+        for terminal,name in wiring.items():nets.setdefault(name,set()).add(terminal)
+        issues=[]
+        check_contract(variant,wiring,nets,issues)
+        usb_power_margins(parts,issues)
+        check_usb_power_states(wiring,parts,issues)
+        return issues
+    baseline=inspect(pins,components)
+    results={"usb_power_baseline_passes":not baseline}
+    for name,changes,required_check in (
+            ("host_coil_supply_detected",{("K101","1"):"HOST1_5V"},"supply_boundary"),
+            ("presence_gate_bypass_detected",{("Q102","2"):"DATA_ENABLE"},"usb_relay_state"),
+            ("cross_host_presence_detected",{("R101","1"):"HOST2_5V"},"usb_relay_state"),
+            ("missing_presence_pulldown_detected",{("R102","2"):None},"usb_relay_state"),
+            ("missing_presence_series_detected",{("R101","1"):None},"usb_relay_state"),
+            ("upper_driver_body_diode_detected",{("Q102","1"):"S1_DATA_COIL_LOW",("Q102","3"):"S1_RELAY_STACK"},"usb_relay_state"),
+            ("lower_driver_body_diode_detected",{("Q101","1"):"S1_RELAY_STACK",("Q101","3"):"GND"},"usb_relay_state"),
+            ("wrong_shield_net_detected",{("TP101","1"):"HOST1_5V"},"circuit_contract"),
+            ("host_reservoir_detected",{("C101","1"):"HOST1_5V"},"supply_boundary")):
+        changed=dict(pins)
+        for pin,net in changes.items():
+            if net is None:changed.pop(pin)
+            else:changed[pin]=net
+        issues=inspect(changed,components)
+        results[name]=not baseline and any(e["check"]==required_check for e in issues)
+    for name,ref,value in (("weak_presence_pulldown_detected","R102","100M 1%"),
+                           ("short_presence_series_detected","R101","0R 1%"),
+                           ("presence_tolerance_suffix_detected","R101","10k 91%")):
+        changed=dict(components);changed[ref]=(*components[ref][:2],value)
+        results[name]=not baseline and any(e["check"]=="usb_sense_components"
+                                           for e in inspect(pins,changed))
+    return results
+
+
 def self_test(board_path, components, expected, temp, variant="hand"):
     _, raw_nets = parse_netlist(HERE / variant / f"screen_power_{variant}.net")
     results = relay_contact_self_test(raw_nets)
+    results.update(usb_power_self_test(variant,expected,components))
     for name, kind, check_name in (
             ("small_silk_text_detected", "reference", "silk_text_height"),
             ("thin_silk_text_detected", "label", "silk_text_stroke"),
@@ -824,6 +988,7 @@ def self_test(board_path, components, expected, temp, variant="hand"):
     results["wrong_relay_detected"]=numeric_mutation("K101","IM06TS")
     results["wrong_driver_detected"]=numeric_mutation("Q101","BS170")
     results["wrong_tolerance_detected"]=numeric_mutation("R3","4.7k 20%")
+    results["wrong_tolerance_suffix_detected"]=numeric_mutation("R3","4.7k 11%")
     results["weak_pulldown_detected"]=numeric_mutation("R7","100M 1%")
     results["weak_gate_pullup_detected"]=numeric_mutation("R4","330k 1%")
     results["weak_opto_drive_detected"]=numeric_mutation("R9","100k 1%")
@@ -1047,6 +1212,7 @@ def validate(variant, board_override=None, run_self_test=False):
         check_pad_map(board, components, pins, errors)
         check_contract(variant, pins, expected, errors)
         summary["relay_contact_behavior"] = check_relay_contacts(raw_nets, errors)
+        summary["usb_relay_power_states"] = check_usb_power_states(pins, components, errors)
         check_geometry(board, errors, variant)
         check_silkscreen(board, errors)
         check_silk_mask_clearance(board, errors)
@@ -1083,7 +1249,8 @@ def validate(variant, board_override=None, run_self_test=False):
                         fail(errors, "native_parity", f"{name}: missing {sorted(expected.get(name, set())-native.get(name, set()))}; extra {sorted(native.get(name, set())-expected.get(name, set()))}")
             if run_self_test:
                 summary["self_test"] = self_test(board_path, components, pins, temp, variant)
-                required_faults = ["wrong_relay_detected", "wrong_driver_detected", "wrong_tolerance_detected", "weak_pulldown_detected", "narrow_power_detected", "host_power_bridge_detected", "usb_cut_detected", "console_control_cut_detected"]
+                required_faults = ["wrong_relay_detected", "wrong_driver_detected", "wrong_tolerance_detected", "wrong_tolerance_suffix_detected", "weak_pulldown_detected", "narrow_power_detected", "host_power_bridge_detected", "usb_cut_detected", "console_control_cut_detected"]
+                required_faults += list(USB_POWER_FAULTS)
                 required_faults += ["relay_hole_detected", "model_unassigned_detected", "model_missing_detected", "model_disabled_detected", "wrong_xh_pitch_detected"]
                 required_faults += ["smd_footprint_detected", "smd_pad_detected", "power_lead_hole_detected", "four_layers_detected", "missing_usb_reference_detected"]
                 required_faults += [f'{ref}_hole_tolerance_detected' for ref in ('J101','J2','J1','Q1','H1','U1','U2')]

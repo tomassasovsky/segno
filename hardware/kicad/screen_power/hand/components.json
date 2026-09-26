@@ -311,6 +311,17 @@
     }
   },
   {
+    "ref": "TP101",
+    "value": "SHIELD",
+    "footprint": "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm",
+    "mpn": "PCB pad",
+    "group": "Screen 1",
+    "quantity": 0,
+    "pins": {
+      "1": "GND"
+    }
+  },
+  {
     "ref": "J102",
     "value": "TOUCH / XH4",
     "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
@@ -322,6 +333,17 @@
       "2": "S1_DN_N",
       "3": "S1_DN_P",
       "4": "GND"
+    }
+  },
+  {
+    "ref": "TP102",
+    "value": "SHIELD",
+    "footprint": "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm",
+    "mpn": "PCB pad",
+    "group": "Screen 1",
+    "quantity": 0,
+    "pins": {
+      "1": "GND"
     }
   },
   {
@@ -368,7 +390,7 @@
     "group": "Screen 1",
     "quantity": 1,
     "pins": {
-      "1": "HOST1_5V",
+      "1": "AUX_5V",
       "8": "S1_DATA_COIL_LOW",
       "3": "S1_UP_N",
       "4": "S1_DN_N",
@@ -386,7 +408,44 @@
     "pins": {
       "1": "GND",
       "2": "DATA_ENABLE",
+      "3": "S1_RELAY_STACK"
+    }
+  },
+  {
+    "ref": "Q102",
+    "value": "TN0702",
+    "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
+    "mpn": "TN0702N3-G",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_RELAY_STACK",
+      "2": "S1_HOST_PRESENT",
       "3": "S1_DATA_COIL_LOW"
+    }
+  },
+  {
+    "ref": "R101",
+    "value": "10k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-10K",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST1_5V",
+      "2": "S1_HOST_PRESENT"
+    }
+  },
+  {
+    "ref": "R102",
+    "value": "100k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-100K",
+    "group": "Screen 1",
+    "quantity": 1,
+    "pins": {
+      "1": "S1_HOST_PRESENT",
+      "2": "GND"
     }
   },
   {
@@ -397,7 +456,7 @@
     "group": "Screen 1",
     "quantity": 1,
     "pins": {
-      "1": "HOST1_5V",
+      "1": "AUX_5V",
       "2": "S1_DATA_COIL_LOW"
     }
   },
@@ -409,7 +468,7 @@
     "group": "Screen 1",
     "quantity": 1,
     "pins": {
-      "1": "HOST1_5V",
+      "1": "AUX_5V",
       "2": "GND"
     }
   },
@@ -440,6 +499,17 @@
     }
   },
   {
+    "ref": "TP201",
+    "value": "SHIELD",
+    "footprint": "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm",
+    "mpn": "PCB pad",
+    "group": "Screen 2",
+    "quantity": 0,
+    "pins": {
+      "1": "GND"
+    }
+  },
+  {
     "ref": "J202",
     "value": "TOUCH / XH4",
     "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
@@ -451,6 +521,17 @@
       "2": "S2_DN_N",
       "3": "S2_DN_P",
       "4": "GND"
+    }
+  },
+  {
+    "ref": "TP202",
+    "value": "SHIELD",
+    "footprint": "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm",
+    "mpn": "PCB pad",
+    "group": "Screen 2",
+    "quantity": 0,
+    "pins": {
+      "1": "GND"
     }
   },
   {
@@ -497,7 +578,7 @@
     "group": "Screen 2",
     "quantity": 1,
     "pins": {
-      "1": "HOST2_5V",
+      "1": "AUX_5V",
       "8": "S2_DATA_COIL_LOW",
       "3": "S2_UP_N",
       "4": "S2_DN_N",
@@ -515,7 +596,44 @@
     "pins": {
       "1": "GND",
       "2": "DATA_ENABLE",
+      "3": "S2_RELAY_STACK"
+    }
+  },
+  {
+    "ref": "Q202",
+    "value": "TN0702",
+    "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
+    "mpn": "TN0702N3-G",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_RELAY_STACK",
+      "2": "S2_HOST_PRESENT",
       "3": "S2_DATA_COIL_LOW"
+    }
+  },
+  {
+    "ref": "R201",
+    "value": "10k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-10K",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "HOST2_5V",
+      "2": "S2_HOST_PRESENT"
+    }
+  },
+  {
+    "ref": "R202",
+    "value": "100k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-100K",
+    "group": "Screen 2",
+    "quantity": 1,
+    "pins": {
+      "1": "S2_HOST_PRESENT",
+      "2": "GND"
     }
   },
   {
@@ -526,7 +644,7 @@
     "group": "Screen 2",
     "quantity": 1,
     "pins": {
-      "1": "HOST2_5V",
+      "1": "AUX_5V",
       "2": "S2_DATA_COIL_LOW"
     }
   },
@@ -538,7 +656,7 @@
     "group": "Screen 2",
     "quantity": 1,
     "pins": {
-      "1": "HOST2_5V",
+      "1": "AUX_5V",
       "2": "GND"
     }
   },

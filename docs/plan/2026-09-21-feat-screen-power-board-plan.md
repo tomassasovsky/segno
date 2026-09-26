@@ -128,3 +128,37 @@ Files: firmware console/ring targets and shared library; pedal repository codec
 and status; appliance release/build recipes; segno-bundle GPIO helper/unit and
 Weston drop-in; screen component definitions, checks, generated artifacts and
 assembly/cost documentation. No existing hardware is flashed in this work.
+
+
+## Authorized USB correction — 26 September 2026
+
+The owner authorized completing the USB fixes after the production follow-up
+identified excess host current during suspend. The screen-board fabrication
+order remains on hold until the revised circuit and exact exports are checked.
+Console and ring copper are outside this correction.
+
+- Supply the existing IM02TS relay coils from AUX. Add a per-channel TN0702
+  presence switch in series with the existing GPIO-controlled switch, using
+  a 10 kΩ / 100 kΩ host-VBUS sensing divider. Retain separate host qualification
+  and default-off control; host VBUS must not supply a coil or screen rail.
+- Retain the selected four-pin XH connectors. Provide a bare grounded drain
+  solder pad adjacent to each connector, and document short shield/pair
+  fanouts. Identify a documented shielded donor-cable route if the purchased
+  leads do not meet the required construction, including USB-C attachment.
+- Refine the two-layer impedance calculation using published fabrication
+  materials and tolerances, distinguishing modeled bounds from guaranteed
+  manufactured impedance. Do not change pair geometry without evidence.
+- Keep the current outline, mounting holes, power path widths, hand assembly,
+  rounded routes and aligned connectors. Use Claude for placement/routing
+  if available. Update native schematic, BOM, model coverage and revisions.
+- Verify switch states and numerical margins, including USB suspend, host loss,
+  AUX loss, GPIO low/floating, and deliberate wiring/component faults. Require
+  native ERC/DRC, actual ground/USB/power connectivity, reviewed placement and
+  fresh independent CAM comparison before replacing the delivered screen ZIP.
+- Complete independent circuit, implementation and external-model reviews,
+  update issue/PR/release documentation, and preserve physical qualification
+  limits. No pre-PCB prototype, purchase, deployment or merge is authorized.
+
+Files: `hardware/kicad/screen_power/` circuit, checks, schematic/PCB generators,
+layout/routing, native and fabrication outputs, assembly/cost/cable documentation;
+`docs/reviews/screen-power-usb-revision-1072/`; current release manifests.

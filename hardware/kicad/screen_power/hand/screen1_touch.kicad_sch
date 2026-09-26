@@ -5,8 +5,8 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / screen1 touch")
-    (rev "L prototype")
-    (comment 1 "Discrete 5V switch. Host VBUS powers only its own signal relay coil.")
+    (rev "M prototype")
+    (comment 1 "AUX-powered relays; each host VBUS supplies only its presence detector.")
     (comment 2 "Physical verification required before release."))
   (lib_symbols
     (symbol "screen_symbols:Connector_Generic_Conn_01x04"
@@ -126,6 +126,70 @@
               (font
                 (size 1.27 1.27))))
           (number "4"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Connector_TestPoint"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "TP"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "TestPoint"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "test point"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Connector_TestPoint_0_1"
+        (circle
+          (center 0 3.302)
+          (radius 0.762)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Connector_TestPoint_1_1"
+        (circle
+          (center 0 3.302)
+          (radius 0.762)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at 0 0 90)
+          (length 2.54)
+          (name "1"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
             (effects
               (font
                 (size 1.27 1.27))))))
@@ -1081,6 +1145,81 @@
               (font
                 (size 1.27 1.27))))))
       (embedded_fonts no))
+    (symbol "screen_symbols:Device_R"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "R"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "R"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Resistor"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Device_R_0_1"
+        (rectangle
+          (start -1.016 -2.54)
+          (end 1.016 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Device_R_1_1"
+        (rectangle
+          (start -1.016 -2.54)
+          (end 1.016 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at 0 3.81 270)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
     (symbol "screen_symbols:Diode_1N4007"
       (pin_names
         (offset 0.508)
@@ -1429,7 +1568,7 @@
       (width 0)
       (type default))
     (uuid 145374ec-ad45-50ac-86f9-a430c531dd1e))
-  (global_label "HOST1_5V"
+  (global_label "AUX_5V"
     (shape bidirectional)
     (at 41.91 63.5 180)
     (effects
@@ -1571,7 +1710,7 @@
       (width 0)
       (type default))
     (uuid 1a1705dc-e480-59d3-b87c-0e3f9bd196a6))
-  (global_label "HOST1_5V"
+  (global_label "AUX_5V"
     (shape bidirectional)
     (at 245.11 63.5 180)
     (effects
@@ -1856,7 +1995,7 @@
       (width 0)
       (type default))
     (uuid d85c25bf-741b-5e1e-b93e-db02be07e1a9))
-  (global_label "HOST1_5V"
+  (global_label "AUX_5V"
     (shape bidirectional)
     (at 142.24 101.6 90)
     (effects
@@ -2041,7 +2180,7 @@
       (width 0)
       (type default))
     (uuid 7e404d52-114d-56ab-82e6-335728e15c1f))
-  (global_label "S1_DATA_COIL_LOW"
+  (global_label "S1_RELAY_STACK"
     (shape bidirectional)
     (at 256.54 104.14 90)
     (effects
@@ -2089,5 +2228,342 @@
       (project "screen_power_hand"
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
           (reference "Q101")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 358.14 119.38)
+      (xy 358.14 124.46))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 8dc0e354-2320-5534-9fbe-a2ea53e35ac6))
+  (global_label "S1_RELAY_STACK"
+    (shape bidirectional)
+    (at 358.14 124.46 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 530d8460-2bc3-582b-82a5-216828f62562))
+  (wire
+    (pts
+      (xy 350.52 114.3)
+      (xy 345.44 114.3))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 7c8b2f20-18c4-5832-b92e-a87c4ba9e227))
+  (global_label "S1_HOST_PRESENT"
+    (shape bidirectional)
+    (at 345.44 114.3 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid c89999a7-e301-57de-aa92-dfd67cb4ca35))
+  (wire
+    (pts
+      (xy 358.14 109.22)
+      (xy 358.14 104.14))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid d19e1c07-f476-59c3-96fe-ea60671d2d91))
+  (global_label "S1_DATA_COIL_LOW"
+    (shape bidirectional)
+    (at 358.14 104.14 90)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 37acd253-9e3a-537d-b664-762fc22afbcd))
+  (symbol
+    (lib_id "screen_symbols:Transistor_FET_2N7000")
+    (at 355.59999999999997 114.3 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid d1c931af-bfef-52e7-9c87-0714563d0fb5)
+    (property "Reference" "Q102"
+      (at 378.46 99.06 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "TN0702"
+      (at 378.46 101.60000000000001 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Package_TO_SOT_THT:TO-92_Inline_Wide"
+      (at 378.46 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "TN0702N3-G"
+      (at 378.46 114.3 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid e146a64b-1d4c-518d-b614-da0e9b9ba2f0))
+    (pin "2"
+      (uuid d1bfad41-cdeb-5cf7-936d-071a70c988f3))
+    (pin "3"
+      (uuid ef8b8273-4a11-523f-a63b-9d13a172b896))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
+          (reference "Q102")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 46.99 165.1)
+      (xy 41.91 165.1))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 3ac131bb-ec2c-50c6-8db3-1e30c9b23ddb))
+  (global_label "HOST1_5V"
+    (shape bidirectional)
+    (at 41.91 165.1 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid f63bfa9a-f72c-5636-98d0-45a6962afa59))
+  (wire
+    (pts
+      (xy 54.61 165.1)
+      (xy 59.69 165.1))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 37fbbd46-4d12-5b46-9003-1abe5fe35952))
+  (global_label "S1_HOST_PRESENT"
+    (shape bidirectional)
+    (at 59.69 165.1 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 0f547187-b985-5a12-bddb-ea7eadc0bb89))
+  (symbol
+    (lib_id "screen_symbols:Device_R")
+    (at 50.8 165.1 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid a1203b14-e2c6-5313-ae42-66e720882fbe)
+    (property "Reference" "R101"
+      (at 50.8 154.94 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "10k 1%"
+      (at 50.8 157.48 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+      (at 50.8 165.1 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "MFR-25FBF52-10K"
+      (at 50.8 165.1 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid a22f9b15-d8cc-5d36-95e3-291bcb085d9d))
+    (pin "2"
+      (uuid ea2deaad-5898-5b3b-afb8-f51d837eea81))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
+          (reference "R101")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 148.59 165.1)
+      (xy 143.51 165.1))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 726a9718-b5ac-56d6-bd80-06295fc43d7e))
+  (global_label "S1_HOST_PRESENT"
+    (shape bidirectional)
+    (at 143.51 165.1 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 8eda7d89-30eb-5be7-8f64-dc97a5cc2092))
+  (wire
+    (pts
+      (xy 156.21 165.1)
+      (xy 161.29 165.1))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid dc3fb51e-fead-5055-b20b-959ea7fba3e3))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 161.29 165.1 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 0523f272-0a11-5436-b834-00fe1b372a7e))
+  (symbol
+    (lib_id "screen_symbols:Device_R")
+    (at 152.39999999999998 165.1 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 4eb3fd91-eb02-50e7-ade4-0e3a57b3f805)
+    (property "Reference" "R102"
+      (at 152.39999999999998 154.94 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "100k 1%"
+      (at 152.39999999999998 157.48 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+      (at 152.39999999999998 165.1 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "MFR-25FBF52-100K"
+      (at 152.39999999999998 165.1 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 3e494df9-7eb5-5c19-ada7-533665c88b4a))
+    (pin "2"
+      (uuid d48a87af-2b69-52f4-9e3d-005567ea5754))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
+          (reference "R102")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 254.0 165.1)
+      (xy 254.0 170.18))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 8524c6d0-94f6-57dd-909f-84d78c274c31))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 254.0 170.18 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid e56ef333-b7d2-5b13-b57d-a3bf2a2d81d9))
+  (symbol
+    (lib_id "screen_symbols:Connector_TestPoint")
+    (at 254.0 165.1 0)
+    (unit 1)
+    (in_bom no)
+    (on_board yes)
+    (dnp no)
+    (uuid 40dc7612-ff00-55f2-b4af-f80c0f6d1cf3)
+    (property "Reference" "TP101"
+      (at 254.0 154.94 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "SHIELD"
+      (at 254.0 157.48 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm"
+      (at 254.0 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "PCB pad"
+      (at 254.0 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 24bf7d39-a3e0-58b2-b515-8ba5dad5cd04))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
+          (reference "TP101")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 355.6 165.1)
+      (xy 355.6 170.18))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 0df7c272-8f90-5366-9d99-89fd74842bb8))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 355.6 170.18 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 3a151fa3-ca7f-5de5-a9ff-9345dcf88ee5))
+  (symbol
+    (lib_id "screen_symbols:Connector_TestPoint")
+    (at 355.59999999999997 165.1 0)
+    (unit 1)
+    (in_bom no)
+    (on_board yes)
+    (dnp no)
+    (uuid 6a7db96b-0abb-5f7c-9fe1-19926c0d68c2)
+    (property "Reference" "TP102"
+      (at 355.59999999999997 154.94 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "SHIELD"
+      (at 355.59999999999997 157.48 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm"
+      (at 355.59999999999997 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "PCB pad"
+      (at 355.59999999999997 165.1 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 7ee2e48d-74ba-5d82-87e0-22a4aaf79556))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
+          (reference "TP102")
           (unit 1)))))
   (embedded_fonts no))

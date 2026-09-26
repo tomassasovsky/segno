@@ -5,8 +5,8 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / shared power")
-    (rev "L prototype")
-    (comment 1 "Discrete 5V switch. Host VBUS powers only its own signal relay coil.")
+    (rev "M prototype")
+    (comment 1 "AUX-powered relays; each host VBUS supplies only its presence detector.")
     (comment 2 "Physical verification required before release."))
   (lib_symbols
     (symbol "screen_symbols:Connector_Generic_Conn_01x02"

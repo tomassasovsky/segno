@@ -1,3 +1,4 @@
+<!-- cspell:words fanout -->
 <!-- cspell:words derating unswitched Reterminate Littelfuse PXCN FHAC -->
 # Segno console — system wiring plan
 
@@ -52,14 +53,14 @@ longer applies to anything.
 ## 2. Power distribution (#754)
 
 **20 V in, 5 V made next to the loads.** Local bucks keep the high-current
-5 V wiring short. The current design allowances total **63.04 W** at their
-outputs: 25 W for the Pi rail and 38.04 W for AUX. At an illustrative 85–90%
-buck efficiency, that needs approximately **70.0–74.2 W**, or **3.50–3.71 A at
+5 V wiring short. The current design allowances total **63.54 W** at their
+outputs: 25 W for the Pi rail and 38.54 W for AUX. At an illustrative 85–90%
+buck efficiency, that needs approximately **70.6–74.8 W**, or **3.53–3.74 A at
 20 V**. These efficiencies are planning assumptions, not measurements of the
 retained bucks. The 20 V / 5 A / 100 W contract accommodates this model; it
 does not establish enclosed thermal capacity or startup response.
 
-The Revision L screen gate driver is assessed at **4.5–5.25 V at J1**;
+The Revision M screen gate driver is assessed at **4.5–5.25 V at J1**;
 its negative gate supply preserves enhancement after fuse and harness losses.
 Use the existing nominal 5 V buck. This driver corner does not claim that
 both screens operate at 4.5 V or that the buck is adjustable. Keep screen
@@ -102,7 +103,7 @@ state the remaining engineering assumptions.
 | Buck | Loads | Design figure |
 | --- | --- | --- |
 | **BUCK_PI** | Pi 5, its USB devices and NVMe | 5.0 A / 25 W device budget |
-| **BUCK_AUX** | Both screens, console, 80 pill LEDs and 40 ring LEDs | 7.608 A / 38.04 W for a full-white ring with normal pill indications and the allowances below |
+| **BUCK_AUX** | Both screens, console, 80 pill LEDs and 40 ring LEDs | 7.708 A / 38.54 W for a full-white ring with normal pill indications and the allowances below |
 
 The selected ring is a **40-pixel strip**, giving 120 LEDs with the ten
 8-pixel pills. The updated v3 console/carrier copper supports the ring at
@@ -124,24 +125,27 @@ This PCB change does not alter those animations or command a full-white mode.
 | AUX load allowance | Current |
 | --- | ---: |
 | Screen board: both main feeds, both touch feeds and its 0.05 A bleeder | 4.250 A |
+| Screen-board relay coils and control/pump circuitry | 0.100 A |
 | 40 ring pixels, all RGB channels at 255 | 2.40 A |
 | All ten pills displaying their brightest normal indications | 0.498 A |
 | Idle allowance for 120 pixels | 0.120 A |
 | Console logic | 0.140 A |
 | Additional XIAO ring controller and buffer | 0.200 A |
-| **Planning total** | **7.608 A** |
+| **Planning total** | **7.708 A** |
 
-The nominal 10 A buck has approximately 2.39 A headroom against this model.
+The nominal 10 A buck has approximately 2.29 A headroom against this model.
 That is not a guarantee of transient response, capacity at high temperature
 or screen current; physical validation remains part of the first assembled build.
-The bleeder is included once, inside the 4.25 A screen planning allowance. Relay coils
-take their power from Pi USB VBUS, not AUX. The 3 A main and 0.5 A touch branch
+The bleeder is included once, inside the 4.25 A screen planning allowance.
+Both relay coils and the board's control circuitry now have an explicit
+0.10 A AUX allowance. Host USB VBUS
+only supplies the low-current presence detectors. The 3 A main and 0.5 A touch branch
 ceilings cannot all be used simultaneously: their sum exceeds the shared 4.25 A
 planning allowance before the bleeder is counted.
 
 Allowing **all 80 pill LEDs as well as the ring** to display flat unrestricted
 white is a different requirement: 7.2 A of LED channels plus the screens and
-allowances above totals **11.91 A**. That exceeds the retained 10 A AUX
+allowances above totals **12.01 A**. That exceeds the retained 10 A AUX
 supply. The ring PCB upgrade does not authorize that simultaneous system load.
 Normal pill rendering remains within the modeled budget with a full-white ring.
 
@@ -192,8 +196,8 @@ must not be flashed onto the old board.
   600 mA unless **`usb_max_current_enable=1`** is set in `config.txt`. Required
   for the existing peripheral budget: the audio interface and rear USB ports
   use Pi USB power. After the screen switch is fitted, each touch cable draws
-  only its approximately 34 mA relay-coil load from Pi VBUS; screen touch power
-  comes from switched AUX.
+  only approximately 50 µA of host-presence sensing load from Pi VBUS;
+  relay coils use AUX and screen touch power comes from switched AUX.
 - The console board takes 5 V from **BUCK_AUX on J3**, a 2-way **JST VH**
   (~10 A per contact) since #1062; it was a 4-way XH with doubled pins (~6 A). The
   pills' 5 V leaves on **J24**, the JST VH beside it, and their harness is a **5 V
@@ -213,7 +217,7 @@ must not be flashed onto the old board.
   5 V. Using 10 W plus 6 W gives a conservative 3.2 A screen allowance before
   any separately counted touch current. Adding up to 1 A for both touch paths
   and 0.05 A for the bleeder gives a **3.25–4.25 A screen-board planning bracket**,
-  or about **6.61–7.61 A AUX** with a full-white ring and normal pills. This does
+  or about **6.71–7.71 A AUX** with a full-white ring and normal pills. This does
   not qualify the buck, new-board voltage drop, thermal behavior or inrush.
 
 ### Screen power and touch harness
@@ -227,7 +231,7 @@ remain connected in parallel.
 | --- | --- |
 | AUX buck → input fuse → screen J1 | Positive split → 028707.5PXCN in FHAC0001ZXJ near buck → J1 pin 1; ground direct to J1 pin 2. Dedicated short 16 AWG pair with VHR-2N housing and SVH-41T-P1.1 contacts; console/ring stay on their separate branch. |
 | Console J25 → screen J2 | Pin 1 GPIO17, pin 2 GND, straight pin-for-pin; one short 22 AWG XH2 lead. |
-| Pi USB 2.0 ports → J101/J201 | Two USB-A male-to-XH4 leads: 1 VBUS, 2 D−, 3 D+, 4 GND. Host VBUS feeds each relay coil only. |
+| Pi USB 2.0 ports → J101/J201 | Two USB-A male-to-XH4 leads: 1 VBUS, 2 D−, 3 D+, 4 GND. Host VBUS feeds only its low-current presence detector. |
 | J102 → UPERFECT touch | XH4-to-USB-C male: 1 fused switched VBUS, 2 D−, 3 D+, 4 GND. Preserve the source-role CC resistor in the plug. |
 | J202 → APROTII touch | XH4-to-Micro-B male, same four-pin map. |
 | J103 → UPERFECT power | Pin 1 fused switched +5 V, pin 2 GND; separate main-power lead retaining the working USB-C screen termination. |
@@ -243,6 +247,12 @@ existing lead gauge has not been recorded: reuse is conditional on these
 requirements, not an assertion that any existing cable meets them. An
 unspecified charge-only cable or the selected 28 AWG XH data cable is not a
 substitute. [JST VH specifications](https://www.jst-mfg.com/product/pdf/eng/eVH.pdf).
+
+USB shield drains connect separately to TP101/TP102/TP201/TP202 beside their
+corresponding XH headers, with at most 10 mm exposed fanout and jacket strain
+relief. Keep foil/braid and pair twist intact to that point. The
+[cable assessment](../docs/reviews/screen-power-usb-revision-1072/cable-assessment.md)
+documents optional suitable donor cables without requiring duplicate purchases.
 
 The selected 28 AWG leads are for touch/data only. Both screen ports may join
 internally, so the 750 mA touch fuse does not force screen current into the

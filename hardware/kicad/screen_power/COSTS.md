@@ -1,19 +1,20 @@
-# Screen-power revision L component cost estimate
+# Screen-power revision M component cost estimate
 
 <!-- cspell:words DigiKey MOSFETs onsemi Littelfuse VHR SXH XHP SVH SUP PXCN FHAC -->
 <!-- cspell:words optocoupler MOSFET WIMA ECEA -->
 
-**USD, updated 25 September 2026.** The 44 populated through-hole components
-cost **$41.51** using published single-unit distributor prices. Allow **$45–50
+**USD, updated 26 September 2026.** The 50 populated through-hole components
+cost **$44.95** using published single-unit distributor prices. Allow **$45–50
 for board components**, including modest price movement and spare small parts.
 This excludes the bare PCB, wiring, mounting hardware, assembly labor, tools,
 shipping, taxes and import charges. It is an estimate, not a reserved basket.
 
-Revision L adds the charge pump, isolated gate drive and supporting parts,
-changes the two relay-driver MOSFETs and R4, and removes D1. The table matches
-the current [hand-board BOM](hand/bom.csv). Prices marked **25 Sep** were
-refreshed for this update; **22 Sep** prices are retained estimates from the
-earlier snapshot, not newly checked quotations.
+Revision M adds two TN0702 presence switches and four sensing resistors,
+increasing the prior estimate by $3.44. Its four shield-drain solder pads are
+bare PCB features and have no purchased component cost. Revision L introduced
+the charge pump and gate drive retained here. The table matches
+the current [hand-board BOM](hand/bom.csv). The three part types added in Revision M are marked **26 Sep**. Other
+prices retain their stated earlier snapshot dates, not new quotations.
 
 The four mounting holes are PCB features, not four purchased components.
 No USB-C modules or additional Pi ribbon are required.
@@ -43,18 +44,18 @@ The relay's manufacturer ordering number 1-1462037-3 corresponds to IM02TS.
 | U2 | TLP627M(E | 1 | $1.00 | $1.00 | 25 Sep | [DigiKey](https://www.digikey.com/en/products/detail/toshiba-semiconductor-and-storage/TLP627M-E/10492648) |
 | Q1 | 2N3904BU | 1 | $0.29 | $0.29 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/onsemi/2N3904BU/1413) |
 | Q2 | 2N3906BU | 1 | $0.27 | $0.27 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/onsemi/2N3906BU/1414) |
-| Q101, Q201 | TN0702N3-G | 2 | $1.52 | $3.04 | 25 Sep | [DigiKey](https://www.digikey.com/en/products/detail/microchip-technology/TN0702N3-G/4902376) |
+| Q101, Q102, Q201, Q202 | TN0702N3-G | 4 | $1.52 | $6.08 | 26 Sep | [DigiKey](https://www.digikey.com/en/products/detail/microchip-technology/TN0702N3-G/4902376) |
 | D101, D201 | 1N4007-E3/54 | 2 | $0.56 | $1.12 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/vishay-general-semiconductor-diodes-division/1N4007-E3-54/754813) |
 | D2 | BAT85S-TAP | 1 | $0.50 | $0.50 | 25 Sep | [DigiKey](https://www.digikey.com/en/products/detail/vishay-general-semiconductor-diodes-division/BAT85S-TAP/3104127) |
 | R1 | MFR-25FBF52-1K | 1 | $0.10 | $0.10 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-1K/13011) |
-| R2, R6, R7 | MFR-25FBF52-100K | 3 | $0.10 | $0.30 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-100K/13473) |
+| R2, R6, R7, R102, R202 | MFR-25FBF52-100K | 5 | $0.10 | $0.50 | 26 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-100K/13473) |
 | R3 | MFR-25FBF52-4K7 | 1 | $0.11 | $0.11 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-4K7/9138176) |
 | R4 | MFR-25FBF52-22K | 1 | $0.10 | $0.10 | 25 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-22K/9138098) |
 | R5 | MFR-25FBF52-5K6 | 1 | $0.10 | $0.10 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-5K6/9138195) |
 | R8 | PR01000101000FA100 | 1 | $0.45 | $0.45 | 22 Sep | [Mouser](https://www.mouser.com/ProductDetail/Vishay-BC-Components/PR01000101000FA100?qs=17u8i%2FzlE8%252B%252BSN%2FNRC7Xyg%3D%3D) |
 | R9 | MFR-25FBF52-2K4 | 1 | $0.10 | $0.10 | 25 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-2K4/9138109) |
-| R10 | MFR-25FBF52-10K | 1 | $0.10 | $0.10 | 25 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-10K/13219) |
-| **Total** | **26 unique parts** | **44** | | **$41.51** | | |
+| R10, R101, R201 | MFR-25FBF52-10K | 3 | $0.10 | $0.30 | 26 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-10K/13219) |
+| **Total** | **26 unique parts** | **50** | | **$44.95** | | |
 
 <!-- cspell:enable -->
 
@@ -71,9 +72,9 @@ parts; there are no bulk discounts assumed.
 | PCB connectors | $1.26 |
 | Capacitors | $4.72 |
 | Charge pump and optocoupler | $4.13 |
-| Small transistors and diodes | $5.22 |
-| Resistors | $1.36 |
-| **Total** | **$41.51** |
+| Small transistors and diodes | $8.26 |
+| Resistors | $1.76 |
+| **Total** | **$44.95** |
 
 ## Availability
 
@@ -103,7 +104,7 @@ marked 22 Sep were not refreshed for Revision L.
 
 ## Required AUX input protection
 
-These two external harness parts are required in addition to the 44 PCB
+These two external harness parts are required in addition to the 50 PCB
 components. **Single-unit USD prices checked 25 September 2026**; both were
 listed in stock. The existing buck is reused.
 
@@ -137,7 +138,7 @@ cables: their housings are already included.
 | Existing HDMI cables | 2 reused | $0 additional |
 | **External wiring and mounting allowance** | | **$23–48** |
 
-That gives **$72.32–97.32 for fitted electronic parts, required input
+That gives **$75.76–100.76 for fitted electronic parts, required input
 protection, wiring and mounting**, before the bare PCB, shipping and taxes.
 An order with spare electronic parts is closer to **$76–106**.
 PCB fabrication is not quoted here: it needs the selected two-layer stackup,
@@ -147,3 +148,10 @@ HDMI cables are reused and excluded from the new-build component subtotal.
 The selected 28 AWG data cables remain for touch only. Keep full screen power
 on suitably sized separate leads. Cable pin mapping, fit, USB-C plug
 configuration and signal performance still require sample qualification.
+
+If the selected leads prove unsuitable, the optional shielded donor pair in
+[the cable assessment](../../../docs/reviews/screen-power-usb-revision-1072/cable-assessment.md)
+costs $30.45 before shipping/taxes (26 September snapshot). This replaces the
+$12–24 ready-made data-cable allowance; do not add both. Reusing suitable
+existing cables avoids that donor purchase. Donor entries have zero default
+quantity in the external BOM.

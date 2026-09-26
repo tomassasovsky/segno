@@ -1,9 +1,14 @@
+<!-- cspell:words fanout -->
 <!-- cspell:words preorder Axicom Mbps energization Digi typec mrico kilohm -->
 <!-- cspell:words overvoltage derate autosuspend overmolds fanouts onsemi Nexperia Omron derating autoroutes pulldowns -->
 <!-- cspell:words SUP SUM Rds backfeed Micro pulldown Vgs Littelfuse Lumberg MMBT DMODEL stackup microstrip heatsinks eleUniverse ATOF PXCN FHAC overcurrent -->
 # Screen power and touch switch
 
-Revision L retains the **two-layer, 68 × 76 mm** hand-soldered board, **3 mm
+**Revision M is in progress; do not order the retained Revision L archive.**
+The schematic and source are updated. Native routing and release verification
+are pending. See the [revision status](../../../docs/reviews/screen-power-usb-revision-1072/review.md).
+
+Revision M retains the **two-layer, 68 × 76 mm** hand-soldered board, **3 mm
 rounded corners**, purple solder mask and white silkscreen. The screen supply
 and both USB touch paths switch off together under GPIO17 control. The ring
 and console retain their separate power branch.
@@ -20,7 +25,8 @@ U1 and U2 share both pin rows and a body centerline. Their final alignment
 retains the stock courtyards and nearby capacitor positions; see the
 [alignment verification](../../../docs/reviews/screen-u2-alignment-1072/verification.md).
 
-The board has **44 populated through-hole components plus four M3 holes**.
+The board has **50 populated through-hole components, four bare shield-drain
+solder pads and four M3 holes**.
 Both outer copper layers have filled GND pours. All eight cable headers
 retain their positions and matching orientation: vertical pin rows, pin 1
 at the bottom and retaining wall on the left, viewed from the component side.
@@ -28,12 +34,12 @@ Cables enter perpendicular to the board. Mounting centers remain (4, 4),
 (64, 4), (4, 72) and (64, 72) mm. The 3.5 mm unplated holes have 4.25 mm
 copper keepouts on both faces for M3 heads/washers up to 7 mm diameter.
 
-The [final production review](../../../docs/reviews/production-final-1072/review.md)
-checks the complete circuit and manufacturing package. Its last correction
-raises existing printed labels to at least 1.0 mm height and 0.15 mm stroke,
-with 0.15 mm pad clearance, and thickens existing printed outlines. No copper,
-component placement or mounting geometry changes. The validator includes five
-new ink/rule fault controls, bringing the screen suite to 61 controls.
+Revision M moves both relay coils to AUX and adds a low-current host-presence
+detector to each channel. This corrects the USB suspend-current defect recorded
+in the [preceding review](../../../docs/reviews/production-final-1072/usb-requirements-followup.md).
+The [circuit assessment](../../../docs/reviews/screen-power-usb-revision-1072/circuit-assessment.md)
+records the new connections, margins and switching-state checks. Printed labels
+retain at least 1.0 mm height, 0.15 mm stroke and 0.15 mm pad clearance.
 
 Use only the archive identified by the
 [current three-board manufacturing record](../../../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
@@ -58,8 +64,9 @@ have not been physically qualified. Issue: [#1072](https://github.com/tomassasov
 The existing Pi-to-console ribbon stays directly connected. Console J25 takes
 GPIO17 from physical Pi pin 11. This board has no 40-pin header and takes no
 screen power from Pi GPIO. GPIO high enables both channels; low, disconnected,
-or an unpowered Pi defaults them off. The Pi, board, HDMI and screens share ground. The four-pin XH cables have
-no separate shield terminal; their actual shield termination must be checked.
+or an unpowered Pi defaults them off. The Pi, board, HDMI and screens share ground. The four-pin XH housings retain their existing pin map. Separate GND solder
+pads TP101/TP102 and TP201/TP202 terminate the corresponding cable shields;
+see the cable contract below.
 
 ### What “off” means
 
@@ -96,7 +103,7 @@ bottom-side labels, not wire colors or a mirrored view of the cable housing.
 
 | PCB pin | Signal | Input J101/J201 | Output J102/J202 |
 | --- | --- | --- | --- |
-| 1 | +5 V | Pi VBUS; relay coil only | Fused switched touch supply |
+| 1 | +5 V | Pi VBUS; low-current host detection only | Fused switched touch supply |
 | 2 | D− | Host data | Screen data |
 | 3 | D+ | Host data | Screen data |
 | 4 | GND | Common ground | Common ground |
@@ -119,7 +126,8 @@ about 0.128 ohm round-trip: 64 mV / 32 mW at the touch-path design budget of
 500 mA, versus 0.383 V / 1.15 W at a 3 A main-power load, excluding connectors.
 These are estimates, not measured cable ratings; source:
 [Alpha Wire conductor table](https://www.belden.com/-/media/Project/AlphaWire/AlphaWire/2023-Master-Catalog/2023-MasterCat-English-20230609.pdf?rev=08a9584660404c8dad92412e1b961875).
-The host lead's VBUS feeds about 34 mA of relay load. Screen touch current must
+The host lead's VBUS feeds approximately 50 µA of presence-sensing load at
+the upper 5.5 V host corner. AUX supplies the relay coils. Screen touch current must
 be measured with both screen connectors attached; a screen may join the
 supplies internally, and the 750 mA fuse is not an active 500 mA limiter.
 
@@ -130,8 +138,18 @@ termination, controlled-impedance pair or 480 Mbps qualification. Check that
 the USB-C plug has the proper legacy-source configuration (56 kilohm Rp to
 VBUS); test both plug orientations. A sink-configured or charge-only cable
 is unsuitable. Four XH contacts do not carry a separate CC signal, so this
-configuration belongs inside the cable's USB-C plug. USB speed, shield behavior,
-voltage drop and cable temperature remain prototype acceptance checks.
+configuration belongs inside the cable's USB-C plug. USB speed, voltage drop
+and cable temperature remain first-assembly acceptance checks.
+
+Keep each cable's foil/braid and twisted data pair intact up to a short fanout.
+Connect its insulated shield drain to the adjacent bare pad: J101→TP101,
+J102→TP102, J201→TP201 and J202→TP202. Keep each drain tail at most 10 mm
+and provide jacket strain relief; do not use loose braid as a power return.
+The pad joins board GND separately from XH pin 4. See the
+[cable assessment](../../../docs/reviews/screen-power-usb-revision-1072/cable-assessment.md)
+for suitable existing-cable reuse and optional shielded USB-A-to-USB-C and
+USB-A-to-Micro-B donor cables. Donor cables replace unsuitable leads; they
+are not an additional set of adapters or mandatory new purchases.
 
 ### Separate main-power harness
 
@@ -147,8 +165,8 @@ its wire gauge is not yet recorded. APROTII power pads may be used only
 after checking polarity, cable rating, strain relief and the screen's pad layout.
 
 Never connect a direct Pi-to-display touch cable around this board: that would
-restore the observed alternate power path. Upstream USB VBUS only feeds its own
-relay coil and bypass capacitor, and never connects to a screen supply.
+restore the observed alternate power path. Upstream USB VBUS feeds only its own 10 kΩ/100 kΩ host-presence detector,
+and never connects to a screen supply. The coil and its bypass use AUX.
 
 ### Required AUX branch protection
 
@@ -189,13 +207,19 @@ positive excursions of the negative rail during power transitions.
 
 Q1 switches U2's AUX-powered LED and Q2's base network. The former D1 is
 removed because U2 separates the gate network from this buffer. Q2 enables
-the two TN0702 relay drivers. Each IM02TS coil uses its own Pi USB VBUS and
-opens both data lines when released; host VBUS never feeds a screen.
+the lower TN0702 relay switches Q101/Q201. Each AUX-powered IM02TS coil
+also has an upper TN0702 switch Q102/Q202 controlled by its own host VBUS
+through a 10 kΩ/100 kΩ divider. Both switches must conduct to close that
+channel's data contacts. A low/floating GPIO or an absent host therefore opens
+both data lines; host VBUS never feeds a screen. The flyback diode and
+100 nF bypass remain local to each coil, now referenced to AUX.
 
 - Shared screen planning load: **4.25 A**, including both main feeds, both
   touch feeds and the approximately 0.05 A bleeder. This is conservative
   budgeting from the available screen readings, not a measured simultaneous
-  maximum or a current limit. The previous 6 A expansion allowance is retired.
+  maximum or a current limit. Add **0.10 A** for both AUX-powered relay coils
+  and control circuitry, giving **4.35 A at J1**. This extra current bypasses
+  Q3/Q4. The previous 6 A expansion allowance is retired.
 - Each main branch retains its 4 A Littelfuse 251 fuse and **3 A lead ceiling**;
   each touch branch retains its 750 mA fuse and **500 mA lead ceiling**. These
   ceilings are not additive guarantees. Screens may internally join their
@@ -209,12 +233,19 @@ opens both data lines when released; host VBUS never feeds a screen.
 - R8 is a 100 Ω, 1 W bleeder: approximately 0.25 W at 5 V. Shutdown delay
   depends on actual screen energy storage; the software's five-second wait
   remains provisional until normal operation is checked on the assembly.
-- Each host relay coil draws about 34 mA. At 4.75 V host VBUS, minimum coil
-  resistance and an explicit doubled-hot TN0702 resistance estimate,
-  calculated coil voltage is **4.575 V**, above TE's **3.38 V initial pickup
-  limit at 23°C**. That comparison does not establish a hot pickup guarantee.
-  The maximum 5.25 V host supply is 1.167 times the 4.5 V coil rating, within
-  TE's negligible-contact-load continuous coil curve through 85°C ambient.
+- Each host contributes about **50 µA** at 5.5 V, rather than powering a coil.
+  Even the 10 kΩ series resistor alone bounds DC sensing current below
+  **0.556 mA** for a nonnegative gate node at that supply. This is a circuit
+  bound, not a measurement of the complete screen's suspend behavior.
+- Each AUX-powered relay draws about 34 mA nominally. The two series TN0702
+  switches have a calculated coil voltage of **4.412 V** at 4.75 V AUX,
+  minimum coil resistance and a conservative doubled-hot resistance estimate.
+  TE specifies **3.38 V initial pickup at 23°C**. The detailed assessment also
+  estimates hot restart at the project's 60°C local-air envelope; it does
+  not convert the room-temperature specification into a guaranteed hot limit.
+  The 5.25 V upper supply is 1.167 times the 4.5 V coil rating, within TE's
+  negligible-contact-load continuous curve through 85°C ambient. That curve
+  establishes a different condition from hot pickup.
 - Q3/Q4 have electrically live, different drain tabs. Keep them clear of one
   another, metal mounting hardware and the enclosure. No shared uninsulated
   heatsink is permitted. The normal screen-load estimates need no heatsinks.
@@ -232,16 +263,20 @@ holes are checked, but cable overmolds, latch access, screwdriver access and
 vertical transistor clearance still need an enclosure fit check.
 
 The nominal 1.6 mm, two-layer stack uses 35 µm outer copper and a 1.53 mm
-FR-4 core, with nominal relative permittivity 4.4. USB pairs use **B.Cu**,
-**0.85 mm width / 0.16 mm gap**, without data vias. KiCad 10's coupled-microstrip
-calculator estimates **89.64 Ω differential** at 1 GHz for this nominal geometry.
-This calculation omits solder mask and finite adjacent copper. JLCPCB lists controlled-impedance service for four or more layers; this
-two-layer board does not order that service. The Gerber job omits the
-`ImpedanceControlled` field; it makes no impedance-control declaration.
-The estimate is a design target, not a promised
-manufactured impedance or USB compliance result. Ordinary thickness and trace
-tolerances, and the published two-layer material value of 4.5, still require
-actual-link qualification. See [JLCPCB capabilities](https://jlcpcb.com/capabilities/pcb-capabilities). Connector and relay pad
+FR-4 core, with nominal relative permittivity **4.5**. The revised target is
+**0.78 mm width / 0.23 mm gap**, on B.Cu without data vias. It preserves the
+1.01 mm center pitch. A converged quasi-static field calculation including
+nominal solder mask estimates **90.8 Ω differential**. This corrects the
+preceding uncoated calculator estimate, which did not capture the coating's
+effect. See the [reproducible impedance assessment](../../../docs/reviews/screen-power-usb-revision-1072/impedance-assessment.md)
+for material assumptions, independent checks and sensitivity bounds.
+
+JLCPCB's [controlled-impedance service](https://jlcpcb.com/capabilities/pcb-capabilities)
+starts at four layers. This two-layer order does not use it, and published
+ordinary fabrication tolerances do not guarantee a USB impedance band. The
+Gerber job therefore omits `ImpedanceControlled`. The calculation is a design
+target, not measured impedance or a complete-channel compliance result.
+Connector and relay pad
 fanouts necessarily separate the traces and remain local discontinuities.
 
 Both conductors now use mirrored rounded fanouts. The coupled sections extend
@@ -315,14 +350,14 @@ bottom) and [Sierra Circuits' placement guidance](https://www.protoexpress.com/b
 `hand/bom.csv` lists every populated component. `external_bom.csv`
 lists the required input fuse and holder, harness housings, contacts, existing
 cables and mounting hardware.
-All 44 populated components have bundled STEP models; the four bare mounting
-holes have no separate solid body. Custom models are simplified dimensioned
+All 50 populated components have bundled STEP models. The four shield-drain
+pads and four mounting holes are bare PCB features without separate bodies. Custom models are simplified dimensioned
 assembly models, not vendor CAD. See [model sources and limitations](models/README.md).
 The exported `native/` folder keeps model paths portable; open its hand project
 in KiCad. Use `top.png`, `perspective.png`, and `assembly.pdf` together to inspect
 components and labels; `F-copper.svg` and `B-copper.svg` show the actual routing.
 
-See [the complete component cost estimate](COSTS.md) for all 44 populated
+See [the complete component cost estimate](COSTS.md) for all 50 populated
 parts, dated supplier prices and external wiring allowances.
 
 ## Measured USB topology and screen loads
@@ -363,7 +398,8 @@ margin issue; it cannot compensate for voltage lost along the screen's actual
 power path. Retain the specified short, thick main-power leads.
 
 Normal pills, full-white 40-LED ring and console total about 3.358 A from
-AUX. With the conservative 4.25 A screen budget, that is **7.608 A** against
+AUX. With the conservative 4.25 A switched-screen budget and 0.10 A for
+relay/control power, that is **7.708 A** against
 the retained nominal 10 A supply. This does not make 10 A a guaranteed
 instantaneous surge ceiling or permit every LED and load to be expanded.
 

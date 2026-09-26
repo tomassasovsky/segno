@@ -120,7 +120,9 @@ def build(variant):
                 pad.SetDrillSize(point(drill, drill))
         # Every populated component has a bundled model. Keep model placement
         # from the library, but resolve files relative to this project.
-        if not ref.startswith("H"):
+        shield_pad = (ref in ("TP101", "TP102", "TP201", "TP202") and
+                      name == "TestPoint_THTPad_D2.0mm_Drill1.0mm")
+        if not ref.startswith("H") and not shield_pad:
             models = list(fp.Models())
             if not models:
                 model = p.FP_3DMODEL()
