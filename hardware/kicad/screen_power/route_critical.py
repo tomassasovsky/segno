@@ -229,12 +229,19 @@ def route(variant):
     top,bottom=taps[0]-TAP/2,taps[-1]+TAP/2
     track('SWITCHED_5V',[(POWER_BUS_X,top+BUS/2+.25),
                          (POWER_BUS_X,bottom-BUS/2-.25)],BUS,p.F_Cu)
+    # Native smoothing only rounds convex corners, and this outline's convex
+    # corners all sit inside the branch tracks, so the joins the eye sees have
+    # to carry their arc explicitly: each tap edge leaves the bus on a quarter
+    # circle tangent to both, which continues the branch's straight edge with
+    # no kink. The free ends stay square here and take the native 1mm radius.
     outline=[(west-GUSSET,top),(east,top),(east,bottom),(west-GUSSET,bottom)]
     for y in reversed(taps):
         if y!=taps[-1]:
-            outline+=[(west,y+TAP/2),(west-GUSSET,y+TAP/2)]
+            outline+=quarter((west-GUSSET,y+TAP/2+GUSSET),
+                             (west,y+TAP/2+GUSSET),(west-GUSSET,y+TAP/2))
         if y!=taps[0]:
-            outline+=[(west-GUSSET,y-TAP/2),(west,y-TAP/2)]
+            outline+=quarter((west-GUSSET,y-TAP/2-GUSSET),
+                             (west-GUSSET,y-TAP/2),(west,y-TAP/2-GUSSET))
     region('SWITCHED_5V',outline,fillet=FILLET)
     for ch,y in enumerate(USB_ROWS[variant],1):
         n=100*ch
