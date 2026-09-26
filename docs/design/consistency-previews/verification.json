@@ -1,0 +1,80 @@
+{
+  "savedPenHash": "bf9553111459347892bf4ac0d6de771b172f5849",
+  "currentScreens": 241,
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "suites": [
+    "verify_design_consistency",
+    "verify_session_library",
+    "verify_pedal_setup",
+    "verify_pedal_performance",
+    "verify_backing_playback",
+    "verify_power",
+    "verify_network"
+  ],
+  "nativeVerification": {
+    "texts": 523,
+    "elements": 1266,
+    "errors": [],
+    "sectionOverlaps": [],
+    "containmentErrors": []
+  },
+  "focusVerification": {
+    "updated": 244,
+    "missing": [],
+    "outside": [],
+    "stacking": "Within the matching control parent; underlying focus stays behind overlays."
+  },
+  "exporterShapes": "Round color preview and bottom-only anchored sheet geometry verified",
+  "settingsArtwork": {
+    "layout": "Two rows of five compact cards with original Segno equipment artwork.",
+    "nativeVerification": {
+      "texts": 13,
+      "elements": 42,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "artwork": "../../settings-art/manifest.json",
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ]
+  },
+  "startup": {
+    "default": "Tracks",
+    "reload": "Tracks",
+    "reviewLinks": "Explicit named screen",
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "navigation": "Tracks \u2192 Settings \u2192 Effects \u2192 Back \u2192 Settings \u2192 Back \u2192 Tracks"
+  },
+  "surfaceRefinement": {
+    "nativeVerification": {
+      "texts": 1169,
+      "elements": 2717,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "auditedFrames": 28,
+    "exportedCurrentFrames": 241,
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "suites": [
+      "verify_fx_surface_consistency",
+      "verify_midi_controls",
+      "verify_midi_sync",
+      "verify_power",
+      "verify_stage_display",
+      "verify_stage_recording_journey"
+    ],
+    "mixerStatus": "Proposal; accepted Tracks unchanged"
+  }
+}

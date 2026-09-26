@@ -1,0 +1,240 @@
+{
+  "screenRoots": [
+    {
+      "scene": "performance-recording-ready",
+      "wrapper": "cH9UX",
+      "root": "B7Q07"
+    },
+    {
+      "scene": "completion-usb-recording",
+      "wrapper": "FwjUV",
+      "root": "g6WBer"
+    },
+    {
+      "scene": "completion-usb-interrupted",
+      "wrapper": "HWH3p",
+      "root": "udaE1"
+    },
+    {
+      "scene": "completion-usb-saved",
+      "wrapper": "Z3V6Z",
+      "root": "aR4Qm"
+    },
+    {
+      "scene": "completion-save-common-cycle",
+      "wrapper": "op31E",
+      "root": "rARHK"
+    },
+    {
+      "scene": "completion-bounce-common-cycle",
+      "wrapper": "meZ1X",
+      "root": "hWeDb"
+    },
+    {
+      "scene": "sound-behavior",
+      "wrapper": "Dy0kG",
+      "root": "p8a7D"
+    },
+    {
+      "scene": "completion-capture-before-output",
+      "wrapper": "EbFAW",
+      "root": "SNtzK"
+    },
+    {
+      "scene": "completion-capture-follows-output",
+      "wrapper": "WYlCS",
+      "root": "F4ihgx"
+    },
+    {
+      "scene": "completion-first-timing-review",
+      "wrapper": "k70koS",
+      "root": "MW3Os"
+    },
+    {
+      "scene": "completion-primary-clear-review",
+      "wrapper": "FFjyK",
+      "root": "goc0I"
+    },
+    {
+      "scene": "completion-clock-loss-recovered",
+      "wrapper": "Lqfa3",
+      "root": "gCTKx"
+    },
+    {
+      "scene": "completion-touch-locked",
+      "wrapper": "zInLo",
+      "root": "mypYQ"
+    },
+    {
+      "scene": "completion-double-solo-setting",
+      "wrapper": "gyQG4",
+      "root": "rJ9GY"
+    },
+    {
+      "scene": "completion-double-solo-active",
+      "wrapper": "QvVWD",
+      "root": "N2NlS"
+    },
+    {
+      "scene": "completion-midi-14bit",
+      "wrapper": "E82cGb",
+      "root": "T7urI"
+    },
+    {
+      "scene": "completion-midi-nrpn",
+      "wrapper": "p7yOFK",
+      "root": "SCQt4"
+    },
+    {
+      "scene": "completion-midi-bank-program",
+      "wrapper": "Plope",
+      "root": "jRkHr"
+    },
+    {
+      "scene": "completion-midi-relative",
+      "wrapper": "gRRhj",
+      "root": "jWDJD"
+    }
+  ],
+  "groups": [
+    {
+      "n": 48,
+      "title": "Recording destinations",
+      "x": 100,
+      "y": 90804,
+      "scenes": [
+        [
+          "performance-recording-ready",
+          "Choose Internal or USB"
+        ],
+        [
+          "completion-usb-recording",
+          "Record directly to USB"
+        ],
+        [
+          "completion-usb-interrupted",
+          "USB interruption \u00b7 Take held"
+        ],
+        [
+          "completion-usb-saved",
+          "Recovered recording in Library"
+        ]
+      ]
+    },
+    {
+      "n": 49,
+      "title": "Save audio and Bounce",
+      "x": 6700,
+      "y": 90804,
+      "scenes": [
+        [
+          "completion-save-common-cycle",
+          "Save audio \u00b7 Shared cycle"
+        ],
+        [
+          "completion-bounce-common-cycle",
+          "Bounce \u00b7 Shared cycle and Mix FX"
+        ]
+      ]
+    },
+    {
+      "n": 50,
+      "title": "Audible processing behavior",
+      "x": 100,
+      "y": 93808,
+      "scenes": [
+        [
+          "sound-behavior",
+          "Stop \u00b7 Tails finish"
+        ],
+        [
+          "completion-capture-before-output",
+          "Listening muted \u00b7 Recording intact"
+        ],
+        [
+          "completion-capture-follows-output",
+          "Recording follows output mute"
+        ]
+      ]
+    },
+    {
+      "n": 51,
+      "title": "Timing boundaries",
+      "x": 6700,
+      "y": 93808,
+      "scenes": [
+        [
+          "completion-first-timing-review",
+          "First take \u00b7 Optional timing correction"
+        ],
+        [
+          "completion-primary-clear-review",
+          "Clear timing source \u00b7 Review"
+        ],
+        [
+          "completion-clock-loss-recovered",
+          "Clock loss \u00b7 Partial take preserved"
+        ]
+      ]
+    },
+    {
+      "n": 52,
+      "title": "Touch lock and Solo",
+      "x": 100,
+      "y": 95540,
+      "scenes": [
+        [
+          "completion-touch-locked",
+          "Touch locked \u00b7 Pedals available"
+        ],
+        [
+          "completion-double-solo-setting",
+          "Optional double-press Solo"
+        ],
+        [
+          "completion-double-solo-active",
+          "Solo after second press"
+        ]
+      ]
+    },
+    {
+      "n": 53,
+      "title": "Expanded MIDI Learn",
+      "x": 6700,
+      "y": 95540,
+      "scenes": [
+        [
+          "completion-midi-14bit",
+          "14-bit CC \u00b7 Track volume"
+        ],
+        [
+          "completion-midi-nrpn",
+          "NRPN \u00b7 Track volume"
+        ],
+        [
+          "completion-midi-bank-program",
+          "Bank and Program \u00b7 Cut sound"
+        ],
+        [
+          "completion-midi-relative",
+          "Relative CC \u00b7 Track volume"
+        ]
+      ]
+    }
+  ],
+  "layoutStatus": "Complete. Text bounds checked in all 19 screens; current clock-loss/crown display refreshed. Native File > Save verified against final handoff evidence.",
+  "remaining": [],
+  "rootSections": {
+    "current": "p0dpwx",
+    "earlier": "X5FjMW",
+    "designSystem": "adlbY",
+    "superseded": "jbFH4"
+  },
+  "followUp": {
+    "design": "../2026-09-09-primary-crown.md",
+    "geometry": "../primary-crown-previews/",
+    "note": "Completed: current Track, Wave, Mixer and selected-track frames refreshed from these exports."
+  },
+  "status": "Complete: 19 frames fitted and checked, current clock-loss frame refreshed, accepted section labels and native save verified.",
+  "handoffEvidence": "../../handoff/segno-app/pen-verification.json"
+}

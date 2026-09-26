@@ -1,0 +1,56 @@
+{
+  "section": "eKooF",
+  "status": "owner accepted",
+  "acceptedOn": "2026-09-08",
+  "frames": [
+    {
+      "review": "backup-library",
+      "name": "Backup in Library",
+      "root": "Rv5nm",
+      "tile": "npwR1"
+    },
+    {
+      "review": "backup-copying",
+      "name": "Inline copy progress",
+      "root": "VfIy4",
+      "tile": "mdwSD"
+    },
+    {
+      "review": "backup-usb",
+      "name": "USB session list",
+      "root": "BbADt",
+      "tile": "C0Mogf"
+    },
+    {
+      "review": "backup-conflict",
+      "name": "Matching backup name",
+      "root": "c1Lk51",
+      "tile": "ZECDn"
+    },
+    {
+      "review": "backup-restored",
+      "name": "Restored session selected",
+      "root": "lch7K",
+      "tile": "f2sBAc"
+    },
+    {
+      "review": "backup-recovery",
+      "name": "Retry an interrupted copy",
+      "root": "i7kkai",
+      "tile": "vzH8N"
+    }
+  ],
+  "nativeVerification": {
+    "texts": 438,
+    "elements": 1021,
+    "errors": [],
+    "sectionOverlaps": [],
+    "containmentErrors": []
+  },
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "document": "../2026-09-07-session-backup-ux.md",
+  "savedHash": "c22731ffd8d4bd336dc72befc066583463ab576b"
+}

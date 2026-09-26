@@ -1,0 +1,20 @@
+{
+  "checks": [
+    "per-field defaults and overrides",
+    "Loop/Once selectable in all five modes",
+    "live overdub edits",
+    "direct touch and encoder editing",
+    "encoder cancellation preserves inheritance",
+    "double tap restores default ownership",
+    "scope-switch draft cancellation",
+    "decay endpoints and bounds",
+    "pedal saves exclude drafts",
+    "committed state survives reload",
+    "FX isolation",
+    "visible encoder stops only",
+    "all eight tracks visible; 1920x1080 canvas and aligned rows"
+  ],
+  "errors": [],
+  "engineValidation": false,
+  "physicalValidation": false
+}

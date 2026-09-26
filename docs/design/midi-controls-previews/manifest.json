@@ -1,0 +1,122 @@
+{
+  "section": "rmWqV",
+  "frames": [
+    {
+      "review": "midi-list",
+      "name": "Controller mappings",
+      "tile": "RIrL3",
+      "root": "vxmoz",
+      "status": "reviewed",
+      "browser": "chrome/midi-list.png",
+      "native": "pen/vxmoz.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "midi-learn",
+      "name": "Learn a control",
+      "tile": "Rzp8l",
+      "root": "nnKUG",
+      "status": "reviewed",
+      "browser": "chrome/midi-learn.png",
+      "native": "pen/nnKUG.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "midi-edit",
+      "name": "Knob or fader",
+      "tile": "P5dWId",
+      "root": "l2iAy6",
+      "status": "reviewed",
+      "browser": "chrome/midi-edit.png",
+      "native": "pen/l2iAy6.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "midi-button",
+      "name": "Button and multiple controls",
+      "tile": "l9iwlZ",
+      "root": "bJXN8",
+      "status": "reviewed",
+      "browser": "chrome/midi-button.png",
+      "native": "pen/bJXN8.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "midi-targets",
+      "name": "Choose a parameter",
+      "tile": "l3ouX",
+      "root": "L8j66W",
+      "status": "reviewed",
+      "browser": "chrome/midi-targets.png",
+      "native": "pen/L8j66W.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "midi-conflict",
+      "name": "Already mapped",
+      "tile": "F3HLl",
+      "root": "JqcUT",
+      "status": "reviewed",
+      "browser": "chrome/midi-conflict.png",
+      "native": "pen/JqcUT.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "midi-disconnected",
+      "name": "Disconnected controller",
+      "tile": "sSpdN",
+      "root": "MMzPS",
+      "status": "reviewed",
+      "browser": "chrome/midi-disconnected.png",
+      "native": "pen/MMzPS.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "midi-empty",
+      "name": "No mappings",
+      "tile": "vsyj4",
+      "root": "aQHXq",
+      "status": "reviewed",
+      "browser": "chrome/midi-empty.png",
+      "native": "pen/aQHXq.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    }
+  ],
+  "status": "reviewed",
+  "savedPenHash": "8bf3673e88a1e1c1e012ae9e2e044b7a026e5d99",
+  "nativeVerification": {
+    "texts": 248,
+    "elements": 381,
+    "errors": [],
+    "groupProblems": []
+  },
+  "checks": [
+    "Chrome and Firefox: Learn filtering, multiple targets, pickup, Momentary/Toggle/Program, conflicts, save/cancel, encoder editing, reconnect, reload, held-value persistence and failed saves",
+    "Existing pedal performance and recording journey regressions pass"
+  ],
+  "limits": "MIDI messages, ports and audio are simulated. External sync has its own approved UX reference; real hardware I/O remains open."
+}

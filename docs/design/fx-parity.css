@@ -1,0 +1,17 @@
+.fx-typed-control .inline-label output{white-space:nowrap;font-size:20px;}
+.fx-source-note{font-size:17px;line-height:20px;color:#9dacc2;}
+.fx-value-options{display:flex;gap:10px;}
+.fx-value-options button{flex:1;min-height:54px;padding:10px;border:1px solid #52647c;background:#222b39;color:#dbe6f5;}
+.fx-value-options button.selected{background:#7089ac;color:#101722;border-color:#b1c6e3;}
+.fx-preset-card{display:flex;flex-direction:column;gap:10px;min-width:0;}
+.fx-preset-card .saved-card{width:100%;}
+.fx-preset-actions{display:flex;gap:10px;}
+.fx-preset-actions button{flex:1;min-width:0;min-height:54px;padding:10px;font-size:20px;}
+.fx-preset-summary{color:#aebed4;font-size:24px;line-height:1.45;}
+.fx-preset-error{color:#e3be8a;font-size:24px;line-height:1.4;}
+.fx-preset-import-list{max-height:360px;overflow:auto;display:flex;flex-direction:column;gap:10px;}
+.fx-preset-import-row{padding:16px 20px;background:#222b39;border:1px solid #52647c;border-radius:8px;}
+.fx-preset-import-row span{display:block;color:#aebed4;font-size:22px;}
+.pedal-column .fx-typed-control .inline-label{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;}
+.pedal-column .fx-typed-control .inline-label>span{height:28px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pedal-column .fx-typed-control .inline-label output{height:24px;line-height:24px;}

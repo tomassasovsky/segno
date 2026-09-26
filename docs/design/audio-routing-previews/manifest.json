@@ -1,0 +1,183 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "section": "O51ZiH",
+  "status": "Input setup accepted; routing proposal",
+  "audio": "Silent prototype; meter samples are simulated",
+  "frames": [
+    {
+      "root": "eFjwu",
+      "tile": "s0zlm",
+      "review": "routing-inputs",
+      "name": "Recording inputs",
+      "status": "proposal",
+      "browser": "routing-inputs.png",
+      "native": "pen/eFjwu.png"
+    },
+    {
+      "root": "QJo9g",
+      "tile": "oegcz",
+      "review": "routing-outputs",
+      "name": "Live output routing",
+      "status": "proposal",
+      "browser": "routing-outputs.png",
+      "native": "pen/QJo9g.png"
+    },
+    {
+      "root": "eEHQf",
+      "tile": "BnMNn",
+      "review": "routing-tracks",
+      "name": "Track output routing",
+      "status": "proposal",
+      "browser": "routing-tracks.png",
+      "native": "pen/eEHQf.png"
+    },
+    {
+      "root": "Mk6WM",
+      "tile": "Z3tJMK",
+      "review": "routing-players",
+      "name": "Backing & click",
+      "status": "proposal",
+      "browser": "routing-players.png",
+      "native": "pen/Mk6WM.png"
+    },
+    {
+      "root": "KBR1V",
+      "tile": "mf0fR",
+      "review": "routing-monitor",
+      "name": "Auto monitoring",
+      "status": "proposal",
+      "browser": "routing-monitor.png",
+      "native": "pen/KBR1V.png"
+    },
+    {
+      "root": "Z8OoHg",
+      "tile": "MoriR",
+      "review": "routing-many-inputs",
+      "name": "18 recording inputs",
+      "status": "proposal",
+      "browser": "routing-many-inputs.png",
+      "native": "pen/Z8OoHg.png"
+    },
+    {
+      "root": "hHEH0",
+      "tile": "sTYRr",
+      "review": "routing-many-outputs",
+      "name": "18 live inputs",
+      "status": "proposal",
+      "browser": "routing-many-outputs.png",
+      "native": "pen/hHEH0.png"
+    },
+    {
+      "root": "pi4VQ",
+      "tile": "r47I8",
+      "review": "routing-recording",
+      "name": "Recording locked",
+      "status": "proposal",
+      "browser": "routing-recording.png",
+      "native": "pen/pi4VQ.png"
+    },
+    {
+      "root": "PCmlB",
+      "tile": "KFFvd",
+      "review": "routing-empty",
+      "name": "No recording inputs",
+      "status": "proposal",
+      "browser": "routing-empty.png",
+      "native": "pen/PCmlB.png"
+    },
+    {
+      "root": "sYQjb",
+      "tile": "RZ14D",
+      "review": "routing-names",
+      "name": "Input names",
+      "status": "accepted",
+      "browser": "routing-names.png",
+      "native": "pen/sYQjb.png",
+      "acceptedOn": "2026-09-07"
+    },
+    {
+      "root": "WbzLb",
+      "tile": "RcgPS",
+      "review": "routing-many-names",
+      "name": "18 input names",
+      "status": "accepted",
+      "browser": "routing-many-names.png",
+      "native": "pen/WbzLb.png",
+      "acceptedOn": "2026-09-07"
+    },
+    {
+      "root": "KrLEc",
+      "tile": "bDCDG",
+      "review": "routing-rename",
+      "name": "Rename an input",
+      "status": "accepted",
+      "browser": "routing-rename.png",
+      "native": "pen/KrLEc.png",
+      "acceptedOn": "2026-09-07"
+    },
+    {
+      "root": "Wf8UJ",
+      "tile": "t01P4n",
+      "review": "routing-setup",
+      "name": "Mono input · Pan & trim",
+      "status": "accepted",
+      "browser": "routing-setup.png",
+      "native": "pen/Wf8UJ.png",
+      "acceptedOn": "2026-09-07"
+    },
+    {
+      "root": "tE43z",
+      "tile": "X8GtQ",
+      "review": "routing-setup-stereo",
+      "name": "Stereo pair · Balance & trim",
+      "status": "accepted",
+      "browser": "routing-setup-stereo.png",
+      "native": "pen/tE43z.png",
+      "acceptedOn": "2026-09-07"
+    },
+    {
+      "root": "RWQ1Q",
+      "tile": "NKTbe",
+      "review": "routing-setup-many",
+      "name": "18-input setup",
+      "status": "accepted",
+      "browser": "routing-setup-many.png",
+      "native": "pen/RWQ1Q.png",
+      "acceptedOn": "2026-09-07"
+    },
+    {
+      "root": "z9BJOr",
+      "tile": "uJVUu",
+      "review": "routing-setup-clip",
+      "name": "Clipping input",
+      "status": "accepted",
+      "browser": "routing-setup-clip.png",
+      "native": "pen/z9BJOr.png",
+      "acceptedOn": "2026-09-07"
+    },
+    {
+      "root": "IAJw1",
+      "tile": "Sh3v1",
+      "review": "routing-setup-locked",
+      "name": "Recording in progress",
+      "status": "accepted",
+      "browser": "routing-setup-locked.png",
+      "native": "pen/IAJw1.png",
+      "acceptedOn": "2026-09-07"
+    }
+  ],
+  "checks": [
+    "Chrome and Firefox: verify_audio_routing.cjs, verify_input_names.cjs, verify_input_setup.cjs, verify_mixer_performance.cjs pass"
+  ],
+  "savedPenHash": "ab84722ad8f6c434c467f3f2ae8c05a91a647ba4",
+  "nativeVerification": {
+    "texts": 624,
+    "elements": 1375,
+    "errors": [],
+    "groupProblems": []
+  },
+  "nativeExportScale": 1
+}

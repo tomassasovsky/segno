@@ -1,0 +1,354 @@
+{
+  "scope": "57 FX and Loop study screens",
+  "textNodes": 1947,
+  "alignmentTolerancePx": 1,
+  "widthTolerance": "3 px or 1%, whichever is larger",
+  "fontMapping": {
+    "Arial": "Arimo",
+    "SegnoMono": "JetBrains Mono"
+  },
+  "frames": [
+    {
+      "id": "v7Ekz",
+      "textCount": 7,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "SC3Q1",
+      "textCount": 33,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "KJeZI",
+      "textCount": 52,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "OjrTx",
+      "textCount": 51,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "w07hGt",
+      "textCount": 67,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "yCQe8",
+      "textCount": 22,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "reByP",
+      "textCount": 23,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "cf3wW",
+      "textCount": 85,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "i1RkcR",
+      "textCount": 15,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "G8vVo",
+      "textCount": 29,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "S0zMH",
+      "textCount": 18,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "o0RK7c",
+      "textCount": 61,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "WD0tY",
+      "textCount": 26,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "TFAyM",
+      "textCount": 118,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "J8U51x",
+      "textCount": 27,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "WmJsF",
+      "textCount": 32,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "d0FaB",
+      "textCount": 103,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "g37kn",
+      "textCount": 17,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "z385s",
+      "textCount": 16,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "UV1lE",
+      "textCount": 10,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "GPoYp",
+      "textCount": 18,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "AFjEl",
+      "textCount": 20,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "Kliy9",
+      "textCount": 17,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "dRiy6",
+      "textCount": 19,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "SJgv4",
+      "textCount": 11,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "c0Gtr",
+      "textCount": 19,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "whFS7",
+      "textCount": 15,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "WFsUa",
+      "textCount": 7,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "xxEXs",
+      "textCount": 66,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "wtQOy",
+      "textCount": 67,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "rmQ4f",
+      "textCount": 26,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "Lkmir",
+      "textCount": 28,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "fVIs5",
+      "textCount": 29,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "PddSM",
+      "textCount": 29,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "vXnWZ",
+      "textCount": 31,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "H9eAG2",
+      "textCount": 33,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "WHaeh",
+      "textCount": 32,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "ymA4W",
+      "textCount": 34,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "XLSOr",
+      "textCount": 34,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "e85zX",
+      "textCount": 22,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "UBbfo",
+      "textCount": 25,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "aoBlk",
+      "textCount": 27,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "zKmA9",
+      "textCount": 21,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "vpV8H",
+      "textCount": 25,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "gnbuy",
+      "textCount": 23,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "BFfDT",
+      "textCount": 24,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "ayrzf",
+      "textCount": 61,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "L2zCah",
+      "textCount": 33,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "l4SrE7",
+      "textCount": 15,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "KBznC",
+      "textCount": 20,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "pLkQ5",
+      "textCount": 14,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "jtUVL",
+      "textCount": 17,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "fbyDZ",
+      "textCount": 50,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "r2N5ss",
+      "textCount": 75,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "jWo0A",
+      "textCount": 75,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "IMvAD",
+      "textCount": 23,
+      "misaligned": [],
+      "widthDifferences": []
+    },
+    {
+      "id": "gCHAo",
+      "textCount": 50,
+      "misaligned": [],
+      "widthDifferences": []
+    }
+  ]
+}

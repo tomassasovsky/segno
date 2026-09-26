@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-08",
+  "scope": "local silent symbolic proposal; no DSP or PCM",
+  "command": "SEGNO_PROCESSING_BROWSER=1 SEGNO_PROCESSING_SCREENSHOTS=1 node docs/design/verify_processing_behavior.cjs (configured Playwright runtime)",
+  "result": {
+    "pure": 19,
+    "browser": 2,
+    "total": 21,
+    "passed": 21
+  },
+  "browsers": [
+    "Chrome",
+    "Firefox"
+  ],
+  "viewports": [
+    [
+      1920,
+      1080
+    ],
+    [
+      1280,
+      1024
+    ]
+  ],
+  "screenshots": [
+    "chrome-tails.png",
+    "chrome-stop.png",
+    "chrome-capture-taps.png",
+    "firefox-tails.png",
+    "firefox-stop.png",
+    "firefox-capture-taps.png"
+  ],
+  "visualInspection": "Stop and capture tap screenshots inspected in both browsers",
+  "sha256": {
+    "processing-behavior-study.js": "69947ccab8e8474bc7ccc70a5b6bc32b2e66985c8e2f29da8738ca2fbd6c8193",
+    "verify_processing_behavior.cjs": "f133fa3088bc80321ecde133ee535c3e7bc43c994c6dc6fe1a37f8d63be435db",
+    "processing-behavior-preview.html": "526d364467fcd6b5aaccde1c2fbd9900735ef90752e4ed8784a46b41c09fd917",
+    "2026-09-08-processing-behavior-proposal.md": "8148a7312e8655c651e43af4a053d1c258439d60c09127fa40da280c8852c1c4"
+  },
+  "finalVerification": "Final signal and monitoring coverage plus browser toggle independently rerun; author screenshots are unchanged."
+}

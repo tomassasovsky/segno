@@ -1,0 +1,16 @@
+{
+  "scope": "Author-side browser and native design checks",
+  "browsers": [
+    "Chrome",
+    "Firefox"
+  ],
+  "suites": [
+    "verify_length_performance.cjs",
+    "verify_speed_performance.cjs",
+    "verify_fade_performance.cjs"
+  ],
+  "native_text_alignment_issues": 0,
+  "audio": "Silent edit model; no engine audio or hardware validation",
+  "status": "Separate-mode revision ready for owner review",
+  "gesture_timing": "Direct First/Last on release; hold Undo is exclusive; stable track pedals; independent Press/Hold entry"
+}

@@ -1,12 +1,104 @@
-# Segno — Progress & Roadmap
+# Segno — Build notes and implementation history
 
 <!-- cspell:words hashlib -->
 
-Living status doc for the Flutter desktop loopstation. Pairs with the original
-plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
-Update this as work lands so any session (human or agent) can resume cold.
+September 9, 2026: the [implementation handoff](handoff/segno-app/README.md) is prepared for Claude Fable 5.1. Accepted behavior, existing app seams and exact source gaps are consolidated. The 19 completion Pen screens and four crown/display views are corrected and saved, with eight accepted instrument frames preserved. The clipped clock-loss cue is fixed; Chrome/Firefox checks and scoped reviews pass. Production work has not started in this handoff task. Older entries below describe earlier checkpoints; the handoff resolves superseded proposal wording.
+
+Build/test instructions and historical implementation notes. Current product
+scope and proposed execution order: [appliance roadmap](roadmap/README.md).
+GitHub Issues own live status; dated claims below need current-source checks.
+
+September 9, 2026: the owner clarified that [the same racks, effects and effect
+parameters](design/2026-09-09-fx-reference-completion.md) remain required, while
+Segno's sound may differ. Original factory audio is no longer a prerequisite;
+unverified control definitions remain open. [Virtual instruments](brainstorm/2026-09-09-virtual-instruments-brainstorm-doc.md)
+are new product scope: controls/MIDI generate audio routed like an input. This
+records product direction, not an implemented instrument engine. The completion
+walkthrough and crown are accepted; final visual comparison and native Pen save are recorded in the handoff.
+
+September 9, 2026: the [virtual-instrument proposal](design/2026-09-09-virtual-instruments-ux.md)
+is integrated into the main prototype under Audio routing. Its 19 illustrative
+patches are grouped in seven families. Controllers can be enabled independently;
+custom notes/chords, sustain and removal are supported. Recording uses the normal
+Tracks workflow, and session recall/New Loop preserve the instrument setup.
+Chrome and Firefox checks pass for the integrated journeys and failure cases.
+Live browser synthesis is audible; loop audio insertion, hardware delivery and
+native hosting remain unimplemented. The obsolete standalone recorder is removed.
+
+September 9, 2026: the [instrument UX review](design/2026-09-09-instrument-ux-review.md) closure is accepted by the owner and implements independent instrument inputs, shared MIDI/pedal/expression assignments, explicit key/chord mappings, family sound controls, audition and unavailable-sound recovery. Browser checks cover normal Tracks recording, sessions, source retirement and encoder drafts. Final evidence is in the instrument verification manifest and independent review reports. Native hosting and physical-device validation remain production work.
+
+September 8, 2026: the [audit closure design pass](design/2026-09-08-audit-closure-pass.md) addresses nine concrete prototype gaps and partially improves missing-control repair. Production, unresolved behavior/reference questions and appliance verification remain separate gates.
+
+September 8, 2026: [session recovery proposal](design/2026-09-08-session-recovery-ux.md) adds pending media repair and an Audio setup return path. [Shared behavior proposals](design/2026-09-08-shared-behavior-proposal.md) group the remaining contracts into three review examples; they are not silently adopted. Full native recovery and remaining dependency types stay open.
+
+September 8, 2026: the owner clarified [partial-take recovery in Multi](design/2026-09-08-shared-behavior-proposal.md): a short recording occupies part of the established loop, with silence in unwritten portions. Redo retains the shared loop length and Multi mode. The earlier Free-mode recovery proposal is superseded. The [recording recovery prototype](design/2026-09-08-capture-recovery-ux.md) now implements that decision, including waveform silence, wrapped regions and Redo without interrupting other tracks. It also demonstrates grouped active Clear All recovery with formerly capturing tracks restored stopped. Focused model and Chrome/Firefox checks pass; active Clear All remains a proposal, and native audio/power-loss verification remains outstanding.
 
 Repo: https://github.com/tomassasovsky/segno · branch `master`.
+
+September 8, 2026: the [shared-behavior prototypes](design/shared-behavior-previews/index.html)
+now demonstrate defining-take tempo, stopped-start count-in, Sync/Band Auto cycle
+endings, symbolic processing/capture alternatives, and session recall that keeps
+current physical setup. Eight editable references are saved in Pen sections 38
+and 39. Focused model, Chrome/Firefox and existing recovery/two-display journeys
+pass; independent reviews have no unresolved findings in this bounded prototype
+scope. New policies remain proposals, including the recording tap, session field
+split, and tail rules beyond ordinary Stop. Primary handoff, transformed-primary
+capture, native audio and appliance recovery remain open. See the
+[verification and review record](reviews/2026-09-08-shared-behavior/review.md).
+
+---
+
+September 8, 2026: the [session connection-repair proposal](design/2026-09-08-session-connection-repair.md)
+adds pending CTRL/MIDI replacement inside Library, affected-assignment review,
+Cancel, failed-write retry and foot/encoder control. Four references are saved
+in Pen section 40; the previous retry-only guard is archived. The combined
+72-test model regression and Chrome/Firefox journeys pass, with no unresolved
+findings across the five local review roles. Missing effect/parameter targets,
+physical-device proof and native recovery remain open. The owner asked to move
+on from the tail comparison without settling its processing policies.
+
+---
+
+September 8, 2026: the [saved-control repair proposal](design/2026-09-08-session-target-repair.md)
+adds incoming-session destination and parameter selection, paged endpoint review,
+and guarded Apply in Library. The 21 focused tests and 93 combined model cases
+pass; Chrome/Firefox cover touch, encoder, foot controls, cancellation, failed
+write/retry and combined media/controller/target repair. Five editable references
+are saved in Pen section 41; native alignment and all five independent review
+roles pass for this bounded change. Native plugin and audio
+recovery remain outside this silent prototype; LX-181 is still partially open.
+
+September 9, 2026: the six authorized [recovery and performance proposals](design/2026-09-09-recovery-expansion-delivery.md)
+are integrated into the main prototype: recorded-layer recovery, physical-port
+repair, complete appliance backup, timing-track handoff, reversible preset trial,
+and multipart recordings with low-storage handling. The 143 combined model cases,
+Chrome/Firefox journeys and existing recording/Library/repair regressions pass.
+Five independent review roles have no unresolved findings in their bounded
+scopes. Fifteen editable references are saved in Pen sections 42–47 with aligned
+text and unclipped encoder focus. The [gallery](design/recovery-expansion-previews/index.html)
+and [review record](reviews/2026-09-08-recovery-expansion/review.md) distinguish
+the silent prototype from native audio, filesystem and hardware work. Tail and
+capture-tap policies remain open.
+
+September 9, 2026: the owner accepted all six recovery/performance flows and the
+simplified Review connections popup after viewing their recorded walkthrough.
+The delivery record, gallery and Pen sections 42–47 mark them accepted. Remaining
+audio behavior, timing edge cases and reference/production gates are summarized
+in the [remaining design gates](design/2026-09-09-remaining-design-gates.md).
+
+September 9, 2026: the authorized [non-production completion pass](design/2026-09-09-non-production-completion.md)
+adds USB recording/recovery, a shared Bounce/Save render policy, audible tail
+examples, stable capture timing, touch lock, optional double-press Solo and
+expanded MIDI Learn. A [seven-chapter recording](design/completion-previews/walkthrough.html)
+shows the interactions. Exact FX definitions and the absent factory audio remain
+source-dependent; production is explicitly excluded. The delivery record keeps
+those boundaries separate from browser validation and owner design acceptance.
+
+September 9, 2026: the owner-requested [primary-track crown](design/2026-09-09-primary-crown.md)
+now appears beside the first recorded track’s name in all main views and on its
+selected-track display. Selection and bank changes preserve ownership; timing
+handoff updates the marker. Chrome/Firefox behavior and long-name alignment
+checks pass. Pen correction remains blocked by its existing editor stall.
 
 ---
 
@@ -79,11 +171,11 @@ install hook remain unchanged. A failed inspection stops the release build.
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
-  env (exit 69, machine-output parser vs Flutter 3.44). Hooks block bare
-  `flutter test` / `dart test`. Run via the **absolute path**, which the guard
-  doesn't match: `/Users/Tomas/development/flutter/bin/flutter test`.
-- **Scaffolding:** `flutter create` is hook-blocked in favour of the very_good
-  MCP `create` tool — but that only makes federated method-channel plugins. The
+  env (exit 69, machine-output parser vs Flutter 3.44). Use the working SDK:
+  `/Users/Tomas/development/flutter/bin/flutter test`. Codex does not install
+  the former Claude hook that blocked bare CLI test commands.
+- **Scaffolding:** prefer the Very Good CLI templates for normal packages.
+  The Very Good MCP `create` tool only makes federated method-channel plugins. The
   FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +
   podspec). Native engine lives **inside** the plugin at
   `packages/segno_engine/src/` (Flutter symlinks plugins at build time, so
@@ -156,7 +248,7 @@ install hook remain unchanged. A failed inspection stops the release build.
     `WIN32_LEAN_AND_MEAN` instead — it applies to the whole TU, including
     miniaudio's own later `<windows.h>`, and miniaudio documents it as excluding
     symbols it then redefines by hand.
-- **Regenerate FFI bindings** after touching `src/segno_engine_api.h`:
+- **Regenerate FFI bindings** after touching `src/core/segno_engine_api.h`:
   ```sh
   cd packages/segno_engine
   dart run ffigen --config ffigen.yaml
@@ -706,7 +798,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 
 ---
 
-## Locked design decisions (don't re-litigate)
+## Design decisions (read with the current appliance direction)
 
 - **Record is exclusive** — one input stream, one capturer; chained hand-off.
 - **Latency compensation** — comp write + live monitoring + auto-offset from the
@@ -722,13 +814,13 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   Free-running `loop_iteration`; track reads its `(iter-start_iter) % k` segment.
   New-track first pass always begins at the loop top (phase-locked multiples);
   per-track multi-loop phase is relative to each track's own start.
-- **Fully free mode (no tempo)** — the looper is tempo-free: one master loop
-  length set by the first recording, no metronome/click/count-in/tap-tempo, no
-  loop↔tempo sync, no quantization. Captures start/stop immediately. BPM logic
-  was deleted (not hidden) from engine → FFI → repo → bloc → UI. Loop multiples
-  (#4), latency compensation, the waveform visualizer, Big Picture / two-window,
-  and theming are retained. (Supersedes the earlier #2 loop↔tempo and #3
-  quantize-start decisions, which were removed.)
+- **Tempo-free-only direction — superseded.** The current appliance has five
+  modes, tempo, click, count-in, tap tempo and quantization. Preserve these
+  implementations; issue 263 owns the timing/mode programme. The earlier
+  removal of BPM was historical, not a current instruction. Session recall,
+  production stretch and external clock still have gaps; see the dated
+  [comparison](research/segno-looper-x-comparison/README.md) and current
+  [roadmap](roadmap/README.md) for evidence and remaining outcomes.
 - **Transport holds at the top when idle** — the master clock advances only
   while a track is active; otherwise it sits at 0. Play always resumes from the
   beginning, never mid-loop in silence.
@@ -741,7 +833,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 
 ---
 
-## Roadmap (path forward)
+## Historical roadmap (superseded as the execution queue)
 
 **Full multichannel per-track I/O routing — SHIPPED.** The "last big feature" is
 done in code: it landed as the multi-lane / dual-route rework (per-lane

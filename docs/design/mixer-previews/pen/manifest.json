@@ -1,0 +1,34 @@
+{
+  "scope": "Owner-accepted Mixer target UX; silent browser study",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "frames": [
+    {
+      "review": "performance-mixer",
+      "file": "PQJIq.png",
+      "name": "Mixer / Tracks",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-mixer-inputs",
+      "file": "Fbk22.png",
+      "name": "Mixer / Live inputs",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-mixer-many-inputs",
+      "file": "L8Z37W.png",
+      "name": "Mixer / Eighteen inputs",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-mixer-auto",
+      "file": "f8I7b.png",
+      "name": "Mixer / Auto monitoring",
+      "status": "accepted"
+    }
+  ],
+  "hardwareComponent": "Qdj7x"
+}

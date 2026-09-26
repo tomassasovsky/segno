@@ -1,0 +1,39 @@
+{
+  "status": "proposal",
+  "screens": {
+    "session-recovery": "DH3ER",
+    "session-recovery-files": "p1uEqR",
+    "session-recovery-ready": "vs5qf",
+    "session-recovery-error": "sQupO",
+    "session-recovery-device": "P2y0Vb"
+  },
+  "penGroup": "kmWoI",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "sourceHashes": {
+    "session-recovery-model.js": "4412f284920b64055593335192df5f9b4cdb01ef1d1d1a8b1aa5f9eaa8097cc4",
+    "session-recovery-model.test.cjs": "7b42b59c507225143f4b5a0dfb4f69a7a13337bd13bfdca7e85a0af1d94d4153",
+    "session-recovery-study.js": "35381a51085faf131c3d9382b4f24b7b81d62f4aa97096c674730f5788bdcb93",
+    "session-recovery-study.css": "c0c7bb29062f346254eb8f4b9f261b8b41906b8e30d9cbb666debad780ac07bf",
+    "session-recovery-study.test.cjs": "59461775911185d19ad36ddb4ce120187de1c4690ec308e9c0ac54d68560d1ea",
+    "session-library-study.js": "90834527f21568c17a3949796e3b45051feec67abb1f4cdabcad00bf1e51fffb",
+    "fx-ux-prototype.html": "4cb77e7aa11ed4b2de0f3f18ef96428b0d1581654002a2ff109c565f6b1c667d",
+    "media-parity-study.test.cjs": "fb72e88c26e22bde1def41dbd59cac62d0ae146be351e52b9d9e3e3b2beb2be8",
+    "verify_session_recovery.cjs": "b6264f000fc19c3cc8d39bcf835088a244e6722b9ff40cb5ab50a3366378dfd5",
+    "verify_session_library.cjs": "001de48aa5c862dcdf510d49b59e7d6bc562faa207df250826f6c3add9cc86e2"
+  },
+  "penHash": "f88aee36bed403f3003c1b6d8c9320c432ef610b73aad2e5c4297b81b1ef1c4f",
+  "penBytes": 88625863,
+  "nativeClippingIssues": 0,
+  "verification": {
+    "nodeTests": 37,
+    "browserSuites": [
+      "verify_session_recovery.cjs: Chrome, Firefox",
+      "verify_session_library.cjs: Chrome, Firefox"
+    ],
+    "simulated": true,
+    "production": false
+  }
+}

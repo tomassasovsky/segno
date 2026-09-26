@@ -1,0 +1,93 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "status": "accepted",
+  "acceptedOn": "2026-09-07",
+  "audio": "Symbolic prototype state; no appliance audio save/load",
+  "section": "BYESA",
+  "frames": [
+    {
+      "root": "SKrlX",
+      "tile": "HPb9F",
+      "review": "session-library",
+      "name": "Session library",
+      "status": "accepted",
+      "browser": "session-library.png",
+      "native": "pen/SKrlX.png"
+    },
+    {
+      "root": "O1njbc",
+      "tile": "U2bRH",
+      "review": "session-new",
+      "name": "New loop / Keep current session",
+      "status": "accepted",
+      "browser": "session-new.png",
+      "native": "pen/O1njbc.png"
+    },
+    {
+      "root": "CI2oT",
+      "tile": "OltOM",
+      "review": "session-saved",
+      "name": "Session recall / Selected",
+      "status": "accepted",
+      "browser": "session-saved.png",
+      "native": "pen/CI2oT.png"
+    },
+    {
+      "root": "onoQe",
+      "tile": "cPmYI",
+      "review": "session-name",
+      "name": "Session name",
+      "status": "accepted",
+      "browser": "session-name.png",
+      "native": "pen/onoQe.png"
+    },
+    {
+      "root": "Kgbw7",
+      "tile": "lb1U1",
+      "review": "session-error",
+      "name": "Session save / Storage error",
+      "status": "accepted",
+      "browser": "session-error.png",
+      "native": "pen/Kgbw7.png"
+    },
+    {
+      "root": "X11hD0",
+      "tile": "uRKTE",
+      "review": "session-empty",
+      "name": "New loop / Ready",
+      "status": "accepted",
+      "browser": "session-empty.png",
+      "native": "pen/X11hD0.png"
+    }
+  ],
+  "checks": [
+    "verify_session_library.cjs: Chrome and Firefox pass",
+    "verify_audio_library.cjs: Chrome and Firefox pass",
+    "verify_backing_performance.cjs: Chrome and Firefox pass",
+    "verify_track_import.cjs: Chrome and Firefox pass",
+    "verify_pedal_performance.cjs: Chrome and Firefox pass"
+  ],
+  "verification": {
+    "texts": 658,
+    "elements": 2172,
+    "errors": [],
+    "groupProblems": []
+  },
+  "savedPenHash": "39b6b817ce8988ed82685b26c524b7e44573c7d3",
+  "previewRevision": {
+    "status": "owner accepted",
+    "acceptedOn": "2026-09-08",
+    "description": "Only recorded tracks, waveform examples, length/layers, mute/FX and isolated silent audition",
+    "nativeVerification": {
+      "texts": 438,
+      "elements": 1021,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "savedHash": "c22731ffd8d4bd336dc72befc066583463ab576b"
+  }
+}

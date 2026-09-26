@@ -1,0 +1,34 @@
+{
+  "scope": "Owner-accepted Transpose target UX; silent browser study",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "frames": [
+    {
+      "review": "performance-transpose",
+      "name": "Transpose",
+      "file": "fWlTV.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-transpose-bank",
+      "name": "Transpose across banks",
+      "file": "mhj7T.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-transpose-empty",
+      "name": "Transpose with no selection",
+      "file": "iL02o.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-transpose-limit",
+      "name": "Transpose at pitch limit",
+      "file": "yujfF.png",
+      "status": "accepted"
+    }
+  ],
+  "hardwareComponent": "Qdj7x"
+}

@@ -1,0 +1,278 @@
+{
+  "date": "2026-09-09",
+  "scope": "19 completion screens, four current display views and eight accepted instrument screens",
+  "saveMethod": "Native Pen File menu / Save; changed on-disk file verified after mutation",
+  "disk": {
+    "path": "segno-ui.pen",
+    "sha256": "af3a465f7b47a2102dadc13d45e4e8d79d94d53724724ebbb3f75bace49ce30a",
+    "bytes": 106782915,
+    "modifiedEpoch": 1788951212.1139312
+  },
+  "roots": [
+    {
+      "id": "p0dpwx",
+      "name": "01   CURRENT UX",
+      "x": 0,
+      "y": 0,
+      "width": 13200,
+      "height": 102912
+    },
+    {
+      "id": "X5FjMW",
+      "name": "02   EARLIER APPLICATION",
+      "x": 13560,
+      "y": 0,
+      "width": 13200,
+      "height": 39703
+    },
+    {
+      "id": "adlbY",
+      "name": "03   DESIGN SYSTEM",
+      "x": 13560,
+      "y": 40100,
+      "width": 6500,
+      "height": 11280
+    },
+    {
+      "id": "jbFH4",
+      "name": "04   SUPERSEDED",
+      "x": 20260,
+      "y": 40100,
+      "width": 6500,
+      "height": 12920
+    }
+  ],
+  "rootOverlaps": [],
+  "currentSectionOverlaps": [],
+  "screens": [
+    {
+      "id": "B7Q07",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "g6WBer",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "udaE1",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "aR4Qm",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "rARHK",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "hWeDb",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "p8a7D",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "SNtzK",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "F4ihgx",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "MW3Os",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "goc0I",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "gCTKx",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": [
+        "Bs9nf"
+      ]
+    },
+    {
+      "id": "mypYQ",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "rJ9GY",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "N2NlS",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "T7urI",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "SCQt4",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "jRkHr",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "jWDJD",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "Khh1a",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": [
+        "K1yqTN"
+      ]
+    },
+    {
+      "id": "yNPnZ",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": [
+        "BafLN"
+      ]
+    },
+    {
+      "id": "smLmX",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": [
+        "tZs1j"
+      ]
+    },
+    {
+      "id": "wJlxa",
+      "width": 1280,
+      "height": 720,
+      "textProblems": [],
+      "crowns": [
+        "FgRjQ"
+      ]
+    },
+    {
+      "id": "gGTXF",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "hSy26",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "Uv25f",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "kole9",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "t00H3H",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "J2uTq",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "hRKQL",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    },
+    {
+      "id": "B5PEqI",
+      "width": 1920,
+      "height": 1080,
+      "textProblems": [],
+      "crowns": []
+    }
+  ],
+  "visualReview": "Representative screenshot comparisons plus text-bound checks on every listed screen. Source-positioned LED and meter scale overflow is intentional; all checked text nodes have no clipping problems.",
+  "prototypeChanges": "Clock-loss cue wraps; native BPM parent padded by one pixel for font rounding; current four display frames replace stale geometry."
+}

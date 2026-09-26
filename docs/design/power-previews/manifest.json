@@ -1,0 +1,49 @@
+{
+  "section": "Z4KAJ",
+  "status": "owner accepted",
+  "frames": [
+    {
+      "review": "power-choose",
+      "name": "Power options",
+      "root": "z3tkX",
+      "tile": "QWWba"
+    },
+    {
+      "review": "power-saving",
+      "name": "Saving before shutdown",
+      "root": "tUqCV",
+      "tile": "xD6Px"
+    },
+    {
+      "review": "power-error",
+      "name": "Save failed \u00b7 stay on",
+      "root": "MFCYv",
+      "tile": "tBAZf"
+    },
+    {
+      "review": "power-off",
+      "name": "Safe to switch off",
+      "root": "DHsYQ",
+      "tile": "Cu7cd"
+    },
+    {
+      "review": "power-restarting",
+      "name": "Restarting",
+      "root": "V7XVe",
+      "tile": "iR4p7"
+    }
+  ],
+  "nativeVerification": {
+    "texts": 89,
+    "elements": 322,
+    "errors": [],
+    "sectionOverlaps": [],
+    "containmentErrors": []
+  },
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "document": "../2026-09-07-safe-power-ux.md",
+  "savedPenHash": "a40086e1523a9b2808d4374f6536b43b8e50df3d"
+}

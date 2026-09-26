@@ -1,0 +1,50 @@
+{
+  "date": "2026-09-09",
+  "scope": "Local browser/Node prototype checks, not physical hardware or CI",
+  "tests": [
+    {
+      "suite": "verify_instrument_runtime.cjs",
+      "exitCode": 0,
+      "output": "PASS: 19 patches; independent sources/routes and audio buses; splits/layers; sustain; remaps; MIDI expression; disconnect/reconnect; pending-start retirement; audition persistence; audio failure."
+    },
+    {
+      "suite": "verify_instrument_shared_controls.cjs",
+      "exitCode": 0,
+      "output": "PASS Dynamic catalogue preserves stable IDs, refreshes labels and removes stale targets\nPASS Existing editors discover new instrument actions and persist keys through rename\nPASS Dispatcher forwards stable target and source token, including release and stale guard\nPASS Built-in held Press begins on down, Hold stays exclusive, cancellation releases\nPASS External held actions release the same source on up and disconnect cancellation\nPASS Shared MIDI delivers original notes, CC, bend and pressure with independent Remote enable\nPASS MIDI Learn and editor consume one device, suspend its voices and preserve other ports\nPASS MIDI button instrument assignment dispatches through shared mapping and releases\nPASS Expression and external control pickers include dynamic instrument destinations\nPASS Mapping lifecycle retires latch sources; ordinary release preserves the latch\nPASS Built-in editor disables incompatible held Press / Hold pairs and repairs saved invalid pairs\nPASS External editor refuses invalid pairs at choices and Save, then allows Hold None or held Hold\n12 instrument shared control contracts passed"
+    },
+    {
+      "suite": "verify_instrument_complete_journeys.cjs",
+      "exitCode": 0,
+      "output": "chrome: independent inputs, full MIDI range/sustain/reconnect, explicit key chords, shared pedal and MIDI targets, audition/cancel/pack retry, routes, persistence and failed save passed\nfirefox: independent inputs, full MIDI range/sustain/reconnect, explicit key chords, shared pedal and MIDI targets, audition/cancel/pack retry, routes, persistence and failed save passed"
+    },
+    {
+      "suite": "verify_instrument_hardware_journeys.cjs",
+      "exitCode": 0,
+      "output": "chrome: shared built-in/external editors, saved physical assignments, instrument notes and sustain release passed\nfirefox: shared built-in/external editors, saved physical assignments, instrument notes and sustain release passed"
+    },
+    {
+      "suite": "verify_virtual_instruments.cjs",
+      "exitCode": 0,
+      "output": "chrome: integrated navigation, 19 sounds/7 families, shared theme/monitor/FX/output routes, normal track recording, session recall/New Loop, persistence and layout passed\nfirefox: integrated navigation, 19 sounds/7 families, shared theme/monitor/FX/output routes, normal track recording, session recall/New Loop, persistence and layout passed"
+    },
+    {
+      "suite": "verify_instrument_note_mappings.cjs",
+      "exitCode": 0,
+      "output": "chrome: custom chords, release, cancel, duplicate prevention, MIDI note/CC learn, source isolation, all note pitches, reload and dialog layout passed\nfirefox: custom chords, release, cancel, duplicate prevention, MIDI note/CC learn, source isolation, all note pitches, reload and dialog layout passed"
+    },
+    {
+      "suite": "verify_instrument_sustain.cjs",
+      "exitCode": 0,
+      "output": "chrome: sustain release, held keys, retrigger, source isolation, momentary/latch assignments, persistence, panic, focus loss, drums and scaled layout passed\nfirefox: sustain release, held keys, retrigger, source isolation, momentary/latch assignments, persistence, panic, focus loss, drums and scaled layout passed"
+    },
+    {
+      "suite": "verify_instrument_management.cjs",
+      "exitCode": 0,
+      "output": "chrome: whole-track meter, controller enable/disable, release and persistence, direct mapping editor, removal/cancel/active-capture protection, empty library, add after empty and failed removal passed\nfirefox: whole-track meter, controller enable/disable, release and persistence, direct mapping editor, removal/cancel/active-capture protection, empty library, add after empty and failed removal passed"
+    }
+  ],
+  "subsequentFocusedRun": {
+    "suite": "verify_instrument_complete_journeys.cjs",
+    "result": "Chrome and Firefox passed after sparse parameter draft initialization"
+  }
+}

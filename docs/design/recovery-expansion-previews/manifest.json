@@ -1,0 +1,77 @@
+[
+  {
+    "scene": "loop-audio-missing",
+    "root": "BFJxi",
+    "name": "Missing or damaged layer"
+  },
+  {
+    "scene": "loop-audio-find",
+    "root": "Jmimf",
+    "name": "Find an intact original"
+  },
+  {
+    "scene": "loop-audio-ready",
+    "root": "QF1ad",
+    "name": "Ready to open"
+  },
+  {
+    "scene": "audio-ports-missing",
+    "root": "xHGOX",
+    "name": "Missing interface ports"
+  },
+  {
+    "scene": "audio-ports-choose",
+    "root": "B7Xgj",
+    "name": "Choose replacement ports"
+  },
+  {
+    "scene": "audio-ports-ready",
+    "root": "nipgf",
+    "name": "Review routes"
+  },
+  {
+    "scene": "appliance-backup",
+    "root": "twPax",
+    "name": "USB appliance backups"
+  },
+  {
+    "scene": "appliance-backup-review",
+    "root": "TCLCg",
+    "name": "Review complete backup"
+  },
+  {
+    "scene": "appliance-backup-restore",
+    "root": "tYPzP",
+    "name": "Review restore"
+  },
+  {
+    "scene": "primary-stopped",
+    "root": "BMJPv",
+    "name": "Choose timing track"
+  },
+  {
+    "scene": "primary-playing",
+    "root": "u67Yl",
+    "name": "Confirm timing handoff"
+  },
+  {
+    "scene": "preset-audition-active",
+    "root": "GQ43v",
+    "name": "Preview and compare"
+  },
+  {
+    "scene": "performance-recording-long",
+    "root": "q8WUP5",
+    "name": "Long take · Ordered parts"
+  },
+  {
+    "scene": "performance-recording-low",
+    "root": "v5j4nV",
+    "name": "Storage reserve · Recording kept"
+  },
+  {
+    "scene": "performance-recording-unknown",
+    "root": "ybqt0",
+    "name": "Capacity unavailable"
+  }
+]

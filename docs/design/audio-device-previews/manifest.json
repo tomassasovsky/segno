@@ -1,0 +1,61 @@
+{
+  "section": "yeG6A",
+  "status": "revised prototype; automatic-first measurement requested by owner",
+  "frames": [
+    {
+      "review": "device-ready",
+      "root": "hWDHw",
+      "tile": "Q3YCDg",
+      "name": "Audio settings"
+    },
+    {
+      "root": "yyqrZ",
+      "tile": "NtHav",
+      "review": "device-automatic",
+      "name": "Automatic measurement"
+    },
+    {
+      "review": "device-calibration",
+      "root": "C2o3h",
+      "tile": "viOWI",
+      "name": "Measure latency"
+    },
+    {
+      "review": "device-confirm",
+      "root": "jUlrb",
+      "tile": "btTbs",
+      "name": "Apply during playback"
+    },
+    {
+      "review": "device-lost",
+      "root": "kfd3i",
+      "tile": "i1uSR",
+      "name": "Interface disconnected"
+    },
+    {
+      "review": "device-reconnect",
+      "root": "i8LwPO",
+      "tile": "orpdZ",
+      "name": "Reconnect audio"
+    },
+    {
+      "review": "device-lost-stage",
+      "root": "pbdiy",
+      "tile": "LGQmc",
+      "name": "Repair from Stage"
+    }
+  ],
+  "nativeVerification": {
+    "texts": 268,
+    "elements": 487,
+    "errors": [],
+    "sectionOverlaps": [],
+    "containmentErrors": []
+  },
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "document": "../../2026-09-07-audio-device-ux.md",
+  "savedPenHash": "092fec33ad631b1d04a36b59c5f4ef2b4c740830"
+}

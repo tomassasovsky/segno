@@ -1,0 +1,60 @@
+{
+  "source": "VAMP console (populated)",
+  "projection": "Orthographic top view of assembled pedal and raised nameplate",
+  "size": [
+    720,
+    960
+  ],
+  "assets": [
+    {
+      "file": "rec_play.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:1",
+      "nameplate": "tile_REC_PLAY:1"
+    },
+    {
+      "file": "stop.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:2",
+      "nameplate": "tile_STOP:1"
+    },
+    {
+      "file": "undo.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:3",
+      "nameplate": "tile_UNDO:1"
+    },
+    {
+      "file": "mode.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:4",
+      "nameplate": "tile_MODE:1"
+    },
+    {
+      "file": "track1.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:5",
+      "nameplate": "tile_TRACK1:1"
+    },
+    {
+      "file": "track2.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:6",
+      "nameplate": "tile_TRACK2:1"
+    },
+    {
+      "file": "track3.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:7",
+      "nameplate": "tile_TRACK3:1"
+    },
+    {
+      "file": "track4.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:8",
+      "nameplate": "tile_TRACK4:1"
+    },
+    {
+      "file": "clear.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:9",
+      "nameplate": "tile_CLEAR:1"
+    },
+    {
+      "file": "bank.png",
+      "pedal": "pedals:1+Cherub WTB-006 Footswitch:10",
+      "nameplate": "tile_BANK:1"
+    }
+  ]
+}

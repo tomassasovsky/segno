@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Segno — Recorded walkthrough</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101216;color:#e7edf6;font:17px/1.5 system-ui,sans-serif}main{max-width:1540px;margin:auto;padding:28px 30px 50px}h1{font-size:30px;font-weight:550;margin:0 0 8px}p{margin:8px 0 20px;color:#b4c1d2}a{color:#c6d8ef;text-underline-offset:4px}video{display:block;width:100%;max-height:73vh;background:#07090c;border:1px solid #38475b;border-radius:8px}.chapters{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0}button{font:inherit;text-align:left;min-height:48px;padding:10px 16px;background:#1c2532;border:1px solid #485c75;color:#dbe7f6;border-radius:7px;cursor:pointer}button[aria-current=true]{background:#31435c;border-color:#98b3d4}button:focus-visible,a:focus-visible{outline:3px solid #f2bf70;outline-offset:4px}.small{font-size:14px}nav{display:flex;gap:24px;flex-wrap:wrap;margin-top:18px}@media(max-width:600px){main{padding:20px 16px}h1{font-size:25px}.chapters{display:grid;grid-template-columns:1fr 1fr}button{font-size:14px}}
+</style><main><h1>Watch the completion pass</h1><p>Recorded interactions with visible taps, short captions, Cancel and the final result. Jump to any flow below.</p>
+<video id="player" controls playsinline preload="metadata" poster="walkthroughs/poster.jpg"><track kind="chapters" src="walkthroughs/chapters.vtt" srclang="en" label="Flows">Your browser cannot play this recording. <a href="walkthroughs/all-flows.mp4">Open the video</a>.</video>
+<p id="loading" class="small" role="status">Loading recording</p>
+<div id="chapters" class="chapters" aria-label="Walkthrough chapters"></div>
+<p class="small">Recorded browser interactions. Chapter 3 includes the illustrative audio played by the prototype. USB, recording and hardware operations remain simulated; this is not the production audio engine.</p>
+<nav><a href="../fx-ux-prototype.html">Try the prototype</a><a href="index.html">Interactive starting points</a><a href="walkthroughs/all-flows.mp4" download>Download recording</a></nav>
+<script>
+const player=document.getElementById('player'),loading=document.getElementById('loading');let chapters=[];
+// Load the small recording as a Blob so chapter seeking works on the static
+// preview server, which does not implement HTTP byte-range requests.
+Promise.all([fetch('walkthroughs/all-flows.mp4').then(r=>{if(!r.ok)throw Error('Video unavailable');return r.blob();}),fetch('walkthroughs/chapters.json').then(r=>{if(!r.ok)throw Error('Chapters unavailable');return r.json();})]).then(([video,list])=>{chapters=list;player.src=URL.createObjectURL(video);player.addEventListener('loadedmetadata',()=>{loading.hidden=true;const target=document.getElementById('chapters');for(const [i,chapter] of list.entries()){const b=document.createElement('button');b.textContent=(i+1)+'. '+chapter.title;b.setAttribute('aria-current','false');b.onclick=()=>{player.currentTime=chapter.start;player.play().catch(()=>{});};target.append(b);}update();},{once:true});}).catch(()=>{loading.textContent='Recording could not load. Reload this page to try again.';});
+function update(){const active=chapters.findIndex((c,i)=>player.currentTime>=c.start&&(i===chapters.length-1||player.currentTime<chapters[i+1].start));document.querySelectorAll('#chapters button').forEach((b,i)=>b.setAttribute('aria-current',String(i===active)));}
+player.addEventListener('timeupdate',update);
+</script></main></html>

@@ -1,0 +1,76 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "section": "wHUmy",
+  "status": "Proposal",
+  "audio": "Silent prototype; meter samples are simulated",
+  "frames": [
+    {
+      "root": "QPEOk",
+      "tile": "J6WLX",
+      "review": "routing-output-setup",
+      "name": "Main output",
+      "status": "proposal",
+      "browser": "routing-output-setup.png",
+      "native": "pen/QPEOk.png"
+    },
+    {
+      "root": "TyZ3G",
+      "tile": "WKiEK",
+      "review": "routing-output-setup-monitor",
+      "name": "Monitor output",
+      "status": "proposal",
+      "browser": "routing-output-setup-monitor.png",
+      "native": "pen/TyZ3G.png"
+    },
+    {
+      "root": "DvF0Q",
+      "tile": "zUSHq",
+      "review": "routing-output-setup-muted",
+      "name": "Muted output",
+      "status": "proposal",
+      "browser": "routing-output-setup-muted.png",
+      "native": "pen/DvF0Q.png"
+    },
+    {
+      "root": "T9C9zL",
+      "tile": "O0T8He",
+      "review": "routing-output-setup-mono",
+      "name": "Mono output",
+      "status": "proposal",
+      "browser": "routing-output-setup-mono.png",
+      "native": "pen/T9C9zL.png"
+    },
+    {
+      "root": "u9WCb",
+      "tile": "ADpwv",
+      "review": "routing-output-names",
+      "name": "Output names",
+      "status": "proposal",
+      "browser": "routing-output-names.png",
+      "native": "pen/u9WCb.png"
+    },
+    {
+      "root": "dD1im",
+      "tile": "oqlGn",
+      "review": "routing-output-rename",
+      "name": "Rename output",
+      "status": "proposal",
+      "browser": "routing-output-rename.png",
+      "native": "pen/dD1im.png"
+    }
+  ],
+  "checks": [
+    "Chrome and Firefox: verify_output_setup.cjs and verify_expression_journeys.cjs pass"
+  ],
+  "savedPenHash": "ab84722ad8f6c434c467f3f2ae8c05a91a647ba4",
+  "nativeVerification": {
+    "texts": 165,
+    "elements": 579,
+    "errors": [],
+    "groupProblems": []
+  },
+  "nativeExportScale": 1
+}

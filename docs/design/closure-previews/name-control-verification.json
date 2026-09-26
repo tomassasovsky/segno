@@ -1,0 +1,54 @@
+[
+  {
+    "browser": "chrome",
+    "control": {
+      "tag": "BUTTON",
+      "height": 64,
+      "width": 966,
+      "background": "rgb(36, 45, 57)",
+      "color": "rgb(231, 237, 246)",
+      "fontSize": "24px",
+      "text": "My presets.segno-fx.json"
+    },
+    "keyboardBounds": {
+      "x": 0,
+      "y": 412,
+      "width": 1920,
+      "height": 668
+    },
+    "screenBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1920,
+      "height": 1080
+    },
+    "rename": true,
+    "errors": []
+  },
+  {
+    "browser": "firefox",
+    "control": {
+      "tag": "BUTTON",
+      "height": 64,
+      "width": 966,
+      "background": "rgb(36, 45, 57)",
+      "color": "rgb(231, 237, 246)",
+      "fontSize": "24px",
+      "text": "My presets.segno-fx.json"
+    },
+    "keyboardBounds": {
+      "x": 0,
+      "y": 410.01666259765625,
+      "width": 1920,
+      "height": 669.9833374023438
+    },
+    "screenBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1920,
+      "height": 1080
+    },
+    "rename": true,
+    "errors": []
+  }
+]

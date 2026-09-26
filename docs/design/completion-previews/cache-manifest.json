@@ -1,0 +1,27 @@
+{
+  "updated": [
+    "performance-recording-study.css",
+    "storage-study.js",
+    "optional-controls-study.css",
+    "touch-lock-study.js",
+    "midi-sync-study.js",
+    "midi-controls-study.css",
+    "midi-protocol-study.js",
+    "midi-controls-study.js",
+    "recording-timing-scenes.js",
+    "stage-transport-study.js",
+    "selected-render-policy.css",
+    "selected-render-policy.js",
+    "bounce-performance-study.js",
+    "pedal-performance-study.js",
+    "primary-track-study.js",
+    "sound-behavior-study.css",
+    "sound-behavior-audio.js",
+    "sound-behavior-study.js",
+    "performance-recording-model.js",
+    "performance-recording-study.js",
+    "session-connection-repair.js",
+    "audio-library-study.js"
+  ],
+  "mainSha256": "fefb41fdc0582eee7e1f65c13aedd8475066c419c695aa9161f80290c63b5673"
+}

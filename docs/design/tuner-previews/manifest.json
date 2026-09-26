@@ -1,0 +1,68 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "section": "H60hp",
+  "status": "accepted",
+  "acceptedOn": "2026-09-07",
+  "audio": "Silent prototype; pitch and physical switch samples are simulated",
+  "frames": [
+    {
+      "name": "Tune an input",
+      "review": "performance-tuner",
+      "root": "o9d3X",
+      "tile": "Q42nzJ",
+      "status": "accepted",
+      "browser": "performance-tuner.png",
+      "native": "pen/o9d3X.png"
+    },
+    {
+      "name": "In tune",
+      "review": "performance-tuner-in-tune",
+      "root": "lDOKf",
+      "tile": "HRmS8",
+      "status": "accepted",
+      "browser": "performance-tuner-in-tune.png",
+      "native": "pen/lDOKf.png"
+    },
+    {
+      "name": "No signal",
+      "review": "performance-tuner-no-signal",
+      "root": "d9CLS",
+      "tile": "F8UFQf",
+      "status": "accepted",
+      "browser": "performance-tuner-no-signal.png",
+      "native": "pen/d9CLS.png"
+    },
+    {
+      "name": "Live monitoring",
+      "review": "performance-tuner-monitor",
+      "root": "sMhKO",
+      "tile": "ZbH5h",
+      "status": "accepted",
+      "browser": "performance-tuner-monitor.png",
+      "native": "pen/sMhKO.png"
+    },
+    {
+      "name": "18 inputs",
+      "review": "performance-tuner-many-inputs",
+      "root": "ta3Fj",
+      "tile": "wHIym",
+      "status": "accepted",
+      "browser": "performance-tuner-many-inputs.png",
+      "native": "pen/ta3Fj.png"
+    }
+  ],
+  "nativeVerification": {
+    "texts": 158,
+    "elements": 437,
+    "errors": [],
+    "groupProblems": []
+  },
+  "checks": [
+    "Chrome and Firefox: Tuner, pedal performance and audio routing suites pass"
+  ],
+  "nativeExportScale": 1,
+  "savedPenHash": "5b2e0d68d3d5615dc49d15868869a4172767d40f"
+}

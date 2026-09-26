@@ -1,0 +1,66 @@
+{
+  "scope": "Separate Multiply and Divide target UX; owner-requested revision ready for review",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "frames": [
+    {
+      "id": "WZXxv",
+      "review": "performance-multiply",
+      "name": "Multiply / Selected track",
+      "file": "WZXxv.png",
+      "status": "proposal"
+    },
+    {
+      "id": "P6Eawr",
+      "review": "performance-multiply-double",
+      "name": "Multiply / Repeated phrase",
+      "file": "P6Eawr.png",
+      "status": "proposal"
+    },
+    {
+      "id": "J88S7",
+      "review": "performance-divide",
+      "name": "Divide / First or last half",
+      "file": "J88S7.png",
+      "status": "proposal"
+    },
+    {
+      "id": "YM0C4",
+      "review": "performance-divide-first",
+      "name": "Divide / First half kept",
+      "file": "YM0C4.png",
+      "status": "proposal"
+    },
+    {
+      "id": "E6hSr",
+      "review": "performance-divide-last",
+      "name": "Divide / Last half kept",
+      "file": "E6hSr.png",
+      "status": "proposal"
+    },
+    {
+      "id": "q1Zau",
+      "review": "performance-divide-bank",
+      "name": "Divide / Bank B",
+      "file": "q1Zau.png",
+      "status": "proposal"
+    },
+    {
+      "id": "KkzgJ",
+      "review": "performance-divide-empty",
+      "name": "Divide / Empty loop",
+      "file": "KkzgJ.png",
+      "status": "proposal"
+    },
+    {
+      "id": "xuQwK",
+      "review": "performance-divide-recording",
+      "name": "Divide / Recording in progress",
+      "file": "xuQwK.png",
+      "status": "proposal"
+    }
+  ],
+  "hardwareComponent": "Qdj7x"
+}

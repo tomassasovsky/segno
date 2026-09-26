@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Segno — FX and factory audio evidence</title>
+<link rel="stylesheet" href="fx-reference-inspector.css">
+</head>
+<body>
+<main>
+  <header><div><p class="kicker">Segno · Reference study</p><h1>FX and factory audio evidence</h1>
+    <p>Exact saved values are available. Native control behavior and factory audio still need source evidence.</p></div>
+    <a href="2026-09-09-fx-reference-completion.md">Read the findings</a></header>
+  <div class="totals" aria-label="Evidence coverage">
+    <div><strong>239</strong><span>Control contracts unresolved</span></div>
+    <div><strong>61</strong><span>Module enable controls established</span></div>
+    <div><strong>26</strong><span>Single FX schemas unresolved</span></div>
+    <div><strong>0 / 302</strong><span>Factory audio files available</span></div>
+  </div>
+  <nav aria-label="Evidence collections">
+    <button data-tab="controls" aria-pressed="true">Rack controls</button>
+    <button data-tab="singles" aria-pressed="false">Single FX</button>
+    <button data-tab="audio" aria-pressed="false">Factory audio</button>
+    <button id="download" class="download">Download missing-source list</button>
+  </nav>
+  <section class="filters" aria-label="Filter evidence">
+    <label id="family-label">Rack family<select id="family"></select></label>
+    <label class="search-label">Search<input id="search" type="search" placeholder="Find a control or source file"></label>
+    <label id="status-label">Evidence<select id="status"><option value="all">All controls</option><option value="unresolved">Unresolved controls</option><option value="module-enable">Module enable controls</option></select></label>
+  </section>
+  <p id="result-count" role="status"></p>
+  <section class="workspace"><div id="items" class="items" aria-label="Matching evidence"></div><article id="detail"></article></section>
+  <footer>Looper X 1.0.2 reference study · Preset values are not legal ranges or reset defaults. Constructor arguments are not a verified UI schema. No substitute audio is presented as factory content.</footer>
+</main>
+<script src="looperx-factory/catalog.js"></script>
+<script src="fx-reference-evidence.js"></script>
+<script src="fx-reference-inspector.js"></script>
+</body>
+</html>

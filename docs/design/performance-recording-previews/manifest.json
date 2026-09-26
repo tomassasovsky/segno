@@ -1,0 +1,81 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "status": "proposal",
+  "audio": "Silent study; no audio bytes or appliance durability proof",
+  "section": "G2Cj8g",
+  "frames": [
+    {
+      "root": "e7occ",
+      "tile": "D9QbI2",
+      "review": "performance-recording-ready",
+      "name": "Ready to record",
+      "status": "proposal",
+      "browser": "performance-recording-ready.png",
+      "native": "pen/e7occ.png"
+    },
+    {
+      "root": "kpQNc",
+      "tile": "vjohm",
+      "review": "performance-recording-active",
+      "name": "Recording",
+      "status": "proposal",
+      "browser": "performance-recording-active.png",
+      "native": "pen/kpQNc.png"
+    },
+    {
+      "root": "EpIHx",
+      "tile": "E7kQV",
+      "review": "performance-recording-stage",
+      "name": "Recording by foot",
+      "status": "proposal",
+      "browser": "performance-recording-stage.png",
+      "native": "pen/EpIHx.png"
+    },
+    {
+      "root": "pRtAT",
+      "tile": "Xcpyh",
+      "review": "performance-recording-saved",
+      "name": "Saved recording",
+      "status": "proposal",
+      "browser": "performance-recording-saved.png",
+      "native": "pen/pRtAT.png"
+    },
+    {
+      "root": "m9eYTR",
+      "tile": "dgedL",
+      "review": "performance-recording-recovered",
+      "name": "Interrupted recording",
+      "status": "proposal",
+      "browser": "performance-recording-recovered.png",
+      "native": "pen/m9eYTR.png"
+    },
+    {
+      "root": "gfhPC",
+      "tile": "owAnd",
+      "review": "performance-recording-error",
+      "name": "Save failure",
+      "status": "proposal",
+      "browser": "performance-recording-error.png",
+      "native": "pen/gfhPC.png"
+    }
+  ],
+  "checks": [
+    "verify_performance_recording.cjs: Chrome and Firefox pass",
+    "verify_session_library.cjs: Chrome and Firefox pass",
+    "verify_audio_library.cjs: Chrome and Firefox pass",
+    "verify_pedal_performance.cjs: Chrome and Firefox pass"
+  ],
+  "verification": {
+    "texts": 147,
+    "elements": 608,
+    "errors": [],
+    "groupProblems": [],
+    "groups": 20,
+    "overlaps": [],
+    "outside": []
+  },
+  "savedPenHash": "fde736118373773c626e216d9edfbf738b17eebe"
+}

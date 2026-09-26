@@ -1,0 +1,69 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "scope": "External pedals target UX, browser simulation",
+  "frames": [
+    {
+      "review": "expression",
+      "name": "Expression",
+      "file": "kxWt7.png"
+    },
+    {
+      "review": "expression-empty",
+      "name": "Disconnected jack",
+      "file": "SAN8R.png"
+    },
+    {
+      "review": "expression-calibrate",
+      "name": "Calibrate expression",
+      "file": "wMk6n.png"
+    },
+    {
+      "review": "expression-destination",
+      "name": "Choose destination",
+      "file": "lGQei.png"
+    },
+    {
+      "review": "expression-controls",
+      "name": "Choose control",
+      "file": "KmjS7.png"
+    },
+    {
+      "review": "external-single",
+      "name": "Single switch",
+      "file": "jxMTm.png"
+    },
+    {
+      "review": "external-dual",
+      "name": "Dual switch",
+      "file": "n4yNFB.png"
+    },
+    {
+      "review": "external-latching",
+      "name": "Latching switch",
+      "file": "Pmfzu.png"
+    },
+    {
+      "review": "external-tracks",
+      "name": "Tracks 5 and 6",
+      "file": "BvKPC.png"
+    },
+    {
+      "review": "external-controls",
+      "name": "Multiple controls",
+      "file": "oWHjm.png"
+    },
+    {
+      "review": "external-controls-add",
+      "name": "Choose an external control",
+      "file": "kJBur.png"
+    },
+    {
+      "review": "external-controls-knob",
+      "name": "Button parameter values",
+      "file": "xddan.png"
+    }
+  ]
+}

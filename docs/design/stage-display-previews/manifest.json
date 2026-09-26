@@ -1,0 +1,153 @@
+{
+  "status": "revised proposal",
+  "section": "I400Yi",
+  "frames": [
+    {
+      "name": "Track",
+      "review": "stage-layout",
+      "root": "Khh1a",
+      "status": "revised proposal",
+      "browser": "stage-layout.png",
+      "native": "pen/Khh1a.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "name": "First recording",
+      "review": "stage-layout-recording",
+      "root": "cylzm",
+      "status": "revised proposal",
+      "browser": "stage-layout-recording.png",
+      "native": "pen/cylzm.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "name": "Wave",
+      "review": "stage-layout-wave",
+      "root": "yNPnZ",
+      "status": "owner accepted",
+      "browser": "stage-layout-wave.png",
+      "native": "pen/yNPnZ.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "name": "Mixer",
+      "review": "stage-layout-mixer",
+      "root": "smLmX",
+      "status": "revised proposal",
+      "browser": "stage-layout-mixer.png",
+      "native": "pen/smLmX.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "name": "Selected track \u00b7 7-inch",
+      "review": "stage-layout-readout",
+      "root": "wJlxa",
+      "status": "owner accepted",
+      "browser": "selected-track.png",
+      "native": "pen/wJlxa.png",
+      "canvas": [
+        1280,
+        720
+      ]
+    },
+    {
+      "name": "Paired display reference",
+      "review": null,
+      "root": "I4bQ9",
+      "status": "owner accepted",
+      "browser": "two-displays-wave-review.png",
+      "native": "pen/I4bQ9.png",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "rasterReference": true
+    },
+    {
+      "name": "Queued recording",
+      "review": "stage-layout-queued",
+      "root": "kiQz4",
+      "status": "revised proposal",
+      "browser": "stage-layout-queued.png",
+      "native": "pen/kiQz4.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "name": "Mute in place",
+      "review": "stage-layout-mute",
+      "root": "z4Z54",
+      "status": "reviewed",
+      "browser": "stage-layout-mute.png",
+      "native": "pen/z4Z54.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    }
+  ],
+  "archivedSection": "NJxtO",
+  "archivedRoots": [
+    "ebaN3",
+    "mDqIV",
+    "P9bp2S",
+    "FAjrZ",
+    "HrXqh"
+  ],
+  "nativeVerification": {
+    "texts": 233,
+    "elements": 753,
+    "errors": [],
+    "groupProblems": []
+  },
+  "checks": [
+    "Chrome and Firefox: view switching, bank filtering, state preservation, shared mix, encoder cancel/reset, waveform, clipping, scale alignment, absent duplicate readings and centered queued action pass",
+    "Existing pedal-performance suite passes in Chrome and Firefox",
+    "Pen: 27 current sections, no overlaps or containment errors"
+  ],
+  "nativeExportScale": 1,
+  "limits": "Silent visual study. Waveforms use measured peaks from real reference recordings; capture, CPU, meters and transport are simulated. No production audio or device validation.",
+  "savedPenHash": "37466f428bc4aedc5d6c6e36db661a5ee524a8c5",
+  "refinement": "No per-track BPM, numeric dBFS or routine status labels. Queued actions appear at meter/waveform center. Shared side scales, clipping caps and progress bars remain.",
+  "recordingJourney": {
+    "prototype": "../stage-two-screen-preview.html",
+    "contract": "../2026-09-07-stage-recording-ux.md",
+    "status": "implemented prototype",
+    "checks": "Chrome and Firefox: recording, overdub pass Undo, Redo, queued transitions, bank changes and Mute in place pass.",
+    "limits": "Silent prototype; production transport, durable edit history and full mode integration remain open."
+  },
+  "wavePerformance": {
+    "status": "owner accepted",
+    "savedPenHash": "37466f428bc4aedc5d6c6e36db661a5ee524a8c5",
+    "nativeVerification": {
+      "scope": "Revised Wave and selected-track display",
+      "texts": 58,
+      "elements": 122,
+      "errors": [],
+      "groupProblems": []
+    },
+    "checks": [
+      "Chrome and Firefox: Wave foot entry, normal recording controls, growth, completed phrase, shared playhead, empty selection and bank filtering",
+      "General recording, pedal, external function and sync regressions pass",
+      "Transport model verifies reverse from current position and Once at altered speed",
+      "Chrome and Firefox: sample-derived contours, identical closed-loop shape across displays, capture extent and separated metadata pass"
+    ],
+    "waveformSource": "../waveform-reference/README.md",
+    "refinement": "Continuous PCM min/max envelopes on both displays, with distinct spacing for bars, layers and FX. Old synthetic block bars removed.",
+    "acceptedOn": "2026-09-07"
+  }
+}

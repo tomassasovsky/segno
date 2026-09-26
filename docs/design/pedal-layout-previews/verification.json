@@ -1,0 +1,42 @@
+{
+  "scope": "Accepted A integrated into the main FX prototype",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "screens": [
+    {
+      "root": "KPWLz",
+      "refs": 10,
+      "leds": 10,
+      "texts": 14,
+      "errors": []
+    },
+    {
+      "root": "Yzjqt",
+      "refs": 10,
+      "leds": 10,
+      "texts": 14,
+      "errors": []
+    },
+    {
+      "root": "pIO6k",
+      "refs": 10,
+      "leds": 10,
+      "texts": 11,
+      "errors": []
+    },
+    {
+      "root": "f1VvL2",
+      "refs": 10,
+      "leds": 10,
+      "texts": 11,
+      "errors": []
+    }
+  ],
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "simulationOnly": true
+}

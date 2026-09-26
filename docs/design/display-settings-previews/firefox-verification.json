@@ -1,0 +1,16 @@
+{
+  "browser": "firefox",
+  "checks": [
+    "Track display first, matching physical layout",
+    "independent brightness, encoder cancel/commit and double-tap default",
+    "five pointer contacts, fitted offset and three verification contacts",
+    "wrong contact, retry, cancel and timeout preserve saved calibration",
+    "disconnect and storage failure recovery",
+    "idle protection during playback and recording",
+    "explicit stop before calibration preserves audio",
+    "new playback cancels calibration without stopping audio",
+    "appliance settings survive reload and New Loop",
+    "canvas bounds"
+  ],
+  "errors": []
+}

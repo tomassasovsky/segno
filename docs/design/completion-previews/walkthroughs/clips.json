@@ -1,0 +1,44 @@
+[
+  {
+    "id": "01-usb-recording",
+    "title": "Record directly to USB",
+    "seconds": 27.8,
+    "file": "01-usb-recording.mp4"
+  },
+  {
+    "id": "02-selected-render",
+    "title": "Save and bounce selected tracks",
+    "seconds": 40.633333,
+    "file": "02-selected-render.mp4"
+  },
+  {
+    "id": "03-sound-tails",
+    "title": "Hear Stop, Mute, bypass and Cut",
+    "seconds": 61.666667,
+    "file": "03-sound-tails.mp4"
+  },
+  {
+    "id": "04-timing",
+    "title": "Timing, recovery and the primary track",
+    "seconds": 31.92,
+    "file": "04-timing.mp4"
+  },
+  {
+    "id": "05-touch-and-solo",
+    "title": "Touch lock and optional double-press Solo",
+    "seconds": 28.633333,
+    "file": "05-touch-and-solo.mp4"
+  },
+  {
+    "id": "06-midi-formats",
+    "title": "Expanded MIDI Learn",
+    "seconds": 66.833333,
+    "file": "06-midi-formats.mp4"
+  },
+  {
+    "id": "07-source-evidence",
+    "title": "What still needs original source material",
+    "seconds": 18.92,
+    "file": "07-source-evidence.mp4"
+  }
+]

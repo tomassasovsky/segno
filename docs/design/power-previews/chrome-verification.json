@@ -1,0 +1,15 @@
+{
+  "browser": "chrome",
+  "checks": [
+    "Cancel before or during shutdown",
+    "failed session save and retry",
+    "hardware controls blocked after shutdown",
+    "finish loop capture before restart",
+    "restart with tracks stopped",
+    "finalize performance capture",
+    "recover failed performance save",
+    "real storage exception and reload fidelity",
+    "five bounded layouts"
+  ],
+  "errors": []
+}

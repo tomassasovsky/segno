@@ -1,0 +1,60 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "section": "Kgxk9",
+  "status": "proposal",
+  "acceptedOn": null,
+  "audio": "Silent prototype; pitch and physical switch samples are simulated",
+  "frames": [
+    {
+      "name": "Press Mixer \u00b7 Hold Tuner",
+      "review": "external-functions",
+      "root": "zrrQt",
+      "tile": "nGtjy",
+      "status": "proposal",
+      "browser": "external-functions.png",
+      "native": "pen/zrrQt.png"
+    },
+    {
+      "name": "Choose a function",
+      "review": "external-functions-picker",
+      "root": "q05KuW",
+      "tile": "tjrjE",
+      "status": "proposal",
+      "browser": "external-functions-picker.png",
+      "native": "pen/q05KuW.png"
+    },
+    {
+      "name": "Choose a track",
+      "review": "external-functions-tracks",
+      "root": "AIVtk",
+      "tile": "J7eaGC",
+      "status": "proposal",
+      "browser": "external-functions-tracks.png",
+      "native": "pen/AIVtk.png"
+    },
+    {
+      "name": "Choose an FX pedal",
+      "review": "external-functions-fx",
+      "root": "s4sPkb",
+      "tile": "dFiDP",
+      "status": "proposal",
+      "browser": "external-functions-fx.png",
+      "native": "pen/s4sPkb.png"
+    }
+  ],
+  "checks": [
+    "Chrome and Firefox: external functions, external switches and Tuner suites pass"
+  ],
+  "nativeVerification": {
+    "texts": 144,
+    "elements": 274,
+    "errors": [],
+    "groupProblems": []
+  },
+  "nativeExportScale": 1,
+  "savedPenHash": "d434005d7eaa5e4de0e0c6c69505c03e96c3bb2b",
+  "waveAssignment": "Wave opens the waveform view and restores normal track controls. 40 action choices."
+}

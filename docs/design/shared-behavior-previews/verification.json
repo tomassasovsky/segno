@@ -1,0 +1,149 @@
+{
+  "date": "2026-09-08",
+  "scope": "local silent design proposals; no production audio or appliance proof",
+  "browsers": [
+    {
+      "name": "Chrome",
+      "galleryCards": 8,
+      "linksAndImages": "all HTTP 200",
+      "pageErrors": 0,
+      "narrowViewportOverflow": false
+    },
+    {
+      "name": "Firefox",
+      "galleryCards": 8,
+      "linksAndImages": "all HTTP 200",
+      "pageErrors": 0,
+      "narrowViewportOverflow": false
+    }
+  ],
+  "pen": {
+    "file": "segno-ui.pen",
+    "sha256": "48e329cc77a3bf6b4ff444d1116e53c913e04bc8ca41b24b8d3b9c526c777474",
+    "bytes": 91432718,
+    "sections": [
+      "38 Recording timing",
+      "39 Processing and session ownership"
+    ],
+    "save": "Native File > Save; on-disk size and hash changed",
+    "textAlignment": "363 text nodes across eight frames checked against exported browser rectangles; no errors",
+    "focus": "No encoder focus outside the eight canvases",
+    "visual": "Native screenshots checked for all eight frames; established wrapper and meter clipping retained"
+  },
+  "artifacts": [
+    {
+      "name": "Count-in from stopped",
+      "scene": "timing-count-in",
+      "penId": "N1eQi9",
+      "width": 1920,
+      "height": 1080,
+      "interactive": "../fx-ux-prototype.html?review=timing-count-in",
+      "browser": "chrome-timing-count-in.png",
+      "pen": "pen/N1eQi9.png",
+      "status": "proposal",
+      "sha256": "572a33c4e78ee7b82da1b109bb4f0d9f7e8b0bac141da7bc14f30d3c299baa9b"
+    },
+    {
+      "name": "First-take tempo",
+      "scene": "timing-first-take",
+      "penId": "j8xTC",
+      "width": 1920,
+      "height": 1080,
+      "interactive": "../fx-ux-prototype.html?review=timing-first-take",
+      "browser": "chrome-timing-first-take.png",
+      "pen": "pen/j8xTC.png",
+      "status": "proposal",
+      "sha256": "37683e57e0155854b251db014e3c7635435c3d197591a056d7710d35b2a674ab"
+    },
+    {
+      "name": "Queued primary-cycle ending",
+      "scene": "timing-cycle-queued",
+      "penId": "nPtsg",
+      "width": 1920,
+      "height": 1080,
+      "interactive": "../fx-ux-prototype.html?review=timing-cycle-queued",
+      "browser": "chrome-timing-cycle-queued.png",
+      "pen": "pen/nPtsg.png",
+      "status": "proposal",
+      "sha256": "35b4226c78cab1f850fa58abc793475deb2b83243d5236c92021876b4daefcae"
+    },
+    {
+      "name": "Completed primary cycle",
+      "scene": "timing-cycle-complete",
+      "penId": "S189D",
+      "width": 1920,
+      "height": 1080,
+      "interactive": "../fx-ux-prototype.html?review=timing-cycle-complete",
+      "browser": "chrome-timing-cycle-complete.png",
+      "pen": "pen/S189D.png",
+      "status": "proposal",
+      "sha256": "955a0ca649963a9e41710fe98023ff13716bcb73d6ecf86c9f0e9f63d9acea8e"
+    },
+    {
+      "name": "Stop and downstream tails",
+      "scene": "processing-stop",
+      "penId": "NkTiO",
+      "width": 1920,
+      "height": 1080,
+      "interactive": "../processing-behavior-preview.html",
+      "browser": "../processing-behavior-previews/chrome-stop.png",
+      "pen": "pen/NkTiO.png",
+      "status": "proposal",
+      "sha256": "1d8fc279b52548235a643eb0150f7d53e90eacf1c3a0f048154ac82c1eb88ae8"
+    },
+    {
+      "name": "Performance recording tap",
+      "scene": "processing-capture",
+      "penId": "MEzxY",
+      "width": 1920,
+      "height": 1080,
+      "interactive": "../processing-behavior-preview.html",
+      "browser": "../processing-behavior-previews/chrome-capture-taps.png",
+      "pen": "pen/MEzxY.png",
+      "status": "proposal",
+      "sha256": "bffa0e429c466b239bc1251d30b33d784566d1b831881da9ce763e0c41bb277a"
+    },
+    {
+      "name": "Musical session recall",
+      "scene": "session-ownership",
+      "penId": "g4ZClX",
+      "width": 1920,
+      "height": 1080,
+      "interactive": "../fx-ux-prototype.html?review=session-ownership",
+      "browser": "../session-field-ownership-previews/chrome-session-ownership.png",
+      "pen": "pen/g4ZClX.png",
+      "status": "proposal",
+      "sha256": "b60a06916eadb0eee5a7c730b5dc373589e8a6c9efa91d88768f6503728aa40d"
+    },
+    {
+      "name": "Missing control connection",
+      "scene": "session-ownership-missing",
+      "penId": "o1bls",
+      "width": 1920,
+      "height": 1080,
+      "interactive": "../fx-ux-prototype.html?review=session-ownership-missing",
+      "browser": "../session-field-ownership-previews/chrome-session-ownership-missing.png",
+      "pen": "pen/o1bls.png",
+      "status": "proposal",
+      "sha256": "4532da9a7e653c753a1e755927306bb7aa7f5c1039e7afab466a9018e091073e"
+    }
+  ],
+  "sourceSha256": {
+    "stage-transport-study.js": "ad1022a28f7672385062d961610b75b6a118bb41ca6be48419216af3d99dd20d",
+    "fx-ux-prototype.html": "4419343fd04a62b457678e46706b0163a750fa0b39c54eb511dedeef9480b28a",
+    "loop-ux-study.js": "114752c4276e18d552cc3a8dd2a88ece47d2fd45844cb5bc67352c59e6d6b167",
+    "speed-performance-study.js": "eff0ea1c8cd3234c6f89573bc09d183f6be1c988f71861edd86791621b56667a",
+    "recording-timing-scenes.js": "c4d7dd9d309e498f5284fc506c8c6872a1144f22993274bb802c8b23459bba50",
+    "session-field-ownership.js": "d89e7d1d7d6f83075e4da2f838c4512548e2f07288c42fb4e6971bc9192f1932",
+    "session-library-study.js": "5b29dac1756d6ade5d0d0537d9e05e1eccdcc78e5fc81c61d5ac0a2ec07cdf37",
+    "session-library-study.css": "675a3d3ba039fa9b61ad4cce3a255b8bda1a2c85c2e8b3c56d9e34de9ffa1b9c",
+    "processing-behavior-study.js": "69947ccab8e8474bc7ccc70a5b6bc32b2e66985c8e2f29da8738ca2fbd6c8193",
+    "processing-behavior-preview.html": "526d364467fcd6b5aaccde1c2fbd9900735ef90752e4ed8784a46b41c09fd917",
+    "verify_recording_timing.cjs": "a51e9b05464292caea6079e05b79684c501ce1ec722b7b86977c8429c878230e",
+    "verify_recording_timing_browser.cjs": "37dd189a23969c456265be95c4f2f2f3048b78651a19548bf4d3f324124d9988",
+    "verify_processing_behavior.cjs": "f133fa3088bc80321ecde133ee535c3e7bc43c994c6dc6fe1a37f8d63be435db",
+    "verify_session_field_ownership.cjs": "74705dbd128afd4c2d59d30e40a56fcb87b6f2060aa3df03fdc1d9084ac972b4",
+    "verify_session_field_ownership_browser.cjs": "d0974567e41e905da7b8eaed7b3ecea099f05eaae0ac454224348f72c326d132",
+    "export_prototype_geometry.cjs": "79364853886ae5aff24e36c3c8abf12adaf37e754bbc0ca087e3be6685afe55d"
+  }
+}

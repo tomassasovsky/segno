@@ -1,0 +1,17 @@
+{
+  "scope": "Author-side browser and native design checks",
+  "browsers": [
+    "Chrome",
+    "Firefox"
+  ],
+  "suites": [
+    "verify_speed_performance.cjs",
+    "verify_fade_performance.cjs",
+    "verify_reverse_performance.cjs",
+    "verify_mixer_performance.cjs"
+  ],
+  "native_text_alignment_issues": 0,
+  "audio": "Silent simulation; no production audio or hardware validation",
+  "status": "Owner accepted; browser and native design verified",
+  "gesture_timing": "Absolute speed selection and Normal reset on pedal down; hold/release cannot repeat"
+}

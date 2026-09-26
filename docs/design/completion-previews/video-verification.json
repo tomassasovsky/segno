@@ -1,0 +1,23 @@
+{
+  "checkedAt": "2026-09-09T05:46:12.043Z",
+  "results": [
+    {
+      "browser": "chrome",
+      "status": "passed",
+      "chapters": 7,
+      "duration": 276.449375,
+      "muted": false,
+      "width": 1920,
+      "height": 1200
+    },
+    {
+      "browser": "firefox",
+      "status": "passed",
+      "chapters": 7,
+      "duration": 276.45,
+      "muted": false,
+      "width": 1920,
+      "height": 1200
+    }
+  ]
+}

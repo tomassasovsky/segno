@@ -1,0 +1,90 @@
+{
+  "date": "2026-09-09T05:33:38.820902+00:00",
+  "scope": "Local uncommitted prototype delta only",
+  "baselineDirectory": "/tmp/segno-completion-baseline",
+  "baselineSha256": {
+    "audio-library-study.js": "544d12fa11f3857e6a4969ff23372d3d607a0563aad5ed0473f03111c7914a40",
+    "bounce-performance-study.js": "9cf9a90bbf2cc0667564ebfd297f9de080e8159552b50299ee556da61de0e4d4",
+    "fx-ux-prototype.html": "c821a23af292aafd32d08e7e88fc9f60c732d6bcb037f6e9682525d0979d9bb4",
+    "performance-recording-model.js": "403aa6e3a88455b7c35c1a5801d8325c9a598c9770684e78977e4ac472898600",
+    "performance-recording-study.js": "66335027c00b815c29f17538116f4d766ded91dd2c814c1367e2b6d0a6f2464e",
+    "processing-behavior-study.js": "69947ccab8e8474bc7ccc70a5b6bc32b2e66985c8e2f29da8738ca2fbd6c8193",
+    "storage-study.js": "7a253aa4a4d135a1f2f7db03f4f65892442fd260667676885ee11cf347c1ae21"
+  },
+  "reviewedSha256": {
+    "docs/design/selected-render-policy.js": "0c9dd6be59b07b31d467b470b12dc4a091a0bedf68bd94c925cb2e894b0e507b",
+    "docs/design/sound-behavior-audio.js": "f801e7883fe004e6dbc780dcd3cb7ae4847fa21ad87887faab7df1f8af75e678",
+    "docs/design/sound-behavior-study.js": "a66d8a314b93cdaf2ff09b29d25513cef462c27573b8091ccdbf1861d5cee969",
+    "docs/design/performance-recording-model.js": "e57e0694d46a70fd11ec50446541f3ddeef42ee5954f34914129139119a85856",
+    "docs/design/performance-recording-study.js": "602952defaa2785fd9525b0b1f55332ade59bef7faef28e49926919958a380d6",
+    "docs/design/audio-library-study.js": "c95a6e09ce50a02cdde226c6488c4f29ee234de280c475fafdc4b291f0dd770b",
+    "docs/design/storage-study.js": "ecbd437d64ba0858007bce7ff0fcd3857e76123f7c7cb5f61a59627d176122f2",
+    "docs/design/bounce-performance-study.js": "d9ad2d4382d6f2b47028021cfb0fe8d18c0ebf504031745f770f0851041bcbbb",
+    "docs/design/fx-ux-prototype.html": "483ac9fe67deb2eec9384487b3440e0c74019ec23b2507b3d0ffc57dad04997d",
+    "docs/design/processing-behavior-study.js": "6163f11216a171f1b737a13bc599406133a52a6bc425fb73427349bf73fdf501",
+    "docs/design/processing-behavior-preview.html": "7be1d5845837864b455bacb447ac5302d70b8e0ec82486766bb8919d5f798734",
+    "docs/design/verify_selected_render_policy.cjs": "5c247ce8b578ebca0c67e34fd5ada1b50c250b4ea4972bc765e0363892390f74",
+    "docs/design/verify_processing_behavior.cjs": "dfa2238a37fc8e08b8ecf9f53cb298bd9ba84107d88714287bee3e30118df506",
+    "docs/design/verify_processing_preview_browser.cjs": "418f1993fa95ddc7ac301aa61678bfa987bbb753f289f022fa76dd4b7717d319",
+    "docs/design/verify_performance_recording_model.cjs": "33d8f9a7dadb4abbbe01eefad60655392098e1e91cd09d9ce064c4e595634cee",
+    "docs/design/media-parity-study.test.cjs": "ecd43e2be99ec8b3323ea25d549f9eebe44fc3eaecd4fb9057e0760027c65632",
+    "docs/design/verify_recording_completion_browser.cjs": "0f56e01f5d4830414d2009046bb62eec8a8c798d1cef58466dfd444416563cfe",
+    "docs/design/verify_render_rack_processing_browser.cjs": "42b156c9d19fcec561fbad8956949353fc73e9c6eae9557124c00e3f6209f07f",
+    "docs/design/verify_audio_drive_identity_browser.cjs": "8d0f77e4de512c15967afd59b6fc29b5cf854efe51925c94b9de9262b68c7c88",
+    "docs/design/verify_imported_render_length_browser.cjs": "a22679798e7948ec41f22bdbaba2b62e05fd02cf1d585a14175d0e80e44bf0fb",
+    "docs/design/verify_long_performance_recording_browser.cjs": "578ee85600c63db2269af9ac93ded79ab9025d7396cac3746a111c6eb3d1d2c7"
+  },
+  "observedValidation": [
+    {
+      "command": "node --test docs/design/verify_processing_behavior.cjs docs/design/verify_selected_render_policy.cjs docs/design/verify_performance_recording_model.cjs docs/design/media-parity-study.test.cjs",
+      "result": "59 passed on final reviewed sources: 17 processing, 8 selected/sound, 12 multipart model/study and 22 media cases."
+    },
+    {
+      "command": "node --test docs/design/verify_processing_behavior.cjs docs/design/verify_selected_render_policy.cjs",
+      "result": "25 passed: 17 processing and 8 selected/sound."
+    },
+    {
+      "command": "SEGNO_PROCESSING_BROWSER=1 node docs/design/verify_processing_behavior.cjs",
+      "result": "19 passed: 17 model plus Chrome and Firefox, including 1920\u00d71080 and 1280\u00d71024 bounds."
+    },
+    {
+      "command": "node docs/design/verify_processing_preview_browser.cjs",
+      "result": "Chrome and Firefox passed."
+    },
+    {
+      "command": "node docs/design/verify_recording_completion_browser.cjs",
+      "result": "Chrome and Firefox passed."
+    },
+    {
+      "command": "node docs/design/verify_render_rack_processing_browser.cjs",
+      "result": "Chrome and Firefox passed."
+    },
+    {
+      "command": "node docs/design/verify_audio_drive_identity_browser.cjs",
+      "result": "Chrome and Firefox passed."
+    },
+    {
+      "command": "node docs/design/verify_imported_render_length_browser.cjs",
+      "result": "Chrome and Firefox passed."
+    },
+    {
+      "command": "node docs/design/verify_long_performance_recording_browser.cjs",
+      "result": "Chrome and Firefox passed."
+    }
+  ],
+  "notCertified": [
+    "native audio",
+    "real USB filesystem transactions",
+    "hardware",
+    "whole dirty tree",
+    "Pen",
+    "video",
+    "CI",
+    "PR or merge"
+  ],
+  "authoredFixExclusions": [
+    "Audio Library drive-copy guards and associated tests",
+    "Removal of obsolete processing selectedRecipe API and migration of standalone preview",
+    "Imported Follow-off span calculation in bounceAudioRecipe and associated regression"
+  ]
+}

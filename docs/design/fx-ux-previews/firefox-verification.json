@@ -1,0 +1,15 @@
+{
+  "browser": "Firefox 153.0",
+  "checks": [
+    "per-pedal hidden-parameter cues and vertical scrolling",
+    "theme and local fonts",
+    "filled slate-blue sliders",
+    "pointer editing",
+    "exact double-click reset",
+    "encoder cancellation",
+    "channel selection and pan",
+    "aligned track edges",
+    "horizontal source scrolling"
+  ],
+  "errors": []
+}

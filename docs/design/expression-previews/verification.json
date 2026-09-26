@@ -1,0 +1,19 @@
+{
+  "scope": "Author-side prototype verification only",
+  "browsers": [
+    "Chrome",
+    "Firefox"
+  ],
+  "suites": [
+    "verify_expression_journeys.cjs",
+    "verify_external_switches.cjs",
+    "verify_pedal_setup.cjs",
+    "verify_pedal_performance.cjs",
+    "verify_fx_prototype.cjs",
+    "verify_external_controls.cjs"
+  ],
+  "native_text_alignment_issues": 0,
+  "track_dispatch": "Fixed track-press intent only; transport/audio not implemented",
+  "hardware": "No physical jack or dual-contact validation",
+  "accepted": "External pedals owns external activation and button parameter mappings; multiple controls per button."
+}

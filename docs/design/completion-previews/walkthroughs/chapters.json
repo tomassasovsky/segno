@@ -1,0 +1,44 @@
+[
+  {
+    "title": "Record directly to USB",
+    "start": 0,
+    "end": 27.8,
+    "file": "01-usb-recording.mp4"
+  },
+  {
+    "title": "Save and bounce selected tracks",
+    "start": 27.8,
+    "end": 68.433,
+    "file": "02-selected-render.mp4"
+  },
+  {
+    "title": "Hear Stop, Mute, bypass and Cut",
+    "start": 68.433,
+    "end": 130.1,
+    "file": "03-sound-tails.mp4"
+  },
+  {
+    "title": "Timing, recovery and the primary track",
+    "start": 130.1,
+    "end": 162.02,
+    "file": "04-timing.mp4"
+  },
+  {
+    "title": "Touch lock and optional double-press Solo",
+    "start": 162.02,
+    "end": 190.653,
+    "file": "05-touch-and-solo.mp4"
+  },
+  {
+    "title": "Expanded MIDI Learn",
+    "start": 190.653,
+    "end": 257.487,
+    "file": "06-midi-formats.mp4"
+  },
+  {
+    "title": "What still needs original source material",
+    "start": 257.487,
+    "end": 276.407,
+    "file": "07-source-evidence.mp4"
+  }
+]

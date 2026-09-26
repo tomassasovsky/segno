@@ -1,0 +1,90 @@
+[
+  {
+    "name": "Count-in from stopped",
+    "scene": "timing-count-in",
+    "penId": "N1eQi9",
+    "width": 1920,
+    "height": 1080,
+    "interactive": "../fx-ux-prototype.html?review=timing-count-in",
+    "browser": "chrome-timing-count-in.png",
+    "pen": "pen/N1eQi9.png",
+    "status": "proposal"
+  },
+  {
+    "name": "First-take tempo",
+    "scene": "timing-first-take",
+    "penId": "j8xTC",
+    "width": 1920,
+    "height": 1080,
+    "interactive": "../fx-ux-prototype.html?review=timing-first-take",
+    "browser": "chrome-timing-first-take.png",
+    "pen": "pen/j8xTC.png",
+    "status": "proposal"
+  },
+  {
+    "name": "Queued primary-cycle ending",
+    "scene": "timing-cycle-queued",
+    "penId": "nPtsg",
+    "width": 1920,
+    "height": 1080,
+    "interactive": "../fx-ux-prototype.html?review=timing-cycle-queued",
+    "browser": "chrome-timing-cycle-queued.png",
+    "pen": "pen/nPtsg.png",
+    "status": "proposal"
+  },
+  {
+    "name": "Completed primary cycle",
+    "scene": "timing-cycle-complete",
+    "penId": "S189D",
+    "width": 1920,
+    "height": 1080,
+    "interactive": "../fx-ux-prototype.html?review=timing-cycle-complete",
+    "browser": "chrome-timing-cycle-complete.png",
+    "pen": "pen/S189D.png",
+    "status": "proposal"
+  },
+  {
+    "name": "Stop and downstream tails",
+    "scene": "processing-stop",
+    "penId": "NkTiO",
+    "width": 1920,
+    "height": 1080,
+    "interactive": "../processing-behavior-preview.html",
+    "browser": "../processing-behavior-previews/chrome-stop.png",
+    "pen": "pen/NkTiO.png",
+    "status": "proposal"
+  },
+  {
+    "name": "Performance recording tap",
+    "scene": "processing-capture",
+    "penId": "MEzxY",
+    "width": 1920,
+    "height": 1080,
+    "interactive": "../processing-behavior-preview.html",
+    "browser": "../processing-behavior-previews/chrome-capture-taps.png",
+    "pen": "pen/MEzxY.png",
+    "status": "proposal"
+  },
+  {
+    "name": "Musical session recall",
+    "scene": "session-ownership",
+    "penId": "g4ZClX",
+    "width": 1920,
+    "height": 1080,
+    "interactive": "../fx-ux-prototype.html?review=session-ownership",
+    "browser": "../session-field-ownership-previews/chrome-session-ownership.png",
+    "pen": "pen/g4ZClX.png",
+    "status": "proposal"
+  },
+  {
+    "name": "Missing control connection",
+    "scene": "session-ownership-missing",
+    "penId": "o1bls",
+    "width": 1920,
+    "height": 1080,
+    "interactive": "../fx-ux-prototype.html?review=session-ownership-missing",
+    "browser": "../session-field-ownership-previews/chrome-session-ownership-missing.png",
+    "pen": "pen/o1bls.png",
+    "status": "proposal"
+  }
+]

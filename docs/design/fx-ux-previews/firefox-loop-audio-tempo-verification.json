@@ -1,0 +1,18 @@
+{
+  "checks": [
+    "independent per-field defaults and overrides",
+    "pitch choice retained while original speed determines effective pitch",
+    "MIDI permits tempo-follow opt-out",
+    "all five modes and overdub edits",
+    "touch and encoder choices agree",
+    "reset returns focus to the effective choice",
+    "committed state survives reload",
+    "same tempo editor and target remembered",
+    "FX isolation",
+    "eight visible tracks and aligned controls",
+    "1920x1080 geometry and minimum targets"
+  ],
+  "errors": [],
+  "engineValidation": false,
+  "physicalValidation": false
+}

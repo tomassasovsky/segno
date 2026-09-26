@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Segno — Parity review</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101216;color:#e7edf6;font:18px/1.5 Arial,sans-serif}main{max-width:1160px;margin:auto;padding:56px 32px}h1{font-size:38px;margin:0 0 12px}h2{font-size:23px;margin:0 0 14px}p{color:#b9c6d8;margin:0 0 28px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}section{padding:28px;background:#202735;border:1px solid #45536a;border-radius:14px}a{color:#dae6f8;text-decoration:none}a:hover{text-decoration:underline}a:focus-visible{outline:3px solid #f2bf70;outline-offset:5px}section a{display:block;padding:9px 0}section p{font-size:16px;margin:0 0 12px}.limit{margin:28px 0;color:#b9c6d8;font-size:16px}.top{display:flex;justify-content:space-between;align-items:baseline;gap:24px}.top a{white-space:nowrap}@media(max-width:760px){.grid{grid-template-columns:1fr}.top{display:block}main{padding:32px 22px}}
+</style>
+<main>
+<div class="top"><h1>Segno parity review</h1><a href="fx-ux-prototype.html">Open the prototype</a></div>
+<p>Corrections from the complete Looper X comparison. These links open prepared, silent examples for review.</p>
+<h2>Session recovery · new proposal</h2>
+<div class="grid"><section><h2>Repair and return</h2><a href="fx-ux-prototype.html?review=session-recovery">Find missing session audio</a><a href="fx-ux-prototype.html?review=session-recovery-device">Reconnect audio and return</a><a href="session-recovery-previews/index.html">Compare browser and Pen</a></section><section><h2>Shared behavior choices</h2><p>Three proposed demos: recording, recovery and sound/session ownership. Existing decisions remain in force.</p><a href="2026-09-08-shared-behavior-proposal.md">Review the eight contracts</a><a href="2026-09-08-session-recovery-ux.md">Recovery scope and checks</a></section></div>
+<h2>September 8 · Audit closure pass</h2>
+<p>Nine concrete UI gaps addressed. Parameter repair is improved; full-session dependency repair and production/audio verification remain open.</p>
+<div class="grid">
+<section><h2>Mixer and tempo</h2><a href="fx-ux-prototype.html?review=stage-layout-mixer">Track rename, Solo and Mixer</a><a href="fx-ux-prototype.html?review=stage-layout-mixer-sources">Backing &amp; click</a><a href="fx-ux-prototype.html?review=loop-timing">Fine tempo adjustment</a></section>
+<section><h2>Pedals</h2><a href="fx-ux-prototype.html?review=performance-transpose">Transpose enable and bypass</a><a href="fx-ux-prototype.html?review=pedal-custom">Clear custom and loop-mode assignments</a></section>
+<section><h2>Media and recovery</h2><a href="fx-ux-prototype.html?review=my-presets">Import and export preset packages</a><a href="fx-ux-prototype.html?review=storage-ready">Remaining recording time</a><a href="fx-ux-prototype.html?review=expression">External control setup</a></section>
+<section><h2>Review record</h2><a href="2026-09-08-audit-closure-pass.md">Changes, checks and remaining gates</a><a href="../research/segno-looper-x-comparison/2026-09-08-recheck/closure-items.csv">All 183 audit items</a><a href="../research/segno-looper-x-comparison/2026-09-08-recheck/reference-closure-pass.md">Reference findings and behavior proposals</a></section>
+</div>
+<h2>Earlier correction pass</h2>
+<div class="grid">
+<section><h2>Mixer</h2><p>Stereo meters and gain, multi-Solo, pan, FX access and bypass.</p><a href="fx-ux-prototype.html?review=stage-layout-mixer">Open Mixer</a><a href="stage-two-screen-preview.html">Try both performance displays</a></section>
+<section><h2>Effects</h2><p>Shared controls, factory defaults and personal preset management.</p><a href="fx-ux-prototype.html?review=pedal-chain">Edit a complete chain</a><a href="fx-ux-prototype.html?review=parameter-scroll">Browse a longer parameter list</a><a href="fx-ux-prototype.html?review=my-presets">Manage personal presets</a></section>
+<section><h2>Control mappings</h2><p>Direct actions, multiple targets and consistent encoder increments.</p><a href="fx-ux-prototype.html?review=midi-list">MIDI controls</a><a href="fx-ux-prototype.html?review=external-controls">External pedal controls</a><a href="fx-ux-prototype.html?review=pedal-custom">Custom pedal assignments</a></section>
+<section><h2>Library and audio</h2><p>Session management, import timing and backing mix controls.</p><a href="fx-ux-prototype.html?review=session-library">Session Library</a><a href="fx-ux-prototype.html?review=audio-track-import-selected">Import audio into a track</a><a href="fx-ux-prototype.html?review=audio-backing">Backing playback and mix</a></section>
+<section><h2>Recording recovery</h2><p>Short takes within Multi and grouped Clear All during capture.</p><a href="capture-recovery-previews/index.html">Compare browser and Pen</a><a href="fx-ux-prototype.html?review=stage-recovery-multi&amp;simulate=1">Try partial-take Redo</a><a href="fx-ux-prototype.html?review=stage-recovery-clear-cleared&amp;simulate=1">Try grouped Undo</a></section>
+<section><h2>Editing and recovery</h2><p>Recording, Divide, Peel, Bounce and Import share chronological Undo and Redo.</p><a href="fx-ux-prototype.html?review=performance-divide">Divide a track</a><a href="fx-ux-prototype.html?review=performance-peel">Remove an overdub layer</a><a href="fx-ux-prototype.html?review=performance-bounce">Bounce tracks</a><a href="fx-ux-prototype.html?review=session-empty">Start a new loop</a></section>
+<section><h2>Sync and appliance</h2><p>Clock offsets, DIN Thru, build information and explicit controller recovery.</p><a href="fx-ux-prototype.html?review=sync-offset">Clock offset</a><a href="fx-ux-prototype.html?review=sync-thru">DIN Thru</a><a href="fx-ux-prototype.html?review=appliance-about">About and notices</a><a href="fx-ux-prototype.html?review=controller-interrupted">Simulated controller recovery</a></section>
+</div>
+<p class="limit">Browser checks verify the interactions and stored prototype state. Real audio processing, physical FX scales, RP2350 programming, independent Phones and USB device modes still require the production and hardware work recorded in the correction plan.</p>
+<a href="looper-x-comparison.html">Open the full reference comparison</a>
+<p class="limit"><a href="fx-ux-previews/pen-sizing/index.html">View the saved Pen references</a> · Latest recovery pass: 5 screens saved; 267 current references.</p>
+</main>
+</html>

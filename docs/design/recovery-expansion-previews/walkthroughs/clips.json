@@ -1,0 +1,38 @@
+[
+  {
+    "id": "01-recorded-audio",
+    "title": "Recover recorded audio",
+    "seconds": 32,
+    "file": "01-recorded-audio.mp4"
+  },
+  {
+    "id": "02-audio-connections",
+    "title": "Repair audio connections",
+    "seconds": 31.033008,
+    "file": "02-audio-connections.mp4"
+  },
+  {
+    "id": "03-appliance-backup",
+    "title": "Back up and restore the appliance",
+    "seconds": 36.366667,
+    "file": "03-appliance-backup.mp4"
+  },
+  {
+    "id": "04-timing-track",
+    "title": "Choose the timing track",
+    "seconds": 29.033333,
+    "file": "04-timing-track.mp4"
+  },
+  {
+    "id": "05-preset-audition",
+    "title": "Try a preset, then Keep or Cancel",
+    "seconds": 26.733333,
+    "file": "05-preset-audition.mp4"
+  },
+  {
+    "id": "06-long-recordings",
+    "title": "Long recordings and low storage",
+    "seconds": 51.866667,
+    "file": "06-long-recordings.mp4"
+  }
+]

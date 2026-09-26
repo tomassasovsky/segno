@@ -1,0 +1,39 @@
+{
+  "scope": "Main prototype foot-only performance, sharing FX rig state",
+  "screens": [
+    {
+      "root": "hmEBj",
+      "refs": 10,
+      "leds": 10,
+      "texts": 15,
+      "errors": []
+    },
+    {
+      "root": "uEukr",
+      "refs": 10,
+      "leds": 10,
+      "texts": 19,
+      "errors": []
+    },
+    {
+      "root": "noDGu",
+      "refs": 10,
+      "leds": 10,
+      "texts": 18,
+      "errors": []
+    },
+    {
+      "root": "RPCYZ",
+      "refs": 10,
+      "leds": 10,
+      "texts": 18,
+      "errors": []
+    }
+  ],
+  "browsers": [
+    "Chrome",
+    "Firefox"
+  ],
+  "hardwareValidated": false,
+  "audioDispatch": false
+}

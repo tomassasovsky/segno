@@ -1,0 +1,34 @@
+{
+  "scope": "Owner-accepted Fade target UX; silent browser study",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "frames": [
+    {
+      "review": "performance-fade",
+      "name": "Fade / Shared default",
+      "file": "q5GgaM.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-fade-custom",
+      "name": "Fade / Track override",
+      "file": "qxzA7.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-fade-bank",
+      "name": "Fade / Bank B",
+      "file": "zzlgN.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-fade-empty",
+      "name": "Fade / Empty loop",
+      "file": "P9salH.png",
+      "status": "accepted"
+    }
+  ],
+  "hardwareComponent": "Qdj7x"
+}

@@ -1,0 +1,4167 @@
+{
+  "file": "segno-ui.pen",
+  "originalNodes": 625,
+  "preservedNodes": 625,
+  "screenFrames": 250,
+  "screenContentChanges": 0,
+  "missing": [],
+  "clippedInNewGroups": [],
+  "siblingOverlaps": [],
+  "rootNodes": [
+    {
+      "id": "p0dpwx",
+      "name": "01   CURRENT UX"
+    },
+    {
+      "id": "X5FjMW",
+      "name": "02   EARLIER APPLICATION"
+    },
+    {
+      "id": "adlbY",
+      "name": "03   DESIGN SYSTEM"
+    },
+    {
+      "id": "jbFH4",
+      "name": "04   SUPERSEDED"
+    }
+  ],
+  "sections": 30,
+  "adjustedAnnotations": [
+    "ihreD",
+    "r838RZ"
+  ],
+  "savedFileHash": "5be8e630ffe327c74afa0467d3da35dba009fbab",
+  "verificationScope": "Canvas organization: section bounds, sibling overlap and preservation of original screen subtrees. Existing screen internals were not redesigned.",
+  "regions": [
+    {
+      "id": "p0dpwx",
+      "name": "01   CURRENT UX",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 13200,
+        "height": 65020
+      },
+      "preview": "p0dpwx.png",
+      "sections": [
+        {
+          "id": "X1LTP",
+          "name": "01  Effects \u00b7 destinations",
+          "bounds": {
+            "x": 180,
+            "y": 300,
+            "width": 6320,
+            "height": 5348
+          },
+          "frames": [
+            {
+              "id": "SC3Q1",
+              "container": "N3HmL",
+              "name": "FX UX 2026 / 03 Live inputs"
+            },
+            {
+              "id": "KJeZI",
+              "container": "r4NaWB",
+              "name": "FX UX 2026 / 03d Ten input racks"
+            },
+            {
+              "id": "OjrTx",
+              "container": "XyChE",
+              "name": "FX UX 2026 / 03e Ten track racks"
+            },
+            {
+              "id": "w07hGt",
+              "container": "s0CzW",
+              "name": "FX UX 2026 / 03g Named tracks"
+            },
+            {
+              "id": "yCQe8",
+              "container": "s7Br3",
+              "name": "FX UX 2026 / 03b Recorded guitar on Track 1"
+            },
+            {
+              "id": "reByP",
+              "container": "xzz9X",
+              "name": "FX UX 2026 / 03c All tracks"
+            },
+            {
+              "id": "cf3wW",
+              "container": "XPsjH",
+              "name": "FX UX 2026 / 03f Eighteen inputs"
+            },
+            {
+              "id": "ayrzf",
+              "container": "SnQsB",
+              "name": "FX UX 2026 / Pre and Post switch"
+            },
+            {
+              "id": "L2zCah",
+              "container": "U3cDvX",
+              "name": "FX UX 2026 / Pre and Post rack chain"
+            },
+            {
+              "id": "l4SrE7",
+              "container": "oRhNG",
+              "name": "FX UX 2026 / Output effects"
+            },
+            {
+              "id": "KBznC",
+              "container": "tkNqI",
+              "name": "FX UX 2026 / Reverb on main output"
+            },
+            {
+              "id": "pLkQ5",
+              "container": "FaSWs",
+              "name": "FX UX 2026 / Separate monitor output"
+            }
+          ]
+        },
+        {
+          "id": "CnUFF",
+          "name": "02  Effects \u00b7 chains & controls",
+          "bounds": {
+            "x": 6700,
+            "y": 300,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "o0RK7c",
+              "container": "b1UGvn",
+              "name": "FX UX 2026 / Connected pedal editor"
+            },
+            {
+              "id": "WD0tY",
+              "container": "sqK4u",
+              "name": "FX UX 2026 / Single effect"
+            },
+            {
+              "id": "TFAyM",
+              "container": "LTMFp",
+              "name": "FX UX 2026 / Hidden parameters"
+            },
+            {
+              "id": "c0Gtr",
+              "container": "in9I8",
+              "name": "FX UX 2026 / 10 Reorder effects"
+            },
+            {
+              "id": "whFS7",
+              "container": "QUgbB",
+              "name": "FX UX 2026 / 11 Reorder rack chain"
+            },
+            {
+              "id": "wtQOy",
+              "container": "DStr6",
+              "name": "FX UX 2026 / 14 Rack options"
+            }
+          ]
+        },
+        {
+          "id": "WndfW",
+          "name": "03  Sound library & presets",
+          "bounds": {
+            "x": 6700,
+            "y": 3284,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "i1RkcR",
+              "container": "jexi5",
+              "name": "FX UX 2026 / Add effects"
+            },
+            {
+              "id": "G8vVo",
+              "container": "Rv04K",
+              "name": "FX UX 2026 / 05 Add an effect to a rack"
+            },
+            {
+              "id": "S0zMH",
+              "container": "I0nT5d",
+              "name": "FX UX 2026 / 06 Rack presets"
+            },
+            {
+              "id": "WFsUa",
+              "container": "Ngf4i",
+              "name": "FX UX 2026 / 12 My presets"
+            },
+            {
+              "id": "d0FaB",
+              "container": "hDcaw",
+              "name": "FX UX 2026 / 07 Save a preset"
+            },
+            {
+              "id": "xxEXs",
+              "container": "qArSe",
+              "name": "FX UX 2026 / 13 Replace a saved preset"
+            }
+          ]
+        },
+        {
+          "id": "LXtIM",
+          "name": "04  FX activation & pedal banks",
+          "bounds": {
+            "x": 180,
+            "y": 5828,
+            "width": 6320,
+            "height": 1532
+          },
+          "frames": [
+            {
+              "id": "J8U51x",
+              "container": "FthYE",
+              "name": "FX UX 2026 / 08 Rack activation"
+            },
+            {
+              "id": "WmJsF",
+              "container": "yF4kh",
+              "name": "FX UX 2026 / 09 Pedal banks"
+            }
+          ]
+        },
+        {
+          "id": "EYla4",
+          "name": "05  Loop setup",
+          "bounds": {
+            "x": 6700,
+            "y": 6268,
+            "width": 6320,
+            "height": 5348
+          },
+          "frames": [
+            {
+              "id": "v7Ekz",
+              "container": "ixImV",
+              "name": "Settings"
+            },
+            {
+              "id": "g37kn",
+              "container": "Ao3Yg",
+              "name": "Loop settings"
+            },
+            {
+              "id": "z385s",
+              "container": "Kb0rN",
+              "name": "LOOP UX 2026 / 02 Loop mode"
+            },
+            {
+              "id": "UV1lE",
+              "container": "W7FK6K",
+              "name": "LOOP UX 2026 / 03 Recording"
+            },
+            {
+              "id": "GPoYp",
+              "container": "IEn1a",
+              "name": "LOOP UX 2026 / 04 Tempo & click"
+            },
+            {
+              "id": "AFjEl",
+              "container": "YCtfH",
+              "name": "LOOP UX 2026 / 05 Time signature"
+            },
+            {
+              "id": "Kliy9",
+              "container": "wIdhg",
+              "name": "LOOP UX / Existing audio compatibility"
+            },
+            {
+              "id": "dRiy6",
+              "container": "nfcC2",
+              "name": "LOOP UX 2026 / 07 Tempo from MIDI clock"
+            },
+            {
+              "id": "SJgv4",
+              "container": "qYHaF",
+              "name": "LOOP UX 2026 / 08 Recording in progress"
+            },
+            {
+              "id": "l2b6qn",
+              "container": "b0FuSM",
+              "name": "LOOP UX / Confirm mode change"
+            }
+          ]
+        },
+        {
+          "id": "nFsjR",
+          "name": "06  Loop length & track defaults",
+          "bounds": {
+            "x": 180,
+            "y": 7540,
+            "width": 6320,
+            "height": 4076
+          },
+          "frames": [
+            {
+              "id": "rmQ4f",
+              "container": "FFXSz",
+              "name": "LOOP UX 2026 / 09 Length and quantization"
+            },
+            {
+              "id": "Lkmir",
+              "container": "leohU",
+              "name": "LOOP UX 2026 / 10 Fixed bar count"
+            },
+            {
+              "id": "fVIs5",
+              "container": "z3ehZe",
+              "name": "LOOP UX 2026 / 11 Length and timing locked while recording"
+            },
+            {
+              "id": "PddSM",
+              "container": "IEttC",
+              "name": "LOOP UX 2026 / 12 Length under MIDI clock"
+            },
+            {
+              "id": "vXnWZ",
+              "container": "Jshfl",
+              "name": "LOOP UX 2026 / Track follows defaults"
+            },
+            {
+              "id": "H9eAG2",
+              "container": "HkwWc",
+              "name": "LOOP UX 2026 / Custom track length and timing"
+            },
+            {
+              "id": "WHaeh",
+              "container": "CVTcz",
+              "name": "LOOP UX 2026 / Shared length in Multi"
+            },
+            {
+              "id": "ymA4W",
+              "container": "cLrdU",
+              "name": "LOOP UX 2026 / Track settings locked while recording"
+            },
+            {
+              "id": "XLSOr",
+              "container": "FrsRF",
+              "name": "LOOP UX 2026 / Track settings under MIDI clock"
+            }
+          ]
+        },
+        {
+          "id": "MV9G6",
+          "name": "07  Playback, decay & audio tempo",
+          "bounds": {
+            "x": 6700,
+            "y": 11796,
+            "width": 6320,
+            "height": 4076
+          },
+          "frames": [
+            {
+              "id": "e85zX",
+              "container": "YOJkt",
+              "name": "LOOP UX 2026 / Playback defaults"
+            },
+            {
+              "id": "UBbfo",
+              "container": "U6vS35",
+              "name": "LOOP UX 2026 / Track playback follows defaults"
+            },
+            {
+              "id": "aoBlk",
+              "container": "vg40u",
+              "name": "LOOP UX 2026 / Track playback and decay"
+            },
+            {
+              "id": "zKmA9",
+              "container": "reN7g",
+              "name": "LOOP UX 2026 / Audio tempo defaults"
+            },
+            {
+              "id": "vpV8H",
+              "container": "MfjIH",
+              "name": "LOOP UX 2026 / Pitch follows speed"
+            },
+            {
+              "id": "gnbuy",
+              "container": "hujmY",
+              "name": "LOOP UX 2026 / Keep recorded speed"
+            },
+            {
+              "id": "BFfDT",
+              "container": "JQpGt",
+              "name": "LOOP UX 2026 / Audio follows MIDI tempo"
+            }
+          ]
+        },
+        {
+          "id": "tu0U3",
+          "name": "08  Pedal setup & LEDs",
+          "bounds": {
+            "x": 180,
+            "y": 11796,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "KPWLz",
+              "container": "IOj18",
+              "name": "Pedals / Track controls"
+            },
+            {
+              "id": "Yzjqt",
+              "container": "OgLiI",
+              "name": "Pedals / Custom controls"
+            },
+            {
+              "id": "pIO6k",
+              "container": "kwORp",
+              "name": "Pedals / LED colors"
+            },
+            {
+              "id": "f1VvL2",
+              "container": "vEPzT",
+              "name": "Pedals / LED colors \u2014 FX toggle active"
+            }
+          ]
+        },
+        {
+          "id": "q2xSj",
+          "name": "09  External pedals",
+          "bounds": {
+            "x": 180,
+            "y": 14780,
+            "width": 6320,
+            "height": 5348
+          },
+          "frames": [
+            {
+              "id": "kxWt7",
+              "container": "M63pX",
+              "name": "External pedals / Expression"
+            },
+            {
+              "id": "SAN8R",
+              "container": "QxNOd",
+              "name": "External pedals / Disconnected jack"
+            },
+            {
+              "id": "wMk6n",
+              "container": "AVP7J",
+              "name": "External pedals / Calibrate expression"
+            },
+            {
+              "id": "lGQei",
+              "container": "CKQpE",
+              "name": "External pedals / Choose destination"
+            },
+            {
+              "id": "KmjS7",
+              "container": "s7nNW",
+              "name": "External pedals / Choose control"
+            },
+            {
+              "id": "jxMTm",
+              "container": "U3Xhb8",
+              "name": "External pedals / Single switch"
+            },
+            {
+              "id": "n4yNFB",
+              "container": "fCGQd",
+              "name": "External pedals / Dual switch"
+            },
+            {
+              "id": "Pmfzu",
+              "container": "sf5x1",
+              "name": "External pedals / Latching switch"
+            },
+            {
+              "id": "BvKPC",
+              "container": "rC6gf",
+              "name": "External pedals / Tracks 5 and 6"
+            },
+            {
+              "id": "oWHjm",
+              "container": "D4BCXO",
+              "name": "External pedals / Multiple controls"
+            },
+            {
+              "id": "kJBur",
+              "container": "TeRoC",
+              "name": "External pedals / Choose a control"
+            },
+            {
+              "id": "xddan",
+              "container": "V3CXYV",
+              "name": "External pedals / Button parameter values"
+            }
+          ]
+        },
+        {
+          "id": "FWBji",
+          "name": "10  Performance \u00b7 Tracks, Custom, FX & Mute",
+          "bounds": {
+            "x": 6700,
+            "y": 16052,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "hmEBj",
+              "container": "qwMkg",
+              "name": "Performance / Tracks"
+            },
+            {
+              "id": "uEukr",
+              "container": "D1aJr9",
+              "name": "Performance / Custom"
+            },
+            {
+              "id": "noDGu",
+              "container": "Pmk4g",
+              "name": "Performance / FX"
+            },
+            {
+              "id": "PRSrG",
+              "container": "v0aHo",
+              "name": "Performance / Pending Hold \u00b7 proposal"
+            },
+            {
+              "id": "ri60q",
+              "container": "Pz1HA",
+              "name": "Performance / FX held contact \u00b7 proposal"
+            }
+          ]
+        },
+        {
+          "id": "YLTza",
+          "name": "11  Performance \u00b7 Transpose",
+          "bounds": {
+            "x": 6700,
+            "y": 19036,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "fWlTV",
+              "container": "k5GTy",
+              "name": "Performance / Transpose"
+            },
+            {
+              "id": "mhj7T",
+              "container": "yBmpo",
+              "name": "Performance / Transpose across banks"
+            },
+            {
+              "id": "iL02o",
+              "container": "JTxQq",
+              "name": "Performance / Transpose with no selection"
+            },
+            {
+              "id": "yujfF",
+              "container": "lpGO0",
+              "name": "Performance / Transpose at pitch limit"
+            }
+          ]
+        },
+        {
+          "id": "U9iU1",
+          "name": "12  Performance \u00b7 Mixer",
+          "bounds": {
+            "x": 180,
+            "y": 20308,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "PQJIq",
+              "container": "bdnfa",
+              "name": "Mixer / Tracks"
+            },
+            {
+              "id": "Fbk22",
+              "container": "ovP0x",
+              "name": "Mixer / Live inputs"
+            },
+            {
+              "id": "L8Z37W",
+              "container": "Nkqvr",
+              "name": "Mixer / Eighteen inputs"
+            },
+            {
+              "id": "f8I7b",
+              "container": "V4WlA",
+              "name": "Mixer / Auto monitoring"
+            }
+          ]
+        },
+        {
+          "id": "g7T3b",
+          "name": "13  Performance \u00b7 Reverse",
+          "bounds": {
+            "x": 6700,
+            "y": 22020,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "Y1sB3",
+              "container": "cTprh",
+              "name": "Reverse / Playback direction"
+            },
+            {
+              "id": "pHeBV",
+              "container": "vkrtr",
+              "name": "Reverse / Bank B"
+            },
+            {
+              "id": "O3MHy",
+              "container": "e7Ftt",
+              "name": "Reverse / Empty loop"
+            },
+            {
+              "id": "vEooA",
+              "container": "mqwV1",
+              "name": "Tracks / Reverse indicator"
+            }
+          ]
+        },
+        {
+          "id": "tYRWi",
+          "name": "14  Performance \u00b7 Fade",
+          "bounds": {
+            "x": 180,
+            "y": 23292,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "q5GgaM",
+              "container": "f9JPF",
+              "name": "Fade / Shared default"
+            },
+            {
+              "id": "qxzA7",
+              "container": "vnqp1",
+              "name": "Fade / Track override"
+            },
+            {
+              "id": "zzlgN",
+              "container": "Lz63a",
+              "name": "Fade / Bank B"
+            },
+            {
+              "id": "P9salH",
+              "container": "D2tUF9",
+              "name": "Fade / Empty loop"
+            }
+          ]
+        },
+        {
+          "id": "nSfpL",
+          "name": "15  Performance \u00b7 Speed",
+          "bounds": {
+            "x": 6700,
+            "y": 25004,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "K1d7e",
+              "container": "SO34L",
+              "name": "Speed / Normal"
+            },
+            {
+              "id": "e73F0",
+              "container": "Q29ROp",
+              "name": "Speed / Half speed"
+            },
+            {
+              "id": "GRSnI",
+              "container": "jY5NQ",
+              "name": "Speed / Eight times"
+            },
+            {
+              "id": "FKfY0",
+              "container": "YMPRG",
+              "name": "Speed / Empty loop"
+            },
+            {
+              "id": "Xvxte",
+              "container": "usAz6",
+              "name": "Tracks / Speed indicator"
+            }
+          ]
+        },
+        {
+          "id": "fmAqg",
+          "name": "16  Performance \u00b7 Multiply & Divide",
+          "bounds": {
+            "x": 180,
+            "y": 26276,
+            "width": 6320,
+            "height": 4076
+          },
+          "frames": [
+            {
+              "id": "WZXxv",
+              "container": "nJ9qT",
+              "name": "Multiply / Selected track"
+            },
+            {
+              "id": "P6Eawr",
+              "container": "SvTTY",
+              "name": "Multiply / Repeated phrase"
+            },
+            {
+              "id": "J88S7",
+              "container": "Jl8HD",
+              "name": "Divide / First or last half"
+            },
+            {
+              "id": "YM0C4",
+              "container": "Wpeiu",
+              "name": "Divide / First half kept"
+            },
+            {
+              "id": "E6hSr",
+              "container": "S93QcW",
+              "name": "Divide / Last half kept"
+            },
+            {
+              "id": "q1Zau",
+              "container": "vTTb6",
+              "name": "Divide / Bank B"
+            },
+            {
+              "id": "KkzgJ",
+              "container": "VxAeO",
+              "name": "Divide / Empty loop"
+            },
+            {
+              "id": "xuQwK",
+              "container": "PmE2g",
+              "name": "Divide / Recording in progress"
+            }
+          ]
+        },
+        {
+          "id": "XHBlG",
+          "name": "17  Performance \u00b7 Bounce",
+          "bounds": {
+            "x": 6700,
+            "y": 27988,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "lIaLp",
+              "container": "vBT13",
+              "name": "Bounce / Select sources"
+            },
+            {
+              "id": "UGP71",
+              "container": "K2Ui7",
+              "name": "Bounce / Sources across banks"
+            },
+            {
+              "id": "K8nyS",
+              "container": "YPpOv",
+              "name": "Bounce / Choose destination"
+            },
+            {
+              "id": "S1qtJT",
+              "container": "y5o1vy",
+              "name": "Bounce / Replace destination"
+            },
+            {
+              "id": "iEwsD",
+              "container": "DhyM0",
+              "name": "Bounce / Clear source tracks"
+            },
+            {
+              "id": "eOj9S",
+              "container": "y5k8v",
+              "name": "Bounce / Result and recovery"
+            }
+          ]
+        },
+        {
+          "id": "JvDpn",
+          "name": "18  Audio library, backing & import",
+          "bounds": {
+            "x": 6700,
+            "y": 30972,
+            "width": 6320,
+            "height": 6620
+          },
+          "frames": [
+            {
+              "id": "o6kYrs",
+              "container": "bx7vK",
+              "name": "Audio library / Internal"
+            },
+            {
+              "id": "UtzNP",
+              "container": "B5q2Q",
+              "name": "Audio library / USB drive"
+            },
+            {
+              "id": "oIPyp",
+              "container": "M9kyGb",
+              "name": "Save audio / Tracks and destination"
+            },
+            {
+              "id": "m4emE",
+              "container": "o32NQJ",
+              "name": "Save audio / Name"
+            },
+            {
+              "id": "H5BRWH",
+              "container": "OIOV1",
+              "name": "Backing track / Ready"
+            },
+            {
+              "id": "L2AAd",
+              "container": "jsmae",
+              "name": "Audio library / USB disconnected"
+            },
+            {
+              "id": "j4Q7in",
+              "container": "EM37x",
+              "name": "Prepared audio / Performance order"
+            },
+            {
+              "id": "AkvOw",
+              "container": "Vbg8o",
+              "name": "Backing / Ready"
+            },
+            {
+              "id": "LJgD6",
+              "container": "xI2WT",
+              "name": "Backing / Playing and selected"
+            },
+            {
+              "id": "wmj0r",
+              "container": "wotfZ",
+              "name": "Backing / More prepared audio"
+            },
+            {
+              "id": "fIENo",
+              "container": "g7wH7",
+              "name": "Backing / Nothing prepared"
+            },
+            {
+              "id": "eQfV3",
+              "container": "taRWd",
+              "name": "Track import / Choose destination"
+            },
+            {
+              "id": "KFAtn",
+              "container": "c6CBav",
+              "name": "Track import / Ready to load"
+            },
+            {
+              "id": "WPxhW",
+              "container": "akxOj",
+              "name": "Track import / No empty tracks"
+            },
+            {
+              "id": "N7swLe",
+              "container": "HaVqw",
+              "name": "Track import / USB source"
+            }
+          ]
+        },
+        {
+          "id": "BYESA",
+          "name": "19  Sessions \u00b7 New loop & recall",
+          "bounds": {
+            "x": 180,
+            "y": 30532,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "SKrlX",
+              "container": "HPb9F",
+              "name": "Session library"
+            },
+            {
+              "id": "O1njbc",
+              "container": "U2bRH",
+              "name": "New loop / Keep current session"
+            },
+            {
+              "id": "CI2oT",
+              "container": "OltOM",
+              "name": "Session recall / Selected"
+            },
+            {
+              "id": "onoQe",
+              "container": "cPmYI",
+              "name": "Session name"
+            },
+            {
+              "id": "Kgbw7",
+              "container": "lb1U1",
+              "name": "Session save / Storage error"
+            },
+            {
+              "id": "X11hD0",
+              "container": "uRKTE",
+              "name": "New loop / Ready"
+            }
+          ]
+        },
+        {
+          "id": "G2Cj8g",
+          "name": "20  Record performance & USB export",
+          "bounds": {
+            "x": 180,
+            "y": 33516,
+            "width": 6320,
+            "height": 5348
+          },
+          "frames": [
+            {
+              "id": "e7occ",
+              "container": "D9QbI2",
+              "name": "Record performance / Ready to record"
+            },
+            {
+              "id": "kpQNc",
+              "container": "vjohm",
+              "name": "Record performance / Recording"
+            },
+            {
+              "id": "EpIHx",
+              "container": "E7kQV",
+              "name": "Record performance / Recording by foot"
+            },
+            {
+              "id": "pRtAT",
+              "container": "Xcpyh",
+              "name": "Record performance / Saved recording"
+            },
+            {
+              "id": "m9eYTR",
+              "container": "dgedL",
+              "name": "Record performance / Interrupted recording"
+            },
+            {
+              "id": "gfhPC",
+              "container": "owAnd",
+              "name": "Record performance / Save failure"
+            },
+            {
+              "id": "W0D1DN",
+              "container": "KGCxw",
+              "name": "USB export / Export a recording"
+            },
+            {
+              "id": "bVziR",
+              "container": "iYJSm",
+              "name": "USB export / Export in progress"
+            },
+            {
+              "id": "N0rbWf",
+              "container": "DFfXS",
+              "name": "USB export / Matching filename"
+            },
+            {
+              "id": "p8REL",
+              "container": "m5XyVv",
+              "name": "USB export / Connect USB drive"
+            },
+            {
+              "id": "wC8xL",
+              "container": "M734SS",
+              "name": "USB export / Export storage error"
+            },
+            {
+              "id": "HjWmG",
+              "container": "ee8o6",
+              "name": "USB export / Export complete"
+            }
+          ]
+        },
+        {
+          "id": "O51ZiH",
+          "name": "21  Audio routing",
+          "bounds": {
+            "x": 6700,
+            "y": 37772,
+            "width": 6320,
+            "height": 7892
+          },
+          "frames": [
+            {
+              "id": "eFjwu",
+              "container": "s0zlm",
+              "name": "Audio routing / Recording inputs"
+            },
+            {
+              "id": "QJo9g",
+              "container": "oegcz",
+              "name": "Audio routing / Live output routing"
+            },
+            {
+              "id": "eEHQf",
+              "container": "BnMNn",
+              "name": "Audio routing / Track output routing"
+            },
+            {
+              "id": "Mk6WM",
+              "container": "Z3tJMK",
+              "name": "Audio routing / Backing & click"
+            },
+            {
+              "id": "KBR1V",
+              "container": "mf0fR",
+              "name": "Audio routing / Auto monitoring"
+            },
+            {
+              "id": "Z8OoHg",
+              "container": "MoriR",
+              "name": "Audio routing / 18 recording inputs"
+            },
+            {
+              "id": "hHEH0",
+              "container": "sTYRr",
+              "name": "Audio routing / 18 live inputs"
+            },
+            {
+              "id": "pi4VQ",
+              "container": "r47I8",
+              "name": "Audio routing / Recording locked"
+            },
+            {
+              "id": "PCmlB",
+              "container": "KFFvd",
+              "name": "Audio routing / No recording inputs"
+            },
+            {
+              "id": "sYQjb",
+              "container": "RZ14D",
+              "name": "Audio routing / Input names"
+            },
+            {
+              "id": "WbzLb",
+              "container": "RcgPS",
+              "name": "Audio routing / 18 input names"
+            },
+            {
+              "id": "KrLEc",
+              "container": "bDCDG",
+              "name": "Audio routing / Rename an input"
+            },
+            {
+              "id": "Wf8UJ",
+              "container": "t01P4n",
+              "name": "Audio routing / Mono input \u00b7 Pan & trim"
+            },
+            {
+              "id": "tE43z",
+              "container": "X8GtQ",
+              "name": "Audio routing / Stereo pair \u00b7 Balance & trim"
+            },
+            {
+              "id": "RWQ1Q",
+              "container": "NKTbe",
+              "name": "Audio routing / 18-input setup"
+            },
+            {
+              "id": "z9BJOr",
+              "container": "uJVUu",
+              "name": "Audio routing / Clipping input"
+            },
+            {
+              "id": "IAJw1",
+              "container": "Sh3v1",
+              "name": "Audio routing / Recording in progress"
+            }
+          ]
+        },
+        {
+          "id": "wHUmy",
+          "name": "22  Output setup",
+          "bounds": {
+            "x": 180,
+            "y": 39044,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "QPEOk",
+              "container": "J6WLX",
+              "name": "Output setup / Main output"
+            },
+            {
+              "id": "TyZ3G",
+              "container": "WKiEK",
+              "name": "Output setup / Monitor output"
+            },
+            {
+              "id": "DvF0Q",
+              "container": "zUSHq",
+              "name": "Output setup / Muted output"
+            },
+            {
+              "id": "T9C9zL",
+              "container": "O0T8He",
+              "name": "Output setup / Mono output"
+            },
+            {
+              "id": "u9WCb",
+              "container": "ADpwv",
+              "name": "Output setup / Output names"
+            },
+            {
+              "id": "dD1im",
+              "container": "oqlGn",
+              "name": "Output setup / Rename output"
+            }
+          ]
+        },
+        {
+          "id": "H60hp",
+          "name": "23  Performance \u00b7 Tuner",
+          "bounds": {
+            "x": 180,
+            "y": 42108,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "o9d3X",
+              "container": "Q42nzJ",
+              "name": "Tuner / Tune an input"
+            },
+            {
+              "id": "lDOKf",
+              "container": "HRmS8",
+              "name": "Tuner / In tune"
+            },
+            {
+              "id": "d9CLS",
+              "container": "F8UFQf",
+              "name": "Tuner / No signal"
+            },
+            {
+              "id": "sMhKO",
+              "container": "ZbH5h",
+              "name": "Tuner / Live monitoring"
+            },
+            {
+              "id": "ta3Fj",
+              "container": "wHIym",
+              "name": "Tuner / 18 inputs"
+            }
+          ]
+        },
+        {
+          "id": "Kgxk9",
+          "name": "24  External pedals \u00b7 Function assignments",
+          "bounds": {
+            "x": 6700,
+            "y": 45844,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "zrrQt",
+              "container": "nGtjy",
+              "name": "External functions / Press Mixer \u00b7 Hold Tuner"
+            },
+            {
+              "id": "q05KuW",
+              "container": "tjrjE",
+              "name": "External functions / Choose a function"
+            },
+            {
+              "id": "AIVtk",
+              "container": "J7eaGC",
+              "name": "External functions / Choose a track"
+            },
+            {
+              "id": "s4sPkb",
+              "container": "dFiDP",
+              "name": "External functions / Choose an FX pedal"
+            }
+          ]
+        },
+        {
+          "id": "I400Yi",
+          "name": "25  Main views and selected-track display",
+          "bounds": {
+            "x": 180,
+            "y": 45092,
+            "width": 6320,
+            "height": 4076
+          },
+          "frames": [
+            {
+              "id": "Khh1a",
+              "container": "giw9q",
+              "name": "Track"
+            },
+            {
+              "id": "cylzm",
+              "container": "USyt6",
+              "name": "First recording"
+            },
+            {
+              "id": "yNPnZ",
+              "container": "ixQ3A",
+              "name": "Wave"
+            },
+            {
+              "id": "smLmX",
+              "container": "dG5io",
+              "name": "Mixer"
+            },
+            {
+              "id": "wJlxa",
+              "container": "M1RhZ",
+              "name": "Selected track \u00b7 7-inch"
+            },
+            {
+              "id": "I4bQ9",
+              "container": "xUjrp",
+              "name": "Paired display reference"
+            },
+            {
+              "id": "kiQz4",
+              "container": "wwShi",
+              "name": "Queued recording"
+            },
+            {
+              "id": "z4Z54",
+              "container": "joMct",
+              "name": "Mute in place"
+            }
+          ]
+        },
+        {
+          "id": "rmWqV",
+          "name": "26  MIDI controls and Learn",
+          "bounds": {
+            "x": 180,
+            "y": 49348,
+            "width": 6320,
+            "height": 4076
+          },
+          "frames": [
+            {
+              "id": "vxmoz",
+              "container": "RIrL3",
+              "name": "MIDI / Controller mappings"
+            },
+            {
+              "id": "nnKUG",
+              "container": "Rzp8l",
+              "name": "MIDI / Learn a control"
+            },
+            {
+              "id": "l2iAy6",
+              "container": "P5dWId",
+              "name": "MIDI / Knob or fader"
+            },
+            {
+              "id": "bJXN8",
+              "container": "l9iwlZ",
+              "name": "MIDI / Button and multiple controls"
+            },
+            {
+              "id": "L8j66W",
+              "container": "l3ouX",
+              "name": "MIDI / Choose a parameter"
+            },
+            {
+              "id": "JqcUT",
+              "container": "F3HLl",
+              "name": "MIDI / Already mapped"
+            },
+            {
+              "id": "MMzPS",
+              "container": "sSpdN",
+              "name": "MIDI / Disconnected controller"
+            },
+            {
+              "id": "aQHXq",
+              "container": "vsyj4",
+              "name": "MIDI / No mappings"
+            }
+          ]
+        },
+        {
+          "id": "q0VwTg",
+          "name": "27  MIDI clock and external sync",
+          "bounds": {
+            "x": 6700,
+            "y": 48828,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "fkLOU",
+              "container": "zuZHV",
+              "name": "Sync / Internal tempo"
+            },
+            {
+              "id": "yMhnp",
+              "container": "C6fke",
+              "name": "Sync / Waiting for clock"
+            },
+            {
+              "id": "ipK6w",
+              "container": "OWG8J",
+              "name": "Sync / Following MIDI clock"
+            },
+            {
+              "id": "q85IK",
+              "container": "rI1jF",
+              "name": "Sync / Clock lost \u00b7 Keep playing"
+            },
+            {
+              "id": "OeIN1",
+              "container": "m8suY",
+              "name": "Sync / Clock lost \u00b7 Stop loops"
+            },
+            {
+              "id": "PMu8D",
+              "container": "J7Sied",
+              "name": "Sync / Sync on the main view"
+            }
+          ]
+        },
+        {
+          "id": "yeG6A",
+          "name": "28  Audio device & recovery",
+          "bounds": {
+            "x": 6700,
+            "y": 51812,
+            "width": 6320,
+            "height": 4076
+          },
+          "frames": [
+            {
+              "id": "hWDHw",
+              "container": "Q3YCDg",
+              "name": "Device / Audio settings"
+            },
+            {
+              "id": "yyqrZ",
+              "container": "NtHav",
+              "name": "Device / Automatic measurement"
+            },
+            {
+              "id": "C2o3h",
+              "container": "viOWI",
+              "name": "Device / Measure latency"
+            },
+            {
+              "id": "jUlrb",
+              "container": "btTbs",
+              "name": "Device / Apply during playback"
+            },
+            {
+              "id": "kfd3i",
+              "container": "i1uSR",
+              "name": "Device / Interface disconnected"
+            },
+            {
+              "id": "i8LwPO",
+              "container": "orpdZ",
+              "name": "Device / Reconnect audio"
+            },
+            {
+              "id": "pbdiy",
+              "container": "LGQmc",
+              "name": "Device / Repair from Stage"
+            }
+          ]
+        },
+        {
+          "id": "p33ymC",
+          "name": "29  Wi-Fi connectivity",
+          "bounds": {
+            "x": 180,
+            "y": 53604,
+            "width": 6320,
+            "height": 4076
+          },
+          "frames": [
+            {
+              "id": "cnZr7",
+              "container": "wse91",
+              "name": "NETWORK UX / Connected network"
+            },
+            {
+              "id": "X1daqW",
+              "container": "O7zN9",
+              "name": "NETWORK UX / Join a network"
+            },
+            {
+              "id": "KSPNp",
+              "container": "brPO6",
+              "name": "NETWORK UX / Connecting"
+            },
+            {
+              "id": "BqXq1",
+              "container": "YU3gq",
+              "name": "NETWORK UX / Incorrect password"
+            },
+            {
+              "id": "N2AGeo",
+              "container": "JEHXY",
+              "name": "NETWORK UX / Saved network controls"
+            },
+            {
+              "id": "qAxVl",
+              "container": "EXgOI",
+              "name": "NETWORK UX / Connection lost"
+            },
+            {
+              "id": "m4Xh5",
+              "container": "m0cYo",
+              "name": "NETWORK UX / Wi-Fi off"
+            },
+            {
+              "id": "hu9Bf",
+              "container": "yL9W8",
+              "name": "NETWORK UX / Connected without internet"
+            }
+          ]
+        },
+        {
+          "id": "OdZ7n",
+          "name": "30  Displays & touch calibration",
+          "bounds": {
+            "x": 6700,
+            "y": 56068,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "UXiWk",
+              "container": "hrXyj",
+              "name": "DISPLAYS UX / Display settings"
+            },
+            {
+              "id": "q4OZOP",
+              "container": "ESLal",
+              "name": "DISPLAYS UX / Track display calibration"
+            },
+            {
+              "id": "c00LeS",
+              "container": "ARj5B",
+              "name": "DISPLAYS UX / Main display calibration"
+            },
+            {
+              "id": "xpmFC",
+              "container": "hmuQG",
+              "name": "DISPLAYS UX / Test before keeping"
+            },
+            {
+              "id": "cWuvA",
+              "container": "a7zTq",
+              "name": "DISPLAYS UX / Disconnected display"
+            },
+            {
+              "id": "CXU4c",
+              "container": "ppCdS",
+              "name": "DISPLAYS UX / Idle dimming"
+            }
+          ]
+        },
+        {
+          "id": "PQ2W9",
+          "name": "31  Storage & safe eject",
+          "bounds": {
+            "x": 180,
+            "y": 57860,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "NxtNc",
+              "container": "BQc2H",
+              "name": "STORAGE UX / Storage overview"
+            },
+            {
+              "id": "mEqa6",
+              "container": "SowFm",
+              "name": "STORAGE UX / Ejecting USB"
+            },
+            {
+              "id": "chgDv",
+              "container": "GbezI",
+              "name": "STORAGE UX / Safe to remove"
+            },
+            {
+              "id": "gqcmf",
+              "container": "t5SpNf",
+              "name": "STORAGE UX / No USB drive"
+            },
+            {
+              "id": "p8bT0",
+              "container": "PQOpP",
+              "name": "STORAGE UX / Eject failed"
+            },
+            {
+              "id": "Bn0vl",
+              "container": "uvis2",
+              "name": "STORAGE UX / Low internal space"
+            }
+          ]
+        },
+        {
+          "id": "Z4KAJ",
+          "name": "32  Safe shutdown & restart",
+          "bounds": {
+            "x": 6700,
+            "y": 59052,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "z3tkX",
+              "container": "QWWba",
+              "name": "POWER UX / Power options"
+            },
+            {
+              "id": "tUqCV",
+              "container": "xD6Px",
+              "name": "POWER UX / Saving before shutdown"
+            },
+            {
+              "id": "MFCYv",
+              "container": "tBAZf",
+              "name": "POWER UX / Save failed \u00b7 stay on"
+            },
+            {
+              "id": "DHsYQ",
+              "container": "Cu7cd",
+              "name": "POWER UX / Safe to switch off"
+            },
+            {
+              "id": "V7XVe",
+              "container": "iR4p7",
+              "name": "POWER UX / Restarting"
+            }
+          ]
+        },
+        {
+          "id": "b0n5kk",
+          "name": "33  Software updates",
+          "bounds": {
+            "x": 180,
+            "y": 60844,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "T1igr",
+              "container": "kGlWv",
+              "name": "UPDATES UX / Installed software"
+            },
+            {
+              "id": "rHa2d",
+              "container": "rWqZT",
+              "name": "UPDATES UX / Update available"
+            },
+            {
+              "id": "xlAif",
+              "container": "w3lUKE",
+              "name": "UPDATES UX / Load a USB package"
+            },
+            {
+              "id": "tn7CZ",
+              "container": "d4elG",
+              "name": "UPDATES UX / Download progress"
+            },
+            {
+              "id": "g6y2R",
+              "container": "w4f0uG",
+              "name": "UPDATES UX / Ready to restart"
+            },
+            {
+              "id": "ic1C5",
+              "container": "Fv2zf",
+              "name": "UPDATES UX / Update interrupted"
+            }
+          ]
+        },
+        {
+          "id": "eKooF",
+          "name": "34 Session backup & restore",
+          "bounds": {
+            "x": 6700,
+            "y": 62036,
+            "width": 6320,
+            "height": 2804
+          },
+          "frames": [
+            {
+              "id": "Rv5nm",
+              "container": "npwR1",
+              "name": "SESSION BACKUP UX / Backup in Library"
+            },
+            {
+              "id": "VfIy4",
+              "container": "mdwSD",
+              "name": "SESSION BACKUP UX / Inline copy progress"
+            },
+            {
+              "id": "BbADt",
+              "container": "C0Mogf",
+              "name": "SESSION BACKUP UX / USB session list"
+            },
+            {
+              "id": "c1Lk51",
+              "container": "ZECDn",
+              "name": "SESSION BACKUP UX / Matching backup name"
+            },
+            {
+              "id": "lch7K",
+              "container": "f2sBAc",
+              "name": "SESSION BACKUP UX / Restored session selected"
+            },
+            {
+              "id": "i7kkai",
+              "container": "vzH8N",
+              "name": "SESSION BACKUP UX / Retry an interrupted copy"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "X5FjMW",
+      "name": "02   EARLIER APPLICATION",
+      "bounds": {
+        "x": 13560,
+        "y": 0,
+        "width": 13200,
+        "height": 39703
+      },
+      "preview": "X5FjMW.png",
+      "sections": [
+        {
+          "id": "Tp6IP",
+          "name": "01  Stage",
+          "frames": [
+            {
+              "id": "Ob2Mu",
+              "container": "dTtC2",
+              "name": "STAGE / stage"
+            },
+            {
+              "id": "W9EBo",
+              "container": "OKMdH",
+              "name": "STAGE / stage-states"
+            },
+            {
+              "id": "oIEZW",
+              "container": "O1sjYi",
+              "name": "STAGE / stage-armed"
+            },
+            {
+              "id": "aOCwz",
+              "container": "irRi6",
+              "name": "STAGE / stage-countin"
+            },
+            {
+              "id": "VOgon",
+              "container": "HLUeY",
+              "name": "STAGE / stage-fx"
+            },
+            {
+              "id": "aaQ4M",
+              "container": "GQXYe",
+              "name": "STAGE / track-rename"
+            },
+            {
+              "id": "NVkgh",
+              "container": "utNY3",
+              "name": "STAGE / readout"
+            },
+            {
+              "id": "Y10Jar",
+              "container": "ohHAh",
+              "name": "STAGE / stage-engine-off"
+            },
+            {
+              "id": "D5TOo",
+              "container": "T85rX",
+              "name": "STAGE / device-lost"
+            },
+            {
+              "id": "S1YHE3",
+              "container": "gkBF5",
+              "name": "STAGE / readout-volumes"
+            },
+            {
+              "id": "HqSgj",
+              "container": "IYLbU",
+              "name": "STAGE / readout-volumes-input"
+            },
+            {
+              "id": "Y14E9",
+              "container": "BR3h8",
+              "name": "STAGE / readout-volumes-track"
+            },
+            {
+              "id": "grngC",
+              "container": "sFFmA",
+              "name": "STAGE / midi-lost-toast"
+            },
+            {
+              "id": "jL8Ib",
+              "container": "Qzt9o",
+              "name": "STAGE / stage-fx-overlay"
+            },
+            {
+              "id": "UMcEK",
+              "container": "e0qAO",
+              "name": "STAGE / fx-opt-A"
+            },
+            {
+              "id": "RMDoK",
+              "container": "sf9fv",
+              "name": "STAGE / fx-opt-B"
+            },
+            {
+              "id": "jM9AK",
+              "container": "BHs9y",
+              "name": "STAGE / fx-opt-C"
+            },
+            {
+              "id": "KjNGM",
+              "container": "cd4p3",
+              "name": "STAGE / fx-opt-D"
+            },
+            {
+              "id": "q4IJ0",
+              "container": "zykkH",
+              "name": "STAGE / fx-opt-E"
+            }
+          ]
+        },
+        {
+          "id": "J8aa3b",
+          "name": "02  Signal",
+          "frames": [
+            {
+              "id": "jRxsq",
+              "container": "padSX",
+              "name": "SIGNAL / signal-loop"
+            },
+            {
+              "id": "Nhli9",
+              "container": "ZfCMK",
+              "name": "SIGNAL / signal-input"
+            },
+            {
+              "id": "H7lAnH",
+              "container": "gGDxS",
+              "name": "SIGNAL / signal-master"
+            },
+            {
+              "id": "e7CHF1",
+              "container": "G7pLe",
+              "name": "SIGNAL / signal-detail"
+            },
+            {
+              "id": "u0MHpD",
+              "container": "S4vjX",
+              "name": "SIGNAL / fx-edit"
+            },
+            {
+              "id": "D5B91",
+              "container": "Q7Us4f",
+              "name": "SIGNAL / fx-reorder"
+            },
+            {
+              "id": "Z6r4bH",
+              "container": "L7GiT",
+              "name": "SIGNAL / fx-plugin"
+            },
+            {
+              "id": "QR2XW",
+              "container": "GatJF",
+              "name": "SIGNAL / library"
+            },
+            {
+              "id": "d4lBhS",
+              "container": "Xvd2v",
+              "name": "SIGNAL / fx-browse"
+            },
+            {
+              "id": "f7iUcv",
+              "container": "y236HB",
+              "name": "SIGNAL / rack-new"
+            },
+            {
+              "id": "CYNKS",
+              "container": "WwtSO",
+              "name": "SIGNAL / fx-add"
+            },
+            {
+              "id": "Q10B3",
+              "container": "D3oui",
+              "name": "SIGNAL / rack-delete"
+            },
+            {
+              "id": "EMaMV",
+              "container": "yK0us",
+              "name": "SIGNAL / signal-track"
+            },
+            {
+              "id": "gqhzx",
+              "container": "q2azF7",
+              "name": "SIGNAL / master-last-output"
+            },
+            {
+              "id": "M3PQQ",
+              "container": "VHZ5B",
+              "name": "SIGNAL / fx-param-sheet"
+            },
+            {
+              "id": "xerFn",
+              "container": "jzyAP",
+              "name": "SIGNAL / input-conditioning"
+            },
+            {
+              "id": "onYgt",
+              "container": "TAI1g",
+              "name": "SIGNAL / input-clip"
+            },
+            {
+              "id": "gSOpF",
+              "container": "mt5vx",
+              "name": "SIGNAL / restore-states"
+            }
+          ]
+        },
+        {
+          "id": "tPvC3",
+          "name": "03  Control",
+          "frames": [
+            {
+              "id": "zirAH",
+              "container": "H8aM7Q",
+              "name": "CONTROL / midi-switch"
+            },
+            {
+              "id": "bjgrC",
+              "container": "mv5Fi",
+              "name": "CONTROL / midi-stale"
+            },
+            {
+              "id": "oJq8B",
+              "container": "bgwSE",
+              "name": "CONTROL / midi-listening"
+            },
+            {
+              "id": "ZgDn7",
+              "container": "cy9R0",
+              "name": "CONTROL / midi-replace"
+            },
+            {
+              "id": "Z0P3m",
+              "container": "xCoX9",
+              "name": "CONTROL / midi-no-device"
+            },
+            {
+              "id": "fmW5L",
+              "container": "Ht94P",
+              "name": "CONTROL / midi-gone"
+            },
+            {
+              "id": "efohL",
+              "container": "TXblf",
+              "name": "CONTROL / midi-open-failed"
+            },
+            {
+              "id": "DND7I",
+              "container": "T6pPLM",
+              "name": "CONTROL / control-midi"
+            },
+            {
+              "id": "RqBBQ",
+              "container": "NBsSk",
+              "name": "CONTROL / midi-sweep"
+            },
+            {
+              "id": "iWOZJ",
+              "container": "j5lTH",
+              "name": "CONTROL / pedal"
+            },
+            {
+              "id": "LJiMA",
+              "container": "QMQHK",
+              "name": "CONTROL / pedal-selected"
+            },
+            {
+              "id": "kzeWd",
+              "container": "p3lGv",
+              "name": "CONTROL / pedal-bank-b"
+            },
+            {
+              "id": "UFKEZ",
+              "container": "CI5R3",
+              "name": "CONTROL / pedal-slots"
+            },
+            {
+              "id": "n6xC9M",
+              "container": "N6ffuk",
+              "name": "CONTROL / pedal-stale"
+            }
+          ]
+        },
+        {
+          "id": "A0zMsH",
+          "name": "04  Loop",
+          "frames": [
+            {
+              "id": "FcbTT",
+              "container": "gIXN1",
+              "name": "LOOP / loop"
+            },
+            {
+              "id": "IATbd",
+              "container": "e6Uz8H",
+              "name": "LOOP / loop-tempo"
+            },
+            {
+              "id": "gwVQ7",
+              "container": "b1KF8T",
+              "name": "LOOP / loop-quantise"
+            },
+            {
+              "id": "CVKLT",
+              "container": "fA0jn",
+              "name": "LOOP / loop-click"
+            },
+            {
+              "id": "iBlpk",
+              "container": "Cb9CL",
+              "name": "LOOP / loop-mode"
+            },
+            {
+              "id": "RbOjB",
+              "container": "MHgB2",
+              "name": "LOOP / settings-mode-confirm"
+            },
+            {
+              "id": "FBqbV",
+              "container": "zE5xQ",
+              "name": "LOOP / loop-mode-pick"
+            },
+            {
+              "id": "kkuyc",
+              "container": "gJrJJ",
+              "name": "LOOP / loop-signature"
+            },
+            {
+              "id": "yPkzO",
+              "container": "jKWEZ",
+              "name": "LOOP / loop-output"
+            }
+          ]
+        },
+        {
+          "id": "cUnCC",
+          "name": "05  Tracks",
+          "frames": [
+            {
+              "id": "Mwxrx",
+              "container": "UtIC0",
+              "name": "TRACKS / tracks"
+            },
+            {
+              "id": "IAsX8",
+              "container": "yVQFM",
+              "name": "TRACKS / tracks-lengths"
+            },
+            {
+              "id": "bhU9Z",
+              "container": "JB0cN",
+              "name": "TRACKS / tracks-routing"
+            },
+            {
+              "id": "Q4LT4",
+              "container": "sOjkz",
+              "name": "TRACKS / track-routing"
+            },
+            {
+              "id": "jzjWX",
+              "container": "EMdFi",
+              "name": "TRACKS / track-unrouted"
+            },
+            {
+              "id": "obL5d",
+              "container": "v1SWgZ",
+              "name": "TRACKS / track-rename"
+            },
+            {
+              "id": "jM4fL",
+              "container": "ShxJg",
+              "name": "TRACKS / tracks-empty"
+            },
+            {
+              "id": "sVQQ1",
+              "container": "r6mOGh",
+              "name": "TRACKS / tracks-length-pick"
+            }
+          ]
+        },
+        {
+          "id": "l6clI4",
+          "name": "06  Audio",
+          "frames": [
+            {
+              "id": "gNIym",
+              "container": "x20QIB",
+              "name": "AUDIO / audio"
+            },
+            {
+              "id": "V39Pf",
+              "container": "R89dsj",
+              "name": "AUDIO / settings-device"
+            },
+            {
+              "id": "qEGVr",
+              "container": "Qy9t5",
+              "name": "AUDIO / settings-rate"
+            },
+            {
+              "id": "QPjyA",
+              "container": "jdNXc",
+              "name": "AUDIO / settings-inputs"
+            },
+            {
+              "id": "Oxh0r",
+              "container": "eBLhu",
+              "name": "AUDIO / settings-rename"
+            },
+            {
+              "id": "PmRZi",
+              "container": "ycoSb",
+              "name": "AUDIO / audio-recording"
+            },
+            {
+              "id": "fwg3D",
+              "container": "GLgU1",
+              "name": "AUDIO / settings-maxloop"
+            },
+            {
+              "id": "KK3NE",
+              "container": "Ljmru",
+              "name": "AUDIO / settings-nolatency"
+            },
+            {
+              "id": "zP8Nf",
+              "container": "ttLUf",
+              "name": "AUDIO / asio"
+            },
+            {
+              "id": "tHEDv",
+              "container": "G6YNcJ",
+              "name": "AUDIO / asio-missing"
+            },
+            {
+              "id": "eVDH8",
+              "container": "w5BO9w",
+              "name": "AUDIO / no-outputs"
+            },
+            {
+              "id": "ggLz5",
+              "container": "aTpf4",
+              "name": "AUDIO / audio-refused"
+            },
+            {
+              "id": "W7UhUg",
+              "container": "nAy2x",
+              "name": "AUDIO / settings-inputs-wide"
+            },
+            {
+              "id": "Vf7IM",
+              "container": "A0ahZy",
+              "name": "AUDIO / settings-inputs-unnamed"
+            }
+          ]
+        },
+        {
+          "id": "ww2oc",
+          "name": "07  Tuner",
+          "frames": [
+            {
+              "id": "mF6jF",
+              "container": "Eq9cS",
+              "name": "TUNER / tuner"
+            },
+            {
+              "id": "QI7GZ",
+              "container": "FiTHX",
+              "name": "TUNER / tuner-mic"
+            }
+          ]
+        },
+        {
+          "id": "e0cAH",
+          "name": "08  Network",
+          "frames": [
+            {
+              "id": "wbwpb",
+              "container": "JfQm1",
+              "name": "NETWORK / wifi"
+            },
+            {
+              "id": "S1ldXs",
+              "container": "s7HDyp",
+              "name": "NETWORK / wifi-expanded"
+            },
+            {
+              "id": "AQZsA",
+              "container": "QADvg",
+              "name": "NETWORK / wifi-off"
+            },
+            {
+              "id": "L6msm",
+              "container": "V3yuza",
+              "name": "NETWORK / wifi-scanning"
+            },
+            {
+              "id": "W1s6h2",
+              "container": "KN8Gx",
+              "name": "NETWORK / wifi-forget"
+            },
+            {
+              "id": "OGs7e",
+              "container": "rUFHx",
+              "name": "NETWORK / wifi-password"
+            },
+            {
+              "id": "ssver",
+              "container": "queZo",
+              "name": "NETWORK / wifi-symbols"
+            },
+            {
+              "id": "dnrvw",
+              "container": "YvEcq",
+              "name": "NETWORK / wifi-error"
+            },
+            {
+              "id": "OhzU8",
+              "container": "s5DbC",
+              "name": "NETWORK / wifi-connecting"
+            },
+            {
+              "id": "JDvK2",
+              "container": "a8VfyL",
+              "name": "NETWORK / wifi-failed"
+            },
+            {
+              "id": "pYbut",
+              "container": "x2O7LP",
+              "name": "NETWORK / wifi-unsupported"
+            },
+            {
+              "id": "Q9mTz",
+              "container": "fO4Lg",
+              "name": "NETWORK / bluetooth"
+            },
+            {
+              "id": "U0xLh",
+              "container": "N3ufS6",
+              "name": "NETWORK / bt-expanded"
+            },
+            {
+              "id": "faboB",
+              "container": "JFNvo",
+              "name": "NETWORK / bluetooth-off"
+            },
+            {
+              "id": "gD7TC",
+              "container": "APlAc",
+              "name": "NETWORK / bt-pairing"
+            },
+            {
+              "id": "EcTto",
+              "container": "I7i6E",
+              "name": "NETWORK / bt-failed"
+            },
+            {
+              "id": "NDBmS",
+              "container": "gVi43",
+              "name": "NETWORK / bt-forget"
+            }
+          ]
+        },
+        {
+          "id": "WzOcR",
+          "name": "09  System",
+          "frames": [
+            {
+              "id": "dyNJZ",
+              "container": "fKB8P",
+              "name": "SYSTEM / display"
+            },
+            {
+              "id": "HPskM",
+              "container": "zFly4",
+              "name": "SYSTEM / waveform-failed"
+            },
+            {
+              "id": "BTfmz",
+              "container": "rXmRi",
+              "name": "SYSTEM / brightness"
+            },
+            {
+              "id": "ptYnN",
+              "container": "HSvey",
+              "name": "SYSTEM / update"
+            },
+            {
+              "id": "LDVFG",
+              "container": "in0V2",
+              "name": "SYSTEM / update-available"
+            },
+            {
+              "id": "gECvM",
+              "container": "Q5qTGs",
+              "name": "SYSTEM / update-downloading"
+            },
+            {
+              "id": "h9g5K",
+              "container": "GCxvW",
+              "name": "SYSTEM / update-staged"
+            },
+            {
+              "id": "Pc17o",
+              "container": "NSgPU",
+              "name": "SYSTEM / update-error"
+            },
+            {
+              "id": "pdcs2",
+              "container": "E2Ta0",
+              "name": "SYSTEM / storage"
+            },
+            {
+              "id": "S9YR5d",
+              "container": "lqXnt",
+              "name": "SYSTEM / about"
+            },
+            {
+              "id": "YlYmk",
+              "container": "K8C8w",
+              "name": "SYSTEM / licences"
+            }
+          ]
+        },
+        {
+          "id": "DTyBg",
+          "name": "10  Sessions & capture",
+          "frames": [
+            {
+              "id": "YAYfo",
+              "container": "AIisQ",
+              "name": "SESSION & CAPTURE / sessions"
+            },
+            {
+              "id": "VsICP",
+              "container": "SQVUr",
+              "name": "SESSION & CAPTURE / session-rate-error"
+            },
+            {
+              "id": "AnTlI",
+              "container": "N6T7V",
+              "name": "SESSION & CAPTURE / session-version-error"
+            },
+            {
+              "id": "GN6mB",
+              "container": "Mdw0q",
+              "name": "SESSION & CAPTURE / capture-saved"
+            },
+            {
+              "id": "g95tW",
+              "container": "WcFsP",
+              "name": "SESSION & CAPTURE / capture-diskfull"
+            },
+            {
+              "id": "sItwN",
+              "container": "uoO64",
+              "name": "SESSION & CAPTURE / capture-glitch"
+            },
+            {
+              "id": "AOY5m",
+              "container": "y1Do5",
+              "name": "SESSION & CAPTURE / capture-rendering"
+            },
+            {
+              "id": "AMpfE",
+              "container": "uyKav",
+              "name": "SESSION & CAPTURE / shortcuts"
+            },
+            {
+              "id": "JjNTL",
+              "container": "RSW9p",
+              "name": "SESSION & CAPTURE / firmware-gate"
+            },
+            {
+              "id": "KrMQp",
+              "container": "XV68D",
+              "name": "SESSION & CAPTURE / firmware-failed"
+            },
+            {
+              "id": "oKOqX",
+              "container": "XrNsK",
+              "name": "SESSION & CAPTURE / capture-partial"
+            },
+            {
+              "id": "JIjph",
+              "container": "r0ScA",
+              "name": "SESSION & CAPTURE / library"
+            },
+            {
+              "id": "I5d1j",
+              "container": "a73nQl",
+              "name": "SESSION & CAPTURE / library-capture-selected"
+            },
+            {
+              "id": "pyeEu",
+              "container": "DRiiQ",
+              "name": "SESSION & CAPTURE / library-recovered"
+            },
+            {
+              "id": "G6syS",
+              "container": "go0kI",
+              "name": "SESSION & CAPTURE / library-empty"
+            },
+            {
+              "id": "nXHa8",
+              "container": "QsaSO",
+              "name": "SESSION & CAPTURE / firmware-failed-interrupted"
+            }
+          ]
+        },
+        {
+          "id": "Tl4hO",
+          "name": "11  Earlier control & capture notes",
+          "frames": []
+        }
+      ]
+    },
+    {
+      "id": "adlbY",
+      "name": "03   DESIGN SYSTEM",
+      "bounds": {
+        "x": 0,
+        "y": 65320,
+        "width": 6500,
+        "height": 10685
+      },
+      "preview": "adlbY.png",
+      "sections": [
+        {
+          "id": "iZJPi",
+          "name": "01  Foundations & components",
+          "frames": [
+            {
+              "id": "XJoip",
+              "container": "tdcqC",
+              "name": "DS / masters"
+            },
+            {
+              "id": "AGXjB",
+              "container": "ASPkT",
+              "name": "DS / 01 Foundations"
+            },
+            {
+              "id": "im3R8",
+              "container": "t1MOx",
+              "name": "DS / 02 Components"
+            },
+            {
+              "id": "TrIGV",
+              "container": "a6GxSt",
+              "name": "DS / 03 Patterns"
+            },
+            {
+              "id": "VJKTa",
+              "container": "M0uTZ",
+              "name": "DS / 04 FX controls"
+            },
+            {
+              "id": "kPLQ6",
+              "container": "cgMaC",
+              "name": "DS / 05 Dense params \u2014 options"
+            },
+            {
+              "id": "R29c7",
+              "container": "NUjCy",
+              "name": "DS / 06 FX parameter \u2014 spec"
+            },
+            {
+              "id": "Qdj7x",
+              "container": "dhDYD",
+              "name": "Hardware / Segno pedal face"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "jbFH4",
+      "name": "04   SUPERSEDED",
+      "bounds": {
+        "x": 6700,
+        "y": 65320,
+        "width": 6500,
+        "height": 9220
+      },
+      "preview": "jbFH4.png",
+      "sections": [
+        {
+          "id": "nwSwt",
+          "name": "01  Superseded pedal layouts",
+          "frames": [
+            {
+              "id": "jtUVL",
+              "container": "bkJ47",
+              "name": "Superseded / Loop UX 2026 / Pedal setup \u2014 Press and Hold"
+            },
+            {
+              "id": "fbyDZ",
+              "container": "YLewP",
+              "name": "Superseded / Loop UX 2026 / Custom pedals \u2014 Press and Hold"
+            },
+            {
+              "id": "r2N5ss",
+              "container": "sbgbo",
+              "name": "Superseded / Loop UX 2026 / Assign Press"
+            },
+            {
+              "id": "jWo0A",
+              "container": "w6lsk",
+              "name": "Superseded / Loop UX 2026 / Assign Hold"
+            },
+            {
+              "id": "IMvAD",
+              "container": "s1XYl",
+              "name": "Superseded / Loop UX 2026 / Mode Hold entry"
+            },
+            {
+              "id": "gCHAo",
+              "container": "r8VDwr",
+              "name": "Superseded / Loop UX 2026 / Custom pedals \u2014 Bank B"
+            },
+            {
+              "id": "LVwOq",
+              "container": "plcGn",
+              "name": "Superseded / B \u2014 Gesture layers"
+            },
+            {
+              "id": "Y0HcbM",
+              "container": "F42bp",
+              "name": "Superseded / C \u2014 Assignment table"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "subsequentChanges": {
+    "slice": "Audio library, backing and import",
+    "addedScreenFrames": 15,
+    "totalScreenFrames": 265,
+    "currentUxFrames": 121,
+    "currentSections": 18,
+    "totalSections": 31,
+    "currentUxBounds": {
+      "x": 0,
+      "y": 0,
+      "width": 13200,
+      "height": 36500
+    },
+    "designSystemY": 36800,
+    "supersededY": 36800,
+    "newSection": {
+      "id": "JvDpn",
+      "name": "18  Audio library, backing & import",
+      "bounds": {
+        "x": 6700,
+        "y": 29700,
+        "width": 6320,
+        "height": 6620
+      },
+      "frames": [
+        {
+          "id": "o6kYrs",
+          "container": "bx7vK",
+          "name": "Audio library / Internal",
+          "status": "proposal"
+        },
+        {
+          "id": "UtzNP",
+          "container": "B5q2Q",
+          "name": "Audio library / USB drive",
+          "status": "proposal"
+        },
+        {
+          "id": "oIPyp",
+          "container": "M9kyGb",
+          "name": "Save audio / Tracks and destination",
+          "status": "proposal"
+        },
+        {
+          "id": "m4emE",
+          "container": "o32NQJ",
+          "name": "Save audio / Name",
+          "status": "proposal"
+        },
+        {
+          "id": "H5BRWH",
+          "container": "OIOV1",
+          "name": "Backing track / Ready",
+          "status": "proposal"
+        },
+        {
+          "id": "L2AAd",
+          "container": "jsmae",
+          "name": "Audio library / USB disconnected",
+          "status": "proposal"
+        },
+        {
+          "id": "j4Q7in",
+          "container": "EM37x",
+          "name": "Prepared audio / Performance order",
+          "status": "accepted"
+        },
+        {
+          "id": "AkvOw",
+          "container": "Vbg8o",
+          "name": "Backing / Ready",
+          "status": "proposal"
+        },
+        {
+          "id": "LJgD6",
+          "container": "xI2WT",
+          "name": "Backing / Playing and selected",
+          "status": "proposal"
+        },
+        {
+          "id": "wmj0r",
+          "container": "wotfZ",
+          "name": "Backing / More prepared audio",
+          "status": "proposal"
+        },
+        {
+          "id": "fIENo",
+          "container": "g7wH7",
+          "name": "Backing / Nothing prepared",
+          "status": "proposal"
+        },
+        {
+          "id": "eQfV3",
+          "container": "taRWd",
+          "name": "Track import / Choose destination",
+          "status": "proposal"
+        },
+        {
+          "id": "KFAtn",
+          "container": "c6CBav",
+          "name": "Track import / Ready to load",
+          "status": "proposal"
+        },
+        {
+          "id": "WPxhW",
+          "container": "akxOj",
+          "name": "Track import / No empty tracks",
+          "status": "proposal"
+        },
+        {
+          "id": "N7swLe",
+          "container": "HaVqw",
+          "name": "Track import / USB source",
+          "status": "proposal"
+        }
+      ]
+    },
+    "intentionalOriginalScreenUpdates": [
+      {
+        "id": "hmEBj",
+        "change": "Added Library entry in normal Tracks header"
+      },
+      {
+        "id": "vEooA",
+        "change": "Added Library entry in normal Tracks header"
+      },
+      {
+        "id": "Xvxte",
+        "change": "Added Library entry in normal Tracks header"
+      }
+    ],
+    "currentGroupingClipping": [],
+    "savedPenHash": "3beee670199e09fb9888ce7c37ef4b8bb9d6aeae"
+  },
+  "sessionLibraryAddition": {
+    "date": "2026-09-07",
+    "section": "BYESA",
+    "bounds": {
+      "x": 180,
+      "y": 30532,
+      "width": 6320,
+      "height": 2804
+    },
+    "currentScreens": 127,
+    "currentSections": 19,
+    "addedFrames": [
+      {
+        "root": "SKrlX",
+        "tile": "HPb9F",
+        "review": "session-library",
+        "name": "Session library",
+        "status": "accepted",
+        "browser": "session-library.png",
+        "native": "pen/SKrlX.png"
+      },
+      {
+        "root": "O1njbc",
+        "tile": "U2bRH",
+        "review": "session-new",
+        "name": "New loop / Keep current session",
+        "status": "accepted",
+        "browser": "session-new.png",
+        "native": "pen/O1njbc.png"
+      },
+      {
+        "root": "CI2oT",
+        "tile": "OltOM",
+        "review": "session-saved",
+        "name": "Session recall / Selected",
+        "status": "accepted",
+        "browser": "session-saved.png",
+        "native": "pen/CI2oT.png"
+      },
+      {
+        "root": "onoQe",
+        "tile": "cPmYI",
+        "review": "session-name",
+        "name": "Session name",
+        "status": "accepted",
+        "browser": "session-name.png",
+        "native": "pen/onoQe.png"
+      },
+      {
+        "root": "Kgbw7",
+        "tile": "lb1U1",
+        "review": "session-error",
+        "name": "Session save / Storage error",
+        "status": "accepted",
+        "browser": "session-error.png",
+        "native": "pen/Kgbw7.png"
+      },
+      {
+        "root": "X11hD0",
+        "tile": "uRKTE",
+        "review": "session-empty",
+        "name": "New loop / Ready",
+        "status": "accepted",
+        "browser": "session-empty.png",
+        "native": "pen/X11hD0.png"
+      }
+    ],
+    "savedPenHash": "39b6b817ce8988ed82685b26c524b7e44573c7d3"
+  },
+  "performanceRecordingAddition": {
+    "date": "2026-09-07",
+    "section": "G2Cj8g",
+    "bounds": {
+      "x": 180,
+      "y": 33516,
+      "width": 6320,
+      "height": 2804
+    },
+    "currentScreens": 133,
+    "currentSections": 20,
+    "addedFrames": [
+      {
+        "root": "e7occ",
+        "tile": "D9QbI2",
+        "review": "performance-recording-ready",
+        "name": "Ready to record",
+        "status": "proposal",
+        "browser": "performance-recording-ready.png",
+        "native": "pen/e7occ.png"
+      },
+      {
+        "root": "kpQNc",
+        "tile": "vjohm",
+        "review": "performance-recording-active",
+        "name": "Recording",
+        "status": "proposal",
+        "browser": "performance-recording-active.png",
+        "native": "pen/kpQNc.png"
+      },
+      {
+        "root": "EpIHx",
+        "tile": "E7kQV",
+        "review": "performance-recording-stage",
+        "name": "Recording by foot",
+        "status": "proposal",
+        "browser": "performance-recording-stage.png",
+        "native": "pen/EpIHx.png"
+      },
+      {
+        "root": "pRtAT",
+        "tile": "Xcpyh",
+        "review": "performance-recording-saved",
+        "name": "Saved recording",
+        "status": "proposal",
+        "browser": "performance-recording-saved.png",
+        "native": "pen/pRtAT.png"
+      },
+      {
+        "root": "m9eYTR",
+        "tile": "dgedL",
+        "review": "performance-recording-recovered",
+        "name": "Interrupted recording",
+        "status": "proposal",
+        "browser": "performance-recording-recovered.png",
+        "native": "pen/m9eYTR.png"
+      },
+      {
+        "root": "gfhPC",
+        "tile": "owAnd",
+        "review": "performance-recording-error",
+        "name": "Save failure",
+        "status": "proposal",
+        "browser": "performance-recording-error.png",
+        "native": "pen/gfhPC.png"
+      }
+    ],
+    "updatedAudioFrames": [
+      "o6kYrs",
+      "UtzNP",
+      "L2AAd"
+    ],
+    "groupOverlaps": [],
+    "outsideCurrentRegion": [],
+    "savedPenHash": "fde736118373773c626e216d9edfbf738b17eebe"
+  },
+  "usbExportAddition": {
+    "date": "2026-09-07",
+    "section": "G2Cj8g",
+    "bounds": {
+      "x": 180,
+      "y": 33516,
+      "width": 6320,
+      "height": 5348
+    },
+    "currentRegionHeight": 39044,
+    "referenceRegionY": 39344,
+    "currentScreens": 139,
+    "currentSections": 20,
+    "addedFrames": [
+      {
+        "root": "W0D1DN",
+        "tile": "KGCxw",
+        "review": "audio-export",
+        "name": "Export a recording",
+        "status": "accepted",
+        "browser": "audio-export.png",
+        "native": "pen/W0D1DN.png"
+      },
+      {
+        "root": "bVziR",
+        "tile": "iYJSm",
+        "review": "audio-export-progress",
+        "name": "Export in progress",
+        "status": "accepted",
+        "browser": "audio-export-progress.png",
+        "native": "pen/bVziR.png"
+      },
+      {
+        "root": "N0rbWf",
+        "tile": "DFfXS",
+        "review": "audio-export-collision",
+        "name": "Matching filename",
+        "status": "accepted",
+        "browser": "audio-export-collision.png",
+        "native": "pen/N0rbWf.png"
+      },
+      {
+        "root": "p8REL",
+        "tile": "m5XyVv",
+        "review": "audio-export-missing",
+        "name": "Connect USB drive",
+        "status": "accepted",
+        "browser": "audio-export-missing.png",
+        "native": "pen/p8REL.png"
+      },
+      {
+        "root": "wC8xL",
+        "tile": "M734SS",
+        "review": "audio-export-error",
+        "name": "Export storage error",
+        "status": "accepted",
+        "browser": "audio-export-error.png",
+        "native": "pen/wC8xL.png"
+      },
+      {
+        "root": "HjWmG",
+        "tile": "ee8o6",
+        "review": "audio-export-complete",
+        "name": "Export complete",
+        "status": "accepted",
+        "browser": "audio-export-complete.png",
+        "native": "pen/HjWmG.png"
+      }
+    ],
+    "updatedAudioFrames": [
+      "o6kYrs",
+      "j4Q7in"
+    ],
+    "savedPenHash": "aa530c6530efb5250f474397223258b1c85df108"
+  },
+  "audioRoutingAddition": {
+    "date": "2026-09-07",
+    "currentFrames": 156,
+    "currentSections": 21,
+    "section": "O51ZiH",
+    "frames": [
+      {
+        "root": "eFjwu",
+        "tile": "s0zlm",
+        "review": "routing-inputs",
+        "name": "Recording inputs",
+        "status": "proposal",
+        "browser": "routing-inputs.png",
+        "native": "pen/eFjwu.png"
+      },
+      {
+        "root": "QJo9g",
+        "tile": "oegcz",
+        "review": "routing-outputs",
+        "name": "Live output routing",
+        "status": "proposal",
+        "browser": "routing-outputs.png",
+        "native": "pen/QJo9g.png"
+      },
+      {
+        "root": "eEHQf",
+        "tile": "BnMNn",
+        "review": "routing-tracks",
+        "name": "Track output routing",
+        "status": "proposal",
+        "browser": "routing-tracks.png",
+        "native": "pen/eEHQf.png"
+      },
+      {
+        "root": "Mk6WM",
+        "tile": "Z3tJMK",
+        "review": "routing-players",
+        "name": "Backing & click",
+        "status": "proposal",
+        "browser": "routing-players.png",
+        "native": "pen/Mk6WM.png"
+      },
+      {
+        "root": "KBR1V",
+        "tile": "mf0fR",
+        "review": "routing-monitor",
+        "name": "Auto monitoring",
+        "status": "proposal",
+        "browser": "routing-monitor.png",
+        "native": "pen/KBR1V.png"
+      },
+      {
+        "root": "Z8OoHg",
+        "tile": "MoriR",
+        "review": "routing-many-inputs",
+        "name": "18 recording inputs",
+        "status": "proposal",
+        "browser": "routing-many-inputs.png",
+        "native": "pen/Z8OoHg.png"
+      },
+      {
+        "root": "hHEH0",
+        "tile": "sTYRr",
+        "review": "routing-many-outputs",
+        "name": "18 live inputs",
+        "status": "proposal",
+        "browser": "routing-many-outputs.png",
+        "native": "pen/hHEH0.png"
+      },
+      {
+        "root": "pi4VQ",
+        "tile": "r47I8",
+        "review": "routing-recording",
+        "name": "Recording locked",
+        "status": "proposal",
+        "browser": "routing-recording.png",
+        "native": "pen/pi4VQ.png"
+      },
+      {
+        "root": "PCmlB",
+        "tile": "KFFvd",
+        "review": "routing-empty",
+        "name": "No recording inputs",
+        "status": "proposal",
+        "browser": "routing-empty.png",
+        "native": "pen/PCmlB.png"
+      },
+      {
+        "root": "sYQjb",
+        "tile": "RZ14D",
+        "review": "routing-names",
+        "name": "Input names",
+        "status": "accepted",
+        "browser": "routing-names.png",
+        "native": "pen/sYQjb.png"
+      },
+      {
+        "root": "WbzLb",
+        "tile": "RcgPS",
+        "review": "routing-many-names",
+        "name": "18 input names",
+        "status": "accepted",
+        "browser": "routing-many-names.png",
+        "native": "pen/WbzLb.png"
+      },
+      {
+        "root": "KrLEc",
+        "tile": "bDCDG",
+        "review": "routing-rename",
+        "name": "Rename an input",
+        "status": "accepted",
+        "browser": "routing-rename.png",
+        "native": "pen/KrLEc.png"
+      },
+      {
+        "root": "Wf8UJ",
+        "tile": "t01P4n",
+        "review": "routing-setup",
+        "name": "Mono input \u00b7 Pan & trim",
+        "status": "accepted",
+        "browser": "routing-setup.png",
+        "native": "pen/Wf8UJ.png"
+      },
+      {
+        "root": "tE43z",
+        "tile": "X8GtQ",
+        "review": "routing-setup-stereo",
+        "name": "Stereo pair \u00b7 Balance & trim",
+        "status": "accepted",
+        "browser": "routing-setup-stereo.png",
+        "native": "pen/tE43z.png"
+      },
+      {
+        "root": "RWQ1Q",
+        "tile": "NKTbe",
+        "review": "routing-setup-many",
+        "name": "18-input setup",
+        "status": "accepted",
+        "browser": "routing-setup-many.png",
+        "native": "pen/RWQ1Q.png"
+      },
+      {
+        "root": "z9BJOr",
+        "tile": "uJVUu",
+        "review": "routing-setup-clip",
+        "name": "Clipping input",
+        "status": "accepted",
+        "browser": "routing-setup-clip.png",
+        "native": "pen/z9BJOr.png"
+      },
+      {
+        "root": "IAJw1",
+        "tile": "Sh3v1",
+        "review": "routing-setup-locked",
+        "name": "Recording in progress",
+        "status": "accepted",
+        "browser": "routing-setup-locked.png",
+        "native": "pen/IAJw1.png"
+      }
+    ],
+    "bounds": {
+      "x": 6700,
+      "y": 36500,
+      "width": 6320,
+      "height": 7892
+    },
+    "savedPenHash": "ab84722ad8f6c434c467f3f2ae8c05a91a647ba4",
+    "nativeVerification": {
+      "texts": 624,
+      "elements": 1375,
+      "errors": [],
+      "groupProblems": []
+    }
+  },
+  "outputSetupAddition": {
+    "date": "2026-09-07",
+    "currentFrames": 162,
+    "currentSections": 22,
+    "section": "wHUmy",
+    "frames": [
+      {
+        "root": "QPEOk",
+        "tile": "J6WLX",
+        "review": "routing-output-setup",
+        "name": "Main output",
+        "status": "proposal",
+        "browser": "routing-output-setup.png",
+        "native": "pen/QPEOk.png"
+      },
+      {
+        "root": "TyZ3G",
+        "tile": "WKiEK",
+        "review": "routing-output-setup-monitor",
+        "name": "Monitor output",
+        "status": "proposal",
+        "browser": "routing-output-setup-monitor.png",
+        "native": "pen/TyZ3G.png"
+      },
+      {
+        "root": "DvF0Q",
+        "tile": "zUSHq",
+        "review": "routing-output-setup-muted",
+        "name": "Muted output",
+        "status": "proposal",
+        "browser": "routing-output-setup-muted.png",
+        "native": "pen/DvF0Q.png"
+      },
+      {
+        "root": "T9C9zL",
+        "tile": "O0T8He",
+        "review": "routing-output-setup-mono",
+        "name": "Mono output",
+        "status": "proposal",
+        "browser": "routing-output-setup-mono.png",
+        "native": "pen/T9C9zL.png"
+      },
+      {
+        "root": "u9WCb",
+        "tile": "ADpwv",
+        "review": "routing-output-names",
+        "name": "Output names",
+        "status": "proposal",
+        "browser": "routing-output-names.png",
+        "native": "pen/u9WCb.png"
+      },
+      {
+        "root": "dD1im",
+        "tile": "oqlGn",
+        "review": "routing-output-rename",
+        "name": "Rename output",
+        "status": "proposal",
+        "browser": "routing-output-rename.png",
+        "native": "pen/dD1im.png"
+      }
+    ],
+    "bounds": {
+      "x": 180,
+      "y": 39044,
+      "width": 6320,
+      "height": 2804
+    },
+    "regions": {
+      "current": {
+        "x": 0,
+        "y": 0,
+        "width": 13200,
+        "height": 44572
+      },
+      "designSystem": {
+        "x": 0,
+        "y": 44872,
+        "width": 6500,
+        "height": 10685
+      },
+      "superseded": {
+        "x": 6700,
+        "y": 44872,
+        "width": 6500,
+        "height": 4556
+      }
+    },
+    "savedPenHash": "ab84722ad8f6c434c467f3f2ae8c05a91a647ba4",
+    "nativeVerification": {
+      "texts": 165,
+      "elements": 579,
+      "errors": [],
+      "groupProblems": []
+    }
+  },
+  "currentVerification": {
+    "currentFrames": 241,
+    "currentSections": 34,
+    "sectionOverlaps": [],
+    "sectionContainmentErrors": [],
+    "savedPenHash": "bf9553111459347892bf4ac0d6de771b172f5849",
+    "regions": {
+      "current": {
+        "x": 0,
+        "y": 0,
+        "width": 13200,
+        "height": 65020
+      },
+      "designSystem": {
+        "x": 0,
+        "y": 65320,
+        "width": 6500,
+        "height": 11280
+      },
+      "superseded": {
+        "x": 6700,
+        "y": 65320,
+        "width": 6500,
+        "height": 9220
+      }
+    },
+    "currentScreens": 241
+  },
+  "tunerAddition": {
+    "date": "2026-09-07",
+    "section": "H60hp",
+    "status": "accepted",
+    "frames": [
+      {
+        "name": "Tune an input",
+        "review": "performance-tuner",
+        "root": "o9d3X",
+        "tile": "Q42nzJ",
+        "status": "accepted",
+        "browser": "performance-tuner.png",
+        "native": "pen/o9d3X.png"
+      },
+      {
+        "name": "In tune",
+        "review": "performance-tuner-in-tune",
+        "root": "lDOKf",
+        "tile": "HRmS8",
+        "status": "accepted",
+        "browser": "performance-tuner-in-tune.png",
+        "native": "pen/lDOKf.png"
+      },
+      {
+        "name": "No signal",
+        "review": "performance-tuner-no-signal",
+        "root": "d9CLS",
+        "tile": "F8UFQf",
+        "status": "accepted",
+        "browser": "performance-tuner-no-signal.png",
+        "native": "pen/d9CLS.png"
+      },
+      {
+        "name": "Live monitoring",
+        "review": "performance-tuner-monitor",
+        "root": "sMhKO",
+        "tile": "ZbH5h",
+        "status": "accepted",
+        "browser": "performance-tuner-monitor.png",
+        "native": "pen/sMhKO.png"
+      },
+      {
+        "name": "18 inputs",
+        "review": "performance-tuner-many-inputs",
+        "root": "ta3Fj",
+        "tile": "wHIym",
+        "status": "accepted",
+        "browser": "performance-tuner-many-inputs.png",
+        "native": "pen/ta3Fj.png"
+      }
+    ],
+    "bounds": {
+      "x": 180,
+      "y": 42108,
+      "width": 6320,
+      "height": 2804
+    },
+    "savedPenHash": "5b2e0d68d3d5615dc49d15868869a4172767d40f",
+    "nativeVerification": {
+      "texts": 158,
+      "elements": 437,
+      "errors": [],
+      "groupProblems": []
+    }
+  },
+  "externalFunctionsAddition": {
+    "date": "2026-09-07",
+    "section": "Kgxk9",
+    "status": "proposal",
+    "frames": [
+      {
+        "name": "Press Mixer \u00b7 Hold Tuner",
+        "review": "external-functions",
+        "root": "zrrQt",
+        "tile": "nGtjy",
+        "status": "proposal",
+        "browser": "external-functions.png",
+        "native": "pen/zrrQt.png"
+      },
+      {
+        "name": "Choose a function",
+        "review": "external-functions-picker",
+        "root": "q05KuW",
+        "tile": "tjrjE",
+        "status": "proposal",
+        "browser": "external-functions-picker.png",
+        "native": "pen/q05KuW.png"
+      },
+      {
+        "name": "Choose a track",
+        "review": "external-functions-tracks",
+        "root": "AIVtk",
+        "tile": "J7eaGC",
+        "status": "proposal",
+        "browser": "external-functions-tracks.png",
+        "native": "pen/AIVtk.png"
+      },
+      {
+        "name": "Choose an FX pedal",
+        "review": "external-functions-fx",
+        "root": "s4sPkb",
+        "tile": "dFiDP",
+        "status": "proposal",
+        "browser": "external-functions-fx.png",
+        "native": "pen/s4sPkb.png"
+      }
+    ],
+    "bounds": {
+      "x": 6700,
+      "y": 44572,
+      "width": 6320,
+      "height": 2804
+    },
+    "savedPenHash": "5b2e0d68d3d5615dc49d15868869a4172767d40f",
+    "nativeVerification": {
+      "texts": 144,
+      "elements": 274,
+      "errors": [],
+      "groupProblems": []
+    }
+  },
+  "performanceFeedbackAddition": {
+    "section": "FWBji",
+    "addedFrames": [
+      "PRSrG",
+      "ri60q"
+    ],
+    "updatedFrames": [
+      "hmEBj",
+      "noDGu"
+    ],
+    "nativeVerification": {
+      "texts": 72,
+      "elements": 184,
+      "errors": [],
+      "groupProblems": []
+    },
+    "savedPenHash": "98326583bd9eda9b3791ddc7d69e739a834d1e5b"
+  },
+  "stageDisplayAddition": {
+    "status": "revised proposal",
+    "section": "I400Yi",
+    "frames": [
+      {
+        "name": "Track",
+        "review": "stage-layout",
+        "root": "Khh1a",
+        "status": "revised proposal",
+        "browser": "stage-layout.png",
+        "native": "pen/Khh1a.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "name": "First recording",
+        "review": "stage-layout-recording",
+        "root": "cylzm",
+        "status": "revised proposal",
+        "browser": "stage-layout-recording.png",
+        "native": "pen/cylzm.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "name": "Wave",
+        "review": "stage-layout-wave",
+        "root": "yNPnZ",
+        "status": "owner accepted",
+        "browser": "stage-layout-wave.png",
+        "native": "pen/yNPnZ.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "name": "Mixer",
+        "review": "stage-layout-mixer",
+        "root": "smLmX",
+        "status": "revised proposal",
+        "browser": "stage-layout-mixer.png",
+        "native": "pen/smLmX.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "name": "Selected track \u00b7 7-inch",
+        "review": "stage-layout-readout",
+        "root": "wJlxa",
+        "status": "owner accepted",
+        "browser": "selected-track.png",
+        "native": "pen/wJlxa.png",
+        "canvas": [
+          1280,
+          720
+        ]
+      },
+      {
+        "name": "Paired display reference",
+        "review": null,
+        "root": "I4bQ9",
+        "status": "owner accepted",
+        "browser": "two-displays-wave-review.png",
+        "native": "pen/I4bQ9.png",
+        "canvas": [
+          1920,
+          1080
+        ],
+        "rasterReference": true
+      },
+      {
+        "name": "Queued recording",
+        "review": "stage-layout-queued",
+        "root": "kiQz4",
+        "status": "revised proposal",
+        "browser": "stage-layout-queued.png",
+        "native": "pen/kiQz4.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "name": "Mute in place",
+        "review": "stage-layout-mute",
+        "root": "z4Z54",
+        "status": "reviewed",
+        "browser": "stage-layout-mute.png",
+        "native": "pen/z4Z54.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      }
+    ],
+    "archivedSection": "NJxtO",
+    "archivedRoots": [
+      "ebaN3",
+      "mDqIV",
+      "P9bp2S",
+      "FAjrZ",
+      "HrXqh"
+    ],
+    "nativeVerification": {
+      "texts": 233,
+      "elements": 753,
+      "errors": [],
+      "groupProblems": []
+    },
+    "checks": [
+      "Chrome and Firefox: view switching, bank filtering, state preservation, shared mix, encoder cancel/reset, waveform, clipping, scale alignment, absent duplicate readings and centered queued action pass",
+      "Existing pedal-performance suite passes in Chrome and Firefox",
+      "Pen: 27 current sections, no overlaps or containment errors"
+    ],
+    "nativeExportScale": 1,
+    "limits": "Silent visual study. Waveforms use measured peaks from real reference recordings; capture, CPU, meters and transport are simulated. No production audio or device validation.",
+    "savedPenHash": "37466f428bc4aedc5d6c6e36db661a5ee524a8c5",
+    "refinement": "No per-track BPM, numeric dBFS or routine status labels. Queued actions appear at meter/waveform center. Shared side scales, clipping caps and progress bars remain.",
+    "recordingJourney": {
+      "prototype": "../stage-two-screen-preview.html",
+      "contract": "../2026-09-07-stage-recording-ux.md",
+      "status": "implemented prototype",
+      "checks": "Chrome and Firefox: recording, overdub pass Undo, Redo, queued transitions, bank changes and Mute in place pass.",
+      "limits": "Silent prototype; production transport, durable edit history and full mode integration remain open."
+    },
+    "wavePerformance": {
+      "status": "owner accepted",
+      "savedPenHash": "37466f428bc4aedc5d6c6e36db661a5ee524a8c5",
+      "nativeVerification": {
+        "scope": "Revised Wave and selected-track display",
+        "texts": 58,
+        "elements": 122,
+        "errors": [],
+        "groupProblems": []
+      },
+      "checks": [
+        "Chrome and Firefox: Wave foot entry, normal recording controls, growth, completed phrase, shared playhead, empty selection and bank filtering",
+        "General recording, pedal, external function and sync regressions pass",
+        "Transport model verifies reverse from current position and Once at altered speed",
+        "Chrome and Firefox: sample-derived contours, identical closed-loop shape across displays, capture extent and separated metadata pass"
+      ],
+      "waveformSource": "../waveform-reference/README.md",
+      "refinement": "Continuous PCM min/max envelopes on both displays, with distinct spacing for bars, layers and FX. Old synthetic block bars removed.",
+      "acceptedOn": "2026-09-07"
+    }
+  },
+  "rejectedStageProposal": {
+    "section": "NJxtO",
+    "parent": "jbFH4",
+    "roots": [
+      "ebaN3",
+      "mDqIV",
+      "P9bp2S",
+      "FAjrZ",
+      "HrXqh"
+    ],
+    "reason": "Owner requested active-bank columns and selected-track waveform."
+  },
+  "midiControlsAddition": {
+    "section": "rmWqV",
+    "frames": [
+      {
+        "review": "midi-list",
+        "name": "Controller mappings",
+        "tile": "RIrL3",
+        "root": "vxmoz",
+        "status": "reviewed",
+        "browser": "chrome/midi-list.png",
+        "native": "pen/vxmoz.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "midi-learn",
+        "name": "Learn a control",
+        "tile": "Rzp8l",
+        "root": "nnKUG",
+        "status": "reviewed",
+        "browser": "chrome/midi-learn.png",
+        "native": "pen/nnKUG.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "midi-edit",
+        "name": "Knob or fader",
+        "tile": "P5dWId",
+        "root": "l2iAy6",
+        "status": "reviewed",
+        "browser": "chrome/midi-edit.png",
+        "native": "pen/l2iAy6.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "midi-button",
+        "name": "Button and multiple controls",
+        "tile": "l9iwlZ",
+        "root": "bJXN8",
+        "status": "reviewed",
+        "browser": "chrome/midi-button.png",
+        "native": "pen/bJXN8.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "midi-targets",
+        "name": "Choose a parameter",
+        "tile": "l3ouX",
+        "root": "L8j66W",
+        "status": "reviewed",
+        "browser": "chrome/midi-targets.png",
+        "native": "pen/L8j66W.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "midi-conflict",
+        "name": "Already mapped",
+        "tile": "F3HLl",
+        "root": "JqcUT",
+        "status": "reviewed",
+        "browser": "chrome/midi-conflict.png",
+        "native": "pen/JqcUT.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "midi-disconnected",
+        "name": "Disconnected controller",
+        "tile": "sSpdN",
+        "root": "MMzPS",
+        "status": "reviewed",
+        "browser": "chrome/midi-disconnected.png",
+        "native": "pen/MMzPS.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "midi-empty",
+        "name": "No mappings",
+        "tile": "vsyj4",
+        "root": "aQHXq",
+        "status": "reviewed",
+        "browser": "chrome/midi-empty.png",
+        "native": "pen/aQHXq.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      }
+    ],
+    "status": "reviewed",
+    "savedPenHash": "9457461851987ec80dfbb76218d6dc9d76f6d429",
+    "nativeVerification": {
+      "texts": 248,
+      "elements": 381,
+      "errors": [],
+      "groupProblems": []
+    },
+    "checks": [
+      "Chrome and Firefox: Learn filtering, multiple targets, pickup, Momentary/Toggle/Program, conflicts, save/cancel, encoder editing, reconnect, reload, held-value persistence and failed saves",
+      "Existing pedal performance and recording journey regressions pass"
+    ],
+    "limits": "MIDI messages, ports and audio are simulated. Real hardware I/O and external sync remain open."
+  },
+  "inlineMuteReplacement": {
+    "archivedRoot": "RPCYZ",
+    "archivedSection": "hcfs6",
+    "replacement": "z4Z54",
+    "savedPenHash": "9457461851987ec80dfbb76218d6dc9d76f6d429"
+  },
+  "midiSyncAddition": {
+    "section": "q0VwTg",
+    "frames": [
+      {
+        "review": "sync-internal",
+        "name": "Internal tempo",
+        "tile": "zuZHV",
+        "root": "fkLOU",
+        "status": "approved direction",
+        "browser": "chrome/sync-internal.png",
+        "native": "pen/fkLOU.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "sync-waiting",
+        "name": "Waiting for clock",
+        "tile": "C6fke",
+        "root": "yMhnp",
+        "status": "approved direction",
+        "browser": "chrome/sync-waiting.png",
+        "native": "pen/yMhnp.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "sync-synced",
+        "name": "Following MIDI clock",
+        "tile": "OWG8J",
+        "root": "ipK6w",
+        "status": "approved direction",
+        "browser": "chrome/sync-synced.png",
+        "native": "pen/ipK6w.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "sync-lost",
+        "name": "Clock lost \u00b7 Keep playing",
+        "tile": "rI1jF",
+        "root": "q85IK",
+        "status": "approved direction",
+        "browser": "chrome/sync-lost.png",
+        "native": "pen/q85IK.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "sync-stop",
+        "name": "Clock lost \u00b7 Stop loops",
+        "tile": "m8suY",
+        "root": "OeIN1",
+        "status": "approved direction",
+        "browser": "chrome/sync-stop.png",
+        "native": "pen/OeIN1.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "review": "sync-stage",
+        "name": "Sync on the main view",
+        "tile": "J7Sied",
+        "root": "PMu8D",
+        "status": "approved direction",
+        "browser": "chrome/sync-stage.png",
+        "native": "pen/PMu8D.png",
+        "canvas": [
+          1920,
+          1080
+        ]
+      }
+    ],
+    "status": "owner approved direction",
+    "savedPenHash": "8bf3673e88a1e1c1e012ae9e2e044b7a026e5d99",
+    "nativeVerification": {
+      "texts": 567,
+      "elements": 990,
+      "errors": [],
+      "groupProblems": []
+    },
+    "checks": [
+      "Chrome and Firefox sync journeys and six screen bounds pass",
+      "Recording, MIDI mappings and loop setup regression checks pass"
+    ],
+    "limits": "Silent simulation. Real MIDI I/O, clock phase and appliance timing require implementation and validation."
+  },
+  "wavePerformanceRefinement": {
+    "status": "owner accepted",
+    "savedPenHash": "37466f428bc4aedc5d6c6e36db661a5ee524a8c5",
+    "nativeVerification": {
+      "scope": "Revised Wave and selected-track display",
+      "texts": 58,
+      "elements": 122,
+      "errors": [],
+      "groupProblems": []
+    },
+    "checks": [
+      "Chrome and Firefox: Wave foot entry, normal recording controls, growth, completed phrase, shared playhead, empty selection and bank filtering",
+      "General recording, pedal, external function and sync regressions pass",
+      "Transport model verifies reverse from current position and Once at altered speed",
+      "Chrome and Firefox: sample-derived contours, identical closed-loop shape across displays, capture extent and separated metadata pass"
+    ],
+    "waveformSource": "../waveform-reference/README.md",
+    "refinement": "Continuous PCM min/max envelopes on both displays, with distinct spacing for bars, layers and FX. Old synthetic block bars removed.",
+    "acceptedOn": "2026-09-07"
+  },
+  "loopModeChanges": {
+    "status": "owner accepted after live walkthrough",
+    "section": "EYla4",
+    "newFrames": [
+      "l2b6qn"
+    ],
+    "updatedFrames": [
+      "z385s",
+      "Kliy9"
+    ],
+    "nativeVerification": {
+      "texts": 53,
+      "elements": 241,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "layout": "Loop setup extended one row; subsequent right-column groups moved down within the existing current-UX region.",
+    "savedPenHash": "092fec33ad631b1d04a36b59c5f4ef2b4c740830"
+  },
+  "audioDeviceAddition": {
+    "section": "yeG6A",
+    "status": "revised prototype; automatic-first measurement requested by owner",
+    "frames": [
+      {
+        "review": "device-ready",
+        "root": "hWDHw",
+        "tile": "Q3YCDg",
+        "name": "Audio settings"
+      },
+      {
+        "root": "yyqrZ",
+        "tile": "NtHav",
+        "review": "device-automatic",
+        "name": "Automatic measurement"
+      },
+      {
+        "review": "device-calibration",
+        "root": "C2o3h",
+        "tile": "viOWI",
+        "name": "Measure latency"
+      },
+      {
+        "review": "device-confirm",
+        "root": "jUlrb",
+        "tile": "btTbs",
+        "name": "Apply during playback"
+      },
+      {
+        "review": "device-lost",
+        "root": "kfd3i",
+        "tile": "i1uSR",
+        "name": "Interface disconnected"
+      },
+      {
+        "review": "device-reconnect",
+        "root": "i8LwPO",
+        "tile": "orpdZ",
+        "name": "Reconnect audio"
+      },
+      {
+        "review": "device-lost-stage",
+        "root": "pbdiy",
+        "tile": "LGQmc",
+        "name": "Repair from Stage"
+      }
+    ],
+    "nativeVerification": {
+      "texts": 268,
+      "elements": 487,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "document": "../../2026-09-07-audio-device-ux.md",
+    "savedPenHash": "092fec33ad631b1d04a36b59c5f4ef2b4c740830"
+  },
+  "networkAddition": {
+    "section": "p33ymC",
+    "status": "owner accepted",
+    "frames": [
+      {
+        "review": "network-ready",
+        "name": "Connected network",
+        "root": "cnZr7",
+        "tile": "wse91"
+      },
+      {
+        "review": "network-password",
+        "name": "Join a network",
+        "root": "X1daqW",
+        "tile": "O7zN9"
+      },
+      {
+        "review": "network-joining",
+        "name": "Connecting",
+        "root": "KSPNp",
+        "tile": "brPO6"
+      },
+      {
+        "review": "network-error",
+        "name": "Incorrect password",
+        "root": "BqXq1",
+        "tile": "YU3gq"
+      },
+      {
+        "review": "network-details",
+        "name": "Saved network controls",
+        "root": "N2AGeo",
+        "tile": "JEHXY"
+      },
+      {
+        "review": "network-lost",
+        "name": "Connection lost",
+        "root": "qAxVl",
+        "tile": "EXgOI"
+      },
+      {
+        "review": "network-off",
+        "name": "Wi-Fi off",
+        "root": "m4Xh5",
+        "tile": "m0cYo"
+      },
+      {
+        "review": "network-no-internet",
+        "name": "Connected without internet",
+        "root": "hu9Bf",
+        "tile": "yL9W8"
+      }
+    ],
+    "nativeVerification": {
+      "texts": 324,
+      "elements": 900,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "document": "../2026-09-07-network-ux.md",
+    "savedPenHash": "5be8e630ffe327c74afa0467d3da35dba009fbab"
+  },
+  "displaysAddition": {
+    "section": "OdZ7n",
+    "status": "owner accepted",
+    "frames": [
+      {
+        "review": "displays-ready",
+        "name": "Display settings",
+        "root": "UXiWk",
+        "tile": "hrXyj"
+      },
+      {
+        "review": "displays-small",
+        "name": "Track display calibration",
+        "root": "q4OZOP",
+        "tile": "ESLal"
+      },
+      {
+        "review": "displays-calibrate",
+        "name": "Main display calibration",
+        "root": "c00LeS",
+        "tile": "ARj5B"
+      },
+      {
+        "review": "displays-test",
+        "name": "Test before keeping",
+        "root": "xpmFC",
+        "tile": "hmuQG"
+      },
+      {
+        "review": "displays-disconnected",
+        "name": "Disconnected display",
+        "root": "cWuvA",
+        "tile": "a7zTq"
+      },
+      {
+        "review": "displays-dimmed",
+        "name": "Idle dimming",
+        "root": "CXU4c",
+        "tile": "ppCdS"
+      }
+    ],
+    "nativeVerification": {
+      "texts": 98,
+      "elements": 271,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "document": "../2026-09-07-display-settings-ux.md",
+    "savedPenHash": "8de18c77547372781d8b4e4b0fa39659d7f4332e"
+  },
+  "storageAddition": {
+    "section": "PQ2W9",
+    "status": "owner accepted",
+    "frames": [
+      {
+        "review": "storage-ready",
+        "name": "Storage overview",
+        "root": "NxtNc",
+        "tile": "BQc2H"
+      },
+      {
+        "review": "storage-ejecting",
+        "name": "Ejecting USB",
+        "root": "mEqa6",
+        "tile": "SowFm"
+      },
+      {
+        "review": "storage-ejected",
+        "name": "Safe to remove",
+        "root": "chgDv",
+        "tile": "GbezI"
+      },
+      {
+        "review": "storage-missing",
+        "name": "No USB drive",
+        "root": "gqcmf",
+        "tile": "t5SpNf"
+      },
+      {
+        "review": "storage-error",
+        "name": "Eject failed",
+        "root": "p8bT0",
+        "tile": "PQOpP"
+      },
+      {
+        "review": "storage-low",
+        "name": "Low internal space",
+        "root": "Bn0vl",
+        "tile": "uvis2"
+      }
+    ],
+    "nativeVerification": {
+      "texts": 91,
+      "elements": 270,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "document": "../2026-09-07-storage-ux.md",
+    "savedPenHash": "a40086e1523a9b2808d4374f6536b43b8e50df3d"
+  },
+  "powerAddition": {
+    "section": "Z4KAJ",
+    "status": "owner accepted",
+    "frames": [
+      {
+        "review": "power-choose",
+        "name": "Power options",
+        "root": "z3tkX",
+        "tile": "QWWba"
+      },
+      {
+        "review": "power-saving",
+        "name": "Saving before shutdown",
+        "root": "tUqCV",
+        "tile": "xD6Px"
+      },
+      {
+        "review": "power-error",
+        "name": "Save failed \u00b7 stay on",
+        "root": "MFCYv",
+        "tile": "tBAZf"
+      },
+      {
+        "review": "power-off",
+        "name": "Safe to switch off",
+        "root": "DHsYQ",
+        "tile": "Cu7cd"
+      },
+      {
+        "review": "power-restarting",
+        "name": "Restarting",
+        "root": "V7XVe",
+        "tile": "iR4p7"
+      }
+    ],
+    "nativeVerification": {
+      "texts": 89,
+      "elements": 322,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "document": "../2026-09-07-safe-power-ux.md",
+    "savedPenHash": "a40086e1523a9b2808d4374f6536b43b8e50df3d"
+  },
+  "updatesAddition": {
+    "section": "b0n5kk",
+    "status": "owner accepted",
+    "frames": [
+      {
+        "review": "updates-ready",
+        "name": "Installed software",
+        "root": "T1igr",
+        "tile": "kGlWv"
+      },
+      {
+        "review": "updates-available",
+        "name": "Update available",
+        "root": "rHa2d",
+        "tile": "rWqZT"
+      },
+      {
+        "review": "updates-usb",
+        "name": "Load a USB package",
+        "root": "xlAif",
+        "tile": "w3lUKE"
+      },
+      {
+        "review": "updates-downloading",
+        "name": "Download progress",
+        "root": "tn7CZ",
+        "tile": "d4elG"
+      },
+      {
+        "review": "updates-staged",
+        "name": "Ready to restart",
+        "root": "g6y2R",
+        "tile": "w4f0uG"
+      },
+      {
+        "review": "updates-error",
+        "name": "Update interrupted",
+        "root": "ic1C5",
+        "tile": "Fv2zf"
+      }
+    ],
+    "nativeVerification": {
+      "texts": 174,
+      "elements": 516,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "document": "../2026-09-07-software-updates-ux.md",
+    "savedPenHash": "a40086e1523a9b2808d4374f6536b43b8e50df3d"
+  },
+  "sessionBackupAddition": {
+    "section": "eKooF",
+    "status": "owner accepted",
+    "acceptedOn": "2026-09-08",
+    "frames": [
+      {
+        "review": "backup-library",
+        "name": "Backup in Library",
+        "root": "Rv5nm",
+        "tile": "npwR1"
+      },
+      {
+        "review": "backup-copying",
+        "name": "Inline copy progress",
+        "root": "VfIy4",
+        "tile": "mdwSD"
+      },
+      {
+        "review": "backup-usb",
+        "name": "USB session list",
+        "root": "BbADt",
+        "tile": "C0Mogf"
+      },
+      {
+        "review": "backup-conflict",
+        "name": "Matching backup name",
+        "root": "c1Lk51",
+        "tile": "ZECDn"
+      },
+      {
+        "review": "backup-restored",
+        "name": "Restored session selected",
+        "root": "lch7K",
+        "tile": "f2sBAc"
+      },
+      {
+        "review": "backup-recovery",
+        "name": "Retry an interrupted copy",
+        "root": "i7kkai",
+        "tile": "vzH8N"
+      }
+    ],
+    "nativeVerification": {
+      "texts": 438,
+      "elements": 1021,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "document": "../2026-09-07-session-backup-ux.md"
+  },
+  "designConsistency": {
+    "date": "2026-09-08",
+    "section": "tu0U3",
+    "addedScreens": [
+      "cE5EM",
+      "gvV2o"
+    ],
+    "savedPenHash": "bf9553111459347892bf4ac0d6de771b172f5849",
+    "focus": {
+      "updated": 244,
+      "missing": [],
+      "outside": [],
+      "stacking": "Within the matching control parent; underlying focus stays behind overlays."
+    },
+    "typography": {
+      "texts": 523,
+      "elements": 1266,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    },
+    "settingsArtwork": {
+      "layout": "Two rows of five compact cards with original Segno equipment artwork.",
+      "nativeVerification": {
+        "texts": 13,
+        "elements": 42,
+        "errors": [],
+        "sectionOverlaps": [],
+        "containmentErrors": []
+      },
+      "artwork": "../../settings-art/manifest.json",
+      "browserChecks": [
+        "Chrome",
+        "Firefox"
+      ]
+    },
+    "artworkComponents": "BqolV",
+    "surfaceRefinement": {
+      "nativeVerification": {
+        "texts": 1169,
+        "elements": 2717,
+        "errors": [],
+        "sectionOverlaps": [],
+        "containmentErrors": []
+      },
+      "auditedFrames": 28,
+      "exportedCurrentFrames": 241,
+      "browserChecks": [
+        "Chrome",
+        "Firefox"
+      ],
+      "suites": [
+        "verify_fx_surface_consistency",
+        "verify_midi_controls",
+        "verify_midi_sync",
+        "verify_power",
+        "verify_stage_display",
+        "verify_stage_recording_journey"
+      ],
+      "mixerStatus": "Proposal; accepted Tracks unchanged"
+    }
+  }
+}

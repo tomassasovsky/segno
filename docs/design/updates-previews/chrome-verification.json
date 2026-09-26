@@ -1,0 +1,17 @@
+{
+  "browser": "chrome",
+  "checks": [
+    "check and download preserve playback",
+    "cancel and lost-network retry",
+    "download separate from installation",
+    "cancel restart keeps staged package",
+    "safe restart applies only after confirmation",
+    "failed boot restores prior version",
+    "invalid or removed USB package cannot stage",
+    "USB can be removed after staging",
+    "automatic checks never install",
+    "appliance settings persist outside sessions",
+    "six bounded layouts"
+  ],
+  "errors": []
+}

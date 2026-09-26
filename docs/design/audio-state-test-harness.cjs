@@ -1,0 +1,18 @@
+// Fresh canonical rig for silent prototype behavior tests; no audio engine runs.
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const clone=v=>JSON.parse(JSON.stringify(v));
+const context={window:{},structuredClone,performance:{now:()=>0},Date,Map,Set};vm.createContext(context);
+for(const name of ['selected-render-policy.js','stage-transport-study.js','length-performance-study.js','peel-performance-study.js','bounce-performance-study.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,name),'utf8'),context,{filename:name});
+function createRig(mode='free',count=4){
+ let time=0,selected=0,bank=0,saved=null,publishFails=false,ready=true;const publicationAttempts=[],names=Array.from({length:count},(_,i)=>'Track '+(i+1)),capture=names.map(()=>'idle'),state=names.map(()=>({parts:[],length:{audio:[],durationBeats:0,note:''},layers:{layers:[]},playing:false,muted:false,pitch:0,reverse:false,mix:{level:1,pan:.5},fade:null,fx:[],recipe:null,imported:null}));
+ const config={mode,tempo:120,signature:'4/4',beatsPerBar:4,inputs:['Input'],countIn:0,start:'press',quantize:'immediate',decay:0,recDub:false,bars:0,speed:1},overrides={};
+ const transport=context.window.createStageTransportStudy({audioReady:()=>ready,tracks:names,read:i=>({parts:clone(state[i].parts),beats:state[i].parts.length?state[i].length.durationBeats:0,layers:clone(state[i].layers.layers)}),editState:{publish:(changes,journal,clock)=>{publicationAttempts.push(clone({state:state.map((track,i)=>changes[i]||track),journal,clock}));if(publishFails)return false;for(const [i,v]of Object.entries(changes))state[i]=clone(v);saved=clone(journal);if(clock)Object.assign(config,clock);return true;},read:i=>clone(state[i]),write:changes=>{for(const [i,v]of Object.entries(changes))state[i]=clone(v);},readHistory:()=>saved,writeHistory:value=>saved=clone(value)},settings:i=>({...config,...overrides[i]}),selected:()=>selected,select:i=>selected=i,capture:(i,v)=>capture[i]=v,playback:(i,v)=>{if(v!==undefined)state[i].playing=v;return state[i].playing;},changed:()=>{},now:()=>time});
+ const common={trackNames:names,currentTrack:()=>selected,transport:transport.command,bankState:{get:()=>bank,set:v=>bank=v},history:transport};
+ const commonState={hasAudio:i=>i>=0&&!!state[i]?.parts.length,capturing:i=>capture[i]!=='idle',beatsPerBar:()=>4};
+ const length=context.window.createLengthPerformanceStudy({...common,state:{...commonState,get:i=>state[i].length}}),peel=context.window.createPeelPerformanceStudy({...common,state:{...commonState,get:i=>state[i].layers}}),bounce=context.window.createBouncePerformanceStudy({...common,state:{...commonState,button:(id,label)=>'<button data-action="'+id+'">'+label+'</button>',recipe:(ids,options)=>context.window.SegnoSelectedRender.recipe(ids.map(i=>({...clone(state[i]),id:names[i],beats:state[i].length.durationBeats,capturing:capture[i]!=='idle'})),{tempo:config.tempo,...options}),readTrack:i=>clone(state[i])}});
+ function advance(ms){time+=ms;transport.tick();}
+ function record(i,beats=8){transport.command('Record / Play',i);advance(beats*500);if(capture[i]==='recording')transport.command('Record / Play',i);}
+ function overdub(i,beats=8){if(!state[i].playing)transport.command('Record / Play',i);transport.command('Record / Play',i);advance(beats*500);transport.command('Record / Play',i);}
+ return {setAudioReady:value=>ready=value,failPublish:value=>publishFails=value,publishedAttempts:()=>clone(publicationAttempts),transport,length,peel,bounce,state,capture,config,overrides,advance,elapse:ms=>{time+=ms;},record,overdub,selected:()=>selected,setSelected:i=>selected=i,history:()=>clone(saved),setHistory:v=>saved=clone(v)};
+}
+module.exports={createRig,clone};

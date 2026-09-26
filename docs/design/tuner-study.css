@@ -1,0 +1,23 @@
+.pedal-study .performance-map.tuner-map{height:740px;grid-template-rows:300px 380px}
+.tuner-reference{grid-column:1 / span 2;grid-row:1;align-self:center;display:flex;flex-direction:column;gap:18px;padding-left:8px}
+.tuner-reference>span{font-size:24px;color:#aebdd2}
+.tuner-reference>strong{font:56px SegnoMono,monospace;color:#dce6f4}
+.tuner-reference small{font:24px Arial;margin-left:12px;color:#aebdd2}
+.tuner-reference p{font-size:20px;line-height:1.4;color:#e1b780;max-width:320px}
+.tuner-overview{grid-column:5 / span 4;grid-row:1;align-self:start;padding-left:32px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.tuner-source{display:flex;align-items:baseline;gap:24px;min-height:40px}
+.pedal-study .tuner-source h2{font-size:27px;color:#dce6f4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tuner-source>span{font-size:20px;color:#aebdd2;white-space:nowrap}
+.tuner-reading{height:138px;display:flex;align-items:center;gap:32px}
+.tuner-reading>strong{font:120px Arial;line-height:1;min-width:170px;color:#e5ebf4}
+.tuner-reading>div{display:flex;flex-direction:column;gap:10px}
+.tuner-reading b{font-size:27px;font-weight:400;color:#dce6f4}
+.tuner-reading span{font:21px SegnoMono,monospace;color:#aebdd2;min-height:25px}
+.tuner-meter{position:relative;height:48px;margin:0 8px;border-bottom:2px solid #526074}
+.tuner-meter>i{position:absolute;bottom:0;width:2px;background:#728099;transform:translateX(-1px)}
+.tuner-center{position:absolute;left:47%;width:6%;height:48px;background:#303c50;border-left:1px solid #94a8c5;border-right:1px solid #94a8c5}
+.tuner-meter.in-tune .tuner-center{background:#bfcfe5}
+.tuner-needle{position:absolute;bottom:0;width:5px;height:48px;background:#e1b780;transform:translateX(-2px);border-radius:2px}
+.tuner-meter.in-tune .tuner-needle{background:#f0f4fa}
+.tuner-scale{display:flex;justify-content:space-between;font:18px SegnoMono,monospace;color:#aebdd2}
+.pedal-study .tuner-map .performance-caption{font-size:23px;line-height:1.3}

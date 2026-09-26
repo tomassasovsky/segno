@@ -1,0 +1,96 @@
+{
+  "section": "q0VwTg",
+  "frames": [
+    {
+      "review": "sync-internal",
+      "name": "Internal tempo",
+      "tile": "zuZHV",
+      "root": "fkLOU",
+      "status": "approved direction",
+      "browser": "chrome/sync-internal.png",
+      "native": "pen/fkLOU.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "sync-waiting",
+      "name": "Waiting for clock",
+      "tile": "C6fke",
+      "root": "yMhnp",
+      "status": "approved direction",
+      "browser": "chrome/sync-waiting.png",
+      "native": "pen/yMhnp.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "sync-synced",
+      "name": "Following MIDI clock",
+      "tile": "OWG8J",
+      "root": "ipK6w",
+      "status": "approved direction",
+      "browser": "chrome/sync-synced.png",
+      "native": "pen/ipK6w.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "sync-lost",
+      "name": "Clock lost \u00b7 Keep playing",
+      "tile": "rI1jF",
+      "root": "q85IK",
+      "status": "approved direction",
+      "browser": "chrome/sync-lost.png",
+      "native": "pen/q85IK.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "sync-stop",
+      "name": "Clock lost \u00b7 Stop loops",
+      "tile": "m8suY",
+      "root": "OeIN1",
+      "status": "approved direction",
+      "browser": "chrome/sync-stop.png",
+      "native": "pen/OeIN1.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "review": "sync-stage",
+      "name": "Sync on the main view",
+      "tile": "J7Sied",
+      "root": "PMu8D",
+      "status": "approved direction",
+      "browser": "chrome/sync-stage.png",
+      "native": "pen/PMu8D.png",
+      "canvas": [
+        1920,
+        1080
+      ]
+    }
+  ],
+  "status": "owner approved direction",
+  "savedPenHash": "8bf3673e88a1e1c1e012ae9e2e044b7a026e5d99",
+  "nativeVerification": {
+    "texts": 567,
+    "elements": 990,
+    "errors": [],
+    "groupProblems": []
+  },
+  "checks": [
+    "Chrome and Firefox sync journeys and six screen bounds pass",
+    "Recording, MIDI mappings and loop setup regression checks pass"
+  ],
+  "limits": "Silent simulation. Real MIDI I/O, clock phase and appliance timing require implementation and validation."
+}

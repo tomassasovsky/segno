@@ -1,0 +1,65 @@
+{
+  "date": "2026-09-09",
+  "scope": "Local silent prototype; no native audio or device certification",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "referenceCount": 15,
+  "penSections": [
+    42,
+    43,
+    44,
+    45,
+    46,
+    47
+  ],
+  "allCurrentSectionFrames": 47,
+  "sectionOverlaps": 0,
+  "sectionContainmentProblems": 0,
+  "textPositions": 494,
+  "textMismatches": 0,
+  "elementRectangles": 1101,
+  "elementMismatches": 0,
+  "encoderFocusOutlines": 15,
+  "clippedFocusOutlines": 0,
+  "nativeRendersVisuallyInspected": 15,
+  "nativeSave": "File > Save; acceptance labels and on-disk file verified",
+  "penFileBytes": 97271806,
+  "penFileSha256": "35798360a89fd759f2fb06b4b30701906876269acf7a7b27b7ac557ad7635d89",
+  "mainPrototypeSha256": "c821a23af292aafd32d08e7e88fc9f60c732d6bcb037f6e9682525d0979d9bb4",
+  "combinedModelTests": 143,
+  "combinedModelFailures": 0,
+  "browserJourneys": [
+    "Chrome",
+    "Firefox"
+  ],
+  "browserCapturePageErrors": 0,
+  "independentReviewRoles": 5,
+  "unresolvedReviewFindings": 0,
+  "currentGalleryReferences": 298,
+  "nativeAudioVerified": false,
+  "physicalStorageVerified": false,
+  "powerLossVerified": false,
+  "recordedWalkthrough": {
+    "seconds": 207.033008,
+    "bytes": 8448089,
+    "codec": "H.264",
+    "canvas": [
+      1920,
+      1200
+    ],
+    "chapters": 6,
+    "allRecordedJourneysPassed": true,
+    "chapterSeekingVerified": "Chrome",
+    "narrowViewportOverflow": false,
+    "audioTrack": false
+  },
+  "postReviewRefinement": "Coordinator-verified port-option CSS spacing; Chrome and Firefox rerun passed; corrected editable Pen reference saved.",
+  "connectionSummaryRefinement": "Owner-requested compact For / Use connection comparison plus route count. Chrome/Firefox port journeys pass; Pen geometry, save and updated video seeking verified.",
+  "ownerAcceptance": {
+    "date": "2026-09-09",
+    "scope": "All six demonstrated flows, simplified connection review and recorded walkthrough",
+    "nativeVerificationImplied": false
+  }
+}

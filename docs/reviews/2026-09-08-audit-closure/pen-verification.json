@@ -1,0 +1,47 @@
+{
+  "date": "2026-09-08",
+  "frames": [
+    "Khh1a",
+    "cylzm",
+    "yNPnZ",
+    "kiQz4",
+    "z4Z54",
+    "smLmX",
+    "InyjH",
+    "RRRgo",
+    "dbmn1",
+    "GPoYp",
+    "fWlTV",
+    "mhj7T",
+    "iL02o",
+    "yujfF",
+    "NxtNc",
+    "mEqa6",
+    "chgDv",
+    "gqcmf",
+    "p8bT0",
+    "Bn0vl",
+    "z8AYJ",
+    "HLuY9",
+    "qQyNI",
+    "uTtlb",
+    "Vqedz",
+    "kvbC6"
+  ],
+  "nativeVerification": {
+    "elements": 2365,
+    "texts": 1076,
+    "focus": 26,
+    "groups": 35,
+    "errors": []
+  },
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "savedPenSha256": "55ed0e2761bf8c76150ebd4911deb804418ef5d1c7e7d8b5852a53bb5e52e4ab",
+  "savedPenBytes": 88302899,
+  "scope": "Local prototype and editable design references; owner review pending; production and appliance verification remain open.",
+  "review": "../../2026-09-08-audit-closure-pass.md",
+  "validation": "../../../reviews/2026-09-08-audit-closure/final-validation.md"
+}

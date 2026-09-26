@@ -1,0 +1,22 @@
+{
+  "browser": "firefox",
+  "checks": [
+    "Settings entry",
+    "masked physical/touch/encoder password entry",
+    "cancel and late completion",
+    "wrong password and retry",
+    "open network",
+    "saved profiles and auto connect",
+    "disconnect and forget",
+    "connection loss and recovery",
+    "internet distinct from Wi-Fi",
+    "radio state and scanning",
+    "long list encoder scrolling",
+    "playback and recording preserved",
+    "profile persistence outside sessions",
+    "password never persisted or returned by snapshot",
+    "storage error rollback",
+    "canvas bounds"
+  ],
+  "errors": []
+}

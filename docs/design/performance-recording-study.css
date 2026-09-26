@@ -1,0 +1,16 @@
+.main.performance-recording-study{padding:28px 64px 48px;gap:40px}
+.performance-recorder{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:90px;align-items:center;margin:auto 0;flex:1;min-height:0}
+.recorder-display{display:flex;flex-direction:column;gap:30px;border:1px solid #435065;border-radius:18px;padding:48px;background:#181c24;min-width:0}
+.recorder-status{display:flex;gap:20px;align-items:center;color:#bdcbe0;font-size:28px}
+.recorder-mark{width:18px;height:18px;display:inline-block;flex:none;border-radius:50%;background:#7e8ca1}
+.recording .recorder-mark{background:#ee767c;box-shadow:0 0 18px #ee767c55}.recovered .recorder-mark{background:#e9bb72;box-shadow:none}
+.recorder-display.recording{border-color:#aa646e}.recorder-display.recovered{border-color:#a58a60}
+.recorder-clock{font:112px/1.1 SegnoMono,monospace;color:#ecf0f7;letter-spacing:1px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.recorder-source{font-size:28px;color:#b2bfd2;line-height:1.3;overflow-wrap:anywhere}
+.recorder-details{display:flex;flex-direction:column;gap:40px;min-width:0}.recorder-routing>span{font-size:32px;color:#e8edf5}.recorder-routing>p,.recorder-note{font-size:24px;line-height:1.5;color:#aabbd2;margin:16px 0 0}
+.recorder-actions{display:flex;gap:20px;flex-wrap:wrap}.recorder-start,.recorder-stop{border:1px solid #b8767a;background:#653a43;color:#ffe8e9;min-height:80px;padding:20px 36px;border-radius:8px;font-size:28px}.recorder-stop{background:#313743;border-color:#aeb9c9;color:#edf3fb}
+.recorder-error{color:#edbc9e;font-size:23px;line-height:1.5;margin:0}
+.recorder-capacity{display:flex;flex-direction:column;gap:14px;color:#c8d5e8}.recorder-capacity strong{font-size:27px;font-weight:500}.recorder-capacity span{font-size:22px;color:#aabbd2}.recorder-parts strong{font-size:26px;font-weight:500}.recorder-parts p,.recorder-parts li{font-size:22px;line-height:1.35;color:#b8c8dc}.recorder-parts p{margin:12px 0}.recorder-parts ol{display:flex;gap:26px;padding:0;list-style:none;margin:10px 0}.recorder-low{font-size:24px;line-height:1.4;color:#efc788;margin:0}.performance-recorder .recorder-details{gap:26px}
+.recorder-badge{display:flex;gap:14px;align-items:center;min-height:64px;padding:14px 20px;background:#1d2027;border:1px solid #4f596a;border-radius:8px;color:#e8edf5;font:22px SegnoMono,monospace;flex:none;margin-left:auto}.recorder-badge.recording{border-color:#985e67}.recorder-badge.recovered{border-color:#b69a69}.recorder-badge .recorder-mark{width:14px;height:14px}.recorder-badge+button{margin-left:0}
+
+.recorder-settings{display:grid;gap:24px;margin-bottom:26px}.recorder-settings h2{font-size:24px;margin:0 0 10px}.recorder-settings .audio-locations{margin:0}.recorder-output-choice{display:flex;align-items:center;gap:28px}.recorder-output-choice>div{flex:1}.recorder-output-choice p{font-size:20px;line-height:1.4;color:#aeb7c5;margin:0}.recorder-output-choice>button{min-width:100px}.recorder-settings strong{font-size:24px}.recorder-details{overflow:auto;scrollbar-gutter:stable;padding-right:20px}

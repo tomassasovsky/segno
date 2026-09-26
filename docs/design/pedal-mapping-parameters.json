@@ -1,0 +1,546 @@
+[
+  {
+    "label": "Ambient Reverb · Amb-Dub Mix",
+    "key": "Amb-Dub Mix"
+  },
+  {
+    "label": "Ambient Reverb · Amb-Verb",
+    "key": "Amb-Verb"
+  },
+  {
+    "label": "Ambient Reverb · Amb-Verb Dec",
+    "key": "Amb-Verb Dec"
+  },
+  {
+    "label": "Ambient Reverb · Amb-verb Level",
+    "key": "Amb-verb Vol"
+  },
+  {
+    "label": "Amp · Bass",
+    "key": "Amp Bass"
+  },
+  {
+    "label": "Amp · Drive",
+    "key": "Amp Drive"
+  },
+  {
+    "label": "Amp · Treble",
+    "key": "Amp Treble"
+  },
+  {
+    "label": "Chorus · Chor",
+    "key": "Chor"
+  },
+  {
+    "label": "Chorus · Chor Depth",
+    "key": "Chor Depth"
+  },
+  {
+    "label": "Chorus · Chor Mix",
+    "key": "Chor Mix"
+  },
+  {
+    "label": "Chorus · Chor Rate",
+    "key": "Chor Rate"
+  },
+  {
+    "label": "Compressor · Comp",
+    "key": "Comp"
+  },
+  {
+    "label": "Compressor · Comp Attack",
+    "key": "Comp Attack"
+  },
+  {
+    "label": "Compressor · Comp Make-Up",
+    "key": "Comp Make-Up"
+  },
+  {
+    "label": "Compressor · Comp Ratio",
+    "key": "Comp Ratio"
+  },
+  {
+    "label": "Compressor · Comp Release",
+    "key": "Comp Release"
+  },
+  {
+    "label": "Compressor · Comp Thresh",
+    "key": "Comp Thresh"
+  },
+  {
+    "label": "Degrade · Degrade Filter",
+    "key": "Degrade Filter"
+  },
+  {
+    "label": "Degrade · Degrade Frequency",
+    "key": "Degrade Freq"
+  },
+  {
+    "label": "Degrade · Degrade Mix",
+    "key": "Degrade Mix"
+  },
+  {
+    "label": "Delay · Feedback",
+    "key": "Del Feedback"
+  },
+  {
+    "label": "Delay · Frequency",
+    "key": "Del Freq"
+  },
+  {
+    "label": "Delay · Mix",
+    "key": "Del Mix"
+  },
+  {
+    "label": "Delay · Time",
+    "key": "Del Time"
+  },
+  {
+    "label": "Distortion · Dist",
+    "key": "Dist"
+  },
+  {
+    "label": "Distortion · Dist Drive",
+    "key": "Dist Drive"
+  },
+  {
+    "label": "Distortion · Dist Tone",
+    "key": "Dist Tone"
+  },
+  {
+    "label": "Doubler · Doubler",
+    "key": "Doubler"
+  },
+  {
+    "label": "Doubler · Doubler Mix",
+    "key": "Doubler Mix"
+  },
+  {
+    "label": "Doubler · Doubler Sep",
+    "key": "Doubler Sep"
+  },
+  {
+    "label": "Dub Delay · Damp",
+    "key": "Del Damp"
+  },
+  {
+    "label": "Dub Delay · Feedback",
+    "key": "Del Feedback"
+  },
+  {
+    "label": "Dub Delay · L/R Ratio",
+    "key": "Del L/R Ratio"
+  },
+  {
+    "label": "Dub Delay · Res-Frequency",
+    "key": "Del Res-Freq"
+  },
+  {
+    "label": "Dub Delay · Resonance",
+    "key": "Del Reso"
+  },
+  {
+    "label": "Dub Delay · Time",
+    "key": "Del Time"
+  },
+  {
+    "label": "Dub Reverb · Dub-Verb",
+    "key": "Dub-Verb"
+  },
+  {
+    "label": "Dub Reverb · Dub-Verb Dec",
+    "key": "Dub-Verb Dec"
+  },
+  {
+    "label": "Dub Reverb · Dub-Verb Level",
+    "key": "Dub-Verb Vol"
+  },
+  {
+    "label": "Four-band EQ · Hi Mid",
+    "key": "EQ Hi Mid"
+  },
+  {
+    "label": "Four-band EQ · Hi Mid Frequency",
+    "key": "EQ Hi Mid Freq"
+  },
+  {
+    "label": "Four-band EQ · Hi Mid Q",
+    "key": "EQ Hi Mid Q"
+  },
+  {
+    "label": "Four-band EQ · High",
+    "key": "EQ High"
+  },
+  {
+    "label": "Four-band EQ · High Cut",
+    "key": "EQ High Cut"
+  },
+  {
+    "label": "Four-band EQ · High Frequency",
+    "key": "EQ High Freq"
+  },
+  {
+    "label": "Four-band EQ · High Q",
+    "key": "EQ High Q"
+  },
+  {
+    "label": "Four-band EQ · Lo Mid",
+    "key": "EQ Lo Mid"
+  },
+  {
+    "label": "Four-band EQ · Lo Mid Frequency",
+    "key": "EQ Lo Mid Freq"
+  },
+  {
+    "label": "Four-band EQ · Lo Mid Q",
+    "key": "EQ Lo Mid Q"
+  },
+  {
+    "label": "Four-band EQ · Low",
+    "key": "EQ Low"
+  },
+  {
+    "label": "Four-band EQ · Low Cut",
+    "key": "EQ Low Cut"
+  },
+  {
+    "label": "Four-band EQ · Low Frequency",
+    "key": "EQ Low Freq"
+  },
+  {
+    "label": "Four-band EQ · Low Q",
+    "key": "EQ Low Q"
+  },
+  {
+    "label": "Harmonize · Harm Level",
+    "key": "Harm Vol"
+  },
+  {
+    "label": "Harmonize · Lead Level",
+    "key": "Lead Vol"
+  },
+  {
+    "label": "Harmonize · Voice 1",
+    "key": "Voice 1"
+  },
+  {
+    "label": "Harmonize · Voice 1 Delay",
+    "key": "Voice 1 Delay"
+  },
+  {
+    "label": "Harmonize · Voice 1 Gender",
+    "key": "Voice 1 Gender"
+  },
+  {
+    "label": "Harmonize · Voice 1 Level",
+    "key": "Voice 1 Vol"
+  },
+  {
+    "label": "Harmonize · Voice 1 Pan",
+    "key": "Voice 1 Pan"
+  },
+  {
+    "label": "Harmonize · Voice 1 Pitch",
+    "key": "Voice 1 Pitch"
+  },
+  {
+    "label": "Harmonize · Voice 2",
+    "key": "Voice 2"
+  },
+  {
+    "label": "Harmonize · Voice 2 Delay",
+    "key": "Voice 2 Delay"
+  },
+  {
+    "label": "Harmonize · Voice 2 Gender",
+    "key": "Voice 2 Gender"
+  },
+  {
+    "label": "Harmonize · Voice 2 Level",
+    "key": "Voice 2 Vol"
+  },
+  {
+    "label": "Harmonize · Voice 2 Pan",
+    "key": "Voice 2 Pan"
+  },
+  {
+    "label": "Harmonize · Voice 2 Pitch",
+    "key": "Voice 2 Pitch"
+  },
+  {
+    "label": "HP / Gate · Gate Thresh",
+    "key": "Gate Thresh"
+  },
+  {
+    "label": "HP / Gate · HP/Gate",
+    "key": "HP/Gate"
+  },
+  {
+    "label": "Low-pass Filter · Cutoff",
+    "key": "LPF Cutoff"
+  },
+  {
+    "label": "Low-pass Filter · Depth",
+    "key": "LPF LFO Depth"
+  },
+  {
+    "label": "Low-pass Filter · Rate",
+    "key": "LPF LFO Rate"
+  },
+  {
+    "label": "Low-pass Filter · Resonance",
+    "key": "LPF Reso"
+  },
+  {
+    "label": "Master · Level",
+    "key": "Master Vol"
+  },
+  {
+    "label": "Modulation · Depth",
+    "key": "Mod Depth"
+  },
+  {
+    "label": "Modulation · Mix",
+    "key": "Mod Mix"
+  },
+  {
+    "label": "Modulation · Rate",
+    "key": "Mod Rate"
+  },
+  {
+    "label": "Octaver · Oct",
+    "key": "Oct"
+  },
+  {
+    "label": "Octaver · Octave 1 Level",
+    "key": "Octave 1 Vol"
+  },
+  {
+    "label": "Octaver · Octave 2 Level",
+    "key": "Octave 2 Vol"
+  },
+  {
+    "label": "Octaver · Octave Mix",
+    "key": "Octave Mix"
+  },
+  {
+    "label": "Other controls · Audio Type",
+    "key": "Audio Type"
+  },
+  {
+    "label": "Other controls · Auto Source",
+    "key": "Auto Source"
+  },
+  {
+    "label": "Other controls · High EQ",
+    "key": "High EQ"
+  },
+  {
+    "label": "Other controls · High EQ Frequency",
+    "key": "High EQ Freq"
+  },
+  {
+    "label": "Other controls · Highpass",
+    "key": "Highpass"
+  },
+  {
+    "label": "Other controls · Key",
+    "key": "Key"
+  },
+  {
+    "label": "Other controls · Low EQ",
+    "key": "Low EQ"
+  },
+  {
+    "label": "Other controls · Low EQ Frequency",
+    "key": "Low EQ Freq"
+  },
+  {
+    "label": "Other controls · Mid EQ",
+    "key": "Mid EQ"
+  },
+  {
+    "label": "Other controls · Mid EQ Frequency",
+    "key": "Mid EQ Freq"
+  },
+  {
+    "label": "Other controls · Reference",
+    "key": "Reference"
+  },
+  {
+    "label": "Other controls · Scale",
+    "key": "Scale"
+  },
+  {
+    "label": "Other controls · Scale Root",
+    "key": "Scale Root"
+  },
+  {
+    "label": "Other controls · Scale Type",
+    "key": "Scale Type"
+  },
+  {
+    "label": "Other controls · Speed",
+    "key": "Speed"
+  },
+  {
+    "label": "Other controls · Stereo",
+    "key": "Stereo"
+  },
+  {
+    "label": "Other controls · Tightness",
+    "key": "Tightness"
+  },
+  {
+    "label": "Other controls · Tracking",
+    "key": "Tracking"
+  },
+  {
+    "label": "Overdrive · Drive",
+    "key": "OD Drive"
+  },
+  {
+    "label": "Overdrive · Tone",
+    "key": "OD Tone"
+  },
+  {
+    "label": "Parametric EQ · Air",
+    "key": "EQ Air"
+  },
+  {
+    "label": "Parametric EQ · High",
+    "key": "EQ High"
+  },
+  {
+    "label": "Parametric EQ · High Cut",
+    "key": "EQ High Cut"
+  },
+  {
+    "label": "Parametric EQ · Low",
+    "key": "EQ Low"
+  },
+  {
+    "label": "Parametric EQ · Low Cut",
+    "key": "EQ Low Cut"
+  },
+  {
+    "label": "Parametric EQ · Mid",
+    "key": "EQ Mid"
+  },
+  {
+    "label": "Parametric EQ · Mid Frequency",
+    "key": "EQ Mid Freq"
+  },
+  {
+    "label": "Parametric EQ · Mid Gain",
+    "key": "EQ Mid Gain"
+  },
+  {
+    "label": "Parametric EQ · Mid Q",
+    "key": "EQ Mid Q"
+  },
+  {
+    "label": "Parametric EQ · Para EQ",
+    "key": "Para EQ"
+  },
+  {
+    "label": "Pitch Shift · Pitch Mix",
+    "key": "Pitch Mix"
+  },
+  {
+    "label": "Pitch Shift · Pitch Shift",
+    "key": "Pitch Shift"
+  },
+  {
+    "label": "Pumper · Depth",
+    "key": "Pumper Depth"
+  },
+  {
+    "label": "Pumper · Rate",
+    "key": "Pumper Rate"
+  },
+  {
+    "label": "Reverb · Bright",
+    "key": "Rev Bright"
+  },
+  {
+    "label": "Reverb · Density",
+    "key": "Rev Density"
+  },
+  {
+    "label": "Reverb · ER",
+    "key": "Rev ER"
+  },
+  {
+    "label": "Reverb · Length",
+    "key": "Rev Length"
+  },
+  {
+    "label": "Reverb · Lo/Hi",
+    "key": "Rev Lo/Hi"
+  },
+  {
+    "label": "Reverb · Mix",
+    "key": "Rev Mix"
+  },
+  {
+    "label": "Reverb · Tail/ER",
+    "key": "Rev Tail/ER"
+  },
+  {
+    "label": "Slicer · Mix",
+    "key": "Slic Mix"
+  },
+  {
+    "label": "Spring Reverb · Mix",
+    "key": "Spring Mix"
+  },
+  {
+    "label": "Spring Reverb · Time",
+    "key": "Spring Time"
+  },
+  {
+    "label": "Transient · Attack",
+    "key": "Attack"
+  },
+  {
+    "label": "Transient · Attack Length",
+    "key": "Attack Length"
+  },
+  {
+    "label": "Transient · Sustain",
+    "key": "Sustain"
+  },
+  {
+    "label": "Transient · Transient",
+    "key": "Transient"
+  },
+  {
+    "label": "Vinyl · Vinyl Drive",
+    "key": "Vinyl Drive"
+  },
+  {
+    "label": "Vinyl · Vinyl Frequency",
+    "key": "Vinyl Freq"
+  },
+  {
+    "label": "Vinyl · Vinyl Noise",
+    "key": "Vinyl Noise"
+  },
+  {
+    "label": "Vinyl · Vinyl Noise-Tone",
+    "key": "Vinyl Noise-Tone"
+  },
+  {
+    "label": "Wah · Pedal",
+    "key": "Wah Pedal"
+  },
+  {
+    "label": "Whammy · Whammy Pedal",
+    "key": "Whammy Pedal"
+  },
+  {
+    "label": "Whammy · Whammy Range",
+    "key": "Whammy Range"
+  }
+]

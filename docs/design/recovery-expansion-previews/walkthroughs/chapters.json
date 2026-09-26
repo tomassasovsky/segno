@@ -1,0 +1,38 @@
+[
+  {
+    "title": "Recover recorded audio",
+    "start": 0,
+    "end": 32,
+    "file": "01-recorded-audio.mp4"
+  },
+  {
+    "title": "Repair audio connections",
+    "start": 32,
+    "end": 63.033,
+    "file": "02-audio-connections.mp4"
+  },
+  {
+    "title": "Back up and restore the appliance",
+    "start": 63.033,
+    "end": 99.4,
+    "file": "03-appliance-backup.mp4"
+  },
+  {
+    "title": "Choose the timing track",
+    "start": 99.4,
+    "end": 128.433,
+    "file": "04-timing-track.mp4"
+  },
+  {
+    "title": "Try a preset, then Keep or Cancel",
+    "start": 128.433,
+    "end": 155.166,
+    "file": "05-preset-audition.mp4"
+  },
+  {
+    "title": "Long recordings and low storage",
+    "start": 155.166,
+    "end": 207.033,
+    "file": "06-long-recordings.mp4"
+  }
+]

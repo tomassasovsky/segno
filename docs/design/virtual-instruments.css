@@ -1,0 +1,253 @@
+.instruments-study button,.instruments-study input{font:inherit;color:inherit}
+.instruments-study button,.instruments-study input{touch-action:manipulation}
+.instruments-study button{cursor:pointer}
+.instruments-study button:disabled{opacity:.35;cursor:default}
+.instruments-study button:focus-visible,.instruments-study a:focus-visible,.instruments-study input:focus-visible{outline:3px solid #f2bf70;outline-offset:4px}
+.instruments-study button svg,.instruments-study a svg{width:28px;height:28px;display:block;flex:none}
+.instruments-study .topbar{height:96px;padding:16px 36px;display:flex;gap:24px;align-items:center;border-bottom:1px solid #343b47;flex:none}
+.instruments-study .icon-button{display:grid;place-items:center;width:64px;height:64px;background:transparent;border:1px solid #515d6e;border-radius:8px;text-decoration:none;flex:none}
+.instruments-study .topbar .crumb{font-size:23px;color:#aebbd0}
+.instruments-study .topbar .session{margin-left:auto;font-size:23px;color:#aebbd0}
+.instruments-study .main{padding:30px 64px 38px;flex:1;min-height:0;display:flex;flex-direction:column;gap:26px}
+.instruments-study h1,.instruments-study h2,.instruments-study h3,.instruments-study p{margin:0}
+.instruments-study h1{font-size:42px;line-height:1.2;font-weight:500;letter-spacing:-1px}
+.instruments-study h2{font-size:28px;font-weight:500}
+.instruments-study h3{font-size:25px;font-weight:500}
+.instruments-study .heading{display:flex;justify-content:space-between;align-items:center;min-height:64px}
+.instruments-study .button{display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:64px;padding:14px 24px;border:1px solid #556881;border-radius:8px;background:#202735;font-size:24px}
+
+.instruments-study .button.quiet{background:transparent}
+.instruments-study .source-strip{display:flex;align-items:center;gap:14px;padding:5px 4px 14px;overflow:auto;scrollbar-width:thin;scrollbar-color:#7a8ba4 #191e27;flex:none}
+.instruments-study .source{display:flex;align-items:center;gap:16px;min-width:224px;max-width:360px;min-height:76px;border-radius:8px;border:1px solid #404b5d;background:#191f29;padding:14px 22px;font-size:25px;text-align:left}
+.instruments-study .source span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.instruments-study .source.selected{background:#2c3c52;border-color:#91abcd}
+.instruments-study .source svg{width:28px;height:28px}
+.instruments-study .source .source-dot{width:8px;height:8px;border-radius:50%;background:#91abcd;flex:none}
+.instruments-study .layout{display:grid;grid-template-columns:minmax(0,1fr) 580px;gap:34px;flex:1;min-height:0}
+.instruments-study .left{display:flex;flex-direction:column;gap:24px;min-width:0}
+.instruments-study .instrument{position:relative;border:1px solid #455064;border-radius:14px;background:linear-gradient(160deg,#252c38,#171c25 70%);padding:28px 30px 32px;box-shadow:inset 0 1px #5e687733,0 10px 24px #0003}
+.instruments-study .instrument-head{display:flex;align-items:center;gap:20px;margin-bottom:38px}
+.instruments-study .instrument-head .sound-name{font-size:30px;font-weight:500;display:flex;align-items:center;gap:12px}
+.instruments-study .instrument-head .sound-name svg{width:27px;height:27px;color:#adc0dc}
+.instruments-study .instrument-head .button{margin-left:auto}
+.instruments-study .instrument-head .icon-button{height:60px;width:60px}
+.instruments-study .parameter-pair{display:grid;grid-template-columns:1fr 1fr;gap:34px;margin-bottom:36px}
+.instruments-study .control{display:flex;flex-direction:column;gap:14px}
+.instruments-study .control-label{display:flex;align-items:center;justify-content:space-between;font-size:23px;gap:16px}
+.instruments-study .control-label output{font:21px SegnoMono,monospace;color:#b4c5de}
+.instruments-study .control input{--amount:50%;appearance:none;-webkit-appearance:none;width:100%;height:56px;margin:0;border:1px solid #556881;border-radius:5px;background:#161b23;overflow:hidden;cursor:ew-resize}
+.instruments-study .control input::-webkit-slider-runnable-track{height:54px;background:linear-gradient(to right,#7187a5 var(--amount),#161b23 var(--amount))}
+.instruments-study .control input::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:2px;height:54px;background:#d1e0f4;border:0;border-radius:0}
+.instruments-study .control input::-moz-range-track{height:54px;background:#161b23;border:0}
+.instruments-study .control input::-moz-range-progress{height:54px;background:#7187a5}
+.instruments-study .control input::-moz-range-thumb{width:2px;height:54px;background:#d1e0f4;border:0;border-radius:0}
+.instruments-study .play-surface{position:relative;border-top:1px solid #404b5f;padding-top:26px}
+.instruments-study .keyboard{height:216px;position:relative;display:flex;border:5px solid #0a0c10;border-radius:8px;overflow:hidden;background:#090b0e}
+.instruments-study .key{border:0;border-radius:0;touch-action:none;-webkit-user-select:none;user-select:none;display:flex;justify-content:center;align-items:flex-end;padding:0 0 15px;position:relative;font:16px SegnoMono,monospace;color:#6f7b89}
+.instruments-study .key.white{flex:1;height:100%;background:linear-gradient(#cfd4dc,#f1f2f5 80%,#c9d1dc);border-right:2px solid #323947;box-shadow:inset 0 -6px #aab4c2}
+.instruments-study .key.white:last-child{border-right:0}
+.instruments-study .key.black{position:absolute;top:0;width:4.4%;height:64%;z-index:2;background:linear-gradient(90deg,#10141b,#272e3b 70%,#0d1117);border:1px solid #030508;border-top:0;border-radius:0 0 5px 5px;box-shadow:0 6px 4px #0005,inset 0 -6px #0005;color:#9dabbd}
+.instruments-study .key.down{background:#9bb4d7;box-shadow:inset 0 -5px #60789c}
+.instruments-study .key.black.down{background:#637fa4}
+.instruments-study .key:focus-visible{outline-offset:-5px;z-index:4}
+.instruments-study .keyboard-legends{display:flex;justify-content:space-between;align-items:center;margin-top:18px;font-size:18px;color:#99a8be}
+.instruments-study .playing-note{font:19px SegnoMono,monospace;color:#d2e0f3;min-width:100px;text-align:right}
+.instruments-study .pad-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;height:216px}
+.instruments-study .drum-pad{background:linear-gradient(#2c3647,#1b2432);border:2px solid #607591;border-radius:10px;box-shadow:inset 0 -8px #080c1229,0 5px 5px #0004;font-size:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;touch-action:none}
+.instruments-study .drum-pad svg{width:52px;height:52px;color:#bbcce4}
+.instruments-study .drum-pad.down{background:#506c92;border-color:#c2d5ef}
+.instruments-study .panel{background:#171c25;border:1px solid #3c4759;border-radius:12px;padding:28px;display:flex;flex-direction:column;gap:24px}
+.instruments-study .right{display:flex;flex-direction:column;gap:24px;min-height:0}
+.instruments-study .route-panel{flex:1}
+.instruments-study .section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.instruments-study .small-led{display:flex;align-items:center;gap:8px;font-size:18px;color:#aebbd0}
+.instruments-study .small-led:before{content:'';width:8px;height:8px;background:#778ba5;border-radius:50%}
+.instruments-study .small-led.active:before{background:#c6d9f0;box-shadow:0 0 8px #a5c9ff80}
+.instruments-study .setting-row{display:flex;align-items:center;justify-content:space-between;gap:18px;font-size:23px}
+.instruments-study .row-action{display:flex;align-items:center;gap:12px;min-height:60px;background:#222c3b;border:1px solid #52647e;border-radius:7px;padding:10px 18px;font-size:22px}
+.instruments-study .row-action small{font-size:19px;color:#b6c7de}
+.instruments-study .row-action svg{width:22px;height:22px}
+.instruments-study .binding-secondary{font-size:18px;color:#98aac3;margin-top:5px}
+.instruments-study .segment{display:flex;border:1px solid #53647c;border-radius:7px;padding:4px;gap:4px}
+.instruments-study .segment button{border:1px solid transparent;border-radius:5px;background:transparent;padding:10px 18px;font-size:21px;min-height:52px;color:#aebbd0}
+.instruments-study .segment button.selected{background:#2c3c52;border-color:#91abcd;color:#edf3fc}
+.instruments-study .inline-hint{font-size:19px;color:#9eafc6;line-height:1.35}
+.instruments-study .live-level{display:grid;grid-template-columns:1fr 88px;gap:20px;align-items:center}
+.instruments-study .meter{height:54px;display:flex;align-items:center;gap:4px}
+.instruments-study .meter-bar{height:100%;width:7px;background:#273446;transition:background 80ms}
+.instruments-study .meter-bar.lit{background:#b1c9e7}
+.instruments-study .route-divider{height:1px;background:#343f50;margin:0}
+.instruments-study .toast{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);max-width:80%;font-size:22px;background:#c4d4eb;color:#162132;padding:14px 24px;border-radius:7px;box-shadow:0 10px 24px #0005;z-index:30}
+.instruments-study .overlay{position:absolute;inset:0;z-index:10;background:#070a10c9;display:flex;align-items:center;justify-content:center;padding:64px}
+.instruments-study .dialog{border:1px solid #657893;border-radius:14px;background:#1c2431;width:1100px;max-height:900px;display:flex;flex-direction:column;padding:36px;gap:30px;box-shadow:0 28px 90px #0007}
+.instruments-study .dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:24px}
+.instruments-study .dialog h2{font-size:34px}
+.instruments-study .dialog .actions{display:flex;justify-content:flex-end;gap:16px}
+.instruments-study .sound-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.instruments-study .sound-card{padding:26px 20px;border:1px solid #4a5a71;border-radius:10px;background:#171e2a;display:flex;flex-direction:column;align-items:center;gap:24px;text-align:center;min-height:300px;font-size:27px}
+.instruments-study .sound-card.selected{background:#2c3c52;border-color:#a5bddb}
+.instruments-study .sound-card small{display:block;margin-top:9px;font-size:21px;color:#aebdd3}
+.instruments-study .sound-art{height:146px;width:100%;display:grid;place-items:center}
+.instruments-study .sound-art svg{width:100%;height:100%;color:#b8c9e2}
+.instruments-study .wide-options{display:flex;gap:16px}
+.instruments-study .wide-options .button{flex:1}
+.instruments-study .stepper{display:flex;align-items:center;gap:20px}
+.instruments-study .stepper output{min-width:80px;text-align:center;font:26px SegnoMono,monospace}
+.instruments-study .dialog .setting-row{min-height:72px}
+.instruments-study .dialog .setting-row+.setting-row{border-top:1px solid #3a475b;padding-top:24px}
+.instruments-study .keyboard-overlay{align-items:flex-end;padding:0}
+.instruments-study .keyboard-dialog{width:100%;border-radius:16px 16px 0 0;max-height:none;padding:30px 180px;gap:20px}
+.instruments-study .name-input{font-size:30px;border:1px solid #6a7f9f;background:#121924;border-radius:8px;height:74px;padding:16px 22px;width:100%;outline-offset:-4px!important}
+.instruments-study .typing-rows{display:flex;flex-direction:column;align-items:center;gap:10px}
+.instruments-study .typing-row{display:flex;gap:10px;justify-content:center;width:100%}
+.instruments-study .typing-key{background:#2b374b;border:1px solid #54677f;border-radius:8px;min-width:108px;height:66px;font-size:26px}
+.instruments-study .typing-key.space{width:630px}
+.instruments-study .typing-key.backspace{width:180px}
+.instruments-study .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.instruments-study .heading{gap:32px;min-height:98px}
+.instruments-study .heading h1{flex:none}
+.instruments-study .heading>.source-strip{flex:1;min-width:0;margin-left:16px}
+.instruments-study .heading>.button{flex:none}
+.instruments-study .controller-options{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.instruments-study .controller-options .row-action{justify-content:space-between;min-width:0;text-align:left;height:80px;padding:12px 16px}
+.instruments-study .controller-options small{display:block;margin-top:9px;font-size:18px;color:#b6c7de}
+.instruments-study .controller-options .row-action>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.instruments-study .panel{padding:24px;gap:18px}
+.instruments-study .route-panel{gap:18px}
+.instruments-study .instrument-head{margin-bottom:26px}
+.instruments-study .parameter-pair{margin-bottom:28px}
+.instruments-study .wide-options .selected{background:#2c3c52;border-color:#91abcd}
+.instruments-study .mapping-launch{border:1px solid #52647e;background:#202b3c;border-radius:6px;min-height:46px;padding:8px 18px;font-size:21px;display:flex;align-items:center;gap:12px}
+.instruments-study .mapping-launch svg{width:22px;height:22px}
+.instruments-study .mapping-empty{padding:24px 0;color:var(--text-muted);font-size:24px}
+.instruments-study .mapping-list{display:flex;flex-direction:column;gap:12px;max-height:460px;overflow-y:auto;padding:6px 18px 6px 6px;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#8ba2c1 #121926}
+.instruments-study .mapping-row{display:grid;grid-template-columns:1fr 32px 130px 90px;align-items:center;gap:20px}
+.instruments-study .mapping-row>.button{justify-content:flex-start}
+.instruments-study .mapping-row .source-label{font-size:23px}
+.instruments-study .mapping-row .source-label small{display:block;font-size:18px;color:#aebed6;margin-top:5px}
+.instruments-study .mapping-row output{font:28px SegnoMono,monospace}
+.instruments-study .mapping-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+.instruments-study .mapping-field{display:flex;flex-direction:column;gap:22px;background:#141c28;border:1px solid #455771;border-radius:10px;padding:26px;min-height:220px}
+.instruments-study .mapping-field>span{font-size:22px;color:#aebed4}
+.instruments-study .mapping-field .learn{min-height:84px;font-size:28px}
+.instruments-study .mapping-field .learn.listening{border-color:#9dbbdc;background:#2c3c52}
+.instruments-study .mapping-field .stepper{justify-content:center;margin-top:10px}
+.instruments-study .mapping-field .stepper output{font-size:42px;min-width:140px}
+.instruments-study .mapping-status{font-size:21px;color:#aebed4;line-height:1.4;min-height:28px}
+.instruments-study .mapping-target .keyboard{height:158px}
+.instruments-study .mapping-target .key.white{color:#495b75}
+.instruments-study .mapping-target .key.chosen{background:#9db7d9}
+.instruments-study .mapping-edit-target-label{display:flex;align-items:center;justify-content:space-between;color:#aebed4;font-size:21px}
+.instruments-study .mapping-edit-target-label .button{min-height:48px;font-size:20px;padding:8px 16px}
+.instruments-study .mapping-dialog{width:1180px}
+.instruments-study .mapping-target{display:flex;flex-direction:column;gap:14px}
+.instruments-study .mapping-field .segment{align-self:flex-start}
+.instruments-study .mapping-conflict{color:#edbf9a}
+.instruments-study .mapping-field .source-detail{font-size:19px;color:#aebed4;text-align:center}
+.instruments-study .mapping-edit-grid .stepper .icon-button{height:62px;width:62px}
+.instruments-study .target-notes{display:flex;flex-wrap:wrap;gap:10px;min-height:74px;max-height:128px;overflow-y:auto;padding:4px;scrollbar-gutter:stable;scrollbar-width:thin}
+.instruments-study .note-chip{font:28px SegnoMono,monospace;border:1px solid #91abcd;background:#2c3c52;border-radius:7px;min-height:62px;padding:12px 16px}
+.instruments-study .mapping-row{grid-template-columns:minmax(0,1fr) 32px minmax(130px,1fr) 64px}
+.instruments-study .mapping-row output{font-size:23px;overflow-wrap:anywhere;line-height:1.6}
+.instruments-study .mapping-target .key.black.chosen{background:#637fa4}
+.instruments-study .keyboard-legends{min-height:46px;margin-top:12px}
+.instruments-study .sustain-indicator{font-size:20px;color:#c6d9f0;margin-left:auto;margin-right:22px;display:flex;align-items:center;gap:10px}
+.instruments-study .sustain-indicator:before{content:'';width:8px;height:8px;border-radius:50%;background:#bed4ed}
+.instruments-study .sustain-indicator[hidden]{display:none}
+.instruments-study .key.white.sustained{background:linear-gradient(#8b9bad,#bdcad9);box-shadow:inset 0 -6px #8095b2}
+.instruments-study .key.black.sustained{background:#475a75}
+.instruments-study{font-family:inherit;color:var(--text);height:100%;width:100%;position:relative;min-height:0}
+.instruments-study .main{padding:0;gap:24px;height:100%}
+.instruments-study h1{font-size:var(--title-size);font-weight:500;letter-spacing:-1.1px}
+.instruments-study .heading{min-height:88px}
+.instruments-study .layout{grid-template-columns:minmax(0,1fr) 540px;align-items:stretch}
+.instruments-study .instrument{border-radius:8px;box-shadow:none;background:var(--surface);border-color:var(--surface-border);padding:32px;display:flex;flex-direction:column}
+.instruments-study .play-surface{margin:auto 0;padding:28px 0;border-top:1px solid var(--line)}
+.instruments-study .panel{background:var(--surface);border-color:var(--surface-border);border-radius:8px;padding:24px}
+.instruments-study .route-panel{justify-content:flex-start;gap:28px}
+.instruments-study .button,.instruments-study .row-action{background:var(--surface);border-color:var(--surface-border);font-size:var(--label-size)}
+.instruments-study .button.primary{background:var(--selection-fill);color:var(--selection-text);border-color:var(--selection-border);font-weight:500}
+.instruments-study .source.selected,.instruments-study .segment button.selected,.instruments-study .sound-card.selected{background:var(--selection-fill);border-color:var(--selection-border)}
+.instruments-study .dialog{background:var(--surface);border-radius:12px;padding:40px;gap:24px;width:1200px}
+.instruments-study .overlay{position:absolute;inset:-124px -36px -24px;padding:60px;z-index:30}
+.instruments-study .keyboard-overlay{align-items:flex-end;padding:0}
+.instruments-study .keyboard-dialog{width:100%;padding:30px 180px;border-radius:16px 16px 0 0}
+.instruments-study .instrument-library{display:grid;grid-template-columns:240px 1fr;gap:24px;min-height:570px}
+.instruments-study .instrument-families{display:flex;flex-direction:column;gap:12px}
+.instruments-study .instrument-families .button{justify-content:flex-start}
+.instruments-study .instrument-families .selected{background:var(--selection-fill);border-color:var(--selection-border)}
+.instruments-study .instrument-sounds{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-content:start}
+.instruments-study .sound-card{min-height:258px;padding:20px;gap:16px;font-size:26px;background:var(--surface)}
+.instruments-study .sound-art{height:152px}
+.instrument-mount{height:100%;min-height:0;flex:1}
+.instrument-simulator{display:none;align-items:center;flex-wrap:wrap;gap:12px;padding:14px 0;color:#aebbd0;font:14px Arial,sans-serif}
+body.instrument-demo .instrument-simulator{display:flex}
+.instrument-simulator button{background:#202735;border:1px solid #556881;border-radius:7px;padding:12px 18px;color:#e7edf6;min-height:44px}
+.instrument-simulator button.held{background:#b7cbe8;color:#162132}
+
+.instruments-study .mapping-row>svg{width:24px;height:24px;flex:none}
+.instruments-study .mapping-edit-grid{grid-template-columns:1fr 1fr;gap:24px}
+.instruments-study .mapping-field{min-height:0;gap:16px;padding:22px;background:transparent;border-color:var(--surface-border);border-radius:8px}
+.instruments-study .mapping-field .learn{min-height:64px;font-size:24px}
+.instruments-study .mapping-status:empty{display:none}
+.instruments-study .mapping-target .keyboard{height:176px}
+.instruments-study .mapping-target{gap:20px}
+.instruments-study .mapping-dialog{max-height:900px}
+.instruments-study .instrument-head>.button{margin-left:auto}
+.instruments-study .instrument-empty{margin:auto;display:flex;flex-direction:column;align-items:center;gap:24px;color:var(--text-muted)}
+.instruments-study .instrument-empty>svg{width:112px;height:112px}
+.instruments-study .instrument-empty h2{color:var(--text)}
+.instruments-study .remove-copy{font-size:24px;line-height:1.5;color:var(--text-muted)}
+.instruments-study .button.danger{color:#ffb8ae;border-color:#965f63;background:#3b252d}
+
+.instruments-study .controller-options{display:flex;flex-direction:column;gap:10px}
+.instruments-study .controller-source{display:flex;align-items:stretch;gap:10px;min-height:64px}
+.instruments-study .controller-source .row-action{flex:1;min-height:64px;height:64px;font-size:22px;padding:8px 14px}
+.instruments-study .controller-source small{font-size:17px;margin-top:4px}
+.instruments-study .controller-toggle{width:64px;height:64px;border:1px solid var(--surface-border);background:transparent;border-radius:7px;display:grid;place-items:center}
+.instruments-study .controller-toggle svg{visibility:hidden}
+.instruments-study .controller-toggle.selected{background:var(--selection-fill);border-color:var(--selection-border)}
+.instruments-study .controller-toggle.selected svg{visibility:visible}
+.instruments-study .controller-source.disabled .row-action{color:var(--text-muted)}
+.instruments-study .route-panel{gap:18px}
+.instruments-study .route-panel .row-action{min-height:64px}
+.instruments-study .route-panel .inline-hint{font-size:18px}
+.instruments-study .panel h2{font-size:26px}
+
+.instruments-study .route-panel{gap:14px;padding:22px}
+
+.instruments-study .instrument-head .sound-name{display:block;flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.instruments-study .instrument-head .icon-button{width:64px;height:64px}
+/* Instrument inputs share the main control hierarchy. */
+.instruments-study .parameter-pair{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-bottom:26px}
+.instruments-study .control-label{font-size:21px;gap:8px;flex-wrap:wrap}
+.instruments-study .control-label output{font-size:20px}
+.instruments-study .instrument-feedback{display:flex;align-items:center;gap:12px;min-height:62px;margin:0 0 20px;font-size:21px;color:var(--text);flex-wrap:wrap}
+.instruments-study .activity-dot{width:10px;height:10px;flex:none;border-radius:50%;background:#596374}
+.instruments-study .activity-dot.active{background:#b1c6e0;box-shadow:0 0 12px #9bb7d877}
+.instruments-study .playing-reason{font-size:19px;color:var(--muted);margin-left:auto;max-width:75%;text-align:right}
+.instruments-study .route-links{display:flex;flex-wrap:wrap;gap:10px}
+.instruments-study .route-links .button{font-size:21px;padding:12px 14px}
+.instruments-study .sound-audition{display:flex;align-items:center;gap:20px;min-height:84px;margin-top:18px;font-size:22px;flex-wrap:wrap}
+.instruments-study .sound-audition .button{margin-left:auto}
+.instruments-study .sound-audition small{color:var(--muted);width:100%}
+.instruments-study .midi-input-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px;margin:28px 0}
+.instruments-study .midi-input-grid label{display:flex;flex-direction:column;gap:14px;font-size:22px}
+.instruments-study select,.instruments-study input[type=number]{min-width:0;min-height:64px;padding:12px 16px;background:#171e29;border:1px solid #556881;border-radius:8px;color:var(--text);font-size:23px;max-width:100%}
+.instruments-study select option{color:#eef1f5;background:#202735}
+.instruments-study .wide-options{flex-wrap:wrap}
+.instruments-study .dialog .inline-hint{margin:18px 0}
+.instruments-study .note-entry{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:18px}
+.instruments-study .note-entry input{width:105px}
+.instruments-study .note-entry .button{font-size:20px;padding:12px 16px}
+.instruments-study .mapping-edit-grid.notes-only{grid-template-columns:1fr}
+.instruments-study .notes-only .control-source-field{display:none}
+.instruments-study .instrument-binding-list{display:flex;flex-direction:column;gap:12px;max-height:240px;overflow:auto;scrollbar-gutter:stable;padding:12px 16px 12px 0;font-size:22px}
+.instruments-study .instrument-binding-list>div{display:flex;justify-content:space-between;gap:28px;padding:14px;background:var(--surface);border-radius:8px}
+.instruments-study .instrument-binding-list span{color:var(--muted)}
+.instruments-study .shared-control-links{display:flex;gap:16px;flex-wrap:wrap}
+.instruments-study .keyboard-legends{font-size:20px}
+.instruments-study .mapping-list{scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#8395ad #151b25;padding-right:20px}
+.instruments-study .mapping-list::-webkit-scrollbar{width:10px}
+.instruments-study .mapping-list::-webkit-scrollbar-thumb{background:#8395ad;border-radius:6px}
+.instruments-study .mapping-list::-webkit-scrollbar-track{background:#151b25;border-radius:6px}

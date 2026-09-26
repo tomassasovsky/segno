@@ -1,0 +1,45 @@
+{
+  "checkedAt": "2026-09-09T06:00:07.415049+00:00",
+  "scope": "Primary crown display only; existing recording and timing ownership preserved.",
+  "files": {
+    "fx-ux-prototype.html": "6a502b4c3d52f6801707e78527215078166fc8368caec439cb53fd0ec28bf79a",
+    "stage-display-study.js": "36ea0397068fc42796573381e834d2f9f98199109d8079cd335bbbd5ca776024",
+    "stage-display-study.css": "6ce6d7723b2369971e070a0af2a083c870ff83fa8d9963a040610f93b2a9e454",
+    "stage-two-screen-preview.html": "12825eee9fd752aa7a8f4cc55cc5c53726dec54c69798eded07050e30beede48"
+  },
+  "checks": {
+    "Chrome": "passed",
+    "Firefox": "passed",
+    "firstCompletedTake": "Track 3 retains crown after later Track 1 recording",
+    "existingPrimaryHandoffJourney": "passed in Chrome and Firefox",
+    "views": [
+      "Track",
+      "Wave",
+      "Mixer",
+      "Selected track display"
+    ],
+    "layout": "Chrome and Firefox: long names and crown fit in Track/Wave/Mixer; Mixer meter top and bottom align with dB scale within 2 px."
+  },
+  "pen": {
+    "status": "Complete: refreshed current Track/Wave/Mixer/selected-track frames and verified native save.",
+    "frames": {
+      "track": "Khh1a",
+      "wave": "yNPnZ",
+      "mixer": "smLmX",
+      "selected-track": "wJlxa"
+    },
+    "sha256": "af3a465f7b47a2102dadc13d45e4e8d79d94d53724724ebbb3f75bace49ce30a",
+    "evidence": "../../handoff/segno-app/pen-verification.json"
+  },
+  "handoffSynchronization": {
+    "date": "2026-09-09",
+    "browserCheck": "verify_handoff_display.cjs passed in Chrome and Firefox",
+    "geometry": [
+      "track.json",
+      "wave.json",
+      "mixer.json",
+      "selected-track.json"
+    ],
+    "note": "Earlier first-take tests above retain their original provenance; current files include later whole-track-meter refinements."
+  }
+}

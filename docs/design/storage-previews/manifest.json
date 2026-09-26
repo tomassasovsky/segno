@@ -1,0 +1,55 @@
+{
+  "section": "PQ2W9",
+  "status": "owner accepted",
+  "frames": [
+    {
+      "review": "storage-ready",
+      "name": "Storage overview",
+      "root": "NxtNc",
+      "tile": "BQc2H"
+    },
+    {
+      "review": "storage-ejecting",
+      "name": "Ejecting USB",
+      "root": "mEqa6",
+      "tile": "SowFm"
+    },
+    {
+      "review": "storage-ejected",
+      "name": "Safe to remove",
+      "root": "chgDv",
+      "tile": "GbezI"
+    },
+    {
+      "review": "storage-missing",
+      "name": "No USB drive",
+      "root": "gqcmf",
+      "tile": "t5SpNf"
+    },
+    {
+      "review": "storage-error",
+      "name": "Eject failed",
+      "root": "p8bT0",
+      "tile": "PQOpP"
+    },
+    {
+      "review": "storage-low",
+      "name": "Low internal space",
+      "root": "Bn0vl",
+      "tile": "uvis2"
+    }
+  ],
+  "nativeVerification": {
+    "texts": 91,
+    "elements": 270,
+    "errors": [],
+    "sectionOverlaps": [],
+    "containmentErrors": []
+  },
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "document": "../2026-09-07-storage-ux.md",
+  "savedPenHash": "a40086e1523a9b2808d4374f6536b43b8e50df3d"
+}

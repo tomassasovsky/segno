@@ -1,0 +1,185 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "status": "mixed: prepared-list reorder accepted; import proposal",
+  "audio": "silent fixtures; simulated backing clock",
+  "checks": [
+    "verify_audio_library.cjs: Chrome and Firefox pass",
+    "verify_backing_performance.cjs: Chrome and Firefox pass",
+    "verify_track_import.cjs: Chrome and Firefox pass",
+    "verify_bounce_performance.cjs: Chrome and Firefox pass",
+    "verify_pedal_performance.cjs: Chrome and Firefox pass"
+  ],
+  "frames": [
+    {
+      "root": "o6kYrs",
+      "tile": "bx7vK",
+      "review": "audio-library",
+      "name": "Audio library / Internal",
+      "status": "proposal",
+      "browser": "audio-library.png",
+      "native": "pen/o6kYrs.png"
+    },
+    {
+      "root": "UtzNP",
+      "tile": "B5q2Q",
+      "review": "audio-usb",
+      "name": "Audio library / USB drive",
+      "status": "proposal",
+      "browser": "audio-usb.png",
+      "native": "pen/UtzNP.png"
+    },
+    {
+      "root": "oIPyp",
+      "tile": "M9kyGb",
+      "review": "audio-save",
+      "name": "Save audio / Tracks and destination",
+      "status": "proposal",
+      "browser": "audio-save.png",
+      "native": "pen/oIPyp.png"
+    },
+    {
+      "root": "m4emE",
+      "tile": "o32NQJ",
+      "review": "audio-save-name",
+      "name": "Save audio / Name",
+      "status": "proposal",
+      "browser": "audio-save-name.png",
+      "native": "pen/m4emE.png"
+    },
+    {
+      "root": "H5BRWH",
+      "tile": "OIOV1",
+      "review": "audio-backing",
+      "name": "Backing track / Ready",
+      "status": "proposal",
+      "browser": "audio-backing.png",
+      "native": "pen/H5BRWH.png"
+    },
+    {
+      "root": "L2AAd",
+      "tile": "jsmae",
+      "review": "audio-usb-missing",
+      "name": "Audio library / USB disconnected",
+      "status": "proposal",
+      "browser": "audio-usb-missing.png",
+      "native": "pen/L2AAd.png"
+    },
+    {
+      "root": "j4Q7in",
+      "tile": "EM37x",
+      "review": "audio-prepared",
+      "name": "Prepared audio / Performance order",
+      "status": "accepted",
+      "browser": "audio-prepared.png",
+      "native": "pen/j4Q7in.png"
+    },
+    {
+      "root": "AkvOw",
+      "tile": "Vbg8o",
+      "review": "performance-backing",
+      "name": "Backing / Ready",
+      "status": "proposal",
+      "browser": "performance-backing.png",
+      "native": "pen/AkvOw.png"
+    },
+    {
+      "root": "LJgD6",
+      "tile": "xI2WT",
+      "review": "performance-backing-queued",
+      "name": "Backing / Playing and selected",
+      "status": "proposal",
+      "browser": "performance-backing-queued.png",
+      "native": "pen/LJgD6.png"
+    },
+    {
+      "root": "wmj0r",
+      "tile": "wotfZ",
+      "review": "performance-backing-bank",
+      "name": "Backing / More prepared audio",
+      "status": "proposal",
+      "browser": "performance-backing-bank.png",
+      "native": "pen/wmj0r.png"
+    },
+    {
+      "root": "fIENo",
+      "tile": "g7wH7",
+      "review": "performance-backing-empty",
+      "name": "Backing / Nothing prepared",
+      "status": "proposal",
+      "browser": "performance-backing-empty.png",
+      "native": "pen/fIENo.png"
+    },
+    {
+      "root": "eQfV3",
+      "tile": "taRWd",
+      "review": "audio-track-import",
+      "name": "Track import / Choose destination",
+      "status": "proposal",
+      "browser": "audio-track-import.png",
+      "native": "pen/eQfV3.png"
+    },
+    {
+      "root": "KFAtn",
+      "tile": "c6CBav",
+      "review": "audio-track-import-selected",
+      "name": "Track import / Ready to load",
+      "status": "proposal",
+      "browser": "audio-track-import-selected.png",
+      "native": "pen/KFAtn.png"
+    },
+    {
+      "root": "WPxhW",
+      "tile": "akxOj",
+      "review": "audio-track-import-full",
+      "name": "Track import / No empty tracks",
+      "status": "proposal",
+      "browser": "audio-track-import-full.png",
+      "native": "pen/WPxhW.png"
+    },
+    {
+      "root": "N7swLe",
+      "tile": "HaVqw",
+      "review": "audio-track-import-usb",
+      "name": "Track import / USB source",
+      "status": "proposal",
+      "browser": "audio-track-import-usb.png",
+      "native": "pen/N7swLe.png"
+    }
+  ],
+  "savedPenHash": "3beee670199e09fb9888ce7c37ef4b8bb9d6aeae",
+  "nativeVerification": "native-verification.json",
+  "libraryNavigation": {
+    "status": "accepted",
+    "change": "Shared Sessions / Audio header",
+    "savedPenHash": "39b6b817ce8988ed82685b26c524b7e44573c7d3",
+    "verification": "../session-library-previews/native-verification.json"
+  },
+  "performanceRecordingEntry": {
+    "screens": [
+      "o6kYrs",
+      "UtzNP",
+      "L2AAd"
+    ],
+    "savedPenHash": "fde736118373773c626e216d9edfbf738b17eebe",
+    "verification": "../performance-recording-previews/native-verification.json"
+  },
+  "backingPlayback": {
+    "status": "proposal",
+    "document": "../2026-09-08-backing-playback-ux.md",
+    "savedHash": "82bb89ef85e5ee1ffc6ad9ea55d9651afecba379",
+    "browserChecks": [
+      "Chrome",
+      "Firefox"
+    ],
+    "nativeVerification": {
+      "texts": 119,
+      "elements": 251,
+      "errors": [],
+      "sectionOverlaps": [],
+      "containmentErrors": []
+    }
+  }
+}

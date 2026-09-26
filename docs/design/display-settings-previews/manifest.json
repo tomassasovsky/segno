@@ -1,0 +1,55 @@
+{
+  "section": "OdZ7n",
+  "status": "owner accepted",
+  "frames": [
+    {
+      "review": "displays-ready",
+      "name": "Display settings",
+      "root": "UXiWk",
+      "tile": "hrXyj"
+    },
+    {
+      "review": "displays-small",
+      "name": "Track display calibration",
+      "root": "q4OZOP",
+      "tile": "ESLal"
+    },
+    {
+      "review": "displays-calibrate",
+      "name": "Main display calibration",
+      "root": "c00LeS",
+      "tile": "ARj5B"
+    },
+    {
+      "review": "displays-test",
+      "name": "Test before keeping",
+      "root": "xpmFC",
+      "tile": "hmuQG"
+    },
+    {
+      "review": "displays-disconnected",
+      "name": "Disconnected display",
+      "root": "cWuvA",
+      "tile": "a7zTq"
+    },
+    {
+      "review": "displays-dimmed",
+      "name": "Idle dimming",
+      "root": "CXU4c",
+      "tile": "ppCdS"
+    }
+  ],
+  "nativeVerification": {
+    "texts": 98,
+    "elements": 271,
+    "errors": [],
+    "sectionOverlaps": [],
+    "containmentErrors": []
+  },
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "document": "../2026-09-07-display-settings-ux.md",
+  "savedPenHash": "8de18c77547372781d8b4e4b0fa39659d7f4332e"
+}

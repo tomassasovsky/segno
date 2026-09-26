@@ -1,0 +1,300 @@
+{
+  "scope": "Accepted pedal setup and performance in the main FX prototype",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "frames": [
+    {
+      "review": "pedal-custom",
+      "name": "Pedals / Custom controls",
+      "file": "Yzjqt.png",
+      "status": "accepted"
+    },
+    {
+      "review": "option-b",
+      "name": "Pedals exploration / B — Gesture layers",
+      "file": "LVwOq.png",
+      "status": "superseded"
+    },
+    {
+      "review": "option-c",
+      "name": "Pedals exploration / C — Assignment table",
+      "file": "Y0HcbM.png",
+      "status": "superseded"
+    },
+    {
+      "review": "pedal-setup",
+      "name": "Pedals / Track controls",
+      "file": "KPWLz.png",
+      "status": "accepted"
+    },
+    {
+      "review": "pedal-leds",
+      "name": "Pedals / LED colors",
+      "file": "pIO6k.png",
+      "status": "accepted"
+    },
+    {
+      "review": "pedal-leds-active",
+      "name": "Pedals / LED colors — Toggle active",
+      "file": "f1VvL2.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-tracks",
+      "file": "hmEBj.png",
+      "name": "Performance / Tracks",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-custom",
+      "file": "uEukr.png",
+      "name": "Performance / Custom",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-fx",
+      "file": "noDGu.png",
+      "name": "Performance / FX",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-mute",
+      "file": "RPCYZ.png",
+      "name": "Performance / Mute",
+      "status": "superseded",
+      "replacement": "../stage-display-previews/pen/z4Z54.png",
+      "reason": "Mute remains in the main track view."
+    },
+    {
+      "review": "performance-transpose",
+      "name": "Transpose",
+      "file": "fWlTV.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-transpose-bank",
+      "name": "Transpose across banks",
+      "file": "mhj7T.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-transpose-empty",
+      "name": "Transpose with no selection",
+      "file": "iL02o.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-transpose-limit",
+      "name": "Transpose at pitch limit",
+      "file": "yujfF.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-mixer",
+      "file": "PQJIq.png",
+      "name": "Mixer / Tracks",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-mixer-inputs",
+      "file": "Fbk22.png",
+      "name": "Mixer / Live inputs",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-mixer-many-inputs",
+      "file": "L8Z37W.png",
+      "name": "Mixer / Eighteen inputs",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-mixer-auto",
+      "file": "f8I7b.png",
+      "name": "Mixer / Auto monitoring",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-reverse",
+      "file": "Y1sB3.png",
+      "name": "Reverse / Playback direction",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-reverse-bank",
+      "file": "pHeBV.png",
+      "name": "Reverse / Bank B",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-reverse-empty",
+      "file": "O3MHy.png",
+      "name": "Reverse / Empty loop",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-reverse-stage",
+      "file": "vEooA.png",
+      "name": "Tracks / Reverse indicator",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-fade",
+      "name": "Fade / Shared default",
+      "file": "q5GgaM.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-fade-custom",
+      "name": "Fade / Track override",
+      "file": "qxzA7.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-fade-bank",
+      "name": "Fade / Bank B",
+      "file": "zzlgN.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-fade-empty",
+      "name": "Fade / Empty loop",
+      "file": "P9salH.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-speed",
+      "name": "Speed / Normal",
+      "file": "K1d7e.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-speed-half",
+      "name": "Speed / Half speed",
+      "file": "e73F0.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-speed-fast",
+      "name": "Speed / Eight times",
+      "file": "GRSnI.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-speed-empty",
+      "name": "Speed / Empty loop",
+      "file": "FKfY0.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-speed-stage",
+      "name": "Tracks / Speed indicator",
+      "file": "Xvxte.png",
+      "status": "accepted"
+    },
+    {
+      "id": "WZXxv",
+      "review": "performance-multiply",
+      "name": "Multiply / Selected track",
+      "file": "WZXxv.png",
+      "status": "proposal"
+    },
+    {
+      "id": "P6Eawr",
+      "review": "performance-multiply-double",
+      "name": "Multiply / Repeated phrase",
+      "file": "P6Eawr.png",
+      "status": "proposal"
+    },
+    {
+      "id": "J88S7",
+      "review": "performance-divide",
+      "name": "Divide / First or last half",
+      "file": "J88S7.png",
+      "status": "proposal"
+    },
+    {
+      "id": "YM0C4",
+      "review": "performance-divide-first",
+      "name": "Divide / First half kept",
+      "file": "YM0C4.png",
+      "status": "proposal"
+    },
+    {
+      "id": "E6hSr",
+      "review": "performance-divide-last",
+      "name": "Divide / Last half kept",
+      "file": "E6hSr.png",
+      "status": "proposal"
+    },
+    {
+      "id": "q1Zau",
+      "review": "performance-divide-bank",
+      "name": "Divide / Bank B",
+      "file": "q1Zau.png",
+      "status": "proposal"
+    },
+    {
+      "id": "KkzgJ",
+      "review": "performance-divide-empty",
+      "name": "Divide / Empty loop",
+      "file": "KkzgJ.png",
+      "status": "proposal"
+    },
+    {
+      "id": "xuQwK",
+      "review": "performance-divide-recording",
+      "name": "Divide / Recording in progress",
+      "file": "xuQwK.png",
+      "status": "proposal"
+    },
+    {
+      "review": "performance-bounce",
+      "id": "lIaLp",
+      "name": "Bounce / Select sources",
+      "file": "lIaLp.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-bank",
+      "id": "UGP71",
+      "name": "Bounce / Sources across banks",
+      "file": "UGP71.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-destination",
+      "id": "K8nyS",
+      "name": "Bounce / Choose destination",
+      "file": "K8nyS.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-replace",
+      "id": "S1qtJT",
+      "name": "Bounce / Replace destination",
+      "file": "S1qtJT.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-clear",
+      "id": "iEwsD",
+      "name": "Bounce / Clear source tracks",
+      "file": "iEwsD.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-done",
+      "id": "eOj9S",
+      "name": "Bounce / Result and recovery",
+      "file": "eOj9S.png",
+      "status": "accepted"
+    }
+  ],
+  "component": {
+    "name": "Hardware / Segno pedal face",
+    "file": "Qdj7x.png"
+  },
+  "prototype": "../fx-ux-prototype.html"
+}

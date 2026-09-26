@@ -1,0 +1,31 @@
+// Author-side silent UX checks. These do not establish audio quality or foot timing.
+const {chromium,firefox}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
+(async()=>{for(const kind of ['chrome','firefox']){
+ const b=await (kind==='chrome'?chromium:firefox).launch({headless:true,...(kind==='chrome'?{executablePath:process.env.ATLAS_CHROME}:{})});
+ try{
+  const p=await b.newPage({viewport:{width:1920,height:1080}}),errors=[];
+  p.on('pageerror',e=>errors.push(e.message));
+  await p.clock.install({time:new Date('2026-09-07T15:00:00Z')});await p.clock.pauseAt(new Date('2026-09-07T15:00:01Z'));
+  const base='http://127.0.0.1:8768/fx-ux-prototype.html',button=id=>p.locator('[data-action='+JSON.stringify(id)+']'),foot=id=>button('perform:'+id),snap=()=>p.evaluate(()=>segnoDemo.snapshot()),fade=async()=>(await snap()).performance.fade;
+  const hold=async id=>{await foot(id).focus();await p.keyboard.down(' ');await p.clock.runFor(810);await p.keyboard.up(' ');};
+  await p.goto(base+'?review=performance-custom&canvas=actual');await foot(6).click();assert.equal((await snap()).performance.view,'fade');assert.equal((await fade()).tracks[2].target,1,'entry must not fade its new target');
+  await p.goto(base+'?review=performance-fade&canvas=actual');const before=await snap();
+  await foot(4).focus();await p.keyboard.down(' ');assert.equal((await fade()).tracks[0].target,1,'hold selection must not first start fading');await p.keyboard.up(' ');assert.equal((await fade()).tracks[0].target,0);
+  await p.clock.runFor(2000);assert.equal((await fade()).tracks[0].amount,.5);assert.equal(await foot(4).locator('.pedal-led').getAttribute('data-state'),'active');
+  await foot(4).click();assert.equal((await fade()).tracks[0].amount,.5,'retrigger retains current gain');assert.equal((await fade()).tracks[0].target,1);await p.clock.runFor(1000);assert.equal((await fade()).tracks[0].amount,.75);await p.clock.runFor(1000);assert.equal((await fade()).tracks[0].amount,1);assert.equal(await foot(4).locator('.pedal-led').getAttribute('data-state'),'inactive');
+  await hold(5);assert.equal((await fade()).selected,1);assert.equal((await fade()).seconds,8);assert.equal((await fade()).tracks[1].target,0,'holding selects time without fading');
+  await foot(8).click();assert.equal((await fade()).seconds,8.5);assert.equal((await fade()).defaultSeconds,4);await hold(2);assert.equal((await fade()).seconds,4);assert.equal((await fade()).overrides[1],false,'reset returns to inherited default');
+  await hold(9);assert.equal((await fade()).selected,-1);assert.equal((await snap()).performance.bank,0,'hold bank must not also switch bank');await foot(8).click();assert.equal((await fade()).defaultSeconds,4.5);assert.equal((await fade()).durations[1],4.5);assert.equal((await fade()).durations[4],2,'default edits preserve overrides');
+  await foot(4).click();const job=structuredClone((await snap()).rig.trackFade['Track 1']);await foot(8).click();assert.deepEqual((await snap()).rig.trackFade['Track 1'],job,'duration changes do not retime an active fade');
+  await foot(4).focus();await p.keyboard.down(' ');await foot(9).click();await p.clock.runFor(810);await p.keyboard.up(' ');assert.equal((await fade()).selected,4,'pending track hold follows bank');assert.equal((await fade()).tracks[4].target,0);
+  await foot(4).click();await p.clock.runFor(2000);assert.equal((await fade()).tracks[4].amount,1);assert.equal((await snap()).trackPlayback['Track 5'],false,'fade never starts transport');
+  await foot(9).click();await foot(5).click();await foot(3).click();assert.equal((await snap()).performance.view,'tracks');await p.clock.runFor(6000);assert.equal((await fade()).tracks[1].amount,1,'fade continues after Exit');
+  const after=await snap();assert.deepEqual(after.rig.expressionMix,before.rig.expressionMix);assert.deepEqual(after.rig.mutedTracks,before.rig.mutedTracks);assert.deepEqual(after.rig.racks,before.rig.racks);assert.deepEqual(after.captureState,before.captureState);assert.deepEqual(after.trackPlayback,before.trackPlayback);assert.deepEqual(after.liveMonitoring,before.liveMonitoring);
+  await hold(3);await foot(7).click();assert.equal((await snap()).performance.view,'mixer');assert.equal(await p.locator('[data-mixer-fade="0"]').textContent(),'Faded out','Mixer explains attenuation separately from saved level');
+  await p.goto(base+'?review=performance-fade&canvas=actual');await p.evaluate(()=>segnoDemo.setPlayback('Track 1',true));await foot(4).click();await foot(1).click();assert.equal((await snap()).trackPlayback['Track 1'],false);await p.clock.runFor(4000);assert.equal((await fade()).tracks[0].amount,0,'Stop does not reset the fade');
+  await p.goto(base+'?review=performance-fade-empty&canvas=actual');assert.equal(await foot(4).isDisabled(),true);assert.equal(await foot(3).isEnabled(),true);
+  await p.goto(base+'?canvas=actual');await p.evaluate(()=>localStorage.clear());await p.reload();await button('stage').click();await hold(3);await foot(6).click();await hold(4);await foot(8).click();await foot(4).click();await p.reload();assert.equal((await fade()).durations[0],4.5);await p.clock.runFor(5000);assert.equal((await fade()).tracks[0].amount,0,'saved envelope reaches its target on reload');
+  for(const review of ['performance-fade','performance-fade-custom','performance-fade-bank','performance-fade-empty']){await p.goto(base+'?review='+review+'&canvas=actual');await p.evaluate(()=>document.fonts.ready);const bad=await p.evaluate(()=>[...document.querySelectorAll('#screen button,.fade-overview')].filter(e=>{const r=e.getBoundingClientRect();return r.x<0||r.y<0||r.right>1921||r.bottom>1081||e.scrollWidth>e.clientWidth+2||e.scrollHeight>e.clientHeight+2}).map(e=>e.textContent));assert.deepEqual(bad,[]);if(kind==='chrome'){fs.mkdirSync('docs/design/fade-previews',{recursive:true});await p.locator('#screen').screenshot({path:'docs/design/fade-previews/'+review+'.png'});}}
+  assert.deepEqual(errors,[]);console.log(kind+': Fade entry, default/override timing, retrigger continuity, hold arbitration, banks, Exit, Stop, gain/mute independence, persistence and layout passed.');
+ }finally{await b.close();}
+}})().catch(e=>{console.error(e);process.exitCode=1});

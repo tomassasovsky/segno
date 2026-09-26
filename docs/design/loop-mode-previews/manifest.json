@@ -1,0 +1,27 @@
+{
+  "scope": "Approved compatible-only mode-change flow; silent prototype",
+  "document": "../2026-09-07-loop-mode-transitions-ux.md",
+  "penFile": "segno-ui.pen",
+  "savedPenHash": "62a8f657c4b996dec3537de53dd212fc26ce6348",
+  "screens": [
+    "z385s",
+    "Kliy9",
+    "l2b6qn"
+  ],
+  "nativeVerification": {
+    "texts": 53,
+    "elements": 241,
+    "errors": [],
+    "sectionOverlaps": [],
+    "containmentErrors": []
+  },
+  "browsers": [
+    "chrome",
+    "firefox"
+  ],
+  "regressions": [
+    "loop setup",
+    "stage transport model",
+    "two-display recording journey"
+  ]
+}

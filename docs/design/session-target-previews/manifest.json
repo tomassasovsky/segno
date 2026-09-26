@@ -1,0 +1,79 @@
+{
+  "status": "proposal",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "section": "Fne3m",
+  "sectionName": "41 Session control repair",
+  "frames": [
+    {
+      "scene": "session-target-missing",
+      "node": "oY3Fv",
+      "name": "Missing control",
+      "browser": "preview-session-target-missing.png",
+      "pen": "pen/oY3Fv.png"
+    },
+    {
+      "scene": "session-target-destinations",
+      "node": "F8VGm",
+      "name": "Choose a destination",
+      "browser": "preview-session-target-destinations.png",
+      "pen": "pen/F8VGm.png"
+    },
+    {
+      "scene": "session-target-controls",
+      "node": "h2gt3h",
+      "name": "Choose a replacement control",
+      "browser": "preview-session-target-controls.png",
+      "pen": "pen/h2gt3h.png"
+    },
+    {
+      "scene": "session-target-review",
+      "node": "DJjCG",
+      "name": "Review affected assignments",
+      "browser": "preview-session-target-review.png",
+      "pen": "pen/DJjCG.png"
+    },
+    {
+      "scene": "session-target-ready",
+      "node": "rdskM",
+      "name": "Review and open",
+      "browser": "preview-session-target-ready.png",
+      "pen": "pen/rdskM.png"
+    }
+  ],
+  "review": "../../reviews/2026-09-08-session-target-repair/review.md",
+  "checks": {
+    "modelTests": 21,
+    "combinedModelTests": 93,
+    "browsers": [
+      "Chrome",
+      "Firefox"
+    ],
+    "reviewRoles": [
+      "VGV",
+      "Architecture",
+      "Test quality",
+      "Readiness",
+      "Simplicity"
+    ],
+    "normalStorage": true
+  },
+  "verification": {
+    "texts": 511,
+    "elements": 964,
+    "focus": 5,
+    "textErrors": [],
+    "elementErrors": [],
+    "focusErrors": [],
+    "currentGroups": 41,
+    "groupOutside": [],
+    "groupOverlaps": [],
+    "clipping": "Only intentional scroll clipping: five background Library track rows and 129 offscreen destination/control rows. Modal text, actions and focus fit.",
+    "scope": "Initial five-frame inspection; approved ready-summary refinement has separate checks below."
+  },
+  "savedPenSha256": "2000987e8a13dc5ab7b92c4cd709b3caf912c242181e0aed55e31c265529de5d",
+  "savedPenBytes": 94917555,
+  "summaryRefinement": "Owner approved From/To comparison plus assignment count. Detailed values remain on previous page. Focused21 and Chrome/Firefox repair suite pass; ready frame text/focus rechecked and resaved."
+}

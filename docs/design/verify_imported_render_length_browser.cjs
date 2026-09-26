@@ -1,0 +1,16 @@
+// Real prototype import/length controls; the source and render are symbolic.
+const {chromium,firefox}=require('playwright'),assert=require('node:assert/strict');
+const base=process.env.FX_PROTOTYPE_URL||'http://127.0.0.1:8768/fx-ux-prototype.html';
+(async()=>{for(const kind of ['chrome','firefox']){const browser=await(kind==='chrome'?chromium:firefox).launch({headless:true,...(kind==='chrome'?{executablePath:process.env.ATLAS_CHROME}:{})});try{
+ const p=await browser.newPage({viewport:{width:1920,height:1080}}),errors=[];p.setDefaultTimeout(7000);p.on('pageerror',e=>errors.push(e.message));await p.clock.install();
+ const b=id=>p.locator('[data-action='+JSON.stringify(id)+']').first(),click=id=>b(id).click(),snap=()=>p.evaluate(()=>segnoDemo.snapshot());
+ await p.goto(base+'?canvas=actual');await p.evaluate(()=>localStorage.clear());await p.reload();await click('session:library');await click('audio-library');await click('audio:up');await click('audio:folder:Saved%20audio');await click('audio:file:inside-9');await click('audio:load-track');await p.locator('[data-action^="audio:import-target:"]:not([disabled])').first().click();
+ const target=(await snap()).audioLibrary.trackImport.target;await click('audio:commit-track-import');await p.clock.runFor(1500);const source=(await snap()).rig.audioLibrary.trackImports[target];assert.equal(source.timing.seconds,24);
+ await click('stage');await click('settings');await click('loop:page:loop-settings');await click('loop:page:loop-mode');await click('loop:mode:free');if(await b('loop:mode-confirm:free').count())await click('loop:mode-confirm:free');await click('back');await click('loop:page:loop-audio-tempo');await click('loop:audio-tempo:follow:false');await click('stage');
+ const plan=()=>p.evaluate(i=>segnoDemo.audioRecipe([i]),target),command=action=>p.evaluate(key=>segnoDemo.dispatchMapping(key),action+':'+target);
+ assert.equal((await plan()).seconds,24);await command('direct:multiply');assert.equal((await plan()).seconds,48);assert.equal((await snap()).rig.trackLength['Track '+(target+1)].durationBeats,source.timing.seconds*source.timing.loopTempo/60*2);
+ await p.evaluate(i=>segnoDemo.dispatchMapping('direct:divide:'+i+':last'),target);assert.equal((await plan()).seconds,24);await p.evaluate(i=>segnoDemo.dispatchMapping('direct:divide:'+i+':first'),target);assert.equal((await plan()).seconds,12);assert.deepEqual((await snap()).rig.audioLibrary.trackImports[target],source,'length edits keep the source timing and file');
+ await click('session:library');await click('audio-library');await click('audio:save');for(const id of (await snap()).audioLibrary.draft.tracks)if(id!==target)await click('audio:track:'+id);await click('audio:commit-save');await p.clock.runFor(1500);const saved=(await snap()).audioLibrary.lastSaved;assert.equal(saved.seconds,12);assert.equal(saved.recipe.seconds,12);assert.equal(saved.recipe.sources[0].imported.timing.seconds,24);
+ await p.reload();assert.equal((await plan()).seconds,12);assert.equal((await snap()).rig.audioLibrary.files.find(f=>f.id===saved.id).seconds,12);assert.deepEqual(errors,[]);
+ console.log(kind+': imported Follow-off render uses current Multiply/Divide span, preserves source timing, and saves/reloads exact selected duration.');
+ }finally{await browser.close();}}})().catch(e=>{console.error(e);process.exitCode=1;});

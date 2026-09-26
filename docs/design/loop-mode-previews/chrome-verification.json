@@ -1,0 +1,15 @@
+{
+  "browser": "chrome",
+  "checks": [
+    "empty and recorded length compatibility",
+    "primary and exact beat relationships",
+    "touch and encoder commit",
+    "playing confirmation and cancellation",
+    "capture recheck and queued guard",
+    "no content or assignment mutations",
+    "ordinary Settings path",
+    "storage failure rollback and reload",
+    "1920 × 1080 geometry"
+  ],
+  "errors": []
+}

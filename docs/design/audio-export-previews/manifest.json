@@ -1,0 +1,78 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "status": "accepted",
+  "acceptedOn": "2026-09-07",
+  "audio": "Simulated USB file descriptors, no audio bytes",
+  "section": "G2Cj8g",
+  "frames": [
+    {
+      "root": "W0D1DN",
+      "tile": "KGCxw",
+      "review": "audio-export",
+      "name": "Export a recording",
+      "status": "accepted",
+      "browser": "audio-export.png",
+      "native": "pen/W0D1DN.png"
+    },
+    {
+      "root": "bVziR",
+      "tile": "iYJSm",
+      "review": "audio-export-progress",
+      "name": "Export in progress",
+      "status": "accepted",
+      "browser": "audio-export-progress.png",
+      "native": "pen/bVziR.png"
+    },
+    {
+      "root": "N0rbWf",
+      "tile": "DFfXS",
+      "review": "audio-export-collision",
+      "name": "Matching filename",
+      "status": "accepted",
+      "browser": "audio-export-collision.png",
+      "native": "pen/N0rbWf.png"
+    },
+    {
+      "root": "p8REL",
+      "tile": "m5XyVv",
+      "review": "audio-export-missing",
+      "name": "Connect USB drive",
+      "status": "accepted",
+      "browser": "audio-export-missing.png",
+      "native": "pen/p8REL.png"
+    },
+    {
+      "root": "wC8xL",
+      "tile": "M734SS",
+      "review": "audio-export-error",
+      "name": "Export storage error",
+      "status": "accepted",
+      "browser": "audio-export-error.png",
+      "native": "pen/wC8xL.png"
+    },
+    {
+      "root": "HjWmG",
+      "tile": "ee8o6",
+      "review": "audio-export-complete",
+      "name": "Export complete",
+      "status": "accepted",
+      "browser": "audio-export-complete.png",
+      "native": "pen/HjWmG.png"
+    }
+  ],
+  "checks": [
+    "verify_audio_export.cjs: Chrome and Firefox pass",
+    "verify_audio_library.cjs: Chrome and Firefox pass",
+    "verify_performance_recording.cjs: Chrome and Firefox pass"
+  ],
+  "verification": {
+    "texts": 184,
+    "elements": 934,
+    "errors": [],
+    "groupProblems": []
+  },
+  "savedPenHash": "aa530c6530efb5250f474397223258b1c85df108"
+}

@@ -1,0 +1,34 @@
+{
+  "scope": "Owner-accepted Reverse target UX; silent browser study",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "frames": [
+    {
+      "review": "performance-reverse",
+      "file": "Y1sB3.png",
+      "name": "Reverse / Playback direction",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-reverse-bank",
+      "file": "pHeBV.png",
+      "name": "Reverse / Bank B",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-reverse-empty",
+      "file": "O3MHy.png",
+      "name": "Reverse / Empty loop",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-reverse-stage",
+      "file": "vEooA.png",
+      "name": "Tracks / Reverse indicator",
+      "status": "accepted"
+    }
+  ],
+  "hardwareComponent": "Qdj7x"
+}

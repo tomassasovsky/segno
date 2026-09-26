@@ -1,0 +1,49 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "scope": "Recording recovery prototype; audio simulated",
+  "frames": [
+    {
+      "review": "stage-recovery-multi",
+      "name": "Multi: partial take ready for Redo",
+      "browser": "stage-recovery-multi.png",
+      "pen": "pen/NJgjM.png",
+      "pen_id": "NJgjM",
+      "status": "accepted"
+    },
+    {
+      "review": "stage-recovery-multi-restored",
+      "name": "Multi: recovered in the shared cycle",
+      "browser": "stage-recovery-multi-restored.png",
+      "pen": "pen/wugxf.png",
+      "pen_id": "wugxf",
+      "status": "accepted"
+    },
+    {
+      "review": "stage-recovery-clear",
+      "name": "Clear All: playing, stopped, recording and queued",
+      "browser": "stage-recovery-clear.png",
+      "pen": "pen/XWarf.png",
+      "pen_id": "XWarf",
+      "status": "proposal"
+    },
+    {
+      "review": "stage-recovery-clear-cleared",
+      "name": "Clear All: ready for grouped Undo",
+      "browser": "stage-recovery-clear-cleared.png",
+      "pen": "pen/nB0SN.png",
+      "pen_id": "nB0SN",
+      "status": "proposal"
+    },
+    {
+      "review": "stage-recovery-clear-restored",
+      "name": "Clear All: recovered audio, capture stays stopped",
+      "browser": "stage-recovery-clear-restored.png",
+      "pen": "pen/caKQ7.png",
+      "pen_id": "caKQ7",
+      "status": "proposal"
+    }
+  ]
+}

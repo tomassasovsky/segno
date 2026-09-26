@@ -1,0 +1,21 @@
+{
+  "date": "2026-09-08",
+  "frames": [
+    "o0RK7c",
+    "TFAyM"
+  ],
+  "behavior": "The effect title controls module enable; no duplicate Off/On row in rack parameters. Original enable values and mapping targets remain.",
+  "nativeVerification": {
+    "texts": 249,
+    "elements": 637,
+    "errors": [],
+    "focusMissing": [],
+    "focusOutside": []
+  },
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "savedPenSha256": "038f670cb04ccfcc6e23a1f45eaf723236724b1c34bb07414e0c6235f4d7f06f",
+  "savedPenBytes": 82184844
+}

@@ -1,0 +1,61 @@
+{
+  "status": "proposal",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "section": "vs4lB",
+  "sectionName": "40 Session connection repair",
+  "frames": [
+    {
+      "scene": "session-connection-missing",
+      "node": "dEYLA",
+      "name": "Missing pedal connection",
+      "browser": "chrome-session-connection-missing.png",
+      "pen": "pen/dEYLA.png"
+    },
+    {
+      "scene": "session-connection-picker",
+      "node": "bxvII",
+      "name": "Choose a compatible pedal",
+      "browser": "chrome-session-connection-picker.png",
+      "pen": "pen/bxvII.png"
+    },
+    {
+      "scene": "session-connection-ready",
+      "node": "s8Cq7e",
+      "name": "Review and apply",
+      "browser": "chrome-session-connection-ready.png",
+      "pen": "pen/s8Cq7e.png"
+    },
+    {
+      "scene": "session-connection-midi",
+      "node": "Lc11M",
+      "name": "Replace a MIDI controller",
+      "browser": "chrome-session-connection-midi.png",
+      "pen": "pen/Lc11M.png"
+    }
+  ],
+  "verification": {
+    "texts": 207,
+    "elements": 481,
+    "focus": 4,
+    "textErrors": [],
+    "currentGroups": 40,
+    "groupOverlaps": [],
+    "groupOutside": [],
+    "clipping": "Only the intentionally scroll-clipped third background Library track extends more than one pixel. Modal content and focus fit. Subpixel font and rounded geometry differences are under one pixel.",
+    "browsers": [
+      "Chrome",
+      "Firefox"
+    ]
+  },
+  "savedPenSha256": "5970ec7a932493378c8dc9ebf449847d9add9810f0c8b7a8f21a70eeda126b65",
+  "savedPenBytes": 92607865,
+  "review": "../../reviews/2026-09-08-session-connection-repair/review.md",
+  "superseded": {
+    "node": "o1bls",
+    "section": "AVGvc",
+    "name": "Previous retry-only connection guard"
+  }
+}

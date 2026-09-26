@@ -1,0 +1,52 @@
+{
+  "scope": "Owner-accepted Bounce UX; September 7, 2026",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "frames": [
+    {
+      "review": "performance-bounce",
+      "id": "lIaLp",
+      "name": "Bounce / Select sources",
+      "file": "lIaLp.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-bank",
+      "id": "UGP71",
+      "name": "Bounce / Sources across banks",
+      "file": "UGP71.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-destination",
+      "id": "K8nyS",
+      "name": "Bounce / Choose destination",
+      "file": "K8nyS.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-replace",
+      "id": "S1qtJT",
+      "name": "Bounce / Replace destination",
+      "file": "S1qtJT.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-clear",
+      "id": "iEwsD",
+      "name": "Bounce / Clear source tracks",
+      "file": "iEwsD.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-bounce-done",
+      "id": "eOj9S",
+      "name": "Bounce / Result and recovery",
+      "file": "eOj9S.png",
+      "status": "accepted"
+    }
+  ],
+  "hardwareComponent": "Qdj7x"
+}

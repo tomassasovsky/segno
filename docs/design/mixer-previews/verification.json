@@ -1,0 +1,17 @@
+{
+  "scope": "Author-side browser and native design checks",
+  "browsers": [
+    "Chrome",
+    "Firefox"
+  ],
+  "suites": [
+    "verify_mixer_performance.cjs",
+    "verify_transpose_performance.cjs",
+    "verify_external_controls.cjs",
+    "verify_pedal_performance.cjs"
+  ],
+  "native_text_alignment_issues": 0,
+  "audio": "No production audio processing or physical pedal validation",
+  "status": "Owner accepted; browser and native design verified",
+  "gesture_validation": "Hold checks wait for action completion before release, with a bounded timeout."
+}

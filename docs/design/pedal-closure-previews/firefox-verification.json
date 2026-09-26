@@ -1,0 +1,15 @@
+{
+  "browser": "firefox",
+  "checks": [
+    "global bypass and pitch retention",
+    "hold consumption and cancelled gesture",
+    "bank/reset independence",
+    "clear both banks, encoder confirmation, Escape, Save and Restore",
+    "all five custom mode assignments with foot cancel/confirm",
+    "incompatible/capture/queued refusal",
+    "capture recheck at foot confirmation",
+    "reload and storage-failure rollback",
+    "1920 × 1080 dialog and heading bounds"
+  ],
+  "errors": []
+}

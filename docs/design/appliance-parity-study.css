@@ -1,0 +1,22 @@
+.main.appliance-study{padding:28px 100px 36px;gap:24px;overflow:hidden;}
+.appliance-preview,.appliance-notice-scope{margin:0;color:#9cafc8;font-size:20px;line-height:1.4;}
+.appliance-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;min-height:0;overflow:auto;}
+.appliance-panel{border:1px solid #52647c;border-radius:12px;background:#1b2432;padding:28px;display:flex;flex-direction:column;gap:24px;}
+.appliance-panel h2{font-size:29px;font-weight:500;margin:0;color:#e4edf9;}
+.appliance-panel p{font-size:24px;line-height:1.5;color:#b4c4db;margin:0;}
+.appliance-panel>.quiet,.appliance-panel>.primary{align-self:flex-start;}
+.appliance-fact{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-bottom:16px;border-bottom:1px solid #3e4c60;font-size:25px;}
+.appliance-fact>span{color:#afbed4;}.appliance-fact strong{font-weight:400;max-width:55%;overflow-wrap:anywhere;text-align:right;}
+.appliance-fact small{display:block;font-size:19px;margin-top:8px;color:#91a6c1;}
+.appliance-legal{grid-column:1/-1;}
+.appliance-controller{display:grid;grid-template-columns:600px 1fr;gap:28px;min-height:0;overflow:auto;}
+.appliance-update-panel{justify-content:center;}
+.appliance-actions{display:flex;gap:16px;flex-wrap:wrap;}
+.appliance-panel .appliance-error,.appliance-error{color:#e0bd8a;}
+.appliance-progress{height:16px;border-radius:8px;background:#303f54;overflow:hidden;}
+.appliance-progress span{height:100%;display:block;background:#abc3e4;}
+.appliance-notices{overflow:auto;display:flex;flex-direction:column;gap:16px;min-height:0;}
+.appliance-license{border:1px solid #52647c;border-radius:10px;background:#1b2432;}
+.appliance-license>button{display:flex;justify-content:space-between;width:100%;padding:24px;background:transparent;border:0;font-size:26px;}
+.appliance-license pre{font-family:SegnoMono,monospace;font-size:20px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;padding:0 28px 28px;margin:0;color:#d2def0;}
+.appliance-license-source{padding:0 28px;color:#9fb2cd;font-size:18px;}

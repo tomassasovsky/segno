@@ -1,0 +1,67 @@
+{
+  "section": "p33ymC",
+  "status": "owner accepted",
+  "frames": [
+    {
+      "review": "network-ready",
+      "name": "Connected network",
+      "root": "cnZr7",
+      "tile": "wse91"
+    },
+    {
+      "review": "network-password",
+      "name": "Join a network",
+      "root": "X1daqW",
+      "tile": "O7zN9"
+    },
+    {
+      "review": "network-joining",
+      "name": "Connecting",
+      "root": "KSPNp",
+      "tile": "brPO6"
+    },
+    {
+      "review": "network-error",
+      "name": "Incorrect password",
+      "root": "BqXq1",
+      "tile": "YU3gq"
+    },
+    {
+      "review": "network-details",
+      "name": "Saved network controls",
+      "root": "N2AGeo",
+      "tile": "JEHXY"
+    },
+    {
+      "review": "network-lost",
+      "name": "Connection lost",
+      "root": "qAxVl",
+      "tile": "EXgOI"
+    },
+    {
+      "review": "network-off",
+      "name": "Wi-Fi off",
+      "root": "m4Xh5",
+      "tile": "m0cYo"
+    },
+    {
+      "review": "network-no-internet",
+      "name": "Connected without internet",
+      "root": "hu9Bf",
+      "tile": "yL9W8"
+    }
+  ],
+  "nativeVerification": {
+    "texts": 324,
+    "elements": 900,
+    "errors": [],
+    "sectionOverlaps": [],
+    "containmentErrors": []
+  },
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "document": "../2026-09-07-network-ux.md",
+  "savedPenHash": "5be8e630ffe327c74afa0467d3da35dba009fbab"
+}

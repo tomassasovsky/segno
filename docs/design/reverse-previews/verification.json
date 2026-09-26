@@ -1,0 +1,16 @@
+{
+  "scope": "Author-side browser and native design checks",
+  "browsers": [
+    "Chrome",
+    "Firefox"
+  ],
+  "suites": [
+    "verify_reverse_performance.cjs",
+    "verify_transpose_performance.cjs",
+    "verify_mixer_performance.cjs"
+  ],
+  "native_text_alignment_issues": 0,
+  "audio": "No production audio processing or physical pedal validation",
+  "status": "Owner accepted; browser and native design verified",
+  "gesture_validation": "Immediate pedal-down toggle; held entry, repeat, bank changes and release cannot apply an extra direction change."
+}

@@ -1,0 +1,57 @@
+{
+  "canvas": [
+    1920,
+    1080
+  ],
+  "section": "FWBji",
+  "status": "proposal",
+  "frames": [
+    {
+      "name": "Ready to press or hold",
+      "review": "performance-feedback-ready",
+      "root": "hmEBj",
+      "tile": "qwMkg",
+      "status": "accepted layout",
+      "browser": "performance-feedback-ready.png",
+      "native": "pen/hmEBj.png"
+    },
+    {
+      "name": "Pending Hold",
+      "review": "performance-feedback-hold",
+      "root": "PRSrG",
+      "tile": "v0aHo",
+      "status": "proposal",
+      "browser": "performance-feedback-hold.png",
+      "native": "pen/PRSrG.png"
+    },
+    {
+      "name": "FX held contact",
+      "review": "performance-feedback-fx-held",
+      "root": "ri60q",
+      "tile": "Pz1HA",
+      "status": "proposal",
+      "browser": "performance-feedback-fx-held.png",
+      "native": "pen/ri60q.png"
+    },
+    {
+      "name": "FX released · toggle remains active",
+      "review": "performance-feedback-fx-released",
+      "root": "noDGu",
+      "tile": "Pmk4g",
+      "status": "accepted layout",
+      "browser": "performance-feedback-fx-released.png",
+      "native": "pen/noDGu.png"
+    }
+  ],
+  "checks": [
+    "Chrome and Firefox: gesture feedback and saved pedal-performance regressions pass"
+  ],
+  "nativeVerification": {
+    "texts": 72,
+    "elements": 184,
+    "errors": [],
+    "groupProblems": []
+  },
+  "nativeExportScale": 1,
+  "savedPenHash": "98326583bd9eda9b3791ddc7d69e739a834d1e5b"
+}

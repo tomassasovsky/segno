@@ -1,0 +1,117 @@
+{
+  "date": "2026-09-09",
+  "status": "All eight instrument UX findings closed; owner accepted the revised UX",
+  "checks": {
+    "runtime": "19 patch definitions and runtime lifecycle paths passed",
+    "sharedControls": "12 contracts passed",
+    "chrome": "All six browser suites passed",
+    "firefox": "All six browser suites passed",
+    "finalEvidence": "closure-tests.json",
+    "assetQueries": "All 11 modified JS/CSS queries match source content hashes",
+    "visual": "All eight browser and Pen screens inspected; no immediate-parent text clipping. Native select/number values and the dropdown affordance are included. Mapping list retains intentional scroll clipping."
+  },
+  "pen": {
+    "file": "segno-ui.pen",
+    "section": "54  Virtual instruments \u00b7 accepted UX",
+    "sectionId": "teX79",
+    "canvas": [
+      1920,
+      1080
+    ],
+    "screens": [
+      {
+        "scene": "instruments",
+        "nodeId": "gGTXF",
+        "title": "Independent instrument inputs",
+        "geometryNodeCount": 193
+      },
+      {
+        "scene": "instruments-library",
+        "nodeId": "hSy26",
+        "title": "Sound library and audition",
+        "geometryNodeCount": 289
+      },
+      {
+        "scene": "instruments-mapping",
+        "nodeId": "Uv25f",
+        "title": "Computer key mappings",
+        "geometryNodeCount": 377
+      },
+      {
+        "scene": "instruments-midi",
+        "nodeId": "kole9",
+        "title": "MIDI input and keyboard range",
+        "geometryNodeCount": 231
+      },
+      {
+        "scene": "instruments-notes",
+        "nodeId": "t00H3H",
+        "title": "Learn notes and chords",
+        "geometryNodeCount": 266
+      },
+      {
+        "scene": "instruments-controls",
+        "nodeId": "J2uTq",
+        "title": "Shared pedal and control assignments",
+        "geometryNodeCount": 219
+      },
+      {
+        "scene": "instruments-pack",
+        "nodeId": "hRKQL",
+        "title": "Unavailable sound recovery",
+        "geometryNodeCount": 269
+      },
+      {
+        "scene": "instruments-feedback",
+        "nodeId": "B5PEqI",
+        "title": "Live monitoring feedback",
+        "geometryNodeCount": 195
+      }
+    ],
+    "sha256": "af3a465f7b47a2102dadc13d45e4e8d79d94d53724724ebbb3f75bace49ce30a",
+    "saveEvidence": "Native File > Save completed after final handoff corrections. All eight instrument frame text bounds rechecked without changing accepted content.",
+    "sizeBytes": 106782915,
+    "handoffVerification": "../../handoff/segno-app/pen-verification.json"
+  },
+  "sourceHashes": {
+    "fx-ux-prototype.html": "8770f79392246c927f2909da9ca935be93fd6714ef793de2db1caaaea44ebc74",
+    "instrument-catalogue.js": "d42879ff3d69da049145a287bb9060accfc65e9db7b70222d00a7bee29d1e344",
+    "instrument-runtime.js": "990eb765d3f481d0a37fc88019dc8a9f18b9a34c6a411f73c766c0b0862eee40",
+    "virtual-instruments.js": "581be1891ac5f905e9e42f3707303ef659d4a5fa957fd7e6c7761e2514b347b0",
+    "virtual-instruments.css": "1acd2d1466b481db22c957ce3ad9246deb1f25852c49f8793912eda3643df24a",
+    "pedal-action-catalogue.js": "e8670eeefbf97efd8a4ab14f6e9594793875581efc7d41bfb16cbe58f18c6d97",
+    "mapping-action-dispatch.js": "630506f364f9eed537e9f12444eed8cb10cc0036cc6bf42004542a4fed12df9d",
+    "pedal-ux-study.js": "390343e17f899604a0f9e6eb564ccc014f488740e97d569061517e944e8037c0",
+    "pedal-performance-study.js": "bbd0c037ebecd2de215443c582edc718bcbcf9daf08a8f15b5917fc7c312e97e",
+    "external-switch-study.js": "e894ccfcd80ff8303f42db9898369462642004b68fd1c15330a8c055f5729375",
+    "expression-ux-study.js": "95abf57b7a9e478fe28bad2b97dd387cd117f9b7c324f878587b34374e282237",
+    "midi-controls-study.js": "f55fc055b2f4f9371df903672cef5ea63b7ff2eb342bc7aa88ee7e37920500dc",
+    "prototype-geometry.cjs": "f1e7513faed4fd133effc4d6df7545601d04459f6ab840f91c14b8840f5fefa3",
+    "export_instruments_geometry.cjs": "9bdbff67c4cd4aed4b05e77e6a6911f3fb72751566ab8c2b9455fbd5408f9422",
+    "verify_instrument_runtime.cjs": "17d5eba0df01ccc82282d4982c5829d83a208a59f67adc57b33f3809a6feb2a1",
+    "verify_instrument_shared_controls.cjs": "87d26e75ffb2b9a729641792b1921c5a8f3a2d3854b4987afd3a4bf071ddd8ae",
+    "verify_instrument_complete_journeys.cjs": "f30725e406e0b37555b657d4bcd089cd05a57f95059a6db58c2606491ef63a1b",
+    "verify_instrument_hardware_journeys.cjs": "67fec5f04cac7ff39db6f3fba0e3da860c7e5d43e9d8e57ccbb9d1bea6e984a6",
+    "verify_virtual_instruments.cjs": "f397e2d1e3a0868e250128609da87535f138267b3b600fe623ab0b0cb2ac0bdc",
+    "verify_instrument_note_mappings.cjs": "5bb53e6039583b6e08bb074473af15e1978df3a0c165c41f29ef03a3fd9b7cef",
+    "verify_instrument_sustain.cjs": "6effacd3087ce73afd8da9ebbb9b30b2abd4f227930538206d3a2a0d5bb56286",
+    "verify_instrument_management.cjs": "be8a812009999c6e37f029b6246e4451c764d4bb39a913ff83eb0b6cd219e60f",
+    "2026-09-09-instrument-ux-review.md": "658f7bf04dd3f861b08dea97eba8070e35c94cc297b7fa5247ea1ce65e8706c6"
+  },
+  "review": "../../reviews/instrument-ux-closure/review.md",
+  "limits": [
+    "Local browser prototype evidence, not CI or physical-device validation",
+    "Native Linux instrument hosting, physical MIDI/pedal delivery and real loop-audio capture remain production work",
+    "Sound-pack installation and physical output dispatch are simulated",
+    "Browser synthesis is audible; the production FX engine is not connected to it",
+    "The remaining Looper X exact effect-parameter source gaps are separate from the instrument UX closure"
+  ],
+  "reviewHashes": {
+    "architecture.md": "671c982297ffcbe7cc2b65eadbf6e9cfea148e7da8fe1e585ea4e717004cbb0c",
+    "conventions.md": "328181618a8594c9e036daad1d57b3fc3fce5b3a6b35902fadac311bde0489ed",
+    "test-quality.md": "526aa2f6c237aa89f56e773b2fd5f51104a703d1b2d8189ea1d5c7e1c3cce920",
+    "readiness.md": "01e2780444c47ea78dac9d1458237a6b7768c16a583929765ceba9c9792b6e37",
+    "simplicity.md": "0c8741274cc630ce8a9d82e3aaf93ccc374567de9070d3dfd2441a8303cfe6a6",
+    "consolidated": "d2776358754149e183645dce50bd22a6421f0aad0544b2d84e6606dd6ee86cda"
+  }
+}

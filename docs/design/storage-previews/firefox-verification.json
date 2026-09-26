@@ -1,0 +1,16 @@
+{
+  "browser": "firefox",
+  "checks": [
+    "Settings and Library paths",
+    "eject cancel and completion",
+    "playback/capture and files preserved",
+    "Library shares disconnected media state",
+    "failed eject and retry",
+    "disconnect/reconnect rejects stale completion",
+    "export continues in Storage with eject blocked",
+    "no USB job while ejecting",
+    "encoder and Escape",
+    "six bounded layouts"
+  ],
+  "errors": []
+}

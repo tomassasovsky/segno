@@ -1,0 +1,22 @@
+{
+  "status": "owner-accepted",
+  "verification": "author-side; separate from CI, audio engine and hardware",
+  "browsers": [
+    "Chrome",
+    "Firefox"
+  ],
+  "suites": [
+    "verify_bounce_performance.cjs",
+    "verify_length_performance.cjs",
+    "verify_fade_performance.cjs"
+  ],
+  "penTextAlignmentMismatches": 0,
+  "nativeFrames": 6,
+  "pedalInstancesPerFrame": 10,
+  "canvas": [
+    1920,
+    1080
+  ],
+  "audio": "silent render recipe; no audio mix executed",
+  "savedPenHash": "60c493c4b9ca9f8bb07f073a1b9bcba9374b36b7"
+}

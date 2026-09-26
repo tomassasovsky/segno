@@ -1,0 +1,55 @@
+{
+  "section": "b0n5kk",
+  "status": "owner accepted",
+  "frames": [
+    {
+      "review": "updates-ready",
+      "name": "Installed software",
+      "root": "T1igr",
+      "tile": "kGlWv"
+    },
+    {
+      "review": "updates-available",
+      "name": "Update available",
+      "root": "rHa2d",
+      "tile": "rWqZT"
+    },
+    {
+      "review": "updates-usb",
+      "name": "Load a USB package",
+      "root": "xlAif",
+      "tile": "w3lUKE"
+    },
+    {
+      "review": "updates-downloading",
+      "name": "Download progress",
+      "root": "tn7CZ",
+      "tile": "d4elG"
+    },
+    {
+      "review": "updates-staged",
+      "name": "Ready to restart",
+      "root": "g6y2R",
+      "tile": "w4f0uG"
+    },
+    {
+      "review": "updates-error",
+      "name": "Update interrupted",
+      "root": "ic1C5",
+      "tile": "Fv2zf"
+    }
+  ],
+  "nativeVerification": {
+    "texts": 174,
+    "elements": 516,
+    "errors": [],
+    "sectionOverlaps": [],
+    "containmentErrors": []
+  },
+  "browserChecks": [
+    "Chrome",
+    "Firefox"
+  ],
+  "document": "../2026-09-07-software-updates-ux.md",
+  "savedPenHash": "a40086e1523a9b2808d4374f6536b43b8e50df3d"
+}

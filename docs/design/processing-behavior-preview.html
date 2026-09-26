@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Segno · Processing behavior proposal</title>
+<style>
+@font-face{font-family:Segno;src:url('fonts/Inter-Regular.ttf')}*{box-sizing:border-box}body{margin:0;background:#101722;color:#dce4ee;font:18px Segno,Arial,sans-serif}main{max-width:1200px;margin:0 auto;padding:28px 32px}header{display:flex;align-items:center;justify-content:space-between;gap:20px}h1{font-size:32px;margin:0 0 10px;font-weight:600}h2{font-size:24px;font-weight:550;margin:0 0 16px}p{color:#aab9ca;line-height:1.5;margin:8px 0 20px}.badge{font-size:16px;color:#b9cadd;background:#263547;border:1px solid #40546d;border-radius:7px;padding:10px 14px;white-space:nowrap}header p{margin:0}nav{display:flex;gap:12px;margin:18px 0}button{font:inherit;color:inherit;background:#243247;border:1px solid #475c76;border-radius:8px;min-height:56px;padding:12px 20px;cursor:pointer}button:hover{background:#2d405a}button:focus-visible{outline:3px solid #b2cee9;outline-offset:3px}button[aria-pressed=true]{background:#415b78;border-color:#95b4d3;color:#f4f8fc}button.cut{background:#39303a;border-color:#705b6b}button:disabled{opacity:.4;cursor:default}.panel{background:#192433;border:1px solid #34485f;border-radius:12px;padding:22px;margin-bottom:14px}.rows{display:grid;gap:0}.row{display:grid;grid-template-columns:230px 145px 1fr;gap:22px;align-items:center;min-height:77px;border-top:1px solid #324255}.row:first-child{border-top:0}.name{font-weight:550}.state{color:#a7c5e3}.detail{font-size:17px;color:#aab9ca}.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}.steps{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-top:20px}.subtle{font-size:16px;color:#96a7bb}.compare{display:grid;grid-template-columns:1fr 1fr;gap:18px}.comparison{background:#202e40;border:1px solid #40556d;border-radius:8px;padding:16px;min-height:128px}.comparison h3{font-size:19px;font-weight:550;margin:0 0 16px}.comparison strong{display:block;font-size:22px;font-weight:550;margin-bottom:12px;color:#bdd4ea}.comparison p{font-size:16px;margin:0}.result-row{display:flex;justify-content:space-between;gap:20px;padding:12px 0;border-top:1px solid #34485f}.result-row:first-of-type{border-top:0}.result-row span:last-child{color:#bdd4ea}.hidden{display:none}footer{font-size:15px;color:#93a5ba;line-height:1.5;margin-top:14px}a{color:#b6d4ee}@media(max-width:800px){main{padding:24px 16px}header{align-items:flex-start;flex-direction:column}.row{grid-template-columns:140px 100px 1fr;gap:12px}.compare{grid-template-columns:1fr}.panel{padding:20px}.steps{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body><main>
+<header><div><h1>Processing behavior</h1><p>See which sources keep feeding an effect, and which tails remain.</p></div><span class="badge">Proposal · Silent test</span></header>
+<nav aria-label="Processing comparison"><button data-action="tab:tails" aria-pressed="true">Stop and tails</button><button data-action="tab:capture" aria-pressed="false">Bounce and capture</button></nav>
+<section id="tails">
+<div class="panel"><h2>Recorded guitar and live voice → Main</h2><div class="rows" id="signal-rows" aria-live="polite"></div>
+<div class="actions"><button data-action="stop">Stop guitar</button><button data-action="mute">Mute guitar</button><button data-action="clear">Clear guitar</button><button data-action="bypass">Bypass delay</button><button class="cut" data-action="cut">Cut all sound</button></div>
+<div class="steps"><div class="actions"><button data-action="step">Next test step</button><button data-action="live" aria-pressed="true">Live voice on</button><button data-action="reset">Reset example</button></div><span class="subtle" id="step-count"></span></div></div>
+<p id="consequence">Stop ends the recorded feed. Track Post and Main output tails can drain while live voice continues.</p>
+<p class="subtle">One step is a test interval, not seconds. No sound is played. Mute gates the track after Post; it does not erase the processor's state.</p>
+</section>
+<section id="capture" class="hidden">
+<div class="panel"><h2>Bounce and Save selected audio</h2><div class="result-row"><span>Two-bar guitar + three-bar keys</span><span id="cycle-result"></span></div><div class="result-row"><span>Destination</span><span>Neutral processing and level</span></div><div class="actions"><button data-action="wrap" aria-pressed="true">Wrap tails</button><button data-action="cut-tails" aria-pressed="false">Cut tails</button></div><p class="subtle" style="margin-top:18px;margin-bottom:0">Includes selected processing and levels, even when stopped or muted. Live inputs and shared FX are off here. Use the main render controls for shared FX and a chosen length.</p></div>
+<div class="panel"><h2>Record performance · Main output</h2><p>Guitar, live voice, backing and click all route to Main. Compare the two recording choices.</p><div class="actions" style="margin:0 0 16px"><button data-action="level:1" aria-pressed="true">Main level 100%</button><button data-action="level:0" aria-pressed="false">Main level 0%</button></div><div class="compare"><div class="comparison"><h3>Before final output controls</h3><strong id="before-signal"></strong><p id="before-detail"></p></div><div class="comparison"><h3>After final output controls</h3><strong id="after-signal"></strong><p id="after-detail"></p></div></div><p class="subtle" style="margin-top:18px;margin-bottom:0">Both include output FX. Before ignores final volume and mute; After follows them. The choice stays fixed for the take.</p></div>
+<p class="subtle">Performance duration follows the recording clock. Export to USB copies that finished file; it does not render the loop again.</p>
+</section>
+<footer>Use Tab or ↑ / ↓ to move focus, Enter to press. Review only: no DSP, PCM, tail duration, mix law or native audio claim. <a href="2026-09-08-processing-behavior-proposal.md">Contract and remaining decisions</a></footer>
+</main><script src="processing-behavior-study.js"></script><script src="selected-render-policy.js"></script><script>
+'use strict';
+const P=window.SegnoProcessingBehavior,fx=(id,tailSteps=0)=>({id,tailSteps,bypassed:false});
+let tab='tails',level=1,tails='wrap',state;
+function fixture(capture=false){return P.create({tracks:[{id:'Guitar',playing:true,hasAudio:true,printedPre:['input-drive'],post:[fx('track-delay',2)],routes:['Main']}],inputs:[{id:'Voice',signal:true,monitoring:true,pre:[],post:[fx('voice-reverb',1)],routes:['Main']}],auxiliary:[{id:'Backing',playing:capture,routes:['Main']},{id:'Click',playing:capture,routes:['Main']}],outputs:[{id:'Main',fx:[fx('main-reverb',2)],level:capture?level:1}]});}
+const sources=packets=>[...new Set(packets.flatMap(packet=>packet.origins))].join(' · ');
+const text=(id,value)=>document.getElementById(id).textContent=value;
+function row(name,status,detail){const element=document.createElement('div');element.className='row';for(const [value,cls] of [[name,'name'],[status,'state'],[detail,'detail']]){const child=document.createElement('span');child.className=cls;child.textContent=value;element.append(child);}return element;}
+function render(){
+ document.getElementById('tails').classList.toggle('hidden',tab!=='tails');document.getElementById('capture').classList.toggle('hidden',tab!=='capture');
+ for(const button of document.querySelectorAll('nav button'))button.setAttribute('aria-pressed',button.dataset.action==='tab:'+tab);
+ const track=state.tracks[0],frame=state.frame.tracks.Guitar,input=state.frame.inputs.Voice,main=state.frame.outputs.Main;
+ const rows=document.getElementById('signal-rows');rows.replaceChildren(
+  row('Recorded guitar',frame?.feed?'Feeding':'No feed',track.hasAudio===false?'Recorded content cleared':track.playing?'Captured Pre is in the recorded sound':'Stopped · captured Pre stops with the player'),
+  row('Track Post delay',track.muted?'Muted':frame?.audible.length?frame.audible.some(p=>!p.tail)?'Dry + effect':'Tail only':'Silent',track.muted?'Track Post is gated before Main':track.post[0].bypassed?'New dry feed passes; existing wet tail drains':'Independent of the live-input chain'),
+  row('Live voice',input?.feed?'Feeding':input?.audible.length?'Tail only':'No feed',state.inputs[0].signal?'Monitoring preference stays on':'No new voice signal'),
+  row('Main output',main.audible.length?main.incoming.length?'Receiving':'Tail only':'Silent',sources(main.audible)||'No source or tail signal'));
+ const mute=document.querySelector('[data-action="mute"]'),bypass=document.querySelector('[data-action="bypass"]'),live=document.querySelector('[data-action="live"]');
+ mute.textContent=track.muted?'Unmute guitar':'Mute guitar';mute.setAttribute('aria-pressed',track.muted);bypass.textContent=track.post[0].bypassed?'Enable delay':'Bypass delay';bypass.setAttribute('aria-pressed',track.post[0].bypassed);live.textContent=state.inputs[0].signal?'Live voice on':'Live voice off';live.setAttribute('aria-pressed',state.inputs[0].signal);
+ text('step-count','Symbolic step '+state.step);
+ const recipe=window.SegnoSelectedRender.recipe([{id:'Guitar',beats:8},{id:'Keys',beats:12}],{tails});text('cycle-result',recipe.duration.beats/4+' bars · '+(tails==='wrap'?'tails fold into cycle':'tails end at boundary'));
+ const comparison=P.advance(fixture(true));
+ for(const [prefix,tap]of [['before','before-final-controls'],['after','after-final-controls']]){const packets=P.performanceFrame(comparison,'Main',tap).packets;text(prefix+'-signal',packets.length?'Recording receives signal':'Recording receives silence');text(prefix+'-detail',sources(packets)||'Main level is zero');}
+ for(const button of document.querySelectorAll('[data-action^="level:"]'))button.setAttribute('aria-pressed',Number(button.dataset.action.split(':')[1])===level);
+ document.querySelector('[data-action="wrap"]').setAttribute('aria-pressed',tails==='wrap');document.querySelector('[data-action="cut-tails"]').setAttribute('aria-pressed',tails==='cut');
+}
+function reset(){state=P.advance(fixture());text('consequence','Stop ends the recorded feed. Track Post and Main output tails can drain while live voice continues.');render();}
+function act(action){
+ if(action.startsWith('tab:')){tab=action.slice(4);render();return;}
+ if(action.startsWith('level:')){level=Number(action.slice(6));render();return;}
+ if(action==='wrap'||action==='cut-tails'){tails=action==='wrap'?'wrap':'cut';render();return;}
+ if(action==='reset'){reset();return;}
+ let explanation='';
+ if(action==='step')state=P.advance(state);
+ else if(action==='cut'){state=P.action(state,'all-sound-cut');explanation='Existing tails are cut. Later live input can make new sound; monitoring settings are preserved.';}
+ else{const type=action==='live'?'input-signal':action,id=action==='live'?'Voice':action==='bypass'?'track-delay':'Guitar';const value=action==='live'?!state.inputs[0].signal:action==='mute'?!state.tracks[0].muted:action==='bypass'?!state.tracks[0].post[0].bypassed:undefined;state=P.advance(P.action(state,type,id,value));explanation={stop:'Guitar feed stops; Post and output tails drain. Live voice continues.',mute:'Mute gates the complete track after Post. Already mixed output tails can drain.',clear:'Clear removes recorded content and stops feed. Downstream tails remain.',bypass:'Bypass passes dry feed and allows the existing wet delay tail to drain.',live:'Live-input monitoring remains independent of recorded playback.'}[action];}
+ if(explanation)text('consequence',explanation);render();
+}
+document.addEventListener('click',event=>{const button=event.target.closest('[data-action]');if(button)act(button.dataset.action);});
+document.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp'].includes(event.key))return;event.preventDefault();const buttons=[...document.querySelectorAll('button')].filter(button=>button.offsetParent!==null&&!button.disabled),index=buttons.indexOf(document.activeElement);buttons[(index+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus();});
+window.processingReview={snapshot:()=>JSON.parse(JSON.stringify({tab,level,tails,state})),reset};reset();
+</script></body></html>

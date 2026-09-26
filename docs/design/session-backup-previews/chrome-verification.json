@@ -1,0 +1,17 @@
+{
+  "browser": "chrome",
+  "checks": [
+    "backup is an action in Library",
+    "inline progress and cancellation",
+    "USB list has no track preview",
+    "restore selects a new copy without changing playback",
+    "independent backing and imported audio",
+    "name conflicts and atomic failed replacement",
+    "disconnect and explicit retry",
+    "current-session and media persistence",
+    "capture and shared transfer guards",
+    "encoder and scrolling",
+    "six bounded layouts"
+  ],
+  "errors": []
+}

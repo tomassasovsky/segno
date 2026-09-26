@@ -1,0 +1,139 @@
+{
+  "canvas": [
+    1983,
+    793
+  ],
+  "file": "menu-atlas.png",
+  "generator": "Built-in image generation",
+  "prompt": "Create ONE production UI sprite atlas for a custom musical looper appliance called Segno. EXACT canvas 2560 x 1024 pixels, five equal columns by two equal rows, each cell 512 x 512. Each cell contains exactly ONE distinct original equipment illustration centered at the cell center. NO text, NO letters, NO logos, NO cell borders. The background of the whole atlas is one uniform flat dark blue-gray #202735, no texture. Leave at least 80 pixels of pure background on every side inside each cell. Keep all artwork at the same visual size, around 330 pixels square. The atlas will be cropped by CSS into ten independent UI cards, so nothing crosses a cell boundary.\nStyle: original high-quality instrument-panel pictograms, crisp vector-like graphic illustration with medium-weight pale blue-gray #BDD2ED contours, muted slate #7085A0 details, dark ink #111820 recesses, very restrained blue-gray flat filled faces. Mostly orthographic/front/top views with very subtle depth. Strong silhouettes, simplified purposeful hardware details, a coherent designed family. No colored glows, no gradients, no photoreal textures, no generic stock icon glyphs. A premium musical instrument feel.\nExact order from left to right:\nTOP ROW 1: two guitar effects pedals chained by a small patch cable, with a knob and foot pad on each.\nTOP ROW 2: a compact loop panel with four upright track lanes, varied progress-fill heights, and a simple circular loop indication.\nTOP ROW 3: one Segno-style pressure footswitch: tall slightly tapered rectangular metal body, large rectangular black rubber tread pad with several rows of round grip dots, narrow blank label plate at top, a horizontal LED strip just above the pedal. NO footprints/shoes, NO round stomp button.\nTOP ROW 4: a five-pin DIN MIDI connector socket, clearly round with five tiny holes on an arc, a small cable plug beside it.\nTOP ROW 5: a compact audio patch bay with two input jacks on left and two output jacks on right, connected by tidy routing cables.\nBOTTOM ROW 1: a compact audio interface with two round input jacks, one large output knob, and a short level-meter strip.\nBOTTOM ROW 2: a little network connector with Ethernet-jack geometry and three radio-wave arcs rising above it.\nBOTTOM ROW 3: two landscape display panels side by side, a smaller screen at left showing a single waveform and a larger screen at right showing four vertical track columns. No text.\nBOTTOM ROW 4: a small solid-state storage drive beside a USB thumb drive.\nBOTTOM ROW 5: a small software/media cartridge lowered into a slot in an appliance enclosure, with one short down arrow marking installation.\nAll ten symbols must be completely distinct, geometrically centered in their equal cells, simple, confident, coherent and legible when rendered at 100 pixels. Deliver only the finished sprite atlas.",
+  "icons": [
+    {
+      "key": "effects",
+      "name": "Effects",
+      "crop": [
+        52,
+        110,
+        334,
+        237
+      ],
+      "file": "effects.png",
+      "nativeComponent": "EzLgq"
+    },
+    {
+      "key": "loop",
+      "name": "Loop settings",
+      "crop": [
+        494,
+        88,
+        304,
+        261
+      ],
+      "file": "loop.png",
+      "nativeComponent": "w9CnWM"
+    },
+    {
+      "key": "pedals",
+      "name": "Pedals",
+      "crop": [
+        905,
+        35,
+        180,
+        343
+      ],
+      "file": "pedals.png",
+      "nativeComponent": "d4tCt"
+    },
+    {
+      "key": "midi",
+      "name": "MIDI",
+      "crop": [
+        1210,
+        120,
+        294,
+        236
+      ],
+      "file": "midi.png",
+      "nativeComponent": "E6hyU"
+    },
+    {
+      "key": "routing",
+      "name": "Audio routing",
+      "crop": [
+        1583,
+        143,
+        335,
+        195
+      ],
+      "file": "routing.png",
+      "nativeComponent": "a295G"
+    },
+    {
+      "key": "device",
+      "name": "Device",
+      "crop": [
+        34,
+        514,
+        380,
+        152
+      ],
+      "file": "device.png",
+      "nativeComponent": "uG9xz"
+    },
+    {
+      "key": "network",
+      "name": "Network",
+      "crop": [
+        509,
+        435,
+        173,
+        257
+      ],
+      "file": "network.png",
+      "nativeComponent": "FOZvB"
+    },
+    {
+      "key": "displays",
+      "name": "Displays",
+      "crop": [
+        777,
+        495,
+        391,
+        185
+      ],
+      "file": "displays.png",
+      "nativeComponent": "O1E4Q"
+    },
+    {
+      "key": "storage",
+      "name": "Storage",
+      "crop": [
+        1227,
+        466,
+        251,
+        218
+      ],
+      "file": "storage.png",
+      "nativeComponent": "zjaII"
+    },
+    {
+      "key": "updates",
+      "name": "Updates",
+      "crop": [
+        1568,
+        418,
+        356,
+        300
+      ],
+      "file": "updates.png",
+      "nativeComponent": "JHYbI"
+    }
+  ],
+  "nativeComponentSection": "BqolV",
+  "myPresets": {
+    "file": "my-presets.png",
+    "purpose": "Original pedalboard artwork for the My presets catalogue card",
+    "generation": "Built-in image generation",
+    "source": "Original generated artwork, matching the tonal equipment style of the existing Looper X catalogue",
+    "prompt": "my-presets-prompt.txt"
+  }
+}

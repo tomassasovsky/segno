@@ -1,0 +1,81 @@
+{
+  "scope": "Main prototype integration: native text anchors, font metrics and overflow",
+  "screens": [
+    {
+      "root": "KPWLz",
+      "refs": 10,
+      "leds": 10,
+      "texts": 14,
+      "errors": []
+    },
+    {
+      "root": "Yzjqt",
+      "refs": 10,
+      "leds": 10,
+      "texts": 14,
+      "errors": []
+    },
+    {
+      "root": "pIO6k",
+      "refs": 10,
+      "leds": 10,
+      "texts": 11,
+      "errors": []
+    },
+    {
+      "root": "f1VvL2",
+      "refs": 10,
+      "leds": 10,
+      "texts": 11,
+      "errors": []
+    },
+    {
+      "root": "hmEBj",
+      "refs": 10,
+      "leds": 10,
+      "texts": 15,
+      "errors": []
+    },
+    {
+      "root": "uEukr",
+      "refs": 10,
+      "leds": 10,
+      "texts": 19,
+      "errors": []
+    },
+    {
+      "root": "noDGu",
+      "refs": 10,
+      "leds": 10,
+      "texts": 18,
+      "errors": []
+    },
+    {
+      "root": "RPCYZ",
+      "refs": 10,
+      "leds": 10,
+      "texts": 18,
+      "errors": []
+    },
+    {
+      "root": "v7Ekz",
+      "refs": 0,
+      "leds": 0,
+      "texts": 8,
+      "errors": []
+    },
+    {
+      "root": "g37kn",
+      "refs": 0,
+      "leds": 0,
+      "texts": 15,
+      "errors": []
+    }
+  ],
+  "browsers": [
+    "Chrome",
+    "Firefox"
+  ],
+  "hardwareValidated": false,
+  "audioDispatch": false
+}

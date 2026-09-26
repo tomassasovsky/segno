@@ -1,0 +1,151 @@
+{
+  "verifiedAt": "2026-09-09T05:50:08.890377+00:00",
+  "scope": "Local prototype, browser interaction recording and editable design references. Production excluded.",
+  "mainPrototypeSha256": "fefb41fdc0582eee7e1f65c13aedd8475066c419c695aa9161f80290c63b5673",
+  "substantiveReviewedFilesUnchanged": {
+    "docs/design/selected-render-policy.js": true,
+    "docs/design/sound-behavior-audio.js": true,
+    "docs/design/sound-behavior-study.js": true,
+    "docs/design/performance-recording-model.js": true,
+    "docs/design/performance-recording-study.js": true,
+    "docs/design/audio-library-study.js": true,
+    "docs/design/storage-study.js": true,
+    "docs/design/bounce-performance-study.js": true,
+    "docs/design/processing-behavior-study.js": true,
+    "docs/design/processing-behavior-preview.html": true,
+    "docs/design/verify_selected_render_policy.cjs": true,
+    "docs/design/verify_processing_behavior.cjs": true,
+    "docs/design/verify_processing_preview_browser.cjs": true,
+    "docs/design/verify_performance_recording_model.cjs": true,
+    "docs/design/media-parity-study.test.cjs": true,
+    "docs/design/verify_recording_completion_browser.cjs": true,
+    "docs/design/verify_render_rack_processing_browser.cjs": true,
+    "docs/design/verify_audio_drive_identity_browser.cjs": true,
+    "docs/design/verify_imported_render_length_browser.cjs": true,
+    "docs/design/verify_long_performance_recording_browser.cjs": true
+  },
+  "hostCacheOnlyReview": "../../reviews/2026-09-09-non-production-completion/raw/pr-readiness.md",
+  "video": {
+    "path": "walkthroughs/all-flows.mp4",
+    "sha256": "a424080dd52e15b2fc679d74210621bfeacc8ea60c3fc3d58c3cb9abf2144dda",
+    "metadata": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1200
+        },
+        {
+          "codec_name": "aac",
+          "sample_rate": "24000"
+        }
+      ],
+      "format": {
+        "duration": "276.449375",
+        "size": "12003545"
+      }
+    },
+    "chapters": [
+      {
+        "title": "Record directly to USB",
+        "start": 0,
+        "end": 27.8,
+        "file": "01-usb-recording.mp4"
+      },
+      {
+        "title": "Save and bounce selected tracks",
+        "start": 27.8,
+        "end": 68.433,
+        "file": "02-selected-render.mp4"
+      },
+      {
+        "title": "Hear Stop, Mute, bypass and Cut",
+        "start": 68.433,
+        "end": 130.1,
+        "file": "03-sound-tails.mp4"
+      },
+      {
+        "title": "Timing, recovery and the primary track",
+        "start": 130.1,
+        "end": 162.02,
+        "file": "04-timing.mp4"
+      },
+      {
+        "title": "Touch lock and optional double-press Solo",
+        "start": 162.02,
+        "end": 190.653,
+        "file": "05-touch-and-solo.mp4"
+      },
+      {
+        "title": "Expanded MIDI Learn",
+        "start": 190.653,
+        "end": 257.487,
+        "file": "06-midi-formats.mp4"
+      },
+      {
+        "title": "What still needs original source material",
+        "start": 257.487,
+        "end": 276.407,
+        "file": "07-source-evidence.mp4"
+      }
+    ],
+    "browserChecks": {
+      "checkedAt": "2026-09-09T05:46:12.043Z",
+      "results": [
+        {
+          "browser": "chrome",
+          "status": "passed",
+          "chapters": 7,
+          "duration": 276.449375,
+          "muted": false,
+          "width": 1920,
+          "height": 1200
+        },
+        {
+          "browser": "firefox",
+          "status": "passed",
+          "chapters": 7,
+          "duration": 276.45,
+          "muted": false,
+          "width": 1920,
+          "height": 1200
+        }
+      ]
+    },
+    "audio": "Exact illustrative PCM buffers captured from prototype AudioBufferSourceNode playback; silence in other chapters.",
+    "audioChapterMaxDb": -10.4
+  },
+  "reviews": {
+    "consolidated": "../../reviews/2026-09-09-non-production-completion/review.md",
+    "roles": 5,
+    "unresolvedActionableFindings": 0,
+    "limits": "Bounded local code review, not production/CI/hardware certification."
+  },
+  "pen": {
+    "status": "Final handoff alignment and visual comparison complete; saved through native File menu.",
+    "sectionNumbers": [
+      48,
+      49,
+      50,
+      51,
+      52,
+      53
+    ],
+    "resumeManifest": "pen-import-resume.json",
+    "sourceGeometry": "pen-import-data/",
+    "lastObservedOnDiskSha256": "af3a465f7b47a2102dadc13d45e4e8d79d94d53724724ebbb3f75bace49ce30a",
+    "handoffEvidence": "../../handoff/segno-app/pen-verification.json"
+  },
+  "sourceBlockers": [
+    "239 rack control contracts and unverified Single FX schemas need original definitions.",
+    "302 referenced factory loop files are absent from supplied image."
+  ],
+  "handoffRefinement": {
+    "date": "2026-09-09",
+    "scope": "Current display/crown geometry; clock-loss cue wrapping. Existing video provenance is retained.",
+    "cssSha256": "856252127dc821994fd420453860d408b0944d5cc4a486e7552dff8b51ff0cf6",
+    "browserCheck": "verify_handoff_display.cjs; Chrome and Firefox passed"
+  }
+}

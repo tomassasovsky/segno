@@ -1,0 +1,23 @@
+{
+  "checks": [
+    "recording choices isolated from FX",
+    "direct tempo encoder commit and cancellation",
+    "time signature return and all 17 choices",
+    "click and count-in choices",
+    "per-mode compatibility with existing audio",
+    "MIDI ownership",
+    "recording locks and unlock",
+    "sound start and count-in are exclusive",
+    "loop length encoder commit/cancel and 1–64 bounds",
+    "seven distinct quantization choices",
+    "fixed length independent of click audibility (proposed)",
+    "length and timing locks",
+    "per-field inheritance, explicit matching overrides, and independent Auto",
+    "reset restores inheritance",
+    "encoder cancel and scope switch preserve ownership",
+    "Multi shared length and independent track timing",
+    "committed overrides survive reload; drafts do not",
+    "seventeen 1920 × 1080 screens with minimum 56px targets"
+  ],
+  "errors": []
+}

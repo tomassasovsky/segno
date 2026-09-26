@@ -1,0 +1,40 @@
+{
+  "scope": "Owner-accepted Speed target UX; silent browser study",
+  "canvas": [
+    1920,
+    1080
+  ],
+  "frames": [
+    {
+      "review": "performance-speed",
+      "name": "Speed / Normal",
+      "file": "K1d7e.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-speed-half",
+      "name": "Speed / Half speed",
+      "file": "e73F0.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-speed-fast",
+      "name": "Speed / Eight times",
+      "file": "GRSnI.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-speed-empty",
+      "name": "Speed / Empty loop",
+      "file": "FKfY0.png",
+      "status": "accepted"
+    },
+    {
+      "review": "performance-speed-stage",
+      "name": "Tracks / Speed indicator",
+      "file": "Xvxte.png",
+      "status": "accepted"
+    }
+  ],
+  "hardwareComponent": "Qdj7x"
+}

@@ -1,0 +1,22 @@
+{
+  "browser": "chrome",
+  "checks": [
+    "Connected interface first",
+    "sample rate and buffer draft, cancel and apply",
+    "calibration channels, timing compensation, cancel and no-return retry",
+    "measurement invalidated by configuration change",
+    "Device entry",
+    "candidate does not change audio",
+    "explicit playback stop and cancel",
+    "open failure and retry",
+    "capture and disconnection rechecks",
+    "no fallback to another device",
+    "reconnect requires an explicit action",
+    "partial capture and performance recovery",
+    "offline transport guard",
+    "repair Back preserves Stage",
+    "storage rollback and reload",
+    "canvas bounds"
+  ],
+  "errors": []
+}
