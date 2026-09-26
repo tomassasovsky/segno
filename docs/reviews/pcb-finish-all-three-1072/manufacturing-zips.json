@@ -1,7 +1,7 @@
 {
   "date": "2026-09-26",
-  "status": "verified-for-bare-board-fabrication",
-  "purpose": "Final three-board production review: printable legends and independently verified existing rounded copper; selected 40-strip direct AUX star harness",
+  "status": "screen-order-hold-revision-m-in-progress",
+  "purpose": "Console/ring archives unchanged; screen Revision L withdrawn pending Revision M USB correction and native release validation",
   "baseline_revision": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
   "archives": {
     "console-v3": {
@@ -105,7 +105,8 @@
         "assembly": false,
         "stencil": false,
         "vias": "tented"
-      }
+      },
+      "status": "withdrawn-host-powered-relay-suspend-current"
     }
   },
   "verification": {
@@ -121,6 +122,7 @@
     }
   },
   "limits": [
+    "Do not order the retained screen Revision L ZIP. Revision M source and schematic are committed; routing and new CAM validation are pending.",
     "Bare-board CAD and export verification; assembled electrical, USB and enclosure behavior are not physically qualified.",
     "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
     "No order, merge or device deployment performed."

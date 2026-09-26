@@ -60,7 +60,9 @@ buck efficiency, that needs approximately **70.6–74.8 W**, or **3.53–3.74 A 
 retained bucks. The 20 V / 5 A / 100 W contract accommodates this model; it
 does not establish enclosed thermal capacity or startup response.
 
-The Revision M screen gate driver is assessed at **4.5–5.25 V at J1**;
+Normal screen-board operation is assessed at **4.75–5.25 V at J1**, including
+warm relay pickup. The power-MOSFET gate driver alone is assessed down to
+**4.5 V at J1**;
 its negative gate supply preserves enhancement after fuse and harness losses.
 Use the existing nominal 5 V buck. This driver corner does not claim that
 both screens operate at 4.5 V or that the buck is adjustable. Keep screen

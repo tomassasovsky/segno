@@ -604,6 +604,8 @@ def usb_power_margins(components, errors):
         # bounds the host's DC load, independent of a hot gate-leakage model.
         grounded_node_max = 5.5 / (series * .99)
         absent_gate = 1e-6 * pull * 1.01
+        # TE initial pickup is specified at 23 C without pre-energization;
+        # this numerical guard does not establish hot restart.
         coil_min = 4.75 * coil_low / (coil_low + 2 * driver_hot)
         if (min(upper_gate_min, bottom_gate_min) < 3 or grounded_node_max >= .0025
                 or absent_gate >= .25 or coil_min < 3.38):
@@ -642,8 +644,8 @@ def check_usb_power_states(pins, components, errors):
         fail(errors,"usb_relay_state","Missing physical terminal in relay qualification circuit")
         return {}
     states = paths = 0
-    for aux, gpio, host1, host2, suspended in itertools.product(
-            (False,True), ("low","high","floating"), (False,True), (False,True), (False,True)):
+    for aux, gpio, host1, host2 in itertools.product(
+            (False,True), ("low","high","floating"), (False,True), (False,True)):
         voltages = {"GND":0, "AUX_5V":4.75 if aux else 0,
                     "HOST1_5V":4.4 if host1 else 0, "HOST2_5V":4.4 if host2 else 0,
                     "DATA_ENABLE":4.35 if aux and gpio=="high" else 0}
@@ -673,10 +675,10 @@ def check_usb_power_states(pins, components, errors):
             actual=voltages.get(pins[(relay,"1")],0)>3 and "GND" in reached
             wanted=aux and gpio=="high" and host
             if actual!=wanted:
-                fail(errors,"usb_relay_state",f"{relay}: AUX={aux}, GPIO={gpio}, hosts={host1,host2}, suspend={suspended}: coil={actual}, required={wanted}")
+                fail(errors,"usb_relay_state",f"{relay}: AUX={aux}, GPIO={gpio}, hosts={host1,host2}: coil={actual}, required={wanted}")
             paths+=1
         states+=1
-    return {"supply_gpio_host_suspend_states":states,"coil_paths_checked":paths,
+    return {"supply_gpio_host_states":states,"coil_paths_checked":paths,
             "model":"ideal switches with directed body diodes; numerical drive checked separately",
             "suspend_behavior":"relay may stay on; its energy comes from AUX, not host VBUS"}
 
@@ -740,13 +742,6 @@ def numerical_checks(variant, components, errors):
     for ch in (1,2):
         if components[f"F{ch*100+1}"][2] != "4A fast" or components[f"F{ch*100+2}"][2] != "750mA fast":
             fail(errors,"fuse_rating","Unexpected branch fuse rating")
-    # TE 108-98001: initial pickup at 23 C, without pre-energization.
-    # This does not qualify a warm coil or an elevated enclosure temperature.
-    # TN0702 is specified at 3V drive. Double its 2.5ohm 25C maximum
-    # for the same explicitly estimated hot margin used in this review.
-    relay_coil_min = 4.75*(145*.9)/(145*.9+2*2*2.5)
-    if relay_coil_min < 3.38:
-        fail(errors,"relay_pickup","IM02TS initial coil voltage is below its 3.38V operate threshold")
     return {"aux_input_min_V":aux_min,"aux_input_max_V":aux_max,"combined_design_load_A":load,
             "aux_voltage_reference":"J1 gate-driver assessment; not a screen input-voltage guarantee",
             "gate_min_V_with_estimated_hot_Rds":gate_min,"hot_Rds_factor_is_estimate":1.7,
@@ -759,8 +754,6 @@ def numerical_checks(variant, components, errors):
             "collector_peak_mA":sink_peak*1000,"bleeder_max_W":bleed_max,
             "pair_loss_at_planning_load_hot_estimate_W":2*load**2*hot_rds,
             "upright_junction_C_at_60C_75C_per_W_estimate":60+load**2*hot_rds*75,
-            "relay_initial_coil_min_V":relay_coil_min,
-            "relay_initial_pickup_margin_23C_V":relay_coil_min-3.38,
             "relay_coil_rated_V":4.5,
             "relay_coil_max_applied_over_rated_ratio":5.25/4.5,
             "relay_hot_restart":"measure coil voltage and qualify hot re-enable on first assembly",

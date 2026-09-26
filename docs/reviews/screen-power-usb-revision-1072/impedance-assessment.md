@@ -1,3 +1,5 @@
+<!-- cspell:words centerlines scikit Femwell ATLC Mbps stackups -->
+
 # Two-layer USB impedance assessment
 
 Date: 26 September 2026. Baseline: `355882d848477537cb491b8ab9180123eb7f8971`.

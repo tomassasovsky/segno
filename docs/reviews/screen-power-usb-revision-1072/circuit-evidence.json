@@ -1,8 +1,8 @@
 {
   "errors": [],
   "states": {
-    "supply_gpio_host_suspend_states": 48,
-    "coil_paths_checked": 96,
+    "supply_gpio_host_states": 24,
+    "coil_paths_checked": 48,
     "model": "ideal switches with directed body diodes; numerical drive checked separately",
     "suspend_behavior": "relay may stay on; its energy comes from AUX, not host VBUS"
   },
@@ -78,7 +78,7 @@
     }
   ],
   "source_hashes": {
-    "hardware/kicad/screen_power/check.py": "c7f09c4dc5df279cbf89780729f0cec15987fda8109aa0d770b8c3a7cb32f747",
+    "hardware/kicad/screen_power/check.py": "b68482bb0bd5350531708bda32114d4c0f38c3f8074dbea83a5087ed01a5539d",
     "hardware/kicad/screen_power/switch_circuit.py": "652502f1006b5019752c874b08ff431b5e8bc24cea1dcbf52d50cc513fd23a7e"
   },
   "bare_shield_pads_excluded_from_bom": true

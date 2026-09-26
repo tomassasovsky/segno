@@ -6,8 +6,8 @@
 
 Every populated component in the board has a project-relative STEP model.
 The models are stored beside the native hand folder so KiCad does not need
-machine-specific 3D library paths. Bare M3 mounting holes intentionally have
-no solid body. Screws, mating plugs, cable bends and enclosure clearance are
+machine-specific 3D library paths. Bare M3 mounting holes and the four
+Revision M shield-drain solder pads intentionally have no separate solid body. Screws, mating plugs, cable bends and enclosure clearance are
 not included in the populated board model.
 
 ## Custom models

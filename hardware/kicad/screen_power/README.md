@@ -55,7 +55,7 @@ have not been physically qualified. Issue: [#1072](https://github.com/tomassasov
 
 | Connector | Function |
 | --- | --- |
-| J1, JST VH 2-pin | Dedicated buck AUX input through the required inline fuse below. Pin 1 = +5 V; pin 2 = ground. Use the existing nominal **5 V** buck. The new gate driver is assessed at **4.5–5.25 V at J1**, allowing supply-path losses; that lower corner is not a claim that either screen operates down to 4.5 V. Do not assume the buck is adjustable. |
+| J1, JST VH 2-pin | Dedicated buck AUX input through the required inline fuse below. Pin 1 = +5 V; pin 2 = ground. Use the existing nominal **5 V** buck. Normal operation requires **at least 4.75 V at J1** for the assessed warm relay-pickup margin. The power-MOSFET gate driver alone is assessed at **4.5–5.25 V at J1**, allowing supply-path losses; that lower corner is not a claim that either screen operates down to 4.5 V. Do not assume the buck is adjustable. |
 | J2, JST XH 2-pin | Console J25 control. Pin 1 = BCM GPIO17; pin 2 = ground. One two-wire cable, numbered pins connected 1:1. |
 | J101 / J201, JST XH 4-pin | USB-A male to XH cable from each Pi USB 2.0 host port; channels 1 / 2. |
 | J102 / J202, JST XH 4-pin | Direct XH-to-USB-C male cable to UPERFECT (channel 1), and XH-to-Micro-B male cable to APROTII (channel 2). |
@@ -77,7 +77,8 @@ feed the screens. An electrically unpowered Pi therefore defaults the board
 off even if the dedicated screen buck remains powered.
 
 A software-halted Pi that still has input power must explicitly release or
-lower GPIO17. The board follows this signal; it does not detect Linux shutdown
+lower GPIO17. Do not leave that input with a pull-up enabled; an internal Pi
+pull-up can overcome the board's external pull-down. The board follows this signal; it does not detect Linux shutdown
 or missing HDMI. The appliance now includes a dedicated GPIO owner and Weston
 start/stop hooks: enable before display probing, then drive low before stopping
 HDMI. Its five-second discharge wait is provisional until measured on both
@@ -437,8 +438,10 @@ Run `check.py hand --self-test --output validation.json` with KiCad Python.
 It checks native ERC/DRC, full schematic/netlist/PCB parity, actual USB and
 console GPIO connectivity, circuit boundaries, assembly types and drive margins.
 Revision J adds an independent relay contact-state check and fault injection
-for the disconnected-common error; verification results are in the
-[Revision L record](../../../docs/reviews/screen-power-rev-l-1072/verification.md).
+for the disconnected-common error. Revision M adds independent host-presence
+and coil-power contracts, 24 distinct ideal switching states, directed
+body-diode paths and low-current bounds. Its complete native suite requires
+75 control results; see the [revision record](../../../docs/reviews/screen-power-usb-revision-1072/review.md).
 Fault injection checks that missing, disabled or unresolved 3D models,
 broken USB/control copper, missing USB ground reference, extra copper layers,
 a host power bridge,
