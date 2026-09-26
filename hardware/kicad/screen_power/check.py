@@ -386,6 +386,72 @@ def check_usb(board, errors, variant="hand"):
     return lengths
 
 
+def check_usb_pair(board, errors):
+    """Measure each data pair on the board: its own gap, match and coupling.
+
+    route_critical draws both traces of a pair from one radius so that the two
+    stay exact mirror images of each other, which is what holds the intra-pair
+    skew at zero when the fanout corners are rounded. None of that is worth
+    anything unasserted, and native DRC cannot stand in for it: its clearance
+    rule is a floor for any two nets, not this pair's own 0.16 mm contract, and
+    it has nothing at all to say about length matching or about how much of a
+    pair still runs as a pair. So this re-derives all three from the saved
+    copper, independently of the generator that drew it.
+    """
+    from layout import USB_WIDTH, USB_GAP
+    from pcb import xy
+    out = {}
+    for ch, side in itertools.product((1, 2), ("UP", "DN")):
+        runs = []
+        for polarity in ("P", "N"):
+            name = f"S{ch}_{side}_{polarity}"
+            runs.append([(xy(t.GetStart()), xy(t.GetEnd())) for t in board.GetTracks()
+                         if net_name(t.GetNetname()) == name
+                         and not isinstance(t, p.PCB_VIA)])
+        if not all(runs):
+            continue                      # check_usb already reports missing copper
+        gap = min(segment_gap(a, b, c, d) for a, b in runs[0] for c, d in runs[1])
+        edge = gap - USB_WIDTH
+        lengths = [sum(math.dist(a, b) for a, b in run) for run in runs]
+        # Copper that is still running at the pair's nominal spacing, to within
+        # a hundredth of a millimetre: the coupled section and nothing else.
+        coupled = sum(math.dist(a, b) for a, b in runs[0]
+                      if min(segment_gap(a, b, c, d) for c, d in runs[1])
+                      <= USB_WIDTH + USB_GAP + .01)
+        name = f"S{ch}_{side}"
+        if edge < USB_GAP - 1e-4:
+            fail(errors, "usb_pair", f"{name}: {edge:.4f} mm between the two traces, "
+                                     f"below the {USB_GAP} mm pair gap")
+        if abs(lengths[0] - lengths[1]) > .01:
+            fail(errors, "usb_pair", f"{name}: traces differ by "
+                                     f"{abs(lengths[0]-lengths[1]):.4f} mm; the pair is "
+                                     "drawn as two mirror images and should match")
+        if coupled < lengths[0]/2:
+            fail(errors, "usb_pair", f"{name}: only {coupled:.3f} mm of "
+                                     f"{lengths[0]:.3f} mm runs at the pair spacing")
+        out[name] = {"edge_gap_mm": round(edge, 6),
+                     "skew_mm": round(abs(lengths[0]-lengths[1]), 6),
+                     "length_mm": round(lengths[0], 6),
+                     "coupled_mm": round(coupled, 6)}
+    return out
+
+
+def segment_gap(a, b, c, d):
+    """Closest approach of two segments, 0 if they cross."""
+    def point_gap(q, x, y):
+        dx, dy = y[0]-x[0], y[1]-x[1]
+        square = dx*dx + dy*dy
+        u = 0 if not square else max(0, min(1, ((q[0]-x[0])*dx + (q[1]-x[1])*dy)/square))
+        return math.dist(q, (x[0]+u*dx, x[1]+u*dy))
+    def side(o, q, r):
+        return (q[0]-o[0])*(r[1]-o[1]) - (q[1]-o[1])*(r[0]-o[0])
+    if ((side(c, d, a) > 0) != (side(c, d, b) > 0)
+            and (side(a, b, c) > 0) != (side(a, b, d) > 0)):
+        return 0.
+    return min(point_gap(a, c, d), point_gap(b, c, d),
+               point_gap(c, a, b), point_gap(d, a, b))
+
+
 def check_usb_reference(board, errors):
     """Sample actual filled F.Cu under each B.Cu trace, including fanouts.
 
@@ -913,6 +979,20 @@ def self_test(board_path, components, expected, temp, variant="hand"):
         if not zone.GetIsRuleArea() and zone.GetLayer() == p.F_Cu:altered.RemoveNative(zone)
     ground_errors = []; check_usb_reference(altered, ground_errors)
     results["missing_usb_reference_detected"] = any(e["check"] == "usb_reference" for e in ground_errors)
+    # Walk one trace of a pair 0.05 mm towards the other: the pair gap drops to
+    # 0.11 mm while every net, width, layer and endpoint stays what it was, which
+    # is exactly the class of fault a clearance rule and a connectivity walk both
+    # let through.
+    altered = load_board(board_path)
+    from layout import USB_ROWS
+    row = USB_ROWS[variant][0]                 # the pair's own mirror axis
+    for track in altered.GetTracks():
+        if net_name(track.GetNetname()) != "S1_UP_N" or isinstance(track, p.PCB_VIA):continue
+        shift = p.FromMM(-.05) if track.GetStart().y > p.FromMM(row) else p.FromMM(.05)
+        track.SetStart(p.VECTOR2I(track.GetStart().x, track.GetStart().y + shift))
+        track.SetEnd(p.VECTOR2I(track.GetEnd().x, track.GetEnd().y + shift))
+    pair_errors = []; check_usb_pair(altered, pair_errors)
+    results["narrow_usb_pair_detected"] = any(e["check"] == "usb_pair" for e in pair_errors)
     return results
 
 
@@ -958,6 +1038,7 @@ def validate(variant, board_override=None, run_self_test=False):
         check_usb_headers(board, errors)
         summary["model_coverage"] = check_models(board, folder, errors)
         summary["usb_track_lengths_mm"] = check_usb(board, errors, variant)
+        summary["usb_pair_geometry"] = check_usb_pair(board, errors)
         summary["usb_ground_reference"] = check_usb_reference(board, errors)
         check_power(board_path, errors, variant)
         from hand_checks import check_through_hole
@@ -986,7 +1067,7 @@ def validate(variant, board_override=None, run_self_test=False):
                 summary["self_test"] = self_test(board_path, components, pins, temp, variant)
                 required_faults = ["wrong_relay_detected", "wrong_driver_detected", "wrong_tolerance_detected", "weak_pulldown_detected", "narrow_power_detected", "host_power_bridge_detected", "usb_cut_detected", "console_control_cut_detected"]
                 required_faults += ["relay_hole_detected", "model_unassigned_detected", "model_missing_detected", "model_disabled_detected", "wrong_xh_pitch_detected"]
-                required_faults += ["smd_footprint_detected", "smd_pad_detected", "power_lead_hole_detected", "four_layers_detected", "missing_usb_reference_detected"]
+                required_faults += ["smd_footprint_detected", "smd_pad_detected", "power_lead_hole_detected", "four_layers_detected", "missing_usb_reference_detected", "narrow_usb_pair_detected"]
                 required_faults += [f'{ref}_hole_tolerance_detected' for ref in ('J101','J2','J1','Q1','H1','U1','U2')]
                 required_faults += ["weak_gate_pullup_detected", "weak_opto_drive_detected",
                                     "wrong_pump_detected", "polarized_pump_cap_detected",

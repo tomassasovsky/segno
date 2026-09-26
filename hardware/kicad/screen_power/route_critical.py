@@ -22,6 +22,15 @@ CTRL=.25
 # radius on the inner edge, so all the wide corners on the board read the same.
 def sweep(width):return width/2+1
 ARC3,ARC2=sweep(3),sweep(2)
+# Inside-edge radius for a USB fanout corner, largest first, and the chords a
+# corner is cut into. A pair's corners all turn 45 degrees, so four chords hold
+# the deviation from the circle under 6um - better than the 13um the power arcs
+# accept - and the whole run stays straight-segment copper the DSN export cannot
+# flatten. 1mm does not fit: the 1.0536mm leg between a fanout knee and the
+# coupled run may lend only half its length, which caps the centreline radius at
+# 1.2718mm, so the ladder starts where both traces can hold the same radius.
+PAIR_INSIDE=(1.,.7,.5,.35,.25,.15)
+PAIR_CHORDS=4
 
 
 def route(variant):
@@ -96,6 +105,47 @@ def route(variant):
             out+=quarter(centre,t1,t2,steps)
         out.append(points[-1])
         return [q for i,q in enumerate(out) if i==0 or math.dist(q,out[i-1])>1e-9]
+    def clamps(points,radius):
+        """Would any corner of this polyline have to shrink that radius?
+
+        curve() lends a corner a whole end leg but only half an interior one, so
+        a short leg silently gives a smaller arc. That is fine for a single run
+        and fatal for a matched pair, where the two traces must come out the
+        same shape, so the pair asks this before committing to a radius.
+        """
+        points=[q for i,q in enumerate(points)
+                if i==0 or math.dist(q,points[i-1])>1e-9]
+        last=len(points)-3
+        for i,corner in enumerate(points[1:-1]):
+            before,after=points[i],points[i+2]
+            v1=(before[0]-corner[0],before[1]-corner[1])
+            v2=(after[0]-corner[0],after[1]-corner[1])
+            l1,l2=math.hypot(*v1),math.hypot(*v2)
+            u1,u2=(v1[0]/l1,v1[1]/l1),(v2[0]/l2,v2[1]/l2)
+            angle=math.acos(max(-1,min(1,u1[0]*u2[0]+u1[1]*u2[1])))
+            if angle>math.pi-1e-9:continue
+            if radius/math.tan(angle/2)>min(l1 if i==0 else l1/2,
+                                            l2 if i==last else l2/2)+1e-9:
+                return True
+        return False
+    def measure(points):
+        return sum(math.dist(x,y) for x,y in zip(points,points[1:]))
+    def spacing(one,other):
+        """Closest the two centrelines come, over every pair of segments."""
+        def point_gap(q,x,y):
+            dx,dy=y[0]-x[0],y[1]-x[1];square=dx*dx+dy*dy
+            u=0 if not square else max(0,min(1,((q[0]-x[0])*dx+(q[1]-x[1])*dy)/square))
+            return math.dist(q,(x[0]+u*dx,x[1]+u*dy))
+        def side(o,q,r):return (q[0]-o[0])*(r[1]-o[1])-(q[1]-o[1])*(r[0]-o[0])
+        best=math.inf
+        for a,b in zip(one,one[1:]):
+            for c,d in zip(other,other[1:]):
+                if ((side(c,d,a)>0)!=(side(c,d,b)>0)
+                        and (side(a,b,c)>0)!=(side(a,b,d)>0)):
+                    return 0.
+                best=min(best,point_gap(a,c,d),point_gap(b,c,d),
+                         point_gap(c,a,b),point_gap(d,a,b))
+        return best
     def flow(a,b,bends,width,layer,radius):
         """join(), with circular corners instead of mitred ones."""
         assert pad(*a).GetNetname()==pad(*b).GetNetname(),(a,b)
@@ -185,12 +235,39 @@ def route(variant):
             reach=pad_xy[0]-coupled[0]
             assert abs(reach)<=abs(pad_xy[1]-coupled[1])
             return (pad_xy[0],coupled[1]+math.copysign(abs(reach),pad_xy[1]-coupled[1]))
+        sides=[]
         for i,sign in enumerate((1,-1)):
             pts=[(c[0]+n[0]*(USB_WIDTH+USB_GAP)/2*sign,c[1]+n[1]*(USB_WIDTH+USB_GAP)/2*sign) for c,n in zip(centre,offsets)]
             ap,bp=at(*a[i]),at(*b[i]);first,last=normals[0],normals[-1]
             tail=spread(bp,pts[-1]) if breakout else fanout(bp,pts[-1],(last[1],-last[0]))
             bends=[fanout(ap,pts[0],(-first[1],first[0])),*pts,tail]
-            join(a[i],b[i],bends)
+            assert pad(*a[i]).GetNetname()==pad(*b[i]).GetNetname(),(a[i],b[i])
+            sides.append((a[i],[ap,*bends,bp]))
+        # Round both fanouts of the pair on ONE radius, the largest of the
+        # ladder that no corner on either trace has to clamp. That single
+        # condition is what keeps the pair matched: the two traces are exact
+        # mirror images of each other about the pair's own centreline - the
+        # offsets, the fanouts and the terminals all are - and two congruent
+        # polylines rounded on the same radius stay congruent, so the intra-pair
+        # skew stays the 0.000mm the mitred geometry had. A corner that clamped
+        # on one trace and not the other is the one thing that would break that,
+        # so such a radius is refused rather than applied. Nothing here changes
+        # layer, adds a via, or moves an endpoint off its pad, so the return
+        # path under the pair is the copper it always was; the front-face
+        # keepouts below are rebuilt from the tracks that end up drawn, and each
+        # arc lies inside the mitre it replaces, so those corridors only shrink.
+        # The measurements the pair has to hold are asserted, not assumed.
+        radius=next((USB_WIDTH/2+inside for inside in PAIR_INSIDE
+                     if not any(clamps(path,USB_WIDTH/2+inside)
+                                for _,path in sides)),0)
+        assert radius,'USB pair at %s: no radius fits both traces'%(centre,)
+        drawn=[curve(path,radius,PAIR_CHORDS) for _,path in sides]
+        gap=spacing(*drawn)-USB_WIDTH
+        skew=abs(measure(drawn[0])-measure(drawn[1]))
+        assert gap>=USB_GAP-1e-6,'USB pair at %s: %.4fmm gap'%(centre,gap)
+        assert skew<=1e-4,'USB pair at %s: %.4fmm intra-pair skew'%(centre,skew)
+        for (terminal,_),path in zip(sides,drawn):
+            track(pad(*terminal).GetNetname(),path)
     for ch,y in enumerate(USB_ROWS[variant],1):
         n=ch*100;host=f'J{n+1}';touch=f'J{n+2}';relay=f'K{n+1}'
         # The host side lands on the changeover commons 6/3, one terminal
