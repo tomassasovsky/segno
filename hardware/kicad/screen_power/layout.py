@@ -33,7 +33,10 @@ def place_components(variant, place, fps):
     # so its cathode marker, which the DO-35 footprint places 1.8 mm beyond
     # the courtyard, points into the board instead of over the edge.
     place("C5", 13.0, 6.1, 90)
-    place("C4", 22.6, 7.0, 270)
+    # C4 sits on U1 pin 5's own column: its negative-rail terminal lines up
+    # with the pin it reservoirs, which takes the jog out of that rail and
+    # leaves twice the room between the 5.5mm can and Q4's 10.54mm tab body.
+    place("C4", 22.22, 7.0, 270)
     place("D2", 22.09, 1.8, 180)
     # Both DIPs are anchored on pin 1 rather than their bounding-box centre,
     # so route_critical.py works in pin coordinates: U1 pins 1-4 run east
@@ -81,7 +84,7 @@ def place_components(variant, place, fps):
     # body in the 3D view, and none overlaps another footprint's silkscreen.
     refs = {"R1": (2.84, 16.8), "R2": (2.75, 24.67), "Q1": (4.88, 25.21),
             "R3": (37.39, 4.9), "R4": (50.36, 5.0), "R8": (44, 75),
-            "C5": (15.7, 6.1), "C4": (24.21, 10.44), "D2": (18.64, 3.99),
+            "C5": (15.7, 6.1), "C4": (23.83, 10.44), "D2": (18.64, 3.99),
             "U1": (17.94, 9.82), "C3": (20.29, 26.65), "U2": (30.77, 16.2),
             "R10": (30.55, 20.62), "R9": (29.08, 28.79),
             "Q2": (4.58, 48.79), "R5": (10.27, 46.6), "R6": (14.27, 54.49),
