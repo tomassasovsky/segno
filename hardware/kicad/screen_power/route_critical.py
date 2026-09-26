@@ -6,8 +6,10 @@ import pcbnew as p
 from pcb import point, xy
 from layout import USB_ROWS, POWER_BUS_X, USB_WIDTH, USB_GAP
 HERE=Path(__file__).resolve().parent
-# Shared-load neck at the TO-220 terminals.
+# Shared-load neck at the TO-220 terminals, and the uniform width of the two
+# runs that carry the whole switched load between them.
 NECK=1.9
+TRUNK=2.5
 # Charge-pump/negative-rail supply and gate-drive signal widths.
 SUPPLY=.5
 CTRL=.25
@@ -53,7 +55,8 @@ def route(variant):
         leaves a positive radius on both edges. The arc is emitted as chords,
         not as a PCB_ARC: the DSN export that feeds the router flattens an arc
         to its chord and would lose the bow. Eight chords per corner hold the
-        deviation from the true circle under 10um.
+        deviation from the true circle under 13um: 12.04um at the tightest
+        radius here.
 
         The first and last leg may spend their whole length on a tangent
         because nothing else claims it; an interior leg keeps half for its
@@ -238,39 +241,35 @@ def route(variant):
     film_x=film[0]-1.7
     track('AUX_5V',[(47,11),(film_x,11+47-film_x),
                     (film_x,film[1]-1.7),film],.8,p.F_Cu)
-    # Common-source bridge. Each pin keeps the 1.9mm neck its terminal pitch
-    # allows, and the bridge between them is a single 3mm band that turns on
-    # arcs, so the copper is one width the whole way across: no point on the
-    # outside of a bend, no notch on the inside. The two approaches differ in
-    # length because the pad rows do, but both hand the current over at the
-    # same height, through the same 1.2mm taper and into the same 2.5mm
-    # centreline radius, so the two transitions read as one shape.
-    hand=10.7
-    track('COMMON_SOURCE',[q3s,(41.46,hand)],NECK,p.F_Cu)
-    track('COMMON_SOURCE',[q4s,(33.54,hand)],NECK,p.F_Cu)
-    track('COMMON_SOURCE',curve([(33.54,hand),(33.54,hand+ARC3),
-                                 (41.46,hand+ARC3),(41.46,hand)],ARC3),
-          3,p.F_Cu)
-    for x in (33.54,41.46):
-        taper('COMMON_SOURCE',(x,hand-1.2),(x,hand),NECK,3)
+    # Common-source bridge: one width from pad to pad, turning on arcs. The
+    # old neck-taper-band-taper-neck changed width three times over 8mm for
+    # no electrical reason, which is what read as lumps. TRUNK is the widest
+    # standard track the TO-220's 2.54mm terminal pitch takes - 0.3375mm to
+    # the neighbouring pads against a 0.2mm rule, where 3mm cannot clear at
+    # all - and it carries the 4.25A planning load with 66mV of drop and an
+    # estimated 14.5C rise over both shared-load runs.
+    deck=13.2
+    track('COMMON_SOURCE',curve([q4s,(33.54,deck),(41.46,deck),q3s],ARC3),
+          TRUNK,p.F_Cu)
     # Feed the edge bus through the plated fuse terminal, and stitch that
-    # transition with dedicated vias for parallel copper paths independent
-    # of the fuse terminal's plated barrel. The trunk hands over from the
-    # 1.9mm terminal neck through the same 1.2mm taper the bridge uses, then
-    # runs on 2.5mm arcs: down the diagonal, along the clear lane at y=20 and
-    # into the fuse terminal on the terminal's own row. Ending level with the
-    # pad keeps the whole 2mm pad inside the 3mm band, so the terminal needs
-    # neither a mitred stub nor a round cap standing proud of the band, and
-    # the three transition vias sit inside the copper on both faces instead of
-    # just outside its edge, which is what left facing nibs in the pour.
-    start,term=10.8,23
-    track('SWITCHED_5V',[q4d,(31,start)],NECK,p.B_Cu)
-    taper('SWITCHED_5V',(31,start-1.2),(31,start),NECK,3,p.B_Cu)
+    # transition with dedicated vias for parallel copper paths independent of
+    # the fuse terminal's plated barrel. This is the board's other shared-load
+    # run, so it is the same uniform TRUNK width from the drain pad to the
+    # fuse, again with no neck and no taper: down the diagonal, along the clear
+    # lane at y=20 and into the terminal on the terminal's own row. Ending
+    # level with the pad keeps the whole 2mm pad inside the band, so the
+    # terminal needs neither a mitred stub nor a round cap standing proud of
+    # it, and the transition vias sit inside the copper on both faces instead
+    # of just outside its edge, which is what left facing nibs in the pour.
+    term=23
     f=at('F101',1)
-    track('SWITCHED_5V',curve([(31,start),(31,12),(39,20),(44,20),
-                               (47,term),f],ARC3),3,p.B_Cu)
-    track('SWITCHED_5V',[(46.6,term),f],3,p.F_Cu)
-    for stitch in ((46.4,term+.9),(47.5,term+.9),(48.6,term+.9)):
+    track('SWITCHED_5V',curve([q4d,(31,12),(39,20),(44,20),
+                               (47,term),f],ARC3),TRUNK,p.B_Cu)
+    track('SWITCHED_5V',[(46.6,term),f],TRUNK,p.F_Cu)
+    # Each barrel sits wholly inside the copper on both faces: no centre is
+    # more than 0.65mm off either centreline, against the 0.8mm a 0.9mm disk
+    # has to spare inside a 2.5mm band, and each keeps 0.44mm to the fuse hole.
+    for stitch in ((46.4,22.7),(47.5,23),(48.35,23.6)):
         v=p.PCB_VIA(board);v.SetPosition(point(*stitch));v.SetWidth(p.FromMM(.9));v.SetDrill(p.FromMM(.45))
         v.SetViaType(p.VIATYPE_THROUGH);v.SetLayerPair(p.F_Cu,p.B_Cu)
         v.SetNet(nets['SWITCHED_5V']);v.SetLocked(True);board.Add(v)
