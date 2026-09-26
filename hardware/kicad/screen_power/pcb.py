@@ -15,6 +15,7 @@ import pcbnew as p
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 from netlist import parse_netlist
+from silkscreen import finish_footprint
 
 FPDIR = Path(os.environ.get("KICAD_FOOTPRINT_DIR", "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints"))
 from layout import CORNER_RADIUS, DIMENSIONS, place_components
@@ -82,6 +83,9 @@ def build(variant):
     ds.m_MinThroughDrill = p.FromMM(0.3)
     ds.m_SolderMaskMinWidth = p.FromMM(0.08)
     ds.m_SolderMaskExpansion = p.FromMM(0.025)
+    ds.m_MinSilkTextHeight = p.FromMM(1.0)
+    ds.m_MinSilkTextThickness = p.FromMM(0.15)
+    ds.m_SilkClearance = p.FromMM(0.15)
     for nc in board.GetAllNetClasses().values():
         nc.SetClearance(p.FromMM(0.15))
         nc.SetTrackWidth(p.FromMM(0.25))
@@ -151,7 +155,8 @@ def build(variant):
             name = pin_nets.get((ref, pad.GetNumber()))
             if name:
                 pad.SetNet(netmap[name])
-        fp.Reference().SetTextSize(point(0.85, 0.85))
+        finish_footprint(fp)
+        fp.Reference().SetTextSize(point(1.0, 1.0))
         fp.Reference().SetTextThickness(p.FromMM(0.15))
         fp.Value().SetVisible(False)
         fps[ref] = fp

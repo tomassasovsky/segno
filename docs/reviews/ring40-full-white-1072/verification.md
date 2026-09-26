@@ -2,6 +2,12 @@
 
 # 40-pixel full-white fabrication verification — 25 September 2026
 
+The September 26 [final voltage review](../production-final-1072/ring-voltage-margin.md)
+supersedes this report's straight-through power-harness assumption for the
+selected 40-pixel strip. The PCB current-capacity evidence remains applicable; current
+assembly sends strip current directly from AUX and only DIN through carrier J2.
+
+
 The new v3 console and white ring carrier now supply one 40-pixel RGB strip at
 unrestricted full white without depending on a firmware brightness cap. These
 exports replace the September 24 console and ring order files. The screen-power

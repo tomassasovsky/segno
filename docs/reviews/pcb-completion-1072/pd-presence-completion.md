@@ -1,9 +1,15 @@
 <!-- cspell:words STUSB IOVDD SDA SCL RDO PDOs UM millis -->
 # Console CTRL presence and PD status completion
 
-Implemented and verified locally on September 22, 2026. This closes the
-software omissions in the earlier console audit. No device was flashed or
-reconfigured, and these results do not release the PCB order.
+Implemented and verified locally on September 22, 2026, then published in
+[runtime PR #1082](https://github.com/tomassasovsky/segno/pull/1082) at
+`92af127d9a2d58c4ea9b810b38d06ca3ddc3c73d`. The files described below belong
+to that runtime revision, not to the firmware snapshot on the hardware branch.
+Use that runtime's E9 workaround for an A2 Pico 2; the hardware branch's old
+presence implementation is unsuitable. Later silicon also works with the
+workaround. This closes the software omissions in the earlier console audit.
+No device was flashed or reconfigured. Runtime integration and assembled
+verification remain open; these results do not establish physical operation.
 
 ## CTRL presence
 

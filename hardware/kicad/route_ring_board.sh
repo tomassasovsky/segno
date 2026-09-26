@@ -184,6 +184,14 @@ PY
 
 echo "== 7. gerbers =="
 "$KPY" ring_power.py "$PCB"
+"$KPY" - "$PCB" <<'PY_CHECK_SILK'
+import sys
+import pcbnew
+from silkscreen import mask_clearance_problems
+problems = mask_clearance_problems(pcbnew.LoadBoard(sys.argv[1]))
+if problems:
+    raise SystemExit("Silkscreen mask clearance: " + "; ".join(problems))
+PY_CHECK_SILK
 "$CLI" pcb export gerbers --output "$WORK/gb" --no-protel-ext --layers "$FAB_LAYERS" "$PCB" >/dev/null
 "$CLI" pcb export drill --output "$WORK/gb" --format excellon --drill-origin absolute --excellon-separate-th "$PCB" >/dev/null
 ( cd "$WORK/gb" && zip -q -X segno_pedal_ring_gerbers.zip *.gbr *.gbrjob *.drl )

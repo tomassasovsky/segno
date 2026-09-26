@@ -13,6 +13,24 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+The [final production review](reviews/production-final-1072/review.md) supersedes
+the earlier release checks below. It reviews the complete circuits, all three
+native boards, wiring, current budgets, thermal estimates, mechanical envelopes
+and exact manufacturing exports. It corrects sub-minimum silkscreen dimensions,
+selects the actual 40-LED strip in the purchasing BOM, removes old ring wiring
+instructions and names the separate v3 runtime needed for A2 presence inputs.
+Console and ring USB-programming isolation is now explicit. The screen's
+proposed enclosure location still needs its floor holes incorporated in the
+enclosure release; this does not change the fixed PCB outline. No order, merge
+or deployment is part of this review.
+
+
+The September 26 final PCB review additionally replaces the selected 40-pixel
+ring's straight-through power harness with a direct AUX star feed near the strip.
+Only DIN uses carrier J2; console J6 carries only the two UART wires. This closes
+the hot-wire/aged-contact voltage-margin gap without changing PCB copper. See
+`docs/reviews/production-final-1072/ring-voltage-margin.md` and the current wiring.
+
 The September 26 [all-three-board audit](reviews/pcb-finish-all-three-1072/audit.md)
 records the current native boards and replacement manufacturing archives.
 The final pass rounds the remaining exposed signal/control bends as well as
@@ -97,9 +115,9 @@ It preserves first-assembly validation and the separate 10 A whole-system limit.
 Publication is split by hardware generation. This branch includes the screen
 power PCB, console connectors and power-domain corrections, white XIAO ring carrier (module footprints or external strip), and GPIO17 lifecycle service. The current old-console
 ten-pill/40-LED-strip firmware is tracked separately under #1076 and #1077.
-New-v3 console/ring firmware and PD diagnostics remain separate unpublished
-work; historical reports below are evidence of local checks, not code included
-in this hardware publication. See the [publication record](reviews/hardware-publication-1072/verification.md).
+New-v3 console/ring firmware and PD diagnostics are published separately in
+PR #1082 at `92af127d`; they remain an integration draft and are not code
+included in this hardware publication. See the [publication record](reviews/hardware-publication-1072/verification.md).
 
 The populated screen-power board has a proposed position behind CLEAR, left of
 the buck pair, on 15 mm standoffs. Four floor mounts still need to be integrated
@@ -255,6 +273,7 @@ bundles. Inspection now runs before bundle deployment using the pinned
 Yocto-native RAUC with JSON support, archive tools and jq. The checker matches
 the existing boot archive filename ending in `.tar.img`; the producer and
 install hook remain unchanged. A failed inspection stops the release build.
+
 
 ## How to build / test (environment gotchas — read first)
 

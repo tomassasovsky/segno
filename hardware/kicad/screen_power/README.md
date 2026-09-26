@@ -28,6 +28,13 @@ Cables enter perpendicular to the board. Mounting centers remain (4, 4),
 (64, 4), (4, 72) and (64, 72) mm. The 3.5 mm unplated holes have 4.25 mm
 copper keepouts on both faces for M3 heads/washers up to 7 mm diameter.
 
+The [final production review](../../../docs/reviews/production-final-1072/review.md)
+checks the complete circuit and manufacturing package. Its last correction
+raises existing printed labels to at least 1.0 mm height and 0.15 mm stroke,
+with 0.15 mm pad clearance, and thickens existing printed outlines. No copper,
+component placement or mounting geometry changes. The validator includes five
+new ink/rule fault controls, bringing the screen suite to 61 controls.
+
 Use only the archive identified by the
 [current three-board manufacturing record](../../../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
 Older screen archives are superseded; Revision I remains withdrawn because

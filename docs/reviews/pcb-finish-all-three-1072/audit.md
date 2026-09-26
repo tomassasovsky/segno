@@ -11,6 +11,12 @@ Use the [current archive manifest](manufacturing-zips.json); older ZIPs are
 superseded. This does not qualify assembled operation or mark the whole PR
 review/CI gates complete.
 
+The [final production review](../production-final-1072/review.md) supersedes
+this checkpoint and the subsequent alignment export for all three boards. It
+corrects printed legend dimensions while preserving copper, placements and
+outlines. Use the manifest above for the current archives; hashes below are
+historical evidence.
+
 The later [U1/U2 alignment correction](../screen-u2-alignment-1072/verification.md)
 supersedes this checkpoint for the screen board only. The manifest above points
 to the aligned screen export and refreshed verification reports; console and

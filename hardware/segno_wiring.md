@@ -21,7 +21,8 @@ longer applies to anything.
               |   STUSB4500 trigger: ONE 20 V / 5 A contract
               |   fuse, T5A slow-blow, in series with the 20 V feed
               +--> BUCK_PI  (20->5 V) --> Pi 5 via its USB-C  --> Pi USB + NVMe
-              +--> BUCK_AUX (20->5 V) --+--> console J3 --> pills + ring
+              +--> BUCK_AUX (20->5 V) --+--> console J3 --> pills
+                                       +--> near-ring split --> strip power + ring J1 power
                                        +--> 7.5 A inline fuse --> screen-power J1
                                                                   | switched rail
                                                                   +--> J103/J203 --> screen power
@@ -33,7 +34,7 @@ longer applies to anything.
         MIDI  DIN IN -> H11L1 (at 3V3) -> Pi uart0 RX (GPIO15)
               Pi uart0 TX (GPIO14) -> 74AHCT125 -> 220R loop -> DIN OUT
         SWD   Pi GPIO24/25 -> the Pico's debug pads (cold flashing)
-     console board <-- footswitches x10 | ring board (4-way) | CTRL TRS x2
+     console board <-- footswitches x10 | ring board (two UART wires) | CTRL TRS x2
      Pi --HDMI x2--> 7" + 15.6" screens
      Pi USB2 x2 --> screen J101/J201 --> relays --> J102/J202 --> screen touch
      Pi GPIO17 --> ribbon --> console J25 --> screen J2 (GPIO17 + GND)
@@ -160,12 +161,14 @@ V3 sends pill power through a copper bar instead:
   routed track. The 80 pill LEDs have a 4.8 A uncapped RGB-white channel
   budget (about 4.88 A including the idle allowance). The data line crosses
   the board to J24 from the buffer, ~87 mm. J7 is gone.
-- The console ring feed is a dedicated **1.7 mm** route to J6, with four
+- The retained console ring feed is a dedicated **1.7 mm** route to J6, with four
   parallel 0.5 mm drilled power vias. The carrier has a **1.5 mm** direct feed
   from J1 to J2 and three parallel ground vias at the strip wire pad. Console
   input, pill-output and ring-output ground connections have wider thermal spokes.
   Lower-current logic and alternative 24/16-pixel module branches retain their
-  existing tracks. The routing/export guards preserve this separation.
+  existing tracks. The routing/export guards preserve this separation. For the
+  selected full-white strip, use the direct AUX star harness below rather than
+  sending LED current through the console and both XH connectors.
 
 The conductor estimates use **IPC-2221, 10 °C rise, 1 oz external copper**,
 including a 20% negative width tolerance for the new high-current feeds.
@@ -196,7 +199,7 @@ must not be flashed onto the old board.
   pills' 5 V leaves on **J24**, the JST VH beside it, and their harness is a **5 V
   bus with a tap to each pill**, not a daisy chain through the strips: 4.8 A in
   series through the strip copper would drop enough to shift the far pills'
-  colour. Use 18 AWG for the pill bus and **16 AWG for J3's input feed**, with
+  colour. Use 16 AWG for the pill bus and **16 AWG for J3's input feed**, with
   SVH-41T-P1.1 contacts for the latter. The selected standard VH connector's
   10 A rating is specified with 16 AWG. The data line and its GND ride the
   same J24 plug (pins 2 and 1). See `kicad/console_board_pcb.py`
@@ -286,70 +289,86 @@ between the Pi and console board. Screen power comes from BUCK_AUX through
 the dedicated inline fuse to the new board; J25 carries no 5 V. The new board
 provides the enable pull-down.
 
+For console Pico USB programming, program the module before fitting it, or
+first disconnect console J3 (AUX), J6 (ring) and J24 (pills). Remove the USB
+cable before reconnecting those headers. Pico USB can feed its VSYS rail
+through the module's diode; the console connects VSYS directly to AUX, so
+leaving those loads attached can power them from USB and feed current back into the buck.
+Normal in-place programming uses the existing Pi SWD connection. The ring
+XIAO has its own [USB isolation rule](kicad/RING_ASSEMBLY.md#programming).
+
 The link needs **no level shifting**: RP2350 and Pi are both 3.3 V. The old
 1k8/3k3 divider and the AHCT gate on this path were the retired 5 V board's needs
 and died with it. The series 10 k in each link line is not level shifting — it
 bounds the cross-domain current when one side is powered and the other is not
 (rationale and arithmetic: R17/R18 in `console_board.py`).
 
-The **74AHCT125** remains for MIDI OUT's current loop and the indicator chain.
-Its third gate still drives the ring-data pin (J6 pin 5) and that pin now goes
-nowhere: since #987 the ring board generates its own WS2812 timing behind a XIAO
-RP2350, so the level shifting for the ring moved onto **that** board. Gate B, R15
-and J6 pin 5 stay fitted because the console board exists in copper and its
-netlist has to keep matching it. **MIDI IN's H11L1 runs at 3.3 V** and
-feeds the Pi directly — no shifter. GPIO4 (pin 7) is left alone: the GeeekPi
-N07 NVMe board under the Pi claims it (`PI_RESERVED`).
+The **74AHCT125** drives MIDI OUT's current loop and the indicator chain.
+The ring carrier has its own XIAO and level shifter; console gate B is disabled,
+and the former ring-data path is removed. **MIDI IN's H11L1 runs at 3.3 V** and
+feeds the Pi directly. GPIO4 (pin 7) is reserved for the GeeekPi N07 NVMe board.
 
-### Console board ↔ ring board: the 4-way (#987)
+### Console board ↔ ring board and the full-white power harness
 
 The ring board carries its own **XIAO RP2350**, which owns the encoder and
-generates the WS2812 timing 20 mm from the LEDs. What used to be eight
-conductors across ~600 mm of box is now four.
+generates the WS2812 timing locally. For the selected 40-pixel strip, supply
+its LED current directly from AUX through a near-ring split. This avoids the
+voltage loss of the long console-to-ring power path while preserving full
+white output. The PCB's high-current copper remains unchanged.
 
-**On console board v3 the cable is a plain 1:1 4-way, JST-XH at both ends:**
+| Destination | Connect to |
+| --- | --- |
+| Near-ring positive/ground split | AUX output posts through a dedicated pair, at most 600 mm one-way, 16 AWG copper or larger |
+| Strip +5 V / GND | That split through a separate pair, at most 50 mm one-way, 22 AWG copper or larger |
+| Ring J1 pins 1 / 2 | That split through its own pair, at most 50 mm one-way, **22 AWG** with genuine XH contacts |
+| Ring J1 pin 3 | Console J6 pin 3: console TX to ring RX |
+| Ring J1 pin 4 | Console J6 pin 4: ring TX to console RX |
+| Strip DIN | Ring J2 pin 3, at most 100 mm, routed beside the local ground leads |
 
-| ring J1 | console v3 J6 | console v2 J6 | conductor |
-|---|---|---|---|
-| 1 | 1 | 1 | +5V |
-| 2 | 2 | 3 | GND |
-| 3 | 3 | 6 | LINK_TO_RING — GP13 drives, the XIAO listens |
-| 4 | 4 | 7 | LINK_TO_CONSOLE — the XIAO drives, GP14 listens |
+Leave console J6 cavities **1/2 empty**. Leave ring J2 **1/2/4 unconnected**;
+only DIN uses J2 in this selected assembly. J3/J4 remain empty. Do not add a
+second console-to-ring power pair or a parallel strip-return wire through
+J2. Both boards share ground through their AUX supply returns.
 
-**On a v2 console the cable is asymmetric and that was the whole hazard:** the
-fabbed 8-way J6 stays, and the ring's 4-way lands on four of its eight positions
-(the v2 column). Crimp *that* one 1:1 by position and pin 2 of the ring end lands
-on J6 pin 2, which is +5V: the LED rail straight onto a link line. v3 removes the
-hazard by construction; `RING_CONTRACT` asserts the map is the identity there.
+Use insulated, strain-relieved soldered or correctly crimped branch joints.
+Do not force 16 AWG into XH contacts: the short 22 AWG pigtails are intentional.
+The complete common positive/return termination resistance allocation is
+10 mΩ; each branch's complete joint allocation is another 10 mΩ.
 
-The link is **full duplex** (owner call). One wire would have carried the traffic
-— 115200 is ~11.5 kB/s against a 72-byte pixel frame and a few bytes per detent —
-but a single wire forces a master-polled, collision-avoiding protocol on the
-firmware, and the second conductor buys that away for one crimp. It cost nothing
-in copper: J6 pin 7 was already wired to GP14 with its 10 k pull-up, doing
-nothing. Neither pin is on a free hardware UART (GP13 is UART0 RX, but UART0 is
-the Pi link on GP16/17, and GP14 is on neither), so the console end is a PIO
-UART — of which the RP2350 has plenty spare.
+At a defined **4.75 V minimum at the loaded AUX output posts**, the 60 °C wire,
+aged-contact and hot-copper calculation gives at least **4.632 V at the strip**
+and **4.620 V at the AHCT buffer**, above its 4.5 V minimum. The fixed buck is
+nominally 5 V; its actual regulation floor is not established by a manufacturer
+specification. These are explicit design bounds, not measured assembled
+voltages. See the [final voltage review](../docs/reviews/production-final-1072/ring-voltage-margin.md).
 
-The table above is *not* the source of truth — `RING_PINMAP` in
-`console_board.py` is, and `RING_CONTRACT` checks it against `ring_board.net` on
-every run.
+The link is full duplex at 115200 baud. The console uses a PIO UART because
+its hardware UART is already assigned to the Pi link on GP16/GP17. This map
+applies to the new v3 console and independent ring carrier only.
+
+The PCB pin assignments remain defined by `RING_PINMAP` in
+`console_board.py`, checked against `ring_board.net` by `RING_CONTRACT`. The
+selected harness above deliberately separates power from the two UART wires.
 
 Notes that are load-bearing:
 
-- **GND is the middle pin** so the pulsed amp-scale LED return does not run
-  beside the one signal in the cable.
-- **The link pull-ups are on the console board** (J6 pin 6/7's 10 k to *its* 3V3).
-  The ring board deliberately fits none — a second pull-up on the other board's
-  rail is the split-rail fault `RING_LEVELS` exists to catch, and `LINK_BARE` in
-  `ring_board.py` rejects it from the other side.
-- **On v2, J6 pins 2, 4, 5 and 8 stay fitted and carry nothing.** Pin 5 could
-  never have carried the link anyway: it is the AHCT125's gate-B output with /OE
-  tied low, so it is only ever driven by the console. On v3 the ring-data path
-  (GP12, gate B, R1, R15) is gone and GP12/GP15 went to the expansion header.
-- **One 5 V pair supports the 40-pixel strip without a brightness restriction.**
+- Ground is pin 2, between the supply and the two link signals.
+- The two 10 kΩ link pull-ups connect to the console's 3V3 at J6 pins 3/4.
+  The ring has no link pull-ups to its separate 3V3 rail. `RING_LEVELS` and
+  `LINK_BARE` check that boundary.
+- Use the console and ring firmware from
+  [runtime PR #1082](https://github.com/tomassasovsky/segno/pull/1082), currently
+  `92af127d9a2d58c4ea9b810b38d06ca3ddc3c73d`. It includes the RP2350 A2 E9
+  presence-input workaround and PD status reader. The hardware branch's older
+  firmware snapshot does not. This runtime is still a separate integration
+  draft; board fabrication does not make it deployed or production qualified.
+- **The specified star harness supports the 40-pixel strip without a brightness restriction.**
   The design budget is 2.4 A LED channels, 40 mA pixel idle and 200 mA ring
-  controller, within the XH connector's 3 A rating with 22 AWG power leads.
+  controller. Only that 200 mA controller allocation passes through J1 in the
+  selected harness; the strip current bypasses it. XH remains rated for 3 A
+  with 22 AWG. Its 85 °C
+  upper operating temperature includes the rise caused by current; it is
+  not an 85 °C ambient rating at full current.
   The console now has a dedicated 1.7 mm feed; the carrier's J2 pads have a
   direct 1.5 mm feed and three ground-return vias. This avoids routing strip
   power through the older 0.65 mm module branch. Firmware still chooses its

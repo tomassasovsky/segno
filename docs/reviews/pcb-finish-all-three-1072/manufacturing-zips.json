@@ -1,30 +1,30 @@
 {
   "date": "2026-09-26",
   "status": "verified-for-bare-board-fabrication",
-  "purpose": "Current three-board fabrication files with aligned screen U1/U2; console/ring rounded copper unchanged",
-  "baseline_revision": "2c27234ecf7825d67c812584bc7b82e39455fa38",
+  "purpose": "Final three-board production review: printable legends and independently verified existing rounded copper; selected 40-strip direct AUX star harness",
+  "baseline_revision": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
   "archives": {
     "console-v3": {
       "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
-      "sha256": "bff58e862b971e5e51872faa2eab3681ee25207b18a949fa4272ecb344e538e4",
+      "sha256": "919667b6141639590da8dd36319b236e5c434c4d8f2f3799644374e81da97fc3",
       "members_checked": 12,
       "members": {
-        "segno_console_board-B_Cu.gbr": "c730032ab478a46d88bfdd9778acade1c046b01e85c8f7b8c9cc21cb87dd1f9c",
-        "segno_console_board-B_Mask.gbr": "0effd9067157e786824e037e87beca0ef5d47d1c3331a242f640ec746ce97239",
-        "segno_console_board-B_Paste.gbr": "735709605f33b8d798bf888e4cdaea40c2d92fe3d2b4a4a23585e0067a05f787",
-        "segno_console_board-B_Silkscreen.gbr": "98498f5060cfe187f56cc868423510244bf3ffe47d1ca834bf61a244522bfc66",
-        "segno_console_board-Edge_Cuts.gbr": "a3b63a5093db9b50d14addbdc17e65f8531d9fa436e0fa2a3bb02f9016cb7311",
-        "segno_console_board-F_Cu.gbr": "f22fc3f68240217ef60e1d171db0fa9e042f49ae5d3bb58e714411ccb41040a5",
-        "segno_console_board-F_Mask.gbr": "ecf0e0750ed63e081a41325749c0e36cdf46d7aab9fa2a8ee87804f285a58c55",
-        "segno_console_board-F_Paste.gbr": "aa820d1abf989619bb6dfaf58ae80762c8a621bcbf303692437f3838b97fecb3",
-        "segno_console_board-F_Silkscreen.gbr": "f0be3e7f39ad1aadcbe7b40a8f117340c2d6d431c67ecb9b4608a24c14915e6e",
-        "segno_console_board-NPTH.drl": "9e462c2c93541aac085475a5422d7b3338c5154a137649760abfc309b75463e0",
-        "segno_console_board-PTH.drl": "8b7f6b1589f4e12603e298f8f70e6997fd7a4e23ee7c7b58d1cf62f1d4f6b5b3",
-        "segno_console_board-job.gbrjob": "41ef91610253daaca5c9fcca35fbe4052c07573eb990823123619585da41e7b6"
+        "segno_console_board-B_Cu.gbr": "1e0b3002a59f2695f330b177ca800d476cbf8d2b73c6a85632ac48ba9c37f2e4",
+        "segno_console_board-B_Mask.gbr": "8d7e9568c9ff5b9bc4abbd058162ea83120a5f34d0a5fd1490d8a79ccffcc8a1",
+        "segno_console_board-B_Paste.gbr": "82bfbe4bc11e44e49031c5704662b11043dd174ab2d8c68b7a9423d07d9a96fd",
+        "segno_console_board-B_Silkscreen.gbr": "cf3e4ba6258666653676bfccb4f5468dd927463a68cfdb4dcdf4000eb099b632",
+        "segno_console_board-Edge_Cuts.gbr": "bc3a31c6c17aa922129dfa9e58d3bd13ef4d9be0c56f901539e0c0e68e8c5a7e",
+        "segno_console_board-F_Cu.gbr": "06da98fe833d3c3d5a278465307685f54eb44126c9487801b776b786f6896f83",
+        "segno_console_board-F_Mask.gbr": "5ff7b31e389c8e8cbe161f84c740d8d7b0ebb5759dd83f7e02efed0c20a0960a",
+        "segno_console_board-F_Paste.gbr": "39f323671715f19c77e82700bd8998ab8acf98ab9363fa111cdd433f1d58ebdb",
+        "segno_console_board-F_Silkscreen.gbr": "c01ccc064f9b2dbefb3ad4a553845b68fd2854ec99caa75f537542bb782a6b70",
+        "segno_console_board-NPTH.drl": "c5620df80411e6abb9eaadccd2d17ef7c384940849413d3d235878fc244d3329",
+        "segno_console_board-PTH.drl": "1b63e5b40ce67f2df2d32b369768bd236a96ddc9afefbec835e31b9c46d76179",
+        "segno_console_board-job.gbrjob": "4790dabba49ff294c471f3d452d763c17ccae95d4f9aaa7c3b586891448f5cef"
       },
       "upload_name": "segno-console-v3-gerbers.zip",
       "board": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
-      "board_sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+      "board_sha256": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
       "order": {
         "layers": 2,
         "material": "FR-4",
@@ -41,23 +41,23 @@
     },
     "ring-white": {
       "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
-      "sha256": "29ed635cc4119edfe609332ba62fbe7cb31c102bd6d18af23ef70a75b7cbd606",
+      "sha256": "7b0dd11efc0ab1f2c2f3a28a0a1bb6367d692171ad4136ea9fae49bcabc5a413",
       "members_checked": 10,
       "members": {
-        "segno_pedal_ring-B_Cu.gbr": "49b489354556b94f5620fb8e12a8826689b202e2ded7ca50548e4f13026d1bd2",
-        "segno_pedal_ring-B_Mask.gbr": "65e559d799e40ec55fbf15d3f4ada829b18bf1e79724ddc30d2c429b0a21b5da",
-        "segno_pedal_ring-B_Silkscreen.gbr": "d9569281b5e8825330278c313692d4548eb53bb8c08271244636d0329df08a51",
-        "segno_pedal_ring-Edge_Cuts.gbr": "2b73274ae6109f4135b9fd3c5b190d19f068c6b7d737b4a470b1fe6db25414a8",
-        "segno_pedal_ring-F_Cu.gbr": "72a7777b89a1b1d99c1ac0d79e750ba97b0d754ebacb8c09254a2322b92f0956",
-        "segno_pedal_ring-F_Mask.gbr": "dfabaa15ef6f7f067f036a6b41a2d6ef8c373f52caff56f2f021a2422c0a8cd3",
-        "segno_pedal_ring-F_Silkscreen.gbr": "ce237bc18da86523810b19ea2f28d6a312b3a363ab64e5088db6e50238c37a0c",
-        "segno_pedal_ring-NPTH.drl": "b25aafa269c981bbf84287b4b2d1efdf688547f3ca6311cadedbe11982139863",
-        "segno_pedal_ring-PTH.drl": "fd40718a246a7cc3c8c4d3537928c4e5ed505d8980fea327a463ba74bf8db85f",
-        "segno_pedal_ring-job.gbrjob": "11127271b922449848b87abe02e220cecd81fc6a4dfc7c2f52cec67e1097a263"
+        "segno_pedal_ring-B_Cu.gbr": "4a7efd168e0eb907eb56cc6b77bed54536a49110f499d1cb191a360fb19245d4",
+        "segno_pedal_ring-B_Mask.gbr": "be2be25c366c316f4e007bc7d9089bbe90beb8de4d782977149ab3bf7a9784e5",
+        "segno_pedal_ring-B_Silkscreen.gbr": "2874dbbd39431ac75701ac6cb151a275123fae3502c7ed0a3486a8e9185cfb97",
+        "segno_pedal_ring-Edge_Cuts.gbr": "713a3a444cfc385ae07be680b83b71b3a53d38b382c32d60a9e0a370f13d6954",
+        "segno_pedal_ring-F_Cu.gbr": "0de61aa84fe3e54883a8e1bee076cd8f3b8ae12f1ad31ea85241e4c674dd7efa",
+        "segno_pedal_ring-F_Mask.gbr": "5a28905af4de4b4dd8314330c28e910809ddca20124dc7abb15dbd3d201898b0",
+        "segno_pedal_ring-F_Silkscreen.gbr": "83349493943d3f6da4f059a6bc0f44d72c927857ebc3dcc08effc963d1129f9e",
+        "segno_pedal_ring-NPTH.drl": "4f78785689d3d1f99da28d76425c404bf0b81d288a9db7e7c8705f37a66dd212",
+        "segno_pedal_ring-PTH.drl": "2cbf014c6ccfe966a0d75170e2eed03bcd9442dfc0034c089654c4a7d3edddb0",
+        "segno_pedal_ring-job.gbrjob": "8d93a0349f50d87b8a8865cb1abc2c981fe3cd1569e1a47ace3da15ef0bddb5e"
       },
       "upload_name": "segno-ring-white-gerbers.zip",
       "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
-      "board_sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+      "board_sha256": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
       "order": {
         "layers": 2,
         "material": "FR-4",
@@ -74,25 +74,25 @@
     },
     "screen-power-rev-l": {
       "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
-      "sha256": "ef2a39dd88ea89789cf60188186f3aca2d5505bcd202eb270830b81ee5c76e44",
+      "sha256": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84",
       "members_checked": 12,
       "members": {
-        "screen_power_hand-B_Cu.gbr": "339fe7d1127adc565ad1ff623e75a0bc97e8751d134c79b3284e8ffb55d0ba61",
-        "screen_power_hand-B_Mask.gbr": "4b5b480cb42b5d8aba44daedf67a2da54f0a0b4d7bf2125e7d603d738a50ff9c",
-        "screen_power_hand-B_Silkscreen.gbr": "604ec7b2c5976e4551b2e306e933679adcbc57d22bee95489f41bf1c1a24a5e5",
-        "screen_power_hand-Edge_Cuts.gbr": "30d9e42b7434501e85490d5204fe8fe2d17acdf296aedf5da58b2de7ff7fb5ec",
-        "screen_power_hand-F_Cu.gbr": "47840d8e3804cac59ccfc4f1a61816a455949e50151e699e4ee8b295da9edc2b",
-        "screen_power_hand-F_Mask.gbr": "663e5ce32505f0b5a723f462985ce2d4258d5f3c6698df5074688458c0766b6e",
-        "screen_power_hand-F_Silkscreen.gbr": "2b9185b4d03cab544987145a6b1e3bcb57399ce6b0686998a50af36d05abb7e8",
-        "screen_power_hand-NPTH-drl_map.pdf": "ecab631ffda5a627d6abab3346a758cd0668b834b9485e5b2b7c75d878d49d3a",
-        "screen_power_hand-NPTH.drl": "4eac9f455c2f661ffb3bdaf3c1978df79cd4cf189d0974709bbe8525bab10440",
-        "screen_power_hand-PTH-drl_map.pdf": "081b852ba7ee6441e72e511daa0c9ff0420b25d68a051066fff478e6f6a6fd86",
-        "screen_power_hand-PTH.drl": "b795a128b9eebd125e0b530f0afb8131eceee37e5de7b687f2c0832063b8ad7d",
-        "screen_power_hand-job.gbrjob": "5caa603f38a596d1d1f7652688288e2c2dc103a34faaaf5082b4a5c075eb683f"
+        "screen_power_hand-B_Cu.gbr": "ffc5c2223b89becd65f48baeb226ab5b9ea6f32aedf01655f31776ce99001eac",
+        "screen_power_hand-B_Mask.gbr": "7962bb3732275dd23e33679b09c03c04f7e5d830251363d8c484506d4637fed6",
+        "screen_power_hand-B_Silkscreen.gbr": "4a2261e96afcffdeca6bb7e0f8730c984201e5c925d873aa92be1dddcc7a42e7",
+        "screen_power_hand-Edge_Cuts.gbr": "1efb0b1d38dc7119bfe08cde563bcbcc6e3100d57ffdc36d041341ee618018de",
+        "screen_power_hand-F_Cu.gbr": "41fe95dcd19b098fa1eb5be05f7cdf4bfdc1ebe5d68ce2141083e598b2f505cb",
+        "screen_power_hand-F_Mask.gbr": "d9c65d862f8256d0f910a4b3b63d333812623f6db451bd9119b450fc94a88aac",
+        "screen_power_hand-F_Silkscreen.gbr": "d0b7c213e0acf84ba0b318a27c3e4a5765588a42c97dbaa70a8e0d459f495e48",
+        "screen_power_hand-NPTH-drl_map.pdf": "f000a8a8b2491e59ce0c220d8c0a3c5b32bf42bbe1e60c9b53cb8a121a3a13c2",
+        "screen_power_hand-NPTH.drl": "cfb6fe23a3bf3ba3527f0994afff7c18f07d6d823aef34632c82782a97edc2d6",
+        "screen_power_hand-PTH-drl_map.pdf": "46d7ccce3998228fc043a26aa1d63c24a632b405ed5c41fc006255ecf5e65be4",
+        "screen_power_hand-PTH.drl": "a20cfde561409fa4da8bdb9ffd71af560b61046607cff07c7e4570c7d9fe58f1",
+        "screen_power_hand-job.gbrjob": "606beacf975693c1419dccf596a2579489f352b4d195d11cc0db1f17cc7d31fd"
       },
       "upload_name": "segno-screen-power-rev-l-gerbers.zip",
       "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
-      "board_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+      "board_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
       "order": {
         "layers": 2,
         "material": "FR-4",
@@ -110,18 +110,19 @@
   },
   "verification": {
     "console_ring": {
-      "report": "docs/reviews/screen-u2-alignment-1072/console-ring-fabrication-verification.json",
-      "sha256": "1aa76bcc9a5516a87cb657026377074f061f92ef73dc5dcad08dcf96ba8d1708",
+      "report": "docs/reviews/production-final-1072/console-ring-fabrication-verification.json",
+      "sha256": "de9b2295c70020d9d361f5567129eac3d90985fd45e8288ad2d051f8ad65d989",
       "checks_passed": 175
     },
     "screen": {
-      "report": "docs/reviews/screen-u2-alignment-1072/screen-fabrication-verification.json",
-      "sha256": "c09d84da0b314aa630c2b086db0d5e0626dc0b63a7cb1bc2ee2a8e3343a7b69d",
-      "checks_passed": 409
+      "report": "docs/reviews/production-final-1072/screen-fabrication-verification.json",
+      "sha256": "8a90d9b26dae1456bd3c635364bbf56edd48e6c907caaff2c6ee1d6395c92144",
+      "checks_passed": 412
     }
   },
   "limits": [
     "Bare-board CAD and export verification; assembled electrical, USB and enclosure behavior are not physically qualified.",
+    "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
     "No order, merge or device deployment performed."
   ]
 }

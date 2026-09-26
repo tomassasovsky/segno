@@ -23,6 +23,7 @@ import pcbnew as p
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 from netlist import parse_netlist
+from silkscreen import mask_clearance_problems
 from models import check_models
 
 CLI = os.environ.get(
@@ -306,6 +307,45 @@ def check_geometry(board, errors, variant):
     for track in board.GetTracks():
         if not isinstance(track, p.PCB_VIA) and track.GetLayer() not in (p.F_Cu, p.B_Cu):
             fail(errors, "ground_planes", "Copper exists outside the two outer layers")
+
+
+def check_silkscreen(board, errors):
+    """Inspect printed ink, including footprint fields and library outlines."""
+    items = [("board", item) for item in board.GetDrawings()]
+    for footprint in board.GetFootprints():
+        items.extend((footprint.GetReference(), item) for item in
+                     [*footprint.GetFields(), *footprint.GraphicalItems()])
+    for owner, item in items:
+        if item.GetLayer() not in (p.F_SilkS, p.B_SilkS):
+            continue
+        if isinstance(item, (p.PCB_TEXT, p.PCB_FIELD)):
+            if not item.IsVisible() or not item.GetShownText(False).strip():
+                continue
+            if item.GetTextHeight() < p.FromMM(1.0):
+                fail(errors, "silk_text_height", f"{owner} {item.GetShownText(False)}: visible text is below 1.0 mm")
+            if item.GetTextThickness() < p.FromMM(.15):
+                fail(errors, "silk_text_stroke", f"{owner} {item.GetShownText(False)}: visible text stroke is below 0.15 mm")
+        elif isinstance(item, p.PCB_SHAPE) and not item.IsSolidFill():
+            if item.GetWidth() < p.FromMM(.15):
+                fail(errors, "silk_outline_stroke", f"{owner}: unfilled silkscreen outline is below 0.15 mm")
+
+
+def check_silkscreen_rules(settings, errors):
+    """Keep the fresh CLI DRC's printing limits at least as strict as the ink checks."""
+    rules = settings.get("rules", {})
+    for name, minimum in (("min_text_height", 1.0),
+                          ("min_text_thickness", .15),
+                          ("min_silk_clearance", .15)):
+        actual = rules.get(name)
+        if not isinstance(actual, (int, float)) or not math.isfinite(actual) or actual < minimum:
+            fail(errors, "silk_rules", f"Project {name} must be at least {minimum} mm")
+    if settings.get("rule_severities", {}).get("silk_over_copper") not in ("warning", "error"):
+        fail(errors, "silk_rules", "Project must report silkscreen-to-pad clearance violations")
+
+
+def check_silk_mask_clearance(board, errors):
+    for detail in mask_clearance_problems(board):
+        fail(errors, "silk_mask_clearance", detail)
 
 
 def check_relay_holes(board, errors):
@@ -660,6 +700,58 @@ def rule_check(kind, source, destination, errors):
 def self_test(board_path, components, expected, temp, variant="hand"):
     _, raw_nets = parse_netlist(HERE / variant / f"screen_power_{variant}.net")
     results = relay_contact_self_test(raw_nets)
+    for name, kind, check_name in (
+            ("small_silk_text_detected", "reference", "silk_text_height"),
+            ("thin_silk_text_detected", "label", "silk_text_stroke"),
+            ("thin_silk_outline_detected", "outline", "silk_outline_stroke")):
+        altered = load_board(board_path)
+        baseline = []
+        check_silkscreen(altered, baseline)
+        if kind == "reference":
+            item = next(f for f in altered.GetFootprints() if f.GetReference() == "U1").Reference()
+            item.SetTextHeight(p.FromMM(.99))
+        elif kind == "label":
+            item = next(t for t in altered.GetDrawings() if isinstance(t, p.PCB_TEXT)
+                        and t.GetLayer() in (p.F_SilkS, p.B_SilkS)
+                        and t.IsVisible() and t.GetShownText(False).strip())
+            item.SetTextThickness(p.FromMM(.14))
+        else:
+            footprint = next(f for f in altered.GetFootprints() if f.GetReference() == "Q3")
+            item = next(t for t in footprint.GraphicalItems() if isinstance(t, p.PCB_SHAPE)
+                        and t.GetLayer() in (p.F_SilkS, p.B_SilkS) and not t.IsSolidFill())
+            item.SetWidth(p.FromMM(.14))
+        issues = []
+        check_silkscreen(altered, issues)
+        results[name] = not baseline and any(e["check"] == check_name for e in issues)
+    settings = json.loads(board_path.with_suffix(".kicad_pro").read_text())["board"]["design_settings"]
+    baseline = []
+    check_silkscreen_rules(settings, baseline)
+    settings["rules"]["min_silk_clearance"] = .14
+    issues = []
+    check_silkscreen_rules(settings, issues)
+    results["weak_silk_clearance_rule_detected"] = not baseline and any(e["check"] == "silk_rules" for e in issues)
+    altered = load_board(board_path)
+    baseline = []
+    check_silk_mask_clearance(altered, baseline)
+    terminal = next(pad for fp in altered.GetFootprints() if fp.GetReference() == "J1"
+                    for pad in fp.Pads() if pad.GetNumber() == "1")
+    opening = p.SHAPE_POLY_SET()
+    terminal.TransformShapeToPolygon(opening, p.F_Cu, terminal.GetSolderMaskExpansion(p.F_Cu),
+                                     100, p.ERROR_OUTSIDE)
+    box = opening.BBox()
+    # A valid-width native line with a 0.10 mm ink-to-mask gap. This is outside
+    # the aperture, so an overlap-only test cannot detect the intended fault.
+    x, y = box.GetCenter().x, box.GetTop() - p.FromMM(.175)
+    line = p.PCB_SHAPE(altered, p.SHAPE_T_SEGMENT)
+    line.SetLayer(p.F_SilkS)
+    line.SetWidth(p.FromMM(.15))
+    line.SetStart(p.VECTOR2I(x-p.FromMM(.3), y))
+    line.SetEnd(p.VECTOR2I(x+p.FromMM(.3), y))
+    altered.Add(line)
+    issues = []
+    check_silk_mask_clearance(altered, issues)
+    results["short_silk_mask_gap_detected"] = not baseline and any(
+        e["check"] == "silk_mask_clearance" for e in issues)
     altered = load_board(board_path)
     header = next(f for f in altered.GetFootprints() if f.GetReference() == "J101")
     terminal = next(pad for pad in header.Pads() if pad.GetNumber() == "2")
@@ -925,9 +1017,11 @@ def source_hashes(folder, board_path):
     paths.update((HERE / "screen_power.pretty").glob("*.kicad_mod"))
     paths.add(HERE.parent / "netlist.py")
     paths.add(HERE.parent / "round_routes.py")
+    paths.add(HERE.parent / "silkscreen.py")
     paths.add(HERE.parent / "console_board.net")
     paths.add(HERE.parent / "out_console/segno_console_board.kicad_pcb")
     paths.add(board_path)
+    paths.add(board_path.with_suffix(".kicad_pro"))
     for pattern in ("*.net", "*.kicad_sch", "*.kicad_sym", "*.kicad_pro", "*.kicad_dru", "*-lib-table", "components.json", "bom.csv"):
         paths.update(folder.glob(pattern))
     return {os.path.relpath(path,HERE): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(paths) if path.exists()}
@@ -954,6 +1048,10 @@ def validate(variant, board_override=None, run_self_test=False):
         check_contract(variant, pins, expected, errors)
         summary["relay_contact_behavior"] = check_relay_contacts(raw_nets, errors)
         check_geometry(board, errors, variant)
+        check_silkscreen(board, errors)
+        check_silk_mask_clearance(board, errors)
+        project_settings = json.loads(board_path.with_suffix(".kicad_pro").read_text())["board"]["design_settings"]
+        check_silkscreen_rules(project_settings, errors)
         check_mounting_clearance(board, errors)
         check_relay_holes(board, errors)
         check_usb_headers(board, errors)
@@ -994,6 +1092,9 @@ def validate(variant, board_override=None, run_self_test=False):
                                     "reversed_negative_clamp_detected", "pump_lv_grounded_detected",
                                     "opto_output_reversed_detected", "negative_gpio_bridge_detected"]
                 required_faults += ['fastener_short_detected']
+                required_faults += ["small_silk_text_detected", "thin_silk_text_detected",
+                                    "thin_silk_outline_detected", "weak_silk_clearance_rule_detected",
+                                    "short_silk_mask_gap_detected"]
                 required_faults += ["relay_contact_baseline_passes", "relay_old_host_pins_detected",
                                     "relay_wrong_throw_detected", "relay_polarity_swap_detected",
                                     "relay_cross_channel_detected", "relay_no_connects_isolated",

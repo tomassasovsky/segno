@@ -29,6 +29,7 @@ import subprocess
 import sys
 
 import pcbnew
+from silkscreen import finish_footprint, mask_clearance_problems
 
 import console_ring_power
 from netlist import parse_netlist
@@ -107,17 +108,9 @@ TRACK_W = 0.6                   # what the router is asked for, signal and rail 
 VIA_D, VIA_DRILL = 0.8, 0.4
 CLEARANCE = 0.25
 
-# Silkscreen, as the FAB sees it. JLCPCB will not print a line thinner than
-# 0.15 mm or text shorter than 0.8 mm -- below that it thins, breaks, or is dropped
-# outright, and you find out when the boards arrive. KiCad's own defaults are looser
-# (m_MinSilkTextThickness is 0.08), so its DRC is no help here and _check() carries
-# the rule instead.
-#
-# The stroke is h/5, not the h/6 this used: at h/6 every one of the 58 reference
-# designators came out at 0.133 mm, i.e. under the floor, on a board that had
-# otherwise passed every check we had.
+# JLCPCB's published legend minima: 1 mm text, 0.15 mm strokes and clearance.
 FAB_MIN_SILK_STROKE = 0.15
-FAB_MIN_SILK_HEIGHT = 0.8
+FAB_MIN_SILK_HEIGHT = 1.0
 SILK_STROKE_RATIO = 1.0 / 5.0
 
 # How the ground pours meet a pad. THERMAL, for the reason spelled out in
@@ -497,6 +490,7 @@ def _load_fp(board, lib, name, ref, x, y, rot, by_centre=True):
     else:
         fp.SetPosition(P(x, y))
     _apply_connector_drills(fp)
+    finish_footprint(fp)
     return fp
 
 
@@ -1446,6 +1440,9 @@ def _check(fps, nets, board=None):
         f"The placement is wasting space -- longest nets: "
         + ", ".join(f"{n} {v:.0f}mm" for n, v in worst))
 
+    if board:
+        mask_problems = mask_clearance_problems(board)
+        assert not mask_problems, "SILK_MASK: " + str(mask_problems[:3])
     return True
 
 
@@ -1543,13 +1540,8 @@ LABELS = {
     "J24": "PILLS", "J25": "SCREEN",
 }
 SILK_H = 1.0
-REF_H = 0.8          # designators, a size down from the function labels: there are
-                     # 58 of them and they have to fit in the gaps the labels leave.
-                     # This is exactly the fab's minimum printable height. 0.9 was
-                     # tried for margin and does not fit: the designators stop
-                     # finding gaps, which trades a printing risk for a legibility
-                     # one. The STROKE is where the margin went instead -- h/5 puts
-                     # it at 0.16 mm against a 0.15 floor
+REF_H = 1.0
+REF_STROKE = 0.16
 AUTOPLACE_REFS = True   # off = the designators stay where each library footprint
                         # left them, which is the board that shipped "J1" across R3
 # Pinned label rows. A GROUP of labels reads as tidy only if it sits on one side at
@@ -1576,8 +1568,75 @@ LABEL_AT = {"J22": (46.9, 31.855), "J9": (81.1, 64.1), "J25": (61.4, 64.1)}  # d
 # The same for designators. R11 is boxed in -- the module above, J3 left, R21
 # below, R12 right -- and with J3 at the edge the search had only found a spot
 # 19 mm away. The pocket above R11's left end, under the 5V IN label, is its own.
-REF_AT = {"R11": (12.85, 56.25), "J25": (61.95, 66.8), "R20": (40.5, 66.0),
-          "J9": (73.75, 69.0), "R18": (82.2, 61.9)}
+# Reviewed fixed reference positions; preserve them when text sizing changes.
+REF_AT = {
+    "C1": (8.0, 72.256199),
+    "C2": (17.3333, 72.256199),
+    "C3": (31.152652, 75.3),
+    "C4": (36.0, 72.256199),
+    "C5": (49.819252, 75.3),
+    "C6": (59.152652, 75.3),
+    "C7": (68.485952, 75.3),
+    "C8": (77.819285, 75.3),
+    "C9": (87.152618, 75.3),
+    "C10": (96.866904, 75.3),
+    "C11": (80.0, 27.9562),
+    "C13": (55.899999, 24.0438),
+    "C14": (61.133095, 21.0),
+    "C20": (48.616904, 19.6),
+    "C30": (6.7, 26.208698),
+    "C31": (6.7, 15.053711),
+    "D1": (40.595952, 14.4),
+    "H1": (5.0, 9.996326),
+    "H2": (94.5, 9.996326),
+    "H3": (94.5, 89.503674),
+    "H4": (5.0, 89.503674),
+    "J1": (43.0, 32.9162),
+    "J2": (89.5, 10.7262),
+    "J3": (11.790714, 48.9),
+    "J4": (50.0, 12.9188),
+    "J5": (39.840714, 8.0),
+    "J6": (60.840714, 69.0),
+    "J8": (18.1, 12.9188),
+    "J9": (73.75, 69.0),
+    "J10": (8.0, 89.1188),
+    "J11": (17.3333, 89.1188),
+    "J12": (26.666699, 89.1188),
+    "J13": (36.0, 89.1188),
+    "J14": (45.333299, 89.1188),
+    "J15": (54.6667, 89.1188),
+    "J16": (64.0, 89.1188),
+    "J17": (73.333299, 89.1188),
+    "J18": (82.6667, 89.1188),
+    "J19": (85.778333, 89.1188),
+    "J20": (63.4, 12.9188),
+    "J21": (77.7, 12.9188),
+    "J22": (41.233333, 26.0),
+    "J23": (20.028333, 68.999999),
+    "J24": (12.171667, 52.8862),
+    "J25": (61.95, 66.8),
+    "R2": (77.4, 55.8562),
+    "R3": (66.9, 27.9562),
+    "R4": (57.865952, 12.9562),
+    "R5": (35.0, 26.4562),
+    "R6": (71.4, 28.0438),
+    "R7": (69.134047, 12.9562),
+    "R8": (55.134047, 12.9562),
+    "R9": (76.9, 28.0438),
+    "R10": (57.0, 30.0438),
+    "R11": (12.85, 56.25),
+    "R12": (43.696905, 65.8938),
+    "R14": (96.899999, 67.5238),
+    "R16": (53.253095, 62.6438),
+    "R17": (96.899999, 37.3262),
+    "R18": (82.2, 61.9),
+    "R19": (37.003095, 65.7938),
+    "R20": (40.5, 66.0),
+    "R21": (17.0, 65.7938),
+    "R22": (43.496904, 71.2938),
+    "U1": (82.62, 54.6938),
+    "U2": (27.38, 21.0),
+}
 # Per-pin legends for the two power headers, on the BACK silkscreen beside each pad.
 # J3 is +5V/GND from pin 1 and J24 is GND/DATA/+5V, so the two headers read in
 # opposite orders, and a harness crimped to the wrong one puts 5 V on the pill
@@ -1608,11 +1667,11 @@ def _labels(board, fps):
             taken.append((ToMM(bb.GetLeft()) - ORIGIN[0], ToMM(bb.GetTop()) - ORIGIN[1],
                           ToMM(bb.GetRight()) - ORIGIN[0], ToMM(bb.GetBottom()) - ORIGIN[1]))
 
-    def free(x0, y0, x1, y1):
+    def free(x0, y0, x1, y1, gap=SILK_PAD):
         if x0 < 0.5 or y0 < 0.5 or x1 > BW - 0.5 or y1 > BH - 0.5:
             return False
-        return all(x1 + SILK_PAD < bx0 or bx1 + SILK_PAD < x0 or
-                   y1 + SILK_PAD < by0 or by1 + SILK_PAD < y0
+        return all(x1 + gap < bx0 or bx1 + gap < x0 or
+                   y1 + gap < by0 or by1 + gap < y0
                    for bx0, by0, bx1, by1 in taken)
 
     for ref in sorted(LABELS):
@@ -1661,17 +1720,20 @@ def _labels(board, fps):
         # standing on end beside a module whose own extent is 50 mm long.
         t.SetTextAngle(pcbnew.EDA_ANGLE(0, pcbnew.DEGREES_T))
         t.SetTextSize(pcbnew.VECTOR2I(FromMM(REF_H), FromMM(REF_H)))
-        t.SetTextThickness(FromMM(REF_H * SILK_STROKE_RATIO))
+        t.SetTextThickness(FromMM(REF_STROKE))
         tx0, ty0, tx1, ty1 = _text_box(t)
         w, h = tx1 - tx0, ty1 - ty0
         px0, py0, px1, py1 = _extent(fps[ref])
         cx, cy = (px0 + px1) / 2.0, (py0 + py1) / 2.0
         if ref in REF_AT:
             x, y = REF_AT[ref]
-            assert free(x - w / 2, y - h / 2, x + w / 2, y + h / 2), (
+            # These reviewed positions already clear body courtyards; use the
+            # actual ink/mask gate rather than adding another 0.5 mm margin.
+            assert free(x - w / 2, y - h / 2, x + w / 2, y + h / 2, gap=0), (
                 f"SILK: the pinned spot for the reference '{ref}' at {REF_AT[ref]} "
                 "is not free")
-            t.SetPosition(P(x, y))
+            t.SetPosition(pcbnew.VECTOR2I(round((ORIGIN[0] + x) * 1e6),
+                                         round((ORIGIN[1] + y) * 1e6)))
             taken.append(_text_box(t))
             continue
         # Four sides AND four corners. On a 115 mm board the sides were enough; at
@@ -1802,10 +1864,10 @@ def _selftest():
         ("part pushed off the outline", "outside the", {"J2": (112.0, 40.0, 0)}, {}),
         # Move a NON-isolated part up against the opto rather than moving the opto:
         # displacing U2 also displaces the anchors of its own passives, and the
-        # placer then fails before the isolation gate is ever reached. C20 is a
-        # 5.6 mm disc, so this leaves ~1 mm of the 2 mm barrier and no overlap --
+        # placer then fails before the isolation gate is ever reached. Moving
+        # C20 inward leaves less than the 2 mm barrier without an overlap --
         # a control that overlaps trips PLACE and proves nothing about ISOLATION.
-        ("opto barrier inside ISOLATION_GAP", "ISOLATION:", {"C20": (25.3, 21.0, 0)}, {}),
+        ("opto barrier inside ISOLATION_GAP", "ISOLATION:", {"C20": (42.5, 19.6, 0)}, {}),
         # the exact mistake that was shipped: the 5 V inlet parked in front of USB
         # Same spot, turned round -- the coordinates follow PLACEMENT, or the
         # control lands on the cap row and trips PLACE instead of its own gate.
@@ -1821,11 +1883,10 @@ def _selftest():
         # which is the board that shipped with "J1" printed across R3.
         ("designators left where the footprints put them", "SILK:", {},
          {"AUTOPLACE_REFS": False}),
-        # Silk too thin for the fab to print. The stroke follows the text size, so
-        # the control moves the RATIO -- which is the number a future "make the
-        # designators lighter" edit would reach for.
+        # Shrink the reference stroke without changing functional-label placement,
+        # so this control reaches the printing gate rather than a packing gate.
         ("silkscreen stroked below the fab minimum", "SILK_FAB:", {},
-         {"SILK_STROKE_RATIO": 1.0 / 12.0}),
+         {"REF_STROKE": 0.1}),
         # A label on a PINNED row grows into its neighbour. The pinned rows are
         # placed at a fixed spot rather than searched for a free one, so nothing
         # about the placement can refuse them -- only the gate can.
@@ -1903,6 +1964,9 @@ def build(quiet=False):
 
     ds = board.GetDesignSettings()
     ds.SetCopperLayerCount(2)
+    ds.m_MinSilkTextHeight = FromMM(FAB_MIN_SILK_HEIGHT)
+    ds.m_MinSilkTextThickness = FromMM(FAB_MIN_SILK_STROKE)
+    ds.m_SilkClearance = FromMM(0.15)
     # The mask rule is ON, at the fab's own 0.25 mm. It was set to 0 -- i.e. off --
     # back when 0.1in headers produced ~100 "solder_mask_bridge" errors that drowned
     # out everything else. That is no longer true of this layout: re-enabled, DRC
@@ -2259,6 +2323,9 @@ def check_routed_board(path=None):
     _legend = _pin_legend_problems(_b)
     if _legend:
         raise SystemExit("FAB: " + _legend[0])
+    mask_problems = mask_clearance_problems(_b)
+    if mask_problems:
+        raise SystemExit("FAB: " + "; ".join(mask_problems[:3]))
     # Silk that the fab will not print, checked on the plotted article rather than on
     # the objects build() happened to create.
     for fp in _b.Footprints():

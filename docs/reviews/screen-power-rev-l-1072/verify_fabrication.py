@@ -105,6 +105,7 @@ def sources(base, board):
                   base / "external_bom.csv", base / "LIBRARY_LICENSE.txt",
                   base.parents[2] / "LICENSE", base.parent / "netlist.py",
                   base.parent / "round_routes.py",
+                  base.parent / "silkscreen.py",
                   base.parent / "console_board.net",
                   base.parent / "out_console/segno_console_board.kicad_pcb"))
     result = {}
