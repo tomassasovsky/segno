@@ -81,6 +81,10 @@ certification limit. Keep the drain short and broad where practical, sleeve
 it against neighboring pads, and bond it to the adjacent GND pad. Retain a
 separate pin-4 ground conductor; the shield is not the power return.
 Strain-relieve the jacket independently of the four crimps and solder pad.
+The [local construction assessment](shield-drain-fit.md) gives side-breakout
+paths for the current shield pads, including the 9.8 mm mated plug height,
+neighboring component envelopes and the actual drain length. Preserve those
+paths and their cable-size bounds when making the harness.
 A cable with no shield cannot acquire one merely by adding a drain wire.
 Repinning can correct the XH order but cannot correct an absent data pair,
 shield or incorrect resistor hidden in a sealed C plug.

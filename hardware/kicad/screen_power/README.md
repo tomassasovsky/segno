@@ -4,9 +4,10 @@
 <!-- cspell:words SUP SUM Rds backfeed Micro pulldown Vgs Littelfuse Lumberg MMBT DMODEL stackup microstrip heatsinks eleUniverse ATOF PXCN FHAC overcurrent -->
 # Screen power and touch switch
 
-**Revision M is in progress; do not order the retained Revision L archive.**
-The schematic and source are updated. Native routing and release verification
-are pending. See the [revision status](../../../docs/reviews/screen-power-usb-revision-1072/review.md).
+**Revision M replaces the withdrawn Revision L screen circuit.** Native
+schematic and PCB checks pass, including all 75 fault-detection controls.
+Use the release files identified in the
+[revision verification](../../../docs/reviews/screen-power-usb-revision-1072/review.md).
 
 Revision M retains the **two-layer, 68 × 76 mm** hand-soldered board, **3 mm
 rounded corners**, purple solder mask and white silkscreen. The screen supply
@@ -147,8 +148,14 @@ Connect its insulated shield drain to the adjacent bare pad: J101→TP101,
 J102→TP102, J201→TP201 and J202→TP202. Keep each drain tail at most 10 mm
 and provide jacket strain relief; do not use loose braid as a power return.
 The pad joins board GND separately from XH pin 4. See the
+[local shield-drain construction](../../../docs/reviews/screen-power-usb-revision-1072/shield-drain-fit.md)
+for side breakouts beside the mated plugs. A jacket up to 5 mm diameter and
+an insulated drain up to 2 mm diameter fit the assessed local paths; the
+touch drain has only about 0.9 mm spare length within the 10 mm limit.
+Bring the jacket alongside the plug and raise the short wire fanout into
+its upper wire exits. Strain relief must preserve that arrangement. The
 [cable assessment](../../../docs/reviews/screen-power-usb-revision-1072/cable-assessment.md)
-for suitable existing-cable reuse and optional shielded USB-A-to-USB-C and
+describes suitable existing-cable reuse and optional shielded USB-A-to-USB-C and
 USB-A-to-Micro-B donor cables. Donor cables replace unsuitable leads; they
 are not an additional set of adapters or mandatory new purchases.
 

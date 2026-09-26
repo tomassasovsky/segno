@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "circuit.py")
-    (date "09/26/2026 04:44 PM")
+    (date "09/26/2026 06:27 PM")
     (tool "SKiDL (2.3.0)")
     (sheet
       (number 1)
@@ -13,7 +13,7 @@
         (company)
         (rev)
         (date)
-        (source "../../../circuit.py")
+        (source "circuit.py")
         (comment
           (number "1")
           (value ""))

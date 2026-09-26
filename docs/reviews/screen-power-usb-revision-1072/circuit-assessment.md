@@ -1,8 +1,8 @@
 # USB relay power revision: circuit assessment
 
 Baseline: `355882d8`. This is the circuit author's bounded design assessment,
-not an independent review or an assembled USB compliance result. The screen
-order hold remains until the revised native board and publication gates pass.
+not an independent review or an assembled USB compliance result. The completed
+native and manufacturing checks are recorded in the [revision review](review.md).
 
 ## Circuit change
 
@@ -140,8 +140,9 @@ Source snapshots for this assessment:
 - `check.py`: `b68482bb0bd5350531708bda32114d4c0f38c3f8074dbea83a5087ed01a5539d`
 
 Independent source reviews are complete; findings and their resolutions are
-recorded in [the review](review.md). New native placement/routing, complete
-native checks and refreshed CAM remain pending. This correction removes the known
+recorded in [the review](review.md). The completed native board passes all 75
+required fault controls, with zero DRC, unconnected or ERC findings. Refreshed
+CAM passes 412 independent assertions. This correction removes the known
 host-powered-coil suspend-current defect. It does not certify the complete
 USB channel, cable/shield implementation, signal eye, attachment timing, ESD,
 or assembled operation. The [USB-IF mandatory suspend-current update](https://compliance.usb.org/index.asp?UpdateFile=Electrical)

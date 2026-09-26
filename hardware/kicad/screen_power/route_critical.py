@@ -204,9 +204,15 @@ def route(variant):
         # the USB fanouts. This narrow control channel is routed explicitly.
         # The commons now carry the host pair, so the channel sits between the
         # common column and the make column and is recentred on that gap.
-        flow((relay,8),(f'Q{n+1}',3),
+        # Revision M lands the coil's low side on the UPPER series FET's drain
+        # instead of the lower one's: the two FETs are in series now, and only
+        # the drain that faces the relay belongs on this net. The crossing is
+        # the one this run always made - north of the row, then down the lane
+        # between the relay's contact columns - and it stays the only net on
+        # the board that passes a data pair.
+        flow((relay,8),(f'Q{n+2}',3),
              [(23.2,y-4.6),(23.9,y-5.3),(28.75,y-5.3),
-              (29.75,y-4.3),(29.75,y+6.2)],.25,p.F_Cu,sweep(CTRL))
+              (29.75,y-4.3),(29.75,y+4.6)],.25,p.F_Cu,sweep(CTRL))
     # Revision L gate driver. Every loop that carries pump or negative-rail
     # current is placed here instead of being autorouted, and all of it stays
     # north of the first USB row so no inverter loop runs under a data pair.
@@ -249,6 +255,24 @@ def route(variant):
     for nodes in (('U2','1','R10','1'),('U2','2','R10','2')):
         bend(*nodes,CTRL)
     join(('R10','1'),('R9','2'),[],CTRL,p.F_Cu)
+    # Revision M's short local coil-stage links stay explicit. The host
+    # divider feed, gate connection and long AUX feed are low-current nets
+    # for the constrained router; its USB reference keepouts remain intact.
+    # Only channel 2's two divider arms end up facing each other across a
+    # 2.5 mm gap, so only that tap is stated here. Channel 1's arms sit on
+    # different rows with the pulldown's ground terminal between them, which
+    # takes a three-segment dodge - not a short local link - so that one goes
+    # to the router with the rest of the sense net.
+    taps = {2: (('R201','2'),('R202','1'))}
+    for ch,y in enumerate(USB_ROWS[variant],1):
+        n=ch*100
+        # Lower drain to upper source (about 4.4 mm between pad centres).
+        bend(f'Q{n+1}','3',f'Q{n+2}','1',CTRL)
+        if ch in taps:
+            a,b=taps[ch]
+            bend(a[0],a[1],b[0],b[1],CTRL)
+        bend(f'C{n+1}','1',f'D{n+1}','1',CTRL)
+        bend(f'D{n+1}','1',f'K{n+1}','1',CTRL)
     # Q1 also sinks the relay-enable buffer's base divider, which sits south of
     # the first USB row. The data pairs and their front-copper keepouts leave
     # the left edge as the only crossing, so this one takes the bottom layer

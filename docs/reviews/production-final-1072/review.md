@@ -1,13 +1,13 @@
 <!-- cspell:words DeepSeek heatsinks silkscreen datasheets -->
 # Final PCB production review — issue 1072
 
-**Screen-board order hold, 26 September:** the subsequent
+**Screen Revision M supersedes this checkpoint, 26 September.** The subsequent
 [USB requirements review](usb-requirements-followup.md) found that the
-host-powered relay coils exceed the USB suspend-current allowance. That
-finding supersedes screen-board order acceptance below. The
-[Revision M correction](../screen-power-usb-revision-1072/review.md) is
-implemented in the source; native routing and release verification remain
-pending. Console and ring findings are unchanged.
+host-powered relay coils exceed the USB suspend-current allowance. The
+[Revision M correction](../screen-power-usb-revision-1072/review.md) now passes
+native routing, all 75 fault controls and independent manufacturing comparison.
+Revision L screen Gerbers remain withdrawn. Console and ring findings are
+unchanged; assembled USB behavior and whole-PR CI remain separate gates.
 
 This reviews all three complete boards from hardware baseline
 `d32bca8b24c543b907ee1f104ebf8b04f6fa6947`, followed by the corrections below.

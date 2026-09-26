@@ -58,9 +58,14 @@ def finish(variant):
     # its top-edge parts reach the row the back title used to sit on, so both
     # identifications move to the clear lower edge and the control marking
     # reads up the left edge beside its plug, clear of the M3 washers.
-    label('SEGNO SCREEN POWER / REV M',32,h-1.2,1.0,p.B_SilkS)
-    label('SEGNO SCREEN POWER',28.5,h-2.4,1.0)
-    label('REV M',11,h-2.4,1.0)
+    # Revision M's presence dividers take the south edge either side of the
+    # bleeder, so the strip that used to carry two identifications now holds
+    # three resistors. The back keeps the full identification, moved east of
+    # the dividers' terminals into the only run of that strip with nothing on
+    # it, and the front keeps the revision alone: nineteen characters do not
+    # fit anywhere clear of the new parts, and the name is already on the back.
+    label('SEGNO SCREEN POWER / REV M',47,h-1.0,1.0,p.B_SilkS)
+    label('REV M',57,h-3,1.0)
     label('5V IN',56,6.5,1.0)
     label('J25',2.2,10.1,1.0,angle=90)
     label('CTRL',2.2,14,1.0,angle=90)
@@ -76,9 +81,12 @@ def finish(variant):
         label(f'{screen} POWER',41.5,y-8,1.0)
         label(f'S{ch} PI',6,y-6,1.0,p.B_SilkS)
         label(f'S{ch} TOUCH',56,y-6.5,1.0,p.B_SilkS)
-        for x in (7,56):
+        # Both pin columns now read outboard of their own plug. The touch
+        # column used to sit inboard, where the shield pad for that cable now
+        # is, and its ground line is the one that reached it.
+        for x,out in ((7,-4),(56,4)):
             for text,dy in [('1 +5V',3.75),('2 D-',1.25),('3 D+',-1.25),('4 GND',-3.75)]:
-                label(text,x-4,y+dy,1.0,p.B_SilkS)
+                label(text,x+out,y+dy,1.0,p.B_SilkS)
         label(f'S{ch} 5V OUT',55,y-8.2,1.0,p.B_SilkS)
     # Merge almost-coincident router nodes within 2um. A single grid rounding
     # could put opposite sides of a tiny gap into adjacent rounding cells.

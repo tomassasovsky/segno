@@ -3,8 +3,13 @@ DIMENSIONS = {"hand": (68, 76)}
 CORNER_RADIUS = 3
 USB_ROWS = {"hand": (36, 61)}
 POWER_BUS_X = 64
-USB_WIDTH = 0.85
-USB_GAP = 0.16
+# Coupled-pair geometry, from the converged coated-field solution for this
+# stack: the pair keeps its 1.01 mm centre pitch, so every centreline, fanout
+# and keepout in route_critical.py is unchanged, but the copper is narrower and
+# the gap wider. The model target is 90.8 ohms; a two-layer service does not
+# guarantee impedance and this is not a qualification claim.
+USB_WIDTH = 0.78
+USB_GAP = 0.23
 
 
 def place_components(variant, place, fps):
@@ -62,6 +67,37 @@ def place_components(variant, place, fps):
     place("R5", 14.08, 48.8, 180)
     place("R6", 14.08, 52.3, 180)
     place("R7", 27.08, 52.3)
+    # Revision M's two-switch coil stage, per channel. Everything new sits on
+    # the same side of its own USB row as the FET it stacks on, so no new net
+    # has to pass a data pair: the coil's low side keeps the one crossing it
+    # always had, through the lane between the relay's contact columns.
+    #
+    # The upper FET stands vertically 7.15 mm below its row, which puts pin 1
+    # (the stack node) about 4.4 mm from the lower FET's drain and pin 3 (the coil's
+    # low side) pointing at that crossing lane, with pin 2 (the gate) between
+    # them. 0.11 mm of its courtyard to the relay's is the tightest gap on the
+    # board, in the same family as the 0.14 mm U2 to Q4 and 0.15 mm U1 to C3
+    # gaps already accepted here.
+    #
+    # The dividers cannot take the same offset in both channels, and pretending
+    # otherwise would cost a row crossing: channel 1 has the whole 25 mm band
+    # between the rows below it, channel 2 only the 14 mm south of its own row,
+    # where the mounting hole, the bleeder and the bypass can already be found.
+    # So channel 1 stacks its divider under the relay and channel 2 lays it
+    # along the south edge, each with its 10k arm nearest its own host plug so
+    # that HOSTx_5V, which exists on exactly one connector pin, stays short.
+    # The 100k arm of channel 1 takes the strip below the pulldown row: that is
+    # the only 12.35mm slot left in the band, because the fuse holder owns the
+    # rest of its own row and the bleeder its neighbour. Its tap terminal is the
+    # west one, nearest the other two pads on that node.
+    divider = {1: ((27.13, 49.0), (37.9, 55.6)),
+               2: ((14.5, 73.3), (27.2, 73.5))}
+    # Bare shield-drain pads beside their own headers. The host pad takes the
+    # bay between the plug and the flyback diode; the touch pad the 3.3mm
+    # channel between the reservoir can and the plug, which is the only gap on
+    # that side clear of the main-output band on the back and the switched
+    # branch to the edge bus on the front.
+    shield_host, shield_touch = (13.5, -4.5), (51.47, -4.0)
     for ch, y in enumerate(USB_ROWS[variant], 1):
         n = 100 * ch
         place(f"J{n+1}", 7, y+3.75, 90, centre=False)
@@ -74,11 +110,28 @@ def place_components(variant, place, fps):
         place(f"D{n+1}", 17, y, 90)
         place(f"Q{n+1}", 25, y+8)
         place(f"C{n+1}", 15.5, y+9)
+        place(f"Q{n+2}", 31.37, y+7.15, 90)
+        place(f"R{n+1}", *divider[ch][0])
+        place(f"R{n+2}", *divider[ch][1])
+        place(f"TP{n+1}", shield_host[0], y+shield_host[1])
+        place(f"TP{n+2}", shield_touch[0], y+shield_touch[1])
 
     from pcb import point
     import pcbnew as p
-    for ref in ("H1", "H2", "H3", "H4"):
+    for ref in ("H1", "H2", "H3", "H4",
+                "TP101", "TP102", "TP201", "TP202"):
+        # Mechanical features, and the shield pads are read by position beside
+        # their own plug, not by a designator there is no room to print.
         fps[ref].Reference().SetVisible(False)
+    # Bare shield pads need no decorative ring; the stock circle is too close
+    # to its own mask opening after normalization to the fabrication stroke.
+    for ref in ("TP101", "TP102", "TP201", "TP202"):
+        fp = fps[ref]
+        for graphic in list(fp.GraphicalItems()):
+            if (isinstance(graphic, p.PCB_SHAPE)
+                    and graphic.GetShape() == p.SHAPE_T_CIRCLE
+                    and graphic.GetLayer() == p.F_SilkS):
+                fp.RemoveNative(graphic)
     # Reference designators sit in the clear gaps left by the packing above:
     # every one is outside its own courtyard, so no designator hides under a
     # body in the 3D view, and none overlaps another footprint's silkscreen.
@@ -89,18 +142,35 @@ def place_components(variant, place, fps):
             # References follow their respective package offsets.
             "U1": (17.94, 10.07), "C3": (20.29, 26.65), "U2": (30.77, 15.45),
             "R10": (30.55, 20.62), "R9": (29.08, 28.99),
-            "Q2": (4.58, 48.99), "R5": (10.27, 46.6), "R6": (14.27, 54.69),
+            # The 1.48mm between this resistor's own body outline and the
+            # shield pad's silk circle cannot hold a 1.70mm designator, so
+            # this one reads off the west end of its own leads.
+            "Q2": (4.58, 48.99), "R5": (10.27, 46.6), "R6": (5.5, 52.3),
             "R7": (27.27, 54.69),
             "C1": (50, 11.4), "C2": (38, 16.5), "J1": (51, 8), "J2": (11.82, 13),
-            "C101": (13, 42.55), "C201": (15.69, 72.39)}
+            "C101": (13, 42.5), "C201": (13, 67.5),
+            # Revision M. Each of these is in the nearest gap that is clear of
+            # every courtyard; the board is full enough that two of them sit
+            # beside their part rather than over it.
+            "Q102": (35.6, 39.2), "Q202": (35.6, 64.2),
+            # The 100k arm reads below its own body: the strip above it is the
+            # screen-power connector legend's.
+            "R101": (36.5, 51.5), "R102": (37.9, 58.2),
+            "R201": (8.5, 70.6), "R202": (35.6, 73.6)}
     for ch, y in enumerate(USB_ROWS[variant], 1):
         refs[f"J{ch*100+1}"] = (12.61, y-0.44)
         refs[f"J{ch*100+2}"] = (49, y+4.5)
         refs[f"J{ch*100+3}"] = (50, y-10)
         refs[f"D{ch*100+1}"] = (13.3, y+1)
-        refs[f"Q{ch*100+1}"] = (31, y+8)
+        # The lower FET's designator shares the 2.05mm strip between the relay
+        # and the FET row with the relay's own, west of it; the upper FET's pad
+        # column now owns the east end of that strip.
+        refs[f"Q{ch*100+1}"] = (23, y+4.4)
         refs[f"K{ch*100+1}"] = (27, y+5)
-        refs[f"C{ch*100+2}"] = (50, y-8)
+        # North of the reservoir can, where its own silk circle and the shield
+        # pad leave nothing on the plug side, and east of the screen-power
+        # connector legend that shares this strip.
+        refs[f"C{ch*100+2}"] = (49, y-8.5)
     for ref, at in refs.items():
         fps[ref].Reference().SetPosition(point(*at))
         fps[ref].Reference().SetTextAngle(p.EDA_ANGLE(0, p.DEGREES_T))
