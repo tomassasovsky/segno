@@ -4,12 +4,13 @@
 
 26 September 2026, issue #1072. The owner's scope is a consistent smooth finish
 and a placement review of the **console, ring carrier and screen-power board**.
-This record separates observed baseline findings from reviewed source and native
-changes. All three saved boards and their fresh manufacturing archives now pass
-the bounded checks below. **Bare-board CAD and fabrication files are accepted.**
-Use the [current archive manifest](manufacturing-zips.json); older ZIPs are
-superseded. This does not qualify assembled operation or mark the whole PR
-review/CI gates complete.
+This is a historical copper-finish checkpoint. The subsequent
+[Revision M USB correction](../screen-power-usb-revision-1072/review.md)
+supersedes its screen-board acceptance; the retained Revision L screen archive
+is withdrawn. Console and ring hardware are unchanged. Use the
+[current archive manifest](manufacturing-zips.json) for release status and
+verified file identities. The checks below do not qualify assembled operation
+or mark the whole PR review/CI gates complete.
 
 The [final production review](../production-final-1072/review.md) supersedes
 this checkpoint and the subsequent alignment export for all three boards. It
@@ -18,10 +19,10 @@ outlines. Use the manifest above for the current archives; hashes below are
 historical evidence.
 
 The later [U1/U2 alignment correction](../screen-u2-alignment-1072/verification.md)
-supersedes this checkpoint for the screen board only. The manifest above points
-to the aligned screen export and refreshed verification reports; console and
-ring artwork are unchanged. The screen hashes and geometry below describe the
-prior checkpoint.
+supersedes this checkpoint for the screen board only. The screen hashes and
+geometry below describe the prior checkpoint; the manifest above carries the
+subsequent release status. Console and ring artwork are unchanged by that
+alignment correction.
 
 ## Audited baseline
 

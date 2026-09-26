@@ -1,7 +1,7 @@
 {
   "date": "2026-09-26",
-  "status": "screen-order-hold-revision-m-in-progress",
-  "purpose": "Console/ring archives unchanged; screen Revision L withdrawn pending Revision M USB correction and native release validation",
+  "status": "cad-and-manufacturing-files-verified",
+  "purpose": "Current console, ring and Revision M screen bare-board fabrication archives; assembled operation remains unqualified.",
   "baseline_revision": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
   "archives": {
     "console-v3": {
@@ -72,27 +72,27 @@
         "vias": "tented"
       }
     },
-    "screen-power-rev-l": {
-      "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
-      "sha256": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84",
+    "screen-power-rev-m": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_m_gerbers.zip",
+      "sha256": "fae703b28da14b7cd0d0a769784e839e2468c4b97bb29f5b20bc57acf44fdb1f",
       "members_checked": 12,
       "members": {
-        "screen_power_hand-B_Cu.gbr": "ffc5c2223b89becd65f48baeb226ab5b9ea6f32aedf01655f31776ce99001eac",
-        "screen_power_hand-B_Mask.gbr": "7962bb3732275dd23e33679b09c03c04f7e5d830251363d8c484506d4637fed6",
-        "screen_power_hand-B_Silkscreen.gbr": "4a2261e96afcffdeca6bb7e0f8730c984201e5c925d873aa92be1dddcc7a42e7",
-        "screen_power_hand-Edge_Cuts.gbr": "1efb0b1d38dc7119bfe08cde563bcbcc6e3100d57ffdc36d041341ee618018de",
-        "screen_power_hand-F_Cu.gbr": "41fe95dcd19b098fa1eb5be05f7cdf4bfdc1ebe5d68ce2141083e598b2f505cb",
-        "screen_power_hand-F_Mask.gbr": "d9c65d862f8256d0f910a4b3b63d333812623f6db451bd9119b450fc94a88aac",
-        "screen_power_hand-F_Silkscreen.gbr": "d0b7c213e0acf84ba0b318a27c3e4a5765588a42c97dbaa70a8e0d459f495e48",
-        "screen_power_hand-NPTH-drl_map.pdf": "f000a8a8b2491e59ce0c220d8c0a3c5b32bf42bbe1e60c9b53cb8a121a3a13c2",
-        "screen_power_hand-NPTH.drl": "cfb6fe23a3bf3ba3527f0994afff7c18f07d6d823aef34632c82782a97edc2d6",
-        "screen_power_hand-PTH-drl_map.pdf": "46d7ccce3998228fc043a26aa1d63c24a632b405ed5c41fc006255ecf5e65be4",
-        "screen_power_hand-PTH.drl": "a20cfde561409fa4da8bdb9ffd71af560b61046607cff07c7e4570c7d9fe58f1",
-        "screen_power_hand-job.gbrjob": "606beacf975693c1419dccf596a2579489f352b4d195d11cc0db1f17cc7d31fd"
+        "screen_power_hand-B_Cu.gbr": "52ea67e096f763be8e7ee84c8608ee793107013c2705d06b53d1874f4c33f31e",
+        "screen_power_hand-B_Mask.gbr": "2229e875ea77aea90ab8cfd2f73b9df835049602c1b9bc1a67f2baaf8c88c650",
+        "screen_power_hand-B_Silkscreen.gbr": "073f8e697904b950021b45d3ed4f109fa18f4f05f99f5db0ba9c58b8e82a9971",
+        "screen_power_hand-Edge_Cuts.gbr": "9d1ec1c245bce000151a61d3c1aa92992bd5bbb26f28bfa57d5b309372ba3e27",
+        "screen_power_hand-F_Cu.gbr": "b9e3f5f460e05ebdf9483382122aabe0203db2d2d17df83cc46f7a3a6b7e3e0e",
+        "screen_power_hand-F_Mask.gbr": "26bf72b224bd8ca34a7d30aa5beb2ffe41354d2efb4aafe6108cc8460eecae79",
+        "screen_power_hand-F_Silkscreen.gbr": "a5f456e28ac8c61b0dea9ee5bd48054f680d6a7d3bc9b9e0bf2aa9502f1fe099",
+        "screen_power_hand-NPTH-drl_map.pdf": "55ecfda68c98f8878ca78d2bc982209a6bdddc773f8f9b0c931a2ed6f4823381",
+        "screen_power_hand-NPTH.drl": "431b8a99310e0912c6760599e060d4d79aaf03344dd2f9a9bde7fd314d581d1c",
+        "screen_power_hand-PTH-drl_map.pdf": "f432e515dc651279a8435f1dc52c2faba7c27686e1727346d7ad051b8e207045",
+        "screen_power_hand-PTH.drl": "5d311e2d53800b4181e81dacf5b40dbf670187d08b6923aefdc677702c6539e3",
+        "screen_power_hand-job.gbrjob": "9a7af28420706162ae65ca414bf1986f2f0887c4755170148e7dc9564c255b93"
       },
-      "upload_name": "segno-screen-power-rev-l-gerbers.zip",
+      "upload_name": "segno-screen-power-rev-m-gerbers.zip",
       "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
-      "board_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
+      "board_sha256": "8a467b1c6a881cbf7dd117d38366cfda466f1a51c64553296cc374b4ca52cb27",
       "order": {
         "layers": 2,
         "material": "FR-4",
@@ -105,8 +105,7 @@
         "assembly": false,
         "stencil": false,
         "vias": "tented"
-      },
-      "status": "withdrawn-host-powered-relay-suspend-current"
+      }
     }
   },
   "verification": {
@@ -116,15 +115,24 @@
       "checks_passed": 175
     },
     "screen": {
-      "report": "docs/reviews/production-final-1072/screen-fabrication-verification.json",
-      "sha256": "8a90d9b26dae1456bd3c635364bbf56edd48e6c907caaff2c6ee1d6395c92144",
+      "report": "docs/reviews/screen-power-usb-revision-1072/fabrication-verification.json",
+      "sha256": "77e6051fe0b9a12f0dd2461fe55aa1d57d2d51ae4509c08c708aec4ae8dc80b4",
       "checks_passed": 412
     }
   },
   "limits": [
-    "Do not order the retained screen Revision L ZIP. Revision M source and schematic are committed; routing and new CAM validation are pending.",
+    "Revision L screen ZIP remains withdrawn. Use the screen-power-rev-m archive in this record.",
     "Bare-board CAD and export verification; assembled electrical, USB and enclosure behavior are not physically qualified.",
+    "Ordinary two-layer fabrication does not guarantee USB differential impedance; the documented coated-field result is a nominal model.",
     "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
     "No order, merge or device deployment performed."
-  ]
+  ],
+  "withdrawn_archives": {
+    "screen-power-rev-l": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
+      "sha256": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84",
+      "status": "withdrawn-host-powered-relay-suspend-current",
+      "reason": "Host-powered relay coils exceed USB suspend-current allowance; superseded by Revision M."
+    }
+  }
 }

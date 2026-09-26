@@ -13,19 +13,24 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
-**September 26 USB correction: screen ordering is on hold.**
+**September 26 USB correction: Revision M CAD and manufacturing files pass.**
 [Revision M](reviews/screen-power-usb-revision-1072/review.md) replaces the
-34 mA host-powered relay coils with AUX-powered coils and per-host low-current
-presence detectors. The source/schematic are committed, native KiCad ERC
-passes, and independent source reviews are complete. Claude Cloud is authoring
-the remaining placement/routing. Four shield-drain pads retain the XH4 cable
-interfaces. A coated-field model supports 0.78/0.23 mm USB geometry, while
-ordinary two-layer fabrication still has no impedance guarantee. The retained
-Revision L screen archive is withdrawn; console/ring hardware is unchanged.
-The corrected source power budget is 7.708 A AUX with a full-white 40-pixel
-ring and normal pills. Native validation and replacement CAM remain pending.
-The earlier completion text below is historical until this correction is
-released; no order, merge or device deployment has occurred.
+host-powered relay coils with AUX-powered coils and per-host low-current
+presence detectors. Claude authored the placement/routing correction, with
+local native KiCad checks closing the remaining copper and silkscreen faults.
+The complete rebuilt board has zero DRC, unconnected or ERC findings; all
+75 fault-detection controls, 50 component models and 6,264 USB ground-reference
+samples pass. Independent comparison passes 412 manufacturing assertions.
+Four shield-drain pads retain the XH4 cable interfaces, with documented local
+cable construction. The 0.78/0.23 mm USB pairs retain matched paths; the
+coated-field estimate is about 90.8 ohms, while ordinary two-layer fabrication
+still has no impedance guarantee. The corrected AUX planning budget is
+7.708 A with a full-white 40-pixel ring and normal pills.
+Use the [current archive manifest](reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
+Revision L screen Gerbers remain withdrawn; console/ring files are unchanged.
+This closes bare-board CAD/CAM correction, not assembled USB qualification,
+whole-PR CI or a merge. No order or device deployment has occurred. Earlier
+screen completion text below is historical.
 
 
 The [final production review](reviews/production-final-1072/review.md) supersedes
