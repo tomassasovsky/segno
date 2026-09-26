@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "circuit.py")
-    (date "09/25/2026 04:23 PM")
+    (date "09/25/2026 11:22 PM")
     (tool "SKiDL (2.3.0)")
     (sheet
       (number 1)
@@ -57,7 +57,7 @@
         (field
           (name "SKiDL Tag") "flag-AUX_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:135"))
+          (name "SKiDL Line") "switch_circuit.py:158"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -81,7 +81,7 @@
         (field
           (name "SKiDL Tag") "flag-GND")
         (field
-          (name "SKiDL Line") "switch_circuit.py:135"))
+          (name "SKiDL Line") "switch_circuit.py:158"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -105,7 +105,7 @@
         (field
           (name "SKiDL Tag") "flag-HOST1_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:135"))
+          (name "SKiDL Line") "switch_circuit.py:158"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -129,7 +129,7 @@
         (field
           (name "SKiDL Tag") "flag-HOST2_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:135"))
+          (name "SKiDL Line") "switch_circuit.py:158"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -153,7 +153,7 @@
         (field
           (name "SKiDL Tag") "flag-S1_TOUCH_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:135"))
+          (name "SKiDL Line") "switch_circuit.py:158"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -177,7 +177,7 @@
         (field
           (name "SKiDL Tag") "flag-S2_TOUCH_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:135"))
+          (name "SKiDL Line") "switch_circuit.py:158"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -331,29 +331,77 @@
       (component_classes)
       (tstamps "0c14b922-86a6-572c-ae4c-8e9b91488a80"))
     (comp
-      (ref "D1")
-      (value "1N4148")
-      (description "100V 0.15A standard switching diode, DO-35")
-      (footprint "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal")
+      (ref "C3")
+      (value "10uF 25V bipolar")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm")
       (fields
         (field
-          (name "Description") "100V 0.15A standard switching diode, DO-35")
+          (name "Description") "Unpolarized capacitor")
         (field
-          (name "Footprint") "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal")
+          (name "Footprint") "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm")
         (field
-          (name "Datasheet") "https://assets.nexperia.com/documents/data-sheet/1N4148_1N4448.pdf")
+          (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "D1")
+          (name "SKiDL Tag") "C3")
         (field
           (name "SKiDL Line") "switch_circuit.py:29"))
       (libsource
-        (lib "Diode")
-        (part "1N4148"))
+        (lib "Device")
+        (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "730dc923-5f42-5190-a58b-2dbed3a5d5b0"))
+      (tstamps "299afff0-b6cf-50c0-a677-db76bcc001ee"))
+    (comp
+      (ref "C4")
+      (value "10uF 25V bipolar")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "C4")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:29"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "6f9a1813-19d4-5d20-adea-8868e7232e30"))
+    (comp
+      (ref "C5")
+      (value "100nF 63V")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "C5")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:29"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1d55401a-d19b-530c-b57c-5c75b8c48e01"))
     (comp
       (ref "D101")
       (value "1N4007")
@@ -378,6 +426,30 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "73b19c03-225d-5375-8bb5-615ef2f565de"))
+    (comp
+      (ref "D2")
+      (value "BAT85S")
+      (description "Schottky diode")
+      (footprint "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Schottky diode")
+        (field
+          (name "Footprint") "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "D2")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:29"))
+      (libsource
+        (lib "Device")
+        (part "D_Schottky"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "06934a86-3c08-5320-b71c-96bf0d33127c"))
     (comp
       (ref "D201")
       (value "1N4007")
@@ -860,7 +932,7 @@
       (tstamps "9699dfdd-a6d3-59e3-8793-7f24db869fba"))
     (comp
       (ref "Q101")
-      (value "2N7000")
+      (value "TN0702")
       (description "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
       (footprint "Package_TO_SOT_THT:TO-92_Inline_Wide")
       (fields
@@ -908,7 +980,7 @@
       (tstamps "7852643a-7934-5503-82c8-62f05e9bd38e"))
     (comp
       (ref "Q201")
-      (value "2N7000")
+      (value "TN0702")
       (description "0.2A Id, 200V Vds, N-Channel MOSFET, 2.6V Logic Level, TO-92")
       (footprint "Package_TO_SOT_THT:TO-92_Inline_Wide")
       (fields
@@ -1003,6 +1075,30 @@
       (component_classes)
       (tstamps "91628e47-8f83-5ba1-abed-4cb134d83eea"))
     (comp
+      (ref "R10")
+      (value "10k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R10")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:29"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "99b6d9e4-efbb-57f3-bc7c-dc7822d36beb"))
+    (comp
       (ref "R2")
       (value "100k 1%")
       (description "Resistor")
@@ -1052,7 +1148,7 @@
       (tstamps "9000ab58-0faa-55db-ba96-c3a9c048b920"))
     (comp
       (ref "R4")
-      (value "330k 1%")
+      (value "22k 1%")
       (description "Resistor")
       (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
       (fields
@@ -1169,7 +1265,79 @@
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "d4602b99-fd19-5b52-9a62-e3fbb9d2ed0c")))
+      (tstamps "d4602b99-fd19-5b52-9a62-e3fbb9d2ed0c"))
+    (comp
+      (ref "R9")
+      (value "2.4k 1%")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R9")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:29"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "abe8364b-5ed9-593a-a990-c9655e96dd67"))
+    (comp
+      (ref "U1")
+      (value "LMC7660IN")
+      (description "Voltage converter from +1.5V to +10V to +1.5V to +10V, SO-8/DIP-8")
+      (footprint "Package_DIP:DIP-8_W7.62mm")
+      (fields
+        (field
+          (name "Description") "Voltage converter from +1.5V to +10V to +1.5V to +10V, SO-8/DIP-8")
+        (field
+          (name "Footprint") "Package_DIP:DIP-8_W7.62mm")
+        (field
+          (name "Datasheet") "http://www.ti.com/lit/ds/symlink/lmc7660.pdf")
+        (field
+          (name "SKiDL Tag") "U1")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:29"))
+      (libsource
+        (lib "Regulator_SwitchedCapacitor")
+        (part "LMC7660"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "f8fce87b-acde-5341-b554-4e93a034d648"))
+    (comp
+      (ref "U2")
+      (value "TLP627M")
+      (description "DC Darlington Optocoupler, Vce 300V, CTR 1000%, DIP4")
+      (footprint "Package_DIP:DIP-4_W7.62mm")
+      (fields
+        (field
+          (name "Description") "DC Darlington Optocoupler, Vce 300V, CTR 1000%, DIP4")
+        (field
+          (name "Footprint") "Package_DIP:DIP-4_W7.62mm")
+        (field
+          (name "Datasheet") "https://toshiba.semicon-storage.com/info/docget.jsp?did=16914&prodName=TLP627")
+        (field
+          (name "SKiDL Tag") "U2")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:29"))
+      (libsource
+        (lib "Isolator")
+        (part "TLP627"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "7a03e947-39e7-5554-99eb-b5f6bb184fae")))
   (nets
     (net
       (code 1)
@@ -1188,6 +1356,10 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
+        (ref "C5")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
         (ref "J1")
         (pin "1")
         (pintype "PASSIVE"))
@@ -1202,7 +1374,15 @@
       (node
         (ref "R6")
         (pin "1")
-        (pintype "PASSIVE")))
+        (pintype "PASSIVE"))
+      (node
+        (ref "R9")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "U1")
+        (pin "8")
+        (pintype "POWER-IN")))
     (net
       (code 2)
       (name "BUFFER_BASE")
@@ -1221,18 +1401,6 @@
         (pintype "PASSIVE")))
     (net
       (code 3)
-      (name "BUFFER_SINK")
-      (class "Default")
-      (node
-        (ref "D1")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R5")
-        (pin "1")
-        (pintype "PASSIVE")))
-    (net
-      (code 4)
       (name "COMMON_SOURCE")
       (class "Default")
       (node
@@ -1248,7 +1416,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 5)
+      (code 4)
       (name "CONTROL_BASE")
       (class "Default")
       (node
@@ -1264,23 +1432,27 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 6)
+      (code 5)
       (name "CONTROL_SINK")
       (class "Default")
-      (node
-        (ref "D1")
-        (pin "1")
-        (pintype "PASSIVE"))
       (node
         (ref "Q1")
         (pin "3")
         (pintype "PASSIVE"))
       (node
-        (ref "R3")
+        (ref "R10")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R5")
         (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "U2")
+        (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 7)
+      (code 6)
       (name "DATA_ENABLE")
       (class "Default")
       (node
@@ -1300,7 +1472,35 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
+      (code 7)
+      (name "GATE_LED")
+      (class "Default")
+      (node
+        (ref "R10")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R9")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "U2")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
       (code 8)
+      (name "GATE_SINK")
+      (class "Default")
+      (node
+        (ref "R3")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "U2")
+        (pin "4")
+        (pintype "PASSIVE")))
+    (net
+      (code 9)
       (name "GND")
       (class "Default")
       (node
@@ -1330,6 +1530,18 @@
       (node
         (ref "C202")
         (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C4")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C5")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D2")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "J1")
@@ -1386,9 +1598,13 @@
       (node
         (ref "R8")
         (pin "2")
-        (pintype "PASSIVE")))
+        (pintype "PASSIVE"))
+      (node
+        (ref "U1")
+        (pin "3")
+        (pintype "POWER-IN")))
     (net
-      (code 9)
+      (code 10)
       (name "HOST1_5V")
       (class "Default")
       (node
@@ -1412,7 +1628,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 10)
+      (code 11)
       (name "HOST2_5V")
       (class "Default")
       (node
@@ -1436,7 +1652,27 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 11)
+      (code 12)
+      (name "NEG_5V")
+      (class "Default")
+      (node
+        (ref "C4")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D2")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "U1")
+        (pin "5")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "U2")
+        (pin "3")
+        (pintype "PASSIVE")))
+    (net
+      (code 13)
       (name "PI_GPIO17")
       (class "Default")
       (node
@@ -1448,7 +1684,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 12)
+      (code 14)
       (name "POWER_GATE")
       (class "Default")
       (node
@@ -1468,7 +1704,31 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 13)
+      (code 15)
+      (name "PUMP_CAP_MINUS")
+      (class "Default")
+      (node
+        (ref "C3")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "U1")
+        (pin "4")
+        (pintype "INPUT")))
+    (net
+      (code 16)
+      (name "PUMP_CAP_PLUS")
+      (class "Default")
+      (node
+        (ref "C3")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "U1")
+        (pin "2")
+        (pintype "INPUT")))
+    (net
+      (code 17)
       (name "S1_DATA_COIL_LOW")
       (class "Default")
       (node
@@ -1484,7 +1744,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 14)
+      (code 18)
       (name "S1_DN_N")
       (class "Default")
       (node
@@ -1496,7 +1756,7 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 15)
+      (code 19)
       (name "S1_DN_P")
       (class "Default")
       (node
@@ -1508,7 +1768,7 @@
         (pin "5")
         (pintype "PASSIVE")))
     (net
-      (code 16)
+      (code 20)
       (name "S1_MAIN_5V")
       (class "Default")
       (node
@@ -1520,7 +1780,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 17)
+      (code 21)
       (name "S1_TOUCH_5V")
       (class "Default")
       (node
@@ -1540,7 +1800,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 18)
+      (code 22)
       (name "S1_UP_N")
       (class "Default")
       (node
@@ -1552,7 +1812,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 19)
+      (code 23)
       (name "S1_UP_P")
       (class "Default")
       (node
@@ -1564,7 +1824,7 @@
         (pin "6")
         (pintype "PASSIVE")))
     (net
-      (code 20)
+      (code 24)
       (name "S2_DATA_COIL_LOW")
       (class "Default")
       (node
@@ -1580,7 +1840,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 21)
+      (code 25)
       (name "S2_DN_N")
       (class "Default")
       (node
@@ -1592,7 +1852,7 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 22)
+      (code 26)
       (name "S2_DN_P")
       (class "Default")
       (node
@@ -1604,7 +1864,7 @@
         (pin "5")
         (pintype "PASSIVE")))
     (net
-      (code 23)
+      (code 27)
       (name "S2_MAIN_5V")
       (class "Default")
       (node
@@ -1616,7 +1876,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 24)
+      (code 28)
       (name "S2_TOUCH_5V")
       (class "Default")
       (node
@@ -1636,7 +1896,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 25)
+      (code 29)
       (name "S2_UP_N")
       (class "Default")
       (node
@@ -1648,7 +1908,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 26)
+      (code 30)
       (name "S2_UP_P")
       (class "Default")
       (node
@@ -1660,7 +1920,7 @@
         (pin "6")
         (pintype "PASSIVE")))
     (net
-      (code 27)
+      (code 31)
       (name "SWITCHED_5V")
       (class "Default")
       (node

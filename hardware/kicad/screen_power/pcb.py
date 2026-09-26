@@ -107,7 +107,10 @@ def build(variant):
         # Larger XH/VH holes also ease hand insertion into rigid FR-4.
         drill = (1.10 if name.startswith("JST_XH_") else
                  1.80 if name.startswith("JST_VH_") else
-                 .95 if name == "TO-92_Inline_Wide" else None)
+                 .95 if name == "TO-92_Inline_Wide" else
+                 .90 if name in ("DIP-8_W7.62mm", "DIP-4_W7.62mm") else None)
+        # The TLP627M's maximum rectangular lead diagonal is 0.695 mm;
+        # 0.90 mm DIP drills retain insertion room at the hole tolerance.
         if drill:
             for pad in fp.Pads():
                 pad.SetDrillSize(point(drill, drill))
@@ -126,7 +129,9 @@ def build(variant):
                     filename = "Panasonic_EEUFR1A221.step"
                 elif ref in ("C102", "C202"):
                     filename = "Panasonic_EEUFR1A151.step"
-                elif ref in ("C1", "C101", "C201"):
+                elif ref in ("C3", "C4"):
+                    filename = "Panasonic_ECEA1EN100U.step"
+                elif ref in ("C1", "C5", "C101", "C201"):
                     filename = "WIMA_MKS2C031001A00KSSD.step"
                 elif ref == "R8":
                     filename = "Vishay_PR01_P10.16mm.step"

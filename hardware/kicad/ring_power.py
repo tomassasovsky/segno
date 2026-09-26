@@ -46,7 +46,7 @@ def arc(centre, frm, to, steps=12):
     """Chords along the circular arc frm -> to about centre.
 
     A polygon cannot hold a curve, so the fillet is drawn as chords; twelve to
-    the quarter turn keep the deviation from the circle under 1 um.
+    the quarter turn keep the deviation from the circle under 2 um at the 0.6 mm radius.
     """
     radius = math.dist(centre, frm)
     first = math.atan2(frm[1] - centre[1], frm[0] - centre[0])

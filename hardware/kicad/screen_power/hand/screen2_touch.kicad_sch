@@ -5,7 +5,7 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / screen2 touch")
-    (rev "K prototype")
+    (rev "L prototype")
     (comment 1 "Discrete 5V switch. Host VBUS powers only its own signal relay coil.")
     (comment 2 "Physical verification required before release."))
   (lib_symbols
@@ -2062,7 +2062,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "2N7000"
+    (property "Value" "TN0702"
       (at 276.86 101.60000000000001 0)
       (effects
         (font
@@ -2073,7 +2073,7 @@
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "2N7000"
+    (property "MPN" "TN0702N3-G"
       (at 276.86 114.3 0)
       (effects
         (font
