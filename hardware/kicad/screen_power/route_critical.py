@@ -11,6 +11,9 @@ NECK=1.9
 # Charge-pump/negative-rail supply and gate-drive signal widths.
 SUPPLY=.5
 CTRL=.25
+# Centreline radius for the wide power bends. Both leave a 1mm radius on the
+# inner edge of the band, so every wide corner on the board reads the same.
+ARC3,ARC2=2.5,2.
 
 
 def route(variant):
@@ -41,6 +44,47 @@ def route(variant):
         return [(centre[0]+radius*math.cos(a0+(a1-a0)*i/steps),
                  centre[1]+radius*math.sin(a0+(a1-a0)*i/steps))
                 for i in range(steps+1)]
+    def curve(points,radius,steps=8):
+        """Centreline with a tangent circular arc at every interior corner.
+
+        A wide band drawn as mitred straight segments shows a point on the
+        outside of each bend and a notch on the inside; running the centreline
+        through an arc instead keeps it one width wide the whole way round and
+        leaves a positive radius on both edges. The arc is emitted as chords,
+        not as a PCB_ARC: the DSN export that feeds the router flattens an arc
+        to its chord and would lose the bow. Eight chords per corner hold the
+        deviation from the true circle under 10um.
+
+        The first and last leg may spend their whole length on a tangent
+        because nothing else claims it; an interior leg keeps half for its
+        other end, which is also how KiCad clamps a zone fillet.
+        """
+        out=[points[0]];last=len(points)-3
+        for i,corner in enumerate(points[1:-1]):
+            before,after=points[i],points[i+2]
+            v1=(before[0]-corner[0],before[1]-corner[1])
+            v2=(after[0]-corner[0],after[1]-corner[1])
+            l1,l2=math.hypot(*v1),math.hypot(*v2)
+            u1,u2=(v1[0]/l1,v1[1]/l1),(v2[0]/l2,v2[1]/l2)
+            angle=math.acos(max(-1,min(1,u1[0]*u2[0]+u1[1]*u2[1])))
+            if angle>math.pi-1e-9:
+                out.append(corner);continue
+            tangent=min(radius/math.tan(angle/2),
+                        l1 if i==0 else l1/2,l2 if i==last else l2/2)
+            r=tangent*math.tan(angle/2)
+            t1=(corner[0]+u1[0]*tangent,corner[1]+u1[1]*tangent)
+            t2=(corner[0]+u2[0]*tangent,corner[1]+u2[1]*tangent)
+            bisector=(u1[0]+u2[0],u1[1]+u2[1]);bl=math.hypot(*bisector)
+            centre=(corner[0]+bisector[0]/bl*(r/math.sin(angle/2)),
+                    corner[1]+bisector[1]/bl*(r/math.sin(angle/2)))
+            out+=quarter(centre,t1,t2,steps)
+        out.append(points[-1])
+        return [q for i,q in enumerate(out) if i==0 or math.dist(q,out[i-1])>1e-9]
+    def flow(a,b,bends,width,layer,radius):
+        """join(), with circular corners instead of mitred ones."""
+        assert pad(*a).GetNetname()==pad(*b).GetNetname(),(a,b)
+        track(pad(*a).GetNetname(),curve([at(*a),*bends,at(*b)],radius),
+              width,layer)
     def region(net,points,layer=p.F_Cu,fillet=0):
         # Locked overlay that fixes the visible outline of a power path. The
         # tracks underneath still carry the checked widths on their own, so
@@ -194,20 +238,39 @@ def route(variant):
     film_x=film[0]-1.7
     track('AUX_5V',[(47,11),(film_x,11+47-film_x),
                     (film_x,film[1]-1.7),film],.8,p.F_Cu)
-    track('COMMON_SOURCE',[q3s,(41.46,10.5)],NECK,p.F_Cu)
-    track('COMMON_SOURCE',[q4s,(33.54,10.5)],NECK,p.F_Cu)
-    track('COMMON_SOURCE',[(33.54,10.5),(35.04,12),(39.96,12),(41.46,10.5)],3,p.F_Cu)
-    taper('COMMON_SOURCE',(41.46,9),(41.46,10.5),NECK,3)
-    taper('COMMON_SOURCE',(33.54,9.5),(33.54,10.5),NECK,3)
+    # Common-source bridge. Each pin keeps the 1.9mm neck its terminal pitch
+    # allows, and the bridge between them is a single 3mm band that turns on
+    # arcs, so the copper is one width the whole way across: no point on the
+    # outside of a bend, no notch on the inside. The two approaches differ in
+    # length because the pad rows do, but both hand the current over at the
+    # same height, through the same 1.2mm taper and into the same 2.5mm
+    # centreline radius, so the two transitions read as one shape.
+    hand=10.7
+    track('COMMON_SOURCE',[q3s,(41.46,hand)],NECK,p.F_Cu)
+    track('COMMON_SOURCE',[q4s,(33.54,hand)],NECK,p.F_Cu)
+    track('COMMON_SOURCE',curve([(33.54,hand),(33.54,hand+ARC3),
+                                 (41.46,hand+ARC3),(41.46,hand)],ARC3),
+          3,p.F_Cu)
+    for x in (33.54,41.46):
+        taper('COMMON_SOURCE',(x,hand-1.2),(x,hand),NECK,3)
     # Feed the edge bus through the plated fuse terminal, and stitch that
     # transition with dedicated vias for parallel copper paths independent
-    # of the fuse terminal's plated barrel.
-    track('SWITCHED_5V',[q4d,(31,12)],NECK,p.B_Cu)
-    taper('SWITCHED_5V',(31,10.3),(31,12),NECK,3,p.B_Cu)
+    # of the fuse terminal's plated barrel. The trunk hands over from the
+    # 1.9mm terminal neck through the same 1.2mm taper the bridge uses, then
+    # runs on 2.5mm arcs: down the diagonal, along the clear lane at y=20 and
+    # into the fuse terminal on the terminal's own row. Ending level with the
+    # pad keeps the whole 2mm pad inside the 3mm band, so the terminal needs
+    # neither a mitred stub nor a round cap standing proud of the band, and
+    # the three transition vias sit inside the copper on both faces instead of
+    # just outside its edge, which is what left facing nibs in the pour.
+    start,term=10.8,23
+    track('SWITCHED_5V',[q4d,(31,start)],NECK,p.B_Cu)
+    taper('SWITCHED_5V',(31,start-1.2),(31,start),NECK,3,p.B_Cu)
     f=at('F101',1)
-    track('SWITCHED_5V',[(31,12),(36,17),(36,18.5),(37.5,20),(43,20),(47,24),(f[0]-1,24),f],3,p.B_Cu)
-    track('SWITCHED_5V',[f,(f[0]-1,24),(46.6,24)],3,p.F_Cu)
-    for stitch in ((46.4,24.5),(47.5,24.5),(48.6,24.5)):
+    track('SWITCHED_5V',curve([(31,start),(31,12),(39,20),(44,20),
+                               (47,term),f],ARC3),3,p.B_Cu)
+    track('SWITCHED_5V',[(46.6,term),f],3,p.F_Cu)
+    for stitch in ((46.4,term+.9),(47.5,term+.9),(48.6,term+.9)):
         v=p.PCB_VIA(board);v.SetPosition(point(*stitch));v.SetWidth(p.FromMM(.9));v.SetDrill(p.FromMM(.45))
         v.SetViaType(p.VIATYPE_THROUGH);v.SetLayerPair(p.F_Cu,p.B_Cu)
         v.SetNet(nets['SWITCHED_5V']);v.SetLocked(True);board.Add(v)
@@ -261,10 +324,10 @@ def route(variant):
                 turn=west-GUSSET-.75
                 bends=[(turn-(f[1]-taps[-1]),f[1]),(turn,taps[-1]),
                        (POWER_BUS_X,taps[-1])]
-            track('SWITCHED_5V',[f,*bends],3,p.F_Cu)
+            track('SWITCHED_5V',curve([f,*bends],ARC3),3,p.F_Cu)
         a,b=at(f'F{n+1}',2),at(f'J{n+3}',1)
-        join((f'F{n+1}',2),(f'J{n+3}',1),
-             [(a[0],a[1]+2),(a[0]+2,a[1]+4),(b[0]-2,a[1]+4)],2,p.B_Cu)
+        flow((f'F{n+1}',2),(f'J{n+3}',1),
+             [(a[0],a[1]+2),(a[0]+2,a[1]+4),(b[0]-2,a[1]+4)],2,p.B_Cu,ARC2)
         a,b=at(f'F{n+2}',2),at(f'J{n+2}',1)
         join((f'F{n+2}',2),(f'J{n+2}',1),
              [(a[0]+3.25,b[1])],.8,p.F_Cu)
@@ -297,16 +360,19 @@ def route(variant):
             keepout(p.F_Cu,left,y-2.8,right,y+2.8,tracks=True)
         keepout(p.F_Cu,22,y-1.4,25,y+1.4,tracks=True)
         keepout(p.B_Cu,8.5,y-5,54.5,y+5,pours=True)
-    # Two dead-end ground nibs are left over between power copper: one on the
-    # front under Q3, in the wedge between the AUX approach and the source
-    # bridge, and two facing ones on the back under F101's via transition.
-    # Blunt them with local pour-only cutbacks whose own outline is rounded, so
+    # One dead-end ground nib is left over between power copper, on the front
+    # under Q3 in the wedge between the AUX approach and the source bridge.
+    # Blunt it with a local pour-only cutback whose own outline is rounded, so
     # the pour ends on a curve instead of a tip and the cutback adds no sharp
-    # corner of its own. These only remove fill: the tracks and vias that bound
-    # them, the power zones and the USB reference ground are untouched, and both
-    # areas are dead ends, so no ground region loses a path.
+    # corner of its own. It only removes fill: the tracks and vias that bound
+    # it, the power zones and the USB reference ground are untouched, and the
+    # area is a dead end, so no ground region loses a path.
     keepout(p.F_Cu,43.15,10.35,44.5,11.9,pours=True,radius=.35)
-    keepout(p.B_Cu,46.2,25.45,49.1,25.82,pours=True,radius=.35)
+    # The pair of facing nibs on the back under F101 needed the same treatment
+    # while the trunk ran a millimetre south of the fuse terminal and its three
+    # transition vias sat just outside the band's edge. The trunk now ends on
+    # the terminal's own row with those vias inside the copper, so the pour's
+    # northern boundary there is one straight edge with nothing to poke into.
     # Protect the fanouts as well: a control trace under either data line
     # breaks its return path even when it misses the straight pair corridor.
     for t in list(board.GetTracks()):
