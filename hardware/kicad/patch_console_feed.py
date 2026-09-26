@@ -15,6 +15,7 @@ geometry, so run it with the same Python that runs the board scripts.
     python3 patch_console_feed.py out_console/segno_console_board.kicad_pcb
 """
 import argparse
+import math
 from pathlib import Path
 import re
 import uuid
@@ -22,6 +23,11 @@ import uuid
 import console_ring_power as crp
 
 HERE = Path(__file__).resolve().parent
+# Checked against console_board_pcb.py, so this cannot drift from the source
+# that pours the same fillet on a regenerated board.
+CONTRACT = ('PILL_BAR_R = 1.0', 'PILL_BLEND_R = 0.3',
+            'PILL_BLEND_OVERLAP = 0.2')
+BAR_R, BLEND_R, OVERLAP = 1.0, 0.3, 0.2
 # Exactly the supply copper this replaces: (layer, start, end), millimetres.
 OLD = (('B.Cu', (105.4, 113.0), (102.0, 116.4)),
        ('B.Cu', (102.0, 116.4), (102.0, 137.0)),
@@ -70,6 +76,82 @@ def wire(a, b, layer):
             f'\t\t(uuid "{uuid.uuid4()}")\n\t)\n')
 
 
+def blend(text):
+    """The fillet outline for the busbar corner the supply crosses.
+
+    Takes the busbar's own rectangle from the board, so the two agree by
+    construction rather than by a copied number.
+    """
+    source = (HERE/'console_board_pcb.py').read_text()
+    missing = [line for line in CONTRACT if line not in source]
+    if missing:
+        raise SystemExit('console_board_pcb.py no longer declares: '
+                         + '; '.join(missing))
+    rect = None
+    for _span, body in blocks(text, 'zone'):
+        if '(net "+5V")' not in body or '"B.Cu"' not in body:
+            continue
+        pts = [(float(x), float(y)) for x, y in
+               re.findall(r'\(xy ([-\d.]+) ([-\d.]+)\)',
+                          body.split('(filled_polygon')[0])]
+        if len(pts) == 4:
+            rect = (min(p[0] for p in pts), min(p[1] for p in pts),
+                    max(p[0] for p in pts), max(p[1] for p in pts))
+    if rect is None:
+        raise SystemExit('no rectangular +5V busbar zone on the back')
+    x0, _y0, _x1, y1 = rect
+    edge = crp.BACK_PATH[1][0] + crp.WIDTH/2.0
+    if not x0 < edge < x0 + BAR_R:
+        return None
+    cx, cy = x0 + BAR_R, y1 - BAR_R
+    centre = (edge + BLEND_R,
+              cy + math.sqrt((BAR_R + BLEND_R)**2 - (edge + BLEND_R - cx)**2))
+    scale = BAR_R/(BAR_R + BLEND_R)
+    touch = (cx + (centre[0]-cx)*scale, cy + (centre[1]-cy)*scale)
+    inside = (touch[0] + (cx-touch[0])*OVERLAP/BAR_R,
+              touch[1] + (cy-touch[1])*OVERLAP/BAR_R)
+    back = edge - OVERLAP
+    arc = []
+    first = math.atan2(centre[1]-centre[1], edge-centre[0])
+    last = math.atan2(touch[1]-centre[1], touch[0]-centre[0])
+    if last - first > math.pi:
+        last -= math.tau
+    if first - last > math.pi:
+        last += math.tau
+    for i in range(13):
+        angle = first + (last-first)*i/12
+        arc.append((centre[0]+BLEND_R*math.cos(angle),
+                    centre[1]+BLEND_R*math.sin(angle)))
+    return [(edge, centre[1]), *arc, inside, (back, inside[1]),
+            (back, centre[1])]
+
+
+def fillet_zone(points):
+    body = ''.join(f'\t\t\t\t(xy {number(x)} {number(y)})\n' for x, y in points)
+    return ('\t(zone\n\t\t(net "+5V")\n\t\t(layer "B.Cu")\n'
+            f'\t\t(uuid "{uuid.uuid4()}")\n\t\t(name "POWER_FILLET")\n'
+            '\t\t(locked yes)\n\t\t(hatch edge 0.5)\n\t\t(priority 2)\n'
+            '\t\t(connect_pads\n\t\t\t(clearance 0.25)\n\t\t)\n'
+            '\t\t(min_thickness 0.05)\n\t\t(fill yes\n'
+            '\t\t\t(thermal_gap 0.3)\n\t\t\t(thermal_bridge_width 1.2)\n'
+            '\t\t\t(island_removal_mode 0)\n\t\t)\n'
+            f'\t\t(polygon\n\t\t\t(pts\n{body}\t\t\t)\n\t\t)\n\t)\n')
+
+
+def blocks(text, keyword):
+    """(span, body) for every top-level block of this kind."""
+    out = []
+    for m in re.finditer(r'^\t\(%s\n' % keyword, text, re.M):
+        start = m.start()
+        depth = 0
+        for end in range(text.index('(', start), len(text)):
+            depth += (text[end] == '(') - (text[end] == ')')
+            if depth == 0:
+                break
+        out.append(((start, end+2), text[start:end+1]))
+    return out
+
+
 def patch(path, dry_run=False):
     text = path.read_text()
     found = segments(text)
@@ -92,6 +174,11 @@ def patch(path, dry_run=False):
     added = ''.join(wire(a, b, layers[layer])
                     for a, b, layer, width in crp._required_tracks()
                     if abs(width-crp.WIDTH) < 1e-9)
+    if '"POWER_FILLET"' in text:
+        raise SystemExit(f'{path.name}: already carries a blend overlay')
+    shape = blend(text)
+    if shape:
+        added += fillet_zone(shape)
     for span in sorted(drop, reverse=True):
         text = text[:span[0]] + text[span[1]:]
     # Anchored at a line start: a footprint's own keepout zone is indented
@@ -104,7 +191,8 @@ def patch(path, dry_run=False):
     if not dry_run:
         path.write_text(text)
     print(f'{path.name}: replaced {len(OLD)} mitred supply segments with '
-          f'{added.count("(segment")} rounded chords'
+          f'{added.count("(segment")} rounded chords and '
+          f'{added.count("(zone")} blend overlay'
           + (' (dry run)' if dry_run else ''))
 
 

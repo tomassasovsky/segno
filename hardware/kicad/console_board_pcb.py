@@ -297,13 +297,15 @@ PLACEMENT = {
     # leave the internal connector row free for the Pi button lead at J9.
     "C11": (80.0, 31.0, 0),        # +5V decoupling for U1
     # U2's +3V3 decoupling, on the far side of the opto beside the pin it
-    # decouples: pad 1 sits 4.83 mm from U2 pin 6, where the old slot west of
+    # decouples: pad 1 sits 4.10 mm from U2 pin 6, where the old slot west of
     # the opto put it 17.5 mm of routed track away - a decoupling capacitor is
-    # only as good as the loop it closes. It keeps 2.04 mm to U2's courtyard,
-    # so the DIN-side isolation gate is untouched, and 0.5 mm to R4's body and
-    # J22's. The routed board needs its local +3V3 branch re-routed for this:
-    # the old spot's copper still runs across the new one.
-    "C20": (43.75, 19.6, 0),       # +3V3 decoupling for U2
+    # only as good as the loop it closes. 0.75 mm west of the courtyard centre
+    # the reviewer proposed, which keeps the ground pad 0.48 mm off the Pico
+    # rail's via instead of overlapping it. 1.64 mm to U2's courtyard, so the
+    # DIN-side isolation gate is untouched, 0.85 mm to R4's body and 0.84 mm to
+    # J22's. The routed board needs its local +3V3 branch re-routed around the
+    # new ground pad; patch_console_c20.py does that without a reroute.
+    "C20": (43.0, 19.6, 0),        # +3V3 decoupling for U2
     # The ring link's two pull-ups, on this board's 3V3 (they used to live on
     # ring_board.py tied to its 5 V rail, 1.4 V over the RP2350's absolute
     # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
@@ -746,6 +748,71 @@ def _pill_power_bar(board, fps, net):
         board.Add(z)
         zones.append(z)
     return zones
+
+
+# Where the ring supply crosses back out over the busbar's west edge, the
+# rounded corner and the supply's own edge meet at a shallow angle and leave a
+# wedge of clearance pointing into the join - 39 degrees of it on the back.
+# This is the fillet that takes it out. It has to be copper of its own: a
+# union of tracks and a poured rectangle is bounded by convex arcs and
+# straight lines only, so nothing about the two shapes can round a concave
+# corner between them.
+PILL_BLEND_R = 0.3
+PILL_BLEND_OVERLAP = 0.2
+
+
+def _pill_blend_outline(fps):
+    """-> the blend polygon, or None when the supply clears the corner."""
+    (x0, _y0, _x1, y1), = _pill_bar_rects(fps)
+    edge = console_ring_power.BACK_PATH[1][0] + console_ring_power.WIDTH / 2.0
+    if not x0 < edge < x0 + PILL_BAR_R:
+        return None                     # nothing to blend: no shallow crossing
+    r, R = PILL_BLEND_R, PILL_BAR_R
+    cx, cy = x0 + R, y1 - R             # centre of the busbar's corner arc
+    centre = (edge + r, cy + math.sqrt((R + r) ** 2 - (edge + r - cx) ** 2))
+    scale = R / (R + r)
+    touch = (cx + (centre[0] - cx) * scale, cy + (centre[1] - cy) * scale)
+    inside = (touch[0] + (cx - touch[0]) * PILL_BLEND_OVERLAP / R,
+              touch[1] + (cy - touch[1]) * PILL_BLEND_OVERLAP / R)
+    back = edge - PILL_BLEND_OVERLAP
+    return (_blend_arc(centre, (edge, centre[1]), touch)
+            + [inside, (back, inside[1]), (back, centre[1])])
+
+
+def _blend_arc(centre, frm, to, steps=12):
+    radius = math.dist(centre, frm)
+    first = math.atan2(frm[1] - centre[1], frm[0] - centre[0])
+    last = math.atan2(to[1] - centre[1], to[0] - centre[0])
+    if last - first > math.pi:
+        last -= math.tau
+    if first - last > math.pi:
+        last += math.tau
+    return [(centre[0] + radius * math.cos(first + (last - first) * i / steps),
+             centre[1] + radius * math.sin(first + (last - first) * i / steps))
+            for i in range(steps + 1)]
+
+
+def _pill_bar_blend(board, fps, net):
+    """Pour that fillet on the back, where the supply runs."""
+    shape = _pill_blend_outline(fps)
+    if shape is None:
+        return None
+    z = pcbnew.ZONE(board)
+    z.SetLayer(pcbnew.B_Cu)
+    z.SetNet(net)
+    z.SetZoneName("POWER_FILLET")
+    z.SetAssignedPriority(2)
+    z.SetLocalClearance(FromMM(CLEARANCE))
+    z.SetMinThickness(FromMM(0.05))
+    z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
+    z.SetLocked(True)
+    o = z.Outline()
+    o.NewOutline()
+    for px, py in shape:
+        o.Append(P(px, py).x, P(px, py).y)
+    z.SetIsFilled(False)
+    board.Add(z)
+    return z
 
 
 def _ref_key(ref):
@@ -1925,6 +1992,7 @@ def build(quiet=False):
     _pour_gnd(board, netmap[POUR_NET], pcbnew.B_Cu)
     _pour_gnd(board, netmap[POUR_NET], pcbnew.F_Cu)
     _pill_power_bar(board, fps, netmap["+5V"])
+    _pill_bar_blend(board, fps, netmap["+5V"])
 
     if quiet:
         global _QUIET
