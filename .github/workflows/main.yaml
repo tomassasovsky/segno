@@ -13,6 +13,13 @@ on:
       - master
 
 jobs:
+  codex-hooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify Codex hook behavior
+        run: python3 -m unittest discover -s tool/codex/test -v
+
   semantic-pull-request:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v1
 

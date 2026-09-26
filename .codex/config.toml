@@ -1,0 +1,24 @@
+# Project tools shared by Codex desktop and CLI. Figma requires OAuth login.
+approval_policy = "on-request"
+approvals_reviewer = "user"
+sandbox_mode = "workspace-write"
+[mcp_servers.dart]
+command = "dart"
+args = ["mcp-server"]
+startup_timeout_sec = 30
+
+[mcp_servers.very-good-cli]
+command = "very_good"
+args = ["mcp"]
+startup_timeout_sec = 30
+
+[mcp_servers.fusion]
+url = "http://127.0.0.1:27182/mcp"
+startup_timeout_sec = 10
+
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
+startup_timeout_sec = 30
+
+[sandbox_workspace_write]
+network_access = true
