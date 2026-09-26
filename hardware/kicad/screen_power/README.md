@@ -244,15 +244,18 @@ The shared rail runs along the right edge at 4.5 mm width. The Q3 pin 3 to
 Q4 pin 3 bridge and the Q4 pin 2 to F101 input feed each use a uniform
 2.5 mm width with rounded bends, including their pin approaches. Neither
 connection has a neck or taper. The front fuse branches remain 3 mm, main
-outputs 2 mm and touch-power connections 0.8 mm. The separate AUX input
-approach retains its local 1.9 mm clearance section and gradual transition.
+outputs 2 mm and touch-power connections 0.8 mm. The AUX input from J1 to
+Q3 pin 2 uses a uniform 2.0 mm front-layer route with rounded bends. This
+retains 0.29 mm between its track cap and the adjacent 2.5 mm source route;
+making both traces 2.5 mm would leave only 0.04 mm at the 2.54 mm pin pitch.
 The [uniform-width assessment](../../../docs/reviews/screen-power-rev-l-1072/uniform-power-width.md)
-records current capacity, copper loss and pad clearance for the two revised
+records current capacity, copper loss and pad clearance for the three revised
 runs at the 4.25 A screen planning load.
 
 A filled bus outline gives the four fuse branches rounded joins and corners,
-with 1 mm to the lower mounting keepout. It and the AUX transition overlay
-continuous tracks. Validation removes every zone before proving the minimum
+with 1 mm to the lower mounting keepout. Small AUX branch fillets round the
+capacitor junctions; they do not carry a required power path on their own.
+Validation removes every zone before proving the minimum
 power-path widths, so a filled overlay cannot hide a missing or thin trace.
 Both outer GND pours remain filled on the delivered board.
 

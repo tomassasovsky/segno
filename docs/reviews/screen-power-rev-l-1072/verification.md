@@ -1,7 +1,7 @@
 <!-- cspell:words datasheets heatsinks -->
 # Revision L screen-power verification
 
-25 September 2026. Issue [#1072](https://github.com/tomassasovsky/segno/issues/1072),
+26 September 2026. Issue [#1072](https://github.com/tomassasovsky/segno/issues/1072),
 PR [#1080](https://github.com/tomassasovsky/segno/pull/1080).
 Comparison base: `7dcdc944bea0d22e2fa1fe32ab4ead4681aa11aa`.
 
@@ -22,14 +22,17 @@ The board retains its 68 × 76 mm outline, 3 mm corner radius, two copper
 layers, purple mask, eight connector locations and four M3 mounts. There
 are 44 populated through-hole parts. Q4 pin 3 to Q3 pin 3 and Q4 pin 2 to
 F101 pin 1 now use a uniform 2.5 mm width from pad to pad, with rounded bends
-and no taper overlays. The 4.5 mm distribution trunk, 3 mm fuse branches and
+and no taper overlays. AUX J1 pin 1 to Q3 pin 2 now uses a uniform 2.0 mm
+route with rounded bends and capacitor joins, retaining 0.29 mm clearance
+to the adjacent source track. The 4.5 mm distribution trunk, 3 mm fuse branches and
 2 mm main-output routes retain their capacity and gain rounded joins. The
 new charge-pump loops are explicitly routed north of the USB paths;
 low-current control connections complete the remaining routing.
 
 The owner-authorized Claude cloud task authored the placement, critical
 routing and silkscreen changes, with the final screen-width correction in
-`e9fab839`, ring cleanup in `255a47cf` and console rounding in `2e4b30a5`.
+`e9fab839`, AUX routing in `42f7653c`, its final fillet closure in
+`ffaca8b6`, ring cleanup in `255a47cf` and console rounding in `2e4b30a5`.
 Its remote environment lacked KiCad; the local KiCad 10 build remains the
 authority for electrical and layout checks.
 Native findings are sent back for correction rather than excluded from DRC.
@@ -55,11 +58,11 @@ Native findings are sent back for correction rather than excluded from DRC.
   envelopes and connector mating access were checked, including the new
   0.90 mm DIP drills and their finished-hole tolerance.
 - Final native ERC and DRC report zero errors, warnings, exclusions or
-  unconnected items under the committed project rules. All 52 regression
+  unconnected items under the committed project rules. All 56 regression
   controls pass, including deliberate electrical, copper, hole and model faults.
 - Power checks remove copper pours before testing trace continuity, so a pour
   cannot hide a missing or narrow bus. New controls reject width changes and
-  taper overlays on the two uniform 2.5 mm paths. The
+  taper overlays on the uniform 2.0 mm AUX and two 2.5 mm paths. The
   [width assessment](uniform-power-width.md) covers clearance, resistance,
   heating and gate margin at the 4.25 A planning load.
 - USB pair lengths remain equal within each pair, with no data vias;
@@ -74,10 +77,14 @@ Native build feedback closed the CONTROL_SINK and AUX_5V connections across
 the first USB row. They use opposite-layer edge corridors outside the USB
 return paths. Claude also corrected the silk/mask overlaps, washer-hidden
 labels and exposed right-angle elbows. The latest finish removes the screen
-bus's sharp inside joins, the ring J1 power remnants and pointed tap joins,
+bus's sharp inside joins, the AUX input
+width changes and clipped capacitor-join tips, the ring J1 power remnants
+and pointed tap joins,
 and adds 1 mm corner fillets to both console power bars. The
 [three-board copper review](copper-finish-review.md) verifies the retained
-power and ground paths. The final populated previews, component envelopes
+power and ground paths. The [AUX follow-up review](aux-input-review.md)
+checks the finished input route and capacitor fillets in actual filled copper.
+The final populated previews, component envelopes
 and connector access were inspected; the
 [layout review](final-layout-review.md) records the final board snapshot.
 
@@ -111,8 +118,8 @@ and the job file. Order settings: bare PCB, two-layer FR4, 1.6 mm, 1 oz outer
 copper, ENIG, purple mask, white silkscreen and tented vias. No assembly or
 stencil service. The nominal finished outline is 68 × 76 mm with 3 mm corners.
 
-- Board SHA-256: `d3577772b4945f93652789e109fd232b479cfc8d119dcb67e499da51d39fa5cf`.
-- Screen ZIP SHA-256: `7a52639a561ebebf36695901bd84f27a2770fe900a227a6594deb89c0fde8e23`.
+- Board SHA-256: `94ffa2a0ad3d428451798306c24dc087cbdf3e122cecefa7753c840033321a2b`.
+- Screen ZIP SHA-256: `03ce82f332b01c18a1def9772984f28fe49d5641490f315303f4769e8f0187c0`.
 - [All three upload archives](manufacturing-zips.json) identify the updated
   console, white ring and screen files, native boards and individual ZIP members.
 

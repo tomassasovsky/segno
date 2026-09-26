@@ -4,7 +4,7 @@ Date: 2026-09-25. Updated: 2026-09-26 UTC. Issue: #1072.
 
 <!-- cspell:words Ucamco Soldermask -->
 
-Base and checkout HEAD: `7dcdc944bea0d22e2fa1fe32ab4ead4681aa11aa`.
+Original review base: `7dcdc944bea0d22e2fa1fe32ab4ead4681aa11aa`.
 Target: the uncommitted changes to the five files below, including the new
 fabrication verifier. The hashes identify the reviewed working files.
 
@@ -14,9 +14,10 @@ No unresolved findings in the five reviewed files. A separate reviewer
 completed the fabrication-verifier review. Its confirmed finding and a
 subsequent end-to-end assertion error have been fixed and rechecked.
 The corrected verifier completed 406 assertions against the final Revision L
-package. The separate final console/ring CAM audit passes 103 assertions.
-The final uniform-width screen board passes all 52 validator controls,
-including the six new power-route controls below. The checker changes received
+package, including the AUX follow-up and fillet-closure correction. The separate
+final console/ring CAM audit passes 103 assertions. The current screen board
+passes all 56 validator controls, retaining the prior 52 and adding four AUX
+controls. The checker changes received
 an independent source review with no unresolved finding. This remains a bounded
 source/CAD review, not whole-PR approval or qualification of assembled hardware.
 
@@ -81,11 +82,11 @@ the corrected final board also passes that independent baseline.
 - The final [screen CAM audit](fabrication-verification.json) passes 406
   assertions: 65 source files, 70 artifacts and all 12 manufacturing files.
   It identifies board
-  `d3577772b4945f93652789e109fd232b479cfc8d119dcb67e499da51d39fa5cf`
+  `94ffa2a0ad3d428451798306c24dc087cbdf3e122cecefa7753c840033321a2b`
   and published ZIP
-  `7a52639a561ebebf36695901bd84f27a2770fe900a227a6594deb89c0fde8e23`.
-  This supersedes the earlier pre-contour CAM result. The final native file
-  and published archive independently hash to those recorded values.
+  `03ce82f332b01c18a1def9772984f28fe49d5641490f315303f4769e8f0187c0`.
+  Both on-disk hashes independently match the record. This result supersedes
+  the earlier pre-contour and pre-AUX manufacturing audits.
 - The final [console/ring CAM audit](console-ring-fabrication-verification.json)
   passes 103 assertions with zero failures. Exact native/netlist pad parity,
   empty DRC violation/unconnected lists, ZIP inventories and fresh CAM parity
@@ -97,17 +98,15 @@ the corrected final board also passes that independent baseline.
   obsolete hardware path was introduced. Independent regeneration intentionally
   does not reuse exporter/validator helpers, so it can detect their mistakes.
 
-## Uniform power-route follow-up
+## Original uniform power-route follow-up
 
 Reviewed the native result of routing source `e9fab839` against frozen
 pre-contour board
 `53a3a19d9598feac3f9622b5945d709a394ee10cfb09c81ac7841f46a78624d6`.
-The final screen board SHA-256 is
+That stage's screen board SHA-256 was
 `d3577772b4945f93652789e109fd232b479cfc8d119dcb67e499da51d39fa5cf`.
-The source snapshot in
-[the validation report](../../../hardware/kicad/screen_power/validation.json)
-matches this board and the checker hash below. Its native DRC reports zero
-errors, warnings, exclusions and unconnected items.
+Its native DRC reported zero errors, warnings, exclusions and unconnected
+items. The AUX follow-up below supersedes this board and checker snapshot.
 
 - All 48 footprints and 126 pads retain their positions, orientations, net
   assignments, shapes, drill definitions and model transforms. Net names,
@@ -129,7 +128,7 @@ errors, warnings, exclusions and unconnected items.
   still bypass the F101 plated barrel. An independent geometric calculation
   places each complete 0.9 mm via disk inside qualifying tracks on both
   faces, with a smallest remaining copper margin of 0.20 mm.
-- All 52 positive and negative controls pass. The six additions reject each
+- All 52 positive and negative controls passed at this stage. The six additions reject each
   uniform run reduced to 2.49 mm, the missing bus beneath retained fill, a
   middle section widened to 3 mm, and a forbidden taper on each target run.
   Each new result is mandatory; the existing controls remain required.
@@ -141,10 +140,49 @@ positive inner radii. Its circular paths are represented by fine native track
 segments so routing interchange preserves them; the maximum checked chord
 deviation is 12.04 micrometers. The source comment now states the correct bound.
 
-The [rounded-copper review](copper-finish-review.md) has no unresolved scope
-findings for the final screen, ring and console boards. The final CAM evidence
-above now completes their source/package comparison. Whole-PR `review:pending`,
-`ci:pending` and the hardware verification gate remain in place.
+## AUX input follow-up
+
+Reviewed the checker delta from `29828131` and Claude routing source
+`42f7653c`, followed by hidden fillet-closure correction `ffaca8b6`.
+Current native board SHA-256:
+`94ffa2a0ad3d428451798306c24dc087cbdf3e122cecefa7753c840033321a2b`.
+Current routing source SHA-256:
+`30b5f8ce2b49e073d40773af9e0791a92cdcf0513d1804e4c46b06d9283d0016`.
+The [validation report](../../../hardware/kicad/screen_power/validation.json)
+matches the on-disk board, routing source, circuit source and checker hashes.
+ERC and DRC report zero findings and unconnected items. No unresolved finding
+remains in this bounded checker follow-up.
+
+- J1.1 to Q3.2 now requires a continuous 2.0 mm path with every zone removed.
+  Exact 2.0 mm uniformity applies only to AUX front tracks wider than 1.5 mm,
+  leaving the 1.5 mm C2, 0.8 mm C1 and smaller control branches separate.
+  COMMON_SOURCE and the rear Q4.2 feeder retain their 2.5 mm contracts.
+- `POWER_FILLET` is accepted only on AUX front copper. The actual AUX branch
+  fillets pass; disposable copies changing their layer to rear copper or
+  their net to COMMON_SOURCE or GND are rejected. Legacy AUX `POWER_TAPER`
+  remains forbidden. Other power-zone permissions are unchanged.
+- All 52 earlier control keys remain present and pass. Exactly four mandatory
+  controls were added, bringing the total to 56. Independently repeated
+  native mutations remove the AUX main route, reduce it to 1.99 mm, widen
+  an interior segment to 3 mm and rename an actual AUX branch fillet to
+  `POWER_TAPER`. All four fail their intended assertions; the unmodified
+  native board passes. Widening alone fails uniformity without falsely
+  reporting an electrical disconnection.
+- The retained narrow-FET control now narrows the whole AUX main run to
+  1.5 mm. This preserves its intent when adjacent curved track caps can still
+  reach the pad after only its terminal segment is narrowed.
+- Independent semantic comparison to the frozen pre-contour board still
+  preserves all 48 footprint and 126 pad contracts, models, drills, net names,
+  outline and stack. All 40 USB segments match exactly. The electrical
+  circuit source retains hash `9869038ee6a4a3c8d7459db4d09ee7e4bdb20d54c6102d3a10e4fd16c95164ec`.
+- The final closure correction changes only four AUX fillet zone outlines.
+  Comparison to the preceding AUX board preserves every track, via and native
+  invariant above. The refreshed source hashes, zero DRC findings and all
+  56 passing controls identify the corrected native board.
+
+The refreshed screen CAM audit passes all 406 assertions for this corrected AUX
+board and its published ZIP. Whole-PR `review:pending`, `ci:pending` and the
+hardware verification gate remain in place.
 Matching CAM proves source/package agreement; it does not replace circuit,
 mechanical or assembled-device verification.
 
@@ -152,7 +190,7 @@ mechanical or assembled-device verification.
 
 ```text
 hardware/kicad/screen_power/check.py
-7b3ec8d2a5e9af32bd87617dde999d115cab15d51db3c1cb28817bbdc40f7bc2
+bf91b700ccac02e07ccf033dcf29bcebcf36b7ac2329d048a4c392f80c0e367d
 hardware/kicad/screen_power/hand_checks.py
 92e6f017791bd62e2accb6adf20ade2c4ad0ea7652942574c6d03fb5ae35e655
 hardware/kicad/screen_power/pcb.py

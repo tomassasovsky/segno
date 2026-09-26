@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-26T02:27:44.783387+00:00",
+  "generated_at": "2026-09-26T03:22:13.911796+00:00",
   "kicad_version": "10.0.4",
   "cad_ready": true,
   "hardware_qualification": "not performed",
@@ -14,7 +14,7 @@
         "../netlist.py": "565559b7751337c8930670658026715fa065138c846dd9784bbe4f06549bf1e3",
         "../out_console/segno_console_board.kicad_pcb": "a57759950c14ab9606613dac89d51b9021e7824b80055f0e3daaa5ce571b377b",
         "build.sh": "05712e43f352c1e6c315aeab56846ab6eea8e5ab8e8f0829286a39bc72a7e1c5",
-        "check.py": "7b3ec8d2a5e9af32bd87617dde999d115cab15d51db3c1cb28817bbdc40f7bc2",
+        "check.py": "bf91b700ccac02e07ccf033dcf29bcebcf36b7ac2329d048a4c392f80c0e367d",
         "circuit.py": "5fb3b82bc4f65d7a3bd8ed4abbdba5ffd497cf17e5acc1ffc4ae6eb00957083f",
         "cleanup.py": "250a4ca530796cded61d5d1b660b5d01d1ceff215e0ff44b1265c5a3e19ad93b",
         "export.py": "533651f48a44ecd498c3993e362eb75aaabda1d3d982343b86d88eb718c9f105",
@@ -28,7 +28,7 @@
         "hand/screen1_touch.kicad_sch": "b74ed1678db3dd780d755441b2538b6ec4e74d465c3cacea5a787a5d4d4d27c9",
         "hand/screen2_power.kicad_sch": "7cbe0839a13febb4d73ef84f1246740c5cf8d53d578a260652552eecd951a82a",
         "hand/screen2_touch.kicad_sch": "5a523d2a51ae35288018b40b846903c4d1a4267c39f3f97f8f0a97203362972e",
-        "hand/screen_power_hand.kicad_pcb": "d3577772b4945f93652789e109fd232b479cfc8d119dcb67e499da51d39fa5cf",
+        "hand/screen_power_hand.kicad_pcb": "94ffa2a0ad3d428451798306c24dc087cbdf3e122cecefa7753c840033321a2b",
         "hand/screen_power_hand.kicad_pro": "93b2c29201f7b2df20a8edacf21436de7d3afae0e817ed38c3c4b19b65844d18",
         "hand/screen_power_hand.kicad_sch": "620a12d07661fe1cdd2413112878c3b24136ca4971517fed1e569a1e52378b41",
         "hand/screen_power_hand.net": "09dd14c271635261a5b8b2875c93a834915cb1b4450afd092bcca72012c5d955",
@@ -64,7 +64,7 @@
         "models/licenses/Resistor_THT-CREDITS.md": "0cd03aa057748a76ca727351946973ab950c4f6589cbe197be56bccf4eaeb7b4",
         "models.py": "3a49e950a8323db0a4fb9b73273ba7039b286eb79383243f4d95f9fa8dbf6db6",
         "pcb.py": "7d50aacdb44947ba1fc7beb3006c4c8eee2b8cc140dfdc713899f5b6a7d46d9a",
-        "route_critical.py": "2b8e10a22ccf56d9ef0d2ca19c3c3e8197fb65349fec09f1a041ad21d299f651",
+        "route_critical.py": "30b5f8ce2b49e073d40773af9e0791a92cdcf0513d1804e4c46b06d9283d0016",
         "router.py": "37f7cfeac163f80c62a940455b88ea82d4aaec6cb28ea7eea566330795d4cdf7",
         "schematic.py": "b80c9a1337f9c5549e397a56400716b9a5c7284007eaae73ae91bd1e3b907fcf",
         "screen_power.pretty/Fuse_Littelfuse_251_P12.70mm.kicad_mod": "78dc85457dff9dd66e543e545d7033531b9d0de4fea476e633baea202a66aa3d",
@@ -203,7 +203,7 @@
         "report": {
           "$schema": "https://schemas.kicad.org/drc.v1.json",
           "coordinate_units": "mm",
-          "date": "2026-09-25T23:27:37",
+          "date": "2026-09-26T00:22:06",
           "ignored_checks": [
             {
               "description": "Footprint has no courtyard defined",
@@ -249,7 +249,7 @@
         "report": {
           "$schema": "https://schemas.kicad.org/erc.v1.json",
           "coordinate_units": "mm",
-          "date": "2026-09-25T23:27:38",
+          "date": "2026-09-26T00:22:07",
           "ignored_checks": [
             {
               "description": "Global label only appears once in the schematic",
@@ -355,10 +355,14 @@
         "narrow_bulk_feed_detected": true,
         "narrow_common_source_detected": true,
         "narrow_switched_feed_detected": true,
+        "narrow_aux_main_detected": true,
+        "missing_aux_main_detected": true,
         "missing_bus_under_overlay_detected": true,
         "nonuniform_power_middle_detected": true,
+        "nonuniform_aux_middle_detected": true,
         "common_taper_detected": true,
         "switched_taper_detected": true,
+        "aux_taper_detected": true,
         "missing_power_vias_detected": true,
         "small_drill_power_vias_detected": true,
         "disconnected_power_vias_detected": true,

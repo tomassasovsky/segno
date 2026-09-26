@@ -292,14 +292,17 @@ def check_geometry(board, errors, variant):
         fail(errors, "ground_planes", "Both outer layers need GND pours")
     power_layers = {"AUX_5V": {p.F_Cu}, "COMMON_SOURCE": {p.F_Cu},
                     "SWITCHED_5V": {p.F_Cu, p.B_Cu}}
-    if any(z.GetLayer() not in (p.F_Cu, p.B_Cu) or
-           (net_name(z.GetNetname()) != "GND" and
-            (z.GetZoneName() != "POWER_TAPER" or
-             z.GetLayer() not in power_layers.get(net_name(z.GetNetname()), set())))
-           for z in zones):
-        fail(errors, "ground_planes", "Only outer GND pours and explicit power tapers on their routed layer are allowed")
+    for zone in zones:
+        net,layer=net_name(zone.GetNetname()),zone.GetLayer()
+        if zone.GetZoneName()=="POWER_FILLET":
+            allowed=net=="AUX_5V" and layer==p.F_Cu
+        else:
+            allowed=(net=="GND" or (zone.GetZoneName()=="POWER_TAPER"
+                     and layer in power_layers.get(net,set())))
+        if layer not in (p.F_Cu,p.B_Cu) or not allowed:
+            fail(errors,"ground_planes","Only outer GND pours, approved power tapers and AUX front branch fillets are allowed")
     if any(not z.GetFilledPolysList(z.GetLayer()).OutlineCount() for z in zones):
-        fail(errors, "ground_planes", "All GND pours and power tapers must be filled")
+        fail(errors, "ground_planes", "All GND pours and power overlays must be filled")
     for track in board.GetTracks():
         if not isinstance(track, p.PCB_VIA) and track.GetLayer() not in (p.F_Cu, p.B_Cu):
             fail(errors, "ground_planes", "Copper exists outside the two outer layers")
@@ -429,7 +432,7 @@ def check_power(board_path, errors, variant):
     relying on a filled overlay to bridge a missing or undersized track.
     This checks copper geometry, not its thermal/current rating.
     """
-    paths=[(1.9,("J1","1"),("Q3","2")),(2.5,("Q3","3"),("Q4","3")),
+    paths=[(2.0,("J1","1"),("Q3","2")),(2.5,("Q3","3"),("Q4","3")),
            (1.5,("J1","1"),("C2","1")),(.8,("J1","1"),("C1","1"))]
     for ch in (1,2):
         n=ch*100
@@ -455,19 +458,23 @@ def check_power(board_path, errors, variant):
             if terminals[b].m_Uuid.AsString() not in reached:
                 fail(errors,"power_copper",f"{a} → {b}: no continuous {minimum} mm copper path")
     board=load_board(board_path)
-    # Only these two routed power runs have a uniform-width contract. R4/R8
-    # use separate 0.25 mm control branches on the same nets; the front bus
-    # and fuse feeds retain their wider distribution copper.
-    uniform_runs={("COMMON_SOURCE",p.F_Cu),("SWITCHED_5V",p.B_Cu)}
+    # These main runs have a uniform-width contract. AUX's capacitor branches
+    # remain 1.5/0.8 mm; R4/R8 use 0.25 mm branches on their power nets. The
+    # front distribution bus and fuse feeds retain their wider copper.
+    # Each entry gives the largest branch excluded, then the main-run width.
+    uniform_runs={("AUX_5V",p.F_Cu):(1.5,2.0),
+                  ("COMMON_SOURCE",p.F_Cu):(.25,2.5),
+                  ("SWITCHED_5V",p.B_Cu):(.25,2.5)}
     for track in board.GetTracks():
-        if (not isinstance(track,p.PCB_VIA)
-                and (net_name(track.GetNetname()),track.GetLayer()) in uniform_runs
-                and track.GetWidth()>p.FromMM(.25)+1
-                and abs(track.GetWidth()-p.FromMM(2.5))>1):
-            fail(errors,"uniform_power_width",f"{net_name(track.GetNetname())} {track.GetLayerName()}: power run must stay 2.5 mm wide")
+        if isinstance(track,p.PCB_VIA):continue
+        rule=uniform_runs.get((net_name(track.GetNetname()),track.GetLayer()))
+        if rule and track.GetWidth()>p.FromMM(rule[0])+1 and abs(track.GetWidth()-p.FromMM(rule[1]))>1:
+            fail(errors,"uniform_power_width",f"{net_name(track.GetNetname())} {track.GetLayerName()}: power run must stay {rule[1]} mm wide")
     for zone in list(board.Zones()):
+        key=(net_name(zone.GetNetname()),zone.GetLayer())
+        branch_fillet=key==("AUX_5V",p.F_Cu) and zone.GetZoneName()=="POWER_FILLET"
         if (not zone.GetIsRuleArea()
-                and (net_name(zone.GetNetname()),zone.GetLayer()) in uniform_runs):
+                and key in uniform_runs and not branch_fillet):
             fail(errors,"uniform_power_taper",f"{net_name(zone.GetNetname())} {zone.GetLayerName()}: uniform power run must not have a taper overlay")
         board.RemoveNative(zone)
     terminals={(fp.GetReference(),pad.GetNumber()):pad
@@ -757,28 +764,39 @@ def self_test(board_path, components, expected, temp, variant="hand"):
         altered=load_board(board_path)
         terminal=next(pad for fp in altered.GetFootprints() if fp.GetReference()==ref
                       for pad in fp.Pads() if pad.GetNumber()==number)
-        at=terminal.GetPosition();changed=False
+        changed=False
         for track in altered.GetTracks():
             if isinstance(track,p.PCB_VIA):continue
-            attached=any(end.x==at.x and end.y==at.y for end in (track.GetStart(),track.GetEnd()))
-            # Adjacent wide segments can overlap the capacitor pad even if
-            # its final segment is narrowed. Narrow the whole 1.5 mm branch.
-            selected=track.GetWidth()<=p.FromMM(1.5) if ref=="C2" else attached
+            # Adjacent round end caps can still touch a pad when only its
+            # terminal segment is narrowed. Narrow the complete target run.
+            selected=(track.GetWidth()<=p.FromMM(1.5) if ref=="C2" else
+                      track.GetLayer()==p.F_Cu and track.GetWidth()>p.FromMM(1.5)+1)
             if net_name(track.GetNetname())==net_name(terminal.GetNetname()) and selected:
                 track.SetWidth(p.FromMM(width));changed=True
         target=temp/f"{name}.kicad_pcb";altered.Save(str(target))
         issues=[];check_power(target,issues,variant)
         results[name]=changed and any(e["check"]=="power_copper" and ref in e["detail"] for e in issues)
-    for net,layer,ref,name in (("COMMON_SOURCE",p.F_Cu,"Q3","narrow_common_source_detected"),
-                               ("SWITCHED_5V",p.B_Cu,"Q4","narrow_switched_feed_detected")):
+    for net,layer,ref,branch_width,width,name in (
+            ("COMMON_SOURCE",p.F_Cu,"Q3",.25,2.49,"narrow_common_source_detected"),
+            ("SWITCHED_5V",p.B_Cu,"Q4",.25,2.49,"narrow_switched_feed_detected"),
+            ("AUX_5V",p.F_Cu,"Q3",1.5,1.99,"narrow_aux_main_detected")):
         altered=load_board(board_path);changed=False
         for track in altered.GetTracks():
             if (not isinstance(track,p.PCB_VIA) and net_name(track.GetNetname())==net
-                    and track.GetLayer()==layer and track.GetWidth()>p.FromMM(.25)+1):
-                track.SetWidth(p.FromMM(2.49));changed=True
+                    and track.GetLayer()==layer and track.GetWidth()>p.FromMM(branch_width)+1):
+                track.SetWidth(p.FromMM(width));changed=True
         target=temp/f"{name}.kicad_pcb";altered.Save(str(target))
         issues=[];check_power(target,issues,variant)
         results[name]=changed and any(e["check"]=="power_copper" and ref in e["detail"] for e in issues)
+    altered=load_board(board_path)
+    main=[t for t in altered.GetTracks() if not isinstance(t,p.PCB_VIA)
+          and net_name(t.GetNetname())=="AUX_5V" and t.GetLayer()==p.F_Cu
+          and t.GetWidth()>p.FromMM(1.5)+1]
+    for track in main:altered.RemoveNative(track)
+    target=temp/"missing-aux-main.kicad_pcb";altered.Save(str(target))
+    issues=[];check_power(target,issues,variant)
+    results["missing_aux_main_detected"]=bool(main) and any(
+        e["check"]=="power_copper" and "Q3" in e["detail"] for e in issues)
     altered=load_board(board_path)
     bus=[t for t in altered.GetTracks() if not isinstance(t,p.PCB_VIA)
          and net_name(t.GetNetname())=="SWITCHED_5V" and t.GetLayer()==p.F_Cu
@@ -791,33 +809,35 @@ def self_test(board_path, components, expected, temp, variant="hand"):
     issues=[];check_power(target,issues,variant)
     results["missing_bus_under_overlay_detected"]=bool(bus) and overlay and any(
         e["check"]=="power_copper" and "F201" in e["detail"] for e in issues)
-    altered=load_board(board_path)
-    terminals={(pad.GetPosition().x,pad.GetPosition().y) for fp in altered.GetFootprints()
-               for pad in fp.Pads() if net_name(pad.GetNetname())=="COMMON_SOURCE"}
-    middle=[t for t in altered.GetTracks() if not isinstance(t,p.PCB_VIA)
-            and net_name(t.GetNetname())=="COMMON_SOURCE" and t.GetLayer()==p.F_Cu
-            and abs(t.GetWidth()-p.FromMM(2.5))<=1
-            and all((end.x,end.y) not in terminals for end in (t.GetStart(),t.GetEnd()))]
-    if middle:max(middle,key=lambda t:t.GetLength()).SetWidth(p.FromMM(3))
-    target=temp/"nonuniform-power-middle.kicad_pcb";altered.Save(str(target))
-    issues=[];check_power(target,issues,variant)
-    results["nonuniform_power_middle_detected"]=bool(middle) and any(
-        e["check"]=="uniform_power_width" for e in issues)
-    for net,layer,name in (("COMMON_SOURCE",p.F_Cu,"common_taper_detected"),
-                           ("SWITCHED_5V",p.B_Cu,"switched_taper_detected")):
+    for net,width,name in (("COMMON_SOURCE",2.5,"nonuniform_power_middle_detected"),
+                           ("AUX_5V",2.0,"nonuniform_aux_middle_detected")):
+        altered=load_board(board_path)
+        terminals={(pad.GetPosition().x,pad.GetPosition().y) for fp in altered.GetFootprints()
+                   for pad in fp.Pads() if net_name(pad.GetNetname())==net}
+        middle=[t for t in altered.GetTracks() if not isinstance(t,p.PCB_VIA)
+                and net_name(t.GetNetname())==net and t.GetLayer()==p.F_Cu
+                and abs(t.GetWidth()-p.FromMM(width))<=1
+                and all((end.x,end.y) not in terminals for end in (t.GetStart(),t.GetEnd()))]
+        if middle:max(middle,key=lambda t:t.GetLength()).SetWidth(p.FromMM(3))
+        target=temp/f"{name}.kicad_pcb";altered.Save(str(target))
+        issues=[];check_power(target,issues,variant)
+        results[name]=bool(middle) and any(e["check"]=="uniform_power_width" for e in issues)
+    for net,layer,width,name in (("COMMON_SOURCE",p.F_Cu,2.5,"common_taper_detected"),
+                                 ("SWITCHED_5V",p.B_Cu,2.5,"switched_taper_detected"),
+                                 ("AUX_5V",p.F_Cu,2.0,"aux_taper_detected")):
         altered=load_board(board_path)
         routes=[t for t in altered.GetTracks() if not isinstance(t,p.PCB_VIA)
                 and net_name(t.GetNetname())==net and t.GetLayer()==layer
-                and abs(t.GetWidth()-p.FromMM(2.5))<=1]
+                and abs(t.GetWidth()-p.FromMM(width))<=1]
         if routes:
             track=max(routes,key=lambda t:t.GetLength());a,b=track.GetStart(),track.GetEnd()
             dx,dy=b.x-a.x,b.y-a.y;length=math.hypot(dx,dy)
             zone=p.ZONE(altered);zone.SetLayer(layer);zone.SetNet(altered.GetNetsByName()[net])
             zone.SetZoneName("POWER_TAPER");zone.SetAssignedPriority(20)
             poly=zone.Outline();poly.NewOutline()
-            for at,width,sign in ((a,2.5,1),(b,3,1),(b,3,-1),(a,2.5,-1)):
-                poly.Append(round(at.x-sign*dy/length*p.FromMM(width)/2),
-                            round(at.y+sign*dx/length*p.FromMM(width)/2))
+            for at,taper_width,sign in ((a,width,1),(b,3,1),(b,3,-1),(a,width,-1)):
+                poly.Append(round(at.x-sign*dy/length*p.FromMM(taper_width)/2),
+                            round(at.y+sign*dx/length*p.FromMM(taper_width)/2))
             altered.Add(zone)
         target=temp/f"{name}.kicad_pcb";altered.Save(str(target))
         issues=[];check_power(target,issues,variant)
@@ -980,6 +1000,8 @@ def validate(variant, board_override=None, run_self_test=False):
                                     "narrow_common_source_detected", "narrow_switched_feed_detected",
                                     "missing_bus_under_overlay_detected", "nonuniform_power_middle_detected",
                                     "common_taper_detected", "switched_taper_detected",
+                                    "narrow_aux_main_detected", "missing_aux_main_detected",
+                                    "nonuniform_aux_middle_detected", "aux_taper_detected",
                                     "missing_power_vias_detected", "small_drill_power_vias_detected",
                                     "disconnected_power_vias_detected", "redundant_power_vias_detected"]
                 if not all(summary["self_test"].get(k) for k in required_faults):

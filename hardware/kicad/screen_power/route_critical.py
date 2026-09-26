@@ -6,16 +6,22 @@ import pcbnew as p
 from pcb import point, xy
 from layout import USB_ROWS, POWER_BUS_X, USB_WIDTH, USB_GAP
 HERE=Path(__file__).resolve().parent
-# Retained AUX input approach, and the uniform width of the source bridge
-# and drain feed carrying the whole switched load.
-NECK=1.9
+# Uniform width of the source bridge and drain feed that carry the whole
+# switched load, and of the input path feeding them. Each run holds its own
+# width from pad to pad; they differ from one another only where the terminal
+# pitch forces it.
 TRUNK=2.5
+AUX=2.
+# The bulk and bypass branches off the input, and where they leave it.
+CAP,FILM=1.5,.8
+CAP_TAP,FILM_TAP=46.5,50.
 # Charge-pump/negative-rail supply and gate-drive signal widths.
 SUPPLY=.5
 CTRL=.25
-# Centreline radius for the wide power bends. Both leave a 1mm radius on the
-# inner edge of the band, so every wide corner on the board reads the same.
-ARC3,ARC2=2.5,2.
+# Centreline radius for a bend in a power band: every one of them leaves a 1mm
+# radius on the inner edge, so all the wide corners on the board read the same.
+def sweep(width):return width/2+1
+ARC3,ARC2=sweep(3),sweep(2)
 
 
 def route(variant):
@@ -88,12 +94,12 @@ def route(variant):
         assert pad(*a).GetNetname()==pad(*b).GetNetname(),(a,b)
         track(pad(*a).GetNetname(),curve([at(*a),*bends,at(*b)],radius),
               width,layer)
-    def region(net,points,layer=p.F_Cu,fillet=0):
+    def region(net,points,layer=p.F_Cu,fillet=0,name='POWER_TAPER'):
         # Locked overlay that fixes the visible outline of a power path. The
         # tracks underneath still carry the checked widths on their own, so
         # removing every zone cannot break a minimum-width path.
         zone=p.ZONE(board);zone.SetLayer(layer);zone.SetNet(nets[net])
-        zone.SetZoneName('POWER_TAPER');zone.SetAssignedPriority(20)
+        zone.SetZoneName(name);zone.SetAssignedPriority(20)
         zone.SetLocalClearance(p.FromMM(.2));zone.SetMinThickness(p.FromMM(.05))
         zone.SetPadConnection(p.ZONE_CONNECTION_FULL)
         zone.SetIslandRemovalMode(p.ISLAND_REMOVAL_MODE_ALWAYS);zone.SetLocked(True)
@@ -106,16 +112,45 @@ def route(variant):
         for xy in points:
             v=point(*xy);poly.Append(v.x,v.y)
         board.Add(zone)
-    def taper(net,a,b,start_width,end_width,layer=p.F_Cu,fillet=.4):
-        # Gradual copper transition over an already continuous track. Its four
-        # corners are convex, so rounding them only relieves copper and cannot
-        # reduce a clearance or the width the track underneath carries.
-        dx,dy=b[0]-a[0],b[1]-a[1];length=math.hypot(dx,dy)
-        nx,ny=-dy/length,dx/length
-        region(net,[(xy[0]+sign*nx*width/2,xy[1]+sign*ny*width/2)
-                    for xy,width,sign in ((a,start_width,1),(b,end_width,1),
-                                          (b,end_width,-1),(a,start_width,-1))],
-               layer,fillet)
+    def blend(x,width,edge,turn=None,radius=.8,reach=.5,overlap=.2):
+        """Round both inside corners where a branch leaves a run at 90 degrees.
+
+        A union of tracks is bounded by convex arcs and straight lines only, so
+        the concave corner where a branch meets the run it taps has to be
+        stated as copper of its own. Each side carries a quarter circle tangent
+        to the branch edge and to the run's own edge: the straight edge the run
+        holds there, or, where the run is already turning, the outer arc of
+        that turn, passed as (centre x, centre y, radius). The rest of each
+        outline sits inside the run and the branch, where it adds no copper the
+        eye can see, so the boundary runs from one edge into the other with no
+        step and no sliver left between them.
+
+        Both closures overlap the copper they run into, and the branch side has
+        to: the wedge between an arc and its own tangent is thinner than the
+        fill's 0.05mm minimum for the last 0.28mm, so a tail that closed on the
+        branch edge exactly was opened away and left a notch short of tangency.
+        Closing `overlap` inside the branch instead keeps the outline at least
+        that thick all the way to the tangent point, where the branch track
+        carries the copper on.
+        """
+        for side in (-1,1):
+            e=x+side*width/2;centre=e+side*radius;inward=e-side*overlap
+            if turn and side<0:
+                cx,cy,outer=turn
+                cy_f=cy+math.sqrt((outer+radius)**2-(centre-cx)**2)
+                scale=outer/(outer+radius)
+                far=(cx+(centre-cx)*scale,cy+(cy_f-cy)*scale)
+                shape=[(e,cy_f),*quarter((centre,cy_f),(e,cy_f),far),
+                       (far[0]+(cx-far[0])*reach/outer,
+                        far[1]+(cy-far[1])*reach/outer),
+                       (inward,cy_f-radius-reach),(inward,cy_f)]
+            else:
+                shape=[(e,edge+radius),
+                       *quarter((centre,edge+radius),(e,edge+radius),
+                                (centre,edge)),
+                       (centre,edge-reach),(inward,edge-reach),
+                       (inward,edge+radius)]
+            region('AUX_5V',shape,p.F_Cu,name='POWER_FILLET')
     def pair(a,b,centre,breakout=False):
         # Mitered parallel offsets for the two-layer coupled microstrip.
         normals=[]
@@ -225,22 +260,40 @@ def route(variant):
          [(c5_1[0],27.5),(c5_1[0]-1,28.5),(4.5,28.5),(3.5,29.5),
           (3.5,44.1)],CTRL,p.F_Cu)
     # The front carries the 4.5mm shared trunk; main outputs use 2mm
-    # bottom branches. Keep the narrower approaches local to closely spaced
-    # device pins, then widen smoothly into the 3mm common-source bridge.
+    # bottom branches.
     q3d,q3s,q4d,q4s=at('Q3',2),at('Q3',3),at('Q4',2),at('Q4',3)
-    track('AUX_5V',[at('J1',1),(55,14),(52,11),(47,11)],3,p.F_Cu)
-    track('AUX_5V',[(47,11),(45.5,11),(44,9.5),q3d],NECK,p.F_Cu)
-    taper('AUX_5V',(45.5,11),(47,11),NECK,3)
-    # The input bulk capacitor gets its own short wide branch above the can
-    # instead of a routed signal-width tail; it is the only local reservoir.
+    # Input path, J1 to the high-side drain: one width from pad to pad, turning
+    # on arcs, with no neck and no taper. AUX is narrower than TRUNK because
+    # this run ends on the terminal next to Q3's source, and the source bridge
+    # is already 2.5mm there: two 2.5mm runs on a 2.54mm pitch leave 0.040mm
+    # between their end caps, which no departure angle can recover. At 2.0mm
+    # the same gap is 0.290mm, and the input carries the 4.25A planning load
+    # with an 11.8C rise nominal, 17.0C at a 20% negative width tolerance.
+    track('AUX_5V',curve([at('J1',1),(55,14),(52,11),(45.5,11),(44,9.5),q3d],
+                         sweep(AUX)),AUX,p.F_Cu)
+    # The bulk capacitor keeps its own 1.5mm branch and the film bypass its
+    # 0.8mm one: the reservoir and the high-frequency bypass stay separate
+    # feeds, both tapped off the input at right angles so each join is a pair
+    # of blended corners instead of an acute wedge. Each tap then turns on the
+    # same 1mm inner radius as the trunk and lands square on its pad, the bulk
+    # can from the north, the film from the north-east around its ground pad.
     cap=at('C2',1)
-    track('AUX_5V',[(47,11),(45.5,12.5),(44.4,12.5),
-                    (cap[0],12.5+44.4-cap[0]),cap],1.5,p.F_Cu)
-    # The film bypass also has a deliberate local feed around its GND pad.
+    track('AUX_5V',curve([(CAP_TAP,11),(CAP_TAP,14.5),(cap[0],14.5),cap],
+                         sweep(CAP)),CAP,p.F_Cu)
     film=at('C1',1)
-    film_x=film[0]-1.7
-    track('AUX_5V',[(47,11),(film_x,11+47-film_x),
-                    (film_x,film[1]-1.7),film],.8,p.F_Cu)
+    track('AUX_5V',curve([(FILM_TAP,11),(FILM_TAP,17.5),film],sweep(FILM)),
+          FILM,p.F_Cu)
+    # Both joins are concave, and a union of tracks is bounded by convex arcs
+    # and straight lines only, so each blend is stated as copper of its own.
+    # The bulk tap's west corner lands where the input has already started its
+    # own turn toward Q3, so that blend is tangent to the outer arc of the turn
+    # instead of to a straight edge.
+    lead=sweep(AUX)*math.tan(math.radians(22.5))
+    blend(CAP_TAP,CAP,11+AUX/2,
+          turn=(45.5+lead,11-sweep(AUX),sweep(AUX)+AUX/2))
+    # The film tap's blend is trimmed a little so it, too, stays on the
+    # straight part of that edge rather than reaching into the next turn.
+    blend(FILM_TAP,FILM,11+AUX/2,radius=.7)
     # Common-source bridge: one width from pad to pad, turning on arcs. The
     # old neck-taper-band-taper-neck changed width three times over 8mm for
     # no electrical reason, which is what read as lumps. TRUNK is the widest
