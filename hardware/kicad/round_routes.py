@@ -108,30 +108,63 @@ class Index:
         self.cells = {}
         self.dead = set()
 
-    def add(self, layer, shape, net, box):
+    def add(self, layer, shape, net, box, spots=()):
+        """File a shape, with the points its own copper is anchored at.
+
+        Those points are what a mid-run junction is found by: the end of a
+        branch, or the centre of a pad or via, that lands on a track between its
+        own two ends.
+        """
         for cx in range(box[0]//CELL, box[2]//CELL+1):
             for cy in range(box[1]//CELL, box[3]//CELL+1):
-                self.cells.setdefault((layer, cx, cy), []).append((shape, net, box))
+                self.cells.setdefault((layer, cx, cy), []).append(
+                    (shape, net, box, tuple(spots)))
 
     def retire(self, shapes):
         self.dead.update(id(shape) for shape in shapes)
 
-    def near(self, layer, box, net):
+    def near(self, layer, box, net, same=False):
+        """Shapes of a foreign net around here, or - with same - of this net.
+
+        A rule area and the board outline have no net at all, so they are
+        foreign to everything and never count as copper of one's own.
+        """
+        return [shape for shape, _spots in self.items(layer, box, net, same)]
+
+    def items(self, layer, box, net, same=False):
+        """near(), with each shape's own anchor points beside it."""
         out, seen = [], set()
         for cx in range(box[0]//CELL, box[2]//CELL+1):
             for cy in range(box[1]//CELL, box[3]//CELL+1):
-                for shape, owner, other in self.cells.get((layer, cx, cy), ()):
-                    if owner == net or id(shape) in self.dead or id(shape) in seen:
+                for shape, owner, other, spots in self.cells.get((layer, cx, cy), ()):
+                    if (owner == net) != same or id(shape) in self.dead:
                         continue
-                    if not overlaps(box, other):
+                    if id(shape) in seen or not overlaps(box, other):
                         continue
                     seen.add(id(shape))
-                    out.append(shape)
+                    out.append((shape, spots))
         return out
 
 
-def collect(tracks, pads, edges):
-    """The board as shapes: every track, via, pad and board edge.
+def keepouts(board):
+    """Rule areas that forbid tracks, board level and footprint level.
+
+    A keepout is not copper, so nothing collides with it in the connectivity
+    sense, but a track may not enter it - and a corner rounded blind will walk
+    into one, since the arc bulges towards the inside of its turn. They go into
+    the same index as foreign copper, with no net, and are measured by the same
+    rule: no closer than the mitre was, or than RULE.
+    """
+    out = []
+    for zone in list(board.Zones()) + [z for fp in board.GetFootprints()
+                                       for z in fp.Zones()]:
+        if zone.GetIsRuleArea() and zone.GetDoNotAllowTracks():
+            out.append(zone)
+    return out
+
+
+def collect(tracks, pads, edges, areas):
+    """The board as shapes: every track, via, pad, board edge and track keepout.
 
     Edge.Cuts goes in with no net, so copper is held off the outline by the same
     rule as off foreign copper - rounding pushes a corner outwards as well as
@@ -140,12 +173,16 @@ def collect(tracks, pads, edges):
     """
     index, filed = Index(), {}
     for item in list(tracks) + list(pads):
+        if item.GetClass() == 'PCB_TRACK' or item.GetClass() == 'PCB_ARC':
+            spots = (point(item.GetStart()), point(item.GetEnd()))
+        else:                                  # a pad or a via: its own centre
+            spots = (point(item.GetPosition()),)
         for layer in COPPER:
             if not item.IsOnLayer(layer):
                 continue
             shape = item.GetEffectiveShape(layer)
             filed.setdefault(id(item), []).append(shape)
-            index.add(layer, shape, item.GetNetCode(), bounds(item))
+            index.add(layer, shape, item.GetNetCode(), bounds(item), spots)
     for edge in edges:
         try:
             shape = edge.GetEffectiveShape()
@@ -153,6 +190,11 @@ def collect(tracks, pads, edges):
             continue
         for layer in COPPER:
             index.add(layer, shape, None, bounds(edge))
+    for zone in areas:
+        outline = zone.Outline()
+        for layer in COPPER:
+            if zone.IsOnLayer(layer):
+                index.add(layer, outline, None, bounds(zone))
     return index, filed
 
 
@@ -275,6 +317,76 @@ def landings(tracks, pads):
     return out
 
 
+def along(a, b, spot):
+    """(how far along a -> b a point falls, how far off the line it is), in nm."""
+    dx, dy = b[0]-a[0], b[1]-a[1]
+    length = math.hypot(dx, dy)
+    if not length:
+        return 0.0, math.dist(a, spot)
+    return (((spot[0]-a[0])*dx + (spot[1]-a[1])*dy)/length,
+            abs((spot[0]-a[0])*dy - (spot[1]-a[1])*dx)/length)
+
+
+def split_junctions(board, candidates, index, filed, margin=2000):
+    """Give every mid-run junction a node of its own, and return the new list.
+
+    The endpoint degree of the copper graph cannot see a junction that is not an
+    endpoint: a branch leaving a run between two of its nodes, or a pad whose
+    body overlaps it there, is connected through copper and through nothing
+    else. Rounding shortens the legs beside a corner, so a branch landing
+    0.2 mm from that corner is exactly what the arc walks out from under - which
+    is how one T-junction became two copper islands. Splitting the run at the
+    contact first leaves the same copper with one more endpoint, and the chain
+    walk then stops there like at any other anchor.
+    """
+    out, nodes = [], []
+    for item in candidates:
+        a, b = point(item.GetStart()), point(item.GetEnd())
+        layer, net = item.GetLayer(), item.GetNetCode()
+        length = math.dist(a, b)
+        if length <= 2*margin:                 # nothing to split it into
+            out.append(item)
+            continue
+        own = {id(shape) for shape in filed.get(id(item), ())}
+        mine = item.GetEffectiveShape(layer)
+        cuts = []
+        for other, spots in index.items(layer, bounds(item), net, same=True):
+            if id(other) in own or not other.Collide(mine, 0):
+                continue
+            for spot in spots:
+                # The point has to be in this run's own copper: that is what
+                # tells a branch landing on it apart from copper that merely
+                # crosses it on the way somewhere else.
+                if spot in (a, b) or not mine.Collide(vector(spot), 0):
+                    continue
+                reach = along(a, b, spot)[0]
+                if margin < reach < length-margin:
+                    cuts.append(reach)
+        kept = []
+        for reach in sorted(cuts):
+            if not kept or reach-kept[-1] > margin:
+                kept.append(reach)
+        cuts = kept
+        if not cuts:
+            out.append(item)
+            continue
+        ux, uy = (b[0]-a[0])/length, (b[1]-a[1])/length
+        walk = [a] + [(int(round(a[0]+ux*c)), int(round(a[1]+uy*c)))
+                      for c in cuts] + [b]
+        pieces = [chord_track(board, item, p, q) for p, q in zip(walk, walk[1:])]
+        index.retire(filed.get(id(item), ()))
+        board.Remove(item)
+        for piece in pieces:
+            board.Add(piece)
+            shape = piece.GetEffectiveShape(layer)
+            filed[id(piece)] = [shape]
+            index.add(layer, shape, net, bounds(piece),
+                      (point(piece.GetStart()), point(piece.GetEnd())))
+        out += pieces
+        nodes += [(net, layer, spot) for spot in walk[1:-1]]
+    return out, nodes
+
+
 def sits_in(spots, node, net, layer):
     """Is this point inside a pad or via of its own net?"""
     where = vector(node)
@@ -342,9 +454,17 @@ def process(board, skip=()):
     tracks = list(board.GetTracks())
     pads = [pad for fp in board.GetFootprints() for pad in fp.Pads()]
     edges = [d for d in board.GetDrawings() if d.GetLayer() == pcb.Edge_Cuts]
+    areas = keepouts(board)
+    index, filed = collect(tracks, pads, edges, areas)
+    candidates = [t for t in tracks
+                  if t.GetClass() == 'PCB_TRACK' and not t.IsLocked()
+                  and t.GetNetCode() and t.GetNetname() not in skip]
+    # Mid-run junctions become nodes before anything is measured, so the graph
+    # below sees them and the chain walk stops at them.
+    candidates, cut = split_junctions(board, candidates, index, filed)
+    tracks = list(board.GetTracks())
     degree = graph(tracks)
     spots = landings(tracks, pads)
-    index, filed = collect(tracks, pads, edges)
     known = {}
 
     def blocked(node, net, layer):
@@ -354,12 +474,9 @@ def process(board, skip=()):
                           or sits_in(spots, node, net, layer))
         return known[key]
 
-    candidates = [t for t in tracks
-                  if t.GetClass() == 'PCB_TRACK' and not t.IsLocked()
-                  and t.GetNetCode() and t.GetNetname() not in skip]
     anchors = {(t.GetNetCode(), t.GetLayer(), end) for t in candidates
                for end in (point(t.GetStart()), point(t.GetEnd()))
-               if blocked(end, t.GetNetCode(), t.GetLayer())}
+               if blocked(end, t.GetNetCode(), t.GetLayer())} | set(cut)
     chains = runs(candidates, blocked)
     tally, sharp, added, retired, touched = {}, [], 0, 0, 0
     for chain, points in chains:
@@ -367,6 +484,7 @@ def process(board, skip=()):
         net, layer, width = model.GetNetCode(), model.GetLayer(), model.GetWidth()
         if len(points) < 3:
             continue
+        own = {id(shape) for item in chain for shape in filed.get(id(item), ())}
         out, changed = [points[0]], False
         for i, spot in enumerate(points[1:-1]):
             before, after = points[i], points[i+2]
@@ -408,7 +526,18 @@ def process(board, skip=()):
                 floor = min(iu(RULE), slack(mitre, others, iu(RULE)))
                 if floor < 0:
                     break                      # the mitre itself overlaps: hands off
-                if holds(shapes_for(board, model, curve, layer)[1], others, floor):
+                arc = shapes_for(board, model, curve, layer)[1]
+                if not holds(arc, others, floor):
+                    continue
+                # Whatever this corner's copper touches, it has to go on
+                # touching: a pad or a branch can overlap a corner without
+                # reaching its centreline, so a point test does not see it and
+                # the arc would quietly let go of it. The copper that goes is
+                # exactly the mitre, so what the mitre touches is what to check.
+                mates = [s for s in index.near(
+                    layer, hull([curve[0], spot, curve[-1]], width), net, True)
+                    if id(s) not in own and any(s.Collide(m, 0) for m in mitre)]
+                if all(any(s.Collide(a, 0) for a in arc) for s in mates):
                     chosen = (actual, curve)
                     break
             if chosen is None:
