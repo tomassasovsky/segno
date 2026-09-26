@@ -297,15 +297,21 @@ PLACEMENT = {
     # leave the internal connector row free for the Pi button lead at J9.
     "C11": (80.0, 31.0, 0),        # +5V decoupling for U1
     # U2's +3V3 decoupling, on the far side of the opto beside the pin it
-    # decouples: pad 1 sits 4.10 mm from U2 pin 6, where the old slot west of
+    # decouples: pad 1 sits 4.79 mm from U2 pin 6, where the old slot west of
     # the opto put it 17.5 mm of routed track away - a decoupling capacitor is
-    # only as good as the loop it closes. 0.75 mm west of the courtyard centre
-    # the reviewer proposed, which keeps the ground pad 0.48 mm off the Pico
-    # rail's via instead of overlapping it. 1.64 mm to U2's courtyard, so the
-    # DIN-side isolation gate is untouched, 0.85 mm to R4's body and 0.84 mm to
-    # J22's. The routed board needs its local +3V3 branch re-routed around the
-    # new ground pad; patch_console_c20.py does that without a reroute.
-    "C20": (43.0, 19.6, 0),        # +3V3 decoupling for U2
+    # only as good as the loop it closes. The pocket is bounded on three sides
+    # and every millimetre of it is spoken for: 2.24 mm to U2's courtyard,
+    # because the DIN-side ISOLATION barrier allows nothing closer and a clean
+    # build at x 43.0 failed that gate at 1.30 mm; 0.90 mm to R4's body above
+    # and 0.29 mm to J22's below, which is what the 4.19 mm between them leaves
+    # a 3 mm courtyard. The y is 0.3 mm south of the courtyard centre for the
+    # copper's sake, not the body's: it puts the Pico rail's own front lane
+    # 0.385 mm clear of these pads instead of on top of them, so that rail keeps
+    # its lane and only changes where it dives to the back. The routed board
+    # needs its local +3V3 and +3V3_PICO branches re-routed around the new pads,
+    # and the EXP label and U2's designator moved off the body;
+    # patch_console_c20.py does all of that without a reroute.
+    "C20": (43.85, 19.9, 0),       # +3V3 decoupling for U2
     # The ring link's two pull-ups, on this board's 3V3 (they used to live on
     # ring_board.py tied to its 5 V rail, 1.4 V over the RP2350's absolute
     # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
@@ -1566,12 +1572,27 @@ SILK_PAD = 0.5
 # J3's and J24's labels were pinned when the two sat at the board's edge under
 # the logo with nowhere for the four-sided search to go. Eight millimetres up,
 # the search finds its own spots again, so they are back in its hands.
-LABEL_AT = {"J9": (81.1, 64.1), "J25": (61.4, 64.1)}  # directly above its housing, clear of R18
+# J22's is pinned because C20 took the pocket its label used to sit in, above
+# the housing, and the four-sided search's next choice - 1.5 mm below J22 - put
+# it 0.02 mm from where J1's designator then lands. Both spots were legal by the
+# 0.5 mm test below and the pair reads as a collision on the plot. Under the
+# housing instead, 1.15 mm clear of J22 and 1.12 mm of the module.
+LABEL_AT = {"J9": (81.1, 64.1), "J25": (61.4, 64.1), "J22": (47.5, 32.4)}  # directly above its housing, clear of R18
 # The same for designators. R11 is boxed in -- the module above, J3 left, R21
 # below, R12 right -- and with J3 at the edge the search had only found a spot
 # 19 mm away. The pocket above R11's left end, under the 5V IN label, is its own.
+# U2's, C20's and R4's are pinned for the same reason as J22's label: C20 sits
+# where U2's printed, and its own designator's default spot - straight above its
+# body - lands on R4's pad. The strip at C20's own height has nowhere left,
+# 0.5 mm off U2's courtyard and 0.5 mm off C20's leaving 0.46 mm for a 1.69 mm
+# word, so U2's goes in the gap south-east of the opto, 0.85 mm clear of C20 and
+# 0.54 mm of U2 itself. C20's and R4's share the 5.55 mm strip below R4, in that
+# order, 0.54 mm apart and 0.65 mm below R4's body: the only place either fits
+# once the other is there, and pinning both is what makes the routed board's
+# patch and a clean build print the same silkscreen.
 REF_AT = {"R11": (12.85, 56.25), "J25": (61.95, 66.8), "R20": (40.5, 66.0),
-          "J9": (73.75, 69.0), "R18": (82.2, 61.9)}
+          "J9": (73.75, 69.0), "R18": (82.2, 61.9), "U2": (40.25, 23.0),
+          "C20": (48.45, 18.9), "R4": (51.15, 18.9)}
 # Per-pin legends for the two power headers, on the BACK silkscreen beside each pad.
 # J3 is +5V/GND from pin 1 and J24 is GND/DATA/+5V, so the two headers read in
 # opposite orders, and a harness crimped to the wrong one puts 5 V on the pill
