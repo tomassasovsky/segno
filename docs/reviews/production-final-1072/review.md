@@ -1,6 +1,12 @@
 <!-- cspell:words DeepSeek heatsinks silkscreen datasheets -->
 # Final PCB production review — issue 1072
 
+**Screen-board order hold, 26 September:** the subsequent
+[USB requirements review](usb-requirements-followup.md) found that the
+host-powered relay coils exceed the USB suspend-current allowance. That
+finding supersedes screen-board order acceptance below. The correction has
+not been implemented; console and ring findings are unchanged.
+
 This reviews all three complete boards from hardware baseline
 `d32bca8b24c543b907ee1f104ebf8b04f6fa6947`, followed by the corrections below.
 The [current archive manifest](../pcb-finish-all-three-1072/manufacturing-zips.json)
