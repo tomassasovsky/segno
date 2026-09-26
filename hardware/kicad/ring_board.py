@@ -2,8 +2,8 @@
 
 Hosts an off-the-shelf **24-LED WS2812 5050 NeoPixel ring module** (O65.5 OD /
 O52.3 ID / 3.2 thick), the rotary encoder, and a **Seeed XIAO RP2350 module**
-that owns both of them locally. The link back to the console board is **three
-conductors** -- +5V, GND and one half-duplex data line.
+that owns both of them locally. The link back to the console board is **four
+conductors** -- +5V, GND and two full-duplex data lines.
 
 ## Why the MCU is here at all (#987)
 
@@ -15,8 +15,8 @@ edge and a raw EC11 quadrature pair down that run, on eight conductors, through
 a box carrying ~12 A across two switching bucks.
 
 Now the WS2812 timing is generated 20 mm from the LEDs and the quadrature never
-leaves this PCB. What crosses the box is one 115200-baud line with a 10 k
-pull-up. The conductor count is a side effect:
+leaves this PCB. What crosses the box is a pair of 115200-baud lines with
+10 k pull-ups on the console. The conductor count is a side effect:
 
     8 conductors  ->  4      (+5V, GND, LINK_TO_RING, LINK_TO_CONSOLE)
 
@@ -91,50 +91,36 @@ Seeed's footprint puts the connector shell overhanging the module's +x end (silk
 to x=12.59, y +/-4.5). U1 therefore sits due east with that end facing the rim:
 5.4 mm of clear board in front of it and no part inside its approach.
 
-## Why the 5 V pins went from four to one
+## Full-white 40-pixel strip power
 
-Four ways (two pairs) were sized for 24 LEDs x 60 mA = 1.44 A all-white. One
-pair carries that, and the sizing is done against 1.44 A flat out rather than
-against a cap:
+The external strip at J2 may draw 40 x 60 mA = 2.4 A continuously. Add
+40 mA of pixel idle allowance and 0.2 A for the controller and buffer:
+2.64 A at the console connector. This hardware design does not depend on
+an animation or brightness cap.
 
-  * J1 and the console's J6 are JST XH, ~3 A per contact. One +5V contact and
-    one GND contact at 1.44 A is 48% of rating.
-  * +5V_LED is 0.65 mm of 1 oz outer copper -- 1.75 A at a 10 degC rise by
-    IPC-2221, 21% of margin. It is routed at 0.55 and grown to 0.65 after the
-    fact; route_ring_board.sh step 5b says why, and widen_power.py does it.
-  * 96 mm of that from J1 to the Ring 24's VDD pad is 86 mohm, so 124 mV. With
-    the harness's 0.23 V over ~1.2 m of 26 AWG loop (~0.16 R) and ~30 mV of
-    contact resistance, the ring sees ~4.6 V of a 5.0 V rail. The WS2812B wants
-    3.5 V. U2 taps the rail 21 mm from J1, upstream of most of that drop, so its
-    VOH rises against the ring's 0.7 x VDD threshold: full white makes the data
-    margin better, not worse.
-  * GND is not a track at all -- the return is the pour on both layers, solid to
-    pads, 19 stitching vias.
+J1 and console J6 retain JST XH, rated 3 A with AWG22 wire. Use AWG22 for
+both supply and return with SXH-001T-P0.6 contacts. The connector pin map,
+board size, white mask and two-layer 1 oz construction are unchanged.
+Source: https://www.jst-mfg.com/product/pdf/eng/eXH.pdf
 
-This used to read "the firmware caps ring brightness well under all-white -- the
-comet only ever lights part of the ring -- so one pair carries it with margin",
-with a trigger to add a second pair if a bench measurement of the CAPPED case
-exceeded ~0.7 A. The cap is real: console_board.ino sets LED_BRIGHTNESS = 128
-(#1064), which is 0.72 A all white and ~0.2 A for the comet. It is the wrong
-thing to size against anyway, for two reasons that hold whatever its value.
+The strip has its own 1.5 mm front-copper route directly from J1 to J2,
+bypassing the narrow buffer/module branch. Three parallel 0.4 mm drilled
+GND vias inside J2's ground wire pad join the rear ground plane. These are
+hand-soldered wire pads; no filled-via assembly service is required.
+`ring_power.py` installs the feed before routing the other nets and checks
+the actual copper path before fabrication export. It rejects a removed,
+narrowed or wrong-layer segment and a missing return barrel.
 
-It is the V2 path. console_board.ino generates the ring's WS2812 timing itself
-and calls ring.setBrightness(); on v3 the XIAO 20 mm from the LEDs does that
-instead, and firmware/ has no XIAO directory yet. The console's cap does not
-reach this board.
+The original 0.65 mm module branches remain suitable for ONE direct-mount
+24-pixel or 16-pixel module instead of the strip. Do not populate both module
+footprints or chain another ring. Their presence does not extend the load
+budget. D1 feeds only the XIAO; LED current does not pass through it.
 
-And no cap covers the window before firmware runs. R5 below is fitted precisely
-because the ring CAN latch full white with nothing driving the buffer's input --
-power-up, the bootloader, a reflash, a crash. A console reflashed with a higher
-LED_BRIGHTNESS is the other uncapped case, and neither is exotic.
-
-So 1.44 A is the number, the trigger is gone, and nothing the capped case can do
-makes one pair insufficient when the uncapped case already fits.
-
-What does NOT fit one pair is a second ring chained off RING_DOUT, which J2, J3
-and J4 all carry a pad for. 2.88 A is past a single XH contact whatever the
-track width, and that needs VH on J1 and J6 the way J3/J24 went VH on the
-console. Chain a second ring and the connector is the change, not the copper.
+At 20% negative track-width tolerance, the new 1.5 mm route is 1.2 mm.
+The IPC-2221 external-conductor estimate gives approximately 2.73 A at a
+10 degC rise on 1 oz copper. This is a design calculation, not an assembled
+thermal measurement. See docs/reviews/ring40-full-white-1072/verification.md
+for the complete console-to-strip current and voltage-drop assessment.
 
 GND sits BETWEEN +5V and the link pair on J1 so the return is not the neighbour
 of the signal.
@@ -278,13 +264,11 @@ for _p in XIAO_SPARE:
     XIAO[_p].do_erc = False
 
 # ---- D1: series Schottky into the module's VBUS -----------------------------
-# The XIAO's 5 V pad IS its USB VBUS rail. Plug USB in on the bench while the
-# harness is live and two 5 V sources fight; a series Schottky makes the harness
-# feed strictly one-way and costs ~0.35 V, leaving the module's LDO ~4.65 V --
-# far above what it needs for 3V3.
-# It sits ONLY in the module's feed. The WS2812 ring taps v5 ahead of it, because
-# a diode drop on the LED rail is what raises the WS2812's own VIH threshold and
-# it is already the tight number (see U2).
+# The XIAO's 5 V pad IS its USB VBUS rail. D1 stops USB power feeding the AUX
+# harness, but does not stop live AUX feeding the programming USB host.
+# Disconnect J1 before plugging in USB; remove USB before reconnecting J1.
+# The diode costs roughly 0.35 V in the MCU feed. The WS2812 ring taps v5
+# ahead of it, without this additional voltage drop.
 d1 = Part("Device", "D_Schottky", value="1N5819",
           footprint="Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", ref="D1")
 d1["A"] += v5
@@ -313,7 +297,7 @@ R("330", "R1")[1, 2] += ring_data_5v, ring_data
 # R16 on IND_DATA. Until the XIAO's firmware claims D0 -- power-up, its bootloader,
 # a reflash, a crash -- nothing drives this line, a CMOS input left floating drifts,
 # and the AHCT125 passes whatever it settles on to the ring as WS2812 data. The ring
-# then latches random colours, up to full white on all 24 LEDs. 100 k is weak
+# then latches random colours, up to full white on all 40 strip LEDs. 100 k is weak
 # enough that the pin drives it without noticing (33 uA) and holds the input low.
 R("100k", "R5")[1, 2] += ring_data_3v3, gnd
 

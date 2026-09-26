@@ -1,0 +1,2068 @@
+{
+  "archives_after": {
+    "console": "bff58e862b971e5e51872faa2eab3681ee25207b18a949fa4272ecb344e538e4",
+    "ring": "29ed635cc4119edfe609332ba62fbe7cb31c102bd6d18af23ef70a75b7cbd606"
+  },
+  "archives_before": {
+    "console": "bff58e862b971e5e51872faa2eab3681ee25207b18a949fa4272ecb344e538e4",
+    "ring": "29ed635cc4119edfe609332ba62fbe7cb31c102bd6d18af23ef70a75b7cbd606"
+  },
+  "assertions": [
+    {
+      "check": "kicad_10",
+      "detail": "KiCad CLI",
+      "passed": true
+    },
+    {
+      "check": "tracked_loose_cam_inventory",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_inventory",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "native_reader_exit",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "native_reader_result",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "exact_netlist_pad_parity",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "connected_pad_count",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "duplicate_pad_consistency",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "native_copper_layers",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "native_board_thickness",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "native_drc_exit",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "native_drc_report",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "native_drc_all_severities",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "native_drc_no_violations",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "native_drc_no_unconnected",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "fresh_export_exit",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_inventory",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "exact_zip_inventory",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "no_duplicate_zip_members",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "zip_crc",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "console:segno_console_board-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "console:segno_console_board-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-B_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-B_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-B_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-B_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "console:segno_console_board-B_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "console:segno_console_board-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "console:segno_console_board-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "console:segno_console_board-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "console:segno_console_board-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-F_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-F_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-F_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-F_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "console:segno_console_board-F_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "console:segno_console_board-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "console:segno_console_board-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "console:segno_console_board-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "console:segno_console_board-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "job_board_stack",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "job_one_ounce_copper",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "job_SolderMask_color",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "job_Legend_color",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "job_file_inventory",
+      "detail": "console",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "console:segno_console_board-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "console:segno_console_board-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "console:segno_console_board-F_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "console:segno_console_board-B_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "console:segno_console_board-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "console:segno_console_board-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "console:segno_console_board-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "console:segno_console_board-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "console:segno_console_board-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "tracked_loose_cam_inventory",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_inventory",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "native_reader_exit",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "native_reader_result",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "exact_netlist_pad_parity",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "connected_pad_count",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "duplicate_pad_consistency",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "native_copper_layers",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "native_board_thickness",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "native_drc_exit",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "native_drc_report",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "native_drc_all_severities",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "native_drc_no_violations",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "native_drc_no_unconnected",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "fresh_export_exit",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_inventory",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "exact_zip_inventory",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "no_duplicate_zip_members",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "zip_crc",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "ring:segno_pedal_ring-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "ring:segno_pedal_ring-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "ring:segno_pedal_ring-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "ring:segno_pedal_ring-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "ring:segno_pedal_ring-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "ring:segno_pedal_ring-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "gerber_file_function",
+      "detail": "ring:segno_pedal_ring-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "fresh_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_file",
+      "detail": "ring:segno_pedal_ring-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_zip_except_timestamps",
+      "detail": "ring:segno_pedal_ring-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_matches_fresh_except_timestamps",
+      "detail": "ring:segno_pedal_ring-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "job_board_stack",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "job_one_ounce_copper",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "job_SolderMask_color",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "job_Legend_color",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "job_file_inventory",
+      "detail": "ring",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "ring:segno_pedal_ring-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "ring:segno_pedal_ring-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "ring:segno_pedal_ring-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "ring:segno_pedal_ring-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "ring:segno_pedal_ring-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "ring:segno_pedal_ring-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "job_file_function",
+      "detail": "ring:segno_pedal_ring-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "production_sources_unchanged",
+      "detail": "all inputs",
+      "passed": true
+    },
+    {
+      "check": "archives_unchanged",
+      "detail": "both ZIPs",
+      "passed": true
+    },
+    {
+      "check": "loose_cam_unchanged",
+      "detail": "all loose CAM",
+      "passed": true
+    },
+    {
+      "check": "tracked_inventory_unchanged",
+      "detail": "Git inputs",
+      "passed": true
+    },
+    {
+      "check": "normalizer_source_unchanged",
+      "detail": "strict helper",
+      "passed": true
+    },
+    {
+      "check": "verifier_unchanged",
+      "detail": "this script",
+      "passed": true
+    }
+  ],
+  "boards": {
+    "console": {
+      "archive_sha256": "bff58e862b971e5e51872faa2eab3681ee25207b18a949fa4272ecb344e538e4",
+      "board": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "board_sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+      "cam": {
+        "segno_console_board-B_Cu.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "adf2e38f5984d5622dace07db2b47461dbd780d89c5abd658dcda03454aeb133",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "c730032ab478a46d88bfdd9778acade1c046b01e85c8f7b8c9cc21cb87dd1f9c",
+          "zip_sha256": "c730032ab478a46d88bfdd9778acade1c046b01e85c8f7b8c9cc21cb87dd1f9c"
+        },
+        "segno_console_board-B_Mask.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "680c21c2ff77a11a8e8f63202165ce6e89ec4e340c12952576e3daacd6fc9cb1",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "0effd9067157e786824e037e87beca0ef5d47d1c3331a242f640ec746ce97239",
+          "zip_sha256": "0effd9067157e786824e037e87beca0ef5d47d1c3331a242f640ec746ce97239"
+        },
+        "segno_console_board-B_Paste.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "88d08d01efab1735185c8a655d7b2086d0bba9fa5c218c1f9191c0aeca6d6772",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "735709605f33b8d798bf888e4cdaea40c2d92fe3d2b4a4a23585e0067a05f787",
+          "zip_sha256": "735709605f33b8d798bf888e4cdaea40c2d92fe3d2b4a4a23585e0067a05f787"
+        },
+        "segno_console_board-B_Silkscreen.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "4ee7b3618186cf8811ce195fdd4e0532478b09c2eb04997214cf287cb0784825",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "98498f5060cfe187f56cc868423510244bf3ffe47d1ca834bf61a244522bfc66",
+          "zip_sha256": "98498f5060cfe187f56cc868423510244bf3ffe47d1ca834bf61a244522bfc66"
+        },
+        "segno_console_board-Edge_Cuts.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "ecdf35b15babb85a84f35d454fe55d84b96a159b4b78704ab81b3814775d2225",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "a3b63a5093db9b50d14addbdc17e65f8531d9fa436e0fa2a3bb02f9016cb7311",
+          "zip_sha256": "a3b63a5093db9b50d14addbdc17e65f8531d9fa436e0fa2a3bb02f9016cb7311"
+        },
+        "segno_console_board-F_Cu.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "51d62f9fd8441a6d668657ef91095bd90b7ca5b3d5ac74c5348bf3d0506e0d95",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "f22fc3f68240217ef60e1d171db0fa9e042f49ae5d3bb58e714411ccb41040a5",
+          "zip_sha256": "f22fc3f68240217ef60e1d171db0fa9e042f49ae5d3bb58e714411ccb41040a5"
+        },
+        "segno_console_board-F_Mask.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "d61894faea7b96ccb8557f80ff3107081e7465fcf5aa96fc3be6965a546a7470",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "ecf0e0750ed63e081a41325749c0e36cdf46d7aab9fa2a8ee87804f285a58c55",
+          "zip_sha256": "ecf0e0750ed63e081a41325749c0e36cdf46d7aab9fa2a8ee87804f285a58c55"
+        },
+        "segno_console_board-F_Paste.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "6bd0435a6df02dd030382b70e54794480ad121ccbbe211f678f1dd43d4de817f",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "aa820d1abf989619bb6dfaf58ae80762c8a621bcbf303692437f3838b97fecb3",
+          "zip_sha256": "aa820d1abf989619bb6dfaf58ae80762c8a621bcbf303692437f3838b97fecb3"
+        },
+        "segno_console_board-F_Silkscreen.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "9e19cb2d766f9794c88e5b77594eb836bfaa26ef3ad8179d45a4084f5878801c",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "f0be3e7f39ad1aadcbe7b40a8f117340c2d6d431c67ecb9b4608a24c14915e6e",
+          "zip_sha256": "f0be3e7f39ad1aadcbe7b40a8f117340c2d6d431c67ecb9b4608a24c14915e6e"
+        },
+        "segno_console_board-NPTH.drl": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "de5b9e606f46943d006162632c507bae3c10a63e90bc97d48e025ce919c1b81a",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "9e462c2c93541aac085475a5422d7b3338c5154a137649760abfc309b75463e0",
+          "zip_sha256": "9e462c2c93541aac085475a5422d7b3338c5154a137649760abfc309b75463e0"
+        },
+        "segno_console_board-PTH.drl": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "9631830112a40b4fb8c6f9a3570981c203816eec0d057ece74850994c0157986",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "8b7f6b1589f4e12603e298f8f70e6997fd7a4e23ee7c7b58d1cf62f1d4f6b5b3",
+          "zip_sha256": "8b7f6b1589f4e12603e298f8f70e6997fd7a4e23ee7c7b58d1cf62f1d4f6b5b3"
+        },
+        "segno_console_board-job.gbrjob": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "8c9fd4b1d9025b602418ae223824f9d75b45e1bd7da4c0b018d4c293a6cbd036",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "41ef91610253daaca5c9fcca35fbe4052c07573eb990823123619585da41e7b6",
+          "zip_sha256": "41ef91610253daaca5c9fcca35fbe4052c07573eb990823123619585da41e7b6"
+        }
+      },
+      "drc": {
+        "ignored_checks": [
+          {
+            "description": "Footprint has no courtyard defined",
+            "key": "missing_courtyard"
+          },
+          {
+            "description": "Track endpoint not centered on via",
+            "key": "track_not_centered_on_via"
+          },
+          {
+            "description": "Tuning profile track geometries",
+            "key": "tuning_profile_track_geometries"
+          },
+          {
+            "description": "Footprint doesn't match symbol's footprint filters",
+            "key": "footprint_filters_mismatch"
+          },
+          {
+            "description": "Footprint component type doesn't match footprint pads",
+            "key": "footprint_type_mismatch"
+          }
+        ],
+        "included_severities": [
+          "error",
+          "warning",
+          "exclusion"
+        ],
+        "unconnected_items": [],
+        "violations": []
+      },
+      "expected_inventory": [
+        "segno_console_board-B_Cu.gbr",
+        "segno_console_board-B_Mask.gbr",
+        "segno_console_board-B_Paste.gbr",
+        "segno_console_board-B_Silkscreen.gbr",
+        "segno_console_board-Edge_Cuts.gbr",
+        "segno_console_board-F_Cu.gbr",
+        "segno_console_board-F_Mask.gbr",
+        "segno_console_board-F_Paste.gbr",
+        "segno_console_board-F_Silkscreen.gbr",
+        "segno_console_board-NPTH.drl",
+        "segno_console_board-PTH.drl",
+        "segno_console_board-job.gbrjob"
+      ],
+      "general_specs": {
+        "BoardThickness": 1.6,
+        "Finish": "None",
+        "LayerNumber": 2,
+        "ProjectId": {
+          "GUID": "7365676e-6f5f-4636-9f6e-736f6c655f62",
+          "Name": "segno_console_board",
+          "Revision": "rev?"
+        },
+        "Size": {
+          "X": 99.6,
+          "Y": 99.6
+        }
+      },
+      "native": {
+        "board_thickness_mm": 1.6,
+        "conflicting_duplicate_pads": [],
+        "copper_layers": 2,
+        "expected_pad_map": {
+          "C1.1": "SW_RECPLAY",
+          "C1.2": "GND",
+          "C10.1": "SW_BANK",
+          "C10.2": "GND",
+          "C11.1": "+5V",
+          "C11.2": "GND",
+          "C13.1": "CTRL1_TIP",
+          "C13.2": "GND",
+          "C14.1": "CTRL2_TIP",
+          "C14.2": "GND",
+          "C2.1": "SW_STOP",
+          "C2.2": "GND",
+          "C20.1": "+3V3",
+          "C20.2": "GND",
+          "C3.1": "SW_UNDO",
+          "C3.2": "GND",
+          "C30.1": "+5V",
+          "C30.2": "GND",
+          "C31.1": "+5V",
+          "C31.2": "GND",
+          "C4.1": "SW_MODE",
+          "C4.2": "GND",
+          "C5.1": "SW_TRACK1",
+          "C5.2": "GND",
+          "C6.1": "SW_TRACK2",
+          "C6.2": "GND",
+          "C7.1": "SW_TRACK3",
+          "C7.2": "GND",
+          "C8.1": "SW_TRACK4",
+          "C8.2": "GND",
+          "C9.1": "SW_CLEAR",
+          "C9.2": "GND",
+          "D1.1": "N$4",
+          "D1.2": "N$5",
+          "H1.1": "GND",
+          "H2.1": "CHASSIS_H2",
+          "H3.1": "CHASSIS_H3",
+          "H4.1": "CHASSIS_H4",
+          "J1.1": "PD_SDA",
+          "J1.10": "SW_TRACK2",
+          "J1.11": "SW_TRACK3",
+          "J1.12": "SW_TRACK4",
+          "J1.13": "GND",
+          "J1.14": "SW_CLEAR",
+          "J1.15": "SW_BANK",
+          "J1.16": "EXP_GP12",
+          "J1.17": "LINK_TO_RING",
+          "J1.18": "GND",
+          "J1.19": "LINK_TO_CONSOLE",
+          "J1.2": "PD_SCL",
+          "J1.20": "EXP_GP15",
+          "J1.21": "LINK_TX",
+          "J1.22": "LINK_RX",
+          "J1.23": "GND",
+          "J1.24": "IND_DATA",
+          "J1.25": "CTRL1_PRESENT",
+          "J1.26": "CTRL1_RING",
+          "J1.27": "CTRL2_RING",
+          "J1.28": "GND",
+          "J1.29": "CTRL2_PRESENT",
+          "J1.3": "GND",
+          "J1.31": "CTRL1_TIP",
+          "J1.32": "CTRL2_TIP",
+          "J1.33": "GND",
+          "J1.34": "EXP_GP28",
+          "J1.36": "+3V3_PICO",
+          "J1.38": "GND",
+          "J1.39": "+5V",
+          "J1.4": "SW_RECPLAY",
+          "J1.5": "SW_STOP",
+          "J1.6": "SW_UNDO",
+          "J1.7": "SW_MODE",
+          "J1.8": "GND",
+          "J1.9": "SW_TRACK1",
+          "J1.D1": "SWCLK",
+          "J1.D2": "GND",
+          "J1.D3": "SWDIO",
+          "J10.1": "SW_RECPLAY",
+          "J10.2": "GND",
+          "J11.1": "SW_STOP",
+          "J11.2": "GND",
+          "J12.1": "SW_UNDO",
+          "J12.2": "GND",
+          "J13.1": "SW_MODE",
+          "J13.2": "GND",
+          "J14.1": "SW_TRACK1",
+          "J14.2": "GND",
+          "J15.1": "SW_TRACK2",
+          "J15.2": "GND",
+          "J16.1": "SW_TRACK3",
+          "J16.2": "GND",
+          "J17.1": "SW_TRACK4",
+          "J17.2": "GND",
+          "J18.1": "SW_CLEAR",
+          "J18.2": "GND",
+          "J19.1": "SW_BANK",
+          "J19.2": "GND",
+          "J2.1": "+3V3",
+          "J2.10": "MIDI_RX",
+          "J2.11": "PI_GPIO17",
+          "J2.14": "GND",
+          "J2.17": "+3V3",
+          "J2.18": "SWCLK",
+          "J2.20": "GND",
+          "J2.21": "LINK_TX_PI",
+          "J2.22": "SWDIO",
+          "J2.24": "LINK_RX_PI",
+          "J2.25": "GND",
+          "J2.30": "GND",
+          "J2.34": "GND",
+          "J2.39": "GND",
+          "J2.6": "GND",
+          "J2.8": "MIDI_TX",
+          "J2.9": "GND",
+          "J20.1": "CTRL1_TIP",
+          "J20.2": "J20_REF",
+          "J20.3": "GND",
+          "J20.4": "J20_TN",
+          "J21.1": "CTRL2_TIP",
+          "J21.2": "J21_REF",
+          "J21.3": "GND",
+          "J21.4": "J21_TN",
+          "J22.1": "+3V3",
+          "J22.2": "+5V",
+          "J22.3": "EXP_GP12",
+          "J22.4": "EXP_GP15",
+          "J22.5": "EXP_GP28",
+          "J22.6": "GND",
+          "J23.1": "GND",
+          "J23.2": "PD_SDA",
+          "J23.3": "PD_SCL",
+          "J24.1": "GND",
+          "J24.2": "IND_DATA_OUT",
+          "J24.3": "+5V",
+          "J25.1": "PI_GPIO17",
+          "J25.2": "GND",
+          "J3.1": "+5V",
+          "J3.2": "GND",
+          "J4.1": "N$1",
+          "J4.2": "N$2",
+          "J4.3": "GND",
+          "J5.1": "N$3",
+          "J5.2": "N$5",
+          "J6.1": "+5V",
+          "J6.2": "GND",
+          "J6.3": "LINK_TO_RING",
+          "J6.4": "LINK_TO_CONSOLE",
+          "J8.1": "PWR_BTN",
+          "J8.2": "PWR_BTN_RET",
+          "J9.1": "PWR_BTN",
+          "J9.2": "PWR_BTN_RET",
+          "R10.1": "+3V3_PICO",
+          "R10.2": "CTRL2_TIP",
+          "R11.1": "+3V3",
+          "R11.2": "LINK_TO_RING",
+          "R12.1": "+3V3",
+          "R12.2": "LINK_TO_CONSOLE",
+          "R14.1": "MIDI_TX",
+          "R14.2": "GND",
+          "R16.1": "IND_DATA",
+          "R16.2": "GND",
+          "R17.1": "LINK_TX",
+          "R17.2": "LINK_TX_PI",
+          "R18.1": "LINK_RX_PI",
+          "R18.2": "LINK_RX",
+          "R19.1": "J20_REF",
+          "R19.2": "CTRL1_RING",
+          "R2.1": "IND_DATA_BUF",
+          "R2.2": "IND_DATA_OUT",
+          "R20.1": "J21_REF",
+          "R20.2": "CTRL2_RING",
+          "R21.1": "J20_TN",
+          "R21.2": "CTRL1_PRESENT",
+          "R22.1": "J21_TN",
+          "R22.2": "CTRL2_PRESENT",
+          "R3.1": "MIDI_OUT_BUF",
+          "R3.2": "N$1",
+          "R4.1": "+5V",
+          "R4.2": "N$2",
+          "R5.1": "N$3",
+          "R5.2": "N$4",
+          "R6.1": "+3V3",
+          "R6.2": "MIDI_RX",
+          "R7.1": "+3V3_PICO",
+          "R7.2": "J20_REF",
+          "R8.1": "+3V3_PICO",
+          "R8.2": "CTRL1_TIP",
+          "R9.1": "+3V3_PICO",
+          "R9.2": "J21_REF",
+          "U1.1": "GND",
+          "U1.10": "GND",
+          "U1.12": "GND",
+          "U1.13": "+5V",
+          "U1.14": "+5V",
+          "U1.2": "IND_DATA",
+          "U1.3": "IND_DATA_BUF",
+          "U1.4": "+5V",
+          "U1.5": "GND",
+          "U1.7": "GND",
+          "U1.8": "MIDI_OUT_BUF",
+          "U1.9": "MIDI_TX",
+          "U2.1": "N$4",
+          "U2.2": "N$5",
+          "U2.4": "MIDI_RX",
+          "U2.5": "GND",
+          "U2.6": "+3V3"
+        },
+        "native_pad_map": {
+          "C1.1": "SW_RECPLAY",
+          "C1.2": "GND",
+          "C10.1": "SW_BANK",
+          "C10.2": "GND",
+          "C11.1": "+5V",
+          "C11.2": "GND",
+          "C13.1": "CTRL1_TIP",
+          "C13.2": "GND",
+          "C14.1": "CTRL2_TIP",
+          "C14.2": "GND",
+          "C2.1": "SW_STOP",
+          "C2.2": "GND",
+          "C20.1": "+3V3",
+          "C20.2": "GND",
+          "C3.1": "SW_UNDO",
+          "C3.2": "GND",
+          "C30.1": "+5V",
+          "C30.2": "GND",
+          "C31.1": "+5V",
+          "C31.2": "GND",
+          "C4.1": "SW_MODE",
+          "C4.2": "GND",
+          "C5.1": "SW_TRACK1",
+          "C5.2": "GND",
+          "C6.1": "SW_TRACK2",
+          "C6.2": "GND",
+          "C7.1": "SW_TRACK3",
+          "C7.2": "GND",
+          "C8.1": "SW_TRACK4",
+          "C8.2": "GND",
+          "C9.1": "SW_CLEAR",
+          "C9.2": "GND",
+          "D1.1": "N$4",
+          "D1.2": "N$5",
+          "H1.1": "GND",
+          "H2.1": "CHASSIS_H2",
+          "H3.1": "CHASSIS_H3",
+          "H4.1": "CHASSIS_H4",
+          "J1.1": "PD_SDA",
+          "J1.10": "SW_TRACK2",
+          "J1.11": "SW_TRACK3",
+          "J1.12": "SW_TRACK4",
+          "J1.13": "GND",
+          "J1.14": "SW_CLEAR",
+          "J1.15": "SW_BANK",
+          "J1.16": "EXP_GP12",
+          "J1.17": "LINK_TO_RING",
+          "J1.18": "GND",
+          "J1.19": "LINK_TO_CONSOLE",
+          "J1.2": "PD_SCL",
+          "J1.20": "EXP_GP15",
+          "J1.21": "LINK_TX",
+          "J1.22": "LINK_RX",
+          "J1.23": "GND",
+          "J1.24": "IND_DATA",
+          "J1.25": "CTRL1_PRESENT",
+          "J1.26": "CTRL1_RING",
+          "J1.27": "CTRL2_RING",
+          "J1.28": "GND",
+          "J1.29": "CTRL2_PRESENT",
+          "J1.3": "GND",
+          "J1.31": "CTRL1_TIP",
+          "J1.32": "CTRL2_TIP",
+          "J1.33": "GND",
+          "J1.34": "EXP_GP28",
+          "J1.36": "+3V3_PICO",
+          "J1.38": "GND",
+          "J1.39": "+5V",
+          "J1.4": "SW_RECPLAY",
+          "J1.5": "SW_STOP",
+          "J1.6": "SW_UNDO",
+          "J1.7": "SW_MODE",
+          "J1.8": "GND",
+          "J1.9": "SW_TRACK1",
+          "J1.D1": "SWCLK",
+          "J1.D2": "GND",
+          "J1.D3": "SWDIO",
+          "J10.1": "SW_RECPLAY",
+          "J10.2": "GND",
+          "J11.1": "SW_STOP",
+          "J11.2": "GND",
+          "J12.1": "SW_UNDO",
+          "J12.2": "GND",
+          "J13.1": "SW_MODE",
+          "J13.2": "GND",
+          "J14.1": "SW_TRACK1",
+          "J14.2": "GND",
+          "J15.1": "SW_TRACK2",
+          "J15.2": "GND",
+          "J16.1": "SW_TRACK3",
+          "J16.2": "GND",
+          "J17.1": "SW_TRACK4",
+          "J17.2": "GND",
+          "J18.1": "SW_CLEAR",
+          "J18.2": "GND",
+          "J19.1": "SW_BANK",
+          "J19.2": "GND",
+          "J2.1": "+3V3",
+          "J2.10": "MIDI_RX",
+          "J2.11": "PI_GPIO17",
+          "J2.14": "GND",
+          "J2.17": "+3V3",
+          "J2.18": "SWCLK",
+          "J2.20": "GND",
+          "J2.21": "LINK_TX_PI",
+          "J2.22": "SWDIO",
+          "J2.24": "LINK_RX_PI",
+          "J2.25": "GND",
+          "J2.30": "GND",
+          "J2.34": "GND",
+          "J2.39": "GND",
+          "J2.6": "GND",
+          "J2.8": "MIDI_TX",
+          "J2.9": "GND",
+          "J20.1": "CTRL1_TIP",
+          "J20.2": "J20_REF",
+          "J20.3": "GND",
+          "J20.4": "J20_TN",
+          "J21.1": "CTRL2_TIP",
+          "J21.2": "J21_REF",
+          "J21.3": "GND",
+          "J21.4": "J21_TN",
+          "J22.1": "+3V3",
+          "J22.2": "+5V",
+          "J22.3": "EXP_GP12",
+          "J22.4": "EXP_GP15",
+          "J22.5": "EXP_GP28",
+          "J22.6": "GND",
+          "J23.1": "GND",
+          "J23.2": "PD_SDA",
+          "J23.3": "PD_SCL",
+          "J24.1": "GND",
+          "J24.2": "IND_DATA_OUT",
+          "J24.3": "+5V",
+          "J25.1": "PI_GPIO17",
+          "J25.2": "GND",
+          "J3.1": "+5V",
+          "J3.2": "GND",
+          "J4.1": "N$1",
+          "J4.2": "N$2",
+          "J4.3": "GND",
+          "J5.1": "N$3",
+          "J5.2": "N$5",
+          "J6.1": "+5V",
+          "J6.2": "GND",
+          "J6.3": "LINK_TO_RING",
+          "J6.4": "LINK_TO_CONSOLE",
+          "J8.1": "PWR_BTN",
+          "J8.2": "PWR_BTN_RET",
+          "J9.1": "PWR_BTN",
+          "J9.2": "PWR_BTN_RET",
+          "R10.1": "+3V3_PICO",
+          "R10.2": "CTRL2_TIP",
+          "R11.1": "+3V3",
+          "R11.2": "LINK_TO_RING",
+          "R12.1": "+3V3",
+          "R12.2": "LINK_TO_CONSOLE",
+          "R14.1": "MIDI_TX",
+          "R14.2": "GND",
+          "R16.1": "IND_DATA",
+          "R16.2": "GND",
+          "R17.1": "LINK_TX",
+          "R17.2": "LINK_TX_PI",
+          "R18.1": "LINK_RX_PI",
+          "R18.2": "LINK_RX",
+          "R19.1": "J20_REF",
+          "R19.2": "CTRL1_RING",
+          "R2.1": "IND_DATA_BUF",
+          "R2.2": "IND_DATA_OUT",
+          "R20.1": "J21_REF",
+          "R20.2": "CTRL2_RING",
+          "R21.1": "J20_TN",
+          "R21.2": "CTRL1_PRESENT",
+          "R22.1": "J21_TN",
+          "R22.2": "CTRL2_PRESENT",
+          "R3.1": "MIDI_OUT_BUF",
+          "R3.2": "N$1",
+          "R4.1": "+5V",
+          "R4.2": "N$2",
+          "R5.1": "N$3",
+          "R5.2": "N$4",
+          "R6.1": "+3V3",
+          "R6.2": "MIDI_RX",
+          "R7.1": "+3V3_PICO",
+          "R7.2": "J20_REF",
+          "R8.1": "+3V3_PICO",
+          "R8.2": "CTRL1_TIP",
+          "R9.1": "+3V3_PICO",
+          "R9.2": "J21_REF",
+          "U1.1": "GND",
+          "U1.10": "GND",
+          "U1.12": "GND",
+          "U1.13": "+5V",
+          "U1.14": "+5V",
+          "U1.2": "IND_DATA",
+          "U1.3": "IND_DATA_BUF",
+          "U1.4": "+5V",
+          "U1.5": "GND",
+          "U1.7": "GND",
+          "U1.8": "MIDI_OUT_BUF",
+          "U1.9": "MIDI_TX",
+          "U2.1": "N$4",
+          "U2.2": "N$5",
+          "U2.4": "MIDI_RX",
+          "U2.5": "GND",
+          "U2.6": "+3V3"
+        }
+      },
+      "stackup": [
+        {
+          "Color": "White",
+          "Name": "Top Silk Screen",
+          "Type": "Legend"
+        },
+        {
+          "Name": "Top Solder Paste",
+          "Type": "SolderPaste"
+        },
+        {
+          "Color": "R80G0B80",
+          "Name": "Top Solder Mask",
+          "Thickness": 0.01,
+          "Type": "SolderMask"
+        },
+        {
+          "Name": "F.Cu",
+          "Thickness": 0.035,
+          "Type": "Copper"
+        },
+        {
+          "Material": "FR4",
+          "Name": "F.Cu/B.Cu",
+          "Notes": "Type: dielectric layer 1 (from F.Cu to B.Cu)",
+          "Thickness": 1.51,
+          "Type": "Dielectric"
+        },
+        {
+          "Name": "B.Cu",
+          "Thickness": 0.035,
+          "Type": "Copper"
+        },
+        {
+          "Color": "R80G0B80",
+          "Name": "Bottom Solder Mask",
+          "Thickness": 0.01,
+          "Type": "SolderMask"
+        },
+        {
+          "Name": "Bottom Solder Paste",
+          "Type": "SolderPaste"
+        },
+        {
+          "Color": "White",
+          "Name": "Bottom Silk Screen",
+          "Type": "Legend"
+        }
+      ],
+      "zip": "hardware/kicad/fab/segno_console_v3_gerbers.zip"
+    },
+    "ring": {
+      "archive_sha256": "29ed635cc4119edfe609332ba62fbe7cb31c102bd6d18af23ef70a75b7cbd606",
+      "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "board_sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+      "cam": {
+        "segno_pedal_ring-B_Cu.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "9a4f660e4f9800db68642fd0244540987cd3e324793898bda970e719921d1022",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "49b489354556b94f5620fb8e12a8826689b202e2ded7ca50548e4f13026d1bd2",
+          "zip_sha256": "49b489354556b94f5620fb8e12a8826689b202e2ded7ca50548e4f13026d1bd2"
+        },
+        "segno_pedal_ring-B_Mask.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "bb2ffb9c364922f7d7d67605a5d12a01983edd27a449062fa7e27a535ef8435f",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "65e559d799e40ec55fbf15d3f4ada829b18bf1e79724ddc30d2c429b0a21b5da",
+          "zip_sha256": "65e559d799e40ec55fbf15d3f4ada829b18bf1e79724ddc30d2c429b0a21b5da"
+        },
+        "segno_pedal_ring-B_Silkscreen.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "cf09306761f1a55cdc373a665f5b306ee111586d94a1b657dbdc7268252474a6",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "d9569281b5e8825330278c313692d4548eb53bb8c08271244636d0329df08a51",
+          "zip_sha256": "d9569281b5e8825330278c313692d4548eb53bb8c08271244636d0329df08a51"
+        },
+        "segno_pedal_ring-Edge_Cuts.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "d9d3889503632cba7fb71d6c8318537be3371dbe01880cd862015351fb717e1c",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "2b73274ae6109f4135b9fd3c5b190d19f068c6b7d737b4a470b1fe6db25414a8",
+          "zip_sha256": "2b73274ae6109f4135b9fd3c5b190d19f068c6b7d737b4a470b1fe6db25414a8"
+        },
+        "segno_pedal_ring-F_Cu.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "e09c33bb14953596b64350a1261f2b699ade1070190effc8688c8b20b4576c11",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "72a7777b89a1b1d99c1ac0d79e750ba97b0d754ebacb8c09254a2322b92f0956",
+          "zip_sha256": "72a7777b89a1b1d99c1ac0d79e750ba97b0d754ebacb8c09254a2322b92f0956"
+        },
+        "segno_pedal_ring-F_Mask.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "59e8f15bc9fc1d78c556b635df9f9a8921ac90f45bd018cce07c3ad4cd30495d",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "dfabaa15ef6f7f067f036a6b41a2d6ef8c373f52caff56f2f021a2422c0a8cd3",
+          "zip_sha256": "dfabaa15ef6f7f067f036a6b41a2d6ef8c373f52caff56f2f021a2422c0a8cd3"
+        },
+        "segno_pedal_ring-F_Silkscreen.gbr": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "39bf78d0eded768489463db88d474f0e8a4bbd2a3fd0b6970cc3133c8c58422c",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "ce237bc18da86523810b19ea2f28d6a312b3a363ab64e5088db6e50238c37a0c",
+          "zip_sha256": "ce237bc18da86523810b19ea2f28d6a312b3a363ab64e5088db6e50238c37a0c"
+        },
+        "segno_pedal_ring-NPTH.drl": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "c6592db89a28a435dc11650da16106cd9858bd7aeb074218a8782b4ed6b36296",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "b25aafa269c981bbf84287b4b2d1efdf688547f3ca6311cadedbe11982139863",
+          "zip_sha256": "b25aafa269c981bbf84287b4b2d1efdf688547f3ca6311cadedbe11982139863"
+        },
+        "segno_pedal_ring-PTH.drl": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "7ba56c49f8b0885a5a1d253d4ae5f3716d45cdfedf6256413109290f3378a15c",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "fd40718a246a7cc3c8c4d3537928c4e5ed505d8980fea327a463ba74bf8db85f",
+          "zip_sha256": "fd40718a246a7cc3c8c4d3537928c4e5ed505d8980fea327a463ba74bf8db85f"
+        },
+        "segno_pedal_ring-job.gbrjob": {
+          "bytes_equal": false,
+          "equal_except_timestamps": true,
+          "fresh_sha256": "f1787385b94606e5ed9700f1ebab30724bafadf4a2328e6e1f810b41d4d21b4e",
+          "loose_matches_fresh": true,
+          "loose_matches_zip": true,
+          "loose_sha256": "11127271b922449848b87abe02e220cecd81fc6a4dfc7c2f52cec67e1097a263",
+          "zip_sha256": "11127271b922449848b87abe02e220cecd81fc6a4dfc7c2f52cec67e1097a263"
+        }
+      },
+      "drc": {
+        "ignored_checks": [
+          {
+            "description": "Footprint has no courtyard defined",
+            "key": "missing_courtyard"
+          },
+          {
+            "description": "Track endpoint not centered on via",
+            "key": "track_not_centered_on_via"
+          },
+          {
+            "description": "Tuning profile track geometries",
+            "key": "tuning_profile_track_geometries"
+          },
+          {
+            "description": "Footprint doesn't match symbol's footprint filters",
+            "key": "footprint_filters_mismatch"
+          },
+          {
+            "description": "Footprint component type doesn't match footprint pads",
+            "key": "footprint_type_mismatch"
+          }
+        ],
+        "included_severities": [
+          "error",
+          "warning",
+          "exclusion"
+        ],
+        "unconnected_items": [],
+        "violations": []
+      },
+      "expected_inventory": [
+        "segno_pedal_ring-B_Cu.gbr",
+        "segno_pedal_ring-B_Mask.gbr",
+        "segno_pedal_ring-B_Silkscreen.gbr",
+        "segno_pedal_ring-Edge_Cuts.gbr",
+        "segno_pedal_ring-F_Cu.gbr",
+        "segno_pedal_ring-F_Mask.gbr",
+        "segno_pedal_ring-F_Silkscreen.gbr",
+        "segno_pedal_ring-NPTH.drl",
+        "segno_pedal_ring-PTH.drl",
+        "segno_pedal_ring-job.gbrjob"
+      ],
+      "general_specs": {
+        "BoardThickness": 1.6,
+        "Finish": "None",
+        "LayerNumber": 2,
+        "ProjectId": {
+          "GUID": "7365676e-6f5f-4706-9564-616c5f72696e",
+          "Name": "segno_pedal_ring",
+          "Revision": "rev?"
+        },
+        "Size": {
+          "X": 80.1,
+          "Y": 80.1
+        }
+      },
+      "native": {
+        "board_thickness_mm": 1.6,
+        "conflicting_duplicate_pads": [],
+        "copper_layers": 2,
+        "expected_pad_map": {
+          "C1.1": "+5V_LED",
+          "C1.2": "GND",
+          "C2.1": "ENC_A",
+          "C2.2": "GND",
+          "C3.1": "ENC_B",
+          "C3.2": "GND",
+          "C4.1": "ENC_SW",
+          "C4.2": "GND",
+          "C5.1": "+5V_LED",
+          "C5.2": "GND",
+          "D1.1": "+5V_MCU",
+          "D1.2": "+5V_LED",
+          "ENC1.A": "ENC_A",
+          "ENC1.B": "ENC_B",
+          "ENC1.C": "GND",
+          "ENC1.S1": "ENC_SW",
+          "ENC1.S2": "GND",
+          "J1.1": "+5V_LED",
+          "J1.2": "GND",
+          "J1.3": "LINK_TO_RING",
+          "J1.4": "LINK_TO_CONSOLE",
+          "J2.1": "+5V_LED",
+          "J2.2": "GND",
+          "J2.3": "RING_DATA",
+          "J2.4": "RING_DOUT",
+          "J3.1": "RING_DATA",
+          "J3.2": "+5V_LED",
+          "J3.3": "GND",
+          "J3.4": "RING_DOUT",
+          "J4.1": "RING_DATA",
+          "J4.2": "+5V_LED",
+          "J4.3": "GND",
+          "J4.4": "RING_DOUT",
+          "R1.1": "RING_DATA_5V",
+          "R1.2": "RING_DATA",
+          "R2.1": "+3V3",
+          "R2.2": "ENC_A",
+          "R3.1": "+3V3",
+          "R3.2": "ENC_B",
+          "R4.1": "+3V3",
+          "R4.2": "ENC_SW",
+          "R5.1": "RING_DATA_3V3",
+          "R5.2": "GND",
+          "U1.1": "RING_DATA_3V3",
+          "U1.10": "LINK_TO_RING",
+          "U1.11": "LINK_TO_CONSOLE",
+          "U1.12": "+3V3",
+          "U1.13": "GND",
+          "U1.14": "+5V_MCU",
+          "U1.2": "ENC_A",
+          "U1.3": "ENC_B",
+          "U1.4": "ENC_SW",
+          "U2.1": "GND",
+          "U2.10": "+5V_LED",
+          "U2.12": "GND",
+          "U2.13": "+5V_LED",
+          "U2.14": "+5V_LED",
+          "U2.2": "RING_DATA_3V3",
+          "U2.3": "RING_DATA_5V",
+          "U2.4": "+5V_LED",
+          "U2.5": "GND",
+          "U2.7": "GND",
+          "U2.9": "GND"
+        },
+        "native_pad_map": {
+          "C1.1": "+5V_LED",
+          "C1.2": "GND",
+          "C2.1": "ENC_A",
+          "C2.2": "GND",
+          "C3.1": "ENC_B",
+          "C3.2": "GND",
+          "C4.1": "ENC_SW",
+          "C4.2": "GND",
+          "C5.1": "+5V_LED",
+          "C5.2": "GND",
+          "D1.1": "+5V_MCU",
+          "D1.2": "+5V_LED",
+          "ENC1.A": "ENC_A",
+          "ENC1.B": "ENC_B",
+          "ENC1.C": "GND",
+          "ENC1.S1": "ENC_SW",
+          "ENC1.S2": "GND",
+          "J1.1": "+5V_LED",
+          "J1.2": "GND",
+          "J1.3": "LINK_TO_RING",
+          "J1.4": "LINK_TO_CONSOLE",
+          "J2.1": "+5V_LED",
+          "J2.2": "GND",
+          "J2.3": "RING_DATA",
+          "J2.4": "RING_DOUT",
+          "J3.1": "RING_DATA",
+          "J3.2": "+5V_LED",
+          "J3.3": "GND",
+          "J3.4": "RING_DOUT",
+          "J4.1": "RING_DATA",
+          "J4.2": "+5V_LED",
+          "J4.3": "GND",
+          "J4.4": "RING_DOUT",
+          "R1.1": "RING_DATA_5V",
+          "R1.2": "RING_DATA",
+          "R2.1": "+3V3",
+          "R2.2": "ENC_A",
+          "R3.1": "+3V3",
+          "R3.2": "ENC_B",
+          "R4.1": "+3V3",
+          "R4.2": "ENC_SW",
+          "R5.1": "RING_DATA_3V3",
+          "R5.2": "GND",
+          "U1.1": "RING_DATA_3V3",
+          "U1.10": "LINK_TO_RING",
+          "U1.11": "LINK_TO_CONSOLE",
+          "U1.12": "+3V3",
+          "U1.13": "GND",
+          "U1.14": "+5V_MCU",
+          "U1.2": "ENC_A",
+          "U1.3": "ENC_B",
+          "U1.4": "ENC_SW",
+          "U2.1": "GND",
+          "U2.10": "+5V_LED",
+          "U2.12": "GND",
+          "U2.13": "+5V_LED",
+          "U2.14": "+5V_LED",
+          "U2.2": "RING_DATA_3V3",
+          "U2.3": "RING_DATA_5V",
+          "U2.4": "+5V_LED",
+          "U2.5": "GND",
+          "U2.7": "GND",
+          "U2.9": "GND"
+        }
+      },
+      "stackup": [
+        {
+          "Color": "Black",
+          "Name": "Top Silk Screen",
+          "Type": "Legend"
+        },
+        {
+          "Name": "Top Solder Paste",
+          "Type": "SolderPaste"
+        },
+        {
+          "Color": "White",
+          "Name": "Top Solder Mask",
+          "Thickness": 0.01,
+          "Type": "SolderMask"
+        },
+        {
+          "Name": "F.Cu",
+          "Thickness": 0.035,
+          "Type": "Copper"
+        },
+        {
+          "Material": "FR4",
+          "Name": "F.Cu/B.Cu",
+          "Notes": "Type: dielectric layer 1 (from F.Cu to B.Cu)",
+          "Thickness": 1.51,
+          "Type": "Dielectric"
+        },
+        {
+          "Name": "B.Cu",
+          "Thickness": 0.035,
+          "Type": "Copper"
+        },
+        {
+          "Color": "White",
+          "Name": "Bottom Solder Mask",
+          "Thickness": 0.01,
+          "Type": "SolderMask"
+        },
+        {
+          "Name": "Bottom Solder Paste",
+          "Type": "SolderPaste"
+        },
+        {
+          "Color": "Black",
+          "Name": "Bottom Silk Screen",
+          "Type": "Legend"
+        }
+      ],
+      "zip": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip"
+    }
+  },
+  "checks_failed": 0,
+  "checks_passed": 175,
+  "commands": [
+    {
+      "command": "kicad-version",
+      "returncode": 0
+    },
+    {
+      "command": "console:native-read",
+      "returncode": 0
+    },
+    {
+      "command": "console:drc",
+      "returncode": 0
+    },
+    {
+      "command": "console:fresh-gerbers",
+      "returncode": 0
+    },
+    {
+      "command": "console:fresh-drill",
+      "returncode": 0
+    },
+    {
+      "command": "ring:native-read",
+      "returncode": 0
+    },
+    {
+      "command": "ring:drc",
+      "returncode": 0
+    },
+    {
+      "command": "ring:fresh-gerbers",
+      "returncode": 0
+    },
+    {
+      "command": "ring:fresh-drill",
+      "returncode": 0
+    }
+  ],
+  "finished_at": "2026-09-26T05:37:03Z",
+  "kicad_version": "10.0.4",
+  "limits": [
+    "CAM parity and CAD connectivity do not establish assembled hardware operation.",
+    "DRC ignored checks are recorded; configured severity exclusions are checked.",
+    "Power-route capacity and final visual finish require their separate review."
+  ],
+  "loose_after": {
+    "hardware/kicad/out_console/segno_console_board-B_Cu.gbr": "c730032ab478a46d88bfdd9778acade1c046b01e85c8f7b8c9cc21cb87dd1f9c",
+    "hardware/kicad/out_console/segno_console_board-B_Mask.gbr": "0effd9067157e786824e037e87beca0ef5d47d1c3331a242f640ec746ce97239",
+    "hardware/kicad/out_console/segno_console_board-B_Paste.gbr": "735709605f33b8d798bf888e4cdaea40c2d92fe3d2b4a4a23585e0067a05f787",
+    "hardware/kicad/out_console/segno_console_board-B_Silkscreen.gbr": "98498f5060cfe187f56cc868423510244bf3ffe47d1ca834bf61a244522bfc66",
+    "hardware/kicad/out_console/segno_console_board-Edge_Cuts.gbr": "a3b63a5093db9b50d14addbdc17e65f8531d9fa436e0fa2a3bb02f9016cb7311",
+    "hardware/kicad/out_console/segno_console_board-F_Cu.gbr": "f22fc3f68240217ef60e1d171db0fa9e042f49ae5d3bb58e714411ccb41040a5",
+    "hardware/kicad/out_console/segno_console_board-F_Mask.gbr": "ecf0e0750ed63e081a41325749c0e36cdf46d7aab9fa2a8ee87804f285a58c55",
+    "hardware/kicad/out_console/segno_console_board-F_Paste.gbr": "aa820d1abf989619bb6dfaf58ae80762c8a621bcbf303692437f3838b97fecb3",
+    "hardware/kicad/out_console/segno_console_board-F_Silkscreen.gbr": "f0be3e7f39ad1aadcbe7b40a8f117340c2d6d431c67ecb9b4608a24c14915e6e",
+    "hardware/kicad/out_console/segno_console_board-NPTH.drl": "9e462c2c93541aac085475a5422d7b3338c5154a137649760abfc309b75463e0",
+    "hardware/kicad/out_console/segno_console_board-PTH.drl": "8b7f6b1589f4e12603e298f8f70e6997fd7a4e23ee7c7b58d1cf62f1d4f6b5b3",
+    "hardware/kicad/out_console/segno_console_board-job.gbrjob": "41ef91610253daaca5c9fcca35fbe4052c07573eb990823123619585da41e7b6",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-B_Cu.gbr": "49b489354556b94f5620fb8e12a8826689b202e2ded7ca50548e4f13026d1bd2",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-B_Mask.gbr": "65e559d799e40ec55fbf15d3f4ada829b18bf1e79724ddc30d2c429b0a21b5da",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-B_Silkscreen.gbr": "d9569281b5e8825330278c313692d4548eb53bb8c08271244636d0329df08a51",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-Edge_Cuts.gbr": "2b73274ae6109f4135b9fd3c5b190d19f068c6b7d737b4a470b1fe6db25414a8",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-F_Cu.gbr": "72a7777b89a1b1d99c1ac0d79e750ba97b0d754ebacb8c09254a2322b92f0956",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-F_Mask.gbr": "dfabaa15ef6f7f067f036a6b41a2d6ef8c373f52caff56f2f021a2422c0a8cd3",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-F_Silkscreen.gbr": "ce237bc18da86523810b19ea2f28d6a312b3a363ab64e5088db6e50238c37a0c",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-NPTH.drl": "b25aafa269c981bbf84287b4b2d1efdf688547f3ca6311cadedbe11982139863",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-PTH.drl": "fd40718a246a7cc3c8c4d3537928c4e5ed505d8980fea327a463ba74bf8db85f",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-job.gbrjob": "11127271b922449848b87abe02e220cecd81fc6a4dfc7c2f52cec67e1097a263"
+  },
+  "loose_before": {
+    "hardware/kicad/out_console/segno_console_board-B_Cu.gbr": "c730032ab478a46d88bfdd9778acade1c046b01e85c8f7b8c9cc21cb87dd1f9c",
+    "hardware/kicad/out_console/segno_console_board-B_Mask.gbr": "0effd9067157e786824e037e87beca0ef5d47d1c3331a242f640ec746ce97239",
+    "hardware/kicad/out_console/segno_console_board-B_Paste.gbr": "735709605f33b8d798bf888e4cdaea40c2d92fe3d2b4a4a23585e0067a05f787",
+    "hardware/kicad/out_console/segno_console_board-B_Silkscreen.gbr": "98498f5060cfe187f56cc868423510244bf3ffe47d1ca834bf61a244522bfc66",
+    "hardware/kicad/out_console/segno_console_board-Edge_Cuts.gbr": "a3b63a5093db9b50d14addbdc17e65f8531d9fa436e0fa2a3bb02f9016cb7311",
+    "hardware/kicad/out_console/segno_console_board-F_Cu.gbr": "f22fc3f68240217ef60e1d171db0fa9e042f49ae5d3bb58e714411ccb41040a5",
+    "hardware/kicad/out_console/segno_console_board-F_Mask.gbr": "ecf0e0750ed63e081a41325749c0e36cdf46d7aab9fa2a8ee87804f285a58c55",
+    "hardware/kicad/out_console/segno_console_board-F_Paste.gbr": "aa820d1abf989619bb6dfaf58ae80762c8a621bcbf303692437f3838b97fecb3",
+    "hardware/kicad/out_console/segno_console_board-F_Silkscreen.gbr": "f0be3e7f39ad1aadcbe7b40a8f117340c2d6d431c67ecb9b4608a24c14915e6e",
+    "hardware/kicad/out_console/segno_console_board-NPTH.drl": "9e462c2c93541aac085475a5422d7b3338c5154a137649760abfc309b75463e0",
+    "hardware/kicad/out_console/segno_console_board-PTH.drl": "8b7f6b1589f4e12603e298f8f70e6997fd7a4e23ee7c7b58d1cf62f1d4f6b5b3",
+    "hardware/kicad/out_console/segno_console_board-job.gbrjob": "41ef91610253daaca5c9fcca35fbe4052c07573eb990823123619585da41e7b6",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-B_Cu.gbr": "49b489354556b94f5620fb8e12a8826689b202e2ded7ca50548e4f13026d1bd2",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-B_Mask.gbr": "65e559d799e40ec55fbf15d3f4ada829b18bf1e79724ddc30d2c429b0a21b5da",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-B_Silkscreen.gbr": "d9569281b5e8825330278c313692d4548eb53bb8c08271244636d0329df08a51",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-Edge_Cuts.gbr": "2b73274ae6109f4135b9fd3c5b190d19f068c6b7d737b4a470b1fe6db25414a8",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-F_Cu.gbr": "72a7777b89a1b1d99c1ac0d79e750ba97b0d754ebacb8c09254a2322b92f0956",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-F_Mask.gbr": "dfabaa15ef6f7f067f036a6b41a2d6ef8c373f52caff56f2f021a2422c0a8cd3",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-F_Silkscreen.gbr": "ce237bc18da86523810b19ea2f28d6a312b3a363ab64e5088db6e50238c37a0c",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-NPTH.drl": "b25aafa269c981bbf84287b4b2d1efdf688547f3ca6311cadedbe11982139863",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-PTH.drl": "fd40718a246a7cc3c8c4d3537928c4e5ed505d8980fea327a463ba74bf8db85f",
+    "hardware/kicad/out_ring/gerbers/segno_pedal_ring-job.gbrjob": "11127271b922449848b87abe02e220cecd81fc6a4dfc7c2f52cec67e1097a263"
+  },
+  "normalizer_source_sha256": "c8476a670c4ff269025df60cc2cd0bbd4121c4abb46b3e5c297496b56c53f5a1",
+  "passed": true,
+  "purpose": "final console/ring CAM audit",
+  "sources_after": {
+    "docs/reviews/screen-power-rev-l-1072/verify_fabrication.py": "c8476a670c4ff269025df60cc2cd0bbd4121c4abb46b3e5c297496b56c53f5a1",
+    "hardware/kicad/board_stackup.py": "f7630440e8c489f82db1597320dffb9161fac4240202d5cc446474a8cff88f65",
+    "hardware/kicad/console_board.net": "bc07049c367f126779b20d11e765ed4a3d3c2436d94a56eb9b40c926958f1d6b",
+    "hardware/kicad/console_board.py": "6d5a60e679292bb18959cee76e5d6e6a0da4b1c722737e3351b92c08700a2176",
+    "hardware/kicad/console_board_pcb.py": "d38cc8ece46da3b2f1f57cde1c1fc1d9f3f2a731351c60ed692a658707308eb4",
+    "hardware/kicad/console_ring_power.py": "3c598c7a3985f66eb0a1d852745dea4babebf165d6f79945e5eec52dc73dad1e",
+    "hardware/kicad/netlist.py": "565559b7751337c8930670658026715fa065138c846dd9784bbe4f06549bf1e3",
+    "hardware/kicad/out_console/segno_console_board.kicad_pcb": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+    "hardware/kicad/out_console/segno_console_board.kicad_pro": "1686d424ef6ba4d79c6d94fd0e53d1c1161159f626024014e1cbb27a2b785725",
+    "hardware/kicad/ring_board.net": "7760982472f448cf3b811a0f9a71d5d7a9122665311d130c561f767dcf3e379a",
+    "hardware/kicad/ring_board.py": "ccffc72aec110fffb18a20e2158b11a27a45e1d3ddceacc6b2e3c5cc30c30260",
+    "hardware/kicad/ring_power.py": "d2dcb84bc34a77f9ab27c0f2bbbeb939dfa4594ab0f3682557730d3f025c8548",
+    "hardware/kicad/round_routes.py": "0de2ded7f6c115f5465c98f6408e9514169ed63ffa6335a147ceea692bfd0a05",
+    "hardware/kicad/route_console_board.sh": "5f50e68233792ab050bf5eddbc1808f6473458ecb3887c3c37772bebe928c8a7",
+    "hardware/kicad/route_ring_board.sh": "8c5710ae75500797e5184e6837a4e73e4c35086c689b53a91761d3b10d5ee249",
+    "hardware/kicad/screen_power/build.sh": "58c506aaf72675b578f0ad8d7f533877cd2e77b72d9adecd32742643637a6424",
+    "hardware/kicad/screen_power/check.py": "606f16b80779c4362920c209bdcd1473acfb9b95b705500d4d3b9108fc0f7093",
+    "hardware/kicad/screen_power/circuit.py": "5fb3b82bc4f65d7a3bd8ed4abbdba5ffd497cf17e5acc1ffc4ae6eb00957083f",
+    "hardware/kicad/screen_power/cleanup.py": "250a4ca530796cded61d5d1b660b5d01d1ceff215e0ff44b1265c5a3e19ad93b",
+    "hardware/kicad/screen_power/export.py": "533651f48a44ecd498c3993e362eb75aaabda1d3d982343b86d88eb718c9f105",
+    "hardware/kicad/screen_power/finish.py": "f230664f50047ed983798e4c5d2056457f55775f45311b6daea5dc6aaf7f786e",
+    "hardware/kicad/screen_power/hand_checks.py": "92e6f017791bd62e2accb6adf20ade2c4ad0ea7652942574c6d03fb5ae35e655",
+    "hardware/kicad/screen_power/layout.py": "c2c1d43e06e89f045ac8b217402851c7444d74f43410b65fc17647aa5e6bda50",
+    "hardware/kicad/screen_power/model_geometry.py": "37b7e49ece74315e77e22654cca75c0bf3113b33001c297ee5f2679da280b288",
+    "hardware/kicad/screen_power/models.py": "3a49e950a8323db0a4fb9b73273ba7039b286eb79383243f4d95f9fa8dbf6db6",
+    "hardware/kicad/screen_power/pcb.py": "7d50aacdb44947ba1fc7beb3006c4c8eee2b8cc140dfdc713899f5b6a7d46d9a",
+    "hardware/kicad/screen_power/route_critical.py": "cbcc9e5cafb4c0577889beb1bb5d0c70b2fa7555982ee3701b9ff2e8982ee547",
+    "hardware/kicad/screen_power/router.py": "37f7cfeac163f80c62a940455b88ea82d4aaec6cb28ea7eea566330795d4cdf7",
+    "hardware/kicad/screen_power/schematic.py": "b80c9a1337f9c5549e397a56400716b9a5c7284007eaae73ae91bd1e3b907fcf",
+    "hardware/kicad/screen_power/switch_circuit.py": "9869038ee6a4a3c8d7459db4d09ee7e4bdb20d54c6102d3a10e4fd16c95164ec",
+    "hardware/kicad/segno.pretty/ModuleMountPads_4.kicad_mod": "888a3260fc19f5a1948401d807fc065c2b467349ee81a81d9c0c6caee62ac84c",
+    "hardware/kicad/segno.pretty/ModuleMountPads_Ring24.kicad_mod": "f7bde464b9937d219af26fc85fa72cf6da3d19b2794bc8efdb0bd75b7cded853",
+    "hardware/kicad/segno.pretty/NeoPixel_Ring24.kicad_mod": "09bb3869edb3e4d5992472bdc3b26da220043d39f8a1df561c400caf77c99bfe",
+    "hardware/kicad/segno.pretty/RaspberryPi_Pico_SMD_or_THT_Debug.kicad_mod": "1df993172d4a60cd9a0020a36cee915ceeb641cd1b0f6a0de5d723c0f9e863cf",
+    "hardware/kicad/segno.pretty/RotaryEncoder_EC11.kicad_mod": "a6f5ad796222b36d51098aa60740e2fc1d04932197673efa87c17b283ee1d72e",
+    "hardware/kicad/segno.pretty/WirePads_1x04.kicad_mod": "94002e6d67f468f9f5ddf32faa09c1945ea7505d064eed7b7d60276aff95e323",
+    "hardware/kicad/segno.pretty/XIAO_RP2350_SMD.kicad_mod": "a15a2c808f3264c59161a943dbe8ffe54e7659b895d337cadebd73cfab6eee8f",
+    "hardware/kicad/segno_pedal_ring.kicad_pcb": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+    "hardware/kicad/segno_pedal_ring.kicad_pro": "e9980e0ff65023b05bfcab1a93541bb98a475c5623019740f7822706bf7b1b36",
+    "hardware/kicad/silk_art.py": "a05510fc0eb635dd6b94a4f86acb583583a2acb84b337b12c9a97ae94489361d",
+    "hardware/kicad/silk_art_compose.py": "64e5e77d0d53c96194cbc73628f28c640a3d0faaa7272f834b9a83999426f39f",
+    "hardware/kicad/silk_art_extract.py": "35d1da86dca8177d5357ad325efc7d8a02546a21130d211d7e219cc4df49e699",
+    "hardware/kicad/silk_art_pads.py": "d312c341ddd37430bf6498d103e5dc4d3bff1b42d147b93184f6c0030a1f96e3",
+    "hardware/kicad/test_round_routes.py": "b0a1b93c21248f40ff5f2125b799a83e9da2e1026d68f88fae2116d846b63746",
+    "hardware/kicad/vh_models.py": "f76fd5a31e381b9d305ee678be825c80b1e99330b7bd1bfe62c0c96c4a2b8556",
+    "hardware/kicad/widen_power.py": "123a9a1099380560383a2e998982be635e508b6bd4642ab68096e675e35ba612"
+  },
+  "sources_before": {
+    "docs/reviews/screen-power-rev-l-1072/verify_fabrication.py": "c8476a670c4ff269025df60cc2cd0bbd4121c4abb46b3e5c297496b56c53f5a1",
+    "hardware/kicad/board_stackup.py": "f7630440e8c489f82db1597320dffb9161fac4240202d5cc446474a8cff88f65",
+    "hardware/kicad/console_board.net": "bc07049c367f126779b20d11e765ed4a3d3c2436d94a56eb9b40c926958f1d6b",
+    "hardware/kicad/console_board.py": "6d5a60e679292bb18959cee76e5d6e6a0da4b1c722737e3351b92c08700a2176",
+    "hardware/kicad/console_board_pcb.py": "d38cc8ece46da3b2f1f57cde1c1fc1d9f3f2a731351c60ed692a658707308eb4",
+    "hardware/kicad/console_ring_power.py": "3c598c7a3985f66eb0a1d852745dea4babebf165d6f79945e5eec52dc73dad1e",
+    "hardware/kicad/netlist.py": "565559b7751337c8930670658026715fa065138c846dd9784bbe4f06549bf1e3",
+    "hardware/kicad/out_console/segno_console_board.kicad_pcb": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+    "hardware/kicad/out_console/segno_console_board.kicad_pro": "1686d424ef6ba4d79c6d94fd0e53d1c1161159f626024014e1cbb27a2b785725",
+    "hardware/kicad/ring_board.net": "7760982472f448cf3b811a0f9a71d5d7a9122665311d130c561f767dcf3e379a",
+    "hardware/kicad/ring_board.py": "ccffc72aec110fffb18a20e2158b11a27a45e1d3ddceacc6b2e3c5cc30c30260",
+    "hardware/kicad/ring_power.py": "d2dcb84bc34a77f9ab27c0f2bbbeb939dfa4594ab0f3682557730d3f025c8548",
+    "hardware/kicad/round_routes.py": "0de2ded7f6c115f5465c98f6408e9514169ed63ffa6335a147ceea692bfd0a05",
+    "hardware/kicad/route_console_board.sh": "5f50e68233792ab050bf5eddbc1808f6473458ecb3887c3c37772bebe928c8a7",
+    "hardware/kicad/route_ring_board.sh": "8c5710ae75500797e5184e6837a4e73e4c35086c689b53a91761d3b10d5ee249",
+    "hardware/kicad/screen_power/build.sh": "58c506aaf72675b578f0ad8d7f533877cd2e77b72d9adecd32742643637a6424",
+    "hardware/kicad/screen_power/check.py": "606f16b80779c4362920c209bdcd1473acfb9b95b705500d4d3b9108fc0f7093",
+    "hardware/kicad/screen_power/circuit.py": "5fb3b82bc4f65d7a3bd8ed4abbdba5ffd497cf17e5acc1ffc4ae6eb00957083f",
+    "hardware/kicad/screen_power/cleanup.py": "250a4ca530796cded61d5d1b660b5d01d1ceff215e0ff44b1265c5a3e19ad93b",
+    "hardware/kicad/screen_power/export.py": "533651f48a44ecd498c3993e362eb75aaabda1d3d982343b86d88eb718c9f105",
+    "hardware/kicad/screen_power/finish.py": "f230664f50047ed983798e4c5d2056457f55775f45311b6daea5dc6aaf7f786e",
+    "hardware/kicad/screen_power/hand_checks.py": "92e6f017791bd62e2accb6adf20ade2c4ad0ea7652942574c6d03fb5ae35e655",
+    "hardware/kicad/screen_power/layout.py": "c2c1d43e06e89f045ac8b217402851c7444d74f43410b65fc17647aa5e6bda50",
+    "hardware/kicad/screen_power/model_geometry.py": "37b7e49ece74315e77e22654cca75c0bf3113b33001c297ee5f2679da280b288",
+    "hardware/kicad/screen_power/models.py": "3a49e950a8323db0a4fb9b73273ba7039b286eb79383243f4d95f9fa8dbf6db6",
+    "hardware/kicad/screen_power/pcb.py": "7d50aacdb44947ba1fc7beb3006c4c8eee2b8cc140dfdc713899f5b6a7d46d9a",
+    "hardware/kicad/screen_power/route_critical.py": "cbcc9e5cafb4c0577889beb1bb5d0c70b2fa7555982ee3701b9ff2e8982ee547",
+    "hardware/kicad/screen_power/router.py": "37f7cfeac163f80c62a940455b88ea82d4aaec6cb28ea7eea566330795d4cdf7",
+    "hardware/kicad/screen_power/schematic.py": "b80c9a1337f9c5549e397a56400716b9a5c7284007eaae73ae91bd1e3b907fcf",
+    "hardware/kicad/screen_power/switch_circuit.py": "9869038ee6a4a3c8d7459db4d09ee7e4bdb20d54c6102d3a10e4fd16c95164ec",
+    "hardware/kicad/segno.pretty/ModuleMountPads_4.kicad_mod": "888a3260fc19f5a1948401d807fc065c2b467349ee81a81d9c0c6caee62ac84c",
+    "hardware/kicad/segno.pretty/ModuleMountPads_Ring24.kicad_mod": "f7bde464b9937d219af26fc85fa72cf6da3d19b2794bc8efdb0bd75b7cded853",
+    "hardware/kicad/segno.pretty/NeoPixel_Ring24.kicad_mod": "09bb3869edb3e4d5992472bdc3b26da220043d39f8a1df561c400caf77c99bfe",
+    "hardware/kicad/segno.pretty/RaspberryPi_Pico_SMD_or_THT_Debug.kicad_mod": "1df993172d4a60cd9a0020a36cee915ceeb641cd1b0f6a0de5d723c0f9e863cf",
+    "hardware/kicad/segno.pretty/RotaryEncoder_EC11.kicad_mod": "a6f5ad796222b36d51098aa60740e2fc1d04932197673efa87c17b283ee1d72e",
+    "hardware/kicad/segno.pretty/WirePads_1x04.kicad_mod": "94002e6d67f468f9f5ddf32faa09c1945ea7505d064eed7b7d60276aff95e323",
+    "hardware/kicad/segno.pretty/XIAO_RP2350_SMD.kicad_mod": "a15a2c808f3264c59161a943dbe8ffe54e7659b895d337cadebd73cfab6eee8f",
+    "hardware/kicad/segno_pedal_ring.kicad_pcb": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+    "hardware/kicad/segno_pedal_ring.kicad_pro": "e9980e0ff65023b05bfcab1a93541bb98a475c5623019740f7822706bf7b1b36",
+    "hardware/kicad/silk_art.py": "a05510fc0eb635dd6b94a4f86acb583583a2acb84b337b12c9a97ae94489361d",
+    "hardware/kicad/silk_art_compose.py": "64e5e77d0d53c96194cbc73628f28c640a3d0faaa7272f834b9a83999426f39f",
+    "hardware/kicad/silk_art_extract.py": "35d1da86dca8177d5357ad325efc7d8a02546a21130d211d7e219cc4df49e699",
+    "hardware/kicad/silk_art_pads.py": "d312c341ddd37430bf6498d103e5dc4d3bff1b42d147b93184f6c0030a1f96e3",
+    "hardware/kicad/test_round_routes.py": "b0a1b93c21248f40ff5f2125b799a83e9da2e1026d68f88fae2116d846b63746",
+    "hardware/kicad/vh_models.py": "f76fd5a31e381b9d305ee678be825c80b1e99330b7bd1bfe62c0c96c4a2b8556",
+    "hardware/kicad/widen_power.py": "123a9a1099380560383a2e998982be635e508b6bd4642ab68096e675e35ba612"
+  },
+  "verifier_sha256": "9d7308f5ada898553142e5c916261f7f317657e49463b845a5273a5ec13f4856"
+}

@@ -1,0 +1,14 @@
+{
+  "board_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+  "images_sha256": {
+    "alignment-populated.png": "a6b8eb5fb0289daca1169a3b3880f69d02044902d9ac7d959d5a4e38ea687323",
+    "alignment-copper-silkscreen.png": "9cd05818933097601154d85420200354fef7009d46082e6a2485f05a7ebbe50c"
+  },
+  "checks": [
+    "Common U1/U2 lead rows and aligned package centers",
+    "No new local front or rear copper notch, taper or sharp turn",
+    "Legible references, fixed adjacent capacitors, preserved stock courtyards",
+    "Final native top populated rendering inspected"
+  ],
+  "status": "PASS"
+}

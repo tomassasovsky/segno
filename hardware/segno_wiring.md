@@ -1,6 +1,7 @@
+<!-- cspell:words derating unswitched Reterminate Littelfuse PXCN FHAC -->
 # Segno console — system wiring plan
 
-How the console's subsystems connect: the **console board v2** (Pico 2 / RP2350,
+How the console's subsystems connect: the **console board v3** (Pico 2 / RP2350,
 `hardware/kicad/console_board.py`, #747), the **ring board** (`segno_pedal_ring`),
 the **Raspberry Pi 5**, the two touchscreens, the external audio interface,
 power (#754), and the rear panel.
@@ -20,7 +21,12 @@ longer applies to anything.
               |   STUSB4500 trigger: ONE 20 V / 5 A contract
               |   fuse, T5A slow-blow, in series with the 20 V feed
               +--> BUCK_PI  (20->5 V) --> Pi 5 via its USB-C  --> Pi USB + NVMe
-              +--> BUCK_AUX (20->5 V) --> 7" + 16" screens | board J3 | WS2812
+              +--> BUCK_AUX (20->5 V) --+--> console J3 --> pills
+                                       +--> near-ring split --> strip power + ring J1 power
+                                       +--> 7.5 A inline fuse --> screen-power J1
+                                                                  | switched rail
+                                                                  +--> J103/J203 --> screen power
+                                                                  +--> J102/J202 --> touch VBUS
 
    DATA / CONTROL
      console board <---- keyed 2x20 ribbon, ~10 cm ----> Pi 40-pin header
@@ -28,8 +34,10 @@ longer applies to anything.
         MIDI  DIN IN -> H11L1 (at 3V3) -> Pi uart0 RX (GPIO15)
               Pi uart0 TX (GPIO14) -> 74AHCT125 -> 220R loop -> DIN OUT
         SWD   Pi GPIO24/25 -> the Pico's debug pads (cold flashing)
-     console board <-- footswitches x10 | ring board (4-way) | CTRL TRS x2
-     Pi --HDMI x2--> 7" + 16" screens ;  screen touch --USB--> Pi (2 of 4 ports)
+     console board <-- footswitches x10 | ring board (two UART wires) | CTRL TRS x2
+     Pi --HDMI x2--> 7" + 15.6" screens
+     Pi USB2 x2 --> screen J101/J201 --> relays --> J102/J202 --> screen touch
+     Pi GPIO17 --> ribbon --> console J25 --> screen J2 (GPIO17 + GND)
      Pi's other 2 USB --> internal leads to the rear USB couplers
                           (the audio interface plugs in there, outside the box)
      power button --J8 -> board -> J9 flying lead--> the Pi 5's own J2 pads
@@ -43,14 +51,21 @@ longer applies to anything.
 
 ## 2. Power distribution (#754)
 
-**20 V in, 5 V made next to the loads.** 5 V at the inlet was tried and dropped:
-the usable window is **5.0–5.25 V** (the Pi 5 browns out under ~4.8 V and it and
-both screens cap at 5.25 V, so trimming low eats brown-out margin and trimming
-high eats the ceiling), and at the console's ~12 A even a heavy 1.5 m lead drops
-~0.3 V — *load-dependently*, so no single supply trim holds both idle and
-full-tilt inside that 250 mV band without remote sense. At 20 V the same 59 W is
-under 3 A, the lead drop is regulated away by the bucks, and the tight 5 V
-tolerance only has to survive ~100 mm of internal wiring.
+**20 V in, 5 V made next to the loads.** Local bucks keep the high-current
+5 V wiring short. The current design allowances total **63.04 W** at their
+outputs: 25 W for the Pi rail and 38.04 W for AUX. At an illustrative 85–90%
+buck efficiency, that needs approximately **70.0–74.2 W**, or **3.50–3.71 A at
+20 V**. These efficiencies are planning assumptions, not measurements of the
+retained bucks. The 20 V / 5 A / 100 W contract accommodates this model; it
+does not establish enclosed thermal capacity or startup response.
+
+The Revision L screen gate driver is assessed at **4.5–5.25 V at J1**;
+its negative gate supply preserves enhancement after fuse and harness losses.
+Use the existing nominal 5 V buck. This driver corner does not claim that
+both screens operate at 4.5 V or that the buck is adjustable. Keep screen
+leads short and within the documented wire and connector ratings. The
+[gate-drive and startup assessments](kicad/screen_power/README.md#circuit-and-limits)
+state the remaining engineering assumptions.
 
 - **Inlet:** panel-mount USB-C coupler on a D punch (QIANRENON B0CQ4VD2N2,
   100 W, 10 Gbps). The 10 Gbps matters only because it means **all 24 ways are
@@ -59,110 +74,115 @@ tolerance only has to survive ~100 mm of internal wiring.
 - **Trigger:** SparkFun STUSB4500 board, programmed to request **20 V / 5 A**.
   Its shipped default asks 20 V at only 1.0 A, which contracts 20 W — set the
   PDO before first power-up.
-- **Is the contract really 20 V / 5 A?** The chip is I2C-readable: its RDO
-  (`0x91`–`0x94`) carries the current the source actually granted and a
-  capability mismatch bit that is set when that was less than the PDO asked for;
-  `0x21` holds the negotiated voltage. A 65 W brick grants 20 V / 3.25 A with
-  mismatch set: everything boots and the console browns out only when 26
-  WS2812s go white under two lit screens. Console board **v3** has a 3-way
-  JST-XH for it, **J23 `PD`** (GND, SDA, SCL on the Pico's GP0/GP1, I2C0),
-  under the module's left end next to `5V IN`. Three wires on purpose: the
-  breakout's VDD comes off VBUS on its own board and its I2C pull-ups go to
-  that; the console's 3V3 is downstream of the contract being measured, so it
-  must not feed the trigger. ~250 mm unshielded past two bucks: 100 kHz,
-  twisted with the ground wire. On a v2 board the same read works from J22's
-  GP20/GP21 (I2C0) unless those pads carry the CTRL ring wires. Firmware
-  reads it and reports it up the pedal link; **not implemented yet**.
+- **PD contract status:** console v3 J23 `PD` carries GND, SDA and SCL to
+  Pico GP0/GP1 at 100 kHz. The trigger supplies its own I2C pull-ups; do not
+  connect console 3V3 to it. Firmware reads attachment, policy status and RDO
+  (`0x91`–`0x94`) without changing PDOs or NVM, and reports current and capability
+  mismatch through the pedal link. ST's published map reserves `0x21`, so it
+  is not used as a negotiated-voltage register. Voltage stays explicitly
+  unknown: verify 20 V with a meter/PD analyzer before claiming 100 W readiness.
+  Twist the approximately 250 mm I2C run with ground past the bucks.
 - **Fuse:** 5×20 **T5A slow-blow** in the 20 V feed, ahead of both bucks.
-  Worst-case draw is ~3 A at 20 V, the PD contract ceiling is 5 A, and buck
-  inrush wants the slow curve.
+  The revised planning load is approximately 3.5–3.7 A at 20 V before startup
+  transients; the PD contract ceiling is 5 A. The exact fuse/holder and its
+  ambient derating must support that duty. This existing fuse choice has no
+  documented part-specific coordination with buck inrush/current limiting;
+  do not treat its 5 A marking as an active current limit or guaranteed clearing
+  time for a fault on the 5 V side.
 - **Two bucks (B0GGHN97TK ×2), split BY RAIL, never paralleled.** Two outputs
   tied together have no current sharing: one hogs the load until it limits,
   then they hunt.
+- **Screen branch fuse:** one Littelfuse **028707.5PXCN** in **FHAC0001ZXJ**
+  inline holder, immediately after the AUX positive split near the buck.
+  Connect its output to screen J1 pin 1; ground goes directly to J1 pin 2.
+  Keep the console/ring branch separate. The
+  [required harness specification](kicad/screen_power/README.md#required-aux-branch-protection)
+  defines the parts, wiring and limits of this supplementary protection.
 
-| buck | loads | design figure |
-|---|---|---|
-| **BUCK_PI** | Pi 5 (via its USB-C) + its USB devices + NVMe | 5.0 A / 25 W (worst case) |
-| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 94 WS2812 | 6.3 A / 31 W (**normal**, not worst case — see the state table) |
+| Buck | Loads | Design figure |
+| --- | --- | --- |
+| **BUCK_PI** | Pi 5, its USB devices and NVMe | 5.0 A / 25 W device budget |
+| **BUCK_AUX** | Both screens, console, 80 pill LEDs and 40 ring LEDs | 7.608 A / 38.04 W for a full-white ring with normal pill indications and the allowances below |
 
-BUCK_PI's worst case is capped by device limits, not estimated: the Pi's own 5 A
-budget. BUCK_AUX's figure is the screens' ratings plus the LEDs **as they are
-actually driven** — see below, because the naive all-white number for 94 WS2812
-is misleading in both directions.
+The selected ring is a **40-pixel strip**, giving 120 LEDs with the ten
+8-pixel pills. The updated v3 console/carrier copper supports the ring at
+unrestricted RGB white. Its electrical design no longer depends on the ring
+firmware's brightness limit. The old v2 console on the current pedal is not
+upgraded by changing the new PCB files.
 
-**The LED load is dominated by COLOUR and the pill gradient, not by the count
-(#930).** The pills went from 6 single LEDs to ten 7-LED segments of 144/m (7, not
-8, for a centre pixel: #1062), and the ring is a Ring **24**, so BUCK_AUX carries
-**94 WS2812**. The naive "94 × 60 mA" reading of that is 5.6 A and it is wrong for
-two reasons: 60 mA is
-all three channels at full (an indicator is normally ONE channel, ~20 mA), and
-a pill is never all-on — it is rendered **centre-bright, dimming to both ends**,
-which sums to ~62% of all-at-full. The vendor's own figure agrees: 0.1 W per LED
-per colour at 5 V is exactly 20 mA.
+Use 60 mA per RGB-white LED as the conservative planning model from
+[Adafruit's power guide](https://learn.adafruit.com/adafruit-neopixel-uberguide/powering-neopixels).
+Add 1 mA per pixel as a separate idle allowance. These are design assumptions,
+not measurements or a guaranteed rating of a particular LED batch.
 
-| state | LED | BUCK_AUX | of 10 A |
-|---|---|---|---|
-| all off (controller quiescent only) | 0.09 A | 5.23 A | 52% |
-| **normal — pills one colour + gradient, ring half** | **1.11 A** | **6.25 A** | **62%** |
-| pills amber (2 ch) + gradient, ring one colour | 2.22 A | 7.36 A | 74% |
-| pills white + gradient, ring full white | 4.04 A | 9.18 A | 92% |
-| everything full white, no gradient | 5.64 A | 10.78 A | **108%** |
+The v3 firmware preserved in PR #1082 still uses brightness 128 and the pill
+weights `38, 92, 201, 255, 255, 201, 92, 38`. Its normal indications have at most
+nine single-channel pills and one amber REC/PLAY pill. With its actual integer
+scaling and gamma table, their maximum channel-current estimate is 0.498 A.
+This PCB change does not alter those animations or command a full-white mode.
 
-Normal operation is **1.11 A of LED**, and **the rail does not need a brightness
-cap** — the gradient is inherent to how a pill is drawn, not a limiter bolted on.
-Two things to keep in view: **white is the expensive colour**, and pills-white
-*and* ring-white together reach 92% with little margin — so if a white lamp test or a
-white "clipping" state is ever added, it is that combination, not the LED count,
-that needs the thought.
+| AUX load allowance | Current |
+| --- | ---: |
+| Screen board: both main feeds, both touch feeds and its 0.05 A bleeder | 4.250 A |
+| 40 ring pixels, all RGB channels at 255 | 2.40 A |
+| All ten pills displaying their brightest normal indications | 0.498 A |
+| Idle allowance for 120 pixels | 0.120 A |
+| Console logic | 0.140 A |
+| Additional XIAO ring controller and buffer | 0.200 A |
+| **Planning total** | **7.608 A** |
 
-**The board path is sized for the last row now (#1062).** It was the binding
-limit: the LEDs reached BUCK_AUX through J3 (two JST-XH contacts, ~6 A) and the
-console board's 0.6 mm +5 V track (1.65 A per IPC-2221), both sized when the chain
-was 26 WS2812, so anything above ~1.6 A of LED was past the track — including row 3,
-an ordinary state. v3 fixes it with topology rather than width:
+The nominal 10 A buck has approximately 2.39 A headroom against this model.
+That is not a guarantee of transient response, capacity at high temperature
+or screen current; physical validation remains part of the first assembled build.
+The bleeder is included once, inside the 4.25 A screen planning allowance. Relay coils
+take their power from Pi USB VBUS, not AUX. The 3 A main and 0.5 A touch branch
+ceilings cannot all be used simultaneously: their sum exceeds the shared 4.25 A
+planning allowance before the bleeder is counted.
 
-- **J3** is a JST VH (~10 A per contact), carrying the whole 5.64 A.
+Allowing **all 80 pill LEDs as well as the ring** to display flat unrestricted
+white is a different requirement: 7.2 A of LED channels plus the screens and
+allowances above totals **11.91 A**. That exceeds the retained 10 A AUX
+supply. The ring PCB upgrade does not authorize that simultaneous system load.
+Normal pill rendering remains within the modeled budget with a full-white ring.
+
+See the [40-pixel power-path verification](../docs/reviews/ring40-full-white-1072/verification.md)
+for conductor widths, connector limits and the source-pinned runtime arithmetic.
+
+**The old v2 board and new v3 board have different power paths (#1062).** On
+v2, the LEDs share the console's 0.6 mm +5 V track, estimated at 1.65 A by the
+project's IPC-2221 calculation. That approximately 1.6 A path limit remains
+relevant even with a 10 A buck. It is not a measured cutoff or a fuse rating.
+V3 sends pill power through a copper bar instead:
+
+- **J3** is a JST VH (~10 A per contact), carrying the LEDs and console logic.
 - **J24**, a 3-way JST VH stacked under J3 at the board's left edge, is the pills'
   one connector: pin 1 GND, pin 2 data, pin 3 +5 V. J3's +5 V pad and J24's face
-  each other across a bar poured on both copper layers, so the pills' 4.2 A never
-  reaches a routed track. The data line crosses the board to it from the buffer,
-  ~87 mm. J7 is gone.
-- What the tracks carry is the ring (1.44 A at full white, through J6) and the
-  logic: ~1.6 A. That is 3% inside 0.6 mm, so the +5 V rail is no longer left at
-  the routed width — `widen_power.py` grows it to 0.70 mm (1.85 A, 15%) between
-  the session import and the pour, on both boards. The ring board's own
-  `+5V_LED` goes 0.55 → 0.65 mm the same way.
+  each other across a bar poured on both copper layers, bypassing the narrow
+  routed track. The 80 pill LEDs have a 4.8 A uncapped RGB-white channel
+  budget (about 4.88 A including the idle allowance). The data line crosses
+  the board to J24 from the buffer, ~87 mm. J7 is gone.
+- The retained console ring feed is a dedicated **1.7 mm** route to J6, with four
+  parallel 0.5 mm drilled power vias. The carrier has a **1.5 mm** direct feed
+  from J1 to J2 and three parallel ground vias at the strip wire pad. Console
+  input, pill-output and ring-output ground connections have wider thermal spokes.
+  Lower-current logic and alternative 24/16-pixel module branches retain their
+  existing tracks. The routing/export guards preserve this separation. For the
+  selected full-white strip, use the direct AUX star harness below rather than
+  sending LED current through the console and both XH connectors.
 
-**One standard: IPC-2221, 10 °C rise, 1 oz external.** This page and
-`console_board_pcb.py` used to quote IPC-2152 (~2 A for 0.6 mm) while
-`route_ring_board.sh` quoted IPC-2221 (1.65 A for the same copper), and the two
-boards reported different margins for the same rail as a result. 2152 is newer,
-measurement-based and more generous, and it would credit the ground pour either
-side as a heat spreader. None of the numbers here take that credit.
+The conductor estimates use **IPC-2221, 10 °C rise, 1 oz external copper**,
+including a 20% negative width tolerance for the new high-current feeds.
+They take no credit for adjacent ground copper as a heat spreader. These
+calculations support the design; they are not a measured thermal qualification.
 
-The rail becomes the limit instead: the last row is 108% of BUCK_AUX, and even
-row 4 leaves 8%. Those percentages use the screens' **rated** maxima, so measure
-the real draw on the bench before deciding whether full white needs a firmware
-current limiter or a separate LED buck.
-
-**And the whole table is a model of software that does not exist.** The gradient
-duty (62%) and "one channel per indicator" are how a pill is *intended* to be
-drawn; there is no console pixel renderer yet (`firmware/led_driver/` is the
-standalone RP2040 driver, sized 24 ring + 8 indicators, with a fixed
-`setBrightness(120)` ≈ 47%). So the numbers below are a design target for that
-renderer to hit, not a measurement — and the 1.85 A rail is the number it has to
-hit them against. And the 5.14 A non-LED baseline is **rated maxima** for two
-screens and the board, not measured; real draw is likely well under half, so the
-true headroom is larger than this table admits. Measure it on the bench before
-trusting either direction.
-
-**The console firmware drives every LED at `LED_BRIGHTNESS = 128`, half of full
-(#1064).** The table is at full, so each LED figure halves: normal ~0.6 A, pills
-amber with the ring one colour ~1.2 A, everything full white ~3.1 A. That last
-row is a BUCK_AUX question, not a track one: 2.8 A of it is the pills, and the
-pills reach J24 across the poured bar rather than over copper the router laid.
-What the 0.70 mm rail sees is the ring plus logic either way. The ring's comet at
-128 draws ~0.1 A in green and ~0.2 A in yellow.
+**Testing the existing ten-pill chain on v2:** use a temporary diagnostic that
+keeps the ring dark and lights only one eight-pixel pill at a time, with one
+colour channel capped at 32/255. Its channel-current estimate is
+`8 × 20 mA × 32/255 = 20.1 mA`, plus the already connected pixels' idle draw.
+This checks addressing, colours and pixel direction at low current. It does
+not qualify maximum brightness or the new v3 board. The diagnostic starts and
+finishes dark, then the installed v2 firmware is restored; normal v3 firmware
+must not be flashed onto the old board.
 
 - **The Pi is fed through its USB-C, not the header.** Ribbon pins 2/4 are
   deliberately not connected (`PI_POWER` gate): tying them would put BUCK_PI in
@@ -170,20 +190,75 @@ What the 0.70 mm rail sees is the ring plus logic either way. The ring's comet a
   5 V pin.
 - A plain 5 V feed is not a PD source, so the Pi caps its downstream USB at
   600 mA unless **`usb_max_current_enable=1`** is set in `config.txt`. Required
-  here: the touch panels and the audio interface hang off that budget.
+  for the existing peripheral budget: the audio interface and rear USB ports
+  use Pi USB power. After the screen switch is fitted, each touch cable draws
+  only its approximately 34 mA relay-coil load from Pi VBUS; screen touch power
+  comes from switched AUX.
 - The console board takes 5 V from **BUCK_AUX on J3**, a 2-way **JST VH**
   (~10 A per contact) since #1062; it was a 4-way XH with doubled pins (~6 A). The
   pills' 5 V leaves on **J24**, the JST VH beside it, and their harness is a **5 V
-  bus with a tap to each pill**, not a daisy chain through the strips: 4.2 A in
+  bus with a tap to each pill**, not a daisy chain through the strips: 4.8 A in
   series through the strip copper would drop enough to shift the far pills'
-  colour. Use 18 AWG for the bus and J3's feed. The data line and its GND ride the
+  colour. Use 16 AWG for the pill bus and **16 AWG for J3's input feed**, with
+  SVH-41T-P1.1 contacts for the latter. The selected standard VH connector's
+  10 A rating is specified with 16 AWG. The data line and its GND ride the
   same J24 plug (pins 2 and 1). See `kicad/console_board_pcb.py`
   (`_pill_power_bar`, the `PILL_POWER` gate).
-- **Unverified until a build (carried from #754):** the UPERFECT 15.6" is a
-  USB-C portable monitor, and many of those expect PD and run dim — or refuse
-  to light — on a plain non-PD 5 V feed. BUCK_AUX is exactly that. Verify the
-  panel at full brightness on bench 5 V **before** committing the harness; the
-  fallback is a dedicated PD trigger for the screen off the 20 V rail.
+- **Screen evidence (owner report, 25 September 2026):** the UPERFECT ran at
+  full brightness on a 5 V supply, showing about 1.3–1.4 A and up to 9 W in the
+  pattern sweep, with no startup reading above 10 W. APROTII showed about
+  0.8 A, up to 4 W at startup and 6 W in the sweep. The current and power fields
+  disagree, so they are not a precise simultaneous-current measurement. The
+  current fields imply 2.2 A combined; the steady power maxima imply 3.0 A at
+  5 V. Using 10 W plus 6 W gives a conservative 3.2 A screen allowance before
+  any separately counted touch current. Adding up to 1 A for both touch paths
+  and 0.05 A for the bleeder gives a **3.25–4.25 A screen-board planning bracket**,
+  or about **6.61–7.61 A AUX** with a full-white ring and normal pills. This does
+  not qualify the buck, new-board voltage drop, thermal behavior or inrush.
+
+### Screen power and touch harness
+
+Both main-power leads and both touch leads pass through the screen-power
+board. Keep the existing HDMI connections. A direct Pi-to-screen touch cable
+or unswitched AUX-to-screen power lead would bypass the cutoff and must not
+remain connected in parallel.
+
+| Connection | Pin map and harness |
+| --- | --- |
+| AUX buck → input fuse → screen J1 | Positive split → 028707.5PXCN in FHAC0001ZXJ near buck → J1 pin 1; ground direct to J1 pin 2. Dedicated short 16 AWG pair with VHR-2N housing and SVH-41T-P1.1 contacts; console/ring stay on their separate branch. |
+| Console J25 → screen J2 | Pin 1 GPIO17, pin 2 GND, straight pin-for-pin; one short 22 AWG XH2 lead. |
+| Pi USB 2.0 ports → J101/J201 | Two USB-A male-to-XH4 leads: 1 VBUS, 2 D−, 3 D+, 4 GND. Host VBUS feeds each relay coil only. |
+| J102 → UPERFECT touch | XH4-to-USB-C male: 1 fused switched VBUS, 2 D−, 3 D+, 4 GND. Preserve the source-role CC resistor in the plug. |
+| J202 → APROTII touch | XH4-to-Micro-B male, same four-pin map. |
+| J103 → UPERFECT power | Pin 1 fused switched +5 V, pin 2 GND; separate main-power lead retaining the working USB-C screen termination. |
+| J203 → APROTII power | Pin 1 fused switched +5 V, pin 2 GND; separate main-power lead retaining the working Micro-B connection. Power pads are an alternative only after verifying their polarity and layout. |
+
+The two main-power leads must each be **no more than 30 cm**, with **20 AWG or
+larger copper conductors for both positive and return** and **3 A-rated
+terminations**. At the PCB use VHR-2N housings and SVH-41T-P1.1 contacts, which
+accept 20–16 AWG; match the specified insulation diameter. Reterminate the
+source end of the known-working screen power connection, preserving the
+screen-side USB-C/Micro-B plug and any CC/attachment electronics. The exact
+existing lead gauge has not been recorded: reuse is conditional on these
+requirements, not an assertion that any existing cable meets them. An
+unspecified charge-only cable or the selected 28 AWG XH data cable is not a
+substitute. [JST VH specifications](https://www.jst-mfg.com/product/pdf/eng/eVH.pdf).
+
+The selected 28 AWG leads are for touch/data only. Both screen ports may join
+internally, so the 750 mA touch fuse does not force screen current into the
+main lead or limit it actively to 500 mA. Keep the main leads connected and
+their ground returns intact. Pi USB ground and GPIO ground are signal
+references, not substitutes for the screen power-return pair. The board and
+all equipment still share ground; it is not galvanically isolated.
+
+The GPIO owner enables the board before Weston starts and requests off before
+normal HDMI shutdown, with a provisional five-second discharge wait. A powered
+but halted Pi needs those software hooks; the PCB does not detect missing HDMI.
+The owner confirmed both screens go fully dark when power and touch are
+removed while HDMI stays attached. Actual GPIO-controlled timing, touch
+enumeration and warm operation remain first-assembly checks. See the
+[connector and power acceptance matrix](../docs/reviews/screen-power-rev-k-1072/wiring-and-power.md)
+and the [board instructions](kicad/screen_power/README.md).
 
 ---
 
@@ -194,7 +269,7 @@ What the 0.70 mm rail sees is the ring plus logic either way. The ring's comet a
 One **keyed 2×20 IDC ribbon, ~10 cm** — both boards sit under the 16" screen
 and the Pi is ~30 mm from the board (`board_mounts()` in `segno_enclosure.py`).
 J2 is rotated so both connectors' pin-1 ends face the front: pin 1 meets pin 1
-with no fold in the cable. 16 of the 40 ways carry something;
+with no fold in the cable. 17 of the 40 ways carry something;
 `console_board.py`'s `PI_HDR` is the authority:
 
 | Pi pins | signal |
@@ -202,9 +277,25 @@ with no fold in the cable. 16 of the 40 ways carry something;
 | 1, 17 | 3V3 — the board's 3V3 rail (opto + pull-up bias, ~15 mA) |
 | 6, 9, 14, 20, 25, 30, 34, 39 | GND |
 | 8 / 10 | uart0 TX / RX = MIDI OUT / MIDI IN (GPIO14/15) |
+| 11 | GPIO17 = screen-power enable, through J25 pin 1 |
 | 21 / 24 | uart3 RX / TX = pedal link (GPIO9/8, `dtoverlay=uart3-pi5`), **10 k series** |
 | 18 / 22 | GPIO24/25 = SWD to the Pico's debug pads (flashing only) |
 | 2, 4 | 5 V — deliberately **not connected** (`PI_POWER`) |
+
+**J25 is the two-wire screen-power control connector:** pin 1 is GPIO17
+(physical pin 11 on J2), and pin 2 is GND. Connect it pin-for-pin to J2 on the
+[screen-power board](kicad/screen_power/README.md). The existing Pi ribbon stays
+between the Pi and console board. Screen power comes from BUCK_AUX through
+the dedicated inline fuse to the new board; J25 carries no 5 V. The new board
+provides the enable pull-down.
+
+For console Pico USB programming, program the module before fitting it, or
+first disconnect console J3 (AUX), J6 (ring) and J24 (pills). Remove the USB
+cable before reconnecting those headers. Pico USB can feed its VSYS rail
+through the module's diode; the console connects VSYS directly to AUX, so
+leaving those loads attached can power them from USB and feed current back into the buck.
+Normal in-place programming uses the existing Pi SWD connection. The ring
+XIAO has its own [USB isolation rule](kicad/RING_ASSEMBLY.md#programming).
 
 The link needs **no level shifting**: RP2350 and Pi are both 3.3 V. The old
 1k8/3k3 divider and the AHCT gate on this path were the retired 5 V board's needs
@@ -212,86 +303,93 @@ and died with it. The series 10 k in each link line is not level shifting — it
 bounds the cross-domain current when one side is powered and the other is not
 (rationale and arithmetic: R17/R18 in `console_board.py`).
 
-The **74AHCT125** remains for MIDI OUT's current loop and the indicator chain.
-Its third gate still drives the ring-data pin (J6 pin 5) and that pin now goes
-nowhere: since #987 the ring board generates its own WS2812 timing behind a XIAO
-RP2350, so the level shifting for the ring moved onto **that** board. Gate B, R15
-and J6 pin 5 stay fitted because the console board exists in copper and its
-netlist has to keep matching it. **MIDI IN's H11L1 runs at 3.3 V** and
-feeds the Pi directly — no shifter. GPIO4 (pin 7) is left alone: the GeeekPi
-N07 NVMe board under the Pi claims it (`PI_RESERVED`).
+The **74AHCT125** drives MIDI OUT's current loop and the indicator chain.
+The ring carrier has its own XIAO and level shifter; console gate B is disabled,
+and the former ring-data path is removed. **MIDI IN's H11L1 runs at 3.3 V** and
+feeds the Pi directly. GPIO4 (pin 7) is reserved for the GeeekPi N07 NVMe board.
 
-### Console board ↔ ring board: the 4-way (#987)
+### Console board ↔ ring board and the full-white power harness
 
 The ring board carries its own **XIAO RP2350**, which owns the encoder and
-generates the WS2812 timing 20 mm from the LEDs. What used to be eight
-conductors across ~600 mm of box is now four.
+generates the WS2812 timing locally. For the selected 40-pixel strip, supply
+its LED current directly from AUX through a near-ring split. This avoids the
+voltage loss of the long console-to-ring power path while preserving full
+white output. The PCB's high-current copper remains unchanged.
 
-**On console board v3 the cable is a plain 1:1 4-way, JST-XH at both ends:**
+| Destination | Connect to |
+| --- | --- |
+| Near-ring positive/ground split | AUX output posts through a dedicated pair, at most 600 mm one-way, 16 AWG copper or larger |
+| Strip +5 V / GND | That split through a separate pair, at most 50 mm one-way, 22 AWG copper or larger |
+| Ring J1 pins 1 / 2 | That split through its own pair, at most 50 mm one-way, **22 AWG** with genuine XH contacts |
+| Ring J1 pin 3 | Console J6 pin 3: console TX to ring RX |
+| Ring J1 pin 4 | Console J6 pin 4: ring TX to console RX |
+| Strip DIN | Ring J2 pin 3, at most 100 mm, routed beside the local ground leads |
 
-| ring J1 | console v3 J6 | console v2 J6 | conductor |
-|---|---|---|---|
-| 1 | 1 | 1 | +5V |
-| 2 | 2 | 3 | GND |
-| 3 | 3 | 6 | LINK_TO_RING — GP13 drives, the XIAO listens |
-| 4 | 4 | 7 | LINK_TO_CONSOLE — the XIAO drives, GP14 listens |
+Leave console J6 cavities **1/2 empty**. Leave ring J2 **1/2/4 unconnected**;
+only DIN uses J2 in this selected assembly. J3/J4 remain empty. Do not add a
+second console-to-ring power pair or a parallel strip-return wire through
+J2. Both boards share ground through their AUX supply returns.
 
-**On a v2 console the cable is asymmetric and that was the whole hazard:** the
-fabbed 8-way J6 stays, and the ring's 4-way lands on four of its eight positions
-(the v2 column). Crimp *that* one 1:1 by position and pin 2 of the ring end lands
-on J6 pin 2, which is +5V: the LED rail straight onto a link line. v3 removes the
-hazard by construction; `RING_CONTRACT` asserts the map is the identity there.
+Use insulated, strain-relieved soldered or correctly crimped branch joints.
+Do not force 16 AWG into XH contacts: the short 22 AWG pigtails are intentional.
+The complete common positive/return termination resistance allocation is
+10 mΩ; each branch's complete joint allocation is another 10 mΩ.
 
-The link is **full duplex** (owner call). One wire would have carried the traffic
-— 115200 is ~11.5 kB/s against a 72-byte pixel frame and a few bytes per detent —
-but a single wire forces a master-polled, collision-avoiding protocol on the
-firmware, and the second conductor buys that away for one crimp. It cost nothing
-in copper: J6 pin 7 was already wired to GP14 with its 10 k pull-up, doing
-nothing. Neither pin is on a free hardware UART (GP13 is UART0 RX, but UART0 is
-the Pi link on GP16/17, and GP14 is on neither), so the console end is a PIO
-UART — of which the RP2350 has plenty spare.
+At a defined **4.75 V minimum at the loaded AUX output posts**, the 60 °C wire,
+aged-contact and hot-copper calculation gives at least **4.632 V at the strip**
+and **4.620 V at the AHCT buffer**, above its 4.5 V minimum. The fixed buck is
+nominally 5 V; its actual regulation floor is not established by a manufacturer
+specification. These are explicit design bounds, not measured assembled
+voltages. See the [final voltage review](../docs/reviews/production-final-1072/ring-voltage-margin.md).
 
-The table above is *not* the source of truth — `RING_PINMAP` in
-`console_board.py` is, and `RING_CONTRACT` checks it against `ring_board.net` on
-every run.
+The link is full duplex at 115200 baud. The console uses a PIO UART because
+its hardware UART is already assigned to the Pi link on GP16/GP17. This map
+applies to the new v3 console and independent ring carrier only.
+
+The PCB pin assignments remain defined by `RING_PINMAP` in
+`console_board.py`, checked against `ring_board.net` by `RING_CONTRACT`. The
+selected harness above deliberately separates power from the two UART wires.
 
 Notes that are load-bearing:
 
-- **GND is the middle pin** so the pulsed amp-scale LED return does not run
-  beside the one signal in the cable.
-- **The link pull-ups are on the console board** (J6 pin 6/7's 10 k to *its* 3V3).
-  The ring board deliberately fits none — a second pull-up on the other board's
-  rail is the split-rail fault `RING_LEVELS` exists to catch, and `LINK_BARE` in
-  `ring_board.py` rejects it from the other side.
-- **On v2, J6 pins 2, 4, 5 and 8 stay fitted and carry nothing.** Pin 5 could
-  never have carried the link anyway: it is the AHCT125's gate-B output with /OE
-  tied low, so it is only ever driven by the console. On v3 the ring-data path
-  (GP12, gate B, R1, R15) is gone and GP12/GP15 went to the expansion header.
-- **One 5 V pair, not two, and it is sized for 1.44 A rather than for the cap.**
-  24 LEDs at 60 mA is 1.44 A: 48% of an XH contact's ~3 A, and 21% inside the
-  ring board's `+5V_LED` at 0.65 mm. The cap is real — `LED_BRIGHTNESS = 128`
-  (#1064) puts all-white at 0.72 A and the comet at ~0.2 A — but it is the *v2*
-  path, where `console_board.ino` generates the ring's WS2812 timing itself. On
-  v3 the XIAO does, and that firmware is not written. Two states are outside any
-  cap in either generation: the window before firmware runs, which is why R5 sits
-  on `RING_DATA_3V3` at all (power-up, the bootloader, a reflash, a crash), and a
-  console flashed with a higher `LED_BRIGHTNESS`. Neither is exotic, both land on
-  1.44 A, and the copper now carries it, so the old bench trigger at ~0.7 A of the
-  capped case is gone: nothing the capped case can do makes one pair insufficient
-  when the uncapped case already fits.
-- **A second ring chained off `RING_DOUT` is a connector change, not a wider
-  track.** 2.88 A is past one XH contact at any width; J1 and J6 would go JST VH,
-  the way J3/J24 did on the console.
+- Ground is pin 2, between the supply and the two link signals.
+- The two 10 kΩ link pull-ups connect to the console's 3V3 at J6 pins 3/4.
+  The ring has no link pull-ups to its separate 3V3 rail. `RING_LEVELS` and
+  `LINK_BARE` check that boundary.
+- Use the console and ring firmware from
+  [runtime PR #1082](https://github.com/tomassasovsky/segno/pull/1082), currently
+  `92af127d9a2d58c4ea9b810b38d06ca3ddc3c73d`. It includes the RP2350 A2 E9
+  presence-input workaround and PD status reader. The hardware branch's older
+  firmware snapshot does not. This runtime is still a separate integration
+  draft; board fabrication does not make it deployed or production qualified.
+- **The specified star harness supports the 40-pixel strip without a brightness restriction.**
+  The design budget is 2.4 A LED channels, 40 mA pixel idle and 200 mA ring
+  controller. Only that 200 mA controller allocation passes through J1 in the
+  selected harness; the strip current bypasses it. XH remains rated for 3 A
+  with 22 AWG. Its 85 °C
+  upper operating temperature includes the rise caused by current; it is
+  not an 85 °C ambient rating at full current.
+  The console now has a dedicated 1.7 mm feed; the carrier's J2 pads have a
+  direct 1.5 mm feed and three ground-return vias. This avoids routing strip
+  power through the older 0.65 mm module branch. Firmware still chooses its
+  display brightness, but that setting is not the hardware's current limit.
+- **Only one ring or strip is supported.** Use J2 for the 40-pixel strip, J3
+  for one 24-pixel module, or J4 for one 16-pixel module. Do not populate the
+  alternatives together or chain an additional ring from DOUT. Extra LEDs
+  require a new connector, copper and whole-system power assessment.
 
 ---
 
 ## 4. Raspberry Pi connections
 
 - **Power** — BUCK_PI into the Pi's USB-C. Not the header, not BUCK_AUX.
-- **USB** — the four ports are exactly consumed: 2× screen touch, 2× internal
-  A-to-A leads to the rear-panel couplers. No hub, no hat. The audio interface
+- **USB** — the four ports are exactly consumed: 2× screen touch through the
+  screen-power board, 2× internal A-to-A leads to the rear-panel couplers.
+  No separate hub or HAT is added; the UPERFECT has its own internal USB hub.
+  The audio interface
   plugs into a rear coupler from outside the box.
-- **Screens** — 2× micro-HDMI out; touch comes back over USB.
+- **Screens** — 2× micro-HDMI out; touch comes back over USB through the
+  screen-power board's switched data paths.
 - **Storage** — NVMe on the N07 board under the Pi (PCIe — no GPIO use beyond
   the GPIO4 claim noted above).
 - **Position** — under the 16" screen (#743, #753). Its own ports face inward

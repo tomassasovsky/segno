@@ -1,0 +1,283 @@
+{
+  "scope": "Proposed floor placement checked against current generator, exported supports and actual populated screen-power STEP. Fusion live assembly and cable harness are not verified. No enclosure source changes.",
+  "board_bbox": {
+    "xmin": 251.0,
+    "xmax": 319.0,
+    "ymin": 307.0,
+    "ymax": 383.0,
+    "zmin": 8.865,
+    "zmax": 37.39
+  },
+  "translation_from_KiCad_STEP_mm": [
+    251,
+    383,
+    17
+  ],
+  "standoff_height_mm": 15,
+  "mount_centers_mm": [
+    [
+      255,
+      379
+    ],
+    [
+      315,
+      379
+    ],
+    [
+      255,
+      311
+    ],
+    [
+      315,
+      311
+    ]
+  ],
+  "obstacles": {
+    "7-inch tower": {
+      "bbox": {
+        "xmin": 19.8,
+        "xmax": 223.8,
+        "ymin": 240.1351,
+        "ymax": 398.8649,
+        "zmin": 2.0,
+        "zmax": 88.8009
+      },
+      "distance_mm": 28.98,
+      "intersection_mm3": 0
+    },
+    "REC/PLAY platform": {
+      "bbox": {
+        "xmin": 24.625,
+        "xmax": 113.375,
+        "ymin": 8.513,
+        "ymax": 123.883,
+        "zmin": 2.0,
+        "zmax": 39.8532
+      },
+      "distance_mm": 230.2701,
+      "intersection_mm3": 0
+    },
+    "STOP platform": {
+      "bbox": {
+        "xmin": 125.7679,
+        "xmax": 214.5179,
+        "ymin": 8.513,
+        "ymax": 123.883,
+        "zmin": 2.0,
+        "zmax": 39.8532
+      },
+      "distance_mm": 187.2587,
+      "intersection_mm3": 0
+    },
+    "UNDO platform": {
+      "bbox": {
+        "xmin": 226.9107,
+        "xmax": 315.6607,
+        "ymin": 8.513,
+        "ymax": 123.883,
+        "zmin": 2.0,
+        "zmax": 39.8532
+      },
+      "distance_mm": 183.117,
+      "intersection_mm3": 0
+    },
+    "MODE platform": {
+      "bbox": {
+        "xmin": 328.0536,
+        "xmax": 416.8036,
+        "ymin": 8.513,
+        "ymax": 123.883,
+        "zmin": 2.0,
+        "zmax": 39.8532
+      },
+      "distance_mm": 183.5069,
+      "intersection_mm3": 0
+    },
+    "TRACK1 platform": {
+      "bbox": {
+        "xmin": 429.1964,
+        "xmax": 517.9464,
+        "ymin": 8.513,
+        "ymax": 123.883,
+        "zmin": 2.0,
+        "zmax": 39.8532
+      },
+      "distance_mm": 214.837,
+      "intersection_mm3": 0
+    },
+    "TRACK2 platform": {
+      "bbox": {
+        "xmin": 530.3393,
+        "xmax": 619.0893,
+        "ymin": 8.513,
+        "ymax": 123.883,
+        "zmin": 2.0,
+        "zmax": 39.8532
+      },
+      "distance_mm": 280.8677,
+      "intersection_mm3": 0
+    },
+    "TRACK3 platform": {
+      "bbox": {
+        "xmin": 631.4821,
+        "xmax": 720.2321,
+        "ymin": 8.513,
+        "ymax": 123.883,
+        "zmin": 2.0,
+        "zmax": 39.8532
+      },
+      "distance_mm": 363.2902,
+      "intersection_mm3": 0
+    },
+    "TRACK4 platform": {
+      "bbox": {
+        "xmin": 732.625,
+        "xmax": 821.375,
+        "ymin": 8.513,
+        "ymax": 123.883,
+        "zmin": 2.0,
+        "zmax": 39.8532
+      },
+      "distance_mm": 453.3068,
+      "intersection_mm3": 0
+    },
+    "CLEAR platform": {
+      "bbox": {
+        "xmin": 226.9107,
+        "xmax": 315.6607,
+        "ymin": 170.429,
+        "ymax": 285.799,
+        "zmin": 2.0,
+        "zmax": 75.7439
+      },
+      "distance_mm": 21.201,
+      "intersection_mm3": 0
+    },
+    "BANK platform": {
+      "bbox": {
+        "xmin": 328.0536,
+        "xmax": 416.8036,
+        "ymin": 170.429,
+        "ymax": 285.799,
+        "zmin": 2.0,
+        "zmax": 75.7439
+      },
+      "distance_mm": 24.0366,
+      "intersection_mm3": 0
+    },
+    "BUCK_PI": {
+      "bbox": {
+        "xmin": 340.2,
+        "xmax": 404.0,
+        "ymin": 330.15,
+        "ymax": 387.85,
+        "zmin": 2.0,
+        "zmax": 24.1
+      },
+      "distance_mm": 21.2,
+      "intersection_mm3": 0
+    },
+    "BUCK_AUX": {
+      "bbox": {
+        "xmin": 416.0,
+        "xmax": 479.8,
+        "ymin": 330.15,
+        "ymax": 387.85,
+        "zmin": 2.0,
+        "zmax": 24.1
+      },
+      "distance_mm": 97.0,
+      "intersection_mm3": 0
+    },
+    "console board envelope": {
+      "bbox": {
+        "xmin": 510.25,
+        "xmax": 609.75,
+        "ymin": 224.25,
+        "ymax": 323.75,
+        "zmin": 17.0,
+        "zmax": 33.0
+      },
+      "distance_mm": 191.25,
+      "intersection_mm3": 0
+    },
+    "Pi envelope": {
+      "bbox": {
+        "xmin": 670.5,
+        "xmax": 726.5,
+        "ymin": 249.25,
+        "ymax": 334.25,
+        "zmin": 2.0,
+        "zmax": 39.2
+      },
+      "distance_mm": 351.5,
+      "intersection_mm3": 0
+    },
+    "15.6-inch left stand": {
+      "bbox": {
+        "xmin": 448.0,
+        "xmax": 622.0,
+        "ymin": 198.9021,
+        "ymax": 332.9021,
+        "zmin": 2.0,
+        "zmax": 78.8271
+      },
+      "distance_mm": 129.387,
+      "intersection_mm3": 0
+    },
+    "15.6-inch right stand": {
+      "bbox": {
+        "xmin": 600.0,
+        "xmax": 785.0,
+        "ymin": 198.9021,
+        "ymax": 332.9021,
+        "zmin": 2.0,
+        "zmax": 78.8271
+      },
+      "distance_mm": 283.0166,
+      "intersection_mm3": 0
+    },
+    "rear connector/wire envelope": {
+      "bbox": {
+        "xmin": 425.0,
+        "xmax": 829.0,
+        "ymin": 374.0,
+        "ymax": 419.0,
+        "zmin": 25.0,
+        "zmax": 88.0
+      },
+      "distance_mm": 106.1973,
+      "intersection_mm3": 0
+    }
+  },
+  "conservative_lid_clearance_mm": 43.0836,
+  "floor_clearance_under_longest_untrimmed_lead_mm": 6.865,
+  "front_gap_to_CLEAR_platform_mm": 21.201,
+  "left_gap_to_7inch_tower_mm": 27.2,
+  "right_gap_to_BUCK_PI_mm": 21.2,
+  "wire_envelope": "Reserve 15 mm lateral around board and 25 mm above model top for mated plugs and relaxed wire bends; advisory allowance rather than exact connector/cable geometry.",
+  "checked_date": "2026-09-24",
+  "tool": "CadQuery 2.8.0 / OpenCascade STEP solids and distances",
+  "sources_sha256": {
+    "hardware/enclosure/segno_enclosure.py": "17f7089fc63d8a0b3675c6d2d658d022868294bfb0801d8461719861f776a014",
+    "hardware/enclosure/FUSION_MODELS.md": "e417ebe0f2a6699cb4547272521f1c52b0295fe17f5dc38c0281f6bffdbd0cdb",
+    "hardware/enclosure/out/segno_screen7_tower.step": "b3912be24ef189395f5075128757009e22c34cfa189fbfa26042ca8c22825aad",
+    "hardware/enclosure/out/segno_screen16_stand_L.step": "e98e42cdacb79ff6e0c487ad17a76c7eeee0dbf88f3b9d73ec9052040fa4a6d0",
+    "hardware/enclosure/out/segno_screen16_stand_R.step": "8a1bb4218cb972cd4e32775d142561c92594b6bb94149291d3b1557acb8781d5",
+    "hardware/enclosure/out/segno_platform_mid_ring.step": "7244fe8027d827ec293d89ac1725112ee961fb75a23afc98a94193a78f6a1f42",
+    "hardware/enclosure/out/segno_platform_front_ring.step": "a4802f2881d03f482d824b4ec517eb48a2906e030ea736c8a41fff02196435f7",
+    "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb": "273c4503440df2d6f3431d1f176bc1ca2e11c4b8d55cd499a94efca23aa95e1e",
+    "hardware/kicad/screen_power/hand/fabrication/board.step": "94d33d31d0d731338db23ad90846a9fbeafcc2731e6b449577a4784345b0a28c"
+  },
+  "assumptions": {
+    "frame": "Populated Fusion world: x left-to-right, y front-to-rear, z up; units mm; floor top z=2.",
+    "7inch_tower": "Translation inferred from current frozen six floor-anchor stations and the exported tower local origin.",
+    "pedal_collars": "Exported front/mid collars rotated +90 degrees around z, at PEDALS x and slope-projected depth, floor top z=2.",
+    "console_pi_bucks": "Conservative box envelopes from current enclosure generator; not full assembled models.",
+    "15inch_stands": "Exported solids are already in world plan coordinates; placed at floor top z=2.",
+    "lid": "Canonical FUSION_MODELS faceplate transform; underside at local z=-2 mm; smallest lid height above entire board compared with global highest component.",
+    "rear_connectors": "Conservative occupied box x425..829, depth374..419, z25..88 mm; power-board location is left of it.",
+    "enclosure_side_front_rear": "Board and lead clearance envelope remain within floor footprint, clear of perimeter walls and vent foam.",
+    "omitted": "No live Fusion tree or harness geometry was available. Connector mating and wire bend room use the stated allowance, not a scanned physical harness."
+  }
+}

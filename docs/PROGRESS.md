@@ -1,6 +1,7 @@
+<!-- cspell:words heatsinks -->
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib -->
+<!-- cspell:words hashlib unassembled Axicom Mbps -->
 
 Living status doc for the Flutter desktop loopstation. Pairs with the original
 plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
@@ -12,13 +13,200 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+The [final production review](reviews/production-final-1072/review.md) supersedes
+the earlier release checks below. It reviews the complete circuits, all three
+native boards, wiring, current budgets, thermal estimates, mechanical envelopes
+and exact manufacturing exports. It corrects sub-minimum silkscreen dimensions,
+selects the actual 40-LED strip in the purchasing BOM, removes old ring wiring
+instructions and names the separate v3 runtime needed for A2 presence inputs.
+Console and ring USB-programming isolation is now explicit. The screen's
+proposed enclosure location still needs its floor holes incorporated in the
+enclosure release; this does not change the fixed PCB outline. No order, merge
+or deployment is part of this review.
+
+
+The September 26 final PCB review additionally replaces the selected 40-pixel
+ring's straight-through power harness with a direct AUX star feed near the strip.
+Only DIN uses carrier J2; console J6 carries only the two UART wires. This closes
+the hot-wire/aged-contact voltage-margin gap without changing PCB copper. See
+`docs/reviews/production-final-1072/ring-voltage-margin.md` and the current wiring.
+
+The September 26 [all-three-board audit](reviews/pcb-finish-all-three-1072/audit.md)
+records the current native boards and replacement manufacturing archives.
+The final pass rounds the remaining exposed signal/control bends as well as
+the power routes, closes the console's 0.05 mm slot beside J24, retains the
+ring's two straight vertical taps and moves C20 beside its supply pin.
+Screen C4 is aligned with the charge-pump pin. A subsequent
+[U1/U2 alignment correction](reviews/screen-u2-alignment-1072/verification.md)
+puts both packages on common pin rows while preserving their stock courtyards.
+USB pairs use mirrored rounded bends with their widths, gap and ground
+reference verified independently.
+The Q3/Q4 source bridge and drain feeder remain uniformly 2.5 mm wide and
+the AUX input remains 2.0 mm. All boards retain two copper layers.
+Work follows the owner's one-order requirement, with no pre-PCB prototype
+or new owner measurement campaign. The
+[gate-drive assessment](reviews/screen-power-rev-l-1072/gate-drive.md) supports
+an LMC7660/TLP627M negative gate supply and lower-voltage TN0702 relay drivers;
+the [startup assessment](reviews/screen-power-rev-l-1072/startup.md) does not
+establish a need for active current limiting. Claude Cloud authored placement
+and explicit routing changes; independently reviewed local corrections finished
+the remaining geometry after its session became inaccessible. Final native
+DRC is zero/zero on all three boards, and screen ERC is clean. All 56 screen,
+11 console-power and 7 ring-power fault controls pass, along with 13 native
+rounding regression cases. Fresh export comparison passes 409 screen and
+175 console/ring assertions. DeepSeek's completed source review has no
+unresolved verified finding. The [current archive manifest](reviews/pcb-finish-all-three-1072/manufacturing-zips.json)
+supersedes earlier Revision L artwork and exports. This is bare-board CAD
+and manufacturing-file acceptance; assembled operation, whole-PR review and
+CI remain separate gates. Earlier Revision K evidence below is historical
+and does not qualify the changed circuit.
+
+September 25 screen-power correction: **Revision I screen Gerbers are withdrawn**.
+The [independent Claude review and assessment](reviews/screen-power-claude-1072/assessment.md)
+confirmed that relay commons 3/6 were floating: upstream data used normally
+closed contacts 2/7, so neither USB touch path could conduct in either state.
+Revision J corrects that pinout, retains normally open contacts 4/5, and adds an
+independent contact-state regression guard. It also widens MOSFET necks to 1.9 mm
+and the C2 feed to 1.5 mm, with three dedicated shared-power stitching vias.
+Checks and replacement exports are recorded in the
+[Revision J verification](reviews/screen-power-rev-j-1072/verification.md).
+Revision K retained that correction and superseded J.
+It introduced short 1.9 mm MOSFET approaches, a full 3 mm central bridge and gradual
+transitions into the 4.5 mm distribution rail. Correct BOM-sized capacitor
+models replace undersized previews, and C1 moves 1.5 mm to clear the mated
+power plug. The system wiring diagram now routes both screens through this
+board, specifies the main-power leads and accounts for the full AUX/PD budget.
+The [Revision K verification](reviews/screen-power-rev-k-1072/verification.md)
+records that historical package; the current revision status is above.
+No additional owner measurements are prerequisites for bare-board fabrication.
+Earlier screen-board readiness claims below are historical and superseded.
+
+The [completed Claude cloud review](reviews/screen-power-rev-k-1072/claude-cloud-assessment.md)
+found no verified K circuit/artwork defect and recommended first-prototype
+fabrication. The [implemented follow-up](reviews/screen-power-claude-fixes-1072/verification.md)
+specifies an exact external screen-branch fuse/holder, includes its voltage
+drop in the conditional gate-drive calculation and replaces R8's approximate
+assembly model. Circuit values and manufacturing artwork remain unchanged.
+The fuse adds harness protection, not guaranteed MOSFET fault survival;
+assembled operation still needs the documented qualification.
+That historical package's OpenCode Go reviews were incomplete after provider
+limits. The completed Revision L DeepSeek review is recorded separately in the
+[current external review](reviews/screen-power-rev-l-1072/external-model-review.md).
+
+Revision L retires the historical 6 A expansion allowance. Its screen planning
+load is 4.25 A including both main outputs, both touch outputs and the bleeder;
+the 3 A main and 500 mA touch branch ceilings are not additive guarantees.
+The separate full-white ring, normal pills and console bring the AUX budget
+to 7.608 A. Expected screen loads support upright Q3/Q4 without heatsinks under
+the documented thermal estimates. Connector positions, the 68 × 76 mm outline,
+purple mask and two copper layers remain unchanged. The
+[screen-board notes](../hardware/kicad/screen_power/README.md) give the current
+parts, wiring and post-assembly acceptance checks.
+
+September 25 update: the owner requested unrestricted full-white operation for
+one 40-pixel ring strip. The console and ring carrier now have dedicated wider
+power paths, sized independently of firmware brightness. Board outlines,
+placements, two layers, 1 oz copper and purple-console/white-ring colours remain.
+That full-white change left the screen-power board unchanged. The
+[full-white fabrication review](reviews/ring40-full-white-1072/verification.md)
+supersedes the earlier 24-pixel/current-limited power assessment and order ZIPs.
+It preserves first-assembly validation and the separate 10 A whole-system limit.
+
+Publication is split by hardware generation. This branch includes the screen
+power PCB, console connectors and power-domain corrections, white XIAO ring carrier (module footprints or external strip), and GPIO17 lifecycle service. The current old-console
+ten-pill/40-LED-strip firmware is tracked separately under #1076 and #1077.
+New-v3 console/ring firmware and PD diagnostics are published separately in
+PR #1082 at `92af127d`; they remain an integration draft and are not code
+included in this hardware publication. See the [publication record](reviews/hardware-publication-1072/verification.md).
+
+The populated screen-power board has a proposed position behind CLEAR, left of
+the buck pair, on 15 mm standoffs. Four floor mounts still need to be integrated
+and actual harness/assembly fit checked; the CAD placement is not a physical
+fit test. See the [placement study](reviews/pcb-completion-1072/screen-power-placement.md).
+
+The historical September 24 order package included all three designs: console,
+screen power and ring; its Revision I screen Gerbers are now withdrawn. The ring
+carrier now uses white solder mask and black
+silkscreen, with larger J1 and module-support holes. Its routes and placement
+are retained; refilled-zone DRC has zero violations or unconnected items, and
+all 63 connected pads match the circuit. See the
+[ring order verification](reviews/ring-order-ready-1072/verification.md).
+
 The console and ring boards for #1062 / PR #1066 now carry the wider power
 rails in their routed files and manufacturing exports. Both pass full-severity
 KiCad checks with zero violations and zero unconnected items, and exact circuit
 netlist parity. See the [routing verification](reviews/routing-1062-2026-09-21/verification.md).
 The PR remains open and hardware validation is still required. Screen power
-switching is proposed separately in [#1072](https://github.com/tomassasovsky/segno/issues/1072)
-and the [screen-power brainstorm](brainstorm/2026-09-21-screen-power-switching-brainstorm-doc.md).
+switching has completed prototype CAD under [issue #1072](https://github.com/tomassasovsky/segno/issues/1072).
+Revision E retains **hand-soldered assembly only** and removes the factory
+variant. The new 64 × 76 mm board uses 19.6% less area than revision D's
+72 × 84 mm hand board, with the same 37 populated through-hole parts and
+four M3 mounting holes. All populated parts have portable STEP models.
+Revision F added 3 mm rounded corners and a complete component cost estimate.
+Revision G implements the requested two-layer board with purple solder mask.
+Its 68 × 76 mm outline gives the power rail space beyond the USB connectors;
+the two right-hand mounting holes move 4 mm with that edge.
+Revision H aligns all eight keyed connector housings and vertical pin rows,
+rotating the four two-pin headers and rerouting their connections.
+
+Four-pin JST XH data connectors retain the selected direct USB-A / USB-C /
+Micro-USB leads and pin map: 1 = VBUS, 2 = D−, 3 = D+, 4 = GND. Separate
+screen-power leads retain two-pin JST VH connectors. The 28 AWG data leads
+are not specified for the screens' full power loads; suitable main-power
+leads and their final termination remain to be selected.
+
+The control section is more compact, power enters at the upper-right edge,
+and the two USB paths stay straight. Main power uses a wide
+front-side rail at the right edge; USB stays on bottom copper without data
+vias, with filled front-side ground underneath. Both outer faces have ground
+pours; the board has no inner copper layers. The existing Pi-to-console ribbon remains direct; console
+J25 carries GPIO17 and GND to screen J2. Console PD connector J23 now aligns
+with RING J6 and screen-control J25 on one row. Its 0.8 mm move updates the
+local PD/ground connections and clears two adjacent switch traces. PI PWR J9
+now sits beside the ribbon on that same row, with PWR BTN J8 kept in place.
+R2 turns horizontally below the buffer and R18 shifts 0.15 mm to clear the
+existing PI PWR label. The floating button pair and affected signal routes
+are complete; KiCad reports zero violations and zero unconnected items.
+The underside screen pinout text is replaced by a top-side `SCREEN` label.
+At that earlier placement review, ring routing was unchanged and the LED budget
+was 1.44 A plus controller; the full-white review above supersedes that budget.
+Its 3 A JST XH rating still requires 22 AWG power and ground leads.
+See the [console placement verification](reviews/console-pi-power-placement-1072/verification.md)
+and the [interface pinout](reviews/console-screen-connector-1072/verification.md).
+
+Live USB inspection identified APROTII touch at 12 Mbps and UPERFECT touch
+at 12 Mbps behind a 480 Mbps hub. Both connect directly to the Pi, so the
+UPERFECT path still needs 480 Mbps qualification through the IM02TS relay
+and selected cables. The relay footprint and default-off intent are retained;
+Revision J corrects the contact wiring described above. The
+4.5 V IM02TS relay now improves pickup margin on the 5 V host supply.
+
+See [revision H verification](reviews/screen-power-rev-h-1072/verification.md)
+and the [connector map and assembly notes](../hardware/kicad/screen_power/README.md).
+Revision I superseded those exports, but is itself withdrawn following the
+September 25 relay finding. The historical September 24
+[first-fabrication review](reviews/pcb-completion-1072/first-fabrication.md)
+removed the blanket pre-order measurement requirement; that decision remains,
+subject to completing the Revision J correction and checks. Assembled hardware
+remains unverified. The pre-order
+audit corrected finished-hole allowances, added metal-fastener copper
+clearance on the screen board, and moved console CTRL analogue pull-ups to
+the Pico supply so Pi power cannot feed its unpowered ADC inputs. See the
+[completion and pre-order status](reviews/pcb-completion-1072/verification.md) for final checks and
+remaining physical and firmware acceptance items.
+
+The board remains an unassembled prototype. Cable mating, polarity, shielding,
+USB-C source configuration, USB operation/suspend, hot relay restart, inrush,
+fuse coordination, voltage drop, temperature, impedance and enclosure fit
+need physical checks. The owner confirmed on 2026-09-22 that both screens go
+fully dark with power/touch USB disconnected and HDMI retained, following the
+Pi-on test. The HDMI-only visual check therefore passes; GPIO cutoff and
+discharge timing remain unverified. The included GPIO17 lifecycle service
+passes its host tests; the five-second wait remains provisional. Local new-v3
+firmware/PD work described in the historical completion report is outside
+this publication. Issue #1072 remains `autonomy:blocked-verify` for assembled
+validation and merge.
+
 
 ## September 2026 Mac recording companion
 
@@ -85,6 +273,7 @@ bundles. Inspection now runs before bundle deployment using the pinned
 Yocto-native RAUC with JSON support, archive tools and jq. The checker matches
 the existing boot archive filename ending in `.tar.img`; the producer and
 install hook remain unchanged. A failed inspection stops the release build.
+
 
 ## How to build / test (environment gotchas — read first)
 

@@ -17,7 +17,9 @@ WORK="$(mktemp -d)"
 
 # THE POINT OF THIS SCRIPT. KiCad exports every net in one 'kicad_default' class,
 # so a plain autoroute returns EVERYTHING at the default 0.30 mm -- including
-# +5V_LED, which carries 1.44 A with 24 WS2812Bs at full white and wants 0.50 mm
+# the lower-current +5V_LED module/logic branches, which carry up to 1.44 A
+# with a 24-pixel module. The separate 40-pixel strip feed is hand-routed at
+# 1.5 mm before the router runs and checked again before export. The module wants 0.50 mm
 # by IPC-2221 (10 C rise, 1 oz external). DRC does not catch an undersized power
 # trace, so that mistake ships silently. Splitting the class in the DSN is what
 # makes the autorouter hand back the right width instead of it being reapplied by
@@ -67,6 +69,9 @@ for t in list(m.GetTracks()):
 m.Save(sys.argv[1])                    # unchanged and DRC then lies to you
 print("   ripped up %d segments, kept %d vias (%d grown to 0.8/0.4)" % (n, kept, grown))
 PY
+
+echo "== 1b. hand-route the 40-pixel power feed before the other nets =="
+"$KPY" ring_power.py "$PCB" --install
 
 echo "== 2. export Specctra DSN =="
 "$KPY" - "$PCB" "$WORK/board.dsn" <<'PY'
@@ -137,6 +142,16 @@ echo "== 5b. take back the unused width on the power net =="
 # layout allows and no further, and prints the ceiling it found.
 python3 widen_power.py "$PCB" --net "$POWER_NET" --target "$POWER_FINAL_MM"
 
+echo "== 5b2. round the routed signal corners =="
+# After the widening, so the arcs are measured against the final widths, and
+# before the refill, so the pours retreat from the geometry that ships. Locked
+# copper -- the hand-routed strip feed and its taps -- is left exactly as
+# ring_power.install drew it, and any chain that cannot hold its clearance with
+# an arc keeps its mitre. It runs under KiCad's Python: the clearance it accepts
+# an arc on is measured with pcbnew's own pad shapes and SHAPE::Collide, not with
+# arithmetic of ours.
+"$KPY" round_routes.py "$PCB"
+
 echo "== 5c. refill zones =="
 "$KPY" - "$PCB" <<'PY'
 import pcbnew, sys
@@ -153,7 +168,8 @@ for (net, ww), c in sorted(w.items()):
 PY
 
 echo "== 6. DRC =="
-"$CLI" pcb drc --format json -o "$WORK/drc.json" "$PCB" >"$WORK/drc.log" 2>&1 || true
+"$CLI" pcb drc --format json --severity-all --all-track-errors \
+  -o "$WORK/drc.json" "$PCB" >"$WORK/drc.log" 2>&1 || true
 tail -2 "$WORK/drc.log"
 python3 - "$WORK/drc.json" <<'PY'
 import json, sys
@@ -163,10 +179,19 @@ for x in v:
     print("   [%s] %s" % (x['severity'], x['type']))
 errs = [x for x in v if x['severity'] == 'error']
 print("   violations %d (errors %d), unconnected %d" % (len(v), len(errs), len(u)))
-sys.exit(1 if errs or u else 0)
+sys.exit(1 if v or u else 0)
 PY
 
 echo "== 7. gerbers =="
+"$KPY" ring_power.py "$PCB"
+"$KPY" - "$PCB" <<'PY_CHECK_SILK'
+import sys
+import pcbnew
+from silkscreen import mask_clearance_problems
+problems = mask_clearance_problems(pcbnew.LoadBoard(sys.argv[1]))
+if problems:
+    raise SystemExit("Silkscreen mask clearance: " + "; ".join(problems))
+PY_CHECK_SILK
 "$CLI" pcb export gerbers --output "$WORK/gb" --no-protel-ext --layers "$FAB_LAYERS" "$PCB" >/dev/null
 "$CLI" pcb export drill --output "$WORK/gb" --format excellon --drill-origin absolute --excellon-separate-th "$PCB" >/dev/null
 ( cd "$WORK/gb" && zip -q -X segno_pedal_ring_gerbers.zip *.gbr *.gbrjob *.drl )

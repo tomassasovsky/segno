@@ -1,0 +1,401 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid 2b4f2bc6-c7a6-56c4-ac6c-4e72a6852df9)
+  (paper "A3")
+  (title_block
+    (title "Segno screen power / hand / screen1 power")
+    (rev "L prototype")
+    (comment 1 "Discrete 5V switch. Host VBUS powers only its own signal relay coil.")
+    (comment 2 "Physical verification required before release."))
+  (lib_symbols
+    (symbol "screen_symbols:Connector_Generic_Conn_01x02"
+      (pin_names
+        (offset 0.508)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "J"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "Conn_01x02"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Connector_Generic_Conn_01x02_1_1"
+        (rectangle
+          (start -1.27 1.27)
+          (end 1.27 -3.81)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (rectangle
+          (start -1.27 0.127)
+          (end 0 -0.127)
+          (stroke
+            (width 0.1524)
+            (type default))
+          (fill
+            (type none)))
+        (rectangle
+          (start -1.27 -2.413)
+          (end 0 -2.667)
+          (stroke
+            (width 0.1524)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at -5.08 0 0)
+          (length 3.81)
+          (name "Pin_1"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at -5.08 -2.54 0)
+          (length 3.81)
+          (name "Pin_2"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Device_Fuse"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "F"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "Fuse"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Fuse"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Device_Fuse_0_1"
+        (rectangle
+          (start -0.762 -2.54)
+          (end 0.762 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0 2.54)
+            (xy 0 -2.54))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Device_Fuse_1_1"
+        (rectangle
+          (start -0.762 -2.54)
+          (end 0.762 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0 2.54)
+            (xy 0 -2.54))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at 0 3.81 270)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no)))
+  (wire
+    (pts
+      (xy 50.8 59.69)
+      (xy 50.8 54.61))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid a0e34752-e610-5b5f-b149-7691085304da))
+  (global_label "SWITCHED_5V"
+    (shape bidirectional)
+    (at 50.8 54.61 90)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 618977dd-71dd-55e4-b041-c856f7975949))
+  (wire
+    (pts
+      (xy 50.8 67.31)
+      (xy 50.8 72.39))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 914b3226-5b8e-59ea-aa67-97f7e6ad911c))
+  (global_label "S1_MAIN_5V"
+    (shape bidirectional)
+    (at 50.8 72.39 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 863e60d8-c337-54d6-a704-20dac687be42))
+  (symbol
+    (lib_id "screen_symbols:Device_Fuse")
+    (at 50.8 63.5 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 5a5dc9b3-adc1-50bc-af38-6d9fbe841621)
+    (property "Reference" "F101"
+      (at 73.66 49.53 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "4A fast"
+      (at 73.66 52.07 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "screen_power:Fuse_Littelfuse_251_P12.70mm"
+      (at 73.66 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "0251004.MXL"
+      (at 73.66 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid e51b3866-865e-5898-80a0-0a5c3e98c501))
+    (pin "2"
+      (uuid 143d8c51-f3be-5333-b1c4-2ca0bf4a909d))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/2b4f2bc6-c7a6-56c4-ac6c-4e72a6852df9"
+          (reference "F101")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 152.4 59.69)
+      (xy 152.4 54.61))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 1f235500-9884-5ae2-8c48-6025d668e2db))
+  (global_label "SWITCHED_5V"
+    (shape bidirectional)
+    (at 152.4 54.61 90)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 3ed84b86-33ab-572e-874c-b1073ba2f2af))
+  (wire
+    (pts
+      (xy 152.4 67.31)
+      (xy 152.4 72.39))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 883edab1-b4fc-5b68-939c-81b287a8b2b5))
+  (global_label "S1_TOUCH_5V"
+    (shape bidirectional)
+    (at 152.4 72.39 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 18b4a910-788b-58f9-a965-98dc084db26d))
+  (symbol
+    (lib_id "screen_symbols:Device_Fuse")
+    (at 152.39999999999998 63.5 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 8ede0719-d634-5004-a390-0a48cfed3b85)
+    (property "Reference" "F102"
+      (at 175.26 49.53 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "750mA fast"
+      (at 175.26 52.07 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "screen_power:Fuse_Littelfuse_251_P12.70mm"
+      (at 175.26 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "0251.750MXL"
+      (at 175.26 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 34fbe268-b805-53f9-9e4d-b2dff78fd504))
+    (pin "2"
+      (uuid f23f9ac6-be74-5255-b157-94ce6263433f))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/2b4f2bc6-c7a6-56c4-ac6c-4e72a6852df9"
+          (reference "F102")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 248.92 63.5)
+      (xy 243.84 63.5))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 8aceff88-355d-52cb-9ef4-e2f3f820dce7))
+  (global_label "S1_MAIN_5V"
+    (shape bidirectional)
+    (at 243.84 63.5 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid b8b76673-11e5-5f29-9f59-e3896bc4acc3))
+  (wire
+    (pts
+      (xy 248.92 66.04)
+      (xy 243.84 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 9689ce35-f550-5386-a3fb-31d0601c2e8a))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 243.84 66.04 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 02804142-89a1-5300-a58f-97c8b0fb54e9))
+  (symbol
+    (lib_id "screen_symbols:Connector_Generic_Conn_01x02")
+    (at 254.0 63.5 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 8855ec3d-0cc1-535f-9ee7-645d6ffa3f04)
+    (property "Reference" "J103"
+      (at 254.0 53.34 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "SCREEN 1 POWER"
+      (at 254.0 55.88 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical"
+      (at 254.0 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "B2P-VH(LF)(SN)"
+      (at 254.0 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 9d551b42-c259-523f-b369-1c52e4a3a7a6))
+    (pin "2"
+      (uuid 41a113bb-14d2-58c3-a83e-c38dd8d9f78a))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/2b4f2bc6-c7a6-56c4-ac6c-4e72a6852df9"
+          (reference "J103")
+          (unit 1)))))
+  (embedded_fonts no))

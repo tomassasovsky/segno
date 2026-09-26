@@ -127,9 +127,36 @@ per-quote artifact, same freshness gate as the other vendor packs (#236).
 
 | Board | Files | Qty | Notes |
 |---|---|---|---|
-| **Console board v3** (`console_board.py`, #990) | `kicad/out_console/segno_console_board_gerbers.zip` (run `route_console_board.sh` to produce) + `kicad/fab/segno_console_board_bom.csv` | 1 | Hardware work in progress: Pico 2, MIDI front end, sensed CTRL jacks, ring-board link and PD header. The Pico footprint takes the module **either way** (#1062): soldered flat by its castellations, or socketed on 2.54 mm headers and pulled out later. SWD reaches the module's debug pads in both builds. The ring-link and PD firmware are unfinished; this is not the v2 board running release 137. See the [integration record](../docs/APPLIANCE_INTEGRATION.md). |
-| Encoder ring PCB (#987) | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø80 Ring 24 board with a XIAO controller and a four-conductor link to v3 J6. The XIAO firmware and console-side ring link are unfinished. Existing direct-encoder v2 wiring does not apply to this board. See [the ring design](kicad/ring_board.py). |
+| **Console board v3** | `kicad/fab/segno_console_v3_gerbers.zip` + `kicad/fab/segno_console_board_bom.csv` | 1 | 99.5 × 99.5 mm, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, lead-free HASL. Pico 2 may be soldered by its castellations or fitted on removable 2.54 mm headers. Use the matching v3 runtime described below. |
+| **Encoder ring carrier** | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø80 mm, two layers, 1.6 mm FR4, 1 oz, white mask / black silk, lead-free HASL. Selected assembly: one 40-LED strip at J2, J3/J4 empty. The 24/16-module footprints remain alternatives. See [assembly](kicad/RING_ASSEMBLY.md). |
+| **Screen power Rev L** | `kicad/fab/segno_screen_power_rev_l_gerbers.zip` + `kicad/screen_power/hand/bom.csv` + `kicad/screen_power/external_bom.csv` | 1 | 68 × 76 mm, R3 corners, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, ENIG. Hand-soldered components. External input fuse and harness parts are required. See [wiring and assembly](kicad/screen_power/README.md). |
 | LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 0 | **NOT ORDERED for the console.** Owner call 2026-08-28: the indicators are eight-LED segments cut from a **144 LEDs/m bare IP20 strip**, and the diffuser channel is sized for that (**12 mm wide, 0.53 thick**, 56.96 long), not for this 16×8 board. The design is kept because it is finished and the footprint may suit another build — but ordering it will not fit the current diffuser. |
+
+
+The quantities above are the one-unit assembly need; JLCPCB's order is five
+individual copies of each board. Use only the ZIP hashes in the
+[current manufacturing record](../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
+Older exports in other directories are superseded. No stencil or factory
+component assembly is required. The selected 40-LED strip uses the direct AUX
+star harness in [the ring assembly guide](kicad/RING_ASSEMBLY.md); J2 carries
+DIN only. Do not reuse the superseded straight-through console/ring power wiring.
+
+The new console and carrier runtime is in
+[PR #1082](https://github.com/tomassasovsky/segno/pull/1082), published at
+`92af127d9a2d58c4ea9b810b38d06ca3ddc3c73d`. It includes the A2 Pico E9 workaround,
+ring link and PD reader; the hardware branch's old firmware snapshot does not.
+Program the Pico before fitting it, or disconnect console J3/J6/J24 before
+connecting its USB cable; remove USB before reconnecting those headers. Use
+SWD for normal in-place programming. Unplug ring J1 before XIAO USB programming.
+
+The runtime remains an integration draft. Fabricating these boards does not complete
+runtime integration, device qualification or the enclosure work below.
+
+The screen-board mounting proposal is documented in
+[the enclosure clearance assessment](../docs/reviews/pcb-completion-1072/screen-power-placement.md).
+Its four floor holes are not yet incorporated in the enclosure manufacturing
+CAD. Do not send the enclosure pack to fabrication as though that integration
+were complete. The bare PCB outline and mounting centers are fixed.
 
 
 ## 4. Printed overlay
@@ -160,8 +187,10 @@ parts are `kicad/fab/segno_console_board_bom.csv`. Headlines:
   Check one thing with calipers before the faceplate is cut: the model assumes a Ø22 × 4.5
   underside relief clearing the EC11 nut. If the real knob's underside is solid it will sit
   ~3 mm proud of where the model puts it.
-- 1× NeoPixel **Ring 24** — 65.5 mm OD / 52.3 mm ID / 3.2 mm thick (the ring the owner has;
-  the faceplate window and `segno_ring_diffuser` are cut for THESE numbers, not the Ring 16's 44.5 mm)
+- 1× existing **40-LED WS2812B strip**, connected to carrier J2 in its separate
+  [strip housing design](https://github.com/tomassasovsky/segno/pull/1083).
+  The older `segno_ring_diffuser` and enclosure window described above are the
+  24-LED mechanical variant; they are not a completed 40-strip enclosure release.
 - Heat-set inserts: **M3 5×5 throughout** (5.0 long × 5.0 OD, pilots Ø4.5), brass —
   40× console pedestals (4 per pedestal) + 8× mini-console pedestals + 3× mini lid.
   (Short M3×3 obsolete since the #373 deck raise gave the front pedestals full pilot depth.)

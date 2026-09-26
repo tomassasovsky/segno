@@ -1,0 +1,26 @@
+{
+  "screen": {
+    "minimum_separate_pad_mask_web": {
+      "gap_mm": 0.34999999999999964,
+      "a": "C4.1",
+      "b": "C4.2",
+      "layer": "F.Silkscreen"
+    }
+  },
+  "console": {
+    "minimum_separate_pad_mask_web": {
+      "gap_mm": 0.7399999999999807,
+      "a": "J22.3",
+      "b": "J22.4",
+      "layer": "F.Silkscreen"
+    }
+  },
+  "ring": {
+    "minimum_separate_pad_mask_web": {
+      "gap_mm": 0.5400010000003701,
+      "a": "U1.2",
+      "b": "U1.3",
+      "layer": "B.Silkscreen"
+    }
+  }
+}

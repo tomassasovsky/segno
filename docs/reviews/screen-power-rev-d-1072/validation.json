@@ -1,0 +1,565 @@
+{
+  "generated_at": "2026-09-22T13:58:39.692429+00:00",
+  "kicad_version": "10.0.4",
+  "cad_ready": true,
+  "hardware_qualification": "not performed",
+  "variants": [
+    {
+      "variant": "hand",
+      "board": "hand/screen_power_hand.kicad_pcb",
+      "errors": [],
+      "hardware_qualification": "not performed",
+      "source_sha256": {
+        "../console_board.net": "3941f8fb2da7211e872820f826d3ecee82cfbe57da18fd0c8a5ff58d8f1cd49f",
+        "../netlist.py": "565559b7751337c8930670658026715fa065138c846dd9784bbe4f06549bf1e3",
+        "../out_console/segno_console_board.kicad_pcb": "d4a735337159ee083228dbfa23bc4f16c329b2a44fe26847d5a04fc99004b360",
+        "build.sh": "ae5821c708b0aefd5192e126bc61fded08f7c0b98a59a5caa575077408fbbcb5",
+        "check.py": "ef2d5317aef1c7fc2d2868327ca0f5426f147a13cb237cc41ff7e2f2b82060fd",
+        "circuit.py": "2277c54dea05b9a924ffa2d11092f64ce112a401fffc83c79d892b9d12ea2822",
+        "cleanup.py": "250a4ca530796cded61d5d1b660b5d01d1ceff215e0ff44b1265c5a3e19ad93b",
+        "export.py": "1523ed661f3c0b51de61f3ce40c6ea0881d62373b0bc84795eeba3c8015783d7",
+        "external_bom.csv": "6cdddb26143144c14482fb11aed09db44cf0408ff86cedc8041b8e4d596f62ec",
+        "finish.py": "adb558f0870f4cf77319fc9e396b16bdfb87f61edb5ec94ab55f962146051a8d",
+        "hand/bom.csv": "0fe0a1d4a7a598d9c15b76002d36956295f28a6518a722e8966a044ea9d956af",
+        "hand/components.json": "43229b9befbfe26255c72b01502c91bc6e83a5c40fe5a8e52e9dbf12bb0787e5",
+        "hand/fp-lib-table": "590440cd229828cd8c6d6cc97b03e045898207b4ea07239e3f5616a7af084473",
+        "hand/screen1_power.kicad_sch": "c2ac1d764242b03fa609ad9e1b397928d3b6e9555c3653837ef1a91c6fccb553",
+        "hand/screen1_touch.kicad_sch": "9a9f19b43e75a2cfa9dac61f038762d0da355bddb4de65834375401c1206da7f",
+        "hand/screen2_power.kicad_sch": "84d29630287d102717bc3b1d76bd921c20647b02be5bbf1c39afc5c13ba55bce",
+        "hand/screen2_touch.kicad_sch": "7b69dacef3920d2dbd993efaba4dcaf4d353228cfa3c1676ab5ae49952a5998b",
+        "hand/screen_power_hand.kicad_pcb": "8082fec32b1441cb1d705cf7676fad338fc0fff53a2aaf8e55607b69d953c20b",
+        "hand/screen_power_hand.kicad_pro": "93b2c29201f7b2df20a8edacf21436de7d3afae0e817ed38c3c4b19b65844d18",
+        "hand/screen_power_hand.kicad_sch": "4f5eeec7cd1ba6d1bb394aac3838b8747906c096ee48e1b25b990e6ff1dfb866",
+        "hand/screen_power_hand.net": "58821979ab292683a4a9c480f2bf4842df1a8af49b0965d1a5d1e93a359c21c2",
+        "hand/screen_power_hand.placed.kicad_pro": "826d5348ebb42316d5521ed976e997ff3d493d343da4b459e395a760b407d3fc",
+        "hand/screen_symbols.kicad_sym": "fc9d0e80f88c0874affa86bf115a0c20498f926a21bfecd215a03bd468025940",
+        "hand/shared_power.kicad_sch": "05ddb41f3e5543ddc9c1ac54e8a389c126f1bd307a0c9e4f0e2f072fb0328536",
+        "hand/sym-lib-table": "070e6b5e2a9f44bcdeed6f57f9851fca4075a3e343216d6ce3e0ffa6abb317c9",
+        "hand_checks.py": "f1810c3da62e948f0f1ca864936593218fe55c0b9fd2baa43782ddadf44db0ec",
+        "layout.py": "e0afdc3a0f637aa9ff42a1bfeb10b6313739504fd586625569ed2ab22dd7e073",
+        "model_geometry.py": "66ba702474a9ef26ee5b19ecc818ca5dad1b153c46a7e366ef4e466e90611573",
+        "models/CP_Radial_D5.0mm_P2.00mm.step": "96f77599ffdd30a40b9738a02543510138a4977d6427f42fef3fdd584405fc1d",
+        "models/CP_Radial_D6.3mm_P2.50mm.step": "39dc7bf95fed00917ab20af81ff9e25a70f8d003bc07cffea11840489a11933e",
+        "models/C_0805_2012Metric.step": "9a669c1a2f1ea25b88b401acef6efeaa80a067bd7da9db6993de719a7fbe155c",
+        "models/C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2.step": "10b214188b860330c29300699c56f235742f5a04968496c24f4492cc2cb214b7",
+        "models/D_DO-35_SOD27_P7.62mm_Horizontal.step": "9704292191fcb13b3dfc88c1e572df18313ac20023bb230486c878d8dddfdb54",
+        "models/D_DO-41_SOD81_P10.16mm_Horizontal.step": "c3e23d4b276811b74eecb329bd4480209ad3dbc8cf6e6e3f2a5b542c5ca343c1",
+        "models/D_SOD-123.step": "b3dc4065573abc72e3d5b4cca0e908f72a24205a41b6284b1f75ccacbe99adf8",
+        "models/Fuse_Littelfuse_251_P12.70mm.step": "00963a1755175d1ec1f24d8809adb024bc7c4002b5af8090ae8fdeeb53efa837",
+        "models/JST_VH_B2P-VH_1x02_P3.96mm_Vertical.step": "f695849b57b3a020a3ee91df31b5f73a77e75a5405523d42b5e30f29665f7176",
+        "models/JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical.step": "7287616fdad677e9b54cf5494f17efc4b3fb77be002659d73e215772393f20c6",
+        "models/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step": "7eb17ded8ec4a3216753a234254e22a2d8e07826f0816045bfb803a19cac75ea",
+        "models/README.md": "c91e30a44e53338573e7335291b4f398bf7160c2f04e7bdfff6f269b696e5209",
+        "models/R_0805_2012Metric.step": "ded342cdb394fb45395227beaaa75cc390613cf2581b29cd6d22c12abd6103b2",
+        "models/R_2512_6332Metric.step": "76b2052a3c120193de7cdc0af99157b6f375e9a4af7721e3e3d012968c877f27",
+        "models/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step": "85bdadc9190739c38429da06b1d9c76ccf33aef9a0794a2e7a9dd5b58d9d05fe",
+        "models/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm.step": "ef14b7f12cdde58ff2c770df5e726c11bb1ad801956d525273855cfa84f90633",
+        "models/SOT-23.step": "dd5d1711204e1d8d26cd11490923bd84340820baa69538c385a4300ec2539bc0",
+        "models/TO-220-3_Vertical.step": "7cb065d935df5771f0ba6e48ddd180863a121af76483dad7f18e667a7b68204a",
+        "models/TO-263-3_TabPin2.step": "f8d7f00ad233d49496cf0b53aca1891fcbc2d8d007dfe42465186627fedd54d0",
+        "models/TO-92_Inline_Wide.step": "85b7de23bf92112c1cc60ca5fdb644f1a44e150a99f8c6f4f5f29010f50282b9",
+        "models/licenses/Capacitor_SMD-CREDITS.md": "5a2a836cfa0aeef640ee9a6962b98bd33d2626b78c87b49263e7834d1ae594ca",
+        "models/licenses/Capacitor_THT-CREDITS.md": "21aee58fa893c5aa03b5d0d8f5d6d4e6a7d5e2efe617901d9226f2233a035a9d",
+        "models/licenses/Connector_JST-CREDITS.md": "d9ef1e759fce741e60c40b7a01b72b2df4c0e1d452b9ec8f9e6ad58c1cf25245",
+        "models/licenses/Diode_SMD-CREDITS.md": "78cbed38467964f719152fe51f447f49b44c951d4b3bf47674b7c461c83e6e3c",
+        "models/licenses/Package_TO_SOT_SMD-CREDITS.md": "f69a3456a4d9d2e66427829c447bd87a83d6bb2ddd5bf90091c7c39f084e3d87",
+        "models/licenses/Package_TO_SOT_THT-CREDITS.md": "dc452c3f08da79359ec36f715ce5626680f458e0bafd70888ad3dcfa74d4576a",
+        "models/licenses/Resistor_SMD-CREDITS.md": "afb9fcf30227b3d9e94470954f48ef0ceaa29057a37d9240e3d94edbbb2c672c",
+        "models/licenses/Resistor_THT-CREDITS.md": "0cd03aa057748a76ca727351946973ab950c4f6589cbe197be56bccf4eaeb7b4",
+        "models.py": "3a49e950a8323db0a4fb9b73273ba7039b286eb79383243f4d95f9fa8dbf6db6",
+        "pcb.py": "53c447790b59b356cfb335a346c6ed50442aaa649d5d0c3d7f4a57bb48700229",
+        "route_critical.py": "d826eae43768217d4a7dde0b6b34b06bf654175fef8de2c717dd3121f87a8b44",
+        "router.py": "9d98e807cc1abef9f3588f5e5f643ca460b8d939de6287fdd67f1b1a993f1188",
+        "schematic.py": "98107afa1aaaa8462caeb9e6807cfeb78ddf6395e49bf7dece4570c9a3981237",
+        "screen_power.pretty/Fuse_Littelfuse_251_P12.70mm.kicad_mod": "78dc85457dff9dd66e543e545d7033531b9d0de4fea476e633baea202a66aa3d",
+        "screen_power.pretty/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.80mm.kicad_mod": "e6b67fc4b372092910d1653aa1ac33db1f50d5abb0cbb8431edfd421dea21c0d",
+        "screen_power.pretty/TO-220-3_SUP70101EL.kicad_mod": "0566209e224dbf3c4e85ce20f55fe952db20cb2f4fd765e34b3a8854375b9cd0",
+        "switch_circuit.py": "675cfb8773d4c45eea45c1e38beb3360e76e13cf75c2b3e7d77ca21d5f12a4cb"
+      },
+      "model_coverage": {
+        "populated": 37,
+        "references": [
+          "C1",
+          "C101",
+          "C102",
+          "C2",
+          "C201",
+          "C202",
+          "D1",
+          "D101",
+          "D201",
+          "F101",
+          "F102",
+          "F201",
+          "F202",
+          "J1",
+          "J101",
+          "J102",
+          "J103",
+          "J2",
+          "J201",
+          "J202",
+          "J203",
+          "K101",
+          "K201",
+          "Q1",
+          "Q101",
+          "Q2",
+          "Q201",
+          "Q3",
+          "Q4",
+          "R1",
+          "R2",
+          "R3",
+          "R4",
+          "R5",
+          "R6",
+          "R7",
+          "R8"
+        ]
+      },
+      "usb_track_lengths_mm": {
+        "S1_UP_P": 24.7959,
+        "S1_UP_N": 24.7959,
+        "S1_DN_P": 29.5959,
+        "S1_DN_N": 29.5959,
+        "S2_UP_P": 24.7959,
+        "S2_UP_N": 24.795899,
+        "S2_DN_P": 29.5959,
+        "S2_DN_N": 29.595899
+      },
+      "numerical_checks": {
+        "aux_input_min_V": 5.0,
+        "aux_input_max_V": 5.25,
+        "combined_design_load_A": 6,
+        "gate_min_V_with_estimated_hot_Rds": 4.5804454407492,
+        "hot_Rds_factor_is_estimate": 1.7,
+        "gpio_assumed_minimum_high_V": 2.4,
+        "gpio_base_min_mA": 1.426047604760476,
+        "collector_peak_mA": 2.075274016763378,
+        "bleeder_max_W": 0.2784090909090909,
+        "pair_loss_at_6A_25C_max_Rds_W": 1.08,
+        "relay_initial_coil_min_V": 4.597885196374622,
+        "relay_initial_pickup_margin_23C_V": 0.8478851963746221,
+        "relay_hot_restart": "measure coil voltage and qualify hot re-enable before fabrication release",
+        "host_relay_coil_nominal_mA": 28.089887640449437,
+        "main_continuous_fuse_design_A": 3,
+        "touch_continuous_fuse_design_A": 0.5,
+        "thermal_inrush_USB_suspend_and_fault_coordination": "require physical testing"
+      },
+      "drc": {
+        "counts": {
+          "error": 0,
+          "warning": 0,
+          "exclusion": 0,
+          "unconnected": 0,
+          "findings": 0
+        },
+        "report": {
+          "$schema": "https://schemas.kicad.org/drc.v1.json",
+          "coordinate_units": "mm",
+          "date": "2026-09-22T10:58:23",
+          "ignored_checks": [
+            {
+              "description": "Footprint has no courtyard defined",
+              "key": "missing_courtyard"
+            },
+            {
+              "description": "Track endpoint not centered on via",
+              "key": "track_not_centered_on_via"
+            },
+            {
+              "description": "Tuning profile track geometries",
+              "key": "tuning_profile_track_geometries"
+            },
+            {
+              "description": "Footprint doesn't match symbol's footprint filters",
+              "key": "footprint_filters_mismatch"
+            },
+            {
+              "description": "Footprint component type doesn't match footprint pads",
+              "key": "footprint_type_mismatch"
+            }
+          ],
+          "included_severities": [
+            "error",
+            "warning",
+            "exclusion"
+          ],
+          "kicad_version": "10.0.4",
+          "schematic_parity": [],
+          "source": "screen_power_hand.kicad_pcb",
+          "unconnected_items": [],
+          "violations": []
+        }
+      },
+      "erc": {
+        "counts": {
+          "error": 0,
+          "warning": 0,
+          "exclusion": 0,
+          "unconnected": 0,
+          "findings": 0
+        },
+        "report": {
+          "$schema": "https://schemas.kicad.org/erc.v1.json",
+          "coordinate_units": "mm",
+          "date": "2026-09-22T10:58:26",
+          "ignored_checks": [
+            {
+              "description": "Global label only appears once in the schematic",
+              "key": "single_global_label"
+            },
+            {
+              "description": "Four connection points are joined together",
+              "key": "four_way_junction"
+            },
+            {
+              "description": "SPICE model issue",
+              "key": "simulation_model_issue"
+            },
+            {
+              "description": "Assigned footprint doesn't match footprint filters",
+              "key": "footprint_filter"
+            }
+          ],
+          "included_severities": [
+            "error",
+            "warning",
+            "exclusion"
+          ],
+          "kicad_version": "10.0.4",
+          "sheets": [
+            {
+              "path": "/",
+              "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546",
+              "violations": []
+            },
+            {
+              "path": "/shared power/",
+              "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/0157c963-12d5-5a27-8699-19e38824f98e",
+              "violations": []
+            },
+            {
+              "path": "/screen1 power/",
+              "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/2b4f2bc6-c7a6-56c4-ac6c-4e72a6852df9",
+              "violations": []
+            },
+            {
+              "path": "/screen1 touch/",
+              "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9",
+              "violations": []
+            },
+            {
+              "path": "/screen2 power/",
+              "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/ebf3d20f-1f2b-56bd-97a8-f1d013a08173",
+              "violations": []
+            },
+            {
+              "path": "/screen2 touch/",
+              "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/54c97e4c-a9b4-50bc-a883-235682587f3a",
+              "violations": []
+            }
+          ],
+          "source": "screen_power_hand.kicad_sch"
+        }
+      },
+      "self_test": {
+        "wrong_xh_pitch_detected": true,
+        "model_unassigned_detected": true,
+        "model_missing_detected": true,
+        "model_disabled_detected": true,
+        "relay_hole_detected": true,
+        "console_control_cut_detected": true,
+        "smd_footprint_detected": true,
+        "smd_pad_detected": true,
+        "power_lead_hole_detected": true,
+        "wrong_relay_detected": true,
+        "wrong_driver_detected": true,
+        "wrong_tolerance_detected": true,
+        "weak_pulldown_detected": true,
+        "narrow_power_detected": true,
+        "host_power_bridge_detected": true,
+        "usb_cut_detected": true
+      },
+      "cad_ready": true
+    },
+    {
+      "variant": "factory",
+      "board": "factory/screen_power_factory.kicad_pcb",
+      "errors": [],
+      "hardware_qualification": "not performed",
+      "source_sha256": {
+        "../console_board.net": "3941f8fb2da7211e872820f826d3ecee82cfbe57da18fd0c8a5ff58d8f1cd49f",
+        "../netlist.py": "565559b7751337c8930670658026715fa065138c846dd9784bbe4f06549bf1e3",
+        "../out_console/segno_console_board.kicad_pcb": "d4a735337159ee083228dbfa23bc4f16c329b2a44fe26847d5a04fc99004b360",
+        "build.sh": "ae5821c708b0aefd5192e126bc61fded08f7c0b98a59a5caa575077408fbbcb5",
+        "check.py": "ef2d5317aef1c7fc2d2868327ca0f5426f147a13cb237cc41ff7e2f2b82060fd",
+        "circuit.py": "2277c54dea05b9a924ffa2d11092f64ce112a401fffc83c79d892b9d12ea2822",
+        "cleanup.py": "250a4ca530796cded61d5d1b660b5d01d1ceff215e0ff44b1265c5a3e19ad93b",
+        "export.py": "1523ed661f3c0b51de61f3ce40c6ea0881d62373b0bc84795eeba3c8015783d7",
+        "external_bom.csv": "6cdddb26143144c14482fb11aed09db44cf0408ff86cedc8041b8e4d596f62ec",
+        "factory/bom.csv": "0261e68f2c8dcc81ca660199ba13891141a3b4da43690a28e9a58f12e5e724dc",
+        "factory/components.json": "b6670211b814b65c94468c7ae422e72f4e5df12956607494b470a6a77b61e367",
+        "factory/fp-lib-table": "590440cd229828cd8c6d6cc97b03e045898207b4ea07239e3f5616a7af084473",
+        "factory/screen1_power.kicad_sch": "f9bb75cb783c7659b828dcfbca935a2a539836ef831987d1cc4bc84a2d0ecf82",
+        "factory/screen1_touch.kicad_sch": "18e0c907cbbfdea8643cc9152b7d2888d7d30c6a07b77c5b6e34a684056e104b",
+        "factory/screen2_power.kicad_sch": "7055bd71d30390d173dee27a3e65aafa9bf3b6171bc7a61fcc519e85fe3a3bbe",
+        "factory/screen2_touch.kicad_sch": "6ea942057cb13336fcc6c7d7812d6b553b80e05cd288405719b38f0cfa4356f2",
+        "factory/screen_power_factory.kicad_pcb": "7a7732217e542ea11fd70c6a613b06a4714663c09eb2825e43653b6d370ac541",
+        "factory/screen_power_factory.kicad_pro": "d5e6f071ed0e6910fe57a286bc0e8df731c104225ced5a3d119d7b8a6aaf8f7f",
+        "factory/screen_power_factory.kicad_sch": "016a28b1c05f5836ae92f6d72b041af3d3f3576152b81296e78f8a856c587e1d",
+        "factory/screen_power_factory.net": "101ffe8237fac17d419be06008aa19172e2b9c6f8afcd7969250f826aa4498cf",
+        "factory/screen_power_factory.placed.kicad_pro": "9f2df6aae2c9d2cda062349b8cbb87248d7a1251e7f6e1ebbbda4d2880a8b669",
+        "factory/screen_symbols.kicad_sym": "024baf4b2f9705766c9f2db6bbde6c3f015ab46218377e5043471a83127d4527",
+        "factory/shared_power.kicad_sch": "641b336a6b1bbf03e354a561d10fe1e4b6834cc39117edb8e140c69d3540cfa0",
+        "factory/sym-lib-table": "070e6b5e2a9f44bcdeed6f57f9851fca4075a3e343216d6ce3e0ffa6abb317c9",
+        "finish.py": "adb558f0870f4cf77319fc9e396b16bdfb87f61edb5ec94ab55f962146051a8d",
+        "hand_checks.py": "f1810c3da62e948f0f1ca864936593218fe55c0b9fd2baa43782ddadf44db0ec",
+        "layout.py": "e0afdc3a0f637aa9ff42a1bfeb10b6313739504fd586625569ed2ab22dd7e073",
+        "model_geometry.py": "66ba702474a9ef26ee5b19ecc818ca5dad1b153c46a7e366ef4e466e90611573",
+        "models/CP_Radial_D5.0mm_P2.00mm.step": "96f77599ffdd30a40b9738a02543510138a4977d6427f42fef3fdd584405fc1d",
+        "models/CP_Radial_D6.3mm_P2.50mm.step": "39dc7bf95fed00917ab20af81ff9e25a70f8d003bc07cffea11840489a11933e",
+        "models/C_0805_2012Metric.step": "9a669c1a2f1ea25b88b401acef6efeaa80a067bd7da9db6993de719a7fbe155c",
+        "models/C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2.step": "10b214188b860330c29300699c56f235742f5a04968496c24f4492cc2cb214b7",
+        "models/D_DO-35_SOD27_P7.62mm_Horizontal.step": "9704292191fcb13b3dfc88c1e572df18313ac20023bb230486c878d8dddfdb54",
+        "models/D_DO-41_SOD81_P10.16mm_Horizontal.step": "c3e23d4b276811b74eecb329bd4480209ad3dbc8cf6e6e3f2a5b542c5ca343c1",
+        "models/D_SOD-123.step": "b3dc4065573abc72e3d5b4cca0e908f72a24205a41b6284b1f75ccacbe99adf8",
+        "models/Fuse_Littelfuse_251_P12.70mm.step": "00963a1755175d1ec1f24d8809adb024bc7c4002b5af8090ae8fdeeb53efa837",
+        "models/JST_VH_B2P-VH_1x02_P3.96mm_Vertical.step": "f695849b57b3a020a3ee91df31b5f73a77e75a5405523d42b5e30f29665f7176",
+        "models/JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical.step": "7287616fdad677e9b54cf5494f17efc4b3fb77be002659d73e215772393f20c6",
+        "models/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step": "7eb17ded8ec4a3216753a234254e22a2d8e07826f0816045bfb803a19cac75ea",
+        "models/README.md": "c91e30a44e53338573e7335291b4f398bf7160c2f04e7bdfff6f269b696e5209",
+        "models/R_0805_2012Metric.step": "ded342cdb394fb45395227beaaa75cc390613cf2581b29cd6d22c12abd6103b2",
+        "models/R_2512_6332Metric.step": "76b2052a3c120193de7cdc0af99157b6f375e9a4af7721e3e3d012968c877f27",
+        "models/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step": "85bdadc9190739c38429da06b1d9c76ccf33aef9a0794a2e7a9dd5b58d9d05fe",
+        "models/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm.step": "ef14b7f12cdde58ff2c770df5e726c11bb1ad801956d525273855cfa84f90633",
+        "models/SOT-23.step": "dd5d1711204e1d8d26cd11490923bd84340820baa69538c385a4300ec2539bc0",
+        "models/TO-220-3_Vertical.step": "7cb065d935df5771f0ba6e48ddd180863a121af76483dad7f18e667a7b68204a",
+        "models/TO-263-3_TabPin2.step": "f8d7f00ad233d49496cf0b53aca1891fcbc2d8d007dfe42465186627fedd54d0",
+        "models/TO-92_Inline_Wide.step": "85b7de23bf92112c1cc60ca5fdb644f1a44e150a99f8c6f4f5f29010f50282b9",
+        "models/licenses/Capacitor_SMD-CREDITS.md": "5a2a836cfa0aeef640ee9a6962b98bd33d2626b78c87b49263e7834d1ae594ca",
+        "models/licenses/Capacitor_THT-CREDITS.md": "21aee58fa893c5aa03b5d0d8f5d6d4e6a7d5e2efe617901d9226f2233a035a9d",
+        "models/licenses/Connector_JST-CREDITS.md": "d9ef1e759fce741e60c40b7a01b72b2df4c0e1d452b9ec8f9e6ad58c1cf25245",
+        "models/licenses/Diode_SMD-CREDITS.md": "78cbed38467964f719152fe51f447f49b44c951d4b3bf47674b7c461c83e6e3c",
+        "models/licenses/Package_TO_SOT_SMD-CREDITS.md": "f69a3456a4d9d2e66427829c447bd87a83d6bb2ddd5bf90091c7c39f084e3d87",
+        "models/licenses/Package_TO_SOT_THT-CREDITS.md": "dc452c3f08da79359ec36f715ce5626680f458e0bafd70888ad3dcfa74d4576a",
+        "models/licenses/Resistor_SMD-CREDITS.md": "afb9fcf30227b3d9e94470954f48ef0ceaa29057a37d9240e3d94edbbb2c672c",
+        "models/licenses/Resistor_THT-CREDITS.md": "0cd03aa057748a76ca727351946973ab950c4f6589cbe197be56bccf4eaeb7b4",
+        "models.py": "3a49e950a8323db0a4fb9b73273ba7039b286eb79383243f4d95f9fa8dbf6db6",
+        "pcb.py": "53c447790b59b356cfb335a346c6ed50442aaa649d5d0c3d7f4a57bb48700229",
+        "route_critical.py": "d826eae43768217d4a7dde0b6b34b06bf654175fef8de2c717dd3121f87a8b44",
+        "router.py": "9d98e807cc1abef9f3588f5e5f643ca460b8d939de6287fdd67f1b1a993f1188",
+        "schematic.py": "98107afa1aaaa8462caeb9e6807cfeb78ddf6395e49bf7dece4570c9a3981237",
+        "screen_power.pretty/Fuse_Littelfuse_251_P12.70mm.kicad_mod": "78dc85457dff9dd66e543e545d7033531b9d0de4fea476e633baea202a66aa3d",
+        "screen_power.pretty/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.80mm.kicad_mod": "e6b67fc4b372092910d1653aa1ac33db1f50d5abb0cbb8431edfd421dea21c0d",
+        "screen_power.pretty/TO-220-3_SUP70101EL.kicad_mod": "0566209e224dbf3c4e85ce20f55fe952db20cb2f4fd765e34b3a8854375b9cd0",
+        "switch_circuit.py": "675cfb8773d4c45eea45c1e38beb3360e76e13cf75c2b3e7d77ca21d5f12a4cb"
+      },
+      "model_coverage": {
+        "populated": 37,
+        "references": [
+          "C1",
+          "C101",
+          "C102",
+          "C2",
+          "C201",
+          "C202",
+          "D1",
+          "D101",
+          "D201",
+          "F101",
+          "F102",
+          "F201",
+          "F202",
+          "J1",
+          "J101",
+          "J102",
+          "J103",
+          "J2",
+          "J201",
+          "J202",
+          "J203",
+          "K101",
+          "K201",
+          "Q1",
+          "Q101",
+          "Q2",
+          "Q201",
+          "Q3",
+          "Q4",
+          "R1",
+          "R2",
+          "R3",
+          "R4",
+          "R5",
+          "R6",
+          "R7",
+          "R8"
+        ]
+      },
+      "usb_track_lengths_mm": {
+        "S1_UP_P": 24.7959,
+        "S1_UP_N": 24.7959,
+        "S1_DN_P": 29.5959,
+        "S1_DN_N": 29.5959,
+        "S2_UP_P": 24.7959,
+        "S2_UP_N": 24.7959,
+        "S2_DN_P": 29.5959,
+        "S2_DN_N": 29.5959
+      },
+      "numerical_checks": {
+        "aux_input_min_V": 5.0,
+        "aux_input_max_V": 5.25,
+        "combined_design_load_A": 6,
+        "gate_min_V_with_estimated_hot_Rds": 4.5804454407492,
+        "hot_Rds_factor_is_estimate": 1.7,
+        "gpio_assumed_minimum_high_V": 2.4,
+        "gpio_base_min_mA": 1.426047604760476,
+        "collector_peak_mA": 2.075274016763378,
+        "bleeder_max_W": 0.2784090909090909,
+        "pair_loss_at_6A_25C_max_Rds_W": 1.08,
+        "relay_initial_coil_min_V": 4.597885196374622,
+        "relay_initial_pickup_margin_23C_V": 0.8478851963746221,
+        "relay_hot_restart": "measure coil voltage and qualify hot re-enable before fabrication release",
+        "host_relay_coil_nominal_mA": 28.089887640449437,
+        "main_continuous_fuse_design_A": 3,
+        "touch_continuous_fuse_design_A": 0.5,
+        "thermal_inrush_USB_suspend_and_fault_coordination": "require physical testing"
+      },
+      "drc": {
+        "counts": {
+          "error": 0,
+          "warning": 0,
+          "exclusion": 0,
+          "unconnected": 0,
+          "findings": 0
+        },
+        "report": {
+          "$schema": "https://schemas.kicad.org/drc.v1.json",
+          "coordinate_units": "mm",
+          "date": "2026-09-22T10:58:31",
+          "ignored_checks": [
+            {
+              "description": "Footprint has no courtyard defined",
+              "key": "missing_courtyard"
+            },
+            {
+              "description": "Track endpoint not centered on via",
+              "key": "track_not_centered_on_via"
+            },
+            {
+              "description": "Tuning profile track geometries",
+              "key": "tuning_profile_track_geometries"
+            },
+            {
+              "description": "Footprint doesn't match symbol's footprint filters",
+              "key": "footprint_filters_mismatch"
+            },
+            {
+              "description": "Footprint component type doesn't match footprint pads",
+              "key": "footprint_type_mismatch"
+            }
+          ],
+          "included_severities": [
+            "error",
+            "warning",
+            "exclusion"
+          ],
+          "kicad_version": "10.0.4",
+          "schematic_parity": [],
+          "source": "screen_power_factory.kicad_pcb",
+          "unconnected_items": [],
+          "violations": []
+        }
+      },
+      "erc": {
+        "counts": {
+          "error": 0,
+          "warning": 0,
+          "exclusion": 0,
+          "unconnected": 0,
+          "findings": 0
+        },
+        "report": {
+          "$schema": "https://schemas.kicad.org/erc.v1.json",
+          "coordinate_units": "mm",
+          "date": "2026-09-22T10:58:32",
+          "ignored_checks": [
+            {
+              "description": "Global label only appears once in the schematic",
+              "key": "single_global_label"
+            },
+            {
+              "description": "Four connection points are joined together",
+              "key": "four_way_junction"
+            },
+            {
+              "description": "SPICE model issue",
+              "key": "simulation_model_issue"
+            },
+            {
+              "description": "Assigned footprint doesn't match footprint filters",
+              "key": "footprint_filter"
+            }
+          ],
+          "included_severities": [
+            "error",
+            "warning",
+            "exclusion"
+          ],
+          "kicad_version": "10.0.4",
+          "sheets": [
+            {
+              "path": "/",
+              "uuid_path": "/164f651f-650b-5409-9ff6-bd70e288a5b2",
+              "violations": []
+            },
+            {
+              "path": "/shared power/",
+              "uuid_path": "/164f651f-650b-5409-9ff6-bd70e288a5b2/faa11794-0a9b-5e4e-8802-14b5160d8ef1",
+              "violations": []
+            },
+            {
+              "path": "/screen1 power/",
+              "uuid_path": "/164f651f-650b-5409-9ff6-bd70e288a5b2/f0aa658f-2b37-5395-ad1d-43ec007e1904",
+              "violations": []
+            },
+            {
+              "path": "/screen1 touch/",
+              "uuid_path": "/164f651f-650b-5409-9ff6-bd70e288a5b2/cf8b904e-515f-5be0-ac92-25f2ed579840",
+              "violations": []
+            },
+            {
+              "path": "/screen2 power/",
+              "uuid_path": "/164f651f-650b-5409-9ff6-bd70e288a5b2/676900eb-5e1f-5e39-82aa-a289e67d0b57",
+              "violations": []
+            },
+            {
+              "path": "/screen2 touch/",
+              "uuid_path": "/164f651f-650b-5409-9ff6-bd70e288a5b2/dd7d57e5-7b7a-5571-abe8-0f62cb5719a2",
+              "violations": []
+            }
+          ],
+          "source": "screen_power_factory.kicad_sch"
+        }
+      },
+      "self_test": {
+        "wrong_xh_pitch_detected": true,
+        "model_unassigned_detected": true,
+        "model_missing_detected": true,
+        "model_disabled_detected": true,
+        "relay_hole_detected": true,
+        "console_control_cut_detected": true,
+        "wrong_relay_detected": true,
+        "wrong_driver_detected": true,
+        "wrong_tolerance_detected": true,
+        "weak_pulldown_detected": true,
+        "narrow_power_detected": true,
+        "host_power_bridge_detected": true,
+        "usb_cut_detected": true
+      },
+      "cad_ready": true
+    }
+  ]
+}

@@ -29,7 +29,9 @@ import subprocess
 import sys
 
 import pcbnew
+from silkscreen import finish_footprint, mask_clearance_problems
 
+import console_ring_power
 from netlist import parse_netlist
 
 FromMM, ToMM = pcbnew.FromMM, pcbnew.ToMM
@@ -95,33 +97,20 @@ MOUNT_INSET = 5.0               # mounting-hole centres, in from each corner.
 # indicators) at 60 mA = 1.56 A plus ~60 mA of logic, and 81 mV of IR drop over the
 # ~60 mm from J3 to J6/J7.
 #
-# That premise stopped holding when the console went to 94 WS2812 -- ten 7-LED
-# pills plus a Ring 24 -- which is 5.7 A at full white (#930, settled by #1062).
-# The fix is topology, not a wider track: the pills' 4.2 A enters on J3 and leaves
-# on J24, two JST VH headers stacked at the left edge with their +5V pads joined by
-# a poured bar on both layers (_pill_power_bar). What reaches a track is the ring
-# (1.44 A through J6) and the logic, ~1.6 A.
-#
-# 1.6 A against 1.65 A is 3%, so the rail does not stay at the routed width: it is
-# grown to 0.70 mm (1.85 A, 15%) after the session import by widen_power.py, which
-# is where the 0.1 mm per side that the DSN's inflated clearance leaves unused gets
-# collected. See route_console_board.sh. MIN_RAIL_TRACK_W in export() is the gate
-# that holds it; PILL_POWER in _check() is the gate that holds the topology.
+# Ten 8-LED pills and one 40-LED strip draw up to 7.2 A at full white.
+# The pills' 4.8 A enters on J3 and leaves on J24 across a 5 mm bar on both
+# copper layers. console_ring_power installs a separate 1.7 mm hand-routed
+# supply for 2.4 A LED channels, 0.04 A idle and 0.2 A controller before signal
+# autorouting. Four parallel 0.5 mm drill vias carry its layer transition.
+# The remaining 0.70 mm +5V tracks supply only console logic. The critical
+# supply and ground ties are checked again on the actual board before export.
 TRACK_W = 0.6                   # what the router is asked for, signal and rail alike
 VIA_D, VIA_DRILL = 0.8, 0.4
 CLEARANCE = 0.25
 
-# Silkscreen, as the FAB sees it. JLCPCB will not print a line thinner than
-# 0.15 mm or text shorter than 0.8 mm -- below that it thins, breaks, or is dropped
-# outright, and you find out when the boards arrive. KiCad's own defaults are looser
-# (m_MinSilkTextThickness is 0.08), so its DRC is no help here and _check() carries
-# the rule instead.
-#
-# The stroke is h/5, not the h/6 this used: at h/6 every one of the 58 reference
-# designators came out at 0.133 mm, i.e. under the floor, on a board that had
-# otherwise passed every check we had.
+# JLCPCB's published legend minima: 1 mm text, 0.15 mm strokes and clearance.
 FAB_MIN_SILK_STROKE = 0.15
-FAB_MIN_SILK_HEIGHT = 0.8
+FAB_MIN_SILK_HEIGHT = 1.0
 SILK_STROKE_RATIO = 1.0 / 5.0
 
 # How the ground pours meet a pad. THERMAL, for the reason spelled out in
@@ -160,9 +149,9 @@ def P(x, y):
 #          cannot find 12.3 mm of axial anywhere in range once the band is this full
 #   y 46      | [======== PICO (rot 90) ========]  U1  | J2 (Pi ribbon, right edge,
 #   y 57   J3 5V IN (VH, left edge, under the USB corridor)
-#   y 63   R11 R12 R13 R1        R2 (upright)  and 59.5 mm of it)
-#   y 69   J24 PILLS (VH, under J3: 5V/DATA/GND, +5V pads bridged)
-#   y 69                J6 RING
+#   y 59   resistor row; R2 below U1, horizontal
+#   y 61   J24 PILLS (VH, under J3: 5V/DATA/GND, +5V pads bridged)
+#   y 69   J23 PD       J6 RING     J25 SCREEN     J9 PI PWR beside the ribbon
 #   y 76   [=========== debounce caps ===========]  (kept HIGH: they are the middle
 #          hop of every switch net, and pushing them down with the headers below put
 #          SW_BANK over the 42 mm hop limit exactly. 76.1, not 75: the row came
@@ -193,13 +182,15 @@ PLACEMENT = {
     # starts at 84.5 and comes up to y 10.2, so the last two headers would sit on
     # top of it. The corner mounting holes cap the other end the same way.
     "J8":  (18.1, 8.0, 0),
-    "J23": (27.5, 68.2, 0),        # 0.8 up, ahead of the cap row (#1062)        # I2C to the PD trigger, under the module's
+    "J25": (68.0, 69.0, 0),       # GPIO17 / GND to screen-power daughterboard
+    "J23": (27.5, 69.0, 0),        # same connector row as RING J6 and SCREEN J25
+                                   # I2C to the PD trigger, under the module's
                                    # left end between 5V IN and EXP: GP0/GP1 are
                                    # pads 1/2, a 12 mm hop up. x 27.5, not 16.5
                                    # (#1062): J24 took the left edge beside it,
                                    # and its PILLS 5V label needs the strip J23
                                    # vacated.
-    "J9":  (23.1, 30.0, 0),        # flying lead to the Pi 5's own J2 button pads
+    "J9":  (79.5, 69.0, 0),        # Pi button lead exits beside the GPIO ribbon
                                    # (NOT a header pin -- no GPIO wakes a Pi 5;
                                    # see PWR_BTN in console_board.py)
     "J5":  (34.0, 8.0, 0),         # MIDI IN  -- 2 leads: DIN pins 4 and 5 only.
@@ -251,8 +242,8 @@ PLACEMENT = {
     # corridor: the module is socketed now, so reaching its USB means lifting it
     # out, not threading a cable past these. The logo ends up partly under the
     # two housings, which costs nothing but paint.
-    "J3":  (5.4, 48.9, 90),       # 5 V in from BUCK_AUX, ~5.7 A at full white
-    "J24": (5.4, 60.84, 90),     # the pills: 5V/DATA/GND, 4.2 A at full white.
+    "J3":  (5.4, 48.9, 90),       # AUX: 7.2 A full-white LEDs plus controllers
+    "J24": (5.4, 60.84, 90),     # the pills: 5V/DATA/GND, 4.8 A at full white.
                                   # 1.0 mm below its first spot (#1062, owner
                                   # call): the two plugs now clear by ~2.1 mm
                                   # instead of 1.1, per JST's own housing
@@ -295,18 +286,15 @@ PLACEMENT = {
                                    # top-right corner that ADC lead ran 61 mm.
                                    # Sat here it reaches both ends of its span.
 
-    # under the module: series resistors, then the ring/LED pair
-    # Both series resistors stand UPRIGHT in the channel beside U1 rather than lying
-    # under the module. Laid out flat at y 61 the gate-B output had a 38 mm reach
-    # across the busiest corner of the board and would not route at all. R1 sits
-    # BELOW the corridor, not in it: at y 51 it plugged the very channel RING_DATA
-    # needs to reach U1, and simply moved which of the two nets failed.
-    # The right column, stacked so nothing sits in the RING_DATA corridor
-    # (x 80.5..88): left to the spiral, C11 lands against the opto and R2 lands in
-    # the corridor, and the one net that has to climb from row A to U1's input has
-    # nowhere to go.
+    # Buffer support parts stay beside U1. R2 lies horizontally below it to
+    # leave the internal connector row free for the Pi button lead at J9.
     "C11": (80.0, 31.0, 0),        # +5V decoupling for U1
-    "C20": (24.0, 21.0, 0),        # +3V3 decoupling for U2
+    # Decoupling beside U2's supply pin, on the logic side. The native routed
+    # branch from pin 6 to C20 is 5.16 mm, versus 17.5 mm at the old location.
+    # Courtyard gaps are 2.045 mm to U2, 0.510 mm to R4 and 0.500 mm to J22;
+    # the existing 2 mm isolation guard stays in force. Its ground stitch goes
+    # east, clear of the locally rerouted +3V3 and Pico supply branches.
+    "C20": (43.75, 19.6, 0),        # +3V3 decoupling for U2
     # The ring link's two pull-ups, on this board's 3V3 (they used to live on
     # ring_board.py tied to its 5 V rail, 1.4 V over the RP2350's absolute
     # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
@@ -323,7 +311,7 @@ PLACEMENT = {
     # The presence series parts (v3, switched jacks), same reasoning and the
     # same exemption: the row under R11/R12, left of R19.
     "R21": (17.0, 63.0, 0), "R22": (30.0, 63.0, 0),
-    "R2":  (79.5, 63.0, 90),        # 330R, U1 gate A -> J24 pin 2 (pill data)
+    "R2":  (77.4, 58.9, 0),         # 330R below U1; clears J9 beside the ribbon
 
     # The five review-fix resistors. ALL hand-placed: the passive bands were
     # already at capacity (R5/R10/D1 above went by hand for the same reason) and
@@ -343,7 +331,7 @@ PLACEMENT = {
     "R17": (96.9, 45.0, 90),       # 10k link_tx series, upright east of the
                                    # ribbon: 11 mm from J2 pin 21, 29 mm from
                                    # the Pico's GP16 pad
-    "R18": (71.6, 63.0, 0),        # 10k link_rx series, flat in the R12..R2 slot;
+    "R18": (71.45, 63.0, 0),       # 10k link_rx; clears the PI PWR label at right
                                    # both legs within 28 mm
     "R16": (61.5, 59.6, 0),        # 100k ind_data pulldown, in the slim band
                                    # the same band: 22 mm from U1 pin 2; its GND
@@ -398,10 +386,10 @@ def fsw_x(i):
 for _i in range(10):
     PLACEMENT["J%d" % (10 + _i)] = (fsw_x(_i), FSW_Y, 0)
 
-PWR_NETS = {"+5V", "+3V3"}
+PWR_NETS = {"+5V", "+3V3", "+3V3_PICO"}
 # The FLOOR, which is the routed width: a rail under this means the netclass in
 # route_console_board.sh did not reach the copper, which is a real fault.
-MIN_RAIL_TRACK_W = {"+5V": 0.60, "+3V3": 0.60}
+MIN_RAIL_TRACK_W = {"+5V": 0.60, "+3V3": 0.60, "+3V3_PICO": 0.60}
 # What widen_power.py aims +5V at afterwards. Reported, NOT enforced, and the
 # distinction cost a fab run to learn: this was briefly a 0.70 floor, and when a
 # re-route came back with no clearance headroom the widening correctly did
@@ -501,7 +489,58 @@ def _load_fp(board, lib, name, ref, x, y, rot, by_centre=True):
         fp.SetPosition(P(x - off[0], y - off[1]))
     else:
         fp.SetPosition(P(x, y))
+    _apply_connector_drills(fp)
+    finish_footprint(fp)
     return fp
+
+
+# JLCPCB finished PTH tolerance is +0.13/-0.08 mm. These sizes leave
+# insertion room for the maximum square JST posts even at the minimum bore.
+# Apply to this board's instances, preserving upstream library footprints.
+CONNECTOR_DRILLS_MM = {
+    "JST_XH_": 1.10, "JST_VH_": 1.80,
+    # Exact purchase parts: Wurth 61204021621 and 61300621121 respectively.
+    # 0.64 +/-0.15 mm square posts need >=1.117 mm diagonal insertion room.
+    "IDC-Header_2x20_P2.54mm_Vertical": 1.25,
+    "PinHeader_2x03_P2.54mm_Vertical": 1.25,
+}
+
+
+def _connector_drill(fp):
+    name = fp.GetFPIDAsString().split(":")[-1]
+    return next((diameter for prefix, diameter in CONNECTOR_DRILLS_MM.items()
+                 if name.startswith(prefix)), None)
+
+
+def _apply_connector_drills(fp):
+    diameter = _connector_drill(fp)
+    if diameter is not None:
+        for pad in fp.Pads():
+            if pad.GetAttribute() == pcbnew.PAD_ATTRIB_PTH:
+                pad.SetDrillSize(pcbnew.VECTOR2I(FromMM(diameter), FromMM(diameter)))
+                if diameter == 1.25:
+                    size = pad.GetSize()
+                    pad.SetSize(pcbnew.VECTOR2I(max(size.x, FromMM(1.80)),
+                                               max(size.y, FromMM(1.80))))
+
+
+def _check_connector_drills(board):
+    for fp in board.GetFootprints():
+        expected = _connector_drill(fp)
+        if expected is None:
+            continue
+        for pad in fp.Pads():
+            if pad.GetAttribute() != pcbnew.PAD_ATTRIB_PTH:
+                continue
+            actual = pad.GetDrillSize()
+            assert actual.x == actual.y == FromMM(expected), (
+                f"CONNECTOR_DRILL: {fp.GetReference()} pad {pad.GetNumber()} "
+                f"requires {expected:.2f} mm finished drill")
+            if expected == 1.25:
+                size = pad.GetSize()
+                assert min(size.x, size.y) >= FromMM(1.80), (
+                    f"CONNECTOR_DRILL: {fp.GetReference()} pad {pad.GetNumber()} "
+                    "requires at least 1.80 mm copper for its annulus")
 
 
 def _pad(fp, padname):
@@ -644,13 +683,19 @@ def _pour_gnd(board, net, layer=pcbnew.B_Cu):
 
 # The pills' current path (#1062). J3 pin 1 and J24 pin 3 (both +5V) face each
 # other a few mm apart in one column at the left edge; this pours a bar between
-# them on BOTH copper layers so the 4.2 A of pills never has to find its way along
+# them on BOTH copper layers so the 4.8 A of pills never has to find its way along
 # a routed track. Priority over the GND pours, thermal relief because THERMALS
 # forbids solid ties on a board with SMD parts, and spokes wide enough that relief
 # is not the bottleneck: ~2.9 mm of spoke copper a layer round each pad.
 PILL_SPOKE_W = 1.2
 PILL_BAR_W = 5.0
 PILL_PAD_R = 2.7 / 2.0
+# The bar is the one piece of exposed power copper on this board, and a poured
+# rectangle ends in four sharp corners. All four are convex, so KiCad's own
+# corner smoothing rounds them with a true arc when it fills. 1 mm takes
+# 0.86 mm2 in total off the ends of a 5 x 9.9 mm pour, none of it from the
+# bar's width where the current runs or from either pad's reach.
+PILL_BAR_R = 1.0
 
 
 def _pill_pad(fps):
@@ -683,14 +728,99 @@ def _pill_power_bar(board, fps, net):
         z.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
         z.SetThermalReliefGap(FromMM(0.3))
         z.SetThermalReliefSpokeWidth(FromMM(PILL_SPOKE_W))
+        z.SetCornerSmoothingType(2)             # fillet, not chamfer
+        z.SetCornerRadius(FromMM(PILL_BAR_R))
         o = z.Outline()
         o.NewOutline()
-        for px, py in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+        if layer == pcbnew.B_Cu:
+            # Explicit boundary survives a touching same-net overlay; KiCad's
+            # zone-corner smoothing otherwise squares the bar at that union.
+            z.SetCornerSmoothingType(0)
+            z.SetCornerRadius(0)
+            points = []
+            for cx, cy, start in ((x1-PILL_BAR_R, y0+PILL_BAR_R, -90),
+                                  (x1-PILL_BAR_R, y1-PILL_BAR_R, 0),
+                                  (x0+PILL_BAR_R, y1-PILL_BAR_R, 90),
+                                  (x0+PILL_BAR_R, y0+PILL_BAR_R, 180)):
+                for i in range(13):
+                    angle = math.radians(start + 90*i/12)
+                    points.append((cx + PILL_BAR_R*math.cos(angle),
+                                   cy + PILL_BAR_R*math.sin(angle)))
+        else:
+            points = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+        for px, py in points:
             o.Append(P(px, py).x, P(px, py).y)
         z.SetIsFilled(False)
         board.Add(z)
         zones.append(z)
     return zones
+
+
+# Where the ring supply crosses back out over the busbar's west edge, the
+# rounded corner and the supply's own edge meet at a shallow angle and leave a
+# wedge of clearance pointing into the join - 39 degrees of it on the back.
+# This is the fillet that takes it out. It has to be copper of its own: a
+# union of tracks and a poured rectangle is bounded by convex arcs and
+# straight lines only, so nothing about the two shapes can round a concave
+# corner between them.
+PILL_BLEND_R = 0.3
+PILL_BLEND_OVERLAP = 0.2
+
+
+def _pill_blend_outline(fps):
+    """-> the blend polygon, or None when the supply clears the corner."""
+    (x0, _y0, _x1, y1), = _pill_bar_rects(fps)
+    edge = (console_ring_power.BACK_PATH[1][0] - ORIGIN[0]
+            + console_ring_power.WIDTH / 2.0)
+    if not x0 < edge < x0 + PILL_BAR_R:
+        return None                     # nothing to blend: no shallow crossing
+    r, R = PILL_BLEND_R, PILL_BAR_R
+    cx, cy = x0 + R, y1 - R             # centre of the busbar's corner arc
+    centre = (edge + r, cy + math.sqrt((R + r) ** 2 - (edge + r - cx) ** 2))
+    scale = R / (R + r)
+    touch = (cx + (centre[0] - cx) * scale, cy + (centre[1] - cy) * scale)
+    inside = (cx, cy)  # bury closure through the rounded bar centre
+    back = edge - PILL_BLEND_OVERLAP
+    return (_blend_arc(centre, (edge, centre[1]), touch)
+            + [inside, (back, inside[1]),
+               (back, centre[1] + PILL_BLEND_OVERLAP),
+               (edge, centre[1] + PILL_BLEND_OVERLAP)])
+
+
+def _blend_arc(centre, frm, to, steps=12):
+    radius = math.dist(centre, frm)
+    first = math.atan2(frm[1] - centre[1], frm[0] - centre[0])
+    last = math.atan2(to[1] - centre[1], to[0] - centre[0])
+    if last - first > math.pi:
+        last -= math.tau
+    if first - last > math.pi:
+        last += math.tau
+    return [(centre[0] + radius * math.cos(first + (last - first) * i / steps),
+             centre[1] + radius * math.sin(first + (last - first) * i / steps))
+            for i in range(steps + 1)]
+
+
+def _pill_bar_blend(board, fps, net):
+    """Pour that fillet on the back, where the supply runs."""
+    shape = _pill_blend_outline(fps)
+    if shape is None:
+        return None
+    z = pcbnew.ZONE(board)
+    z.SetLayer(pcbnew.B_Cu)
+    z.SetNet(net)
+    z.SetZoneName("POWER_FILLET")
+    z.SetAssignedPriority(2)
+    z.SetLocalClearance(FromMM(CLEARANCE))
+    z.SetMinThickness(FromMM(0.05))
+    z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
+    z.SetLocked(True)
+    o = z.Outline()
+    o.NewOutline()
+    for px, py in shape:
+        o.Append(P(px, py).x, P(px, py).y)
+    z.SetIsFilled(False)
+    board.Add(z)
+    return z
 
 
 def _ref_key(ref):
@@ -723,7 +853,7 @@ def _silk_items(board, fps):
 
 # Where the FRONT mark goes now that J3 and J24 have taken its old corner (#1062,
 # owner call). The open patch under the PWR BTN header: C31's body to the left,
-# C20 and the PI PWR label to the right, J8's designator above. It is 9.8 x 9.1
+# the PI PWR label to the right, J8's designator above. It is 9.8 x 9.1
 # against the mark's 9.0 x 9.4, so the mark lands at ~96% of its drawn size --
 # the corner below J24 it tried first only held it at 58%. The art is still
 # scaled to fit the box rather than to a guessed size. The BACK mark is separate.
@@ -996,7 +1126,10 @@ def _free_slot(anchor, w, h, boxes):
 # header's. They are DC lines through 4.7k -- SLOW_SENSE_NETS, exempt from the
 # hop gate for the same reason -- so that copper is a decision, not waste. The
 # budget follows the measurement plus ~7%.
-MAX_RATSNEST_MM = 2050.0
+# J9 now exits beside the ribbon, as requested for the Pi harness. Its two
+# floating button traces add ~128 mm of minimum copper compared with the
+# former position beside the Pico. Preserve the existing routing headroom.
+MAX_RATSNEST_MM = 2180.0
 POURED_NETS = {"GND"}
 
 # The ratsnest total is a GLOBAL number, and --selftest proved it cannot see a
@@ -1014,7 +1147,7 @@ POURED_NETS = {"GND"}
 # parts at both ends of the board by definition, and are carried by wide traces
 # and the pour.
 MAX_HOP_MM = 42.0
-RAIL_NETS = {"+3V3", "+5V"}
+RAIL_NETS = {"+3V3", "+5V", "+3V3_PICO"}
 # The CTRL ring-sense nets are exempt too, by decision: a ring is 3V3 through 1k
 # that a footswitch pulls to ground, read through 4.7k into a GPIO's pull-up --
 # DC, and slow even by footswitch standards -- so the trace can be as long as
@@ -1027,7 +1160,10 @@ RAIL_NETS = {"+3V3", "+5V"}
 # keeping the pills' power and data on ONE connector is the point of the placement.
 LONG_DATA_NETS = {"IND_DATA_OUT"}
 SLOW_SENSE_NETS = {"J20_REF", "J21_REF", "CTRL1_RING", "CTRL2_RING",
-                   "J20_TN", "J21_TN", "CTRL1_PRESENT", "CTRL2_PRESENT"}
+                   "J20_TN", "J21_TN", "CTRL1_PRESENT", "CTRL2_PRESENT",
+                   # Passive, floating button pair between the rear-panel
+                   # connector and the Pi harness exit beside the ribbon.
+                   "PWR_BTN", "PWR_BTN_RET"}
 
 
 def worst_hops(fps, nets):
@@ -1046,8 +1182,8 @@ def worst_hops(fps, nets):
         # `continue` checks nothing about them. J2's position is not a routing
         # choice: a 40-way ribbon has to exit at a board edge, and no edge is
         # within 42 mm of the module wherever it sits. Every signal on it is slow
-        # (MIDI is 31.25 kbaud, the link a UART, SWD a flashing port, PWR_BTN a
-        # switch), so trace length is not the binding constraint; where the cable
+        # (MIDI is 31.25 kbaud, the link a UART, SWD a flashing port), so trace
+        # length is not the binding constraint; where the cable
         # goes is. The cost, named honestly: parts whose nets are all either
         # rails or J2-landing (R14 is one) have NO distance gate at all -- their
         # placement comments carry the arithmetic instead.
@@ -1256,7 +1392,7 @@ def _check(fps, nets, board=None):
     # case" while the layout violates it is worse -- so it goes, and the reason
     # lives here.
 
-    # PILL_POWER (#1062): the pills' 4.2 A must go J3 -> J24 over the poured bar
+    # PILL_POWER (#1062): the pills' 4.8 A must go J3 -> J24 over the poured bar
     # and nowhere else. Both are JST VH, facing the same way, their +5V pads face
     # each other within reach of one bar, J24 is the pills' only connector (5V,
     # data, GND), and (with a board) the bar exists on both copper layers. A J24
@@ -1304,6 +1440,9 @@ def _check(fps, nets, board=None):
         f"The placement is wasting space -- longest nets: "
         + ", ".join(f"{n} {v:.0f}mm" for n, v in worst))
 
+    if board:
+        mask_problems = mask_clearance_problems(board)
+        assert not mask_problems, "SILK_MASK: " + str(mask_problems[:3])
     return True
 
 
@@ -1354,6 +1493,11 @@ def _stitch_gnd(board, fps, nets, netmap, boxes):
         inward = ((fx0 + fx1) / 2.0 - xy[0], (fy0 + fy1) / 2.0 - xy[1])
         dirs = sorted(((0, -1), (0, 1), (1, 0), (-1, 0)),
                       key=lambda d: -(d[0] * inward[0] + d[1] * inward[1]))
+        if ref == "C20":
+            # Keep its stitch east of the capacitor, clear of the Pico rail.
+            # Extra reach puts it strictly outside its own pad keepout.
+            dirs = ((1, 0),)
+            reach += 0.1
         spot = None
         for k in range(12):
             d = reach + k * 0.5
@@ -1393,16 +1537,11 @@ LABELS = {
     "J2":  "PI",     "J3":  "5V IN",    "J20": "CTRL 1", "J21": "CTRL 2",
     "J22": "EXP",    "J23": "PD",       "J4":  "MIDI OUT", "J5":  "MIDI IN",
     "J6":  "RING",   "J8":  "PWR BTN", "J9": "PI PWR",
-    "J24": "PILLS",
+    "J24": "PILLS", "J25": "SCREEN",
 }
 SILK_H = 1.0
-REF_H = 0.8          # designators, a size down from the function labels: there are
-                     # 58 of them and they have to fit in the gaps the labels leave.
-                     # This is exactly the fab's minimum printable height. 0.9 was
-                     # tried for margin and does not fit: the designators stop
-                     # finding gaps, which trades a printing risk for a legibility
-                     # one. The STROKE is where the margin went instead -- h/5 puts
-                     # it at 0.16 mm against a 0.15 floor
+REF_H = 1.0
+REF_STROKE = 0.16
 AUTOPLACE_REFS = True   # off = the designators stay where each library footprint
                         # left them, which is the board that shipped "J1" across R3
 # Pinned label rows. A GROUP of labels reads as tidy only if it sits on one side at
@@ -1425,11 +1564,79 @@ SILK_PAD = 0.5
 # J3's and J24's labels were pinned when the two sat at the board's edge under
 # the logo with nowhere for the four-sided search to go. Eight millimetres up,
 # the search finds its own spots again, so they are back in its hands.
-LABEL_AT = {}
+LABEL_AT = {"J22": (46.9, 31.855), "J9": (81.1, 64.1), "J25": (61.4, 64.1)}  # directly above its housing, clear of R18
 # The same for designators. R11 is boxed in -- the module above, J3 left, R21
 # below, R12 right -- and with J3 at the edge the search had only found a spot
 # 19 mm away. The pocket above R11's left end, under the 5V IN label, is its own.
-REF_AT = {"R11": (12.85, 56.25)}
+# Reviewed fixed reference positions; preserve them when text sizing changes.
+REF_AT = {
+    "C1": (8.0, 72.256199),
+    "C2": (17.3333, 72.256199),
+    "C3": (31.152652, 75.3),
+    "C4": (36.0, 72.256199),
+    "C5": (49.819252, 75.3),
+    "C6": (59.152652, 75.3),
+    "C7": (68.485952, 75.3),
+    "C8": (77.819285, 75.3),
+    "C9": (87.152618, 75.3),
+    "C10": (96.866904, 75.3),
+    "C11": (80.0, 27.9562),
+    "C13": (55.899999, 24.0438),
+    "C14": (61.133095, 21.0),
+    "C20": (48.616904, 19.6),
+    "C30": (6.7, 26.208698),
+    "C31": (6.7, 15.053711),
+    "D1": (40.595952, 14.4),
+    "H1": (5.0, 9.996326),
+    "H2": (94.5, 9.996326),
+    "H3": (94.5, 89.503674),
+    "H4": (5.0, 89.503674),
+    "J1": (43.0, 32.9162),
+    "J2": (89.5, 10.7262),
+    "J3": (11.790714, 48.9),
+    "J4": (50.0, 12.9188),
+    "J5": (39.840714, 8.0),
+    "J6": (60.840714, 69.0),
+    "J8": (18.1, 12.9188),
+    "J9": (73.75, 69.0),
+    "J10": (8.0, 89.1188),
+    "J11": (17.3333, 89.1188),
+    "J12": (26.666699, 89.1188),
+    "J13": (36.0, 89.1188),
+    "J14": (45.333299, 89.1188),
+    "J15": (54.6667, 89.1188),
+    "J16": (64.0, 89.1188),
+    "J17": (73.333299, 89.1188),
+    "J18": (82.6667, 89.1188),
+    "J19": (85.778333, 89.1188),
+    "J20": (63.4, 12.9188),
+    "J21": (77.7, 12.9188),
+    "J22": (41.233333, 26.0),
+    "J23": (20.028333, 68.999999),
+    "J24": (12.171667, 52.8862),
+    "J25": (61.95, 66.8),
+    "R2": (77.4, 55.8562),
+    "R3": (66.9, 27.9562),
+    "R4": (57.865952, 12.9562),
+    "R5": (35.0, 26.4562),
+    "R6": (71.4, 28.0438),
+    "R7": (69.134047, 12.9562),
+    "R8": (55.134047, 12.9562),
+    "R9": (76.9, 28.0438),
+    "R10": (57.0, 30.0438),
+    "R11": (12.85, 56.25),
+    "R12": (43.696905, 65.8938),
+    "R14": (96.899999, 67.5238),
+    "R16": (53.253095, 62.6438),
+    "R17": (96.899999, 37.3262),
+    "R18": (82.2, 61.9),
+    "R19": (37.003095, 65.7938),
+    "R20": (40.5, 66.0),
+    "R21": (17.0, 65.7938),
+    "R22": (43.496904, 71.2938),
+    "U1": (82.62, 54.6938),
+    "U2": (27.38, 21.0),
+}
 # Per-pin legends for the two power headers, on the BACK silkscreen beside each pad.
 # J3 is +5V/GND from pin 1 and J24 is GND/DATA/+5V, so the two headers read in
 # opposite orders, and a harness crimped to the wrong one puts 5 V on the pill
@@ -1460,11 +1667,11 @@ def _labels(board, fps):
             taken.append((ToMM(bb.GetLeft()) - ORIGIN[0], ToMM(bb.GetTop()) - ORIGIN[1],
                           ToMM(bb.GetRight()) - ORIGIN[0], ToMM(bb.GetBottom()) - ORIGIN[1]))
 
-    def free(x0, y0, x1, y1):
+    def free(x0, y0, x1, y1, gap=SILK_PAD):
         if x0 < 0.5 or y0 < 0.5 or x1 > BW - 0.5 or y1 > BH - 0.5:
             return False
-        return all(x1 + SILK_PAD < bx0 or bx1 + SILK_PAD < x0 or
-                   y1 + SILK_PAD < by0 or by1 + SILK_PAD < y0
+        return all(x1 + gap < bx0 or bx1 + gap < x0 or
+                   y1 + gap < by0 or by1 + gap < y0
                    for bx0, by0, bx1, by1 in taken)
 
     for ref in sorted(LABELS):
@@ -1513,17 +1720,20 @@ def _labels(board, fps):
         # standing on end beside a module whose own extent is 50 mm long.
         t.SetTextAngle(pcbnew.EDA_ANGLE(0, pcbnew.DEGREES_T))
         t.SetTextSize(pcbnew.VECTOR2I(FromMM(REF_H), FromMM(REF_H)))
-        t.SetTextThickness(FromMM(REF_H * SILK_STROKE_RATIO))
+        t.SetTextThickness(FromMM(REF_STROKE))
         tx0, ty0, tx1, ty1 = _text_box(t)
         w, h = tx1 - tx0, ty1 - ty0
         px0, py0, px1, py1 = _extent(fps[ref])
         cx, cy = (px0 + px1) / 2.0, (py0 + py1) / 2.0
         if ref in REF_AT:
             x, y = REF_AT[ref]
-            assert free(x - w / 2, y - h / 2, x + w / 2, y + h / 2), (
+            # These reviewed positions already clear body courtyards; use the
+            # actual ink/mask gate rather than adding another 0.5 mm margin.
+            assert free(x - w / 2, y - h / 2, x + w / 2, y + h / 2, gap=0), (
                 f"SILK: the pinned spot for the reference '{ref}' at {REF_AT[ref]} "
                 "is not free")
-            t.SetPosition(P(x, y))
+            t.SetPosition(pcbnew.VECTOR2I(round((ORIGIN[0] + x) * 1e6),
+                                         round((ORIGIN[1] + y) * 1e6)))
             taken.append(_text_box(t))
             continue
         # Four sides AND four corners. On a 115 mm board the sides were enough; at
@@ -1654,10 +1864,10 @@ def _selftest():
         ("part pushed off the outline", "outside the", {"J2": (112.0, 40.0, 0)}, {}),
         # Move a NON-isolated part up against the opto rather than moving the opto:
         # displacing U2 also displaces the anchors of its own passives, and the
-        # placer then fails before the isolation gate is ever reached. C20 is a
-        # 5.6 mm disc, so this leaves ~1 mm of the 2 mm barrier and no overlap --
+        # placer then fails before the isolation gate is ever reached. Moving
+        # C20 inward leaves less than the 2 mm barrier without an overlap --
         # a control that overlaps trips PLACE and proves nothing about ISOLATION.
-        ("opto barrier inside ISOLATION_GAP", "ISOLATION:", {"C20": (25.3, 21.0, 0)}, {}),
+        ("opto barrier inside ISOLATION_GAP", "ISOLATION:", {"C20": (42.5, 19.6, 0)}, {}),
         # the exact mistake that was shipped: the 5 V inlet parked in front of USB
         # Same spot, turned round -- the coordinates follow PLACEMENT, or the
         # control lands on the cap row and trips PLACE instead of its own gate.
@@ -1673,11 +1883,10 @@ def _selftest():
         # which is the board that shipped with "J1" printed across R3.
         ("designators left where the footprints put them", "SILK:", {},
          {"AUTOPLACE_REFS": False}),
-        # Silk too thin for the fab to print. The stroke follows the text size, so
-        # the control moves the RATIO -- which is the number a future "make the
-        # designators lighter" edit would reach for.
+        # Shrink the reference stroke without changing functional-label placement,
+        # so this control reaches the printing gate rather than a packing gate.
         ("silkscreen stroked below the fab minimum", "SILK_FAB:", {},
-         {"SILK_STROKE_RATIO": 1.0 / 12.0}),
+         {"REF_STROKE": 0.1}),
         # A label on a PINNED row grows into its neighbour. The pinned rows are
         # placed at a fixed spot rather than searched for a free one, so nothing
         # about the placement can refuse them -- only the gate can.
@@ -1709,7 +1918,44 @@ def _selftest():
         finally:
             globals().update(keep)
     PLACEMENT.clear(); PLACEMENT.update(saved)
+    for label, library, name in (
+            ("XH", "Connector_JST", "JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"),
+            ("VH", "Connector_JST", "JST_VH_B2P-VH_1x02_P3.96mm_Vertical"),
+            ("IDC", "Connector_IDC", "IDC-Header_2x20_P2.54mm_Vertical"),
+            ("expansion", "Connector_PinHeader_2.54mm", "PinHeader_2x03_P2.54mm_Vertical")):
+        fixture = pcbnew.BOARD()
+        fp = _load_fp(fixture, library, name, "J_TEST", 0, 0, 0)
+        _check_connector_drills(fixture)
+        pad = next(p for p in fp.Pads() if p.GetNumber() == "1")
+        pad.SetDrillSize(pcbnew.VECTOR2I(FromMM(.9), FromMM(.9)))
+        try:
+            _check_connector_drills(fixture)
+        except AssertionError as exc:
+            assert "CONNECTOR_DRILL:" in str(exc)
+            print(f"  bites      {label} finished hole undersized")
+        else:
+            print(f"  NO BITE    {label} finished hole undersized")
+            ok = False
     return ok
+
+
+def _route_screen_control(board, net):
+    """One added control trace, preserving every pre-existing console route.
+
+    The two vias cross the indicator trace below the ribbon. Coordinates are
+    board-local; both existing copper layers retain a ground return beneath it.
+    """
+    paths = (
+        (pcbnew.F_Cu, [(90.77, 53.43), (92.2, 53.43), (94.2, 55.43),
+                      (94.2, 67.7), (93.3, 68.6)]),
+        (pcbnew.F_Cu, [(66.75, 69.0), (66.75, 69.9), (70.05, 73.2), (76.0, 73.2)]),
+        (pcbnew.B_Cu, [(93.3, 68.6), (88.7, 73.2), (76.0, 73.2)]),
+    )
+    for layer, points in paths:
+        for start, end in zip(points, points[1:]):
+            _track(board, net, layer, 0.6, start, end)
+    for x, y in ((76.0, 73.2), (93.3, 68.6)):
+        _via(board, net, x, y)
 
 
 def build(quiet=False):
@@ -1718,6 +1964,9 @@ def build(quiet=False):
 
     ds = board.GetDesignSettings()
     ds.SetCopperLayerCount(2)
+    ds.m_MinSilkTextHeight = FromMM(FAB_MIN_SILK_HEIGHT)
+    ds.m_MinSilkTextThickness = FromMM(FAB_MIN_SILK_STROKE)
+    ds.m_SilkClearance = FromMM(0.15)
     # The mask rule is ON, at the fab's own 0.25 mm. It was set to 0 -- i.e. off --
     # back when 0.1in headers produced ~100 "solder_mask_bridge" errors that drowned
     # out everything else. That is no longer true of this layout: re-enabled, DRC
@@ -1772,6 +2021,8 @@ def build(quiet=False):
         boxes.append(_bbox_mm(fp))
         fps[ref] = fp
 
+    _check_connector_drills(board)
+
     # Placement geometry is judged HERE, the moment it exists -- a bad hand
     # coordinate must fail as PLACE, not surface later as a label with nowhere
     # to print (see _check_place's docstring).
@@ -1824,6 +2075,7 @@ def build(quiet=False):
     _pour_gnd(board, netmap[POUR_NET], pcbnew.B_Cu)
     _pour_gnd(board, netmap[POUR_NET], pcbnew.F_Cu)
     _pill_power_bar(board, fps, netmap["+5V"])
+    _pill_bar_blend(board, fps, netmap["+5V"])
 
     if quiet:
         global _QUIET
@@ -1847,8 +2099,11 @@ def build(quiet=False):
     # pills' current runs through.
     boxes += [(x0 - VIA_KEEPOUT, y0 - VIA_KEEPOUT, x1 + VIA_KEEPOUT, y1 + VIA_KEEPOUT)
               for x0, y0, x1, y1 in _pill_bar_rects(fps)]
+    boxes += console_ring_power.stitch_keepouts(ORIGIN)
     n_vias = _stitch_gnd(board, fps, nets, netmap, boxes)
     n_vias += _stitch_grid(board, netmap[POUR_NET], fps, boxes)
+    _route_screen_control(board, netmap["PI_GPIO17"])
+    console_ring_power.install(board)
 
     # NOT pcbnew.ZONE_FILLER here: in-process it segfaults with no wxApp. The
     # LED-strip generator hit the same wall and fills via kicad-cli instead --
@@ -1896,6 +2151,9 @@ def write_bom():
         rows.append((val, [r for r, _v in items], fp))
     for fp, items in conns.items():
         roles = ", ".join(v for _r, v in sorted(items, key=lambda i: _ref_key(i[0])))
+        exact = {"J2": "Wurth 61204021621", "J22": "Wurth 61300621121"}
+        if len(items) == 1 and items[0][0] in exact:
+            roles += "; " + exact[items[0][0]]
         rows.append((roles, [r for r, _v in items], fp))
 
     path = os.path.join(HERE, "fab", "segno_console_board_bom.csv")
@@ -1991,6 +2249,8 @@ def check_routed_board(path=None):
     are constraints KiCad has never been told about.
     """
     _b = pcbnew.LoadBoard(path or BOARD_PATH)
+    _check_connector_drills(_b)
+    console_ring_power.check(_b)
     # REFUSE to plot an unrouted board. Running this module without --no-export
     # produced a JLCPCB-ready zip, "ALL PASS", "0 violations" and exit 0 from a board
     # with ZERO tracks and 80 unconnected items: build() stopped routing when that
@@ -2017,7 +2277,7 @@ def check_routed_board(path=None):
         raise SystemExit(
             f"FAB: {len(thin)} rail track(s) under their floor, thinnest "
             f"{width:.2f} mm on {net} (floor {MIN_RAIL_TRACK_W[net]} mm) -- the "
-            "ring draws 1.44 A through J6. Width comes from the DSN netclass in "
+            "logic supply is below its floor. Width comes from the DSN netclass in "
             "route_console_board.sh; if that did not reach the copper, this is "
             "what it looks like.")
     for _net, _want in RAIL_TARGET_W.items():
@@ -2063,6 +2323,9 @@ def check_routed_board(path=None):
     _legend = _pin_legend_problems(_b)
     if _legend:
         raise SystemExit("FAB: " + _legend[0])
+    mask_problems = mask_clearance_problems(_b)
+    if mask_problems:
+        raise SystemExit("FAB: " + "; ".join(mask_problems[:3]))
     # Silk that the fab will not print, checked on the plotted article rather than on
     # the objects build() happened to create.
     for fp in _b.Footprints():
@@ -2082,8 +2345,9 @@ def export():
     # DRC first: it is what pours the zone (--refill-zones --save-board), so
     # plotting before it would ship gerbers with an empty ground plane.
     drc = subprocess.run([KICAD_CLI, "pcb", "drc", "--refill-zones", "--save-board",
-                          "--severity-all", "--exit-code-violations", BOARD_PATH],
-                         capture_output=True, text=True)
+                          "--severity-all", "--all-track-errors",
+                          "--exit-code-violations", BOARD_PATH],
+                         check=True, capture_output=True, text=True)
     tail = [ln for ln in drc.stdout.splitlines() if ln.strip()][-4:]
     print("DRC:", " | ".join(tail) if tail else "(clean)")
 

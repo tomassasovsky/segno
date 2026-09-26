@@ -5,8 +5,8 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
 (import or specialty).
 
 > The console is a **standalone Pi 5 appliance**. The foot controls
-> (footswitches + encoder), the WS2812 drive and the MIDI front end all live on
-> the **console board v2** — a Pico 2 (RP2350) board linked to the Pi's 40-pin
+> (footswitches), pill LED drive and MIDI front end live on
+> the **console board v3** — a Pico 2 (RP2350) board linked to the Pi's 40-pin
 > header over a short keyed ribbon (`hardware/kicad/console_board.py`, #747).
 > The Pi reads no controls directly and never bit-bangs WS2812. The console is
 > the only product; there is no separate USB-MIDI pedal.
@@ -24,7 +24,12 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
 - [ ] **16″ touchscreen** monitor, 1080p, HDMI + USB-touch ×1 — main UI
 - [ ] **7″ HDMI** display ×1 — waveform. **HDMI, not DSI** (decision below)
 - [ ] micro-HDMI → HDMI cables (Pi 5 has 2× micro-HDMI) ×2
-- [ ] USB-A → USB-B/-C cable for the touchscreen's touch panel ×1
+- [ ] Screen touch: USB-A male → XH4 ×2, XH4 → USB-C male ×1 and
+      XH4 → Micro-B male ×1, connected through the screen-power board.
+      Separate main-power leads: VH2 → UPERFECT USB-C and VH2 → APROTII
+      Micro-B or power pads, positive and return at least 20 AWG.
+      Use the exact [screen harness BOM](kicad/screen_power/external_bom.csv),
+      including its required input fuse, holder and GPIO lead.
 
 ## Audio
 
@@ -35,7 +40,7 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
 
 ## Foot controls
 
-Terminated by the **console board v2** (`hardware/kicad/console_board.py`, #747)
+Terminated by the **console board v3** (`hardware/kicad/console_board.py`, #747)
 — the loose parts here are only what bolts to the panel and plugs into it.
 
 - [ ] Momentary **SPST footswitches** (stomp-rated, Cherub WTB-006 per
@@ -44,24 +49,23 @@ Terminated by the **console board v2** (`hardware/kicad/console_board.py`, #747)
       ring PCB (also in `MANUFACTURING.md`)
 - [ ] Knob for the EC11 ×1
 - [ ] JST-XH pre-crimped 2-pin leads for the footswitch looms ×10
-- [ ] **CTRL jacks, board v3: Neutrik NJ6FD-V ×2** — D-series 6.35 mm TRS
-      **with switching contacts**. Same Ø24 D punch and M3 pair as the MEIRIYFA
-      jack it replaces; what it adds is the tip-normal contact the board reads as
-      "something is plugged in" (J20/J21 pin 4), which is what makes plugging a
-      pedal in or out clean. Four leads per jack: tip, ring, sleeve, TN. A v2
-      board keeps the plain jack (3 leads) and the firmware's heuristics.
+- [ ] **Neutrik NJ6FD-V switched CTRL jacks ×2** — rear-mounted through
+      Ø12 mm holes in the 1.5 mm panel. Four wires per jack: T, R, S and TN
+      to console J20/J21. RN/SN remain unused. These are not D-punch parts.
 
 ## LEDs
 
-Driven by the console board's own Pico 2 — there is **no separate LED-driver
-board, shifter, bulk cap or series resistor to buy**; all of that is on the v2
-board's BOM.
+The console Pico drives the pills. The independent XIAO on the ring carrier
+drives the ring and reads its encoder; their level shifters and bulk capacitors
+are on the respective board BOMs.
 
-- [x] WS2812 **ring, 24 LEDs** — Adafruit NeoPixel **Ring 24**, 65.5 mm OD /
-      52.3 mm ID / 3.2 mm thick. **Owner already has it.** This line said
-      "Ring 16, 44.5 mm OD" until 2026-08-28 — stale since #792/#794 moved
-      the faceplate window to Ø67 and the ring board to Ø68 for the 24.
-      A Ring 16 will NOT fill the window it is now cut for
+- [x] **40-LED WS2812B strip**, already fitted to the current pedal. Reuse it
+      with the new carrier's J2 pin 3 for DIN and its separate strip housing.
+      Feed power directly from the near-ring AUX split: at most 600 mm of
+      16 AWG copper pair, then separate ≤50 mm 22 AWG pairs to the strip and
+      carrier J1. Buy suitable insulated splice materials and genuine XH
+      contacts for the 22 AWG pigtail. Do not also populate the optional
+      24/16-module pads. See the current wiring diagram.
 - [ ] WS2812B **indicator pills** — **144 LEDs/m, bare/non-waterproof
       (labelled IP20 or IP30 — the same uncoated strip either way), 12 mm
       wide**, ×**1 m**. Cut into **10** eight-LED segments of 55.56 mm,
@@ -90,10 +94,6 @@ board's BOM.
 
 ## Power (#754 — one 20 V PD contract, two bucks)
 
-- [ ] **CTRL jacks: Neutrik NJ6FD-V ×2** — 6-pole switching 1/4" jack, vertical
-      PCB pins, rear-mounted through the panel's Ø12 hole with its snap-on cap
-      (Neutrik: panel 1.2–1.5 mm, which is why the rear panel is 1.5 mm). Solder
-      leads to T/R/S. Mouser/TME stock it; the Amazon listing is B09ZNHVYG8 (25-pack).
 - [ ] **USB-C PD panel coupler**, D punch — QIANRENON
       [B0CQ4VD2N2](https://www.amazon.com/dp/B0CQ4VD2N2) ×1 (100 W, 10 Gbps —
       the 10 Gbps grade matters: all 24 ways wired means CC reaches the trigger;
@@ -107,6 +107,11 @@ board's BOM.
 - [ ] **100 W-class USB-C PD supply** (20 V / 5 A capable) + 5 A-rated C-to-C
       cable ×1 — the external brick; no mains enters the enclosure
 - [ ] **2×20 keyed IDC ribbon**, ~10 cm ×1 — console board J2 → Pi header
+- [ ] **Würth 61204021621** vertical keyed 2×20 board header ×1 — J2.
+      The console footprint uses 1.25 mm finished holes and 1.80 mm minimum pads
+      for this part’s maximum post size; a generic substitute needs its own fit check.
+- [ ] **Würth 61300621121** vertical 2×3 pin header ×1, optional — J22 expansion;
+      the same 1.25 mm holes / 1.80 mm pads apply.
 - [ ] **Panel fuse holder**, generic 5×20 screw-cap, 10 A / 250 VAC, **Ø12.0**
       aperture ×1 — e.g. [NeoLum 4-pack](https://www.amazon.com/dp/B0GF33P9FF).
       Generic by decision. NOTE the aperture: the SCI R3-11 upgrade wants
@@ -127,24 +132,25 @@ board's BOM.
 - The power budget is [`segno_wiring.md` §2](segno_wiring.md) — canonical since
   #754.
 
-## Console board v2 (#747) — supersedes the link + MIDI daughterboard (#746)
+## Console v3, ring carrier and screen-power boards
 
-MIDI, the pedal link, the footswitch headers, the CTRL jacks and the LED
-buffers all live on the **console board v2** now. Its parts list is generated
-with the board — order from
-[`kicad/fab/segno_console_board_bom.csv`](kicad/fab/segno_console_board_bom.csv),
-not from a list transcribed here. What died with the daughterboard: the
-1k8/3k3 divider (the RP2350 link is 3.3 V at both ends — no level shifting,
-only a 10 k series pair bounding cross-domain current), the perfboard, and the
-"do not populate J4/J5/U2" note for the V1 board — the console does not use
-the V1 board at all. The DIN-5 sockets stay in the rear-panel list and wire to
-the v2 board's J4/J5.
+Use the current generated/maintained BOMs rather than earlier board lists:
 
-One purchasing rule from that BOM that is easy to violate under stock pressure:
-**U1 must be AHCT (74AHCT125), not HC or HCT.** The TTL-level inputs
-(V_IH = 2.0 V) are the whole point — a 74HC125 at 5 V wants V_IH ≈ 3.15 V, and
-a 3.3 V drive would leave all three 3.3→5 V crossings (MIDI OUT, ring data,
-indicator data) ~0.15 V of margin: works on the bench, flaky in the field.
+- [Console v3](kicad/fab/segno_console_board_bom.csv).
+- [Ring carrier and selected 40-LED strip](kicad/fab/segno_combined_bom_lcsc.csv).
+- [Screen board](kicad/screen_power/hand/bom.csv) and
+  [external harness parts](kicad/screen_power/external_bom.csv).
+
+Fit the specified **74AHCT125N** DIP parts at console U1 and ring U2.
+Their TTL-level inputs accept the 3.3 V control signals; do not substitute
+74HC125. The console buffer drives MIDI OUT and pills; the carrier buffer
+drives the ring strip.
+
+Use the console/carrier runtime in
+[PR #1082](https://github.com/tomassasovsky/segno/pull/1082), including its E9
+workaround for A2 Pico silicon. The hardware branch's old firmware snapshot
+is not that runtime. Board order settings and the separate enclosure-release
+limits are in [MANUFACTURING.md](MANUFACTURING.md#3-pcbs).
 
 ## Mechanical / enclosure
 
@@ -173,6 +179,6 @@ a waveform, so pick any 7″ HDMI panel; set its per-output `--scale` in
 - Keep the engine at **48 kHz** with the PipeWire **Pro Audio** profile for the
   full channel count + lowest stable latency (see
   [`docs/RUNNING_ON_LINUX.md`](../docs/RUNNING_ON_LINUX.md)).
-- The LEDs and foot controls all terminate on the **console board v2**
-  (`hardware/kicad/console_board.py`); Pi GPIO14/15 carry MIDI, and the pedal
-  link rides uart3 (GPIO8/9) over the ribbon.
+- Footswitches, CTRL jacks and pill LEDs terminate on console v3; the encoder
+  and 40-LED strip terminate on the independent ring carrier. Pi GPIO14/15
+  carry MIDI, and the pedal link uses uart3 (GPIO8/9) over the ribbon.

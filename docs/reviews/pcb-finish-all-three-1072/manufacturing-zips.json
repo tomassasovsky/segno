@@ -1,0 +1,128 @@
+{
+  "date": "2026-09-26",
+  "status": "verified-for-bare-board-fabrication",
+  "purpose": "Final three-board production review: printable legends and independently verified existing rounded copper; selected 40-strip direct AUX star harness",
+  "baseline_revision": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+  "archives": {
+    "console-v3": {
+      "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
+      "sha256": "919667b6141639590da8dd36319b236e5c434c4d8f2f3799644374e81da97fc3",
+      "members_checked": 12,
+      "members": {
+        "segno_console_board-B_Cu.gbr": "1e0b3002a59f2695f330b177ca800d476cbf8d2b73c6a85632ac48ba9c37f2e4",
+        "segno_console_board-B_Mask.gbr": "8d7e9568c9ff5b9bc4abbd058162ea83120a5f34d0a5fd1490d8a79ccffcc8a1",
+        "segno_console_board-B_Paste.gbr": "82bfbe4bc11e44e49031c5704662b11043dd174ab2d8c68b7a9423d07d9a96fd",
+        "segno_console_board-B_Silkscreen.gbr": "cf3e4ba6258666653676bfccb4f5468dd927463a68cfdb4dcdf4000eb099b632",
+        "segno_console_board-Edge_Cuts.gbr": "bc3a31c6c17aa922129dfa9e58d3bd13ef4d9be0c56f901539e0c0e68e8c5a7e",
+        "segno_console_board-F_Cu.gbr": "06da98fe833d3c3d5a278465307685f54eb44126c9487801b776b786f6896f83",
+        "segno_console_board-F_Mask.gbr": "5ff7b31e389c8e8cbe161f84c740d8d7b0ebb5759dd83f7e02efed0c20a0960a",
+        "segno_console_board-F_Paste.gbr": "39f323671715f19c77e82700bd8998ab8acf98ab9363fa111cdd433f1d58ebdb",
+        "segno_console_board-F_Silkscreen.gbr": "c01ccc064f9b2dbefb3ad4a553845b68fd2854ec99caa75f537542bb782a6b70",
+        "segno_console_board-NPTH.drl": "c5620df80411e6abb9eaadccd2d17ef7c384940849413d3d235878fc244d3329",
+        "segno_console_board-PTH.drl": "1b63e5b40ce67f2df2d32b369768bd236a96ddc9afefbec835e31b9c46d76179",
+        "segno_console_board-job.gbrjob": "4790dabba49ff294c471f3d452d763c17ccae95d4f9aaa7c3b586891448f5cef"
+      },
+      "upload_name": "segno-console-v3-gerbers.zip",
+      "board": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "board_sha256": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
+      "order": {
+        "layers": 2,
+        "material": "FR-4",
+        "thickness_mm": 1.6,
+        "copper_oz": 1,
+        "solder_mask": "Purple",
+        "silkscreen": "White",
+        "finish": "Lead-free HASL",
+        "quantity": 5,
+        "assembly": false,
+        "stencil": false,
+        "vias": "tented"
+      }
+    },
+    "ring-white": {
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "sha256": "7b0dd11efc0ab1f2c2f3a28a0a1bb6367d692171ad4136ea9fae49bcabc5a413",
+      "members_checked": 10,
+      "members": {
+        "segno_pedal_ring-B_Cu.gbr": "4a7efd168e0eb907eb56cc6b77bed54536a49110f499d1cb191a360fb19245d4",
+        "segno_pedal_ring-B_Mask.gbr": "be2be25c366c316f4e007bc7d9089bbe90beb8de4d782977149ab3bf7a9784e5",
+        "segno_pedal_ring-B_Silkscreen.gbr": "2874dbbd39431ac75701ac6cb151a275123fae3502c7ed0a3486a8e9185cfb97",
+        "segno_pedal_ring-Edge_Cuts.gbr": "713a3a444cfc385ae07be680b83b71b3a53d38b382c32d60a9e0a370f13d6954",
+        "segno_pedal_ring-F_Cu.gbr": "0de61aa84fe3e54883a8e1bee076cd8f3b8ae12f1ad31ea85241e4c674dd7efa",
+        "segno_pedal_ring-F_Mask.gbr": "5a28905af4de4b4dd8314330c28e910809ddca20124dc7abb15dbd3d201898b0",
+        "segno_pedal_ring-F_Silkscreen.gbr": "83349493943d3f6da4f059a6bc0f44d72c927857ebc3dcc08effc963d1129f9e",
+        "segno_pedal_ring-NPTH.drl": "4f78785689d3d1f99da28d76425c404bf0b81d288a9db7e7c8705f37a66dd212",
+        "segno_pedal_ring-PTH.drl": "2cbf014c6ccfe966a0d75170e2eed03bcd9442dfc0034c089654c4a7d3edddb0",
+        "segno_pedal_ring-job.gbrjob": "8d93a0349f50d87b8a8865cb1abc2c981fe3cd1569e1a47ace3da15ef0bddb5e"
+      },
+      "upload_name": "segno-ring-white-gerbers.zip",
+      "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "board_sha256": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+      "order": {
+        "layers": 2,
+        "material": "FR-4",
+        "thickness_mm": 1.6,
+        "copper_oz": 1,
+        "solder_mask": "White",
+        "silkscreen": "Black",
+        "finish": "Lead-free HASL",
+        "quantity": 5,
+        "assembly": false,
+        "stencil": false,
+        "vias": "tented"
+      }
+    },
+    "screen-power-rev-l": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
+      "sha256": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84",
+      "members_checked": 12,
+      "members": {
+        "screen_power_hand-B_Cu.gbr": "ffc5c2223b89becd65f48baeb226ab5b9ea6f32aedf01655f31776ce99001eac",
+        "screen_power_hand-B_Mask.gbr": "7962bb3732275dd23e33679b09c03c04f7e5d830251363d8c484506d4637fed6",
+        "screen_power_hand-B_Silkscreen.gbr": "4a2261e96afcffdeca6bb7e0f8730c984201e5c925d873aa92be1dddcc7a42e7",
+        "screen_power_hand-Edge_Cuts.gbr": "1efb0b1d38dc7119bfe08cde563bcbcc6e3100d57ffdc36d041341ee618018de",
+        "screen_power_hand-F_Cu.gbr": "41fe95dcd19b098fa1eb5be05f7cdf4bfdc1ebe5d68ce2141083e598b2f505cb",
+        "screen_power_hand-F_Mask.gbr": "d9c65d862f8256d0f910a4b3b63d333812623f6db451bd9119b450fc94a88aac",
+        "screen_power_hand-F_Silkscreen.gbr": "d0b7c213e0acf84ba0b318a27c3e4a5765588a42c97dbaa70a8e0d459f495e48",
+        "screen_power_hand-NPTH-drl_map.pdf": "f000a8a8b2491e59ce0c220d8c0a3c5b32bf42bbe1e60c9b53cb8a121a3a13c2",
+        "screen_power_hand-NPTH.drl": "cfb6fe23a3bf3ba3527f0994afff7c18f07d6d823aef34632c82782a97edc2d6",
+        "screen_power_hand-PTH-drl_map.pdf": "46d7ccce3998228fc043a26aa1d63c24a632b405ed5c41fc006255ecf5e65be4",
+        "screen_power_hand-PTH.drl": "a20cfde561409fa4da8bdb9ffd71af560b61046607cff07c7e4570c7d9fe58f1",
+        "screen_power_hand-job.gbrjob": "606beacf975693c1419dccf596a2579489f352b4d195d11cc0db1f17cc7d31fd"
+      },
+      "upload_name": "segno-screen-power-rev-l-gerbers.zip",
+      "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+      "board_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
+      "order": {
+        "layers": 2,
+        "material": "FR-4",
+        "thickness_mm": 1.6,
+        "copper_oz": 1,
+        "solder_mask": "Purple",
+        "silkscreen": "White",
+        "finish": "ENIG",
+        "quantity": 5,
+        "assembly": false,
+        "stencil": false,
+        "vias": "tented"
+      }
+    }
+  },
+  "verification": {
+    "console_ring": {
+      "report": "docs/reviews/production-final-1072/console-ring-fabrication-verification.json",
+      "sha256": "de9b2295c70020d9d361f5567129eac3d90985fd45e8288ad2d051f8ad65d989",
+      "checks_passed": 175
+    },
+    "screen": {
+      "report": "docs/reviews/production-final-1072/screen-fabrication-verification.json",
+      "sha256": "8a90d9b26dae1456bd3c635364bbf56edd48e6c907caaff2c6ee1d6395c92144",
+      "checks_passed": 412
+    }
+  },
+  "limits": [
+    "Bare-board CAD and export verification; assembled electrical, USB and enclosure behavior are not physically qualified.",
+    "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
+    "No order, merge or device deployment performed."
+  ]
+}
