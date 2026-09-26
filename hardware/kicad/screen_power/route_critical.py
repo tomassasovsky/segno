@@ -255,6 +255,15 @@ def route(variant):
             keepout(p.F_Cu,left,y-2.8,right,y+2.8,tracks=True)
         keepout(p.F_Cu,22,y-1.4,25,y+1.4,tracks=True)
         keepout(p.B_Cu,8.5,y-5,54.5,y+5,pours=True)
+    # Two dead-end ground nibs are left over between power copper: one on the
+    # front under Q3, in the wedge between the AUX approach and the source
+    # bridge, and two facing ones on the back under F101's via transition.
+    # Blunt them with local pour-only cutbacks, so the pour ends on a straight
+    # edge instead of a tip. These only remove fill: the tracks and vias that
+    # bound them, the power zones and the USB reference ground are untouched,
+    # and both boxes are dead ends, so no ground region loses a path.
+    keepout(p.F_Cu,43.15,10.35,44.5,11.9,pours=True)
+    keepout(p.B_Cu,46.2,25.45,49.1,25.82,pours=True)
     # Protect the fanouts as well: a control trace under either data line
     # breaks its return path even when it misses the straight pair corridor.
     for t in list(board.GetTracks()):
