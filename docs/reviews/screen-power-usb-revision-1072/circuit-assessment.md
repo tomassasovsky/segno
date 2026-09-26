@@ -113,10 +113,11 @@ all transient off states.
 
 A disposable SKiDL build of the revised source completed with zero ERC errors
 and zero ERC warnings. Source/netlist pin contracts, numerical checks and the
-48-case state sweep passed. The sweep evaluates AUX presence, GPIO high/low/
-floating, each host independently and suspend; it checks 96 coil paths using
+24-case state sweep passed. The sweep evaluates AUX presence, GPIO high/low/
+floating and each host independently; it checks 48 coil paths using
 actual pin nets and directed source-to-drain body diodes. It is an ideal
-switch model, with analog drive assessed separately.
+switch model, with analog drive assessed separately. USB suspend with VBUS
+retained has the same DC state and is not double-counted as another case.
 
 All 13 new mandatory USB control results passed: clean baseline; old host-powered
 coil; presence-gate bypass; crossed host sensing; missing pull-down; missing
@@ -136,10 +137,11 @@ screen groups. AST parsing and the scoped whitespace check passed.
 Source snapshots for this assessment:
 
 - `switch_circuit.py`: `652502f1006b5019752c874b08ff431b5e8bc24cea1dcbf52d50cc513fd23a7e`
-- `check.py`: `c7f09c4dc5df279cbf89780729f0cec15987fda8109aa0d770b8c3a7cb32f747`
+- `check.py`: `b68482bb0bd5350531708bda32114d4c0f38c3f8074dbea83a5087ed01a5539d`
 
-Independent circuit review, new native placement/routing, complete native
-checks and refreshed CAM remain pending. This correction removes the known
+Independent source reviews are complete; findings and their resolutions are
+recorded in [the review](review.md). New native placement/routing, complete
+native checks and refreshed CAM remain pending. This correction removes the known
 host-powered-coil suspend-current defect. It does not certify the complete
 USB channel, cable/shield implementation, signal eye, attachment timing, ESD,
 or assembled operation. The [USB-IF mandatory suspend-current update](https://compliance.usb.org/index.asp?UpdateFile=Electrical)

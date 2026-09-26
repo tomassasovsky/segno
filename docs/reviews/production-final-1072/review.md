@@ -4,8 +4,10 @@
 **Screen-board order hold, 26 September:** the subsequent
 [USB requirements review](usb-requirements-followup.md) found that the
 host-powered relay coils exceed the USB suspend-current allowance. That
-finding supersedes screen-board order acceptance below. The correction has
-not been implemented; console and ring findings are unchanged.
+finding supersedes screen-board order acceptance below. The
+[Revision M correction](../screen-power-usb-revision-1072/review.md) is
+implemented in the source; native routing and release verification remain
+pending. Console and ring findings are unchanged.
 
 This reviews all three complete boards from hardware baseline
 `d32bca8b24c543b907ee1f104ebf8b04f6fa6947`, followed by the corrections below.

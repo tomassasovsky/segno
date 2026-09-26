@@ -13,6 +13,21 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+**September 26 USB correction: screen ordering is on hold.**
+[Revision M](reviews/screen-power-usb-revision-1072/review.md) replaces the
+34 mA host-powered relay coils with AUX-powered coils and per-host low-current
+presence detectors. The source/schematic are committed, native KiCad ERC
+passes, and independent source reviews are complete. Claude Cloud is authoring
+the remaining placement/routing. Four shield-drain pads retain the XH4 cable
+interfaces. A coated-field model supports 0.78/0.23 mm USB geometry, while
+ordinary two-layer fabrication still has no impedance guarantee. The retained
+Revision L screen archive is withdrawn; console/ring hardware is unchanged.
+The corrected source power budget is 7.708 A AUX with a full-white 40-pixel
+ring and normal pills. Native validation and replacement CAM remain pending.
+The earlier completion text below is historical until this correction is
+released; no order, merge or device deployment has occurred.
+
+
 The [final production review](reviews/production-final-1072/review.md) supersedes
 the earlier release checks below. It reviews the complete circuits, all three
 native boards, wiring, current budgets, thermal estimates, mechanical envelopes
