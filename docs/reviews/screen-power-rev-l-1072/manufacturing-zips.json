@@ -1,0 +1,84 @@
+{
+  "date": "2026-09-25",
+  "purpose": "Final Revision L gate drive, uniform 2.5 mm MOSFET bridge/feed and rounded copper on screen, console and white ring boards",
+  "archives": {
+    "console-v3": {
+      "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
+      "sha256": "d8cd9fe5bcd4e12487de33c938d0f2e457d4eb807962f5fdc3fff11ee25aaf23",
+      "members_checked": 12,
+      "members": {
+        "segno_console_board-B_Cu.gbr": "2523044cd03d7b070a5ae2105f181a4c91e7a25690d7616c1f03d5dddb2920b4",
+        "segno_console_board-B_Mask.gbr": "4f107d401cd08c6febfdcc5f7a8db89d3cf17fee200d441e291f414456c35de9",
+        "segno_console_board-B_Paste.gbr": "6274cfc76336dab144ae2dd09f851060beb7e00e125bf2fa946f60a6ede3e7b1",
+        "segno_console_board-B_Silkscreen.gbr": "2e25de2cae9b7fa9b9f408f0d93ca3bc5d16a365f542fe58b34b9b9d53040b2c",
+        "segno_console_board-Edge_Cuts.gbr": "347c25bafce127b52fada0091d3328028deda0fb86669269b14614dcc2e78818",
+        "segno_console_board-F_Cu.gbr": "0661e11e6d99d537389b209fb0fda6c33fad7a056d4cbd95302d99f5f418540f",
+        "segno_console_board-F_Mask.gbr": "c55a879d8ef41c93e29206c4389b73793fe140789f5cfc89344170169d67d901",
+        "segno_console_board-F_Paste.gbr": "45a7793b960454761eed9bf932b18ff560353253c0c2d81d4727e360f8a11929",
+        "segno_console_board-F_Silkscreen.gbr": "0f33f7119e0fa5eb4deb0da5a6ac332c2f46a841456352d1ba2226c723170c67",
+        "segno_console_board-NPTH.drl": "e8896bde51afd9d82b3f61bd8c39c82fb3875a09dda12defbe0ee59cd320acc5",
+        "segno_console_board-PTH.drl": "1fdc85fe7524b4f60aed83fa9d383e7fbf41ccde9e31e270930f39a2c303923f",
+        "segno_console_board-job.gbrjob": "a2b4475eee94001df0d680dbf58c07fabc6f200a25f4ae8745d7c7d94a8f8f3f"
+      },
+      "upload_name": "segno-console-v3-gerbers.zip",
+      "board": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "board_sha256": "a57759950c14ab9606613dac89d51b9021e7824b80055f0e3daaa5ce571b377b"
+    },
+    "ring-white": {
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "sha256": "be75ed5d55d65942250ae5442f17388cb7314548960bce5464af2421fb9eaab6",
+      "members_checked": 10,
+      "members": {
+        "segno_pedal_ring-B_Cu.gbr": "981760b13f70898e16ac4b9d6130d452fc646491a420e3400fc980afcaf3aa26",
+        "segno_pedal_ring-B_Mask.gbr": "1fec8cc1c48c79055bc1bd8aff3f73e0c4be620bd0cf5f603891200a1526d976",
+        "segno_pedal_ring-B_Silkscreen.gbr": "0ac2e9901f2739e5bb39b36e896146491d74a34222f044be128455a0a810efcc",
+        "segno_pedal_ring-Edge_Cuts.gbr": "0694658b8d544f6632915686f83e982840dde1e996aba197af12259cabbc213d",
+        "segno_pedal_ring-F_Cu.gbr": "b04bb879cd36230d632889d3ee2a7484fa771017beff8e3ffe243464fbd504c4",
+        "segno_pedal_ring-F_Mask.gbr": "f713577f6160d813d743d17c2770722d501b1ba32c9b77c488e5a3f3d88eee74",
+        "segno_pedal_ring-F_Silkscreen.gbr": "278f7fcd9c6bb9cb8de2ce0840c928b937c3e68d239d50fd616eb2ff6cc52a03",
+        "segno_pedal_ring-NPTH.drl": "bf9447d1bd45b2b672334804a84cbd75016b3843475f81bc28736baeee32f476",
+        "segno_pedal_ring-PTH.drl": "9a5a104c067421f9c5f19fb44dfa64381925ca6b4a79b88487da03781c7c9722",
+        "segno_pedal_ring-job.gbrjob": "16004c729b511c362b4ac32af3ab1d76913e5e7f181920c3540bc9003100ca44"
+      },
+      "upload_name": "segno-ring-white-gerbers.zip",
+      "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "board_sha256": "3c92dcfd2ab2644ca74f7d82226db84476becbd7fb897ca701ff593ed604a0f2"
+    },
+    "screen-power-rev-l": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
+      "sha256": "7a52639a561ebebf36695901bd84f27a2770fe900a227a6594deb89c0fde8e23",
+      "members_checked": 12,
+      "members": {
+        "screen_power_hand-B_Cu.gbr": "b0dc50fec5adc9cc1ea36513f6c9801018b37abe0829d846db1df09f79d749df",
+        "screen_power_hand-B_Mask.gbr": "ca513cc9d42efab382ec8406676fa0210e86fc93ce5b6d0f882a4e549099595f",
+        "screen_power_hand-B_Silkscreen.gbr": "bee246bd9ce85f8c90a3253c2d0f9b14efd362715c6f34de78b2fb03f5917182",
+        "screen_power_hand-Edge_Cuts.gbr": "b39e00ab296d075031f1f6b8540454a41e98743c5a27e5665079dd676129aa4e",
+        "screen_power_hand-F_Cu.gbr": "c9953cd6f89e0fb2fd6690555290483f308cb88e80267b42bd00d6695b8f3016",
+        "screen_power_hand-F_Mask.gbr": "d833041b953ba524c7991d8533eafacf2294584f862a124053009cf67b350ef2",
+        "screen_power_hand-F_Silkscreen.gbr": "6d0b48e6a85cb50bd7ab99a8e5cd205cdfeb74a4236606967e7b89413765a480",
+        "screen_power_hand-NPTH-drl_map.pdf": "a35071c094ff4fd5e57d00aa7c88568becbf83a8f00bb820750a2d97b17d6b8d",
+        "screen_power_hand-NPTH.drl": "a8fdadfdf8f0ceeecec4bd3f875ba98bc9b7c55755ea74899e415cd7f76b2d5c",
+        "screen_power_hand-PTH-drl_map.pdf": "eb6f435c326ba59c62b5755ca17a5db7c38d8eae164e5c3e1baf2bac29d828c3",
+        "screen_power_hand-PTH.drl": "b2a41ed1cb9b981a29ccebccb850b3c2e510d24538cfb673a4751c6ceab2cf5a",
+        "screen_power_hand-job.gbrjob": "7dea6a9581e6d32b54ccbe35abed400cea5ede4451c829578402a6012bafdb99"
+      },
+      "upload_name": "segno-screen-power-rev-l-gerbers.zip",
+      "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+      "board_sha256": "d3577772b4945f93652789e109fd232b479cfc8d119dcb67e499da51d39fa5cf"
+    }
+  },
+  "hardware_pr": "https://github.com/tomassasovsky/segno/pull/1080",
+  "screen_board_sha256": "d3577772b4945f93652789e109fd232b479cfc8d119dcb67e499da51d39fa5cf",
+  "screen_source_baseline_commit": "7dcdc944bea0d22e2fa1fe32ab4ead4681aa11aa",
+  "superseded_screen_rev_k_sha256": "171034c87f3d371db9f7017a196960bdb7e01c249c1178eba90abb3ab2f05e3c",
+  "screen_verification": "docs/reviews/screen-power-rev-l-1072/verification.md",
+  "claude_layout_source_commits": {
+    "screen": "e9fab839",
+    "ring": "255a47cf",
+    "console": "2e4b30a5"
+  },
+  "independent_cam_records": [
+    "docs/reviews/screen-power-rev-l-1072/fabrication-verification.json",
+    "docs/reviews/screen-power-rev-l-1072/console-ring-fabrication-verification.json"
+  ]
+}

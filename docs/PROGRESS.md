@@ -13,12 +13,23 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
-The [design-margin follow-up](reviews/screen-power-design-margin-1072/verification.md)
-records the owner's one-order requirement and rejection of a pre-PCB prototype
-build. No replacement power circuit was adopted. A small USB routing candidate
-passed an isolated rebuild and remains an unapplied patch; published Revision K
-source and manufacturing files are unchanged. New Claude and DeepSeek follow-up
-attempts did not produce completed reviews. This is not a new production approval.
+Revision L's circuit and final artwork pass the checks below. All three
+boards now have the requested rounded-copper finish. The screen Q3/Q4 pin-3
+bridge and Q4 pin-2 feed are uniformly 2.5 mm wide, without taper overlays;
+the screen bus, ring J1 power taps and console power-bar corners are rounded.
+Work follows the owner's one-order requirement, with
+no pre-PCB prototype or new owner measurement campaign. The
+[gate-drive assessment](reviews/screen-power-rev-l-1072/gate-drive.md) supports
+an LMC7660/TLP627M negative gate supply and lower-voltage TN0702 relay drivers;
+the [startup assessment](reviews/screen-power-rev-l-1072/startup.md) does not
+establish a need for active current limiting. Claude Cloud authored the new
+placement/routing. Final native ERC/DRC have zero findings, all 52 regression
+controls pass, and 406 screen plus 103 console/ring independent fabrication
+assertions pass. Power checks reject defects hidden by copper pours. DeepSeek's
+completed review has no unresolved verified finding. The
+[Revision L record](reviews/screen-power-rev-l-1072/verification.md) identifies
+the replacement archives for all three boards. Earlier
+Revision K evidence below is historical and does not qualify the changed circuit.
 
 September 25 screen-power correction: **Revision I screen Gerbers are withdrawn**.
 The [independent Claude review and assessment](reviews/screen-power-claude-1072/assessment.md)
@@ -29,13 +40,14 @@ independent contact-state regression guard. It also widens MOSFET necks to 1.9 m
 and the C2 feed to 1.5 mm, with three dedicated shared-power stitching vias.
 Checks and replacement exports are recorded in the
 [Revision J verification](reviews/screen-power-rev-j-1072/verification.md).
-Revision K retains that correction and replaces the current screen archive.
-It uses short 1.9 mm MOSFET approaches, a full 3 mm central bridge and gradual
+Revision K retained that correction and superseded J.
+It introduced short 1.9 mm MOSFET approaches, a full 3 mm central bridge and gradual
 transitions into the 4.5 mm distribution rail. Correct BOM-sized capacitor
 models replace undersized previews, and C1 moves 1.5 mm to clear the mated
 power plug. The system wiring diagram now routes both screens through this
 board, specifies the main-power leads and accounts for the full AUX/PD budget.
-Use the archive in the [Revision K verification](reviews/screen-power-rev-k-1072/verification.md).
+The [Revision K verification](reviews/screen-power-rev-k-1072/verification.md)
+records that historical package; the current revision status is above.
 No additional owner measurements are prerequisites for bare-board fabrication.
 Earlier screen-board readiness claims below are historical and superseded.
 
@@ -47,17 +59,19 @@ drop in the conditional gate-drive calculation and replaces R8's approximate
 assembly model. Circuit values and manufacturing artwork remain unchanged.
 The fuse adds harness protection, not guaranteed MOSFET fault survival;
 assembled operation still needs the documented qualification.
-OpenCode Go reviews remain incomplete after provider limits.
+That historical package's OpenCode Go reviews were incomplete after provider
+limits. The completed Revision L DeepSeek review is recorded separately in the
+[current external review](reviews/screen-power-rev-l-1072/external-model-review.md).
 
-The 6 A shared switch allowance includes both main outputs, both touch outputs
-and the 0.05 A bleeder. The 3 A main and 500 mA touch branch ceilings are not
-additive or simultaneous guarantees; ring current follows a separate path.
-Expected screen loads support retaining upright Q3/Q4 without heatsinks under
-the stated thermal estimates, not an assembled thermal or startup qualification.
-Parts, fuses, connector positions, the 68 × 76 mm through-hole board, purple
-mask and two copper layers remain unchanged, as do the full-white console/ring
-designs. The [screen-board notes](../hardware/kicad/screen_power/README.md) give
-the current budget and unchanged post-assembly acceptance checks.
+Revision L retires the historical 6 A expansion allowance. Its screen planning
+load is 4.25 A including both main outputs, both touch outputs and the bleeder;
+the 3 A main and 500 mA touch branch ceilings are not additive guarantees.
+The separate full-white ring, normal pills and console bring the AUX budget
+to 7.608 A. Expected screen loads support upright Q3/Q4 without heatsinks under
+the documented thermal estimates. Connector positions, the 68 × 76 mm outline,
+purple mask and two copper layers remain unchanged. The
+[screen-board notes](../hardware/kicad/screen_power/README.md) give the current
+parts, wiring and post-assembly acceptance checks.
 
 September 25 update: the owner requested unrestricted full-white operation for
 one 40-pixel ring strip. The console and ring carrier now have dedicated wider
