@@ -691,6 +691,12 @@ def _pour_gnd(board, net, layer=pcbnew.B_Cu):
 PILL_SPOKE_W = 1.2
 PILL_BAR_W = 5.0
 PILL_PAD_R = 2.7 / 2.0
+# The bar is the one piece of exposed power copper on this board, and a poured
+# rectangle ends in four sharp corners. All four are convex, so KiCad's own
+# corner smoothing rounds them with a true arc when it fills. 1 mm takes
+# 0.86 mm2 in total off the ends of a 5 x 9.9 mm pour, none of it from the
+# bar's width where the current runs or from either pad's reach.
+PILL_BAR_R = 1.0
 
 
 def _pill_pad(fps):
@@ -723,6 +729,8 @@ def _pill_power_bar(board, fps, net):
         z.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
         z.SetThermalReliefGap(FromMM(0.3))
         z.SetThermalReliefSpokeWidth(FromMM(PILL_SPOKE_W))
+        z.SetCornerSmoothingType(2)             # fillet, not chamfer
+        z.SetCornerRadius(FromMM(PILL_BAR_R))
         o = z.Outline()
         o.NewOutline()
         for px, py in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
