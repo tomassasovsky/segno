@@ -706,6 +706,9 @@ PILL_PAD_R = 2.7 / 2.0
 # 0.86 mm2 in total off the ends of a 5 x 9.9 mm pour, none of it from the
 # bar's width where the current runs or from either pad's reach.
 PILL_BAR_R = 1.0
+# Above the ground pour, and shared with the blend below: two same-net zones at
+# one priority fill and union, where a higher one cuts the lower one's copper.
+PILL_BAR_PRIORITY = 1
 
 
 def _pill_pad(fps):
@@ -732,7 +735,7 @@ def _pill_power_bar(board, fps, net):
         z = pcbnew.ZONE(board)
         z.SetLayer(layer)
         z.SetNet(net)
-        z.SetAssignedPriority(1)
+        z.SetAssignedPriority(PILL_BAR_PRIORITY)
         z.SetLocalClearance(FromMM(CLEARANCE))
         z.SetMinThickness(FromMM(0.2))
         z.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
@@ -764,7 +767,12 @@ PILL_BLEND_OVERLAP = 0.2
 def _pill_blend_outline(fps):
     """-> the blend polygon, or None when the supply clears the corner."""
     (x0, _y0, _x1, y1), = _pill_bar_rects(fps)
-    edge = console_ring_power.BACK_PATH[1][0] + console_ring_power.WIDTH / 2.0
+    # console_ring_power works in absolute board millimetres; everything here is
+    # board-local, because P() is what adds ORIGIN. Comparing the two frames
+    # asked whether 103.12 was between 2.9 and 3.9, so this returned None and a
+    # clean build simply left the blend out.
+    edge = (console_ring_power.BACK_PATH[1][0] + console_ring_power.WIDTH / 2.0
+            - ORIGIN[0])
     if not x0 < edge < x0 + PILL_BAR_R:
         return None                     # nothing to blend: no shallow crossing
     r, R = PILL_BLEND_R, PILL_BAR_R
@@ -801,7 +809,12 @@ def _pill_bar_blend(board, fps, net):
     z.SetLayer(pcbnew.B_Cu)
     z.SetNet(net)
     z.SetZoneName("POWER_FILLET")
-    z.SetAssignedPriority(2)
+    # The SAME priority as the bar, which is what makes the two fills union. On
+    # a higher priority this zone cut the bar instead: the bar filled straight to
+    # y = 118.83 under it and its own 1 mm corner arc came back clipped at
+    # (103.205017, 118.83) into a 48 degree kink - a new sharp corner, put there
+    # by the copper that was supposed to remove one.
+    z.SetAssignedPriority(PILL_BAR_PRIORITY)
     z.SetLocalClearance(FromMM(CLEARANCE))
     z.SetMinThickness(FromMM(0.05))
     z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)

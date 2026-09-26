@@ -26,7 +26,7 @@ HERE = Path(__file__).resolve().parent
 # Checked against console_board_pcb.py, so this cannot drift from the source
 # that pours the same fillet on a regenerated board.
 CONTRACT = ('PILL_BAR_R = 1.0', 'PILL_BLEND_R = 0.3',
-            'PILL_BLEND_OVERLAP = 0.2')
+            'PILL_BLEND_OVERLAP = 0.2', 'PILL_BAR_PRIORITY = 1')
 BAR_R, BLEND_R, OVERLAP = 1.0, 0.3, 0.2
 # Exactly the supply copper this replaces: (layer, start, end), millimetres.
 OLD = (('B.Cu', (105.4, 113.0), (102.0, 116.4)),
@@ -87,7 +87,7 @@ def blend(text):
     if missing:
         raise SystemExit('console_board_pcb.py no longer declares: '
                          + '; '.join(missing))
-    rect = None
+    rect = priority = None
     for _span, body in blocks(text, 'zone'):
         if '(net "+5V")' not in body or '"B.Cu"' not in body:
             continue
@@ -97,12 +97,19 @@ def blend(text):
         if len(pts) == 4:
             rect = (min(p[0] for p in pts), min(p[1] for p in pts),
                     max(p[0] for p in pts), max(p[1] for p in pts))
+            # The blend fills at the bar's own priority, so the two union. Taken
+            # from the board for the same reason as the rectangle: a copied
+            # number is a number that can drift. On a higher priority the blend
+            # CUT the bar - it filled straight under the overlay and its 1 mm
+            # corner arc came back clipped into a 48 degree kink.
+            priority = int((re.search(r'\(priority (\d+)\)', body)
+                            or (None, 0))[1])
     if rect is None:
         raise SystemExit('no rectangular +5V busbar zone on the back')
     x0, _y0, _x1, y1 = rect
     edge = crp.BACK_PATH[1][0] + crp.WIDTH/2.0
     if not x0 < edge < x0 + BAR_R:
-        return None
+        return priority, None
     cx, cy = x0 + BAR_R, y1 - BAR_R
     centre = (edge + BLEND_R,
               cy + math.sqrt((BAR_R + BLEND_R)**2 - (edge + BLEND_R - cx)**2))
@@ -122,15 +129,16 @@ def blend(text):
         angle = first + (last-first)*i/12
         arc.append((centre[0]+BLEND_R*math.cos(angle),
                     centre[1]+BLEND_R*math.sin(angle)))
-    return [(edge, centre[1]), *arc, inside, (back, inside[1]),
-            (back, centre[1])]
+    return priority, [(edge, centre[1]), *arc, inside, (back, inside[1]),
+                      (back, centre[1])]
 
 
-def fillet_zone(points):
+def fillet_zone(points, priority):
     body = ''.join(f'\t\t\t\t(xy {number(x)} {number(y)})\n' for x, y in points)
     return ('\t(zone\n\t\t(net "+5V")\n\t\t(layer "B.Cu")\n'
             f'\t\t(uuid "{uuid.uuid4()}")\n\t\t(name "POWER_FILLET")\n'
-            '\t\t(locked yes)\n\t\t(hatch edge 0.5)\n\t\t(priority 2)\n'
+            '\t\t(locked yes)\n\t\t(hatch edge 0.5)\n'
+            f'\t\t(priority {priority})\n'
             '\t\t(connect_pads\n\t\t\t(clearance 0.25)\n\t\t)\n'
             '\t\t(min_thickness 0.05)\n\t\t(fill yes\n'
             '\t\t\t(thermal_gap 0.3)\n\t\t\t(thermal_bridge_width 1.2)\n'
@@ -176,9 +184,9 @@ def patch(path, dry_run=False):
                     if abs(width-crp.WIDTH) < 1e-9)
     if '"POWER_FILLET"' in text:
         raise SystemExit(f'{path.name}: already carries a blend overlay')
-    shape = blend(text)
+    priority, shape = blend(text)
     if shape:
-        added += fillet_zone(shape)
+        added += fillet_zone(shape, priority)
     for span in sorted(drop, reverse=True):
         text = text[:span[0]] + text[span[1]:]
     # Anchored at a line start: a footprint's own keepout zone is indented
