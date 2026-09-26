@@ -110,16 +110,16 @@ def route(variant):
     # AUX bypass at pin 8 and the reservoir/clamp on pin 5's negative rail.
     for nodes in (('C5','1','U1','8'),('U1','5','C4','2'),('D2','2','C4','2')):
         bend(*nodes,SUPPLY)
-    # Carry the negative rail to the optocoupler emitter through the clear
-    # channel above the DIP row, not across pin 4 of the coupler.
-    u1_5,u2_3=at('U1','5'),at('U2','3')
-    channel=u1_5[1]-.98
+    # Carry the negative rail to the optocoupler emitter between the DIP rows,
+    # clear of pin 4 on its south side: the gate-drive run to R3 owns the lane
+    # north of the coupler, and crossing it would need a via on either net.
+    u1_5,u2_3,u2_4=at('U1','5'),at('U2','3'),at('U2','4')
+    lane=u2_4[1]+1.6
     join(('U1','5'),('U2','3'),
-         [(u1_5[0],channel+.5),(u1_5[0]+.5,channel),
-          (u2_3[0]-.5,channel),(u2_3[0],channel+.5)],SUPPLY,p.F_Cu)
+         [(u1_5[0]+lane-u1_5[1],lane),(u2_3[0],lane)],SUPPLY,p.F_Cu)
     # Gate drive: coupler collector to its series resistor above the FETs,
     # threaded between the reservoir can and the Q4 courtyard.
-    u2_4,r3_1=at('U2','4'),at('R3','1')
+    r3_1=at('R3','1')
     join(('U2','4'),('R3','1'),
          [(u2_4[0],r3_1[1]+2),(u2_4[0]+2,r3_1[1])],CTRL,p.F_Cu)
     # LED network and the sink node shared with Q1.

@@ -25,14 +25,16 @@ def place_components(variant, place, fps):
     # Both gate resistors sit directly above the transistors they drive, so
     # POWER_GATE stays a short top-edge net and the negative-rail parts get
     # the whole north strip.
-    place("R3", 33.58, 3.0)
-    place("R4", 46.38, 3.0)
+    place("R3", 33.58, 2.7)
+    place("R4", 46.38, 2.7)
     # North strip: the charge-pump satellites. C5 bypasses U1 pins 8/3, C4 is
     # the NEG_5V reservoir beside pin 5 and D2 clamps that rail along the
-    # top edge. Their loops close through the filled GND pours.
+    # top edge. Their loops close through the filled GND pours. D2 faces east
+    # so its cathode marker, which the DO-35 footprint places 1.8 mm beyond
+    # the courtyard, points into the board instead of over the edge.
     place("C5", 13.0, 6.1, 90)
     place("C4", 22.6, 7.0, 270)
-    place("D2", 20.31, 2.0)
+    place("D2", 22.09, 1.8, 180)
     # Both DIPs are anchored on pin 1 rather than their bounding-box centre,
     # so route_critical.py works in pin coordinates: U1 pins 1-4 run east
     # along y = 19 with pins 8-5 along y = 11.38, and C3 bridges pins 2/4
@@ -78,7 +80,7 @@ def place_components(variant, place, fps):
     # every one is outside its own courtyard, so no designator hides under a
     # body in the 3D view, and none overlaps another footprint's silkscreen.
     refs = {"R1": (2.84, 16.8), "R2": (2.75, 24.67), "Q1": (4.88, 25.21),
-            "R3": (37.39, 5.2), "R4": (50.36, 5.3), "R8": (44, 75),
+            "R3": (37.39, 4.9), "R4": (50.36, 5.0), "R8": (44, 75),
             "C5": (15.7, 6.1), "C4": (24.21, 10.44), "D2": (18.64, 3.99),
             "U1": (17.94, 9.82), "C3": (20.29, 26.65), "U2": (30.77, 16.2),
             "R10": (30.55, 20.62), "R9": (29.08, 28.79),
