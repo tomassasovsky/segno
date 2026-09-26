@@ -204,9 +204,15 @@ def route(variant):
         # the USB fanouts. This narrow control channel is routed explicitly.
         # The commons now carry the host pair, so the channel sits between the
         # common column and the make column and is recentred on that gap.
-        flow((relay,8),(f'Q{n+1}',3),
+        # Revision M lands the coil's low side on the UPPER series FET's drain
+        # instead of the lower one's: the two FETs are in series now, and only
+        # the drain that faces the relay belongs on this net. The crossing is
+        # the one this run always made - north of the row, then down the lane
+        # between the relay's contact columns - and it stays the only net on
+        # the board that passes a data pair.
+        flow((relay,8),(f'Q{n+2}',3),
              [(23.2,y-4.6),(23.9,y-5.3),(28.75,y-5.3),
-              (29.75,y-4.3),(29.75,y+6.2)],.25,p.F_Cu,sweep(CTRL))
+              (29.75,y-4.3),(29.75,y+4.6)],.25,p.F_Cu,sweep(CTRL))
     # Revision L gate driver. Every loop that carries pump or negative-rail
     # current is placed here instead of being autorouted, and all of it stays
     # north of the first USB row so no inverter loop runs under a data pair.
@@ -249,6 +255,50 @@ def route(variant):
     for nodes in (('U2','1','R10','1'),('U2','2','R10','2')):
         bend(*nodes,CTRL)
     join(('R10','1'),('R9','2'),[],CTRL,p.F_Cu)
+    # ---- Revision M: the second series switch, its presence divider and the
+    # coil feeds that now come from AUX instead of the host.
+    #
+    # Nothing here crosses a data pair. Each channel's stage sits on the same
+    # side of its own row as the FET it stacks on, the AUX feeds come down the
+    # left-hand channel that the pours and keepouts leave open, and the gate
+    # node reaches the upper FET from the side rather than along the column its
+    # source and drain pads share.
+    #
+    # Per channel: the VBUS arm of the divider, the gate tap, and the run from
+    # the AUX buffer to the bypass capacitor. Channel 1 has the band between
+    # the rows for its divider; channel 2 has the south edge, so its bends are
+    # its own rather than an offset copy.
+    presence = {
+        1: dict(vbus=[(7.0,41.6),(8.4,43.0),(20.0,43.0),(20.0,47.0)],
+                gate=[(33.8,47.41),(33.8,43.15)],
+                tap=(('R102','1'),('R101','2')),gate_from=('R101','2'),
+                aux=[(1.5,43.4),(2.8,42.1),(11.9,42.1),(13.0,43.2)]),
+        2: dict(vbus=[(7.0,72.95)],
+                gate=[(20.4,72.35),(20.4,67.9),(31.37,67.9)],
+                tap=(('R201','2'),('R202','1')),gate_from=('R202','1'),
+                aux=[(1.5,48.8),(3.5,50.8),(3.5,66.7),(4.8,68.0),(11.0,68.0)]),
+    }
+    for ch,y in enumerate(USB_ROWS[variant],1):
+        n=ch*100
+        lower,upper,plan=f'Q{n+1}',f'Q{n+2}',presence[ch]
+        # The stack node: the lower FET's drain to the upper one's source,
+        # 1.7 mm apart on the same side of the row.
+        bend(lower,'3',upper,'1',CTRL)
+        # VBUS into the divider. HOSTx_5V exists on exactly two pads - the
+        # host plug's pin 1 and the 10k arm - so this run is the whole net, and
+        # it threads the 1.7 mm corridor between the flyback diode's cathode
+        # and the bypass capacitor's terminals.
+        flow((f'J{n+1}','1'),(f'R{n+1}','1'),plan['vbus'],CTRL,p.F_Cu,sweep(CTRL))
+        # The tap: the two arms meet, and the gate comes off that node.
+        bend(plan['tap'][0][0],plan['tap'][0][1],
+             plan['tap'][1][0],plan['tap'][1][1],CTRL)
+        flow(plan['gate_from'],(upper,'2'),plan['gate'],CTRL,p.F_Cu,sweep(CTRL))
+        # AUX to the coil: the buffer's own supply pad, down the left-hand
+        # channel, then the bypass capacitor, the flyback cathode and the coil
+        # in one chain, all on this channel's side of the row.
+        flow(('Q2','1'),(f'C{n+1}','1'),plan['aux'],CTRL,p.F_Cu,sweep(CTRL))
+        bend(f'C{n+1}','1',f'D{n+1}','1',CTRL)
+        bend(f'D{n+1}','1',f'K{n+1}','1',CTRL)
     # Q1 also sinks the relay-enable buffer's base divider, which sits south of
     # the first USB row. The data pairs and their front-copper keepouts leave
     # the left edge as the only crossing, so this one takes the bottom layer
