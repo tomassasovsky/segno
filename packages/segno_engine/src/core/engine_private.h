@@ -1190,6 +1190,13 @@ struct le_engine {
    * the tempo lock (content alone). */
   _Atomic int32_t a_looper_mode; /* le_looper_mode; default 0 = MULTI */
 
+  /* Song handoff state: audio-thread-owned, reset only with callback stopped.
+   * Source is latched at request acceptance, never inferred from UI selection.
+   * Packed publication: low byte target+1 (0 none), upper24 elapsed fraction.
+   * One lock-free load keeps the public target/progress pair coherent. */
+  int32_t song_source, song_target, song_wait_frames;
+  _Atomic uint32_t a_song_queue;
+
   /* Primary track (B3, D18, published — see le_snapshot's trailing block).
    * -1 = none (default). A SETTING seeded once in le_engine_create and
    * persisting across configure exactly like a_looper_mode above, and

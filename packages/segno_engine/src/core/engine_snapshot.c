@@ -189,6 +189,10 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       atomic_load_explicit(&engine->a_latency_ms_bits, memory_order_relaxed));
   out->master_length_frames = load_i32(&engine->a_master_len);
   out->master_position_frames = load_i32(&engine->a_master_pos);
+  const uint32_t song = atomic_load_explicit(&engine->a_song_queue,
+                                            memory_order_relaxed);
+  out->song_queued_track = (int32_t)(song & 255u) - 1;
+  out->song_queue_progress = (float)(song >> 8) / 16777215.0f;
   out->record_offset_frames = load_i32(&engine->a_record_offset);
   out->fx_added_latency_frames = le_max_fx_latency(engine);
   out->master_gain = load_f32(&engine->a_master_gain_bits);

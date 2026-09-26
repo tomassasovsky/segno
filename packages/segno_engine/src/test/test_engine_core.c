@@ -19195,6 +19195,299 @@ static void test_song_mode_defining_recording_sets_own_clock_not_master(
   le_engine_destroy(e);
 }
 
+/* Three real recorded sections, parked through the public API. Different
+ * lengths and sample values make a wrong source clock or overlapping handoff
+ * observable in the output, not merely in private bookkeeping. */
+static le_engine* song_queue_fixture(void) {
+  le_engine* e = sm_make_song_engine(1000);
+  fm_record_track_value(e, 0, 100, 0.2f);
+  fm_record_track_value(e, 1, 160, 0.6f);
+  fm_record_track_value(e, 2, 240, 0.8f);
+  for (int c = 0; c < 3; ++c) CHECK(le_engine_stop_track(e, c) == LE_OK);
+  drain(e);
+  return e;
+}
+
+static void test_song_queue_exact_boundary_both_channel_orders(void) {
+  printf("test_song_queue_exact_boundary_both_channel_orders\n");
+  for (int reverse = 0; reverse < 2; ++reverse) {
+    const int source = reverse ? 1 : 0;
+    const int target = reverse ? 0 : 1;
+    const int length = reverse ? 160 : 100;
+    le_engine* e = song_queue_fixture();
+    le_snapshot s;
+    CHECK(le_engine_play(e, source) == LE_OK);
+    drain(e);
+    CHECK(e->tracks[source].free_clock.position == 0);
+    CHECK(load_i32(&e->tracks[target].a_state) == LE_TRACK_STOPPED);
+    tg_advance(e, 37);
+    CHECK(le_engine_play(e, target) == LE_OK);
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.song_queued_track == target);
+    CHECK(s.song_queue_progress == 0.0f);
+    CHECK(s.tracks[source].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[target].state == LE_TRACK_STOPPED);
+    const int remaining = length - 37;
+    tg_advance(e, remaining / 2);
+    le_engine_get_snapshot(e, &s);
+    CHECK(fabsf(s.song_queue_progress - (float)(remaining / 2) / remaining) < 1e-6f);
+    tg_advance(e, remaining - remaining / 2 - 1);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.song_queued_track == target && s.song_queue_progress < 1.0f);
+    CHECK(s.tracks[source].state == LE_TRACK_PLAYING);
+    float in[2] = {0}, out[2];
+    /* One process block straddles the boundary: no gap, overlap or early
+     * switch, regardless of the target's position in the track iteration. */
+    le_engine_process(e, out, in, 2);
+    CHECK(fabsf(out[0] - (reverse ? 0.6f : 0.2f)) < 1e-5f);
+    CHECK(fabsf(out[1] - (reverse ? 0.2f : 0.6f)) < 1e-5f);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[source].state == LE_TRACK_STOPPED);
+    CHECK(s.tracks[target].state == LE_TRACK_PLAYING);
+    CHECK(e->tracks[target].free_clock.position == 1);
+    CHECK(s.song_queued_track == -1 && s.song_queue_progress == 0.0f);
+    CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+    le_engine_destroy(e);
+  }
+}
+
+static void test_song_queue_replace_cancel_and_current(void) {
+  printf("test_song_queue_replace_cancel_and_current\n");
+  le_engine* e = song_queue_fixture();
+  le_snapshot s;
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  tg_advance(e, 20);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  tg_advance(e, 20);
+  CHECK(le_engine_play(e, 2) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 2 && s.song_queue_progress == 0.0f);
+  tg_advance(e, 30);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.song_queue_progress - 0.5f) < 1e-6f);
+  CHECK(le_engine_play(e, 2) == LE_OK); /* second request cancels */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1 && s.song_queue_progress == 0.0f);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 0) == LE_OK); /* current source cancels, no rewind */
+  drain(e);
+  CHECK(e->tracks[0].free_clock.position == 70);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1);
+  tg_advance(e, 35);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
+  CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_STOPPED);
+  /* Replacement actually fires at the ORIGINAL source's next wrap. */
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  tg_advance(e, 10);
+  CHECK(le_engine_play(e, 2) == LE_OK);
+  drain(e);
+  tg_advance(e, 85);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_STOPPED);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
+  CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
+  CHECK(e->tracks[2].free_clock.position == 0);
+  le_engine_destroy(e);
+}
+
+static void test_song_queue_invalidation_and_capture(void) {
+  printf("test_song_queue_invalidation_and_capture\n");
+  for (int action = 0; action < 11; ++action) {
+    le_engine* e = song_queue_fixture();
+    le_snapshot s;
+    CHECK(le_engine_play(e, 0) == LE_OK);
+    drain(e);
+    tg_advance(e, 25);
+    CHECK(le_engine_play(e, 1) == LE_OK);
+    drain(e);
+    switch (action) {
+      case 0: CHECK(le_engine_stop_track(e, 0) == LE_OK); break;
+      case 1: CHECK(le_engine_stop_track(e, 1) == LE_OK); break;
+      case 2: CHECK(le_engine_clear(e, 0) == LE_OK); break;
+      case 3: CHECK(le_engine_clear(e, 1) == LE_OK); break;
+      case 4: CHECK(le_engine_undo(e, 1) == LE_OK); break;
+      case 5: CHECK(le_engine_record(e, 3) == LE_OK); break;
+      case 6: CHECK(le_engine_configure(e, 1000, 1, 1, 20000) == LE_OK); break;
+      case 7: CHECK(le_engine_record(e, 0) == LE_OK); break;
+      case 8:
+        le_engine_mark_started(e); /* device-free lifecycle test seam */
+        CHECK(le_engine_stop(e) == LE_OK);
+        break;
+      case 9:
+        /* Bypass the public API guard: stale/invalid input must be safe at
+         * actual application too, not only when the request was posted. */
+        CHECK(le_push(e, LE_CMD_PLAY, 3, 0.0f) == LE_OK);
+        break;
+      case 10: CHECK(le_engine_cancel_arm(e, 1) == LE_OK); break;
+    }
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.song_queued_track == -1 && s.song_queue_progress == 0.0f);
+    if (action == 5 || action == 7) {
+      /* Reject without cutting either a defining take or an overdub. */
+      CHECK(le_engine_play(e, 2) == LE_ERR_INVALID);
+      CHECK(s.tracks[action == 5 ? 3 : 0].state ==
+            (action == 5 ? LE_TRACK_RECORDING : LE_TRACK_OVERDUBBING));
+    }
+    tg_advance(e, 130);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.song_queued_track == -1);
+    CHECK(s.tracks[1].state != LE_TRACK_PLAYING);
+    le_engine_destroy(e);
+  }
+  le_engine* e = song_queue_fixture();
+  CHECK(le_engine_play(e, 3) == LE_ERR_INVALID); /* empty */
+  CHECK(le_engine_play(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_play(e, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  /* Cancel before the queued PLAY has even reached the callback. */
+  CHECK(le_engine_cancel_arm(e, 1) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1 && s.song_queue_progress == 0.0f);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  CHECK(le_engine_cancel_arm(e, 2) == LE_OK); /* unrelated track */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 1);
+  le_engine_destroy(e);
+}
+
+static void test_song_queue_one_shot_and_legacy_polyphony(void) {
+  printf("test_song_queue_one_shot_and_legacy_polyphony\n");
+  le_engine* e = song_queue_fixture();
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  tg_advance(e, 50);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  tg_advance(e, 50);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_STOPPED);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.position == 0);
+  tg_advance(e, 160);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
+  le_engine_destroy(e);
+
+  /* Recording successive sections may leave several playing in old state.
+   * The lowest playing channel supplies the boundary; commit stops all old
+   * sections and starts just the requested target. */
+  e = sm_make_song_engine(1000);
+  fm_record_track(e, 0, 100);
+  fm_record_track(e, 1, 160);
+  fm_record_track(e, 2, 240);
+  CHECK(le_engine_stop_track(e, 2) == LE_OK);
+  drain(e);
+  const int remaining = 100 - e->tracks[0].free_clock.position;
+  CHECK(le_engine_play(e, 2) == LE_OK);
+  drain(e);
+  tg_advance(e, remaining);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_STOPPED);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
+  CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
+  CHECK(e->tracks[2].free_clock.position == 0);
+  le_engine_destroy(e);
+}
+
+static void test_song_queue_free_mode_keeps_immediate_play(void) {
+  printf("test_song_queue_free_mode_keeps_immediate_play\n");
+  le_engine* e = fm_make_free_engine(1000);
+  fm_record_track(e, 0, 100);
+  fm_record_track(e, 1, 160);
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  drain(e);
+  const int position = e->tracks[1].free_clock.position;
+  tg_advance(e, 17);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1 && s.song_queue_progress == 0.0f);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.position == position);
+  le_engine_destroy(e);
+}
+
+static void test_song_queue_logs_committed_handoff_only(void) {
+  printf("test_song_queue_logs_committed_handoff_only\n");
+  le_engine* e = song_queue_fixture();
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  tg_advance(e, 20);
+  CHECK(le_engine_play(e, 2) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 2) == LE_OK); /* cancelled requests log no play */
+  drain(e);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  tg_advance(e, 81);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_PLAY, 2) == 0);
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_PLAY, 1) == 1);
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_STOP, 0) == 1);
+  CHECK(frame_of_log_entry_for_channel(buf, count, LE_CMD_STOP, 0) == 100);
+  CHECK(frame_of_log_entry_for_channel(buf, count, LE_CMD_PLAY, 1) == 100);
+  le_engine_destroy(e);
+
+  /* A second old section can wrap on the very same sample. Its One Shot
+   * auto-stop must not duplicate the stop already committed by the handoff
+   * (or put an older frame into the log after the handoff's new frame). */
+  e = sm_make_song_engine(1000);
+  fm_record_track(e, 0, 100);
+  fm_record_track(e, 1, 90);
+  fm_record_track(e, 2, 240);
+  CHECK(le_engine_stop_track(e, 2) == LE_OK);
+  drain(e);
+  /* Let their independently recorded clocks reach a common upcoming wrap. */
+  for (int i = 0; i < 900 &&
+       100 - e->tracks[0].free_clock.position !=
+       90 - e->tracks[1].free_clock.position; ++i) tg_advance(e, 1);
+  const int remaining = 100 - e->tracks[0].free_clock.position;
+  CHECK(remaining == 90 - e->tracks[1].free_clock.position);
+  CHECK(remaining > 20);
+  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  tg_advance(e, 20);
+  CHECK(le_engine_play(e, 2) == LE_OK);
+  drain(e);
+  tg_advance(e, remaining - 20 + 1);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  const size_t simultaneous_n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(simultaneous_n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t simultaneous_count = log_entry_count(simultaneous_n);
+  CHECK(count_log_entries_for_channel(buf, simultaneous_count, LE_CMD_STOP, 0) == 1);
+  CHECK(count_log_entries_for_channel(buf, simultaneous_count, LE_CMD_STOP, 1) == 1);
+  CHECK(count_log_entries_for_channel(buf, simultaneous_count, LE_CMD_PLAY, 2) == 1);
+  CHECK(frame_of_log_entry_for_channel(buf, simultaneous_count, LE_CMD_STOP, 0) == (uint64_t)remaining);
+  CHECK(frame_of_log_entry_for_channel(buf, simultaneous_count, LE_CMD_STOP, 1) == (uint64_t)remaining);
+  CHECK(frame_of_log_entry_for_channel(buf, simultaneous_count, LE_CMD_PLAY, 2) == (uint64_t)remaining);
+  le_engine_destroy(e);
+}
+
 static void test_song_mode_independent_lengths_wraps(void) {
   printf("test_song_mode_independent_lengths_wraps\n");
   le_engine* e = sm_make_song_engine(1000);
@@ -26100,6 +26393,12 @@ int main(void) {
   test_free_mode_punch_in_ramps_not_hard_cuts();
 
   test_song_mode_defining_recording_sets_own_clock_not_master();
+  test_song_queue_exact_boundary_both_channel_orders();
+  test_song_queue_replace_cancel_and_current();
+  test_song_queue_invalidation_and_capture();
+  test_song_queue_one_shot_and_legacy_polyphony();
+  test_song_queue_free_mode_keeps_immediate_play();
+  test_song_queue_logs_committed_handoff_only();
   test_song_mode_independent_lengths_wraps();
   test_song_mode_one_capturer_handoff_finalizes_to_own_length();
   test_song_mode_commit_session_rejected_leaves_master_dormant();

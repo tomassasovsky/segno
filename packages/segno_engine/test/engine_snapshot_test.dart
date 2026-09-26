@@ -56,6 +56,8 @@ void main() {
       expect(snapshot.countInBeatsLeft, 0);
       // Looper mode (B2a) default.
       expect(snapshot.looperMode, LooperMode.multi);
+      expect(snapshot.songQueuedTrack, isNull);
+      expect(snapshot.songQueueProgress, 0);
     });
   });
 
@@ -562,6 +564,26 @@ void main() {
       }
     });
 
+    test('projects the queued Song section and clears the native sentinel', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        ptr.ref
+          ..song_queued_track = 5
+          ..song_queue_progress = 0.75;
+        final queued = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(queued.songQueuedTrack, 5);
+        expect(queued.songQueueProgress, 0.75);
+        ptr.ref
+          ..song_queued_track = -1
+          ..song_queue_progress = 0;
+        final cleared = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(cleared.songQueuedTrack, isNull);
+        expect(cleared.songQueueProgress, 0);
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
     test('sync_tempo == 0 maps to syncTempo false', () {
       final ptr = calloc<le_snapshot>();
       try {
@@ -696,6 +718,8 @@ void main() {
       bool countingIn = false,
       int countInBeatsLeft = 0,
       LooperMode looperMode = LooperMode.multi,
+      int? songQueuedTrack,
+      double songQueueProgress = 0,
       int inputClipMask = 0,
       int inputCondMask = 0,
     }) => EngineSnapshot(
@@ -733,9 +757,24 @@ void main() {
       countingIn: countingIn,
       countInBeatsLeft: countInBeatsLeft,
       looperMode: looperMode,
+      songQueuedTrack: songQueuedTrack,
+      songQueueProgress: songQueueProgress,
       inputClipMask: inputClipMask,
       inputCondMask: inputCondMask,
     );
+
+    test('queue changes and elapsed wait participate in equality', () {
+      final idle = build();
+      final queued = build(songQueuedTrack: 5);
+      final advanced = build(songQueuedTrack: 5, songQueueProgress: 0.5);
+      expect(idle, isNot(queued));
+      expect(queued, isNot(advanced));
+      expect(advanced, build(songQueuedTrack: 5, songQueueProgress: 0.5));
+      expect(
+        advanced.hashCode,
+        build(songQueuedTrack: 5, songQueueProgress: 0.5).hashCode,
+      );
+    });
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
       expect(build(), equals(build()));
@@ -1130,6 +1169,8 @@ void main() {
         'countInBeatsLeft',
         'looperMode',
         'primaryTrack',
+        'songQueuedTrack',
+        'songQueueProgress',
         'tracks',
       };
 

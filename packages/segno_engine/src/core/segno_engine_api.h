@@ -116,11 +116,10 @@ typedef enum le_looper_mode {
    * per-track controls. No separate section object, no advance gesture (the
    * plan's original `advanceSection` was explicitly dropped once the manual
    * research showed no such gesture exists on the Sheeran — see the spec's
-   * six B1 answers). Structurally IDENTICAL to Free's transport (independent
-   * lengths, no primary, no shared grid obligation): B4 reuses B2b's
-   * per-track clock machinery outright by broadening every FREE-only gate to
-   * also cover SONG (see free_clock's doc, engine_private.h) rather than
-   * inventing a parallel mechanism. */
+   * six B1 answers). The clocks reuse Free's independent lengths, with no
+   * primary or shared grid obligation. Song PLAY requests now queue a stopped
+   * section for the currently playing section's next wrap; that sample-accurate
+   * handoff stops the old section and starts the target at its beginning. */
   LE_LOOPER_MODE_SONG = 2,
   LE_LOOPER_MODE_BAND = 3,  /* primary + independently-quantized sections
                              * (B3) */
@@ -1037,6 +1036,12 @@ typedef struct le_snapshot {
    * (the UI truth for a "conditioning on" badge; a stage enabled on an
    * excluded channel reads 0 here because it never runs). */
   uint32_t input_cond_mask;
+  /* Song playback request awaiting the source section's next wrap. These two
+   * fields are decoded from ONE atomic publication, so target and progress
+   * cannot belong to different requests. Progress is elapsed / remaining-at-
+   * enqueue (0..1); no queue means track -1 and progress 0. */
+  int32_t song_queued_track;
+  float song_queue_progress;
   /* NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
    * le_callback_telemetry and le_engine_get_callback_telemetry. */
 } le_snapshot;
@@ -1377,6 +1382,11 @@ LE_EXPORT int32_t le_engine_measure_latency(le_engine* engine);
  * undo — never a copy. */
 LE_EXPORT int32_t le_engine_record(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_stop_track(le_engine* engine, int32_t channel);
+/* In Song, starts a stopped section alone from its beginning when idle, or
+ * queues it for the next wrap of the currently playing section. Requesting
+ * the queued target again, or the playing source, cancels the queue. A new
+ * target replaces it. Captures are never interrupted by this action. Other
+ * modes retain immediate play/resume behavior. */
 LE_EXPORT int32_t le_engine_play(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_clear(le_engine* engine, int32_t channel);
 /* Clear that leaves a restore point: identical to le_engine_clear, except the

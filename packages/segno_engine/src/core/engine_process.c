@@ -1539,6 +1539,7 @@ static void handle_finalize_take(le_engine* e, int32_t ch, uint64_t frame) {
 
 static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
+  if (ch == e->song_source || ch == e->song_target) le_song_cancel(e);
   /* A stop press during a count-in cancels it (D9). The stop then proceeds
    * normally — a no-op on the idle transport a count-in requires. */
   if (e->count_in_total > 0) le_count_in_reset(e);
@@ -1563,9 +1564,105 @@ static void handle_play(le_engine* e, int32_t ch, uint64_t frame) {
   le_track* t = &e->tracks[ch];
   if (load_i32(&t->a_state) == LE_TRACK_STOPPED) {
     store_i32(&t->a_state, LE_TRACK_PLAYING);
-    /* Playing anything from a held transport unparks the entire loop. */
-    if (was_held) le_unpark_stopped(e, frame);
+    /* Song starts one section; the other modes retain whole-rig unpark. */
+    if (was_held && load_i32(&e->a_looper_mode) != LE_LOOPER_MODE_SONG) {
+      le_unpark_stopped(e, frame);
+    }
   }
+}
+
+/* Song requests use the existing RT command ring. The source is the lowest
+ * playing channel if an older session contains several simultaneous sections;
+ * committing a handoff then stops all playing sections. Any capture refuses
+ * the request, rather than truncating a take. Pressing a playing section or
+ * the queued target cancels the pending request without changing playback. */
+static void handle_song_play(le_engine* e, int32_t ch, uint64_t frame) {
+  if (!valid_channel(e, ch)) return;
+  le_track* target = &e->tracks[ch];
+  const int32_t target_state = load_i32(&target->a_state);
+  if ((target_state != LE_TRACK_PLAYING && target_state != LE_TRACK_STOPPED) ||
+      target->free_clock.length <= 0) {
+    le_song_cancel(e);
+    return;
+  }
+  int32_t source = -1;
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    const int32_t st = load_i32(&e->tracks[c].a_state);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
+      le_song_cancel(e);
+      return;
+    }
+    if (source < 0 && st == LE_TRACK_PLAYING) source = c;
+  }
+  if (target_state == LE_TRACK_PLAYING || ch == e->song_target) {
+    le_song_cancel(e);
+    return;
+  }
+  le_song_cancel(e);
+  if (source < 0) {
+    target->free_clock.position = 0;
+    target->free_iteration = 0;
+    le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = ch});
+    handle_play(e, ch, frame);
+    return;
+  }
+  const le_loop_clock* clock = &e->tracks[source].free_clock;
+  if (clock->length <= 0) return;
+  e->song_source = source;
+  e->song_target = ch;
+  e->song_wait_frames = clock->length - clock->position;
+}
+
+/* Validate after commands and before every possible wrap. Clear/undo/capture
+ * can invalidate either endpoint without going through a Song-specific API. */
+static int song_queue_valid(le_engine* e) {
+  if (e->song_target < 0) return 0;
+  if (load_i32(&e->a_looper_mode) != LE_LOOPER_MODE_SONG ||
+      !valid_channel(e, e->song_source) || !valid_channel(e, e->song_target) ||
+      e->song_wait_frames <= 0 ||
+      load_i32(&e->tracks[e->song_source].a_state) != LE_TRACK_PLAYING ||
+      load_i32(&e->tracks[e->song_target].a_state) != LE_TRACK_STOPPED ||
+      e->tracks[e->song_source].free_clock.length <= 0 ||
+      e->tracks[e->song_target].free_clock.length <= 0) {
+    le_song_cancel(e);
+    return 0;
+  }
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    const int32_t st = load_i32(&e->tracks[c].a_state);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
+      le_song_cancel(e);
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static void publish_song_queue(le_engine* e) {
+  if (!song_queue_valid(e)) return;
+  const le_loop_clock* c = &e->tracks[e->song_source].free_clock;
+  int32_t elapsed = e->song_wait_frames - (c->length - c->position);
+  if (elapsed < 0) elapsed = 0;
+  uint32_t progress = (uint32_t)((uint64_t)elapsed * 16777215u /
+                                 (uint32_t)e->song_wait_frames);
+  /* A queued pill is never complete: the actual wrap clears the queue first. */
+  if (progress >= 16777215u) progress = 16777214u;
+  atomic_store_explicit(&e->a_song_queue,
+                        (progress << 8) | (uint32_t)(e->song_target + 1),
+                        memory_order_relaxed);
+}
+
+static void commit_song_queue(le_engine* e, uint64_t frame) {
+  const int32_t target = e->song_target;
+  le_song_cancel(e);
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    if (load_i32(&e->tracks[c].a_state) != LE_TRACK_PLAYING) continue;
+    le_plog_push(e, frame, (le_command){.code = LE_CMD_STOP, .arg_i = c});
+    handle_stop(e, c, frame);
+  }
+  e->tracks[target].free_clock.position = 0;
+  e->tracks[target].free_iteration = 0;
+  le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = target});
+  handle_play(e, target, frame);
 }
 
 /* Applies one lane-mute command, capture-aware. Muting a CAPTURING track
@@ -1609,6 +1706,7 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
 
 static void handle_clear(le_engine* e, int32_t ch) {
   if (!valid_channel(e, ch)) return;
+  if (ch == e->song_source || ch == e->song_target) le_song_cancel(e);
   le_track* t = &e->tracks[ch];
   le_audio_rev_bump(t); /* [R1] clear: the track's content is gone */
   t->record_pos = 0;
@@ -1827,6 +1925,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       break;
     }
     case LE_CMD_RECORD:
+      le_song_cancel(e);
       le_plog_push(e, frame, *cmd);
       if (valid_channel(e, cmd->arg_i)) {
         e->tracks[cmd->arg_i].pending_record = 0;
@@ -1845,6 +1944,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       break;
     case LE_CMD_ARM:
       if (valid_channel(e, cmd->arg_i)) {
+        le_song_cancel(e);
         le_track* t = &e->tracks[cmd->arg_i];
         /* arg_f carries the trigger: 0 = grid (quantize), 1 = input level
          * (sound-activated auto-record), 2 = Band section transport (B3b) —
@@ -1937,6 +2037,9 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       }
       break;
     case LE_CMD_DISARM:
+      if (cmd->arg_i == e->song_source || cmd->arg_i == e->song_target) {
+        le_song_cancel(e);
+      }
       if (valid_channel(e, cmd->arg_i)) {
         e->tracks[cmd->arg_i].pending_record = 0;
         e->tracks[cmd->arg_i].pending_trigger = 0;
@@ -1948,8 +2051,12 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       handle_stop(e, cmd->arg_i, frame);
       break;
     case LE_CMD_PLAY:
-      le_plog_push(e, frame, *cmd);
-      handle_play(e, cmd->arg_i, frame);
+      if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_SONG) {
+        handle_song_play(e, cmd->arg_i, frame);
+      } else {
+        le_plog_push(e, frame, *cmd);
+        handle_play(e, cmd->arg_i, frame);
+      }
       break;
     case LE_CMD_CLEAR:
       le_plog_push(e, frame, *cmd);
@@ -1982,6 +2089,9 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
        * the master grid deliberately survives — redo needs it; a full reset
        * stays Clear's job (handle_clear's all-empty check). */
       if (!valid_channel(e, cmd->arg_i)) break;
+      if (cmd->arg_i == e->song_source || cmd->arg_i == e->song_target) {
+        le_song_cancel(e);
+      }
       le_track* t = &e->tracks[cmd->arg_i];
       le_audio_rev_bump(t); /* [R1] undo to empty: content-less from here */
       t->record_pos = 0;
@@ -2194,6 +2304,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         break; /* re-validated here; the exported wrapper already rejects */
       }
       store_i32(&e->a_looper_mode, m);
+      le_song_cancel(e);
       break;
     }
     /* ---- primary track (B3, D18; see LE_CMD_CROWN_PRIMARY's doc,
@@ -3163,7 +3274,19 @@ static inline void advance_track_clock_frame(le_engine* e, int32_t ch,
   if (state != LE_TRACK_PLAYING && state != LE_TRACK_OVERDUBBING) return;
   if (le_loop_clock_tick(&t->free_clock)) {
     t->free_iteration++;
-    if (load_i32(&t->a_one_shot)) {
+    if (ch == e->song_source && song_queue_valid(e)) {
+      /* The sample just mixed was the old section's last sample. The first
+       * sample of the next section is the following frame, at position zero.
+       * st[] still describes the old frame, so the newly started target is
+       * not advanced by the rest of this loop, regardless of channel order. */
+      commit_song_queue(e, frame + 1);
+      return;
+    }
+    /* An earlier Song source in this frame's iteration may have committed a
+     * handoff and stopped this old section already. Its last rendered sample
+     * still advances the clock, but must not emit a second One Shot stop. */
+    if (load_i32(&t->a_one_shot) &&
+        load_i32(&t->a_state) != LE_TRACK_STOPPED) {
       /* Synthetic LE_CMD_STOP (#420): this auto-stop is the same audible
        * transition as a manual Stop press, which apply_command logs before
        * handle_stop runs — without an entry here a perf-log replay hears
@@ -4423,6 +4546,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
   le_command cmd;
   while (le_ring_pop(&e->ring, &cmd)) apply_command(e, &cmd, perf_frame_base);
+  song_queue_valid(e);
 
   /* Close the count-in cancel-race grace window (code-review fix) right
    * after this block's command drain: it is open for exactly one block's
@@ -4815,6 +4939,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     store_f32(&e->tracks[t].a_trk_peak_bits, trk_peak[t]);
   }
   store_i32(&e->a_master_pos, e->clock.position);
+  publish_song_queue(e);
   atomic_fetch_add_explicit(&e->a_frames, (uint64_t)frames,
                             memory_order_relaxed);
   /* Tap-tempo frame clock, advanced once per block (taps arrive via the ring,

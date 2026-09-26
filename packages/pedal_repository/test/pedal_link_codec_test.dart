@@ -62,6 +62,26 @@ void main() {
       expect(decoded!.masterGain, closeTo(0.5, 1 / 255));
     });
 
+    test('Song queues round-trip first and last tracks at all fill stages', () {
+      for (final track in [0, 7]) {
+        for (final progress in [0, 127, 254]) {
+          final frame = PedalStateFrame.blank().copyWith(
+            mode: PedalMode.play,
+            looperMode: PedalLooperMode.song,
+            queuedTrack: track,
+            queuedProgress: progress,
+          );
+          final payload = PedalLinkCodec.encodeStatePayload(frame);
+          expect(payload.sublist(19), [track + 1, progress]);
+          expect(PedalLinkCodec.decodeStatePayload(payload), frame);
+          final cancelled = frame.copyWith(clearQueue: true);
+          final cancelledBytes = PedalLinkCodec.encodeStatePayload(cancelled);
+          expect(cancelledBytes.sublist(19), [0, 0]);
+          expect(PedalLinkCodec.decodeStatePayload(cancelledBytes), cancelled);
+        }
+      }
+    });
+
     group('decodeStatePayload rejects', () {
       final good = PedalLinkCodec.encodeStatePayload(PedalStateFrame.blank());
 
@@ -73,6 +93,34 @@ void main() {
       test('a reserved flag bit', () {
         expect(
           PedalLinkCodec.decodeStatePayload([0x10, ...good.skip(1)]),
+          isNull,
+        );
+      });
+
+      test(
+        'invalid queue targets, premature completion and orphan progress',
+        () {
+          for (final (target, progress) in [
+            (9, 0),
+            (255, 0),
+            (1, 255),
+            (0, 1),
+          ]) {
+            final bad = List<int>.of(good)
+              ..[19] = target
+              ..[20] = progress;
+            expect(PedalLinkCodec.decodeStatePayload(bad), isNull);
+          }
+        },
+      );
+
+      test('negative and oversized bytes', () {
+        expect(
+          PedalLinkCodec.decodeStatePayload([...good.take(20), -1]),
+          isNull,
+        );
+        expect(
+          PedalLinkCodec.decodeStatePayload([...good.take(20), 256]),
           isNull,
         );
       });

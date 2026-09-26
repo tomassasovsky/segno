@@ -27,6 +27,12 @@ Map<String, PedalLinkMessage> _enumPins() {
           trackLeds: [led, ...blank.trackLeds.skip(1)],
         ),
       ),
+    for (final state in PedalPdState.values)
+      'enum_pd_${state.name}': PdStatusMessage(
+        state == PedalPdState.contract
+            ? const PedalPdStatus.contract(currentMilliamps: 5000)
+            : PedalPdStatus.unavailable(state),
+      ),
   };
   return pins;
 }
@@ -98,6 +104,23 @@ final goldenMessages = <String, PedalLinkMessage>{
       countingIn: true,
     ),
   ),
+  for (final progress in [0, 127, 254])
+    'song_queue_$progress': StateMessage(
+      PedalStateFrame.blank().copyWith(
+        mode: PedalMode.play,
+        looperMode: PedalLooperMode.song,
+        globalColor: GlobalColor.green,
+        queuedTrack: 7,
+        queuedProgress: progress,
+      ),
+    ),
+  'song_queue_cancelled': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      mode: PedalMode.play,
+      looperMode: PedalLooperMode.song,
+      globalColor: GlobalColor.green,
+    ),
+  ),
   'fx_mode': StateMessage(
     PedalStateFrame(
       globalColor: GlobalColor.green,
@@ -123,6 +146,16 @@ final goldenMessages = <String, PedalLinkMessage>{
   'button_bank_up': const ButtonMessage(PedalButton.bank, pressed: false),
   'encoder_plus1': const EncoderMessage(1),
   'encoder_minus3': const EncoderMessage(-3),
+  // These pin wire units and null semantics; they are not board measurements.
+  'pd_contract_20v_5a': const PdStatusMessage(
+    PedalPdStatus.contract(currentMilliamps: 5000, voltageMillivolts: 20000),
+  ),
+  'pd_contract_unknown_voltage': const PdStatusMessage(
+    PedalPdStatus.contract(currentMilliamps: 5000),
+  ),
+  'pd_mismatch': const PdStatusMessage(
+    PedalPdStatus.contract(currentMilliamps: 3000, capabilityMismatch: true),
+  ),
   'ctrl1_switch_down': const CtrlMessage(
     jack: PedalCtrlJack.ctrl1,
     kind: PedalCtrlKind.switchPedal,

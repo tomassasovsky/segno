@@ -42,36 +42,42 @@ import 'helpers/fake_audio_engine.dart';
 final EngineSnapshot _playingSnapshot = _playingAt(24000);
 
 /// One playing track with independently controlled transport and meter values.
-EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
-    EngineSnapshot(
-      isRunning: true,
-      sampleRate: 48000,
-      bufferFrames: 128,
-      inputChannels: 2,
-      outputChannels: 4,
-      framesProcessed: 0,
-      xrunCount: 0,
-      inputRms: 0,
-      inputPeak: 0,
-      outputRms: 0,
-      latencyState: le.LatencyState.idle,
-      measuredLatencyMs: -1,
-      masterLengthFrames: 96000,
-      masterPositionFrames: masterPositionFrames,
-      tracks: [
-        TrackSnapshot(
-          state: TrackState.playing,
-          volume: 0.8,
-          muted: false,
-          lengthFrames: 96000,
-          undoDepth: 1,
-          rms: 0.3,
-          peak: peak,
-          inputMask: 0x2,
-          outputMask: 0x2,
-        ),
-      ],
-    );
+EngineSnapshot _playingAt(
+  int masterPositionFrames, {
+  double peak = 0.5,
+  int? songQueuedTrack,
+  double songQueueProgress = 0,
+}) => EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  masterLengthFrames: 96000,
+  masterPositionFrames: masterPositionFrames,
+  songQueuedTrack: songQueuedTrack,
+  songQueueProgress: songQueueProgress,
+  tracks: [
+    TrackSnapshot(
+      state: TrackState.playing,
+      volume: 0.8,
+      muted: false,
+      lengthFrames: 96000,
+      undoDepth: 1,
+      rms: 0.3,
+      peak: peak,
+      inputMask: 0x2,
+      outputMask: 0x2,
+    ),
+  ],
+);
 
 /// One playing track with one real lane — the cache-telemetry gate is a
 /// per-lane concern, and [_playingSnapshot]'s tracks carry no lanes.
@@ -391,6 +397,31 @@ void main() {
       expect(state.status.outputChannels, 4);
       expect(state.status.isConnected, isTrue);
     });
+
+    test(
+      'projects queue progress and cancellation without changing tracks',
+      () {
+        engine.nextSnapshot = _playingAt(24000, songQueuedTrack: 1);
+        final repo = buildRepo();
+        final queued = repo.state;
+        expect(queued.transport.songQueuedTrack, 1);
+        expect(queued.transport.songQueueProgress, 0);
+        engine.nextSnapshot = _playingAt(
+          24000,
+          songQueuedTrack: 1,
+          songQueueProgress: 0.75,
+        );
+        final advanced = repo.state;
+        expect(advanced.transport.songQueueProgress, 0.75);
+        expect(advanced.transport, isNot(queued.transport));
+        expect(advanced.tracks, queued.tracks);
+        engine.nextSnapshot = _playingAt(24000);
+        final cancelled = repo.state;
+        expect(cancelled.transport.songQueuedTrack, isNull);
+        expect(cancelled.transport.songQueueProgress, 0);
+        expect(cancelled.tracks, queued.tracks);
+      },
+    );
 
     test('the master playhead moving does not change any track', () {
       // The transport position belongs to the TRANSPORT. Copying it onto every

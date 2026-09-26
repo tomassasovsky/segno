@@ -5,6 +5,7 @@ import 'package:pedal_repository/src/pedal_event.dart';
 import 'package:pedal_repository/src/pedal_link.dart';
 import 'package:pedal_repository/src/pedal_link_codec.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
+import 'package:pedal_repository/src/pedal_pd_status.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
 /// Whether the console board is on the other end of the link.
@@ -74,6 +75,17 @@ class PedalRepository {
       StreamController<PedalEvent>.broadcast();
   final StreamController<PedalLinkStatus> _statusChanges =
       StreamController<PedalLinkStatus>.broadcast();
+  final StreamController<PedalPdStatus> _pdStatusChanges =
+      StreamController<PedalPdStatus>.broadcast();
+  PedalPdStatus _pdStatus = const PedalPdStatus.unavailable(
+    PedalPdState.unknown,
+  );
+  Timer? _pdWatchdog;
+
+  /// Three missed once-per-second PD reports invalidate the last contract.
+  static const pdStatusTimeout = Duration(
+    milliseconds: 3 * PedalLinkCodec.helloIntervalMs,
+  );
 
   /// The last hello heard, or `null` while the board is quiet.
   HelloMessage? _hello;
@@ -107,6 +119,12 @@ class PedalRepository {
   /// talking board announces a different firmware version — the board was
   /// reflashed under a running app.
   Stream<PedalLinkStatus> get statusChanges => _statusChanges.stream;
+
+  /// The latest inlet observation, invalidated when reports or the link stop.
+  PedalPdStatus get pdStatus => _pdStatus;
+
+  /// Changed inlet observations. Duplicate reports refresh freshness silently.
+  Stream<PedalPdStatus> get pdStatusChanges => _pdStatusChanges.stream;
 
   /// The current link status.
   PedalLinkStatus get status => switch (_hello) {
@@ -192,9 +210,34 @@ class PedalRepository {
         _onCtrl(jack, contact, kind, value);
       case HelloMessage():
         _onHello(message);
+      case PdStatusMessage(:final status):
+        if (!_connected || !status.isValid) return;
+        _setPdStatus(status);
+        _armPdWatchdog();
       case StateMessage():
         break; // outbound; a board never sends one
     }
+  }
+
+  void _armPdWatchdog() {
+    _pdWatchdog?.cancel();
+    _pdWatchdog = Timer(pdStatusTimeout, () {
+      _setPdStatus(const PedalPdStatus.unavailable(PedalPdState.stale));
+    });
+  }
+
+  void _setPdStatus(PedalPdStatus next) {
+    if (next == _pdStatus) return;
+    _pdStatus = next;
+    final voltage = next.voltageMillivolts;
+    final voltageLabel = voltage == null ? 'unknown' : '$voltage mV';
+    final detail = next.state == PedalPdState.contract
+        ? 'requested ${next.currentMilliamps} mA; '
+              'voltage $voltageLabel; '
+              'capability mismatch ${next.capabilityMismatch}'
+        : next.state.name;
+    _log?.call('pedal power: $detail');
+    if (!_pdStatusChanges.isClosed) _pdStatusChanges.add(next);
   }
 
   void _onHello(HelloMessage hello) {
@@ -314,6 +357,15 @@ class PedalRepository {
   void _setHello(HelloMessage? hello, String Function() why) {
     if (hello == _hello) return;
     _hello = hello;
+    _pdWatchdog?.cancel();
+    _setPdStatus(
+      PedalPdStatus.unavailable(
+        status == PedalLinkStatus.connected
+            ? PedalPdState.unknown
+            : PedalPdState.stale,
+      ),
+    );
+    if (status == PedalLinkStatus.connected) _armPdWatchdog();
     // A missing or incompatible board cannot supply trusted calibration
     // readings, including readings still waiting for their settle timer.
     // Whatever comes back may hold another pedal; explicit calibration stays.
@@ -332,11 +384,13 @@ class PedalRepository {
     if (_disposed) return;
     _disposed = true;
     _helloWatchdog?.cancel();
+    _pdWatchdog?.cancel();
     _forgetLearned();
     _setHello(null, () => 'link released');
     await _inboundSub.cancel();
     await _link.dispose();
     await _events.close();
     await _statusChanges.close();
+    await _pdStatusChanges.close();
   }
 }

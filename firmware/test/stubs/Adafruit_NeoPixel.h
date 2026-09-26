@@ -7,6 +7,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <map>
 #include <vector>
 
 #define HIGH 1
@@ -19,6 +21,10 @@
 #define CHANGE 0
 #define NEO_GRB 0
 #define NEO_KHZ800 0
+
+static const uint8_t D0 = 26, D1 = 27, D2 = 28, D3 = 5, D9 = 4, D10 = 3;
+struct FakeRp2040 { uint32_t hwrand32() { return 0x1234; } };
+inline FakeRp2040 rp2040;
 
 namespace fake_arduino {
 inline unsigned long now = 0;
@@ -43,11 +49,15 @@ inline void attachInterrupt(int, void (*)(), int) {}
 inline void delay(int duration) { fake_arduino::now += duration; }
 
 struct FakeSerial {
+  std::deque<uint8_t> received;
   void setTX(int) {}
   void setRX(int) {}
   void begin(unsigned long) {}
-  int available() { return 0; }
-  int read() { return -1; }
+  int available() { return received.size(); }
+  int read() {
+    if (received.empty()) return -1;
+    const uint8_t value = received.front(); received.pop_front(); return value;
+  }
   size_t write(const uint8_t *bytes, size_t length) {
     fake_arduino::sent.emplace_back(bytes, bytes + length);
     return length;
@@ -55,19 +65,29 @@ struct FakeSerial {
 };
 inline FakeSerial Serial1;
 
+namespace fake_neopixels {
+inline std::map<int, std::vector<uint32_t>> values;
+}
+
 class Adafruit_NeoPixel {
  public:
-  Adafruit_NeoPixel(int, int, int) {}
+  Adafruit_NeoPixel(int count, int pin, int) : pin_(pin) {
+    fake_neopixels::values[pin].resize(count);
+  }
   void begin() {}
   void setBrightness(int) {}
   void show() {}
-  void clear() {}
-  void setPixelColor(int, uint32_t) {}
+  void clear() { for (auto &color : fake_neopixels::values[pin_]) color = 0; }
+  void setPixelColor(int pixel, uint32_t color) {
+    fake_neopixels::values[pin_].at(pixel) = color;
+  }
   static uint32_t Color(uint8_t r, uint8_t g, uint8_t b) {
     return (uint32_t)r << 16 | (uint32_t)g << 8 | b;
   }
   static uint32_t gamma32(uint32_t color) { return color; }
   static uint8_t gamma8(uint8_t x) { return x; }
+ private:
+  int pin_;
 };
 
 #endif

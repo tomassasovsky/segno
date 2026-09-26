@@ -12,6 +12,7 @@ export 'src/pedal_link.dart';
 export 'src/pedal_link_codec.dart';
 export 'src/pedal_link_message.dart';
 export 'src/pedal_mode.dart';
+export 'src/pedal_pd_status.dart';
 export 'src/pedal_repository.dart';
 export 'src/pedal_state_frame.dart';
 export 'src/uart_pedal_link.dart';

@@ -967,6 +967,21 @@ int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
   return le_push(engine, LE_CMD_STOP, channel, 0.0f);
 }
 int32_t le_engine_play(le_engine* engine, int32_t channel) {
+  if (engine != NULL &&
+      load_i32(&engine->a_looper_mode) == LE_LOOPER_MODE_SONG) {
+    if (!valid_channel(engine, channel)) return LE_ERR_INVALID;
+    const int32_t st = load_i32(&engine->tracks[channel].a_state);
+    if ((st != LE_TRACK_STOPPED && st != LE_TRACK_PLAYING) ||
+        load_i32(&engine->tracks[channel].lanes[0].a_len) <= 0) {
+      return LE_ERR_INVALID;
+    }
+    for (int32_t c = 0; c < engine->track_count; ++c) {
+      const int32_t state = load_i32(&engine->tracks[c].a_state);
+      if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) {
+        return LE_ERR_INVALID;
+      }
+    }
+  }
   return le_push(engine, LE_CMD_PLAY, channel, 0.0f);
 }
 /* Builds the restore point for a clear about to be posted on `t` (control
@@ -1346,6 +1361,13 @@ int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled) {
 int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (load_i32(&engine->a_looper_mode) == LE_LOOPER_MODE_SONG) {
+    /* Song PLAY may be ahead of us in the ring but not published yet. Always
+     * enqueue cancellation; control-side record-arm bookkeeping cannot tell
+     * whether this track has a Song request waiting on the audio thread. */
+    engine->armed[channel] = 0;
+    return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+  }
   /* Trigger-agnostic on purpose: the caller is saying "nothing may fire on
    * this track later", not "undo my own press". le_cancel_arm is a no-op on
    * an unarmed track (LE_OK), and otherwise reports whether the DISARM

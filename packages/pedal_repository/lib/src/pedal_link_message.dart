@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_ctrl.dart';
+import 'package:pedal_repository/src/pedal_pd_status.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
 /// One message on the pedal link, in either direction.
@@ -73,6 +74,18 @@ final class CtrlMessage extends PedalLinkMessage {
 
   @override
   List<Object?> get props => [jack, contact, kind, value];
+}
+
+/// The console's current observation of its power inlet (board → segno).
+final class PdStatusMessage extends PedalLinkMessage {
+  /// Creates a [PdStatusMessage].
+  const PdStatusMessage(this.status);
+
+  /// A contract or an explicit unknown, disconnected or failure state.
+  final PedalPdStatus status;
+
+  @override
+  List<Object?> get props => [status];
 }
 
 /// The board announcing itself (board → segno), at boot and once a second
