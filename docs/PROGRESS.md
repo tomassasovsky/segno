@@ -12,6 +12,17 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+**September 26 encoder correction:** new-board runtime PR #1082 now targets
+the Same Sky ACZ11BR1E-20FD1-20C selected by hardware PR #1080. Its manufacturer
+clockwise waveform produces +1 per complete click and increases master gain.
+The decoder cancels contact bounce, rejects incomplete/two-bit transitions and
+retains cumulative counter wrap. All eight firmware host suites (including 58
+codec fixtures) pass, and the XIAO target builds at 64,072 bytes flash / 10,812
+bytes RAM. The scoped review is in
+[ring encoder review](code-review/ring-encoder-1081/review.md).
+No firmware was flashed. Full runtime reconciliation, whole-PR review and CI
+remain separate gates; the older publication notes below are historical.
+
 Publication is split by hardware generation. This branch includes the screen
 power PCB, console connectors and power-domain corrections, white XIAO ring carrier (module footprints or external strip), and GPIO17 lifecycle service. The current old-console
 ten-pill/40-LED-strip firmware is tracked separately under #1076 and #1077.

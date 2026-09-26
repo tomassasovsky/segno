@@ -48,10 +48,38 @@ int main() {
   CHECK(!dark(), "reconnection restores current state");
   fake_arduino::now += ring_link::TIMEOUT_MS; loop();
   CHECK(dark() && !g_haveFrame, "missing console heartbeat blanks ring in 500ms");
-  encoder(2); encoder(0); encoder(1); encoder(3);
-  CHECK(g_encDetents == 1, "one clockwise detent reports once");
+  // Manufacturer 20C waveform, viewed from the shaft: A closes before B.
+  // A is the high bit, B the low bit; both contacts open at every detent.
   encoder(1); encoder(0); encoder(2); encoder(3);
+  CHECK(g_encDetents == 1, "one clockwise detent reports once");
+  sendInput();
+  ring_link::Parser turnParser; uint8_t turnType = 0;
+  const uint8_t *turnPayload = nullptr; bool turnDecoded = false;
+  for (uint8_t byte : ringLink.sent.back())
+    if (turnParser.push(byte, turnType, turnPayload)) turnDecoded = true;
+  CHECK(turnDecoded && turnType == ring_link::INPUT_STATE &&
+        ring_link::get32(turnPayload + 4) == 1,
+        "clockwise increment reaches the actual ring-link packet");
+  encoder(2); encoder(0); encoder(1); encoder(3);
   CHECK(g_encDetents == 0, "one reverse detent cancels once");
+  encoder(1); encoder(3); encoder(2); encoder(3);
+  CHECK(g_encDetents == 0, "bounce near a detent generates no false clicks");
+  encoder(1); encoder(0); encoder(1); encoder(3);
+  CHECK(g_encDetents == 0, "reversing halfway through a click generates no event");
+  encoder(1); encoder(3); encoder(1); encoder(0); encoder(1);
+  encoder(0); encoder(2); encoder(0); encoder(2); encoder(3);
+  encoder(2); encoder(3);
+  CHECK(g_encDetents == 1, "clockwise click with bounce on every edge counts once");
+  encoder(0); encoder(2); encoder(3);
+  CHECK(g_encDetents == 1, "invalid two-bit jump cannot create a detent");
+  for (int i = 0; i < 20; ++i) {
+    encoder(1); encoder(0); encoder(2); encoder(3);
+  }
+  CHECK(g_encDetents == 21, "twenty clockwise clicks produce twenty increments");
+  for (int i = 0; i < 22; ++i) {
+    encoder(2); encoder(0); encoder(1); encoder(3);
+  }
+  CHECK(g_encDetents == UINT32_MAX, "reverse detents retain unsigned counter wrap");
   fake_arduino::digital[PIN_ENC_SW] = LOW; pollButton();
   fake_arduino::now += 8; pollButton();
   fake_arduino::digital[PIN_ENC_SW] = HIGH; pollButton();

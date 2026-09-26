@@ -19,6 +19,14 @@ the Seeed board variant shipped with arduino-pico 6.0.0. The UART runs at
 115200 8N1 with a 256-byte receive queue. PIO/DMA LED output leaves encoder
 and UART interrupts enabled.
 
+The selected encoder is **Same Sky ACZ11BR1E-20FD1-20C** (20 pulses and
+20 detents). With its A/B contacts connected as above, the manufacturer's
+[20C waveform](https://www.sameskydevices.com/product/resource/acz11.pdf)
+gives `11 → 01 → 00 → 10 → 11` clockwise, viewed from the shaft.
+Each complete clockwise click sends +1 and increases master gain;
+counterclockwise sends −1. The transition decoder cancels contact bounce,
+rejects incomplete/invalid cycles, and emits only at the open-contact detent.
+
 The private link uses SLIP framing, CRC-16/CCITT-FALSE and version 2.
 The console sends the canonical 21-byte pedal state every 100ms, including
 the queued-track progress used by the console's pills. The XIAO

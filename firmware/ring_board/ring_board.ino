@@ -23,22 +23,28 @@ static bool g_buttonRaw = false, g_buttonStable = false;
 
 static const uint8_t ENC_DETENT = 3;      // both lines high, between clicks
 static volatile uint8_t g_encLast = ENC_DETENT;
-static volatile uint8_t g_encMark = 0;    // last intermediate state, 0 = none
+static volatile int8_t g_encSteps = 0;   // signed quarter-steps since last detent
 static volatile uint32_t g_encDetents = 0;  // whole clicks the link still owes
 
 static void encoderSample() {
   const uint8_t cur = (uint8_t)((digitalRead(PIN_ENC_A) << 1) | digitalRead(PIN_ENC_B));
   if (cur == g_encLast) return;
+  const uint8_t previous = g_encLast;
   g_encLast = cur;
+  // ACZ11BR1E-20FD1-20C: clockwise closes A before B, giving
+  // 11 -> 01 -> 00 -> 10 -> 11. Count only a complete cycle;
+  // reverse transitions from contact bounce cancel their forward steps.
+  static const int8_t steps[16] = {
+     0, -1,  1,  0,  1,  0,  0, -1,
+    -1,  0,  0,  1,  0,  1, -1,  0,
+  };
+  if ((previous ^ cur) == 3) g_encSteps = 0;  // missed/invalid two-bit jump
+  else g_encSteps += steps[(previous << 2) | cur];
   if (cur == ENC_DETENT) {
-    if (g_encMark == 1) g_encDetents++;
-    if (g_encMark == 2) g_encDetents--;
-    g_encMark = 0;
-    return;
+    if (g_encSteps == 4) g_encDetents++;
+    if (g_encSteps == -4) g_encDetents--;
+    g_encSteps = 0;
   }
-  // 01 and 10 name a direction; 00 is the midpoint and names none, so it
-  // leaves the mark alone.
-  if (cur == 1 || cur == 2) g_encMark = cur;
 }
 
 // Samples from the main loop. The ISR can preempt any instruction of
