@@ -13,6 +13,24 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+**September 26 repeat production review: encoder and UART corrections.**
+The [fresh all-three-board review](code-review/pcb-final-repeat-1072/review.md)
+found and closed the ring encoder part/footprint mismatch and the console A2
+UART resistor margin. The selected encoder is Same Sky ACZ11BR1E-20FD1-20C,
+with its exact threaded-part footprint and separately sourced mounting nut.
+Console R18 is now 6.8 kΩ, 1%; console copper is unchanged. The former ring ZIP
+is withdrawn. Screen Revision M copper is unchanged, with freshly regenerated
+exports and input hashes. All three boards pass native ERC/DRC, and independent
+CAM comparison passes 175 console/ring and 412 screen assertions. Independent
+correction reviews and the completed DeepSeek follow-up close the findings.
+The new-board encoder direction/bounce fix is separately pushed in runtime
+#1082 at `dd46ab0d1a44bc55c7f42bc7db7992773c7a4113`; nothing was flashed.
+Use only the [current archive manifest](reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
+This supersedes the earlier statement that console/ring inputs were unchanged.
+Bare-board CAD/CAM acceptance does not establish assembled USB, enclosure or
+runtime qualification; full CI remains unavailable on the stacked feature base.
+No order or merge occurred.
+
 **September 26 USB correction: Revision M CAD and manufacturing files pass.**
 [Revision M](reviews/screen-power-usb-revision-1072/review.md) replaces the
 host-powered relay coils with AUX-powered coils and per-host low-current
