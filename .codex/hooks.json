@@ -1,0 +1,41 @@
+{
+  "description": "Segno session context and Dart post-patch checks. Review in Codex /hooks before activation.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/tool/codex/session_context.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/tool/codex/session_context.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/tool/codex/after_patch.py\"",
+            "timeout": 60,
+            "statusMessage": "Formatting and analyzing patched Dart files"
+          }
+        ]
+      }
+    ]
+  }
+}
