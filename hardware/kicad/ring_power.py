@@ -25,7 +25,14 @@ RETURN_VIAS = ((34.23, 24), (35.23, 24), (34.73, 23.5))
 TAP_WIDTH = 0.65
 RAIL_Y = 22
 FILLET = 0.6
-TAPS = (("C5", "1", 39, 18.5), ("U2", "14", 35.62, 20))
+TAPS = (("C5", "1", 39, 18.5),)
+# U2 pins 13 and 14 hang off C5's tap instead of taking a second one. With a
+# tap of their own the two taps, the rail between them and the pocket's own
+# 0.65 mm copper closed a loop around 8.9 mm2 of bare board; this link is the
+# short way across it, 4.0 mm of track where the old path was 7.3 mm.
+LINK = ((39, 18.5), (37.5, 20), (35.62, 20))      # C5.1 -> U2.14
+# Centreline radius for the rail's own bends: a 1 mm radius on the inner edge.
+BEND = WIDTH / 2 + 1
 
 
 def vector(point):
@@ -95,6 +102,44 @@ def feed_nodes():
     return out
 
 
+def rounded(points, radius=BEND):
+    """The same centreline, with a tangent arc at each corner.
+
+    Chords, not arc items: the Specctra export flattens an arc to its chord.
+    Collinear points pass through untouched, so the tap landings stay real
+    endpoints of the rail. The first and last leg may spend their whole length
+    on a tangent; an interior leg keeps half of it for its other end.
+    """
+    out = [points[0]]
+    last = len(points) - 3
+    for i, corner in enumerate(points[1:-1]):
+        before, after = points[i], points[i + 2]
+        v1 = (before[0] - corner[0], before[1] - corner[1])
+        v2 = (after[0] - corner[0], after[1] - corner[1])
+        l1, l2 = math.hypot(*v1), math.hypot(*v2)
+        u1, u2 = (v1[0] / l1, v1[1] / l1), (v2[0] / l2, v2[1] / l2)
+        angle = math.acos(max(-1, min(1, u1[0] * u2[0] + u1[1] * u2[1])))
+        if angle > math.pi - 1e-9:
+            out.append(corner)
+            continue
+        tangent = min(radius / math.tan(angle / 2),
+                      l1 if i == 0 else l1 / 2,
+                      l2 if i == last else l2 / 2)
+        r = tangent * math.tan(angle / 2)
+        t1 = (corner[0] + u1[0] * tangent, corner[1] + u1[1] * tangent)
+        t2 = (corner[0] + u2[0] * tangent, corner[1] + u2[1] * tangent)
+        bisector = (u1[0] + u2[0], u1[1] + u2[1])
+        bl = math.hypot(*bisector)
+        out += arc((corner[0] + bisector[0] / bl * (r / math.sin(angle / 2)),
+                    corner[1] + bisector[1] / bl * (r / math.sin(angle / 2))),
+                   t1, t2, steps=8)
+    out.append(points[-1])
+    out = [(round(x * 1_000_000) / 1_000_000, round(y * 1_000_000) / 1_000_000)
+           for x, y in out]
+    return [q for i, q in enumerate(out)
+            if i == 0 or math.dist(q, out[i - 1]) > 1e-9]
+
+
 def install(board):
     """Add the fixed feed, its taps and the return vias before signal routing."""
     assert point(pad(board, "J1", "1").GetPosition()) == point(vector(FEED[0]))
@@ -110,9 +155,13 @@ def install(board):
         track.SetLocked(True)
         board.Add(track)
 
-    nodes = feed_nodes()
+    nodes = rounded(feed_nodes())
     for a, b in zip(nodes, nodes[1:]):
         wire(a, b, WIDTH)
+    assert point(pad(board, "U2", "14").GetPosition()) == point(vector(LINK[-1])), \
+        "TAP: U2.14 moved"
+    for a, b in zip(LINK, LINK[1:]):
+        wire(a, b, TAP_WIDTH)
     for ref, number, x, y in TAPS:
         assert point(pad(board, ref, number).GetPosition()) == point(
             vector((x, y))), "TAP: %s.%s moved" % (ref, number)
