@@ -12,6 +12,11 @@ other net.
 Geometry comes from ring_power itself, so this cannot drift from the source.
 
     python3 patch_ring_feed.py segno_pedal_ring.kicad_pcb
+
+--restore-taps undoes the tap topology an earlier version of this script
+changed, and --split-taps then gives each tap landing its own endpoint, which
+is what the source does. Run in that order on a board that took the old route;
+a board this script rounds from the baseline needs neither.
 """
 import argparse
 from pathlib import Path
@@ -117,6 +122,46 @@ def restore_taps(path, dry_run=False):
           'restored' + (' (dry run)' if dry_run else ''))
 
 
+def split_taps(path, dry_run=False):
+    """Give every tap landing its own node on an already rounded rail.
+
+    A board that was rounded while only one tap existed carries the other
+    landing in the middle of a chord, where the source now puts an endpoint.
+    This splits that chord in two at the landing: the same copper, one more
+    endpoint, and a board that matches ring_power.feed_nodes() track for track.
+    """
+    text = path.read_text()
+    nodes = rp.feed_nodes()
+    drop, added, done = [], '', []
+    for _, _, x, _ in rp.TAPS:
+        spot = (x, rp.RAIL_Y)
+        assert any(same(node, spot) for node in nodes), \
+            f'{spot} is not a node of the source rail'
+        rail = [(span, endpoints(body)) for span, body in blocks(text, 'segment')
+                if '"+5V_LED"' in body and '"F.Cu"' in body
+                and f'(width {number(rp.WIDTH)})' in body]
+        if any(same(a, spot) or same(b, spot) for _, (a, b) in rail):
+            continue                                  # already an endpoint
+        hits = [(span, (a, b)) for span, (a, b) in rail if rp.on_run(a, b, spot)]
+        if len(hits) != 1:
+            raise SystemExit(f'{path.name}: expected one {rp.WIDTH} mm chord '
+                             f'through {spot}, found {len(hits)}')
+        span, (a, b) = hits[0]
+        drop.append(span)
+        added += wire(a, spot, rp.WIDTH) + wire(spot, b, rp.WIDTH)
+        done.append(spot)
+    for span in sorted(drop, reverse=True):
+        text = text[:span[0]] + text[span[1]:]
+    spot = re.search(r'^\t\(zone\n', text, re.M)
+    cut = spot.start() if spot else text.rindex('\n)')
+    text = text[:cut] + added + text[cut:]
+    if not dry_run:
+        path.write_text(text)
+    print(f'{path.name}: {len(done)} tap landing(s) split into the rail'
+          + (f' at {done}' if done else ' (nothing to split)')
+          + (' (dry run)' if dry_run else ''))
+
+
 def patch(path, dry_run=False):
     text = path.read_text()
     segments = [(span, body) for span, body in blocks(text, 'segment')]
@@ -132,7 +177,7 @@ def patch(path, dry_run=False):
                              f'{a}->{b}, found {len(hits)} - already patched, '
                              'or not the board this migrates')
         drop.append(hits[0][0])
-    nodes = rp.rounded(rp.feed_nodes())
+    nodes = rp.feed_nodes()
     added = ''.join(wire(a, b, rp.WIDTH) for a, b in zip(nodes, nodes[1:]))
     for span in sorted(drop, reverse=True):
         text = text[:span[0]] + text[span[1]:]
@@ -154,10 +199,15 @@ def main():
     parser.add_argument('--restore-taps', action='store_true',
                         help="put U2's tap and its feed leg back on a board "
                              'an earlier version of this script changed')
+    parser.add_argument('--split-taps', action='store_true',
+                        help='split the rounded rail at any tap landing that is '
+                             'not already an endpoint, matching the source')
     args = parser.parse_args()
     for board in args.boards:
         if args.restore_taps:
             restore_taps(board, args.dry_run)
+        elif args.split_taps:
+            split_taps(board, args.dry_run)
         else:
             patch(board, args.dry_run)
 

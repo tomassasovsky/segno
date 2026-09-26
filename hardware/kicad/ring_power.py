@@ -84,23 +84,46 @@ def tap_outline(x):
                   (x + half + FILLET, lip), (x + half, top)))
 
 
-def feed_nodes():
-    """FEED with the tap landings inserted, so every junction is an endpoint.
+def on_run(a, b, spot, tol=1e-6):
+    """True when spot lies on the straight run a -> b, ends excluded."""
+    dx, dy = b[0]-a[0], b[1]-a[1]
+    length = math.hypot(dx, dy)
+    if not length:
+        return False
+    along = ((spot[0]-a[0])*dx + (spot[1]-a[1])*dy)/length
+    across = abs((spot[0]-a[0])*dy - (spot[1]-a[1])*dx)/length
+    return across <= tol and tol < along < length-tol
 
-    The copper is the same straight rail either way; splitting it there keeps
-    the connectivity graph honest for anything that walks segment ends, this
-    file's own continuity check included.
+
+def split_run(nodes, spot, tol=1e-6):
+    """nodes with spot as its own node, if it is not one already."""
+    if any(math.dist(node, spot) <= tol for node in nodes):
+        return list(nodes)
+    for i, (a, b) in enumerate(zip(nodes, nodes[1:])):
+        if on_run(a, b, spot):
+            return list(nodes[:i+1]) + [spot] + list(nodes[i+1:])
+    raise AssertionError("TAP: no straight run of the rail passes through %s"
+                         % (spot,))
+
+
+def feed_nodes():
+    """The rounded rail, with each tap landing as a node of its own.
+
+    Rounding first and splitting after is the order that matters. A landing
+    sits in the middle of a straight run, and a node there must not shorten the
+    leg the next bend measures its tangent against: inserting the landings
+    first clamped the J2 bend to a 1.715 mm radius, because the tangent may
+    only take half an interior leg and the U2 landing cut that leg from
+    12.81 mm to 3.43 mm - for no geometric reason, since the copper on both
+    sides of a collinear node is the same straight rail. Splitting afterwards
+    keeps the accepted 1.75 mm bend and still leaves every junction a real
+    endpoint for anything that walks segment ends, this file's own continuity
+    check included.
     """
-    out = []
-    for a, b in zip(FEED, FEED[1:]):
-        out.append(a)
-        if a[1] == b[1] == RAIL_Y:
-            for _, _, x, _ in sorted(TAPS, key=lambda t: t[2],
-                                     reverse=a[0] > b[0]):
-                if min(a[0], b[0]) < x < max(a[0], b[0]):
-                    out.append((x, RAIL_Y))
-    out.append(FEED[-1])
-    return out
+    nodes = rounded(FEED)
+    for _, _, x, _ in TAPS:
+        nodes = split_run(nodes, (x, RAIL_Y))
+    return nodes
 
 
 def rounded(points, radius=BEND):
@@ -160,7 +183,7 @@ def install(board):
         track.SetLocked(True)
         board.Add(track)
 
-    nodes = rounded(feed_nodes())
+    nodes = feed_nodes()
     for a, b in zip(nodes, nodes[1:]):
         wire(a, b, WIDTH)
     for ref, number, x, y in TAPS:
