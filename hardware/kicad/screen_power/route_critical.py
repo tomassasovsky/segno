@@ -107,9 +107,14 @@ def route(variant):
     # Pump capacitor: symmetric legs from pins 2 and 4 to the 2mm terminals.
     for pin,cap_pin in (('2','1'),('4','2')):
         bend('U1',pin,'C3',cap_pin,SUPPLY)
-    # AUX bypass at pin 8 and the reservoir/clamp on pin 5's negative rail.
-    for nodes in (('C5','1','U1','8'),('U1','5','C4','2'),('D2','2','C4','2')):
+    # The reservoir and the clamp on pin 5's negative rail.
+    for nodes in (('U1','5','C4','2'),('D2','2','C4','2')):
         bend(*nodes,SUPPLY)
+    # AUX bypass at pin 8. This one leaves its pad diagonally so the branch
+    # below can run straight down the same column without doubling copper.
+    c5_1,u1_8=at('C5','1'),at('U1','8')
+    join(('C5','1'),('U1','8'),
+         [(u1_8[0],c5_1[1]+abs(u1_8[0]-c5_1[0]))],SUPPLY,p.F_Cu)
     # Carry the negative rail to the optocoupler emitter between the DIP rows,
     # clear of pin 4 on its south side: the gate-drive run to R3 owns the lane
     # north of the coupler, and crossing it would need a via on either net.
@@ -137,6 +142,12 @@ def route(variant):
     join(('Q1','3'),('R5','1'),
          [(q1_3[0],28.3),(q1_3[0]-1,29.3),(3.8,29.3),(2.8,30.3),
           (2.8,42),(3.8,43),(r5_1[0]-1,43),(r5_1[0],44)],CTRL,p.B_Cu)
+    # AUX_5V feeds that buffer's emitter and pull-up as well, so it takes the
+    # front half of the same crossing: down the column between the input stage
+    # and the DIP, along the clear lane under Q1 and into the channel west of
+    # the plugs. A hundred microamps needs no more than signal copper.
+    join(('C5','1'),('Q2','1'),
+         [(c5_1[0],28.5),(4.5,28.5),(3.5,29.5),(3.5,44.1)],CTRL,p.F_Cu)
     # The front carries the 4.5mm shared trunk; main outputs use 2mm
     # bottom branches. Keep the narrower approaches local to closely spaced
     # device pins, then widen smoothly into the 3mm common-source bridge.
