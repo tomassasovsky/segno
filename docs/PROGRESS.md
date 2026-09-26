@@ -16,6 +16,7 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 Revision L's circuit and final artwork pass the checks below. All three
 boards now have the requested rounded-copper finish. The screen Q3/Q4 pin-3
 bridge and Q4 pin-2 feed are uniformly 2.5 mm wide, without taper overlays;
+the AUX input is uniformly 2.0 mm with rounded capacitor joins, while
 the screen bus, ring J1 power taps and console power-bar corners are rounded.
 Work follows the owner's one-order requirement, with
 no pre-PCB prototype or new owner measurement campaign. The
@@ -23,7 +24,7 @@ no pre-PCB prototype or new owner measurement campaign. The
 an LMC7660/TLP627M negative gate supply and lower-voltage TN0702 relay drivers;
 the [startup assessment](reviews/screen-power-rev-l-1072/startup.md) does not
 establish a need for active current limiting. Claude Cloud authored the new
-placement/routing. Final native ERC/DRC have zero findings, all 52 regression
+placement/routing. Final native ERC/DRC have zero findings, all 56 regression
 controls pass, and 406 screen plus 103 console/ring independent fabrication
 assertions pass. Power checks reject defects hidden by copper pours. DeepSeek's
 completed review has no unresolved verified finding. The

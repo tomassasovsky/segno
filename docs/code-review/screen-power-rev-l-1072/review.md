@@ -3,15 +3,15 @@
 
 The requested rounded copper finish and uniform-width screen routes have
 completed their bounded review. The evidence below identifies the final
-native boards and manufacturing archives.
+native boards and verified manufacturing archives, including the AUX follow-up.
 
 Base: `7dcdc944bea0d22e2fa1fe32ab4ead4681aa11aa`.
 Target: the final Revision L working changes, including untracked source,
 models and evidence, subsequently committed with this report. Exact production
-source hashes are recorded in
-[fabrication-verification.json](../../reviews/screen-power-rev-l-1072/fabrication-verification.json).
-Screen board SHA-256: `d3577772b4945f93652789e109fd232b479cfc8d119dcb67e499da51d39fa5cf`.
-Screen ZIP SHA-256: `7a52639a561ebebf36695901bd84f27a2770fe900a227a6594deb89c0fde8e23`.
+source hashes are recorded in the current
+[validation report](../../../hardware/kicad/screen_power/validation.json).
+Screen board SHA-256: `94ffa2a0ad3d428451798306c24dc087cbdf3e122cecefa7753c840033321a2b`.
+Screen ZIP SHA-256: `03ce82f332b01c18a1def9772984f28fe49d5641490f315303f4769e8f0187c0`.
 
 **No unresolved actionable finding in this revision's bounded scope.**
 This does not establish a clean review of every historical change in PR #1080.
@@ -36,7 +36,9 @@ Keep the whole-PR `review:pending`, `ci:pending` and hardware verification gate.
   geometrically unchanged from the reviewed base.
 - The rounded screen, ring and console copper has no unresolved finding in
   the reviewed scope. The screen's common-source bridge and Q4.2 feeder are
-  uniformly 2.5 mm with no taper overlays on those runs. The ring retains its
+  uniformly 2.5 mm; the J1.1-to-Q3.2 AUX input is uniformly 2.0 mm. These runs
+  have no taper overlays; AUX capacitor junctions use approved rounded branch
+  fillets. The ring retains its
   1.5 mm feed, while the console retains its 1.7 mm ring feed and 5 mm supply
   bar. The [copper-finish review](../../reviews/screen-power-rev-l-1072/copper-finish-review.md)
   identifies each final native board and the preserved geometry.
@@ -66,20 +68,27 @@ weakening byte comparisons or case-normalizing input.
 The power-path checker also no longer lets a filled overlay conceal a missing
 or undersized trace: it removes all zones from its power-continuity copies.
 USB reference checks continue to inspect actual filled ground. Uniform-width,
-forbidden-taper and missing-bus controls now guard these changes.
+forbidden-taper and missing-bus controls now guard these changes. Four added
+AUX controls reject a missing route, a 1.99 mm route, a 3 mm interior segment
+and a forbidden taper while preserving the narrower capacitor branches.
+Claude's final `ffaca8b6` correction adjusts only four hidden AUX fillet
+closures; every track, via, footprint, pad contract, model and board outline
+is unchanged from the preceding AUX board.
 
 ## Observed validation
 
 - Final native ERC/DRC: zero reported findings and no unconnected items under
   committed project rules; no new ignored category.
-- All 52 fault/baseline controls pass. Independent circuit and validator
+- All 56 fault/baseline controls pass, including all 52 previous controls.
+  Independent circuit and validator
   mutations supplement this suite; see their reports for non-additive counts.
 - Four relay states / 16 USB paths, minimum-width power continuity, console
   GPIO17 connection and 5,452 actual filled-ground samples pass.
-- Independent CAM audit: 406 assertions, 65 production source hashes,
-  70 package artifacts and all 12 screen manufacturing files pass on the
-  final board and ZIP above. Both screen ZIP copies match their inventories
-  and bytes. The separate final
+- The final [screen CAM audit](../../reviews/screen-power-rev-l-1072/fabrication-verification.json)
+  passes 406 assertions, 65 production source hashes, 70 package artifacts
+  and all 12 manufacturing files. Its board and ZIP hashes match the current
+  files above, including the final AUX fillet closures.
+  The separate final
   [console/ring CAM audit](../../reviews/screen-power-rev-l-1072/console-ring-fabrication-verification.json)
   passes 103 assertions with zero failures; both updated archives match fresh
   native exports apart from the strictly permitted timestamps.
@@ -97,6 +106,7 @@ is imposed. Full CI does not run on this PR's feature base; it is not green.
 
 - [Electrical review](../../reviews/screen-power-rev-l-1072/electrical-review.md)
 - [Layout review](../../reviews/screen-power-rev-l-1072/final-layout-review.md)
+- [AUX input follow-up](../../reviews/screen-power-rev-l-1072/aux-input-review.md)
 - [Validator review](../../reviews/screen-power-rev-l-1072/validator-review.md)
 - [External model review](../../reviews/screen-power-rev-l-1072/external-model-review.md)
 - [Final verification and manufacturing files](../../reviews/screen-power-rev-l-1072/verification.md)
