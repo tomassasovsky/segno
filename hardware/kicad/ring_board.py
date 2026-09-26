@@ -379,6 +379,17 @@ j4[4] += ring_dout   # Out (unused electrically; soldered for rigidity)
 # load-bearing: a general-purpose 470uF in the same can runs ~0.5 ohm, and the
 # ring's amp-scale frame edges x that ESR is real ripple on the LEDs' own VDD.
 # Same rule as the console board's C30.
+# Audited against moving it up beside the strip connector, which is where a
+# "bulk cap" instinctively belongs, and it should stay exactly where it is. It is
+# 9.46 mm of 0.65 mm copper from the module ring's own power-entry pad - 7.2
+# milliohm, 10 mV at the 1.44 A worst case - while the feed that brings the
+# current round the board from the rail tap is 67 mm of the same copper, 50.7
+# milliohm and 73 mV. That is the arrangement a reservoir wants: the capacitor at
+# the load, the long thin run upstream of it. Beside the connector it would sit
+# behind all 67 mm of that run and damp nothing the ring can feel, and it would
+# not fit anyway: the pocket between C5's and J1's courtyards is 4.0 mm and the
+# can's courtyard is 8.5 mm. The nearest place on the board that does take the
+# can is 9.45 mm from the rail on the far west side, with 0.58 mm to spare.
 Part("Device", "C_Polarized", value="470uF 16V low-ESR <=0.15R", ref="C1",
      footprint="Capacitor_THT:CP_Radial_D8.0mm_P3.50mm")[1, 2] += v5, gnd
 
