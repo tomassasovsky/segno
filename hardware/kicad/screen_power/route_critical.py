@@ -218,10 +218,18 @@ def route(variant):
             # The branch reaches the broad trunk on the same face.
             bends=[(f[0],f[1]+2),(f[0]+4,f[1]+6),(POWER_BUS_X,f[1]+6)] if offset==1 else [(POWER_BUS_X,f[1])]
             if ch==2 and offset==2:
-                # This feed climbs to the bus, so it turns well west of the
-                # junction: every tap then meets the trunk as a plain 3mm band
-                # and the bus keeps one contour along its whole length.
-                bends=[(56.75,68),(59.5,taps[-1]),(POWER_BUS_X,taps[-1])]
+                # This feed climbs to the bus. It turns as late as the bus
+                # allows, landing its 45 degree rise exactly on the trunk's
+                # lower west corner: the bus keeps one contour along its whole
+                # length, and the diagonal stays a full millimetre off the
+                # corner of J202's nearest terminal, which a turn further west
+                # would crowd. The rise equals the climb, so the corner is 45.
+                # The turn also stops .75mm short of the gusset, which is more
+                # than the .62mm a 45 degree corner's outer flank reaches past
+                # its own vertex, so the flank cannot notch the bus edge.
+                turn=west-GUSSET-.75
+                bends=[(turn-(f[1]-taps[-1]),f[1]),(turn,taps[-1]),
+                       (POWER_BUS_X,taps[-1])]
             track('SWITCHED_5V',[f,*bends],3,p.F_Cu)
         a,b=at(f'F{n+1}',2),at(f'J{n+3}',1)
         join((f'F{n+1}',2),(f'J{n+3}',1),
