@@ -4,7 +4,10 @@
 # will attempt a LINE-WISE merge of ciphertext and produce a file that
 # decrypts to nothing. `binary` is `-diff -merge -text`, so git refuses the
 # text merge and asks for a real resolution instead.
-*.pen binary
+#
+# The pen outgrew GitHub's 100 MB per-file limit, so it is stored in Git LFS.
+# The LFS filter keeps it out of text diff and merge the same way.
+*.pen filter=lfs diff=lfs merge=lfs -text
 
 # Goldens are compared byte-for-byte by the screenshot suite; never let a
 # checkout rewrite their line endings.
