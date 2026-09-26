@@ -118,19 +118,33 @@ def check_contract(variant, pins, nets, errors):
     require("R1", {1:"PI_GPIO17",2:"CONTROL_BASE"})
     require("R2", {1:"CONTROL_BASE",2:"GND"})
     require("Q1", ({1:"GND",2:"CONTROL_BASE",3:"CONTROL_SINK"}))
-    require("R3", {1:"CONTROL_SINK",2:"POWER_GATE"})
+    require("R3", {1:"GATE_SINK",2:"POWER_GATE"})
     require("R4", {1:"POWER_GATE",2:"COMMON_SOURCE"})
-    require("D1", {1:"CONTROL_SINK",2:"BUFFER_SINK"})
-    require("R5", {1:"BUFFER_SINK",2:"BUFFER_BASE"})
+    require("R5", {1:"CONTROL_SINK",2:"BUFFER_BASE"})
     require("R6", {1:"AUX_5V",2:"BUFFER_BASE"})
     require("R7", {1:"DATA_ENABLE",2:"GND"})
     require("R8", {1:"SWITCHED_5V",2:"GND"})
+    require("R9", {1:"AUX_5V",2:"GATE_LED"})
+    require("R10", {1:"GATE_LED",2:"CONTROL_SINK"})
+    require("U1", {2:"PUMP_CAP_PLUS",3:"GND",4:"PUMP_CAP_MINUS",5:"NEG_5V",8:"AUX_5V"})
+    if any(("U1", pin) in pins for pin in ("1", "6", "7")):
+        fail(errors, "pump_controls", "U1 NC, LV and OSC must remain unconnected at 5V")
+    require("U2", {1:"GATE_LED",2:"CONTROL_SINK",3:"NEG_5V",4:"GATE_SINK"})
+    require("C3", {1:"PUMP_CAP_PLUS",2:"PUMP_CAP_MINUS"})
+    require("C4", {1:"GND",2:"NEG_5V"})
+    require("C5", {1:"AUX_5V",2:"GND"})
+    require("D2", {1:"GND",2:"NEG_5V"})
+    nodes("NEG_5V", {("U1","5"),("U2","3"),("C4","2"),("D2","2")})
+    nodes("GATE_SINK", {("U2","4"),("R3","1")})
+    nodes("GATE_LED", {("U2","1"),("R9","2"),("R10","1")})
+    nodes("PUMP_CAP_PLUS", {("U1","2"),("C3","1")})
+    nodes("PUMP_CAP_MINUS", {("U1","4"),("C3","2")})
     require("Q2", ({1:"AUX_5V",2:"BUFFER_BASE",3:"DATA_ENABLE"}))
     for ref, drain in (("Q3","AUX_5V"),("Q4","SWITCHED_5V")):
         require(ref, {1:"POWER_GATE",2:drain,3:"COMMON_SOURCE"})
     nodes("COMMON_SOURCE", {("Q3","3"),("Q4","3"),("R4","2")})
     nodes("POWER_GATE", {("Q3","1"),("Q4","1"),("R3","2"),("R4","1")})
-    nodes("CONTROL_SINK", {("Q1","3"),("R3","1"),("D1","1")})
+    nodes("CONTROL_SINK", {("Q1","3"),("R5","1"),("U2","2"),("R10","2")})
     for ch in (1,2):
         n=100*ch; pre=f"S{ch}"; host=f"HOST{ch}_5V"; coil=f"{pre}_DATA_COIL_LOW"
         for offset, rail, side in ((1,host,"UP"),(2,pre+"_TOUCH_5V","DN")):
@@ -410,19 +424,21 @@ def check_usb_reference(board, errors):
 def check_power(board_path, errors, variant):
     """Require continuous copper at the specified minimum power-path width.
 
-    Strip thin control branches and single signal vias on fresh board copies;
-    KiCad's geometric connectivity then proves a path between physical pads.
+    Remove every zone, thin control branch and single signal via on fresh
+    copies. KiCad then proves the tracks connect the physical pads without
+    relying on a filled overlay to bridge a missing or undersized track.
     This checks copper geometry, not its thermal/current rating.
     """
-    paths=[(1.9,("J1","1"),("Q3","2")),(1.9,("Q3","3"),("Q4","3")),
+    paths=[(1.9,("J1","1"),("Q3","2")),(2.5,("Q3","3"),("Q4","3")),
            (1.5,("J1","1"),("C2","1")),(.8,("J1","1"),("C1","1"))]
     for ch in (1,2):
         n=ch*100
-        paths += [(1.9,("Q4","2"),(f"F{n+i}","1")) for i in (1,2)]
+        paths += [(2.5,("Q4","2"),(f"F{n+i}","1")) for i in (1,2)]
         paths += [(2.0,(f"F{n+1}","2"),(f"J{n+3}","1")),
                   (.8,(f"F{n+2}","2"),(f"J{n+2}","1"))]
     for minimum in sorted({path[0] for path in paths}):
         board=load_board(board_path)
+        for zone in list(board.Zones()):board.RemoveNative(zone)
         selected=[path for path in paths if path[0]==minimum]
         terminals={}
         for fp in board.GetFootprints():
@@ -439,10 +455,25 @@ def check_power(board_path, errors, variant):
             if terminals[b].m_Uuid.AsString() not in reached:
                 fail(errors,"power_copper",f"{a} → {b}: no continuous {minimum} mm copper path")
     board=load_board(board_path)
+    # Only these two routed power runs have a uniform-width contract. R4/R8
+    # use separate 0.25 mm control branches on the same nets; the front bus
+    # and fuse feeds retain their wider distribution copper.
+    uniform_runs={("COMMON_SOURCE",p.F_Cu),("SWITCHED_5V",p.B_Cu)}
+    for track in board.GetTracks():
+        if (not isinstance(track,p.PCB_VIA)
+                and (net_name(track.GetNetname()),track.GetLayer()) in uniform_runs
+                and track.GetWidth()>p.FromMM(.25)+1
+                and abs(track.GetWidth()-p.FromMM(2.5))>1):
+            fail(errors,"uniform_power_width",f"{net_name(track.GetNetname())} {track.GetLayerName()}: power run must stay 2.5 mm wide")
+    for zone in list(board.Zones()):
+        if (not zone.GetIsRuleArea()
+                and (net_name(zone.GetNetname()),zone.GetLayer()) in uniform_runs):
+            fail(errors,"uniform_power_taper",f"{net_name(zone.GetNetname())} {zone.GetLayerName()}: uniform power run must not have a taper overlay")
+        board.RemoveNative(zone)
     terminals={(fp.GetReference(),pad.GetNumber()):pad
                for fp in board.GetFootprints() for pad in fp.Pads()}
     tracks=[t for t in board.GetTracks() if not isinstance(t,p.PCB_VIA)
-            and net_name(t.GetNetname())=="SWITCHED_5V" and t.GetWidth()>=p.FromMM(1.9)-1]
+            and net_name(t.GetNetname())=="SWITCHED_5V" and t.GetWidth()>=p.FromMM(2.5)-1]
     connectivity=board.GetConnectivity();connectivity.Build(board)
     required={terminals[key].m_Uuid.AsString() for key in (("Q4","2"),("F201","1"))}
     dedicated=set()
@@ -471,12 +502,12 @@ def check_power(board_path, errors, variant):
     fuse.RemoveNative(terminals.pop(("F101","1")))
     for item in list(board.GetTracks()):
         if ((isinstance(item,p.PCB_VIA) and item.m_Uuid.AsString() not in dedicated)
-                or (not isinstance(item,p.PCB_VIA) and item.GetWidth()<p.FromMM(1.9)-1)):
+                or (not isinstance(item,p.PCB_VIA) and item.GetWidth()<p.FromMM(2.5)-1)):
             board.RemoveNative(item)
     connectivity=board.GetConnectivity();connectivity.Build(board)
     reached={item.m_Uuid.AsString() for item in connectivity.GetConnectedItems(terminals[("Q4","2")])}
     if terminals[("F201","1")].m_Uuid.AsString() not in reached:
-        fail(errors,"power_via_bypass","Qualifying SWITCHED_5V vias do not provide a continuous 1.9 mm Q4.2 to F201.1 path without the F101.1 barrel")
+        fail(errors,"power_via_bypass","Qualifying SWITCHED_5V vias do not provide a continuous 2.5 mm Q4.2 to F201.1 path without the F101.1 barrel")
 
 
 def resistor_value(components, ref):
@@ -489,49 +520,54 @@ def resistor_value(components, ref):
 
 
 def numerical_checks(variant, components, errors):
-    r = {i: resistor_value(components,f"R{i}") for i in range(1,9)}
+    r = {i: resistor_value(components,f"R{i}") for i in range(1,11)}
     if any(value<=0 for value in r.values()):
         fail(errors,"resistor_model","Control resistances must be positive")
         return {}
     if any("1%" not in components[f"R{i}"][2] for i in r):
         fail(errors,"resistor_model","Drive margins require 1% resistors")
-    models={"Q1":("2N3904"), "Q2":("2N3906"),
-            "D1":("1N4148")}
+    models={"Q1":"2N3904", "Q2":"2N3906", "U1":"LMC7660IN",
+            "U2":"TLP627M", "D2":"BAT85S",
+            "C3":"10uF 25V bipolar", "C4":"10uF 25V bipolar"}
     for ch in (1,2):
         n=100*ch
-        models.update({f"Q{n+1}":("2N7000"),f"K{n+1}":"IM02TS",
+        models.update({f"Q{n+1}":"TN0702",f"K{n+1}":"IM02TS",
                        f"D{n+1}":("1N4007")})
     for ref,model in models.items():
         if components[ref][2]!=model:
             fail(errors,"driver_model",f"{ref}: calculations require {model}")
-    # A conservative 1uA off-state leakage budget at each pulled node;
-    # elevated-temperature and assembled-device leakage still require testing.
-    if any(r[i]*1.01*1e-6 >= .5 for i in (4,6,7)):
-        fail(errors,"default_off","Pull resistances exceed the 1uA / 0.5V leakage budget")
-    # Defined operating envelope: AUX 5.0–5.25V at the board, 6A maximum
-    # combined design load. Hot resistance factor is an estimate, not a rating.
-    v_source_min = 5.0 - 6*.015*1.7
+    # TLP627M specifies 20uA dark current at 85C. The smaller R4 keeps
+    # that below 0.5V gate bias; other pulled nodes retain a 1uA allowance.
+    dark_gate = r[4]*1.01*20e-6
+    if dark_gate >= .5 or any(r[i]*1.01*1e-6 >= .5 for i in (6,7)):
+        fail(errors,"default_off","Off-state leakage exceeds the 0.5V pull-up/down budget")
+    # The 4.5V floor is a gate-driver design corner, not a screen-voltage
+    # guarantee. 4.25A covers the documented screen planning load. Retain
+    # the conservative -4.5V Rds rating despite the higher actual drive.
+    aux_min, aux_max, load = 4.5, 5.25, 4.25
+    hot_rds = .015*1.7
+    v_source_min = aux_min - load*hot_rds
     gate_divider = (r[4]*.99)/(r[4]*.99+r[3]*1.01)
-    gate_min = (v_source_min-.2)*gate_divider
-    # The retained buck is nominally 5V BEFORE the external fuse/harness.
-    # Littelfuse ATOF 287: 7.5A fuse cold resistance is typically 10.91mOhm.
-    # These scenarios expose the missing loss budget; they are not a source
-    # tolerance, hot resistance bound, or qualification of actual hardware.
-    supply_margin = []
-    for load in (4.25, 6):
-        required_j1 = 4.5/gate_divider + .2 + load*.015*1.7
-        cold_fuse_drop = load*.01091
-        supply_margin.append({
-            "load_A":load,
-            "required_J1_V_for_4_5V_gate_with_estimated_hot_Rds":required_j1,
-            "typical_cold_input_fuse_drop_V":cold_fuse_drop,
-            "remaining_loss_budget_from_ideal_5V_buck_V":5-cold_fuse_drop-required_j1})
+    negative_min = .9*aux_min
+    gate_min = (v_source_min+negative_min-1.0)*gate_divider
+    # A 2V optocoupler stress allowance is twice its 25C saturation spec.
+    gate_stress = (v_source_min+negative_min-2.0)*gate_divider
+    gate_max = 2*aux_max*(r[4]*1.01)/(r[4]*1.01+r[3]*.99)
+    # Compare with TI's 10k / >=90% conversion test condition. The diode
+    # hot allowance and catalog capacitor leakage are engineering budgets,
+    # not manufacturer hot maxima. Additional voltage margin remains if
+    # the negative rail sags further: see gate-drive.md.
+    pump_load = (aux_min+negative_min)/((r[3]+r[4])*.99)+50e-6+2*10.5e-6
+    pump_reference = negative_min/10000
+    led_min = (aux_min-.2-1.4)/(r[9]*1.01)-1.4/(r[10]*.99)
     base_min = (2.4-.95)/(r[1]*1.01)-.95/(r[2]*.99)
-    sink_peak = 5.25/(r[3]*.99)+5.25/(r[5]*.99)
-    pnp_base_min = (5.0-.95-1.0-.2)/(r[5]*1.01)-.95/(r[6]*.99)
+    sink_peak = aux_max/(r[9]*.99)+aux_max/(r[5]*.99)
+    pnp_base_min = (aux_min-.95-.2)/(r[5]*1.01)-.95/(r[6]*.99)
     pnp_load_max = 5.25/(r[7]*.99)+2e-6
     bleed_max = 5.25**2/(r[8]*.99)
-    if gate_min < 4.5 or base_min < sink_peak/10 or pnp_base_min < pnp_load_max/10:
+    if (gate_stress < 4.5 or gate_max >= 20 or led_min < .001
+            or base_min < sink_peak/10 or pnp_base_min < pnp_load_max/10
+            or pump_load > pump_reference):
         fail(errors,"driver_margin","Insufficient gate or transistor drive in the stated envelope")
     if bleed_max > .5 or "1W" not in components['R8'][2]:
         fail(errors,"discharge","Bleeder must dissipate below 0.5W in its 1W part")
@@ -544,16 +580,23 @@ def numerical_checks(variant, components, errors):
             fail(errors,"fuse_rating","Unexpected branch fuse rating")
     # TE 108-98001: initial pickup at 23 C, without pre-energization.
     # This does not qualify a warm coil or an elevated enclosure temperature.
-    relay_coil_min = 4.75*(145*.9)/(145*.9+5.3)
+    # TN0702 is specified at 3V drive. Double its 2.5ohm 25C maximum
+    # for the same explicitly estimated hot margin used in this review.
+    relay_coil_min = 4.75*(145*.9)/(145*.9+2*2.5)
     if relay_coil_min < 3.38:
         fail(errors,"relay_pickup","IM02TS initial coil voltage is below its 3.38V operate threshold")
-    return {"aux_input_min_V":5.0,"aux_input_max_V":5.25,"combined_design_load_A":6,
-            "aux_voltage_reference":"J1 under load; not the nominal buck label",
-            "nominal_supply_scenarios_not_qualified":supply_margin,
+    return {"aux_input_min_V":aux_min,"aux_input_max_V":aux_max,"combined_design_load_A":load,
+            "aux_voltage_reference":"J1 gate-driver assessment; not a screen input-voltage guarantee",
             "gate_min_V_with_estimated_hot_Rds":gate_min,"hot_Rds_factor_is_estimate":1.7,
+            "gate_V_with_2V_opto_stress_allowance":gate_stress,"gate_max_V":gate_max,
+            "off_gate_V_at_opto_85C_dark_current":dark_gate,
+            "opto_LED_min_mA":led_min*1000,
+            "pump_engineering_load_uA":pump_load*1e6,"pump_10k_test_load_uA":pump_reference*1e6,
+            "pump_hot_leakage_budget_is_estimate":True,
             "gpio_assumed_minimum_high_V":2.4,"gpio_base_min_mA":base_min*1000,
             "collector_peak_mA":sink_peak*1000,"bleeder_max_W":bleed_max,
-            "pair_loss_at_6A_25C_max_Rds_W":2*6**2*.015,
+            "pair_loss_at_planning_load_hot_estimate_W":2*load**2*hot_rds,
+            "upright_junction_C_at_60C_75C_per_W_estimate":60+load**2*hot_rds*75,
             "relay_initial_coil_min_V":relay_coil_min,
             "relay_initial_pickup_margin_23C_V":relay_coil_min-3.38,
             "relay_coil_rated_V":4.5,
@@ -561,7 +604,8 @@ def numerical_checks(variant, components, errors):
             "relay_hot_restart":"measure coil voltage and qualify hot re-enable on first assembly",
             "host_relay_coil_nominal_mA":5000/145,
             "main_continuous_fuse_design_A":3,"touch_continuous_fuse_design_A":.5,
-            "thermal_inrush_USB_suspend_and_fault_coordination":"require physical testing"}
+            "startup":"bounded SOA assessment in rev-l-1072/startup.md; no active current limiter",
+            "assembled_qualification":"not performed; CAD and calculations do not establish USB compliance"}
 
 
 def cli_run(args, errors, label):
@@ -646,7 +690,7 @@ def self_test(board_path, components, expected, temp, variant="hand"):
     check_console_control(console_errors, cut_console)
     results["console_control_cut_detected"] = any(e["check"] == "console_control" for e in console_errors)
     from hand_checks import check_through_hole
-    for ref,old_drill in [('J101',.95),('J2',1.0),('J1',1.7),('Q1',.8),('H1',3.2)]:
+    for ref,old_drill in [('J101',.95),('J2',1.0),('J1',1.7),('Q1',.8),('H1',3.2),('U1',.8),('U2',.8)]:
         altered=load_board(board_path)
         fp=next(f for f in altered.GetFootprints() if f.GetReference()==ref)
         next(iter(fp.Pads())).SetDrillSize(p.VECTOR2I(p.FromMM(old_drill),p.FromMM(old_drill)))
@@ -682,6 +726,25 @@ def self_test(board_path, components, expected, temp, variant="hand"):
     results["wrong_driver_detected"]=numeric_mutation("Q101","BS170")
     results["wrong_tolerance_detected"]=numeric_mutation("R3","4.7k 20%")
     results["weak_pulldown_detected"]=numeric_mutation("R7","100M 1%")
+    results["weak_gate_pullup_detected"]=numeric_mutation("R4","330k 1%")
+    results["weak_opto_drive_detected"]=numeric_mutation("R9","100k 1%")
+    results["wrong_pump_detected"]=numeric_mutation("U1","ICL7660")
+    results["polarized_pump_cap_detected"]=numeric_mutation("C4","10uF 25V polarized")
+    # Check partial-power failure paths against independent pin contracts.
+    # These mutations are electrical misconnections, not text-only matches.
+    for name, replacements in (
+            ("reversed_negative_clamp_detected", {("D2","1"):"NEG_5V",("D2","2"):"GND"}),
+            ("pump_lv_grounded_detected", {("U1","6"):"GND"}),
+            ("opto_output_reversed_detected", {("U2","3"):"GATE_SINK",("U2","4"):"NEG_5V"}),
+            ("negative_gpio_bridge_detected", {("U2","3"):"PI_GPIO17"})):
+        changed = dict(expected)
+        changed.update(replacements)
+        changed_nets = {}
+        for terminal, name_net in changed.items():
+            changed_nets.setdefault(name_net, set()).add(terminal)
+        issues = []
+        check_contract(variant, changed, changed_nets, issues)
+        results[name] = bool(issues)
     narrowed=load_board(board_path)
     for track in narrowed.GetTracks():
         if not isinstance(track,p.PCB_VIA) and net_name(track.GetNetname())=="S1_MAIN_5V":
@@ -706,6 +769,59 @@ def self_test(board_path, components, expected, temp, variant="hand"):
         target=temp/f"{name}.kicad_pcb";altered.Save(str(target))
         issues=[];check_power(target,issues,variant)
         results[name]=changed and any(e["check"]=="power_copper" and ref in e["detail"] for e in issues)
+    for net,layer,ref,name in (("COMMON_SOURCE",p.F_Cu,"Q3","narrow_common_source_detected"),
+                               ("SWITCHED_5V",p.B_Cu,"Q4","narrow_switched_feed_detected")):
+        altered=load_board(board_path);changed=False
+        for track in altered.GetTracks():
+            if (not isinstance(track,p.PCB_VIA) and net_name(track.GetNetname())==net
+                    and track.GetLayer()==layer and track.GetWidth()>p.FromMM(.25)+1):
+                track.SetWidth(p.FromMM(2.49));changed=True
+        target=temp/f"{name}.kicad_pcb";altered.Save(str(target))
+        issues=[];check_power(target,issues,variant)
+        results[name]=changed and any(e["check"]=="power_copper" and ref in e["detail"] for e in issues)
+    altered=load_board(board_path)
+    bus=[t for t in altered.GetTracks() if not isinstance(t,p.PCB_VIA)
+         and net_name(t.GetNetname())=="SWITCHED_5V" and t.GetLayer()==p.F_Cu
+         and abs(t.GetWidth()-p.FromMM(4.5))<=1]
+    overlay=any(not z.GetIsRuleArea() and net_name(z.GetNetname())=="SWITCHED_5V"
+                and z.GetLayer()==p.F_Cu and z.GetFilledPolysList(p.F_Cu).OutlineCount()
+                for z in altered.Zones())
+    for track in bus:altered.RemoveNative(track)
+    target=temp/"missing-bus-under-overlay.kicad_pcb";altered.Save(str(target))
+    issues=[];check_power(target,issues,variant)
+    results["missing_bus_under_overlay_detected"]=bool(bus) and overlay and any(
+        e["check"]=="power_copper" and "F201" in e["detail"] for e in issues)
+    altered=load_board(board_path)
+    terminals={(pad.GetPosition().x,pad.GetPosition().y) for fp in altered.GetFootprints()
+               for pad in fp.Pads() if net_name(pad.GetNetname())=="COMMON_SOURCE"}
+    middle=[t for t in altered.GetTracks() if not isinstance(t,p.PCB_VIA)
+            and net_name(t.GetNetname())=="COMMON_SOURCE" and t.GetLayer()==p.F_Cu
+            and abs(t.GetWidth()-p.FromMM(2.5))<=1
+            and all((end.x,end.y) not in terminals for end in (t.GetStart(),t.GetEnd()))]
+    if middle:max(middle,key=lambda t:t.GetLength()).SetWidth(p.FromMM(3))
+    target=temp/"nonuniform-power-middle.kicad_pcb";altered.Save(str(target))
+    issues=[];check_power(target,issues,variant)
+    results["nonuniform_power_middle_detected"]=bool(middle) and any(
+        e["check"]=="uniform_power_width" for e in issues)
+    for net,layer,name in (("COMMON_SOURCE",p.F_Cu,"common_taper_detected"),
+                           ("SWITCHED_5V",p.B_Cu,"switched_taper_detected")):
+        altered=load_board(board_path)
+        routes=[t for t in altered.GetTracks() if not isinstance(t,p.PCB_VIA)
+                and net_name(t.GetNetname())==net and t.GetLayer()==layer
+                and abs(t.GetWidth()-p.FromMM(2.5))<=1]
+        if routes:
+            track=max(routes,key=lambda t:t.GetLength());a,b=track.GetStart(),track.GetEnd()
+            dx,dy=b.x-a.x,b.y-a.y;length=math.hypot(dx,dy)
+            zone=p.ZONE(altered);zone.SetLayer(layer);zone.SetNet(altered.GetNetsByName()[net])
+            zone.SetZoneName("POWER_TAPER");zone.SetAssignedPriority(20)
+            poly=zone.Outline();poly.NewOutline()
+            for at,width,sign in ((a,2.5,1),(b,3,1),(b,3,-1),(a,2.5,-1)):
+                poly.Append(round(at.x-sign*dy/length*p.FromMM(width)/2),
+                            round(at.y+sign*dx/length*p.FromMM(width)/2))
+            altered.Add(zone)
+        target=temp/f"{name}.kicad_pcb";altered.Save(str(target))
+        issues=[];check_power(target,issues,variant)
+        results[name]=bool(routes) and any(e["check"]=="uniform_power_taper" for e in issues)
     for fault in ("missing", "small_drill", "disconnected"):
         altered=load_board(board_path)
         changed=False
@@ -851,12 +967,19 @@ def validate(variant, board_override=None, run_self_test=False):
                 required_faults = ["wrong_relay_detected", "wrong_driver_detected", "wrong_tolerance_detected", "weak_pulldown_detected", "narrow_power_detected", "host_power_bridge_detected", "usb_cut_detected", "console_control_cut_detected"]
                 required_faults += ["relay_hole_detected", "model_unassigned_detected", "model_missing_detected", "model_disabled_detected", "wrong_xh_pitch_detected"]
                 required_faults += ["smd_footprint_detected", "smd_pad_detected", "power_lead_hole_detected", "four_layers_detected", "missing_usb_reference_detected"]
-                required_faults += [f'{ref}_hole_tolerance_detected' for ref in ('J101','J2','J1','Q1','H1')]
+                required_faults += [f'{ref}_hole_tolerance_detected' for ref in ('J101','J2','J1','Q1','H1','U1','U2')]
+                required_faults += ["weak_gate_pullup_detected", "weak_opto_drive_detected",
+                                    "wrong_pump_detected", "polarized_pump_cap_detected",
+                                    "reversed_negative_clamp_detected", "pump_lv_grounded_detected",
+                                    "opto_output_reversed_detected", "negative_gpio_bridge_detected"]
                 required_faults += ['fastener_short_detected']
                 required_faults += ["relay_contact_baseline_passes", "relay_old_host_pins_detected",
                                     "relay_wrong_throw_detected", "relay_polarity_swap_detected",
                                     "relay_cross_channel_detected", "relay_no_connects_isolated",
                                     "narrow_fet_neck_detected", "narrow_bulk_feed_detected",
+                                    "narrow_common_source_detected", "narrow_switched_feed_detected",
+                                    "missing_bus_under_overlay_detected", "nonuniform_power_middle_detected",
+                                    "common_taper_detected", "switched_taper_detected",
                                     "missing_power_vias_detected", "small_drill_power_vias_detected",
                                     "disconnected_power_vias_detected", "redundant_power_vias_detected"]
                 if not all(summary["self_test"].get(k) for k in required_faults):

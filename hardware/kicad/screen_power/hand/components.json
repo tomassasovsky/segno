@@ -61,6 +61,107 @@
     }
   },
   {
+    "ref": "U1",
+    "value": "LMC7660IN",
+    "footprint": "Package_DIP:DIP-8_W7.62mm",
+    "mpn": "LMC7660IN/NOPB",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "2": "PUMP_CAP_PLUS",
+      "3": "GND",
+      "4": "PUMP_CAP_MINUS",
+      "5": "NEG_5V",
+      "8": "AUX_5V"
+    }
+  },
+  {
+    "ref": "C3",
+    "value": "10uF 25V bipolar",
+    "footprint": "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm",
+    "mpn": "ECE-A1EN100U",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "PUMP_CAP_PLUS",
+      "2": "PUMP_CAP_MINUS"
+    }
+  },
+  {
+    "ref": "C4",
+    "value": "10uF 25V bipolar",
+    "footprint": "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm",
+    "mpn": "ECE-A1EN100U",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "GND",
+      "2": "NEG_5V"
+    }
+  },
+  {
+    "ref": "C5",
+    "value": "100nF 63V",
+    "footprint": "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm",
+    "mpn": "MKS2C031001A00KSSD",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GND"
+    }
+  },
+  {
+    "ref": "D2",
+    "value": "BAT85S",
+    "footprint": "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal",
+    "mpn": "BAT85S-TAP",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "GND",
+      "2": "NEG_5V"
+    }
+  },
+  {
+    "ref": "U2",
+    "value": "TLP627M",
+    "footprint": "Package_DIP:DIP-4_W7.62mm",
+    "mpn": "TLP627M(E",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "GATE_LED",
+      "2": "CONTROL_SINK",
+      "3": "NEG_5V",
+      "4": "GATE_SINK"
+    }
+  },
+  {
+    "ref": "R9",
+    "value": "2.4k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-2K4",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "AUX_5V",
+      "2": "GATE_LED"
+    }
+  },
+  {
+    "ref": "R10",
+    "value": "10k 1%",
+    "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
+    "mpn": "MFR-25FBF52-10K",
+    "group": "Control",
+    "quantity": 1,
+    "pins": {
+      "1": "GATE_LED",
+      "2": "CONTROL_SINK"
+    }
+  },
+  {
     "ref": "R3",
     "value": "4.7k 1%",
     "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
@@ -68,15 +169,15 @@
     "group": "Control",
     "quantity": 1,
     "pins": {
-      "1": "CONTROL_SINK",
+      "1": "GATE_SINK",
       "2": "POWER_GATE"
     }
   },
   {
     "ref": "R4",
-    "value": "330k 1%",
+    "value": "22k 1%",
     "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
-    "mpn": "MFR-25FBF52-330K",
+    "mpn": "MFR-25FBF52-22K",
     "group": "Control",
     "quantity": 1,
     "pins": {
@@ -111,18 +212,6 @@
     }
   },
   {
-    "ref": "D1",
-    "value": "1N4148",
-    "footprint": "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal",
-    "mpn": "1N4148-TAP",
-    "group": "Control",
-    "quantity": 1,
-    "pins": {
-      "1": "CONTROL_SINK",
-      "2": "BUFFER_SINK"
-    }
-  },
-  {
     "ref": "R5",
     "value": "5.6k 1%",
     "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
@@ -130,7 +219,7 @@
     "group": "Control",
     "quantity": 1,
     "pins": {
-      "1": "BUFFER_SINK",
+      "1": "CONTROL_SINK",
       "2": "BUFFER_BASE"
     }
   },
@@ -289,9 +378,9 @@
   },
   {
     "ref": "Q101",
-    "value": "2N7000",
+    "value": "TN0702",
     "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
-    "mpn": "2N7000",
+    "mpn": "TN0702N3-G",
     "group": "Screen 1",
     "quantity": 1,
     "pins": {
@@ -418,9 +507,9 @@
   },
   {
     "ref": "Q201",
-    "value": "2N7000",
+    "value": "TN0702",
     "footprint": "Package_TO_SOT_THT:TO-92_Inline_Wide",
-    "mpn": "2N7000",
+    "mpn": "TN0702N3-G",
     "group": "Screen 2",
     "quantity": 1,
     "pins": {

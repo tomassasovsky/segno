@@ -16,16 +16,16 @@ September 24 hole allowances, order settings and USB programming connection.
 
 ## Console connection to the screen-power board
 
-**Revision I screen Gerbers are withdrawn.** The independent review found
-disconnected relay commons, so neither touch path could conduct. Revision J
-corrects the common contacts to 3/6 and retains normally open contacts 4/5;
-Revision K retains that correction, finishes the power-trace transitions,
-and corrects assembly models and mated-connector clearance. Current checks
-and exports are recorded in the
-[Revision K verification](../../docs/reviews/screen-power-rev-k-1072/verification.md).
-Use the archive identified in that record. No additional owner measurements
-are prerequisites for bare-board fabrication. The full-white console and ring
-designs are unchanged.
+**Revision L is the current screen-board design.** It adds a through-hole
+negative gate supply to improve MOSFET drive margin, retaining the two-layer
+68 × 76 mm outline, direct USB-to-XH leads and existing connector anchors.
+The corrected relay contact mapping from Revision J remains. Use only the
+archive and checks identified in the
+[Revision L verification](../../docs/reviews/screen-power-rev-l-1072/verification.md).
+Revision I is withdrawn; J/K are superseded. No pre-PCB prototype or further
+owner measurements are required by this change. The final archives also
+include rounded power-bar corners on the console and cleaned, rounded J1
+power taps on the white ring carrier, preserving their full-white capacity.
 
 Use **J25**, the two-pin through-hole JST XH connector beside the Pi ribbon
 connector. It is already included in the console source, routed PCB and BOM
@@ -55,11 +55,12 @@ covers the PI PWR move and retained PD alignment. The subsequent
 [top-label verification](../../docs/reviews/console-screen-label-1072/verification.md)
 covers the `SCREEN` text change and current exports.
 
-The screen switch's provisional **6 A shared allowance includes both main
-outputs, both touch outputs and the 0.05 A bleeder**. Its 3 A main and 500 mA
-touch branch ceilings are not additive or simultaneous guarantees. Ring current
-uses its separate console power path and does not pass through Q3/Q4. See the
-[screen-board limits and thermal estimate](screen_power/README.md#circuit-and-limits).
+The screen planning load is **4.25 A shared**, including both main outputs,
+both touch outputs and the 0.05 A bleeder. The old 6 A expansion allowance is
+retired. The 3 A main and 500 mA touch lead ceilings are not additive or
+simultaneous guarantees. Ring current uses its separate console power path
+and does not pass through Q3/Q4. See the
+[screen-board assessment](screen_power/README.md#circuit-and-limits).
 
 The ring's J6 connector is JST XH, rated **3 A with 22 AWG wire**. Use 22 AWG
 for its +5V and GND leads with SXH-001T-P0.6 contacts. The updated console

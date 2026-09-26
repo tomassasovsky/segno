@@ -40,7 +40,8 @@ def build_switch(variant, schematic=False):
 
     def resistor(ref, value, a, b, power=False):
         footprint = (AXIAL)
-        spelling = {"1k": "1K", "100k": "100K", "4.7k": "4K7", "330k": "330K", "5.6k": "5K6"}
+        spelling = {"1k": "1K", "100k": "100K", "4.7k": "4K7", "22k": "22K",
+                    "5.6k": "5K6", "2.4k": "2K4", "10k": "10K"}
         if power:
             mpn = ("PR01000101000FA100")
         else:
@@ -66,8 +67,33 @@ def build_switch(variant, schematic=False):
          (TO92),
          ({1: "GND", 2: "CONTROL_BASE", 3: "CONTROL_SINK"}),
          ("2N3904BU"))
-    resistor("R3", "4.7k", "CONTROL_SINK", "POWER_GATE")
-    resistor("R4", "330k", "POWER_GATE", "COMMON_SOURCE")
+    # A small negative supply gives the P-FETs ample enhancement even after
+    # fuse/harness drop. The optocoupler level-shifts the control signal;
+    # the Pi and the relay drivers never connect to the negative rail.
+    part("Regulator_SwitchedCapacitor", "LMC7660", "U1", "LMC7660IN",
+         "Package_DIP:DIP-8_W7.62mm",
+         {2: "PUMP_CAP_PLUS", 3: "GND", 4: "PUMP_CAP_MINUS",
+          5: "NEG_5V", 8: "AUX_5V"}, "LMC7660IN/NOPB")
+    # Pins 1, 6 (LV) and 7 (OSC) intentionally remain unconnected. LV must
+    # not be grounded on this 5V supply. Both caps are nonpolar so power
+    # sequencing cannot reverse-bias a polarized output reservoir.
+    for ref, a, b in (("C3", "PUMP_CAP_PLUS", "PUMP_CAP_MINUS"),
+                      ("C4", "GND", "NEG_5V")):
+        part("Device", "C", ref, "10uF 25V bipolar",
+             "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm",
+             {1: a, 2: b}, "ECE-A1EN100U")
+    bypass("C5", "AUX_5V")
+    part("Device", "D_Schottky", "D2", "BAT85S",
+         "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal",
+         {1: "GND", 2: "NEG_5V"}, "BAT85S-TAP")
+    part("Isolator", "TLP627", "U2", "TLP627M",
+         "Package_DIP:DIP-4_W7.62mm",
+         {1: "GATE_LED", 2: "CONTROL_SINK", 3: "NEG_5V", 4: "GATE_SINK"},
+         "TLP627M(E")
+    resistor("R9", "2.4k", "AUX_5V", "GATE_LED")
+    resistor("R10", "10k", "GATE_LED", "CONTROL_SINK")
+    resistor("R3", "4.7k", "GATE_SINK", "POWER_GATE")
+    resistor("R4", "22k", "POWER_GATE", "COMMON_SOURCE")
     # Pull-up belongs to the joined sources, not AUX, to keep both FETs off
     # when a powered panel is connected to an unpowered AUX input.
     for ref, drain in [("Q3", "AUX_5V"), ("Q4", "SWITCHED_5V")]:
@@ -75,12 +101,9 @@ def build_switch(variant, schematic=False):
              ("screen_power:TO-220-3_SUP70101EL"),
              {1: "POWER_GATE", 2: drain, 3: "COMMON_SOURCE"},
              ("SUP70101EL-GE3"))
-    # Block a charged output from pulling the FET gates toward a dead AUX
-    # supply through the PNP base network when the GPIO is low.
-    part("Diode", ("1N4148"), "D1", ("1N4148"),
-         ("Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal"),
-         {1: "CONTROL_SINK", 2: "BUFFER_SINK"}, ("1N4148-TAP"))
-    resistor("R5", "5.6k", "BUFFER_SINK", "BUFFER_BASE")
+    # U2 now separates the power-gate network from this AUX-referenced
+    # buffer, so the former D1 backfeed-blocking diode is unnecessary.
+    resistor("R5", "5.6k", "CONTROL_SINK", "BUFFER_BASE")
     resistor("R6", "100k", "AUX_5V", "BUFFER_BASE")
     resistor("R7", "100k", "DATA_ENABLE", "GND")
     part("Transistor_BJT", ("2N3906"), "Q2", ("2N3906"),
@@ -118,10 +141,10 @@ def build_switch(variant, schematic=False):
              "screen_power:Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm",
              {1: host, 8: coil, 3: pre+"_UP_N", 4: pre+"_DN_N",
               6: pre+"_UP_P", 5: pre+"_DN_P"}, "1-1462037-3", group)
-        part("Transistor_FET", ("2N7000"), f"Q{n+1}", ("2N7000"),
+        part("Transistor_FET", "2N7000", f"Q{n+1}", "TN0702",
              (TO92),
              ({1: "GND", 2: "DATA_ENABLE", 3: coil}),
-             ("2N7000"), group)
+             "TN0702N3-G", group)
         part("Diode", ("1N4007"), f"D{n+1}", ("1N4007"),
              ("Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal"),
              {1: host, 2: coil}, ("1N4007-E3/54"), group)

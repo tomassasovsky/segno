@@ -24,6 +24,7 @@ def check_through_hole(board, errors):
                 required = (1.0 if name.startswith('JST_XH_') and len(list(footprint.Pads()))==2 else
                             .9 if name.startswith('JST_XH_') else
                             1.65 if name.startswith('JST_VH_') else
+                            .8 if name.startswith('DIP-') else
                             .85 if name=='TO-92_Inline_Wide' else 0)
                 if finished_min < required - 1e-6:
                     _fail(errors, 'hole_tolerance', f'{ref}.{pad.GetNumber()}: minimum finished hole {finished_min:.3f} mm is below {required:.2f} mm after fabrication tolerance')

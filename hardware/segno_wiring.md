@@ -51,19 +51,20 @@ longer applies to anything.
 ## 2. Power distribution (#754)
 
 **20 V in, 5 V made next to the loads.** Local bucks keep the high-current
-5 V wiring short. The current design allowances total **71.79 W** at their
-outputs: 25 W for the Pi rail and 46.79 W for AUX. At an illustrative 85–90%
-buck efficiency, that needs approximately **79.8–84.5 W**, or **3.99–4.22 A at
+5 V wiring short. The current design allowances total **63.04 W** at their
+outputs: 25 W for the Pi rail and 38.04 W for AUX. At an illustrative 85–90%
+buck efficiency, that needs approximately **70.0–74.2 W**, or **3.50–3.71 A at
 20 V**. These efficiencies are planning assumptions, not measurements of the
 retained bucks. The 20 V / 5 A / 100 W contract accommodates this model; it
 does not establish enclosed thermal capacity or startup response.
 
-The screen switch calculations assume **5.0–5.25 V at its J1 under load**.
-The retained fixed nominal 5 V buck plus input fuse, cable and connector losses
-does not guarantee that minimum. Further voltage is lost through the switch, fuses and
-screen leads. The 6 A shared screen-board allowance therefore remains
-conditional on its stated electrical and thermal assumptions; neither a
-regulated 5.0 V at each screen nor an adjustable buck is implied.
+The Revision L screen gate driver is assessed at **4.5–5.25 V at J1**;
+its negative gate supply preserves enhancement after fuse and harness losses.
+Use the existing nominal 5 V buck. This driver corner does not claim that
+both screens operate at 4.5 V or that the buck is adjustable. Keep screen
+leads short and within the documented wire and connector ratings. The
+[gate-drive and startup assessments](kicad/screen_power/README.md#circuit-and-limits)
+state the remaining engineering assumptions.
 
 - **Inlet:** panel-mount USB-C coupler on a D punch (QIANRENON B0CQ4VD2N2,
   100 W, 10 Gbps). The 10 Gbps matters only because it means **all 24 ways are
@@ -81,7 +82,7 @@ regulated 5.0 V at each screen nor an adjustable buck is implied.
   unknown: verify 20 V with a meter/PD analyzer before claiming 100 W readiness.
   Twist the approximately 250 mm I2C run with ground past the bucks.
 - **Fuse:** 5×20 **T5A slow-blow** in the 20 V feed, ahead of both bucks.
-  The revised planning load is approximately 4.0–4.2 A at 20 V before startup
+  The revised planning load is approximately 3.5–3.7 A at 20 V before startup
   transients; the PD contract ceiling is 5 A. The exact fuse/holder and its
   ambient derating must support that duty. This existing fuse choice has no
   documented part-specific coordination with buck inrush/current limiting;
@@ -100,7 +101,7 @@ regulated 5.0 V at each screen nor an adjustable buck is implied.
 | Buck | Loads | Design figure |
 | --- | --- | --- |
 | **BUCK_PI** | Pi 5, its USB devices and NVMe | 5.0 A / 25 W device budget |
-| **BUCK_AUX** | Both screens, console, 80 pill LEDs and 40 ring LEDs | 9.358 A / 46.79 W for a full-white ring with normal pill indications and the allowances below |
+| **BUCK_AUX** | Both screens, console, 80 pill LEDs and 40 ring LEDs | 7.608 A / 38.04 W for a full-white ring with normal pill indications and the allowances below |
 
 The selected ring is a **40-pixel strip**, giving 120 LEDs with the ten
 8-pixel pills. The updated v3 console/carrier copper supports the ring at
@@ -121,25 +122,25 @@ This PCB change does not alter those animations or command a full-white mode.
 
 | AUX load allowance | Current |
 | --- | ---: |
-| Screen board: both main feeds, both touch feeds and its 0.05 A bleeder | 6.000 A |
+| Screen board: both main feeds, both touch feeds and its 0.05 A bleeder | 4.250 A |
 | 40 ring pixels, all RGB channels at 255 | 2.40 A |
 | All ten pills displaying their brightest normal indications | 0.498 A |
 | Idle allowance for 120 pixels | 0.120 A |
 | Console logic | 0.140 A |
 | Additional XIAO ring controller and buffer | 0.200 A |
-| **Planning total** | **9.358 A** |
+| **Planning total** | **7.608 A** |
 
-The nominal 10 A buck has approximately 0.64 A headroom against this model.
+The nominal 10 A buck has approximately 2.39 A headroom against this model.
 That is not a guarantee of transient response, capacity at high temperature
 or screen current; physical validation remains part of the first assembled build.
-The bleeder is included once, inside the 6 A screen-board allowance. Relay coils
+The bleeder is included once, inside the 4.25 A screen planning allowance. Relay coils
 take their power from Pi USB VBUS, not AUX. The 3 A main and 0.5 A touch branch
-ceilings cannot all be used simultaneously: their sum exceeds the shared 6 A
-allowance before the bleeder is counted.
+ceilings cannot all be used simultaneously: their sum exceeds the shared 4.25 A
+planning allowance before the bleeder is counted.
 
 Allowing **all 80 pill LEDs as well as the ring** to display flat unrestricted
 white is a different requirement: 7.2 A of LED channels plus the screens and
-allowances above totals **13.66 A**. That exceeds the retained 10 A AUX
+allowances above totals **11.91 A**. That exceeds the retained 10 A AUX
 supply. The ring PCB upgrade does not authorize that simultaneous system load.
 Normal pill rendering remains within the modeled budget with a full-white ring.
 
