@@ -25,22 +25,26 @@ def route(variant):
     def join(a,b,bends=(),width=USB_WIDTH,layer=p.B_Cu):
         assert pad(*a).GetNetname()==pad(*b).GetNetname(),(a,b)
         track(pad(*a).GetNetname(),[at(*a),*bends,at(*b)],width,layer)
-    def taper(net,a,b,start_width,end_width,layer=p.F_Cu):
-        # Add a gradual copper transition over an already continuous track.
-        # The underlying track retains the validated minimum power width.
-        dx,dy=b[0]-a[0],b[1]-a[1];length=math.hypot(dx,dy)
-        nx,ny=-dy/length,dx/length
+    def region(net,points,layer=p.F_Cu):
+        # Locked overlay that fixes the visible outline of a power path. The
+        # tracks underneath still carry the checked widths on their own, so
+        # removing every zone cannot break a minimum-width path.
         zone=p.ZONE(board);zone.SetLayer(layer);zone.SetNet(nets[net])
         zone.SetZoneName('POWER_TAPER');zone.SetAssignedPriority(20)
         zone.SetLocalClearance(p.FromMM(.2));zone.SetMinThickness(p.FromMM(.05))
         zone.SetPadConnection(p.ZONE_CONNECTION_FULL)
         zone.SetIslandRemovalMode(p.ISLAND_REMOVAL_MODE_ALWAYS);zone.SetLocked(True)
         poly=zone.Outline();poly.NewOutline()
-        for at,width,sign in ((a,start_width,1),(b,end_width,1),
-                              (b,end_width,-1),(a,start_width,-1)):
-            v=point(at[0]+sign*nx*width/2,at[1]+sign*ny*width/2)
-            poly.Append(v.x,v.y)
+        for xy in points:
+            v=point(*xy);poly.Append(v.x,v.y)
         board.Add(zone)
+    def taper(net,a,b,start_width,end_width,layer=p.F_Cu):
+        # Gradual copper transition over an already continuous track.
+        dx,dy=b[0]-a[0],b[1]-a[1];length=math.hypot(dx,dy)
+        nx,ny=-dy/length,dx/length
+        region(net,[(xy[0]+sign*nx*width/2,xy[1]+sign*ny*width/2)
+                    for xy,width,sign in ((a,start_width,1),(b,end_width,1),
+                                          (b,end_width,-1),(a,start_width,-1))],layer)
     def pair(a,b,centre,breakout=False):
         # Mitered parallel offsets for the two-layer coupled microstrip.
         normals=[]
@@ -183,9 +187,30 @@ def route(variant):
         v=p.PCB_VIA(board);v.SetPosition(point(*stitch));v.SetWidth(p.FromMM(.9));v.SetDrill(p.FromMM(.45))
         v.SetViaType(p.VIATYPE_THROUGH);v.SetLayerPair(p.F_Cu,p.B_Cu)
         v.SetNet(nets['SWITCHED_5V']);v.SetLocked(True);board.Add(v)
-    track('SWITCHED_5V',[(POWER_BUS_X,29),(POWER_BUS_X,65.25)],4.5,p.F_Cu)
-    for y in (29,43,54,65.25):
-        taper('SWITCHED_5V',(61.25 if y==65.25 else 60.5,y),(POWER_BUS_X,y),3,4.5)
+    # Right-edge distribution bus. The spine holds the full 4.5mm copper that
+    # the width check measures with every zone deleted; one locked overlay then
+    # states the outline, because a bare track network draws this bus as a
+    # capsule with round end caps and a trapezoid flare at every tap. The
+    # contour is deliberate and repeats: straight sides one bus width apart,
+    # the first tap's north edge and the last tap's south edge continuing as
+    # the flat ends, a 45 degree chamfer on each of the two free corners, and a
+    # 45 degree gusset where every tap widens into the trunk. Both ends stop a
+    # clear millimetre short of the M3 washer keepouts, so the ground pour
+    # beside the bus keeps an even width instead of pinching around a cap.
+    BUS,TAP,GUSSET,CHAMFER=4.5,3,1,1.25
+    taps=(29,43,54,65.25)
+    west,east=POWER_BUS_X-BUS/2,POWER_BUS_X+BUS/2
+    top,bottom=taps[0]-TAP/2,taps[-1]+TAP/2
+    track('SWITCHED_5V',[(POWER_BUS_X,top+BUS/2+.25),
+                         (POWER_BUS_X,bottom-BUS/2-.25)],BUS,p.F_Cu)
+    outline=[(west-GUSSET,top),(east-CHAMFER,top),(east,top+CHAMFER),
+             (east,bottom-CHAMFER),(east-CHAMFER,bottom),(west-GUSSET,bottom)]
+    for y in reversed(taps):
+        if y!=taps[-1]:
+            outline+=[(west,y+TAP/2+GUSSET),(west-GUSSET,y+TAP/2)]
+        if y!=taps[0]:
+            outline+=[(west-GUSSET,y-TAP/2),(west,y-TAP/2-GUSSET)]
+    region('SWITCHED_5V',outline)
     for ch,y in enumerate(USB_ROWS[variant],1):
         n=100*ch
         for offset in (1,2):
@@ -193,7 +218,10 @@ def route(variant):
             # The branch reaches the broad trunk on the same face.
             bends=[(f[0],f[1]+2),(f[0]+4,f[1]+6),(POWER_BUS_X,f[1]+6)] if offset==1 else [(POWER_BUS_X,f[1])]
             if ch==2 and offset==2:
-                bends=[(58.5,68),(61.25,65.25),(POWER_BUS_X,65.25)]
+                # This feed climbs to the bus, so it turns well west of the
+                # junction: every tap then meets the trunk as a plain 3mm band
+                # and the bus keeps one contour along its whole length.
+                bends=[(56.75,68),(59.5,taps[-1]),(POWER_BUS_X,taps[-1])]
             track('SWITCHED_5V',[f,*bends],3,p.F_Cu)
         a,b=at(f'F{n+1}',2),at(f'J{n+3}',1)
         join((f'F{n+1}',2),(f'J{n+3}',1),
