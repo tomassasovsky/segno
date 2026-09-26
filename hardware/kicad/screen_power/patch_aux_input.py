@@ -241,7 +241,10 @@ def patch(path, dry_run=False):
     added += ''.join(fillet_zone(shape) for shape in blend_outlines())
     for span in sorted(drop, reverse=True):
         text = text[:span[0]] + text[span[1]:]
-    cut = text.index('\t(zone\n')
+    # Anchored at a line start: a footprint's own keepout zone is indented
+    # deeper, and inserting board copper inside a footprint silently loses it.
+    spot = re.search(r'^\t\(zone\n', text, re.M)
+    cut = spot.start() if spot else text.rindex('\n)')
     text = text[:cut] + added + text[cut:]
     if added.count('(') != added.count(')'):
         raise SystemExit('generated copper is unbalanced')

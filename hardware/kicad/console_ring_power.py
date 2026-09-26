@@ -6,19 +6,36 @@ IPC-2221 10 C estimate is about 2.99 A, above the 2.64 A load. Four parallel
 0.5 mm drill vias carry the only layer transition; the logic rail is separate.
 """
 
+import math
+
 import pcbnew
 
 
 WIDTH = 1.7
 VIA_DIAMETER = 0.9
 VIA_DRILL = 0.5
+# Centreline radius for the supply's bends: a 1 mm radius on the inner edge of
+# the band, the same rule the screen board's power copper follows.
+BEND = WIDTH / 2 + 1
 CENTER = (141.8, 136.9)
+# The run leaves the pill busbar inside it and comes back out across its west
+# edge at x = 102.9. The vertical used to sit at x = 102, which put its east
+# edge 0.05 mm from that edge: same net, too far apart to merge and too close
+# to be a clearance, so the fill left a dead-end slot beside J24 pad 3 that
+# ended in a point. At x = 102.27 the two overlap by 0.22 mm and merge, while
+# the run keeps 0.22 mm to the indicator-data track east of it. Only the
+# vertical moves: the corner below it moves down by the same 0.27 mm so the
+# diagonal that follows keeps its own line, 0.21 mm off that net's via.
 BACK_PATH = (
-    (105.4, 113.0), (102.0, 116.4), (102.0, 137.0),
+    (105.4, 113.0), (102.27, 116.13), (102.27, 137.27),
     (104.4, 139.4), (104.4, 145.4), (106.5, 147.5),
     (139.0, 147.5), (141.8, 144.7), CENTER,
 )
 FRONT_PATH = (CENTER, (141.8, 134.0), (146.8, 129.0), (148.75, 129.0))
+# One corner keeps its mitre: the run passes the indicator-data track 0.22 mm
+# to its east there, and an arc of any useful radius swings the centreline
+# into that clearance (a 45 degree bend moves it 0.082 mm per mm of radius).
+SQUARE = {(102.27, 137.27)}
 VIA_CENTERS = tuple(
     (CENTER[0] + dx, CENTER[1] + dy)
     for dx in (-0.55, 0.55) for dy in (-0.55, 0.55)
@@ -43,9 +60,63 @@ def _segment_key(a, b, layer):
     return layer, frozenset((_xy(a), _xy(b)))
 
 
+def _arc(centre, frm, to, steps=8):
+    radius = math.dist(centre, frm)
+    first = math.atan2(frm[1] - centre[1], frm[0] - centre[0])
+    last = math.atan2(to[1] - centre[1], to[0] - centre[0])
+    if last - first > math.pi:
+        last -= math.tau
+    if first - last > math.pi:
+        last += math.tau
+    return [(centre[0] + radius * math.cos(first + (last - first) * i / steps),
+             centre[1] + radius * math.sin(first + (last - first) * i / steps))
+            for i in range(steps + 1)]
+
+
+def _rounded(points, radius=BEND):
+    """The same centreline, with a tangent arc at each corner.
+
+    Chords, not arc items: the Specctra export this run is handed to flattens
+    a PCB_ARC to its chord and would lose the bow. Eight chords to a corner
+    hold the deviation from the circle under 10 um at this radius. The first
+    and last leg may spend their whole length on a tangent; an interior leg
+    keeps half of it for its other end.
+    """
+    out = [points[0]]
+    last = len(points) - 3
+    for i, corner in enumerate(points[1:-1]):
+        if corner in SQUARE:
+            out.append(corner)
+            continue
+        before, after = points[i], points[i + 2]
+        v1 = (before[0] - corner[0], before[1] - corner[1])
+        v2 = (after[0] - corner[0], after[1] - corner[1])
+        l1, l2 = math.hypot(*v1), math.hypot(*v2)
+        u1, u2 = (v1[0] / l1, v1[1] / l1), (v2[0] / l2, v2[1] / l2)
+        angle = math.acos(max(-1, min(1, u1[0] * u2[0] + u1[1] * u2[1])))
+        if angle > math.pi - 1e-9:
+            out.append(corner)
+            continue
+        tangent = min(radius / math.tan(angle / 2),
+                      l1 if i == 0 else l1 / 2,
+                      l2 if i == last else l2 / 2)
+        r = tangent * math.tan(angle / 2)
+        t1 = (corner[0] + u1[0] * tangent, corner[1] + u1[1] * tangent)
+        t2 = (corner[0] + u2[0] * tangent, corner[1] + u2[1] * tangent)
+        bisector = (u1[0] + u2[0], u1[1] + u2[1])
+        bl = math.hypot(*bisector)
+        out += _arc((corner[0] + bisector[0] / bl * (r / math.sin(angle / 2)),
+                     corner[1] + bisector[1] / bl * (r / math.sin(angle / 2))),
+                    t1, t2)
+    out.append(points[-1])
+    return [q for i, q in enumerate(out)
+            if i == 0 or math.dist(q, out[i - 1]) > 1e-9]
+
+
 def _required_tracks():
     for layer, points in ((pcbnew.B_Cu, BACK_PATH), (pcbnew.F_Cu, FRONT_PATH)):
-        for a, b in zip(points, points[1:]):
+        chords = _rounded(points)
+        for a, b in zip(chords, chords[1:]):
             yield a, b, layer, WIDTH
     # Each short 0.8 mm spoke carries one quarter of the ring current.
     for xy in VIA_CENTERS:
@@ -146,7 +217,8 @@ def check(board):
 def self_test(path):
     """Inject realistic copper faults; every one must stop fabrication."""
     def segment(board):
-        key = _segment_key(_point(BACK_PATH[0]), _point(BACK_PATH[1]), pcbnew.B_Cu)
+        a, b, layer, _ = next(iter(_required_tracks()))
+        key = _segment_key(_point(a), _point(b), layer)
         return next(t for t in board.GetTracks() if t.GetClass() != "PCB_VIA"
                     and _segment_key(t.GetStart(), t.GetEnd(), t.GetLayer()) == key)
 
