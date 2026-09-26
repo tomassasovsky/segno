@@ -25,7 +25,23 @@ def route(variant):
     def join(a,b,bends=(),width=USB_WIDTH,layer=p.B_Cu):
         assert pad(*a).GetNetname()==pad(*b).GetNetname(),(a,b)
         track(pad(*a).GetNetname(),[at(*a),*bends,at(*b)],width,layer)
-    def region(net,points,layer=p.F_Cu):
+    def quarter(centre,frm,to,steps=12):
+        """Fine polyline along the circular arc frm -> to about centre.
+
+        Zone outlines are polygons, so a fillet is drawn as a chord sequence.
+        Twelve chords per quarter turn keep the deviation from the true circle
+        under 3um, far below any fabrication resolution, and the arc stays
+        tangent to both edges it joins.
+        """
+        radius=math.dist(centre,frm)
+        a0=math.atan2(frm[1]-centre[1],frm[0]-centre[0])
+        a1=math.atan2(to[1]-centre[1],to[0]-centre[0])
+        if a1-a0>math.pi:a1-=math.tau
+        if a0-a1>math.pi:a1+=math.tau
+        return [(centre[0]+radius*math.cos(a0+(a1-a0)*i/steps),
+                 centre[1]+radius*math.sin(a0+(a1-a0)*i/steps))
+                for i in range(steps+1)]
+    def region(net,points,layer=p.F_Cu,fillet=0):
         # Locked overlay that fixes the visible outline of a power path. The
         # tracks underneath still carry the checked widths on their own, so
         # removing every zone cannot break a minimum-width path.
@@ -34,17 +50,25 @@ def route(variant):
         zone.SetLocalClearance(p.FromMM(.2));zone.SetMinThickness(p.FromMM(.05))
         zone.SetPadConnection(p.ZONE_CONNECTION_FULL)
         zone.SetIslandRemovalMode(p.ISLAND_REMOVAL_MODE_ALWAYS);zone.SetLocked(True)
+        if fillet:
+            # Native corner smoothing: KiCad rounds every corner of the square
+            # source outline with a true arc when it fills, and shrinks the
+            # radius by itself where an edge is too short to carry it.
+            zone.SetCornerSmoothingType(2);zone.SetCornerRadius(p.FromMM(fillet))
         poly=zone.Outline();poly.NewOutline()
         for xy in points:
             v=point(*xy);poly.Append(v.x,v.y)
         board.Add(zone)
-    def taper(net,a,b,start_width,end_width,layer=p.F_Cu):
-        # Gradual copper transition over an already continuous track.
+    def taper(net,a,b,start_width,end_width,layer=p.F_Cu,fillet=.4):
+        # Gradual copper transition over an already continuous track. Its four
+        # corners are convex, so rounding them only relieves copper and cannot
+        # reduce a clearance or the width the track underneath carries.
         dx,dy=b[0]-a[0],b[1]-a[1];length=math.hypot(dx,dy)
         nx,ny=-dy/length,dx/length
         region(net,[(xy[0]+sign*nx*width/2,xy[1]+sign*ny*width/2)
                     for xy,width,sign in ((a,start_width,1),(b,end_width,1),
-                                          (b,end_width,-1),(a,start_width,-1))],layer)
+                                          (b,end_width,-1),(a,start_width,-1))],
+               layer,fillet)
     def pair(a,b,centre,breakout=False):
         # Mitered parallel offsets for the two-layer coupled microstrip.
         normals=[]
@@ -193,24 +217,25 @@ def route(variant):
     # capsule with round end caps and a trapezoid flare at every tap. The
     # contour is deliberate and repeats: straight sides one bus width apart,
     # the first tap's north edge and the last tap's south edge continuing as
-    # the flat ends, a 45 degree chamfer on each of the two free corners, and a
-    # 45 degree gusset where every tap widens into the trunk. Both ends stop a
-    # clear millimetre short of the M3 washer keepouts, so the ground pour
-    # beside the bus keeps an even width instead of pinching around a cap.
-    BUS,TAP,GUSSET,CHAMFER=4.5,3,1,1.25
+    # the flat ends, and a step out to the tap width wherever a tap meets the
+    # trunk. Every corner of that outline is then rounded with a true arc, so
+    # the free ends are radiused and each tap blends into the bus instead of
+    # meeting it in a notch. Both ends stop a clear millimetre short of the M3
+    # washer keepouts, so the ground pour beside the bus keeps an even width
+    # rather than pinching around a cap.
+    BUS,TAP,GUSSET,FILLET=4.5,3,1,1
     taps=(29,43,54,65.25)
     west,east=POWER_BUS_X-BUS/2,POWER_BUS_X+BUS/2
     top,bottom=taps[0]-TAP/2,taps[-1]+TAP/2
     track('SWITCHED_5V',[(POWER_BUS_X,top+BUS/2+.25),
                          (POWER_BUS_X,bottom-BUS/2-.25)],BUS,p.F_Cu)
-    outline=[(west-GUSSET,top),(east-CHAMFER,top),(east,top+CHAMFER),
-             (east,bottom-CHAMFER),(east-CHAMFER,bottom),(west-GUSSET,bottom)]
+    outline=[(west-GUSSET,top),(east,top),(east,bottom),(west-GUSSET,bottom)]
     for y in reversed(taps):
         if y!=taps[-1]:
-            outline+=[(west,y+TAP/2+GUSSET),(west-GUSSET,y+TAP/2)]
+            outline+=[(west,y+TAP/2),(west-GUSSET,y+TAP/2)]
         if y!=taps[0]:
-            outline+=[(west-GUSSET,y-TAP/2),(west,y-TAP/2-GUSSET)]
-    region('SWITCHED_5V',outline)
+            outline+=[(west-GUSSET,y-TAP/2),(west,y-TAP/2)]
+    region('SWITCHED_5V',outline,fillet=FILLET)
     for ch,y in enumerate(USB_ROWS[variant],1):
         n=100*ch
         for offset in (1,2):
@@ -241,13 +266,24 @@ def route(variant):
              [(57.5,b[1]),(58.5,b[1]-1),(58.5,y-6),(57.5,y-7),(c[0]+3,y-7)],.8,p.B_Cu)
     # Reserve front copper below each pair, and keep same-side ground far
     # enough away to use the coupled-microstrip calculation as a starting point.
-    def keepout(layer,x1,y1,x2,y2,tracks=False,pours=False):
+    def keepout(layer,x1,y1,x2,y2,tracks=False,pours=False,radius=0):
         z=p.ZONE(board);z.SetLayer(layer);z.SetIsRuleArea(True)
         z.SetDoNotAllowTracks(tracks);z.SetDoNotAllowVias(tracks)
         z.SetDoNotAllowZoneFills(pours);z.SetDoNotAllowPads(False);z.SetDoNotAllowFootprints(False)
         poly=z.Outline();poly.NewOutline()
-        for at in [(x1,y1),(x2,y1),(x2,y2),(x1,y2)]:
-            v=point(*at);poly.Append(v.x,v.y)
+        if radius:
+            # A rule area carries no fill, so it cannot use the zone smoothing
+            # the filled overlays use; draw the rounded outline directly.
+            radius=min(radius,(x2-x1)/2,(y2-y1)/2)
+            corners=[((x2-radius,y1+radius),(x2-radius,y1),(x2,y1+radius)),
+                     ((x2-radius,y2-radius),(x2,y2-radius),(x2-radius,y2)),
+                     ((x1+radius,y2-radius),(x1+radius,y2),(x1,y2-radius)),
+                     ((x1+radius,y1+radius),(x1,y1+radius),(x1+radius,y1))]
+            shape=[xy for corner in corners for xy in quarter(*corner)]
+        else:
+            shape=[(x1,y1),(x2,y1),(x2,y2),(x1,y2)]
+        for xy in shape:
+            v=point(*xy);poly.Append(v.x,v.y)
         board.Add(z)
     for y in USB_ROWS[variant]:
         for left,right in [(9,22),(35,54)]:
@@ -257,12 +293,13 @@ def route(variant):
     # Two dead-end ground nibs are left over between power copper: one on the
     # front under Q3, in the wedge between the AUX approach and the source
     # bridge, and two facing ones on the back under F101's via transition.
-    # Blunt them with local pour-only cutbacks, so the pour ends on a straight
-    # edge instead of a tip. These only remove fill: the tracks and vias that
-    # bound them, the power zones and the USB reference ground are untouched,
-    # and both boxes are dead ends, so no ground region loses a path.
-    keepout(p.F_Cu,43.15,10.35,44.5,11.9,pours=True)
-    keepout(p.B_Cu,46.2,25.45,49.1,25.82,pours=True)
+    # Blunt them with local pour-only cutbacks whose own outline is rounded, so
+    # the pour ends on a curve instead of a tip and the cutback adds no sharp
+    # corner of its own. These only remove fill: the tracks and vias that bound
+    # them, the power zones and the USB reference ground are untouched, and both
+    # areas are dead ends, so no ground region loses a path.
+    keepout(p.F_Cu,43.15,10.35,44.5,11.9,pours=True,radius=.35)
+    keepout(p.B_Cu,46.2,25.45,49.1,25.82,pours=True,radius=.35)
     # Protect the fanouts as well: a control trace under either data line
     # breaks its return path even when it misses the straight pair corridor.
     for t in list(board.GetTracks()):
