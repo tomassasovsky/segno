@@ -165,3 +165,23 @@ hardware/kicad/out_console/*.kicad_prl
 # Widget Preview related
 .widget_preview/
 ios/Flutter/ephemeral/.swift_pm.lock
+
+# Looper X material stays on the owner's machine: the repo is public and
+# these are extracted from, or may reproduce, a commercial app.
+docs/research/sheeran-looper-x-1.0.2/
+docs/design/looperx-factory/
+docs/design/settings-art/*.png
+
+# Rendered design previews and walkthrough videos stay local; the study
+# sources that produce them are tracked.
+docs/design/*-previews/**/*.png
+docs/design/*-previews/**/*.mp4
+
+# Local tool output
+/.worktrees/
+/embedded-image*.png
+/images/127.0.0.1/
+/fonts/127.0.0.1/
+/tmp/
+/try_screen_sch.erc
+ios/Flutter/ephemeral/

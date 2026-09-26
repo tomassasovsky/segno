@@ -1,0 +1,14 @@
+The product decision on whole-track Pre/Post is settled: keep the switch and implement a non-destructive processed copy of the combined track, preserving its original recorded parts and overdub layers.
+
+This answers the question on Slice 3: inputs, outputs, Mixer and FX:
+https://github.com/tomassasovsky/segno/issues/1016#issuecomment-5614857125
+
+Whole-track Pre processes the combined material as one signal. Do not fan separate copies of the effect out to each part: that changes the sound for effects such as compression and distortion. Do not make switching to Pre perform a user-facing Bounce or permanently flatten the track.
+
+Keep original sources and recoverable edit state. Build the playable result from those sources and the applicable processing recipe, never by processing the previous wet result again. Keep the current working sound until the replacement succeeds, then switch at an audio-safe boundary without restarting the loop. Parts, layers, Undo/Redo and effect assignments must remain usable. Editing a source or effect must update the derived result appropriately.
+
+Pre sound stops with the loop. Post remains live and can finish its tails after Stop. Outputs and All tracks keep their accepted fixed placement. The existing compact Pre/Post UX stays unchanged.
+
+Before implementation, define the exact signal/render boundary and its interaction with each part's Post effects, overdubbing, live parameter/pedal changes, tail wrapping and playback transforms. These are engineering details still to resolve; the approval does not authorize baking a Post effect into Pre, losing editable parts, or silently disabling accepted controls. If preserving those behaviors reveals an actual product conflict, explain that conflict concretely before changing the behavior.
+
+Proceed with the rendering design and implementation in the existing slice work. Replace the forced whole-track Post restriction when the complete path works. Verify combined-signal processing with a nonlinear effect, edits from originals, source/layer recovery, assignment identity, failure retention, boundary swaps and Stop/tail behavior. Update the design contract and progress record with the approved direction and observed results; do not mark the feature complete from the UI switch alone.
