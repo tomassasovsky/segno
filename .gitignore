@@ -169,7 +169,13 @@ ios/Flutter/ephemeral/.swift_pm.lock
 # Looper X material stays on the owner's machine: the repo is public and
 # these are extracted from a commercial app.
 docs/research/sheeran-looper-x-1.0.2/
-docs/design/looperx-factory/
+docs/design/looperx-factory/*
+!docs/design/looperx-factory/images/
+docs/design/looperx-factory/images/**/*.png
+# segno-ui.pen renders these, so they are tracked.
+!docs/design/looperx-factory/images/footswitch/*.png
+!docs/design/looperx-factory/images/selector/*.png
+!docs/design/looperx-factory/images/stomps/*.png
 
 # Local tool output
 /.worktrees/
