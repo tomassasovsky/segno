@@ -25,12 +25,13 @@ RETURN_VIAS = ((34.23, 24), (35.23, 24), (34.73, 23.5))
 TAP_WIDTH = 0.65
 RAIL_Y = 22
 FILLET = 0.6
-TAPS = (("C5", "1", 39, 18.5),)
-# U2 pins 13 and 14 hang off C5's tap instead of taking a second one. With a
-# tap of their own the two taps, the rail between them and the pocket's own
-# 0.65 mm copper closed a loop around 8.9 mm2 of bare board; this link is the
-# short way across it, 4.0 mm of track where the old path was 7.3 mm.
-LINK = ((39, 18.5), (37.5, 20), (35.62, 20))      # C5.1 -> U2.14
+# C5 and U2 pin 14 each drop straight down into the rail. The two taps, the
+# rail between them and the pocket's own 0.65 mm copper do enclose about
+# 8.9 mm2 of bare board, which is the geometry the owner wants: two plain
+# vertical taps with rounded bases read better than one tap and a dog-leg
+# across the pocket, and the enclosed area is not an electrical fault - the
+# strip's current takes the 1.5 mm rail either way.
+TAPS = (("C5", "1", 39, 18.5), ("U2", "14", 35.62, 20))
 # Centreline radius for the rail's own bends: a 1 mm radius on the inner edge.
 BEND = WIDTH / 2 + 1
 
@@ -110,6 +111,10 @@ def rounded(points, radius=BEND):
     endpoints of the rail. The first and last leg may spend their whole length
     on a tangent; an interior leg keeps half of it for its other end.
     """
+    points = [q for i, q in enumerate(points)
+              if i == 0 or math.dist(q, points[i-1]) > 1e-9]
+    if len(points) < 3:
+        return list(points)
     out = [points[0]]
     last = len(points) - 3
     for i, corner in enumerate(points[1:-1]):
@@ -158,10 +163,6 @@ def install(board):
     nodes = rounded(feed_nodes())
     for a, b in zip(nodes, nodes[1:]):
         wire(a, b, WIDTH)
-    assert point(pad(board, "U2", "14").GetPosition()) == point(vector(LINK[-1])), \
-        "TAP: U2.14 moved"
-    for a, b in zip(LINK, LINK[1:]):
-        wire(a, b, TAP_WIDTH)
     for ref, number, x, y in TAPS:
         assert point(pad(board, ref, number).GetPosition()) == point(
             vector((x, y))), "TAP: %s.%s moved" % (ref, number)

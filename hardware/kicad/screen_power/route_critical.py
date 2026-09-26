@@ -67,7 +67,14 @@ def route(variant):
         The first and last leg may spend their whole length on a tangent
         because nothing else claims it; an interior leg keeps half for its
         other end, which is also how KiCad clamps a zone fillet.
+
+        Repeated points come in from the miter helper whenever a knee lands on
+        the pad it is aiming at - two aligned terminals give [a,b,b] - so they
+        go before anything is normalised.
         """
+        points=[q for i,q in enumerate(points)
+                if i==0 or math.dist(q,points[i-1])>1e-9]
+        if len(points)<3:return points
         out=[points[0]];last=len(points)-3
         for i,corner in enumerate(points[1:-1]):
             before,after=points[i],points[i+2]

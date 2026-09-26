@@ -24,9 +24,9 @@ import ring_power as rp
 OLD_RAIL = (((52, 20), (47, 20)), ((47, 20), (45, 22)), ((45, 22), (39, 22)),
             ((39, 22), (35.62, 22)), ((35.62, 22), (32.19, 22)),
             ((32.19, 22), (32.19, 24)))
-OLD_TAP = ((35.62, 20), (35.62, 22))           # U2's own rail tap
-OLD_LEG = ((36.79, 16.29), (35.62, 17.46))     # its feed from the C5 cluster
-DEAD_FILLET = 35.62                            # the blend that went with it
+TAP = ((35.62, 20), (35.62, 22))               # U2's own rail tap
+LEG = ((36.79, 16.29), (35.62, 17.46))         # its feed from the C5 cluster
+LINK = ((39, 18.5), (37.5, 20), (35.62, 20))   # the dog-leg that replaced them
 
 
 def number(value):
@@ -59,18 +59,68 @@ def same(a, b, tol=2e-4):
     return abs(a[0]-b[0]) <= tol and abs(a[1]-b[1]) <= tol
 
 
-def wire(a, b, width):
+def wire(a, b, width, locked=True):
     return (f'\t(segment\n\t\t(start {number(a[0])} {number(a[1])})\n'
             f'\t\t(end {number(b[0])} {number(b[1])})\n'
-            f'\t\t(width {number(width)})\n\t\t(locked yes)\n'
-            f'\t\t(layer "F.Cu")\n\t\t(net "+5V_LED")\n'
-            f'\t\t(uuid "{uuid.uuid4()}")\n\t)\n')
+            f'\t\t(width {number(width)})\n'
+            + ('\t\t(locked yes)\n' if locked else '')
+            + f'\t\t(layer "F.Cu")\n\t\t(net "+5V_LED")\n'
+              f'\t\t(uuid "{uuid.uuid4()}")\n\t)\n')
+
+
+def fillet_zone(points):
+    body = ''.join(f'\t\t\t\t(xy {number(x)} {number(y)})\n' for x, y in points)
+    return ('\t(zone\n\t\t(net "+5V_LED")\n\t\t(layer "F.Cu")\n'
+            f'\t\t(uuid "{uuid.uuid4()}")\n\t\t(name "TAP_FILLET")\n'
+            '\t\t(locked yes)\n\t\t(hatch edge 0.5)\n\t\t(priority 20)\n'
+            '\t\t(connect_pads yes\n\t\t\t(clearance 0)\n\t\t)\n'
+            '\t\t(min_thickness 0.05)\n\t\t(fill yes\n'
+            '\t\t\t(thermal_gap 0.5)\n\t\t\t(thermal_bridge_width 0.5)\n'
+            '\t\t\t(island_removal_mode 0)\n\t\t)\n'
+            f'\t\t(polygon\n\t\t\t(pts\n{body}\t\t\t)\n\t\t)\n\t)\n')
+
+
+def restore_taps(path, dry_run=False):
+    """Put U2's own tap and its feed leg back, on a board that lost them.
+
+    The owner prefers the two straight vertical taps with rounded bases to the
+    single tap and the dog-leg that replaced them, so this undoes that part of
+    the earlier migration while keeping the rounded rail.
+    """
+    text = path.read_text()
+    drop = []
+    for a, b in zip(LINK, LINK[1:]):
+        hits = [span for span, body in blocks(text, 'segment')
+                if '"+5V_LED"' in body and '"F.Cu"' in body
+                and ((same(endpoints(body)[0], a) and same(endpoints(body)[1], b))
+                     or (same(endpoints(body)[0], b)
+                         and same(endpoints(body)[1], a)))]
+        if len(hits) != 1:
+            raise SystemExit(f'{path.name}: expected one link segment {a}->{b}, '
+                             f'found {len(hits)} - the taps are already back, '
+                             'or this board never had the link')
+        drop += hits
+    if '"TAP_FILLET"' not in text:
+        raise SystemExit(f'{path.name}: no blend overlay to match; run the '
+                         'rail patch first')
+    added = wire(TAP[0], TAP[1], rp.TAP_WIDTH)
+    added += wire(LEG[0], LEG[1], rp.TAP_WIDTH, locked=False)
+    added += fillet_zone(rp.tap_outline(TAP[0][0]))
+    for span in sorted(drop, reverse=True):
+        text = text[:span[0]] + text[span[1]:]
+    spot = re.search(r'^\t\(zone\n', text, re.M)
+    cut = spot.start() if spot else text.rindex('\n)')
+    text = text[:cut] + added + text[cut:]
+    if not dry_run:
+        path.write_text(text)
+    print(f'{path.name}: U2 tap, its feed leg and the second blend overlay '
+          'restored' + (' (dry run)' if dry_run else ''))
 
 
 def patch(path, dry_run=False):
     text = path.read_text()
     segments = [(span, body) for span, body in blocks(text, 'segment')]
-    drop, wanted = [], list(OLD_RAIL)+[OLD_TAP, OLD_LEG]
+    drop, wanted = [], list(OLD_RAIL)
     for a, b in wanted:
         hits = [(span, body) for span, body in segments
                 if '"+5V_LED"' in body and '"F.Cu"' in body
@@ -82,22 +132,8 @@ def patch(path, dry_run=False):
                              f'{a}->{b}, found {len(hits)} - already patched, '
                              'or not the board this migrates')
         drop.append(hits[0][0])
-    def centre_x(body):
-        xs = [float(x) for x, _y in
-              re.findall(r'\(xy ([-\d.]+) ([-\d.]+)\)', body.split(
-                  '(filled_polygon')[0])]
-        return sum(xs)/len(xs) if xs else None
-    fillets = [(span, body) for span, body in blocks(text, 'zone')
-               if '"TAP_FILLET"' in body
-               and abs((centre_x(body) or 0)-DEAD_FILLET) < 0.6]
-    if len(fillets) != 1:
-        raise SystemExit(f'{path.name}: expected one blend overlay at '
-                         f'x={DEAD_FILLET}, found {len(fillets)}')
-    drop.append(fillets[0][0])
     nodes = rp.rounded(rp.feed_nodes())
     added = ''.join(wire(a, b, rp.WIDTH) for a, b in zip(nodes, nodes[1:]))
-    added += ''.join(wire(a, b, rp.TAP_WIDTH)
-                     for a, b in zip(rp.LINK, rp.LINK[1:]))
     for span in sorted(drop, reverse=True):
         text = text[:span[0]] + text[span[1]:]
     spot = re.search(r'^\t\(zone\n', text, re.M)
@@ -107,18 +143,23 @@ def patch(path, dry_run=False):
         raise SystemExit('generated copper is unbalanced')
     if not dry_run:
         path.write_text(text)
-    print(f'{path.name}: rail rounded into {len(nodes)-1} chords, U2 tap and '
-          f'its feed leg replaced by the {len(rp.LINK)-1}-segment C5 link, '
-          f'stale blend overlay removed' + (' (dry run)' if dry_run else ''))
+    print(f'{path.name}: rail rounded into {len(nodes)-1} chords'
+          + (' (dry run)' if dry_run else ''))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('boards', nargs='+', type=Path)
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--restore-taps', action='store_true',
+                        help="put U2's tap and its feed leg back on a board "
+                             'an earlier version of this script changed')
     args = parser.parse_args()
     for board in args.boards:
-        patch(board, args.dry_run)
+        if args.restore_taps:
+            restore_taps(board, args.dry_run)
+        else:
+            patch(board, args.dry_run)
 
 
 if __name__ == '__main__':
