@@ -48,8 +48,23 @@ ANCHORS = {
 }
 
 
+IU = 1_000_000          # KiCad internal units per millimetre
+
+
+def _iu(value):
+    """Nanometres, as the board file stores them.
+
+    Every point on this run is quantised here once, so the installer, the
+    guard and any text-level patch all name the same integer: pcbnew.FromMM
+    truncates, a serialised 6-decimal number is read back rounded, and a
+    curve's chord ends land between the two often enough to fail the guard by
+    1 nm.
+    """
+    return int(round(value * IU))
+
+
 def _point(xy):
-    return pcbnew.VECTOR2I(*(pcbnew.FromMM(v) for v in xy))
+    return pcbnew.VECTOR2I(_iu(xy[0]), _iu(xy[1]))
 
 
 def _xy(point):
@@ -109,6 +124,7 @@ def _rounded(points, radius=BEND):
                      corner[1] + bisector[1] / bl * (r / math.sin(angle / 2))),
                     t1, t2)
     out.append(points[-1])
+    out = [(_iu(x) / IU, _iu(y) / IU) for x, y in out]
     return [q for i, q in enumerate(out)
             if i == 0 or math.dist(q, out[i - 1]) > 1e-9]
 

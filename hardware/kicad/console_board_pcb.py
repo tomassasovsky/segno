@@ -296,7 +296,14 @@ PLACEMENT = {
     # Buffer support parts stay beside U1. R2 lies horizontally below it to
     # leave the internal connector row free for the Pi button lead at J9.
     "C11": (80.0, 31.0, 0),        # +5V decoupling for U1
-    "C20": (24.0, 21.0, 0),        # +3V3 decoupling for U2
+    # U2's +3V3 decoupling, on the far side of the opto beside the pin it
+    # decouples: pad 1 sits 4.83 mm from U2 pin 6, where the old slot west of
+    # the opto put it 17.5 mm of routed track away - a decoupling capacitor is
+    # only as good as the loop it closes. It keeps 2.04 mm to U2's courtyard,
+    # so the DIN-side isolation gate is untouched, and 0.5 mm to R4's body and
+    # J22's. The routed board needs its local +3V3 branch re-routed for this:
+    # the old spot's copper still runs across the new one.
+    "C20": (43.75, 19.6, 0),       # +3V3 decoupling for U2
     # The ring link's two pull-ups, on this board's 3V3 (they used to live on
     # ring_board.py tied to its 5 V rail, 1.4 V over the RP2350's absolute
     # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
@@ -771,7 +778,7 @@ def _silk_items(board, fps):
 
 # Where the FRONT mark goes now that J3 and J24 have taken its old corner (#1062,
 # owner call). The open patch under the PWR BTN header: C31's body to the left,
-# C20 and the PI PWR label to the right, J8's designator above. It is 9.8 x 9.1
+# the PI PWR label to the right, J8's designator above. It is 9.8 x 9.1
 # against the mark's 9.0 x 9.4, so the mark lands at ~96% of its drawn size --
 # the corner below J24 it tried first only held it at 58%. The art is still
 # scaled to fit the box rather than to a guessed size. The BACK mark is separate.

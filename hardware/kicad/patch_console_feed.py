@@ -37,7 +37,8 @@ OLD = (('B.Cu', (105.4, 113.0), (102.0, 116.4)),
 
 
 def number(value):
-    return f'{value:.6f}'.rstrip('0').rstrip('.')
+    # Quantised by the generator, so the text and pcbnew name the same integer.
+    return f'{crp._iu(value) / crp.IU:.6f}'.rstrip('0').rstrip('.')
 
 
 def segments(text):
