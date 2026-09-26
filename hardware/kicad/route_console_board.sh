@@ -105,7 +105,9 @@ sys.exit(0 if ok else 'SES import failed')" 2>&1 | grep -viE "wxApp|memory leak|
   # routed copper only: the hand-routed ring supply is locked and keeps the
   # geometry console_ring_power's guard demands, and any chain that cannot hold
   # its clearance with an arc keeps its mitre.
-  python3 round_routes.py "$PCB"
+  # Under KiCad's Python: the clearance an arc is accepted on is measured with
+  # pcbnew's own pad shapes and SHAPE::Collide, not with arithmetic of ours.
+  "$KPY" round_routes.py "$PCB"
 
   # Which stitching vias are useful is decided by the FILL, not by placement: the
   # ones left in islands the fill deleted connect to nothing on either layer. They

@@ -32,6 +32,14 @@ PY
 java -jar "$FREEROUTING_JAR" -de "$route_temp/board.dsn" -do "$route_temp/board.ses" -mp 30 -dct 0
 "$KICAD_PYTHON" router.py "$variant" import "$route_temp/board.ses"
 "$KICAD_PYTHON" finish.py "$variant"
+# Round what the router mitred, after finish.py has snapped its endpoints and
+# before cleanup.py's final DRC judges the board. The eight USB data nets are
+# excluded by name: a coupled pair's geometry belongs to route_critical.py, and
+# rounding one side of a pair on its own is a coupling change. The gate-drive
+# and power paths route_critical.py draws are locked, so they keep their own
+# arcs; this reaches the logic and control copper Freerouting returned.
+"$KICAD_PYTHON" ../round_routes.py "$variant/screen_power_$variant.kicad_pcb" \
+  --skip S1_UP_P,S1_UP_N,S1_DN_P,S1_DN_N,S2_UP_P,S2_UP_N,S2_DN_P,S2_DN_N
 "$KICAD_PYTHON" cleanup.py "$variant"
 "$KICAD_PYTHON" check.py "$variant" --self-test --output validation.json
 "$KICAD_PYTHON" export.py "$variant"
