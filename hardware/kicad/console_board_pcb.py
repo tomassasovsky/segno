@@ -331,7 +331,7 @@ PLACEMENT = {
     "R17": (96.9, 45.0, 90),       # 10k link_tx series, upright east of the
                                    # ribbon: 11 mm from J2 pin 21, 29 mm from
                                    # the Pico's GP16 pad
-    "R18": (71.45, 63.0, 0),       # 10k link_rx; clears the PI PWR label at right
+    "R18": (71.45, 63.0, 0),       # 6.8k link_rx; clears the PI PWR label at right
                                    # both legs within 28 mm
     "R16": (61.5, 59.6, 0),        # 100k ind_data pulldown, in the slim band
                                    # the same band: 22 mm from U1 pin 2; its GND
@@ -2028,6 +2028,9 @@ def build(quiet=False):
     # to print (see _check_place's docstring).
     _check_place(fps)
 
+    # This assembly-critical value implements the A2 UART-input workaround.
+    fps["R18"].SetValue(comps["R18"][2])
+
     # attach nets to pads
     for name, nodes in nets.items():
         for ref, pad in nodes:
@@ -2250,6 +2253,9 @@ def check_routed_board(path=None):
     """
     _b = pcbnew.LoadBoard(path or BOARD_PATH)
     _check_connector_drills(_b)
+    _rx_series = next(fp for fp in _b.GetFootprints() if fp.GetReference() == "R18")
+    if _rx_series.GetValue() != "6.8k":
+        raise SystemExit("FAB: R18 must be 6.8k for RP2350 A2 UART RX")
     console_ring_power.check(_b)
     # REFUSE to plot an unrouted board. Running this module without --no-export
     # produced a JLCPCB-ready zip, "ALL PASS", "0 violations" and exit 0 from a board

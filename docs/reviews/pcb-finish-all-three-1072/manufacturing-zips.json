@@ -1,8 +1,8 @@
 {
   "date": "2026-09-26",
-  "status": "cad-and-manufacturing-files-verified",
-  "purpose": "Current console, ring and Revision M screen bare-board fabrication archives; assembled operation remains unqualified.",
-  "baseline_revision": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+  "status": "bare-board-review-clean",
+  "purpose": "Completed repeat circuit, native PCB and manufacturing-file review; exact encoder and UART corrections independently checked. Assembled operation and full CI remain separate gates.",
+  "baseline_revision": "368b9bd72589e12853ea7d47595351f67c843452",
   "archives": {
     "console-v3": {
       "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
@@ -24,7 +24,7 @@
       },
       "upload_name": "segno-console-v3-gerbers.zip",
       "board": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
-      "board_sha256": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
+      "board_sha256": "8bf99b025248c1e5fc704610dbdd14410f5089645d7e03e61a2e03418c295082",
       "order": {
         "layers": 2,
         "material": "FR-4",
@@ -37,27 +37,28 @@
         "assembly": false,
         "stencil": false,
         "vias": "tented"
-      }
+      },
+      "assembly_change": "R18 is 6.8 kOhm 1%; copper and manufacturing ZIP unchanged."
     },
     "ring-white": {
       "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
-      "sha256": "7b0dd11efc0ab1f2c2f3a28a0a1bb6367d692171ad4136ea9fae49bcabc5a413",
+      "sha256": "d5cad80522c7a80d797470d423e96bfb97473849b6e237a3c56789f99e28a4f4",
       "members_checked": 10,
       "members": {
-        "segno_pedal_ring-B_Cu.gbr": "4a7efd168e0eb907eb56cc6b77bed54536a49110f499d1cb191a360fb19245d4",
-        "segno_pedal_ring-B_Mask.gbr": "be2be25c366c316f4e007bc7d9089bbe90beb8de4d782977149ab3bf7a9784e5",
-        "segno_pedal_ring-B_Silkscreen.gbr": "2874dbbd39431ac75701ac6cb151a275123fae3502c7ed0a3486a8e9185cfb97",
-        "segno_pedal_ring-Edge_Cuts.gbr": "713a3a444cfc385ae07be680b83b71b3a53d38b382c32d60a9e0a370f13d6954",
-        "segno_pedal_ring-F_Cu.gbr": "0de61aa84fe3e54883a8e1bee076cd8f3b8ae12f1ad31ea85241e4c674dd7efa",
-        "segno_pedal_ring-F_Mask.gbr": "5a28905af4de4b4dd8314330c28e910809ddca20124dc7abb15dbd3d201898b0",
-        "segno_pedal_ring-F_Silkscreen.gbr": "83349493943d3f6da4f059a6bc0f44d72c927857ebc3dcc08effc963d1129f9e",
-        "segno_pedal_ring-NPTH.drl": "4f78785689d3d1f99da28d76425c404bf0b81d288a9db7e7c8705f37a66dd212",
-        "segno_pedal_ring-PTH.drl": "2cbf014c6ccfe966a0d75170e2eed03bcd9442dfc0034c089654c4a7d3edddb0",
-        "segno_pedal_ring-job.gbrjob": "8d93a0349f50d87b8a8865cb1abc2c981fe3cd1569e1a47ace3da15ef0bddb5e"
+        "segno_pedal_ring-B_Cu.gbr": "94f7d5d3f0e45d1b0101785caa13c9e945b7fc2faa86fecdfc8b41a5c306a88c",
+        "segno_pedal_ring-B_Mask.gbr": "582a6848c3279dba60fab8b36f6f22f2b3962eb3ae9b1683cf64d6e60747a83c",
+        "segno_pedal_ring-B_Silkscreen.gbr": "5154880e8124a487b15c40122a5456f1844fd60b514cc2a75603f17d8f1425d4",
+        "segno_pedal_ring-Edge_Cuts.gbr": "c0d1d43d5248ec19f2a89cca6f079f3e40efffa097513dafff09b3c4013f4fcb",
+        "segno_pedal_ring-F_Cu.gbr": "a558d6af1830505aef461e99552607b723673acaa087f33bfd51b4945162faf8",
+        "segno_pedal_ring-F_Mask.gbr": "7f2c4101e5d65279a91287a21acfd9ff0b54c75ce160526c1df4143f95736e6b",
+        "segno_pedal_ring-F_Silkscreen.gbr": "47d596fb7de06291db9d841c8b60a643e46b221a0ba23f5df596500511991039",
+        "segno_pedal_ring-NPTH.drl": "e9f86bf7b65ef311a870143b53318e816a04916c7c61d770fd21cfe21841d0c5",
+        "segno_pedal_ring-PTH.drl": "fa7daa7dcb534c19491831cb6b818f63c802f54171b2b33881834d8f719d808d",
+        "segno_pedal_ring-job.gbrjob": "8c7a73132b3a8aaefab1eddc8f9315a013d6eaf94984361aa15bb347b609b708"
       },
       "upload_name": "segno-ring-white-gerbers.zip",
       "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
-      "board_sha256": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+      "board_sha256": "e6e1d1bcda4258391ed43a441f9bf8231839abab3b1551660f1b817472f8f62b",
       "order": {
         "layers": 2,
         "material": "FR-4",
@@ -70,25 +71,26 @@
         "assembly": false,
         "stencil": false,
         "vias": "tented"
-      }
+      },
+      "encoder": "Same Sky ACZ11BR1E-20FD1-20C; separately sourced M7x0.75 SJ5-43502PM-nut; no washer in the 2 mm disc clamp."
     },
     "screen-power-rev-m": {
       "path": "hardware/kicad/fab/segno_screen_power_rev_m_gerbers.zip",
-      "sha256": "fae703b28da14b7cd0d0a769784e839e2468c4b97bb29f5b20bc57acf44fdb1f",
+      "sha256": "25a35f9a546fe6235a9641b1259ac763a74c6c09e31af1ee345e11c711cc7af6",
       "members_checked": 12,
       "members": {
-        "screen_power_hand-B_Cu.gbr": "52ea67e096f763be8e7ee84c8608ee793107013c2705d06b53d1874f4c33f31e",
-        "screen_power_hand-B_Mask.gbr": "2229e875ea77aea90ab8cfd2f73b9df835049602c1b9bc1a67f2baaf8c88c650",
-        "screen_power_hand-B_Silkscreen.gbr": "073f8e697904b950021b45d3ed4f109fa18f4f05f99f5db0ba9c58b8e82a9971",
-        "screen_power_hand-Edge_Cuts.gbr": "9d1ec1c245bce000151a61d3c1aa92992bd5bbb26f28bfa57d5b309372ba3e27",
-        "screen_power_hand-F_Cu.gbr": "b9e3f5f460e05ebdf9483382122aabe0203db2d2d17df83cc46f7a3a6b7e3e0e",
-        "screen_power_hand-F_Mask.gbr": "26bf72b224bd8ca34a7d30aa5beb2ffe41354d2efb4aafe6108cc8460eecae79",
-        "screen_power_hand-F_Silkscreen.gbr": "a5f456e28ac8c61b0dea9ee5bd48054f680d6a7d3bc9b9e0bf2aa9502f1fe099",
-        "screen_power_hand-NPTH-drl_map.pdf": "55ecfda68c98f8878ca78d2bc982209a6bdddc773f8f9b0c931a2ed6f4823381",
-        "screen_power_hand-NPTH.drl": "431b8a99310e0912c6760599e060d4d79aaf03344dd2f9a9bde7fd314d581d1c",
-        "screen_power_hand-PTH-drl_map.pdf": "f432e515dc651279a8435f1dc52c2faba7c27686e1727346d7ad051b8e207045",
-        "screen_power_hand-PTH.drl": "5d311e2d53800b4181e81dacf5b40dbf670187d08b6923aefdc677702c6539e3",
-        "screen_power_hand-job.gbrjob": "9a7af28420706162ae65ca414bf1986f2f0887c4755170148e7dc9564c255b93"
+        "screen_power_hand-B_Cu.gbr": "f05c4d21b9570c78d82bfc086e5d14fa40940999f58bd38b68409deac2babcfc",
+        "screen_power_hand-B_Mask.gbr": "de4002d6771b692d17b988be11fef0e6ab2f8cd2e5efa392c9be32d962f0e570",
+        "screen_power_hand-B_Silkscreen.gbr": "4cc9ac3bf83e2805b9e2364f25b3135bd6a58e26a5de04c2a909210fcdce4fc4",
+        "screen_power_hand-Edge_Cuts.gbr": "05ae6671e770e9af2452f2dcd0eb65007b63a92f033574e3a98423109e0fec0b",
+        "screen_power_hand-F_Cu.gbr": "9596a0b88cd95b83aec7e3303c8a4b9cbbfb83147782c8937afcd7a041330d6f",
+        "screen_power_hand-F_Mask.gbr": "13a923f147863b88021a58324c8f693c51469aeaf750a9fe339a3c5f2910394e",
+        "screen_power_hand-F_Silkscreen.gbr": "af842c10ad80c3787ef4c1d9d5836774ce23613c2854d8c5648e1d9419bb45d3",
+        "screen_power_hand-NPTH-drl_map.pdf": "34c8588bce08a69695bfc7ba3c1fd7633a3ac9dbcccee291f767b898c87f7f1d",
+        "screen_power_hand-NPTH.drl": "cc9e38a21bf96e7f445fd542de2699fbb3165c5cb0862d90ca67770f53b6494a",
+        "screen_power_hand-PTH-drl_map.pdf": "4568ba385cc5ef7516320970471e9da5bb7e4911d3be75f5d312fd4bc43a2a05",
+        "screen_power_hand-PTH.drl": "7fdfed2d88c19854805e053fece51262e1bcc9dfd16f2295cb80330b8bfb6050",
+        "screen_power_hand-job.gbrjob": "9d731ab0c2c4518bb840abf2e6b290445a9159a9fb8650bcc52c802070cf47f2"
       },
       "upload_name": "segno-screen-power-rev-m-gerbers.zip",
       "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
@@ -110,17 +112,18 @@
   },
   "verification": {
     "console_ring": {
-      "report": "docs/reviews/production-final-1072/console-ring-fabrication-verification.json",
-      "sha256": "de9b2295c70020d9d361f5567129eac3d90985fd45e8288ad2d051f8ad65d989",
+      "report": "docs/code-review/pcb-final-repeat-1072/console-ring-fabrication-verification.json",
+      "sha256": "d88cfc867bb784431254f1599ee288b758aee218df7c1f51b90221b8e3d3594a",
       "checks_passed": 175
     },
     "screen": {
-      "report": "docs/reviews/screen-power-usb-revision-1072/fabrication-verification.json",
-      "sha256": "77e6051fe0b9a12f0dd2461fe55aa1d57d2d51ae4509c08c708aec4ae8dc80b4",
+      "report": "docs/code-review/pcb-final-repeat-1072/screen-fabrication-verification.json",
+      "sha256": "2aec8c004890ca4031882316f400c8ca64449f73572b4fe620c262e98d2939d2",
       "checks_passed": 412
     }
   },
   "limits": [
+    "The former ring ZIP at the baseline revision is withdrawn. Only the exact Same Sky encoder matches the current ring fabrication files.",
     "Revision L screen ZIP remains withdrawn. Use the screen-power-rev-m archive in this record.",
     "Bare-board CAD and export verification; assembled electrical, USB and enclosure behavior are not physically qualified.",
     "Ordinary two-layer fabrication does not guarantee USB differential impedance; the documented coated-field result is a nominal model.",
@@ -133,6 +136,19 @@
       "sha256": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84",
       "status": "withdrawn-host-powered-relay-suspend-current",
       "reason": "Host-powered relay coils exceed USB suspend-current allowance; superseded by Revision M."
+    },
+    "ring-alps-footprint-2026-09-26": {
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "historical_revision": "368b9bd72589e12853ea7d47595351f67c843452",
+      "sha256": "7b0dd11efc0ab1f2c2f3a28a0a1bb6367d692171ad4136ea9fae49bcabc5a413",
+      "status": "withdrawn-encoder-footprint-mismatch",
+      "reason": "The ALPS BOM part did not fit the generic footprint and lacked the required threaded bushing. Replaced by the exact Same Sky part and new encoder footprint."
     }
-  }
+  },
+  "runtime": {
+    "pull_request": 1082,
+    "revision": "dd46ab0d1a44bc55c7f42bc7db7992773c7a4113",
+    "deployment": "not performed"
+  },
+  "review": "docs/code-review/pcb-final-repeat-1072/review.md"
 }

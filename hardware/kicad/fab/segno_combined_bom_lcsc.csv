@@ -7,6 +7,7 @@ LCSC,Comment,Value,Package,Qty,Designator,Notes
 ,Schottky diode,1N5819,DO-41,1,RING:D1,Series diode into the XIAO's VBUS pad (band = cathode toward the module)
 C354152,74AHCT125N,74AHCT125N,DIP-14,1,RING:U2,TI SN74AHCT125N quad buffer (3V3 -> 5V for the ring data)
 ,Seeed Studio XIAO RP2350,XIAO RP2350,Castellated module 21x17.8mm,1,RING:U1,"Not an LCSC part -- Seeed, DigiKey or Mouser. Soldered by its 14 side pads; its underside pads stay unsoldered (a square of Kapton under it is cheap insurance)"
-,Rotary encoder,EC11E18244AU,EC11 vertical w/switch 20mm,1,RING:ENC1,ALPS Alpine EC11E18244AU; match the fitted encoder footprint and shaft
+,Rotary encoder,ACZ11BR1E-20FD1-20C,RotaryEncoder_SameSky_ACZ11BR1E-20FD1-20C,1,RING:ENC1,Same Sky exact part; DigiKey 102-1768-ND; vertical switch 20mm D-shaft M7x0.75 H5; 20 pulses/20 detents; hand solder <=350C <=3s; see RING_ENCODER.md
+,Encoder mounting nut,SJ5-43502PM-nut,M7x0.75 2.0mm thick 10mm AF,1,RING:ENC1 hardware,Same Sky separately sourced; clamp 2mm disc without washer; exact drawing and stack in RING_ENCODER.md
 C144395,JST B4B-XH-A,4P 2.5mm,JST_XH vertical,1,RING:J1,Selected 40-strip harness: pins 1/2 to near-ring AUX split via own 50 mm 22 AWG pair; pins 3/4 to console J6 pins 3/4; console J6 cavities 1/2 empty. Buy XHP-4 housings and SXH-001T-P0.6 contacts.
 ,External WS2812B strip,40 LEDs at 5 V,Existing strip in its separate housing,1,RING:J2,Selected assembly: J2 pin 3 DIN only; pins 1/2/4 unused. Strip power goes directly to near-ring AUX split. J3/J4 empty. Reuse existing 40-LED strip; see RING_ASSEMBLY.md for required 16 AWG trunk/22 AWG branches.

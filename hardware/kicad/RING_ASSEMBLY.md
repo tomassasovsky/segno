@@ -42,7 +42,12 @@ support pins. Keep these allowances when updating footprints.
 - Match the loose support pins to the purchased ring's own holes. Its holes
   still constrain the pin stock even though the carrier now has more allowance.
 - Solder the XIAO RP2350 module to U1's castellated pads. Discrete parts are
-  through-hole. The encoder is ALPS EC11E18244AU, and the level shifter is a
+  through-hole. The encoder is **Same Sky ACZ11BR1E-20FD1-20C**, with a 20 mm D shaft,
+  M7×0.75 threaded bushing, push switch and 20 detents. Use this exact part:
+  similarly named EC11 parts have different mounting tabs and detent phases.
+  Hand solder its terminals at at most 350 °C for at most 3 seconds. See the
+  [encoder drawing and fit contract](RING_ENCODER.md). Clamp the 2 mm disc
+  with the separately sourced SJ5-43502PM-nut and no washer. The level shifter is a
   74AHCT125 in DIP-14. Observe diode and electrolytic polarity.
 - Ring J1 pins 1/2 take +5 V/GND from the same near-ring AUX split through
   their own short 22 AWG pair. J1 pins 3/4 connect to console J6 pins 3/4.
@@ -72,7 +77,7 @@ AUX power from reaching a connected USB host. See the
 
 Install the separate ring UF2 using XIAO BOOTSEL. Use `firmware/ring_board` from
 [runtime PR #1082](https://github.com/tomassasovsky/segno/pull/1082), published
-at `92af127d9a2d58c4ea9b810b38d06ca3ddc3c73d`, together with its matching console
+at `dd46ab0d1a44bc55c7f42bc7db7992773c7a4113`, together with its matching console
 firmware. The firmware snapshot on the hardware branch is not the completed
 v3 runtime. The console's SWD updater does not program this module.
 No USB cable is needed on the ring during normal operation.

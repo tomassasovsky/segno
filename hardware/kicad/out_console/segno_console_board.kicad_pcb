@@ -7737,7 +7737,7 @@
 				)
 			)
 		)
-		(property "Value" "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+		(property "Value" "6.8k"
 			(at 5.08 2.37 0)
 			(layer "F.Fab")
 			(uuid "18bc8d27-1f83-40ac-9784-7d154870677d")

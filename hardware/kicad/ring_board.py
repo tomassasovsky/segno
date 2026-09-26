@@ -1,136 +1,29 @@
-"""SKiDL generator for the Segno pedal RING/ENCODER base board.
+"""SKiDL generator for the Segno ring/encoder carrier.
 
-Hosts an off-the-shelf **24-LED WS2812 5050 NeoPixel ring module** (O65.5 OD /
-O52.3 ID / 3.2 thick), the rotary encoder, and a **Seeed XIAO RP2350 module**
-that owns both of them locally. The link back to the console board is **four
-conductors** -- +5V, GND and two full-duplex data lines.
+The selected assembly uses a 40-LED external WS2812 strip, a Same Sky
+ACZ11BR1E-20FD1-20C encoder and a Seeed XIAO RP2350 module. The 80 mm circular
+carrier is two-layer, white mask / black silk and hand soldered. It snap-mounts;
+the shaft location and M7 threaded-bushing mount are fixed by the enclosure.
+J3/J4 remain mutually exclusive alternatives for 24/16-LED purchased modules.
 
-## Why the MCU is here at all (#987)
+The XIAO drives the LED data locally through a 5 V AHCT buffer and reads the
+encoder through 10k / 100nF filters. Only its fourteen castellated side pads are
+soldered; its rear pads stay isolated. USB faces the clear east board rim.
 
-It is not about part count, it is about cable length. The console board lives at
-BOARD_U = 560 under the 16" screen; this board lives at COL_U = 119.6 on the
-sloped faceplate (`segno_enclosure.py`). That is 440 mm in u alone -- call it
-550-650 mm of harness once it climbs the face. The old design sent a 5 V WS2812
-edge and a raw EC11 quadrature pair down that run, on eight conductors, through
-a box carrying ~12 A across two switching bucks.
+For the selected strip, the near-ring AUX split separately supplies strip power
+and J1 pins 1/2. Only J1 pins 3/4 run to console J6 pins 3/4: 115200-baud
+full-duplex push-pull SerialPIO UART. The console's existing 10k pull-ups set
+idle levels, with none added here. See RING_ASSEMBLY.md and ../segno_wiring.md
+for the exact 16 AWG trunk / short 22 AWG branches and common-ground bounds.
+J2 pin 3 carries DIN; its power and DOUT pins are unused in that assembly.
 
-Now the WS2812 timing is generated 20 mm from the LEDs and the quadrature never
-leaves this PCB. What crosses the box is a pair of 115200-baud lines with
-10 k pull-ups on the console. The conductor count is a side effect:
-
-    8 conductors  ->  4      (+5V, GND, LINK_TO_RING, LINK_TO_CONSOLE)
-
-FULL DUPLEX, on an owner call: one wire would have carried the traffic easily
-(115200 is ~11.5 kB/s against a 72-byte pixel frame and a few bytes per detent),
-but a single wire forces a master-polled, collision-avoiding protocol on the
-firmware. A second conductor buys that discipline away for one crimp, and cost
-NOTHING in copper on the console board that existed at the time -- J6 pin 7 was
-already wired to GP14 with its 10 k pull-up, doing nothing.
-
-## The console end
-
-Console board v2 kept its fabbed 8-way J6 and this board's 4-way landed on four
-of its eight positions, mapped by `RING_PINMAP` in console_board.py and gated by
-RING_CONTRACT. That cable was asymmetric -- crimped 1:1 by position it put the
-LED rail on a Pico input -- and it was the whole hazard of the design.
-
-Console board v3 is new copper: its J6 is a 4-way and the cable is 1:1 with this
-board's J1 by position. RING_PINMAP is the identity there and RING_CONTRACT
-asserts that it is. The console's ring-data path (GP12, AHCT gate B, its series
-and pull-down parts) is gone from v3; on v2 it stays fitted and drives nothing.
-The link pins on the console are GP13 (drives this board) and GP14 (listens),
-each with the console's own 10 k pull-up to ITS 3V3 -- this board fits none.
-
-## Levels: the historical fault is now structurally impossible
-
-ring_board's old 10 k encoder pull-ups went to THIS board's 5 V rail while the
-far end of the cable had become a 3.3 V RP2350 -- 1.4 V over GP13/GP14's
-absolute maximum, continuously, and nothing caught it (see RING_LEVELS in
-console_board.py). The pull-ups then moved to the console board so they would
-track whatever MCU was really on the other end.
-
-They come back here, because the MCU is now here: 10 k to the XIAO's own
-3V3_OUT. The pull-up and the input it feeds are on the same board and the same
-rail, so they cannot disagree. RING_LEVELS survives, re-pointed from the three
-encoder pins to the one line that still crosses the cable into a Pico input.
-
-**RP2350 erratum E9** (A2 silicon) latches an input HIGH when it is configured
-with its INTERNAL PULL-DOWN enabled. Nothing here uses one: the encoder lines are
-pulled UP (R2-R4 below), both link lines are pulled up by the console's existing
-10 k, and the WS2812 line is an output. The one pull-down on the board, R5, is
-EXTERNAL and sits on that output -- the erratum's own workaround is an external
-pull-down, and an output's input buffer is never what the pin reads. Do not add
-an internal pull-down to any input here without re-reading E9.
-
-## The board grew to O80, and it SNAP-MOUNTS -- no mounting holes (owner calls)
-
-The O68 disc could not hold this. Its usable back is an annulus from r>~11 (clear
-of the encoder body) outwards, and three M3 holes sat at r=22 in the middle of
-it, so every large part had to dodge them. The XIAO ended up 0.85 mm from the
-encoder's courtyard with the encoder's own traces squeezing through that gap.
-
-- **Outline O68 -> O80.** Measured against `segno_enclosure.py` rather than
-  guessed: the binding neighbour is the 7" screen's BEZEL at r=58.6 (O117 would
-  still fit), with the row-1 pedal slots 60 mm clear the other way, so O80 keeps
-  ~18 mm of margin.
-- **No mounting holes at all.** They are gone; the board snap-mounts. That also
-  retires a constraint that was shaping the layout badly: a screw head has to
-  stay inside the ring's O52.3 bore, which confined holes to r < 22.95, and U1 --
-  which must sit east so its USB-C reaches the rim -- crosses that band from
-  r=14.6 outward. There was no legal eastern hole, so the three holes could only
-  reach an 82 degree spread and left the USB corner carried by the encoder nut
-  alone. Snap features have no such rule.
-
-Nothing in the enclosure had to change: it models no bosses for this board, and
-RING_OD/RING_ID (the faceplate window) are untouched -- the ring module and the
-encoder bush still sit exactly where they did.
-
-## The XIAO's USB-C is a keep-out
-
-Seeed's footprint puts the connector shell overhanging the module's +x end (silk
-to x=12.59, y +/-4.5). U1 therefore sits due east with that end facing the rim:
-5.4 mm of clear board in front of it and no part inside its approach.
-
-## Full-white 40-pixel strip power
-
-The external strip at J2 may draw 40 x 60 mA = 2.4 A continuously. Add
-40 mA of pixel idle allowance and 0.2 A for the controller and buffer:
-2.64 A at the console connector. This hardware design does not depend on
-an animation or brightness cap.
-
-J1 and console J6 retain JST XH, rated 3 A with AWG22 wire. Use AWG22 for
-both supply and return with SXH-001T-P0.6 contacts. The connector pin map,
-board size, white mask and two-layer 1 oz construction are unchanged.
-Source: https://www.jst-mfg.com/product/pdf/eng/eXH.pdf
-
-The strip has its own 1.5 mm front-copper route directly from J1 to J2,
-bypassing the narrow buffer/module branch. Three parallel 0.4 mm drilled
-GND vias inside J2's ground wire pad join the rear ground plane. These are
-hand-soldered wire pads; no filled-via assembly service is required.
-`ring_power.py` installs the feed before routing the other nets and checks
-the actual copper path before fabrication export. It rejects a removed,
-narrowed or wrong-layer segment and a missing return barrel.
-
-The original 0.65 mm module branches remain suitable for ONE direct-mount
-24-pixel or 16-pixel module instead of the strip. Do not populate both module
-footprints or chain another ring. Their presence does not extend the load
-budget. D1 feeds only the XIAO; LED current does not pass through it.
-
-At 20% negative track-width tolerance, the new 1.5 mm route is 1.2 mm.
-The IPC-2221 external-conductor estimate gives approximately 2.73 A at a
-10 degC rise on 1 oz copper. This is a design calculation, not an assembled
-thermal measurement. See docs/reviews/ring40-full-white-1072/verification.md
-for the complete console-to-strip current and voltage-drop assessment.
-
-GND sits BETWEEN +5V and the link pair on J1 so the return is not the neighbour
-of the signal.
-
-Everything on this board is a module or through-hole. The XIAO and the ring are
-pre-assembled modules soldered down by their pads; nothing fine-pitch is
-hand-placed.
-
-Run (from hardware/kicad/):
-    python ring_board.py     # KICAD_SYMBOL_DIR may override the symbol path
+The retained J1-to-J2 power path also supports the documented module variants.
+ring_power.py checks the native rail, taps and return vias; ring_encoder.py
+checks the exact encoder's physical fit. Generator assertions below protect
+local voltage domains, diode polarity, idle data level and fixed references.
+Unplug J1 before USB programming: D1 blocks USB-to-AUX backfeed but does not
+isolate a USB host from live AUX. Runtime pin and direction contracts are in
+RING_ENCODER.md and the separately maintained firmware PR #1082.
 """
 import os
 import sys
@@ -363,14 +256,12 @@ j4[4] += ring_dout   # Out (unused electrically; soldered for rigidity)
 # and the pins are modelled TRIMMED: KiCad's own PinHeader_1x01 leaves 4.54 mm of
 # bare pin standing above the ring, which nobody assembles, so
 # PinHeader_1x01_trimmed.wrl keeps the insulator at 2.54 and snips the pin 1.0 mm
-# proud. RING1 carries BOTH rings -- the Ring 24 shown on J3's circle, the Ring 16
-# hidden on J4's -- each with its own pins, so the 3D viewer switches between the
-# two builds by toggling which models are visible.
-# CLEARANCE, worth a bench check before the faceplate is cut: the EC11's M7 bush
-# runs z 5.0..11.5 above this board (measured off RotaryEncoder_EC11.step), and
-# the faceplate rides somewhere on it -- so the gap to the plate's inner face is
-# ~5.0 at worst and ~9.5 at best, against a 5.71 stack. It fits at a normal nut
-# depth and is tight at the extreme, and closer LEDs suit the diffuser anyway.
+# proud. RING1 retains both alternative module models and their pins, hidden
+# for the selected external 40-pixel strip. Toggle a module and its four pins
+# together only when inspecting that optional assembly.
+# Same Sky ACZ11BR1E-20FD1-20C: manufacturer seating-to-shaft datum 6.5 mm,
+# M7x0.75 bushing z=6.5..11.5, shaft tip z=26.5. The 5.71 mm alternative
+# module stack clears the bushing base. See RING_ENCODER.md for fit and sourcing.
 
 # bulk cap at the module power entry (24 LEDs, ~1.44 A all-white worst case; the
 # comet only ever lights part of the ring, so the real draw is far lower) -- THT
@@ -382,11 +273,11 @@ j4[4] += ring_dout   # Out (unused electrically; soldered for rigidity)
 Part("Device", "C_Polarized", value="470uF 16V low-ESR <=0.15R", ref="C1",
      footprint="Capacitor_THT:CP_Radial_D8.0mm_P3.50mm")[1, 2] += v5, gnd
 
-# ---- EC11 rotary encoder (A,B,C common, S1,S2 switch) ----------------------
+# ---- Same Sky ACZ11 rotary encoder (A,B,C common, S1,S2 switch) ------------
 # Now a purely LOCAL circuit: 20 mm of trace to U1 instead of ~600 mm of harness.
 enc = Part("Device", "RotaryEncoder_Switch",
-           footprint="segno:RotaryEncoder_EC11",   # vendored EC11 (LCSC C202365) + 3D model
-           ref="ENC1")
+           footprint="segno:RotaryEncoder_SameSky_ACZ11BR1E-20FD1-20C",
+           value="ACZ11BR1E-20FD1-20C", ref="ENC1")
 enc["A"] += encA
 enc["B"] += encB
 enc["C"] += gnd
@@ -394,11 +285,10 @@ enc["S1"] += encSW
 enc["S2"] += gnd
 
 # 10k to the XIAO's OWN 3V3_OUT, plus 100nF: RC = 1 ms, which is the timing the
-# board has always had and which an EC11 needs. The RP2350's INTERNAL pull-ups
-# are deliberately NOT used here, unlike console_board.py's footswitches: those
-# are ~50-80k, which against 100nF is a 5-8 ms release edge. A stomp tolerates
-# that; quadrature does not -- a fast spin puts edges ~25 ms apart and 8 ms of
-# smear loses detents and direction.
+# board has always had. Same Sky specifies no minimum contact current and
+# illustrates 10k pull-ups; its 20C detents are both contacts open (logic 11).
+# Runtime also enables internal pull-ups; they are in parallel with these
+# external resistors, so the effective release RC is slightly less than 1 ms.
 R("10k", "R2")[1, 2] += v3v3, encA
 R("10k", "R3")[1, 2] += v3v3, encB
 R("10k", "R4")[1, 2] += v3v3, encSW
@@ -406,12 +296,9 @@ C("100nF", "C2")[1, 2] += encA, gnd
 C("100nF", "C3")[1, 2] += encB, gnd
 C("100nF", "C4")[1, 2] += encSW, gnd
 
-# NOTE: neither link line gets a pull-up on this board. The console's existing 10k to
-# ITS 3V3 (console_board.py, the old ENC_A pull-up) is the one the open-drain
-# line needs; a second one here would halve it to 5k and, being on a different
-# board's rail, would re-create exactly the split-rail hazard RING_LEVELS exists
-# to catch. There is no series resistor either -- the two boards share one supply
-# through this cable, so there is no cross-domain window like the Pi link's.
+# The push-pull SerialPIO UART has its idle pull-ups only on the console.
+# Both controllers share AUX and the documented near-ring ground reference;
+# selected-strip supply current bypasses the console-to-ring UART harness.
 
 # ---- gates -----------------------------------------------------------------
 # This board grew an MCU, so it inherits the obligation that came with the one on

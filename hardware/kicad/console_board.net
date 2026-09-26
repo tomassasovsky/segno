@@ -1217,7 +1217,7 @@
       (tstamps "d9ffd1e1-e6a0-57da-9357-b4382b953fc4"))
     (comp
       (ref "R18")
-      (value "10k")
+      (value "6.8k")
       (description "Resistor")
       (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
       (fields

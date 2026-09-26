@@ -63,18 +63,20 @@ covers the `SCREEN` text change and current exports.
 The screen planning load is **4.25 A shared**, including both main outputs,
 both touch outputs and the 0.05 A bleeder. The old 6 A expansion allowance is
 retired. The 3 A main and 500 mA touch lead ceilings are not additive or
-simultaneous guarantees. Ring current uses its separate console power path
-and does not pass through Q3/Q4. See the
+simultaneous guarantees. The selected 40-pixel ring uses a separate direct
+AUX branch and does not pass through console power copper or Q3/Q4. See the
 [screen-board assessment](screen_power/README.md#circuit-and-limits).
 
-The ring's J6 connector is JST XH, rated **3 A with 22 AWG wire**. Use 22 AWG
-for its +5V and GND leads with SXH-001T-P0.6 contacts. The updated console
-feed and carrier J2 strip pads support **40 LEDs at unrestricted full white**:
-2.4 A for LED channels, 40 mA idle allowance and 200 mA for the ring controller.
-This is a hardware design budget; it does not require a firmware brightness cap.
+For **40 LEDs at unrestricted full white**, follow the
+[ring assembly guide](RING_ASSEMBLY.md): console J6 pins 3/4 carry UART only,
+with cavities 1/2 empty. Supply strip power and ring J1 pins 1/2 from separate
+short pairs at the near-ring AUX split; ring J2 pin 3 carries DIN only, with
+pins 1/2/4 unconnected. The budget is 2.4 A for LED channels, 40 mA idle and
+200 mA for the ring controller. The retained console/carrier power routes do
+not replace this harness's voltage-margin requirement. Genuine XH contacts
+use 22 AWG pigtails; do not crimp the 16 AWG trunk into them.
 Use one external strip, or one direct-mount 24/16-LED module. A second ring is
-outside this budget. See the [power-path verification](../../docs/reviews/ring40-full-white-1072/verification.md)
-and [JST rating](https://www.jst-mfg.com/product/pdf/eng/eXH.pdf).
+outside this budget. See the [JST rating](https://www.jst-mfg.com/product/pdf/eng/eXH.pdf).
 
 ## Running them
 

@@ -31,7 +31,7 @@ longer applies to anything.
 
    DATA / CONTROL
      console board <---- keyed 2x20 ribbon, ~10 cm ----> Pi 40-pin header
-        link  Pico uart0 (GP16/17) <-> Pi uart3 (GPIO8/9), 10 k series each way
+        link  Pico uart0 (GP16/17) <-> Pi uart3 (GPIO8/9), TX 10k / RX 6.8k
         MIDI  DIN IN -> H11L1 (at 3V3) -> Pi uart0 RX (GPIO15)
               Pi uart0 TX (GPIO14) -> 74AHCT125 -> 220R loop -> DIN OUT
         SWD   Pi GPIO24/25 -> the Pico's debug pads (cold flashing)
@@ -290,7 +290,7 @@ with no fold in the cable. 17 of the 40 ways carry something;
 | 6, 9, 14, 20, 25, 30, 34, 39 | GND |
 | 8 / 10 | uart0 TX / RX = MIDI OUT / MIDI IN (GPIO14/15) |
 | 11 | GPIO17 = screen-power enable, through J25 pin 1 |
-| 21 / 24 | uart3 RX / TX = pedal link (GPIO9/8, `dtoverlay=uart3-pi5`), **10 k series** |
+| 21 / 24 | uart3 RX / TX = pedal link (GPIO9/8, `dtoverlay=uart3-pi5`); R17 **10 kΩ** Pico→Pi, R18 **6.8 kΩ** Pi→Pico |
 | 18 / 22 | GPIO24/25 = SWD to the Pico's debug pads (flashing only) |
 | 2, 4 | 5 V — deliberately **not connected** (`PI_POWER`) |
 
@@ -311,9 +311,13 @@ XIAO has its own [USB isolation rule](kicad/RING_ASSEMBLY.md#programming).
 
 The link needs **no level shifting**: RP2350 and Pi are both 3.3 V. The old
 1k8/3k3 divider and the AHCT gate on this path were the retired 5 V board's needs
-and died with it. The series 10 k in each link line is not level shifting — it
-bounds the cross-domain current when one side is powered and the other is not
-(rationale and arithmetic: R17/R18 in `console_board.py`).
+and died with it. Fit **R17 = 10 kΩ** from Pico TX to Pi RX and **R18 = 6.8 kΩ,
+1%** from Pi TX to Pico RX. The lower R18 satisfies the RP2350 A2 E9 maximum
+low-drive impedance; the sampled presence-input firmware workaround cannot be
+used on hardware UART RX. Both resistors limit fault current. RP1 and these
+Pico digital pads are 3.3 V-failsafe when unpowered, so a supply-clamp-induced
+UART break is not a valid Pi-off detector. See R17/R18 in `console_board.py` and
+[RP2350 E9](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf).
 
 The **74AHCT125** drives MIDI OUT's current loop and the indicator chain.
 The ring carrier has its own XIAO and level shifter; console gate B is disabled,
@@ -370,7 +374,7 @@ Notes that are load-bearing:
   `LINK_BARE` check that boundary.
 - Use the console and ring firmware from
   [runtime PR #1082](https://github.com/tomassasovsky/segno/pull/1082), currently
-  `92af127d9a2d58c4ea9b810b38d06ca3ddc3c73d`. It includes the RP2350 A2 E9
+  `dd46ab0d1a44bc55c7f42bc7db7992773c7a4113`. It includes the RP2350 A2 E9
   presence-input workaround and PD status reader. The hardware branch's older
   firmware snapshot does not. This runtime is still a separate integration
   draft; board fabrication does not make it deployed or production qualified.

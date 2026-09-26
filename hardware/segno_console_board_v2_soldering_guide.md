@@ -93,16 +93,18 @@ v3 is the same board with the ring-board link (#987) and the CTRL ring sense
 
 | | v2 | v3 |
 |---|---|---|
-| J6 `RING` | JST-XH 8-pin; the ring board's 4-way lands on pins 1, 3, 6, 7 | **JST-XH 4-pin**, cable 1:1 with the ring board's J1 |
+| J6 `RING` | JST-XH 8-pin; the ring board's 4-way lands on pins 1, 3, 6, 7 | **JST-XH 4-pin**; selected 40-pixel assembly uses pins 3/4 for UART only. Leave pins 1/2 empty and supply ring J1.1/.2 from the local AUX split; see [ring assembly](kicad/RING_ASSEMBLY.md) |
 | R1 (330 Ω), R13 (10 kΩ), R15 (100 kΩ) | fitted | **not fitted, no pads** — the ring-data path is gone; U1's gate B is parked |
+| R18 link RX | 10 kΩ | **6.8 kΩ, 1%** from Pi TX to Pico RX. This satisfies the RP2350 A2 E9 input-leakage workaround for hardware UART. R17 remains 10 kΩ. |
 | R19, R20 | — (bench wires from J20/J21 pin 2 to J22's GP20/GP21 pads instead) | **4.7 kΩ**, in the row under the Pico where R13 and R15 used to be (R20 in the slim band by R16, R19 in the row below): the ring-sense series parts. Far from the jacks on purpose — DC sense lines, and the column under `CTRL 1` stays J22's |
-| J20 / J21 `CTRL` | JST-XH 3-pin: tip, ring, sleeve | **JST-XH 4-pin**: tip, ring, sleeve, **TN** (the jack's tip-normal contact). The jacks themselves are **Neutrik NJ6FD-V** (switched, same D punch). The pair sits 2.6 mm further left than on v2 |
+| J20 / J21 `CTRL` | JST-XH 3-pin: tip, ring, sleeve | **JST-XH 4-pin**: tip, ring, sleeve, **TN** (the jack's tip-normal contact). The jacks themselves are **Neutrik NJ6FD-V** (switched, rear-mounted through Ø12 mm holes). The pair sits 2.6 mm further left than on v2 |
 | R21, R22 | — | **4.7 kΩ**, the row under R11/R12, left of R19: presence series parts (TN → GP19/GP22) |
 | R11, R12 | row under the Pico at y 63 | On the slim band right under the Pico's bottom pads, with R20 and R16 |
 | J22 `EXP` | 2×4, right of U2: +3V3, +5V, GP19, GP20, GP21, GP22, GP28, GND | Same place, **2×3**: +3V3, +5V, **GP12, GP15, GP28**, GND. Pin 1 top-left; odd pins are the left column |
 | J23 `PD` | — | **JST-XH 3-pin, new**, in the `RING` / `LEDS` row under the Pico's left end, right of `5V IN`: pin 1 GND, 2 SDA (GP0), 3 SCL (GP1). I2C to the STUSB4500 PD trigger, three wires only — do not run the trigger's VDD from this board |
 
-Use the resistor colour key as printed; the only new value is **4.7 kΩ = yellow · violet · black · brown**.
+For v3, add **4.7 kΩ = yellow · violet · black · brown · brown** and
+**6.8 kΩ = blue · grey · black · brown · brown** to the five-band, 1% resistor key.
 
 ### Check the bare board
 

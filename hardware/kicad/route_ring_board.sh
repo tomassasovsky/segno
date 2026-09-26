@@ -184,6 +184,7 @@ PY
 
 echo "== 7. gerbers =="
 "$KPY" ring_power.py "$PCB"
+"$KPY" ring_encoder.py "$PCB"
 "$KPY" - "$PCB" <<'PY_CHECK_SILK'
 import sys
 import pcbnew
