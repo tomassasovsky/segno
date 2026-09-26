@@ -13,24 +13,32 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
-Revision L's circuit and final artwork pass the checks below. All three
-boards now have the requested rounded-copper finish. The screen Q3/Q4 pin-3
-bridge and Q4 pin-2 feed are uniformly 2.5 mm wide, without taper overlays;
-the AUX input is uniformly 2.0 mm with rounded capacitor joins, while
-the screen bus, ring J1 power taps and console power-bar corners are rounded.
-Work follows the owner's one-order requirement, with
-no pre-PCB prototype or new owner measurement campaign. The
+The September 26 [all-three-board audit](reviews/pcb-finish-all-three-1072/audit.md)
+records the current native boards and replacement manufacturing archives.
+The final pass rounds the remaining exposed signal/control bends as well as
+the power routes, closes the console's 0.05 mm slot beside J24, retains the
+ring's two straight vertical taps and moves C20 beside its supply pin.
+Screen C4 is aligned with the charge-pump pin; USB pairs use mirrored rounded
+bends with their widths, gap and ground reference verified independently.
+The Q3/Q4 source bridge and drain feeder remain uniformly 2.5 mm wide and
+the AUX input remains 2.0 mm. All boards retain two copper layers.
+Work follows the owner's one-order requirement, with no pre-PCB prototype
+or new owner measurement campaign. The
 [gate-drive assessment](reviews/screen-power-rev-l-1072/gate-drive.md) supports
 an LMC7660/TLP627M negative gate supply and lower-voltage TN0702 relay drivers;
 the [startup assessment](reviews/screen-power-rev-l-1072/startup.md) does not
-establish a need for active current limiting. Claude Cloud authored the new
-placement/routing. Final native ERC/DRC have zero findings, all 56 regression
-controls pass, and 406 screen plus 103 console/ring independent fabrication
-assertions pass. Power checks reject defects hidden by copper pours. DeepSeek's
-completed review has no unresolved verified finding. The
-[Revision L record](reviews/screen-power-rev-l-1072/verification.md) identifies
-the replacement archives for all three boards. Earlier
-Revision K evidence below is historical and does not qualify the changed circuit.
+establish a need for active current limiting. Claude Cloud authored placement
+and explicit routing changes; independently reviewed local corrections finished
+the remaining geometry after its session became inaccessible. Final native
+DRC is zero/zero on all three boards, and screen ERC is clean. All 56 screen,
+11 console-power and 7 ring-power fault controls pass, along with 13 native
+rounding regression cases. Fresh export comparison passes 409 screen and
+175 console/ring assertions. DeepSeek's completed source review has no
+unresolved verified finding. The [current archive manifest](reviews/pcb-finish-all-three-1072/manufacturing-zips.json)
+supersedes earlier Revision L artwork and exports. This is bare-board CAD
+and manufacturing-file acceptance; assembled operation, whole-PR review and
+CI remain separate gates. Earlier Revision K evidence below is historical
+and does not qualify the changed circuit.
 
 September 25 screen-power correction: **Revision I screen Gerbers are withdrawn**.
 The [independent Claude review and assessment](reviews/screen-power-claude-1072/assessment.md)

@@ -1,6 +1,8 @@
 <!-- cspell:words ECEA optocoupler kicad -->
 # Revision L final layout review
 
+**Historical checkpoint — superseded artwork.** The [all-three-board audit](../pcb-finish-all-three-1072/audit.md) and its [archive manifest](../pcb-finish-all-three-1072/manufacturing-zips.json) identify the current rounded boards and exports. The hashes and fabrication counts below describe the earlier checkpoint only. Circuit and power calculations remain applicable where their geometry and components are unchanged.
+
 Reviewed 2026-09-25 against the published Revision K base `7dcdc944`.
 The final layout includes Claude's corrections through `e9fab839` and the
 subsequent comment-only source corrections.

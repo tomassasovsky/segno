@@ -25,7 +25,15 @@ RETURN_VIAS = ((34.23, 24), (35.23, 24), (34.73, 23.5))
 TAP_WIDTH = 0.65
 RAIL_Y = 22
 FILLET = 0.6
+# C5 and U2 pin 14 each drop straight down into the rail. The two taps, the
+# rail between them and the pocket's own 0.65 mm copper do enclose about
+# 8.9 mm2 of bare board, which is the geometry the owner wants: two plain
+# vertical taps with rounded bases read better than one tap and a dog-leg
+# across the pocket, and the enclosed area is not an electrical fault - the
+# strip's current takes the 1.5 mm rail either way.
 TAPS = (("C5", "1", 39, 18.5), ("U2", "14", 35.62, 20))
+# Centreline radius for the rail's own bends: a 1 mm radius on the inner edge.
+BEND = WIDTH / 2 + 1
 
 
 def vector(point):
@@ -76,23 +84,88 @@ def tap_outline(x):
                   (x + half + FILLET, lip), (x + half, top)))
 
 
-def feed_nodes():
-    """FEED with the tap landings inserted, so every junction is an endpoint.
+def on_run(a, b, spot, tol=1e-6):
+    """True when spot lies on the straight run a -> b, ends excluded."""
+    dx, dy = b[0]-a[0], b[1]-a[1]
+    length = math.hypot(dx, dy)
+    if not length:
+        return False
+    along = ((spot[0]-a[0])*dx + (spot[1]-a[1])*dy)/length
+    across = abs((spot[0]-a[0])*dy - (spot[1]-a[1])*dx)/length
+    return across <= tol and tol < along < length-tol
 
-    The copper is the same straight rail either way; splitting it there keeps
-    the connectivity graph honest for anything that walks segment ends, this
-    file's own continuity check included.
+
+def split_run(nodes, spot, tol=1e-6):
+    """nodes with spot as its own node, if it is not one already."""
+    if any(math.dist(node, spot) <= tol for node in nodes):
+        return list(nodes)
+    for i, (a, b) in enumerate(zip(nodes, nodes[1:])):
+        if on_run(a, b, spot):
+            return list(nodes[:i+1]) + [spot] + list(nodes[i+1:])
+    raise AssertionError("TAP: no straight run of the rail passes through %s"
+                         % (spot,))
+
+
+def feed_nodes():
+    """The rounded rail, with each tap landing as a node of its own.
+
+    Rounding first and splitting after is the order that matters. A landing
+    sits in the middle of a straight run, and a node there must not shorten the
+    leg the next bend measures its tangent against: inserting the landings
+    first clamped the J2 bend to a 1.715 mm radius, because the tangent may
+    only take half an interior leg and the U2 landing cut that leg from
+    12.81 mm to 3.43 mm - for no geometric reason, since the copper on both
+    sides of a collinear node is the same straight rail. Splitting afterwards
+    keeps the accepted 1.75 mm bend and still leaves every junction a real
+    endpoint for anything that walks segment ends, this file's own continuity
+    check included.
     """
-    out = []
-    for a, b in zip(FEED, FEED[1:]):
-        out.append(a)
-        if a[1] == b[1] == RAIL_Y:
-            for _, _, x, _ in sorted(TAPS, key=lambda t: t[2],
-                                     reverse=a[0] > b[0]):
-                if min(a[0], b[0]) < x < max(a[0], b[0]):
-                    out.append((x, RAIL_Y))
-    out.append(FEED[-1])
-    return out
+    nodes = rounded(FEED)
+    for _, _, x, _ in TAPS:
+        nodes = split_run(nodes, (x, RAIL_Y))
+    return nodes
+
+
+def rounded(points, radius=BEND):
+    """The same centreline, with a tangent arc at each corner.
+
+    Chords, not arc items: the Specctra export flattens an arc to its chord.
+    Collinear points pass through untouched, so the tap landings stay real
+    endpoints of the rail. The first and last leg may spend their whole length
+    on a tangent; an interior leg keeps half of it for its other end.
+    """
+    points = [q for i, q in enumerate(points)
+              if i == 0 or math.dist(q, points[i-1]) > 1e-9]
+    if len(points) < 3:
+        return list(points)
+    out = [points[0]]
+    last = len(points) - 3
+    for i, corner in enumerate(points[1:-1]):
+        before, after = points[i], points[i + 2]
+        v1 = (before[0] - corner[0], before[1] - corner[1])
+        v2 = (after[0] - corner[0], after[1] - corner[1])
+        l1, l2 = math.hypot(*v1), math.hypot(*v2)
+        u1, u2 = (v1[0] / l1, v1[1] / l1), (v2[0] / l2, v2[1] / l2)
+        angle = math.acos(max(-1, min(1, u1[0] * u2[0] + u1[1] * u2[1])))
+        if angle > math.pi - 1e-9:
+            out.append(corner)
+            continue
+        tangent = min(radius / math.tan(angle / 2),
+                      l1 if i == 0 else l1 / 2,
+                      l2 if i == last else l2 / 2)
+        r = tangent * math.tan(angle / 2)
+        t1 = (corner[0] + u1[0] * tangent, corner[1] + u1[1] * tangent)
+        t2 = (corner[0] + u2[0] * tangent, corner[1] + u2[1] * tangent)
+        bisector = (u1[0] + u2[0], u1[1] + u2[1])
+        bl = math.hypot(*bisector)
+        out += arc((corner[0] + bisector[0] / bl * (r / math.sin(angle / 2)),
+                    corner[1] + bisector[1] / bl * (r / math.sin(angle / 2))),
+                   t1, t2, steps=8)
+    out.append(points[-1])
+    out = [(round(x * 1_000_000) / 1_000_000, round(y * 1_000_000) / 1_000_000)
+           for x, y in out]
+    return [q for i, q in enumerate(out)
+            if i == 0 or math.dist(q, out[i - 1]) > 1e-9]
 
 
 def install(board):

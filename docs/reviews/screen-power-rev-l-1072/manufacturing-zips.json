@@ -80,5 +80,7 @@
   "independent_cam_records": [
     "docs/reviews/screen-power-rev-l-1072/fabrication-verification.json",
     "docs/reviews/screen-power-rev-l-1072/console-ring-fabrication-verification.json"
-  ]
+  ],
+  "status": "superseded",
+  "superseded_by": "docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json"
 }

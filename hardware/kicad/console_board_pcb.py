@@ -296,7 +296,12 @@ PLACEMENT = {
     # Buffer support parts stay beside U1. R2 lies horizontally below it to
     # leave the internal connector row free for the Pi button lead at J9.
     "C11": (80.0, 31.0, 0),        # +5V decoupling for U1
-    "C20": (24.0, 21.0, 0),        # +3V3 decoupling for U2
+    # Decoupling beside U2's supply pin, on the logic side. The native routed
+    # branch from pin 6 to C20 is 5.16 mm, versus 17.5 mm at the old location.
+    # Courtyard gaps are 2.045 mm to U2, 0.510 mm to R4 and 0.500 mm to J22;
+    # the existing 2 mm isolation guard stays in force. Its ground stitch goes
+    # east, clear of the locally rerouted +3V3 and Pico supply branches.
+    "C20": (43.75, 19.6, 0),        # +3V3 decoupling for U2
     # The ring link's two pull-ups, on this board's 3V3 (they used to live on
     # ring_board.py tied to its 5 V rail, 1.4 V over the RP2350's absolute
     # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
@@ -733,12 +738,95 @@ def _pill_power_bar(board, fps, net):
         z.SetCornerRadius(FromMM(PILL_BAR_R))
         o = z.Outline()
         o.NewOutline()
-        for px, py in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+        if layer == pcbnew.B_Cu:
+            # Explicit boundary survives a touching same-net overlay; KiCad's
+            # zone-corner smoothing otherwise squares the bar at that union.
+            z.SetCornerSmoothingType(0)
+            z.SetCornerRadius(0)
+            points = []
+            for cx, cy, start in ((x1-PILL_BAR_R, y0+PILL_BAR_R, -90),
+                                  (x1-PILL_BAR_R, y1-PILL_BAR_R, 0),
+                                  (x0+PILL_BAR_R, y1-PILL_BAR_R, 90),
+                                  (x0+PILL_BAR_R, y0+PILL_BAR_R, 180)):
+                for i in range(13):
+                    angle = math.radians(start + 90*i/12)
+                    points.append((cx + PILL_BAR_R*math.cos(angle),
+                                   cy + PILL_BAR_R*math.sin(angle)))
+        else:
+            points = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+        for px, py in points:
             o.Append(P(px, py).x, P(px, py).y)
         z.SetIsFilled(False)
         board.Add(z)
         zones.append(z)
     return zones
+
+
+# Where the ring supply crosses back out over the busbar's west edge, the
+# rounded corner and the supply's own edge meet at a shallow angle and leave a
+# wedge of clearance pointing into the join - 39 degrees of it on the back.
+# This is the fillet that takes it out. It has to be copper of its own: a
+# union of tracks and a poured rectangle is bounded by convex arcs and
+# straight lines only, so nothing about the two shapes can round a concave
+# corner between them.
+PILL_BLEND_R = 0.3
+PILL_BLEND_OVERLAP = 0.2
+
+
+def _pill_blend_outline(fps):
+    """-> the blend polygon, or None when the supply clears the corner."""
+    (x0, _y0, _x1, y1), = _pill_bar_rects(fps)
+    edge = (console_ring_power.BACK_PATH[1][0] - ORIGIN[0]
+            + console_ring_power.WIDTH / 2.0)
+    if not x0 < edge < x0 + PILL_BAR_R:
+        return None                     # nothing to blend: no shallow crossing
+    r, R = PILL_BLEND_R, PILL_BAR_R
+    cx, cy = x0 + R, y1 - R             # centre of the busbar's corner arc
+    centre = (edge + r, cy + math.sqrt((R + r) ** 2 - (edge + r - cx) ** 2))
+    scale = R / (R + r)
+    touch = (cx + (centre[0] - cx) * scale, cy + (centre[1] - cy) * scale)
+    inside = (cx, cy)  # bury closure through the rounded bar centre
+    back = edge - PILL_BLEND_OVERLAP
+    return (_blend_arc(centre, (edge, centre[1]), touch)
+            + [inside, (back, inside[1]),
+               (back, centre[1] + PILL_BLEND_OVERLAP),
+               (edge, centre[1] + PILL_BLEND_OVERLAP)])
+
+
+def _blend_arc(centre, frm, to, steps=12):
+    radius = math.dist(centre, frm)
+    first = math.atan2(frm[1] - centre[1], frm[0] - centre[0])
+    last = math.atan2(to[1] - centre[1], to[0] - centre[0])
+    if last - first > math.pi:
+        last -= math.tau
+    if first - last > math.pi:
+        last += math.tau
+    return [(centre[0] + radius * math.cos(first + (last - first) * i / steps),
+             centre[1] + radius * math.sin(first + (last - first) * i / steps))
+            for i in range(steps + 1)]
+
+
+def _pill_bar_blend(board, fps, net):
+    """Pour that fillet on the back, where the supply runs."""
+    shape = _pill_blend_outline(fps)
+    if shape is None:
+        return None
+    z = pcbnew.ZONE(board)
+    z.SetLayer(pcbnew.B_Cu)
+    z.SetNet(net)
+    z.SetZoneName("POWER_FILLET")
+    z.SetAssignedPriority(2)
+    z.SetLocalClearance(FromMM(CLEARANCE))
+    z.SetMinThickness(FromMM(0.05))
+    z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
+    z.SetLocked(True)
+    o = z.Outline()
+    o.NewOutline()
+    for px, py in shape:
+        o.Append(P(px, py).x, P(px, py).y)
+    z.SetIsFilled(False)
+    board.Add(z)
+    return z
 
 
 def _ref_key(ref):
@@ -771,7 +859,7 @@ def _silk_items(board, fps):
 
 # Where the FRONT mark goes now that J3 and J24 have taken its old corner (#1062,
 # owner call). The open patch under the PWR BTN header: C31's body to the left,
-# C20 and the PI PWR label to the right, J8's designator above. It is 9.8 x 9.1
+# the PI PWR label to the right, J8's designator above. It is 9.8 x 9.1
 # against the mark's 9.0 x 9.4, so the mark lands at ~96% of its drawn size --
 # the corner below J24 it tried first only held it at 58%. The art is still
 # scaled to fit the box rather than to a guessed size. The BACK mark is separate.
@@ -1408,6 +1496,11 @@ def _stitch_gnd(board, fps, nets, netmap, boxes):
         inward = ((fx0 + fx1) / 2.0 - xy[0], (fy0 + fy1) / 2.0 - xy[1])
         dirs = sorted(((0, -1), (0, 1), (1, 0), (-1, 0)),
                       key=lambda d: -(d[0] * inward[0] + d[1] * inward[1]))
+        if ref == "C20":
+            # Keep its stitch east of the capacitor, clear of the Pico rail.
+            # Extra reach puts it strictly outside its own pad keepout.
+            dirs = ((1, 0),)
+            reach += 0.1
         spot = None
         for k in range(12):
             d = reach + k * 0.5
@@ -1479,7 +1572,7 @@ SILK_PAD = 0.5
 # J3's and J24's labels were pinned when the two sat at the board's edge under
 # the logo with nowhere for the four-sided search to go. Eight millimetres up,
 # the search finds its own spots again, so they are back in its hands.
-LABEL_AT = {"J9": (81.1, 64.1), "J25": (61.4, 64.1)}  # directly above its housing, clear of R18
+LABEL_AT = {"J22": (46.9, 31.855), "J9": (81.1, 64.1), "J25": (61.4, 64.1)}  # directly above its housing, clear of R18
 # The same for designators. R11 is boxed in -- the module above, J3 left, R21
 # below, R12 right -- and with J3 at the edge the search had only found a spot
 # 19 mm away. The pocket above R11's left end, under the 5V IN label, is its own.
@@ -1918,6 +2011,7 @@ def build(quiet=False):
     _pour_gnd(board, netmap[POUR_NET], pcbnew.B_Cu)
     _pour_gnd(board, netmap[POUR_NET], pcbnew.F_Cu)
     _pill_power_bar(board, fps, netmap["+5V"])
+    _pill_bar_blend(board, fps, netmap["+5V"])
 
     if quiet:
         global _QUIET

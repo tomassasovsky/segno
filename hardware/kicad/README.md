@@ -21,7 +21,7 @@ negative gate supply to improve MOSFET drive margin, retaining the two-layer
 68 × 76 mm outline, direct USB-to-XH leads and existing connector anchors.
 The corrected relay contact mapping from Revision J remains. Use only the
 archive and checks identified in the
-[Revision L verification](../../docs/reviews/screen-power-rev-l-1072/verification.md).
+[current three-board audit](../../docs/reviews/pcb-finish-all-three-1072/audit.md).
 Revision I is withdrawn; J/K are superseded. No pre-PCB prototype or further
 owner measurements are required by this change. The final archives also
 include rounded power-bar corners on the console and cleaned, rounded J1
@@ -81,6 +81,13 @@ cd hardware/kicad && ./.venv/bin/python console_board.py
 **Run from `hardware/kicad/`.** `generate_netlist()` writes `<script>.net` into the
 current working directory, so running from the repo root silently drops the netlist
 in the wrong place while reporting success.
+
+The routing pipelines finish unlocked signal bends with `round_routes.py`
+after setting trace widths and before refilling copper. It uses KiCad's native
+pad and track geometry to preserve connections and clearance. Locked power
+routes and the screen's paired USB traces are rounded by their own generators.
+Run `test_round_routes.py` with KiCad's Python to exercise the native contact,
+keepout, small-radius and repeat-run regression cases without changing a board.
 
 ## Two things that will mislead you
 

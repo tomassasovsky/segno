@@ -142,6 +142,16 @@ echo "== 5b. take back the unused width on the power net =="
 # layout allows and no further, and prints the ceiling it found.
 python3 widen_power.py "$PCB" --net "$POWER_NET" --target "$POWER_FINAL_MM"
 
+echo "== 5b2. round the routed signal corners =="
+# After the widening, so the arcs are measured against the final widths, and
+# before the refill, so the pours retreat from the geometry that ships. Locked
+# copper -- the hand-routed strip feed and its taps -- is left exactly as
+# ring_power.install drew it, and any chain that cannot hold its clearance with
+# an arc keeps its mitre. It runs under KiCad's Python: the clearance it accepts
+# an arc on is measured with pcbnew's own pad shapes and SHAPE::Collide, not with
+# arithmetic of ours.
+"$KPY" round_routes.py "$PCB"
+
 echo "== 5c. refill zones =="
 "$KPY" - "$PCB" <<'PY'
 import pcbnew, sys

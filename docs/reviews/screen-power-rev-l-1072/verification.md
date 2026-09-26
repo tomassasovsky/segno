@@ -1,6 +1,8 @@
 <!-- cspell:words datasheets heatsinks -->
 # Revision L screen-power verification
 
+**Historical checkpoint — superseded artwork.** The [all-three-board audit](../pcb-finish-all-three-1072/audit.md) and its [archive manifest](../pcb-finish-all-three-1072/manufacturing-zips.json) identify the current rounded boards and exports. The hashes and fabrication counts below describe the earlier checkpoint only. Circuit and power calculations remain applicable where their geometry and components are unchanged.
+
 26 September 2026. Issue [#1072](https://github.com/tomassasovsky/segno/issues/1072),
 PR [#1080](https://github.com/tomassasovsky/segno/pull/1080).
 Comparison base: `7dcdc944bea0d22e2fa1fe32ab4ead4681aa11aa`.

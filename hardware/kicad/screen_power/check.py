@@ -924,6 +924,7 @@ def source_hashes(folder, board_path):
     paths.add(HERE / "external_bom.csv")
     paths.update((HERE / "screen_power.pretty").glob("*.kicad_mod"))
     paths.add(HERE.parent / "netlist.py")
+    paths.add(HERE.parent / "round_routes.py")
     paths.add(HERE.parent / "console_board.net")
     paths.add(HERE.parent / "out_console/segno_console_board.kicad_pcb")
     paths.add(board_path)

@@ -67,7 +67,14 @@ def route(variant):
         The first and last leg may spend their whole length on a tangent
         because nothing else claims it; an interior leg keeps half for its
         other end, which is also how KiCad clamps a zone fillet.
+
+        Repeated points come in from the miter helper whenever a knee lands on
+        the pad it is aiming at - two aligned terminals give [a,b,b] - so they
+        go before anything is normalised.
         """
+        points=[q for i,q in enumerate(points)
+                if i==0 or math.dist(q,points[i-1])>1e-9]
+        if len(points)<3:return points
         out=[points[0]];last=len(points)-3
         for i,corner in enumerate(points[1:-1]):
             before,after=points[i],points[i+2]
@@ -183,23 +190,23 @@ def route(variant):
             ap,bp=at(*a[i]),at(*b[i]);first,last=normals[0],normals[-1]
             tail=spread(bp,pts[-1]) if breakout else fanout(bp,pts[-1],(last[1],-last[0]))
             bends=[fanout(ap,pts[0],(-first[1],first[0])),*pts,tail]
-            join(a[i],b[i],bends)
+            flow(a[i],b[i],bends,USB_WIDTH,p.B_Cu,1.0)
     for ch,y in enumerate(USB_ROWS[variant],1):
         n=ch*100;host=f'J{n+1}';touch=f'J{n+2}';relay=f'K{n+1}'
         # The host side lands on the changeover commons 6/3, one terminal
         # column further in than the unused breaks 7/2. The pair therefore
         # stays coupled past those idle pads and separates across the row.
         pair([(host,3),(host,2)],[(relay,6),(relay,3)],
-             [(11,y),(27.6,y)],breakout=True)
+             [(10.6,y),(28.15,y)],breakout=True)
         pair([(relay,5),(relay,4)],[(touch,3),(touch,2)],
-             [(35,y),(52,y)])
+             [(34.6,y),(52.4,y)])
         # Keep the relay-drive return between contact columns, never beneath
         # the USB fanouts. This narrow control channel is routed explicitly.
         # The commons now carry the host pair, so the channel sits between the
         # common column and the make column and is recentred on that gap.
-        join((relay,8),(f'Q{n+1}',3),
+        flow((relay,8),(f'Q{n+1}',3),
              [(23.2,y-4.6),(23.9,y-5.3),(28.75,y-5.3),
-              (29.75,y-4.3),(29.75,y+6.2)],.25,p.F_Cu)
+              (29.75,y-4.3),(29.75,y+6.2)],.25,p.F_Cu,sweep(CTRL))
     # Revision L gate driver. Every loop that carries pump or negative-rail
     # current is placed here instead of being autorouted, and all of it stays
     # north of the first USB row so no inverter loop runs under a data pair.
@@ -212,8 +219,8 @@ def route(variant):
             return (a[0],b[1]-math.copysign(abs(dx),dy))
         return (b[0]-math.copysign(abs(dy),dx),a[1])
     def bend(a_ref,a_pin,b_ref,b_pin,width):
-        join((a_ref,a_pin),(b_ref,b_pin),
-             [miter(at(a_ref,a_pin),at(b_ref,b_pin))],width,p.F_Cu)
+        flow((a_ref,a_pin),(b_ref,b_pin),
+             [miter(at(a_ref,a_pin),at(b_ref,b_pin))],width,p.F_Cu,sweep(width))
     # Pump capacitor: symmetric legs from pins 2 and 4 to the 2mm terminals.
     for pin,cap_pin in (('2','1'),('4','2')):
         bend('U1',pin,'C3',cap_pin,SUPPLY)
@@ -223,21 +230,21 @@ def route(variant):
     # AUX bypass at pin 8. This one leaves its pad diagonally so the branch
     # below can run straight down the same column without doubling copper.
     c5_1,u1_8=at('C5','1'),at('U1','8')
-    join(('C5','1'),('U1','8'),
-         [(u1_8[0],c5_1[1]+abs(u1_8[0]-c5_1[0]))],SUPPLY,p.F_Cu)
+    flow(('C5','1'),('U1','8'),
+         [(u1_8[0],c5_1[1]+abs(u1_8[0]-c5_1[0]))],SUPPLY,p.F_Cu,sweep(SUPPLY))
     # Carry the negative rail to the optocoupler emitter between the DIP rows,
     # clear of pin 4 on its south side: the gate-drive run to R3 owns the lane
     # north of the coupler, and crossing it would need a via on either net.
     u1_5,u2_3,u2_4=at('U1','5'),at('U2','3'),at('U2','4')
     lane=u2_4[1]+1.6
-    join(('U1','5'),('U2','3'),
+    flow(('U1','5'),('U2','3'),
          [(u1_5[0]+lane-u1_5[1],lane),(u2_3[0]-.6,lane),
-          (u2_3[0],lane-.6)],SUPPLY,p.F_Cu)
+          (u2_3[0],lane-.6)],SUPPLY,p.F_Cu,sweep(SUPPLY))
     # Gate drive: coupler collector to its series resistor above the FETs,
     # threaded between the reservoir can and the Q4 courtyard.
     r3_1=at('R3','1')
-    join(('U2','4'),('R3','1'),
-         [(u2_4[0],r3_1[1]+2),(u2_4[0]+2,r3_1[1])],CTRL,p.F_Cu)
+    flow(('U2','4'),('R3','1'),
+         [(u2_4[0],r3_1[1]+2),(u2_4[0]+2,r3_1[1])],CTRL,p.F_Cu,sweep(CTRL))
     # LED network and the sink node shared with Q1.
     for nodes in (('U2','1','R10','1'),('U2','2','R10','2')):
         bend(*nodes,CTRL)
@@ -249,16 +256,21 @@ def route(variant):
     # same route, and the ground reference under the pairs is untouched. West
     # of the plugs at x=2.8 the pair copper and the pour keepout are both far.
     q1_3,r5_1=at('Q1','3'),at('R5','1')
-    join(('Q1','3'),('R5','1'),
+    flow(('Q1','3'),('R5','1'),
          [(q1_3[0],28.3),(q1_3[0]-1,29.3),(3.8,29.3),(2.8,30.3),
-          (2.8,42),(3.8,43),(r5_1[0]-1,43),(r5_1[0],44)],CTRL,p.B_Cu)
+          (2.8,42),(3.8,43),(r5_1[0]-1,43),(r5_1[0],44)],CTRL,p.B_Cu,sweep(CTRL))
     # AUX_5V feeds that buffer's emitter and pull-up as well, so it takes the
     # front half of the same crossing: down the column between the input stage
     # and the DIP, along the clear lane under Q1 and into the channel west of
     # the plugs. Signal copper is ample for a low-current buffer supply.
-    join(('C5','1'),('Q2','1'),
+    flow(('C5','1'),('Q2','1'),
          [(c5_1[0],27.5),(c5_1[0]-1,28.5),(4.5,28.5),(3.5,29.5),
-          (3.5,44.1)],CTRL,p.F_Cu)
+          (3.5,44.1)],CTRL,p.F_Cu,sweep(CTRL))
+    # Keep the buffer pull-up supply's return leg as one rounded run. The
+    # router otherwise inserts a short up/down jog beside Q2's emitter.
+    flow(('Q2','1'),('R6','1'),
+         [(2.442,46.1),(3.5187,47.1767),(14.0367,47.1767)],
+         CTRL,p.B_Cu,sweep(CTRL))
     # The front carries the 4.5mm shared trunk; main outputs use 2mm
     # bottom branches.
     q3d,q3s,q4d,q4s=at('Q3',2),at('Q3',3),at('Q4',2),at('Q4',3)
@@ -381,11 +393,12 @@ def route(variant):
         flow((f'F{n+1}',2),(f'J{n+3}',1),
              [(a[0],a[1]+2),(a[0]+2,a[1]+4),(b[0]-2,a[1]+4)],2,p.B_Cu,ARC2)
         a,b=at(f'F{n+2}',2),at(f'J{n+2}',1)
-        join((f'F{n+2}',2),(f'J{n+2}',1),
-             [(a[0]+3.25,b[1])],.8,p.F_Cu)
+        flow((f'F{n+2}',2),(f'J{n+2}',1),
+             [(a[0]+3.25,b[1])],.8,p.F_Cu,sweep(.8))
         c=at(f'C{n+2}',1)
-        join((f'J{n+2}',1),(f'C{n+2}',1),
-             [(57.5,b[1]),(58.5,b[1]-1),(58.5,y-6),(57.5,y-7),(c[0]+3,y-7)],.8,p.B_Cu)
+        flow((f'J{n+2}',1),(f'C{n+2}',1),
+             [(57.5,b[1]),(58.5,b[1]-1),(58.5,y-6),(57.5,y-7),(c[0]+3,y-7)],
+             .8,p.B_Cu,sweep(.8))
     # Reserve front copper below each pair, and keep same-side ground far
     # enough away to use the coupled-microstrip calculation as a starting point.
     def keepout(layer,x1,y1,x2,y2,tracks=False,pours=False,radius=0):

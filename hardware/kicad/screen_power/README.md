@@ -25,7 +25,7 @@ Cables enter perpendicular to the board. Mounting centers remain (4, 4),
 copper keepouts on both faces for M3 heads/washers up to 7 mm diameter.
 
 Use only the archive identified by the
-[Revision L verification](../../../docs/reviews/screen-power-rev-l-1072/verification.md).
+[current three-board manufacturing record](../../../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
 Older screen archives are superseded; Revision I remains withdrawn because
 its relay commons were wired incorrectly. The corrected common contacts 3/6 and
 normally open contacts 4/5 are retained and independently checked.
@@ -233,6 +233,11 @@ tolerances, and the published two-layer material value of 4.5, still require
 actual-link qualification. See [JLCPCB capabilities](https://jlcpcb.com/capabilities/pcb-capabilities). Connector and relay pad
 fanouts necessarily separate the traces and remain local discontinuities.
 
+Both conductors now use mirrored rounded fanouts. The coupled sections extend
+slightly toward the terminals so rounding shortens, rather than lengthens,
+the uncoupled ends. Width, minimum pair gap, length matching and the actual
+filled ground beneath the bends are checked on the native board.
+
 Filled F.Cu ground extends beneath the pairs and their fanouts. Routing
 keepouts protect that return path, and the B.Cu pour stays back from the
 coupled sections. Ground stitching links the outer pours. Validation samples
@@ -257,15 +262,19 @@ with 1 mm to the lower mounting keepout. Small AUX branch fillets round the
 capacitor junctions; they do not carry a required power path on their own.
 Validation removes every zone before proving the minimum
 power-path widths, so a filled overlay cannot hide a missing or thin trace.
-Both outer GND pours remain filled on the delivered board.
+Both outer GND pours remain filled on the delivered board. The remaining
+signal routes also use rounded bends. A native KiCad finishing pass preserves
+pad/via contacts, branch connections, fixed power copper and track keepouts;
+USB geometry stays under its paired route generator.
 
 The 1.5 mm C2 feed and three dedicated shared-power stitching vias are retained.
 C1 sits clear of the full mated VH housing, with a deliberate 0.8 mm
 local supply route. The revised capacitor models use the actual BOM body
 sizes; the maximum envelopes were checked separately. The gate-supply components occupy the rearranged control area. USB copper retains
 paired bottom-layer routing, no data vias and a checked front-side GND return.
-The [Revision L record](../../../docs/reviews/screen-power-rev-l-1072/verification.md)
-contains the current CAD and export evidence.
+The [three-board audit](../../../docs/reviews/pcb-finish-all-three-1072/audit.md)
+contains the current CAD and export evidence. C4 is aligned with U1 pin 5;
+connector positions and the rest of the component placement are retained.
 
 These choices follow [TI's USB layout guidance](https://www.ti.com/lit/an/slla414/slla414.pdf)
 (short pairs, continuous return planes, through-hole connector signals on the
