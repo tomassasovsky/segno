@@ -1,5 +1,7 @@
 # Copper finish review
 
+**Historical checkpoint — superseded artwork.** The [all-three-board audit](../pcb-finish-all-three-1072/audit.md) and its [archive manifest](../pcb-finish-all-three-1072/manufacturing-zips.json) identify the current rounded boards and exports. The hashes and fabrication counts below describe the earlier checkpoint only. Circuit and power calculations remain applicable where their geometry and components are unchanged.
+
 25 September 2026. Diagnosis covers the console, ring carrier and Revision L
 screen-power board. Coordinates below are native KiCad millimeters.
 

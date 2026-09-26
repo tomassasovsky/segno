@@ -104,6 +104,7 @@ def sources(base, board):
     paths.update((board, base / "README.md", base / "COSTS.md",
                   base / "external_bom.csv", base / "LIBRARY_LICENSE.txt",
                   base.parents[2] / "LICENSE", base.parent / "netlist.py",
+                  base.parent / "round_routes.py",
                   base.parent / "console_board.net",
                   base.parent / "out_console/segno_console_board.kicad_pcb"))
     result = {}

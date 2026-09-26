@@ -1,0 +1,85 @@
+{
+  "rendered": true,
+  "visual_acceptance_pending": false,
+  "inputs": {
+    "console": {
+      "board": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+      "models": {
+        "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step": "85bdadc9190739c38429da06b1d9c76ccf33aef9a0794a2e7a9dd5b58d9d05fe",
+        "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_2x03_P2.54mm_Vertical.step": "30c87dd7aa515b02055124826d8c4054084971d49d819c644cd6b21295ac52c8",
+        "${KICAD10_3DMODEL_DIR}/Package_DIP.3dshapes/DIP-6_W7.62mm.step": "a4460ddeadf04a1914d6bacbeb5b59d684aa99d513b0a3b223dbfdd0c77830c1",
+        "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes/JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical.step": "7287616fdad677e9b54cf5494f17efc4b3fb77be002659d73e215772393f20c6",
+        "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/C_Disc_D5.0mm_W2.5mm_P2.50mm.step": "7d12adb68ab129e45af16ec2557a388c93aae06b4b52bc45238c17d6e4b76f49",
+        "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/CP_Radial_D10.0mm_P5.00mm.step": "7367f35dd5439e325ba3912de65e9200831fdc6698080ffd056cd268649ba41d",
+        "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step": "7eb17ded8ec4a3216753a234254e22a2d8e07826f0816045bfb803a19cac75ea",
+        "${KIPRJMOD}/../segno.pretty/JST_VH_B3P-VH_1x03_P3.96mm_Vertical.step": "1acd7089c35c49845e3c5c0fe4322755b2a2888459fcc5e08867a3af6997bc84",
+        "${KICAD10_3DMODEL_DIR}/Connector_IDC.3dshapes/IDC-Header_2x20_P2.54mm_Vertical.step": "b4c4f2a81aa970bdb46cb2ef80833d2370a5d0d023d178729b0cbb368db263cc",
+        "${KICAD10_3DMODEL_DIR}/Package_DIP.3dshapes/DIP-14_W7.62mm.step": "3dae072a95c64bee0d1e58be8e75383639f5017ab982de1749d05808a4eed058",
+        "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/CP_Radial_D6.3mm_P2.50mm.step": "39dc7bf95fed00917ab20af81ff9e25a70f8d003bc07cffea11840489a11933e",
+        "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-35_SOD27_P7.62mm_Horizontal.step": "9704292191fcb13b3dfc88c1e572df18313ac20023bb230486c878d8dddfdb54",
+        "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes/JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical.step": "8800a66e739fc222ec36495d2d05fd0f79ba9423c3587c7169630591d024f36f",
+        "${KICAD10_3DMODEL_DIR}/Module.3dshapes/RaspberryPi_Pico.step": "8c8d6d42eaf05538fe501c6efbc1f8989a3b35f36f0def8db95875e0f304e069",
+        "${KIPRJMOD}/../segno.pretty/JST_VH_B2P-VH_1x02_P3.96mm_Vertical.step": "efb59acce5543b80f42f2636560a54ce2c5c5386f71d13281651de07161bde5d"
+      }
+    },
+    "ring": {
+      "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+      "models": {
+        "${KIPRJMOD}/segno.pretty/RotaryEncoder_EC11.step": "ce00f2ec7df04fc4a45ef4779ffa61f3cfbc82e4d79ba5f84a0ee5d4ffa0575a",
+        "${KIPRJMOD}/segno.pretty/NeoPixel_Ring24.step": "e998469894bc67bf60a8aabdaa4d8ab13e817e65640fcef5a1e50a8ace023f6f",
+        "${KIPRJMOD}/segno.pretty/PinHeader_1x01_trimmed.wrl": "4aea6dbb1ccca05220840f451041cd7b79949c4eb3bf5d4fede7d22bd65de477",
+        "${KIPRJMOD}/segno.pretty/NeoPixel_Ring16.step": "0734497b453ee856e7e119261e62a27237c57a46ff28fa2bdae9ce953e7009f9",
+        "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/C_Disc_D5.0mm_W2.5mm_P5.00mm.step": "5739d7f7288da1879d2a2e4a8d7f4d1ac5e5ad712d777b40e647ec559cf8ecba",
+        "${KICAD10_3DMODEL_DIR}/Resistor_THT.3dshapes/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step": "85bdadc9190739c38429da06b1d9c76ccf33aef9a0794a2e7a9dd5b58d9d05fe",
+        "${KICAD10_3DMODEL_DIR}/Package_DIP.3dshapes/DIP-14_W7.62mm.step": "3dae072a95c64bee0d1e58be8e75383639f5017ab982de1749d05808a4eed058",
+        "${KICAD10_3DMODEL_DIR}/Capacitor_THT.3dshapes/CP_Radial_D8.0mm_P3.50mm.step": "abedfe603cd28231e16fb158d7b3f8875be74514f602e356364f48f073d0ef8e",
+        "${KIPRJMOD}/segno.pretty/XIAO_Module.step": "0d552b5f11e9df2a777c6e1595f7a963187118df899be9395c7d439ad2f5a67f",
+        "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step": "7eb17ded8ec4a3216753a234254e22a2d8e07826f0816045bfb803a19cac75ea",
+        "${KICAD10_3DMODEL_DIR}/Diode_THT.3dshapes/D_DO-41_SOD81_P10.16mm_Horizontal.step": "c3e23d4b276811b74eecb329bd4480209ad3dbc8cf6e6e3f2a5b542c5ca343c1"
+      }
+    },
+    "screen": {
+      "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+      "sha256": "c06e6b35438b2fc7208cdc50feeebee92e6c01a56a00dadd280f697d1e49d79b",
+      "models": {
+        "${KIPRJMOD}/../models/Panasonic_EEUFR1A151.step": "2162715725a2bee92472f5025b88b04305f4e1ae584b1a552765c288df6dde4e",
+        "${KIPRJMOD}/../models/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm.step": "ef14b7f12cdde58ff2c770df5e726c11bb1ad801956d525273855cfa84f90633",
+        "${KIPRJMOD}/../models/TO-220-3_Vertical.step": "7cb065d935df5771f0ba6e48ddd180863a121af76483dad7f18e667a7b68204a",
+        "${KIPRJMOD}/../models/D_DO-41_SOD81_P10.16mm_Horizontal.step": "c3e23d4b276811b74eecb329bd4480209ad3dbc8cf6e6e3f2a5b542c5ca343c1",
+        "${KIPRJMOD}/../models/DIP-4_W7.62mm.step": "39490b2c17b5f36ae3fdd5fdd2952f6879a060ff6cbc6d0241e3d6262fd0f215",
+        "${KIPRJMOD}/../models/JST_VH_B2P-VH_1x02_P3.96mm_Vertical.step": "f695849b57b3a020a3ee91df31b5f73a77e75a5405523d42b5e30f29665f7176",
+        "${KIPRJMOD}/../models/TO-92_Inline_Wide.step": "85b7de23bf92112c1cc60ca5fdb644f1a44e150a99f8c6f4f5f29010f50282b9",
+        "${KIPRJMOD}/../models/Panasonic_ECEA1EN100U.step": "a9118f23639820ef24ddecc1867e0263a3505276e58d869e6209c0b4fdaa8a45",
+        "${KIPRJMOD}/../models/Panasonic_EEUFR1A221.step": "af0aa040439004602375439464b7de656ed8544b64959c8f1b029cd9dd998336",
+        "${KIPRJMOD}/../models/WIMA_MKS2C031001A00KSSD.step": "eec7e67ee90b43b27b1dba6587b1ad3f3fb935489347e1aaf397f2206814292e",
+        "${KIPRJMOD}/../models/Vishay_PR01_P10.16mm.step": "e3b8cb6df2b979f2dab949ff54ff8fa8cb7c16e6d83c66285f9f30776137b2dc",
+        "${KIPRJMOD}/../models/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step": "85bdadc9190739c38429da06b1d9c76ccf33aef9a0794a2e7a9dd5b58d9d05fe",
+        "${KIPRJMOD}/../models/D_DO-35_SOD27_P7.62mm_Horizontal.step": "9704292191fcb13b3dfc88c1e572df18313ac20023bb230486c878d8dddfdb54",
+        "${KIPRJMOD}/../models/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step": "7eb17ded8ec4a3216753a234254e22a2d8e07826f0816045bfb803a19cac75ea",
+        "${KIPRJMOD}/../models/JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical.step": "7287616fdad677e9b54cf5494f17efc4b3fb77be002659d73e215772393f20c6",
+        "${KIPRJMOD}/../models/Fuse_Littelfuse_251_P12.70mm.step": "00963a1755175d1ec1f24d8809adb024bc7c4002b5af8090ae8fdeeb53efa837",
+        "${KIPRJMOD}/../models/DIP-8_W7.62mm.step": "4a377a56a8d9e9c0b86c095ef9ecc1869ac19e7f5069a3247b294250bf4f235d"
+      }
+    }
+  },
+  "artifacts": {
+    "console/F-copper.svg": "73dcc9cf957f3f82f7c78ba10a9063b94e033237667e08f282f5c433cd84c9a8",
+    "console/B-copper.svg": "171803269afc1936f036c3a3cdc13bb428302747653a3bc86f6116ffd2d43ac3",
+    "console/top.png": "ed85cb6112aa1948b5a5a32b5eaec145acd8e1c788559e334d56c12b4e78ae00",
+    "console/bottom.png": "5184f49b4dfa745f6d3a07b42cb0c92bb86f7ac6293af59238cc019537b041ba",
+    "console/perspective.png": "cd89d4da136e55e519d9bdd7defa2f524fd3ac7beeb7a45e11e381d7c52661cd",
+    "ring/F-copper.svg": "dc48a05d1e40652d734526852fed4497316f6863bec92d74426a3f132571273a",
+    "ring/B-copper.svg": "20f6fb301ce06a0b79e98702cc47a7cbd924a790d1ce777685e6ebfc4bcb126e",
+    "ring/top.png": "bf1b528b630a1e20d995c32fca946581cecb1509e3d77592d02ddf3a0cd9d1d2",
+    "ring/bottom.png": "28e8e6c3f0c2a9d50b2aa8180d6a63956f264dc7c8bb66d717650fcb40108010",
+    "ring/perspective.png": "42289deaabb0df4fb2e0e0534881a8bc5fdd3aae8e19442a4e943a8c15de1417",
+    "screen/F-copper.svg": "a84888c66332e7afaf3a60d61adf1e83b5db4fe3514e661e950b221c0aee63e6",
+    "screen/B-copper.svg": "3c21a67760874d5a2e2df077d3486f0da64e84a439389df9dc4024b847bdfb69",
+    "screen/top.png": "22988cf643c1d505d100ad2d8ce70e803815a422debd893ccaa422c89b34fe9a",
+    "screen/bottom.png": "14c166fb090e5b2ccf22676b498b285144219bd543badc1e373092f27314a0a7",
+    "screen/perspective.png": "7b462771156e418496e338ae9912e9536071e5f031e9a401dda454a5315c2d46"
+  },
+  "review": "Both native copper faces and populated top/bottom views inspected for each board. All referenced models resolved. Perspective views exported for review."
+}

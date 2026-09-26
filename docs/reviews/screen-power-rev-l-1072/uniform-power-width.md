@@ -1,5 +1,7 @@
 # Uniform screen-power trace width
 
+**Historical checkpoint — superseded artwork.** The [all-three-board audit](../pcb-finish-all-three-1072/audit.md) and its [archive manifest](../pcb-finish-all-three-1072/manufacturing-zips.json) identify the current rounded boards and exports. The hashes and fabrication counts below describe the earlier checkpoint only. Circuit and power calculations remain applicable where their geometry and components are unchanged.
+
 26 September 2026. A uniform **2.0 mm AUX input** route and uniform **2.5 mm
 MOSFET source bridge and drain feeder** are suitable for the documented
 **4.25 A** combined screen planning load. They remove the visible

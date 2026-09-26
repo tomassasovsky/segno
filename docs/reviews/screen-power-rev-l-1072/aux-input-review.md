@@ -2,6 +2,8 @@
 
 # Revision L AUX input copper review
 
+**Historical checkpoint — superseded artwork.** The [all-three-board audit](../pcb-finish-all-three-1072/audit.md) and its [archive manifest](../pcb-finish-all-three-1072/manufacturing-zips.json) identify the current rounded boards and exports. The hashes and fabrication counts below describe the earlier checkpoint only. Circuit and power calculations remain applicable where their geometry and components are unchanged.
+
 The rounded AUX input revision passes this bounded native-layout review.
 The main input holds 2.0 mm from J1.1 to Q3.2; the local capacitor branches
 keep their separate 1.5 mm and 0.8 mm widths. The four branch blends now

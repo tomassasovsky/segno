@@ -1,0 +1,127 @@
+{
+  "date": "2026-09-26",
+  "status": "verified-for-bare-board-fabrication",
+  "purpose": "Final three-board rounded routing, console J24 copper-slot closure, retained vertical ring taps, C20 decoupling placement and C4 alignment",
+  "baseline_revision": "2b45a6adb804044baebfe6ecb7b225ac98c97ded",
+  "archives": {
+    "console-v3": {
+      "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
+      "sha256": "bff58e862b971e5e51872faa2eab3681ee25207b18a949fa4272ecb344e538e4",
+      "members_checked": 12,
+      "members": {
+        "segno_console_board-B_Cu.gbr": "c730032ab478a46d88bfdd9778acade1c046b01e85c8f7b8c9cc21cb87dd1f9c",
+        "segno_console_board-B_Mask.gbr": "0effd9067157e786824e037e87beca0ef5d47d1c3331a242f640ec746ce97239",
+        "segno_console_board-B_Paste.gbr": "735709605f33b8d798bf888e4cdaea40c2d92fe3d2b4a4a23585e0067a05f787",
+        "segno_console_board-B_Silkscreen.gbr": "98498f5060cfe187f56cc868423510244bf3ffe47d1ca834bf61a244522bfc66",
+        "segno_console_board-Edge_Cuts.gbr": "a3b63a5093db9b50d14addbdc17e65f8531d9fa436e0fa2a3bb02f9016cb7311",
+        "segno_console_board-F_Cu.gbr": "f22fc3f68240217ef60e1d171db0fa9e042f49ae5d3bb58e714411ccb41040a5",
+        "segno_console_board-F_Mask.gbr": "ecf0e0750ed63e081a41325749c0e36cdf46d7aab9fa2a8ee87804f285a58c55",
+        "segno_console_board-F_Paste.gbr": "aa820d1abf989619bb6dfaf58ae80762c8a621bcbf303692437f3838b97fecb3",
+        "segno_console_board-F_Silkscreen.gbr": "f0be3e7f39ad1aadcbe7b40a8f117340c2d6d431c67ecb9b4608a24c14915e6e",
+        "segno_console_board-NPTH.drl": "9e462c2c93541aac085475a5422d7b3338c5154a137649760abfc309b75463e0",
+        "segno_console_board-PTH.drl": "8b7f6b1589f4e12603e298f8f70e6997fd7a4e23ee7c7b58d1cf62f1d4f6b5b3",
+        "segno_console_board-job.gbrjob": "41ef91610253daaca5c9fcca35fbe4052c07573eb990823123619585da41e7b6"
+      },
+      "upload_name": "segno-console-v3-gerbers.zip",
+      "board": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "board_sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+      "order": {
+        "layers": 2,
+        "material": "FR-4",
+        "thickness_mm": 1.6,
+        "copper_oz": 1,
+        "solder_mask": "Purple",
+        "silkscreen": "White",
+        "finish": "Lead-free HASL",
+        "quantity": 5,
+        "assembly": false,
+        "stencil": false,
+        "vias": "tented"
+      }
+    },
+    "ring-white": {
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "sha256": "29ed635cc4119edfe609332ba62fbe7cb31c102bd6d18af23ef70a75b7cbd606",
+      "members_checked": 10,
+      "members": {
+        "segno_pedal_ring-B_Cu.gbr": "49b489354556b94f5620fb8e12a8826689b202e2ded7ca50548e4f13026d1bd2",
+        "segno_pedal_ring-B_Mask.gbr": "65e559d799e40ec55fbf15d3f4ada829b18bf1e79724ddc30d2c429b0a21b5da",
+        "segno_pedal_ring-B_Silkscreen.gbr": "d9569281b5e8825330278c313692d4548eb53bb8c08271244636d0329df08a51",
+        "segno_pedal_ring-Edge_Cuts.gbr": "2b73274ae6109f4135b9fd3c5b190d19f068c6b7d737b4a470b1fe6db25414a8",
+        "segno_pedal_ring-F_Cu.gbr": "72a7777b89a1b1d99c1ac0d79e750ba97b0d754ebacb8c09254a2322b92f0956",
+        "segno_pedal_ring-F_Mask.gbr": "dfabaa15ef6f7f067f036a6b41a2d6ef8c373f52caff56f2f021a2422c0a8cd3",
+        "segno_pedal_ring-F_Silkscreen.gbr": "ce237bc18da86523810b19ea2f28d6a312b3a363ab64e5088db6e50238c37a0c",
+        "segno_pedal_ring-NPTH.drl": "b25aafa269c981bbf84287b4b2d1efdf688547f3ca6311cadedbe11982139863",
+        "segno_pedal_ring-PTH.drl": "fd40718a246a7cc3c8c4d3537928c4e5ed505d8980fea327a463ba74bf8db85f",
+        "segno_pedal_ring-job.gbrjob": "11127271b922449848b87abe02e220cecd81fc6a4dfc7c2f52cec67e1097a263"
+      },
+      "upload_name": "segno-ring-white-gerbers.zip",
+      "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "board_sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+      "order": {
+        "layers": 2,
+        "material": "FR-4",
+        "thickness_mm": 1.6,
+        "copper_oz": 1,
+        "solder_mask": "White",
+        "silkscreen": "Black",
+        "finish": "Lead-free HASL",
+        "quantity": 5,
+        "assembly": false,
+        "stencil": false,
+        "vias": "tented"
+      }
+    },
+    "screen-power-rev-l": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
+      "sha256": "94e5534ba9703e34274a86a3188080568b22e83d63369f106b32204f32af51b0",
+      "members_checked": 12,
+      "members": {
+        "screen_power_hand-B_Cu.gbr": "c0205b92a926b7bb88c664a26f529ae253b3aeccefb082b37314e2763f1bc9b9",
+        "screen_power_hand-B_Mask.gbr": "fa388ff621de49ab1c7669abb2450341c0ff238716282edf2034149b4d6ce52e",
+        "screen_power_hand-B_Silkscreen.gbr": "7017e3ab36bf98c72901b95e62a3126c226f79849cf607f7e426b2cb0b2ba573",
+        "screen_power_hand-Edge_Cuts.gbr": "d88018b4ca8d47d1420351818985d82799502925032f1dad8d8a55b9854d2415",
+        "screen_power_hand-F_Cu.gbr": "c609f3ed1bab68baf0652c6c2da3c95957dd76e95ed0ca25db1e330681d73a4f",
+        "screen_power_hand-F_Mask.gbr": "9365afb615d8ab88546c9c94075781dca521e1b77309ef650c080adf38b3e731",
+        "screen_power_hand-F_Silkscreen.gbr": "f7ecff09bd3341696a565950549b89dc8ddfade73cf96e164bbb7e742bb867e5",
+        "screen_power_hand-NPTH-drl_map.pdf": "98c67af1b9e2b16d80410b8d83dc3250bb313454bfa913a5a2c8a1a8bddaa55d",
+        "screen_power_hand-NPTH.drl": "8f85ec6304a580a876f84cda949fecc3187e3e8810c56e121bb2bd91e8286070",
+        "screen_power_hand-PTH-drl_map.pdf": "cc2528520e77c50db98f2be4db3f9c465ffa18aa54ad1b2005c4498806ed6c06",
+        "screen_power_hand-PTH.drl": "ffb23f561c084ce427b1aebb951a43571694b4538d46fc38e2f5ac675a5e3dbe",
+        "screen_power_hand-job.gbrjob": "43ef8465f500cf799e35628b15162fc0eb0c7dc96447e8060396c96850015340"
+      },
+      "upload_name": "segno-screen-power-rev-l-gerbers.zip",
+      "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+      "board_sha256": "c06e6b35438b2fc7208cdc50feeebee92e6c01a56a00dadd280f697d1e49d79b",
+      "order": {
+        "layers": 2,
+        "material": "FR-4",
+        "thickness_mm": 1.6,
+        "copper_oz": 1,
+        "solder_mask": "Purple",
+        "silkscreen": "White",
+        "finish": "ENIG",
+        "quantity": 5,
+        "assembly": false,
+        "stencil": false,
+        "vias": "tented"
+      }
+    }
+  },
+  "verification": {
+    "console_ring": {
+      "report": "docs/reviews/pcb-finish-all-three-1072/console-ring-fabrication-verification.json",
+      "sha256": "e18cf9a954a925c1c798e771bf1132d30bc45047c54e886d99bfa783d93f7119",
+      "checks_passed": 175
+    },
+    "screen": {
+      "report": "docs/reviews/pcb-finish-all-three-1072/screen-fabrication-verification.json",
+      "sha256": "2953ea67ad643c8498fa420107a45994ba3ae38cf743959b4ff557eeb9af1555",
+      "checks_passed": 409
+    }
+  },
+  "limits": [
+    "Bare-board CAD and export verification; assembled electrical, USB and enclosure behavior are not physically qualified.",
+    "No order, merge or device deployment performed."
+  ]
+}
