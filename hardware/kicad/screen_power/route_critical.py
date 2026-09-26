@@ -116,7 +116,8 @@ def route(variant):
     u1_5,u2_3,u2_4=at('U1','5'),at('U2','3'),at('U2','4')
     lane=u2_4[1]+1.6
     join(('U1','5'),('U2','3'),
-         [(u1_5[0]+lane-u1_5[1],lane),(u2_3[0],lane)],SUPPLY,p.F_Cu)
+         [(u1_5[0]+lane-u1_5[1],lane),(u2_3[0]-.6,lane),
+          (u2_3[0],lane-.6)],SUPPLY,p.F_Cu)
     # Gate drive: coupler collector to its series resistor above the FETs,
     # threaded between the reservoir can and the Q4 courtyard.
     r3_1=at('R3','1')
@@ -126,6 +127,16 @@ def route(variant):
     for nodes in (('U2','1','R10','1'),('U2','2','R10','2')):
         bend(*nodes,CTRL)
     join(('R10','1'),('R9','2'),[],CTRL,p.F_Cu)
+    # Q1 also sinks the relay-enable buffer's base divider, which sits south of
+    # the first USB row. The data pairs and their front-copper keepouts leave
+    # the left edge as the only crossing, so this one takes the bottom layer
+    # there: the front channel stays clear for the AUX branch that follows the
+    # same route, and the ground reference under the pairs is untouched. West
+    # of the plugs at x=2.8 the pair copper and the pour keepout are both far.
+    q1_3,r5_1=at('Q1','3'),at('R5','1')
+    join(('Q1','3'),('R5','1'),
+         [(q1_3[0],28.3),(q1_3[0]-1,29.3),(3.8,29.3),(2.8,30.3),
+          (2.8,42),(3.8,43),(r5_1[0]-1,43),(r5_1[0],44)],CTRL,p.B_Cu)
     # The front carries the 4.5mm shared trunk; main outputs use 2mm
     # bottom branches. Keep the narrower approaches local to closely spaced
     # device pins, then widen smoothly into the 3mm common-source bridge.

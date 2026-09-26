@@ -54,16 +54,19 @@ def finish(variant):
         t.SetLayer(layer);t.SetMirrored(layer==p.B_SilkS);board.Add(t)
     from layout import DIMENSIONS, USB_ROWS
     w,h = DIMENSIONS[variant]
-    label('SEGNO SCREEN POWER / REV L',32,1.4,.8,p.B_SilkS)
-    # The revision L control section fills the old mid-board name strip, so
-    # the front identification moves to the clear lower edge.
+    # Revision L fills the old mid-board name strip and the bay above J2, and
+    # its top-edge parts reach the row the back title used to sit on, so both
+    # identifications move to the clear lower edge and the control marking
+    # reads up the left edge beside its plug, clear of the M3 washers.
+    label('SEGNO SCREEN POWER / REV L',32,h-1.2,.8,p.B_SilkS)
     label('SEGNO SCREEN POWER',28.5,h-2.4,.9)
-    label('REV L',8.5,h-2.4,.8)
+    label('REV L',11,h-2.4,.8)
     label('5V IN',56,6.5,1.0)
-    label('CTRL J25',6,8,1.0)
+    label('J25',2.2,10.1,1.0,angle=90)
+    label('CTRL',2.2,14,1.0,angle=90)
     label('5V IN',56,6.5,1.0,p.B_SilkS)
     label('1=5V 2=GND',55,17.5,1.0,p.B_SilkS)
-    label('GPIO17 / GND',8,18,1.0,p.B_SilkS)
+    label('GPIO17 / GND',8,17.3,1.0,p.B_SilkS)
     for ch,y in enumerate(USB_ROWS[variant],1):
         screen='15.6"' if ch==1 else '7"'
         # The bay above each Pi plug now carries control parts; read this one
@@ -71,7 +74,7 @@ def finish(variant):
         label(f'PI USB {ch}',2.2,y,1.0,angle=90)
         label(f'{screen} TOUCH',45,y+1.5,1.0)
         label(f'{screen} POWER',41.5,y-8,1.0)
-        label(f'S{ch} PI',7,y-8,1.0,p.B_SilkS)
+        label(f'S{ch} PI',6,y-6,1.0,p.B_SilkS)
         label(f'S{ch} TOUCH',56,y-6.5,1.0,p.B_SilkS)
         for x in (7,56):
             for text,dy in [('1 +5V',3.75),('2 D-',1.25),('3 D+',-1.25),('4 GND',-3.75)]:
