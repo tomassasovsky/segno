@@ -1,0 +1,111 @@
+{
+  "before_sha256": "2e0f14a8f2988038ddf29ed87d986b2d812cbe4d9285d88943ae476311e67170",
+  "candidate_sha256": "c14921ed198b39ea02ae1413d99dc5b53f258d42e8076e0640f4d6744b51b63a",
+  "errors": [],
+  "metadata_exact_except_U1_U2_and_fills": true,
+  "usb_exact": true,
+  "pins": {
+    "U1": {
+      "1": [
+        14.6,
+        19.25
+      ],
+      "2": [
+        17.14,
+        19.25
+      ],
+      "3": [
+        19.68,
+        19.25
+      ],
+      "4": [
+        22.22,
+        19.25
+      ],
+      "5": [
+        22.22,
+        11.63
+      ],
+      "6": [
+        19.68,
+        11.63
+      ],
+      "7": [
+        17.14,
+        11.63
+      ],
+      "8": [
+        14.6,
+        11.63
+      ]
+    },
+    "U2": {
+      "1": [
+        25.6,
+        19.25
+      ],
+      "2": [
+        28.14,
+        19.25
+      ],
+      "3": [
+        28.14,
+        11.63
+      ],
+      "4": [
+        25.6,
+        11.63
+      ]
+    }
+  },
+  "U2_reference_before": [
+    30.77,
+    16.2
+  ],
+  "U2_reference_after": [
+    30.77,
+    15.45
+  ],
+  "ground_outline_counts": [
+    {
+      "stage": "before",
+      "layer": "F.Cu",
+      "filled_outline_count": 1
+    },
+    {
+      "stage": "before",
+      "layer": "B.Cu",
+      "filled_outline_count": 1
+    },
+    {
+      "stage": "after",
+      "layer": "F.Cu",
+      "filled_outline_count": 1
+    },
+    {
+      "stage": "after",
+      "layer": "B.Cu",
+      "filled_outline_count": 1
+    }
+  ],
+  "removed_by_net_layer": {
+    "GATE_LED/F.Cu": 1,
+    "CONTROL_SINK/F.Cu": 10,
+    "NEG_5V/F.Cu": 28,
+    "GATE_SINK/F.Cu": 1,
+    "PUMP_CAP_PLUS/F.Cu": 1,
+    "PUMP_CAP_MINUS/F.Cu": 1,
+    "AUX_5V/F.Cu": 1
+  },
+  "added_by_net_layer": {
+    "GATE_LED/F.Cu": 1,
+    "CONTROL_SINK/F.Cu": 10,
+    "NEG_5V/F.Cu": 28,
+    "GATE_SINK/F.Cu": 1,
+    "PUMP_CAP_PLUS/F.Cu": 1,
+    "PUMP_CAP_MINUS/F.Cu": 1,
+    "AUX_5V/F.Cu": 1
+  },
+  "added_tracks_count": 43,
+  "removed_tracks_count": 43
+}
