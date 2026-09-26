@@ -16,6 +16,10 @@ added active startup-current limiter: the
 [startup assessment](../../../docs/reviews/screen-power-rev-l-1072/startup.md)
 finds useful pulse margin in the existing power devices.
 
+U1 and U2 share both pin rows and a body centerline. Their final alignment
+retains the stock courtyards and nearby capacitor positions; see the
+[alignment verification](../../../docs/reviews/screen-u2-alignment-1072/verification.md).
+
 The board has **44 populated through-hole components plus four M3 holes**.
 Both outer copper layers have filled GND pours. All eight cable headers
 retain their positions and matching orientation: vertical pin rows, pin 1

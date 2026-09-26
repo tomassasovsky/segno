@@ -18,8 +18,11 @@ records the current native boards and replacement manufacturing archives.
 The final pass rounds the remaining exposed signal/control bends as well as
 the power routes, closes the console's 0.05 mm slot beside J24, retains the
 ring's two straight vertical taps and moves C20 beside its supply pin.
-Screen C4 is aligned with the charge-pump pin; USB pairs use mirrored rounded
-bends with their widths, gap and ground reference verified independently.
+Screen C4 is aligned with the charge-pump pin. A subsequent
+[U1/U2 alignment correction](reviews/screen-u2-alignment-1072/verification.md)
+puts both packages on common pin rows while preserving their stock courtyards.
+USB pairs use mirrored rounded bends with their widths, gap and ground
+reference verified independently.
 The Q3/Q4 source bridge and drain feeder remain uniformly 2.5 mm wide and
 the AUX input remains 2.0 mm. All boards retain two copper layers.
 Work follows the owner's one-order requirement, with no pre-PCB prototype

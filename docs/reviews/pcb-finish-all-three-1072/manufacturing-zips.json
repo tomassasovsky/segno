@@ -1,8 +1,8 @@
 {
   "date": "2026-09-26",
   "status": "verified-for-bare-board-fabrication",
-  "purpose": "Final three-board rounded routing, console J24 copper-slot closure, retained vertical ring taps, C20 decoupling placement and C4 alignment",
-  "baseline_revision": "2b45a6adb804044baebfe6ecb7b225ac98c97ded",
+  "purpose": "Current three-board fabrication files with aligned screen U1/U2; console/ring rounded copper unchanged",
+  "baseline_revision": "2c27234ecf7825d67c812584bc7b82e39455fa38",
   "archives": {
     "console-v3": {
       "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
@@ -74,25 +74,25 @@
     },
     "screen-power-rev-l": {
       "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
-      "sha256": "94e5534ba9703e34274a86a3188080568b22e83d63369f106b32204f32af51b0",
+      "sha256": "ef2a39dd88ea89789cf60188186f3aca2d5505bcd202eb270830b81ee5c76e44",
       "members_checked": 12,
       "members": {
-        "screen_power_hand-B_Cu.gbr": "c0205b92a926b7bb88c664a26f529ae253b3aeccefb082b37314e2763f1bc9b9",
-        "screen_power_hand-B_Mask.gbr": "fa388ff621de49ab1c7669abb2450341c0ff238716282edf2034149b4d6ce52e",
-        "screen_power_hand-B_Silkscreen.gbr": "7017e3ab36bf98c72901b95e62a3126c226f79849cf607f7e426b2cb0b2ba573",
-        "screen_power_hand-Edge_Cuts.gbr": "d88018b4ca8d47d1420351818985d82799502925032f1dad8d8a55b9854d2415",
-        "screen_power_hand-F_Cu.gbr": "c609f3ed1bab68baf0652c6c2da3c95957dd76e95ed0ca25db1e330681d73a4f",
-        "screen_power_hand-F_Mask.gbr": "9365afb615d8ab88546c9c94075781dca521e1b77309ef650c080adf38b3e731",
-        "screen_power_hand-F_Silkscreen.gbr": "f7ecff09bd3341696a565950549b89dc8ddfade73cf96e164bbb7e742bb867e5",
-        "screen_power_hand-NPTH-drl_map.pdf": "98c67af1b9e2b16d80410b8d83dc3250bb313454bfa913a5a2c8a1a8bddaa55d",
-        "screen_power_hand-NPTH.drl": "8f85ec6304a580a876f84cda949fecc3187e3e8810c56e121bb2bd91e8286070",
-        "screen_power_hand-PTH-drl_map.pdf": "cc2528520e77c50db98f2be4db3f9c465ffa18aa54ad1b2005c4498806ed6c06",
-        "screen_power_hand-PTH.drl": "ffb23f561c084ce427b1aebb951a43571694b4538d46fc38e2f5ac675a5e3dbe",
-        "screen_power_hand-job.gbrjob": "43ef8465f500cf799e35628b15162fc0eb0c7dc96447e8060396c96850015340"
+        "screen_power_hand-B_Cu.gbr": "339fe7d1127adc565ad1ff623e75a0bc97e8751d134c79b3284e8ffb55d0ba61",
+        "screen_power_hand-B_Mask.gbr": "4b5b480cb42b5d8aba44daedf67a2da54f0a0b4d7bf2125e7d603d738a50ff9c",
+        "screen_power_hand-B_Silkscreen.gbr": "604ec7b2c5976e4551b2e306e933679adcbc57d22bee95489f41bf1c1a24a5e5",
+        "screen_power_hand-Edge_Cuts.gbr": "30d9e42b7434501e85490d5204fe8fe2d17acdf296aedf5da58b2de7ff7fb5ec",
+        "screen_power_hand-F_Cu.gbr": "47840d8e3804cac59ccfc4f1a61816a455949e50151e699e4ee8b295da9edc2b",
+        "screen_power_hand-F_Mask.gbr": "663e5ce32505f0b5a723f462985ce2d4258d5f3c6698df5074688458c0766b6e",
+        "screen_power_hand-F_Silkscreen.gbr": "2b9185b4d03cab544987145a6b1e3bcb57399ce6b0686998a50af36d05abb7e8",
+        "screen_power_hand-NPTH-drl_map.pdf": "ecab631ffda5a627d6abab3346a758cd0668b834b9485e5b2b7c75d878d49d3a",
+        "screen_power_hand-NPTH.drl": "4eac9f455c2f661ffb3bdaf3c1978df79cd4cf189d0974709bbe8525bab10440",
+        "screen_power_hand-PTH-drl_map.pdf": "081b852ba7ee6441e72e511daa0c9ff0420b25d68a051066fff478e6f6a6fd86",
+        "screen_power_hand-PTH.drl": "b795a128b9eebd125e0b530f0afb8131eceee37e5de7b687f2c0832063b8ad7d",
+        "screen_power_hand-job.gbrjob": "5caa603f38a596d1d1f7652688288e2c2dc103a34faaaf5082b4a5c075eb683f"
       },
       "upload_name": "segno-screen-power-rev-l-gerbers.zip",
       "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
-      "board_sha256": "c06e6b35438b2fc7208cdc50feeebee92e6c01a56a00dadd280f697d1e49d79b",
+      "board_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
       "order": {
         "layers": 2,
         "material": "FR-4",
@@ -110,13 +110,13 @@
   },
   "verification": {
     "console_ring": {
-      "report": "docs/reviews/pcb-finish-all-three-1072/console-ring-fabrication-verification.json",
-      "sha256": "e18cf9a954a925c1c798e771bf1132d30bc45047c54e886d99bfa783d93f7119",
+      "report": "docs/reviews/screen-u2-alignment-1072/console-ring-fabrication-verification.json",
+      "sha256": "1aa76bcc9a5516a87cb657026377074f061f92ef73dc5dcad08dcf96ba8d1708",
       "checks_passed": 175
     },
     "screen": {
-      "report": "docs/reviews/pcb-finish-all-three-1072/screen-fabrication-verification.json",
-      "sha256": "2953ea67ad643c8498fa420107a45994ba3ae38cf743959b4ff557eeb9af1555",
+      "report": "docs/reviews/screen-u2-alignment-1072/screen-fabrication-verification.json",
+      "sha256": "c09d84da0b314aa630c2b086db0d5e0626dc0b63a7cb1bc2ee2a8e3343a7b69d",
       "checks_passed": 409
     }
   },

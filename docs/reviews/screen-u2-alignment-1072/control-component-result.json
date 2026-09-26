@@ -1,0 +1,21 @@
+{
+  "control_sink_track_pad_only_component_items": 106,
+  "control_sink_pads": [
+    [
+      "Q1",
+      "3"
+    ],
+    [
+      "R10",
+      "2"
+    ],
+    [
+      "R5",
+      "1"
+    ],
+    [
+      "U2",
+      "2"
+    ]
+  ]
+}

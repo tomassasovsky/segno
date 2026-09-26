@@ -11,6 +11,12 @@ Use the [current archive manifest](manufacturing-zips.json); older ZIPs are
 superseded. This does not qualify assembled operation or mark the whole PR
 review/CI gates complete.
 
+The later [U1/U2 alignment correction](../screen-u2-alignment-1072/verification.md)
+supersedes this checkpoint for the screen board only. The manifest above points
+to the aligned screen export and refreshed verification reports; console and
+ring artwork are unchanged. The screen hashes and geometry below describe the
+prior checkpoint.
+
 ## Audited baseline
 
 The starting repository revision was `2b45a6adb804044baebfe6ecb7b225ac98c97ded`.
