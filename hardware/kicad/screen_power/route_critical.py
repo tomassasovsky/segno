@@ -145,9 +145,10 @@ def route(variant):
     # AUX_5V feeds that buffer's emitter and pull-up as well, so it takes the
     # front half of the same crossing: down the column between the input stage
     # and the DIP, along the clear lane under Q1 and into the channel west of
-    # the plugs. A hundred microamps needs no more than signal copper.
+    # the plugs. Signal copper is ample for a low-current buffer supply.
     join(('C5','1'),('Q2','1'),
-         [(c5_1[0],28.5),(4.5,28.5),(3.5,29.5),(3.5,44.1)],CTRL,p.F_Cu)
+         [(c5_1[0],27.5),(c5_1[0]-1,28.5),(4.5,28.5),(3.5,29.5),
+          (3.5,44.1)],CTRL,p.F_Cu)
     # The front carries the 4.5mm shared trunk; main outputs use 2mm
     # bottom branches. Keep the narrower approaches local to closely spaced
     # device pins, then widen smoothly into the 3mm common-source bridge.
