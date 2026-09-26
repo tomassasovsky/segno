@@ -39,14 +39,26 @@ def place_components(variant, place, fps):
     place("C4", 22.22, 7.0, 270)
     place("D2", 22.09, 1.8, 180)
     # Both DIPs are anchored on pin 1 rather than their bounding-box centre,
-    # so route_critical.py works in pin coordinates: U1 pins 1-4 run east
-    # along y = 19 with pins 8-5 along y = 11.38, and C3 bridges pins 2/4
+    # so route_critical.py works in pin coordinates: pins 1-4 run east along
+    # y = 19.25 with the far row along y = 11.63, and C3 bridges U1 pins 2/4
     # symmetrically below the package.
-    place("U1", 14.6, 19.0, 90, centre=False)
+    # The two packages share those rows, so they read as one row of pins and
+    # one body line. Getting there is a split, not a move of one part: the
+    # coupler cannot rise the whole millimetre by itself, because its stock
+    # courtyard would then overlap Q4's by 0.110 mm (its top would reach
+    # y 10.335 against Q4's 10.445, over an x window of 25.755..29.665), and a
+    # courtyard overlap is a DRC error here, not a matter of taste. U1 cannot
+    # take the whole millimetre either: it has 0.385 mm to C3's can below it.
+    # So U1 comes down 0.25 and the coupler rises 0.75, which is within 3 um of
+    # the split that leaves both sides the most room (0.7525/0.2475 would even
+    # them at 0.1375 mm). Measured: U2 to Q4 0.140 mm, U1 to C3 0.1525 mm on the
+    # actual polygons, U1 to U2 0.350 mm, U1 to R1 0.310 mm, and every pump and
+    # reservoir leg either keeps its length or loses a quarter millimetre.
+    place("U1", 14.6, 19.25, 90, centre=False)
     place("C3", 19.68, 23.2)
-    # Optocoupler and its LED network, east of the pump: pins 1/2 along
-    # y = 20 and the negative-rail pins 4/3 along y = 12.38.
-    place("U2", 25.6, 20.0, 90, centre=False)
+    # Optocoupler and its LED network, east of the pump, on the same two rows:
+    # pins 1/2 along y = 19.25 and the negative-rail pins 4/3 along y = 11.63.
+    place("U2", 25.6, 19.25, 90, centre=False)
     place("R10", 28.89, 23.0)
     place("R9", 28.89, 26.6, 180)
     # GPIO input stage keeps its own bay between the two left-hand plugs.
@@ -85,7 +97,10 @@ def place_components(variant, place, fps):
     refs = {"R1": (2.84, 16.8), "R2": (2.75, 24.67), "Q1": (4.88, 25.21),
             "R3": (37.39, 4.9), "R4": (50.36, 5.0), "R8": (44, 75),
             "C5": (15.7, 6.1), "C4": (23.83, 10.44), "D2": (18.64, 3.99),
-            "U1": (17.94, 9.82), "C3": (20.29, 26.65), "U2": (30.77, 16.2),
+            # Both DIP designators follow their bodies: U1's down a quarter
+            # millimetre with the package, the coupler's up three quarters, so
+            # each stays level with the body it names.
+            "U1": (17.94, 10.07), "C3": (20.29, 26.65), "U2": (30.77, 15.45),
             "R10": (30.55, 20.62), "R9": (29.08, 28.79),
             "Q2": (4.58, 48.79), "R5": (10.27, 46.6), "R6": (14.27, 54.49),
             "R7": (27.27, 54.49),
