@@ -105,8 +105,8 @@ def route(variant):
         join((a_ref,a_pin),(b_ref,b_pin),
              [miter(at(a_ref,a_pin),at(b_ref,b_pin))],width,p.F_Cu)
     # Pump capacitor: symmetric legs from pins 2 and 4 to the 2mm terminals.
-    for pin,pad in (('2','1'),('4','2')):
-        bend('U1',pin,'C3',pad,SUPPLY)
+    for pin,cap_pin in (('2','1'),('4','2')):
+        bend('U1',pin,'C3',cap_pin,SUPPLY)
     # AUX bypass at pin 8 and the reservoir/clamp on pin 5's negative rail.
     for nodes in (('C5','1','U1','8'),('U1','5','C4','2'),('D2','2','C4','2')):
         bend(*nodes,SUPPLY)
