@@ -219,11 +219,10 @@ def route(variant):
             bends=[(f[0],f[1]+2),(f[0]+4,f[1]+6),(POWER_BUS_X,f[1]+6)] if offset==1 else [(POWER_BUS_X,f[1])]
             if ch==2 and offset==2:
                 # This feed climbs to the bus. It turns as late as the bus
-                # allows, landing its 45 degree rise exactly on the trunk's
-                # lower west corner: the bus keeps one contour along its whole
-                # length, and the diagonal stays a full millimetre off the
+                # allows, so the whole rise stays at 45 degrees, the bus keeps
+                # one contour along its length, and the diagonal clears the
                 # corner of J202's nearest terminal, which a turn further west
-                # would crowd. The rise equals the climb, so the corner is 45.
+                # would crowd.
                 # The turn also stops .75mm short of the gusset, which is more
                 # than the .62mm a 45 degree corner's outer flank reaches past
                 # its own vertex, so the flank cannot notch the bus edge.
