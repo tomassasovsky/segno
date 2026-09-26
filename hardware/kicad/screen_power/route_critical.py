@@ -112,7 +112,7 @@ def route(variant):
         for xy in points:
             v=point(*xy);poly.Append(v.x,v.y)
         board.Add(zone)
-    def blend(x,width,edge,turn=None,radius=.8,reach=.5):
+    def blend(x,width,edge,turn=None,radius=.8,reach=.5,overlap=.2):
         """Round both inside corners where a branch leaves a run at 90 degrees.
 
         A union of tracks is bounded by convex arcs and straight lines only, so
@@ -124,9 +124,17 @@ def route(variant):
         outline sits inside the run and the branch, where it adds no copper the
         eye can see, so the boundary runs from one edge into the other with no
         step and no sliver left between them.
+
+        Both closures overlap the copper they run into, and the branch side has
+        to: the wedge between an arc and its own tangent is thinner than the
+        fill's 0.05mm minimum for the last 0.28mm, so a tail that closed on the
+        branch edge exactly was opened away and left a notch short of tangency.
+        Closing `overlap` inside the branch instead keeps the outline at least
+        that thick all the way to the tangent point, where the branch track
+        carries the copper on.
         """
         for side in (-1,1):
-            e=x+side*width/2;centre=e+side*radius
+            e=x+side*width/2;centre=e+side*radius;inward=e-side*overlap
             if turn and side<0:
                 cx,cy,outer=turn
                 cy_f=cy+math.sqrt((outer+radius)**2-(centre-cx)**2)
@@ -135,12 +143,13 @@ def route(variant):
                 shape=[(e,cy_f),*quarter((centre,cy_f),(e,cy_f),far),
                        (far[0]+(cx-far[0])*reach/outer,
                         far[1]+(cy-far[1])*reach/outer),
-                       (e,cy_f-radius-reach)]
+                       (inward,cy_f-radius-reach),(inward,cy_f)]
             else:
                 shape=[(e,edge+radius),
                        *quarter((centre,edge+radius),(e,edge+radius),
                                 (centre,edge)),
-                       (centre,edge-reach),(e,edge-reach)]
+                       (centre,edge-reach),(inward,edge-reach),
+                       (inward,edge+radius)]
             region('AUX_5V',shape,p.F_Cu,name='POWER_FILLET')
     def pair(a,b,centre,breakout=False):
         # Mitered parallel offsets for the two-layer coupled microstrip.

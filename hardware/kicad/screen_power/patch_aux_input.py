@@ -26,9 +26,10 @@ HERE = Path(__file__).resolve().parent
 # patch a board once the generator's widths or tap positions have moved.
 AUX, CAP, FILM = 2., 1.5, .8
 CAP_TAP, FILM_TAP = 46.5, 50.
-BLEND, FILM_BLEND, REACH = .8, .7, .5
+BLEND, FILM_BLEND, REACH, OVERLAP = .8, .7, .5, .2
 CONTRACT = ('AUX=2.', 'CAP,FILM=1.5,.8', 'CAP_TAP,FILM_TAP=46.5,50.',
-            'def sweep(width):return width/2+1')
+            'def sweep(width):return width/2+1',
+            'reach=.5,overlap=.2', 'inward=e-side*overlap')
 # The input path's own corners, and the two branch polylines, as the generator
 # states them. Pad ends are filled in from the board.
 TRUNK_BENDS = ((55, 14), (52, 11), (45.5, 11), (44, 9.5))
@@ -104,6 +105,7 @@ def blend_outlines():
         for side in (-1, 1):
             e = x+side*width/2
             centre = e+side*radius
+            inward = e-side*OVERLAP
             if spec and side < 0:
                 cx, cy, outer = spec
                 cy_f = cy+math.sqrt((outer+radius)**2-(centre-cx)**2)
@@ -112,12 +114,13 @@ def blend_outlines():
                 out.append([(e, cy_f), *quarter((centre, cy_f), (e, cy_f), far),
                             (far[0]+(cx-far[0])*REACH/outer,
                              far[1]+(cy-far[1])*REACH/outer),
-                            (e, cy_f-radius-REACH)])
+                            (inward, cy_f-radius-REACH), (inward, cy_f)])
             else:
                 out.append([(e, edge+radius),
                             *quarter((centre, edge+radius), (e, edge+radius),
                                      (centre, edge)),
-                            (centre, edge-REACH), (e, edge-REACH)])
+                            (centre, edge-REACH), (inward, edge-REACH),
+                            (inward, edge+radius)])
     return out
 
 
@@ -185,10 +188,11 @@ def wire(a, b, width, uid=None):
             f'\t\t(uuid "{uid or uuid.uuid4()}")\n\t)\n')
 
 
-def fillet_zone(points):
+def fillet_zone(points, uid=None):
     body = ''.join(f'\t\t\t\t(xy {number(x)} {number(y)})\n' for x, y in points)
     return ('\t(zone\n\t\t(net "AUX_5V")\n\t\t(layer "F.Cu")\n'
-            f'\t\t(uuid "{uuid.uuid4()}")\n\t\t(name "POWER_FILLET")\n'
+            f'\t\t(uuid "{uid or uuid.uuid4()}")\n'
+            '\t\t(name "POWER_FILLET")\n'
             '\t\t(locked yes)\n\t\t(hatch edge 0.5)\n\t\t(priority 20)\n'
             '\t\t(connect_pads yes\n\t\t\t(clearance 0.2)\n\t\t)\n'
             '\t\t(min_thickness 0.05)\n\t\t(fill yes\n'
@@ -249,14 +253,61 @@ def patch(path, dry_run=False):
           + (' (dry run)' if dry_run else ''))
 
 
+def patch_fillets(path, dry_run=False):
+    """Restate only the four blend overlays on an already-patched board.
+
+    For a board the full patch has already run on: the tracks, the tap
+    positions and the exposed arcs are unchanged, so each overlay is matched by
+    its own first corner - the point where its arc meets the branch edge - and
+    rewritten with the closure that overlaps the branch. Nothing else in the
+    file is read or written, and the cached fill goes with the old outline, so
+    KiCad pours these afresh.
+    """
+    text = path.read_text()
+    stale = [s for s in segments(text) for width, a, b in OLD
+             if s[1] == width and s[4] == 'F.Cu' and s[5] == 'AUX_5V'
+             and ((same(s[2], a) and same(s[3], b))
+                  or (same(s[2], b) and same(s[3], a)))]
+    if stale:
+        raise SystemExit(f'{path.name}: still carries {len(stale)} of the old '
+                         'AUX segments - run the full patch, not --fillets-only')
+    found = [z for z in zones(text)
+             if z[1] == 'POWER_FILLET' and z[3] == 'AUX_5V' and z[2] == 'F.Cu']
+    if len(found) != 4:
+        raise SystemExit(f'{path.name}: expected four AUX blend overlays, '
+                         f'found {len(found)}')
+    wanted = blend_outlines()
+    edits = []
+    for span, _name, _layer, _net, points in found:
+        match = [shape for shape in wanted if same(shape[0], points[0])]
+        if len(match) != 1:
+            raise SystemExit(f'{path.name}: no single blend outline starts at '
+                             f'{points[0]}')
+        uid = re.search(r'\t\t\(uuid "([^"]+)"\)', text[span[0]:span[1]])
+        edits.append((span, fillet_zone(match[0], uid.group(1))))
+        wanted.remove(match[0])
+    for span, block in sorted(edits, reverse=True):
+        text = text[:span[0]] + block + text[span[1]:]
+    if not dry_run:
+        path.write_text(text)
+    print(f'{path.name}: restated {len(edits)} blend overlays'
+          + (' (dry run)' if dry_run else ''))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('boards', nargs='+', type=Path)
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--fillets-only', action='store_true',
+                        help='restate the four blend overlays on a board the '
+                             'full patch has already run on')
     args = parser.parse_args()
     check_source()
     for board in args.boards:
-        patch(board, args.dry_run)
+        if args.fillets_only:
+            patch_fillets(board, args.dry_run)
+        else:
+            patch(board, args.dry_run)
 
 
 if __name__ == '__main__':
