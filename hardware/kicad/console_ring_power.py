@@ -32,10 +32,17 @@ BACK_PATH = (
     (139.0, 147.5), (141.8, 144.7), CENTER,
 )
 FRONT_PATH = (CENTER, (141.8, 134.0), (146.8, 129.0), (148.75, 129.0))
-# One corner keeps its mitre: the run passes the indicator-data track 0.22 mm
-# to its east there, and an arc of any useful radius swings the centreline
-# into that clearance (a 45 degree bend moves it 0.082 mm per mm of radius).
-SQUARE = {(102.27, 137.27)}
+# Every corner on this run is rounded. The one at (102.27, 137.27) was kept
+# square on the argument that the indicator-data track passes 0.22 mm to its
+# east and a 45 degree bend swings the centreline 0.082 mm into that clearance
+# per millimetre of radius. That arithmetic is right and the conclusion was
+# wrong: it assumed the data track runs straight past the corner, and it does
+# not - it turns east at y 136.4798, 0.024 mm before the arc even starts. The
+# arc curves away from it. Measured against that track on the routed board, the
+# arc holds 0.2220 mm, which is the same 0.2220 mm the mitre held, at the same
+# point - the tangent point where the two geometries still coincide. The
+# vertical leg above it is the tighter place at 0.2218 mm, and rounding the
+# corner does not touch it.
 VIA_CENTERS = tuple(
     (CENTER[0] + dx, CENTER[1] + dy)
     for dx in (-0.55, 0.55) for dy in (-0.55, 0.55)
@@ -104,9 +111,6 @@ def _rounded(points, radius=BEND):
     out = [points[0]]
     last = len(points) - 3
     for i, corner in enumerate(points[1:-1]):
-        if corner in SQUARE:
-            out.append(corner)
-            continue
         before, after = points[i], points[i + 2]
         v1 = (before[0] - corner[0], before[1] - corner[1])
         v2 = (after[0] - corner[0], after[1] - corner[1])
