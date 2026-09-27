@@ -78,8 +78,13 @@ feed the screens. An electrically unpowered Pi therefore defaults the board
 off even if the dedicated screen buck remains powered.
 
 A software-halted Pi that still has input power must explicitly release or
-lower GPIO17. Do not leave that input with a pull-up enabled; an internal Pi
-pull-up can overcome the board's external pull-down. The board follows this signal; it does not detect Linux shutdown
+lower GPIO17. R2 is 4.7 kΩ, 1%, to shunt weak pull-ups on a released signal.
+The assessed weak-source case is at most 3.63 V through at least 50 kΩ:
+Including resistor tolerances and a 1 µA injected-leakage allowance, Q1's
+unloaded base stays below 0.314 V, within the 0.35 V base-bias design budget.
+This is a design envelope, not a guaranteed RP1 pull-resistor specification;
+leave the internal pull disabled. An actively driven high still enables the
+board. The board follows this signal; it does not detect Linux shutdown
 or missing HDMI. The appliance now includes a dedicated GPIO owner and Weston
 start/stop hooks: enable before display probing, then drive low before stopping
 HDMI. Its five-second discharge wait is provisional until measured on both

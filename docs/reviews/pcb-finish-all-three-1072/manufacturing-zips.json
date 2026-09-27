@@ -1,127 +1,115 @@
 {
-  "date": "2026-09-26",
-  "status": "bare-board-review-clean",
-  "purpose": "Completed repeat circuit, native PCB and manufacturing-file review; exact encoder and UART corrections independently checked. Assembled operation and full CI remain separate gates.",
-  "baseline_revision": "368b9bd72589e12853ea7d47595351f67c843452",
   "archives": {
     "console-v3": {
-      "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
-      "sha256": "919667b6141639590da8dd36319b236e5c434c4d8f2f3799644374e81da97fc3",
-      "members_checked": 12,
-      "members": {
-        "segno_console_board-B_Cu.gbr": "1e0b3002a59f2695f330b177ca800d476cbf8d2b73c6a85632ac48ba9c37f2e4",
-        "segno_console_board-B_Mask.gbr": "8d7e9568c9ff5b9bc4abbd058162ea83120a5f34d0a5fd1490d8a79ccffcc8a1",
-        "segno_console_board-B_Paste.gbr": "82bfbe4bc11e44e49031c5704662b11043dd174ab2d8c68b7a9423d07d9a96fd",
-        "segno_console_board-B_Silkscreen.gbr": "cf3e4ba6258666653676bfccb4f5468dd927463a68cfdb4dcdf4000eb099b632",
-        "segno_console_board-Edge_Cuts.gbr": "bc3a31c6c17aa922129dfa9e58d3bd13ef4d9be0c56f901539e0c0e68e8c5a7e",
-        "segno_console_board-F_Cu.gbr": "06da98fe833d3c3d5a278465307685f54eb44126c9487801b776b786f6896f83",
-        "segno_console_board-F_Mask.gbr": "5ff7b31e389c8e8cbe161f84c740d8d7b0ebb5759dd83f7e02efed0c20a0960a",
-        "segno_console_board-F_Paste.gbr": "39f323671715f19c77e82700bd8998ab8acf98ab9363fa111cdd433f1d58ebdb",
-        "segno_console_board-F_Silkscreen.gbr": "c01ccc064f9b2dbefb3ad4a553845b68fd2854ec99caa75f537542bb782a6b70",
-        "segno_console_board-NPTH.drl": "c5620df80411e6abb9eaadccd2d17ef7c384940849413d3d235878fc244d3329",
-        "segno_console_board-PTH.drl": "1b63e5b40ce67f2df2d32b369768bd236a96ddc9afefbec835e31b9c46d76179",
-        "segno_console_board-job.gbrjob": "4790dabba49ff294c471f3d452d763c17ccae95d4f9aaa7c3b586891448f5cef"
-      },
-      "upload_name": "segno-console-v3-gerbers.zip",
+      "assembly_change": "R18 remains 6.8 kOhm 1%; R11/R12 use +3V3_PICO; CTRL connector pin 4 uses the NJ6FD-V ring-normal contact.",
       "board": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
-      "board_sha256": "8bf99b025248c1e5fc704610dbdd14410f5089645d7e03e61a2e03418c295082",
+      "board_sha256": "c23df586f211bb439081ca951dd23dc54ba21f6d89eb3d373bd6f196749f326d",
+      "members": {
+        "segno_console_board-B_Cu.gbr": "196b59eb67ea9d67a677488b28015bf7883c1975b35b78a97afcf92cd6f11c76",
+        "segno_console_board-B_Mask.gbr": "d5404c6e45a513a15f4a4752ab70234b3adc84dd5e864d8455c855fabef018b8",
+        "segno_console_board-B_Paste.gbr": "3cbbb69569c4ef3fb32c5501865c30274f9895b2c534a745d647eef6f53792eb",
+        "segno_console_board-B_Silkscreen.gbr": "44291e6cc72c27a8b9b34a36ae266c0040d5d63e57b9dc65bf262cb4c4af0207",
+        "segno_console_board-Edge_Cuts.gbr": "e0cb4e4980423cbf6d16fe4495281ab9936653ec3246954588d89ec3e2d930f3",
+        "segno_console_board-F_Cu.gbr": "3785af0f804924fa4f214ef2d528bce66552c549f25625d138a3356fb107acdd",
+        "segno_console_board-F_Mask.gbr": "76944e58c0cfc3069660e1597420f8ac1814ac2304d0082070b113f01c296cd9",
+        "segno_console_board-F_Paste.gbr": "19ab467d65173d346d1f1fbad524afb7d2b31a44cb08a204465a76d150f4f5c2",
+        "segno_console_board-F_Silkscreen.gbr": "809675c695d7b5ee2737a9165852750e2572472b26721a78b202836e7f619437",
+        "segno_console_board-NPTH.drl": "727e9ffb4bb792398b14f81c1789b9aabce468459ab2927f117117e2fa7f6ffd",
+        "segno_console_board-PTH.drl": "e1b8ecca2a911864b27bdec0a32327c796ceb53715c3adce973291232c32d8a0",
+        "segno_console_board-job.gbrjob": "cc860d0662c68189f20b81b53f0a37bff28e2d40d700a48fb47235f8837ae960"
+      },
+      "members_checked": 12,
       "order": {
+        "assembly": false,
+        "copper_oz": 1,
+        "finish": "Lead-free HASL",
         "layers": 2,
         "material": "FR-4",
-        "thickness_mm": 1.6,
-        "copper_oz": 1,
-        "solder_mask": "Purple",
-        "silkscreen": "White",
-        "finish": "Lead-free HASL",
         "quantity": 5,
-        "assembly": false,
+        "silkscreen": "White",
+        "solder_mask": "Purple",
         "stencil": false,
+        "thickness_mm": 1.6,
         "vias": "tented"
       },
-      "assembly_change": "R18 is 6.8 kOhm 1%; copper and manufacturing ZIP unchanged."
+      "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
+      "sha256": "1f50cfc2816fdb3cab0fbaef07b91aad07ee06584f8dac8437a2431869465383",
+      "upload_name": "segno-console-v3-gerbers.zip"
     },
     "ring-white": {
-      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
-      "sha256": "d5cad80522c7a80d797470d423e96bfb97473849b6e237a3c56789f99e28a4f4",
-      "members_checked": 10,
-      "members": {
-        "segno_pedal_ring-B_Cu.gbr": "94f7d5d3f0e45d1b0101785caa13c9e945b7fc2faa86fecdfc8b41a5c306a88c",
-        "segno_pedal_ring-B_Mask.gbr": "582a6848c3279dba60fab8b36f6f22f2b3962eb3ae9b1683cf64d6e60747a83c",
-        "segno_pedal_ring-B_Silkscreen.gbr": "5154880e8124a487b15c40122a5456f1844fd60b514cc2a75603f17d8f1425d4",
-        "segno_pedal_ring-Edge_Cuts.gbr": "c0d1d43d5248ec19f2a89cca6f079f3e40efffa097513dafff09b3c4013f4fcb",
-        "segno_pedal_ring-F_Cu.gbr": "a558d6af1830505aef461e99552607b723673acaa087f33bfd51b4945162faf8",
-        "segno_pedal_ring-F_Mask.gbr": "7f2c4101e5d65279a91287a21acfd9ff0b54c75ce160526c1df4143f95736e6b",
-        "segno_pedal_ring-F_Silkscreen.gbr": "47d596fb7de06291db9d841c8b60a643e46b221a0ba23f5df596500511991039",
-        "segno_pedal_ring-NPTH.drl": "e9f86bf7b65ef311a870143b53318e816a04916c7c61d770fd21cfe21841d0c5",
-        "segno_pedal_ring-PTH.drl": "fa7daa7dcb534c19491831cb6b818f63c802f54171b2b33881834d8f719d808d",
-        "segno_pedal_ring-job.gbrjob": "8c7a73132b3a8aaefab1eddc8f9315a013d6eaf94984361aa15bb347b609b708"
-      },
-      "upload_name": "segno-ring-white-gerbers.zip",
+      "assembly_change": "Encoder C2/C3/C4 use 10 nF; selected strip input reservoir and AUX star harness follow RING_ASSEMBLY.md.",
       "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
-      "board_sha256": "e6e1d1bcda4258391ed43a441f9bf8231839abab3b1551660f1b817472f8f62b",
+      "board_sha256": "2a2d139d824a981edb4f455533b4d57a190f456496606b1f80d9dc52b9c097cb",
+      "encoder": "Same Sky ACZ11BR1E-20FD1-20C; separately sourced M7x0.75 SJ5-43502PM-nut; no washer in the 2 mm disc clamp.",
+      "members": {
+        "segno_pedal_ring-B_Cu.gbr": "2d76711915b108662a244da7a01ce2806e394e0b7d955e69d5f6c570271cf6ad",
+        "segno_pedal_ring-B_Mask.gbr": "a7d428833221999d2f384fe243e64a616cb589181f5ae9509652f433c68fae9c",
+        "segno_pedal_ring-B_Silkscreen.gbr": "84c2457585cb25d90e7c8e34b7b71a7e4eba431d9569e10a83064d6eb0b9c596",
+        "segno_pedal_ring-Edge_Cuts.gbr": "fc6a1f66f4a6af956e2a1dd09e67cc1f3fd32f7963d86c09526a2506e183f50d",
+        "segno_pedal_ring-F_Cu.gbr": "69d60742acb36822c7f4e7f2763f72762f813f96acff4ef8946c74b9d57e41a3",
+        "segno_pedal_ring-F_Mask.gbr": "31f28f124900d481fc7d0d67803dcaf5853e850124d046f2880cd4018dd6bd4b",
+        "segno_pedal_ring-F_Silkscreen.gbr": "4795cdf48d42d58035d5b311bc50731603d433c73f20abf6b7b80007b0b7f420",
+        "segno_pedal_ring-NPTH.drl": "baa692b1882e078b8d5a2cdf0512f72b31969f42ba16564f359d5f4f60fa345d",
+        "segno_pedal_ring-PTH.drl": "49a091d0f4c8367f3178f8e51ffa25acae6aca376400abcc327cee4d6cdc2117",
+        "segno_pedal_ring-job.gbrjob": "f2489dbb010a8114ff52b8e91ffc58264c7192756dbf017f83ba28407f3b155e"
+      },
+      "members_checked": 10,
       "order": {
+        "assembly": false,
+        "copper_oz": 1,
+        "finish": "Lead-free HASL",
         "layers": 2,
         "material": "FR-4",
-        "thickness_mm": 1.6,
-        "copper_oz": 1,
-        "solder_mask": "White",
-        "silkscreen": "Black",
-        "finish": "Lead-free HASL",
         "quantity": 5,
-        "assembly": false,
+        "silkscreen": "Black",
+        "solder_mask": "White",
         "stencil": false,
+        "thickness_mm": 1.6,
         "vias": "tented"
       },
-      "encoder": "Same Sky ACZ11BR1E-20FD1-20C; separately sourced M7x0.75 SJ5-43502PM-nut; no washer in the 2 mm disc clamp."
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "sha256": "b7486b4a8139de9c070c85f095e1710997a0f2e3d6e0fc3174d36d129b250759",
+      "upload_name": "segno-ring-white-gerbers.zip"
     },
     "screen-power-rev-m": {
-      "path": "hardware/kicad/fab/segno_screen_power_rev_m_gerbers.zip",
-      "sha256": "25a35f9a546fe6235a9641b1259ac763a74c6c09e31af1ee345e11c711cc7af6",
-      "members_checked": 12,
-      "members": {
-        "screen_power_hand-B_Cu.gbr": "f05c4d21b9570c78d82bfc086e5d14fa40940999f58bd38b68409deac2babcfc",
-        "screen_power_hand-B_Mask.gbr": "de4002d6771b692d17b988be11fef0e6ab2f8cd2e5efa392c9be32d962f0e570",
-        "screen_power_hand-B_Silkscreen.gbr": "4cc9ac3bf83e2805b9e2364f25b3135bd6a58e26a5de04c2a909210fcdce4fc4",
-        "screen_power_hand-Edge_Cuts.gbr": "05ae6671e770e9af2452f2dcd0eb65007b63a92f033574e3a98423109e0fec0b",
-        "screen_power_hand-F_Cu.gbr": "9596a0b88cd95b83aec7e3303c8a4b9cbbfb83147782c8937afcd7a041330d6f",
-        "screen_power_hand-F_Mask.gbr": "13a923f147863b88021a58324c8f693c51469aeaf750a9fe339a3c5f2910394e",
-        "screen_power_hand-F_Silkscreen.gbr": "af842c10ad80c3787ef4c1d9d5836774ce23613c2854d8c5648e1d9419bb45d3",
-        "screen_power_hand-NPTH-drl_map.pdf": "34c8588bce08a69695bfc7ba3c1fd7633a3ac9dbcccee291f767b898c87f7f1d",
-        "screen_power_hand-NPTH.drl": "cc9e38a21bf96e7f445fd542de2699fbb3165c5cb0862d90ca67770f53b6494a",
-        "screen_power_hand-PTH-drl_map.pdf": "4568ba385cc5ef7516320970471e9da5bb7e4911d3be75f5d312fd4bc43a2a05",
-        "screen_power_hand-PTH.drl": "7fdfed2d88c19854805e053fece51262e1bcc9dfd16f2295cb80330b8bfb6050",
-        "screen_power_hand-job.gbrjob": "9d731ab0c2c4518bb840abf2e6b290445a9159a9fb8650bcc52c802070cf47f2"
-      },
-      "upload_name": "segno-screen-power-rev-m-gerbers.zip",
+      "assembly_change": "R2 is 4.7 kOhm 1%; follow the assessed GPIO drive conditions and wiring in the screen BOM and README.",
       "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
-      "board_sha256": "8a467b1c6a881cbf7dd117d38366cfda466f1a51c64553296cc374b4ca52cb27",
+      "board_sha256": "28959e56ab6ce29fb26532883fc9604daacedd37c85e59271ccd54fc5a53a36e",
+      "members": {
+        "screen_power_hand-B_Cu.gbr": "90d6af3a8b8995103574be46eedc9b4c63ebe19edc4cff668c745084ddd1dffe",
+        "screen_power_hand-B_Mask.gbr": "3f7490db7f8a80f82bba7b2fe73f1ec200f8d77805239e3cd9f61a03174cb496",
+        "screen_power_hand-B_Silkscreen.gbr": "0a1c5f7db62d3ff0ddc277584f3426301a5b504710603d233dbc8531777dd03e",
+        "screen_power_hand-Edge_Cuts.gbr": "4ad49f85aed69116f6d5782be0a76aa362d9ce8622423ae3147f42900e8ddcd0",
+        "screen_power_hand-F_Cu.gbr": "bdb2a4cc6302237cba2d67766f8521b1fa49ac7ff3fb2c99449bb69f14cab4e7",
+        "screen_power_hand-F_Mask.gbr": "94fc03aaf5c95c6ec3c3edd21a6dad1c35c8820d5941088ff31c1ba4bedfeb9f",
+        "screen_power_hand-F_Silkscreen.gbr": "44f9067fb70578262fcad20ee60d8bc41a7e2693f7ee729216e7ee5700bfc403",
+        "screen_power_hand-NPTH-drl_map.pdf": "0c96bdf8288951543e7287fa20ece83123060396df647925a205cdf7c19f3c08",
+        "screen_power_hand-NPTH.drl": "5f6700b4e48d443c33ff2492565643db1041781f41b3cc593dc95de041cf4656",
+        "screen_power_hand-PTH-drl_map.pdf": "1e5c8a2e075a7e106604cdebb8ed28e95a0b965219656bc6b4c26a8c422d9e54",
+        "screen_power_hand-PTH.drl": "80397c6da43e3fbbc32e61461100ed0d483479147c6b51e7bbf867964f235ac2",
+        "screen_power_hand-job.gbrjob": "88b254f7f7f7c6e6a1892293131455b8a45d56d32c04fd54b384140016db5dba"
+      },
+      "members_checked": 12,
       "order": {
+        "assembly": false,
+        "copper_oz": 1,
+        "finish": "ENIG",
         "layers": 2,
         "material": "FR-4",
-        "thickness_mm": 1.6,
-        "copper_oz": 1,
-        "solder_mask": "Purple",
-        "silkscreen": "White",
-        "finish": "ENIG",
         "quantity": 5,
-        "assembly": false,
+        "silkscreen": "White",
+        "solder_mask": "Purple",
         "stencil": false,
+        "thickness_mm": 1.6,
         "vias": "tented"
-      }
+      },
+      "path": "hardware/kicad/fab/segno_screen_power_rev_m_gerbers.zip",
+      "sha256": "544bb5dde53a130dcc040bcbf5a4f62e5cfed521597e8a88601a2bf631741e2f",
+      "upload_name": "segno-screen-power-rev-m-gerbers.zip"
     }
   },
-  "verification": {
-    "console_ring": {
-      "report": "docs/code-review/pcb-final-repeat-1072/console-ring-fabrication-verification.json",
-      "sha256": "d88cfc867bb784431254f1599ee288b758aee218df7c1f51b90221b8e3d3594a",
-      "checks_passed": 175
-    },
-    "screen": {
-      "report": "docs/code-review/pcb-final-repeat-1072/screen-fabrication-verification.json",
-      "sha256": "2aec8c004890ca4031882316f400c8ca64449f73572b4fe620c262e98d2939d2",
-      "checks_passed": 412
-    }
-  },
+  "baseline_revision": "a1ff9d6d491c09f6e7f3c8b818440eb5c0493b7e",
+  "date": "2026-09-27",
   "limits": [
     "The former ring ZIP at the baseline revision is withdrawn. Only the exact Same Sky encoder matches the current ring fabrication files.",
     "Revision L screen ZIP remains withdrawn. Use the screen-power-rev-m archive in this record.",
@@ -130,25 +118,68 @@
     "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
     "No order, merge or device deployment performed."
   ],
-  "withdrawn_archives": {
-    "screen-power-rev-l": {
-      "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
-      "sha256": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84",
-      "status": "withdrawn-host-powered-relay-suspend-current",
-      "reason": "Host-powered relay coils exceed USB suspend-current allowance; superseded by Revision M."
+  "purpose": "Verified native/CAM package after Claude follow-up corrections. Review acceptance is explicit; assembled operation and CI are separate gates.",
+  "review": "docs/code-review/pcb-claude-followup-1072/review.md",
+  "runtime": {
+    "deployment": "not performed",
+    "pull_request": 1082,
+    "revision": "53828fc4eae1c18af45abfc3ea7c31f19f9799d7"
+  },
+  "status": "bare-board-review-clean",
+  "verification": {
+    "console_ring": {
+      "checks_passed": 175,
+      "report": "docs/code-review/pcb-claude-followup-1072/console-ring-fabrication-verification.json",
+      "sha256": "a527fe870e29e078df589dc7952d09c10ecca1126ab168e6800cb50b389c9ecd"
     },
-    "ring-alps-footprint-2026-09-26": {
-      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
-      "historical_revision": "368b9bd72589e12853ea7d47595351f67c843452",
-      "sha256": "7b0dd11efc0ab1f2c2f3a28a0a1bb6367d692171ad4136ea9fae49bcabc5a413",
-      "status": "withdrawn-encoder-footprint-mismatch",
-      "reason": "The ALPS BOM part did not fit the generic footprint and lacked the required threaded bushing. Replaced by the exact Same Sky part and new encoder footprint."
+    "screen": {
+      "checks_passed": 412,
+      "report": "docs/code-review/pcb-claude-followup-1072/screen-fabrication-verification.json",
+      "sha256": "fa646552dd41c3c1d2461c567d416bbe5d7e8b4b24168d5cfc6381a949276fe0"
+    },
+    "screen_native": {
+      "report": "docs/code-review/pcb-claude-followup-1072/screen-native-validation.json",
+      "self_test_checks_passed": 77,
+      "sha256": "9f198f3c295ae15afdd40fdced84a924326c426fcaa350770777412d84fcbb5a"
     }
   },
-  "runtime": {
-    "pull_request": 1082,
-    "revision": "dd46ab0d1a44bc55c7f42bc7db7992773c7a4113",
-    "deployment": "not performed"
-  },
-  "review": "docs/code-review/pcb-final-repeat-1072/review.md"
+  "withdrawn_archives": {
+    "console-v3-2026-09-26": {
+      "board_sha256": "8bf99b025248c1e5fc704610dbdd14410f5089645d7e03e61a2e03418c295082",
+      "historical_revision": "a1ff9d6d491c09f6e7f3c8b818440eb5c0493b7e",
+      "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
+      "reason": "Superseded by the native, assembly and export identities in the current follow-up review.",
+      "sha256": "919667b6141639590da8dd36319b236e5c434c4d8f2f3799644374e81da97fc3",
+      "status": "superseded-2026-09-27-followup"
+    },
+    "ring-alps-footprint-2026-09-26": {
+      "historical_revision": "368b9bd72589e12853ea7d47595351f67c843452",
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "reason": "The ALPS BOM part did not fit the generic footprint and lacked the required threaded bushing. Replaced by the exact Same Sky part and new encoder footprint.",
+      "sha256": "7b0dd11efc0ab1f2c2f3a28a0a1bb6367d692171ad4136ea9fae49bcabc5a413",
+      "status": "withdrawn-encoder-footprint-mismatch"
+    },
+    "ring-white-2026-09-26": {
+      "board_sha256": "e6e1d1bcda4258391ed43a441f9bf8231839abab3b1551660f1b817472f8f62b",
+      "historical_revision": "a1ff9d6d491c09f6e7f3c8b818440eb5c0493b7e",
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "reason": "Superseded by the native, assembly and export identities in the current follow-up review.",
+      "sha256": "d5cad80522c7a80d797470d423e96bfb97473849b6e237a3c56789f99e28a4f4",
+      "status": "superseded-2026-09-27-followup"
+    },
+    "screen-power-rev-l": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
+      "reason": "Host-powered relay coils exceed USB suspend-current allowance; superseded by Revision M.",
+      "sha256": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84",
+      "status": "withdrawn-host-powered-relay-suspend-current"
+    },
+    "screen-power-rev-m-2026-09-26": {
+      "board_sha256": "8a467b1c6a881cbf7dd117d38366cfda466f1a51c64553296cc374b4ca52cb27",
+      "historical_revision": "a1ff9d6d491c09f6e7f3c8b818440eb5c0493b7e",
+      "path": "hardware/kicad/fab/segno_screen_power_rev_m_gerbers.zip",
+      "reason": "Superseded by the native, assembly and export identities in the current follow-up review.",
+      "sha256": "25a35f9a546fe6235a9641b1259ac763a74c6c09e31af1ee345e11c711cc7af6",
+      "status": "superseded-2026-09-27-followup"
+    }
+  }
 }

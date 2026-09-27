@@ -7,7 +7,7 @@ the shaft location and M7 threaded-bushing mount are fixed by the enclosure.
 J3/J4 remain mutually exclusive alternatives for 24/16-LED purchased modules.
 
 The XIAO drives the LED data locally through a 5 V AHCT buffer and reads the
-encoder through 10k / 100nF filters. Only its fourteen castellated side pads are
+encoder through 10k / 10nF filters. Only its fourteen castellated side pads are
 soldered; its rear pads stay isolated. USB faces the clear east board rim.
 
 For the selected strip, the near-ring AUX split separately supplies strip power
@@ -284,17 +284,19 @@ enc["C"] += gnd
 enc["S1"] += encSW
 enc["S2"] += gnd
 
-# 10k to the XIAO's OWN 3V3_OUT, plus 100nF: RC = 1 ms, which is the timing the
-# board has always had. Same Sky specifies no minimum contact current and
-# illustrates 10k pull-ups; its 20C detents are both contacts open (logic 11).
+# 10k to the XIAO's OWN 3V3_OUT, plus 10nF: nominal RC = 0.1 ms. The shorter
+# release delay preserves the high-high detent when the knob is turned quickly.
+# Same Sky illustrates 10nF in its optional two-resistor filter; this local
+# one-resistor circuit uses firmware quadrature cancellation for contact bounce.
+# Exact THT capacitor and tolerance calculation: RING_ENCODER.md.
 # Runtime also enables internal pull-ups; they are in parallel with these
-# external resistors, so the effective release RC is slightly less than 1 ms.
+# external resistors, so the effective release RC is less than 0.1 ms.
 R("10k", "R2")[1, 2] += v3v3, encA
 R("10k", "R3")[1, 2] += v3v3, encB
 R("10k", "R4")[1, 2] += v3v3, encSW
-C("100nF", "C2")[1, 2] += encA, gnd
-C("100nF", "C3")[1, 2] += encB, gnd
-C("100nF", "C4")[1, 2] += encSW, gnd
+C("10nF", "C2")[1, 2] += encA, gnd
+C("10nF", "C3")[1, 2] += encB, gnd
+C("10nF", "C4")[1, 2] += encSW, gnd
 
 # The push-pull SerialPIO UART has its idle pull-ups only on the console.
 # Both controllers share AUX and the documented near-ring ground reference;
@@ -392,6 +394,14 @@ def _check():
         "not driving D0 the AHCT125's input floats and the ring latches random "
         "colours (console_board.py's R16 is the same fix on IND_DATA)")
 
+    # Preserve the encoder release bandwidth and keep filtering local to GND.
+    # This catches restoring the old 100nF parts or wiring a filter across rails.
+    for ref, signal in (("C2", "ENC_A"), ("C3", "ENC_B"), ("C4", "ENC_SW")):
+        cap = next(p for p in default_circuit.parts if p.ref == ref)
+        assert cap.value == "10nF", f"ENC_FILTER: {ref} exceeds selected release delay"
+        assert {n.name for pin in cap.pins for n in pin.nets} == {signal, "GND"}, (
+            f"ENC_FILTER: {ref} must filter {signal} to GND")
+
     # REFS runs LAST on purpose. It is the broadest assertion here, so ahead of
     # the others it fires first for every control that adds a part and masks the
     # gate that control exists to prove -- --selftest reported exactly that
@@ -449,6 +459,13 @@ def _selftest():
         r[1, 2] += v3v3, gnd
         added.append(r)
 
+    def _slow_filter():
+        next(p for p in default_circuit.parts if p.ref == "C2").value = "100nF"
+
+    def _miswired_filter():
+        cap = next(p for p in default_circuit.parts if p.ref == "C3")
+        cap[2].disconnect(); cap[2] += encA
+
     def _undo():
         for r in added:
             if isinstance(r, tuple):     # a disconnected design part: put it back
@@ -463,6 +480,9 @@ def _selftest():
             d["A"] += v5; d["K"] += v5_mcu
         if XIAO[5].nets:
             XIAO[5].disconnect()
+        next(p for p in default_circuit.parts if p.ref == "C2").value = "10nF"
+        cap = next(p for p in default_circuit.parts if p.ref == "C3")
+        cap[2].disconnect(); cap[2] += gnd
 
     cases = [
         ("ring board pulls a XIAO logic pad to 5 V", "XIAO_LEVELS:", _pullup_5v),
@@ -471,6 +491,8 @@ def _selftest():
         ("an ERC-exempt pad quietly wired",          "XIAO_PADS:",   _exempt_live_pad),
         ("the LED buffer input left floating",       "RING_DATA_IDLE:", _no_idle_pulldown),
         ("a part declared without a pinned ref",      "REFS:",        _unpinned_part),
+        ("old 100nF encoder filter restored",          "ENC_FILTER:",  _slow_filter),
+        ("encoder filter tied to the other phase",    "ENC_FILTER:",  _miswired_filter),
     ]
     ok = True
     for name, want, mutate in cases:

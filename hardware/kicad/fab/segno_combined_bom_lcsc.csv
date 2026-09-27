@@ -1,5 +1,6 @@
 LCSC,Comment,Value,Package,Qty,Designator,Notes
-,Ceramic capacitor,100nF,C_Disc_D5.0mm_P5.00mm (THT),4,"RING:C2,C3,C4,C5","C2-C4 are the encoder filters, C5 decouples U2. Any in-stock 100nF 50V THT disc or 5mm-pitch MLCC"
+,Ceramic capacitor,10nF 50V X7R +/-10%,C_Disc_D5.0mm_P5.00mm (THT),3,"RING:C2,C3,C4","Vishay K103K10X7RF53H5: 5mm pitch, 3.6x2.3mm body, 0.5mm leads; encoder release filters. See RING_ENCODER.md."
+,Ceramic capacitor,100nF,C_Disc_D5.0mm_P5.00mm (THT),1,RING:C5,U2 supply decoupling only; do not substitute the 10nF encoder-filter value.
 ,Electrolytic,470uF 16V low-ESR <=0.15R,CP_Radial_D8.0mm_P3.50mm,1,RING:C1,Low-ESR grade (e.g. Panasonic FC / Nichicon PW) -- GP parts in the same can run ~0.5R and ripple the LED rail
 ,Resistor,330R,Axial 1/4W DIN0207,1,RING:R1,WS2812 data series resistor. Any in-stock 1/4W axial
 ,Resistor,10k,Axial 1/4W DIN0207,3,"RING:R2,R3,R4",Encoder pull-ups to the XIAO's 3V3_OUT. Any in-stock 1/4W axial
@@ -11,3 +12,4 @@ C354152,74AHCT125N,74AHCT125N,DIP-14,1,RING:U2,TI SN74AHCT125N quad buffer (3V3 
 ,Encoder mounting nut,SJ5-43502PM-nut,M7x0.75 2.0mm thick 10mm AF,1,RING:ENC1 hardware,Same Sky separately sourced; clamp 2mm disc without washer; exact drawing and stack in RING_ENCODER.md
 C144395,JST B4B-XH-A,4P 2.5mm,JST_XH vertical,1,RING:J1,Selected 40-strip harness: pins 1/2 to near-ring AUX split via own 50 mm 22 AWG pair; pins 3/4 to console J6 pins 3/4; console J6 cavities 1/2 empty. Buy XHP-4 housings and SXH-001T-P0.6 contacts.
 ,External WS2812B strip,40 LEDs at 5 V,Existing strip in its separate housing,1,RING:J2,Selected assembly: J2 pin 3 DIN only; pins 1/2/4 unused. Strip power goes directly to near-ring AUX split. J3/J4 empty. Reuse existing 40-LED strip; see RING_ASSEMBLY.md for required 16 AWG trunk/22 AWG branches.
+,Strip-entry bulk capacitor,1000uF 10V Panasonic EEUFR1A102,Radial 10x16mm P5mm; external harness,1,RING:strip harness,Positive to strip +5V; striped negative to strip GND at power entry. Short leads; separately sleeve joints and secure body outside optics with vent clear. Separate from carrier C1.

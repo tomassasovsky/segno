@@ -1,3 +1,4 @@
+<!-- cspell:words Qwiic VREG EEUFR -->
 <!-- cspell:words fanout -->
 <!-- cspell:words derating unswitched Reterminate Littelfuse PXCN FHAC -->
 # Segno console — system wiring plan
@@ -78,7 +79,11 @@ state the remaining engineering assumptions.
   Its shipped default asks 20 V at only 1.0 A, which contracts 20 W — set the
   PDO before first power-up.
 - **PD contract status:** console v3 J23 `PD` carries GND, SDA and SCL to
-  Pico GP0/GP1 at 100 kHz. The trigger supplies its own I2C pull-ups; do not
+  Pico GP0/GP1 at 100 kHz. Leave the trigger's external VDD and Qwiic VCC
+  unconnected. Its 2.2 kΩ I2C pull-ups use the low-voltage VDD net fed from
+  VREG_2V7 through D4/BAT60A, as shown in the
+  [SparkFun schematic](https://cdn.sparkfun.com/assets/9/2/6/8/6/SparkFun_PowerDeliveryBoardSchematic.pdf).
+  That net is separate from VIN/VBUS and the STUSB4500 chip's VDD pin; do not
   connect console 3V3 to it. Firmware reads attachment, policy status and RDO
   (`0x91`–`0x94`) without changing PDOs or NVM, and reports current and capability
   mismatch through the pedal link. ST's published map reserves `0x21`, so it
@@ -336,6 +341,7 @@ white output. The PCB's high-current copper remains unchanged.
 | --- | --- |
 | Near-ring positive/ground split | AUX output posts through a dedicated pair, at most 600 mm one-way, 16 AWG copper or larger |
 | Strip +5 V / GND | That split through a separate pair, at most 50 mm one-way, 22 AWG copper or larger |
+| Strip-entry bulk capacitor | Panasonic EEUFR1A102, 1000 µF / 10 V, positive to strip +5 V and striped negative to strip GND; short leads with separately sleeved joints |
 | Ring J1 pins 1 / 2 | That split through its own pair, at most 50 mm one-way, **22 AWG** with genuine XH contacts |
 | Ring J1 pin 3 | Console J6 pin 3: console TX to ring RX |
 | Ring J1 pin 4 | Console J6 pin 4: ring TX to console RX |
@@ -345,6 +351,12 @@ Leave console J6 cavities **1/2 empty**. Leave ring J2 **1/2/4 unconnected**;
 only DIN uses J2 in this selected assembly. J3/J4 remain empty. Do not add a
 second console-to-ring power pair or a parallel strip-return wire through
 J2. Both boards share ground through their AUX supply returns.
+
+Secure the strip-entry capacitor body beside the harness, outside the optical
+area, with its pressure vent clear. Allow its 10 × 16 mm envelope. Leave carrier
+C1 fitted as well. This local reservoir buffers load changes; it does not limit
+startup current. Wire only with AUX off. The carrier copper guard covers the
+retained PCB rail, not the selected external strip's harness or capacitor.
 
 Use insulated, strain-relieved soldered or correctly crimped branch joints.
 Do not force 16 AWG into XH contacts: the short 22 AWG pigtails are intentional.
@@ -369,12 +381,14 @@ selected harness above deliberately separates power from the two UART wires.
 Notes that are load-bearing:
 
 - Ground is pin 2, between the supply and the two link signals.
-- The two 10 kΩ link pull-ups connect to the console's 3V3 at J6 pins 3/4.
+- The two 10 kΩ link pull-ups R11/R12 connect J6 pins 3/4 to the console
+  Pico's `+3V3_PICO` rail. They retain UART idle high while AUX is powered
+  and the Pi's independent rail is off.
   The ring has no link pull-ups to its separate 3V3 rail. `RING_LEVELS` and
   `LINK_BARE` check that boundary.
 - Use the console and ring firmware from
   [runtime PR #1082](https://github.com/tomassasovsky/segno/pull/1082), currently
-  `dd46ab0d1a44bc55c7f42bc7db7992773c7a4113`. It includes the RP2350 A2 E9
+  `53828fc4eae1c18af45abfc3ea7c31f19f9799d7`. It includes the RP2350 A2 E9
   presence-input workaround and PD status reader. The hardware branch's older
   firmware snapshot does not. This runtime is still a separate integration
   draft; board fabrication does not make it deployed or production qualified.
@@ -385,10 +399,11 @@ Notes that are load-bearing:
   with 22 AWG. Its 85 °C
   upper operating temperature includes the rise caused by current; it is
   not an 85 °C ambient rating at full current.
-  The console now has a dedicated 1.7 mm feed; the carrier's J2 pads have a
-  direct 1.5 mm feed and three ground-return vias. This avoids routing strip
-  power through the older 0.65 mm module branch. Firmware still chooses its
-  display brightness, but that setting is not the hardware's current limit.
+  The retained console 1.7 mm feed and carrier J2 1.5 mm feed with three
+  ground-return vias serve the alternative module wiring. They do not supply
+  the selected strip, whose power follows the direct AUX harness above.
+  Firmware still chooses its display brightness, but that setting is not
+  the hardware's current limit.
 - **Only one ring or strip is supported.** Use J2 for the 40-pixel strip, J3
   for one 24-pixel module, or J4 for one 16-pixel module. Do not populate the
   alternatives together or chain an additional ring from DOUT. Extra LEDs
@@ -427,7 +442,7 @@ source of truth.
 | power button (`POWER`) | momentary, **unlit** → J8, through the board to J9 → the Pi 5's own J2 solder pads. Two wires, and neither end has a polarity: J8 and J9 are wired pin to pin as a floating pair that never touches the board's ground (#1062), so the lead works on the Pi's pads either way round. No 5 V run to the rear panel. The machine has no power indicator — the screens are the indicator |
 | fuse (`FUSE`) | 5×20 screw-cap holder — value and placement are §2's (T5A slow-blow, in the 20 V feed) |
 | MIDI DIN-5 ×2 (`MIDI_IN`/`MIDI_OUT`) | IN is opto-isolated **on the board** — the socket alone is not enough. IN's pin 2 stays unbonded (that isolation is the point) |
-| Neutrik NJ6FD-V ×2 (`CTRL_1`/`CTRL_2`) | 6-pole switching 1/4" jack, rear-mounted through a Ø12 hole with its snap cap (needs the 1.5 mm panel). Vertical PCB pins, no lugs. On v2 connect T / R / S and leave TN / RN / SN open. An expression pedal OR footswitch on the same jack, auto-detected (tip → ADC with pull-up, ring → 3V3 through 1 k). A two-switch pedal on one TRS plug (BOSS FS-6 A&B) puts its B switch on the ring, which firmware ≥ 1.1 reads on GP20/GP21: a trace through 4.7 kΩ on board v3 (R19/R20); on v2 one wire from each jack's ring pin (J20/J21 pin 2) to J22's GP20/GP21 pads. Without either, use the pedal's separate A and B mono jacks, one per CTRL. **v3 jacks are Neutrik NJ6FD-V** (switched): a fourth lead, the tip-normal contact, tells the board whether anything is plugged in (J20/J21 pin 4 → GP19/GP22), so an empty jack never reads as a pedal at full toe |
+| Neutrik NJ6FD-V ×2 (`CTRL_1`/`CTRL_2`) | 6-pole switching 1/4" jack, rear-mounted through a Ø12 hole with its snap cap (needs the 1.5 mm panel). Vertical PCB pins, no lugs. On v2 connect T / R / S and leave TN / RN / SN open. An expression pedal OR footswitch on the same jack, auto-detected (tip → ADC with pull-up, ring → 3V3 through 1 k). A two-switch pedal on one TRS plug (BOSS FS-6 A&B) puts its B switch on the ring, which firmware ≥ 1.1 reads on GP20/GP21: a trace through 4.7 kΩ on board v3 (R19/R20); on v2 one wire from each jack's ring pin (J20/J21 pin 2) to J22's GP20/GP21 pads. Without either, use the pedal's separate A and B mono jacks, one per CTRL. **v3 jacks are Neutrik NJ6FD-V** (switched): a fourth lead, the **ring-normal (RN)** contact, tells the board whether anything is plugged in (J20/J21 pin 4 → R21/R22 → GP19/GP22). Leave TN and SN open. RN is connected to R while empty and opens on insertion, leaving the ADC tip free of the presence pull-down. Identify RN from the component-side terminal view in [Neutrik's drawing](https://www.neutrik.com/media/8599/download/nj6fd-v-2.pdf?v=1); do not mirror that view |
 | USB 3.0 coupler ×2 (`USB3_1`/`USB3_2`) | internal A-to-A leads to two Pi ports |
 | M6 earth stud | between the cluster and the vent block; rules in the grounding doc |
 

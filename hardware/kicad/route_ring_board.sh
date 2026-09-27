@@ -18,7 +18,7 @@ WORK="$(mktemp -d)"
 # THE POINT OF THIS SCRIPT. KiCad exports every net in one 'kicad_default' class,
 # so a plain autoroute returns EVERYTHING at the default 0.30 mm -- including
 # the lower-current +5V_LED module/logic branches, which carry up to 1.44 A
-# with a 24-pixel module. The separate 40-pixel strip feed is hand-routed at
+# with a 24-pixel module. The retained J1-to-J2 rail is hand-routed at
 # 1.5 mm before the router runs and checked again before export. The module wants 0.50 mm
 # by IPC-2221 (10 C rise, 1 oz external). DRC does not catch an undersized power
 # trace, so that mistake ships silently. Splitting the class in the DSN is what
@@ -70,7 +70,7 @@ m.Save(sys.argv[1])                    # unchanged and DRC then lies to you
 print("   ripped up %d segments, kept %d vias (%d grown to 0.8/0.4)" % (n, kept, grown))
 PY
 
-echo "== 1b. hand-route the 40-pixel power feed before the other nets =="
+echo "== 1b. hand-route the retained carrier feed before the other nets =="
 "$KPY" ring_power.py "$PCB" --install
 
 echo "== 2. export Specctra DSN =="

@@ -37,9 +37,9 @@
   },
   {
     "ref": "R2",
-    "value": "100k 1%",
+    "value": "4.7k 1%",
     "footprint": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal",
-    "mpn": "MFR-25FBF52-100K",
+    "mpn": "MFR-25FBF52-4K7",
     "group": "Control",
     "quantity": 1,
     "pins": {

@@ -1,3 +1,4 @@
+<!-- cspell:words EEUFR -->
 <!-- cspell:words XIAO NeoPixel Seeed VBUS castellations HASL UF2 Taiyo -->
 # Ring carrier — first fabrication
 
@@ -16,10 +17,12 @@ White replaces the earlier purple finish to reduce coloured reflections
 around the LEDs. The purchased NeoPixel module retains its own board colour.
 See [Taiyo's discussion of white masks for LEDs](https://www.taiyo-america.com/index.php/media-resources/news/solder-mask-led-applications-formulation-101/).
 
-The September 25 full-white export supersedes the September 24 ZIP. It adds
-a dedicated 1.5 mm power feed to J2 and three parallel ground-return vias,
+The September 25 export supersedes the September 24 ZIP. It adds
+a retained 1.5 mm power feed to J2 and three parallel ground-return vias,
 retaining the two-layer, 1 oz construction and all component positions.
-The console feed is upgraded with it. See the
+The console feed was upgraded with it. This carrier copper supports the
+module alternatives; the selected 40-pixel strip now uses the direct AUX
+harness below, so passing carrier power checks does not verify that harness. See the
 [40-pixel verification](../../docs/reviews/ring40-full-white-1072/verification.md).
 
 The September 26 copper-finish export supersedes those earlier ZIPs.
@@ -58,6 +61,21 @@ support pins. Keep these allowances when updating footprints.
   22 AWG XH pigtails; do not crimp the thicker trunk into XH. Keep DIN at most
   100 mm and beside the local ground leads. Add strain relief. See the exact
   [wiring and voltage bounds](../segno_wiring.md#console-board--ring-board-and-the-full-white-power-harness).
+- Fit a separate **Panasonic EEUFR1A102, 1000 µF / 10 V** radial capacitor
+  directly across the strip's power entry: positive lead to +5 V and striped
+  negative lead to GND. Keep leads short, sleeve each soldered joint separately
+  and secure the body with strain relief outside the optical area, leaving its
+  pressure vent unobstructed. The part is 10 mm diameter × 16 mm long; allow
+  this space in the harness, not on the carrier. Its
+  [manufacturer specification](https://industrial.panasonic.com/ww/products/pt/aluminum-cap-lead/models/EEUFR1A102)
+  gives at most 28 mΩ impedance at 100 kHz. Carrier C1 remains fitted but
+  is not the local strip-entry capacitor. This follows the
+  [NeoPixel supply-entry recommendation](https://learn.adafruit.com/adafruit-neopixel-uberguide/best-practices).
+  Assemble with power disconnected; the capacitor buffers load changes and
+  is not an inrush limiter or permission to hot-plug the strip.
+- Fit C2/C3/C4 as **10 nF Vishay K103K10X7RF53H5**. C5 remains 100 nF.
+  Both ground pours now use through-hole thermal relief for hand soldering;
+  observe the encoder's 350 °C / 3 s terminal limit.
 - The carrier snap-mounts; it has no screw mounting holes.
 
 The 40-pixel full-white design budget is 2.4 A for LED channels plus a 40 mA
@@ -77,7 +95,7 @@ AUX power from reaching a connected USB host. See the
 
 Install the separate ring UF2 using XIAO BOOTSEL. Use `firmware/ring_board` from
 [runtime PR #1082](https://github.com/tomassasovsky/segno/pull/1082), published
-at `dd46ab0d1a44bc55c7f42bc7db7992773c7a4113`, together with its matching console
+at `53828fc4eae1c18af45abfc3ea7c31f19f9799d7`, together with its matching console
 firmware. The firmware snapshot on the hardware branch is not the completed
 v3 runtime. The console's SWD updater does not program this module.
 No USB cable is needed on the ring during normal operation.

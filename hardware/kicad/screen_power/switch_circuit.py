@@ -62,7 +62,8 @@ def build_switch(variant, schematic=False):
     header("J1", "AUX 5V INPUT", "AUX_5V")
     header("J2", "GPIO17 / GND", "PI_GPIO17", control=True)
     resistor("R1", "1k", "PI_GPIO17", "CONTROL_BASE")
-    resistor("R2", "100k", "CONTROL_BASE", "GND")
+    # Shunt weak pull-ups on a released GPIO while retaining ample Q1 drive.
+    resistor("R2", "4.7k", "CONTROL_BASE", "GND")
     part("Transistor_BJT", ("2N3904"), "Q1", ("2N3904"),
          (TO92),
          ({1: "GND", 2: "CONTROL_BASE", 3: "CONTROL_SINK"}),

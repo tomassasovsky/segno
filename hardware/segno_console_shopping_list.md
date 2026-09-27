@@ -1,3 +1,4 @@
+<!-- cspell:words decoupler EEUFR -->
 # Segno Floor Console — Local Shopping List (Argentina)
 
 Quantities are **per console**. All parts are standard and available at local
@@ -45,13 +46,19 @@ Terminated by the **console board v3** (`hardware/kicad/console_board.py`, #747)
 
 - [ ] Momentary **SPST footswitches** (stomp-rated, Cherub WTB-006 per
       [`MANUFACTURING.md`](MANUFACTURING.md)) ×10 — one per pedal, J10..J19
-- [ ] **EC11 rotary encoder** (with push switch) ×1 — mounts on the encoder
-      ring PCB (also in `MANUFACTURING.md`)
-- [ ] Knob for the EC11 ×1
+- [ ] **Same Sky ACZ11BR1E-20FD1-20C** rotary encoder ×1, plus
+      **SJ5-43502PM-nut** ×1 — exact threaded ring-board part; no washer.
+      See [fit and sourcing](kicad/RING_ENCODER.md).
+- [ ] Knob with 6 mm D-shaft bore ×1; retain the documented purchased knob
+      envelope and nut relief in `MANUFACTURING.md`
+- [ ] **Vishay K103K10X7RF53H5**, 10 nF / 50 V THT ×3 for ring C2/C3/C4;
+      the separate C5 buffer decoupler remains 100 nF
+- [ ] **Panasonic EEUFR1A102**, 1000 µF / 10 V radial ×1 for the external
+      strip power-entry harness; separate from carrier C1
 - [ ] JST-XH pre-crimped 2-pin leads for the footswitch looms ×10
 - [ ] **Neutrik NJ6FD-V switched CTRL jacks ×2** — rear-mounted through
-      Ø12 mm holes in the 1.5 mm panel. Four wires per jack: T, R, S and TN
-      to console J20/J21. RN/SN remain unused. These are not D-punch parts.
+      Ø12 mm holes in the 1.5 mm panel. Four wires per jack: T, R, S and RN
+      to console J20/J21. TN/SN remain unused. These are not D-punch parts.
 
 ## LEDs
 

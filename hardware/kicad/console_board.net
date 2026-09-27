@@ -1582,14 +1582,6 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
-        (ref "R11")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R12")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
         (ref "R6")
         (pin "1")
         (pintype "PASSIVE"))
@@ -1607,6 +1599,14 @@
         (pintype "PASSIVE"))
       (node
         (ref "R10")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R11")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R12")
         (pin "1")
         (pintype "PASSIVE"))
       (node
@@ -2127,7 +2127,7 @@
         (pintype "PASSIVE")))
     (net
       (code 21)
-      (name "J20_TN")
+      (name "J20_RN")
       (class "Default")
       (node
         (ref "J20")
@@ -2155,7 +2155,7 @@
         (pintype "PASSIVE")))
     (net
       (code 23)
-      (name "J21_TN")
+      (name "J21_RN")
       (class "Default")
       (node
         (ref "J21")

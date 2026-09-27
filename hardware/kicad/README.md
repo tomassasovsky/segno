@@ -14,19 +14,26 @@ The ring carrier now uses **white solder mask and black silkscreen** for LED
 reflections. See [ring order and assembly notes](RING_ASSEMBLY.md) for the
 September 24 hole allowances, order settings and USB programming connection.
 
+Current console CTRL headers J20/J21 connect T / R / S / **RN** to the
+Neutrik NJ6FD-V jacks; pin 4 uses ring-normal, leaving tip-normal and
+sleeve-normal open. This keeps the presence pull-down off the ADC tip.
+R11/R12 use the console Pico's `+3V3_PICO` supply so the AUX-powered ring
+UART remains biased high while the Pi is off. See the
+[connector wiring](../segno_wiring.md).
+
 ## Console connection to the screen-power board
 
 **Revision M replaces the withdrawn Revision L screen files.** It corrects
 USB suspend current with AUX-powered coils and per-host presence detection,
-and adds shield-drain pads. Native checks and all 75 fault controls pass;
-independent comparison passes 412 manufacturing assertions. See the
-[revision verification](../../docs/reviews/screen-power-usb-revision-1072/review.md).
+and adds shield-drain pads. The September 27 follow-up strengthens the
+control-input pull-down (R2 = 4.7 kΩ). See the
+[current review and manufacturing checks](../../docs/code-review/pcb-claude-followup-1072/review.md).
 The board retains the through-hole
 negative gate supply to improve MOSFET drive margin, retaining the two-layer
 68 × 76 mm outline, direct USB-to-XH leads and existing connector anchors.
 The corrected relay contact mapping from Revision J remains. Use only the
 archive and checks identified in the
-[current three-board audit](../../docs/reviews/pcb-finish-all-three-1072/audit.md).
+[current manufacturing record](../../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
 Revision I is withdrawn; J/K are superseded. No pre-PCB prototype or further
 owner measurements are required by this change. The final archives also
 include rounded power-bar corners on the console and cleaned, rounded J1
@@ -106,7 +113,7 @@ not fix this. Judge a run by `0 errors found while running ERC` and the `(net ..
 blocks, not by `git diff`.
 
 **Prefer upstream footprints.** `segno.pretty/` exists for parts KiCad does not ship
-(the NeoPixel Ring 24, the EC11 on its ring board, the module mount-pad and wire-pad
+(the NeoPixel Ring 24, the Same Sky ACZ11BR1E-20FD1-20C encoder, the module mount-pad and wire-pad
 helpers). It is not a place to re-draw something that already exists. The Pico 2, for instance, is KiCad's own
 `Module:RaspberryPi_Pico_Common_THT` — its description explicitly says it supports
 Pico 2, and it is maintained upstream.

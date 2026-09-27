@@ -2,7 +2,7 @@ ref,value,footprint,mpn,group,quantity
 J1,AUX 5V INPUT,Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical,B2P-VH(LF)(SN),Control,1
 J2,GPIO17 / GND,Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,B2B-XH-A(LF)(SN),Control,1
 R1,1k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-1K,Control,1
-R2,100k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-100K,Control,1
+R2,4.7k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-25FBF52-4K7,Control,1
 Q1,2N3904,Package_TO_SOT_THT:TO-92_Inline_Wide,2N3904BU,Control,1
 U1,LMC7660IN,Package_DIP:DIP-8_W7.62mm,LMC7660IN/NOPB,Control,1
 C3,10uF 25V bipolar,Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm,ECE-A1EN100U,Control,1

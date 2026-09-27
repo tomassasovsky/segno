@@ -106,6 +106,9 @@ MOUNT_INSET = 5.0               # mounting-hole centres, in from each corner.
 # supply and ground ties are checked again on the actual board before export.
 TRACK_W = 0.6                   # what the router is asked for, signal and rail alike
 VIA_D, VIA_DRILL = 0.8, 0.4
+# Local zone spacing and placement/via keepouts; this is not the routed-track
+# minimum. The native project permits 0.20 mm copper clearance, while the DSN
+# router uses 0.30 mm to leave rounding headroom (route_console_board.sh).
 CLEARANCE = 0.25
 
 # JLCPCB's published legend minima: 1 mm text, 0.15 mm strokes and clearance.
@@ -198,7 +201,7 @@ PLACEMENT = {
                                    # bonding the shield here would short out the
                                    # isolation U2 exists to provide.
     "J4":  (50.0, 8.0, 0),         # MIDI OUT -- 3 leads: DIN pins 4, 5 and 2.
-    # 4-way since v3 (tip, ring, sleeve, tip-normal for presence): 2.5 mm
+    # 4-way since v3 (tip, ring, sleeve, ring-normal for presence): 2.5 mm
     # wider each, so the pair slides left to keep 0.8 mm to MIDI OUT on one
     # side and to the ribbon's column on the other.
     "J20": (63.4, 8.0, 0),         # CTRL 1, over GP26 = pad 31
@@ -295,7 +298,7 @@ PLACEMENT = {
     # the existing 2 mm isolation guard stays in force. Its ground stitch goes
     # east, clear of the locally rerouted +3V3 and Pico supply branches.
     "C20": (43.75, 19.6, 0),        # +3V3 decoupling for U2
-    # The ring link's two pull-ups, on this board's 3V3 (they used to live on
+    # The ring link's two pull-ups, on the Pico's own 3V3 (they used to live on
     # ring_board.py tied to its 5 V rail, 1.4 V over the RP2350's absolute
     # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
     # and its pull-down -- retired with the ring-data path in v3 (#987); their
@@ -1120,7 +1123,7 @@ def _free_slot(anchor, w, h, boxes):
 # straight ordered row.
 #
 # v3 measured 1915 mm. The ~210 mm over v2 is the four CTRL sense nets (ring and
-# presence, J20_REF/J21_REF/J20_TN/J21_TN and their GPIO ends): their series
+# presence, J20_REF/J21_REF/J20_RN/J21_RN and their GPIO ends): their series
 # parts sit under the module, 50-60 mm from the jacks they serve, because the
 # column beside U2 that would have put them under the jacks is the expansion
 # header's. They are DC lines through 4.7k -- SLOW_SENSE_NETS, exempt from the
@@ -1160,7 +1163,7 @@ RAIL_NETS = {"+3V3", "+5V", "+3V3_PICO"}
 # keeping the pills' power and data on ONE connector is the point of the placement.
 LONG_DATA_NETS = {"IND_DATA_OUT"}
 SLOW_SENSE_NETS = {"J20_REF", "J21_REF", "CTRL1_RING", "CTRL2_RING",
-                   "J20_TN", "J21_TN", "CTRL1_PRESENT", "CTRL2_PRESENT",
+                   "J20_RN", "J21_RN", "CTRL1_PRESENT", "CTRL2_PRESENT",
                    # Passive, floating button pair between the rear-panel
                    # connector and the Pi harness exit beside the ribbon.
                    "PWR_BTN", "PWR_BTN_RET"}

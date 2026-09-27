@@ -865,7 +865,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "100k 1%"
+    (property "Value" "4.7k 1%"
       (at 50.8 106.68 90)
       (effects
         (font
@@ -876,7 +876,7 @@
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "MFR-25FBF52-100K"
+    (property "MPN" "MFR-25FBF52-4K7"
       (at 50.8 114.3 90)
       (effects
         (font

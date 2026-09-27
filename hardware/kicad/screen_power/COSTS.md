@@ -3,8 +3,8 @@
 <!-- cspell:words DigiKey MOSFETs onsemi Littelfuse VHR SXH XHP SVH SUP PXCN FHAC -->
 <!-- cspell:words optocoupler MOSFET WIMA ECEA -->
 
-**USD, updated 26 September 2026.** The 50 populated through-hole components
-cost **$44.95** using published single-unit distributor prices. Allow **$45–50
+**USD, quantities updated 27 September 2026.** The 50 populated through-hole components
+cost **$44.96** using the dated published single-unit prices below. Allow **$45–50
 for board components**, including modest price movement and spare small parts.
 This excludes the bare PCB, wiring, mounting hardware, assembly labor, tools,
 shipping, taxes and import charges. It is an estimate, not a reserved basket.
@@ -48,14 +48,14 @@ The relay's manufacturer ordering number 1-1462037-3 corresponds to IM02TS.
 | D101, D201 | 1N4007-E3/54 | 2 | $0.56 | $1.12 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/vishay-general-semiconductor-diodes-division/1N4007-E3-54/754813) |
 | D2 | BAT85S-TAP | 1 | $0.50 | $0.50 | 25 Sep | [DigiKey](https://www.digikey.com/en/products/detail/vishay-general-semiconductor-diodes-division/BAT85S-TAP/3104127) |
 | R1 | MFR-25FBF52-1K | 1 | $0.10 | $0.10 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-1K/13011) |
-| R2, R6, R7, R102, R202 | MFR-25FBF52-100K | 5 | $0.10 | $0.50 | 26 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-100K/13473) |
-| R3 | MFR-25FBF52-4K7 | 1 | $0.11 | $0.11 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-4K7/9138176) |
+| R6, R7, R102, R202 | MFR-25FBF52-100K | 4 | $0.10 | $0.40 | 26 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-100K/13473) |
+| R2, R3 | MFR-25FBF52-4K7 | 2 | $0.11 | $0.22 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-4K7/9138176) |
 | R4 | MFR-25FBF52-22K | 1 | $0.10 | $0.10 | 25 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-22K/9138098) |
 | R5 | MFR-25FBF52-5K6 | 1 | $0.10 | $0.10 | 22 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-5K6/9138195) |
 | R8 | PR01000101000FA100 | 1 | $0.45 | $0.45 | 22 Sep | [Mouser](https://www.mouser.com/ProductDetail/Vishay-BC-Components/PR01000101000FA100?qs=17u8i%2FzlE8%252B%252BSN%2FNRC7Xyg%3D%3D) |
 | R9 | MFR-25FBF52-2K4 | 1 | $0.10 | $0.10 | 25 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-2K4/9138109) |
 | R10, R101, R201 | MFR-25FBF52-10K | 3 | $0.10 | $0.30 | 26 Sep | [DigiKey](https://www.digikey.com/en/products/detail/yageo/MFR-25FBF52-10K/13219) |
-| **Total** | **26 unique parts** | **50** | | **$44.95** | | |
+| **Total** | **26 unique parts** | **50** | | **$44.96** | | |
 
 <!-- cspell:enable -->
 
@@ -73,8 +73,8 @@ parts; there are no bulk discounts assumed.
 | Capacitors | $4.72 |
 | Charge pump and optocoupler | $4.13 |
 | Small transistors and diodes | $8.26 |
-| Resistors | $1.76 |
-| **Total** | **$44.95** |
+| Resistors | $1.77 |
+| **Total** | **$44.96** |
 
 ## Availability
 

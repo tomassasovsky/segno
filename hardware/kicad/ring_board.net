@@ -67,7 +67,7 @@
       (tstamps "ab598cd8-37da-50fc-bf33-d249dba073b3"))
     (comp
       (ref "C2")
-      (value "100nF")
+      (value "10nF")
       (description "Unpolarized capacitor")
       (footprint "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm")
       (fields
@@ -90,7 +90,7 @@
       (tstamps "a123aac9-0ab6-5a29-8db4-65fee96a224c"))
     (comp
       (ref "C3")
-      (value "100nF")
+      (value "10nF")
       (description "Unpolarized capacitor")
       (footprint "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm")
       (fields
@@ -113,7 +113,7 @@
       (tstamps "5e55c4f7-c8bf-5a11-bae3-2013b0855733"))
     (comp
       (ref "C4")
-      (value "100nF")
+      (value "10nF")
       (description "Unpolarized capacitor")
       (footprint "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm")
       (fields

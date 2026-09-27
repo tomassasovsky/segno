@@ -82,11 +82,40 @@ def check(board):
     library = pcb.FootprintLoad(str(HERE / "segno.pretty"), NAME)
     require(library is not None, "library footprint cannot load")
     check_footprint(library)
+    grounds = [zone for zone in board.Zones() if zone.GetNetname() == "GND"]
+    require({zone.GetLayer() for zone in grounds} == {pcb.F_Cu, pcb.B_Cu},
+            "both copper layers need a GND pour")
+    for zone in grounds:
+        require(zone.GetPadConnection() == pcb.ZONE_CONNECTION_THT_THERMAL,
+                "GND must use THT thermal relief; module SMD ground stays solid")
+        require(zone.GetThermalReliefGap() == pcb.FromMM(.5) and
+                zone.GetThermalReliefSpokeWidth() == pcb.FromMM(.5),
+                "GND thermal geometry must retain 0.5 mm gap and spokes")
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad.GetAttribute() == pcb.PAD_ATTRIB_PTH and pad.GetNetname() == "GND":
+                require(pad.GetLocalZoneConnection() in
+                        (pcb.ZONE_CONNECTION_INHERITED, pcb.ZONE_CONNECTION_THERMAL,
+                         pcb.ZONE_CONNECTION_THT_THERMAL),
+                        "GND through-hole pad overrides thermal relief")
+    require(board.GetDesignSettings().m_MinClearance >= pcb.FromMM(.2),
+            "board minimum clearance must be at least 0.2 mm")
+    require(all(nc.GetClearance() >= pcb.FromMM(.2)
+                for nc in board.GetAllNetClasses().values()),
+            "netclass clearance must be at least 0.2 mm")
+    for ref, signal in (("C2", "ENC_A"), ("C3", "ENC_B"), ("C4", "ENC_SW")):
+        cap = next(fp for fp in board.GetFootprints() if fp.GetReference() == ref)
+        require(cap.GetValue() == "10nF", ref + " must retain 10nF release filter")
+        require({pad.GetNetname() for pad in cap.Pads()} == {signal, "GND"},
+                ref + " filter nets changed")
 
 
 def self_test(path):
     def run(label, mutate, expected):
         board = pcb.LoadBoard(str(path))
+        # KiCad can share the project's netclass objects across LoadBoard calls.
+        clearances = {name: nc.GetClearance()
+                      for name, nc in board.GetAllNetClasses().items()}
         fp = next(f for f in board.GetFootprints() if f.GetReference() == "ENC1")
         pads = {p.GetNumber(): p for p in fp.Pads()}
         mutate(board, fp, pads)
@@ -97,6 +126,9 @@ def self_test(path):
             print("Rejected:", label)
         else:
             raise AssertionError("Fault escaped: " + label)
+        finally:
+            for name, value in clearances.items():
+                board.GetAllNetClasses()[name].SetClearance(value)
 
     def move(pad, dx, dy):
         pad.SetPosition(pad.GetPosition() + pcb.VECTOR2I(round(dx*1e6), round(dy*1e6)))
@@ -112,8 +144,20 @@ def self_test(path):
     run("shaft moved", lambda b,f,p: f.SetPosition(f.GetPosition()+pcb.VECTOR2I(0,250000)),
         "shaft centre")
     run("generic part substitution", lambda b,f,p: f.SetValue("EC11E18244AU"), "BOM part")
+    run("solid ground pour restored", lambda b,f,p: next(
+        z for z in b.Zones() if z.GetNetname() == "GND").SetPadConnection(
+            pcb.ZONE_CONNECTION_FULL), "THT thermal relief")
+    run("encoder ground pad bypasses thermal", lambda b,f,p:
+        p["C"].SetLocalZoneConnection(pcb.ZONE_CONNECTION_FULL), "overrides thermal")
+    run("board minimum clearance weakened", lambda b,f,p:
+        setattr(b.GetDesignSettings(), "m_MinClearance", pcb.FromMM(.13)), "minimum clearance")
+    run("default clearance weakened", lambda b,f,p:
+        b.GetAllNetClasses()["Default"].SetClearance(pcb.FromMM(.13)), "netclass clearance")
+    run("old filter fitted", lambda b,f,p: next(
+        fp for fp in b.GetFootprints() if fp.GetReference() == "C2").SetValue("100nF"),
+        "10nF release filter")
     check(pcb.LoadBoard(str(path)))
-    print("Eight negative controls passed; original board still passes.")
+    print("Thirteen negative controls passed; original board still passes.")
 
 
 if __name__ == "__main__":
@@ -122,6 +166,6 @@ if __name__ == "__main__":
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     check(pcb.LoadBoard(str(args.board)))
-    print("Same Sky encoder fit, finished-hole tolerance, pad roles and model datum: PASS")
+    print("Encoder fit, filters, thermal relief and 0.2 mm clearance policy: PASS")
     if args.self_test:
         self_test(args.board)

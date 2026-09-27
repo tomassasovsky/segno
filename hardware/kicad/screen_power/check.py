@@ -705,6 +705,14 @@ def numerical_checks(variant, components, errors):
     dark_gate = r[4]*1.01*20e-6
     if dark_gate >= .5 or any(r[i]*1.01*1e-6 >= .5 for i in (6,7)):
         fail(errors,"default_off","Off-state leakage exceeds the 0.5V pull-up/down budget")
+    # Weak-source design envelope, not a guaranteed RP1 pull-resistor range:
+    # RP1 documents selectable pulls without specifying their resistance.
+    # Bound the unloaded base voltage; any base current only lowers it.
+    weak_source_ohms, pull_max = 50000+r[1]*.99, r[2]*1.01
+    weak_pull_base = (3.63*pull_max/(weak_source_ohms+pull_max)
+                      + 1e-6*weak_source_ohms*pull_max/(weak_source_ohms+pull_max))
+    if weak_pull_base >= .35:
+        fail(errors,"gpio_weak_pull","Released GPIO exceeds the 0.35V base-bias design budget with a 3.63V / 50k weak source")
     # The 4.5V floor is a gate-driver design corner, not a screen-voltage
     # guarantee. 4.25A covers the documented screen planning load. Retain
     # the conservative -4.5V Rds rating despite the higher actual drive.
@@ -751,6 +759,10 @@ def numerical_checks(variant, components, errors):
             "pump_engineering_load_uA":pump_load*1e6,"pump_10k_test_load_uA":pump_reference*1e6,
             "pump_hot_leakage_budget_is_estimate":True,
             "gpio_assumed_minimum_high_V":2.4,"gpio_base_min_mA":base_min*1000,
+            "gpio_weak_pull_source_max_V":3.63,"gpio_weak_pull_source_min_ohms":50000,
+            "gpio_weak_pull_injected_leakage_uA_allowance":1,
+            "gpio_weak_pull_base_max_V":weak_pull_base,
+            "gpio_weak_pull_is_design_envelope_not_RP1_guarantee":True,
             "collector_peak_mA":sink_peak*1000,"bleeder_max_W":bleed_max,
             "pair_loss_at_planning_load_hot_estimate_W":2*load**2*hot_rds,
             "upright_junction_C_at_60C_75C_per_W_estimate":60+load**2*hot_rds*75,
@@ -983,6 +995,8 @@ def self_test(board_path, components, expected, temp, variant="hand"):
     results["wrong_tolerance_detected"]=numeric_mutation("R3","4.7k 20%")
     results["wrong_tolerance_suffix_detected"]=numeric_mutation("R3","4.7k 11%")
     results["weak_pulldown_detected"]=numeric_mutation("R7","100M 1%")
+    results["weak_gpio_pulldown_detected"]=numeric_mutation("R2","100k 1%")
+    results["excess_gpio_shunt_detected"]=numeric_mutation("R2","22R 1%")
     results["weak_gate_pullup_detected"]=numeric_mutation("R4","330k 1%")
     results["weak_opto_drive_detected"]=numeric_mutation("R9","100k 1%")
     results["wrong_pump_detected"]=numeric_mutation("U1","ICL7660")
@@ -1244,6 +1258,7 @@ def validate(variant, board_override=None, run_self_test=False):
                 summary["self_test"] = self_test(board_path, components, pins, temp, variant)
                 required_faults = ["wrong_relay_detected", "wrong_driver_detected", "wrong_tolerance_detected", "wrong_tolerance_suffix_detected", "weak_pulldown_detected", "narrow_power_detected", "host_power_bridge_detected", "usb_cut_detected", "console_control_cut_detected"]
                 required_faults += list(USB_POWER_FAULTS)
+                required_faults += ["weak_gpio_pulldown_detected", "excess_gpio_shunt_detected"]
                 required_faults += ["relay_hole_detected", "model_unassigned_detected", "model_missing_detected", "model_disabled_detected", "wrong_xh_pitch_detected"]
                 required_faults += ["smd_footprint_detected", "smd_pad_detected", "power_lead_hole_detected", "four_layers_detected", "missing_usb_reference_detected"]
                 required_faults += [f'{ref}_hole_tolerance_detected' for ref in ('J101','J2','J1','Q1','H1','U1','U2')]

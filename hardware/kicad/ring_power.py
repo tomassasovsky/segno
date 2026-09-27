@@ -1,7 +1,9 @@
-"""Hand-route and verify the 40-pixel strip's dedicated power feed.
+"""Hand-route and verify the carrier's retained power distribution.
 
 Run with KiCad's Python. The 24/16-pixel module branches retain their existing
-0.65 mm tracks; the external strip uses J2 and has a separate 1.5 mm feed.
+0.65 mm tracks, supplied from the retained 1.5 mm J1-to-J2 rail.
+The selected external 40-pixel strip takes only DIN from J2 and draws power
+from the external AUX split; these checks do not verify that harness.
 The routing script installs this feed BEFORE routing the remaining signals.
 """
 import argparse
@@ -30,7 +32,7 @@ FILLET = 0.6
 # 8.9 mm2 of bare board, which is the geometry the owner wants: two plain
 # vertical taps with rounded bases read better than one tap and a dog-leg
 # across the pocket, and the enclosed area is not an electrical fault - the
-# strip's current takes the 1.5 mm rail either way.
+# retained carrier distribution rail remains 1.5 mm either way.
 TAPS = (("C5", "1", 39, 18.5), ("U2", "14", 35.62, 20))
 # Centreline radius for the rail's own bends: a 1 mm radius on the inner edge.
 BEND = WIDTH / 2 + 1
@@ -223,7 +225,7 @@ def install(board):
 def check(board, source):
     """Trace an adequately wide, via-free path between the actual power pads."""
     start, finish = pad(board, "J1", "1"), pad(board, "J2", "1")
-    assert start.GetNetname() == finish.GetNetname() == "+5V_LED", "STRIP_POWER: wrong pad net"
+    assert start.GetNetname() == finish.GetNetname() == "+5V_LED", "CARRIER_POWER: wrong pad net"
     graph = {}
     for track in board.GetTracks():
         if (track.GetClass() != "PCB_TRACK" or track.GetLayer() != pcb.F_Cu
@@ -239,10 +241,10 @@ def check(board, source):
         if node not in reached:
             reached.add(node)
             pending.extend(graph.get(node, set()) - reached)
-    assert point(finish.GetPosition()) in reached, "STRIP_POWER: no continuous 1.5 mm feed to J2"
+    assert point(finish.GetPosition()) in reached, "CARRIER_POWER: no continuous 1.5 mm feed to J2"
 
     ground = pad(board, "J2", "2")
-    assert ground.GetNetname() == "GND", "STRIP_RETURN: wrong pad net"
+    assert ground.GetNetname() == "GND", "CARRIER_RETURN: wrong pad net"
     # Three 0.4 mm barrels share the return. Their holes lie inside the wire
     # pad; this is hand soldered and requires no filled-via assembly service.
     center = ground.GetPosition()
@@ -252,9 +254,9 @@ def check(board, source):
             and t.BottomLayer() == pcb.B_Cu and t.GetDrill() >= pcb.FromMM(0.4)
             and math.hypot(t.GetPosition().x - center.x,
                            t.GetPosition().y - center.y) + t.GetDrill() / 2 <= radius]
-    assert len(vias) >= 3, "STRIP_RETURN: fewer than three ground barrels at J2"
+    assert len(vias) >= 3, "CARRIER_RETURN: fewer than three ground barrels at J2"
     copper = re.findall(r'\(layer "[FB]\.Cu"\s*\(type "copper"\)\s*\(thickness ([\d.]+)\)', source)
-    assert len(copper) == 2 and all(float(v) >= 0.035 for v in copper), "STRIP_POWER: copper below 1 oz"
+    assert len(copper) == 2 and all(float(v) >= 0.035 for v in copper), "CARRIER_POWER: copper below 1 oz"
 
 
 def selftest(path):
@@ -270,12 +272,12 @@ def selftest(path):
                     and point(t.GetPosition()) == point(vector(RETURN_VIAS[0])))
 
     cases = (
-        ("removed feed", lambda b: b.RemoveNative(feed(b)), "STRIP_POWER"),
-        ("thin feed", lambda b: feed(b).SetWidth(pcb.FromMM(0.65)), "STRIP_POWER"),
-        ("broken layer transition", lambda b: feed(b).SetLayer(pcb.B_Cu), "STRIP_POWER"),
-        ("wrong supply", lambda b: pad(b, "J2", "1").SetNet(b.FindNet("+3V3")), "STRIP_POWER"),
-        ("missing return barrel", lambda b: b.RemoveNative(ground_via(b)), "STRIP_RETURN"),
-        ("wrong return net", lambda b: ground_via(b).SetNet(b.FindNet("RING_DATA")), "STRIP_RETURN"),
+        ("removed feed", lambda b: b.RemoveNative(feed(b)), "CARRIER_POWER"),
+        ("thin feed", lambda b: feed(b).SetWidth(pcb.FromMM(0.65)), "CARRIER_POWER"),
+        ("broken layer transition", lambda b: feed(b).SetLayer(pcb.B_Cu), "CARRIER_POWER"),
+        ("wrong supply", lambda b: pad(b, "J2", "1").SetNet(b.FindNet("+3V3")), "CARRIER_POWER"),
+        ("missing return barrel", lambda b: b.RemoveNative(ground_via(b)), "CARRIER_RETURN"),
+        ("wrong return net", lambda b: ground_via(b).SetNet(b.FindNet("RING_DATA")), "CARRIER_RETURN"),
     )
     for name, mutate, expected in cases:
         board = pcb.LoadBoard(str(path))
@@ -289,10 +291,10 @@ def selftest(path):
     try:
         check(pcb.LoadBoard(str(path)), source.replace("(thickness 0.035)", "(thickness 0.018)"))
     except AssertionError as error:
-        assert str(error).startswith("STRIP_POWER")
+        assert str(error).startswith("CARRIER_POWER")
     else:
         raise AssertionError("half-ounce copper accepted")
-    print("40-pixel power path: PASS; 7 deliberate faults rejected")
+    print("Retained carrier power path: PASS; 7 deliberate faults rejected")
 
 
 if __name__ == "__main__":
@@ -309,4 +311,4 @@ if __name__ == "__main__":
             install(board)
             board.Save(str(args.board))
         check(board, args.board.read_text())
-        print("40-pixel power path: PASS")
+        print("Retained carrier power path: PASS")

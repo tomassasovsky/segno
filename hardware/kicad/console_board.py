@@ -155,7 +155,7 @@ v5 = Net("+5V")            # logic: Pico VSYS + the AHCT125
 v3v3 = Net("+3V3")         # from the Pi ribbon -- the MIDI front end is the Pi's,
                            # so it runs on the Pi's rail and works whenever the Pi
                            # is up, regardless of the MCU
-v3v3_pico = Net("+3V3_PICO")  # Pico pin 36: CTRL bias follows its ADC supply
+v3v3_pico = Net("+3V3_PICO")  # Pico pin 36: CTRL bias and AUX-domain UART idle
 link_tx = Net("LINK_TX")   # Pico -> Pi   (3V3 both ends: no level shifting...)
 link_rx = Net("LINK_RX")   # Pi   -> Pico (3V3 both ends)
 link_tx_pi = Net("LINK_TX_PI")   # ...but series R17/R18: these are the
@@ -224,7 +224,7 @@ pico[39] += v5                   # VSYS: 5 V in, onboard reg makes 3V3
 pico[40].do_erc = False          # VBUS -- USB only, unused
 pico[30].do_erc = False          # RUN  -- BOOTSEL/RUN not brought out
 pico[35].do_erc = False          # ADC_VREF -- left on the module's own reference
-pico[36] += v3v3_pico             # CTRL bias uses the ADC owner's supply
+pico[36] += v3v3_pico             # CTRL bias and ring UART use the Pico's supply
 pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 
 # Spare GPIO, brought out to nothing on purpose. ERC would otherwise report each
@@ -288,7 +288,7 @@ GPIO = {
     # I2C to the STUSB4500 PD trigger (J23): read the negotiated contract. GP0/1
     # are I2C0 SDA/SCL, row A's first two pads -- the end the power inlet is on.
     "PD_SDA": 0, "PD_SCL": 1,
-    # Jack presence, from the switched jacks' tip-normal contacts (v3, Neutrik
+    # Jack presence, from the switched jacks' ring-normal contacts (v3, Neutrik
     # NJ6FD-V): high while the jack is EMPTY, open once a plug is inserted.
     # On A2, a reliable low requires runtime #1082's E9 input-enable gating and
     # discharge interval; a continuously enabled input plus its weak pull-down
@@ -422,13 +422,14 @@ opto[4] += midi_rx
 # pin to the J22 pads these GPIO used to be on.
 #
 # The jack is a Neutrik NJ6FD-V (v3), rear-mounted through a 12 mm aperture, with
-# SWITCHING contacts. Its tip-normal contact (TN) is tied to the tip while the
+# SWITCHING contacts. Its ring-normal contact (RN) is tied to the ring while the
 # jack is empty and opens when a plug goes in, which gives the board a
-# presence wire per jack: with the tip at 3V3 through its 10k, TN reads high
+# presence wire per jack: with the ring at 3V3 through its 1k, RN reads high
 # only while empty. That is what makes plugging in and out clean -- an empty
 # jack no longer reads as a pedal at full toe, and a plug on its way in is
 # ignored until it is seated -- without guessing from the ADC. Four leads to
-# the jack: tip, ring, sleeve, TN.
+# the jack: tip, ring, sleeve, RN. Using RN leaves the ADC tip unloaded when
+# empty; the presence input's pull-down no longer divides the tip's 10k bias.
 _ring_sense = []
 _presence = []
 for _ref, _net, _ring, _present in (("J20", ctrl1, ctrl1_ring, ctrl1_present),
@@ -454,9 +455,9 @@ for _ref, _net, _ring, _present in (("J20", ctrl1, ctrl1_ring, ctrl1_present),
     # refs further down (R19..R22): a pinned ref declared here, ahead of
     # auto-numbered parts, collides with SKiDL's counter and gets renamed.
     _ring_sense.append((_ref_net, _ring))
-    _tn = Net(_ref + "_TN")
-    j[4] += _tn                                # tip-normal: closed while empty
-    _presence.append((_tn, _present))
+    _rn = Net(_ref + "_RN")
+    j[4] += _rn                                # ring-normal: closed while empty
+    _presence.append((_rn, _present))
 
 # ---- J6/J7: the ring-board link and the indicator chain ---------------------
 # J6 is the console end of the ring board's link (#987): the ring board carries a
@@ -482,13 +483,13 @@ RING_PINMAP = {1: 1, 2: 2, 3: 3, 4: 4}
 j_ring = jst(4, "J6", "RING_LINK")
 j_ring[1] += v5
 j_ring[2] += gnd
-# The link's pull-ups use the Pi's 3V3 rail; GP13/GP14 are 3V3-tolerant
-# digital pads even when their Pico is unpowered. The ring board deliberately fits none: a second pull-up on another board's
-# rail is the split-rail hazard RING_LEVELS exists to catch (its ancestors were
-# 10k to a 5 V rail that sat 1.4 V over the RP2350's absolute maximum, and no
-# gate could see across two generators' netlists until RING_LEVELS was written).
-R("10k", ref="R11")[1, 2] += v3v3, link_to_ring
-R("10k", ref="R12")[1, 2] += v3v3, link_to_console
+# Both UART owners run from AUX, so their idle pull-ups use the Pico's 3V3.
+# Pi soft-off or an absent ribbon must not pull their undriven link low.
+# GP13/GP14 are fail-safe digital pads; the ring deliberately fits no second
+# pull-up to its separate local rail. RING_LEVELS also rejects any ring-side
+# part that would bias these link lines from the 5 V LED rail.
+R("10k", ref="R11")[1, 2] += v3v3_pico, link_to_ring
+R("10k", ref="R12")[1, 2] += v3v3_pico, link_to_console
 j_ring[3] += link_to_ring
 j_ring[4] += link_to_console
 
@@ -565,10 +566,11 @@ j_exp[6] += gnd
 # negotiate at all leaves VBUS at 5 V, the bucks never start, and nothing
 # powers up -- that case diagnoses itself.)
 #
-# Three wires, not four: GND, SDA, SCL. The breakout's VDD comes off VBUS on
-# its own board, and this board's 3V3 sits downstream of the contract being
-# measured -- feeding it back would make the measurement part of the loop.
-# The I2C pull-ups are the breakout's own, to its VDD; none here. ~250 mm of
+# Three wires, not four: GND, SDA, SCL. SparkFun schematic v10 feeds its external
+# VDD net through D4 (BAT60A) from STUSB4500 VREG_2V7. This is the low-voltage
+# regulator node, not the chip's VDD pin on VIN/VBUS. Leave external VDD/Qwiic
+# VCC unconnected: the two 2.2k I2C pull-ups use that local low-voltage node.
+# No pull-ups are added here. ~250 mm of
 # unshielded run past two bucks: 100 kHz, twisted with the ground wire.
 # Firmware reads it and reports it up the pedal link; until it does, the header
 # is just a header.
@@ -712,18 +714,18 @@ R("6.8k", ref="R18")[1, 2] += link_rx_pi, link_rx
 
 # CTRL ring sense (see J20/J21 above), through 4.7k. Not a bare trace: the ring
 # is a panel jack, so a plug can expose it to transients. The ring bias now
-# follows the Pico's own 3V3, and the resistor limits current into the sense pin. 4.7k against the RP2350's internal pull-up (50-80k,
+# follows the Pico's own 3V3, and the resistor limits current into the sense pin. 4.7k against the RP2350's internal pull-up (32-86k,
 # which firmware enables so an unwired v2 pin reads open) still divides a closed
-# switch down to ~0.3 V, a clean low. Pinned: the soldering guide names them.
+# switch below 0.5 V including resistor tolerance, a clean low. Pinned: the soldering guide names them.
 for _ref, (_ref_net, _ring) in zip(("R19", "R20"), _ring_sense):
     R("4.7k", ref=_ref)[1, 2] += _ref_net, _ring
-# Presence, through the same 4.7k for the same reasons: the tip-normal contact
-# is the jack's own metal, and while the jack is empty it is the tip node.
-# When inserted, TN opens; runtime #1082 disables IE between short samples and
+# Presence, through the same 4.7k for the same reasons: the ring-normal contact
+# is the jack's own metal, and while the jack is empty it is the ring node.
+# When inserted, RN opens; runtime #1082 disables IE between short samples and
 # discharges the pad at setup to handle A2 E9. The weak pull-down alone cannot
 # guarantee low with the input buffer continuously enabled.
-for _ref, (_tn, _present) in zip(("R21", "R22"), _presence):
-    R("4.7k", ref=_ref)[1, 2] += _tn, _present
+for _ref, (_rn, _present) in zip(("R21", "R22"), _presence):
+    R("4.7k", ref=_ref)[1, 2] += _rn, _present
 
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
@@ -989,7 +991,7 @@ def _check(strict_stations=True):
     # into a Pico input is the link pair, and it is exposed to exactly the same
     # mistake: one 10k to the ring board's 5 V rail "to make the link idle high"
     # would put 5 V on GP13. The pull-up that line actually runs on is on THIS
-    # board (J6 pin 6's, above), at the rail GP13 belongs to.
+    # board (J6 pins 3/4, above), at the rail GP13 belongs to.
     _rail = ring_j1["1"]
     _rail_refs = {r for r, _p in _ring_nets.get(_rail, [])}
     _node_count = {}
@@ -1129,12 +1131,14 @@ def _check(strict_stations=True):
             f"PI_RESERVED: Pi header pin {_pin} carries {_n.name}, but {_who} "
             "already uses it -- two drivers on one pin is a link that never comes up")
 
-    # ADC pads lack the RP2350 digital pins' unpowered 3V3 tolerance. Prove
-    # the complete bias island follows the Pico, with no link to the Pi rail.
+    # ADC bias must follow its owner's supply. The ring UART's idle bias must
+    # also remain high while AUX is on and the independently powered Pi is off.
+    # Prove the complete local island, with no link to the Pi rail.
     _ctrl_bias = {(p.part.ref, str(p.num)) for p in v3v3_pico.get_pins()}
     assert _ctrl_bias == {("J1", "36"), ("R7", "1"), ("R8", "1"),
-                          ("R9", "1"), ("R10", "1")}, (
-        f"CTRL_SUPPLY: ADC bias must come only from Pico pin 36: {_ctrl_bias}")
+                          ("R9", "1"), ("R10", "1"),
+                          ("R11", "1"), ("R12", "1")}, (
+        f"CTRL_SUPPLY: CTRL and UART bias must come only from Pico pin 36: {_ctrl_bias}")
     assert {n.name for n in pico[36].nets} == {"+3V3_PICO"}, (
         "CTRL_SUPPLY: Pico 3V3 must not be tied to the Pi 3V3 rail")
 
@@ -1219,8 +1223,8 @@ def _check(strict_stations=True):
             ("R18", "6.8k", {"LINK_RX_PI", "LINK_RX"}),
             ("R19", "4.7k", {"J20_REF", "CTRL1_RING"}),
             ("R20", "4.7k", {"J21_REF", "CTRL2_RING"}),
-            ("R21", "4.7k", {"J20_TN", "CTRL1_PRESENT"}),
-            ("R22", "4.7k", {"J21_TN", "CTRL2_PRESENT"})):
+            ("R21", "4.7k", {"J20_RN", "CTRL1_PRESENT"}),
+            ("R22", "4.7k", {"J21_RN", "CTRL2_PRESENT"})):
         _p = next((p for p in default_circuit.parts if p.ref == _ref), None)
         assert _p is not None and _p.value == _want_val, (
             f"PIN_REFS: {_ref} is "
@@ -1257,8 +1261,8 @@ def report():
             "        (surface-mount pads AND through-holes; solder it either way)\n"
             "\nPin map:\n" + "\n".join(lay) +
             "\n\nRails : +5V (logic AND WS2812; J3 in and J24 pill power on JST VH) | "
-            "+3V3 (Pi: MIDI, expansion and link pull-ups) | "
-            "+3V3_PICO (Pico pin 36: CTRL bias)\n"
+            "+3V3 (Pi: MIDI and expansion) | "
+            "+3V3_PICO (Pico pin 36: CTRL bias and ring UART pull-ups)\n"
             "Link  : 3V3 <-> 3V3; R17 TX 10k / R18 RX 6.8k -- no level shifting,\n"
             "        RX satisfies A2 E9; both resistors limit fault current\n"
             "AHCT  : MIDI OUT and indicators (3V3->5V crossings)\n")
@@ -1421,6 +1425,11 @@ def _selftest():
         pico[36].disconnect()
         pico[36] += v3v3
 
+    def _ring_pi_bias():
+        resistor = next(p for p in default_circuit.parts if p.ref == "R11")
+        resistor[1].disconnect()
+        resistor[1] += v3v3
+
     def _rx_too_weak():
         next(p for p in default_circuit.parts if p.ref == "R18").value = "10k"
 
@@ -1428,6 +1437,7 @@ def _selftest():
         next(p for p in default_circuit.parts if p.ref == "R18").value = "1k"
 
     case("CTRL bias connected to Pi supply", "CTRL_SUPPLY:", _ctrl_pi_bias)
+    case("ring UART bias connected to Pi supply", "CTRL_SUPPLY:", _ring_pi_bias)
     case("Pico output on wrong supply", "CTRL_SUPPLY:", _ctrl_supply_short)
     case("duplicate GPIO", "PIN_MAP:", _dup_gpio)
     case("expansion pin fighting an on-board function", "PIN_MAP:", _exp_collide)
@@ -1484,8 +1494,9 @@ def _selftest():
             RING_NET = ring_net_saved
             if mutate in (_rx_too_weak, _rx_fault_current):
                 next(p for p in default_circuit.parts if p.ref == "R18").value = "6.8k"
-            if mutate is _ctrl_pi_bias:
-                resistor = next(p for p in default_circuit.parts if p.ref == "R7")
+            if mutate in (_ctrl_pi_bias, _ring_pi_bias):
+                ref = "R7" if mutate is _ctrl_pi_bias else "R11"
+                resistor = next(p for p in default_circuit.parts if p.ref == ref)
                 resistor[1].disconnect()
                 resistor[1] += v3v3_pico
             if mutate is _ctrl_supply_short:
