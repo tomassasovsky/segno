@@ -10,7 +10,7 @@
 // an internal pull-down after the jack's normal contact opens. Raspberry Pi
 // specifies keeping IE off between software samples (RP2350 datasheet E9).
 // This is safe on later silicon too. Do not replace it with an output-low
-// pulse: the empty jack is connected to the analogue tip through R21/R22.
+// pulse: the empty jack is connected to the biased ring through R21/R22.
 static inline void console_presence_begin(uint8_t pin) {
   const uint32_t saved = save_and_disable_interrupts();
   gpio_init(pin);

@@ -41,7 +41,7 @@ static const uint8_t PIN_IND = 18;
 static const uint8_t CTRL_PIN[PEDAL_CTRL_COUNT] = {26, 27};
 // The ring contacts return through R19/R20 (4.7k) for dual-switch pedals.
 static const uint8_t CTRL_RING_PIN[PEDAL_CTRL_COUNT] = {20, 21};
-// The switched tip-normal contact is HIGH only with an empty jack.
+// The switched ring-normal contact is HIGH only with an empty jack.
 static const uint8_t CTRL_PRESENT_PIN[PEDAL_CTRL_COUNT] = {19, 22};
 static const uint8_t PIN_SMPS_PWM = 23;
 

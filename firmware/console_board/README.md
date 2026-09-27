@@ -16,7 +16,7 @@ Firmware 2.1 speaks pedal protocol 7. The v2 direct ring/encoder wiring is remov
 | Indicator data | GP18 | J24 pin 2, through AHCT125; 80 WS2812 pixels |
 | CTRL tip | GP26 / GP27 | ADC0/1; 10k pull-up to the Pico's own 3V3 |
 | CTRL ring | GP20 / GP21 | Jack ring through 4.7k; dual-switch pedal second contact |
-| CTRL presence | GP19 / GP22 | Tip-normal contact through 4.7k; high = empty |
+| CTRL presence | GP19 / GP22 | Ring-normal contact through 4.7k; high = empty |
 | PD status | GP0 SDA / GP1 SCL | J23 to STUSB4500 at address 0x28, 100kHz |
 | SMPS mode | GP23 | High for PWM mode |
 
