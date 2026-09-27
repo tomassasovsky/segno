@@ -13,6 +13,32 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+**September 27 Claude follow-up: verified circuit and assembly corrections.**
+The [current correction review](code-review/pcb-claude-followup-1072/review.md)
+resumes all three saved Claude reviews and independently adjudicates their
+findings. Screen R2 is 4.7 kΩ, 1%; ring C2/C3/C4 are 10 nF, with hand-soldering
+thermal relief and a separately specified 1000 µF strip-entry capacitor.
+Console R11/R12 now use Pico 3.3 V, and CTRL pin 4 uses the jack's RN contact.
+Claude authored the native changes. Independent review caught and closed a
+new 0.3 mm console supply segment; the final connection is uniformly 0.6 mm
+with a native rounded bend. No component placement or outline changed.
+
+Fresh final native DRC is zero/zero on all three boards. All 77 screen self-test
+checks, 24 console circuit controls, 15 layout controls and the retained
+power guards pass; ring source/encoder controls pass 8/13 cases respectively.
+Independent current CAM comparison passes 175 console/ring and 412 screen
+assertions. All boards remain two layers. Current runtime is #1082 at
+`53828fc4eae1c18af45abfc3ea7c31f19f9799d7`; its latest three documentation changes
+match RN wiring without changing behavior, and all eight firmware suites pass.
+
+Claude completed its initial reviews and applied the final CAD correction,
+but its usage limit interrupted the last follow-up verdict; no final Claude
+approval is claimed. See the [exact review coverage](code-review/pcb-claude-followup-1072/claude-review-status.md).
+Only the [current archive manifest](reviews/pcb-finish-all-three-1072/manufacturing-zips.json)
+identifies order files. Bare-PCB acceptance does not complete runtime/enclosure
+integration, assembled qualification or current-head CI. No order, merge,
+flashing or deployment occurred. Earlier paragraphs below are historical.
+
 **September 26 repeat production review: encoder and UART corrections.**
 The [fresh all-three-board review](code-review/pcb-final-repeat-1072/review.md)
 found and closed the ring encoder part/footprint mismatch and the console A2
