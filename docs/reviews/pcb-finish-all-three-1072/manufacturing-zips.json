@@ -127,6 +127,24 @@
   },
   "status": "bare-board-review-clean",
   "verification": {
+    "claude_final_console": {
+      "report": "docs/code-review/pcb-claude-followup-1072/claude-final-console.md",
+      "reviewed_revision": "60ff3a637a400deb1ce846f6cb76979c94250a32",
+      "sha256": "aa03d2d5772c91a17b7f4802519c7deb0441853739ac9e6e05e3afbe2efbe74d",
+      "verdict": "complete-no-unresolved-actionable-board-findings"
+    },
+    "claude_final_ring": {
+      "report": "docs/code-review/pcb-claude-followup-1072/claude-final-ring.md",
+      "reviewed_revision": "60ff3a637a400deb1ce846f6cb76979c94250a32",
+      "sha256": "087ba1f92e6cea93568925a1b3386b50f933588dd0fd7a26a5ff656864ea2b72",
+      "verdict": "complete-no-unresolved-actionable-board-findings"
+    },
+    "claude_final_screen": {
+      "report": "docs/code-review/pcb-claude-followup-1072/claude-final-screen.md",
+      "reviewed_revision": "60ff3a637a400deb1ce846f6cb76979c94250a32",
+      "sha256": "b503e1a19352f69e28c4423c0cf120e3d77c152ccbd4b01ee99a7ce3c300793a",
+      "verdict": "complete-no-unresolved-actionable-board-findings"
+    },
     "console_ring": {
       "checks_passed": 175,
       "report": "docs/code-review/pcb-claude-followup-1072/console-ring-fabrication-verification.json",

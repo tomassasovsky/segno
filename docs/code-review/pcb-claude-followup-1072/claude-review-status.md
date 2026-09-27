@@ -1,32 +1,41 @@
-# External Claude review status
+<!-- cspell:words Littelfuse -->
+# Completed final Claude reviews
 
-All three saved initial reviews resumed successfully on 27 September 2026
-and returned completed findings and coverage verdicts. Their initial findings
-were independently adjudicated in the adjacent screen, ring and console
-reports; they were not treated as automatic circuit truth or final approval.
+All three saved reviews finished their final re-review of the repaired boards
+on 27 September 2026. Each returned a completed verdict with **no unresolved
+actionable board defect**, supporting the documented bare-board design and
+fabrication package. Reviewed design revision:
+`60ff3a637a400deb1ce846f6cb76979c94250a32`; associated runtime:
+`53828fc4eae1c18af45abfc3ea7c31f19f9799d7`.
 
-| Initial review | Completed | Turns after resumption |
+| Board | Completed final review | Additional evidence |
 | --- | --- | --- |
-| Screen | Yes; returned findings | 3 |
-| Ring | Yes; returned findings | 3 |
-| Console | Yes; returned findings | 3 |
+| [Screen](claude-final-screen.md) | 16 turns; accepted for bare-board fabrication | A further nine-turn source-reading follow-up closed the Panasonic and Littelfuse primary-read gaps and corrected overly strong leakage/fuse claims. No new actionable defect. |
+| [Ring](claude-final-ring.md) | 16 turns; no open actionable defect | Current native geometry, DRC, encoder controls and a fresh CAM comparison checked. |
+| [Console](claude-final-console.md) | 26 turns; no open actionable defect | Final 0.6 mm native arc, supply domains, jack/runtime paths and Gerber representation checked. Stale auxiliary DRC report refreshed; zero violations/unconnected pads. |
 
-Claude then authored the ring thermal-relief/project correction and the
-console supply reroute. Both CAD passes returned scoped completion reports.
-The console reroute's first version passed DRC but its new 0.3 mm segments
-failed the independent 0.6 mm rail guard. This was returned to Claude for repair.
+Each resumed process returned normally with a completed successful result.
+The reviews reused their completed initial full-board evidence for unchanged
+areas and checked the corrections at the exact revision above. They did not
+relabel earlier incomplete runs as successful or restart an unrelated design.
+The final manufacturing archives remain exactly those identified by the
+[manifest](../../reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
 
-Claude applied the final 0.6 mm rounded connection and the 0.4 mm project hole
-minimum. Its DRC, routed-board guard and eleven power controls ran successfully,
-but the session limit interrupted the turn before a completed final verdict.
-The independent reviewer subsequently checked that actual final native revision,
-verified the retained geometry, ran the guard and fresh DRC, and closed the
-finding. The [console correction review](console-independent-review.md) records
-those final hashes and results.
+## Earlier interruption and claim checks
 
-**No final Claude approval of the repaired three-board release is claimed.**
-The completed initial Claude findings and CAD work are additional external
-evidence; final acceptance relies on the completed independent correction
-reviews and fresh native/CAM/source/delivery verification. The prior full review
-also contains completed DeepSeek evidence for the unchanged design. The cloud
-route's earlier exhausted-credit result is not reported as a successful review.
+The first final CAD follow-up hit a usage limit after applying the repaired
+console connection. Independent review verified that correction, but that was
+not a completed Claude verdict. The subsequent resumed passes above now finish
+the requested Claude review. Earlier cloud usage failures remain failures and
+are not part of this successful evidence.
+
+External claims were still checked independently: the screen review preserves
+conditional engineering allowances, the ring review does not claim a current
+rating by adding thermal-spoke widths, and console presence remains authoritative
+without an ADC unplug fallback. Exact relay stock was observed at a distributor;
+that does not reserve parts or guarantee future delivery.
+
+No further circuit, routing, component or firmware change was requested by
+these final verdicts. Physical USB qualification, actual assembly, loaded power
+and thermal behavior, enclosure integration and full CI remain separate.
+No order, merge, flash or deployment was performed.

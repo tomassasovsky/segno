@@ -1,4 +1,4 @@
-<!-- cspell:words DeepSeek -->
+<!-- cspell:words DeepSeek Littelfuse -->
 # Claude follow-up: three-board production review
 
 27 September 2026. **The completed circuit, correction, native PCB and
@@ -48,6 +48,23 @@ ratings were not supported by the actual primary evidence. They were resolved
 explicitly in the linked assessments rather than converted into speculative
 circuit changes or additional pre-PCB owner measurements.
 
+## Completed final Claude verdicts
+
+The requested final Claude reviews are now complete at design revision
+`60ff3a637a400deb1ce846f6cb76979c94250a32`. [Screen](claude-final-screen.md),
+[ring](claude-final-ring.md) and [console](claude-final-console.md) each have no
+unresolved actionable board finding and support the bare-board fabrication
+release under the documented limits. A further screen source-reading follow-up
+closed its Panasonic/Littelfuse coverage gaps. No new production change was
+needed. The auxiliary console DRC report was refreshed and remains zero/zero;
+its timestamp is the only report change.
+
+The documentation/evidence commit publishing these verdicts preserves all
+97 production inputs and every native/CAM/archive identity from the reviewed
+design. Final published commit and exact delivered copies are recorded in the
+verified delivery inventory; that later documentation commit is not mislabelled
+as the design revision Claude originally inspected.
+
 ## Completed review coverage
 
 | Independent review | Completed scope and result |
@@ -66,12 +83,12 @@ was introduced. The previous accumulated review covers unchanged export,
 lifecycle, reuse, error-path and integration logic. No engine or Dart application
 implementation changed. All mandatory independent review angles completed.
 
-All three saved initial Claude reviews returned findings and coverage verdicts.
 Claude authored the native ring correction and console reroute; independent
 review caught the first console hop's width regression, then verified its repair.
-Claude reached its session limit after applying that final repair and before a
-final verdict. **No final Claude release approval is claimed.** The
-[external review status](claude-review-status.md) records the distinction.
+An earlier usage-limit interruption left the additional final Claude review
+incomplete. The resumed final passes above now close that remaining review work.
+The [external review status](claude-review-status.md) records the completed
+verdicts, the earlier interruption and the retained coverage limits.
 
 ## Verification
 

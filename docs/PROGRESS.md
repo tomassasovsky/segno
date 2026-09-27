@@ -13,6 +13,19 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+**September 27 final Claude review completed.** All three saved sessions now
+returned completed final verdicts on design revision
+`60ff3a637a400deb1ce846f6cb76979c94250a32`, with no open actionable board defect.
+The screen's additional manufacturer-source follow-up also completed, closing
+its two direct-read gaps. See the [completed verdicts](code-review/pcb-claude-followup-1072/claude-review-status.md).
+No further design, routing, BOM or executable firmware changes were required.
+The stale auxiliary console DRC report was rerun: zero violations/unconnected
+pads, date-only report change. All 97 production inputs and the three native/ZIP
+identities are preserved. The documentation release adds the final review
+records and their hashes to the manufacturing manifest. Assembly qualification,
+runtime/enclosure integration and current-head CI remain separate; nothing was
+ordered, merged, flashed or deployed. The earlier interruption below is history.
+
 **September 27 Claude follow-up: verified circuit and assembly corrections.**
 The [current correction review](code-review/pcb-claude-followup-1072/review.md)
 resumes all three saved Claude reviews and independently adjudicates their
