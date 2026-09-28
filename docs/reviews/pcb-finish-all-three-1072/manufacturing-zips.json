@@ -118,15 +118,20 @@
     "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
     "No order, merge or device deployment performed."
   ],
-  "purpose": "Revision N stocked-parts redesign and all-three-board copper audit. Native/CAM review is separate from assembled qualification and full CI.",
+  "purpose": "Revision N native/CAM checks pass; final requested adversarial review is on hold pending a successful fresh Claude console closeout.",
   "review": "docs/reviews/screen-power-stock-cost-1072/review.md",
   "runtime": {
     "deployment": "not performed",
     "pull_request": 1082,
     "revision": "53828fc4eae1c18af45abfc3ea7c31f19f9799d7"
   },
-  "status": "bare-board-review-clean",
+  "status": "review-incomplete",
   "verification": {
+    "adversarial_review": {
+      "report": "docs/reviews/pcb-revn-adversarial-1072/review.md",
+      "sha256": "793fb8d09ec2bacbdf7bad0091f77d2e5efb44956ba5ba8d5efe81348b531622",
+      "status": "incomplete-claude-console-session-limit"
+    },
     "console_ring": {
       "checks_passed": 175,
       "report": "docs/reviews/screen-power-stock-cost-1072/console-ring-fabrication-verification.json",
