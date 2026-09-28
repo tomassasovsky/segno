@@ -112,7 +112,7 @@
   "date": "2026-09-28",
   "limits": [
     "The former ring ZIP at the baseline revision is withdrawn. Only the exact Same Sky encoder matches the current ring fabrication files.",
-    "Revision L screen ZIP remains withdrawn. Use the screen-power-rev-m archive in this record.",
+    "Earlier screen revisions are superseded. Use the screen-power-rev-n archive in this record.",
     "Bare-board CAD and export verification; assembled electrical, USB and enclosure behavior are not physically qualified.",
     "Ordinary two-layer fabrication does not guarantee USB differential impedance; the documented coated-field result is a nominal model.",
     "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",

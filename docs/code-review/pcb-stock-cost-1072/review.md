@@ -86,3 +86,8 @@ Final staging note: the scoped whitespace check passes with STEP model files
 excluded. Their preserved vendor/generated serialization contains trailing
 spaces and CRLF line endings; no source or documentation whitespace errors
 remain. The final staged model bytes match the reviewed fabrication manifest.
+
+Publication follow-up: a final committed-head check found the manufacturing
+manifest still naming the withdrawn Rev M archive in one instruction. That
+instruction now selects Rev N. All reviewed production/native/CAM identities
+remain unchanged from `d05aa10f672686fc69fd3ee3afd48414e645c9ad`.
