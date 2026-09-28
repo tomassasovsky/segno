@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-09-22T16:16:07.480254+00:00",
+  "old_console_sha256": "d4a735337159ee083228dbfa23bc4f16c329b2a44fe26847d5a04fc99004b360",
+  "new_console_sha256": "951b477d7144d42cb221cb1893ff1f359717532c2259cbfc384f792feb4d714e",
+  "changed_footprints": [
+    "J23"
+  ],
+  "pd_move_mm": [
+    0,
+    0.8
+  ],
+  "common_connector_row_y_mm": 69.0,
+  "all_other_footprints_and_pad_geometry_unchanged": true,
+  "removed_track_segments": 2,
+  "new_track_segments": 6,
+  "modified_copper_items": 6,
+  "affected_nets": [
+    "GND",
+    "PD_SCL",
+    "PD_SDA",
+    "SW_STOP",
+    "SW_UNDO"
+  ],
+  "via_count_unchanged": true,
+  "native_drc_violations": 0,
+  "native_drc_unconnected": 0,
+  "generator_placement_and_labels": "pass",
+  "saved_board_footprint_spacing": "pass",
+  "saved_board_fabrication_checks": "pass",
+  "extra_saved_board_placement_label_check": "same pre-existing R18/J25 assertion before and after",
+  "screen_board_cad_and_gpio_regression": "pass",
+  "screen_board_sha256": "b1a404b92166151ec2b43589d48c5fb3be94028b295cf2be9c71cd7ab7630e91",
+  "package": "2026-09-22-console-aligned",
+  "physical_qualification": "not performed"
+}

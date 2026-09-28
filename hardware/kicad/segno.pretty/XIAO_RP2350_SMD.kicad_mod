@@ -12,8 +12,8 @@
 		(uuid "7bab359d-5e5b-4dff-9db4-e7c8562ce635")
 		(effects
 			(font
-				(size 0.635 0.635)
-				(thickness 0.1016)
+				(size 1 1)
+				(thickness 0.15)
 			)
 		)
 	)
@@ -60,7 +60,7 @@
 		(start -10.414 -6.985)
 		(end -10.414 6.985)
 		(stroke
-			(width 0.1)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -70,7 +70,7 @@
 		(start -8.509 -8.89)
 		(end 8.636 -8.89)
 		(stroke
-			(width 0.1)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -80,7 +80,7 @@
 		(start -8.509 8.89)
 		(end 8.636 8.89)
 		(stroke
-			(width 0.1)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -90,7 +90,7 @@
 		(start 10.541 6.985)
 		(end 10.541 -6.985)
 		(stroke
-			(width 0.1)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -100,7 +100,7 @@
 		(start 10.553 -4.498)
 		(end 12.094284 -4.497284)
 		(stroke
-			(width 0.127)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -110,7 +110,7 @@
 		(start 12.094012 4.497988)
 		(end 10.55 4.499)
 		(stroke
-			(width 0.127)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -120,7 +120,7 @@
 		(start 12.594012 -3.997284)
 		(end 12.594012 3.997988)
 		(stroke
-			(width 0.127)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -131,7 +131,7 @@
 		(mid -9.856038 -8.332038)
 		(end -8.509 -8.89)
 		(stroke
-			(width 0.1)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -142,7 +142,7 @@
 		(mid -9.856038 8.332038)
 		(end -10.414 6.985)
 		(stroke
-			(width 0.1)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -153,7 +153,7 @@
 		(mid 9.987038 -8.332038)
 		(end 10.545 -6.985)
 		(stroke
-			(width 0.1)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -164,7 +164,7 @@
 		(mid 9.983038 8.332038)
 		(end 8.636 8.89)
 		(stroke
-			(width 0.1)
+			(width 0.15)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -175,7 +175,7 @@
 		(mid 12.447619 -4.350707)
 		(end 12.594012 -3.997284)
 		(stroke
-			(width 0.127)
+			(width 0.15)
 			(type default)
 		)
 		(layer "F.SilkS")
@@ -186,7 +186,7 @@
 		(mid 12.44757 4.351553)
 		(end 12.094012 4.497988)
 		(stroke
-			(width 0.127)
+			(width 0.15)
 			(type default)
 		)
 		(layer "F.SilkS")

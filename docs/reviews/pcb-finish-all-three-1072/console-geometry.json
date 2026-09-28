@@ -1,0 +1,497 @@
+{
+  "schema_version": 1,
+  "scope": "Console placement and local copper finish before the final general rounding pass",
+  "status": "imported_combined_native_verified_cam_pending",
+  "coordinates": {
+    "unit": "mm",
+    "native_board_origin": [
+      100,
+      60
+    ]
+  },
+  "source": {
+    "hardware/kicad/console_board_pcb.py": "d38cc8ece46da3b2f1f57cde1c1fc1d9f3f2a731351c60ed692a658707308eb4",
+    "hardware/kicad/console_ring_power.py": "3c598c7a3985f66eb0a1d852745dea4babebf165d6f79945e5eec52dc73dad1e",
+    "hardware/kicad/round_routes.py": "0de2ded7f6c115f5465c98f6408e9514169ed63ffa6335a147ceea692bfd0a05",
+    "hardware/kicad/route_console_board.sh": "5f50e68233792ab050bf5eddbc1808f6473458ecb3887c3c37772bebe928c8a7"
+  },
+  "boards": {
+    "before": {
+      "file": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "sha256": "a57759950c14ab9606613dac89d51b9021e7824b80055f0e3daaa5ce571b377b"
+    },
+    "reviewed_candidate": {
+      "file": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "sha256": "e5cac9d98fd7d4bc1e6d2e4a6f4a4fb00dba5494fd4d142cbf451fcf42948b20"
+    },
+    "placed_candidate": {
+      "file": "hardware/kicad/out_console/console.placed.kicad_pcb",
+      "sha256": "4e062733930f25758f6ce0c46119e2ec2168bbdb5a091a4bcd06880b5e81fb6b"
+    },
+    "superseded_candidate_sha256": "56e3de4835945977df9bb6057a7a662415e6d6f1c89f8d4034b78e6510bbec13",
+    "final_combined": {
+      "file": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa"
+    }
+  },
+  "C20": {
+    "center_local": [
+      43.75,
+      19.6
+    ],
+    "pads_native": {
+      "1": {
+        "net": "+3V3",
+        "xy": [
+          142.5,
+          79.6
+        ],
+        "drill": 0.8
+      },
+      "2": {
+        "net": "GND",
+        "xy": [
+          145,
+          79.6
+        ],
+        "drill": 0.8
+      }
+    },
+    "courtyard_gaps": {
+      "U2": 2.045,
+      "R4": 0.51,
+      "J22": 0.5
+    },
+    "required_U2_isolation_gap": 2.0,
+    "ground_stitch": {
+      "via_xy": [
+        146.55,
+        79.6
+      ],
+      "via_diameter": 0.8,
+      "via_drill": 0.4,
+      "stub_layer": "F.Cu",
+      "stub_width": 0.6
+    },
+    "U2_supply_route_length": 5.16220346,
+    "footprint_model_drills_preserved": true
+  },
+  "rear_join": {
+    "net": "+5V",
+    "layer": "B.Cu",
+    "bar_radius": 1.0,
+    "blend_radius": 0.3,
+    "bar_track_overlap": 0.22,
+    "old_gap_width": 0.05,
+    "old_gap_probe_bounds": [
+      102.85001,
+      116.76,
+      102.89999,
+      117.82
+    ],
+    "old_gap_probe_area_mm2": 0.0529788,
+    "remaining_gap_probe_area_mm2": 0.0,
+    "filled_union_contour": {
+      "final_candidate": {
+        "internal_holes": 0,
+        "max_chord_turn_degrees": 9.561045216583313,
+        "max_chord_turn_at": [
+          103.484229,
+          118.745095
+        ],
+        "ignore_fill_edges_shorter_mm": 0.005,
+        "points": [
+          [
+            103.12,
+            119.03812871377916
+          ],
+          [
+            103.123947,
+            118.989635
+          ],
+          [
+            103.123949,
+            118.989623
+          ],
+          [
+            103.135688,
+            118.94239
+          ],
+          [
+            103.15491,
+            118.897684
+          ],
+          [
+            103.154914,
+            118.897677
+          ],
+          [
+            103.18111,
+            118.856666
+          ],
+          [
+            103.181113,
+            118.856662
+          ],
+          [
+            103.213603,
+            118.820422
+          ],
+          [
+            103.251522,
+            118.789913
+          ],
+          [
+            103.25153,
+            118.789908
+          ],
+          [
+            103.293877,
+            118.765938
+          ],
+          [
+            103.339549,
+            118.749127
+          ],
+          [
+            103.339551,
+            118.749126
+          ],
+          [
+            103.339553,
+            118.749126
+          ],
+          [
+            103.352544,
+            118.746623
+          ],
+          [
+            103.387347,
+            118.73992
+          ],
+          [
+            103.434603,
+            118.738603
+          ],
+          [
+            103.435997,
+            118.738565
+          ],
+          [
+            103.435998,
+            118.738565
+          ],
+          [
+            103.484229,
+            118.745095
+          ],
+          [
+            103.521167,
+            118.756398
+          ],
+          [
+            103.524144,
+            118.756196
+          ],
+          [
+            103.531081,
+            118.75855
+          ],
+          [
+            103.635033,
+            118.793838
+          ],
+          [
+            103.647542,
+            118.79719
+          ],
+          [
+            103.76311,
+            118.820178
+          ],
+          [
+            103.775948,
+            118.821868
+          ],
+          [
+            103.896766,
+            118.829788
+          ],
+          [
+            103.903242,
+            118.83
+          ],
+          [
+            104.3,
+            118.83
+          ]
+        ]
+      },
+      "rejected_2bb_fixture": {
+        "internal_holes": 0,
+        "max_chord_turn_degrees": 48.12480024597712,
+        "max_chord_turn_at": [
+          103.205017,
+          118.83
+        ],
+        "ignore_fill_edges_shorter_mm": 0.005,
+        "points": [
+          [
+            103.12,
+            119.0195856397471
+          ],
+          [
+            103.121795,
+            119.016086
+          ],
+          [
+            103.123947,
+            118.98963
+          ],
+          [
+            103.123949,
+            118.989618
+          ],
+          [
+            103.135688,
+            118.942391
+          ],
+          [
+            103.154909,
+            118.897686
+          ],
+          [
+            103.154911,
+            118.897683
+          ],
+          [
+            103.18111,
+            118.856668
+          ],
+          [
+            103.205017,
+            118.83
+          ],
+          [
+            104.3,
+            118.83
+          ]
+        ]
+      }
+    }
+  },
+  "rounded_power_feed": {
+    "net": "+5V",
+    "width": 1.7,
+    "inner_radius": 1.0,
+    "formerly_square_corner": [
+      102.27,
+      137.27
+    ],
+    "anchors_preserved": {
+      "J3.1": [
+        105.4,
+        110.88
+      ],
+      "J24.3": [
+        105.4,
+        116.88
+      ],
+      "J6.1": [
+        148.75,
+        129
+      ]
+    },
+    "parallel_vias": {
+      "count": 4,
+      "diameter": 0.9,
+      "drill": 0.5,
+      "xy": [
+        [
+          141.25,
+          136.35
+        ],
+        [
+          141.25,
+          137.45
+        ],
+        [
+          142.35,
+          136.35
+        ],
+        [
+          142.35,
+          137.45
+        ]
+      ]
+    },
+    "before_general_rounding_clearance_to_IND_DATA_OUT": {
+      "actual_copper_clearance_mm": 0.22144136182306026,
+      "approximation_limit_mm": 1e-05,
+      "nearest_points": [
+        [
+          103.12086635786038,
+          136.5004792841869
+        ],
+        [
+          103.342041,
+          136.489614
+        ]
+      ],
+      "arc_chords": 8,
+      "rule_mm": 0.2
+    },
+    "final_clearance_to_IND_DATA_OUT_mm": 0.27625182609533006
+  },
+  "micro_jog_cleanup": {
+    "net": "+5V",
+    "layer": "F.Cu",
+    "width": 0.7,
+    "external_endpoints_preserved": [
+      [
+        156.4249,
+        89.5169
+      ],
+      [
+        177.2681,
+        89.5181
+      ]
+    ],
+    "removed_intermediate_points": [
+      [
+        171.9696,
+        89.5169
+      ],
+      [
+        171.9708,
+        89.5181
+      ]
+    ]
+  },
+  "checks": {
+    "clean_source_build": true,
+    "generator_negative_controls": 15,
+    "drc_violations_all_severities": 0,
+    "drc_unconnected_items": 0,
+    "power_guard_negative_controls": 11,
+    "source_native_parity": [
+      "rear power zone outlines and settings",
+      "C20 pad positions and nets",
+      "C20 footprint model and drills",
+      "C20/U2/R4/J1 reference positions",
+      "C20 ground stitch"
+    ],
+    "source_native_parity_negative_controls": [
+      {
+        "fault": "missing blend",
+        "rejected": true
+      },
+      {
+        "fault": "wrong origin on blend",
+        "rejected": true
+      },
+      {
+        "fault": "displaced C20",
+        "rejected": true
+      },
+      {
+        "fault": "retained old C20 stitch",
+        "rejected": true
+      }
+    ],
+    "unchanged": [
+      "mounting JSON",
+      "connector pad locations",
+      "all footprint placements except C20",
+      "component models and drills",
+      "net names",
+      "edge outline",
+      "stack",
+      "two copper layers"
+    ],
+    "local_correction_changed_track_nets": {
+      "+3V3": {
+        "before": 43,
+        "after": 45,
+        "removed": 8,
+        "added": 10
+      },
+      "+3V3_PICO": {
+        "before": 20,
+        "after": 23,
+        "removed": 5,
+        "added": 8
+      },
+      "+5V": {
+        "before": 53,
+        "after": 123,
+        "removed": 14,
+        "added": 84
+      },
+      "GND": {
+        "before": 142,
+        "after": 142,
+        "removed": 2,
+        "added": 2
+      }
+    }
+  },
+  "pending": [
+    "final CAM parity and fabrication release evidence",
+    "whole-PR review and CI gates",
+    "assembled hardware verification"
+  ],
+  "pico_rejoin": {
+    "net": "+3V3_PICO",
+    "layer": "F.Cu",
+    "width": 0.6,
+    "direct_path": [
+      [
+        157.92,
+        76
+      ],
+      [
+        155.77,
+        78.15
+      ],
+      [
+        145.4402,
+        78.15
+      ]
+    ],
+    "external_endpoints_preserved": true
+  },
+  "final_combined_rounding": {
+    "evidence": "docs/reviews/pcb-finish-all-three-1072/rounding-regressions.json",
+    "corners_rounded": 329,
+    "remaining_reported_corners": [],
+    "native_drc": {
+      "violations": 0,
+      "unconnected_items": 0,
+      "exit_code": 0
+    },
+    "second_run_byte_identical": true,
+    "metadata_footprints_pads_models_vias_zone_outlines_stack_and_outline_exact": true,
+    "locked_tracks_exact": true,
+    "locked_track_count": 91,
+    "all_tracks_at_least_1mm_exact": true,
+    "changed_widths_mm": [
+      0.4,
+      0.6,
+      0.7
+    ],
+    "power_injected_faults_rejected": 11,
+    "source_native_parity": {
+      "source_native_zones_exact": true,
+      "source_native_C20_exact": true,
+      "source_native_references_exact": true,
+      "source_native_ground_stitch_exact": true
+    },
+    "old_slot_missing_copper_mm2": 0.0,
+    "bar_track_overlap_at_y117_mm": 0.21999999999999886,
+    "fillet_internal_holes": 0,
+    "fillet_max_chord_turn_degrees": 9.561045216583313,
+    "minimum_bend_to_IND_DATA_OUT_clearance_mm": 0.27625182609533006,
+    "front_and_back_filled_copper_visually_reviewed": true
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "baseline_sha256": "1a5bf4ba7b27691f746d61e82fbbe0708b205a57688299a56e4da3a1a88947c6",
+  "board_sha256": "484460a4e08fddb1d9967a1a36e62c150238cad547e3a732aec6b9d8b34cf832",
+  "copper_preserved": true,
+  "footprints_and_pad_nets_preserved": true,
+  "reference_placements_changed": [
+    "J25",
+    "R16",
+    "R20"
+  ],
+  "removed_bottom_text": "SCREEN 1=GPIO17 2=GND",
+  "added_top_text": "SCREEN",
+  "generator_placement_checks": "pass",
+  "saved_board_placement_checks": "pass",
+  "fabrication_checks": "pass",
+  "zones_preserved": true
+}

@@ -1,0 +1,21 @@
+{
+  "baseline_revision": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+  "passed": true,
+  "hash_comparisons": 488,
+  "errors": [],
+  "archive_members": 34,
+  "final_board_sha256": {
+    "console-v3": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
+    "ring-white": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+    "screen-power-rev-l": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123"
+  },
+  "final_archive_sha256": {
+    "console-v3": "919667b6141639590da8dd36319b236e5c434c4d8f2f3799644374e81da97fc3",
+    "ring-white": "7b0dd11efc0ab1f2c2f3a28a0a1bb6367d692171ad4136ea9fae49bcabc5a413",
+    "screen-power-rev-l": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84"
+  },
+  "independent_CAM_assertions": 587,
+  "screen_mandatory_controls": 61,
+  "delivery_folder": "2026-09-26-production-review",
+  "limits": "Exact file consistency and CAD checks, not physical qualification or permission to merge/order."
+}

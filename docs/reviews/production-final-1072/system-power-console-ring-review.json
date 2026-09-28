@@ -1,0 +1,137 @@
+{
+  "review_head": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+  "scope": "complete console/ring circuits and shared power/thermal/wiring/enclosure evidence; screen detailed circuit reviewed separately",
+  "production_files_changed": false,
+  "verified_PCB_circuit_blockers": [],
+  "documentation_corrections_reported": [
+    "runtime branch-pinned E9/PD dependency",
+    "obsolete v2 J6 pin prose",
+    "Pico USB service isolation",
+    "selected 40-strip purchasing option"
+  ],
+  "source_hashes": {
+    "hardware/kicad/console_board.py": "6d5a60e679292bb18959cee76e5d6e6a0da4b1c722737e3351b92c08700a2176",
+    "hardware/kicad/ring_board.py": "ccffc72aec110fffb18a20e2158b11a27a45e1d3ddceacc6b2e3c5cc30c30260",
+    "hardware/kicad/console_board.net": "bc07049c367f126779b20d11e765ed4a3d3c2436d94a56eb9b40c926958f1d6b",
+    "hardware/kicad/ring_board.net": "7760982472f448cf3b811a0f9a71d5d7a9122665311d130c561f767dcf3e379a",
+    "hardware/kicad/out_console/segno_console_board.kicad_pcb": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+    "hardware/kicad/segno_pedal_ring.kicad_pcb": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+    "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+    "hardware/kicad/console_ring_power.py": "3c598c7a3985f66eb0a1d852745dea4babebf165d6f79945e5eec52dc73dad1e",
+    "hardware/kicad/ring_power.py": "d2dcb84bc34a77f9ab27c0f2bbbeb939dfa4594ab0f3682557730d3f025c8548",
+    "hardware/kicad/screen_power/switch_circuit.py": "9869038ee6a4a3c8d7459db4d09ee7e4bdb20d54c6102d3a10e4fd16c95164ec",
+    "hardware/enclosure/segno_enclosure.py": "17f7089fc63d8a0b3675c6d2d658d022868294bfb0801d8461719861f776a014",
+    "hardware/enclosure/FUSION_MODELS.md": "e417ebe0f2a6699cb4547272521f1c52b0295fe17f5dc38c0281f6bffdbd0cdb"
+  },
+  "connected_pad_counts": {
+    "console": 206,
+    "ring": 63
+  },
+  "pad_map_errors": {
+    "console": {
+      "missing_or_wrong": {},
+      "extra": {}
+    },
+    "ring": {
+      "missing_or_wrong": {},
+      "extra": {}
+    }
+  },
+  "native_power_guards": {
+    "console": {
+      "passed": true,
+      "board_sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa"
+    },
+    "ring": {
+      "passed": true,
+      "board_sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2"
+    },
+    "screen": {
+      "passed": true,
+      "board_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+      "errors": []
+    }
+  },
+  "power_estimates": {
+    "console": {
+      "width_mm": 1.7,
+      "length_mm": 93.00779464228994,
+      "load_A": 2.64,
+      "resistance_20C_ohm": 0.027355233718320576,
+      "drop_20C_V": 0.07221781701636633,
+      "drop_100C_minus20percent_width_V": 0.11865387335788988,
+      "empirical_reduced_width_rise_C": 7.542492010205909
+    },
+    "ring": {
+      "width_mm": 1.5,
+      "length_mm": 21.731201742255497,
+      "load_A": 2.44,
+      "resistance_20C_ohm": 0.007243733914085166,
+      "drop_20C_V": 0.017674710750367802,
+      "drop_100C_minus20percent_width_V": 0.0290395497628543,
+      "empirical_reduced_width_rise_C": 7.750364753820005
+    }
+  },
+  "AUX_A": 7.608,
+  "all_120_white_A": 11.91,
+  "required_runtime": "92af127d9a2d58c4ea9b810b38d06ca3ddc3c73d",
+  "E9_runtime_source_contract": "inspected matching source and callers; input enable off between reads, interrupt state preserved",
+  "screen_FET_loss_W_each": 0.46059374999999997,
+  "screen_FET_estimated_Tj_C": 94.54453125,
+  "screen_thermal_assumptions": "60 C local air;75 C/W upright engineering estimate;1.7 hotRds factor;not measured",
+  "enclosure_inputs_unchanged": {
+    "hardware/enclosure/segno_enclosure.py": true,
+    "hardware/enclosure/FUSION_MODELS.md": true,
+    "hardware/enclosure/out/segno_screen7_tower.step": true,
+    "hardware/enclosure/out/segno_screen16_stand_L.step": true,
+    "hardware/enclosure/out/segno_screen16_stand_R.step": true,
+    "hardware/enclosure/out/segno_platform_mid_ring.step": true,
+    "hardware/enclosure/out/segno_platform_front_ring.step": true
+  },
+  "current_STEP": {
+    "hardware/kicad/out_console/segno_console_board.step": {
+      "sha256": "0cfd9c1999c428615f279bad308928bad711db8d675a65ad2e91f4fa6bc8a6bc",
+      "bbox": {
+        "xmin": 99.99999999999324,
+        "xmax": 199.5,
+        "ymin": -159.5,
+        "ymax": -59.99999999999323,
+        "zmin": -2.1050000000000004,
+        "zmax": 12.495000000000001
+      },
+      "solid_count": 69
+    },
+    "hardware/kicad/out_ring/segno_ring_board.step": {
+      "sha256": "3e0dedbdc438c6f3edd9ac327f63af7ae4efbeffbeb9324839167fecfa015d59",
+      "bbox": {
+        "xmin": -4.0,
+        "xmax": 76.0,
+        "ymin": -76.0,
+        "ymax": 4.0,
+        "zmin": -8.085,
+        "zmax": 26.0950001
+      },
+      "solid_count": 74
+    },
+    "hardware/kicad/screen_power/hand/fabrication/board.step": {
+      "sha256": "5586afc424b86bebfc36bada8752e13b7d9095af077a0dd3c1ad0bdc9b231793",
+      "bbox": {
+        "xmin": -2.22044604925e-16,
+        "xmax": 68.0,
+        "ymin": -76.0,
+        "ymax": 0.0,
+        "zmin": -8.13500000000008,
+        "zmax": 20.39
+      },
+      "solid_count": 124
+    }
+  },
+  "enclosure_limit": "screen placement envelope matches prior evidence; proposed floor holes not integrated;40-strip housing/harness not proven by24-module model",
+  "deepseek_adjudication": {
+    "1": "Rejected: all120white outside statedscope, explicit11.91A boundary alreadydocumented",
+    "2": "Resolved byrequired runtimeE9workaround;hardwarebranchmustpointtoit",
+    "4": "No verifiedratingoverload;3A22AWG,85Ctotaltemperaturelimitretained",
+    "8": "Transienthardeninglimitationonly;normalpassivepedalvoltagesboundedGND..3V3"
+  },
+  "report_sha256": "6482a1aba61db790312180cc15e1632f0c4d135f2fbf070ce86691107dda0a52"
+}

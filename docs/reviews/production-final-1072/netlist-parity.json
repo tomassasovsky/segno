@@ -1,0 +1,17 @@
+{
+  "console": {
+    "connected_pad_map_matches": true,
+    "connected_pad_count": 206,
+    "errors": []
+  },
+  "ring": {
+    "connected_pad_map_matches": true,
+    "connected_pad_count": 63,
+    "errors": []
+  },
+  "screen": {
+    "connected_pad_map_matches": true,
+    "connected_pad_count": 115,
+    "errors": []
+  }
+}

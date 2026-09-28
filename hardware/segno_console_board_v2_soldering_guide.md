@@ -5,10 +5,33 @@ issue #747): the Pico 2 / RP2350 control board that lies beside the Raspberry Pi
 floor console. Everything on it is through-hole except the Pico 2 module itself, which is
 soldered down by its castellations.
 
+
+For the current v3 board, use the current generated BOM for quantities and connector
+sizes; the v2 illustration and v2-only rows below are historical. J2 is Würth
+61204021621 and J22 is Würth 61300621121, with 1.25 mm finished holes and minimum
+1.80 mm pads. The Pico is soldered by its castellations, not an unspecified header.
+
+The CTRL bias resistors R7–R10 and ring-link pull-ups R11/R12 use
+**Pico pin 36 (`+3V3_PICO`)**. This supply is separate from the Pi's `+3V3`,
+which still supplies the MIDI receiver and expansion pin. The AUX-powered
+UART pair retains its idle high when the Pi is off. Before fitting the modules,
+verify that those two 3.3 V nets
+are not shorted. This prevents the expression inputs from powering an unpowered
+Pico through its analog pads when the Pi remains on. Use the Pi's SWD programming
+connection for the assembled board; the Pico USB supply can energize the auxiliary
+5 V rail through its onboard diode, so do not connect a USB programmer with the
+auxiliary harness attached.
+
+At H2/H3/H4, keep conductive screw heads and standoff contact surfaces at or
+below 6 mm diameter on **both faces**, or use insulating washers. Larger metal
+washers can bridge the isolated mounting pad to GND and defeat the single chassis
+bond at H1.
+
 ![Soldering order, annotated top view](segno_console_board_v2_soldering_guide.png)
 
-The image is the routed board (`kicad/out_console/segno_console_board.kicad_pcb`, DRC
-0 / 0) rendered from the top with every part outlined in the colour of its step. Every resistor, capacitor,
+The image is the historical v2 illustration, rendered from the top with each part
+outlined in its assembly-step colour. For v3, use the freshly exported assembly PDF
+and BOM in the current review package. Every resistor, capacitor,
 diode and IC has its **value printed on its body** in the image, so you can solder straight
 from the picture. A filled dot is pin 1, the half-disc on a DIP is its notch, `+`/`−` are
 the electrolytic leads, and the bar on D1 is its cathode band.
@@ -72,16 +95,18 @@ v3 is the same board with the ring-board link (#987) and the CTRL ring sense
 
 | | v2 | v3 |
 |---|---|---|
-| J6 `RING` | JST-XH 8-pin; the ring board's 4-way lands on pins 1, 3, 6, 7 | **JST-XH 4-pin**, cable 1:1 with the ring board's J1 |
+| J6 `RING` | JST-XH 8-pin; the ring board's 4-way lands on pins 1, 3, 6, 7 | **JST-XH 4-pin**; selected 40-pixel assembly uses pins 3/4 for UART only. Leave pins 1/2 empty and supply ring J1.1/.2 from the local AUX split; see [ring assembly](kicad/RING_ASSEMBLY.md) |
 | R1 (330 Ω), R13 (10 kΩ), R15 (100 kΩ) | fitted | **not fitted, no pads** — the ring-data path is gone; U1's gate B is parked |
+| R18 link RX | 10 kΩ | **6.8 kΩ, 1%** from Pi TX to Pico RX. This satisfies the RP2350 A2 E9 input-leakage workaround for hardware UART. R17 remains 10 kΩ. |
 | R19, R20 | — (bench wires from J20/J21 pin 2 to J22's GP20/GP21 pads instead) | **4.7 kΩ**, in the row under the Pico where R13 and R15 used to be (R20 in the slim band by R16, R19 in the row below): the ring-sense series parts. Far from the jacks on purpose — DC sense lines, and the column under `CTRL 1` stays J22's |
-| J20 / J21 `CTRL` | JST-XH 3-pin: tip, ring, sleeve | **JST-XH 4-pin**: tip, ring, sleeve, **TN** (the jack's tip-normal contact). The jacks themselves are **Neutrik NJ6FD-V** (switched, same D punch). The pair sits 2.6 mm further left than on v2 |
-| R21, R22 | — | **4.7 kΩ**, the row under R11/R12, left of R19: presence series parts (TN → GP19/GP22) |
+| J20 / J21 `CTRL` | JST-XH 3-pin: tip, ring, sleeve | **JST-XH 4-pin**: tip, ring, sleeve, **RN** (the jack's ring-normal contact; TN/SN remain open). The jacks themselves are **Neutrik NJ6FD-V** (switched, rear-mounted through Ø12 mm holes). The pair sits 2.6 mm further left than on v2 |
+| R21, R22 | — | **4.7 kΩ**, the row under R11/R12, left of R19: presence series parts (RN → GP19/GP22) |
 | R11, R12 | row under the Pico at y 63 | On the slim band right under the Pico's bottom pads, with R20 and R16 |
 | J22 `EXP` | 2×4, right of U2: +3V3, +5V, GP19, GP20, GP21, GP22, GP28, GND | Same place, **2×3**: +3V3, +5V, **GP12, GP15, GP28**, GND. Pin 1 top-left; odd pins are the left column |
 | J23 `PD` | — | **JST-XH 3-pin, new**, in the `RING` / `LEDS` row under the Pico's left end, right of `5V IN`: pin 1 GND, 2 SDA (GP0), 3 SCL (GP1). I2C to the STUSB4500 PD trigger, three wires only — do not run the trigger's VDD from this board |
 
-Use the resistor colour key as printed; the only new value is **4.7 kΩ = yellow · violet · black · brown**.
+For v3, add **4.7 kΩ = yellow · violet · black · brown · brown** and
+**6.8 kΩ = blue · grey · black · brown · brown** to the five-band, 1% resistor key.
 
 ### Check the bare board
 
@@ -199,6 +224,12 @@ housing flat while reheating it, then solder the rest.
 | J6 | 8-pin | `RING`, under the Pico | Left |
 | J7 | 3-pin | `LEDS`, right of J6 | Left |
 | J10 … J19 | 2-pin | `REC STOP UNDO MODE TRK1 TRK2 TRK3 TRK4 CLR BANK` (bottom edge) | Left |
+| J25 | 2-pin | `SCREEN` on the top, beside J25 | Left |
+
+J25 is the screen-power addition to the current console board and is absent
+from the older v2 illustration above. Fit a JST XH B2B-XH-A vertical header:
+pin 1 carries Pi GPIO17 and pin 2 is GND. Its cable connects pin-for-pin to
+the screen-power board's J2; neither contact supplies screen power.
 
 ### Step 6 — J2, the Pi ribbon header
 
@@ -208,7 +239,8 @@ Shrouded, keyed 2×20 box header on the right edge, silk `PI`.
   the right-hand column, even pins up the left-hand column.
 - The shroud's polarising notch faces the board's right edge; the silk outline of the
   shroud shows the notch, so match the plastic to the silk.
-- Only 16 of the 40 pins carry anything. Pins 2 and 4 (the Pi's 5 V) are deliberately
+- With J25 fitted, 17 of the 40 pins carry a signal or supply. Physical pin 11
+  carries GPIO17 to J25 pin 1. Pins 2 and 4 (the Pi's 5 V) are deliberately
   **not connected** on this board and must never be jumpered to `+5V`.
 
 Solder two diagonal corner pins, check it is flat and square, then the other 38. The
@@ -288,7 +320,7 @@ Keep the Pi out of it until the board has run on its own.
    fold), then power the Pi from its own supply and the board from BUCK_AUX per
    `segno_wiring.md` §2.
 
-Firmware note: the Pico runs `firmware/console_board/`; `firmware/console_board/pedal_link.h`
+Firmware note: the Pico runs `firmware/console_board/`; `firmware/libraries/SegnoPanel/src/pedal_link.h`
 is the wire-protocol reference. Whatever runs on the Pico
 must enable the internal pull-ups on the ten footswitch inputs, the encoder inputs and
 the two CTRL tips, or those inputs float (see the notes in `console_board.py`).
@@ -306,7 +338,7 @@ the two CTRL tips, or those inputs float (see the notes in `console_board.py`).
 | J7 `LEDS` | +5V | IND_DATA | GND | |
 | J8 `PWR BTN` | button | GND | | |
 | J9 `PI PWR` | to the Pi 5's J2 button pad | GND | | (flying lead, not the 40-pin header) |
-| J20 / J21 `CTRL` | tip (wiper / switch) | ring (3V3 via 1 kΩ) | sleeve (GND) | v3: pin 4 = TN, the NJ6FD-V's tip-normal contact (presence) |
+| J20 / J21 `CTRL` | tip (wiper / switch) | ring (3V3 via 1 kΩ) | sleeve (GND) | v3: pin 4 = RN, the NJ6FD-V's ring-normal contact (presence); TN/SN open |
 | J10 … J19 | switch | GND | | one per pedal, REC … BANK |
 | J22 `EXP` | +3V3 | +5V | GP19 (v2) / GP12 (v3) | v2: GP20, GP21, GP22, GP28, GND · v3 (2×3): GP15, GP28, GND |
 | J23 `PD` (v3) | GND | SDA (GP0) | SCL (GP1) | I2C to the STUSB4500 trigger; no VDD wire |

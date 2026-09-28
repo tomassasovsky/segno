@@ -1,0 +1,300 @@
+{
+  "archives": {
+    "console-v3": {
+      "assembly_change": "R18 remains 6.8 kOhm 1%; R11/R12 use +3V3_PICO; CTRL connector pin 4 uses the NJ6FD-V ring-normal contact.",
+      "board": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "board_sha256": "c23df586f211bb439081ca951dd23dc54ba21f6d89eb3d373bd6f196749f326d",
+      "members": {
+        "segno_console_board-B_Cu.gbr": "196b59eb67ea9d67a677488b28015bf7883c1975b35b78a97afcf92cd6f11c76",
+        "segno_console_board-B_Mask.gbr": "d5404c6e45a513a15f4a4752ab70234b3adc84dd5e864d8455c855fabef018b8",
+        "segno_console_board-B_Paste.gbr": "3cbbb69569c4ef3fb32c5501865c30274f9895b2c534a745d647eef6f53792eb",
+        "segno_console_board-B_Silkscreen.gbr": "44291e6cc72c27a8b9b34a36ae266c0040d5d63e57b9dc65bf262cb4c4af0207",
+        "segno_console_board-Edge_Cuts.gbr": "e0cb4e4980423cbf6d16fe4495281ab9936653ec3246954588d89ec3e2d930f3",
+        "segno_console_board-F_Cu.gbr": "3785af0f804924fa4f214ef2d528bce66552c549f25625d138a3356fb107acdd",
+        "segno_console_board-F_Mask.gbr": "76944e58c0cfc3069660e1597420f8ac1814ac2304d0082070b113f01c296cd9",
+        "segno_console_board-F_Paste.gbr": "19ab467d65173d346d1f1fbad524afb7d2b31a44cb08a204465a76d150f4f5c2",
+        "segno_console_board-F_Silkscreen.gbr": "809675c695d7b5ee2737a9165852750e2572472b26721a78b202836e7f619437",
+        "segno_console_board-NPTH.drl": "727e9ffb4bb792398b14f81c1789b9aabce468459ab2927f117117e2fa7f6ffd",
+        "segno_console_board-PTH.drl": "e1b8ecca2a911864b27bdec0a32327c796ceb53715c3adce973291232c32d8a0",
+        "segno_console_board-job.gbrjob": "cc860d0662c68189f20b81b53f0a37bff28e2d40d700a48fb47235f8837ae960"
+      },
+      "members_checked": 12,
+      "order": {
+        "assembly": false,
+        "copper_oz": 1,
+        "finish": "Lead-free HASL",
+        "layers": 2,
+        "material": "FR-4",
+        "quantity": 5,
+        "silkscreen": "White",
+        "solder_mask": "Purple",
+        "stencil": false,
+        "thickness_mm": 1.6,
+        "vias": "tented"
+      },
+      "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
+      "sha256": "1f50cfc2816fdb3cab0fbaef07b91aad07ee06584f8dac8437a2431869465383",
+      "upload_name": "segno-console-v3-gerbers.zip"
+    },
+    "ring-white": {
+      "assembly_change": "Encoder C2/C3/C4 use 10 nF; selected strip input reservoir and AUX star harness follow RING_ASSEMBLY.md. Front-ground dead ends cleaned; routes, pads, rear ground and full-white AUX harness unchanged.",
+      "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "board_sha256": "c53eb16d7531f2c891dc5854faaf40fc1414ebcb2747d0101740e6a35bd1d9ca",
+      "encoder": "Same Sky ACZ11BR1E-20FD1-20C; separately sourced M7x0.75 SJ5-43502PM-nut; no washer in the 2 mm disc clamp.",
+      "members": {
+        "segno_pedal_ring-B_Cu.gbr": "0505f868d1ffcf5daddea06df7b28c3abbb136f8b58452c641583cd3529a0eb5",
+        "segno_pedal_ring-B_Mask.gbr": "42b562074dcbf211b89a7d4129e061442981a15e97487fe55aa3dc0fdfcad31a",
+        "segno_pedal_ring-B_Silkscreen.gbr": "0e8a13edb13de4acf8e749cef310b580e475128d28ccdc01ebfe1a63bf87bd64",
+        "segno_pedal_ring-Edge_Cuts.gbr": "2d299bf2ba31740e130c4ebb76328a4d36981abf8f2b981227d6fc615556e69e",
+        "segno_pedal_ring-F_Cu.gbr": "f39c06c8d70ba94240a3c61e06b91c10e041c37cb2e7e9147e94057c6a50ef06",
+        "segno_pedal_ring-F_Mask.gbr": "be57183e93e6a340605927e8b71e96ac6425422f7ca4d42518a7f895f1f74207",
+        "segno_pedal_ring-F_Silkscreen.gbr": "0284069a7d4367f733c52e0f608266801f081f36273899c1d81b379b63933c00",
+        "segno_pedal_ring-NPTH.drl": "4eb556bc9756108f87627b37a6a34d8007afa9ebd6ce32db3da241634158184a",
+        "segno_pedal_ring-PTH.drl": "9e76f4b73cfd6df33a8f8da0d8327266ae5435d846799772adb49881adadfd26",
+        "segno_pedal_ring-job.gbrjob": "98b011d5eee2c520fa9a7bd4b6590e3efbc4eda78f49e82e3d504b5553264541"
+      },
+      "members_checked": 10,
+      "order": {
+        "assembly": false,
+        "copper_oz": 1,
+        "finish": "Lead-free HASL",
+        "layers": 2,
+        "material": "FR-4",
+        "quantity": 5,
+        "silkscreen": "Black",
+        "solder_mask": "White",
+        "stencil": false,
+        "thickness_mm": 1.6,
+        "vias": "tented"
+      },
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "sha256": "d25b01306dec7ab2e62ad1db727eb4854e3bb1777295e05be4fbe468f92b0dfd",
+      "upload_name": "segno-ring-white-gerbers.zip"
+    },
+    "screen-power-rev-p": {
+      "assembly_change": "H1 ground-contour cleanup only; electrical assembly is unchanged. Five-pin XH USB shields connect to GND, with the Omron relay, IRLZ44N driver, removable 8 A input fuse and soldered branch fuses retained.",
+      "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+      "board_sha256": "d0d780a1cde8b70a55f7a60d444e36e02d50835875ba9150b0745ff1b8c3b1ea",
+      "members": {
+        "screen_power_hand-B_Cu.gbr": "d00e7b281c28d136b2110272e1b728c3a6dc98b91a6a21853d41369462030dba",
+        "screen_power_hand-B_Mask.gbr": "b12b0ff48dbfa8cf49b48491f84483ce7174b51ea9f552f242a3cd17991d901f",
+        "screen_power_hand-B_Silkscreen.gbr": "f356f90c25bf3d8d21fd8f50247eb0975f035e30b4c2a5afb62ea56076937b11",
+        "screen_power_hand-Edge_Cuts.gbr": "021a359878dd8bcb824aa2b5c8cc655677162c2d51f9eb3bbb4632fc3d30a99b",
+        "screen_power_hand-F_Cu.gbr": "321a763b5c8005fe53d34d7d89d0f2fbee104534d77bacd21a152b86bfe13dab",
+        "screen_power_hand-F_Mask.gbr": "97055ca2839bbf427b9409eec664cea0444fb72b49487c5e60e722a47467faf1",
+        "screen_power_hand-F_Silkscreen.gbr": "360703d19304aefb823b80d7ccab57c773dcd6ed5b5cd6142eaa4bd09c591db6",
+        "screen_power_hand-NPTH-drl_map.pdf": "70f1864d7112d9605c9726766eb0124a6db0306fcbd2f2d052e5a73dca6664dd",
+        "screen_power_hand-NPTH.drl": "d5eacec933c97e05558edaf94083900c1bf757c5c24215f7c0a18e83943b0a3b",
+        "screen_power_hand-PTH-drl_map.pdf": "dc2801b7c06128986822e62b745f9facc40fbac3ef607c82b38034bc27679cf7",
+        "screen_power_hand-PTH.drl": "c2bdac3fe3e57f04f6ba0ed6b37a0ae6e60f1cc176f44d329f42ac9de523540d",
+        "screen_power_hand-job.gbrjob": "0e714780cc08b37ef6a1930a88a1e87c3416a0d5bc764250b314a0d9e6dc1dd6"
+      },
+      "members_checked": 12,
+      "order": {
+        "assembly": false,
+        "copper_oz": 1,
+        "finish": "ENIG",
+        "layers": 2,
+        "material": "FR-4",
+        "quantity": 5,
+        "silkscreen": "White",
+        "solder_mask": "Purple",
+        "stencil": false,
+        "thickness_mm": 1.6,
+        "vias": "tented"
+      },
+      "path": "hardware/kicad/fab/segno_screen_power_rev_p_gerbers.zip",
+      "sha256": "86ab30459649b32f33347505e43a3e0e8d38ab18313b70ffbd1fa4f983fefe43",
+      "upload_name": "segno-screen-power-rev-p-gerbers.zip"
+    }
+  },
+  "baseline_revision": "bd6456f8efa12418d267a5108e6c70362c746882",
+  "date": "2026-09-28",
+  "limits": [
+    "Historical ALPS and earlier ring archives listed under withdrawn_archives are superseded. The unchanged current ring archive requires the exact Same Sky encoder.",
+    "Earlier screen revisions are superseded. Use the screen-power-rev-p archive in this record.",
+    "Bare-board CAD and export verification; assembled electrical, USB and enclosure behavior are not physically qualified.",
+    "Ordinary two-layer fabrication does not guarantee USB differential impedance; the documented coated-field result is a nominal model.",
+    "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
+    "No order, merge or device deployment performed."
+  ],
+  "purpose": "Revision P H1 ground-contour cleanup: strict native, circuit, copper-loss and CAM checks plus independent source/export review complete with no unresolved actionable finding. Unchanged prior circuit/model coverage is retained explicitly.",
+  "review": "docs/reviews/screen-power-ground-cleanup-1072/review.md",
+  "runtime": {
+    "deployment": "not performed",
+    "pull_request": 1082,
+    "revision": "53828fc4eae1c18af45abfc3ea7c31f19f9799d7"
+  },
+  "status": "bare-board-review-clean",
+  "verification": {
+    "console_ring": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/console-ring-fabrication-verification.json",
+      "sha256": "6fb643facf3ac3aa8e2a1058e84556061e6120c5cb1524f825a545a69336180b",
+      "checks_passed": 175
+    },
+    "screen": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/screen-fabrication-verification.json",
+      "sha256": "96778a71d6833957fb22fed7d26cdd640850f7397546b5cc6cb19c59a38de865",
+      "checks_passed": 415
+    },
+    "screen_native": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/screen-native-validation.json",
+      "sha256": "f356aeb7c272b1d4ce2042063b5bbd8173190c303a64d844e3a78cecf0730bb6",
+      "self_test_checks_passed": 123
+    },
+    "retained_revision_n_adversarial": {
+      "report": "docs/reviews/pcb-revn-adversarial-1072/review.md",
+      "sha256": "821192b5404878adf24f543c1fae1beda80efed448fc2975622e8b23cd6b6b03",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "retained_revision_n_claude_console": {
+      "report": "docs/reviews/pcb-revn-adversarial-1072/claude-console.md",
+      "result_is_error": false,
+      "result_sha256": "7ff2422898842b91dbd8423ba6ee692a5655500aa6eb127bc0f5a8f88a5c35a4",
+      "reviewed_head": "34257020a3529b93cc73abb432f17d35551949ba",
+      "sha256": "14bede68665fd44115cef2b2273c43fbed790c70f3f8d3230e98f33a7747223c",
+      "status": "complete-no-unresolved-actionable-findings",
+      "turns": 6
+    },
+    "ground_nominal": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/ground-return-nominal.json",
+      "sha256": "384294af890c7644f0a4ad42cab331b6d0464e76af9d269848a1a0075028cf16"
+    },
+    "ground_stress": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/ground-return-stress.json",
+      "sha256": "f25e2eb85f19aac4184458754fdd1e4710ea722b6b42acb0c8ebc15b49acf597"
+    },
+    "retained_revision_o_review": {
+      "report": "docs/reviews/screen-power-xh5-1072/review.md",
+      "sha256": "f3a1b30f39c28b4f85bee99a5d7e8cfa3c6c6c9ba4b1f06f13ef241c783d586d",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "retained_revision_o_bug_gate": {
+      "report": "docs/code-review/screen-power-xh5-1072/review.md",
+      "sha256": "f6f09970ed2b174515128bd4ba839d747ceb62eb727ba1f9c9d1ba1ed2ee31bb",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "retained_revision_o_model": {
+      "report": "docs/reviews/screen-power-xh5-1072/deepseek.md",
+      "sha256": "1c2f7d26e747804057c556afef09a1121a96b382667acd190c2e66558fa94fd0",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "retained_revision_o_provenance": {
+      "report": "docs/reviews/screen-power-xh5-1072/review-provenance.json",
+      "sha256": "4d50e4463d0f4e9136d558b2e89d3d84eb10a744ebe6f321d45ace97b55c44f9",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "geometry_preservation": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/geometry-preservation.json",
+      "sha256": "e3dec8e38a847315e6dc6928ed7aed21ab4af2653b917b092f83cd0c4aa2e114"
+    },
+    "ground_copper_delta": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/ground-copper-delta.json",
+      "sha256": "49c0923bb79f2a9605ba8c7f3d681578ff6785b71daefebf82c85f6b74e1583f"
+    },
+    "mouser_quote": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/mouser-live-quote.json",
+      "sha256": "701cef4e5f4f3782ad76c94d443198de91a714eafdc7da1b529c99be8074228e"
+    },
+    "mouser_cart": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/mouser-cart-verification.json",
+      "sha256": "497a6d834e0edc6c40dee09c503178282772a7ebd6f0f1a1b981627aea931970"
+    },
+    "revision_p_review": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/review.md",
+      "sha256": "f115e79533f522a01c91b7fc8f493cd0097bbb3660d979ce01cbad39792fde5d",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "revision_p_bug_gate": {
+      "report": "docs/code-review/screen-power-ground-cleanup-1072/review.md",
+      "sha256": "728f45c10b25fe50ec47c44e1c7238bbd0a8a5624f38c49d516859d44bffc506",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "revision_p_independent": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/raw/independent-closeout.md",
+      "sha256": "af255e5d7b334cb310f61de6d7932355361c8cd7df006e5c0de593e24368b681",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "revision_p_independent_checks": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/independent-checks.json",
+      "sha256": "2509efb5c68bc957ede5b55944dd10e68e61dd10d532ef068bde274fe1435bc3",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "mouser_cart_rows": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/mouser-cart-lines.json",
+      "sha256": "bf8f9331ced9a7f5d3dd1565447f406f251a32a763ac167bc019bf14eb53f829",
+      "status": "complete-no-unresolved-actionable-findings"
+    }
+  },
+  "withdrawn_archives": {
+    "console-v3-2026-09-26": {
+      "board_sha256": "8bf99b025248c1e5fc704610dbdd14410f5089645d7e03e61a2e03418c295082",
+      "historical_revision": "a1ff9d6d491c09f6e7f3c8b818440eb5c0493b7e",
+      "path": "hardware/kicad/fab/segno_console_v3_gerbers.zip",
+      "reason": "Superseded by the native, assembly and export identities in the current follow-up review.",
+      "sha256": "919667b6141639590da8dd36319b236e5c434c4d8f2f3799644374e81da97fc3",
+      "status": "superseded-2026-09-27-followup"
+    },
+    "ring-alps-footprint-2026-09-26": {
+      "historical_revision": "368b9bd72589e12853ea7d47595351f67c843452",
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "reason": "The ALPS BOM part did not fit the generic footprint and lacked the required threaded bushing. Replaced by the exact Same Sky part and new encoder footprint.",
+      "sha256": "7b0dd11efc0ab1f2c2f3a28a0a1bb6367d692171ad4136ea9fae49bcabc5a413",
+      "status": "withdrawn-encoder-footprint-mismatch"
+    },
+    "ring-white-2026-09-26": {
+      "board_sha256": "e6e1d1bcda4258391ed43a441f9bf8231839abab3b1551660f1b817472f8f62b",
+      "historical_revision": "a1ff9d6d491c09f6e7f3c8b818440eb5c0493b7e",
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "reason": "Superseded by the native, assembly and export identities in the current follow-up review.",
+      "sha256": "d5cad80522c7a80d797470d423e96bfb97473849b6e237a3c56789f99e28a4f4",
+      "status": "superseded-2026-09-27-followup"
+    },
+    "ring-white-2026-09-27": {
+      "board_sha256": "2a2d139d824a981edb4f455533b4d57a190f456496606b1f80d9dc52b9c097cb",
+      "historical_revision": "9f01b49572249e544c84097b574c02f25de851a7",
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "reason": "Two local front-ground dead ends removed; routed copper, pads, rear ground and assembly unchanged.",
+      "sha256": "b7486b4a8139de9c070c85f095e1710997a0f2e3d6e0fc3174d36d129b250759",
+      "status": "superseded-2026-09-28"
+    },
+    "screen-power-rev-l": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
+      "reason": "Host-powered relay coils exceed USB suspend-current allowance; superseded by Revision M.",
+      "sha256": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84",
+      "status": "withdrawn-host-powered-relay-suspend-current"
+    },
+    "screen-power-rev-m": {
+      "board_sha256": "28959e56ab6ce29fb26532883fc9604daacedd37c85e59271ccd54fc5a53a36e",
+      "historical_revision": "9f01b49572249e544c84097b574c02f25de851a7",
+      "path": "hardware/kicad/fab/segno_screen_power_rev_m_gerbers.zip",
+      "reason": "Revision N replaces the unavailable power switches with a stocked relay and removable input fuse.",
+      "sha256": "544bb5dde53a130dcc040bcbf5a4f62e5cfed521597e8a88601a2bf631741e2f",
+      "status": "superseded-2026-09-28"
+    },
+    "screen-power-rev-m-2026-09-26": {
+      "board_sha256": "8a467b1c6a881cbf7dd117d38366cfda466f1a51c64553296cc374b4ca52cb27",
+      "historical_revision": "a1ff9d6d491c09f6e7f3c8b818440eb5c0493b7e",
+      "path": "hardware/kicad/fab/segno_screen_power_rev_m_gerbers.zip",
+      "reason": "Superseded by the native, assembly and export identities in the current follow-up review.",
+      "sha256": "25a35f9a546fe6235a9641b1259ac763a74c6c09e31af1ee345e11c711cc7af6",
+      "status": "superseded-2026-09-27-followup"
+    },
+    "screen-power-rev-n": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_n_gerbers.zip",
+      "sha256": "abf39dbf1b7569a1ad25640c081f3e4fb126c94cd8d36d63fb1e559c7c2f8808",
+      "board_sha256": "e72850b26ae9076011bc368b69d3f1f1edce758be878bf5fb0decc4f415c5a2f",
+      "historical_revision": "add2748edce2c274e931e7fc3c524d1695d1ea2c",
+      "status": "superseded-five-pin-removable-shield",
+      "reason": "Revision O replaces separate shield solder pads with five-pin USB plugs; use its matching harness and fabrication archive."
+    },
+    "screen-power-rev-o": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_o_gerbers.zip",
+      "sha256": "4a84d3bd587cf5b7f11941c0d5f6c2bcbc0219a406542d2eb51f7922e8e3dfb2",
+      "board_sha256": "bf870faa7c5e1be2dd9843d1587c76888508ece7549b27b5013d0eb7a77c9fc2",
+      "historical_revision": "bd6456f8efa12418d267a5108e6c70362c746882",
+      "status": "superseded-h1-ground-contour-cleanup",
+      "reason": "Revision P removes two obsolete front-ground exclusions beside H1; all tracks, pads, placements and electrical connections remain unchanged."
+    }
+  }
+}

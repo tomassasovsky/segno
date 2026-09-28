@@ -1,0 +1,103 @@
+{
+  "scope": "Defined steady-load engineering bound; not a measured buck regulation, installed-harness or all-pixel voltage guarantee.",
+  "input": {
+    "buck_posts_min_V": 4.75,
+    "buck_posts_max_V": 5.25,
+    "ring_controller_A": 0.2,
+    "strip_A": 2.44,
+    "total_A": 2.64,
+    "trunk_one_way_m": 0.6,
+    "trunk_AWG": 16,
+    "trunk_copper_mm2": 1.31,
+    "branch_one_way_m": 0.05,
+    "branch_AWG": 22,
+    "branch_copper_mm2": 0.326,
+    "wire_C": 60,
+    "pcb_copper_C": 100,
+    "pcb_width_factor": 0.8,
+    "copper_thickness_um": 35,
+    "common_complete_pair_joint_budget_ohm": 0.01,
+    "each_branch_complete_pair_joint_budget_ohm": 0.01,
+    "controller_XH_two_contacts_ohm": 0.04,
+    "controller_PCB_allowance_V": 0.04
+  },
+  "calculated": {
+    "trunk_pair_ohm": 0.01855053435114504,
+    "branch_pair_ohm": 0.00621196319018405,
+    "shared_drop_V": 0.07537341068702291,
+    "controller_drop_V": 0.051242392638036816,
+    "strip_branch_drop_V": 0.03955719018404909,
+    "AHCT_supply_min_V": 4.62338419667494,
+    "AHCT_margin_above_4_5_V": 0.12338419667494005,
+    "strip_input_min_V": 4.635069399128928,
+    "native_AHCT_positive_path_mm": 19.056721862211234,
+    "native_AHCT_positive_path_squares": 14.448070985063898,
+    "native_back_ground_corridor_mm": 55.20112549695434,
+    "native_ground_corridor_width_mm": 0.298,
+    "native_positive_path_bound_V": 0.0023738180628459986,
+    "native_ground_path_bound_V": 0.030434714493790593,
+    "native_two_paths_bound_V": 0.03280853255663659
+  },
+  "logic_budget": {
+    "strip_vs_controller_ground_offset_V": 0.08,
+    "console_vs_ring_ground_offset_allocation_V": 0.2,
+    "RP2350_VOH_min_at_3V3_V": 2.62,
+    "RP2350_VOL_max_at_3V3_V": 0.5,
+    "RP2350_VIH_min_at_3V3_V": 2.0,
+    "RP2350_VIL_max_at_3V3_V": 0.8,
+    "UART_high_min_after_offset_V": 2.42,
+    "UART_low_max_after_offset_V": 0.7,
+    "note": "UART offset includes a conservative console return allocation; it is not a numerical field solution of the entire chassis/PCB return network."
+  },
+  "connections": {
+    "AUX_to_near_ring_split": "600 mm maximum 16 AWG +5 V/GND pair",
+    "split_to_J1": "50 mm maximum 22 AWG; pin1 +5 V, pin2 GND",
+    "split_to_strip": "50 mm maximum 22 AWG pair directly to strip +5 V/GND",
+    "console_J6": "pins1/2 empty; pin3 to ringJ1.3, pin4 to ringJ1.4",
+    "ring_J2": "pin3 to stripDIN only; pins1/2/4 unconnected",
+    "ring_J3_J4": "unpopulated for selected40-strip"
+  },
+  "source_hashes": {
+    "hardware/kicad/segno_pedal_ring.kicad_pcb": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+    "hardware/enclosure/segno_enclosure.py": "17f7089fc63d8a0b3675c6d2d658d022868294bfb0801d8461719861f776a014",
+    "hardware/enclosure/FUSION_MODELS.md": "e417ebe0f2a6699cb4547272521f1c52b0295fe17f5dc38c0281f6bffdbd0cdb"
+  },
+  "physical_route": {
+    "world_waypoints_mm": [
+      [
+        447.9,
+        359,
+        29
+      ],
+      [
+        423,
+        296,
+        40
+      ],
+      [
+        423,
+        160,
+        40
+      ],
+      [
+        219,
+        160,
+        40
+      ],
+      [
+        219,
+        232,
+        50
+      ],
+      [
+        150,
+        232,
+        55
+      ]
+    ],
+    "centerline_length_mm": 550.5015622093438,
+    "buck_lead_exit_allowance_mm": 15,
+    "remaining_in_600mm_mm": 34.4984377906562,
+    "scope": "Conservative enclosure-envelope routing proposal; actual installed lead exits, bend radius and 40-strip housing are not modeled."
+  }
+}

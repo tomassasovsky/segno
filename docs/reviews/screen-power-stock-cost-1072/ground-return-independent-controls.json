@@ -1,0 +1,73 @@
+{
+  "positive_mesh_solves": true,
+  "double_material_halves_loss": true,
+  "subcell_slit_10um_rejected": true,
+  "baseline": {
+    "mesh_mm": 0.25,
+    "admitted_cells": 3016,
+    "connected_nodes": 3030,
+    "maximum_KCL_residual_A": 2.4934372561753415e-12,
+    "omitted_subcell_terminal_faces": [],
+    "transfer_ohms_at_Q5": {
+      "Q5.3": 0.000619460792138291,
+      "R8.2": 0.00046805013866390785,
+      "J103.2": 0.00045530873242147864,
+      "J203.2": 0.0004751681340896673,
+      "J102.4": 0.00047597872309922156,
+      "J202.4": 0.00046795358812082397
+    },
+    "worst_screen_allocation_A": {
+      "J102.4": 0.5,
+      "J203.2": 3.0,
+      "J202.4": 0.5,
+      "J103.2": 0.25
+    },
+    "control_return_worst_node": "Q5.3",
+    "control_return_transfer_ohms": 0.000619460792138291,
+    "ground_drop_V": 0.0021322998681249728,
+    "bleeder_allowance_A": 0.06,
+    "total_input_allowance_A": 4.46,
+    "raw_feed_length_mm": 10,
+    "raw_feed_drop_V": 0.006355540777142857,
+    "coil_branch_sum_length_mm": 20,
+    "coil_branch_upper_drop_V": 0.0017100109714285714,
+    "coil_return_drop_V_at50mA": 0.0007125045714285717,
+    "total_copper_drop_V_model": 0.010910356188124973
+  },
+  "double_material": {
+    "mesh_mm": 0.25,
+    "admitted_cells": 3016,
+    "connected_nodes": 3030,
+    "maximum_KCL_residual_A": 1.560709052628728e-12,
+    "omitted_subcell_terminal_faces": [],
+    "transfer_ohms_at_Q5": {
+      "Q5.3": 0.0003098597337854881,
+      "R8.2": 0.00023411367686418646,
+      "J103.2": 0.00022771161066807813,
+      "J203.2": 0.0002376446514968363,
+      "J102.4": 0.0002380477622200901,
+      "J202.4": 0.0002340175640039814
+    },
+    "worst_screen_allocation_A": {
+      "J102.4": 0.5,
+      "J203.2": 3.0,
+      "J202.4": 0.5,
+      "J103.2": 0.25
+    },
+    "control_return_worst_node": "Q5.3",
+    "control_return_transfer_ohms": 0.0003098597337854881,
+    "ground_drop_V": 0.0010664203009492386,
+    "bleeder_allowance_A": 0.06,
+    "total_input_allowance_A": 4.46,
+    "raw_feed_length_mm": 10,
+    "raw_feed_drop_V": 0.0031777703885714284,
+    "coil_branch_sum_length_mm": 20,
+    "coil_branch_upper_drop_V": 0.0008550054857142857,
+    "coil_return_drop_V_at50mA": 0.0003562522857142858,
+    "total_copper_drop_V_model": 0.005455448460949239
+  },
+  "material_scaling_ratio": 0.5000247807571164,
+  "material_scaling_ratio_absolute_tolerance": 0.0001,
+  "fixed_terminal_tie_scope": "1 MS numerical terminal ties have fixed resistance; these do not halve with copper and barrel thickness.",
+  "model_sha256": "cf609b252a0139638f99be15fe1b1e82e3e51e2a9051c8c49a869c60ee509528"
+}

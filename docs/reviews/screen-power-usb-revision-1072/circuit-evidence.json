@@ -1,0 +1,85 @@
+{
+  "errors": [],
+  "states": {
+    "supply_gpio_host_states": 24,
+    "coil_paths_checked": 48,
+    "model": "ideal switches with directed body diodes; numerical drive checked separately",
+    "suspend_behavior": "relay may stay on; its energy comes from AUX, not host VBUS"
+  },
+  "usb_margins": {
+    "1": {
+      "host_valid_min_V": 4.4,
+      "host_budget_max_V": 5.5,
+      "host_divider_max_mA_with_1uA_allowance": 0.051505050505050505,
+      "host_grounded_sense_node_bound_mA": 0.5555555555555556,
+      "host_absent_gate_V_at_1uA_allowance": 0.10099999999999999,
+      "upper_Vgs_min_at_host_4p4V": 3.796652719331515,
+      "upper_Vgs_min_at_host_4p75V": 4.11425125278706,
+      "bottom_Vgs_min_V": 4.35,
+      "coil_initial_min_V_at_AUX_4p75V": 4.411921708185053,
+      "coil_initial_pickup_margin_23C_V": 1.0319217081850534,
+      "coil_peak_mA_with_hot_driver_estimate": 37.36654804270462,
+      "coil_max_mA_ignoring_driver_drop": 40.229885057471265,
+      "coil_voltage_at_125C_zero_gate_Idss_benchmark": 0.02233,
+      "hot_coil_resistance_factor_estimate": 1.4,
+      "hot_driver_ohms_each_estimate": 5.0,
+      "gate_leakage_allowance_uA_estimate": 1
+    },
+    "2": {
+      "host_valid_min_V": 4.4,
+      "host_budget_max_V": 5.5,
+      "host_divider_max_mA_with_1uA_allowance": 0.051505050505050505,
+      "host_grounded_sense_node_bound_mA": 0.5555555555555556,
+      "host_absent_gate_V_at_1uA_allowance": 0.10099999999999999,
+      "upper_Vgs_min_at_host_4p4V": 3.796652719331515,
+      "upper_Vgs_min_at_host_4p75V": 4.11425125278706,
+      "bottom_Vgs_min_V": 4.35,
+      "coil_initial_min_V_at_AUX_4p75V": 4.411921708185053,
+      "coil_initial_pickup_margin_23C_V": 1.0319217081850534,
+      "coil_peak_mA_with_hot_driver_estimate": 37.36654804270462,
+      "coil_max_mA_ignoring_driver_drop": 40.229885057471265,
+      "coil_voltage_at_125C_zero_gate_Idss_benchmark": 0.02233,
+      "hot_coil_resistance_factor_estimate": 1.4,
+      "hot_driver_ohms_each_estimate": 5.0,
+      "gate_leakage_allowance_uA_estimate": 1
+    }
+  },
+  "new_controls": {
+    "usb_power_baseline_passes": true,
+    "host_coil_supply_detected": true,
+    "presence_gate_bypass_detected": true,
+    "cross_host_presence_detected": true,
+    "missing_presence_pulldown_detected": true,
+    "missing_presence_series_detected": true,
+    "upper_driver_body_diode_detected": true,
+    "lower_driver_body_diode_detected": true,
+    "wrong_shield_net_detected": true,
+    "host_reservoir_detected": true,
+    "weak_presence_pulldown_detected": true,
+    "short_presence_series_detected": true,
+    "presence_tolerance_suffix_detected": true
+  },
+  "thermal_estimate": [
+    {
+      "ambient_C": 60,
+      "coil_C_estimate": 85.4387611041902,
+      "coil_ohms_estimate": 162.5226552137005,
+      "pickup_V_estimate": 4.2093990392514,
+      "restart_available_V_estimate": 4.474673841002722,
+      "margin_V_estimate": 0.265274801751322
+    },
+    {
+      "ambient_C": 85,
+      "coil_C_estimate": 108.69919631720741,
+      "coil_ohms_estimate": 174.45211831922458,
+      "pickup_V_estimate": 4.5183767043599925,
+      "restart_available_V_estimate": 4.492480593701865,
+      "margin_V_estimate": -0.02589611065812747
+    }
+  ],
+  "source_hashes": {
+    "hardware/kicad/screen_power/check.py": "b68482bb0bd5350531708bda32114d4c0f38c3f8074dbea83a5087ed01a5539d",
+    "hardware/kicad/screen_power/switch_circuit.py": "652502f1006b5019752c874b08ff431b5e8bc24cea1dcbf52d50cc513fd23a7e"
+  },
+  "bare_shield_pads_excluded_from_bom": true
+}

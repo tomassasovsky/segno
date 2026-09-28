@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-09-22T15:05:06.809411+00:00",
+  "package": "2026-09-22-screen-power-rev-f/hand",
+  "board_sha256": "b1a404b92166151ec2b43589d48c5fb3be94028b295cf2be9c71cd7ab7630e91",
+  "verified_exported_files": 65,
+  "verified_source_hashes": 59,
+  "copied_package_matches_manifest": true,
+  "self_test_source_hashes_match": true,
+  "rounded_corner_radius_mm": 3,
+  "hand_only": true,
+  "all_37_components_priced": true,
+  "component_estimate_USD": 32.42,
+  "physical_qualification": "not performed"
+}
