@@ -260,13 +260,15 @@ requirements, not an assertion that any existing cable meets them. An
 unspecified charge-only cable or a 28 AWG USB data lead is not a
 substitute. [JST VH specifications](https://www.jst-mfg.com/product/pdf/eng/eVH.pdf).
 
-Revision O puts each USB shield drain on pin 5 of its XHP-5 plug, bonded to
+Revision P retains each USB shield drain on pin 5 of its XHP-5 plug, bonded to
 PCB GND. There is no separate soldered drain tether: unplugging the housing
 disconnects the complete cable. Keep the shield and data-pair twist intact
 to a short fanout, insulate the drain termination and provide jacket strain
 relief. Select contacts for the actual wire and insulation dimensions. The
 [current harness specification](kicad/screen_power/README.md#xh-usb-cable-contract)
-defines the donor-cable, pinout and length requirements.
+defines the donor-cable, pinout and length requirements. The owner confirmed
+that the available cables physically reach; donor conductor size, insulation
+diameter, shielding and completed USB operation remain to be verified.
 
 The XH5 leads are for touch/data only, with a 500 mA design allocation and
 actual donor wire dimensions still to be established. Both screen ports may join

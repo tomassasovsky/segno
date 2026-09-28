@@ -6,7 +6,10 @@
 <!-- cspell:words SUP SUM Rds backfeed Micro pulldown Vgs Littelfuse Lumberg MMBT DMODEL stackup microstrip heatsinks eleUniverse ATOF PXCN FHAC overcurrent -->
 # Screen power and touch switch
 
-**Revision O** carries each USB cable's shield through a fifth XH contact,
+**Revision P** removes two obsolete ground-fill exclusions beside mounting
+hole H1, restoring its smooth ground-copper contour. All tracks, pads,
+placements and electrical connections remain unchanged. It retains each
+USB cable's shield through a fifth XH contact,
 so the complete cable disconnects at its plug. It retains Revision N's
 through-hole power relay and removable main fuse. The four branch fuses
 remain soldered to keep cost and size down.
@@ -111,8 +114,11 @@ touch tails, retaining their factory USB plugs and overmolds. Use shielded
 USB 2.0 high-speed data cables with an intact controlled pair, not charge-only
 leads. Establish conductor size and insulation diameter from the exact cable
 specification or the exposed donor; neither is known for the owner's existing
-cables. Measure each enclosure route before cutting. The retained assessed
-length limits are **30 cm per host tail, 25 cm for the USB-C touch tail and
+cables. The owner confirmed that the available cables physically reach their
+installed destinations. This closes the earlier reach concern; it does not
+establish wire gauge, insulation diameter, shielding or USB performance.
+Measure and cut the completed tails to the retained assessed
+length limits: **30 cm per host tail, 25 cm for the USB-C touch tail and
 30 cm for the Micro-B touch tail**, including service slack. If a measured
 route exceeds a limit, resolve placement or assess the longer complete USB
 channel before accepting the harness; the connector change does not establish
@@ -154,7 +160,7 @@ local fanout fit must be checked with the actual donor; the old side-solder-pad
 fit assessment does not establish it. Keep pin 4 as the dedicated power return;
 do not use foil or loose braid for load current. No shield wire is separately
 soldered to the PCB: unplugging the XH housing disconnects all five conductors.
-See the [Revision O harness notes](../../../docs/reviews/screen-power-xh5-1072/harness.md)
+See the [current harness notes](../../../docs/reviews/screen-power-ground-cleanup-1072/harness.md)
 for quantities, procurement and inspection details.
 
 ### Separate main-power harness
@@ -354,8 +360,10 @@ The exported `native/` folder keeps model paths portable; open its hand project
 in KiCad. Use `top.png`, `perspective.png`, and `assembly.pdf` together to inspect
 components and labels; `F-copper.svg` and `B-copper.svg` show the actual routing.
 
-See [component costs](COSTS.md) for the dated Mouser US baseline, Revision O
-connector changes, shared purchasing quantities and exclusions.
+See [component costs](COSTS.md) for the refreshed full Mouser US quote and
+matching shared cart: all 55 lines / 192 units available at the check,
+$88.24 before tax including selected UPS Ground shipping. Final address and
+tax are not entered, and stock availability does not guarantee dispatch timing.
 
 ## Measured USB topology and screen loads
 

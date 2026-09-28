@@ -130,7 +130,7 @@ per-quote artifact, same freshness gate as the other vendor packs (#236).
 |---|---|---|---|
 | **Console board v3** | `kicad/fab/segno_console_v3_gerbers.zip` + `kicad/fab/segno_console_board_bom.csv` | 1 | 99.5 × 99.5 mm, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, lead-free HASL. Solder Pico 2 by its castellations as specified in the assembly guide. Use the matching v3 runtime described below. |
 | **Encoder ring carrier** | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø80 mm, two layers, 1.6 mm FR4, 1 oz, white mask / black silk, lead-free HASL. Selected assembly: one 40-LED strip, DIN at J2.3 with direct AUX power; J3/J4 empty. The 24/16-module footprints remain alternatives. See [assembly](kicad/RING_ASSEMBLY.md). |
-| **Screen power Rev O** | `kicad/fab/segno_screen_power_rev_o_gerbers.zip` + `kicad/screen_power/hand/bom.csv` + `kicad/screen_power/external_bom.csv` | 1 | 68 × 76 mm, R3 corners, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, ENIG. Hand-soldered components. Four five-pin XH USB plugs include the shield on pin 5. F1 uses one replaceable 8 A cartridge in its onboard holder; four branch fuses are soldered. See [wiring and assembly](kicad/screen_power/README.md). |
+| **Screen power Rev P** | `kicad/fab/segno_screen_power_rev_p_gerbers.zip` + `kicad/screen_power/hand/bom.csv` + `kicad/screen_power/external_bom.csv` | 1 | 68 × 76 mm, R3 corners, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, ENIG. Hand-soldered components. Four five-pin XH USB plugs include the shield on pin 5. F1 uses one replaceable 8 A cartridge in its onboard holder; four branch fuses are soldered. See [wiring and assembly](kicad/screen_power/README.md). |
 | LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 0 | **NOT ORDERED for the console.** Owner call 2026-08-28: the indicators are eight-LED segments cut from a **144 LEDs/m bare IP20 strip**, and the diffuser channel is sized for that (**12 mm wide, 0.53 thick**, 56.96 long), not for this 16×8 board. The design is kept because it is finished and the footprint may suit another build — but ordering it will not fit the current diffuser. |
 
 
@@ -138,7 +138,7 @@ The quantities above are the one-unit assembly need; JLCPCB's order is five
 individual copies of each board. Use only the ZIP hashes in the
 [current manufacturing record](../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
 Older exports in other directories are superseded. The
-[current adversarial review](../docs/reviews/screen-power-xh5-1072/review.md)
+[current adversarial review](../docs/reviews/screen-power-ground-cleanup-1072/review.md)
 records the completed corrections, review coverage and verification. No stencil or factory
 component assembly is required. The selected 40-LED strip uses the direct AUX
 star harness in [the ring assembly guide](kicad/RING_ASSEMBLY.md); J2 carries

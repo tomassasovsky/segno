@@ -1,0 +1,778 @@
+{
+  "checked_at": "2026-09-28T22:43:17.275Z",
+  "url": "https://www.mouser.com/en/Tools/SavedCart/Share?AccessID=0e06fb761b",
+  "rows": [
+    {
+      "prices": [
+        "$0.58",
+        "$1.16"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "530-0697H0800-02"
+    },
+    {
+      "prices": [
+        "$0.46",
+        "$0.92"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "530-0697H4000-02"
+    },
+    {
+      "prices": [
+        "$5.02",
+        "$10.04"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "655-IM02TS"
+    },
+    {
+      "prices": [
+        "$5.75",
+        "$5.75"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "713-102010550"
+    },
+    {
+      "prices": [
+        "$0.23",
+        "$0.46"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "863-1N4007G"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.10"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "512-1N4148"
+    },
+    {
+      "prices": [
+        "$0.71",
+        "$0.71"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "625-1N5819-E3"
+    },
+    {
+      "prices": [
+        "$0.29",
+        "$0.29"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "512-2N3904BU"
+    },
+    {
+      "prices": [
+        "$0.26",
+        "$0.26"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "512-2N3906BU"
+    },
+    {
+      "prices": [
+        "$1.21",
+        "$1.21"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "710-61204021621"
+    },
+    {
+      "prices": [
+        "$3.99",
+        "$3.99"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "490-CZ11BR1E20FD120C"
+    },
+    {
+      "prices": [
+        "$0.087",
+        "$1.31"
+      ],
+      "quantity": 15,
+      "ships_now": 15,
+      "sku": "306-B2BXHALFSNP"
+    },
+    {
+      "prices": [
+        "$0.16",
+        "$0.64"
+      ],
+      "quantity": 4,
+      "ships_now": 4,
+      "sku": "306-B2P-VHLFSN"
+    },
+    {
+      "prices": [
+        "$0.21",
+        "$0.42"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "306-B3BXHABKLFSNP"
+    },
+    {
+      "prices": [
+        "$0.20",
+        "$0.20"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "306-B3P-VHLFSN"
+    },
+    {
+      "prices": [
+        "$0.17",
+        "$0.68"
+      ],
+      "quantity": 4,
+      "ships_now": 4,
+      "sku": "306-B4BXHALFSN"
+    },
+    {
+      "prices": [
+        "$0.47",
+        "$0.47"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "667-EEU-FC1C101"
+    },
+    {
+      "prices": [
+        "$0.38",
+        "$0.76"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "667-EEU-FR1A151"
+    },
+    {
+      "prices": [
+        "$0.48",
+        "$0.48"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "667-EEU-FR1A221"
+    },
+    {
+      "prices": [
+        "$0.69",
+        "$0.69"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "667-EEU-FR1C471"
+    },
+    {
+      "prices": [
+        "$1.00",
+        "$1.00"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "667-EEU-FR1E471"
+    },
+    {
+      "prices": [
+        "$1.14",
+        "$1.14"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "512-H11L1M"
+    },
+    {
+      "prices": [
+        "$0.22",
+        "$0.66"
+      ],
+      "quantity": 3,
+      "ships_now": 3,
+      "sku": "594-K103K10X7RF53H5"
+    },
+    {
+      "prices": [
+        "$0.22",
+        "$0.44"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "594-K103K10X7RF53L2"
+    },
+    {
+      "prices": [
+        "$0.26",
+        "$1.04"
+      ],
+      "quantity": 4,
+      "ships_now": 4,
+      "sku": "594-K104K10X7RF53H5"
+    },
+    {
+      "prices": [
+        "$0.111",
+        "$1.33"
+      ],
+      "quantity": 12,
+      "ships_now": 12,
+      "sku": "594-K104K10X7RF53L2"
+    },
+    {
+      "prices": [
+        "$0.042",
+        "$0.42"
+      ],
+      "quantity": 10,
+      "ships_now": 10,
+      "sku": "603-MFR-25FBF52-100K"
+    },
+    {
+      "prices": [
+        "$0.042",
+        "$0.50"
+      ],
+      "quantity": 12,
+      "ships_now": 12,
+      "sku": "603-MFR-25FBF52-10K"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.30"
+      ],
+      "quantity": 3,
+      "ships_now": 3,
+      "sku": "603-MFR-25FBF52-1K"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.30"
+      ],
+      "quantity": 3,
+      "ships_now": 3,
+      "sku": "603-MFR-25FBF52-220R"
+    },
+    {
+      "prices": [
+        "$0.11",
+        "$0.22"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "603-MFR-25FBF52-330R"
+    },
+    {
+      "prices": [
+        "$0.044",
+        "$0.44"
+      ],
+      "quantity": 10,
+      "ships_now": 10,
+      "sku": "603-MFR-25FBF52-4K7"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.10"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "603-MFR-25FBF52-5K6"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.10"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "603-MFR-25FBF52-6K8"
+    },
+    {
+      "prices": [
+        "$0.45",
+        "$0.45"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "594-PR01000101000FA1"
+    },
+    {
+      "prices": [
+        "$5.00",
+        "$5.00"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "358-SC1631"
+    },
+    {
+      "prices": [
+        "$0.24",
+        "$0.24"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "490-SJ5-43502PM-NUT"
+    },
+    {
+      "prices": [
+        "$0.95",
+        "$1.90"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "595-SN74AHCT125N"
+    },
+    {
+      "prices": [
+        "$1.52",
+        "$6.08"
+      ],
+      "quantity": 4,
+      "ships_now": 4,
+      "sku": "689-TN0702N3-G"
+    },
+    {
+      "prices": [
+        "$1.15",
+        "$1.15"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "667-EEU-FR1A102"
+    },
+    {
+      "prices": [
+        "$0.23",
+        "$0.23"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "306-SVH-21T-P1.1"
+    },
+    {
+      "prices": [
+        "$0.097",
+        "$0.97"
+      ],
+      "quantity": 10,
+      "ships_now": 10,
+      "sku": "306-SVH-41T-P1.1"
+    },
+    {
+      "prices": [
+        "$0.041",
+        "$1.44"
+      ],
+      "quantity": 35,
+      "ships_now": 35,
+      "sku": "306-SXH-001T-P0.6"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.40"
+      ],
+      "quantity": 4,
+      "ships_now": 4,
+      "sku": "306-VHR-2N"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.10"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "306-VHR-3N"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.20"
+      ],
+      "quantity": 2,
+      "ships_now": 2,
+      "sku": "306-XHP-2"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.10"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "306-XHP-3"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.40"
+      ],
+      "quantity": 4,
+      "ships_now": 4,
+      "sku": "306-XHP-4"
+    },
+    {
+      "prices": [
+        "$6.91",
+        "$6.91"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "653-G6C-1117P-DC5"
+    },
+    {
+      "prices": [
+        "$0.70",
+        "$0.70"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "576-P6KE6.8CA"
+    },
+    {
+      "prices": [
+        "$1.70",
+        "$1.70"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "942-IRLZ44NPBF"
+    },
+    {
+      "prices": [
+        "$0.91",
+        "$0.91"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "693-0001-2513"
+    },
+    {
+      "prices": [
+        "$1.20",
+        "$1.20"
+      ],
+      "quantity": 1,
+      "ships_now": 1,
+      "sku": "693-0031.8201"
+    },
+    {
+      "prices": [
+        "$0.20",
+        "$0.80"
+      ],
+      "quantity": 4,
+      "ships_now": 4,
+      "sku": "306-B5BXHALFSN"
+    },
+    {
+      "prices": [
+        "$0.10",
+        "$0.40"
+      ],
+      "quantity": 4,
+      "ships_now": 4,
+      "sku": "306-XHP-5"
+    }
+  ],
+  "shared_cart_rows": [
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "530-0697H0800-02"
+    },
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "530-0697H4000-02"
+    },
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "655-IM02TS"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "713-102010550"
+    },
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "863-1N4007G"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "512-1N4148"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "625-1N5819-E3"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "512-2N3904BU"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "512-2N3906BU"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "710-61204021621"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "490-CZ11BR1E20FD120C"
+    },
+    {
+      "qty": 15,
+      "ships": 15,
+      "sku": "306-B2BXHALFSNP"
+    },
+    {
+      "qty": 4,
+      "ships": 4,
+      "sku": "306-B2P-VHLFSN"
+    },
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "306-B3BXHABKLFSNP"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "306-B3P-VHLFSN"
+    },
+    {
+      "qty": 4,
+      "ships": 4,
+      "sku": "306-B4BXHALFSN"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "667-EEU-FC1C101"
+    },
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "667-EEU-FR1A151"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "667-EEU-FR1A221"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "667-EEU-FR1C471"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "667-EEU-FR1E471"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "512-H11L1M"
+    },
+    {
+      "qty": 3,
+      "ships": 3,
+      "sku": "594-K103K10X7RF53H5"
+    },
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "594-K103K10X7RF53L2"
+    },
+    {
+      "qty": 4,
+      "ships": 4,
+      "sku": "594-K104K10X7RF53H5"
+    },
+    {
+      "qty": 12,
+      "ships": 12,
+      "sku": "594-K104K10X7RF53L2"
+    },
+    {
+      "qty": 10,
+      "ships": 10,
+      "sku": "603-MFR-25FBF52-100K"
+    },
+    {
+      "qty": 12,
+      "ships": 12,
+      "sku": "603-MFR-25FBF52-10K"
+    },
+    {
+      "qty": 3,
+      "ships": 3,
+      "sku": "603-MFR-25FBF52-1K"
+    },
+    {
+      "qty": 3,
+      "ships": 3,
+      "sku": "603-MFR-25FBF52-220R"
+    },
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "603-MFR-25FBF52-330R"
+    },
+    {
+      "qty": 10,
+      "ships": 10,
+      "sku": "603-MFR-25FBF52-4K7"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "603-MFR-25FBF52-5K6"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "603-MFR-25FBF52-6K8"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "594-PR01000101000FA1"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "358-SC1631"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "490-SJ5-43502PM-NUT"
+    },
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "595-SN74AHCT125N"
+    },
+    {
+      "qty": 4,
+      "ships": 4,
+      "sku": "689-TN0702N3-G"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "667-EEU-FR1A102"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "306-SVH-21T-P1.1"
+    },
+    {
+      "qty": 10,
+      "ships": 10,
+      "sku": "306-SVH-41T-P1.1"
+    },
+    {
+      "qty": 35,
+      "ships": 35,
+      "sku": "306-SXH-001T-P0.6"
+    },
+    {
+      "qty": 4,
+      "ships": 4,
+      "sku": "306-VHR-2N"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "306-VHR-3N"
+    },
+    {
+      "qty": 2,
+      "ships": 2,
+      "sku": "306-XHP-2"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "306-XHP-3"
+    },
+    {
+      "qty": 4,
+      "ships": 4,
+      "sku": "306-XHP-4"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "653-G6C-1117P-DC5"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "576-P6KE6.8CA"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "942-IRLZ44NPBF"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "693-0001-2513"
+    },
+    {
+      "qty": 1,
+      "ships": 1,
+      "sku": "693-0031.8201"
+    },
+    {
+      "qty": 4,
+      "ships": 4,
+      "sku": "306-B5BXHALFSN"
+    },
+    {
+      "qty": 4,
+      "ships": 4,
+      "sku": "306-XHP-5"
+    }
+  ]
+}

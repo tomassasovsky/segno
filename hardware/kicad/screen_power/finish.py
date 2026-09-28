@@ -42,7 +42,7 @@ def finish(variant):
     board = p.LoadBoard(str(path))
     title=board.GetTitleBlock()
     title.SetTitle('Segno screen power')
-    title.SetRevision('O')
+    title.SetRevision('P')
     board.SetTitleBlock(title)
     for item in list(board.GetDrawings()):
         if isinstance(item, p.PCB_TEXT):
@@ -56,7 +56,7 @@ def finish(variant):
     w,h = DIMENSIONS[variant]
     # The full board identity is printed on the underside. Top-side ink
     # identifies the accessible plugs without competing with component refs.
-    label('SEGNO SCREEN POWER / REV O',47,h-1.0,1.0,p.B_SilkS)
+    label('SEGNO SCREEN POWER / REV P',47,h-1.0,1.0,p.B_SilkS)
     label('5V IN',56,6.5,1.0)
     label('CTRL',7.5,18.4,1.0)
     label('5V IN',56,6.5,1.0,p.B_SilkS)

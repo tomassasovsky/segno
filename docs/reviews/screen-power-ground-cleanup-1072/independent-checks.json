@@ -1,0 +1,35 @@
+{
+  "baseline": "bd6456f8efa12418d267a5108e6c70362c746882",
+  "checks": [
+    {
+      "native": "screen_power_hand.kicad_pcb",
+      "sha256": "d0d780a1cde8b70a55f7a60d444e36e02d50835875ba9150b0745ff1b8c3b1ea",
+      "non_zone_geometry_identical_except_revision": true,
+      "only_two_obsolete_fill_exclusions_removed": true
+    },
+    {
+      "native": "screen_power_hand.placed.kicad_pcb",
+      "sha256": "f86302ac64b0e1a38958f9e2bc62b18fa8c2bb71d78865e7f4d9bcd08d89f6b5",
+      "non_zone_geometry_identical_except_revision": true,
+      "only_two_obsolete_fill_exclusions_removed": true
+    }
+  ],
+  "schematic_pages_only_revision_changes": 7,
+  "manifest_report_hashes_verified": 15,
+  "three_archive_board_and_member_identities_verified": true,
+  "cam_source_count": 68,
+  "native_source_count": 64,
+  "package_source_count": 68,
+  "cam_artifact_count": 70,
+  "package_artifact_count": 70,
+  "final_board_sha256": "d0d780a1cde8b70a55f7a60d444e36e02d50835875ba9150b0745ff1b8c3b1ea",
+  "final_zip_sha256": "86ab30459649b32f33347505e43a3e0e8d38ab18313b70ffbd1fa4f983fefe43",
+  "screen_fab_checks": 415,
+  "deliberate_fault_checks": 123,
+  "console_ring_fab_checks": 175,
+  "ground-return-nominal.json_max_mv": 13.645898662513867,
+  "ground-return-stress.json_max_mv": 15.931829246711619,
+  "shopping_verified": "55 unique lines / 192 units, all quoted quantities Ships Now; 69.81 + 9.94 + 8.49 = 88.24 USD before tax",
+  "local_project_preserved": true,
+  "final_commit_delivery_binding": "pending"
+}

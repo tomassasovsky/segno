@@ -24,7 +24,8 @@ UART remains biased high while the Pi is off. See the
 
 ## Console connection to the screen-power board
 
-**Revision O** uses five-pin XH plugs for all four USB touch/data cable tails.
+**Revision P** removes two obsolete ground-fill exclusions beside screen-board
+mounting hole H1. It retains all routes, pads and placements and uses five-pin XH plugs for all four USB touch/data cable tails.
 The fifth contact terminates each shield to PCB GND, so the whole cable
 disconnects with one plug. The separate drain solder pads are removed, with
 local placement changes for the longer headers. The Omron power relay,

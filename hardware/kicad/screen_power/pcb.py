@@ -102,38 +102,15 @@ def ground_outline(width, height):
 
 
 
-def trim_control_corner_pour(board):
-    """Round the two dead-end GND wedges between H1 and the control trace.
-
-    These front-only pour exclusions carry 0.4 mm tangent caps. Their centres
-    touch both the 4.55 mm washer contour and the local control clearance; the
-    closure lies in already-clear space. Tracks, vias, pads and the rear plane
-    remain allowed, so this removes only the visually pointed ground ends.
-    """
-    radius=.4
-    for x,closing_x,upper in ((8.5195,9.02,True),(8.0347,8.7,False)):
-        y=4+(-1 if upper else 1)*math.sqrt((4.55+radius)**2-(x-4)**2)
-        angle=math.atan2(4-y,4-x)
-        outline=[(x+radius*math.cos(angle*i/40),
-                  y+radius*math.sin(angle*i/40)) for i in range(41)]
-        closing_y=3.5 if upper else 4.3
-        outline += [(7.8,closing_y),(closing_x,closing_y),(closing_x,y)]
-        area=p.ZONE(board);area.SetLayer(p.F_Cu);area.SetIsRuleArea(True)
-        area.SetZoneName('GROUND_TIP_CLEARANCE')
-        area.SetDoNotAllowTracks(False);area.SetDoNotAllowVias(False)
-        area.SetDoNotAllowZoneFills(True);area.SetDoNotAllowPads(False)
-        area.SetDoNotAllowFootprints(False)
-        poly=area.Outline();poly.NewOutline()
-        for at in outline:
-            v=point(*at);poly.Append(v.x,v.y)
-        board.Add(area)
-
-
 def build(variant):
     W, H = DIMENSIONS[variant]
     out = HERE / variant
     components, nets = parse_netlist(out / f"screen_power_{variant}.net")
     board = p.BOARD()
+    title = board.GetTitleBlock()
+    title.SetTitle('Segno screen power')
+    title.SetRevision('P')
+    board.SetTitleBlock(title)
     ds = board.GetDesignSettings()
     ds.SetCopperLayerCount(2)
     ds.m_MinClearance = p.FromMM(0.15)
@@ -237,7 +214,6 @@ def build(variant):
         for at in ground_outline(W, H):
             v = point(*at); outline.Append(v.x, v.y)
         board.Add(zone)
-    trim_control_corner_pour(board)
     # Leave critical routing to the explicit geometry below, never autoroute USB.
     placed = out / f"screen_power_{variant}.placed.kicad_pcb"
     board.Save(str(placed))

@@ -1,55 +1,51 @@
 <!-- cspell:words Littelfuse Omron desoldered BXHALFSN -->
-# Screen-power revision O component costs
+# Screen-power revision P component costs
 
-**28 September 2026, USD, Mouser US.** Revision O replaces four screen-board
-headers with five-pin XH parts and adds four mating housings and 20 USB-tail
-contacts. The updated consolidated list is **55 part lines, 192 units**.
-The connector changes add **$1.22 in parts and about $0.44 in estimated
-tariffs** to the earlier quote. Carrying forward its other prices and shipping
-gives **$88.22 estimated before tax**: $69.81 parts, $9.92 estimated tariffs
-and $8.49 estimated shipping. This is an incremental estimate, **not a new
-complete Mouser quote** or a complete build cost.
+**28 September 2026, USD, Mouser US.** Revision P changes only the screen
+board's ground contour and revision labels; its component selection and
+purchase quantities remain the Revision O five-pin USB design.
+The refreshed [complete Mouser quote](https://www.mouser.com/en/price-availability/Edit?bomId=d5ba83e7-f0cd-445f-9ad6-ad99ea2b59f6)
+shows **all 55 part lines / 192 units available to ship now** at the recorded
+check. Stock is not reserved and the quote does not place an order.
 
-The [historical Revision N quote](https://www.mouser.com/en/price-availability/Edit?bomId=8d557212-bfa8-4ecd-9a90-89cffde392b4)
-was $86.56 before tax, with all 53 lines / 168 units marked Ships Now at its
-September 28 check. Its four-pin screen headers and omitted USB-tail crimps
-do not match Revision O. Only the three connector/contact products below
-were checked again for this update. Stock is not reserved; shipping has not
-been rated against a specific Miami street address. No cart or order was changed.
-Use the manufacturing revision identified by the current board documentation.
+The [current shared Mouser cart](https://www.mouser.com/en/Tools/SavedCart/Share?AccessID=0e06fb761b)
+matches all 55 quote lines and totals **$88.24 before sales tax**:
+**$69.81 parts + $9.94 estimated tariffs + $8.49 selected UPS Ground shipping**.
+The US site is selected for the intended Miami delivery; no final street
+address or tax was entered, so checkout may adjust those charges. This is
+not a complete build cost and no purchase was made.
+The [recorded quote](../../../docs/reviews/screen-power-ground-cleanup-1072/mouser-live-quote.json)
+contains each requested quantity, available quantity and line price; the
+[cart verification](../../../docs/reviews/screen-power-ground-cleanup-1072/mouser-cart-verification.json)
+records the matching cart and shipping selection. Combine these parts in
+one shipment. All requested quantities are available now, but Mouser's high
+order-volume notice means stock availability does not guarantee a dispatch date.
 
-## Revision O connector purchase changes
+## Retained connector quantities
 
-Live Mouser US product pages on September 28 showed the following availability.
-Quantities are combined with the other two boards for one Mouser shipment to
-Miami; do not place a separate connector order.
+- Four B5B-XH-A(LF)(SN) board headers serve J101/J102/J201/J202.
+- Four XHP-5 housings and 20 USB contacts connect all five conductors per tail.
+- The combined SXH-001T-P0.6 order remains 35 contacts: 15 for other harnesses
+  plus 20 for USB. It includes no spare crimps.
+- Four B4B-XH-A headers and four XHP-4 housings remain for console/ring uses.
 
-| Part | Required change | Unit USD | Availability at check |
-| --- | --- | ---: | --- |
-| [B5B-XH-A(LF)(SN), 306-B5BXHALFSN](https://www.mouser.com/en/ProductDetail/JST-Commercial/B5B-XH-ALFSN?qs=cdbOS8ANM9ApoXpxtybURg%3D%3D) | Buy 4; reduce B4B-XH-A from 8 to 4 | $0.20 | 46,461 can ship immediately |
-| [XHP-5, 306-XHP-5](https://www.mouser.com/en/ProductDetail/JST-Commercial/XHP-5?qs=QpmGXVUTftFWFYWMIpK8uw%3D%3D) | Add 4; retain all 4 XHP-4 housings used elsewhere | $0.10 | 156,710 can ship immediately |
-| [SXH-001T-P0.6, 306-SXH-001T-P0.6](https://www.mouser.com/en/ProductDetail/JST-Commercial/SXH-001T-P0.6?qs=QpmGXVUTftHVe8yFBLIwfA%3D%3D) | Increase 15 to 35: 15 other harness contacts + 20 USB contacts | $0.041 at 25+ | 963,813 can ship immediately |
-
-The headers total $0.80, housings $0.40 and all 35 contacts $1.44 after line
-rounding. Mouser showed possible US tariffs of 30% on the new headers/housings
-and 11% on contacts. The previous quote included only 15 contacts for other
-harnesses: adding just four would leave the four USB plugs incomplete. Within
-the USB harness, the fifth shield position itself adds four contacts (about
-$0.16 at the combined price break) over a four-wire DIY harness. Quantities
-exclude spare crimps and assume the actual donor wires fit the specified contacts.
+The earlier Revision N quote was $86.56 before tax for 53 lines / 168 units;
+it omitted the USB-tail crimps and used four-pin screen headers. Its cart
+is superseded. Revision O's $88.22 estimate carried old tariffs; the full
+refresh now reports $9.94 tariffs, a two-cent increase.
 
 Only the main input fuse is removable. F1 cartridge and holder cost $2.48
 including estimated tariffs. Four soldered Bel branch fuses cost $2.71.
 The historical Revision N quote saved $11.06 over making all five fuses
 removable and added $1.93 to the all-soldered $84.63 proposal. Those comparisons
-predate the Revision O USB harness additions.
+predate the five-pin USB harness additions.
 
 ## Components fitted to one screen board
 
 The table accounts for 42 electrical references and the separately purchased
 F1 holder, with no duplicate footprint or extra inline holder. Prices use
 quantity breaks from the consolidated three-board purchase. The attribution
-below uses the historical prices except for the new five-pin headers and
+below uses the refreshed full quote and
 excludes tariffs, shipping and spare resistors; it is not a separate
 screen-only cart quotation. The total is calculated before row rounding,
 which can make the displayed rows differ by one cent.
@@ -113,4 +109,4 @@ if the existing ones are unsuitable, are not priced in this estimate.
 
 Do not buy the removed SUP70101EL pair, charge pump/optocoupler parts,
 Littelfuse inline holder, Bel 8 A input fuse, or abandoned branch-fuse holders
-for Revision O. Older cost tables remain historical evidence only.
+for Revision P. Older cost tables remain historical evidence only.
