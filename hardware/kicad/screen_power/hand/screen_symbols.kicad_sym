@@ -1578,7 +1578,7 @@
             (font
               (size 1.27 1.27))))))
     (embedded_fonts no))
-  (symbol "Connector_Generic_Conn_01x04"
+  (symbol "Connector_Generic_Conn_01x05"
     (pin_names
       (offset 0.508)
       (hide yes))
@@ -1590,7 +1590,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "Conn_01x04"
+    (property "Value" "Conn_01x05"
       (at 0 0 90)
       (effects
         (font
@@ -1607,21 +1607,29 @@
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "Description" "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)"
+    (property "Description" "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)"
       (at 0 0 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (symbol "Connector_Generic_Conn_01x04_1_1"
+    (symbol "Connector_Generic_Conn_01x05_1_1"
       (rectangle
-        (start -1.27 3.81)
+        (start -1.27 6.35)
         (end 1.27 -6.35)
         (stroke
           (width 0.254)
           (type default))
         (fill
           (type background)))
+      (rectangle
+        (start -1.27 5.207)
+        (end 0 4.953)
+        (stroke
+          (width 0.1524)
+          (type default))
+        (fill
+          (type none)))
       (rectangle
         (start -1.27 2.667)
         (end 0 2.413)
@@ -1655,7 +1663,7 @@
         (fill
           (type none)))
       (pin passive line
-        (at -5.08 2.54 0)
+        (at -5.08 5.08 0)
         (length 3.81)
         (name "Pin_1"
           (effects
@@ -1666,7 +1674,7 @@
             (font
               (size 1.27 1.27)))))
       (pin passive line
-        (at -5.08 0 0)
+        (at -5.08 2.54 0)
         (length 3.81)
         (name "Pin_2"
           (effects
@@ -1677,7 +1685,7 @@
             (font
               (size 1.27 1.27)))))
       (pin passive line
-        (at -5.08 -2.54 0)
+        (at -5.08 0 0)
         (length 3.81)
         (name "Pin_3"
           (effects
@@ -1688,7 +1696,7 @@
             (font
               (size 1.27 1.27)))))
       (pin passive line
-        (at -5.08 -5.08 0)
+        (at -5.08 -2.54 0)
         (length 3.81)
         (name "Pin_4"
           (effects
@@ -1697,68 +1705,15 @@
         (number "4"
           (effects
             (font
-              (size 1.27 1.27))))))
-    (embedded_fonts no))
-  (symbol "Connector_TestPoint"
-    (pin_names
-      (offset 0.508))
-    (exclude_from_sim no)
-    (in_bom yes)
-    (on_board yes)
-    (property "Reference" "TP"
-      (at 2.032 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "TestPoint"
-      (at 0 0 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" ""
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Datasheet" "~"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "Description" "test point"
-      (at 0 0 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (symbol "Connector_TestPoint_0_1"
-      (circle
-        (center 0 3.302)
-        (radius 0.762)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none))))
-    (symbol "Connector_TestPoint_1_1"
-      (circle
-        (center 0 3.302)
-        (radius 0.762)
-        (stroke
-          (width 0)
-          (type default))
-        (fill
-          (type none)))
+              (size 1.27 1.27)))))
       (pin passive line
-        (at 0 0 90)
-        (length 2.54)
-        (name "1"
+        (at -5.08 -5.08 0)
+        (length 3.81)
+        (name "Pin_5"
           (effects
             (font
               (size 1.27 1.27))))
-        (number "1"
+        (number "5"
           (effects
             (font
               (size 1.27 1.27))))))

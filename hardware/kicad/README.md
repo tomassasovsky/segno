@@ -24,12 +24,13 @@ UART remains biased high while the Pi is off. See the
 
 ## Console connection to the screen-power board
 
-**Revision N** replaces the unavailable screen-power
-MOSFET pair and charge pump with an Omron power relay, and puts one removable
-8 A input fuse on the screen board. The four lower-cost branch fuses remain
-soldered. It retains AUX-powered USB coils, independent host detection,
-shield drains, the two-layer 68 × 76 mm outline and existing connector
-anchors. See the [screen design and wiring](screen_power/README.md).
+**Revision O** uses five-pin XH plugs for all four USB touch/data cable tails.
+The fifth contact terminates each shield to PCB GND, so the whole cable
+disconnects with one plug. The separate drain solder pads are removed, with
+local placement changes for the longer headers. The Omron power relay,
+replaceable 8 A input fuse, four soldered branch fuses, AUX-powered USB coils
+and independent host detection remain. The board is still two layers and
+68 × 76 mm. See the [screen design and wiring](screen_power/README.md).
 
 Use the archives identified by the
 [manufacturing record](../../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json)

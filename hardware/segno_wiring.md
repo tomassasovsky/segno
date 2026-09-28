@@ -243,9 +243,9 @@ remain connected in parallel.
 | --- | --- |
 | AUX buck → screen J1 → onboard F1 | Positive split directly to J1 pin 1; ground to J1 pin 2. Dedicated 16 AWG pair, 15 cm one-way target, with VHR-2N housing and SVH-41T-P1.1 contacts. The incoming pair is upstream of F1: insulate, secure and protect it from abrasion. Console/ring stay on their separate branch. |
 | Console J25 → screen J2 | Pin 1 GPIO17, pin 2 GND, straight pin-for-pin; one short 22 AWG XH2 lead. |
-| Pi USB 2.0 ports → J101/J201 | Two USB-A male-to-XH4 leads: 1 VBUS, 2 D−, 3 D+, 4 GND. Host VBUS feeds only its low-current presence detector. |
-| J102 → UPERFECT touch | XH4-to-USB-C male: 1 fused switched VBUS, 2 D−, 3 D+, 4 GND. Preserve the source-role CC resistor in the plug. |
-| J202 → APROTII touch | XH4-to-Micro-B male, same four-pin map. |
+| Pi USB 2.0 ports → J101/J201 | Two USB-A male-to-XH5 leads: 1 VBUS, 2 D−, 3 D+, 4 GND, 5 shield. Host VBUS feeds only its low-current presence detector. |
+| J102 → UPERFECT touch | XH5-to-USB-C male: 1 fused switched VBUS, 2 D−, 3 D+, 4 GND, 5 shield. Preserve the source-role CC resistor in the plug. |
+| J202 → APROTII touch | XH5-to-Micro-B male, same five-pin map. |
 | J103 → UPERFECT power | Pin 1 fused switched +5 V, pin 2 GND; separate main-power lead retaining the working USB-C screen termination. |
 | J203 → APROTII power | Pin 1 fused switched +5 V, pin 2 GND; separate main-power lead retaining the working Micro-B connection. Power pads are an alternative only after verifying their polarity and layout. |
 
@@ -257,16 +257,19 @@ source end of the known-working screen power connection, preserving the
 screen-side USB-C/Micro-B plug and any CC/attachment electronics. The exact
 existing lead gauge has not been recorded: reuse is conditional on these
 requirements, not an assertion that any existing cable meets them. An
-unspecified charge-only cable or the selected 28 AWG XH data cable is not a
+unspecified charge-only cable or a 28 AWG USB data lead is not a
 substitute. [JST VH specifications](https://www.jst-mfg.com/product/pdf/eng/eVH.pdf).
 
-USB shield drains connect separately to TP101/TP102/TP201/TP202 beside their
-corresponding XH headers, with at most 10 mm exposed fanout and jacket strain
-relief. Keep foil/braid and pair twist intact to that point. The
-[cable assessment](../docs/reviews/screen-power-usb-revision-1072/cable-assessment.md)
-documents optional suitable donor cables without requiring duplicate purchases.
+Revision O puts each USB shield drain on pin 5 of its XHP-5 plug, bonded to
+PCB GND. There is no separate soldered drain tether: unplugging the housing
+disconnects the complete cable. Keep the shield and data-pair twist intact
+to a short fanout, insulate the drain termination and provide jacket strain
+relief. Select contacts for the actual wire and insulation dimensions. The
+[current harness specification](kicad/screen_power/README.md#xh-usb-cable-contract)
+defines the donor-cable, pinout and length requirements.
 
-The selected 28 AWG leads are for touch/data only. Both screen ports may join
+The XH5 leads are for touch/data only, with a 500 mA design allocation and
+actual donor wire dimensions still to be established. Both screen ports may join
 internally, so the 800 mA touch fuse does not force screen current into the
 main lead or limit it actively to 500 mA. Keep the main leads connected and
 their ground returns intact. Pi USB ground and GPIO ground are signal

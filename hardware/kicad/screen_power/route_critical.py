@@ -262,7 +262,13 @@ def route(variant):
     # reaching past it. Gate and gate-return close locally on R7.
     bend('D3','2','K1','8',COIL)
     bend('D3','1','K1','1',COIL)
-    bend('Q5','2','D3','1',COIL)
+    # Revision O lays Q5's terminal row across the bay. Take the uniform 1mm
+    # drain route north of that row before turning toward the clamp, so its
+    # rounded corner clears the adjacent source pad.
+    drain=at('Q5','2');lane=at('Q5','3')[1]-4.65
+    flow(('Q5','2'),('D3','1'),
+         [(drain[0],lane),miter((drain[0],lane),at('D3','1'))],
+         COIL,p.F_Cu,sweep(COIL))
     bend('R7','1','Q5','1',CTRL)
     # Raw input. Only this run and J1's own terminal are ahead of the fuse;
     # it swings south of J1's ground terminal rather than squeezing past it.
@@ -309,7 +315,9 @@ def route(variant):
     # washer keepouts, so the ground pour beside the bus keeps an even width
     # rather than pinching around a cap.
     BUS,TAP,GUSSET,FILLET=4.5,3,1,1
-    taps=(29,43,54,65.25)
+    # The added shield contacts occupy the old horizontal branch lanes.
+    # Centre each 3mm feed in the remaining gap between the adjacent pads.
+    taps=(26.925,42.26,52.24,65.25)
     west,east=POWER_BUS_X-BUS/2,POWER_BUS_X+BUS/2
     top,bottom=taps[0]-TAP/2,taps[-1]+TAP/2
     track('SWITCHED_5V',[(POWER_BUS_X,top+BUS/2+.25),
@@ -333,7 +341,10 @@ def route(variant):
         for offset in (1,2):
             f=at(f'F{n+offset}',1)
             # The branch reaches the broad trunk on the same face.
-            bends=[(f[0],f[1]+3.5),(f[0]+4,f[1]+6),(POWER_BUS_X,f[1]+6)] if offset==1 else [(POWER_BUS_X,f[1])]
+            tap=taps[(ch-1)*2+offset-1]
+            bends=([(f[0]+tap-f[1],tap),(POWER_BUS_X,tap)]
+                   if offset==1 else
+                   [(f[0]+6,tap),(POWER_BUS_X,tap)])
             if ch==2 and offset==2:
                 # This feed climbs to the bus. It turns as late as the bus
                 # allows, so the whole rise stays at 45 degrees, the bus keeps
@@ -348,14 +359,18 @@ def route(variant):
                        (POWER_BUS_X,taps[-1])]
             track('SWITCHED_5V',curve([f,*bends],ARC3),3,p.F_Cu)
         a,b=at(f'F{n+1}',2),at(f'J{n+3}',1)
+        # The main output passes south of its own fuse's switched terminal and
+        # then runs under the output plug's bay. This 2.5mm run and the 0.8mm
+        # touch return below occupy separate lanes north of the shield pad.
         flow((f'F{n+1}',2),(f'J{n+3}',1),
-             [(a[0],a[1]+2),(a[0]+2,a[1]+4),(b[0]-2,a[1]+4)],2.5,p.B_Cu,ARC2)
+             [(a[0],a[1]+1.8),(a[0]+2,a[1]+3.175),(b[0]-2,a[1]+3.175)],
+             2.5,p.B_Cu,ARC2)
         a,b=at(f'F{n+2}',2),at(f'J{n+2}',1)
         flow((f'F{n+2}',2),(f'J{n+2}',1),
              [(a[0]+3.25,b[1])],.8,p.F_Cu,sweep(.8))
         c=at(f'C{n+2}',1)
         flow((f'J{n+2}',1),(f'C{n+2}',1),
-             [(57.5,b[1]),(58.5,b[1]-1),(58.5,y-6),(57.5,y-7),(c[0]+3,y-7)],
+             [(57.5,b[1]),(58.5,b[1]-1),(58.5,y-7),(57.5,y-8),(c[0]+3,y-8)],
              .8,p.B_Cu,sweep(.8))
     # The three control nets that pass a data row - the enable, the buffer's
     # sink and the AUX feed to that buffer - are left to the constrained

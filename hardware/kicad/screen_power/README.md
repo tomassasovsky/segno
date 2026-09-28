@@ -6,26 +6,26 @@
 <!-- cspell:words SUP SUM Rds backfeed Micro pulldown Vgs Littelfuse Lumberg MMBT DMODEL stackup microstrip heatsinks eleUniverse ATOF PXCN FHAC overcurrent -->
 # Screen power and touch switch
 
-**Revision N** replaces the
-out-of-stock power MOSFET pair and charge pump with a through-hole power
-relay, and adds an inexpensive removable main fuse on the board. The four
-branch fuses remain soldered to keep cost and size down.
+**Revision O** carries each USB cable's shield through a fifth XH contact,
+so the complete cable disconnects at its plug. It retains Revision N's
+through-hole power relay and removable main fuse. The four branch fuses
+remain soldered to keep cost and size down.
 
 The design retains the **two-layer, 68 × 76 mm** outline, **3 mm rounded
 corners**, purple solder mask and white silkscreen. GPIO17 controls the
 screen supply and both USB touch paths. Console and ring power use their
 separate AUX branch. No extra Pi ribbon or USB-C module is needed.
 
-There are **42 populated electrical references plus the F1 holder**, four
-bare shield-drain pads and four M3 mounting holes. The eight cable headers,
-two USB relays, shield pads and mounting centers retain their positions.
+There are **42 populated electrical references plus the F1 holder** and four
+M3 mounting holes. The separate shield-drain solder pads have been removed.
+The board has eight cable headers and two USB relays.
 Headers have vertical pin rows, pin 1 at the bottom and retaining walls on
 the left, viewed from the component side. Cables enter from above. Mounting
 centers are (4, 4), (64, 4), (4, 72) and (64, 72) mm. The 3.5 mm unplated
 holes have 4.25 mm copper keepouts for M3 heads/washers up to 7 mm diameter.
 
-The USB host-presence circuit, AUX-powered data relays and shield-drain
-connections from Revision M are retained. Host VBUS only senses connection;
+The USB host-presence circuit and AUX-powered data relays are retained.
+Each USB shield joins board ground through XH pin 5. Host VBUS only senses connection;
 it supplies neither relay coils nor screens. The selected power and fuse
 changes are described in the
 [implementation plan](../../../docs/plan/2026-09-27-screen-power-stock-cost-1072-plan.md)
@@ -47,16 +47,16 @@ Issue: [#1072](https://github.com/tomassasovsky/segno/issues/1072).
 | --- | --- |
 | J1, JST VH 2-pin | Dedicated AUX input: pin 1 = +5 V, pin 2 = ground. Use the existing nominal 5 V buck. The assessed coil-drive envelope requires **4.75–5.25 V at J1**, before onboard F1 and its holder; this is not a guarantee of either screen's minimum operating voltage. |
 | J2, JST XH 2-pin | Console J25 control. Pin 1 = BCM GPIO17; pin 2 = ground. One two-wire cable, numbered pins connected 1:1. |
-| J101 / J201, JST XH 4-pin | USB-A male to XH cable from each Pi USB 2.0 host port; channels 1 / 2. |
-| J102 / J202, JST XH 4-pin | Direct XH-to-USB-C male cable to UPERFECT (channel 1), and XH-to-Micro-B male cable to APROTII (channel 2). |
+| J101 / J201, JST XH 5-pin | USB-A male donor tails from each Pi USB 2.0 host port; channels 1 / 2. |
+| J102 / J202, JST XH 5-pin | USB-C male donor tail to UPERFECT (channel 1), and Micro-B male donor tail to APROTII (channel 2). |
 | J103 / J203, JST VH 2-pin | Screen power outputs. Pin 1 = switched +5 V; pin 2 = ground. Feed the separate screen power leads; final cable termination remains to be selected. |
 
 The existing Pi-to-console ribbon stays directly connected. Console J25 takes
 GPIO17 from physical Pi pin 11. This board has no 40-pin header and takes no
 screen power from Pi GPIO. GPIO high enables both channels; low, disconnected,
-or an unpowered Pi defaults them off. The Pi, board, HDMI and screens share ground. The four-pin XH housings retain their existing pin map. Separate GND solder
-pads TP101/TP102 and TP201/TP202 terminate the corresponding cable shields;
-see the cable contract below.
+or an unpowered Pi defaults them off. The Pi, board, HDMI and screens share ground.
+Each USB plug carries VBUS, D−, D+, ground and shield together; see the cable
+contract below.
 
 ### What “off” means
 
@@ -87,12 +87,13 @@ and shutdown timing still need assembled-device validation.
 ### XH USB cable contract
 
 The committed PCB footprint is
-`Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical`, with
-**B4B-XH-A(LF)(SN)** board headers and XHP-4 mating housings. It is a
+`Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical`, with
+**B5B-XH-A(LF)(SN)** board headers and **XHP-5** mating housings. It is a
 2.50 mm pitch, shrouded friction-retained connector with 1.10 mm nominal finished PCB holes.
-The seller labels its compatible-style housing “XH2.54”; the PCB follows the
-[JST XH drawing](https://www.jst-mfg.com/product/pdf/eng/eXH.pdf), not that
-rounded marketplace name. Verify sample fit without forcing the plug.
+Use the exact five-position parts in the
+[JST XH drawing](https://www.jst-mfg.com/product/pdf/eng/eXH.pdf).
+The active harness is assembled from suitable existing USB donor cables;
+the earlier ready-made four-pin cable selection is superseded.
 
 All four headers use the following pin map. Read the numbered PCB pads and
 bottom-side labels, not wire colors or a mirrored view of the cable housing.
@@ -103,55 +104,58 @@ bottom-side labels, not wire colors or a mirrored view of the cable housing.
 | 2 | D− | Host data | Screen data |
 | 3 | D+ | Host data | Screen data |
 | 4 | GND | Common ground | Common ground |
+| 5 | Shield | Cable shield to board GND | Cable shield to board GND |
 
-The owner selected these ready-made cable variants on 2026-09-22:
+One USB-A-to-USB-C donor and one USB-A-to-Micro-B donor can supply the four
+touch tails, retaining their factory USB plugs and overmolds. Use shielded
+USB 2.0 high-speed data cables with an intact controlled pair, not charge-only
+leads. Establish conductor size and insulation diameter from the exact cable
+specification or the exposed donor; neither is known for the owner's existing
+cables. Measure each enclosure route before cutting. The retained assessed
+length limits are **30 cm per host tail, 25 cm for the USB-C touch tail and
+30 cm for the Micro-B touch tail**, including service slack. If a measured
+route exceeds a limit, resolve placement or assess the longer complete USB
+channel before accepting the harness; the connector change does not establish
+enclosure fit.
 
-- 2 × [USB-A male to XH4](https://www.ebay.com/itm/287533571271?var=589439154168),
-  selector `USB M to XH2.54 4P`, one-piece pack, 30 cm.
-- 1 × [USB-C male to XH4](https://www.ebay.com/itm/287533571271?var=589439372198),
-  selector `typec to XH2.54 4P`, one-piece pack, 25 cm, for J102.
-- 1 × [Micro-USB male to XH4](https://www.ebay.com/itm/287533571271?var=589439372190),
-  selector `mrico to XH2.54 4P`, one-piece pack, 30 cm, for J202.
+Use four XHP-5 housings and **20 new contacts**, five per cable. The specified
+**SXH-001T-P0.6** contact accepts 28–22 AWG conductors and **0.9–1.9 mm
+insulation outside diameter**. Both limits must hold, including at pin 5.
+Use matching crimp tooling and inspect contact retention and insulation support.
+Do not force an unsuitable donor wire into this contact or fold strands to
+make it fit. A different conductor/insulation range needs a documented compatible
+termination before assembly.
 
-These replace the touch cables. The two separate main-power leads remain:
-one USB-C lead to UPERFECT and one Micro-USB lead to APROTII, connected to
-J103/J203 via the larger two-pin VH harness. Do not buy two extra XH data
-cables for the main-power paths. The owner reports 28 AWG conductors in the
-selected USB cables. At 30 cm, typical 0.213 ohm/m conductor resistance gives
-about 0.128 ohm round-trip: 64 mV / 32 mW at the touch-path design budget of
-500 mA, versus 0.383 V / 1.15 W at a 3 A main-power load, excluding connectors.
-These are estimates, not measured cable ratings; source:
-[Alpha Wire conductor table](https://www.belden.com/-/media/Project/AlphaWire/AlphaWire/2023-Master-Catalog/2023-MasterCat-English-20230609.pdf?rev=08a9584660404c8dad92412e1b961875).
+The two separate main-power leads remain: one USB-C lead to UPERFECT and one
+Micro-B lead to APROTII, connected to J103/J203 through the larger two-pin VH
+harness. The XH touch cables carry a **500 mA design allocation**, not the
+screen's main power.
 The host lead's VBUS feeds approximately 50 µA of presence-sensing load at
 the upper 5.5 V host corner. AUX supplies the relay coils. Screen touch current must
 be measured with both screen connectors attached; a screen may join the
 supplies internally, and the 800 mA fuse is not an active 500 mA limiter.
 
-Before connecting equipment, measure each cable's pin-to-contact continuity
-and check for shorts. Re-pin a housing to the documented map if necessary.
-The seller has not documented the USB-C source-side CC resistor, shield
-termination, controlled-impedance pair or 480 Mbps qualification. Check that
-the USB-C plug has the proper legacy-source configuration (56 kilohm Rp to
-VBUS); test both plug orientations. A sink-configured or charge-only cable
-is unsuitable. Four XH contacts do not carry a separate CC signal, so this
-configuration belongs inside the cable's USB-C plug. USB speed, voltage drop
-and cable temperature remain first-assembly acceptance checks.
+Before connecting equipment, measure each cable's pin-to-contact continuity,
+including USB shell to pin 5, and check for shorts. Retain the USB-C donor's
+proper legacy-source configuration (56 kilohm Rp to VBUS) inside its plug;
+test both plug orientations. XH pin 5 is shield, not CC. An unknown plug's
+current advertisement must not be inferred from wire colors or connector shape.
+USB speed, voltage drop and cable temperature remain first-assembly acceptance
+checks. Factory cable certification does not certify a cut cable and PCB channel.
 
-Keep each cable's foil/braid and twisted data pair intact up to a short fanout.
-Connect its insulated shield drain to the adjacent bare pad: J101→TP101,
-J102→TP102, J201→TP201 and J202→TP202. Keep each drain tail at most 10 mm
-and provide jacket strain relief; do not use loose braid as a power return.
-The pad joins board GND separately from XH pin 4. See the
-[local shield-drain construction](../../../docs/reviews/screen-power-usb-revision-1072/shield-drain-fit.md)
-for side breakouts beside the mated plugs. A jacket up to 5 mm diameter and
-an insulated drain up to 2 mm diameter fit the assessed local paths; the
-touch drain has only about 0.9 mm spare length within the 10 mm limit.
-Bring the jacket alongside the plug and raise the short wire fanout into
-its upper wire exits. Strain relief must preserve that arrangement. The
-[cable assessment](../../../docs/reviews/screen-power-usb-revision-1072/cable-assessment.md)
-describes suitable existing-cable reuse and optional shielded USB-A-to-USB-C and
-USB-A-to-Micro-B donor cables. Donor cables replace unsuitable leads; they
-are not an additional set of adapters or mandatory new purchases.
+Keep each cable's foil/braid and twisted data pair intact up to the shortest
+practical fanout. Terminate the shield at **pin 5 in the same removable plug**.
+Use a short insulated drain termination within the contact's conductor and
+insulation ranges; if the bare drain cannot be crimped correctly, join it to
+a short suitable insulated wire and insulate the joint. Keep this shield
+breakout at most **10 mm** as a construction target and secure the cable jacket
+so pulling the cable does not load the individual contacts. The five-pin plug's
+local fanout fit must be checked with the actual donor; the old side-solder-pad
+fit assessment does not establish it. Keep pin 4 as the dedicated power return;
+do not use foil or loose braid for load current. No shield wire is separately
+soldered to the PCB: unplugging the XH housing disconnects all five conductors.
+See the [Revision O harness notes](../../../docs/reviews/screen-power-xh5-1072/harness.md)
+for quantities, procurement and inspection details.
 
 ### Separate main-power harness
 
@@ -309,9 +313,9 @@ terminals. Native DRC separately verifies ground connectivity.
 Power routing uses constant widths and rounded bends. Validation removes
 zones before checking required power paths, so a filled overlay cannot hide
 a missing or narrow trace. The filled-copper assessment includes the shared
-positive feed and actual ground return. Connector
-positions and the existing eight USB data nets are preserved independently
-against the reviewed baseline, including arc midpoint geometry.
+positive feed and actual ground return. The existing eight USB data nets,
+their widths, pair spacing and return paths require verification after any
+connector or nearby component movement.
 
 These choices follow [TI's USB layout guidance](https://www.ti.com/lit/an/slla414/slla414.pdf)
 (short pairs, continuous return planes, through-hole connector signals on the
@@ -338,20 +342,20 @@ bottom) and [Sierra Circuits' placement guidance](https://www.protoexpress.com/b
   5.08 mm lead pitch, 0.6 ±0.1 mm lead diameter; use the specified assembly
   process limits. The -02 tape pitch is not the PCB lead pitch.
 - [JST VH harness](https://www.jst.com/wp-content/uploads/2021/08/eVH.pdf)
-  and [JST XH control harness](https://www.jst.com/wp-content/uploads/2021/01/eXH.pdf).
+  and [JST XH control/data harness](https://www.jst-mfg.com/product/pdf/eng/eXH.pdf).
 
 `hand/bom.csv` lists all electrical references and a separate F1_HOLDER
 purchasing row. The holder and cartridge share one PCB footprint.
-`external_bom.csv` lists harness housings, contacts, existing cables and
-mounting hardware. Populated footprints use bundled STEP models. The four shield-drain
-pads and four mounting holes are bare PCB features without separate bodies. Custom models are simplified dimensioned
+`external_bom.csv` lists harness housings, contacts, donor cable assemblies and
+mounting hardware. Populated footprints use bundled STEP models. The four
+mounting holes are bare PCB features without separate bodies. Custom models are simplified dimensioned
 assembly models, not vendor CAD. See [model sources and limitations](models/README.md).
 The exported `native/` folder keeps model paths portable; open its hand project
 in KiCad. Use `top.png`, `perspective.png`, and `assembly.pdf` together to inspect
 components and labels; `F-copper.svg` and `B-copper.svg` show the actual routing.
 
-See [component costs](COSTS.md) for the current Mouser US quote, shared
-three-board purchasing quantities and exclusions.
+See [component costs](COSTS.md) for the dated Mouser US baseline, Revision O
+connector changes, shared purchasing quantities and exclusions.
 
 ## Measured USB topology and screen loads
 
@@ -391,7 +395,8 @@ white simultaneously or turn the nominal buck rating into a surge limit.
 No separate pre-PCB build is required. After soldering:
 
 1. Check supply polarity, shorts, cartridge seating, cable pin order and live-tab clearance.
-   Re-pin the purchased XH leads if necessary before attaching the Pi/screens.
+   Verify the five-pin donor harness map, contact retention and shell-to-pin-5
+   continuity before attaching the Pi/screens.
 2. Connect both main-power leads and both touch paths through this board.
    Verify both screens start and touch works, including the large screen's
    480 Mbps hub path and both USB-C plug orientations.

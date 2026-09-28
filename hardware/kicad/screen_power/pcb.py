@@ -164,6 +164,10 @@ def build(variant):
         fp = p.FootprintLoad(str(library), name)
         if fp is None:
             raise ValueError(f"Footprint missing: {ref} {lib}:{name}")
+        # Keep the bare item name FootprintLoad returns. Every instance below
+        # is deliberately edited for hand assembly - wider drills, trimmed
+        # legend strokes, project-relative models - so it is a local copy, not
+        # a link to the unmodified stock library it came from.
         fp.SetReference(ref)
         fp.SetValue(value)
         # Nominal drills include JLCPCB's -0.08 mm finished-hole tolerance.
@@ -176,9 +180,7 @@ def build(variant):
                 pad.SetDrillSize(point(drill, drill))
         # Every populated component has a bundled model. Keep model placement
         # from the library, but resolve files relative to this project.
-        shield_pad = (ref in ("TP101", "TP102", "TP201", "TP202") and
-                      name == "TestPoint_THTPad_D2.0mm_Drill1.0mm")
-        if not ref.startswith("H") and not shield_pad:
+        if not ref.startswith("H"):
             models = list(fp.Models())
             if not models:
                 model = p.FP_3DMODEL()

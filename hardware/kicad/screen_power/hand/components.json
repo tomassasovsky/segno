@@ -198,52 +198,32 @@
   },
   {
     "ref": "J101",
-    "value": "PI USB / XH4",
-    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
-    "mpn": "B4B-XH-A(LF)(SN)",
+    "value": "PI USB / XH5",
+    "footprint": "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical",
+    "mpn": "B5B-XH-A(LF)(SN)",
     "group": "Screen 1",
     "quantity": 1,
     "pins": {
       "1": "HOST1_5V",
       "2": "S1_UP_N",
       "3": "S1_UP_P",
-      "4": "GND"
-    }
-  },
-  {
-    "ref": "TP101",
-    "value": "SHIELD",
-    "footprint": "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm",
-    "mpn": "PCB pad",
-    "group": "Screen 1",
-    "quantity": 0,
-    "pins": {
-      "1": "GND"
+      "4": "GND",
+      "5": "GND"
     }
   },
   {
     "ref": "J102",
-    "value": "TOUCH / XH4",
-    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
-    "mpn": "B4B-XH-A(LF)(SN)",
+    "value": "TOUCH / XH5",
+    "footprint": "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical",
+    "mpn": "B5B-XH-A(LF)(SN)",
     "group": "Screen 1",
     "quantity": 1,
     "pins": {
       "1": "S1_TOUCH_5V",
       "2": "S1_DN_N",
       "3": "S1_DN_P",
-      "4": "GND"
-    }
-  },
-  {
-    "ref": "TP102",
-    "value": "SHIELD",
-    "footprint": "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm",
-    "mpn": "PCB pad",
-    "group": "Screen 1",
-    "quantity": 0,
-    "pins": {
-      "1": "GND"
+      "4": "GND",
+      "5": "GND"
     }
   },
   {
@@ -386,52 +366,32 @@
   },
   {
     "ref": "J201",
-    "value": "PI USB / XH4",
-    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
-    "mpn": "B4B-XH-A(LF)(SN)",
+    "value": "PI USB / XH5",
+    "footprint": "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical",
+    "mpn": "B5B-XH-A(LF)(SN)",
     "group": "Screen 2",
     "quantity": 1,
     "pins": {
       "1": "HOST2_5V",
       "2": "S2_UP_N",
       "3": "S2_UP_P",
-      "4": "GND"
-    }
-  },
-  {
-    "ref": "TP201",
-    "value": "SHIELD",
-    "footprint": "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm",
-    "mpn": "PCB pad",
-    "group": "Screen 2",
-    "quantity": 0,
-    "pins": {
-      "1": "GND"
+      "4": "GND",
+      "5": "GND"
     }
   },
   {
     "ref": "J202",
-    "value": "TOUCH / XH4",
-    "footprint": "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
-    "mpn": "B4B-XH-A(LF)(SN)",
+    "value": "TOUCH / XH5",
+    "footprint": "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical",
+    "mpn": "B5B-XH-A(LF)(SN)",
     "group": "Screen 2",
     "quantity": 1,
     "pins": {
       "1": "S2_TOUCH_5V",
       "2": "S2_DN_N",
       "3": "S2_DN_P",
-      "4": "GND"
-    }
-  },
-  {
-    "ref": "TP202",
-    "value": "SHIELD",
-    "footprint": "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm",
-    "mpn": "PCB pad",
-    "group": "Screen 2",
-    "quantity": 0,
-    "pins": {
-      "1": "GND"
+      "4": "GND",
+      "5": "GND"
     }
   },
   {

@@ -32,6 +32,9 @@ CLI = os.environ.get(
 )
 # Keep owners alive while SWIG pad/track wrappers are used by later checks.
 _BOARDS = []
+USB_HEADER_REFS = ("J101", "J102", "J201", "J202")
+USB_HEADER_FOOTPRINT = "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical"
+OBSOLETE_SHIELD_REFS = ("TP101", "TP102", "TP201", "TP202")
 
 
 def load_board(path):
@@ -147,10 +150,12 @@ def check_contract(variant, pins, nets, errors):
     obsolete_nets={"POWER_GATE","COMMON_SOURCE","NEG_5V","GATE_SINK","GATE_LED","PUMP_CAP_PLUS","PUMP_CAP_MINUS"}
     if obsolete_refs & {ref for ref,_ in pins} or obsolete_nets & set(nets):
         fail(errors,"obsolete_power_stage","Removed pump/opto/PMOS stage remains connected")
+    if set(OBSOLETE_SHIELD_REFS) & {ref for ref, _ in pins}:
+        fail(errors, "usb_shield", "Separate shield pads must be replaced by XH pin 5")
     for ch in (1,2):
         n=100*ch; pre=f"S{ch}"; host=f"HOST{ch}_5V"; coil=f"{pre}_DATA_COIL_LOW"
         for offset, rail, side in ((1,host,"UP"),(2,pre+"_TOUCH_5V","DN")):
-            require(f"J{n+offset}", {1:rail,2:pre+f"_{side}_N",3:pre+f"_{side}_P",4:"GND"})
+            require(f"J{n+offset}", {1:rail,2:pre+f"_{side}_N",3:pre+f"_{side}_P",4:"GND",5:"GND"})
         require(f"J{n+3}", {1:pre+"_MAIN_5V",2:"GND"})
         require(f"F{n+1}", {1:"SWITCHED_5V",2:pre+"_MAIN_5V"})
         require(f"F{n+2}", {1:"SWITCHED_5V",2:pre+"_TOUCH_5V"})
@@ -166,7 +171,6 @@ def check_contract(variant, pins, nets, errors):
         require(f"R{n+2}", {1:pre+"_HOST_PRESENT",2:"GND"})
         require(f"D{n+1}", {1:"AUX_5V",2:coil})
         require(f"C{n+1}", {1:"AUX_5V",2:"GND"})
-        for offset in (1,2):require(f"TP{n+offset}", {1:"GND"})
         nodes(host, {(f"J{n+1}","1"),(f"R{n+1}","1")})
         nodes(pre+"_HOST_PRESENT", {(f"R{n+1}","2"),(f"R{n+2}","1"),(f"Q{n+2}","2")})
         nodes(pre+"_RELAY_STACK", {(f"Q{n+1}","3"),(f"Q{n+2}","1")})
@@ -197,7 +201,7 @@ def check_part_records(components, records, bom_rows, errors):
     for ch in (1, 2):
         n = ch * 100
         for prefix, offset, mpn in (
-            ("J",1,"B4B-XH-A(LF)(SN)"), ("J",2,"B4B-XH-A(LF)(SN)"),
+            ("J",1,"B5B-XH-A(LF)(SN)"), ("J",2,"B5B-XH-A(LF)(SN)"),
             ("J",3,"B2P-VH(LF)(SN)"), ("F",1,"0697H4000-02"),
             ("F",2,"0697H0800-02"), ("K",1,"1-1462037-3"),
             ("Q",1,"TN0702N3-G"), ("Q",2,"TN0702N3-G"),
@@ -213,6 +217,9 @@ def check_part_records(components, records, bom_rows, errors):
                   "K1":"screen_power:Relay_Omron_G6C-1117P-US"}
     footprints.update({ref:"screen_power:Fuse_Bel_0697H_P5.08mm"
                        for ref in ("F101","F102","F201","F202")})
+    footprints.update({ref:USB_HEADER_FOOTPRINT for ref in USB_HEADER_REFS})
+    if set(OBSOLETE_SHIELD_REFS) & (set(components) | set(by_ref) | set(bom)):
+        fail(errors, "bom_identity", "Separate shield pads are obsolete; USB shields use XH pin 5")
     for ref, footprint in footprints.items():
         if by_ref.get(ref, {}).get("footprint") != footprint:
             fail(errors, "bom_identity", f"{ref}: selected part requires {footprint}")
@@ -220,14 +227,12 @@ def check_part_records(components, records, bom_rows, errors):
         native = components.get(ref)
         if native and (row["value"] != native[2] or row["footprint"].split(":")[-1] != native[1]):
             fail(errors, "bom_identity", f"{ref}: record value/footprint differs from netlist")
-        if int(row["quantity"]) == 0:
-            if ref in bom:
-                fail(errors, "bom_identity", f"{ref}: unpopulated bare pad must not become a purchased part")
-            continue
+        if int(row["quantity"]) != 1:
+            fail(errors, "bom_identity", f"{ref}: every component record requires one fitted instance")
         got = bom.get(ref, {})
         if any(str(got.get(key)) != str(row[key]) for key in ("value", "footprint", "mpn", "quantity")):
             fail(errors, "bom_identity", f"{ref}: purchase BOM differs from fitted component record")
-    wanted = {ref for ref, row in by_ref.items() if int(row["quantity"])} | {"F1_HOLDER"}
+    wanted = set(by_ref) | {"F1_HOLDER"}
     if set(bom) != wanted:
         fail(errors, "bom_identity", "BOM must contain fitted parts and exactly the input-holder accessory")
     holder = bom.get("F1_HOLDER", {})
@@ -485,21 +490,38 @@ def check_mounting_clearance(board, errors):
 
 
 def check_usb_headers(board, errors):
-    """Verify the chosen cable interface against JST's XH drawing."""
+    """Verify the five-contact cable interface against JST's XH drawing."""
+    headers = []
     for fp in board.GetFootprints():
-        if fp.GetReference() not in ("J101", "J102", "J201", "J202"):
+        ref = fp.GetReference()
+        if ref in OBSOLETE_SHIELD_REFS:
+            fail(errors, "usb_header", f"{ref}: obsolete separate shield pad")
+        if ref not in USB_HEADER_REFS:
             continue
-        pads = {pad.GetNumber(): pad for pad in fp.Pads()}
-        if set(pads) != {"1", "2", "3", "4"}:
-            fail(errors, "usb_header", f"{fp.GetReference()}: expected four XH terminals")
+        headers.append(ref)
+        # Native footprints are customized copies (hand-solder drills, silk
+        # and bundled models), not links to unchanged stock-library items.
+        # The source/netlist/BOM checks above retain the qualified identity.
+        if str(fp.GetFPID().GetLibItemName()) != USB_HEADER_FOOTPRINT.split(":", 1)[1]:
+            fail(errors, "usb_header", f"{ref}: requires {USB_HEADER_FOOTPRINT}")
+        terminals = list(fp.Pads())
+        pads = {pad.GetNumber(): pad for pad in terminals}
+        if len(terminals) != 5 or set(pads) != {"1", "2", "3", "4", "5"}:
+            fail(errors, "usb_header", f"{ref}: expected exactly five XH terminals")
             continue
         for number, pad in pads.items():
             if pad.GetAttribute() != p.PAD_ATTRIB_PTH or min(pad.GetDrillSize().x, pad.GetDrillSize().y) < p.FromMM(.9):
-                fail(errors, "usb_header", f"{fp.GetReference()}.{number}: XH requires at least 0.9 mm plated holes")
-        for a, b in (("1", "2"), ("2", "3"), ("3", "4")):
-            delta = pads[a].GetPosition() - pads[b].GetPosition()
-            if abs(math.hypot(delta.x, delta.y) - p.FromMM(2.5)) > 1:
-                fail(errors, "usb_header", f"{fp.GetReference()}: XH pitch must be 2.50 mm")
+                fail(errors, "usb_header", f"{ref}.{number}: XH requires at least 0.9 mm plated holes")
+        for number in ("4", "5"):
+            if net_name(pads[number].GetNetname()) != "GND":
+                fail(errors, "usb_header", f"{ref}.{number}: ground and shield contacts must connect to GND")
+        for a, b in itertools.combinations(range(1, 6), 2):
+            delta = pads[str(a)].GetPosition() - pads[str(b)].GetPosition()
+            if abs(math.hypot(delta.x, delta.y) - p.FromMM((b-a)*2.5)) > 1:
+                fail(errors, "usb_header", f"{ref}: XH terminals must form one row at 2.50 mm pitch")
+                break
+    if sorted(headers) != sorted(USB_HEADER_REFS):
+        fail(errors, "usb_header", "Expected one each of J101, J102, J201 and J202")
 
 
 def check_usb(board, errors, variant="hand"):
@@ -950,9 +972,47 @@ USB_POWER_FAULTS = (
     "missing_presence_pulldown_detected", "missing_presence_series_detected",
     "weak_presence_pulldown_detected", "short_presence_series_detected",
     "upper_driver_body_diode_detected", "lower_driver_body_diode_detected",
-    "wrong_shield_net_detected", "host_reservoir_detected",
+    "host_reservoir_detected",
     "presence_tolerance_suffix_detected",
-)
+) + tuple(f"{ref}_{fault}_detected" for ref in USB_HEADER_REFS
+          for fault in ("wrong_shield_net", "missing_shield_pin")) + tuple(
+    f"{ref}_obsolete_shield_pad_detected" for ref in OBSOLETE_SHIELD_REFS)
+
+USB_HEADER_FAULTS = ("usb_header_baseline_passes", "wrong_xh_pitch_detected",
+                     "missing_native_shield_pin_detected", "duplicate_xh_terminal_detected",
+                     "wrong_native_shield_net_detected", "four_pin_xh_footprint_detected",
+                     "obsolete_native_shield_pad_detected")
+
+
+def usb_header_self_test(board_path):
+    """Mutate native connector geometry/nets independently of netlist parity."""
+    baseline = []
+    check_usb_headers(load_board(board_path), baseline)
+    results = {"usb_header_baseline_passes": not baseline}
+    if baseline:
+        return {name: False for name in USB_HEADER_FAULTS}
+    for name in USB_HEADER_FAULTS[1:]:
+        altered = load_board(board_path)
+        header = next(f for f in altered.GetFootprints() if f.GetReference() == "J101")
+        shield = next(pad for pad in header.Pads() if pad.GetNumber() == "5")
+        if name == "wrong_xh_pitch_detected":
+            shield.SetPosition(shield.GetPosition() + p.VECTOR2I(0, p.FromMM(.04)))
+        elif name == "missing_native_shield_pin_detected":
+            header.RemoveNative(shield)
+        elif name == "duplicate_xh_terminal_detected":
+            shield.SetNumber("4")
+        elif name == "wrong_native_shield_net_detected":
+            shield.SetNet(next(pad for pad in header.Pads() if pad.GetNumber() == "1").GetNet())
+        elif name == "four_pin_xh_footprint_detected":
+            header.SetFPID(p.LIB_ID("Connector_JST", "JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical"))
+        elif name == "obsolete_native_shield_pad_detected":
+            obsolete = p.FOOTPRINT(altered)
+            obsolete.SetReference("TP101")
+            altered.Add(obsolete)
+        issues = []
+        check_usb_headers(altered, issues)
+        results[name] = not baseline and any(e["check"] == "usb_header" for e in issues)
+    return results
 
 
 def usb_power_self_test(variant, pins, components):
@@ -974,7 +1034,6 @@ def usb_power_self_test(variant, pins, components):
             ("missing_presence_series_detected",{("R101","1"):None},"usb_relay_state"),
             ("upper_driver_body_diode_detected",{("Q102","1"):"S1_DATA_COIL_LOW",("Q102","3"):"S1_RELAY_STACK"},"usb_relay_state"),
             ("lower_driver_body_diode_detected",{("Q101","1"):"S1_RELAY_STACK",("Q101","3"):"GND"},"usb_relay_state"),
-            ("wrong_shield_net_detected",{("TP101","1"):"HOST1_5V"},"circuit_contract"),
             ("host_reservoir_detected",{("C101","1"):"HOST1_5V"},"supply_boundary")):
         changed=dict(pins)
         for pin,net in changes.items():
@@ -982,6 +1041,20 @@ def usb_power_self_test(variant, pins, components):
             else:changed[pin]=net
         issues=inspect(changed,components)
         results[name]=not baseline and any(e["check"]==required_check for e in issues)
+    for ref in USB_HEADER_REFS:
+        for fault, net in (("wrong_shield_net", "HOST1_5V"), ("missing_shield_pin", None)):
+            changed = dict(pins)
+            if net is None:
+                changed.pop((ref, "5"), None)
+            else:
+                changed[(ref, "5")] = net
+            results[f"{ref}_{fault}_detected"] = not baseline and any(
+                e["check"] == "circuit_contract" for e in inspect(changed, components))
+    for ref in OBSOLETE_SHIELD_REFS:
+        changed = dict(pins)
+        changed[(ref, "1")] = "GND"
+        results[f"{ref}_obsolete_shield_pad_detected"] = not baseline and any(
+            e["check"] == "usb_shield" for e in inspect(changed, components))
     for name,ref,value in (("weak_presence_pulldown_detected","R102","100M 1%"),
                            ("short_presence_series_detected","R101","0R 1%"),
                            ("presence_tolerance_suffix_detected","R101","10k 91%")):
@@ -1047,6 +1120,22 @@ def power_source_self_test(variant, pins, components):
         next(row for row in changed if row["ref"] == ref)[key] = value
         issues = []; check_part_records(components, changed, bom, issues)
         results[name] = not baseline and any(e["check"] == "bom_identity" for e in issues)
+    # Keep every generated record consistent with the wrong connector so only
+    # the independent part-selection contract can reject these faults.
+    for name, key, value in (
+        ("four_pin_xh_purchase_detected", "mpn", "B4B-XH-A(LF)(SN)"),
+        ("four_pin_xh_record_detected", "footprint", "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical"),
+        ("unpopulated_component_detected", "quantity", 0)):
+        changed_records = [dict(row) for row in records]
+        changed_bom = [dict(row) for row in bom]
+        changed_components = dict(components)
+        for rows in (changed_records, changed_bom):
+            next(row for row in rows if row["ref"] == "J101")[key] = value
+        if key == "footprint":
+            changed_components["J101"] = (*value.split(":", 1), components["J101"][2])
+        issues = []
+        check_part_records(changed_components, changed_records, changed_bom, issues)
+        results[name] = not baseline and any(e["check"] == "bom_identity" for e in issues)
     for name, changed in (
         ("missing_input_holder_purchase_detected",[row for row in bom if row["ref"] != "F1_HOLDER"]),
         ("duplicate_input_holder_purchase_detected",bom + [dict(bom[-1])]),
@@ -1059,6 +1148,7 @@ def power_source_self_test(variant, pins, components):
 def self_test(board_path, components, expected, temp, variant="hand"):
     _, raw_nets = parse_netlist(HERE / variant / f"screen_power_{variant}.net")
     results = relay_contact_self_test(raw_nets)
+    results.update(usb_header_self_test(board_path))
     results.update(usb_power_self_test(variant,expected,components))
     results.update(power_source_self_test(variant, expected, components))
     for name, kind, check_name in (
@@ -1113,13 +1203,6 @@ def self_test(board_path, components, expected, temp, variant="hand"):
     check_silk_mask_clearance(altered, issues)
     results["short_silk_mask_gap_detected"] = not baseline and any(
         e["check"] == "silk_mask_clearance" for e in issues)
-    altered = load_board(board_path)
-    header = next(f for f in altered.GetFootprints() if f.GetReference() == "J101")
-    terminal = next(pad for pad in header.Pads() if pad.GetNumber() == "2")
-    terminal.SetPosition(terminal.GetPosition() + p.VECTOR2I(0, p.FromMM(.04)))
-    header_errors = []
-    check_usb_headers(altered, header_errors)
-    results["wrong_xh_pitch_detected"] = any(e["check"] == "usb_header" for e in header_errors)
     for fault in ("unassigned", "missing", "disabled"):
         altered = load_board(board_path)
         fp = next(f for f in altered.GetFootprints() if f.GetReference() == "K101")
@@ -1418,6 +1501,7 @@ def validate(variant, board_override=None, run_self_test=False):
                 summary["self_test"] = self_test(board_path, components, pins, temp, variant)
                 required_faults = ["wrong_relay_detected", "wrong_driver_detected", "wrong_tolerance_detected", "wrong_tolerance_suffix_detected", "weak_pulldown_detected", "narrow_power_detected", "host_power_bridge_detected", "usb_cut_detected", "console_control_cut_detected"]
                 required_faults += list(USB_POWER_FAULTS)
+                required_faults += list(USB_HEADER_FAULTS)
                 required_faults += ["weak_gpio_pulldown_detected", "excess_gpio_shunt_detected"]
                 required_faults += ["relay_hole_detected", "model_unassigned_detected", "model_missing_detected", "model_disabled_detected", "wrong_xh_pitch_detected"]
                 required_faults += ["smd_footprint_detected", "smd_pad_detected", "power_lead_hole_detected", "four_layers_detected", "missing_usb_reference_detected"]

@@ -4,7 +4,7 @@
 
 Each populated footprint uses a project-relative STEP model. F1's model
 combines the holder and removable cartridge; both are separately listed in
-the purchasing BOM. Bare shield pads and M3 holes have no separate body.
+the purchasing BOM. M3 holes have no separate body.
 Screws, mating plugs, wire bends and the enclosure are not included.
 
 ## Custom models

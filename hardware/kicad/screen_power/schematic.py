@@ -68,7 +68,7 @@ def write_schematic(circuit, out, variant):
                 section = "shared_power" if part.ref.startswith(("H", "#FLG")) or part.ref in {"F1", "R8", "C1", "C2", "J1"} else "control"
         else:
             touch = ((part.ref.startswith("J") and local in (1, 2))
-                     or part.ref.startswith(("K", "Q", "D", "C", "R", "TP")))
+                     or part.ref.startswith(("K", "Q", "D", "C", "R")))
             section = f"screen{channel}_{'touch' if touch else 'power'}"
         sheets[section].append(part)
     for page, (section, parts) in enumerate(sheets.items(), 1):
@@ -77,7 +77,7 @@ def write_schematic(circuit, out, variant):
         title = f"Segno screen power / {variant} / {section.replace('_', ' ')}"
         sch = Sexp(["kicad_sch", ["version", 20250114], ["generator", "eeschema"],
                     ["uuid", sheet_id], ["paper", "A3"],
-                    ["title_block", ["title", title], ["rev", '"N prototype"'],
+                    ["title_block", ["title", title], ["rev", '"O prototype"'],
                      ["comment", 1, "One normally open contact switches AUX; every board load sits behind F1."],
                      ["comment", 2, "AUX-powered relays; each host VBUS supplies only its presence detector."],
                      ["comment", 3, "Physical verification required before release."]]])
@@ -96,7 +96,7 @@ def write_schematic(circuit, out, variant):
                 return (round(pin.x*math.cos(radians)-pin.y*math.sin(radians), 6),
                         round(pin.x*math.sin(radians)+pin.y*math.cos(radians), 6))
             symbol = Sexp(["symbol", ["lib_id", definition[1]], ["at", x, y, rotation],
-                           ["unit", 1], ["in_bom", "no" if part.ref.startswith(("#", "TP")) else "yes"],
+                           ["unit", 1], ["in_bom", "no" if part.ref.startswith("#") else "yes"],
                            ["on_board", "no" if part.ref.startswith("#") else "yes"],
                            ["dnp", "no"], ["uuid", symbol_id]])
             # Keep values clear of the body of the tallest symbol.

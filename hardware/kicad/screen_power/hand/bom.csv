@@ -15,8 +15,8 @@ K1,G6C-1117P-US,screen_power:Relay_Omron_G6C-1117P-US,G6C-1117P-US DC5,Control,1
 R8,100R 1W 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,PR01000101000FA100,Control,1
 C1,100nF 50V X7R,Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm,K104K10X7RF53H5,Control,1
 C2,220uF 10V,Capacitor_THT:CP_Radial_D6.3mm_P2.50mm,EEU-FR1A221,Control,1
-J101,PI USB / XH4,Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical,B4B-XH-A(LF)(SN),Screen 1,1
-J102,TOUCH / XH4,Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical,B4B-XH-A(LF)(SN),Screen 1,1
+J101,PI USB / XH5,Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical,B5B-XH-A(LF)(SN),Screen 1,1
+J102,TOUCH / XH5,Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical,B5B-XH-A(LF)(SN),Screen 1,1
 J103,SCREEN 1 POWER,Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical,B2P-VH(LF)(SN),Screen 1,1
 F101,4A time-lag,screen_power:Fuse_Bel_0697H_P5.08mm,0697H4000-02,Screen 1,1
 F102,800mA time-lag,screen_power:Fuse_Bel_0697H_P5.08mm,0697H0800-02,Screen 1,1
@@ -28,8 +28,8 @@ R102,100k 1%,Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,MFR-
 D101,1N4007,Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal,1N4007G,Screen 1,1
 C101,100nF 50V X7R,Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm,K104K10X7RF53H5,Screen 1,1
 C102,150uF 10V,Capacitor_THT:CP_Radial_D5.0mm_P2.00mm,EEU-FR1A151,Screen 1,1
-J201,PI USB / XH4,Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical,B4B-XH-A(LF)(SN),Screen 2,1
-J202,TOUCH / XH4,Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical,B4B-XH-A(LF)(SN),Screen 2,1
+J201,PI USB / XH5,Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical,B5B-XH-A(LF)(SN),Screen 2,1
+J202,TOUCH / XH5,Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical,B5B-XH-A(LF)(SN),Screen 2,1
 J203,SCREEN 2 POWER,Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical,B2P-VH(LF)(SN),Screen 2,1
 F201,4A time-lag,screen_power:Fuse_Bel_0697H_P5.08mm,0697H4000-02,Screen 2,1
 F202,800mA time-lag,screen_power:Fuse_Bel_0697H_P5.08mm,0697H0800-02,Screen 2,1

@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "circuit.py")
-    (date "09/28/2026 01:19 AM")
+    (date "09/28/2026 05:18 PM")
     (tool "SKiDL (2.3.0)")
     (sheet
       (number 1)
@@ -13,7 +13,7 @@
         (company)
         (rev)
         (date)
-        (source "../../../circuit.py")
+        (source "circuit.py")
         (comment
           (number "1")
           (value ""))
@@ -57,7 +57,7 @@
         (field
           (name "SKiDL Tag") "flag-AUX_5V_IN")
         (field
-          (name "SKiDL Line") "switch_circuit.py:172"))
+          (name "SKiDL Line") "switch_circuit.py:173"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -81,7 +81,7 @@
         (field
           (name "SKiDL Tag") "flag-GND")
         (field
-          (name "SKiDL Line") "switch_circuit.py:172"))
+          (name "SKiDL Line") "switch_circuit.py:173"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -105,7 +105,7 @@
         (field
           (name "SKiDL Tag") "flag-HOST1_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:172"))
+          (name "SKiDL Line") "switch_circuit.py:173"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -129,7 +129,7 @@
         (field
           (name "SKiDL Tag") "flag-HOST2_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:172"))
+          (name "SKiDL Line") "switch_circuit.py:173"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -153,7 +153,7 @@
         (field
           (name "SKiDL Tag") "flag-S1_TOUCH_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:172"))
+          (name "SKiDL Line") "switch_circuit.py:173"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -177,7 +177,7 @@
         (field
           (name "SKiDL Tag") "flag-S2_TOUCH_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:172"))
+          (name "SKiDL Line") "switch_circuit.py:173"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -644,14 +644,14 @@
       (tstamps "d7608689-a7d2-514c-aa16-0f8bde5cf213"))
     (comp
       (ref "J101")
-      (value "PI USB / XH4")
-      (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+      (value "PI USB / XH5")
+      (description "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical")
       (fields
         (field
-          (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+          (name "Description") "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+          (name "Footprint") "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical")
         (field
           (name "Datasheet"))
         (field
@@ -660,7 +660,7 @@
           (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
-        (part "Conn_01x04"))
+        (part "Conn_01x05"))
       (sheetpath
         (names "/")
         (tstamps "/"))
@@ -668,14 +668,14 @@
       (tstamps "73f566de-b027-5486-affb-6cd7f626dfae"))
     (comp
       (ref "J102")
-      (value "TOUCH / XH4")
-      (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+      (value "TOUCH / XH5")
+      (description "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical")
       (fields
         (field
-          (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+          (name "Description") "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+          (name "Footprint") "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical")
         (field
           (name "Datasheet"))
         (field
@@ -684,7 +684,7 @@
           (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
-        (part "Conn_01x04"))
+        (part "Conn_01x05"))
       (sheetpath
         (names "/")
         (tstamps "/"))
@@ -740,14 +740,14 @@
       (tstamps "5e0b731b-c654-5cf6-8847-00f2f042255c"))
     (comp
       (ref "J201")
-      (value "PI USB / XH4")
-      (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+      (value "PI USB / XH5")
+      (description "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical")
       (fields
         (field
-          (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+          (name "Description") "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+          (name "Footprint") "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical")
         (field
           (name "Datasheet"))
         (field
@@ -756,7 +756,7 @@
           (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
-        (part "Conn_01x04"))
+        (part "Conn_01x05"))
       (sheetpath
         (names "/")
         (tstamps "/"))
@@ -764,14 +764,14 @@
       (tstamps "ed19d927-26d8-5559-bc45-6d31787664c5"))
     (comp
       (ref "J202")
-      (value "TOUCH / XH4")
-      (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+      (value "TOUCH / XH5")
+      (description "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical")
       (fields
         (field
-          (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+          (name "Description") "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
+          (name "Footprint") "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical")
         (field
           (name "Datasheet"))
         (field
@@ -780,7 +780,7 @@
           (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
-        (part "Conn_01x04"))
+        (part "Conn_01x05"))
       (sheetpath
         (names "/")
         (tstamps "/"))
@@ -1289,103 +1289,7 @@
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "d4602b99-fd19-5b52-9a62-e3fbb9d2ed0c"))
-    (comp
-      (ref "TP101")
-      (value "SHIELD")
-      (description "test point")
-      (footprint "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm")
-      (fields
-        (field
-          (name "Description") "test point")
-        (field
-          (name "Footprint") "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "TP101")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:39"))
-      (libsource
-        (lib "Connector")
-        (part "TestPoint"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "c523403f-a285-5273-bb23-83636eabc785"))
-    (comp
-      (ref "TP102")
-      (value "SHIELD")
-      (description "test point")
-      (footprint "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm")
-      (fields
-        (field
-          (name "Description") "test point")
-        (field
-          (name "Footprint") "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "TP102")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:39"))
-      (libsource
-        (lib "Connector")
-        (part "TestPoint"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "a41f68e5-a1f4-523d-b699-a99cac24b452"))
-    (comp
-      (ref "TP201")
-      (value "SHIELD")
-      (description "test point")
-      (footprint "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm")
-      (fields
-        (field
-          (name "Description") "test point")
-        (field
-          (name "Footprint") "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "TP201")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:39"))
-      (libsource
-        (lib "Connector")
-        (part "TestPoint"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "2edb0419-9c78-54c8-b4ca-3539ee8da200"))
-    (comp
-      (ref "TP202")
-      (value "SHIELD")
-      (description "test point")
-      (footprint "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm")
-      (fields
-        (field
-          (name "Description") "test point")
-        (field
-          (name "Footprint") "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "TP202")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:39"))
-      (libsource
-        (lib "Connector")
-        (part "TestPoint"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "28b55bb8-169f-53e5-bb6d-30b78fd2597a")))
+      (tstamps "d4602b99-fd19-5b52-9a62-e3fbb9d2ed0c")))
   (nets
     (net
       (code 1)
@@ -1572,8 +1476,16 @@
         (pin "4")
         (pintype "PASSIVE"))
       (node
+        (ref "J101")
+        (pin "5")
+        (pintype "PASSIVE"))
+      (node
         (ref "J102")
         (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J102")
+        (pin "5")
         (pintype "PASSIVE"))
       (node
         (ref "J103")
@@ -1588,8 +1500,16 @@
         (pin "4")
         (pintype "PASSIVE"))
       (node
+        (ref "J201")
+        (pin "5")
+        (pintype "PASSIVE"))
+      (node
         (ref "J202")
         (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J202")
+        (pin "5")
         (pintype "PASSIVE"))
       (node
         (ref "J203")
@@ -1630,22 +1550,6 @@
       (node
         (ref "R8")
         (pin "2")
-        (pintype "PASSIVE"))
-      (node
-        (ref "TP101")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "TP102")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "TP201")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "TP202")
-        (pin "1")
         (pintype "PASSIVE")))
     (net
       (code 8)

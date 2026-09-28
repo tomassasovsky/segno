@@ -5,12 +5,12 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / screen1 touch")
-    (rev "N prototype")
+    (rev "O prototype")
     (comment 1 "One normally open contact switches AUX; every board load sits behind F1.")
     (comment 2 "AUX-powered relays; each host VBUS supplies only its presence detector.")
     (comment 3 "Physical verification required before release."))
   (lib_symbols
-    (symbol "screen_symbols:Connector_Generic_Conn_01x04"
+    (symbol "screen_symbols:Connector_Generic_Conn_01x05"
       (pin_names
         (offset 0.508)
         (hide yes))
@@ -22,7 +22,7 @@
         (effects
           (font
             (size 1.27 1.27))))
-      (property "Value" "Conn_01x04"
+      (property "Value" "Conn_01x05"
         (at 0 0 90)
         (effects
           (font
@@ -39,21 +39,29 @@
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Description" "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)"
+      (property "Description" "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (symbol "Connector_Generic_Conn_01x04_1_1"
+      (symbol "Connector_Generic_Conn_01x05_1_1"
         (rectangle
-          (start -1.27 3.81)
+          (start -1.27 6.35)
           (end 1.27 -6.35)
           (stroke
             (width 0.254)
             (type default))
           (fill
             (type background)))
+        (rectangle
+          (start -1.27 5.207)
+          (end 0 4.953)
+          (stroke
+            (width 0.1524)
+            (type default))
+          (fill
+            (type none)))
         (rectangle
           (start -1.27 2.667)
           (end 0 2.413)
@@ -87,7 +95,7 @@
           (fill
             (type none)))
         (pin passive line
-          (at -5.08 2.54 0)
+          (at -5.08 5.08 0)
           (length 3.81)
           (name "Pin_1"
             (effects
@@ -98,7 +106,7 @@
               (font
                 (size 1.27 1.27)))))
         (pin passive line
-          (at -5.08 0 0)
+          (at -5.08 2.54 0)
           (length 3.81)
           (name "Pin_2"
             (effects
@@ -109,7 +117,7 @@
               (font
                 (size 1.27 1.27)))))
         (pin passive line
-          (at -5.08 -2.54 0)
+          (at -5.08 0 0)
           (length 3.81)
           (name "Pin_3"
             (effects
@@ -120,7 +128,7 @@
               (font
                 (size 1.27 1.27)))))
         (pin passive line
-          (at -5.08 -5.08 0)
+          (at -5.08 -2.54 0)
           (length 3.81)
           (name "Pin_4"
             (effects
@@ -129,68 +137,15 @@
           (number "4"
             (effects
               (font
-                (size 1.27 1.27))))))
-      (embedded_fonts no))
-    (symbol "screen_symbols:Connector_TestPoint"
-      (pin_names
-        (offset 0.508))
-      (exclude_from_sim no)
-      (in_bom yes)
-      (on_board yes)
-      (property "Reference" "TP"
-        (at 2.032 0 90)
-        (effects
-          (font
-            (size 1.27 1.27))))
-      (property "Value" "TestPoint"
-        (at 0 0 90)
-        (effects
-          (font
-            (size 1.27 1.27))))
-      (property "Footprint" ""
-        (at 0 0 0)
-        (effects
-          (font
-            (size 1.27 1.27))
-          (hide yes)))
-      (property "Datasheet" "~"
-        (at 0 0 0)
-        (effects
-          (font
-            (size 1.27 1.27))
-          (hide yes)))
-      (property "Description" "test point"
-        (at 0 0 0)
-        (effects
-          (font
-            (size 1.27 1.27))
-          (hide yes)))
-      (symbol "Connector_TestPoint_0_1"
-        (circle
-          (center 0 3.302)
-          (radius 0.762)
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none))))
-      (symbol "Connector_TestPoint_1_1"
-        (circle
-          (center 0 3.302)
-          (radius 0.762)
-          (stroke
-            (width 0)
-            (type default))
-          (fill
-            (type none)))
+                (size 1.27 1.27)))))
         (pin passive line
-          (at 0 0 90)
-          (length 2.54)
-          (name "1"
+          (at -5.08 -5.08 0)
+          (length 3.81)
+          (name "Pin_5"
             (effects
               (font
                 (size 1.27 1.27))))
-          (number "1"
+          (number "5"
             (effects
               (font
                 (size 1.27 1.27))))))
@@ -1776,15 +1731,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 350.52 60.96)
-      (xy 345.44 60.96))
+      (xy 350.52 58.42)
+      (xy 345.44 58.42))
     (stroke
       (width 0)
       (type default))
     (uuid 574c639f-20fa-557d-9c24-370cfe0ea00c))
   (global_label "HOST1_5V"
     (shape bidirectional)
-    (at 345.44 60.96 180)
+    (at 345.44 58.42 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1792,15 +1747,15 @@
     (uuid 4df9c426-eb78-55a0-8fc0-a43aa12549b4))
   (wire
     (pts
-      (xy 350.52 63.5)
-      (xy 345.44 63.5))
+      (xy 350.52 60.96)
+      (xy 345.44 60.96))
     (stroke
       (width 0)
       (type default))
     (uuid 4122037d-32d0-5ee4-a454-786e7f1af623))
   (global_label "S1_UP_N"
     (shape bidirectional)
-    (at 345.44 63.5 180)
+    (at 345.44 60.96 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1808,15 +1763,15 @@
     (uuid 1a701fb3-e209-5b0b-b433-c93a4441dae4))
   (wire
     (pts
-      (xy 350.52 66.04)
-      (xy 345.44 66.04))
+      (xy 350.52 63.5)
+      (xy 345.44 63.5))
     (stroke
       (width 0)
       (type default))
     (uuid 8c1ca8fa-cab6-597c-a437-9235234c4b5c))
   (global_label "S1_UP_P"
     (shape bidirectional)
-    (at 345.44 66.04 180)
+    (at 345.44 63.5 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1824,12 +1779,28 @@
     (uuid e6f5f12f-8462-5099-83b7-9673c998b591))
   (wire
     (pts
+      (xy 350.52 66.04)
+      (xy 345.44 66.04))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 193a7668-ad3e-5c22-8e3d-9abeedc86aa8))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 345.44 66.04 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid b47c2331-f6a7-5ea4-b710-02da69bd45b6))
+  (wire
+    (pts
       (xy 350.52 68.58)
       (xy 345.44 68.58))
     (stroke
       (width 0)
       (type default))
-    (uuid 193a7668-ad3e-5c22-8e3d-9abeedc86aa8))
+    (uuid b516a426-3caa-5de4-b77e-fdffaa4892be))
   (global_label "GND"
     (shape bidirectional)
     (at 345.44 68.58 180)
@@ -1837,9 +1808,9 @@
       (font
         (size 1.0 1.0))
       (justify right))
-    (uuid b47c2331-f6a7-5ea4-b710-02da69bd45b6))
+    (uuid b607846b-6111-5086-8260-9e430275fbf7))
   (symbol
-    (lib_id "screen_symbols:Connector_Generic_Conn_01x04")
+    (lib_id "screen_symbols:Connector_Generic_Conn_01x05")
     (at 355.59999999999997 63.5 0)
     (unit 1)
     (in_bom yes)
@@ -1847,22 +1818,22 @@
     (dnp no)
     (uuid a734e692-b605-517f-9a91-8fefdc252f57)
     (property "Reference" "J101"
-      (at 355.59999999999997 50.8 0)
+      (at 355.59999999999997 48.260000000000005 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "PI USB / XH4"
-      (at 355.59999999999997 53.339999999999996 0)
+    (property "Value" "PI USB / XH5"
+      (at 355.59999999999997 50.800000000000004 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical"
+    (property "Footprint" "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical"
       (at 355.59999999999997 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "B4B-XH-A(LF)(SN)"
+    (property "MPN" "B5B-XH-A(LF)(SN)"
       (at 355.59999999999997 63.5 0)
       (effects
         (font
@@ -1876,6 +1847,8 @@
       (uuid b6e1d429-0c5d-5e6f-91b2-9654a9d2f793))
     (pin "4"
       (uuid 18cc8817-112c-5065-b0bb-fd78a5e4c05a))
+    (pin "5"
+      (uuid 7baec55d-7c2d-54ce-a3e9-cc484758b13f))
     (instances
       (project "screen_power_hand"
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
@@ -1883,15 +1856,15 @@
           (unit 1)))))
   (wire
     (pts
-      (xy 45.72 111.76)
-      (xy 40.64 111.76))
+      (xy 45.72 109.22)
+      (xy 40.64 109.22))
     (stroke
       (width 0)
       (type default))
     (uuid 6ebe39dc-46f3-508f-b37f-083d815d3dd3))
   (global_label "S1_TOUCH_5V"
     (shape bidirectional)
-    (at 40.64 111.76 180)
+    (at 40.64 109.22 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1899,15 +1872,15 @@
     (uuid bbf82352-6564-5a40-a648-131b181af99d))
   (wire
     (pts
-      (xy 45.72 114.3)
-      (xy 40.64 114.3))
+      (xy 45.72 111.76)
+      (xy 40.64 111.76))
     (stroke
       (width 0)
       (type default))
     (uuid 0e05f9d3-5c96-5c04-ae47-54128460aedd))
   (global_label "S1_DN_N"
     (shape bidirectional)
-    (at 40.64 114.3 180)
+    (at 40.64 111.76 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1915,15 +1888,15 @@
     (uuid 06243769-42aa-5987-a678-f0fd8f39c760))
   (wire
     (pts
-      (xy 45.72 116.84)
-      (xy 40.64 116.84))
+      (xy 45.72 114.3)
+      (xy 40.64 114.3))
     (stroke
       (width 0)
       (type default))
     (uuid 872a4c4b-3e08-551b-9a83-026a3ef86c6c))
   (global_label "S1_DN_P"
     (shape bidirectional)
-    (at 40.64 116.84 180)
+    (at 40.64 114.3 180)
     (effects
       (font
         (size 1.0 1.0))
@@ -1931,12 +1904,28 @@
     (uuid 93b6fdf1-6791-51a6-843f-a9d3d0e69de3))
   (wire
     (pts
+      (xy 45.72 116.84)
+      (xy 40.64 116.84))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 0a0adcca-4bac-5091-83c4-567e0777c4c5))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 40.64 116.84 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 1715c014-0a26-5437-8428-824aad72d818))
+  (wire
+    (pts
       (xy 45.72 119.38)
       (xy 40.64 119.38))
     (stroke
       (width 0)
       (type default))
-    (uuid 0a0adcca-4bac-5091-83c4-567e0777c4c5))
+    (uuid acc91dff-eae9-5d1b-bfbd-49d490bb60fc))
   (global_label "GND"
     (shape bidirectional)
     (at 40.64 119.38 180)
@@ -1944,9 +1933,9 @@
       (font
         (size 1.0 1.0))
       (justify right))
-    (uuid 1715c014-0a26-5437-8428-824aad72d818))
+    (uuid 73483922-7b14-5695-9c3e-52d9513a4306))
   (symbol
-    (lib_id "screen_symbols:Connector_Generic_Conn_01x04")
+    (lib_id "screen_symbols:Connector_Generic_Conn_01x05")
     (at 50.8 114.3 0)
     (unit 1)
     (in_bom yes)
@@ -1954,22 +1943,22 @@
     (dnp no)
     (uuid 2304bdee-3aa4-5de6-b48e-04ea5773b8cb)
     (property "Reference" "J102"
-      (at 50.8 101.6 0)
+      (at 50.8 99.06 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "TOUCH / XH4"
-      (at 50.8 104.14 0)
+    (property "Value" "TOUCH / XH5"
+      (at 50.8 101.60000000000001 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical"
+    (property "Footprint" "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical"
       (at 50.8 114.3 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "B4B-XH-A(LF)(SN)"
+    (property "MPN" "B5B-XH-A(LF)(SN)"
       (at 50.8 114.3 0)
       (effects
         (font
@@ -1983,6 +1972,8 @@
       (uuid 792b8127-11e4-59ce-92d1-42ac25b1af11))
     (pin "4"
       (uuid 512878be-7100-58d3-b645-b0704590846d))
+    (pin "5"
+      (uuid f4a268f9-2712-50fc-9d0c-5a42a8bcc054))
     (instances
       (project "screen_power_hand"
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
@@ -2460,111 +2451,5 @@
       (project "screen_power_hand"
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
           (reference "R102")
-          (unit 1)))))
-  (wire
-    (pts
-      (xy 254.0 165.1)
-      (xy 254.0 170.18))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 8524c6d0-94f6-57dd-909f-84d78c274c31))
-  (global_label "GND"
-    (shape bidirectional)
-    (at 254.0 170.18 270)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify right))
-    (uuid e56ef333-b7d2-5b13-b57d-a3bf2a2d81d9))
-  (symbol
-    (lib_id "screen_symbols:Connector_TestPoint")
-    (at 254.0 165.1 0)
-    (unit 1)
-    (in_bom no)
-    (on_board yes)
-    (dnp no)
-    (uuid 40dc7612-ff00-55f2-b4af-f80c0f6d1cf3)
-    (property "Reference" "TP101"
-      (at 254.0 154.94 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "SHIELD"
-      (at 254.0 157.48 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm"
-      (at 254.0 165.1 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "PCB pad"
-      (at 254.0 165.1 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (pin "1"
-      (uuid 24bf7d39-a3e0-58b2-b515-8ba5dad5cd04))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
-          (reference "TP101")
-          (unit 1)))))
-  (wire
-    (pts
-      (xy 355.6 165.1)
-      (xy 355.6 170.18))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 0df7c272-8f90-5366-9d99-89fd74842bb8))
-  (global_label "GND"
-    (shape bidirectional)
-    (at 355.6 170.18 270)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify right))
-    (uuid 3a151fa3-ca7f-5de5-a9ff-9345dcf88ee5))
-  (symbol
-    (lib_id "screen_symbols:Connector_TestPoint")
-    (at 355.59999999999997 165.1 0)
-    (unit 1)
-    (in_bom no)
-    (on_board yes)
-    (dnp no)
-    (uuid 6a7db96b-0abb-5f7c-9fe1-19926c0d68c2)
-    (property "Reference" "TP102"
-      (at 355.59999999999997 154.94 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "SHIELD"
-      (at 355.59999999999997 157.48 0)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm"
-      (at 355.59999999999997 165.1 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "PCB pad"
-      (at 355.59999999999997 165.1 0)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (pin "1"
-      (uuid 7ee2e48d-74ba-5d82-87e0-22a4aaf79556))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9"
-          (reference "TP102")
           (unit 1)))))
   (embedded_fonts no))

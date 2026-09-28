@@ -123,16 +123,16 @@ def build_switch(variant, schematic=False):
     for ch in (1, 2):
         n, pre, group = ch * 100, f"S{ch}", f"Screen {ch}"
         host, coil = f"HOST{ch}_5V", f"{pre}_DATA_COIL_LOW"
-        for offset, value, rail, side in ((1, "PI USB / XH4", host, "UP"),
-                                         (2, "TOUCH / XH4", pre+"_TOUCH_5V", "DN")):
-            part("Connector_Generic", "Conn_01x04", f"J{n+offset}", value,
-                 "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
-                 {1: rail, 2: pre+f"_{side}_N", 3: pre+f"_{side}_P", 4: "GND"},
-                 "B4B-XH-A(LF)(SN)", group)
-            part("Connector", "TestPoint", f"TP{n+offset}", "SHIELD",
-                 "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm", {1: "GND"},
-                 "PCB pad", group)
-            records[-1]["quantity"] = 0
+        # Five contacts per USB lead: the cable's shield drain is terminal 5 of
+        # the same keyed housing, so a lead unplugs whole with no soldered
+        # tether. Terminals 4 and 5 are both board ground.
+        for offset, value, rail, side in ((1, "PI USB / XH5", host, "UP"),
+                                         (2, "TOUCH / XH5", pre+"_TOUCH_5V", "DN")):
+            part("Connector_Generic", "Conn_01x05", f"J{n+offset}", value,
+                 "Connector_JST:JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical",
+                 {1: rail, 2: pre+f"_{side}_N", 3: pre+f"_{side}_P", 4: "GND",
+                  5: "GND"},
+                 "B5B-XH-A(LF)(SN)", group)
         header(f"J{n+3}", f"SCREEN {ch} POWER", pre+"_MAIN_5V", group=group)
         # Time-lag branch fuses: the contact makes into the screens' own
         # capacitance without a gate ramp, so the branches need pulse margin.
@@ -181,7 +181,7 @@ def build_switch(variant, schematic=False):
         writer = csv.DictWriter(stream, fieldnames=["ref", "value", "footprint", "mpn", "group", "quantity"], lineterminator="\n")
         writer.writeheader()
         writer.writerows({key: row[key] for key in writer.fieldnames}
-                         for row in records if row["quantity"] > 0)
+                         for row in records)
         # Holder hardware has no extra electrical component or phantom pads.
         # These records deliberately live only in the purchasing BOM.
         writer.writerows([

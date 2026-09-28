@@ -13,7 +13,25 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
-**September 28 all-three-board adversarial review completed.**
+**September 28 Revision O completed: fully removable USB shields.**
+The four screen-board USB headers now use XH5, with pin 5 carrying the shield
+to GND and no separate soldered tether. Local placement and rounded power
+routes clear the longer headers; the two-layer outline, power circuit and
+292 USB copper items are retained. Fresh checks pass: zero ERC/DRC findings,
+123 deliberate faults, 415 screen manufacturing comparisons and 175 unchanged
+console/ring comparisons. Conservative copper loss is 15.93 mV below its
+20 mV allowance. The final populated review also corrected a hidden CTRL label.
+Five independent local roles and the bounded model review completed without
+unresolved findings. Claude helped author the change, then reached its limit;
+there is no new Claude approval of Revision O. See the
+[current review](reviews/screen-power-xh5-1072/review.md) and
+[manufacturing identities](reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
+The combined Mouser import is 55 lines / 192 units, estimated $88.22 before
+tax with only changed connector/contact prices freshly checked. Current-head
+CI and assembled USB/enclosure qualification remain separate; no order,
+merge, flash or deployment occurred.
+
+**September 28 Revision N all-three-board adversarial review completed.**
 Claude's console continuation returned a successful final verdict after the
 reset, closing the last outstanding review. All three Claude and DeepSeek
 passes are now complete, with no unresolved actionable PCB finding. The

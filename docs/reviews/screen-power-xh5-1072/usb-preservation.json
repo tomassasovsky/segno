@@ -1,0 +1,9 @@
+{
+  "baseline_board_sha256": "e72850b26ae9076011bc368b69d3f1f1edce758be878bf5fb0decc4f415c5a2f",
+  "board_sha256": "bf870faa7c5e1be2dd9843d1587c76888508ece7549b27b5013d0eb7a77c9fc2",
+  "method": "verify_preserved_usb.capture; compare every USB data track and each pre-existing USB connector/relay pad",
+  "usb_copper_items": 292,
+  "usb_copper_unchanged": true,
+  "anchor_pad_changes": [],
+  "passed": true
+}
