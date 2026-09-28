@@ -5,9 +5,10 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / screen2 touch")
-    (rev "M prototype")
-    (comment 1 "AUX-powered relays; each host VBUS supplies only its presence detector.")
-    (comment 2 "Physical verification required before release."))
+    (rev "N prototype")
+    (comment 1 "One normally open contact switches AUX; every board load sits behind F1.")
+    (comment 2 "AUX-powered relays; each host VBUS supplies only its presence detector.")
+    (comment 3 "Physical verification required before release."))
   (lib_symbols
     (symbol "screen_symbols:Connector_Generic_Conn_01x04"
       (pin_names
@@ -1605,18 +1606,18 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "100nF 63V"
+    (property "Value" "100nF 50V X7R"
       (at 50.8 55.88 90)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm"
+    (property "Footprint" "Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm"
       (at 50.8 63.5 90)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "MKS2C031001A00KSSD"
+    (property "MPN" "K104K10X7RF53H5"
       (at 50.8 63.5 90)
       (effects
         (font
@@ -1758,7 +1759,7 @@
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "1N4007-E3/54"
+    (property "MPN" "1N4007G"
       (at 254.0 63.5 0)
       (effects
         (font

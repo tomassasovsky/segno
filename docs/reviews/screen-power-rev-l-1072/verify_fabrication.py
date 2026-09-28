@@ -96,6 +96,7 @@ def sources(base, board):
     paths = set(base.glob("*.sh"))
     # SKiDL's generated symbol cache is an output, not a production input.
     paths.update(p for p in base.glob("*.py") if not p.name.endswith("_sklib.py"))
+    paths.update(base.glob("*.kicad_sym"))
     for directory in (base / "models", base / "screen_power.pretty"):
         paths.update(p for p in directory.rglob("*") if p.is_file())
     for pattern in ("*.net", "*.kicad_sch", "*.kicad_sym", "*.kicad_pro",

@@ -70,6 +70,65 @@ def protect_mounting_hardware(board, width, height):
             board.Add(area)
 
 
+def ground_outline(width, height):
+    """Tangent pour ends where the board edge meets each washer clearance.
+
+    The circular hardware keepouts remain independent DRC rules. This contour
+    only removes their otherwise pointed intersections with the pour boundary;
+    0.75 mm end fillets join a 4.55 mm clearance arc without thin copper tips.
+    """
+    edge, centre, clearance, radius = .3, 4., 4.55, .75
+    tangent = centre + math.sqrt((clearance + radius)**2
+                                - (centre - edge - radius)**2)
+    small_top = (tangent, edge + radius)
+    a = (centre + (tangent-centre)*clearance/(clearance+radius),
+         centre + (edge+radius-centre)*clearance/(clearance+radius))
+    b = (a[1], a[0])
+    def arc(c, r, start, end, count):
+        return [(c[0]+r*math.cos(start+(end-start)*i/count),
+                 c[1]+r*math.sin(start+(end-start)*i/count))
+                for i in range(count+1)]
+    theta = math.atan2(a[1]-small_top[1], a[0]-small_top[0])-math.tau
+    sector = arc(small_top, radius, -math.pi/2, theta, 20)
+    a0 = math.atan2(a[1]-centre, a[0]-centre)
+    a1 = math.atan2(b[1]-centre, b[0]-centre)
+    sector += arc((centre,centre), clearance, a0, a1, 48)[1:]
+    start = math.atan2(b[1]-tangent, b[0]-edge-radius)
+    sector += arc((edge+radius,tangent), radius, start, -math.pi, 20)[1:]
+    return ([(width-x,y) for x,y in sector]
+            + [(width-x,height-y) for x,y in reversed(sector)]
+            + [(x,height-y) for x,y in sector]
+            + list(reversed(sector)))
+
+
+
+def trim_control_corner_pour(board):
+    """Round the two dead-end GND wedges between H1 and the control trace.
+
+    These front-only pour exclusions carry 0.4 mm tangent caps. Their centres
+    touch both the 4.55 mm washer contour and the local control clearance; the
+    closure lies in already-clear space. Tracks, vias, pads and the rear plane
+    remain allowed, so this removes only the visually pointed ground ends.
+    """
+    radius=.4
+    for x,closing_x,upper in ((8.5195,9.02,True),(8.0347,8.7,False)):
+        y=4+(-1 if upper else 1)*math.sqrt((4.55+radius)**2-(x-4)**2)
+        angle=math.atan2(4-y,4-x)
+        outline=[(x+radius*math.cos(angle*i/40),
+                  y+radius*math.sin(angle*i/40)) for i in range(41)]
+        closing_y=3.5 if upper else 4.3
+        outline += [(7.8,closing_y),(closing_x,closing_y),(closing_x,y)]
+        area=p.ZONE(board);area.SetLayer(p.F_Cu);area.SetIsRuleArea(True)
+        area.SetZoneName('GROUND_TIP_CLEARANCE')
+        area.SetDoNotAllowTracks(False);area.SetDoNotAllowVias(False)
+        area.SetDoNotAllowZoneFills(True);area.SetDoNotAllowPads(False)
+        area.SetDoNotAllowFootprints(False)
+        poly=area.Outline();poly.NewOutline()
+        for at in outline:
+            v=point(*at);poly.Append(v.x,v.y)
+        board.Add(area)
+
+
 def build(variant):
     W, H = DIMENSIONS[variant]
     out = HERE / variant
@@ -111,10 +170,7 @@ def build(variant):
         # Larger XH/VH holes also ease hand insertion into rigid FR-4.
         drill = (1.10 if name.startswith("JST_XH_") else
                  1.80 if name.startswith("JST_VH_") else
-                 .95 if name == "TO-92_Inline_Wide" else
-                 .90 if name in ("DIP-8_W7.62mm", "DIP-4_W7.62mm") else None)
-        # The TLP627M's maximum rectangular lead diagonal is 0.695 mm;
-        # 0.90 mm DIP drills retain insertion room at the hole tolerance.
+                 .95 if name == "TO-92_Inline_Wide" else None)
         if drill:
             for pad in fp.Pads():
                 pad.SetDrillSize(point(drill, drill))
@@ -131,14 +187,13 @@ def build(variant):
             fp.Models().clear()
             for model in models:
                 filename = Path(model.m_Filename).name
+                # The other footprints already name a bundled model file; only
+                # the parts whose exact body differs from the library preview
+                # are redirected here.
                 if ref == "C2":
                     filename = "Panasonic_EEUFR1A221.step"
                 elif ref in ("C102", "C202"):
                     filename = "Panasonic_EEUFR1A151.step"
-                elif ref in ("C3", "C4"):
-                    filename = "Panasonic_ECEA1EN100U.step"
-                elif ref in ("C1", "C5", "C101", "C201"):
-                    filename = "WIMA_MKS2C031001A00KSSD.step"
                 elif ref == "R8":
                     filename = "Vishay_PR01_P10.16mm.step"
                 if not (HERE / "models" / filename).is_file():
@@ -177,9 +232,10 @@ def build(variant):
         zone.SetThermalReliefGap(p.FromMM(0.25)); zone.SetThermalReliefSpokeWidth(p.FromMM(0.5))
         zone.SetIslandRemovalMode(p.ISLAND_REMOVAL_MODE_ALWAYS)
         outline = zone.Outline(); outline.NewOutline()
-        for at in [(0.3, 0.3), (W-0.3, 0.3), (W-0.3, H-0.3), (0.3, H-0.3)]:
+        for at in ground_outline(W, H):
             v = point(*at); outline.Append(v.x, v.y)
         board.Add(zone)
+    trim_control_corner_pour(board)
     # Leave critical routing to the explicit geometry below, never autoroute USB.
     placed = out / f"screen_power_{variant}.placed.kicad_pcb"
     board.Save(str(placed))

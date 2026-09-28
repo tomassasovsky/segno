@@ -42,7 +42,7 @@ def finish(variant):
     board = p.LoadBoard(str(path))
     title=board.GetTitleBlock()
     title.SetTitle('Segno screen power')
-    title.SetRevision('M')
+    title.SetRevision('N')
     board.SetTitleBlock(title)
     for item in list(board.GetDrawings()):
         if isinstance(item, p.PCB_TEXT):
@@ -54,31 +54,21 @@ def finish(variant):
         t.SetLayer(layer);t.SetMirrored(layer==p.B_SilkS);board.Add(t)
     from layout import DIMENSIONS, USB_ROWS
     w,h = DIMENSIONS[variant]
-    # Revision L fills the old mid-board name strip and the bay above J2, and
-    # its top-edge parts reach the row the back title used to sit on, so both
-    # identifications move to the clear lower edge and the control marking
-    # reads up the left edge beside its plug, clear of the M3 washers.
-    # Revision M's presence dividers take the south edge either side of the
-    # bleeder, so the strip that used to carry two identifications now holds
-    # three resistors. The back keeps the full identification, moved east of
-    # the dividers' terminals into the only run of that strip with nothing on
-    # it, and the front keeps the revision alone: nineteen characters do not
-    # fit anywhere clear of the new parts, and the name is already on the back.
-    label('SEGNO SCREEN POWER / REV M',47,h-1.0,1.0,p.B_SilkS)
-    label('REV M',57,h-3,1.0)
+    # The full board identity is printed on the underside. Top-side ink
+    # identifies the accessible plugs without competing with component refs.
+    label('SEGNO SCREEN POWER / REV N',47,h-1.0,1.0,p.B_SilkS)
     label('5V IN',56,6.5,1.0)
-    label('J25',2.2,10.1,1.0,angle=90)
     label('CTRL',2.2,14,1.0,angle=90)
     label('5V IN',56,6.5,1.0,p.B_SilkS)
     label('1=5V 2=GND',55,17.5,1.0,p.B_SilkS)
-    label('GPIO17 / GND',8,17.3,1.0,p.B_SilkS)
+    label('GPIO17 / GND',21,13,1.0,p.B_SilkS)
     for ch,y in enumerate(USB_ROWS[variant],1):
         screen='15.6"' if ch==1 else '7"'
         # The bay above each Pi plug now carries control parts; read this one
         # along the left edge instead.
-        label(f'PI USB {ch}',2.2,y,1.0,angle=90)
-        label(f'{screen} TOUCH',45,y+1.5,1.0)
-        label(f'{screen} POWER',41.5,y-8,1.0)
+        label(f'PI USB {ch}',2.2,y-.5,1.0,angle=90)
+        label(f'{screen} TOUCH',45,y-.5,1.0)
+        label(f'{screen} POWER',62.5,y-13,1.0,angle=90)
         label(f'S{ch} PI',6,y-6,1.0,p.B_SilkS)
         label(f'S{ch} TOUCH',56,y-6.5,1.0,p.B_SilkS)
         # Both pin columns now read outboard of their own plug. The touch

@@ -1,4 +1,4 @@
-"""Explicit USB pairs, high-current paths and local relay/gate-drive loops."""
+"""Explicit USB pairs, high-current paths and local relay/coil/gate loops."""
 import math
 from pathlib import Path
 import sys
@@ -6,22 +6,90 @@ import pcbnew as p
 from pcb import point, xy
 from layout import USB_ROWS, POWER_BUS_X, USB_WIDTH, USB_GAP
 HERE=Path(__file__).resolve().parent
-# Uniform width of the source bridge and drain feed that carry the whole
-# switched load, and of the input path feeding them. Each run holds its own
-# width from pad to pad; they differ from one another only where the terminal
-# pitch forces it.
-TRUNK=2.5
-AUX=2.
-# The bulk and bypass branches off the input, and where they leave it.
-CAP,FILM=1.5,.8
-CAP_TAP,FILM_TAP=46.5,50.
-# Charge-pump/negative-rail supply and gate-drive signal widths.
-SUPPLY=.5
+# Revision N power widths. Each run holds one width from pad to pad; they
+# differ from one another only where the terminal pitch or a fixed corridor
+# forces it. RAW carries the whole board before F1; AUXFEED carries the screen
+# allocation from the fuse to the relay's normally open contact; TRUNK carries
+# the same current back out of that contact to the branch fuses. COIL is the
+# light branch that leaves the protected side of F1 for the coils and control,
+# so the long switched-load runs never spend the coil's voltage allowance.
+RAW=4.
+AUXFEED=5.
+TRUNK=3.5
+COIL=1.
+# Gate, sense and coil-return control widths.
 CTRL=.25
 # Centreline radius for a bend in a power band: every one of them leaves a 1mm
 # radius on the inner edge, so all the wide corners on the board read the same.
 def sweep(width):return width/2+1
 ARC3,ARC2=sweep(3),sweep(2)
+
+
+
+def add_aux_junction_fillets(board):
+    """Round three concave branch edges without narrowing the track backbone.
+
+    Derive the junctions from the union of the actual wide AUX routes. This
+    avoids a decorative polygon whose edge silently drifts off the route after
+    placement changes. The small buried overlap keeps each fill connected even
+    when KiCad applies its minimum polygon thickness during zone refill.
+    """
+    merged=p.SHAPE_POLY_SET()
+    for t in board.GetTracks():
+        if (isinstance(t,p.PCB_VIA) or t.GetNetname()!='AUX_5V'
+                or t.GetLayer()!=p.F_Cu or t.GetWidth()<p.FromMM(COIL)):
+            continue
+        shape=p.SHAPE_POLY_SET()
+        t.TransformShapeToPolygon(shape,p.F_Cu,0,1000,p.ERROR_INSIDE)
+        merged.BooleanAdd(shape)
+    merged.Simplify()
+    candidates=[]
+    for n in range(merged.OutlineCount()):
+        edge=merged.COutline(n)
+        pts=[xy(edge.CPoint(i)) for i in range(edge.PointCount())]
+        for i,corner in enumerate(pts):
+            before,after=pts[i-1],pts[(i+1)%len(pts)]
+            a=(corner[0]-before[0],corner[1]-before[1])
+            b=(after[0]-corner[0],after[1]-corner[1])
+            if a[0]*b[1]-a[1]*b[0]<0:
+                candidates.append((corner,before,after))
+    for target in ((34.951,16.),(35.606,17.),(25.032,8.486)):
+        corner,before,after=min(candidates,key=lambda c:math.dist(c[0],target))
+        assert math.dist(corner,target)<.05, ('AUX junction moved',target,corner)
+        u=[]
+        for end in (before,after):
+            length=math.dist(end,corner)
+            u.append(((end[0]-corner[0])/length,(end[1]-corner[1])/length))
+        angle=math.acos(max(-1,min(1,u[0][0]*u[1][0]+u[0][1]*u[1][1])))
+        radius=.5
+        tangent=radius/math.tan(angle/2)
+        assert tangent<min(math.dist(before,corner),math.dist(after,corner))
+        centre_distance=radius/math.sin(angle/2)
+        bisector=(u[0][0]+u[1][0],u[0][1]+u[1][1])
+        length=math.hypot(*bisector)
+        centre=(corner[0]+bisector[0]*centre_distance/length,
+                corner[1]+bisector[1]*centre_distance/length)
+        ends=[(corner[0]+v[0]*tangent,corner[1]+v[1]*tangent) for v in u]
+        a0=math.atan2(ends[0][1]-centre[1],ends[0][0]-centre[0])
+        a1=math.atan2(ends[1][1]-centre[1],ends[1][0]-centre[0])
+        turn=(a1-a0+math.pi)%math.tau-math.pi
+        arc=[(centre[0]+radius*math.cos(a0+turn*i/24),
+              centre[1]+radius*math.sin(a0+turn*i/24)) for i in range(25)]
+        # The union is CCW. Its left normals point into existing copper.
+        n1=(u[0][1],-u[0][0]);n2=(-u[1][1],u[1][0])
+        polygon=[*arc,
+                 (ends[1][0]+.1*n2[0],ends[1][1]+.1*n2[1]),
+                 (corner[0]+.1*(n1[0]+n2[0]),corner[1]+.1*(n1[1]+n2[1])),
+                 (ends[0][0]+.1*n1[0],ends[0][1]+.1*n1[1])]
+        z=p.ZONE(board);z.SetLayer(p.F_Cu);z.SetNet(board.GetNetsByName()['AUX_5V'])
+        z.SetZoneName('POWER_FILLET');z.SetAssignedPriority(20)
+        z.SetLocalClearance(p.FromMM(.2));z.SetMinThickness(p.FromMM(.05))
+        z.SetPadConnection(p.ZONE_CONNECTION_FULL)
+        z.SetIslandRemovalMode(p.ISLAND_REMOVAL_MODE_ALWAYS);z.SetLocked(True)
+        outline=z.Outline();outline.NewOutline()
+        for position in polygon:
+            v=point(*position);outline.Append(v.x,v.y)
+        board.Add(z)
 
 
 def route(variant):
@@ -119,45 +187,12 @@ def route(variant):
         for xy in points:
             v=point(*xy);poly.Append(v.x,v.y)
         board.Add(zone)
-    def blend(x,width,edge,turn=None,radius=.8,reach=.5,overlap=.2):
-        """Round both inside corners where a branch leaves a run at 90 degrees.
-
-        A union of tracks is bounded by convex arcs and straight lines only, so
-        the concave corner where a branch meets the run it taps has to be
-        stated as copper of its own. Each side carries a quarter circle tangent
-        to the branch edge and to the run's own edge: the straight edge the run
-        holds there, or, where the run is already turning, the outer arc of
-        that turn, passed as (centre x, centre y, radius). The rest of each
-        outline sits inside the run and the branch, where it adds no copper the
-        eye can see, so the boundary runs from one edge into the other with no
-        step and no sliver left between them.
-
-        Both closures overlap the copper they run into, and the branch side has
-        to: the wedge between an arc and its own tangent is thinner than the
-        fill's 0.05mm minimum for the last 0.28mm, so a tail that closed on the
-        branch edge exactly was opened away and left a notch short of tangency.
-        Closing `overlap` inside the branch instead keeps the outline at least
-        that thick all the way to the tangent point, where the branch track
-        carries the copper on.
-        """
-        for side in (-1,1):
-            e=x+side*width/2;centre=e+side*radius;inward=e-side*overlap
-            if turn and side<0:
-                cx,cy,outer=turn
-                cy_f=cy+math.sqrt((outer+radius)**2-(centre-cx)**2)
-                scale=outer/(outer+radius)
-                far=(cx+(centre-cx)*scale,cy+(cy_f-cy)*scale)
-                shape=[(e,cy_f),*quarter((centre,cy_f),(e,cy_f),far),
-                       (far[0]+(cx-far[0])*reach/outer,
-                        far[1]+(cy-far[1])*reach/outer),
-                       (inward,cy_f-radius-reach),(inward,cy_f)]
-            else:
-                shape=[(e,edge+radius),
-                       *quarter((centre,edge+radius),(e,edge+radius),
-                                (centre,edge)),
-                       (centre,edge-reach),(inward,edge-reach),
-                       (inward,edge+radius)]
-            region('AUX_5V',shape,p.F_Cu,name='POWER_FILLET')
+    def via(net,at_xy,diameter=.9,drill=.45):
+        v=p.PCB_VIA(board);v.SetPosition(point(*at_xy))
+        v.SetWidth(p.FromMM(diameter));v.SetDrill(p.FromMM(drill))
+        v.SetViaType(p.VIATYPE_THROUGH);v.SetLayerPair(p.F_Cu,p.B_Cu)
+        v.SetNet(nets[net]);v.SetLocked(True);board.Add(v)
+        return at_xy
     def pair(a,b,centre,breakout=False):
         # Mitered parallel offsets for the two-layer coupled microstrip.
         normals=[]
@@ -202,166 +237,65 @@ def route(variant):
              [(34.6,y),(52.4,y)])
         # Keep the relay-drive return between contact columns, never beneath
         # the USB fanouts. This narrow control channel is routed explicitly.
-        # The commons now carry the host pair, so the channel sits between the
+        # The commons carry the host pair, so the channel sits between the
         # common column and the make column and is recentred on that gap.
-        # Revision M lands the coil's low side on the UPPER series FET's drain
-        # instead of the lower one's: the two FETs are in series now, and only
-        # the drain that faces the relay belongs on this net. The crossing is
-        # the one this run always made - north of the row, then down the lane
-        # between the relay's contact columns - and it stays the only net on
-        # the board that passes a data pair.
+        # The coil's low side lands on the UPPER series FET's drain: the two
+        # FETs are in series, and only the drain that faces the relay belongs
+        # on this net. The crossing is the one this run always made - north of
+        # the row, then down the lane between the relay's contact columns -
+        # and it stays the only net on the board that passes a data pair.
         flow((relay,8),(f'Q{n+2}',3),
              [(23.2,y-4.6),(23.9,y-5.3),(28.75,y-5.3),
-              (29.75,y-4.3),(29.75,y+4.6)],.25,p.F_Cu,sweep(CTRL))
-    # Revision L gate driver. Every loop that carries pump or negative-rail
-    # current is placed here instead of being autorouted, and all of it stays
-    # north of the first USB row so no inverter loop runs under a data pair.
-    # GND returns close through the filled pours: U1.3, C3/C4/C5 and D2 all
-    # sit on them, so only the driven nodes need copper.
+              (29.75,y-4.3),(29.75,y+4.6)],CTRL,p.F_Cu,sweep(CTRL))
     def miter(a,b):
         """Knee for one axial leg followed by a 45 degree approach to b."""
         dx,dy=b[0]-a[0],b[1]-a[1]
         if abs(dy)>=abs(dx):
             return (a[0],b[1]-math.copysign(abs(dx),dy))
         return (b[0]-math.copysign(abs(dy),dx),a[1])
-    def bend(a_ref,a_pin,b_ref,b_pin,width):
+    def bend(a_ref,a_pin,b_ref,b_pin,width,layer=p.F_Cu):
         flow((a_ref,a_pin),(b_ref,b_pin),
-             [miter(at(a_ref,a_pin),at(b_ref,b_pin))],width,p.F_Cu,sweep(width))
-    # Pump capacitor: symmetric legs from pins 2 and 4 to the 2mm terminals.
-    for pin,cap_pin in (('2','1'),('4','2')):
-        bend('U1',pin,'C3',cap_pin,SUPPLY)
-    # The reservoir and the clamp on pin 5's negative rail.
-    for nodes in (('U1','5','C4','2'),('D2','2','C4','2')):
-        bend(*nodes,SUPPLY)
-    # AUX bypass at pin 8. This one leaves its pad diagonally so the branch
-    # below can run straight down the same column without doubling copper.
-    c5_1,u1_8=at('C5','1'),at('U1','8')
-    flow(('C5','1'),('U1','8'),
-         [(u1_8[0],c5_1[1]+abs(u1_8[0]-c5_1[0]))],SUPPLY,p.F_Cu,sweep(SUPPLY))
-    # Carry the negative rail to the optocoupler emitter between the DIP rows,
-    # clear of pin 4 on its south side: the gate-drive run to R3 owns the lane
-    # north of the coupler, and crossing it would need a via on either net.
-    u1_5,u2_3,u2_4=at('U1','5'),at('U2','3'),at('U2','4')
-    lane=u2_4[1]+1.6
-    flow(('U1','5'),('U2','3'),
-         [(u1_5[0]+lane-u1_5[1],lane),(u2_3[0]-.6,lane),
-          (u2_3[0],lane-.6)],SUPPLY,p.F_Cu,sweep(SUPPLY))
-    # Gate drive: coupler collector to its series resistor above the FETs,
-    # threaded between the reservoir can and the Q4 courtyard.
-    r3_1=at('R3','1')
-    flow(('U2','4'),('R3','1'),
-         [(u2_4[0],r3_1[1]+2),(u2_4[0]+2,r3_1[1])],CTRL,p.F_Cu,sweep(CTRL))
-    # LED network and the sink node shared with Q1.
-    for nodes in (('U2','1','R10','1'),('U2','2','R10','2')):
-        bend(*nodes,CTRL)
-    join(('R10','1'),('R9','2'),[],CTRL,p.F_Cu)
-    # Revision M's short local coil-stage links stay explicit. The host
-    # divider feed, gate connection and long AUX feed are low-current nets
-    # for the constrained router; its USB reference keepouts remain intact.
-    # Only channel 2's two divider arms end up facing each other across a
-    # 2.5 mm gap, so only that tap is stated here. Channel 1's arms sit on
-    # different rows with the pulldown's ground terminal between them, which
-    # takes a three-segment dodge - not a short local link - so that one goes
-    # to the router with the rest of the sense net.
-    taps = {2: (('R201','2'),('R202','1'))}
-    for ch,y in enumerate(USB_ROWS[variant],1):
-        n=ch*100
-        # Lower drain to upper source (about 4.4 mm between pad centres).
-        bend(f'Q{n+1}','3',f'Q{n+2}','1',CTRL)
-        if ch in taps:
-            a,b=taps[ch]
-            bend(a[0],a[1],b[0],b[1],CTRL)
-        bend(f'C{n+1}','1',f'D{n+1}','1',CTRL)
-        bend(f'D{n+1}','1',f'K{n+1}','1',CTRL)
-    # Q1 also sinks the relay-enable buffer's base divider, which sits south of
-    # the first USB row. The data pairs and their front-copper keepouts leave
-    # the left edge as the only crossing, so this one takes the bottom layer
-    # there: the front channel stays clear for the AUX branch that follows the
-    # same route, and the ground reference under the pairs is untouched. West
-    # of the plugs at x=2.8 the pair copper and the pour keepout are both far.
-    q1_3,r5_1=at('Q1','3'),at('R5','1')
-    flow(('Q1','3'),('R5','1'),
-         [(q1_3[0],28.3),(q1_3[0]-1,29.3),(3.8,29.3),(2.8,30.3),
-          (2.8,42),(3.8,43),(r5_1[0]-1,43),(r5_1[0],44)],CTRL,p.B_Cu,sweep(CTRL))
-    # AUX_5V feeds that buffer's emitter and pull-up as well, so it takes the
-    # front half of the same crossing: down the column between the input stage
-    # and the DIP, along the clear lane under Q1 and into the channel west of
-    # the plugs. Signal copper is ample for a low-current buffer supply.
-    flow(('C5','1'),('Q2','1'),
-         [(c5_1[0],27.5),(c5_1[0]-1,28.5),(4.5,28.5),(3.5,29.5),
-          (3.5,44.1)],CTRL,p.F_Cu,sweep(CTRL))
-    # Keep the buffer pull-up supply's return leg as one rounded run. The
-    # router otherwise inserts a short up/down jog beside Q2's emitter.
-    flow(('Q2','1'),('R6','1'),
-         [(2.442,46.1),(3.5187,47.1767),(14.0367,47.1767)],
-         CTRL,p.B_Cu,sweep(CTRL))
-    # The front carries the 4.5mm shared trunk; main outputs use 2mm
-    # bottom branches.
-    q3d,q3s,q4d,q4s=at('Q3',2),at('Q3',3),at('Q4',2),at('Q4',3)
-    # Input path, J1 to the high-side drain: one width from pad to pad, turning
-    # on arcs, with no neck and no taper. AUX is narrower than TRUNK because
-    # this run ends on the terminal next to Q3's source, and the source bridge
-    # is already 2.5mm there: two 2.5mm runs on a 2.54mm pitch leave 0.040mm
-    # between their end caps, which no departure angle can recover. At 2.0mm
-    # the same gap is 0.290mm, and the input carries the 4.25A planning load
-    # with an 11.8C rise nominal, 17.0C at a 20% negative width tolerance.
-    track('AUX_5V',curve([at('J1',1),(55,14),(52,11),(45.5,11),(44,9.5),q3d],
-                         sweep(AUX)),AUX,p.F_Cu)
-    # The bulk capacitor keeps its own 1.5mm branch and the film bypass its
-    # 0.8mm one: the reservoir and the high-frequency bypass stay separate
-    # feeds, both tapped off the input at right angles so each join is a pair
-    # of blended corners instead of an acute wedge. Each tap then turns on the
-    # same 1mm inner radius as the trunk and lands square on its pad, the bulk
-    # can from the north, the film from the north-east around its ground pad.
-    cap=at('C2',1)
-    track('AUX_5V',curve([(CAP_TAP,11),(CAP_TAP,14.5),(cap[0],14.5),cap],
-                         sweep(CAP)),CAP,p.F_Cu)
-    film=at('C1',1)
-    track('AUX_5V',curve([(FILM_TAP,11),(FILM_TAP,17.5),film],sweep(FILM)),
-          FILM,p.F_Cu)
-    # Both joins are concave, and a union of tracks is bounded by convex arcs
-    # and straight lines only, so each blend is stated as copper of its own.
-    # The bulk tap's west corner lands where the input has already started its
-    # own turn toward Q3, so that blend is tangent to the outer arc of the turn
-    # instead of to a straight edge.
-    lead=sweep(AUX)*math.tan(math.radians(22.5))
-    blend(CAP_TAP,CAP,11+AUX/2,
-          turn=(45.5+lead,11-sweep(AUX),sweep(AUX)+AUX/2))
-    # The film tap's blend is trimmed a little so it, too, stays on the
-    # straight part of that edge rather than reaching into the next turn.
-    blend(FILM_TAP,FILM,11+AUX/2,radius=.7)
-    # Common-source bridge: one width from pad to pad, turning on arcs. The
-    # old neck-taper-band-taper-neck changed width three times over 8mm for
-    # no electrical reason, which is what read as lumps. TRUNK is the widest
-    # standard track the TO-220's 2.54mm terminal pitch takes - 0.3375mm to
-    # the neighbouring pads against a 0.2mm rule, where 3mm cannot clear at
-    # all. The uniform-power-width review records the current, voltage-drop
-    # and thermal estimates for the 4.25A screen planning load.
-    deck=13.2
-    track('COMMON_SOURCE',curve([q4s,(33.54,deck),(41.46,deck),q3s],ARC3),
-          TRUNK,p.F_Cu)
-    # Feed the edge bus through the plated fuse terminal, and stitch that
-    # transition with dedicated vias for parallel copper paths independent of
-    # the fuse terminal's plated barrel. This is the board's other shared-load
-    # run, so it is the same uniform TRUNK width from the drain pad to the
-    # fuse, again with no neck and no taper: down the diagonal, along the clear
-    # lane at y=20 and into the terminal on the terminal's own row. Ending
-    # level with the pad keeps the whole 2mm pad inside the band, so the
-    # terminal needs neither a mitred stub nor a round cap standing proud of
-    # it, and the transition vias sit inside the copper on both faces instead
-    # of just outside its edge, which is what left facing nibs in the pour.
-    term=23
+             [miter(at(a_ref,a_pin),at(b_ref,b_pin))],width,layer,sweep(width))
+    # Revision N coil stage. The clamp stands between the two coil terminals,
+    # so the suppression loop is two short links and the coil itself; the
+    # driver's drain joins that loop at the clamp's own terminal rather than
+    # reaching past it. Gate and gate-return close locally on R7.
+    bend('D3','2','K1','8',COIL)
+    bend('D3','1','K1','1',COIL)
+    bend('Q5','2','D3','1',COIL)
+    bend('R7','1','Q5','1',CTRL)
+    # Raw input. Only this run and J1's own terminal are ahead of the fuse;
+    # it swings south of J1's ground terminal rather than squeezing past it.
+    track('AUX_5V_IN',curve([at('J1',1),(54,14),(49.25,9.),at('F1',1)],
+                            sweep(RAW)),RAW,p.F_Cu)
+    # Protected side of F1. The coil and control branch leaves at the fuse
+    # terminal itself, through the bypass capacitor, so the screen allocation
+    # never shares copper with the coil feed beyond this pad.
+    track('AUX_5V',curve([at('F1',2),(30.,13.),(35.89,22.),at('K1',4)],
+                         sweep(AUXFEED)),AUXFEED,p.F_Cu)
+    track('AUX_5V',curve([at('F1',2),(25.2,7.6),at('C1',1)],sweep(COIL)),
+          COIL,p.F_Cu)
+    track('AUX_5V',curve([at('C1',1),(21.,12.4),at('K1',8)],sweep(COIL)),
+          COIL,p.F_Cu)
+    # Reservoir tap off the contact feed, square onto its own terminal.
+    c2=at('C2',1)
+    track('AUX_5V',[(32.6,c2[1]),c2],COIL,p.F_Cu)
+    # Switched output. The contact's middle terminal is the switched one, so
+    # this run has to leave between the coil column and the terminal that
+    # faces the input. It climbs north of both, crosses the bay on the back
+    # layer - the front there carries the contact feed - and lands on the
+    # first main fuse, which is also where the front distribution bus starts.
     f=at('F101',1)
-    track('SWITCHED_5V',curve([q4d,(31,12),(39,20),(44,20),
-                               (47,term),f],ARC3),TRUNK,p.B_Cu)
-    track('SWITCHED_5V',[(46.6,term),f],TRUNK,p.F_Cu)
-    # Each barrel sits wholly inside the copper on both faces: no centre is
-    # more than 0.65mm off either centreline, against the 0.8mm a 0.9mm disk
-    # has to spare inside a 2.5mm band, and each keeps 0.44mm to the fuse hole.
-    for stitch in ((46.4,22.7),(47.5,23),(48.35,23.6)):
-        v=p.PCB_VIA(board);v.SetPosition(point(*stitch));v.SetWidth(p.FromMM(.9));v.SetDrill(p.FromMM(.45))
-        v.SetViaType(p.VIATYPE_THROUGH);v.SetLayerPair(p.F_Cu,p.B_Cu)
-        v.SetNet(nets['SWITCHED_5V']);v.SetLocked(True);board.Add(v)
+    track('SWITCHED_5V',curve([at('K1',3),(28.27,19.6),(45.5,19.6),f],
+                              sweep(TRUNK)),TRUNK,p.B_Cu)
+    # Both faces carry copper past the terminal so the transition vias sit
+    # wholly inside each of them instead of just outside an edge.
+    track('SWITCHED_5V',[f,(f[0],f[1]-3.5)],3.,p.F_Cu)
+    # Each barrel sits wholly inside the copper on both faces, and the three
+    # of them give the transition parallel paths that do not depend on the
+    # fuse terminal's own plated barrel.
+    for stitch in ((f[0],f[1]-1.2),(f[0],f[1]-2.),(f[0],f[1]-2.8)):
+        via('SWITCHED_5V',stitch)
     # Right-edge distribution bus. The spine holds the full 4.5mm copper that
     # the width check measures with every zone deleted; one locked overlay then
     # states the outline, because a bare track network draws this bus as a
@@ -399,7 +333,7 @@ def route(variant):
         for offset in (1,2):
             f=at(f'F{n+offset}',1)
             # The branch reaches the broad trunk on the same face.
-            bends=[(f[0],f[1]+2),(f[0]+4,f[1]+6),(POWER_BUS_X,f[1]+6)] if offset==1 else [(POWER_BUS_X,f[1])]
+            bends=[(f[0],f[1]+3.5),(f[0]+4,f[1]+6),(POWER_BUS_X,f[1]+6)] if offset==1 else [(POWER_BUS_X,f[1])]
             if ch==2 and offset==2:
                 # This feed climbs to the bus. It turns as late as the bus
                 # allows, so the whole rise stays at 45 degrees, the bus keeps
@@ -415,7 +349,7 @@ def route(variant):
             track('SWITCHED_5V',curve([f,*bends],ARC3),3,p.F_Cu)
         a,b=at(f'F{n+1}',2),at(f'J{n+3}',1)
         flow((f'F{n+1}',2),(f'J{n+3}',1),
-             [(a[0],a[1]+2),(a[0]+2,a[1]+4),(b[0]-2,a[1]+4)],2,p.B_Cu,ARC2)
+             [(a[0],a[1]+2),(a[0]+2,a[1]+4),(b[0]-2,a[1]+4)],2.5,p.B_Cu,ARC2)
         a,b=at(f'F{n+2}',2),at(f'J{n+2}',1)
         flow((f'F{n+2}',2),(f'J{n+2}',1),
              [(a[0]+3.25,b[1])],.8,p.F_Cu,sweep(.8))
@@ -423,8 +357,14 @@ def route(variant):
         flow((f'J{n+2}',1),(f'C{n+2}',1),
              [(57.5,b[1]),(58.5,b[1]-1),(58.5,y-6),(57.5,y-7),(c[0]+3,y-7)],
              .8,p.B_Cu,sweep(.8))
+    # The three control nets that pass a data row - the enable, the buffer's
+    # sink and the AUX feed to that buffer - are left to the constrained
+    # router. Every corridor beneath a pair is already reserved below, so it
+    # cannot take the reference copper with it, and these are sub-milliamp
+    # nets with no width or symmetry contract of their own.
     # Reserve front copper below each pair, and keep same-side ground far
     # enough away to use the coupled-microstrip calculation as a starting point.
+    add_aux_junction_fillets(board)
     def keepout(layer,x1,y1,x2,y2,tracks=False,pours=False,radius=0):
         z=p.ZONE(board);z.SetLayer(layer);z.SetIsRuleArea(True)
         z.SetDoNotAllowTracks(tracks);z.SetDoNotAllowVias(tracks)
@@ -449,19 +389,6 @@ def route(variant):
             keepout(p.F_Cu,left,y-2.8,right,y+2.8,tracks=True)
         keepout(p.F_Cu,22,y-1.4,25,y+1.4,tracks=True)
         keepout(p.B_Cu,8.5,y-5,54.5,y+5,pours=True)
-    # One dead-end ground nib is left over between power copper, on the front
-    # under Q3 in the wedge between the AUX approach and the source bridge.
-    # Blunt it with a local pour-only cutback whose own outline is rounded, so
-    # the pour ends on a curve instead of a tip and the cutback adds no sharp
-    # corner of its own. It only removes fill: the tracks and vias that bound
-    # it, the power zones and the USB reference ground are untouched, and the
-    # area is a dead end, so no ground region loses a path.
-    keepout(p.F_Cu,43.15,10.35,44.5,11.9,pours=True,radius=.35)
-    # The pair of facing nibs on the back under F101 needed the same treatment
-    # while the trunk ran a millimetre south of the fuse terminal and its three
-    # transition vias sat just outside the band's edge. The trunk now ends on
-    # the terminal's own row with those vias inside the copper, so the pour's
-    # northern boundary there is one straight edge with nothing to poke into.
     # Protect the fanouts as well: a control trace under either data line
     # breaks its return path even when it misses the straight pair corridor.
     for t in list(board.GetTracks()):
@@ -485,15 +412,11 @@ def route(variant):
         board.Add(z)
     # Ground stitching beside the data corridors and around the power ports.
     for y in USB_ROWS[variant]:
-        for x in (10,20,37,49):
+        for x in (10,37,49):
             for dy in (-5.8,5.8):
                 # Keep stitching clear of the shifted fuse pads and branches.
-                vx=51 if x==49 and dy<0 else 46 if x==49 else 34 if x==37 and dy>0 else x
-                v=p.PCB_VIA(board);v.SetPosition(point(vx,y+dy));v.SetWidth(p.FromMM(.7));v.SetDrill(p.FromMM(.3));v.SetViaType(p.VIATYPE_THROUGH);v.SetLayerPair(p.F_Cu,p.B_Cu);v.SetNet(nets['GND']);v.SetLocked(True);board.Add(v)
-    # Join the small bottom ground pocket at the control pulldown to F.Cu.
-    g=at('R7',2);stitch=(g[0],g[1]-1.8)
-    track('GND',[g,stitch],.5,p.B_Cu)
-    v=p.PCB_VIA(board);v.SetPosition(point(*stitch));v.SetWidth(p.FromMM(.7));v.SetDrill(p.FromMM(.3));v.SetViaType(p.VIATYPE_THROUGH);v.SetLayerPair(p.F_Cu,p.B_Cu);v.SetNet(nets['GND']);v.SetLocked(True);board.Add(v)
+                vx=40 if x==49 else 34 if x==37 and dy>0 else x
+                via('GND',(vx,y+dy),.7,.3)
     board.Save(str(path))
 
 if __name__=='__main__':route(sys.argv[1])

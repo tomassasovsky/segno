@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "circuit.py")
-    (date "09/27/2026 03:47 AM")
+    (date "09/28/2026 01:19 AM")
     (tool "SKiDL (2.3.0)")
     (sheet
       (number 1)
@@ -13,7 +13,7 @@
         (company)
         (rev)
         (date)
-        (source "circuit.py")
+        (source "../../../circuit.py")
         (comment
           (number "1")
           (value ""))
@@ -55,9 +55,9 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "flag-AUX_5V")
+          (name "SKiDL Tag") "flag-AUX_5V_IN")
         (field
-          (name "SKiDL Line") "switch_circuit.py:169"))
+          (name "SKiDL Line") "switch_circuit.py:172"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -65,7 +65,7 @@
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "83041945-d603-5f12-b544-02f3c5f2d2f3"))
+      (tstamps "ae76607c-bc2d-503c-9b7b-aa76b88a7ad6"))
     (comp
       (ref "#FLG2")
       (value "PWR_FLAG")
@@ -81,7 +81,7 @@
         (field
           (name "SKiDL Tag") "flag-GND")
         (field
-          (name "SKiDL Line") "switch_circuit.py:169"))
+          (name "SKiDL Line") "switch_circuit.py:172"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -105,7 +105,7 @@
         (field
           (name "SKiDL Tag") "flag-HOST1_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:169"))
+          (name "SKiDL Line") "switch_circuit.py:172"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -129,7 +129,7 @@
         (field
           (name "SKiDL Tag") "flag-HOST2_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:169"))
+          (name "SKiDL Line") "switch_circuit.py:172"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -153,7 +153,7 @@
         (field
           (name "SKiDL Tag") "flag-S1_TOUCH_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:169"))
+          (name "SKiDL Line") "switch_circuit.py:172"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -177,7 +177,7 @@
         (field
           (name "SKiDL Tag") "flag-S2_TOUCH_5V")
         (field
-          (name "SKiDL Line") "switch_circuit.py:169"))
+          (name "SKiDL Line") "switch_circuit.py:172"))
       (libsource
         (lib "power")
         (part "PWR_FLAG"))
@@ -188,20 +188,20 @@
       (tstamps "5f3c0e6f-cb65-5442-8b0d-ad44ad5775d2"))
     (comp
       (ref "C1")
-      (value "100nF 63V")
+      (value "100nF 50V X7R")
       (description "Unpolarized capacitor")
-      (footprint "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+      (footprint "Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm")
       (fields
         (field
           (name "Description") "Unpolarized capacitor")
         (field
-          (name "Footprint") "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+          (name "Footprint") "Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "C1")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -212,20 +212,20 @@
       (tstamps "b514d237-c153-5f6d-afe2-53badf97a864"))
     (comp
       (ref "C101")
-      (value "100nF 63V")
+      (value "100nF 50V X7R")
       (description "Unpolarized capacitor")
-      (footprint "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+      (footprint "Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm")
       (fields
         (field
           (name "Description") "Unpolarized capacitor")
         (field
-          (name "Footprint") "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+          (name "Footprint") "Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "C101")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -249,7 +249,7 @@
         (field
           (name "SKiDL Tag") "C102")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "C_Polarized"))
@@ -273,7 +273,7 @@
         (field
           (name "SKiDL Tag") "C2")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "C_Polarized"))
@@ -284,20 +284,20 @@
       (tstamps "507fddd0-e494-5270-a7e4-2511aa140519"))
     (comp
       (ref "C201")
-      (value "100nF 63V")
+      (value "100nF 50V X7R")
       (description "Unpolarized capacitor")
-      (footprint "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+      (footprint "Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm")
       (fields
         (field
           (name "Description") "Unpolarized capacitor")
         (field
-          (name "Footprint") "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
+          (name "Footprint") "Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "C201")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -321,7 +321,7 @@
         (field
           (name "SKiDL Tag") "C202")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "C_Polarized"))
@@ -330,78 +330,6 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "0c14b922-86a6-572c-ae4c-8e9b91488a80"))
-    (comp
-      (ref "C3")
-      (value "10uF 25V bipolar")
-      (description "Unpolarized capacitor")
-      (footprint "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm")
-      (fields
-        (field
-          (name "Description") "Unpolarized capacitor")
-        (field
-          (name "Footprint") "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "C3")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Device")
-        (part "C"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "299afff0-b6cf-50c0-a677-db76bcc001ee"))
-    (comp
-      (ref "C4")
-      (value "10uF 25V bipolar")
-      (description "Unpolarized capacitor")
-      (footprint "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm")
-      (fields
-        (field
-          (name "Description") "Unpolarized capacitor")
-        (field
-          (name "Footprint") "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "C4")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Device")
-        (part "C"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "6f9a1813-19d4-5d20-adea-8868e7232e30"))
-    (comp
-      (ref "C5")
-      (value "100nF 63V")
-      (description "Unpolarized capacitor")
-      (footprint "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
-      (fields
-        (field
-          (name "Description") "Unpolarized capacitor")
-        (field
-          (name "Footprint") "Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "C5")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Device")
-        (part "C"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "1d55401a-d19b-530c-b57c-5c75b8c48e01"))
     (comp
       (ref "D101")
       (value "1N4007")
@@ -417,7 +345,7 @@
         (field
           (name "SKiDL Tag") "D101")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Diode")
         (part "1N4007"))
@@ -426,30 +354,6 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "73b19c03-225d-5375-8bb5-615ef2f565de"))
-    (comp
-      (ref "D2")
-      (value "BAT85S")
-      (description "Schottky diode")
-      (footprint "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal")
-      (fields
-        (field
-          (name "Description") "Schottky diode")
-        (field
-          (name "Footprint") "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "D2")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Device")
-        (part "D_Schottky"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "06934a86-3c08-5320-b71c-96bf0d33127c"))
     (comp
       (ref "D201")
       (value "1N4007")
@@ -465,7 +369,7 @@
         (field
           (name "SKiDL Tag") "D201")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Diode")
         (part "1N4007"))
@@ -475,21 +379,69 @@
       (component_classes)
       (tstamps "1be7e6a3-628f-57b2-b556-fc98d1667417"))
     (comp
-      (ref "F101")
-      (value "4A fast")
+      (ref "D3")
+      (value "P6KE6.8CA")
+      (description "Bidirectional transient-voltage-suppression diode")
+      (footprint "Diode_THT:D_DO-15_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Bidirectional transient-voltage-suppression diode")
+        (field
+          (name "Footprint") "Diode_THT:D_DO-15_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "D3")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:39"))
+      (libsource
+        (lib "Device")
+        (part "D_TVS"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "a31abf81-24ee-5c50-91fe-d4cecac4e7dd"))
+    (comp
+      (ref "F1")
+      (value "8A time-lag")
       (description "Fuse")
-      (footprint "screen_power:Fuse_Littelfuse_251_P12.70mm")
+      (footprint "screen_power:Fuseholder_Schurter_OGN_0031.8201")
       (fields
         (field
           (name "Description") "Fuse")
         (field
-          (name "Footprint") "screen_power:Fuse_Littelfuse_251_P12.70mm")
+          (name "Footprint") "screen_power:Fuseholder_Schurter_OGN_0031.8201")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "F1")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:39"))
+      (libsource
+        (lib "Device")
+        (part "Fuse"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "c8376089-30f9-5993-9f79-3ca96ebaa282"))
+    (comp
+      (ref "F101")
+      (value "4A time-lag")
+      (description "Fuse")
+      (footprint "screen_power:Fuse_Bel_0697H_P5.08mm")
+      (fields
+        (field
+          (name "Description") "Fuse")
+        (field
+          (name "Footprint") "screen_power:Fuse_Bel_0697H_P5.08mm")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "F101")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "Fuse"))
@@ -500,20 +452,20 @@
       (tstamps "8edd247e-7c67-57b7-8f48-2850914259ce"))
     (comp
       (ref "F102")
-      (value "750mA fast")
+      (value "800mA time-lag")
       (description "Fuse")
-      (footprint "screen_power:Fuse_Littelfuse_251_P12.70mm")
+      (footprint "screen_power:Fuse_Bel_0697H_P5.08mm")
       (fields
         (field
           (name "Description") "Fuse")
         (field
-          (name "Footprint") "screen_power:Fuse_Littelfuse_251_P12.70mm")
+          (name "Footprint") "screen_power:Fuse_Bel_0697H_P5.08mm")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "F102")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "Fuse"))
@@ -524,20 +476,20 @@
       (tstamps "9e17a09c-cc7b-51cd-9aab-a63740abc48d"))
     (comp
       (ref "F201")
-      (value "4A fast")
+      (value "4A time-lag")
       (description "Fuse")
-      (footprint "screen_power:Fuse_Littelfuse_251_P12.70mm")
+      (footprint "screen_power:Fuse_Bel_0697H_P5.08mm")
       (fields
         (field
           (name "Description") "Fuse")
         (field
-          (name "Footprint") "screen_power:Fuse_Littelfuse_251_P12.70mm")
+          (name "Footprint") "screen_power:Fuse_Bel_0697H_P5.08mm")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "F201")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "Fuse"))
@@ -548,20 +500,20 @@
       (tstamps "c8bef40d-a143-5106-b9fc-d87911638394"))
     (comp
       (ref "F202")
-      (value "750mA fast")
+      (value "800mA time-lag")
       (description "Fuse")
-      (footprint "screen_power:Fuse_Littelfuse_251_P12.70mm")
+      (footprint "screen_power:Fuse_Bel_0697H_P5.08mm")
       (fields
         (field
           (name "Description") "Fuse")
         (field
-          (name "Footprint") "screen_power:Fuse_Littelfuse_251_P12.70mm")
+          (name "Footprint") "screen_power:Fuse_Bel_0697H_P5.08mm")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "F202")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "Fuse"))
@@ -585,7 +537,7 @@
         (field
           (name "SKiDL Tag") "H1")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Mechanical")
         (part "MountingHole"))
@@ -609,7 +561,7 @@
         (field
           (name "SKiDL Tag") "H2")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Mechanical")
         (part "MountingHole"))
@@ -633,7 +585,7 @@
         (field
           (name "SKiDL Tag") "H3")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Mechanical")
         (part "MountingHole"))
@@ -657,7 +609,7 @@
         (field
           (name "SKiDL Tag") "H4")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Mechanical")
         (part "MountingHole"))
@@ -681,7 +633,7 @@
         (field
           (name "SKiDL Tag") "J1")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -705,7 +657,7 @@
         (field
           (name "SKiDL Tag") "J101")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
@@ -729,7 +681,7 @@
         (field
           (name "SKiDL Tag") "J102")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
@@ -753,7 +705,7 @@
         (field
           (name "SKiDL Tag") "J103")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -777,7 +729,7 @@
         (field
           (name "SKiDL Tag") "J2")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -801,7 +753,7 @@
         (field
           (name "SKiDL Tag") "J201")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
@@ -825,7 +777,7 @@
         (field
           (name "SKiDL Tag") "J202")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
@@ -849,7 +801,7 @@
         (field
           (name "SKiDL Tag") "J203")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -858,6 +810,30 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "c7e4333a-e913-5d0a-9d2d-ba7d0260d29e"))
+    (comp
+      (ref "K1")
+      (value "G6C-1117P-US")
+      (description "Omron G6C single-pole PCB power relay, SPST-NO (1 Form A), 10 A 30 VDC, straight flux-protected terminals: coil 8 positive and 1 negative, normally open contact 3 to 4")
+      (footprint "screen_power:Relay_Omron_G6C-1117P-US")
+      (fields
+        (field
+          (name "Description") "Omron G6C single-pole PCB power relay, SPST-NO (1 Form A), 10 A 30 VDC, straight flux-protected terminals: coil 8 positive and 1 negative, normally open contact 3 to 4")
+        (field
+          (name "Footprint") "screen_power:Relay_Omron_G6C-1117P-US")
+        (field
+          (name "Datasheet") "https://omronfs.omron.com/en_US/ecb/products/pdf/en-g6c.pdf")
+        (field
+          (name "SKiDL Tag") "K1")
+        (field
+          (name "SKiDL Line") "switch_circuit.py:39"))
+      (libsource
+        (lib "screen_relay")
+        (part "G6C-1117P-US"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "d0559bf8-db6d-5882-ad90-3869b64cfb1b"))
     (comp
       (ref "K101")
       (value "IM02TS")
@@ -873,7 +849,7 @@
         (field
           (name "SKiDL Tag") "K101")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Relay")
         (part "IM03"))
@@ -897,7 +873,7 @@
         (field
           (name "SKiDL Tag") "K201")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Relay")
         (part "IM03"))
@@ -921,7 +897,7 @@
         (field
           (name "SKiDL Tag") "Q1")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Transistor_BJT")
         (part "2N3904"))
@@ -945,7 +921,7 @@
         (field
           (name "SKiDL Tag") "Q101")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Transistor_FET")
         (part "2N7000"))
@@ -969,7 +945,7 @@
         (field
           (name "SKiDL Tag") "Q102")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Transistor_FET")
         (part "2N7000"))
@@ -993,7 +969,7 @@
         (field
           (name "SKiDL Tag") "Q2")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Transistor_BJT")
         (part "2N3906"))
@@ -1017,7 +993,7 @@
         (field
           (name "SKiDL Tag") "Q201")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Transistor_FET")
         (part "2N7000"))
@@ -1041,7 +1017,7 @@
         (field
           (name "SKiDL Tag") "Q202")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Transistor_FET")
         (part "2N7000"))
@@ -1051,53 +1027,29 @@
       (component_classes)
       (tstamps "6c32f476-40ae-5950-8c88-935ccb1184ee"))
     (comp
-      (ref "Q3")
-      (value "SUP70101EL")
-      (description "P-MOSFET transistor, gate/drain/source")
-      (footprint "screen_power:TO-220-3_SUP70101EL")
+      (ref "Q5")
+      (value "IRLZ44N")
+      (description "N-MOSFET transistor, gate/drain/source")
+      (footprint "screen_power:TO-220-3_IRLZ44N")
       (fields
         (field
-          (name "Description") "P-MOSFET transistor, gate/drain/source")
+          (name "Description") "N-MOSFET transistor, gate/drain/source")
         (field
-          (name "Footprint") "screen_power:TO-220-3_SUP70101EL")
+          (name "Footprint") "screen_power:TO-220-3_IRLZ44N")
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "Q3")
+          (name "SKiDL Tag") "Q5")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Transistor_FET")
-        (part "Q_PMOS_GDS"))
+        (part "Q_NMOS_GDS"))
       (sheetpath
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "fc2a17e0-9b04-5028-8d2e-9de8184e1c9f"))
-    (comp
-      (ref "Q4")
-      (value "SUP70101EL")
-      (description "P-MOSFET transistor, gate/drain/source")
-      (footprint "screen_power:TO-220-3_SUP70101EL")
-      (fields
-        (field
-          (name "Description") "P-MOSFET transistor, gate/drain/source")
-        (field
-          (name "Footprint") "screen_power:TO-220-3_SUP70101EL")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "Q4")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Transistor_FET")
-        (part "Q_PMOS_GDS"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "cc4e8343-4c03-5917-9689-4aee76b32c2b"))
+      (tstamps "8b3eeb49-422c-5be2-865d-3dfba2211852"))
     (comp
       (ref "R1")
       (value "1k 1%")
@@ -1113,7 +1065,7 @@
         (field
           (name "SKiDL Tag") "R1")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1122,30 +1074,6 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "91628e47-8f83-5ba1-abed-4cb134d83eea"))
-    (comp
-      (ref "R10")
-      (value "10k 1%")
-      (description "Resistor")
-      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-      (fields
-        (field
-          (name "Description") "Resistor")
-        (field
-          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "R10")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Device")
-        (part "R"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "99b6d9e4-efbb-57f3-bc7c-dc7822d36beb"))
     (comp
       (ref "R101")
       (value "10k 1%")
@@ -1161,7 +1089,7 @@
         (field
           (name "SKiDL Tag") "R101")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1185,7 +1113,7 @@
         (field
           (name "SKiDL Tag") "R102")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1209,7 +1137,7 @@
         (field
           (name "SKiDL Tag") "R2")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1233,7 +1161,7 @@
         (field
           (name "SKiDL Tag") "R201")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1257,7 +1185,7 @@
         (field
           (name "SKiDL Tag") "R202")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1266,54 +1194,6 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "ebaed951-c546-5d55-b36d-0fa94c690b0d"))
-    (comp
-      (ref "R3")
-      (value "4.7k 1%")
-      (description "Resistor")
-      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-      (fields
-        (field
-          (name "Description") "Resistor")
-        (field
-          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "R3")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Device")
-        (part "R"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "9000ab58-0faa-55db-ba96-c3a9c048b920"))
-    (comp
-      (ref "R4")
-      (value "22k 1%")
-      (description "Resistor")
-      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-      (fields
-        (field
-          (name "Description") "Resistor")
-        (field
-          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "R4")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Device")
-        (part "R"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "a3a00a8b-c8d1-582e-9de2-300987de8d24"))
     (comp
       (ref "R5")
       (value "5.6k 1%")
@@ -1329,7 +1209,7 @@
         (field
           (name "SKiDL Tag") "R5")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1353,7 +1233,7 @@
         (field
           (name "SKiDL Tag") "R6")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1364,7 +1244,7 @@
       (tstamps "380e2b43-9216-5117-9f41-94795d9c3e8a"))
     (comp
       (ref "R7")
-      (value "100k 1%")
+      (value "10k 1%")
       (description "Resistor")
       (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
       (fields
@@ -1377,7 +1257,7 @@
         (field
           (name "SKiDL Tag") "R7")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1401,7 +1281,7 @@
         (field
           (name "SKiDL Tag") "R8")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1410,30 +1290,6 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "d4602b99-fd19-5b52-9a62-e3fbb9d2ed0c"))
-    (comp
-      (ref "R9")
-      (value "2.4k 1%")
-      (description "Resistor")
-      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-      (fields
-        (field
-          (name "Description") "Resistor")
-        (field
-          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "R9")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Device")
-        (part "R"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "abe8364b-5ed9-593a-a990-c9655e96dd67"))
     (comp
       (ref "TP101")
       (value "SHIELD")
@@ -1449,7 +1305,7 @@
         (field
           (name "SKiDL Tag") "TP101")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector")
         (part "TestPoint"))
@@ -1473,7 +1329,7 @@
         (field
           (name "SKiDL Tag") "TP102")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector")
         (part "TestPoint"))
@@ -1497,7 +1353,7 @@
         (field
           (name "SKiDL Tag") "TP201")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector")
         (part "TestPoint"))
@@ -1521,7 +1377,7 @@
         (field
           (name "SKiDL Tag") "TP202")
         (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
+          (name "SKiDL Line") "switch_circuit.py:39"))
       (libsource
         (lib "Connector")
         (part "TestPoint"))
@@ -1529,64 +1385,12 @@
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "28b55bb8-169f-53e5-bb6d-30b78fd2597a"))
-    (comp
-      (ref "U1")
-      (value "LMC7660IN")
-      (description "Voltage converter from +1.5V to +10V to +1.5V to +10V, SO-8/DIP-8")
-      (footprint "Package_DIP:DIP-8_W7.62mm")
-      (fields
-        (field
-          (name "Description") "Voltage converter from +1.5V to +10V to +1.5V to +10V, SO-8/DIP-8")
-        (field
-          (name "Footprint") "Package_DIP:DIP-8_W7.62mm")
-        (field
-          (name "Datasheet") "http://www.ti.com/lit/ds/symlink/lmc7660.pdf")
-        (field
-          (name "SKiDL Tag") "U1")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Regulator_SwitchedCapacitor")
-        (part "LMC7660"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "f8fce87b-acde-5341-b554-4e93a034d648"))
-    (comp
-      (ref "U2")
-      (value "TLP627M")
-      (description "DC Darlington Optocoupler, Vce 300V, CTR 1000%, DIP4")
-      (footprint "Package_DIP:DIP-4_W7.62mm")
-      (fields
-        (field
-          (name "Description") "DC Darlington Optocoupler, Vce 300V, CTR 1000%, DIP4")
-        (field
-          (name "Footprint") "Package_DIP:DIP-4_W7.62mm")
-        (field
-          (name "Datasheet") "https://toshiba.semicon-storage.com/info/docget.jsp?did=16914&prodName=TLP627")
-        (field
-          (name "SKiDL Tag") "U2")
-        (field
-          (name "SKiDL Line") "switch_circuit.py:29"))
-      (libsource
-        (lib "Isolator")
-        (part "TLP627"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (component_classes)
-      (tstamps "7a03e947-39e7-5554-99eb-b5f6bb184fae")))
+      (tstamps "28b55bb8-169f-53e5-bb6d-30b78fd2597a")))
   (nets
     (net
       (code 1)
       (name "AUX_5V")
       (class "Default")
-      (node
-        (ref "#FLG1")
-        (pin "1")
-        (pintype "POWER-OUT"))
       (node
         (ref "C1")
         (pin "1")
@@ -1604,10 +1408,6 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
-        (ref "C5")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
         (ref "D101")
         (pin "1")
         (pintype "PASSIVE"))
@@ -1616,8 +1416,20 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
-        (ref "J1")
-        (pin "1")
+        (ref "D3")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "F1")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K1")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "K1")
+        (pin "8")
         (pintype "PASSIVE"))
       (node
         (ref "K101")
@@ -1632,23 +1444,27 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
-        (ref "Q3")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
         (ref "R6")
         (pin "1")
-        (pintype "PASSIVE"))
+        (pintype "PASSIVE")))
+    (net
+      (code 2)
+      (name "AUX_5V_IN")
+      (class "Default")
       (node
-        (ref "R9")
+        (ref "#FLG1")
+        (pin "1")
+        (pintype "POWER-OUT"))
+      (node
+        (ref "F1")
         (pin "1")
         (pintype "PASSIVE"))
       (node
-        (ref "U1")
-        (pin "8")
-        (pintype "POWER-IN")))
+        (ref "J1")
+        (pin "1")
+        (pintype "PASSIVE")))
     (net
-      (code 2)
+      (code 3)
       (name "BUFFER_BASE")
       (class "Default")
       (node
@@ -1661,22 +1477,6 @@
         (pintype "PASSIVE"))
       (node
         (ref "R6")
-        (pin "2")
-        (pintype "PASSIVE")))
-    (net
-      (code 3)
-      (name "COMMON_SOURCE")
-      (class "Default")
-      (node
-        (ref "Q3")
-        (pin "3")
-        (pintype "PASSIVE"))
-      (node
-        (ref "Q4")
-        (pin "3")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R4")
         (pin "2")
         (pintype "PASSIVE")))
     (net
@@ -1704,16 +1504,8 @@
         (pin "3")
         (pintype "PASSIVE"))
       (node
-        (ref "R10")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
         (ref "R5")
         (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "U2")
-        (pin "2")
         (pintype "PASSIVE")))
     (net
       (code 6)
@@ -1732,39 +1524,15 @@
         (pin "2")
         (pintype "INPUT"))
       (node
+        (ref "Q5")
+        (pin "1")
+        (pintype "INPUT"))
+      (node
         (ref "R7")
         (pin "1")
         (pintype "PASSIVE")))
     (net
       (code 7)
-      (name "GATE_LED")
-      (class "Default")
-      (node
-        (ref "R10")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R9")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
-        (ref "U2")
-        (pin "1")
-        (pintype "PASSIVE")))
-    (net
-      (code 8)
-      (name "GATE_SINK")
-      (class "Default")
-      (node
-        (ref "R3")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "U2")
-        (pin "4")
-        (pintype "PASSIVE")))
-    (net
-      (code 9)
       (name "GND")
       (class "Default")
       (node
@@ -1794,18 +1562,6 @@
       (node
         (ref "C202")
         (pin "2")
-        (pintype "PASSIVE"))
-      (node
-        (ref "C4")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "C5")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
-        (ref "D2")
-        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "J1")
@@ -1850,6 +1606,10 @@
       (node
         (ref "Q201")
         (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q5")
+        (pin "3")
         (pintype "PASSIVE"))
       (node
         (ref "R102")
@@ -1886,13 +1646,9 @@
       (node
         (ref "TP202")
         (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "U1")
-        (pin "3")
-        (pintype "POWER-IN")))
+        (pintype "PASSIVE")))
     (net
-      (code 10)
+      (code 8)
       (name "HOST1_5V")
       (class "Default")
       (node
@@ -1908,7 +1664,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 11)
+      (code 9)
       (name "HOST2_5V")
       (class "Default")
       (node
@@ -1924,27 +1680,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 12)
-      (name "NEG_5V")
-      (class "Default")
-      (node
-        (ref "C4")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
-        (ref "D2")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
-        (ref "U1")
-        (pin "5")
-        (pintype "POWER-OUT"))
-      (node
-        (ref "U2")
-        (pin "3")
-        (pintype "PASSIVE")))
-    (net
-      (code 13)
+      (code 10)
       (name "PI_GPIO17")
       (class "Default")
       (node
@@ -1956,51 +1692,23 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 14)
-      (name "POWER_GATE")
+      (code 11)
+      (name "POWER_COIL_LOW")
       (class "Default")
       (node
-        (ref "Q3")
+        (ref "D3")
         (pin "1")
-        (pintype "INPUT"))
-      (node
-        (ref "Q4")
-        (pin "1")
-        (pintype "INPUT"))
-      (node
-        (ref "R3")
-        (pin "2")
         (pintype "PASSIVE"))
       (node
-        (ref "R4")
+        (ref "K1")
         (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q5")
+        (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 15)
-      (name "PUMP_CAP_MINUS")
-      (class "Default")
-      (node
-        (ref "C3")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
-        (ref "U1")
-        (pin "4")
-        (pintype "INPUT")))
-    (net
-      (code 16)
-      (name "PUMP_CAP_PLUS")
-      (class "Default")
-      (node
-        (ref "C3")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "U1")
-        (pin "2")
-        (pintype "INPUT")))
-    (net
-      (code 17)
+      (code 12)
       (name "S1_DATA_COIL_LOW")
       (class "Default")
       (node
@@ -2016,7 +1724,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 18)
+      (code 13)
       (name "S1_DN_N")
       (class "Default")
       (node
@@ -2028,7 +1736,7 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 19)
+      (code 14)
       (name "S1_DN_P")
       (class "Default")
       (node
@@ -2040,7 +1748,7 @@
         (pin "5")
         (pintype "PASSIVE")))
     (net
-      (code 20)
+      (code 15)
       (name "S1_HOST_PRESENT")
       (class "Default")
       (node
@@ -2056,7 +1764,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 21)
+      (code 16)
       (name "S1_MAIN_5V")
       (class "Default")
       (node
@@ -2068,7 +1776,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 22)
+      (code 17)
       (name "S1_RELAY_STACK")
       (class "Default")
       (node
@@ -2080,7 +1788,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 23)
+      (code 18)
       (name "S1_TOUCH_5V")
       (class "Default")
       (node
@@ -2100,7 +1808,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 24)
+      (code 19)
       (name "S1_UP_N")
       (class "Default")
       (node
@@ -2112,7 +1820,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 25)
+      (code 20)
       (name "S1_UP_P")
       (class "Default")
       (node
@@ -2124,7 +1832,7 @@
         (pin "6")
         (pintype "PASSIVE")))
     (net
-      (code 26)
+      (code 21)
       (name "S2_DATA_COIL_LOW")
       (class "Default")
       (node
@@ -2140,7 +1848,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 27)
+      (code 22)
       (name "S2_DN_N")
       (class "Default")
       (node
@@ -2152,7 +1860,7 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 28)
+      (code 23)
       (name "S2_DN_P")
       (class "Default")
       (node
@@ -2164,7 +1872,7 @@
         (pin "5")
         (pintype "PASSIVE")))
     (net
-      (code 29)
+      (code 24)
       (name "S2_HOST_PRESENT")
       (class "Default")
       (node
@@ -2180,7 +1888,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 30)
+      (code 25)
       (name "S2_MAIN_5V")
       (class "Default")
       (node
@@ -2192,7 +1900,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 31)
+      (code 26)
       (name "S2_RELAY_STACK")
       (class "Default")
       (node
@@ -2204,7 +1912,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 32)
+      (code 27)
       (name "S2_TOUCH_5V")
       (class "Default")
       (node
@@ -2224,7 +1932,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 33)
+      (code 28)
       (name "S2_UP_N")
       (class "Default")
       (node
@@ -2236,7 +1944,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 34)
+      (code 29)
       (name "S2_UP_P")
       (class "Default")
       (node
@@ -2248,7 +1956,7 @@
         (pin "6")
         (pintype "PASSIVE")))
     (net
-      (code 35)
+      (code 30)
       (name "SWITCHED_5V")
       (class "Default")
       (node
@@ -2268,8 +1976,8 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
-        (ref "Q4")
-        (pin "2")
+        (ref "K1")
+        (pin "3")
         (pintype "PASSIVE"))
       (node
         (ref "R8")

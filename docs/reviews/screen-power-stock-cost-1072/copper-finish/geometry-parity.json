@@ -1,0 +1,17 @@
+{
+  "source_sha256": "c53eb16d7531f2c891dc5854faaf40fc1414ebcb2747d0101740e6a35bd1d9ca",
+  "prior_sha256": "2a2d139d824a981edb4f455533b4d57a190f456496606b1f80d9dc52b9c097cb",
+  "track_and_via_items_unchanged": 564,
+  "pad_items_unchanged": 73,
+  "back_ground_contours_identical": true,
+  "front_U2_pin1_ne_and_se_thermals_reach_plane": true,
+  "front_zone_thermal_spoke_mm": 0.5,
+  "ground_copper_area_mm2": {
+    "before F.Cu": 4271.963695164902,
+    "before B.Cu": 3989.0494913711564,
+    "after F.Cu": 4268.743297605327,
+    "after B.Cu": 3989.0494913711564
+  },
+  "front_copper_removed_mm2": 3.220397559574849,
+  "console_sha256": "c23df586f211bb439081ca951dd23dc54ba21f6d89eb3d373bd6f196749f326d"
+}

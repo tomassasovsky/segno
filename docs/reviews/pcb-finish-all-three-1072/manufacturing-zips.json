@@ -37,21 +37,21 @@
       "upload_name": "segno-console-v3-gerbers.zip"
     },
     "ring-white": {
-      "assembly_change": "Encoder C2/C3/C4 use 10 nF; selected strip input reservoir and AUX star harness follow RING_ASSEMBLY.md.",
+      "assembly_change": "Encoder C2/C3/C4 use 10 nF; selected strip input reservoir and AUX star harness follow RING_ASSEMBLY.md. Front-ground dead ends cleaned; routes, pads, rear ground and full-white AUX harness unchanged.",
       "board": "hardware/kicad/segno_pedal_ring.kicad_pcb",
-      "board_sha256": "2a2d139d824a981edb4f455533b4d57a190f456496606b1f80d9dc52b9c097cb",
+      "board_sha256": "c53eb16d7531f2c891dc5854faaf40fc1414ebcb2747d0101740e6a35bd1d9ca",
       "encoder": "Same Sky ACZ11BR1E-20FD1-20C; separately sourced M7x0.75 SJ5-43502PM-nut; no washer in the 2 mm disc clamp.",
       "members": {
-        "segno_pedal_ring-B_Cu.gbr": "2d76711915b108662a244da7a01ce2806e394e0b7d955e69d5f6c570271cf6ad",
-        "segno_pedal_ring-B_Mask.gbr": "a7d428833221999d2f384fe243e64a616cb589181f5ae9509652f433c68fae9c",
-        "segno_pedal_ring-B_Silkscreen.gbr": "84c2457585cb25d90e7c8e34b7b71a7e4eba431d9569e10a83064d6eb0b9c596",
-        "segno_pedal_ring-Edge_Cuts.gbr": "fc6a1f66f4a6af956e2a1dd09e67cc1f3fd32f7963d86c09526a2506e183f50d",
-        "segno_pedal_ring-F_Cu.gbr": "69d60742acb36822c7f4e7f2763f72762f813f96acff4ef8946c74b9d57e41a3",
-        "segno_pedal_ring-F_Mask.gbr": "31f28f124900d481fc7d0d67803dcaf5853e850124d046f2880cd4018dd6bd4b",
-        "segno_pedal_ring-F_Silkscreen.gbr": "4795cdf48d42d58035d5b311bc50731603d433c73f20abf6b7b80007b0b7f420",
-        "segno_pedal_ring-NPTH.drl": "baa692b1882e078b8d5a2cdf0512f72b31969f42ba16564f359d5f4f60fa345d",
-        "segno_pedal_ring-PTH.drl": "49a091d0f4c8367f3178f8e51ffa25acae6aca376400abcc327cee4d6cdc2117",
-        "segno_pedal_ring-job.gbrjob": "f2489dbb010a8114ff52b8e91ffc58264c7192756dbf017f83ba28407f3b155e"
+        "segno_pedal_ring-B_Cu.gbr": "0505f868d1ffcf5daddea06df7b28c3abbb136f8b58452c641583cd3529a0eb5",
+        "segno_pedal_ring-B_Mask.gbr": "42b562074dcbf211b89a7d4129e061442981a15e97487fe55aa3dc0fdfcad31a",
+        "segno_pedal_ring-B_Silkscreen.gbr": "0e8a13edb13de4acf8e749cef310b580e475128d28ccdc01ebfe1a63bf87bd64",
+        "segno_pedal_ring-Edge_Cuts.gbr": "2d299bf2ba31740e130c4ebb76328a4d36981abf8f2b981227d6fc615556e69e",
+        "segno_pedal_ring-F_Cu.gbr": "f39c06c8d70ba94240a3c61e06b91c10e041c37cb2e7e9147e94057c6a50ef06",
+        "segno_pedal_ring-F_Mask.gbr": "be57183e93e6a340605927e8b71e96ac6425422f7ca4d42518a7f895f1f74207",
+        "segno_pedal_ring-F_Silkscreen.gbr": "0284069a7d4367f733c52e0f608266801f081f36273899c1d81b379b63933c00",
+        "segno_pedal_ring-NPTH.drl": "4eb556bc9756108f87627b37a6a34d8007afa9ebd6ce32db3da241634158184a",
+        "segno_pedal_ring-PTH.drl": "9e76f4b73cfd6df33a8f8da0d8327266ae5435d846799772adb49881adadfd26",
+        "segno_pedal_ring-job.gbrjob": "98b011d5eee2c520fa9a7bd4b6590e3efbc4eda78f49e82e3d504b5553264541"
       },
       "members_checked": 10,
       "order": {
@@ -68,26 +68,26 @@
         "vias": "tented"
       },
       "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
-      "sha256": "b7486b4a8139de9c070c85f095e1710997a0f2e3d6e0fc3174d36d129b250759",
+      "sha256": "d25b01306dec7ab2e62ad1db727eb4854e3bb1777295e05be4fbe468f92b0dfd",
       "upload_name": "segno-ring-white-gerbers.zip"
     },
-    "screen-power-rev-m": {
-      "assembly_change": "R2 is 4.7 kOhm 1%; follow the assessed GPIO drive conditions and wiring in the screen BOM and README.",
+    "screen-power-rev-n": {
+      "assembly_change": "Omron G6C power relay with IRLZ44N coil driver; one removable Schurter SPT 8 A input fuse in OGN holder and four soldered Bel branch fuses. Follow the new BOM and wiring.",
       "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
-      "board_sha256": "28959e56ab6ce29fb26532883fc9604daacedd37c85e59271ccd54fc5a53a36e",
+      "board_sha256": "e72850b26ae9076011bc368b69d3f1f1edce758be878bf5fb0decc4f415c5a2f",
       "members": {
-        "screen_power_hand-B_Cu.gbr": "90d6af3a8b8995103574be46eedc9b4c63ebe19edc4cff668c745084ddd1dffe",
-        "screen_power_hand-B_Mask.gbr": "3f7490db7f8a80f82bba7b2fe73f1ec200f8d77805239e3cd9f61a03174cb496",
-        "screen_power_hand-B_Silkscreen.gbr": "0a1c5f7db62d3ff0ddc277584f3426301a5b504710603d233dbc8531777dd03e",
-        "screen_power_hand-Edge_Cuts.gbr": "4ad49f85aed69116f6d5782be0a76aa362d9ce8622423ae3147f42900e8ddcd0",
-        "screen_power_hand-F_Cu.gbr": "bdb2a4cc6302237cba2d67766f8521b1fa49ac7ff3fb2c99449bb69f14cab4e7",
-        "screen_power_hand-F_Mask.gbr": "94fc03aaf5c95c6ec3c3edd21a6dad1c35c8820d5941088ff31c1ba4bedfeb9f",
-        "screen_power_hand-F_Silkscreen.gbr": "44f9067fb70578262fcad20ee60d8bc41a7e2693f7ee729216e7ee5700bfc403",
-        "screen_power_hand-NPTH-drl_map.pdf": "0c96bdf8288951543e7287fa20ece83123060396df647925a205cdf7c19f3c08",
-        "screen_power_hand-NPTH.drl": "5f6700b4e48d443c33ff2492565643db1041781f41b3cc593dc95de041cf4656",
-        "screen_power_hand-PTH-drl_map.pdf": "1e5c8a2e075a7e106604cdebb8ed28e95a0b965219656bc6b4c26a8c422d9e54",
-        "screen_power_hand-PTH.drl": "80397c6da43e3fbbc32e61461100ed0d483479147c6b51e7bbf867964f235ac2",
-        "screen_power_hand-job.gbrjob": "88b254f7f7f7c6e6a1892293131455b8a45d56d32c04fd54b384140016db5dba"
+        "screen_power_hand-B_Cu.gbr": "cb0e31c0679911053f76048c0cc00f4e0c62acafebd1e478492c29ac8f2c5933",
+        "screen_power_hand-B_Mask.gbr": "edb7389a777dd7fb71022442e107cf372a061e5432add67728bca0190e2a0b6f",
+        "screen_power_hand-B_Silkscreen.gbr": "97cd5325c267b79be99f11b20b591fc134715754f8740e2a20fef5155bec5ec0",
+        "screen_power_hand-Edge_Cuts.gbr": "214da932a55975e3ab907325d3ff9c76b4ff6b7dd832b911543a32443ff1abb6",
+        "screen_power_hand-F_Cu.gbr": "74caa69ff13fb6c6923e64c3450243912c32112c83e21a8f7848f5313e010e81",
+        "screen_power_hand-F_Mask.gbr": "b91eaf57926187da91978b37778df042901724892792668fcff69e87a7ac9c1c",
+        "screen_power_hand-F_Silkscreen.gbr": "bd47dfb5fd3a3400515cdfe0826a8f1b2ae82e1e22298b089e7b0777f7ffc302",
+        "screen_power_hand-NPTH-drl_map.pdf": "16920e2d4f4bdc56dec9c37112976426cb776a17cca51144368e64e571390f8f",
+        "screen_power_hand-NPTH.drl": "e90d5f44f52c9a81848e556332e159ee42aee92b33ca4b1fbe974e17bf5a0a1b",
+        "screen_power_hand-PTH-drl_map.pdf": "68259c614bf6d8025ce12e93f191823feff3402152d60e8711a490f0fc8fed22",
+        "screen_power_hand-PTH.drl": "321558cb34ccffec81779711437dc18f8711283ee8a76b3fc6d7b1b46c4e0fe2",
+        "screen_power_hand-job.gbrjob": "8b12626a6cd55a3b32000e1cd92242cc3cf605854641f489261fab31018659e5"
       },
       "members_checked": 12,
       "order": {
@@ -103,13 +103,13 @@
         "thickness_mm": 1.6,
         "vias": "tented"
       },
-      "path": "hardware/kicad/fab/segno_screen_power_rev_m_gerbers.zip",
-      "sha256": "544bb5dde53a130dcc040bcbf5a4f62e5cfed521597e8a88601a2bf631741e2f",
-      "upload_name": "segno-screen-power-rev-m-gerbers.zip"
+      "path": "hardware/kicad/fab/segno_screen_power_rev_n_gerbers.zip",
+      "sha256": "abf39dbf1b7569a1ad25640c081f3e4fb126c94cd8d36d63fb1e559c7c2f8808",
+      "upload_name": "segno-screen-power-rev-n-gerbers.zip"
     }
   },
-  "baseline_revision": "a1ff9d6d491c09f6e7f3c8b818440eb5c0493b7e",
-  "date": "2026-09-27",
+  "baseline_revision": "9f01b49572249e544c84097b574c02f25de851a7",
+  "date": "2026-09-28",
   "limits": [
     "The former ring ZIP at the baseline revision is withdrawn. Only the exact Same Sky encoder matches the current ring fabrication files.",
     "Revision L screen ZIP remains withdrawn. Use the screen-power-rev-m archive in this record.",
@@ -118,8 +118,8 @@
     "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
     "No order, merge or device deployment performed."
   ],
-  "purpose": "Verified native/CAM package after Claude follow-up corrections. Review acceptance is explicit; assembled operation and CI are separate gates.",
-  "review": "docs/code-review/pcb-claude-followup-1072/review.md",
+  "purpose": "Revision N stocked-parts redesign and all-three-board copper audit. Native/CAM review is separate from assembled qualification and full CI.",
+  "review": "docs/reviews/screen-power-stock-cost-1072/review.md",
   "runtime": {
     "deployment": "not performed",
     "pull_request": 1082,
@@ -127,38 +127,20 @@
   },
   "status": "bare-board-review-clean",
   "verification": {
-    "claude_final_console": {
-      "report": "docs/code-review/pcb-claude-followup-1072/claude-final-console.md",
-      "reviewed_revision": "60ff3a637a400deb1ce846f6cb76979c94250a32",
-      "sha256": "aa03d2d5772c91a17b7f4802519c7deb0441853739ac9e6e05e3afbe2efbe74d",
-      "verdict": "complete-no-unresolved-actionable-board-findings"
-    },
-    "claude_final_ring": {
-      "report": "docs/code-review/pcb-claude-followup-1072/claude-final-ring.md",
-      "reviewed_revision": "60ff3a637a400deb1ce846f6cb76979c94250a32",
-      "sha256": "087ba1f92e6cea93568925a1b3386b50f933588dd0fd7a26a5ff656864ea2b72",
-      "verdict": "complete-no-unresolved-actionable-board-findings"
-    },
-    "claude_final_screen": {
-      "report": "docs/code-review/pcb-claude-followup-1072/claude-final-screen.md",
-      "reviewed_revision": "60ff3a637a400deb1ce846f6cb76979c94250a32",
-      "sha256": "b503e1a19352f69e28c4423c0cf120e3d77c152ccbd4b01ee99a7ce3c300793a",
-      "verdict": "complete-no-unresolved-actionable-board-findings"
-    },
     "console_ring": {
       "checks_passed": 175,
-      "report": "docs/code-review/pcb-claude-followup-1072/console-ring-fabrication-verification.json",
-      "sha256": "a527fe870e29e078df589dc7952d09c10ecca1126ab168e6800cb50b389c9ecd"
+      "report": "docs/reviews/screen-power-stock-cost-1072/console-ring-fabrication-verification.json",
+      "sha256": "75bc95bb01bed07205813c8a12ee9fd98dc4e17a46cba7ac6bf93a0030b0a88b"
     },
     "screen": {
-      "checks_passed": 412,
-      "report": "docs/code-review/pcb-claude-followup-1072/screen-fabrication-verification.json",
-      "sha256": "fa646552dd41c3c1d2461c567d416bbe5d7e8b4b24168d5cfc6381a949276fe0"
+      "checks_passed": 415,
+      "report": "docs/reviews/screen-power-stock-cost-1072/screen-fabrication-verification.json",
+      "sha256": "57474a7aeaa38ea88bc9d6aa1737c9ae3a4d7da9c04f007843d24368b96f6ff9"
     },
     "screen_native": {
-      "report": "docs/code-review/pcb-claude-followup-1072/screen-native-validation.json",
-      "self_test_checks_passed": 77,
-      "sha256": "9f198f3c295ae15afdd40fdced84a924326c426fcaa350770777412d84fcbb5a"
+      "report": "docs/reviews/screen-power-stock-cost-1072/screen-native-validation.json",
+      "self_test_checks_passed": 103,
+      "sha256": "39a440a4ce2b211ad02d397b3b64a86b4432ad27ccacb029f5aa8fce92344425"
     }
   },
   "withdrawn_archives": {
@@ -185,11 +167,27 @@
       "sha256": "d5cad80522c7a80d797470d423e96bfb97473849b6e237a3c56789f99e28a4f4",
       "status": "superseded-2026-09-27-followup"
     },
+    "ring-white-2026-09-27": {
+      "board_sha256": "2a2d139d824a981edb4f455533b4d57a190f456496606b1f80d9dc52b9c097cb",
+      "historical_revision": "9f01b49572249e544c84097b574c02f25de851a7",
+      "path": "hardware/kicad/fab/segno_pedal_ring_gerbers.zip",
+      "reason": "Two local front-ground dead ends removed; routed copper, pads, rear ground and assembly unchanged.",
+      "sha256": "b7486b4a8139de9c070c85f095e1710997a0f2e3d6e0fc3174d36d129b250759",
+      "status": "superseded-2026-09-28"
+    },
     "screen-power-rev-l": {
       "path": "hardware/kicad/fab/segno_screen_power_rev_l_gerbers.zip",
       "reason": "Host-powered relay coils exceed USB suspend-current allowance; superseded by Revision M.",
       "sha256": "97fa4abfe42d3e28d408f16048f8392bf9efe9cc4f3dfbb2b357a449cfc46f84",
       "status": "withdrawn-host-powered-relay-suspend-current"
+    },
+    "screen-power-rev-m": {
+      "board_sha256": "28959e56ab6ce29fb26532883fc9604daacedd37c85e59271ccd54fc5a53a36e",
+      "historical_revision": "9f01b49572249e544c84097b574c02f25de851a7",
+      "path": "hardware/kicad/fab/segno_screen_power_rev_m_gerbers.zip",
+      "reason": "Revision N replaces the unavailable power switches with a stocked relay and removable input fuse.",
+      "sha256": "544bb5dde53a130dcc040bcbf5a4f62e5cfed521597e8a88601a2bf631741e2f",
+      "status": "superseded-2026-09-28"
     },
     "screen-power-rev-m-2026-09-26": {
       "board_sha256": "8a467b1c6a881cbf7dd117d38366cfda466f1a51c64553296cc374b4ca52cb27",

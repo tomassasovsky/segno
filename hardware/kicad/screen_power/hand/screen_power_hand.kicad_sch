@@ -5,9 +5,10 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / control")
-    (rev "M prototype")
-    (comment 1 "AUX-powered relays; each host VBUS supplies only its presence detector.")
-    (comment 2 "Physical verification required before release."))
+    (rev "N prototype")
+    (comment 1 "One normally open contact switches AUX; every board load sits behind F1.")
+    (comment 2 "AUX-powered relays; each host VBUS supplies only its presence detector.")
+    (comment 3 "Physical verification required before release."))
   (lib_symbols
     (symbol "screen_symbols:Connector_Generic_Conn_01x02"
       (pin_names
@@ -1033,77 +1034,6 @@
         (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
           (reference "R6")
           (unit 1)))))
-  (wire
-    (pts
-      (xy 351.79 114.3)
-      (xy 346.71 114.3))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 9707979b-91d2-514f-88fc-dbb779eb8ce0))
-  (global_label "DATA_ENABLE"
-    (shape bidirectional)
-    (at 346.71 114.3 180)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify right))
-    (uuid ed061f43-2e6a-57b5-9495-a27030efcfbf))
-  (wire
-    (pts
-      (xy 359.41 114.3)
-      (xy 364.49 114.3))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 68ca739f-3a6c-5b06-a280-7257013e33ba))
-  (global_label "GND"
-    (shape bidirectional)
-    (at 364.49 114.3 0)
-    (effects
-      (font
-        (size 1.0 1.0))
-      (justify left))
-    (uuid 2bafe180-b7ce-5e13-b2f4-91974a93dea9))
-  (symbol
-    (lib_id "screen_symbols:Device_R")
-    (at 355.59999999999997 114.3 90)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid e158c486-a0d8-5bdb-89cb-e34f382ead8c)
-    (property "Reference" "R7"
-      (at 355.59999999999997 104.14 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Value" "100k 1%"
-      (at 355.59999999999997 106.68 90)
-      (effects
-        (font
-          (size 1.27 1.27))))
-    (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-      (at 355.59999999999997 114.3 90)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (property "MPN" "MFR-25FBF52-100K"
-      (at 355.59999999999997 114.3 90)
-      (effects
-        (font
-          (size 1.27 1.27))
-        (hide yes)))
-    (pin "1"
-      (uuid 11046006-066d-5e44-8463-c52a72aed8eb))
-    (pin "2"
-      (uuid d43d44ac-e7b3-5566-b07e-0352dccc3da9))
-    (instances
-      (project "screen_power_hand"
-        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546"
-          (reference "R7")
-          (unit 1)))))
   (sheet
     (at 25.4 218.44)
     (size 101.6 10.16)
@@ -1112,14 +1042,14 @@
       (type default))
     (fill
       (color 0 0 0 0))
-    (uuid 5ba72232-3354-5edc-9ded-d75ff58774fe)
-    (property "Sheetname" "gate drive"
+    (uuid 0b113414-631e-5e58-94dc-4e2e2e21925c)
+    (property "Sheetname" "relay drive"
       (at 25.4 217.17 0)
       (effects
         (font
           (size 1.27 1.27))
         (justify left)))
-    (property "Sheetfile" "gate_drive.kicad_sch"
+    (property "Sheetfile" "relay_drive.kicad_sch"
       (at 25.4 229.87 0)
       (effects
         (font

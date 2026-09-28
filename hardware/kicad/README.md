@@ -1,3 +1,4 @@
+<!-- cspell:words Omron -->
 # Board generators
 
 <!-- cspell:words XHP SXH -->
@@ -23,21 +24,19 @@ UART remains biased high while the Pi is off. See the
 
 ## Console connection to the screen-power board
 
-**Revision M replaces the withdrawn Revision L screen files.** It corrects
-USB suspend current with AUX-powered coils and per-host presence detection,
-and adds shield-drain pads. The September 27 follow-up strengthens the
-control-input pull-down (R2 = 4.7 kΩ). See the
-[current review and manufacturing checks](../../docs/code-review/pcb-claude-followup-1072/review.md).
-The board retains the through-hole
-negative gate supply to improve MOSFET drive margin, retaining the two-layer
-68 × 76 mm outline, direct USB-to-XH leads and existing connector anchors.
-The corrected relay contact mapping from Revision J remains. Use only the
-archive and checks identified in the
-[current manufacturing record](../../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
-Revision I is withdrawn; J/K are superseded. No pre-PCB prototype or further
-owner measurements are required by this change. The final archives also
-include rounded power-bar corners on the console and cleaned, rounded J1
-power taps on the white ring carrier, preserving their full-white capacity.
+**Revision N** replaces the unavailable screen-power
+MOSFET pair and charge pump with an Omron power relay, and puts one removable
+8 A input fuse on the screen board. The four lower-cost branch fuses remain
+soldered. It retains AUX-powered USB coils, independent host detection,
+shield drains, the two-layer 68 × 76 mm outline and existing connector
+anchors. See the [screen design and wiring](screen_power/README.md).
+
+Use the archives identified by the
+[manufacturing record](../../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json)
+and its matching review evidence. Console copper is unchanged. The white
+ring board retains its tracks, pads, rear ground and full-white capacity;
+two small dead-end front-ground fingers have been removed. No pre-PCB prototype or additional
+owner measurement is required by this change.
 
 Use **J25**, the two-pin through-hole JST XH connector beside the Pi ribbon
 connector. It is already included in the console source, routed PCB and BOM
@@ -68,10 +67,11 @@ covers the PI PWR move and retained PD alignment. The subsequent
 covers the `SCREEN` text change and current exports.
 
 The screen planning load is **4.25 A shared**, including both main outputs,
-both touch outputs and the 0.05 A bleeder. The old 6 A expansion allowance is
+both touch outputs. Add 60 mA for the bleeder and 150 mA for coils/control,
+for a **4.46 A** screen-board input allowance. The old 6 A expansion allowance is
 retired. The 3 A main and 500 mA touch lead ceilings are not additive or
 simultaneous guarantees. The selected 40-pixel ring uses a separate direct
-AUX branch and does not pass through console power copper or Q3/Q4. See the
+AUX branch and does not pass through console power copper or the screen-power relay. See the
 [screen-board assessment](screen_power/README.md#circuit-and-limits).
 
 For **40 LEDs at unrestricted full white**, follow the

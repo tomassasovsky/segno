@@ -39,17 +39,55 @@ def relay():
     save(a, "Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm")
 
 
-def fuse():
-    a = cq.Assembly(name="Littelfuse_251")
-    # Maximum 7.11 x diameter 2.80 body, nominal 0.64 wire.
-    # Formed onto the board's 12.7 mm pitch with the body 0.4 mm above PCB.
-    body = cq.Workplane("YZ").circle(1.4).extrude(7.11).translate((2.795, 0, 1.8))
-    add(a, body, "body", cq.Color(0.17, 0.36, 0.22))
-    for i, (x, end) in enumerate(((0, 2.795), (9.905, 12.7))):
-        add(a, cq.Workplane("YZ").circle(.32).extrude(end-x).translate((x, 0, 1.8)), f"wire_{i}")
-    for i, x in enumerate((0, 12.7)):
-        add(a, cq.Workplane("XY").circle(.32).extrude(4.8).translate((x, 0, -3)), f"leg_{i}")
-    save(a, "Fuse_Littelfuse_251_P12.70mm")
+def fuse_cartridge(a, center_x, center_y, z, ceramic=False):
+    # 5 x 20 mm replaceable cartridge; caps and body are distinct solids.
+    color = IVORY if ceramic else cq.Color(.65, .78, .81, .45)
+    body = cq.Workplane("YZ").circle(2.6).extrude(20).translate((center_x-10, center_y, z))
+    add(a, body, "cartridge_body", color)
+    for i, x in enumerate((center_x-10, center_x+5)):
+        cap = cq.Workplane("YZ").circle(2.6).extrude(5).translate((x, center_y, z))
+        add(a, cap, f"cartridge_cap_{i}")
+
+
+def fuse_holders():
+    a = cq.Assembly(name="Schurter_OGN_0031_8201")
+    # The exact THT holder is 25 x 9.6 mm, with 10.8 mm installation width.
+    # Contact springs/fuse rise to 11.5 mm; no optional protective cover.
+    add(a, box(11.25, 0, 1.2, 25, 9.6, 2.4), "base", BLACK)
+    for i, x in enumerate((0, 22.5)):
+        add(a, box(x, 0, 5.6, 2.5, 9.6, 6.4), f"end_wall_{i}", BLACK)
+        add(a, box(x, 0, 5, 1.1, 7, 8), f"contact_{i}")
+        lead = cq.Workplane("XY").circle(.55).extrude(4).translate((x, 0, -4))
+        add(a, lead, f"lead_{i}")
+    fuse_cartridge(a, 11.25, 0, 8.9, ceramic=True)
+    save(a, "Fuseholder_Schurter_OGN_0031.8201")
+
+
+def radial_fuse():
+    a = cq.Assembly(name="Bel_0697H")
+    # Published maximum body and lead envelope; stock leads are trimmed in assembly.
+    add(a, box(2.54, 0, 4.05, 8.65, 4.30, 8.10), "body", cq.Color(.75, .70, .22))
+    for i, x in enumerate((0, 5.08)):
+        leg = cq.Workplane("XY").circle(.35).extrude(3).translate((x, 0, -3))
+        add(a, leg, f"lead_{i}")
+    save(a, "Fuse_Bel_0697H_P5.08mm")
+
+
+def power_relay():
+    a = cq.Assembly(name="Omron_G6C_1117P_US")
+    # Omron G6C-1117P-US, datasheet page 7: 20 x 15 x 10 mm maximum body on a
+    # 0.3 mm standoff, terminals 0.9 x 0.5 mm projecting 3.5 mm below the
+    # seating plane. The origin is pin 1; pins 3 and 4 run in -X and pin 8 in
+    # +Y, matching the footprint's converted top view.
+    add(a, box(-8.89, -5.06, 5.3, 20, 15, 10), "body", cq.Color(.13, .14, .16))
+    # Orientation mark on the pin 1 / pin 8 end of the case top.
+    add(a, box(0.11, -5.06, 10.305, 1.6, 1.6, .01), "orientation_mark", IVORY)
+    for name, (x, y) in (("coil_minus_1", (0, 0)), ("coil_plus_8", (0, -10.16)),
+                         ("contact_3", (-10.16, 0)), ("contact_4", (-17.78, 0))):
+        add(a, box(x, y, -1.6, .9, .5, 3.8), "terminal_" + name)
+    save(a, "Relay_Omron_G6C-1117P-US")
+
+
 
 
 def vh():
@@ -63,37 +101,23 @@ def vh():
     save(a, "JST_VH_B2P-VH_1x02_P3.96mm_Vertical")
 
 
-def electrolytic(name, diameter, height, pitch, lead, polarized=True):
+def electrolytic(name, diameter, height, pitch, lead):
     # Panasonic nominal body dimensions; the footprint origin is pin 1.
     # Worst-case body envelopes are documented separately for fit review.
     a = cq.Assembly(name=name)
     center = pitch / 2
     can = cq.Workplane("XY").circle(diameter / 2).extrude(height-.2).translate((center, 0, 0))
-    if polarized:
-        # Split the sleeve surface so the polarity stripe is visible without
-        # increasing the published body envelope or hiding it inside the can.
-        stripe = can.intersect(box(center+diameter/2, 0, height/2, .2, .5, height-.4))
-        add(a, can.cut(stripe), "sleeve", cq.Color(.08, .25, .48))
-        add(a, stripe, "negative_stripe", IVORY)
-    else:
-        # The SU-A pump capacitors are bipolar: either lead may face pin 1.
-        add(a, can, "sleeve", cq.Color(.08, .25, .48))
+    # Split the sleeve surface so the polarity stripe is visible without
+    # increasing the published body envelope or hiding it inside the can.
+    stripe = can.intersect(box(center+diameter/2, 0, height/2, .2, .5, height-.4))
+    add(a, can.cut(stripe), "sleeve", cq.Color(.08, .25, .48))
+    add(a, stripe, "negative_stripe", IVORY)
     top = cq.Workplane("XY").circle(diameter / 2-.1).extrude(.2)
     add(a, top.translate((center, 0, height-.2)), "top")
     for i, x in enumerate((0, pitch)):
         leg = cq.Workplane("XY").circle(lead / 2).extrude(3)
         add(a, leg.translate((x, 0, -3)), f"lead_{i}")
     save(a, name)
-
-
-def film_capacitor():
-    a = cq.Assembly(name="WIMA_MKS2C031001A00KSSD")
-    # WIMA MKS2 100nF/63V: 7.2 x 2.5 x 6.5 body, 5mm pitch, 0.5mm leads.
-    add(a, box(2.5, 0, 3.25, 7.2, 2.5, 6.5), "body", cq.Color(.72, .04, .04))
-    for i, x in enumerate((0, 5)):
-        leg = cq.Workplane("XY").circle(.25).extrude(3)
-        add(a, leg.translate((x, 0, -3)), f"lead_{i}")
-    save(a, "WIMA_MKS2C031001A00KSSD")
 
 
 def power_resistor():
@@ -121,10 +145,10 @@ def power_resistor():
 
 if __name__ == "__main__":
     relay()
-    fuse()
+    power_relay()
+    fuse_holders()
+    radial_fuse()
     vh()
     electrolytic("Panasonic_EEUFR1A221", 6.3, 11.2, 2.5, .5)
     electrolytic("Panasonic_EEUFR1A151", 5, 11, 2, .5)
-    electrolytic("Panasonic_ECEA1EN100U", 5, 11, 2, .5, polarized=False)
-    film_capacitor()
     power_resistor()

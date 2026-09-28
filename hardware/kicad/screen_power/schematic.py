@@ -52,20 +52,20 @@ def write_schematic(circuit, out, variant):
         (uri "${KIPRJMOD}/screen_symbols.kicad_sym")
         (options "") (descr "Project definitions generated from KiCad and manufacturer pin maps")))
 ''')
-    sheets = {"control": [], "gate_drive": [], "shared_power": [],
+    sheets = {"control": [], "relay_drive": [], "shared_power": [],
               "screen1_power": [], "screen1_touch": [],
               "screen2_power": [], "screen2_touch": []}
-    # The negative-rail driver gets its own page: the control grid overflows
-    # into the child-sheet band once the charge pump and coupler are added.
-    gate_drive = {"U1", "U2", "C3", "C4", "C5", "D2", "R9", "R10"}
+    # The power relay, its low-side driver and its coil clamp get their own
+    # page so the control grid stays clear of the child-sheet band.
+    relay_drive = {"K1", "Q5", "D3", "R7"}
     for part in circuit.parts:
         number = int(''.join(c for c in part.ref if c.isdigit()) or 0)
         channel, local = divmod(number, 100)
         if channel not in (1, 2):
-            if part.ref in gate_drive:
-                section = "gate_drive"
+            if part.ref in relay_drive:
+                section = "relay_drive"
             else:
-                section = "shared_power" if part.ref.startswith(("H", "#FLG")) or part.ref in {"Q3", "Q4", "R3", "R4", "R8", "C1", "C2", "J1"} else "control"
+                section = "shared_power" if part.ref.startswith(("H", "#FLG")) or part.ref in {"F1", "R8", "C1", "C2", "J1"} else "control"
         else:
             touch = ((part.ref.startswith("J") and local in (1, 2))
                      or part.ref.startswith(("K", "Q", "D", "C", "R", "TP")))
@@ -77,9 +77,10 @@ def write_schematic(circuit, out, variant):
         title = f"Segno screen power / {variant} / {section.replace('_', ' ')}"
         sch = Sexp(["kicad_sch", ["version", 20250114], ["generator", "eeschema"],
                     ["uuid", sheet_id], ["paper", "A3"],
-                    ["title_block", ["title", title], ["rev", '"M prototype"'],
-                     ["comment", 1, "AUX-powered relays; each host VBUS supplies only its presence detector."],
-                     ["comment", 2, "Physical verification required before release."]]])
+                    ["title_block", ["title", title], ["rev", '"N prototype"'],
+                     ["comment", 1, "One normally open contact switches AUX; every board load sits behind F1."],
+                     ["comment", 2, "AUX-powered relays; each host VBUS supplies only its presence detector."],
+                     ["comment", 3, "Physical verification required before release."]]])
         definitions = {}
         for part in parts:
             definition = definitions_by_ref[part.ref]

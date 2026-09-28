@@ -152,6 +152,10 @@ echo "== 5b2. round the routed signal corners =="
 # arithmetic of ours.
 "$KPY" round_routes.py "$PCB"
 
+# Local zone-only exclusions remove unused ground fingers beside U2/J2;
+# routed tracks, wire-pad area and the retained power rail are unchanged.
+"$KPY" ring_power.py "$PCB" --finish-ground
+
 echo "== 5c. refill zones =="
 "$KPY" - "$PCB" <<'PY'
 import pcbnew, sys

@@ -1,62 +1,51 @@
+<!-- cspell:words unreviewed -->
+<!-- cspell:words IRLZ NPBF Schurter upsize -->
 <!-- cspell:words fanout -->
 <!-- cspell:words preorder Axicom Mbps energization Digi typec mrico kilohm -->
 <!-- cspell:words overvoltage derate autosuspend overmolds fanouts onsemi Nexperia Omron derating autoroutes pulldowns -->
 <!-- cspell:words SUP SUM Rds backfeed Micro pulldown Vgs Littelfuse Lumberg MMBT DMODEL stackup microstrip heatsinks eleUniverse ATOF PXCN FHAC overcurrent -->
 # Screen power and touch switch
 
-**Revision M replaces the withdrawn Revision L screen circuit.** Native
-schematic and PCB checks pass, including all 75 fault-detection controls.
-Use the release files identified in the
-[revision verification](../../../docs/reviews/screen-power-usb-revision-1072/review.md).
+**Revision N** replaces the
+out-of-stock power MOSFET pair and charge pump with a through-hole power
+relay, and adds an inexpensive removable main fuse on the board. The four
+branch fuses remain soldered to keep cost and size down.
 
-Revision M retains the **two-layer, 68 × 76 mm** hand-soldered board, **3 mm
-rounded corners**, purple solder mask and white silkscreen. The screen supply
-and both USB touch paths switch off together under GPIO17 control. The ring
-and console retain their separate power branch.
+The design retains the **two-layer, 68 × 76 mm** outline, **3 mm rounded
+corners**, purple solder mask and white silkscreen. GPIO17 controls the
+screen supply and both USB touch paths. Console and ring power use their
+separate AUX branch. No extra Pi ribbon or USB-C module is needed.
 
-A small through-hole negative gate supply now turns the existing power
-MOSFETs on with substantial voltage margin after normal fuse and harness
-losses. It adds no external module, Pi ribbon or power rail. The two relay
-drivers also change to parts specified for lower gate voltage. There is no
-added active startup-current limiter: the
-[startup assessment](../../../docs/reviews/screen-power-rev-l-1072/startup.md)
-finds useful pulse margin in the existing power devices.
+There are **42 populated electrical references plus the F1 holder**, four
+bare shield-drain pads and four M3 mounting holes. The eight cable headers,
+two USB relays, shield pads and mounting centers retain their positions.
+Headers have vertical pin rows, pin 1 at the bottom and retaining walls on
+the left, viewed from the component side. Cables enter from above. Mounting
+centers are (4, 4), (64, 4), (4, 72) and (64, 72) mm. The 3.5 mm unplated
+holes have 4.25 mm copper keepouts for M3 heads/washers up to 7 mm diameter.
 
-U1 and U2 share both pin rows and a body centerline. Their final alignment
-retains the stock courtyards and nearby capacitor positions; see the
-[alignment verification](../../../docs/reviews/screen-u2-alignment-1072/verification.md).
+The USB host-presence circuit, AUX-powered data relays and shield-drain
+connections from Revision M are retained. Host VBUS only senses connection;
+it supplies neither relay coils nor screens. The selected power and fuse
+changes are described in the
+[implementation plan](../../../docs/plan/2026-09-27-screen-power-stock-cost-1072-plan.md)
+and [fuse/coil assessment](../../../docs/reviews/screen-power-stock-cost-1072/holder-coil-budget.md).
 
-The board has **50 populated through-hole components, four bare shield-drain
-solder pads and four M3 holes**.
-Both outer copper layers have filled GND pours. All eight cable headers
-retain their positions and matching orientation: vertical pin rows, pin 1
-at the bottom and retaining wall on the left, viewed from the component side.
-Cables enter perpendicular to the board. Mounting centers remain (4, 4),
-(64, 4), (4, 72) and (64, 72) mm. The 3.5 mm unplated holes have 4.25 mm
-copper keepouts on both faces for M3 heads/washers up to 7 mm diameter.
-
-Revision M moves both relay coils to AUX and adds a low-current host-presence
-detector to each channel. This corrects the USB suspend-current defect recorded
-in the [preceding review](../../../docs/reviews/production-final-1072/usb-requirements-followup.md).
-The [circuit assessment](../../../docs/reviews/screen-power-usb-revision-1072/circuit-assessment.md)
-records the new connections, margins and switching-state checks. Printed labels
-retain at least 1.0 mm height, 0.15 mm stroke and 0.15 mm pad clearance.
-
-Use only the archive identified by the
-[current three-board manufacturing record](../../../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
-Older screen archives are superseded; Revision I remains withdrawn because
-its relay commons were wired incorrectly. The corrected common contacts 3/6 and
-normally open contacts 4/5 are retained and independently checked.
-No pre-PCB prototype build or additional owner measurements are prerequisites
-for this revision. The design assessment and fabrication checks are distinct
-from operation of the assembled boards; USB compliance and shutdown timing
-have not been physically qualified. Issue: [#1072](https://github.com/tomassasovsky/segno/issues/1072).
+The [manufacturing record](../../../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json)
+identifies the verified manufacturing archives and their board hashes. Use
+those archives rather than exporting an unreviewed working copy. Revision I
+remains withdrawn because of incorrect
+USB relay common connections. The corrected commons 3/6 and normally open
+contacts 4/5 remain unchanged. No pre-PCB prototype or further owner
+measurements are required. Design review cannot establish assembled USB
+compliance, exact shutdown timing or enclosure temperature.
+Issue: [#1072](https://github.com/tomassasovsky/segno/issues/1072).
 
 ## Wiring
 
 | Connector | Function |
 | --- | --- |
-| J1, JST VH 2-pin | Dedicated buck AUX input through the required inline fuse below. Pin 1 = +5 V; pin 2 = ground. Use the existing nominal **5 V** buck. Normal operation requires **at least 4.75 V at J1** for the assessed warm relay-pickup margin. The power-MOSFET gate driver alone is assessed at **4.5–5.25 V at J1**, allowing supply-path losses; that lower corner is not a claim that either screen operates down to 4.5 V. Do not assume the buck is adjustable. |
+| J1, JST VH 2-pin | Dedicated AUX input: pin 1 = +5 V, pin 2 = ground. Use the existing nominal 5 V buck. The assessed coil-drive envelope requires **4.75–5.25 V at J1**, before onboard F1 and its holder; this is not a guarantee of either screen's minimum operating voltage. |
 | J2, JST XH 2-pin | Console J25 control. Pin 1 = BCM GPIO17; pin 2 = ground. One two-wire cable, numbered pins connected 1:1. |
 | J101 / J201, JST XH 4-pin | USB-A male to XH cable from each Pi USB 2.0 host port; channels 1 / 2. |
 | J102 / J202, JST XH 4-pin | Direct XH-to-USB-C male cable to UPERFECT (channel 1), and XH-to-Micro-B male cable to APROTII (channel 2). |
@@ -136,7 +125,7 @@ These are estimates, not measured cable ratings; source:
 The host lead's VBUS feeds approximately 50 µA of presence-sensing load at
 the upper 5.5 V host corner. AUX supplies the relay coils. Screen touch current must
 be measured with both screen connectors attached; a screen may join the
-supplies internally, and the 750 mA fuse is not an active 500 mA limiter.
+supplies internally, and the 800 mA fuse is not an active 500 mA limiter.
 
 Before connecting equipment, measure each cable's pin-to-contact continuity
 and check for shorts. Re-pin a housing to the documented map if necessary.
@@ -183,97 +172,110 @@ and never connects to a screen supply. The coil and its bypass use AUX.
 
 ### Required AUX branch protection
 
-Fit one **Littelfuse 028707.5PXCN, 7.5 A / 32 VDC ATOF fuse**, in a
-**FHAC0001ZXJ** covered inline holder. The
-[holder datasheet](https://www.littelfuse.com/assetdocs/littelfuse-fuse-holder-ato-fhac-datasheet-rd1?assetguid=272e0b1a-a576-4173-8740-c1eb469efd79)
-specifies **20 A and 16 AWG leads**. Wire **AUX positive split → fuse near the
-buck → J1 pin 1**; connect ground directly to **J1 pin 2**. Use 16 AWG for
-both conductors, insulate and strain-relieve splices, and identify both black
-holder leads as positive. Console/ring power stays on its separate branch.
+F1 is a **Schurter SPT 0001.2513, 8 A time-delay 5 × 20 mm cartridge** in an
+**OGN 0031.8201** PCB holder. It sits immediately after J1, ahead of every
+capacitor, coil, control circuit and power contact feed. Replace the fuse
+with power disconnected. The holder is soldered once; the cartridge is
+removable. No separate inline holder is included in this design or shopping
+list. The four downstream Bel fuses are soldered components.
 
-The [fuse's typical derating table](https://www.littelfuse.com/assetdocs/littelfuse-datasheet-287-atof?assetguid=43dcdce8-8ca2-426f-8998-7e566f048d40)
-allows 6 A at 65 °C and 5 A at 85 °C; final terminals and wiring affect this.
-Specified maximum opening times are 600 s at 10.125 A, 50 s at 12 A and 5 s
-at 15 A. These do not establish clearing from a nominal 10 A source.
-
-The retained [eleUniverse B0GGHN97TK buck](https://www.amazon.com/dp/B0GGHN97TK)
-advertises overcurrent, short-circuit and thermal protection without thresholds
-or response curves. The added fuse provides supplementary harness coverage
-upstream of the board's four branch fuses. It is not an active current limiter
-or a guarantee of MOSFET survival, startup coordination or isolation after a
-shorted switch. The existing assembled qualification still applies.
+Wire the AUX positive split directly to J1 pin 1 and ground to J1 pin 2.
+Keep this incoming pair short (15 cm one-way design target), **16 AWG**,
+insulated, secured and protected from abrasion. F1 does **not** protect a
+short in this incoming cable or the short J1-to-F1 trace. The retained buck's
+advertised protection has no public threshold/response curve, and the
+upstream 20 V T5A fuse does not establish 5 V fault-clearing behavior. This
+is supplementary downstream protection, not an active current clamp or a
+promise of prompt clearing from a nominal 10 A supply. Console/ring remain
+on their separate AUX branch.
 
 ## Circuit and limits
 
-Q3/Q4 are common-source, opposed P-channel MOSFETs. R4 (22 kΩ) pulls their
-gates to the joined sources when disabled, blocking either direction while
-off. They conduct both ways when enabled. They do not provide active reverse
-current, reverse polarity or overvoltage protection.
+The normally open **K1, Omron G6C-1117P-US DC5**, switches the shared screen
+rail. Its contact is rated **10 A at 30 VDC resistive**, with 30 mΩ initial
+maximum contact resistance. Coil pins are **8 positive / 1 negative**;
+contact pin **4 = fused AUX**, **3 = SWITCHED_5V**. Do not substitute the
+similarly named two-pole G6C-2117. The chosen part's coil is 5 V, 125 Ω
+±10%, approximately 40 mA. Its release opens the supply in both directions;
+while closed, a voltage applied at a screen output can feed back into AUX
+until GPIO17 goes low. This is not instantaneous reverse-current protection
+on loss of the buck supply.
 
-U1 (LMC7660IN) produces a small negative gate supply from AUX. U2 (TLP627M)
-level-shifts Q1's on/off signal: its emitter connects to the negative supply
-and its collector pulls POWER_GATE through R3 (4.7 kΩ). The optocoupler is
-used for level shifting; the system still shares ground. GPIO never connects
-to the negative rail. U1 pins 1, 6 and 7 stay unconnected; **do not ground LV**.
-C3/C4 are nonpolar 10 µF capacitors. D2's cathode band faces GND and clamps
-positive excursions of the negative rail during power transitions.
+Q1/Q2 buffer GPIO17 into DATA_ENABLE. **Q5, IRLZ44NPBF**, switches K1's coil:
+pin 1 gate = DATA_ENABLE, pin 2 drain = POWER_COIL_LOW, pin 3 source = GND.
+**D3, P6KE6.8CA**, is a bidirectional TVS across that coil. Q5 carries only
+coil current and requires no heatsink; its drain tab is electrically live
+and must clear metal hardware. R7 is 10 kΩ and holds the gate rail low when
+disabled. The former Q3/Q4, charge pump, optocoupler and negative supply are
+removed.
 
-Q1 switches U2's AUX-powered LED and Q2's base network. The former D1 is
-removed because U2 separates the gate network from this buffer. Q2 enables
-the lower TN0702 relay switches Q101/Q201. Each AUX-powered IM02TS coil
-also has an upper TN0702 switch Q102/Q202 controlled by its own host VBUS
-through a 10 kΩ/100 kΩ divider. Both switches must conduct to close that
-channel's data contacts. A low/floating GPIO or an absent host therefore opens
-both data lines; host VBUS never feeds a screen. The flyback diode and
-100 nF bypass remain local to each coil, now referenced to AUX.
+Each USB relay coil is powered from fused AUX through two series TN0702
+switches. Q101/Q201 require DATA_ENABLE; Q102/Q202 require their own host
+VBUS through a 10 kΩ/100 kΩ divider. Both conditions must be true for that
+channel's data contacts to close. **D101/D201, 1N4007G**, clamp coil flyback:
+cathode to AUX, anode to the corresponding coil low side. Each coil also
+has a local 100 nF bypass. USB contact pins remain coil 1+/8−, commons 3/6,
+normally open 4/5 and unused normally closed 2/7.
 
-- Shared screen planning load: **4.25 A**, including both main feeds, both
-  touch feeds and the approximately 0.05 A bleeder. This is conservative
-  budgeting from the available screen readings, not a measured simultaneous
-  maximum or a current limit. Add **0.10 A** for both AUX-powered relay coils
-  and control circuitry, giving **4.35 A at J1**. This extra current bypasses
-  Q3/Q4. The previous 6 A expansion allowance is retired.
-- Each main branch retains its 4 A Littelfuse 251 fuse and **3 A lead ceiling**;
-  each touch branch retains its 750 mA fuse and **500 mA lead ceiling**. These
-  ceilings are not additive guarantees. Screens may internally join their
-  main and touch inputs. Keep both specified main-power leads connected;
-  the thin touch lead is not a replacement for either main supply lead.
-- Fuses protect against sustained faults; they do not impose those current
-  ceilings or guarantee MOSFET survival from an unspecified buck current limit.
-- There is no controlled soft start. The documented SOA assessment covers
-  bounded startup sensitivities without claiming an exact surge waveform,
-  capacitance limit or screen-current ramp.
-- R8 is a 100 Ω, 1 W bleeder: approximately 0.25 W at 5 V. Shutdown delay
-  depends on actual screen energy storage; the software's five-second wait
-  remains provisional until normal operation is checked on the assembly.
-- Each host contributes about **50 µA** at 5.5 V, rather than powering a coil.
-  Even the 10 kΩ series resistor alone bounds DC sensing current below
-  **0.556 mA** for a nonnegative gate node at that supply. This is a circuit
-  bound, not a measurement of the complete screen's suspend behavior.
-- Each AUX-powered relay draws about 34 mA nominally. The two series TN0702
-  switches have a calculated coil voltage of **4.412 V** at 4.75 V AUX,
-  minimum coil resistance and a conservative doubled-hot resistance estimate.
-  TE specifies **3.38 V initial pickup at 23°C**. The detailed assessment also
-  estimates hot restart at the project's 60°C local-air envelope; it does
-  not convert the room-temperature specification into a guaranteed hot limit.
-  The 5.25 V upper supply is 1.167 times the 4.5 V coil rating, within TE's
-  negligible-contact-load continuous curve through 85°C ambient. That curve
-  establishes a different condition from hot pickup.
-- Q3/Q4 have electrically live, different drain tabs. Keep them clear of one
-  another, metal mounting hardware and the enclosure. No shared uninsulated
-  heatsink is permitted. The normal screen-load estimates need no heatsinks.
+- Shared switched-screen planning load: **4.25 A** for both main
+  feeds and both touch feeds. A separate 60 mA bleeder allowance and
+  150 mA coil/control allowance bring the J1 bound to **4.46 A**. These are conservative
+  allocations from the available readings, not measured simultaneous maxima.
+- Main branches F101/F201 use **Bel 0697H4000-02, 4 A**; their lead ceiling
+  remains **3 A**. Touch branches F102/F202 use **0697H0800-02, 800 mA**;
+  their lead ceiling remains **500 mA**. Branch ceilings are not additive
+  guarantees. Keep both main-power leads connected: screens may join main
+  and touch inputs internally, so a thin touch cable is not a replacement
+  for a main-power lead. Do not upsize the touch fuses.
+- Fuses are not electronic current limits. Their nominal melting integrals
+  do not guarantee clearing before every possible partial fault heats a
+  wire or a contact. Retain the short, protected harness construction.
+- There is no active inrush control. The relay-contact assessment includes
+  bounded capacitor-energy sensitivities; screen capacitance and actual
+  surge waveform are unknown. A 10 A resistive contact rating alone does
+  not establish capacitive-load endurance.
+- R8 is a 100 Ω, 1 W bleeder (approximately 0.25 W at 5 V). The software's
+  five-second shutdown wait remains provisional until assembled operation
+  establishes actual screen discharge time.
+- Host detection draws approximately **50 µA** per port at 5.5 V. Even its
+  10 kΩ series resistor alone bounds sensing current below 0.556 mA for a
+  nonnegative gate node. This is not whole-screen suspend certification.
 
-The [gate-drive assessment](../../../docs/reviews/screen-power-rev-l-1072/gate-drive.md)
-records exact pin mappings, leakage budgets, sequencing and source limits.
+The [fuse/coil budget](../../../docs/reviews/screen-power-stock-cost-1072/holder-coil-budget.md)
+uses 100 mV for F1, at most 10 mΩ for the complete holder path, a 20 mV
+copper target and a 5 mV Q5 allowance. K1 picks up before the screen load is
+connected: at less than 150 mA pre-contact current, the 100 °C winding
+sensitivity leaves **45.5 mV** pickup margin. The deliberately simultaneous
+4.46 A / 100 °C loaded case leaves only **2.4 mV** above the same pickup model;
+this is not substantial margin or a guaranteed holding threshold. The
+100 °C winding ceiling at 60 °C local air is an engineering envelope, not a
+manufacturer guarantee of self-heating. The
+[filled-copper assessment](../../../docs/reviews/screen-power-stock-cost-1072/ground-return-assessment.md)
+records the calculated positive and ground-return losses for the final native
+board, including a thinner-copper sensitivity. It is not a measured guarantee.
+
+TE's standard 140 mW continuous operating-voltage curve permits the
+5.25 / 4.5 = 1.167 nominal-voltage ratio at the negligible data-contact load
+through 85 °C local air. Its upper thermal limit already includes coil
+self-heating; this does not replace the separate hot-pickup lower-bound check.
+
+The retained IM02 hot-coil model gives 4.3196 V at the coil against an
+estimated 4.2094 V pickup requirement, **110.2 mV margin**, including the
+fuse and holder. Fuse hot resistance, aged contacts, exact enclosure heating,
+and the screen-end connector losses remain outside manufacturer-guaranteed
+bounds. The 4.75 V J1 floor is a relay-drive condition; do not advertise it
+as proof that the complete screen power path stays above an unknown screen
+minimum voltage.
 
 ## Placement and routing
 
-USB inputs sit on the left edge and touch outputs on the right, with both
-rows of vertical XH plugs accessible from above. The two
-relay channels follow this signal flow. Main power and GPIO control occupy the top section. The power transistors
-feed a straight front-side trunk, with each output fuse beside its branch. Connector courtyards and M3
-holes are checked, but cable overmolds, latch access, screwdriver access and
-vertical transistor clearance still need an enclosure fit check.
+USB inputs sit on the left edge and touch outputs on the right. Both rows
+of vertical XH plugs remain accessible from above. F1 and K1 occupy the
+shared power section; the four compact branch fuses sit near their outputs.
+The [revision review](../../../docs/reviews/screen-power-stock-cost-1072/review.md)
+records native clearance, body, copper and fabrication checks. Leave access
+above F1 to remove its cartridge with power disconnected; mated housings
+and upright parts also require enclosure headroom.
 
 The nominal 1.6 mm, two-layer stack uses 35 µm outer copper and a 1.53 mm
 FR-4 core, with nominal relative permittivity **4.5**. The revised target is
@@ -304,36 +306,12 @@ the actual front-side fill beneath the center and both edges of every USB
 track at 0.1 mm intervals, excluding only 1.35 mm around its through-hole
 terminals. Native DRC separately verifies ground connectivity.
 
-The shared rail runs along the right edge at 4.5 mm width. The Q3 pin 3 to
-Q4 pin 3 bridge and the Q4 pin 2 to F101 input feed each use a uniform
-2.5 mm width with rounded bends, including their pin approaches. Neither
-connection has a neck or taper. The front fuse branches remain 3 mm, main
-outputs 2 mm and touch-power connections 0.8 mm. The AUX input from J1 to
-Q3 pin 2 uses a uniform 2.0 mm front-layer route with rounded bends. This
-retains 0.29 mm between its track cap and the adjacent 2.5 mm source route;
-making both traces 2.5 mm would leave only 0.04 mm at the 2.54 mm pin pitch.
-The [uniform-width assessment](../../../docs/reviews/screen-power-rev-l-1072/uniform-power-width.md)
-records current capacity, copper loss and pad clearance for the three revised
-runs at the 4.25 A screen planning load.
-
-A filled bus outline gives the four fuse branches rounded joins and corners,
-with 1 mm to the lower mounting keepout. Small AUX branch fillets round the
-capacitor junctions; they do not carry a required power path on their own.
-Validation removes every zone before proving the minimum
-power-path widths, so a filled overlay cannot hide a missing or thin trace.
-Both outer GND pours remain filled on the delivered board. The remaining
-signal routes also use rounded bends. A native KiCad finishing pass preserves
-pad/via contacts, branch connections, fixed power copper and track keepouts;
-USB geometry stays under its paired route generator.
-
-The 1.5 mm C2 feed and three dedicated shared-power stitching vias are retained.
-C1 sits clear of the full mated VH housing, with a deliberate 0.8 mm
-local supply route. The revised capacitor models use the actual BOM body
-sizes; the maximum envelopes were checked separately. The gate-supply components occupy the rearranged control area. USB copper retains
-paired bottom-layer routing, no data vias and a checked front-side GND return.
-The [three-board audit](../../../docs/reviews/pcb-finish-all-three-1072/audit.md)
-contains the current CAD and export evidence. C4 is aligned with U1 pin 5;
-connector positions and the rest of the component placement are retained.
+Power routing uses constant widths and rounded bends. Validation removes
+zones before checking required power paths, so a filled overlay cannot hide
+a missing or narrow trace. The filled-copper assessment includes the shared
+positive feed and actual ground return. Connector
+positions and the existing eight USB data nets are preserved independently
+against the reviewed baseline, including arc midpoint geometry.
 
 These choices follow [TI's USB layout guidance](https://www.ti.com/lit/an/slla414/slla414.pdf)
 (short pairs, continuous return planes, through-hole connector signals on the
@@ -342,7 +320,8 @@ bottom) and [Sierra Circuits' placement guidance](https://www.protoexpress.com/b
 
 ## Sources and assembly
 
-- [Vishay SUP70101EL through-hole MOSFET](https://www.vishay.com/docs/77632/sup70101el.pdf).
+- [Omron G6C power relay](https://components.omron.com/us-en/system/files/2026-03/datasheet_pdf/K018-E1.pdf).
+- [Schurter SPT cartridge](https://www.schurter.com/pdf/english/typ_SPT_5x20.pdf) and [OGN holder](https://www.schurter.com/en/datasheet/typ_ogn.pdf).
 - Relay drivers: **Microchip TN0702N3-G**, TO-92 S1/G2/D3;
   [DS20005941A](https://www.microchip.com/content/dam/mchp/documents/APID/ProductDocuments/DataSheets/TN0702-N-Channel-Enhancement-Mode-Vertical-DMOS-FET-Data-Sheet-20005941A.pdf)
   specifies 2.5 Ω maximum at 3 V gate drive (25°C). Do not substitute the
@@ -355,23 +334,24 @@ bottom) and [Sierra Circuits' placement guidance](https://www.protoexpress.com/b
   The project footprint derives from KiCad IMSeries with drills enlarged from 0.70 to
   **0.90 mm**; allowing JLCPCB's −0.08 mm finished-hole tolerance leaves
   0.82 mm, above TE's 0.75 mm minimum.
-- [Littelfuse 251 fuse dimensions, derating and solder limits](https://www.littelfuse.com/assetdocs/fuse-251-datasheet?assetguid=f47a0bb7-8ede-4679-9646-7114c3787688).
-  Follow the axial fuses’ 350 ± 5 °C / 5 s soldering limit; they are not reflow rated.
+- [Bel 0697H branch fuses](https://www.belfuse.com/media/datasheets/products/circuit-protection/ds-cp-0697h-series.pdf):
+  5.08 mm lead pitch, 0.6 ±0.1 mm lead diameter; use the specified assembly
+  process limits. The -02 tape pitch is not the PCB lead pitch.
 - [JST VH harness](https://www.jst.com/wp-content/uploads/2021/08/eVH.pdf)
   and [JST XH control harness](https://www.jst.com/wp-content/uploads/2021/01/eXH.pdf).
 
-`hand/bom.csv` lists every populated component. `external_bom.csv`
-lists the required input fuse and holder, harness housings, contacts, existing
-cables and mounting hardware.
-All 50 populated components have bundled STEP models. The four shield-drain
+`hand/bom.csv` lists all electrical references and a separate F1_HOLDER
+purchasing row. The holder and cartridge share one PCB footprint.
+`external_bom.csv` lists harness housings, contacts, existing cables and
+mounting hardware. Populated footprints use bundled STEP models. The four shield-drain
 pads and four mounting holes are bare PCB features without separate bodies. Custom models are simplified dimensioned
 assembly models, not vendor CAD. See [model sources and limitations](models/README.md).
 The exported `native/` folder keeps model paths portable; open its hand project
 in KiCad. Use `top.png`, `perspective.png`, and `assembly.pdf` together to inspect
 components and labels; `F-copper.svg` and `B-copper.svg` show the actual routing.
 
-See [the complete component cost estimate](COSTS.md) for all 50 populated
-parts, dated supplier prices and external wiring allowances.
+See [component costs](COSTS.md) for the current Mouser US quote, shared
+three-board purchasing quantities and exclusions.
 
 ## Measured USB topology and screen loads
 
@@ -392,35 +372,25 @@ No appliance settings were changed during this read-only inspection.
 Available screen/charger readings imply about **2.2 A** from their current
 fields, or **3.2 A** from the power fields at 5 V. Those fields are inconsistent
 and do not establish a simultaneous measured bound. Allowing a conservative
-extra 1 A for touch, if not already included, plus the 0.05 A bleeder gives
-**3.25–4.25 A** through each MOSFET.
+extra 1 A for touch, if not already included, gives about **3.2–4.2 A**
+for the screens. The allocation rounds this up to **4.25 A**, then adds a
+separate 60 mA bleeder bound: **4.31 A** through the power contact. Its
+30 mΩ initial maximum gives 0.129 V drop and 0.557 W contact dissipation; coil dissipation
+is additional. Initial contact resistance is not a guaranteed aged/hot
+maximum. These figures do not establish the exact temperature of the
+assembled relay or screens' minimum voltage.
 
-Using a deliberately conservative **1.7 × 15 mΩ per MOSFET**, 60°C ambient
-and an assumed upright thermal resistance of 75°C/W gives **0.27–0.46 W per
-device**, and estimated junction temperatures of **80–95°C** at 3.25–4.25 A.
-These are engineering estimates, not measured temperatures. The datasheet's
-40°C/W mounting arrangement differs from this upright assembly. The
-[startup assessment](../../../docs/reviews/screen-power-rev-l-1072/startup.md)
-keeps steady heating and pulsed SOA assumptions separate.
-
-At 4.5 V J1, 4.25 A shared load, resistor tolerances and 1 V optocoupler drop,
-calculated gate drive is **6.11 V**. Allowing a larger 2 V optocoupler drop
-still gives **5.29 V**, above the 4.5 V condition for the 15 mΩ resistance
-specification. The negative supply therefore closes the previous gate-drive
-margin issue; it cannot compensate for voltage lost along the screen's actual
-power path. Retain the specified short, thick main-power leads.
-
-Normal pills, full-white 40-LED ring and console total about 3.358 A from
-AUX. With the conservative 4.25 A switched-screen budget and 0.10 A for
-relay/control power, that is **7.708 A** against
-the retained nominal 10 A supply. This does not make 10 A a guaranteed
-instantaneous surge ceiling or permit every LED and load to be expanded.
+Normal pills, unrestricted full-white 40-LED ring and console total about
+3.358 A from AUX. Together with the screen-board allowance of 4.46 A this is
+**7.818 A** against the retained nominal 10 A buck. The ring remains on its
+separate direct AUX branch. This does not authorize all 120 LEDs at full
+white simultaneously or turn the nominal buck rating into a surge limit.
 
 ## First assembly
 
 No separate pre-PCB build is required. After soldering:
 
-1. Check supply polarity, shorts, cable pin order and insulated live tabs.
+1. Check supply polarity, shorts, cartridge seating, cable pin order and live-tab clearance.
    Re-pin the purchased XH leads if necessary before attaching the Pi/screens.
 2. Connect both main-power leads and both touch paths through this board.
    Verify both screens start and touch works, including the large screen's
@@ -429,8 +399,8 @@ No separate pre-PCB build is required. After soldering:
    Both panels must go dark before HDMI stops; adjust the existing software
    wait if the actual discharge time needs it.
 4. Check the assembled fit and ordinary operation at maximum brightness.
-   Keep the upright MOSFET tabs away from enclosure metal. The DIP lead rows
-   may need forming to 7.62 mm; TO-92 outer leads use 2.54 mm pitch.
+   Keep Q5's drain tab away from enclosure metal and retain access to F1.
+   TO-92 outer leads use the specified 2.54 mm pitch.
 
 The owner already confirmed both screens go dark with HDMI alone attached.
 That establishes the HDMI-only visual behavior, not operation through the new
@@ -449,18 +419,15 @@ adds the stack and labels; `cleanup.py` removes verified redundant tails.
 Run `check.py hand --self-test --output validation.json` with KiCad Python.
 It checks native ERC/DRC, full schematic/netlist/PCB parity, actual USB and
 console GPIO connectivity, circuit boundaries, assembly types and drive margins.
-Revision J adds an independent relay contact-state check and fault injection
-for the disconnected-common error. Revision M adds independent host-presence
-and coil-power contracts, 24 distinct ideal switching states, directed
-body-diode paths and low-current bounds. Its complete native suite requires
-75 control results; see the [revision record](../../../docs/reviews/screen-power-usb-revision-1072/review.md).
-Fault injection checks that missing, disabled or unresolved 3D models,
-broken USB/control copper, missing USB ground reference, extra copper layers,
-a host power bridge,
-undersized relay lead holes, accidental hand-assembly SMD parts, undersized power copper, unsupported relay
-drivers, wrong resistor tolerances and excessively weak pulldowns are rejected.
-Revision L also rejects reversed optocoupler/clamp wiring, a grounded LV pin,
-negative-rail connections to GPIO, inadequate optical drive, the obsolete
-330 kΩ gate pull-up and polarized pump capacitors. `export.py` publishes
-Gerbers, drills, BOMs, positions, drawings, models and renders only after a
-fresh successful check and unchanged input hashes.
+The source-circuit checks cover independent host presence, GPIO defaults,
+relay contact states, coil clamps, exact BOM parts and protection boundaries.
+Native checks separately cover schematic/netlist/PCB parity, ERC/DRC,
+power widths, USB connectivity, pair lengths and filled ground reference,
+mounting holes, model resolution and hand-solderable assembly geometry.
+Mutation tests must reject broken connections, incorrect contact/coil pins,
+undersized holes, thin power paths, unsupported substitutions and unsafe
+GPIO pull networks. See the final revision review for observed results;
+a successful source-only check is not native-board approval.
+
+`export.py` publishes Gerbers, drills, BOMs, positions, drawings, models and
+renders only after fresh successful checks and unchanged input hashes.

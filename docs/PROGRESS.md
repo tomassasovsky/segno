@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks -->
+<!-- cspell:words heatsinks Omron -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib unassembled Axicom Mbps -->
@@ -12,6 +12,32 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 ---
 
 ## September 2026 PCB routing completion
+
+**September 28 Revision N and copper-finish review.** The screen board now
+uses a stocked Omron power relay and coil driver, one removable 8 A input
+fuse in a PCB holder, and four soldered branch fuses. The consolidated Mouser
+US quote is $86.56 estimated before tax including tariffs and shipping;
+all 53 lines / 168 requested units were available at the final recheck.
+The screen copper audit removes the AUX stub, redundant via extension and
+pointed ground ends; two ring front-ground dead ends are removed. Console
+copper, ring tracks/pads/rear ground and all 292 USB copper items/18 anchors
+are retained. All three boards remain two layers and hand-soldered.
+
+Final DRC is zero/zero on all three boards; screen ERC is zero and all 103
+screen fault controls pass. Exact final filled-copper calculation gives
+12.760–13.158 mV nominal loss and 15.366 mV in the thinner-material sensitivity
+against the retained 20 mV allowance. Independent native/CAM comparison
+passes 175 console/ring and 415 screen assertions. See the
+[Revision N review](reviews/screen-power-stock-cost-1072/review.md),
+[bug-focused gate](code-review/pcb-stock-cost-1072/review.md), and
+[current archive manifest](reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
+Claude's September 27 verdicts below cover the preceding design; no new
+Claude approval is claimed for N after its service failures. Independent
+local roles and bounded DeepSeek component review cover the new work.
+The planning AUX load is 7.818 A with normal pills and the full-white 40-pixel
+strip using its direct harness. Assembled qualification, full current-head CI
+and runtime/enclosure integration remain separate. Nothing was ordered,
+merged, flashed or deployed. Earlier entries below are historical.
 
 **September 27 final Claude review completed.** All three saved sessions now
 returned completed final verdicts on design revision

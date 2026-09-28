@@ -222,6 +222,63 @@ def install(board):
         board.Add(via)
 
 
+def finish_ground_edges(board):
+    """Remove two dead-end pour protrusions without changing routed copper.
+
+    These exclusions affect zone fill only. The small island northwest of
+    U2.1 contains no other ground pad or via; it adds a dangling thermal spoke
+    but carries no return current. The other exclusion gives the narrow nose
+    beside J2.1 a 1 mm tangent radius. Both are local to the retained layout;
+    moving either anchor requires reviewing these shapes again.
+    """
+    assert point(pad(board, "U2", "1").GetPosition()) == point(vector((28, 20)))
+    assert point(pad(board, "J2", "1").GetPosition()) == point(vector((32.19, 24)))
+    names = {"GND_DEAD_END_U2", "GND_NOSE_J2"}
+    for zone in list(board.Zones()):
+        if zone.GetZoneName() in names:
+            board.RemoveNative(zone)
+    radius = 1.0
+    # Blend the diagonal clearance (x - y = 6.671122) into the outside
+    # of the rail bend: centre (33.94, 23.75), radius 1.75 + 0.75 + 0.5.
+    # This removes the entire nose, including the small pad-clearance ledge,
+    # instead of merely rounding the very end of its straight side.
+    obstacle = (33.94, 23.75)
+    outer_radius = BEND + WIDTH / 2 + 0.5
+    offset = 6.671122 + radius * math.sqrt(2)
+    linear = 2 * (offset - sum(obstacle))
+    constant = (offset - obstacle[0]) ** 2 + obstacle[1] ** 2 \
+        - (outer_radius + radius) ** 2
+    y = (-linear - math.sqrt(linear ** 2 - 8 * constant)) / 4
+    centre = (y + offset, y)
+    tangent_right = tuple(a + (b - a) * radius / (outer_radius + radius)
+                          for a, b in zip(centre, obstacle))
+    tangent_left = (centre[0] - radius / math.sqrt(2),
+                    centre[1] + radius / math.sqrt(2))
+    shapes = {
+        "GND_DEAD_END_U2": [(25.6, 17.25), (27.95, 17.25),
+                            (27.95, 19.90), (25.6, 19.90)],
+        "GND_NOSE_J2": arc(centre, tangent_left, tangent_right, steps=24)
+            + [(32, tangent_right[1]), (32, 25), (29, 25), (29, 22.5)],
+    }
+    for name, points in shapes.items():
+        zone = pcb.ZONE(board)
+        zone.SetLayer(pcb.F_Cu)
+        zone.SetZoneName(name)
+        zone.SetIsRuleArea(True)
+        zone.SetDoNotAllowZoneFills(True)
+        zone.SetDoNotAllowTracks(False)
+        zone.SetDoNotAllowVias(False)
+        zone.SetDoNotAllowPads(False)
+        zone.SetDoNotAllowFootprints(False)
+        zone.SetLocked(True)
+        outline = zone.Outline()
+        outline.NewOutline()
+        for xy in points:
+            vertex = vector(xy)
+            outline.Append(vertex.x, vertex.y)
+        board.Add(zone)
+
+
 def check(board, source):
     """Trace an adequately wide, via-free path between the actual power pads."""
     start, finish = pad(board, "J1", "1"), pad(board, "J2", "1")
@@ -302,6 +359,7 @@ if __name__ == "__main__":
     parser.add_argument("board", type=Path)
     parser.add_argument("--install", action="store_true")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--finish-ground", action="store_true")
     args = parser.parse_args()
     if args.self_test:
         selftest(args.board)
@@ -309,6 +367,9 @@ if __name__ == "__main__":
         board = pcb.LoadBoard(str(args.board))
         if args.install:
             install(board)
+            board.Save(str(args.board))
+        if args.finish_ground:
+            finish_ground_edges(board)
             board.Save(str(args.board))
         check(board, args.board.read_text())
         print("Retained carrier power path: PASS")

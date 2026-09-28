@@ -20,96 +20,76 @@ def place_components(variant, place, fps):
     # their retaining wall on the left. Keep the two edge columns aligned.
     place("J1", 56, 14, 90, centre=False)
     place("J2", 7, 14.25, 90, centre=False)
-    place("Q3", 44, 8, 180)
-    place("Q4", 31, 8)
-    # Leave room for the complete VHR mating-housing envelope, not just the
-    # bare header. The adjacent electrolytic retains its body clearance.
-    place("C1", 48.5, 16.5, 90)
-    place("C2", 43, 16.5)
-    place("R8", 44, 73)
-    # Both gate resistors sit directly above the transistors they drive, so
-    # POWER_GATE stays a short top-edge net and the negative-rail parts get
-    # the whole north strip.
-    place("R3", 33.58, 2.7)
-    place("R4", 46.38, 2.7)
-    # North strip: the charge-pump satellites. C5 bypasses U1 pins 8/3, C4 is
-    # the NEG_5V reservoir beside pin 5 and D2 clamps that rail along the
-    # top edge. Their loops close through the filled GND pours. D2 faces east
-    # so its cathode marker, which the DO-35 footprint places 1.8 mm beyond
-    # the courtyard, points into the board instead of over the edge.
-    place("C5", 13.0, 6.1, 90)
-    # C4 sits on U1 pin 5's own column: its negative-rail terminal lines up
-    # with the pin it reservoirs, which takes the jog out of that rail and
-    # leaves twice the room between the 5.5mm can and Q4's 10.54mm tab body.
-    place("C4", 22.22, 7.0, 270)
-    place("D2", 22.09, 1.8, 180)
-    # Anchor both DIPs on pin 1 with shared rows at y=19.25/11.63.
-    # Split the correction: U1 moves down 0.25 mm and U2 up 0.75 mm.
-    # Moving U2 alone by 1 mm would overlap Q4's stock courtyard.
-    # C3 stays centered below U1 pins 2/4; all capacitors stay fixed.
-    place("U1", 14.6, 19.25, 90, centre=False)
-    place("C3", 19.68, 23.2)
-    # Optocoupler and its LED network, east of the pump, on the same two rows:
-    # pins 1/2 along y = 19.25 and the negative-rail pins 4/3 along y = 11.63.
-    place("U2", 25.6, 19.25, 90, centre=False)
-    place("R10", 28.89, 23.0)
-    place("R9", 28.89, 26.6, 180)
-    # GPIO input stage keeps its own bay between the two left-hand plugs.
-    # Q1 sits at the bay's east end: the only front-copper channel past the
-    # USB rows runs up the left edge, so its terminals stay out of it.
-    place("R1", 6.65, 19.16, 180)
-    place("R2", 6.65, 22.42)
-    place("Q1", 8.54, 26.54)
-    # The relay-enable buffer moves between the two relay channels: the
-    # control area cannot hold it once the gate driver is in place, and the
-    # gates it drives sit either side of this band.
-    place("Q2", 4.04, 45.74)
-    place("R5", 14.08, 48.8, 180)
-    place("R6", 14.08, 52.3, 180)
-    place("R7", 27.08, 52.3)
-    # Revision M's two-switch coil stage, per channel. Everything new sits on
-    # the same side of its own USB row as the FET it stacks on, so no new net
-    # has to pass a data pair: the coil's low side keeps the one crossing it
-    # always had, through the lane between the relay's contact columns.
-    #
-    # The upper FET stands vertically 7.15 mm below its row, which puts pin 1
-    # (the stack node) about 4.4 mm from the lower FET's drain and pin 3 (the coil's
-    # low side) pointing at that crossing lane, with pin 2 (the gate) between
-    # them. 0.11 mm of its courtyard to the relay's is the tightest gap on the
-    # board, in the same family as the 0.14 mm U2 to Q4 and 0.15 mm U1 to C3
-    # gaps already accepted here.
-    #
-    # The dividers cannot take the same offset in both channels, and pretending
-    # otherwise would cost a row crossing: channel 1 has the whole 25 mm band
-    # between the rows below it, channel 2 only the 14 mm south of its own row,
-    # where the mounting hole, the bleeder and the bypass can already be found.
-    # So channel 1 stacks its divider under the relay and channel 2 lays it
-    # along the south edge, each with its 10k arm nearest its own host plug so
-    # that HOSTx_5V, which exists on exactly one connector pin, stays short.
-    # The 100k arm of channel 1 takes the strip below the pulldown row: that is
-    # the only 12.35mm slot left in the band, because the fuse holder owns the
-    # rest of its own row and the bleeder its neighbour. Its tap terminal is the
-    # west one, nearest the other two pads on that node.
-    divider = {1: ((27.13, 49.0), (37.9, 55.6)),
-               2: ((14.5, 73.3), (27.2, 73.5))}
+    # Revision N north strip. The input cartridge holder lies across the top
+    # edge with its terminals on the board's own centre line, so the raw
+    # pre-fuse run from J1 stays short and the 5 x 20 mm fuse lifts straight
+    # out from above with nothing over it. Its 11.5 mm uncovered height leaves the
+    # cartridge accessible from above; reserve its installation envelope.
+    place("F1", 38, 6.3, 180)
+    # The relay fills the bay the charge pump, optocoupler and pass MOSFETs
+    # released. Rotated 180 degrees it presents both coil terminals on the
+    # west face and both contact terminals on the east, so the AUX contact
+    # faces the input and the switched contact faces the branch fuses.
+    place("K1", 27, 21, 180)
+    # The clamp stands vertically between the two coil terminals, one pad
+    # opposite each, which is the shortest loop the 10.16 mm lead pitch allows.
+    place("D3", 13.5, 21, 90)
+    # Coil driver and its gate pulldown sit west of the clamp, between the
+    # control plug and the first USB row, so the drain run to the coil is
+    # short and the gate return closes locally.
+    place("Q5", 7, 23, 90)
+    place("R7", 2, 23, 90)
+    # GPIO input stage keeps the north-west corner beside its own plug.
+    place("Q1", 13.5, 10.5, 90)
+    place("R1", 15, 2)
+    place("R2", 15, 5.2)
+    # The AUX-referenced enable buffer stays in the pocket between the two
+    # host plugs: it drives the power-relay gate to the north and both USB
+    # coil gates to the south, so the middle keeps DATA_ENABLE shortest.
+    place("Q2", 7.5, 45.74)
+    place("R5", 10, 51.6, 180)
+    # The pull-up stands in the west edge channel: the column between the two
+    # flyback diodes is 12.04 mm tall and this 12.36 mm part does not fit it.
+    place("R6", 2, 48.5, 90)
+    # AUX bypass north of the relay, reservoir east of it. Both sit on the
+    # protected side of F1, close to the terminals they support.
+    place("C1", 20.35, 10, 180)
+    place("C2", 42.5, 16.5)
+    # The bleeder lies along the south edge, clear of the lower USB pair
+    # and the mounting washer keepout.
+    place("R8", 52, 73)
     # Bare shield-drain pads beside their own headers. The host pad takes the
     # bay between the plug and the flyback diode; the touch pad the 3.3mm
     # channel between the reservoir can and the plug, which is the only gap on
     # that side clear of the main-output band on the back and the switched
     # branch to the edge bus on the front.
     shield_host, shield_touch = (13.5, -4.5), (51.47, -4.0)
+    # Channel 1 keeps its divider under the relay row and channel 2 along the
+    # south edge, each with its 10k arm nearest its own host plug so that
+    # HOSTx_5V, which exists on exactly one connector pin, stays short.
+    divider = {1: ((27.13, 49.0), (37.9, 55.6)),
+               2: ((25, 73.35), (38.5, 73.35))}
     for ch, y in enumerate(USB_ROWS[variant], 1):
         n = 100 * ch
         place(f"J{n+1}", 7, y+3.75, 90, centre=False)
         place(f"J{n+2}", 56, y+3.75, 90, centre=False)
         place(f"K{n+1}", 23.2, y+2.54, 90, centre=False)
         place(f"J{n+3}", 56, y-11, 90, centre=False)
-        place(f"F{n+1}", 43, y-13, 180)
-        place(f"F{n+2}", 43, y+7, 180)
+        # The radial branch fuses replace the old axial pair on the same two
+        # rows. Their terminals keep the existing bus tap and output geometry:
+        # the switched input stays west and the protected output east.
+        place(f"F{n+1}", 44.5, y-13, 180)
+        place(f"F{n+2}", 44.5, y+7, 180)
         place(f"C{n+2}", 47, y-4)
-        place(f"D{n+1}", 17, y, 90)
+        # The flyback moves one column east of the old position so the disc
+        # bypass fits in the channel beside its own host plug without
+        # narrowing the corridor either part needs.
+        place(f"D{n+1}", 19, y, 90)
         place(f"Q{n+1}", 25, y+8)
-        place(f"C{n+1}", 15.5, y+9)
+        # The disc bypass stands on end: the 4.41 mm corridor the old film
+        # body used cannot take its 8.09 mm width lying down, and no pad may
+        # approach the data pair's ground reference.
+        place(f"C{n+1}", 14, y+9.6, 90)
         place(f"Q{n+2}", 31.37, y+7.15, 90)
         place(f"R{n+1}", *divider[ch][0])
         place(f"R{n+2}", *divider[ch][1])
@@ -132,45 +112,53 @@ def place_components(variant, place, fps):
                     and graphic.GetShape() == p.SHAPE_T_CIRCLE
                     and graphic.GetLayer() == p.F_SilkS):
                 fp.RemoveNative(graphic)
-    # Reference designators sit in the clear gaps left by the packing above:
-    # every one is outside its own courtyard, so no designator hides under a
-    # body in the 3D view, and none overlaps another footprint's silkscreen.
-    refs = {"R1": (2.84, 16.8), "R2": (2.75, 24.67), "Q1": (4.88, 25.21),
-            "R3": (37.39, 5.1), "R4": (50.36, 5.0), "R8": (52, 73),
-            "Q3": (44, 11.35), "Q4": (29, 4.65),
-            "C5": (15.7, 6.1), "C4": (23.83, 10.44), "D2": (18.64, 3.99),
-            # References follow their respective package offsets.
-            "U1": (17.94, 10.07), "C3": (20.29, 26.65), "U2": (30.77, 15.45),
-            "R10": (30.55, 20.62), "R9": (29.08, 28.99),
-            # The 1.48mm between this resistor's own body outline and the
-            # shield pad's silk circle cannot hold a 1.70mm designator, so
-            # this one reads off the west end of its own leads.
-            "Q2": (4.58, 48.99), "R5": (10.27, 46.6), "R6": (5.5, 52.3),
-            "R7": (27.27, 54.69),
-            "C1": (50, 11.4), "C2": (38, 16.5), "J1": (51, 8), "J2": (11.82, 13),
-            "C101": (13, 42.5), "C201": (13, 67.5),
-            # Revision M. Each of these is in the nearest gap that is clear of
-            # every courtyard; the board is full enough that two of them sit
-            # beside their part rather than over it.
-            "Q102": (35.6, 39.2), "Q202": (35.6, 64.2),
-            # The 100k arm reads below its own body: the strip above it is the
-            # screen-power connector legend's.
-            "R101": (36.5, 51.5), "R102": (37.9, 58.2),
-            "R201": (8.5, 70.6), "R202": (35.6, 73.6)}
-    for ch, y in enumerate(USB_ROWS[variant], 1):
-        refs[f"J{ch*100+1}"] = (12.61, y-0.44)
-        refs[f"J{ch*100+2}"] = (49, y+4.5)
-        refs[f"J{ch*100+3}"] = (50, y-10)
-        refs[f"D{ch*100+1}"] = (13.3, y+1)
-        # The lower FET's designator shares the 2.05mm strip between the relay
-        # and the FET row with the relay's own, west of it; the upper FET's pad
-        # column now owns the east end of that strip.
-        refs[f"Q{ch*100+1}"] = (23, y+4.4)
-        refs[f"K{ch*100+1}"] = (27, y+5)
-        # North of the reservoir can, where its own silk circle and the shield
-        # pad leave nothing on the plug side, and east of the screen-power
-        # connector legend that shares this strip.
-        refs[f"C{ch*100+2}"] = (49, y-8.5)
-    for ref, at in refs.items():
-        fps[ref].Reference().SetPosition(point(*at))
-        fps[ref].Reference().SetTextAngle(p.EDA_ANGLE(0, p.DEGREES_T))
+    # Printed references occupy clear gaps outside physical bodies and pads.
+    # Courtyard margins remain reserved for assembly access, not blank ink.
+    refs = {
+        "C1": (22.25, 6.5, 0),
+        "C101": (13.75, 40.5, 0),
+        "C102": (49.25, 28.25, 0),
+        "C2": (47.25, 16.25, 0),
+        "C201": (13.75, 65.5, 0),
+        "C202": (42, 58.25, 0),
+        "D101": (19, 43.25, 0),
+        "D201": (19, 53.75, 0),
+        "D3": (16, 31.5, 0),
+        "F1": (47.25, 12.5, 0),
+        "F101": (44.5, 26.5, 0),
+        "F102": (44.5, 39.5, 0),
+        "F201": (48.25, 51.5, 0),
+        "F202": (44.5, 64.5, 0),
+        "J1": (52.5, 7, 0),
+        "J101": (11.5, 28.5, 0),
+        "J102": (58.5, 28.5, 0),
+        "J103": (51.5, 18, 0),
+        "J2": (9.5, 8, 0),
+        "J201": (12.75, 61, 0),
+        "J202": (53.5, 53.5, 0),
+        "J203": (58.5, 53.25, 0),
+        "K1": (23.25, 30, 0),
+        "K101": (27, 31.5, 0),
+        "K201": (27, 56.5, 0),
+        "Q1": (3, 10.5, 0),
+        "Q101": (25, 40.5, 0),
+        "Q102": (34.75, 39.5, 0),
+        "Q2": (12, 38.25, 0),
+        "Q201": (25, 65.5, 0),
+        "Q202": (34.75, 64.5, 0),
+        "Q5": (14.75, 28.75, 90),
+        "R1": (22.25, 2, 0),
+        "R101": (27.25, 51.5, 0),
+        "R102": (43.5, 53.25, 0),
+        "R2": (22.25, 4.25, 0),
+        "R201": (19.25, 71, 0),
+        "R202": (37.5, 70.75, 0),
+        "R5": (5.25, 49.25, 0),
+        "R6": (2, 41.5, 0),
+        "R7": (2, 30, 0),
+        "R8": (52, 70.5, 0),
+    }
+    for ref, (x, y, angle) in refs.items():
+        text = fps[ref].Reference()
+        text.SetPosition(point(x, y))
+        text.SetTextAngle(p.EDA_ANGLE(angle, p.DEGREES_T))

@@ -1,6 +1,10 @@
 """Hand-soldered screen-power circuit.
 
-Opposed P-channel MOSFETs switch AUX while blocking either direction when off.
+One normally-open power relay switches AUX to both screens. Its contact is the
+only path between the input and the screen outputs, so an unenergized board is
+open in both directions. A logic-level MOSFET sinks the coil; a bidirectional
+TVS sits directly across that coil. Every board load, including the coils and
+the control supply, is downstream of the board's own input fuse.
 The USB host's VBUS never reaches a panel; it only qualifies its AUX-powered relay.
 """
 import builtins
@@ -12,6 +16,12 @@ import skidl as s
 HERE = Path(__file__).resolve().parent
 AXIAL = "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
 TO92 = "Package_TO_SOT_THT:TO-92_Inline_Wide"
+# The input uses a replaceable 5 x 20 mm cartridge and separate holder.
+# Four soldered radial output fuses keep the hand assembly compact and cheap.
+INPUT_FUSE_FP = "screen_power:Fuseholder_Schurter_OGN_0031.8201"
+BRANCH_FUSE_FP = "screen_power:Fuse_Bel_0697H_P5.08mm"
+# Vishay 100 nF / 50 V / X7R disc, 5 mm lead spacing, on a reserved envelope.
+FILM_FP = "Capacitor_THT:C_Disc_D7.5mm_W4.4mm_P5.00mm"
 
 
 def build_switch(variant, schematic=False):
@@ -50,16 +60,22 @@ def build_switch(variant, schematic=False):
              {1: a, 2: b}, mpn, group)
 
     def bypass(ref, rail, group="Control"):
-        part("Device", "C", ref, ("100nF 63V"),
-             ("Capacitor_THT:C_Rect_L7.2mm_W2.5mm_P5.00mm"),
-             {1: rail, 2: "GND"}, ("MKS2C031001A00KSSD"), group)
+        part("Device", "C", ref, ("100nF 50V X7R"), FILM_FP,
+             {1: rail, 2: "GND"}, ("K104K10X7RF53H5"), group)
+
+    def fuse(ref, value, mpn, a, b, group="Control"):
+        footprint = INPUT_FUSE_FP if ref == "F1" else BRANCH_FUSE_FP
+        part("Device", "Fuse", ref, value, footprint, {1: a, 2: b}, mpn, group)
 
     def header(ref, value, rail, control=False, group="Control"):
         part("Connector_Generic", "Conn_01x02", ref, value,
              "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical" if control else "Connector_JST:JST_VH_B2P-VH_1x02_P3.96mm_Vertical",
              {1: rail, 2: "GND"}, "B2B-XH-A(LF)(SN)" if control else "B2P-VH(LF)(SN)", group)
 
-    header("J1", "AUX 5V INPUT", "AUX_5V")
+    # J1 pin 1 is the raw input. Only F1's input terminal shares that net, so
+    # every capacitor, coil, control feed and contact load sits behind the fuse.
+    header("J1", "AUX 5V INPUT", "AUX_5V_IN")
+    fuse("F1", "8A time-lag", "0001.2513", "AUX_5V_IN", "AUX_5V")
     header("J2", "GPIO17 / GND", "PI_GPIO17", control=True)
     resistor("R1", "1k", "PI_GPIO17", "CONTROL_BASE")
     # Shunt weak pull-ups on a released GPIO while retaining ample Q1 drive.
@@ -68,49 +84,36 @@ def build_switch(variant, schematic=False):
          (TO92),
          ({1: "GND", 2: "CONTROL_BASE", 3: "CONTROL_SINK"}),
          ("2N3904BU"))
-    # A small negative supply gives the P-FETs ample enhancement even after
-    # fuse/harness drop. The optocoupler level-shifts the control signal;
-    # the Pi and the relay drivers never connect to the negative rail.
-    part("Regulator_SwitchedCapacitor", "LMC7660", "U1", "LMC7660IN",
-         "Package_DIP:DIP-8_W7.62mm",
-         {2: "PUMP_CAP_PLUS", 3: "GND", 4: "PUMP_CAP_MINUS",
-          5: "NEG_5V", 8: "AUX_5V"}, "LMC7660IN/NOPB")
-    # Pins 1, 6 (LV) and 7 (OSC) intentionally remain unconnected. LV must
-    # not be grounded on this 5V supply. Both caps are nonpolar so power
-    # sequencing cannot reverse-bias a polarized output reservoir.
-    for ref, a, b in (("C3", "PUMP_CAP_PLUS", "PUMP_CAP_MINUS"),
-                      ("C4", "GND", "NEG_5V")):
-        part("Device", "C", ref, "10uF 25V bipolar",
-             "Capacitor_THT:C_Radial_D5.0mm_H11.0mm_P2.00mm",
-             {1: a, 2: b}, "ECE-A1EN100U")
-    bypass("C5", "AUX_5V")
-    part("Device", "D_Schottky", "D2", "BAT85S",
-         "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal",
-         {1: "GND", 2: "NEG_5V"}, "BAT85S-TAP")
-    part("Isolator", "TLP627", "U2", "TLP627M",
-         "Package_DIP:DIP-4_W7.62mm",
-         {1: "GATE_LED", 2: "CONTROL_SINK", 3: "NEG_5V", 4: "GATE_SINK"},
-         "TLP627M(E")
-    resistor("R9", "2.4k", "AUX_5V", "GATE_LED")
-    resistor("R10", "10k", "GATE_LED", "CONTROL_SINK")
-    resistor("R3", "4.7k", "GATE_SINK", "POWER_GATE")
-    resistor("R4", "22k", "POWER_GATE", "COMMON_SOURCE")
-    # Pull-up belongs to the joined sources, not AUX, to keep both FETs off
-    # when a powered panel is connected to an unpowered AUX input.
-    for ref, drain in [("Q3", "AUX_5V"), ("Q4", "SWITCHED_5V")]:
-        part("Transistor_FET", "Q_PMOS_GDS", ref, ("SUP70101EL"),
-             ("screen_power:TO-220-3_SUP70101EL"),
-             {1: "POWER_GATE", 2: drain, 3: "COMMON_SOURCE"},
-             ("SUP70101EL-GE3"))
-    # U2 now separates the power-gate network from this AUX-referenced
-    # buffer, so the former D1 backfeed-blocking diode is unnecessary.
+    # The AUX-referenced buffer drives gates only. R7 discharges them when
+    # the buffer is unpowered; an externally fed closed power contact can
+    # sustain AUX, so GPIO17 must still be low for commanded shutdown.
     resistor("R5", "5.6k", "CONTROL_SINK", "BUFFER_BASE")
     resistor("R6", "100k", "AUX_5V", "BUFFER_BASE")
-    resistor("R7", "100k", "DATA_ENABLE", "GND")
+    # 10k holds Q5's larger gate down firmly and discharges it quickly.
+    resistor("R7", "10k", "DATA_ENABLE", "GND")
     part("Transistor_BJT", ("2N3906"), "Q2", ("2N3906"),
          (TO92),
          ({1: "AUX_5V", 2: "BUFFER_BASE", 3: "DATA_ENABLE"}),
          ("2N3906BU"))
+    # Low-side coil driver. Its drain is the only conductor between the coil
+    # and ground, so a released gate de-energizes the contact.
+    part("Transistor_FET", "Q_NMOS_GDS", "Q5", ("IRLZ44N"),
+         ("screen_power:TO-220-3_IRLZ44N"),
+         ({1: "DATA_ENABLE", 2: "POWER_COIL_LOW", 3: "GND"}),
+         ("IRLZ44NPBF"))
+    # Bidirectional clamp directly across the coil: it bounds the driver's
+    # drain excursion without the slow release a plain freewheel diode gives.
+    part("Device", "D_TVS", "D3", ("P6KE6.8CA"),
+         ("Diode_THT:D_DO-15_P10.16mm_Horizontal"),
+         {1: "POWER_COIL_LOW", 2: "AUX_5V"}, ("P6KE6.8CA"))
+    # Pin 8 is coil positive and pin 1 coil negative; 3 and 4 are the single
+    # normally open contact. Terminals 2, 5, 6 and 7 do not exist on the 1a
+    # model. The contact is the whole power switch: there is no body diode
+    # and no gate network across it.
+    part("screen_relay", "G6C-1117P-US", "K1", ("G6C-1117P-US"),
+         ("screen_power:Relay_Omron_G6C-1117P-US"),
+         {8: "AUX_5V", 1: "POWER_COIL_LOW", 4: "AUX_5V", 3: "SWITCHED_5V"},
+         ("G6C-1117P-US DC5"))
     # The passive discharge costs 0.25 W at 5 V and needs no timing/driver path.
     resistor("R8", "100R", "SWITCHED_5V", "GND", power=True)
     bypass("C1", "AUX_5V")
@@ -131,10 +134,11 @@ def build_switch(variant, schematic=False):
                  "PCB pad", group)
             records[-1]["quantity"] = 0
         header(f"J{n+3}", f"SCREEN {ch} POWER", pre+"_MAIN_5V", group=group)
-        for offset, value, rail, mpn in [(1, "4A fast", pre+"_MAIN_5V", "0251004.MXL"),
-                                        (2, "750mA fast", pre+"_TOUCH_5V", "0251.750MXL")]:
-            part("Device", "Fuse", f"F{n+offset}", value, "screen_power:Fuse_Littelfuse_251_P12.70mm",
-                 {1: "SWITCHED_5V", 2: rail}, mpn, group)
+        # Time-lag branch fuses: the contact makes into the screens' own
+        # capacitance without a gate ramp, so the branches need pulse margin.
+        for offset, value, rail, mpn in [(1, "4A time-lag", pre+"_MAIN_5V", "0697H4000-02"),
+                                        (2, "800mA time-lag", pre+"_TOUCH_5V", "0697H0800-02")]:
+            fuse(f"F{n+offset}", value, mpn, "SWITCHED_5V", rail, group)
         # AUX supplies the coil, including during USB suspend. Host VBUS only
         # drives a 10k/100k presence divider, independently of GPIO enable.
         # TE 108-98001 terminal assignment: each changeover set is driven from
@@ -157,7 +161,7 @@ def build_switch(variant, schematic=False):
         resistor(f"R{n+2}", "100k", pre+"_HOST_PRESENT", "GND", group=group)
         part("Diode", ("1N4007"), f"D{n+1}", ("1N4007"),
              ("Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal"),
-             {1: "AUX_5V", 2: coil}, ("1N4007-E3/54"), group)
+             {1: "AUX_5V", 2: coil}, ("1N4007G"), group)
         # Do not retain a host-side reservoir that delays VBUS-loss detection.
         bypass(f"C{n+1}", "AUX_5V", group)
         part("Device", "C_Polarized", f"C{n+2}", "150uF 10V", "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm",
@@ -165,7 +169,7 @@ def build_switch(variant, schematic=False):
 
     for i in range(1, 5):
         part("Mechanical", "MountingHole", f"H{i}", "M3", "MountingHole:MountingHole_3.5mm", {}, "NPTH", "Mechanical")
-    for i, name in enumerate(("AUX_5V", "GND", "HOST1_5V", "HOST2_5V", "S1_TOUCH_5V", "S2_TOUCH_5V"), 1):
+    for i, name in enumerate(("AUX_5V_IN", "GND", "HOST1_5V", "HOST2_5V", "S1_TOUCH_5V", "S2_TOUCH_5V"), 1):
         flag = s.Part("power", "PWR_FLAG", ref=f"#FLG{i}", tag="flag-"+name)
         flag[1] += net(name)
     s.ERC()
@@ -178,6 +182,13 @@ def build_switch(variant, schematic=False):
         writer.writeheader()
         writer.writerows({key: row[key] for key in writer.fieldnames}
                          for row in records if row["quantity"] > 0)
+        # Holder hardware has no extra electrical component or phantom pads.
+        # These records deliberately live only in the purchasing BOM.
+        writer.writerows([
+            dict(ref="F1_HOLDER", value="5x20 input fuse holder",
+                 footprint=INPUT_FUSE_FP, mpn="0031.8201",
+                 group="Fuse holders", quantity=1),
+        ])
     if schematic:
         from schematic import write_schematic
         write_schematic(builtins.default_circuit, out, variant)

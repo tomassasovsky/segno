@@ -5,9 +5,10 @@
   (paper "A3")
   (title_block
     (title "Segno screen power / hand / screen2 power")
-    (rev "M prototype")
-    (comment 1 "AUX-powered relays; each host VBUS supplies only its presence detector.")
-    (comment 2 "Physical verification required before release."))
+    (rev "N prototype")
+    (comment 1 "One normally open contact switches AUX; every board load sits behind F1.")
+    (comment 2 "AUX-powered relays; each host VBUS supplies only its presence detector.")
+    (comment 3 "Physical verification required before release."))
   (lib_symbols
     (symbol "screen_symbols:Connector_Generic_Conn_01x02"
       (pin_names
@@ -230,18 +231,18 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "4A fast"
+    (property "Value" "4A time-lag"
       (at 73.66 52.07 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" "screen_power:Fuse_Littelfuse_251_P12.70mm"
+    (property "Footprint" "screen_power:Fuse_Bel_0697H_P5.08mm"
       (at 73.66 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "0251004.MXL"
+    (property "MPN" "0697H4000-02"
       (at 73.66 63.5 0)
       (effects
         (font
@@ -301,18 +302,18 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Value" "750mA fast"
+    (property "Value" "800mA time-lag"
       (at 175.26 52.07 0)
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" "screen_power:Fuse_Littelfuse_251_P12.70mm"
+    (property "Footprint" "screen_power:Fuse_Bel_0697H_P5.08mm"
       (at 175.26 63.5 0)
       (effects
         (font
           (size 1.27 1.27))
         (hide yes)))
-    (property "MPN" "0251.750MXL"
+    (property "MPN" "0697H0800-02"
       (at 175.26 63.5 0)
       (effects
         (font
