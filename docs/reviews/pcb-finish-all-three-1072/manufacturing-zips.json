@@ -71,23 +71,23 @@
       "sha256": "d25b01306dec7ab2e62ad1db727eb4854e3bb1777295e05be4fbe468f92b0dfd",
       "upload_name": "segno-ring-white-gerbers.zip"
     },
-    "screen-power-rev-o": {
-      "assembly_change": "Four five-pin XH USB plugs carry shield on pin 5 to GND; separate shield solder pads removed. Retains the Omron power relay, IRLZ44N coil driver, removable 8 A input cartridge and four soldered branch fuses.",
+    "screen-power-rev-p": {
+      "assembly_change": "H1 ground-contour cleanup only; electrical assembly is unchanged. Five-pin XH USB shields connect to GND, with the Omron relay, IRLZ44N driver, removable 8 A input fuse and soldered branch fuses retained.",
       "board": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
-      "board_sha256": "bf870faa7c5e1be2dd9843d1587c76888508ece7549b27b5013d0eb7a77c9fc2",
+      "board_sha256": "d0d780a1cde8b70a55f7a60d444e36e02d50835875ba9150b0745ff1b8c3b1ea",
       "members": {
-        "screen_power_hand-B_Cu.gbr": "8f6a5c6dd762289419ba8ef708ebdd77c244a2818c97d5bc2bd83601eed244bf",
-        "screen_power_hand-B_Mask.gbr": "7151f675d30a74e252c159da6b2557cb81db493673cf5117a2fe70e646f8ee1d",
-        "screen_power_hand-B_Silkscreen.gbr": "68d866056787d6a9916b1c03bb99b70fef22d6e9684012307631a2d7276a8f54",
-        "screen_power_hand-Edge_Cuts.gbr": "778d9fae78d4a8566554b303a6d8f1244cd77dde861cabf71b1f776e6ffec32b",
-        "screen_power_hand-F_Cu.gbr": "62da16ed6cac48830948dbae442d23a6a602e5fe869c8bdcd6d56109e4424044",
-        "screen_power_hand-F_Mask.gbr": "011dbfd23b9803bcd69dc6451edd9b220fd22be278709e3f3cff2ec4db86ec91",
-        "screen_power_hand-F_Silkscreen.gbr": "b76d64adca8858dd09e4b4a1a114ae78e46bb434555975cefa893929c0a05b3c",
-        "screen_power_hand-NPTH-drl_map.pdf": "3ca8ec86392cda2e5f91ccddda32d85bfdafd200d3a7e81ccc713af069f783a7",
-        "screen_power_hand-NPTH.drl": "f8927f99e94403618dae0b4559db38bfad84a710cc32e944d7e9ccc0df3c3e0c",
-        "screen_power_hand-PTH-drl_map.pdf": "8c0d92601f2d8508b1056a5484e4f7a2108ec7b4f0608ce921f09f95a23861a2",
-        "screen_power_hand-PTH.drl": "46fde3c5363a5ad8e5b2f78522add2616e8eb9be3ded2ef80f3b3f2610ace6c4",
-        "screen_power_hand-job.gbrjob": "749e0f55a33c8202a006d7b99d11b4657eb8ba541e5b8d3a0c0825d2ab4714ef"
+        "screen_power_hand-B_Cu.gbr": "d00e7b281c28d136b2110272e1b728c3a6dc98b91a6a21853d41369462030dba",
+        "screen_power_hand-B_Mask.gbr": "b12b0ff48dbfa8cf49b48491f84483ce7174b51ea9f552f242a3cd17991d901f",
+        "screen_power_hand-B_Silkscreen.gbr": "f356f90c25bf3d8d21fd8f50247eb0975f035e30b4c2a5afb62ea56076937b11",
+        "screen_power_hand-Edge_Cuts.gbr": "021a359878dd8bcb824aa2b5c8cc655677162c2d51f9eb3bbb4632fc3d30a99b",
+        "screen_power_hand-F_Cu.gbr": "321a763b5c8005fe53d34d7d89d0f2fbee104534d77bacd21a152b86bfe13dab",
+        "screen_power_hand-F_Mask.gbr": "97055ca2839bbf427b9409eec664cea0444fb72b49487c5e60e722a47467faf1",
+        "screen_power_hand-F_Silkscreen.gbr": "360703d19304aefb823b80d7ccab57c773dcd6ed5b5cd6142eaa4bd09c591db6",
+        "screen_power_hand-NPTH-drl_map.pdf": "70f1864d7112d9605c9726766eb0124a6db0306fcbd2f2d052e5a73dca6664dd",
+        "screen_power_hand-NPTH.drl": "d5eacec933c97e05558edaf94083900c1bf757c5c24215f7c0a18e83943b0a3b",
+        "screen_power_hand-PTH-drl_map.pdf": "dc2801b7c06128986822e62b745f9facc40fbac3ef607c82b38034bc27679cf7",
+        "screen_power_hand-PTH.drl": "c2bdac3fe3e57f04f6ba0ed6b37a0ae6e60f1cc176f44d329f42ac9de523540d",
+        "screen_power_hand-job.gbrjob": "0e714780cc08b37ef6a1930a88a1e87c3416a0d5bc764250b314a0d9e6dc1dd6"
       },
       "members_checked": 12,
       "order": {
@@ -103,23 +103,23 @@
         "thickness_mm": 1.6,
         "vias": "tented"
       },
-      "path": "hardware/kicad/fab/segno_screen_power_rev_o_gerbers.zip",
-      "sha256": "4a84d3bd587cf5b7f11941c0d5f6c2bcbc0219a406542d2eb51f7922e8e3dfb2",
-      "upload_name": "segno-screen-power-rev-o-gerbers.zip"
+      "path": "hardware/kicad/fab/segno_screen_power_rev_p_gerbers.zip",
+      "sha256": "86ab30459649b32f33347505e43a3e0e8d38ab18313b70ffbd1fa4f983fefe43",
+      "upload_name": "segno-screen-power-rev-p-gerbers.zip"
     }
   },
-  "baseline_revision": "add2748edce2c274e931e7fc3c524d1695d1ea2c",
+  "baseline_revision": "bd6456f8efa12418d267a5108e6c70362c746882",
   "date": "2026-09-28",
   "limits": [
     "Historical ALPS and earlier ring archives listed under withdrawn_archives are superseded. The unchanged current ring archive requires the exact Same Sky encoder.",
-    "Earlier screen revisions are superseded. Use the screen-power-rev-o archive in this record.",
+    "Earlier screen revisions are superseded. Use the screen-power-rev-p archive in this record.",
     "Bare-board CAD and export verification; assembled electrical, USB and enclosure behavior are not physically qualified.",
     "Ordinary two-layer fabrication does not guarantee USB differential impedance; the documented coated-field result is a nominal model.",
     "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
     "No order, merge or device deployment performed."
   ],
-  "purpose": "Revision O XH5 delta reviewed by five independent Codex roles and completed DeepSeek passes; retained Revision N Claude/circuit coverage for unchanged scope. Fresh native and CAM checks pass. Accepted bare-board manufacturing data; assembled qualification and full CI remain separate.",
-  "review": "docs/reviews/screen-power-xh5-1072/review.md",
+  "purpose": "Revision P H1 ground-contour cleanup: strict native, circuit, copper-loss and CAM checks plus independent source/export review complete with no unresolved actionable finding. Unchanged prior circuit/model coverage is retained explicitly.",
+  "review": "docs/reviews/screen-power-ground-cleanup-1072/review.md",
   "runtime": {
     "deployment": "not performed",
     "pull_request": 1082,
@@ -128,18 +128,18 @@
   "status": "bare-board-review-clean",
   "verification": {
     "console_ring": {
-      "report": "docs/reviews/screen-power-xh5-1072/console-ring-fabrication-verification.json",
-      "sha256": "af5c768ef6b376b78a1754063fac5bbb603a428a7dbcd7885a7ec3a703cba37a",
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/console-ring-fabrication-verification.json",
+      "sha256": "6fb643facf3ac3aa8e2a1058e84556061e6120c5cb1524f825a545a69336180b",
       "checks_passed": 175
     },
     "screen": {
-      "report": "docs/reviews/screen-power-xh5-1072/screen-fabrication-verification.json",
-      "sha256": "8028f0949c7026ae26b1fa7c45d19cf161db3da7d15abb3873e4590e0abb6270",
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/screen-fabrication-verification.json",
+      "sha256": "96778a71d6833957fb22fed7d26cdd640850f7397546b5cc6cb19c59a38de865",
       "checks_passed": 415
     },
     "screen_native": {
-      "report": "docs/reviews/screen-power-xh5-1072/screen-native-validation.json",
-      "sha256": "4fb4dc11ad8a465d5693223695348b38cb8d0a701b02c5b391c4e543cd3548f0",
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/screen-native-validation.json",
+      "sha256": "f356aeb7c272b1d4ce2042063b5bbd8173190c303a64d844e3a78cecf0730bb6",
       "self_test_checks_passed": 123
     },
     "retained_revision_n_adversarial": {
@@ -156,40 +156,73 @@
       "status": "complete-no-unresolved-actionable-findings",
       "turns": 6
     },
-    "usb_preservation": {
-      "report": "docs/reviews/screen-power-xh5-1072/usb-preservation.json",
-      "sha256": "0636edbd8d47523e8e4edfb4c31201c06c2a6fc100b21988e868831b1d583644"
-    },
     "ground_nominal": {
-      "report": "docs/reviews/screen-power-xh5-1072/ground-return-nominal.json",
-      "sha256": "a1fda493bfc51caa1aacc062d4f35491b655486710566415d1ef6cadd22e6e7d"
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/ground-return-nominal.json",
+      "sha256": "384294af890c7644f0a4ad42cab331b6d0464e76af9d269848a1a0075028cf16"
     },
     "ground_stress": {
-      "report": "docs/reviews/screen-power-xh5-1072/ground-return-stress.json",
-      "sha256": "f2d53374af4c77484579fc19682971235feb414c14a64f869ef203c48c9e7a83"
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/ground-return-stress.json",
+      "sha256": "f25e2eb85f19aac4184458754fdd1e4710ea722b6b42acb0c8ebc15b49acf597"
     },
-    "mechanical_gaps": {
-      "report": "docs/reviews/screen-power-xh5-1072/mechanical-gaps.json",
-      "sha256": "64a59809f91c54786c5da35f38e566e585c6f0060cbd913052e916c096ce9b40"
-    },
-    "revision_o_review": {
+    "retained_revision_o_review": {
       "report": "docs/reviews/screen-power-xh5-1072/review.md",
       "sha256": "f3a1b30f39c28b4f85bee99a5d7e8cfa3c6c6c9ba4b1f06f13ef241c783d586d",
       "status": "complete-no-unresolved-actionable-findings"
     },
-    "revision_o_bug_gate": {
+    "retained_revision_o_bug_gate": {
       "report": "docs/code-review/screen-power-xh5-1072/review.md",
       "sha256": "f6f09970ed2b174515128bd4ba839d747ceb62eb727ba1f9c9d1ba1ed2ee31bb",
       "status": "complete-no-unresolved-actionable-findings"
     },
-    "revision_o_model": {
+    "retained_revision_o_model": {
       "report": "docs/reviews/screen-power-xh5-1072/deepseek.md",
       "sha256": "1c2f7d26e747804057c556afef09a1121a96b382667acd190c2e66558fa94fd0",
       "status": "complete-no-unresolved-actionable-findings"
     },
-    "revision_o_provenance": {
+    "retained_revision_o_provenance": {
       "report": "docs/reviews/screen-power-xh5-1072/review-provenance.json",
       "sha256": "4d50e4463d0f4e9136d558b2e89d3d84eb10a744ebe6f321d45ace97b55c44f9",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "geometry_preservation": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/geometry-preservation.json",
+      "sha256": "e3dec8e38a847315e6dc6928ed7aed21ab4af2653b917b092f83cd0c4aa2e114"
+    },
+    "ground_copper_delta": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/ground-copper-delta.json",
+      "sha256": "49c0923bb79f2a9605ba8c7f3d681578ff6785b71daefebf82c85f6b74e1583f"
+    },
+    "mouser_quote": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/mouser-live-quote.json",
+      "sha256": "701cef4e5f4f3782ad76c94d443198de91a714eafdc7da1b529c99be8074228e"
+    },
+    "mouser_cart": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/mouser-cart-verification.json",
+      "sha256": "497a6d834e0edc6c40dee09c503178282772a7ebd6f0f1a1b981627aea931970"
+    },
+    "revision_p_review": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/review.md",
+      "sha256": "f115e79533f522a01c91b7fc8f493cd0097bbb3660d979ce01cbad39792fde5d",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "revision_p_bug_gate": {
+      "report": "docs/code-review/screen-power-ground-cleanup-1072/review.md",
+      "sha256": "728f45c10b25fe50ec47c44e1c7238bbd0a8a5624f38c49d516859d44bffc506",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "revision_p_independent": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/raw/independent-closeout.md",
+      "sha256": "af255e5d7b334cb310f61de6d7932355361c8cd7df006e5c0de593e24368b681",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "revision_p_independent_checks": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/independent-checks.json",
+      "sha256": "2509efb5c68bc957ede5b55944dd10e68e61dd10d532ef068bde274fe1435bc3",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "mouser_cart_rows": {
+      "report": "docs/reviews/screen-power-ground-cleanup-1072/mouser-cart-lines.json",
+      "sha256": "bf8f9331ced9a7f5d3dd1565447f406f251a32a763ac167bc019bf14eb53f829",
       "status": "complete-no-unresolved-actionable-findings"
     }
   },
@@ -254,6 +287,14 @@
       "historical_revision": "add2748edce2c274e931e7fc3c524d1695d1ea2c",
       "status": "superseded-five-pin-removable-shield",
       "reason": "Revision O replaces separate shield solder pads with five-pin USB plugs; use its matching harness and fabrication archive."
+    },
+    "screen-power-rev-o": {
+      "path": "hardware/kicad/fab/segno_screen_power_rev_o_gerbers.zip",
+      "sha256": "4a84d3bd587cf5b7f11941c0d5f6c2bcbc0219a406542d2eb51f7922e8e3dfb2",
+      "board_sha256": "bf870faa7c5e1be2dd9843d1587c76888508ece7549b27b5013d0eb7a77c9fc2",
+      "historical_revision": "bd6456f8efa12418d267a5108e6c70362c746882",
+      "status": "superseded-h1-ground-contour-cleanup",
+      "reason": "Revision P removes two obsolete front-ground exclusions beside H1; all tracks, pads, placements and electrical connections remain unchanged."
     }
   }
 }

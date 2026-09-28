@@ -13,6 +13,22 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+**September 28 Revision P completed: H1 ground-contour cleanup.**
+Claude removed two obsolete front-ground exclusions beside H1 that caused
+notches in the rounded copper boundary. All traces, vias, pads and placements
+remain unchanged. Strict checks pass: zero ERC/DRC findings, 123 fault controls,
+415 screen fabrication comparisons and 175 unchanged console/ring comparisons.
+The conservative copper-loss model is 15.93 mV, below the retained 20 mV
+allowance. Independent source/export review is clean, with earlier full circuit
+reviews retained for unchanged scope. The owner confirmed
+that the available cables physically reach; conductor gauge, insulation,
+shielding and assembled USB performance remain separate. A fresh full Mouser
+quote shows all 55 lines / 192 units available at the check, with $69.81 parts
+and $9.94 estimated tariffs. The matching shared cart adds $8.49 selected
+UPS Ground shipping, totaling $88.24 before tax; final address and tax are
+not entered and no purchase was made. See the
+[Revision P review](reviews/screen-power-ground-cleanup-1072/review.md).
+
 **September 28 Revision O completed: fully removable USB shields.**
 The four screen-board USB headers now use XH5, with pin 5 carrying the shield
 to GND and no separate soldered tether. Local placement and rounded power
