@@ -118,19 +118,28 @@
     "Selected 40-pixel full-white assembly requires the direct AUX star harness in RING_ASSEMBLY.md; loaded AUX output floor 4.75 V is a design bound, not a manufacturer-certified regulator value.",
     "No order, merge or device deployment performed."
   ],
-  "purpose": "Revision N native/CAM checks pass; final requested adversarial review is on hold pending a successful fresh Claude console closeout.",
+  "purpose": "Revision N circuit/native/CAM review and all-three-board adversarial closeout complete. Accepted bare-board manufacturing data; assembled qualification and full CI remain separate.",
   "review": "docs/reviews/screen-power-stock-cost-1072/review.md",
   "runtime": {
     "deployment": "not performed",
     "pull_request": 1082,
     "revision": "53828fc4eae1c18af45abfc3ea7c31f19f9799d7"
   },
-  "status": "review-incomplete",
+  "status": "bare-board-review-clean",
   "verification": {
     "adversarial_review": {
       "report": "docs/reviews/pcb-revn-adversarial-1072/review.md",
-      "sha256": "793fb8d09ec2bacbdf7bad0091f77d2e5efb44956ba5ba8d5efe81348b531622",
-      "status": "incomplete-claude-console-session-limit"
+      "sha256": "821192b5404878adf24f543c1fae1beda80efed448fc2975622e8b23cd6b6b03",
+      "status": "complete-no-unresolved-actionable-findings"
+    },
+    "claude_console_closeout": {
+      "report": "docs/reviews/pcb-revn-adversarial-1072/claude-console.md",
+      "result_is_error": false,
+      "result_sha256": "7ff2422898842b91dbd8423ba6ee692a5655500aa6eb127bc0f5a8f88a5c35a4",
+      "reviewed_head": "34257020a3529b93cc73abb432f17d35551949ba",
+      "sha256": "14bede68665fd44115cef2b2273c43fbed790c70f3f8d3230e98f33a7747223c",
+      "status": "complete-no-unresolved-actionable-findings",
+      "turns": 6
     },
     "console_ring": {
       "checks_passed": 175,

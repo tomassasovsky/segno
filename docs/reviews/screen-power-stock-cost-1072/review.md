@@ -1,11 +1,11 @@
 <!-- cspell:words Schurter Omron IRLZ NPBF backfeed -->
 # Screen-power Revision N and copper-finish review
 
-**Follow-up:** the [fresh all-three-board adversarial review](../pcb-revn-adversarial-1072/review.md)
-now records completed DeepSeek verdicts and current Claude screen/ring verdicts.
-The fresh Claude console closeout hit its session limit and is still pending.
-The record below remains the completed earlier implementation-review scope;
-it does not establish completion of that later requested pass.
+**Follow-up complete:** the [all-three-board adversarial review](../pcb-revn-adversarial-1072/review.md)
+records completed Claude and DeepSeek verdicts on the current design and
+verified unchanged earlier evidence. Claude's console continuation succeeded
+after the session-limit interruption. The final bare-board review hold is
+lifted; the record below retains the earlier implementation-review scope.
 
 **Review complete: no unresolved actionable findings.** Native and fabrication
 checks passed; the independent role verdicts and bug-focused gate below
@@ -35,13 +35,14 @@ on 28 September 2026.
 
 ## Review and evidence boundaries
 
-- Claude's completed September 27 reviews cover the preceding design. Two
-  new authoring attempts stalled without a new verdict; no fresh Claude
-  approval is claimed for Revision N. Placement/routing was completed locally
-  with native KiCad after that service failure.
-- The completed [DeepSeek review](deepseek-bounded-review.md) covered a bounded
-  component/circuit packet. Its verified findings are resolved; it did not
-  inspect final native copper or manufacture a board.
+- The original Claude authoring attempts for Revision N stalled, so placement
+  and routing were completed locally with native KiCad. The subsequent
+  completed adversarial reviews linked above cover the final current design,
+  with explicit identity-based reuse of unchanged prior evidence.
+- The initial [DeepSeek review](deepseek-bounded-review.md) covered a bounded
+  component/circuit packet. The later completed all-three-board reviews linked
+  above also inspected native-derived geometry and primary component data;
+  their model-specific visual and physical coverage limits remain explicit.
 - Independent architecture, VGV, simplicity, test-quality and readiness
   reports are in `raw/`. The [bug-focused gate](../../code-review/pcb-stock-cost-1072/review.md)
   covers the new delta against the preceding reviewed hardware and the final

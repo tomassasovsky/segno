@@ -1,10 +1,10 @@
 # Revision N: all-three-board adversarial review
 
-28 September 2026. PR #1080, issue #1072. **Fresh multi-model review incomplete:
-Claude's console closeout is pending after a session-limit failure.**
+28 September 2026. PR #1080, issue #1072. **Review complete: no unresolved actionable PCB-design or publication finding.**
 This record covers the current screen, ring and console design at
-`44edd9483518768506533a3b6fe30e85d6d530c4`, plus the documentation corrections
-identified below. No native board, circuit, BOM or manufacturing archive has
+`44edd9483518768506533a3b6fe30e85d6d530c4`, the documentation corrections
+published at `34257020a3529b93cc73abb432f17d35551949ba`, and the final
+console closeout identified below. No native board, circuit, BOM or manufacturing archive has
 changed during this pass.
 
 ## Coverage
@@ -13,23 +13,34 @@ changed during this pass.
 |---|---|---|
 | [Claude screen](claude-screen.md) | Fresh Revision N circuit/native review, new-part primary drawings/data, USB geometry and targeted closeout | Complete; no unresolved actionable board defect |
 | [Claude ring](claude-ring.md) | Current native ground-fill delta, retained unchanged circuit evidence, fresh refill/CAM and primary input specification | Complete; no unresolved actionable board defect |
-| [Claude console](claude-console.md) | Current identity continuity with the previous completed full review | Fresh closeout did not finish; session limit, resets 13:40 Buenos Aires on 28 September |
+| [Claude console](claude-console.md) | Verified unchanged full-review evidence plus current committed documentation and screen-enable interface | Completed successfully after reset; no unresolved actionable board defect |
 | [DeepSeek screen](deepseek-screen.md), [ring](deepseek-ring.md) and [console](deepseek-console.md) | Independent circuit/native evidence and manufacturer-data reviews, followed by targeted correction of disputed claims | All complete; no confirmed actionable PCB defect, with model-specific coverage limits |
 | [Independent production audit](production-coverage.md) | Actual BOM/native/archive identities, footprints, fuse access, enclosure bounds and release instructions | Complete; two documentation findings fixed |
 | [Documentation correction review](documentation-review.md) | Current manufacturing guide, wiring arithmetic and ring programming sequence | Complete; clean |
-| [Existing independent bug gate](../../code-review/pcb-stock-cost-1072/review.md) | Revision N implementation, circuit controls, actual copper, retained prior scope and independent CAM | Complete for unchanged production identities |
+| [Implementation bug gate](../../code-review/pcb-stock-cost-1072/review.md) | Revision N implementation, circuit controls, actual copper, retained prior scope and independent CAM | Complete for unchanged production identities |
 
 Coverage is distributed across reviewers. A model reading extracted native
 data is not presented as having visually inspected every manufacturer drawing.
 Individual reports distinguish independent checks, retained evidence,
 adjudicated false positives and material limits.
 
-The console's prior completed Claude review remains relevant because its
-native board is unchanged. That does not constitute a new successful Claude
-verdict. This record therefore does not claim that the requested fresh
-all-three-board, multi-model pass is complete. No new PCB defect was confirmed
-by the reviews that completed. The remaining console closeout must be recorded
-before lifting the final review hold.
+Claude's console continuation returned a complete acceptance verdict after
+six turns, with process exit zero and `is_error: false`. It independently
+proved the console production paths unchanged apart from an old DRC timestamp,
+read the committed documentation delta, recalculated the system budget and
+closed the screen-side GPIO17 default-off coverage gap. Its earlier session-limit
+failure remains historical evidence; it was not counted as approval.
+
+All requested reviewer passes have now completed. The fresh review combines
+new inspection with explicitly verified reuse of unchanged full-review
+evidence; it is not a claim that every model reread every unchanged file.
+No unresolved actionable finding remains, so the final bare-board review hold
+is lifted. The manufacturing manifest and delivery hashes identify the
+accepted files.
+
+The [final bug-focused gate](../../code-review/pcb-revn-adversarial-1072/review.md)
+records the independent publication closeout and retained implementation
+review scope.
 
 ## Verified findings and corrections
 
@@ -80,7 +91,9 @@ claiming newly rerun unchanged tests.
 
 ## Release boundary
 
-This is an adversarial design and bare-PCB fabrication review. It does not
+**The three identified PCB designs and manufacturing archives are accepted
+for bare-board fabrication.** This is an adversarial design and bare-PCB
+fabrication review. It does not
 establish assembled USB compliance, measured startup or enclosure temperature,
 capacitive relay endurance, or the screens' unknown minimum terminal voltage.
 The screen input bound applies at J1 before F1, not at the downstream screen.
