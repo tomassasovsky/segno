@@ -5,7 +5,7 @@ Reviewed 28 September 2026. Base: `44edd9483518768506533a3b6fe30e85d6d530c4`; ta
 
 | File | Reviewed SHA-256 |
 | --- | --- |
-| `hardware/MANUFACTURING.md` | `9dacd32e416a5d3d873f72e3f3a01214f8394694f6ab6a030e15322f9134c01e` |
+| `hardware/MANUFACTURING.md` | `f4403c9c65f744dfb4ab05dbfe2c153129fa82b727276b5bb2103e53b89ca680` |
 | `hardware/segno_wiring.md` | `8117501d22a3b277b09fd95df3f1e07ebe515b9f74f9458ada20971abe3afd38` |
 | `hardware/kicad/RING_ASSEMBLY.md` | `7df6cb52127c84b71e57e936288cf55edd3b3cae60cd032b5d84bf9729b5a53b` |
 
@@ -20,4 +20,4 @@ Read every changed hunk and its surrounding assembly instructions. Compared the 
 - Ring USB programming now has a consistent sequence in both documents: AUX off, disconnect J1, connect USB, keep the separately fed strip off, remove USB, reconnect J1, then restore AUX. Disconnecting J1 isolates the XIAO's AUX/ground/link connector, and leaving the strip off avoids a powered strip with its controller/buffer supply absent. No simultaneous live AUX/USB path is instructed. The existing console procedure still disconnects J3/J6/J24 before USB and removes USB before reconnecting them; normal in-place programming remains SWD.
 - Existing runtime-not-deployed, first-assembly qualification and unfinished enclosure-mounting statements remain in place. The changes do not imply that buying bare boards completes those tasks.
 
-All relative Markdown file targets in these three documents resolve locally. The scoped `git diff --check` passes. No implementation files were changed by this reviewer. The later manufacturing-review link now points directly to the current adversarial record and names the remaining review hold; that link-only addendum is verified in the updated hash above. Aggregate release metadata is covered separately by the final bug-focused publication review; private delivery hashes remain the publishing agent's check.
+All relative Markdown file targets in these three documents resolve locally. The scoped `git diff --check` passes. No implementation files were changed by this reviewer. The final manufacturing-review link points directly to the completed adversarial record. Its former pending-review wording was removed only after the successful Claude console verdict; this status-only addendum is verified in the updated hash above. Aggregate release metadata is covered separately by the final bug-focused publication review; private delivery hashes remain the publishing agent's check.

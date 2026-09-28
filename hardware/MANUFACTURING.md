@@ -139,7 +139,7 @@ individual copies of each board. Use only the ZIP hashes in the
 [current manufacturing record](../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
 Older exports in other directories are superseded. The
 [current adversarial review](../docs/reviews/pcb-revn-adversarial-1072/review.md)
-records the corrections, verification and remaining review hold. No stencil or factory
+records the completed corrections, review coverage and verification. No stencil or factory
 component assembly is required. The selected 40-LED strip uses the direct AUX
 star harness in [the ring assembly guide](kicad/RING_ASSEMBLY.md); J2 carries
 DIN only. Do not reuse the superseded straight-through console/ring power wiring.
