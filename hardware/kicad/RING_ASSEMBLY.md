@@ -88,8 +88,10 @@ all 120 LEDs and both screens at their simultaneous maximum. See the
 
 ## Programming
 
-Unplug **J1 before connecting the XIAO USB cable**. Remove USB before reconnecting
-J1. D1 prevents USB from powering the AUX harness, but it does not prevent live
+**Turn AUX power off**, then unplug **J1 before connecting the XIAO USB cable**.
+Keep the separately powered strip off while programming, so its DIN input is
+not left floating on a powered strip. Remove USB and reconnect J1 before
+restoring AUX power. D1 prevents USB from powering the AUX harness, but it does not prevent live
 AUX power from reaching a connected USB host. See the
 [Seeed schematic](https://files.seeedstudio.com/wiki/XIAO-RP2350/res/Seeed-Studio-XIAO-RP2350-v1.0.pdf).
 

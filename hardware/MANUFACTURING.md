@@ -130,7 +130,7 @@ per-quote artifact, same freshness gate as the other vendor packs (#236).
 |---|---|---|---|
 | **Console board v3** | `kicad/fab/segno_console_v3_gerbers.zip` + `kicad/fab/segno_console_board_bom.csv` | 1 | 99.5 × 99.5 mm, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, lead-free HASL. Solder Pico 2 by its castellations as specified in the assembly guide. Use the matching v3 runtime described below. |
 | **Encoder ring carrier** | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` | 1 | Ø80 mm, two layers, 1.6 mm FR4, 1 oz, white mask / black silk, lead-free HASL. Selected assembly: one 40-LED strip, DIN at J2.3 with direct AUX power; J3/J4 empty. The 24/16-module footprints remain alternatives. See [assembly](kicad/RING_ASSEMBLY.md). |
-| **Screen power Rev M** | `kicad/fab/segno_screen_power_rev_m_gerbers.zip` + `kicad/screen_power/hand/bom.csv` + `kicad/screen_power/external_bom.csv` | 1 | 68 × 76 mm, R3 corners, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, ENIG. Hand-soldered components. External input fuse and harness parts are required. See [wiring and assembly](kicad/screen_power/README.md). |
+| **Screen power Rev N** | `kicad/fab/segno_screen_power_rev_n_gerbers.zip` + `kicad/screen_power/hand/bom.csv` + `kicad/screen_power/external_bom.csv` | 1 | 68 × 76 mm, R3 corners, two layers, 1.6 mm FR4, 1 oz, purple mask / white silk, ENIG. Hand-soldered components. F1 uses one replaceable 8 A cartridge in its onboard holder; four branch fuses are soldered. Follow the current harness specification. See [wiring and assembly](kicad/screen_power/README.md). |
 | LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 0 | **NOT ORDERED for the console.** Owner call 2026-08-28: the indicators are eight-LED segments cut from a **144 LEDs/m bare IP20 strip**, and the diffuser channel is sized for that (**12 mm wide, 0.53 thick**, 56.96 long), not for this 16×8 board. The design is kept because it is finished and the footprint may suit another build — but ordering it will not fit the current diffuser. |
 
 
@@ -138,8 +138,8 @@ The quantities above are the one-unit assembly need; JLCPCB's order is five
 individual copies of each board. Use only the ZIP hashes in the
 [current manufacturing record](../docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json).
 Older exports in other directories are superseded. The
-[September 27 follow-up review](../docs/code-review/pcb-claude-followup-1072/review.md)
-records the current corrections and verification. No stencil or factory
+[current adversarial review](../docs/reviews/pcb-revn-adversarial-1072/review.md)
+records the corrections, verification and remaining review hold. No stencil or factory
 component assembly is required. The selected 40-LED strip uses the direct AUX
 star harness in [the ring assembly guide](kicad/RING_ASSEMBLY.md); J2 carries
 DIN only. Do not reuse the superseded straight-through console/ring power wiring.
@@ -156,7 +156,8 @@ The new console and carrier runtime is in
 ring link and PD reader; the hardware branch's old firmware snapshot does not.
 Program the Pico before fitting it, or disconnect console J3/J6/J24 before
 connecting its USB cable; remove USB before reconnecting those headers. Use
-SWD for normal in-place programming. Unplug ring J1 before XIAO USB programming.
+SWD for normal in-place programming. For XIAO USB programming, turn AUX off
+and unplug ring J1; keep the strip off until USB is removed and J1 is restored.
 
 The runtime remains an integration draft. Fabricating these boards does not complete
 runtime integration, device qualification or the enclosure work below.

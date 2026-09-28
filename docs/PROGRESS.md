@@ -13,6 +13,25 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ## September 2026 PCB routing completion
 
+**September 28 fresh adversarial review: console Claude closeout pending.**
+DeepSeek completed screen, ring and console reviews, and Claude completed
+the current screen review plus ring delta/retained-evidence review. No new
+actionable PCB defect was confirmed. Claude hit its session limit before a
+fresh console verdict; it reports a 13:40 Buenos Aires reset on September 28.
+The console's previous full approval and unchanged identity remain evidence,
+but are not claimed as a new completed verdict. The requested fresh review
+therefore remains incomplete. See the [current coverage and disposition](reviews/pcb-revn-adversarial-1072/review.md).
+
+The audit corrected an obsolete Rev M order instruction and removed the
+inline-fuse, gate-driver and old-budget guidance from the active wiring guide.
+Ring USB programming now keeps AUX and the separate strip feed off until
+USB is removed and J1 restored. Independent documentation review passes.
+All three native boards, BOMs and manufacturing ZIPs are unchanged; their
+existing DRC/ERC, fault-control and independent CAM evidence remains valid.
+The final review hold, current-head CI and physical/integration limits remain
+explicit. Nothing was ordered, merged, flashed or deployed. Earlier entries
+below describe their historical review scopes.
+
 **September 28 Revision N and copper-finish review.** The screen board now
 uses a stocked Omron power relay and coil driver, one removable 8 A input
 fuse in a PCB holder, and four soldered branch fuses. The consolidated Mouser
