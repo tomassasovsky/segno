@@ -15,8 +15,8 @@ import math
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# The populated console, and the #1067 clone that carries the rear tabs and
-# lid-seat flanges until the owner promotes it.
+# The populated console, and the #1067 clone (wider lid; its flanges and tabs
+# were removed again) until the owner promotes it.
 POPULATED_DOCUMENTS = ("VAMP console (populated)",
                        "VAMP console (populated) - 1067 tabs + seat flanges")
 

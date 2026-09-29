@@ -1,6 +1,43 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
-## Rear corner tabs and lid-seat flanges - 2026-09-17 (#1067)
+## Flanges and tabs removed, #1025 base restored - 2026-09-29 (#1067)
+
+The owner dropped both #1067 base features: the lid-seat flanges could not be
+formed along the front third of each side wall (pre-bent, they sit over the
+side-wall bend's punch, 8.6 mm of clear height at the front edge), and the
+welder has no resistance spot welder for the rear tabs. The generator's base is
+the #1025 base again, byte for byte in `out/fusion_formed_input.json`; only the
+lid stays 853.8 mm wide.
+
+**In the clone** ("VAMP console (populated) - 1067 tabs + seat flanges"; its unsaved
+state at the time of writing):
+
+- `base` is the former hidden `base_pre1067` (the #1025 welded base: five folds,
+  trim, `RESTORE_RETURN_ENDS`, front drilling), shown. Volume 945,049.614 mm³,
+  bounds equal to the September 15 manifest. The #1067 base is kept hidden as
+  `base_1067_seat`.
+- `faceplate_support_beam` and `beam_felt` are fresh imports of
+  `out/segno_beam.step` / `out/segno_beam_felt.step` (no end notches; 99,284.029
+  and 12,327.317 mm³), placed with the old occurrences' transforms and a snapshot.
+  The notched ones are hidden as `faceplate_support_beam_notched` /
+  `beam_felt_notched`.
+- Interference: base/beam 0.0069 mm³ (the known floor contact), base/lid
+  5.424 mm³ (films), beam or felt against lid, platforms, prop: none.
+- `fusion_export_formed.py` verified both parts from the worktree; the base entry
+  of `formed/manifest.json` is the new export, the faceplate entry and files are
+  unchanged from 59cee35.
+
+**Fold-solver trap, found rebuilding the base from scratch.** A freshly built base
+with the side walls' front R3 cove replaced by a plain front edge would fold its
+side walls, or its shoulder and rear wall, but never both: whichever came second
+failed with `FOLD_UNEXPECTED_SPLIT_DETECTED`, `ASM_DEFORM_DEGENERATE_BEND` or
+`ASM_UNFOLD_INTERNAL_ERROR`, in every order and with every relief option. The
+same failure hit a flangeless variant that kept the rear tabs. The sketches
+matched the #1025 base's everywhere except that cove, and the #1025 base folds
+in the documented order. Keep the cove; if it must go, expect to work out the
+Fusion fold first.
+
+## (Superseded) Rear corner tabs and lid-seat flanges - 2026-09-17 (#1067)
 
 Built in a **clone**, not the populated document: **"VAMP console (populated) -
 1067 tabs + seat flanges"** (Loopy folder, version 10 at the end of that day). The

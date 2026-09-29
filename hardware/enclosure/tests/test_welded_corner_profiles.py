@@ -86,7 +86,7 @@ class WeldedCornerProfilesTest(unittest.TestCase):
                          if entity.dxf.layer in UNCHANGED_FEATURES)
         self.assertEqual(counts, {
             ('CUT', 'LWPOLYLINE'): 2, ('CUT', 'CIRCLE'): 106,
-            ('VENT', 'LWPOLYLINE'): 95, ('BEND', 'LWPOLYLINE'): 9,
+            ('VENT', 'LWPOLYLINE'): 95, ('BEND', 'LWPOLYLINE'): 5,
             ('DRILL', 'CIRCLE'): 9,
         })
 
@@ -119,84 +119,69 @@ class WeldedCornerProfilesTest(unittest.TestCase):
                 # Measure the specified gap and projected overlap from the
                 # actual cut edges, not from the generator's new parameters.
                 inner_plane = half_bend - 2.0
-                if corner.startswith('front'):
-                    self.assertAlmostEqual(side_end[1] - inner_plane, 0.5, places=7)
-                else:
-                    # #1067: at the rear the side wall's whole edge is a tab 0.2 mm
-                    # off the rear wall; the flap stops 0.5 past that tab's bend band.
-                    dev = 4.0 - half_bend
-                    self.assertAlmostEqual(side_end[1] - inner_plane,
-                                           0.2 + dev + half_bend + 0.5, places=7)
-                if corner.startswith('front'):
-                    self.assertAlmostEqual(inner_plane - web_end[0], 1.0, places=7)
-                else:
-                    # #1067: the rear wall runs the full outer width, 1.9 past
-                    # the side bend line, covering the side walls' folded corners.
-                    self.assertAlmostEqual(web_end[0], -1.9, places=7)
+                self.assertAlmostEqual(side_end[1] - inner_plane, 0.5, places=7)
+                self.assertAlmostEqual(inner_plane - web_end[0], 1.0, places=7)
 
-    def test_front_edges_rise_straight_into_the_lid_seat_flange(self):
-        # #1067: the lid's front lip stands clear ahead of the side walls, so the
-        # old R3 cove is gone. Each side wall's front edge (the weld-gap edge)
-        # runs straight up until the lid-seat flange's bend line ends on it.
-        self.assertFalse([curve for curve in self.curves if curve.dxftype() == 'ARC'
-                          and abs(curve.dxf.radius-3.0) < 1e-7 and curve.dxf.center.y < 10])
-        front_edge = 0.589159114637213
-        half_bend = math.pi / 4 * (2.0 + 0.33 * 2.0)
-        bends = [line for line in (e for e in self.entities if e.dxf.layer == 'BEND')
-                 for line in [list(line.get_points('xy'))]
-                 if abs(line[0][0]-line[1][0]) > 1 and abs(line[0][1]-line[1][1]) > 1]
-        self.assertEqual(len(bends), 2)
-        for line in bends:
-            start = min(line, key=lambda p: p[1])
-            self.assertAlmostEqual(start[1], front_edge, places=7)
-            origin, sign = (0, -1) if start[0] < 0 else (846, 1)
-            edges = [c for c in self.curves if c.dxftype() == 'LINE'
-                     and abs(c.dxf.start.y-front_edge) < 1e-7 and abs(c.dxf.end.y-front_edge) < 1e-7
-                     and (c.dxf.start.x < 0) == (start[0] < 0)]
-            self.assertEqual(len(edges), 1)
-            heights = sorted((x-origin)*sign for x in (edges[0].dxf.start.x, edges[0].dxf.end.x))
-            self.assertAlmostEqual(heights[0], half_bend, places=7)
-            self.assertAlmostEqual(heights[1], (start[0]-origin)*sign, places=7)
+    def test_front_lid_coves_keep_the_original_circle_and_upper_tangent(self):
+        coves = [curve for curve in self.curves if curve.dxftype() == 'ARC'
+                 and abs(curve.dxf.radius-3.0) < 1e-7
+                 and curve.dxf.center.y < 10]
+        self.assertEqual(len(coves), 2)
+        for cove in coves:
+            with self.subTest(center=cove.dxf.center):
+                # September 14 lid-clearance circle and upper tangent. Moving
+                # the whole cove with the side edge would encroach on the lid.
+                expected_x = (-8.104890587629825 if cove.dxf.center.x < 0
+                              else 854.1048905876298)
+                self.assertAlmostEqual(cove.dxf.center.x, expected_x, places=7)
+                self.assertAlmostEqual(cove.dxf.center.y, 3.0, places=7)
+                ends = sorted((cove.start_point, cove.end_point), key=lambda p: p.y)
+                self.assertAlmostEqual(ends[0].y, 0.589159114637213, places=7)
+                self.assertAlmostEqual(ends[1].y, 2.35077103484194, places=7)
+                self.assertAlmostEqual(abs(ends[1].x-(0 if expected_x < 0 else 846)),
+                                       11.03379853271799, places=7)
         # The front wall must keep its existing top, despite the sample having
         # taller flanges. Its first/last drill remains in the original material.
         self.assertAlmostEqual(min(y for _x, y, _b in self.points),
                                -8.183938958241146, places=7)
 
-    def test_rear_wall_runs_the_full_outer_width_above_its_floor_bend(self):
-        # #1067: with the side walls' whole rear edges folded in as tabs, the rear
-        # wall is no longer cut back to half a sheet for a weld; from its floor
-        # bend's tangent to the tip of the shoulder it spans the outer width.
-        half_bend = math.pi / 4 * (2.0 + 0.33 * 2.0)
+    def test_rear_web_widens_only_through_the_upper_bend_band(self):
+        hinge = 504.04508436774597  # Saved upper-fold datum; lid seat is unchanged.
+        half_bend = math.radians(90-enclosure.TRANS_ANGLE) * (2+0.33*2) / 2
+        transitions = [curve for curve in self.curves
+                       if curve.dxftype() == 'LINE'
+                       and abs((curve.dxf.start.y+curve.dxf.end.y)/2-hinge) < 1e-7
+                       and abs(curve.dxf.start.x-curve.dxf.end.x) > 0.1]
+        self.assertEqual(len(transitions), 2)
+        for line in transitions:
+            lower, upper = sorted((line.dxf.start, line.dxf.end), key=lambda p: p.y)
+            self.assertAlmostEqual(lower.y, hinge-half_bend, places=7)
+            self.assertAlmostEqual(upper.y, hinge+half_bend, places=7)
+            origin, sign = (0, 1) if lower.x < 0 else (846, -1)
+            self.assertAlmostEqual((lower.x-origin)*sign, -0.910840885362787,
+                                   places=7)
+            self.assertAlmostEqual((upper.x-origin)*sign, -1.9, places=7)
         tip_y = max(y for _x, y, _b in self.points)
-        sides = [curve for curve in self.curves
-                 if curve.dxftype() == 'LINE'
-                 and abs(curve.dxf.start.x - curve.dxf.end.x) < 1e-7
-                 and min(curve.dxf.start.y, curve.dxf.end.y) > 419]
-        self.assertEqual(len(sides), 2)
-        for line in sides:
-            low, high = sorted((line.dxf.start.y, line.dxf.end.y))
-            self.assertAlmostEqual(low, 419 + half_bend, places=7)
-            self.assertAlmostEqual(high, tip_y, places=7)
-            self.assertTrue(abs(line.dxf.start.x + 1.9) < 1e-7
-                            or abs(line.dxf.start.x - 847.9) < 1e-7)
+        tip = [x for x, y, _b in self.points if abs(y-tip_y) < 1e-7]
+        self.assertEqual(len(tip), 2)
+        self.assertAlmostEqual(max(tip)-min(tip), 849.8, places=7)
+        # Once outside the bend band, the return must be straight and full width.
+        for curve in self.curves:
+            if curve.dxftype() != 'LINE':
+                continue
+            start, end = curve.dxf.start, curve.dxf.end
+            if min(start.y, end.y) >= hinge+half_bend-1e-7:
+                if abs(start.y-end.y) > 1e-7:
+                    self.assertAlmostEqual(start.x, end.x, places=7)
+                    self.assertTrue(abs(start.x+1.9) < 1e-7
+                                    or abs(start.x-847.9) < 1e-7)
 
     def test_every_existing_functional_cut_drill_and_fold_is_preserved(self):
-        # #1067 added four short folds (two lid-seat flanges, two rear tabs);
-        # the five folds that were already there must not move.
-        added = {row[3] for row in enclosure.BEND_TABLES['segno_base']
-                 if row[2] == 'seg'}
-
-        def is_added(entity):
-            return (entity.dxf.layer == 'BEND' and tuple(sorted(
-                (round(x, 3), round(y, 3)) for x, y in entity.get_points('xy')))
-                in added)
-        self.assertEqual(sum(map(is_added, self.entities)), 4)
         for layer, expected in UNCHANGED_FEATURES.items():
             with self.subTest(layer=layer):
                 actual = _feature_signature(entity for entity in self.entities
                                             if entity is not self.outline
-                                            and entity.dxf.layer == layer
-                                            and not is_added(entity))
+                                            and entity.dxf.layer == layer)
                 self.assertEqual(actual, expected,
                                  f'{layer} geometry changed beyond the four corners')
 

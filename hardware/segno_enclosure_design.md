@@ -46,32 +46,19 @@ override those dimensions or the separate metal-shop/painter sequence.
 | Material | **2.0 mm 1100-H14 aluminium** (Alcast cert, lot 26E0269) | bend R 2.0, K 0.33 |
 
 **Construction = folded lower body + removable lid.**
-`segno_base` is one blank: floor, four walls, the rear transition shoulder, a
-lid-seat flange on each side wall and a tab at each rear corner (#1067). The
-two front corners are fusion welded (0.50 mm nominal gap, 1.00 mm overlap; the
-front wall is too short for anything else). The rear corners are not welded by
-fusion. The rear wall runs the full outer width, and each side wall's whole rear
-edge, from the floor bend up, folds inward as an 18 mm tab onto the rear wall's
-inner face (0.20 mm nominal gap) and takes three resistance spot welds, at 15,
-43 and 71 mm above the floor. The electrode marks land on the rear face. Where
-the side wall, rear wall and rear shoulder meet, the tab's top edge follows the
-inside of the rear wall and shoulder 0.15 mm away, through its own bend and
-across the tab, so the corner has no cut, step or loose piece; from outside the
-side wall's folded edge shows as a rounded line beside the flush rear wall.
-18 mm is the usual spot-weld flange for 2 mm sheet: a flat several mm wider than
-the ~7 mm nugget, plus the R2 + T2 bend zone. The spot welder still has to
-confirm it can weld 2 mm 1100 aluminium.
+`segno_base` is one blank: floor, four walls and the rear transition shoulder.
+All four corners are fusion welded after forming (0.50 mm nominal gap, 1.00 mm
+overlap, angular reliefs closed), ground flush on the outside. This is the
+#1025 base, unchanged. #1067 tried spot-welded rear tabs and a 15 mm lid-seat
+flange along each side wall; both were removed on 2026-09-29. The welder has
+no resistance spot welder, and the flange could not be formed along the front
+third of each wall: bent before the wall, it sits over the wall's bend punch,
+with 8.6 mm of clear height at the front edge.
 
 The lid has two folds: a front lip and a rear lap. It is 853.8 mm wide, one
-sheet (2 mm) past each side skin, so its edge caps the side walls; the rear wall
-and its shoulder stay at the base's 849.8 mm outer width. It rests on a 15 mm inward
-flange along each side wall's sloped top (the old bare 2 mm edge line is that
-flange's top face, so the lid did not move) and on the rear transition. The
-flange runs the whole sloped top, from the wall's front edge to where the lid's
-rear bend starts; its rear end is relieved by a single 0.20 mm laser cut. The transition flange that takes
-the nine lap screws runs up to where the lid's lap bend starts, so it meets the
-lid-seat flange in a crease under the lid bend at the peak. The
-support beam's pad stops 1.5 mm short of each flange. Nine M3 screws go through each folded edge
+sheet (2 mm) past each side skin, so its edge covers the side walls' top edges;
+the rear wall and its shoulder stay at the base's 849.8 mm outer width. It rests
+on those bare top edges and on the rear transition, with nine M3 screws through each folded edge
 into tapped body holes. It has no folded side skirts or side fixing screws.
 The eighteen lid bores are Ø4.50(+0.10/−0) before coating and use M3 OD 7 head
 washers. The front axes are 0.50 mm lower than the old pattern. Nine fitted

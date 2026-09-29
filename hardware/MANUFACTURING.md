@@ -34,7 +34,7 @@ these canonical part stems:
 | Part | Qty | Material | Notes |
 |---|---|---|---|
 | `segno_base` | 1 | 2.0 mm 1100-H14 aluminium | One folded blank; weld all four corners and close all corner reliefs, including the two indicated upper edges, after forming. |
-| `segno_faceplate` | 1 | 2.0 mm 1100-H14 aluminium | Removable sloped lid; nine front drilled clearances and nine rear CUT slots. |
+| `segno_faceplate` | 1 | 2.0 mm 1100-H14 aluminium | Removable sloped lid, 853.8 mm wide (2 mm past each side wall); nine front drilled clearances and nine rear CUT slots. |
 | `segno_ring_disc` | 1 | 2.0 mm 1100-H14 aluminium | Flat encoder disc; straight laser bore, no chamfer. |
 | `segno_rear_panel` | 1 | **1.2 mm aluminium** | Flat I/O panel; alloy/temper to confirm. |
 | `segno_beam` | 1 | **1.6 mm cold-rolled steel** | Full-width support beam; grade to confirm. Fold both wall ears before the long folds. |

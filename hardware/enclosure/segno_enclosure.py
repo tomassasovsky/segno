@@ -108,46 +108,21 @@ ALLOY_REAR = "a confirmar"
 RI       = 2.0       # inside bend radius; confirm actual temper and trial bend with the shop
 KF       = 0.33      # K-factor for bend-allowance development
 FLANGE   = 18.0      # return-flange depth (lid side wings + wall top flange)
-# Welded FRONT corners, following the welder's 2 mm / R2 sample. These are
+# Four welded corners, following the welder's 2 mm / R2 sample. These are
 # nominal pre-weld dimensions for Dinacut's forming review, not weld tolerances.
 # The angular relief ends at the common tangent of the two floor bends.
-BASE_WELD_GAP = 0.50       # side-wall edge to front wall inner face, mm
-BASE_WELD_OVERLAP = 1.00   # front wall covers this much side thickness, mm
-# Only the two FRONT corners keep that fusion weld (#1067): the front wall is
-# about 10 mm tall and has no room for anything else. At the REAR, each side wall
-# turns a tab inward onto the rear wall's inner face and the two are spot welded,
-# a lap joint instead of a butt. The tabs fold toward the interior, so the
-# electrode marks land on the rear face, the least visible side of the console.
-# Width: a spot-weld flange needs a flat several mm wider than the nugget
-# (~7 mm at 2 mm sheet) plus the R2 + T2 bend zone (European Aluminium,
-# "Resistance welding", 2015), which is 17-18 mm. The friend's 10-15 mm was the
-# starting point; the owner took 18.
-REAR_TAB_W = 18.0          # side wall OUTER face to the tab's free edge, mm
-# The tab takes the side wall's WHOLE rear edge (owner call: both side walls bend
-# in at the back with nothing left over), from the floor bend up, with no slits.
-# The rear wall runs the full outer width and covers the folded corners from
-# behind. Where the side wall, rear wall and rear shoulder meet, the wall's top
-# edge follows the inside of the rear wall and shoulder -- the shoulder's
-# underside, the rear wall's R2 upper bend, its inner face -- REAR_CORNER_CLR
-# away, through the tab's own bend and across the tab (rear_corner_contour_z).
-# The corner closes with no cut, step or loose piece.
-REAR_CORNER_CLR = 0.15     # mm, kept off the rear wall / shoulder inside contour
-REAR_TAB_GAP = 0.20        # tab outer face to rear wall inner face, nominal. Spot
-                           # welding wants the two sheets touching; the electrodes
-                           # close this. Zero would make the fold a sliding kiss fit.
-REAR_TAB_SPOTS_Z = (15.0, 43.0, 71.0)  # spot welds per tab, height above the floor TOP
-# The lid used to rest on the side walls' bare 2 mm top edges. Each side wall now
-# turns a return flange inward along its sloped top, and the lid rests on that
-# (#1067). Its top face is the old edge line, so the lid does not move. It runs
-# the whole sloped top: from the wall's front edge (the lid's front bend lies
-# ahead of it, so it needs no relief there) to where the lid's rear bend starts.
-SIDE_SEAT_FLANGE = 15.0     # wall OUTER face to the flange's free edge, mm
-# Where a lid-seat flange stops partway along the wall top, the bent and unbent
-# metal must be separated past the bend band or the corner tears. The owner did
-# not want round-bottomed slots showing as notches in the shell, so each relief is
-# a single laser cut this wide: a hairline from outside that the coating mostly
-# fills. (The rear tabs need none: they take the whole rear edge.)
-RELIEF_SLIT = 0.20
+# (#1067 briefly replaced the rear pair with spot-welded tabs; the welder has no
+# resistance spot welder, so on 2026-09-29 the owner took them back to this joint.)
+BASE_WELD_GAP = 0.50       # side-wall edge to front/rear inner face, mm
+BASE_WELD_OVERLAP = 1.00   # front/rear wall covers this much side thickness, mm
+# The lid rests on the side walls' bare 2 mm top edges, which lie on its
+# underside plane, and its 2 mm overhang (LID_OVERHANG) covers them. #1067 had
+# added a 15 mm inward lid-seat flange along each wall top; it was removed on
+# 2026-09-29. Bent first, the flange hangs over the side-wall bend's punch where
+# the wall is short (8.6 mm of clear height at the front edge against a
+# gooseneck tip of roughly 30 mm), so the front third could not be formed.
+# Stopping it partway would show as a change along the wall top. It added
+# bearing area and top-edge stiffness, and the #1019 stomp rating predates it.
 # LID_FRONT_FL (front-lip flange flat) is DERIVED below from the seam solver:
 # the lip runs from the fold to the VERY BOTTOM of the base (#760).
 # LID_REAR_LAP (rear-lap length) is DERIVED by the rear-seam solver below
@@ -1091,7 +1066,7 @@ FP_W = W - 2.0 * T                    # control-area width (schedule coordinate 
 BASE_OUTER_W = W - 0.2                # the base's outer width across the side skins, which
                                       # the rear wall and its shoulder span (issue #237)
 LID_OVERHANG = 2.0                    # the lid runs one sheet past each side skin (owner call,
-                                      # #1067): its edge caps the side walls and their flanges
+                                      # #1067): its edge caps the side walls' top edges
 LID_W = BASE_OUTER_W + 2.0 * LID_OVERHANG   # lid blank full width
 LID_OX = (LID_W - FP_W) / 2.0         # schedule content offset inside the wider blank
 FP_V = L_SLOPE                        # faceplate length up the slope (control area)
@@ -1147,31 +1122,26 @@ YC_TRANS = _y90 - T / math.cos(_rth)            # transition OUTSIDE mold corner
                                                 # flange outer sits ONE SHEET below
                                                 # the lap outer so the lap rests ON it
 HR_FLAT = YC_TRANS - DEV90 - DD_TR              # rear wall web, developed flat
-RIDGE_CLEAR = 2.0                               # the flange tip's ORIGINAL station; the
-                                                # frozen seam-screw solve still uses it
-# The transition flange tip runs up to where the lid's lap bend starts: its top
-# face is the lap's underside, and the lid's inside radius begins at the bend's
-# tangent, (RI + T) tan(half the fold) down the facet from the outer mold corner.
-# There the flange tip and the side walls' lid-seat flange end meet at their
-# bottom corners, closing the joint under the lid bend (#1067). It used to stop
-# 2 mm down, and the side wall filled the widening gap with a hooked wedge.
-FLANGE_TIP_CLR = 0.10                           # kept down-facet of that tangent
-FLANGE_TIP_D = (RI + T) * math.tan(math.radians(SLOPE_ANGLE + TRANS_ANGLE) / 2.0) + FLANGE_TIP_CLR
+RIDGE_CLEAR = 2.0                               # flange tip stops this short of the
+                                                # ridge mold corner (lap-bend zone).
+# #1067 had run the tip up to 0.1 mm short of the lid's lap-bend tangent, to meet
+# the side walls' lid-seat flanges. Those flanges are gone, so the tip is back at
+# its original station, with 2 mm of forming tolerance to the lid's inside bend.
 # along-facet axis d: from the ridge mold corner DOWN the lap/flange facet.
 # A point at flat distance f beyond a bend line lands at facet station f + DD
 # from that bend's mold corner (the straight flap starts sb past the corner but
 # only BA/2 past the line) -- so a target station d needs flat = d - DD.
 D_WALL    = (_zw - RIDGE_Z) * math.cos(_rth) + (RIDGE_Y - YC_TRANS) * math.sin(_rth)
-HT_FLAT   = (D_WALL - FLANGE_TIP_D) - DD_TR     # transition flange, developed flat:
-                                                # as LONG as possible (to the lid's
-                                                # lap-bend tangent, NOT just TRANS_LEN --
+HT_FLAT   = (D_WALL - RIDGE_CLEAR) - DD_TR      # transition flange, developed flat:
+                                                # as LONG as possible (to the ridge
+                                                # clearance, NOT just TRANS_LEN --
                                                 # development stretches the facet)
-D_FL_TIP  = D_WALL - (HT_FLAT + DD_TR)          # flange tip (= FLANGE_TIP_D)
+D_FL_TIP  = D_WALL - (HT_FLAT + DD_TR)          # flange tip (= RIDGE_CLEAR)
 D_LAP_TIP = D_WALL - KNUCKLE_CLEAR              # lap tip: clear of the wall knuckle
 # screw row: centred on the lap/flange overlap, pushed down-facet if needed to
 # keep PEM_EDGE from the flange tip (solved for the retired PEM scheme; frozen --
 # generous for a tapped hole, and every model carries these stations)
-D_SEAM_SCREW = max((RIDGE_CLEAR + D_LAP_TIP) / 2.0, RIDGE_CLEAR + PEM_EDGE)
+D_SEAM_SCREW = max((D_FL_TIP + D_LAP_TIP) / 2.0, D_FL_TIP + PEM_EDGE)
 LID_REAR_LAP = D_LAP_TIP - DD_LAP               # lap developed flat length
 LRL = LID_REAR_LAP
 SEAM_LAP_V = LID_FRONT_FL + LID_FRONT_EXTRA + FP_V + (D_SEAM_SCREW - DD_LAP)     # lap screw row (lid flat v)
@@ -1692,19 +1662,6 @@ BEAM_EAR_RELIEF = 3.5
 assert BEAM_EAR_RELIEF >= BEAM_RI + BEAM_T, "the ear relief does not clear its own bend"
 _BEAM_REL = BEAM_DD_FOOT + BEAM_EAR_RELIEF         # folded: how far the pad and foot
                                                    # stop short of each wall face
-# The side walls' lid-seat flanges (#1067) run inward along the lid underside,
-# exactly where the pad bears. So the pad stops BEAM_SEAT_CLR short of each
-# flange's free edge, and over that end the web's top comes down to clear the
-# flange and its inner bend (RI + T under the lid) by 1 mm. Local beam x, from
-# the left ear's outer face.
-BEAM_SEAT_CLR = 1.5
-BEAM_PAD_X0 = SIDE_SEAT_FLANGE - DEV90 + BEAM_SEAT_CLR - BEAM_U0
-_BEAM_TIP_TAN = math.tan(math.radians(BEAM_TILT))
-BEAM_NOTCH_Z = (BEAM_H + BEAM_T * math.tan(math.radians(90.0 + BEAM_TILT) / 2.0)
-                - BEAM_T * _BEAM_TIP_TAN
-                + (BEAM_BARE_GAP - (RI + T) - 1.0) / math.cos(math.radians(BEAM_TILT)))
-assert BEAM_PAD_X0 > _BEAM_REL, "the pad notch is shorter than the ear relief it replaces"
-assert BEAM_NOTCH_Z > BEAM_EAR_Z0 + BEAM_EAR_H + 2.0, "the web notch reaches the wall ear"
 
 
 def beam_bolt_u():
@@ -1983,38 +1940,14 @@ def _check(strict_board_mount=True):
         "weld corner: positive nominal clearance must fit inside the bend band")
     assert math.isfinite(BASE_WELD_OVERLAP) and 0 < BASE_WELD_OVERLAP < T, (
         "weld corner: nominal overlap must end within the side-wall thickness")
-    # --- rear corner tabs (#1067) ----------------------------------------------
-    # The tab lies flat on the rear wall's inner face, so it has to end below that
-    # wall's upper bend, where the inner face starts curving forward into it.
-    _tz = rear_tab_z()
-    assert 0.0 < REAR_CORNER_CLR < REAR_TAB_GAP, (
-        "rear corner clearance must sit inside the tab gap, or the tab has no top")
-    assert _tz[1] > 80.0, f"rear tab top {_tz[1]:.2f} is not near the top of the rear wall"
-    assert all(_tz[0] + 10.0 <= z <= _tz[1] - 10.0 for z in REAR_TAB_SPOTS_Z), (
-        "a rear-tab spot weld is within 10 mm of the tab's end")
-    assert REAR_TAB_W - (RI + T) >= 12.0, (
-        "rear tab: under 12 mm of flat past its bend, no room for a spot-weld electrode")
-    assert 0.0 <= REAR_TAB_GAP < 0.5, "rear tab gap: the electrodes cannot pull it closed"
-    # Both tabs cover the rear wall's inner face out to REAR_TAB_W - DEV90 from each
-    # side bend line; nothing cut in that wall or pressed on it may sit under them.
-    _tab_u = REAR_TAB_W - DEV90 + 2.0
-    _tab_v = (wall_flat_z(_tz[0]) - T, wall_flat_z(_tz[1]) + T)
-    for _box, _who in ([(_bbox(f), f.get("ref", f["kind"])) for f in rear_holes()]
-                       + [((lambda o: (o[0], o[1], o[0]+o[2], o[1]+o[3]))(rear_panel_outline()),
-                           "rear panel")]):
-        for _lo, _hi in ((-T, _tab_u), (W - 2*T - _tab_u, W - 2*T + T)):
-            assert not _overlap(_box, (_lo, _tab_v[0], _hi, _tab_v[1]), clr=0.0), (
-                f"rear tab covers {_who} on the rear wall")
-    # --- lid-seat flanges (#1067) ----------------------------------------------
-    # A louvre too close to the flange's bend distorts in the fold: keep 2T of
-    # wall between every side vent and the bend band, measured at the vent's
-    # front end, where the wall top is lowest.
+    # --- side-wall top edges -------------------------------------------------
+    # The lid rests on the bare top edges, so every side vent keeps at least 2T of
+    # wall above it, measured at the vent's front end, where the wall top is lowest.
     _a = math.radians(SLOPE_ANGLE)
-    _seat_band = (DEV90 + BA90 / 2.0) / math.cos(_a) + 2.0 * T
     for _f in side_vents('R', W - 2*T):
         _top = _f["u"] + _f["w"] - (W - 2*T)
-        assert _top <= _side_wall_top_flat(_f["v"]) - _seat_band, (
-            f"side vent at v={_f['v']:.1f} is inside 2T of the lid-seat flange bend")
+        assert _top <= _side_wall_top_flat(_f["v"]) - 2.0 * T / math.cos(_a), (
+            f"side vent at v={_f['v']:.1f} is within 2T of the wall's top edge")
     assert 0 < FRONT_BARE_GAP_MIN <= LIP_BARE_CLEAR <= FRONT_BARE_GAP_MAX, (
         "front seam: nominal clearance must lie within the bare assembly fit band")
     # Nominal design allowance only; the finished prototype must still be measured.
@@ -3399,211 +3332,63 @@ def dxf_faceplate(path):
     _save(doc, path)
     return {"blank": (LW, yr1)}
 
-def lid_rear_bend_tangents():
-    """Where the lid's inside surface leaves its two flat faces at the ridge.
-
-    (front, rear) as (world depth, world height): the top plate's underside
-    tangent and the rear lap's underside tangent of the lid's inside bend radius.
-    The side walls' lid-seat flanges end at the first; the transition flange tip
-    sits just down-facet of the second.
-    """
-    a, b = math.radians(SLOPE_ANGLE), math.radians(TRANS_ANGLE)
-    front = (-math.sin(a), math.cos(a))
-    rear = (math.sin(b), math.cos(b))
-    corner = (RIDGE_Z, RIDGE_Y)
-    k_f = front[0]*corner[0] + front[1]*corner[1] - T - RI
-    k_r = rear[0]*corner[0] + rear[1]*corner[1] - T - RI
-    det = front[0]*rear[1] - front[1]*rear[0]
-    centre = ((k_f*rear[1] - front[1]*k_r)/det, (front[0]*k_r - k_f*rear[0])/det)
-    return (tuple(centre[i] + RI*front[i] for i in (0, 1)),
-            tuple(centre[i] + RI*rear[i] for i in (0, 1)))
-
-
-def base_rear_ridge_profile():
-    """Side-wall top at the ridge, after the lid-seat flange's rear slit.
-
-    The wall carries the transition flange's underside to the back. At the
-    ridge it simply continues that line forward until it meets the far side of
-    the lid-seat flange's rear slit, which stands at the lid's front bend
-    tangent. The flange end and the transition flange tip meet at their bottom
-    corners just above this point, so nothing of the wall rises between them.
-    Returned as the one (world depth, world height, bulge) point where the
-    wall top leaves the slit. For the flat, height becomes (world height - DEV90).
-    """
-    a, b = math.radians(SLOPE_ANGLE), math.radians(TRANS_ANGLE)
-    along = (math.cos(a), math.sin(a))          # up the top plate, world (y, z)
-    rear = (math.sin(b), math.cos(b))
-    t1, _t2 = lid_rear_bend_tangents()
-    k_s = along[0]*t1[0] + along[1]*t1[1]
-    k_b = rear[0]*RIDGE_Z + rear[1]*RIDGE_Y - 2.0*T   # transition flange underside
-    det = along[0]*rear[1] - along[1]*rear[0]
-    point = ((k_s*rear[1] - along[1]*k_b)/det, (along[0]*k_b - k_s*rear[0])/det)
-    return (point + (0.0,),)
-
-
-def _base_ridge_peak_height():
-    """World height of the side wall's highest point at the ridge: the lid-seat
-    flange's rear end, on the lid underside at the front bend tangent."""
-    return lid_rear_bend_tangents()[0][1]
-
-
-def _base_side_flap_reach():
-    """How far the flat blank reaches past each side bend line: the ridge apex or
-    the lid-seat flange's free edge, whichever sticks out further."""
-    return max(_base_ridge_peak_height() - DEV90,
-               max(h for h, _y, _b in side_seat_flange()["section"]))
-
-
 def _side_wall_top_flat(y):
     """Side-wall top edge, FRONT segment, as flat distance from the side bend line.
 
     It lies on the lid underside plane, anchored at the front wall's outer top
-    corner (flat y = -DEV90). The edge is the outer mold line of the lid-seat
-    flange, so this is also where that flange's top face lands.
+    corner (flat y = -DEV90). The lid rests on this bare edge.
     """
     return H_FRONT + (y + DEV90) * math.tan(math.radians(SLOPE_ANGLE)) - DEV90
 
 
-def _side_wall_crease_y():
-    """Flat y where the front top segment meets the rear (transition-seat) one."""
-    tan_a = math.tan(math.radians(SLOPE_ANGLE))
-    tan_th = math.tan(math.radians(TRANS_ANGLE))
-    return ((RIDGE_Y - 2.0 * T / math.cos(math.radians(TRANS_ANGLE)) + RIDGE_Z * tan_th
-             - H_FRONT - DEV90 * tan_a) / (tan_a + tan_th))
+def base_rear_ridge_profile():
+    """Side-wall ridge closure as (world depth, world height, arc bulge).
 
-
-def side_seat_flange():
-    """The lid-seat return flange on each side wall (#1067), in RIGHT-flap flat terms.
-
-    Heights h are flat distances from the side bend line (the right flap is
-    x = BW + h; the left mirrors it). Returns a dict with the flange's bend
-    line, its ends and the outline section that replaces the plain top edge
-    -- (h, y, bulge) in the right flap's traversal order (y increasing).
-
-    Development: the edge line is the flange's outer mold line, so the bend
-    line sits DEV90 inside it, measured square to the edge, and the flange
-    reaches SIDE_SEAT_FLANGE - 2*DEV90 past it. At the front it starts at the
-    wall's free front edge -- its bend line ends on that edge, so no relief --
-    and its end is cut square to the edge from there. At the rear it stops where
-    the lid's rear bend starts, relieved by a RELIEF_SLIT-wide straight cut past
-    the bend band: the rear slit's
-    far side stands at the lid's front bend tangent, and the wall's top joins
-    it where the transition flange's underside line crosses it
-    (base_rear_ridge_profile).
+    The side must meet the return flange only where that flange actually
+    exists. Ahead of its tip, follow the lid's inside bend with 0.30 mm bare
+    normal clearance; leave the same clearance to the fixed flange tip.
+    The five points replace a short section of the old flange-seat line.
+    For a native patch, close this wire from its last point to its first,
+    subtract T from world height, and extrude T along X on each side wall.
+    For the flat, height becomes (world height - DEV90); mapping it to X
+    swaps the axes, so the right-side DXF arc has the opposite bulge sign.
     """
-    a = math.radians(SLOPE_ANGLE)
-    along = (math.sin(a), math.cos(a))          # (h, y) unit vector up the edge
-    out = (math.cos(a), -math.sin(a))           # unit normal, away from the floor
-    tip = SIDE_SEAT_FLANGE - 2.0 * DEV90
-    relief = DEV90 + BA90 / 2.0 + 0.5           # edge -> 0.5 past the bend tangent
-    w = RELIEF_SLIT
+    a, b = math.radians(SLOPE_ANGLE), math.radians(TRANS_ANGLE)
+    front = (-math.sin(a), math.cos(a))
+    rear = (math.sin(b), math.cos(b))
+    tip = (-math.cos(b), math.sin(b))
 
-    def edge(y):
-        return (_side_wall_top_flat(y), y)
+    def dot(n, p):
+        return n[0]*p[0] + n[1]*p[1]
 
-    def at(p, n, k):
-        return (p[0] + k * n[0], p[1] + k * n[1])
+    def crossing(n, k, m, q):
+        det = n[0]*m[1] - n[1]*m[0]
+        return ((k*m[1] - n[1]*q)/det,
+                (n[0]*q - k*m[0])/det)
 
-    ry, rz, _b = base_rear_ridge_profile()[0]   # wall top leaves the slit here, world
-    ridge_start = (rz - DEV90, ry)              # ...in flat terms
-    below = ((_side_wall_top_flat(ry) - ridge_start[0]) * math.cos(a))
-    assert 0.0 <= below < relief, "the wall top meets the slit below its bottom"
-    p_rear = at(at(ridge_start, out, below), along, -w)
-    assert abs(p_rear[0] - _side_wall_top_flat(p_rear[1])) < 1e-9
-    # Front: the bend line's end sits on the wall's front edge (flat y = the weld
-    # gap edge), so the flange's end corner on the edge line is DEV90 sin(slope)
-    # ahead of it.
-    front_edge = T - DEV90 + BASE_WELD_GAP
-    p_front = edge(front_edge - DEV90 * math.sin(a))
-    b_front = at(p_front, out, -DEV90)
-    assert abs(b_front[1] - front_edge) < 1e-9
-    section = [
-        (*b_front, 0.0),
-        (*at(p_front, out, tip), 0.0),
-        (*at(p_rear, out, tip), 0.0),
-        (*at(p_rear, out, -relief), 0.0),
-        (*at(at(p_rear, along, w), out, -relief), 0.0),
-    ]                                           # ...then up the slit to ridge_start
-    bend = (at(p_front, out, -DEV90), at(p_rear, out, -DEV90))
-    return {"front_y": p_front[1], "rear_y": p_rear[1], "tip": tip, "relief": relief,
-            "ridge_start": ridge_start, "bend": bend, "section": section,
-            "length": math.dist(*bend)}
+    corner = (RIDGE_Z, RIDGE_Y)
+    front_inner = dot(front, corner) - T
+    rear_inner = dot(rear, corner) - T
+    flange_bottom = rear_inner - T
+    flange_tip = dot(tip, corner) - D_FL_TIP
+    clearance = 0.30
+    center = crossing(front, front_inner-RI, rear, rear_inner-RI)
+    radius = RI-clearance
+    start = crossing(front, front_inner-clearance, rear, flange_bottom)
+    front_tangent = tuple(center[i]+radius*front[i] for i in (0, 1))
+    rear_tangent = tuple(center[i]+radius*rear[i] for i in (0, 1))
+    tip_top = crossing(rear, rear_inner-clearance, tip, flange_tip+clearance)
+    tip_bottom = crossing(rear, flange_bottom, tip, flange_tip+clearance)
+    return (start+(0.0,), front_tangent+(-math.tan((a+b)/4.0),),
+            rear_tangent+(0.0,), tip_top+(0.0,), tip_bottom+(0.0,))
 
 
-def rear_corner_contour_z(y, clr=REAR_CORNER_CLR):
-    """Inside contour of the rear wall and shoulder, as height above the floor TOP.
-
-    At world depth y near the rear corner, the highest point the side wall may
-    reach: the shoulder's underside (the wedge line the wall carries), then the
-    rear wall's upper bend (inside radius RI about a centre RI ahead of the wall's
-    inner face, at the top of its straight part), both offset clr inward. The
-    two pieces meet tangentially, so the offset is smooth.
-    """
-    tan_th = math.tan(math.radians(TRANS_ANGLE))
-    yc = D - 3.0 * T + DEV90 - RI
-    zc = HR_FLAT - bend_allowance(90.0 - TRANS_ANGLE) / 2.0 + DEV90 - T
-    r = RI - clr
-    y_join = yc + r * math.cos(math.radians(90.0 - TRANS_ANGLE))
-    if y >= y_join:
-        assert y <= yc + r, f"depth {y:.3f} is behind the rear wall's inner face"
-        return zc + math.sqrt(r * r - (y - yc) ** 2)
-    shoulder = (RIDGE_Y - (y - RIDGE_Z) * tan_th
-                - 2.0 * T / math.cos(math.radians(TRANS_ANGLE)) - T)
-    return shoulder - clr / math.cos(math.radians(TRANS_ANGLE))
-
-
-def rear_tab_z():
-    """(bottom, top) of the rear corner tab's flat part, height above the floor TOP.
-
-    Bottom: where the side wall's floor bend ends, RI above the floor top. Top:
-    the corner contour at the tab's outer face.
-    """
-    y_face = D - 3.0 * T + DEV90 - REAR_TAB_GAP
-    return (RI, rear_corner_contour_z(y_face))
-
-
-def rear_corner_tab():
-    """The spot-welded rear corner tab on each side wall (#1067), in RIGHT-flap terms.
-
-    The tab takes the side wall's whole rear edge and folds 90 deg inward onto the
-    rear wall's inner face, REAR_TAB_GAP off it, so its bend line (flat y) is
-    DEV90 short of that face and it runs REAR_TAB_W - DEV90 past the line.
-
-    Its top edge is shaped, not cut square: from 3 mm ahead of the bend the wall
-    top eases from the shoulder seat onto rear_corner_contour_z, and through the
-    bend each flat station is lifted to the contour at the depth its OUTER surface
-    reaches once folded (angle = arc length / neutral radius). Heights h are flat
-    distances from the side bend line; the section runs in the right flap's
-    traversal order, top of the wall toward the floor.
-    """
-    BD = D - 2*T
-    y_face = BD + DEV90 - T - REAR_TAB_GAP      # tab OUTER face, world depth
-    y_bend = y_face - DEV90
-    y_tip = y_bend + REAR_TAB_W - DEV90
-    y_s = y_bend - BA90 / 2.0                   # side wall's tangent into the bend
-    h_lo = wall_flat_z(RI)
-    assert abs(h_lo - BA90 / 2.0) < 1e-9, "tab bottom is not at the floor-bend tangent"
-    tan_th = math.tan(math.radians(TRANS_ANGLE))
-    seat = lambda y: (RIDGE_Y - (y - RIDGE_Z) * tan_th
-                      - 2.0 * T / math.cos(math.radians(TRANS_ANGLE))) - DEV90
-    ramp = 3.0
-    neutral, outer = RI + KF * T, RI + T
-    stations = 16                               # even: one lands on the bend line
-    section = [(seat(y_s - ramp), y_s - ramp, 0.0)]
-    for i in range(stations + 1):
-        y_flat = y_s + BA90 * i / stations
-        y_world = y_s + outer * math.sin((y_flat - y_s) / neutral)
-        section.append((wall_flat_z(rear_corner_contour_z(y_world)), y_flat, 0.0))
-    h_top = section[-1][0]
-    h_line = section[1 + stations // 2][0]
-    assert abs(section[1 + stations // 2][1] - y_bend) < 1e-9
-    assert abs(h_top - wall_flat_z(rear_tab_z()[1])) < 1e-9
-    assert all(a[0] >= b[0] - 1e-9 for a, b in zip(section, section[1:])), (
-        "the corner top edge must fall monotonically into the tab")
-    section += [(h_top, y_tip, 0.0), (h_lo, y_tip, 0.0), (h_lo, y_s - 0.5, 0.0)]
-    return {"y_face": y_face, "y_bend": y_bend, "y_tip": y_tip, "y_s": y_s,
-            "h": (h_lo, h_line), "h_top": h_top,
-            "section": section, "length": h_line - h_lo}
+def _base_ridge_peak_height():
+    """World height of the ridge arc apex, including its interior extremum."""
+    (_a, (fy, fz, bulge), (ry, rz, _b), _c, _d) = base_rear_ridge_profile()
+    center_z = (fz+rz)/2 + (1-bulge*bulge)*(ry-fy)/(4*bulge)
+    radius = math.hypot(ry-fy, rz-fz)*(1+bulge*bulge)/(4*abs(bulge))
+    return center_z+radius
 
 
 def dxf_base(path):
@@ -3623,11 +3408,9 @@ def dxf_base(path):
     # below the lid underside) rolls through the wall's top-corner band, and a
     # straight top edge across the T thickness only clears the roll below the
     # bend-axis height (the pocket is tangent to the lip plane exactly there).
-    # The front wall takes a height drop instead (an edge bevel across 2mm is not
-    # a flat-pattern feature). The gap is invisible: the lip skirts down over it.
-    # (#760) The side walls no longer need their old R3 cove for that roll: the
-    # lip now stands LIP_BARE_CLEAR further forward, and the lid-seat flange runs
-    # right to the walls' front edges on the flat underside behind the bend.
+    # The sides already carry the LIPR_R cove for the same roll; the front wall
+    # takes a height drop instead (an edge bevel across 2mm is not a flat-pattern
+    # feature). The gap is invisible: the lip skirts down over it. (#760)
     _axis_h = ((_cfy - T / math.cos(_ra))                       # underside @ lip corner
                + ((-DEV90 + RI) - _cfz) * math.tan(_ra)         # ...out to the bend axis
                - RI / math.cos(_ra))                            # RI perpendicular below
@@ -3645,47 +3428,63 @@ def dxf_base(path):
     Hr = HR_FLAT                             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     half_bend = BA90 / 2.0                 # tangent of each centered floor bend
+    LIPR_R = 3.0                            # lip-bend relief radius: a cove TANGENT
+                                            # to the top edge AND the front edge
+                                            # (mirrors the lid lip's roll)
     tan_a, tan_th = math.tan(_ra), math.tan(_rth)
     # side-wall wedge top, FRONT segment: ON the lid underside plane, anchored at
     # the front wall outer top corner (solver Z = -DEV90, i.e. flat y = -bdd -- the
     # solver frame's origin is the front BEND LINE, same axis as the flat's y)
-    shf_f = _side_wall_top_flat
+    shf_f = lambda y: (H_FRONT + (y + bdd) * tan_a) - bdd
     # REAR segment: FLUSH on the transition FLANGE underside (two sheets below the
     # lap outer skin) so the full-width flange rests on the wedge tops with no gap.
     # RIDGE_Z is already in the flat-y frame -- adding bdd here drew the whole
     # segment ~0.87 low (caught by hand-editing the Fusion model).
     shf_r = lambda y: (RIDGE_Y - (y - RIDGE_Z) * tan_th
                        - 2.0 * T / math.cos(_rth)) - bdd
+    # the two top segments meet in a single CREASE (no apex step): the flange
+    # seat plane extended forward until it intersects the lid underside plane
+    y_x = ((RIDGE_Y - 2.0 * T / math.cos(_rth) + RIDGE_Z * tan_th
+            - H_FRONT - bdd * tan_a) / (tan_a + tan_th))
+    _hyp = math.hypot(1.0, tan_a)
+    h_F = (shf_f(0.0) + tan_a * LIPR_R - LIPR_R * _hyp)   # cove mouth on the front edge
+    y_T = LIPR_R * (1.0 - tan_a / _hyp)                   # tangency depth on the top line
+    h_T = shf_f(y_T)                                      # tangency height (on the line)
     front_edge = T - DEV90 + BASE_WELD_GAP
-    fext  = (BASE_OUTER_W - BW) / 2.0       # rear flap side extension past the wall webs
-    web_ext = DEV90 - T + BASE_WELD_OVERLAP     # FRONT wall: welder's half-sheet overlap
-    # The REAR flap runs the full outer width (fext) from its floor-bend tangent
-    # up: it folds up outside the side walls' tabbed corners and covers them.
+    # Keep the lid's existing R3 cove, trimming only its leading end to the
+    # new side edge. Moving the whole cove would change the lid clearance.
+    h_F += math.sqrt(LIPR_R**2 - (LIPR_R-front_edge)**2)
+    cove_sweep = (math.asin((LIPR_R-front_edge)/LIPR_R)
+                  - math.radians(SLOPE_ANGLE))
+    lb = math.tan(cove_sweep / 4.0)
+    fext  = (BASE_OUTER_W - BW) / 2.0       # flange side extension past the wall webs
+    web_ext = DEV90 - T + BASE_WELD_OVERLAP
+    # The rear web ends halfway across the side-wall thickness, as in the
+    # welder's sample. Widen it through the upper bend band only; the complete
+    # flat return and its lid-bearing surface keep their existing dimensions.
+    upper_half_bend = bend_allowance(90.0-TRANS_ANGLE) / 2.0
+    upper_start = BD + Hr - upper_half_bend
+    upper_end = BD + Hr + upper_half_bend
+    y_edge = BD + DEV90 - T - BASE_WELD_GAP
+    CORNER_R = 2.0                          # fillet where the wedge top meets it
+    h_x = shf_f(y_x)                        # crease height (= shf_r(y_x))
+    h_corner = shf_r(y_edge)                # wedge top at the rear edge
 
     # ---- one closed outer CUT contour (CCW): bottom + 4 fold-up flaps; the side flaps
     #      have a nominal weld gap to the overlapping front/rear flaps. The rear
     #      flap's FLANGE section is FULL OUTER WIDTH (steps out at the hinge) so it
     #      seats on the side-wall wedge tops; the wedge tops carry bend-radius
     #      reliefs for the lid's lip and lap folds (issue #237). --------------------
+    turn = math.radians(90.0 - TRANS_ANGLE)     # corner turn: wedge top -> rear edge
+    ft = CORNER_R * math.tan(turn / 2.0)        # fillet tangent setback
+    fb = math.tan(turn / 4.0)                   # fillet bulge (CCW round-off)
+    ax = h_corner + ft * math.sin(_rth)         # tangent on the wedge-top slope
+    ay = y_edge - ft * math.cos(_rth)
+    bx = h_corner - ft                          # tangent on the rear edge
     # Each relief is two straight developed edges meeting at the common
     # floor-bend tangent. Folding makes the small curved opening in the
     # welder's example; no circular corner hole or added weld bead is modeled.
-    # After the lid-seat flange's rear slit the wall top follows the transition
-    # flange's underside straight back; nothing rises between the two flanges.
     ridge = base_rear_ridge_profile()
-    seat, tab = side_seat_flange(), rear_corner_tab()
-    assert tab["section"][0][1] > ridge[-1][0], "rear corner contour runs into the ridge closure"
-
-    def _mirror(section):
-        # The left flap runs the other way round the contour: reverse the
-        # points and carry each arc to the vertex that now starts it. The x
-        # mirror and the reversal each flip an arc's sense, so the sign stays.
-        pts = section[::-1]
-        return [(-h, y, section[len(section)-2-i][2] if i < len(section)-1 else 0.0)
-                for i, (h, y, _b) in enumerate(pts)]
-    right_seat = [(BW+h, y, b) for h, y, b in seat["section"]]
-    right_tab = [(BW+h, y, b) for h, y, b in tab["section"]]
-    left_seat, left_tab = _mirror(seat["section"]), _mirror(tab["section"])
     # The right contour runs front -> rear, with reversed coordinate handedness.
     # The left runs rear -> front: its reversed arc starts at the rear tangent.
     right_ridge = [(BW+z-bdd, y, -bulge) for y, z, bulge in ridge]
@@ -3696,18 +3495,22 @@ def dxf_base(path):
         (-web_ext, -Hf), (BW+web_ext, -Hf),
         (BW+web_ext, -half_bend), (BW-half_bend, half_bend),
         (BW+half_bend, front_edge),                              # FRONT flap + relief
-        *right_seat,                                                   # front edge up into the lid-seat
-        *right_ridge,                                                  # flange, rear slit, flange underside,
-        *right_tab,                                                    # corner contour, full-height
-        (BW-half_bend, BD-half_bend),                                  # tab, floor-corner relief
-        (BW+fext, BD+half_bend),                                       # REAR flap, full outer width
+        (BW+h_F, front_edge, lb), (BW+h_T, y_T),                   # preserved lip relief cove
+                                                                       # to the front edge, sweeps
+                                                                       # up to kiss the top line
+        (BW+h_x, y_x), *right_ridge,                                   # RIGHT flap: close the ridge,
+        (BW+ax, ay, fb), (BW+bx, y_edge),                              # the flange seat plane,
+        (BW+half_bend, y_edge), (BW-half_bend, BD-half_bend),
+        (BW+web_ext, BD+half_bend),
+        (BW+web_ext, upper_start), (BW+fext, upper_end),
         (BW+fext, BD+Hr+Ht),
         (-fext, BD+Hr+Ht),
-        (-fext, BD+half_bend), (half_bend, BD-half_bend),
-        *left_tab,                                                     # LEFT flap: rear tab, corner,
-        *left_ridge,                                                   # ridge closure
-        *left_seat,
-        (-half_bend, front_edge),
+        (-fext, upper_end), (-web_ext, upper_start),
+        (-web_ext, BD+half_bend), (half_bend, BD-half_bend),
+        (-half_bend, y_edge),
+        (-bx, y_edge, fb),                                             # LEFT flap: rear edge,
+        (-ax, ay), *left_ridge, (-h_x, y_x),                            # fillet, ridge closure, crease
+        (-h_T, y_T, lb), (-h_F, front_edge), (-half_bend, front_edge),
         (half_bend, half_bend), (-web_ext, -half_bend),
     ]
     msp.add_lwpolyline([(pt + (0.0,))[:3] for pt in outline], format="xyb",
@@ -3719,10 +3522,6 @@ def dxf_base(path):
     _poly(msp, [(0, 0), (0, BD)], "BEND", closed=False)               # left
     _poly(msp, [(BW, 0), (BW, BD)], "BEND", closed=False)             # right
     _poly(msp, [(-fext, BD+Hr), (BW+fext, BD+Hr)], "BEND", closed=False)  # rear -> transition (full flange width)
-    for _sgn, _x0 in ((-1, 0.0), (1, BW)):                             # lid-seat flanges (#1067)
-        _poly(msp, [(_x0 + _sgn*h, y) for h, y in seat["bend"]], "BEND", closed=False)
-    for _sgn, _x0 in ((-1, 0.0), (1, BW)):                             # rear corner tabs (#1067)
-        _poly(msp, [(_x0 + _sgn*h, tab["y_bend"]) for h in tab["h"]], "BEND", closed=False)
 
     # ---- bottom features: Pi/board M3 standoffs + the rear rail's anchors ---------
     # No vents in this face. The openings are in the side and rear WALLS, which are
@@ -3786,11 +3585,11 @@ def dxf_base(path):
             _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
                          "zona de puesta a tierra del perno M6, AMBAS CARAS")
     _mask_top = _note(msp, 8, BD+Hr+Ht+10,
-          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las DOS esquinas FRONTALES y cerrar sus alivios inferiores; aporte 5356 acordado con soldador. Esquinas TRASERAS sin soldadura por fusión: la pared trasera cubre todo el ancho exterior y cada lateral pliega su borde trasero completo como lengüeta de {REAR_TAB_W:.0f} mm sobre la cara interior de la pared trasera, {len(REAR_TAB_SPOTS_Z)} puntos de soldadura por resistencia por lengüeta a {', '.join(f'{z:.1f}' for z in REAR_TAB_SPOTS_Z)} mm sobre la cara superior del piso; confirmar que el equipo suelda aluminio 1100 de 2 mm. Soldaduras por fusión con acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable y apoya sobre una pestaña de {SIDE_SEAT_FLANGE:.0f} mm plegada hacia adentro en el borde superior de cada lateral. Taladrar el frente DESPUÉS de todos los plegados y soldaduras, ANTES DE PINTAR; confirmar quién hace esta operación y dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, todos +0.10/-0.00 SIN PINTAR; no roscar los pasos libres. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
+          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las cuatro esquinas, cerrar sus alivios inferiores y las dos uniones superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable. Taladrar el frente DESPUÉS de todos los plegados y soldaduras, ANTES DE PINTAR; confirmar quién hace esta operación y dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, todos +0.10/-0.00 SIN PINTAR; no roscar los pasos libres. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
     _note(msp, 8, _mask_top + 8,
           "MASK = máscara de pintura: sólo contactos eléctricos de tierra indicados; NO CORTAR. Pilotos M3 sin rosca: el propietario limpia y rosca después de pintar. El resto del metal, incluidos asientos y pasos libres, se pinta.", layer="MASK")
     _save(doc, path)
-    return {"blank": (BW + 2*_base_side_flap_reach(),
+    return {"blank": (BW + 2*(_base_ridge_peak_height()-bdd),
                       BD + Hf + Hr + Ht)}
 
 def platform_foot_u(sw):
@@ -3872,17 +3671,13 @@ def dxf_beam(path):
         return x_w0 + (u - BEAM_U0 - BEAM_DD_FOOT)
 
     y_e0, y_e1 = _z2y(BEAM_EAR_Z0 + BEAM_EAR_H), _z2y(BEAM_EAR_Z0)
-    # the pad stops short of the wall flanges and the web top drops beside it
-    x_pa, x_pb = _u2x(BEAM_U0 + BEAM_PAD_X0), _u2x(BEAM_U0 + BEAM_LEN - BEAM_PAD_X0)
-    y_n = _z2y(BEAM_NOTCH_Z)
-    assert y_p < y_n < y_e0, "beam notch: web top must fall between the pad bend and the ear"
-    _poly(msp, [(x_pa, 0), (x_pb, 0), (x_pb, y_n),
-                (x_w1, y_n), (x_w1, y_e0), (x_w1 + ear, y_e0),
+    _poly(msp, [(x_a, 0), (x_b, 0), (x_b, y_p),
+                (x_w1, y_p), (x_w1, y_e0), (x_w1 + ear, y_e0),
                 (x_w1 + ear, y_e1), (x_w1, y_e1), (x_w1, y_f),
                 (x_b, y_f), (x_b, Wd), (x_a, Wd), (x_a, y_f),
                 (x_w0, y_f), (x_w0, y_e1), (0.0, y_e1),
-                (0.0, y_e0), (x_w0, y_e0), (x_w0, y_n), (x_pa, y_n)], "CUT")
-    _poly(msp, [(x_pa, y_p), (x_pb, y_p)], "BEND", closed=False)   # pad -> web (fold 90 + tilt)
+                (0.0, y_e0), (x_w0, y_e0), (x_w0, y_p), (x_a, y_p)], "CUT")
+    _poly(msp, [(x_a, y_p), (x_b, y_p)], "BEND", closed=False)   # pad -> web (fold 90 + tilt)
     _poly(msp, [(x_a, y_f), (x_b, y_f)], "BEND", closed=False)   # web -> foot (fold 90)
     _poly(msp, [(x_w0, y_e0), (x_w0, y_e1)], "BEND", closed=False)   # left ear (fold 90)
     _poly(msp, [(x_w1, y_e0), (x_w1, y_e1)], "BEND", closed=False)   # right ear (fold 90)
@@ -5825,16 +5620,6 @@ def _beam_solid():
         body = body.cut(cq.Workplane("XY")
                         .box(_BEAM_REL + 1.0, f, 4*h, centered=False)
                         .translate((x0, 0.0, -h)))
-    # --- lid-seat notch (#1067): pad and web top clear the wall flanges -------
-    # As in the flat: the whole pad goes over each end (everything forward of the
-    # web's front face above mid-height), and the web above BEAM_NOTCH_Z.
-    for x0 in (-1.0, BEAM_LEN - BEAM_PAD_X0):
-        body = body.cut(cq.Workplane("XY")
-                        .box(BEAM_PAD_X0 + 1.0, f + pad + t, 4*h, centered=False)
-                        .translate((x0, -pad - t, h / 2.0)))
-        body = body.cut(cq.Workplane("XY")
-                        .box(BEAM_PAD_X0 + 1.0, 4*t, 4*h, centered=False)
-                        .translate((x0, f - t, BEAM_NOTCH_Z)))
     # --- wall ears: each end folds a plate REARWARD onto its side wall --------
     # Rearward because the foot and the pad both run forward of the web. Drawn as
     # a real L in PLAN with its own concentric radii, so the ear is a bend and not
@@ -6215,14 +6000,9 @@ def write_formed_input():
         curves = _flat_primitives(stem)
         folds = []
         for _n,_label,axis,position,_length,angle,direction,_radius,_deduct in BEND_TABLES[stem]:
-            if axis == "seg":
-                line = next(curve for curve in curves["BEND"]
-                            if all(abs(a-b)<.001 for p, q in zip(curve[1], position)
-                                   for a, b in zip(p, q)))
-            else:
-                coordinate = 0 if axis == "x" else 1
-                line = next(curve for curve in curves["BEND"]
-                            if all(abs(point[coordinate]-position)<.001 for point in curve[1]))
+            coordinate = 0 if axis == "x" else 1
+            line = next(curve for curve in curves["BEND"]
+                        if all(abs(point[coordinate]-position)<.001 for point in curve[1]))
             folds.append({"line":line,"angle_deg":-angle if direction == DN_AWAY else angle})
         drill = []
         if stem in ("segno_base","segno_faceplate"):
@@ -6623,25 +6403,12 @@ def _bend_tables():
     # transition while the blank is still flat, then the two long walls, then the
     # sides last (their punch has to fit between the standing front and rear walls,
     # with the developed corner reliefs).
-    # The lid-seat flanges and the rear corner tabs (#1067) are short folds on the
-    # side flaps; they go in while the blank is still flat, after the transition.
-    # Neither runs across the whole part or (for the flanges) along an axis, so
-    # their rows carry the drawn segment itself ("seg").
-    seat, tab = side_seat_flange(), rear_corner_tab()
-    def _seg(points, sgn, x0):
-        return tuple(sorted((round(x0 + sgn*h, 3), round(y, 3)) for h, y in points))
     tabs["segno_base"] = [
         (1, "trasera -> transición", "y", BD + HR_FLAT, BASE_OUTER_W, 90.0 - TRANS_ANGLE, UP_TOWARD, RI, DD_TR),
-        (2, "asiento tapa izq.",     "seg", _seg(seat["bend"], -1, 0.0), seat["length"], 90.0, UP_TOWARD, RI, DEV90),
-        (3, "asiento tapa der.",     "seg", _seg(seat["bend"], 1, BW),   seat["length"], 90.0, UP_TOWARD, RI, DEV90),
-        (4, "lengüeta tras. izq.",   "seg", _seg([(h, tab["y_bend"]) for h in tab["h"]], -1, 0.0),
-         tab["length"], 90.0, UP_TOWARD, RI, DEV90),
-        (5, "lengüeta tras. der.",   "seg", _seg([(h, tab["y_bend"]) for h in tab["h"]], 1, BW),
-         tab["length"], 90.0, UP_TOWARD, RI, DEV90),
-        (6, "pared frontal",         "y", 0.0,          BW,    90.0,               UP_TOWARD, RI, DEV90),
-        (7, "pared trasera",         "y", BD,           BW,    90.0,               UP_TOWARD, RI, DEV90),
-        (8, "pared izquierda",       "x", 0.0,          BD,    90.0,               UP_TOWARD, RI, DEV90),
-        (9, "pared derecha",         "x", BW,           BD,    90.0,               UP_TOWARD, RI, DEV90),
+        (2, "pared frontal",         "y", 0.0,          BW,    90.0,               UP_TOWARD, RI, DEV90),
+        (3, "pared trasera",         "y", BD,           BW,    90.0,               UP_TOWARD, RI, DEV90),
+        (4, "pared izquierda",       "x", 0.0,          BD,    90.0,               UP_TOWARD, RI, DEV90),
+        (5, "pared derecha",         "x", BW,           BD,    90.0,               UP_TOWARD, RI, DEV90),
     ]
     tabs["segno_faceplate"] = [
         (1, "pestaña frontal", "y", ffl,        lid_w, 90.0 - SLOPE_ANGLE,        DN_AWAY, RI, DD_LIP),
@@ -6657,7 +6424,7 @@ def _bend_tables():
     tabs["segno_beam"] = [
         (1, "oreja izquierda", "x", BEAM_EAR_F,                 BEAM_EAR_H, 90.0, DN_AWAY, BEAM_RI, BEAM_DD_FOOT),
         (2, "oreja derecha",   "x", BEAM_EAR_F + BEAM_WEB_XF,   BEAM_EAR_H, 90.0, DN_AWAY, BEAM_RI, BEAM_DD_FOOT),
-        (3, "apoyo -> alma",   "y", BEAM_PAD_F,              BEAM_LEN - 2*BEAM_PAD_X0, 90.0 + BEAM_TILT, UP_TOWARD, BEAM_RI, BEAM_DD_PAD),
+        (3, "apoyo -> alma",   "y", BEAM_PAD_F,              _beam_flange_len, 90.0 + BEAM_TILT, UP_TOWARD, BEAM_RI, BEAM_DD_PAD),
         (4, "alma -> pie",     "y", BEAM_PAD_F + BEAM_WEB_F, _beam_flange_len, 90.0,             UP_TOWARD, BEAM_RI, BEAM_DD_FOOT),
     ]
     return tabs
@@ -6676,20 +6443,18 @@ _front_pedal_bend_land = min(c["v"] + LID_FRONT_EXTRA for c in faceplate_holes()
                              if c["ref"] in {label for label, _u, _v in PEDALS})
 BEND_FOOTNOTES = {
     "segno_base": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T) | pestaña plana = longitud exterior - deducción. "
-                   f"LAS FILAS ESTÁN EN ORDEN DE PLEGADO - no reordenar. Las pestañas de asiento (2, 3) y las lengüetas traseras (4, 5) se pliegan con la chapa aún plana; "
-                   f"las lengüetas quedan de pie junto a los extremos de la línea 7 y el punzón de ese plegado no debe pasar por encima de ellas. Los laterales (8, 9) necesitan un punzón <= 410 mm: las "
-                   f"4 esquinas llevan alivios angulares según CUT; en las frontales, separación nominal {BASE_WELD_GAP:.2f} mm y solape {BASE_WELD_OVERLAP:.2f} mm para soldar; la pared trasera cubre todo el ancho exterior. Al levantar cada lateral su lengüeta apoya sobre la pared trasera ya formada (luz nominal {REAR_TAB_GAP:.2f} mm). Los extremos de las pestañas de asiento se liberan con cortes rectos de {RELIEF_SLIT:.2f} mm (una sola pasada de láser, sin ojal ni radio): no ensancharlos. Las lengüetas traseras no llevan cortes: su borde superior sigue el interior de la pared trasera y del hombro según CUT. PROPUESTA: confirmar alivios, acceso del punzón y secuencia antes de cortar. Referenciar los "
-                   f"plegados 8 y 9 contra las caras ya formadas de las paredes frontal/trasera (la pestaña lateral es una cuña y no "
+                   f"LAS FILAS ESTÁN EN ORDEN DE PLEGADO - no reordenar. Los laterales (4, 5) necesitan un punzón <= 410 mm: los "
+                   f"4 esquinas llevan alivios angulares según CUT, separación nominal {BASE_WELD_GAP:.2f} mm y solape {BASE_WELD_OVERLAP:.2f} mm. PROPUESTA: confirmar alivios, acceso del punzón y secuencia antes de cortar. Referenciar los "
+                   f"plegados 4 y 5 contra las caras ya formadas de las paredes frontal/trasera (la pestaña lateral es una cuña y no "
                    f"queda escuadra con su plegado). Matriz V12 en todos los plegados; el Ri {RI:.1f} mm es obligatorio - si aparecen "
                    f"fisuras en el sentido del laminado PARAR, no abrir el radio: hay que volver a desarrollar el plano. "
                    f"PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico). "
-                   f"Chapa de 1250 de ancho (desarrollo {W-2*T+2*_base_side_flap_reach():.1f} x 538.6). Conservar el contorno de cierre y los alivios; la tapa debe asentar sin forzar. Los 9 pilotos Ø2.5 de la pared frontal quedan con el centro a 4.545 mm de la línea de "
+                   f"Chapa de 1250 de ancho (desarrollo {W-2*T+2*(_base_ridge_peak_height()-DEV90):.1f} x 538.6). Conservar el contorno de cierre y los alivios; la tapa debe asentar sin forzar. Los 9 pilotos Ø2.5 de la pared frontal quedan con el centro a 4.545 mm de la línea de "
                    f"plegado, dentro de la abertura de la matriz V12: taladrarlos DESPUÉS de todos los plegados y soldaduras, ANTES DE PINTAR. Confirmar el taller responsable. "
                    f"Después de soldar y antes de taladrar el frente: verificar asiento libre, caras alineadas y luz SIN PINTAR {FRONT_BARE_GAP_MIN:.2f}-{FRONT_BARE_GAP_MAX:.2f} mm. "
                    "Después de pintar: calces metálicos Ø7/paso4.0-4.2 ajustados individualmente entre caras pintadas. Verificar apoyo y paralelismo. "
                    "Arandelas M3 Ø7 delante; Ø12/paso3.2/espesor1 detrás, referencia de compra por confirmar. No apretar sobre la luz vacía. "
-                   f"Soldar las DOS esquinas frontales del cuerpo y cerrar sus alivios en otro taller; aporte 5356 elegido por el soldador. Las esquinas traseras no llevan soldadura por fusión. "
-                   f"Esquinas traseras: {len(REAR_TAB_SPOTS_Z)} puntos de soldadura por resistencia en cada lengüeta, electrodos contra la cara exterior trasera, sin tocar el radio del plegado; aluminio 1100 de 2 mm, confirmar equipo, limpieza de óxido y ajuste antes de soldar. Terminación exterior al ras sin adelgazar chapa ni unión; conservar el asiento de la tapa desmontable. No soldar la tapa. Mantener escuadra sin forzar paredes; plegar la trasera a escuadra "
+                   f"Soldar las cuatro esquinas del cuerpo, cerrar sus alivios y las dos uniones superiores trasera/lateral en otro taller; aporte 5356 elegido por el soldador. Terminación exterior al ras sin adelgazar chapa ni unión; conservar el asiento de la tapa desmontable. No soldar la tapa. Mantener escuadra sin forzar paredes; plegar la trasera a escuadra "
                    f"antes de levantar los laterales. La máscara PANEL_BOND es en la CARA INTERIOR. Ignorar DRILL/NOTE/MASK/SILK al anidar."),
     "segno_faceplate": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T). "
                         f"Material entre pliegue frontal y pedales: {_front_pedal_bend_land:.3f} mm; verificar herramental. "
@@ -6723,8 +6488,7 @@ BEND_FOOTNOTES = {
                    f"LAS FILAS ESTÁN EN ORDEN DE PLEGADO: las dos orejas PRIMERO, con la chapa aún plana; después el apoyo y el pie, "
                    f"cuyas líneas de plegado terminan {BEAM_EAR_RELIEF:.1f} mm antes de cada oreja (alivio de plegado) para que el herramental "
                    f"de {_beam_flange_len_mm():.0f} mm no tenga que pasar por encima de una oreja ya levantada. Las orejas pliegan HACIA EL LADO "
-                   f"OPUESTO al apoyo y al pie. El apoyo termina a {BEAM_PAD_X0:.1f} mm de cada cara exterior de oreja y el alma baja ahí "
-                   f"a {BEAM_NOTCH_Z:.1f} mm sobre el pie: libra las pestañas de asiento de tapa de las paredes laterales. "
+                   f"OPUESTO al apoyo y al pie. "
                    f"El plegado del apoyo es AGUDO (incluido {90.0 - BEAM_TILT:.1f}°): punzón de 30° y matriz aguda, no el juego de 88°."),
 }
 
@@ -6745,13 +6509,7 @@ def _bend_table_lines(stem):
     out = ["TABLA DE PLEGADOS   ( rotación = ángulo que gira la pestaña DESDE el plano;   incluido = 180 - rotación )",
            row([h for h, _w in cols])]
     for seq, name, axis, pos, ln, rot, direction, ri, ded in rows:
-        if axis == "seg":
-            (x0, y0), (x1, y1) = pos
-            where = (f"y = {y0:8.2f}" if abs(y1 - y0) < 1e-6 else
-                     f"x = {x0:8.2f}" if abs(x1 - x0) < 1e-6 else "inclinada")
-        else:
-            where = f"{axis} = {pos:8.2f}"
-        out.append(row([f" {seq}", name, where, f"{ln:8.1f}",
+        out.append(row([f" {seq}", name, f"{axis} = {pos:8.2f}", f"{ln:8.1f}",
                         f"{rot:8.3f}°", f"{180.0-rot:8.3f}°", direction,
                         f"{ri:.1f} mm", f"{ded:.3f} mm" if ded else "sin deducción (nominal)"]))
     return out
@@ -8070,23 +7828,19 @@ def _dxf_bend_lines(dxf_path):
     """Every BEND line actually drawn, as (axis, position, length)."""
     import ezdxf
     out = []
-    segments = {row[3] for rows in BEND_TABLES.values() for row in rows if row[2] == "seg"}
     for e in ezdxf.readfile(dxf_path).modelspace():
         if e.dxf.layer != "BEND" or e.dxftype() != "LWPOLYLINE":
             continue
-        pts = [(float(pt[0]), float(pt[1])) for pt in e.get_points()]
+        pts = [(pt[0], pt[1]) for pt in e.get_points()]
         xs = [q[0] for q in pts]; ys = [q[1] for q in pts]
-        seg = tuple(sorted((round(x, 3), round(y, 3)) for x, y in pts))
-        if seg in segments:
-            out.append(("seg", seg, round(math.dist(*pts[:2]), 3)))
-        elif abs(max(ys) - min(ys)) < 1e-6:
+        if abs(max(ys) - min(ys)) < 1e-6:
             out.append(("y", round(min(ys), 3), round(max(xs) - min(xs), 3)))
         elif abs(max(xs) - min(xs)) < 1e-6:
             out.append(("x", round(min(xs), 3), round(max(ys) - min(ys), 3)))
         else:
             raise AssertionError(f"{os.path.basename(dxf_path)}: BEND line is neither "
                                  f"horizontal nor vertical -- it cannot be tabled")
-    return sorted(out, key=repr)
+    return sorted(out)
 
 
 def _verify_tile_package(with_pdf=True, *, check_archives=True):
@@ -8501,8 +8255,8 @@ def _verify_drawing_package(with_pdf=True, *, check_archives=True):
 
         # --- R2: every drawn fold is in the bend table, and vice versa ----------
         drawn = _dxf_bend_lines(dxf)
-        tabled = sorted(((axis, pos if axis == "seg" else round(pos, 3), round(ln, 3))
-                         for _s, _n, axis, pos, ln, *_r in BEND_TABLES.get(stem, ())), key=repr)
+        tabled = sorted((axis, round(pos, 3), round(ln, 3))
+                        for _s, _n, axis, pos, ln, *_r in BEND_TABLES.get(stem, ()))
         assert drawn == tabled, (
             f"{stem}: bend table does not match the drawn BEND layer.\n"
             f"  drawn : {drawn}\n  tabled: {tabled}")
