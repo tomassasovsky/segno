@@ -1,5 +1,34 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
+## Seven beam screws, tapered lid, rear I/O in the wall - 2026-09-29 (#1088)
+
+Same clone, still unsaved at the time of writing. All three edits were made in
+place, with the timeline marker rolled back to just before each part's first
+extrude, so the heavy document recomputed in seconds:
+
+- `faceplate`: the four outline lines of `CUT` replaced by the eight-point
+  tapered outline from the DXF, the rear-lap line in `BEND` moved to x 0.2..85.18
+  (sketch points moved, so `Fold2` kept its reference), `Extrude1.profile` set
+  to the new largest profile. 406,307.2 mm³, all features healthy.
+- `base`: in `CUT`, fourteen beam holes out and seven in; the old 372 mm window
+  and its four bolt holes out; the seven wall connector cutouts in (circles, plus
+  the two USB four-flat loops drawn from their DXF bulges); the CTRL D-punches in.
+  `Extrude1.profile` re-set, the PANEL_BOND ring deleted from `MASK`. Plate
+  4,987.7806 cm², equal to the DXF; 973,127.6 mm³; all features healthy.
+- `faceplate_support_beam`: fresh import of the seven-slot `out/segno_beam.step`
+  (99,573.2 mm³). The placement had to be set in a SECOND script call: set in
+  the same call as the import it read back correctly and then reset to identity.
+- The full-width rear panel is kept hidden as `rear_panel_retired_1088`.
+- Interference: beam/base 0.0069 mm³, lid/base 5.4238 mm³ and the eighteen lid
+  screws in their pilots (3.64 mm³ each); nothing else touches the three parts.
+
+**Flat-pattern parity trap.** After the base edit, the exact planar Boolean in
+`flat_pattern_check.compare_flat_pattern` failed outright on sub-micron noise
+between Fusion's export and the DXF (intersection empty, the whole sheet both
+missing and extra) although registration matched 290 holes. The comparator now
+uses a 0.03 um fuzzy value (`BOOLEAN_FUZZ_MM`), which still reports a 0.05 mm
+shift as 134 mm².
+
 ## Flanges and tabs removed, #1025 base restored - 2026-09-29 (#1067)
 
 The owner dropped both #1067 base features: the lid-seat flanges could not be

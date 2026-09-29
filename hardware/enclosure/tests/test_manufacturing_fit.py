@@ -85,14 +85,24 @@ class ManufacturingFitTest(unittest.TestCase):
                         with self.assertRaisesRegex(AssertionError, 'weld corner'):
                             enclosure._check()
 
-    def test_rear_panel_allows_coating_within_ctrl_jack_range(self):
-        enclosure._check()
-        self.assertAlmostEqual(enclosure.REAR_PANEL_T + 2*enclosure.COAT_MIN,1.32)
-        self.assertAlmostEqual(enclosure.REAR_PANEL_T + 2*enclosure.COAT_MAX,1.40)
-        for thickness in (1.0,1.5):
-            with self.subTest(thickness=thickness), patch.object(enclosure,'REAR_PANEL_T',thickness):
-                with self.assertRaisesRegex(AssertionError,'finished rear panel'):
-                    enclosure._check()
+    def test_ctrl_jacks_take_the_d_flange_on_the_other_diagonal(self):
+        # #1088: MEIRIYFA D-flange socket, Ø24 hole, 2 x Ø3.4 at +-9.5 / +-12,
+        # top-left and bottom-right from the front, i.e. (+du, +dz) and (-du, -dz)
+        # in wall coords (u grows to the player's right, the wall is seen from
+        # behind). The PD coupler keeps its own, opposite diagonal.
+        cuts = {c['ref']: [] for c in enclosure.rear_io_cutouts()}
+        for c in enclosure.rear_io_cutouts():
+            cuts[c['ref']].append(c)
+        for ref in ('CTRL_1', 'CTRL_2'):
+            (bore,) = cuts[ref]
+            self.assertAlmostEqual(bore['d'], 24.40)
+            screws = sorted((c['u'] - bore['u'], c['v'] - bore['v']) for c in cuts[ref + '_SCR'])
+            self.assertEqual([tuple(round(x, 6) for x in p) for p in screws],
+                             [(-9.5, -12.0), (9.5, 12.0)])
+        pd = cuts['PD_IN'][0]
+        pd_screws = sorted((c['u'] - pd['u'], c['v'] - pd['v']) for c in cuts['PD_IN_SCR'])
+        self.assertEqual([tuple(round(x, 6) for x in p) for p in pd_screws],
+                         [(-9.5, 12.0), (9.5, -12.0)])
 
     def test_usb_openings_clear_the_supplier_four_flat_barrel(self):
         from flat_pattern_check import _face
@@ -100,7 +110,7 @@ class ManufacturingFitTest(unittest.TestCase):
         body = (cq.Workplane('XY').rect(22.1,22.1).extrude(1).val()
                 .intersect(cq.Workplane('XY').circle(12.05).extrude(1).val()))
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp)/'panel.dxf'; enclosure.dxf_rear_panel(str(path))
+            path = Path(tmp)/'base.dxf'; enclosure.dxf_base(str(path))   # #1088: in the wall
             holes = []
             for e in ezdxf.readfile(path).modelspace().query('LWPOLYLINE'):
                 if e.dxf.layer != 'CUT': continue
@@ -431,23 +441,23 @@ class ManufacturingFitTest(unittest.TestCase):
     def test_assembly_has_every_made_part_and_twenty_seven_purchased_references(self):
         source = Path(enclosure.HERE)/'out'
         with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure, 'OUT', tmp):
-            for stem in (*enclosure.FORMED_PARTS,'segno_rear_panel'):
+            for stem in enclosure.FORMED_PARTS:
                 shutil.copyfile(source/(stem+'.dxf'),Path(tmp)/(stem+'.dxf'))
             enclosure.build_ring_disc_step()
             path = enclosure.build_step()
             assembly = cq.importers.importStep(path).val()
             self.assertTrue(assembly.isValid())
             solids = assembly.Solids()
-            self.assertEqual(len(solids),32)       # five metal parts and 27 purchased references
+            self.assertEqual(len(solids),31)       # four metal parts and 27 purchased references (#1088)
             names = re.findall(r"NEXT_ASSEMBLY_USAGE_OCCURRENCE\('[^']*',\s*'([^']*)'",
                                Path(path).read_text())
             purchased = {f'PURCHASED_FITTED_FRONT_SHIM_PACK_{i}' for i in range(1,10)}
             purchased |= {f'PURCHASED_M3_WASHER_{end}_{i}'
                           for end in ('FRONT','REAR')for i in range(1,10)}
             self.assertEqual(set(names),purchased | {
-                'segno_base_1','segno_faceplate_1','segno_rear_panel',
+                'segno_base_1','segno_faceplate_1',
                 'segno_ring_disc', 'segno_beam'})
-            self.assertEqual(len(names),32)
+            self.assertEqual(len(names),31)
             shims = [s for s in solids if len(self._cylinder_axes(s,2.05)) == 1
                      and s.BoundingBox().xlen < 10]
             washers = [s for s in solids if len(self._cylinder_axes(s,1.6)) == 1
@@ -455,7 +465,7 @@ class ManufacturingFitTest(unittest.TestCase):
                             or len(self._cylinder_axes(s,6.0)) == 1)]
             self.assertEqual(len(shims),9)
             self.assertEqual(len(washers),18)
-            self.assertEqual(len(solids)-len(shims)-len(washers),5)
+            self.assertEqual(len(solids)-len(shims)-len(washers),4)
             base, lid = sorted(solids,key=lambda s:s.Volume(),reverse=True)[:2]
             self.assertAlmostEqual(base.BoundingBox().zmin,0.0,places=5)
             self.assertAlmostEqual(lid.BoundingBox().ymin,-5.0108425,places=4)
@@ -472,9 +482,8 @@ class ManufacturingFitTest(unittest.TestCase):
             unsupported = [shims[0].translate((0,-.05,0))]+shims[1:]
             with self.assertRaises(AssertionError):
                 self._assert_front_shim_seats(unsupported,base,lid)
-            displaced = [s.translate((100,0,0))
-                         if abs(s.BoundingBox().xlen-402)<.001 and abs(s.BoundingBox().zlen-76)<.001
-                         else s for s in solids]
+            displaced = [s.translate((1,0,0))
+                         if abs(s.BoundingBox().xlen-50.7)<.001 else s for s in solids]
             with self.assertRaises(AssertionError):
                 self._assert_remaining_seats(displaced,base,lid)
             for solid in beam_solids:
@@ -607,23 +616,8 @@ class ManufacturingFitTest(unittest.TestCase):
     def _assert_remaining_seats(self, solids, base, lid):
         # Independent assembled Fusion measurements, September 4, mm.
         self.assertEqual(self._cylinder_axes(base,1.65),[])
-        panel = next(s for s in solids if abs(s.BoundingBox().xlen-402)<.001
-                     and abs(s.BoundingBox().zlen-76)<.001)
-        bb = panel.BoundingBox()
-        self.assertAlmostEqual(bb.ylen,1.2,places=6)
-        self.assertAlmostEqual(bb.ymin,417.710841,places=4)
-        self.assertAlmostEqual(bb.ymax,418.910841,places=4)
-        self.assertAlmostEqual(bb.xmin,424.285714,places=4)
-        holes = [axis for axis in self._cylinder_axes(panel,1.8)
-                 if abs(axis.Location().X()-430.285714)<.01
-                 or abs(axis.Location().X()-820.285714)<.01]
-        self.assertEqual(len(holes),4)
-        for hole in holes:
-            candidates = [axis for axis in self._cylinder_axes(base,1.8)
-                          if abs(axis.Direction().Dot(hole.Direction()))>.999999]
-            offset = min(cq.Vector(axis.Location()).sub(cq.Vector(hole.Location()))
-                         .cross(cq.Vector(hole.Direction())).Length for axis in candidates)
-            self.assertLess(offset,.02)
+        # #1088: no bolt-on rear panel; every connector is cut in the base's rear
+        # wall, so there is no panel seat to check here.
         ring = next(s for s in solids if abs(s.BoundingBox().xlen-50.7)<.001)
         shaft = self._cylinder_axes(ring,4.35)[0]
         aperture = self._cylinder_axes(lid,33.7)[0]

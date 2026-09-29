@@ -28,18 +28,18 @@ cutting; #1019 remains an independent hold.
 
 ## Dinacut — cut, fold and deburr
 
-Hola. Seguimos con cinco piezas, una de cada una: base, tapa y disco en
-aluminio 1100-H14 de 2,0 mm; panel trasero de aluminio de 1,2 mm; y refuerzo
-transversal de acero laminado en frío de 1,6 mm. ¿Me confirman la aleación y
-el temple de la chapa de 1,2 mm y el grado del acero? Cada archivo indicará
-material, espesor y cantidad.
+Hola. Seguimos con cuatro piezas, una de cada una: base, tapa y disco en
+aluminio 1100-H14 de 2,0 mm, y refuerzo transversal de acero laminado en frío
+de 1,6 mm. Ya no hay panel trasero: todos los conectores van cortados en la
+pared trasera de la base. ¿Me confirman el grado del acero? Cada archivo
+indicará material, espesor y cantidad.
 
 El trabajo de ustedes sería corte, plegado y desbarbado, sin biselado, roscado
 ni pintura. Matías soldará las cuatro esquinas y cerrará sus alivios, incluidas
 las dos aristas superiores indicadas. La tapa queda desmontable; no lleva
 soldadura. Se eliminan las dos escuadras y los diez agujeros de remache del
 cuerpo. Recibirán un solo paquete con STEP, DXF y plano PDF individual de cada
-una de las cinco piezas.
+una de las cuatro piezas.
 CUT/VENT es corte; BEND es referencia de pliegue y DRILL no se corta por láser.
 
 Estamos preparando las uniones según la muestra: luz nominal de 0,5 mm,

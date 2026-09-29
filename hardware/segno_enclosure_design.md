@@ -55,9 +55,11 @@ no resistance spot welder, and the flange could not be formed along the front
 third of each wall: bent before the wall, it sits over the wall's bend punch,
 with 8.6 mm of clear height at the front edge.
 
-The lid has two folds: a front lip and a rear lap. It is 853.8 mm wide, one
-sheet (2 mm) past each side skin, so its edge covers the side walls' top edges;
-the rear wall and its shoulder stay at the base's 849.8 mm outer width. It rests
+The lid has two folds: a front lip and a rear lap. Along the slope it is
+853.8 mm wide, one sheet (2 mm) past each side skin, so its edge covers the side
+walls' top edges. Over the last 40 mm before the rear bend each side edge runs in
+by that 2 mm (#1088), so the rear bend and lap are 849.8 mm wide, flush with the
+rear wall and its shoulder instead of standing proud of them at the corners. It rests
 on those bare top edges and on the rear transition, with nine M3 screws through each folded edge
 into tapped body holes. It has no folded side skirts or side fixing screws.
 The eighteen lid bores are Ø4.50(+0.10/−0) before coating and use M3 OD 7 head
@@ -282,10 +284,9 @@ on the individual pedal tiles; no full-face overlay or logo cutout is required.
 
 ## 4. Rear I/O & ventilation
 
-The rear connectors mount in a removable **1.2 mm aluminium panel** whose alloy
-and temper the shop still has to confirm (the certificate covers the 2.00 mm
-sheet only), from
-inside the base's rear-wall window. The panel centre follows the main screen;
+Every rear connector is cut straight into the base's 2.0 mm rear wall (#1088,
+owner call to cut cost; they sat on a separate 1.2 mm bolt-on panel from #751
+until then). The cluster centre follows the main screen;
 `rear_io_layout()` spreads nine stations over 360 mm with equal keep-out gaps.
 The generated source and `MANUFACTURING.md` define the current revision.
 
@@ -295,7 +296,7 @@ The generated source and `MANUFACTURING.md` define the current revision.
 | POWER | Raw Ø19.80 ±0.10 | APIELE M19 high-round momentary switch; retaining nut |
 | FUSE | Raw Ø12.30 ±0.10 | 5×20 screw-cap holder; retaining nut |
 | MIDI_IN / MIDI_OUT | Raw Ø15.50 (+0.10/−0), M3 Ø3.60 (+0.10/−0), pitch 22.2 mm | REAN NYS325 |
-| CTRL_1 / CTRL_2 | Raw Ø12.30 ±0.10; final Ø12.00–12.28; finished panel 1.20–1.50 mm | Neutrik NJ6FD-V and snap caps, owner-selected September 4 |
+| CTRL_1 / CTRL_2 | Raw Ø24.40 (+0.10/−0), M3 Ø3.60 (+0.10/−0), diagonal 19×24 mm, the OTHER diagonal from PD_IN | MEIRIYFA 6.35 mm stereo socket in a D-size zinc flange (B0G5FZNH49), owner-selected 2026-09-29; replaced the Neutrik NJ6FD-V, which needed a 1.20–1.50 mm panel |
 | USB3_1 / USB3_2 | Raw four flats 22.80 ×22.80 clipped by concentric Ø24.80, both ±0.10 | PENGLIN nut-mounted bulkhead, flange Ø28.5 |
 
 The [owner-supplied USB drawing](enclosure/reference/usb3_dimensions.png)
@@ -327,17 +328,19 @@ pattern was sourced 2026-08-18 from the QIANRENON PD coupler's own listing —
 about the bore, one per diagonal. Each screw centre is 15.305 mm from the
 bore centre. With the compensated bore and fixing sizes, inspect a minimum
 **1.20 mm actual bare web** between holes; this local requirement overrides
-general size/position tolerances. Have the shop qualify the actual 1.2 mm stock,
+general size/position tolerances. Have the shop qualify the 2.0 mm rear wall,
 cutting process and complete coupler pattern on a coupon. Diameter compensation
 alone does not guarantee the two-screw pattern or local web.
 
 A 180° turn preserves a diagonal pair; it cannot adapt to the opposite diagonal.
-The pattern serves only `PD_IN`. CTRL jacks use the separate round hole and
-snap cap, with no fixing pair.
+The CTRL sockets' drawing puts their fixings top-left and bottom-right seen from
+the front, which is the other diagonal: in wall coordinates (±9.5, ±12), seen
+from behind the console. `D_CTRL_DIAG` records it. Check the PD coupler's real
+flange against its own diagonal before cutting.
 
 ### Gates
 
-Source checks cover station containment, spacing, edge/window clearance and
+Source checks cover station containment, spacing, edge clearance and
 nominal bore-to-fixing material. The fixed hardware station schedule must not
 move when raw cut sizes gain coating allowance. Actual local-web and complete
 finished-pattern checks still control fabrication acceptance; they are not
@@ -448,11 +451,11 @@ hole datum. The source checks the 45 mm rear connector/wiring envelope,
 Pi/board overlap, headroom and ventilation area. Those modeled envelopes do
 not establish real plug, lug or cable-bend clearance; dry-fit the bought parts.
 
-**Grounding:** the folded body is one continuous metal part. Rivet the two
-rear corner brackets before coating. Protect the specified earth-stud and
-rear-panel bonding contacts; paint the remaining
-surfaces. The rear panel's marked bonding land must contact its matching body
-land. Verify the assembled electrical bond; paint is not a conductive contact.
+**Grounding:** the folded body is one continuous metal part. Protect the
+specified earth-stud contact; paint the remaining surfaces. The connector shells
+sit on the painted rear wall and reach chassis ground through the board (H1),
+not through a bonded panel (#1088). Verify the assembled electrical bond; paint
+is not a conductive contact.
 
 ---
 
@@ -594,7 +597,7 @@ covered 211 of 850 — a quarter — and the band between them still failed at 4
 On 2026-09-10 the seven became **one folded steel beam that runs wall to wall**
 (owner call: "a whole support beam in that line that is also supported, that also
 attaches to the sides, the walls of the base"). Same C section, same 1.6 mm
-cold-rolled steel, same fourteen M4 into the floor at the same stations; what
+cold-rolled steel, the same fourteen M4 into the floor at the same stations; what
 changed is that the pad is continuous, so the weakest point on the band goes from
 47 kg to 475 kg.
 
@@ -606,6 +609,14 @@ in-plane restraint the plate used to spread. At a 1 kN stomp the floor reads:
 | three rails, no beam | 96 MPa | 3.28 mm | 1.01 |
 | beam on slotted holes | 135 MPa | 2.95 mm | 1.42 |
 | beam on plain holes | 147 MPa | 2.83 mm | 1.54 |
+| **7 M4, slotted (#1088, current)** | **139 MPa** | **2.98 mm** | **1.46** |
+| 7 M4, plain holes | 175 MPa | 2.89 mm | 1.85 |
+
+Since #1088 the beam takes **one M4 per interior pedal gap**, at the gap's
+centre, instead of two: seven instead of fourteen (owner call). Rerun of
+`_stomp_fea_beam.py`, worst of STOP/CLEAR/BANK/REC-PLAY, CLEAR governing.
+Slotted, it costs 4 MPa; the slots matter more than before, since plain holes
+would lose 36 MPa.
 
 Both stay inside the RC-600 calibration point (util 2.00 against yield, on a
 shipping product), so the trade is roughly 0.4 units of floor margin for a
@@ -715,9 +726,9 @@ negative-controlled.
 
 ## 7. Material & weight
 
-Current materials are 2.0 mm aluminium **1100-H14** for the base, lid, two rear
-brackets and encoder disc; 1.2 mm aluminium of unconfirmed alloy for the I/O
-panel; and 1.6 mm cold-rolled steel for the **one** full-width support beam.
+Current materials are 2.0 mm aluminium **1100-H14** for the base, lid and
+encoder disc, and 1.6 mm cold-rolled steel for the **one** full-width support
+beam. The 1.2 mm I/O panel is gone (#1088).
 
 The 2.0 mm stock was ordered as 1050 and is not. Alcast's certificate for lot
 26E0269 (2026-04-01) reports 1100-H14 at Rp0.2 127 MPa, Rm 145 MPa and 10%

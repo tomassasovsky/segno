@@ -8,6 +8,12 @@ from ezdxf.math import Matrix44
 
 
 AREA_TOLERANCE_MM2 = 0.01
+# Fusion's DXF export and the generator's differ by sub-micron coordinate noise.
+# On the #1088 base (seven connector bores in the rear wall) that noise made the
+# exact planar Boolean fail outright: the intersection came back empty and the
+# whole sheet read as both missing and extra. A 0.03 um fuzzy value fixes that and
+# still reports a 0.05 mm shift as 134 mm2, far past AREA_TOLERANCE_MM2.
+BOOLEAN_FUZZ_MM = 3e-5
 
 
 def _face(entity):
@@ -138,8 +144,8 @@ def compare_flat_pattern(source_path, native_path, *, opposite_face=False):
         entity.transform(matrix)
     wanted = _profile(source, source_layers)
     found = _profile(native, native_layers)
-    missing = wanted.cut(found).Area()
-    extra = found.cut(wanted).Area()
+    missing = wanted.cut(found, tol=BOOLEAN_FUZZ_MM).Area()
+    extra = found.cut(wanted, tol=BOOLEAN_FUZZ_MM).Area()
     assert missing <= AREA_TOLERANCE_MM2 and extra <= AREA_TOLERANCE_MM2, (
         f"flat-pattern mismatch: missing {missing:.6f} mm2, extra {extra:.6f} mm2")
     return {"matched_reference_holes": count, "missing_area_mm2": missing,

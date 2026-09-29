@@ -275,8 +275,8 @@ class ManufacturingPipelineTest(unittest.TestCase):
                   patch.object(enclosure,'_write_quote_archives',side_effect=lambda p:p)):
                 packages = enclosure.build_quote_packages(with_step=True,with_pdf=True)
             self.assertEqual({name:len(members) for name,members in packages.items()}, {
-                'segno_sheetmetal.zip':15,
-                'segno_pintura.zip':6, 'segno_pedal_tiles.zip':22,
+                'segno_sheetmetal.zip':12,          # 15 until #1088 retired the rear panel
+                'segno_pintura.zip':5, 'segno_pedal_tiles.zip':22,
                 # 38 until 2026-09-10, when the twelve floor rail segments and
                 # the mid-field prop were added. They had been generated into
                 # out/ and shipped in no package at all since #1019 created them.
@@ -302,13 +302,10 @@ class ManufacturingPipelineTest(unittest.TestCase):
             metal_sources = packages[METAL_ARCHIVE].values()
             self.assertEqual(set(metal_sources), {
                 stem+extension
-                for stem in ('segno_base','segno_faceplate','segno_ring_disc',
-                             'segno_rear_panel','segno_beam')
+                for stem in ('segno_base','segno_faceplate','segno_ring_disc','segno_beam')
                 for extension in ('.step','.dxf','.pdf')})
             for name in packages[METAL_ARCHIVE]:
                 self.assertIn('__qty1.',name)
-                if name.startswith('segno_rear_panel__'):
-                    self.assertIn('de-1.2-mm',name)
             members = [source for names in packages.values() for source in names.values()]
             self.assertFalse(any('overlay' in name for name in members))
             self.assertNotIn('segno_assembly.step',members)
@@ -400,7 +397,7 @@ class ManufacturingPipelineTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure,'OUT',tmp):
             out = Path(tmp); archives = self._previous_archives(out)
             (out/'segno_paint_quote.pdf').write_bytes(b'%PDF incomplete')
-            with patch.object(enclosure,'PAINT_PAGES',{'segno_paint_quote':4}):
+            with patch.object(enclosure,'PAINT_PAGES',{'segno_paint_quote':enclosure.PAINT_PAGES_EXPECTED}):
                 with self.assertRaisesRegex(AssertionError,'holds 0 pages on disk'):
                     enclosure.build_quote_packages(with_step=True,with_pdf=True)
             for name,data in archives.items():

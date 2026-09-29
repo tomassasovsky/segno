@@ -9,7 +9,7 @@ continuous and there is no longer a band between pads to fall through.
 These regressions hold that in place: the beam bears wall to wall on metal that
 was not cut away, it clears every LED diffuser shoulder in depth (the only thing
 it cannot dodge sideways any more), its web is holed wherever a cable used to
-walk past a post, and the fourteen floor fixings did not move. The printed prop
+walk past a post; its floor fixings sit at the posts' stations (one per gap since #1088). The printed prop
 in the clear lane beside BANK is unchanged; the ligament left of CLEAR has no
 lane and stays bare -- see
 docs/research/2026-09-09-enclosure-stomp-load-analysis.md.
@@ -71,12 +71,10 @@ class SupportBeam(unittest.TestCase):
         # room for the 0.2 mm an FDM shoulder can grow, plus a glue bead
         self.assertGreater(gap, 1.4)
 
-    def test_the_fourteen_floor_fixings_did_not_move(self):
-        """Frozen: these holes were in the base flat before the beam existed."""
+    def test_one_floor_fixing_at_the_centre_of_each_pedal_gap(self):
+        """#1088: seven M4, one per interior pedal gap, where the posts' pairs were."""
         self.assertEqual([round(u, 3) for u in enclosure.beam_bolt_u()],
-                         [109.5, 129.643, 210.643, 230.786, 311.786, 331.929,
-                          412.929, 433.071, 514.071, 534.214, 615.214, 635.357,
-                          716.357, 736.5])
+                         [119.571, 220.714, 321.857, 423.0, 524.143, 625.286, 726.429])
         self.assertAlmostEqual(enclosure._BEAM_FOOT_VP, 148.99693697984182, places=9)
 
     def test_a_cable_window_sits_on_every_front_pedal_and_one_each_side(self):
@@ -161,9 +159,9 @@ class SupportBeam(unittest.TestCase):
     def test_the_section_is_strong_enough_that_the_steel_grade_is_free(self):
         """No grade is called out on the drawing, and this is why.
 
-        The beam's own worst case is its end overhang: 108.9 mm of C section
+        The beam's own worst case is its end overhang: 119.0 mm of C section
         past the outermost bolt, with the wall tie ignored. A 1 kN stomp landing
-        on the very tip reads 78 MPa. The softest cold-rolled mild steel a shop
+        on the very tip reads 85 MPa. The softest cold-rolled mild steel a shop
         stocks yields around 140, so any of them carries it, and E is 210 GPa
         for all of them so stiffness does not depend on the choice either.
         Everything else the beam does is bearing and short-range compression at
@@ -175,7 +173,7 @@ class SupportBeam(unittest.TestCase):
 
         solid = enclosure._beam_solid()
         windows = enclosure.beam_cable_u()
-        x = (windows[3] + windows[4])/2.0 - enclosure.BEAM_U0    # clear of every cut
+        x = (3*windows[3] + windows[4])/4.0 - enclosure.BEAM_U0  # clear of every cut
         knife = cq.Workplane('YZ').rect(400, 400).extrude(0.001).val().translate((x, 0, 0))
         face = max((f for f in solid.intersect(knife).Faces()
                     if abs(f.normalAt().x) > 0.999), key=lambda f: f.Area())
@@ -189,9 +187,9 @@ class SupportBeam(unittest.TestCase):
         self.assertAlmostEqual(area, 122.2, places=1)
         self.assertAlmostEqual(second, 33097, delta=50)
         overhang = min(enclosure.beam_bolt_u()) - enclosure.BEAM_U0
-        self.assertAlmostEqual(overhang, 108.9, places=1)
+        self.assertAlmostEqual(overhang, 119.0, places=1)
         tip = 1000.0*overhang*fibre/second
-        self.assertLess(tip, 100.0)          # 78.2 as drawn, against a 140 floor
+        self.assertLess(tip, 100.0)          # 85.4 as drawn, against a 140 floor
         self.assertLess(1000.0*overhang**3/(3*210000.0*second), 0.1)
 
     def test_the_fixings_are_slotted_and_the_flat_says_so(self):
@@ -210,8 +208,8 @@ class SupportBeam(unittest.TestCase):
                      if e.dxftype() == 'LWPOLYLINE' and e.dxf.layer == 'BEND']
         # no plain circles at all: every fixing is an obround
         self.assertEqual([e for e in cuts if e.dxftype() == 'CIRCLE'], [])
-        # outline + 14 foot slots + 10 cable windows + 2 ear slots
-        self.assertEqual(len(cuts), 1 + 14 + 10 + 2)
+        # outline + 7 foot slots (one per pedal gap, #1088) + 10 cable windows + 2 ear slots
+        self.assertEqual(len(cuts), 1 + 7 + 10 + 2)
         # pad, foot and one bend line per ear
         self.assertEqual(len(bends), 4)
 

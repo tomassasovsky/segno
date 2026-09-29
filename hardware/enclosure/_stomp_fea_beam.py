@@ -25,6 +25,17 @@ def bolt_us():
     return se.beam_bolt_u()
 
 
+def _merged(values, tol=0.01):
+    """Fixed mesh lines, with near-duplicates merged. One bolt per pedal gap (#1088)
+    lands within a micron of the floor-rail joint at the same gap centre, and the
+    sliver element between the two lines left the stiffness matrix singular."""
+    out = []
+    for v in sorted(values):
+        if not out or v - out[-1] > tol:
+            out.append(v)
+    return out
+
+
 def wall_k():
     h = 12.0 + (100.0 - 12.0) * (VB / 397.0)
     return 48.0 * 68900.0 * (T * h**3 / 12.0) / (343.25 - 114.883)**3
@@ -40,7 +51,7 @@ def case(pedal, mode, EI=EI_HAT):
     for cu, cv in R.PEDALS.values():
         fx.update([cu - R.COLLAR[0]/2, cu, cu + R.COLLAR[0]/2])
         fy.update([cv - R.COLLAR[1]/2, cv, cv + R.COLLAR[1]/2])
-    s = Shell(_axis(0.0, BW, fx, 14.0), _axis(0.0, BD, fy, 14.0), T, E, NU, FY)
+    s = Shell(_axis(0.0, BW, _merged(fx), 14.0), _axis(0.0, BD, _merged(fy), 14.0), T, E, NU, FY)
     s.edge_inplane()
     s.springs(pads, R.K_RAIL)
     if mode != 'none':
@@ -90,8 +101,8 @@ def case(pedal, mode, EI=EI_HAT):
 if __name__ == '__main__':
     FY = 95.0
     MODES = (('no beam', 'none'),
-             ('beam, 14 bolts, SLOTTED (vertical only)', 'slotted'),
-             ('beam, 14 bolts, plain holes (all DOF)', 'bolted'))
+             ('beam, %d bolts, SLOTTED (vertical only)' % len(bolt_us()), 'slotted'),
+             ('beam, %d bolts, plain holes (all DOF)' % len(bolt_us()), 'bolted'))
     if 'smeared' in sys.argv[1:]:
         MODES += (('beam smeared along the plate', 'smeared'),)
     print('%-44s %8s %10s %6s %s' % ('', 'peak', 'deflect', 'util', 'worst pedal'))

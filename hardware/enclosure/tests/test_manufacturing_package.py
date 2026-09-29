@@ -20,8 +20,6 @@ class ManufacturingPackageTest(unittest.TestCase):
             stem: ('aluminio 1100-H14 de 2.0 mm', 1, 'sheetmetal')
             for stem in ('segno_base', 'segno_faceplate', 'segno_ring_disc')
         }
-        self.specs['segno_rear_panel'] = (
-            'aluminio de 1.2 mm (aleación y temple por confirmar)', 1, 'sheetmetal')
         self.specs['segno_beam'] = ('acero laminado en frío de 1.6 mm', 1, 'sheetmetal')
         self.specs['segno_pedal_tiles'] = ('plástico de 2.0 mm', 10, 'tiles')
         self.members = package.metal_package_members(self.specs)
@@ -42,7 +40,7 @@ class ManufacturingPackageTest(unittest.TestCase):
             self.assertEqual((self.out/name).read_bytes(), content)
         self.assertFalse(list(self.out.glob('.quote-pack-*')))
 
-    def test_order_contains_exactly_five_parts_with_three_formats_and_metadata(self):
+    def test_order_contains_exactly_four_parts_with_three_formats_and_metadata(self):
         # Unrelated files beside the order must never be swept into its ZIP.
         for name in ('README.md', 'SHOP_REVIEW.md', 'segno_assembly.step',
                      'segno_platform_sled.step', 'segno_lid_washer_reference.step',
@@ -53,16 +51,13 @@ class ManufacturingPackageTest(unittest.TestCase):
         produced = self.write()
         self.assertEqual(produced, [str(self.out/package.METAL_ARCHIVE)])
         with zipfile.ZipFile(produced[0]) as archive:
-            self.assertEqual(len(archive.namelist()), 15)
+            self.assertEqual(len(archive.namelist()), 12)   # #1088: the rear panel is gone
             self.assertEqual(set(archive.namelist()), set(self.members))
             self.assertTrue(all('__qty1.' in name for name in archive.namelist()))
             self.assertEqual({Path(name).suffix for name in archive.namelist()},
                              {'.step', '.dxf', '.pdf'})
             for name in archive.namelist():
-                if name.startswith('segno_rear_panel__'):
-                    self.assertIn('aluminio-de-1.2-mm', name)
-                    self.assertIn('por-confirmar', name)
-                elif name.startswith('segno_beam__'):
+                if name.startswith('segno_beam__'):
                     self.assertIn('acero-laminado-en-frio-de-1.6-mm', name)
                 else:
                     self.assertIn('aluminio-1100-H14-de-2.0-mm', name)
@@ -102,7 +97,7 @@ class ManufacturingPackageTest(unittest.TestCase):
         original = zipfile.ZipFile.write
 
         def fail_on_panel(archive, path, arcname):
-            if arcname.startswith('segno_rear_panel__'):
+            if arcname.startswith('segno_beam__'):
                 raise OSError('forced compression failure')
             return original(archive, path, arcname)
 
@@ -136,27 +131,27 @@ class ManufacturingPackageTest(unittest.TestCase):
                 elif fault == 'quantity':
                     specs['segno_beam'] = (specs['segno_beam'][0], 2, 'sheetmetal')
                 elif fault == 'thickness':
-                    specs['segno_rear_panel'] = ('aluminio de 2.0 mm', 1, 'sheetmetal')
+                    specs['segno_beam'] = ('acero laminado en frío de 2.0 mm', 1, 'sheetmetal')
                 else:
                     specs['segno_beam'] = ('aluminio de 1.6 mm', 1, 'sheetmetal')
                 with self.assertRaises(ValueError):
                     package.metal_package_members(specs)
 
     def test_decimal_comma_in_the_caption_remains_unambiguous_in_filenames(self):
-        self.specs['segno_rear_panel'] = ('aluminio de 1,2 mm', 1, 'sheetmetal')
+        self.specs['segno_beam'] = ('acero laminado en frío de 1,6 mm', 1, 'sheetmetal')
         names = package.metal_package_members(self.specs)
-        panel = [name for name in names if name.startswith('segno_rear_panel__')]
-        self.assertEqual(len(panel), 3)
-        self.assertTrue(all('de-1.2-mm' in name for name in panel))
+        beam = [name for name in names if name.startswith('segno_beam__')]
+        self.assertEqual(len(beam), 3)
+        self.assertTrue(all('de-1.6-mm' in name for name in beam))
 
     def test_writer_cannot_publish_an_expanded_or_mislabeled_metal_manifest(self):
         (self.out/'README.md').write_bytes(b'unwanted note')
         invalid = self.members | {'README.md': 'README.md'}
-        with self.assertRaisesRegex(ValueError, '15 reviewed'):
+        with self.assertRaisesRegex(ValueError, '12 reviewed'):
             package.write_archives(self.out,
                 {package.METAL_ARCHIVE: invalid}, run_started=0)
         self.assert_previous_preserved()
-        invalid = {member.replace('de-1.2-mm', 'de-2.0-mm'): source
+        invalid = {member.replace('de-1.6-mm', 'de-2.0-mm'): source
                    for member, source in self.members.items()}
         with self.assertRaisesRegex(ValueError, 'metadata'):
             package.write_archives(self.out,

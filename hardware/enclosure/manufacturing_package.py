@@ -1,4 +1,4 @@
-"""The five-part metal order and atomic publication of generated vendor files.
+"""The four-part metal order and atomic publication of generated vendor files.
 
 Drawing/native geometry checks belong to the generator and run before this
 module. Here, membership, freshness and complete ZIP writes protect the handoff.
@@ -23,13 +23,12 @@ _PART_THICKNESSES = {
     'segno_base': 2.0,
     'segno_faceplate': 2.0,
     'segno_ring_disc': 2.0,
-    'segno_rear_panel': 1.2,
     'segno_beam': 1.6,
 }
 
 
 def metal_package_members(part_specs):
-    """Return all 15 shipping-name -> canonical-filename pairs for one set.
+    """Return all 12 shipping-name -> canonical-filename pairs for one set.
 
     ``part_specs`` is the generator's existing material/quantity/vendor table.
     A changed part set or thickness requires an intentional package revision.
@@ -37,8 +36,8 @@ def metal_package_members(part_specs):
     metal = {stem: row for stem, row in part_specs.items()
              if row[2] == 'sheetmetal'}
     if set(metal) != set(_PART_THICKNESSES):
-        raise ValueError('metal order must contain only base, faceplate, ring disc, '
-                         '1.2 mm rear panel and steel beam')
+        raise ValueError('metal order must contain only base, faceplate, ring disc '
+                         'and steel beam')
     members = {}
     for stem, thickness in _PART_THICKNESSES.items():
         material, quantity, _ = metal[stem]
@@ -80,7 +79,7 @@ def _validate_metal_members(members):
     expected = {stem+extension for stem in _PART_THICKNESSES
                 for extension in ('.step', '.dxf', '.pdf')}
     if set(members.values()) != expected:
-        raise ValueError('metal archive requires exactly the 15 reviewed part artifacts')
+        raise ValueError(f'metal archive requires exactly the {len(expected)} reviewed part artifacts')
     for member, source in members.items():
         stem, extension = os.path.splitext(source)
         material = 'acero' if stem == 'segno_beam' else 'aluminio'

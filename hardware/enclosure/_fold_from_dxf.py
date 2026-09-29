@@ -328,37 +328,10 @@ def pcb_parts():
 
 
 def rear_panels():
-    """The bolt-on I/O sub-panel as a thin plate over the rear WINDOW. Built in the
-    panel-local (u,z) plane from V.rear_panel_holes(), then stood up onto the rear wall
-    (Y=D) centred on the panel blank.
-
-    REBUILT on the derived rear-panel API (#767): this used to size the plate from
-    V.REAR_WIN_W/H + a local ov=12 and emit two swappable "pi"/"nopi" variants. All
-    four REAR_WIN_* constants and the variant argument went away when the window
-    became derived and the panel came back as one part (#757/#761) -- so this whole
-    module (the fold render AND the collision audit) had been dying on an
-    AttributeError before it drew a single solid. Everything now comes from
-    V.rear_panel_outline() / V.rear_window(), which cannot drift from the metal."""
-    th = 2.0
-    pu0, pz0, pw, ph = V.rear_panel_outline()     # wall coords; holes are panel-LOCAL
-    pcu, pcz = pu0 + pw/2.0, pz0 + ph/2.0         # panel centre = the holes' origin
-    plate = cq.Workplane("XY").box(pw, ph, th, centered=(True, True, False))
-    for c in V.rear_panel_holes():
-        if c.get("layer") == "MASK":              # bare-metal bonding land, not a hole
-            continue
-        if c["kind"] == "circle":
-            tool = cq.Workplane("XY").circle(c["d"]/2).extrude(th+0.2).translate((c["u"], c["v"], -0.1))
-        else:                                     # only circle/rect come out of the panel
-            assert c["kind"] == "rect", f"rear_panels: unhandled cut kind {c['kind']!r}"
-            tool = (cq.Workplane("XY").box(c["w"], c["h"], th+0.2, centered=(True, True, False))
-                      .translate((c["u"]+c["w"]/2, c["v"]+c["h"]/2, -0.1)))
-        plate = plate.cut(tool)
-    # mount the sub-panel from INSIDE: plate against the inner wall face, connectors poke
-    # OUT through the window flush with the outer wall. rot about X (+90) maps panel-v -> Z,
-    # thickness -> -Y; seat the plate just inside the wall (Y = inner face).
-    rear_wall_y = V.D - 2*V.T
-    s = plate.val().rotate((0, 0, 0), (1, 0, 0), 90).translate((pcu, rear_wall_y - V.T, pcz))
-    return [("rearpanel", s)]
+    """No bolt-on rear panel since #1088: every connector is cut into the rear wall,
+    which the folded base already carries. Kept so build() and its callers need
+    no special case."""
+    return []
 
 
 def check_platform_screws(path):

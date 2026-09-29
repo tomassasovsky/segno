@@ -121,8 +121,10 @@ class SideWallTopsTest(unittest.TestCase):
         self.assertAlmostEqual(enclosure.LID_OX, (enclosure.LID_W - BW) / 2, places=9)
         shoulder = [row for row in enclosure.BEND_TABLES['segno_base'] if row[1].startswith('trasera')]
         self.assertAlmostEqual(shoulder[0][4], 849.8, places=9)
-        for row in enclosure.BEND_TABLES['segno_faceplate']:
-            self.assertAlmostEqual(row[4], 853.8, places=9)
+        front, lap = enclosure.BEND_TABLES['segno_faceplate']
+        self.assertAlmostEqual(front[4], 853.8, places=9)
+        # #1088: the overhang tapers out before the rear bend; the lap is flush.
+        self.assertAlmostEqual(lap[4], 849.8, places=9)
 
     def test_drawings_ask_for_four_fusion_welded_corners_and_no_spot_welds(self):
         notes = ' '.join(e.dxf.text if e.dxftype() == 'TEXT' else e.text

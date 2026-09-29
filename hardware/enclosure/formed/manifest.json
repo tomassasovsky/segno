@@ -1,6 +1,6 @@
 {
   "segno_base": {
-    "flat_sha256": "a8c5f5456e087f617f51d65d7c1c07fb267535e6eb4ae39e8f0708b7eaf0b296",
+    "flat_sha256": "d22a91840aa658acf4730796cf2f42e742825ade8af7a89305b37d4b792c14b8",
     "forming": {
       "rule": {
         "thickness_mm": 2.0,
@@ -155,7 +155,7 @@
         ]
       ]
     },
-    "step_sha256": "b9a02afa0721b11fc54b03c70e1346e4f3a8a56239ad08214fe06be169f50326",
+    "step_sha256": "33bc7856d621621291cb132b6d05229980e65092ee8d33b3a722d4c8f871af9c",
     "placements_mm": [
       [
         [
@@ -184,7 +184,7 @@
         ]
       ]
     ],
-    "volume_mm3": 945049.614091394,
+    "volume_mm3": 973127.62890679,
     "bounds_mm": [
       [
         -1.910840921,
@@ -197,11 +197,11 @@
         97.51987163183323
       ]
     ],
-    "flat_pattern_sha256": "529eb57f2d98682a99de5636fc2d675e89d908189ed9bc7eed3eb0af71ea696d",
+    "flat_pattern_sha256": "5d1d97c626bfbd64ef09f11566f1590e0d0546c32fe71644bd243d427dc3b14c",
     "flat_pattern_drawn_face": "same"
   },
   "segno_faceplate": {
-    "flat_sha256": "a33373b4322c07a35d0dffe5708c0878e8e9fe41bec7bf9348bafed61428f64e",
+    "flat_sha256": "8f92c96edaa66f330b8201228aed987023f6d4266aacddaf060fe2059e4fab07",
     "forming": {
       "rule": {
         "thickness_mm": 2.0,
@@ -230,11 +230,11 @@
             "L",
             [
               [
-                0.0,
+                2.0,
                 419.7129
               ],
               [
-                853.8,
+                851.8,
                 419.7129
               ]
             ]
@@ -308,7 +308,7 @@
         ]
       ]
     },
-    "step_sha256": "6d8126fd2a032d04c3f807f873cb2f4c3aee9a7877b4b5193b850283d9323f4b",
+    "step_sha256": "f0d47308e1329ebf528600268049d34da244f8d818df9ad62072a593e0edf72a",
     "placements_mm": [
       [
         [
@@ -337,7 +337,7 @@
         ]
       ]
     ],
-    "volume_mm3": 406679.5451953349,
+    "volume_mm3": 406307.2146624868,
     "bounds_mm": [
       [
         0.0,
@@ -350,7 +350,7 @@
         0.0
       ]
     ],
-    "flat_pattern_sha256": "43cac378c6f0dd1c1646b9f5caa6221e0b23eef52834f4e428475eb5cb0530dc",
+    "flat_pattern_sha256": "71475b848cec0053b783adad1409172f42ece778cdb46ac869d19c44c3c4dc8d",
     "flat_pattern_drawn_face": "opposite"
   }
 }

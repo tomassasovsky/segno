@@ -27,22 +27,21 @@ A partial run retains earlier metal archives; those are not the new revision.
 ## 1. Metal fabrication and separate finishing
 
 The metal handoff is **one `enclosure/out/segno_sheetmetal.zip`**, containing
-exactly **15 files: STEP, DXF and individual PDF for each of five parts**.
+exactly **12 files: STEP, DXF and individual PDF for each of four parts**.
 Shipping filenames include material, bare thickness and quantity. They retain
 these canonical part stems:
 
 | Part | Qty | Material | Notes |
 |---|---|---|---|
-| `segno_base` | 1 | 2.0 mm 1100-H14 aluminium | One folded blank; weld all four corners and close all corner reliefs, including the two indicated upper edges, after forming. |
-| `segno_faceplate` | 1 | 2.0 mm 1100-H14 aluminium | Removable sloped lid, 853.8 mm wide (2 mm past each side wall); nine front drilled clearances and nine rear CUT slots. |
+| `segno_base` | 1 | 2.0 mm 1100-H14 aluminium | One folded blank; weld all four corners and close all corner reliefs, including the two indicated upper edges, after forming. Every rear connector is cut straight into its rear wall (#1088). |
+| `segno_faceplate` | 1 | 2.0 mm 1100-H14 aluminium | Removable sloped lid, 853.8 mm wide (2 mm past each side wall) along the slope; over the last 40 mm before the rear bend it narrows to 849.8 mm, so the rear lap is flush with the rear wall. Nine front drilled clearances and nine rear CUT slots. |
 | `segno_ring_disc` | 1 | 2.0 mm 1100-H14 aluminium | Flat encoder disc; straight laser bore, no chamfer. |
-| `segno_rear_panel` | 1 | **1.2 mm aluminium** | Flat I/O panel; alloy/temper to confirm. |
-| `segno_beam` | 1 | **1.6 mm cold-rolled steel** | Full-width support beam; grade to confirm. Fold both wall ears before the long folds. |
+| `segno_beam` | 1 | **1.6 mm cold-rolled steel** | Full-width support beam, seven floor fixings; grade to confirm. Fold both wall ears before the long folds. |
 
 `PART_SPECS` supplies these quantities and materials to the drawings and
 archive manifest. The 2.0 mm material identification follows the Alcast
 1100-H14 certificate, lot 26E0269; confirm the job stock. The certificate does
-not identify the separate rear-panel material or steel grade.
+not identify the steel grade. There is no separate rear I/O panel since #1088.
 
 There are no rear corner brackets or their ten base rivet holes. The metal
 archive excludes assembly, README, drafts, purchased hardware, printed parts
@@ -148,8 +147,7 @@ adhesive enters the coating oven.
 
 All dimensions are mm. Finished ranges assume the stated local film on each
 opposed wall. They do not establish positional fit of a complete screw pattern.
-Keep connector centres, purchased fixing pitches and rear-panel/window datums
-fixed. Retained functional callouts override the general block.
+Keep connector centres and purchased fixing pitches fixed. Retained functional callouts override the general block.
 
 | Opening | Before painting | Predicted finished range |
 |---|---:|---:|
@@ -160,28 +158,30 @@ fixed. Retained functional callouts override the general block.
 | Ø4.80 floor clearances where called out | Ø4.80 +0.10/−0.00 | Ø4.60–4.78 |
 | Pill lens apertures | 60.40 ×6.40, R3.20; +0.10/−0.00 | 60.20–60.38 ×6.20–6.38 |
 | Ring lens aperture | Ø67.40 +0.10/−0.00 | Ø67.20–67.38 |
-| CTRL and selected fuse | Ø12.30 ±0.10 | Ø12.00–12.28 |
+| Selected fuse | Ø12.30 ±0.10 | Ø12.00–12.28 |
 | Power switch | Ø19.80 ±0.10 | Ø19.50–19.78 |
 | MIDI NYS325 | Ø15.50 +0.10/−0.00 | Ø15.30–15.48 |
-| PD coupler | Ø24.40 +0.10/−0.00 | Ø24.20–24.38 |
+| PD coupler and two CTRL D-flange sockets | Ø24.40 +0.10/−0.00 | Ø24.20–24.38 |
 | USB four flats | 22.80 ×22.80 ±0.10 | 22.50–22.78 across each pair |
 | Same USB concentric circle | Ø24.80 ±0.10 | Ø24.50–24.78 |
 | Disc outside diameter | Ø50.70 ±0.20 | Ø50.62–51.10 |
 | Disc straight bore | Ø8.70 ±0.20 | Ø8.30–8.78 |
 
 The USB contour is the intersection of the four flats and concentric circle.
-PD/MIDI local ligaments must measure at least **1.20 mm bare**, including actual
-hole-position error; qualify the complete barrel/fixing pattern and local
-cutting process on the 1.2 mm panel. Check these retained connector fits with
-the actual parts and a representative painted coupon as called out on the
-panel drawing. This is not an electronics-equipped enclosure trial.
+PD/CTRL/MIDI local ligaments must measure at least **1.20 mm bare**, including
+actual hole-position error; qualify the complete barrel/fixing pattern and local
+cutting process on the 2.0 mm rear wall. Check these connector fits with the
+actual parts and a representative painted coupon. This is not an
+electronics-equipped enclosure trial.
 
-The [Neutrik NJ6FD-V drawing](https://www.neutrik.com/media/8599/download/nj6fd-v-2.pdf?v=1)
-requires at least Ø12.00 and **1.20–1.50 mm finished panel thickness**. Nominal
-1.2 mm stock plus the stated film gives 1.32–1.40 mm; check actual thickness
-and both caps' retention. Verify the selected power/fuse hardware and all
-complete M3/M4 mounting patterns after coating; a screw fitting one bare hole
-is insufficient.
+All connectors are cut straight into the 2.0 mm rear wall (#1088); there is no
+separate I/O panel. The two CTRL jacks are MEIRIYFA 6.35 mm stereo sockets in a
+D-size zinc flange (Amazon B0G5FZNH49): Ø24 hole, flange 26 × 31 mm, two Ø3.4
+fixings at ±9.5 / ±12 mm, top-left and bottom-right seen from the front. The
+wall is cut to that diagonal, which is the opposite one to the PD coupler's
+as cut. They screw on from outside, so wall thickness does not limit them.
+Verify the selected power/fuse hardware and all complete M3/M4 mounting
+patterns after coating; a screw fitting one bare hole is insufficient.
 
 The disc is laser-cut and deburred without a chamfer, coated on every surface;
 its bore centre has ±0.20 mm X/Y tolerance relative to the outside-circle
@@ -190,8 +190,9 @@ settle in the printed holder before tightening the original washer/nut, and
 verify actual printed clearance, retention, push-button action and knob rotation.
 The bore is a clearance fit, not a locating feature.
 
-The steel beam retains its 1.2 mm nominal normal bare lid gap and fourteen
-depth-slotted floor fixings plus two vertically slotted wall-ear fixings.
+The steel beam retains its 1.2 mm nominal normal bare lid gap, seven
+depth-slotted floor fixings (one per interior pedal gap, #1088) and two
+vertically slotted wall-ear fixings.
 Fit it after separate coating, then select felt from the measured finished gap.
 Preserve the #1019 rails, central prop and support heights; earlier numerical
 load estimates are not a rating of the current welded assembly.
@@ -390,7 +391,7 @@ finished stack, actual insert depth and screw-tip clearance. Rows marked
 | Pedals → sleds | **40 M3 screws; measure before ordering** | Four per pedal, driven from inside the opened pedal into the sled's top inserts. Remove the lower rubber pad. Measure the real pedal base thickness, head-bearing surface and permitted insertion; close the supplied pedal case on the bench before lowering it into the collar. Reuse the pedal's original case fasteners. |
 | Lid → base | **18 M3 ISO 7380-1 button-head screws, 9 front OD7 washers and 9 rear OD12 / ID3.2 / 1 mm washer references** | Nine front plus nine rear, into owner-tapped M3 pilots. M3×8 is a nominal reference; confirm length, engagement and screw-tip clearance against the revised shim/washer stack. Rear washer procurement and angular seating remain conditional. No clinch nuts. |
 | Front lid lip → base, between painted bearing faces | **9 fitted solid-metal shim packs**, layer quantity depends on finished gaps | Stainless, OD6.90–7.00 / ID4.0–4.2 mm. Fit after coating with the lid freely seated; nominal 1.10 mm STEP thickness is reference only. Check face alignment and bearing, then record thicknesses and stations 1–9. Use edge-only retention, without coating removal or adhesive in the bearing stack. |
-| Support-beam foot → base | **14 M4 screws, 14 nuts and washer sets; measure before ordering** | The beam's foot, through depth-slotted holes at the fourteen stations the seven posts used. Bare metal stack is **3.6 mm**; add both parts' coating, washers and the selected nut. Nuts are under the floor. Check that the ends and hardware remain above the neoprene floor-contact plane. |
+| Support-beam foot → base | **7 M4 screws, 7 nuts and washer sets; measure before ordering** | The beam's foot, through depth-slotted holes, one at the centre of each interior pedal gap (#1088). Bare metal stack is **3.6 mm**; add both parts' coating, washers and the selected nut. Nuts are under the floor. Check that the ends and hardware remain above the neoprene floor-contact plane. |
 | Support-beam ears → side walls | **2 M4 screws, 2 nuts and washer sets; measure before ordering** | One per end, from outside the wall into the beam's rearward ear, whose hole is slotted vertically. Bare stack is 2.0 Al + 1.6 steel = **3.6 mm**. The steel beam receives appropriate pretreatment separately and bolts into the painted body. |
 | Screen stands → base | **14 M3 screws and 14 bearing washers; confirm length before ordering** | Six for the 7-inch tower and four for each 15.6-inch stand. All flange holes pass through **5 mm of printed material** into M3 threads in the 2 mm base. M3×8 is a candidate with a thin washer; verify full engagement after coating without the tips touching the supporting surface. |
 | 15.6-inch stand splice | **2 M3 screws, 2 nuts and bearing washers; measure before ordering** | The two printed halves have clearance holes and need nuts, not heat-set inserts. Measure the actual lap and washer stack and verify access below the bridge. |
@@ -399,13 +400,12 @@ finished stack, actual insert depth and screw-tip clearance. Rows marked
 | Console board → base | **4 M3 female/female standoffs, 15 mm body length, plus 8 M3 screws; measure screw lengths before ordering** | Four floor-side and four board-side screws. Include any washers in the length check and preserve the specified H1 electrical bond. If the supplied standoffs are male/female, replace the four floor-side screws with the matching nuts instead; the installed height stays 15 mm. |
 | N07 / Raspberry Pi → base | **4 M2.5 female/female standoffs, 12 mm body length; 4 M2.5 male/female extenders, 6 mm body length; 8 M2.5 screws** | Four screws secure the lower standoffs from below and four secure the Pi from above. The extenders pass through the N07 board into the lower standoffs. Confirm the supplied kit's thread lengths and avoid bottoming in its blind threads. **35.3 mm risers are not used.** Retain the N07 kit's separate SSD-retaining hardware. |
 | Buck converters → base | **4 M4 screws, 4 nuts, 4 Ø12 mm ear washers and floor-side washer sets; measure before ordering** | Two fixing points per converter, through its Ø6.5 ±0.3 ears. Measure actual ear thickness, washer-bearing area, insulation if required and tool access. The approximate housing STEP does not qualify these washers. Check the completed underside stack against the fitted rails and neoprene. |
-| Rear I/O panel → base | **4 M3 screws, 4 nuts and washer sets; measure before ordering** | Bare sheet stack is **3.2 mm**, plus coating and washers. One specified PANEL_BOND joint must make electrical contact at its masked land; preserve that joint when selecting hardware. |
-| PD and MIDI connectors → rear panel | **6 M3 fixing sets**, each screw plus matching nut as required by the purchased part | Two for the PD coupler and two for each of the two MIDI sockets. Confirm the real flange thickness, screw-head style, washers and whether matching fasteners are supplied before choosing lengths. |
-| Other rear connectors | **2 NJ6FD-V caps; 2 USB bulkhead retaining nuts; 1 power-button nut; 1 fuse-holder nut** | Use the matching hardware supplied for each purchased connector. The USB apertures must follow the owner's verified four-flat profile; verify all finished openings against the purchased parts. The CTRL caps require the specified finished panel thickness. |
+| PD, CTRL and MIDI connectors → rear wall | **10 M3 fixing sets**, each screw plus matching nut as required by the purchased part | Two for the PD coupler, two for each CTRL D-flange socket and two for each MIDI socket, through the 2.0 mm painted rear wall. Confirm the real flange thickness, screw-head style, washers and whether matching fasteners are supplied before choosing lengths. |
+| Other rear connectors | **2 USB bulkhead retaining nuts; 1 power-button nut; 1 fuse-holder nut** | Use the matching hardware supplied for each purchased connector. The USB apertures must follow the owner's verified four-flat profile; verify all finished openings against the purchased parts. |
 | Floor rails → base | **Fixings for 12 printed rail segments; lengths and bearing stacks to confirm** | Preserve shared pedestal fixing stations and the rear rail's eight dedicated anchors from the matching source/native revision. Keep heads within the printed counterbores and all hardware above the neoprene floor-contact plane. Fit rails before the strips; check actual fastener retention and access. The former 15 rubber feet are not ordered. |
 | Central lid prop → base | **2 M4 fixing sets; measure before ordering** | Use the existing two floor stations. Include printed tongue thickness, coating, washers and nut in the stack; verify underside clearance. Fit top felt after measuring the finished lid gap. |
 | Encoder / ring assembly | **1 matching EC11 bushing nut and washer; supplied knob retaining hardware** | The EC11 nut clamps the centre disc into the holder; the holder's outer land is glued to the faceplate underside. Verify this assembled retention and the knob's underside relief. Fusion deliberately uses the owner's PR #990 Ø80 board without mounting holes, as recorded in `enclosure/FUSION_MODELS.md`; the checked-in Ø68/three-hole PCB is a different revision. Reconcile the electronics order with that chosen revision; no three-M3-screw set is implied for the native assembly. |
-| Chassis bonding | **1 M6 stud fixing set**, with the nuts, locking washers, lugs and straps required by the agreed bonding arrangement | Select the complete stack and its length against the actual lug arrangement and verify continuity. Keep the defined rear-panel bond; do not add parallel grounding connections by assumption. |
+| Chassis bonding | **1 M6 stud fixing set**, with the nuts, locking washers, lugs and straps required by the agreed bonding arrangement | Select the complete stack and its length against the actual lug arrangement and verify continuity. The connector shells sit on the painted rear wall and reach chassis ground through the board (H1); there is no rear-panel bond since #1088. Do not add parallel grounding connections by assumption. |
 
 The split CLEAR/BANK joints add eight screws and eight inserts to the previous
 console mounting arrangement. No long through-screws are required.

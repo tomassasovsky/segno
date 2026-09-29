@@ -102,9 +102,6 @@ T        = 2.0       # sheet thickness (the shop's stock, owner 2026-09-04)
 # to the 95; 127 belongs to that coil only. Stiffness is untouched either way,
 # E ~ 69 GPa for 1050, 1100 and 5052 alike, so no alloy call moves a deflection.
 ALLOY_2MM  = "1100-H14"
-# The certificate covers the 2.00 mm sheet ONLY. Nothing establishes what the
-# 1.2 mm rear panel is, so the drawings must ask rather than assert.
-ALLOY_REAR = "a confirmar"
 RI       = 2.0       # inside bend radius; confirm actual temper and trial bend with the shop
 KF       = 0.33      # K-factor for bend-allowance development
 FLANGE   = 18.0      # return-flange depth (lid side wings + wall top flange)
@@ -679,8 +676,7 @@ D_GND     = 6.5      # M6 earth / bond stud
 # being a hole type of its own. Part: QIANRENON D-type USB-C F/F, 100 W, 10 Gbps
 # (Amazon B0CQ4VD2N2). 10 Gbps matters: it means all 24 ways are wired, so CC
 # passes and PD can negotiate. A charge-only coupler drops CC and nothing works.
-# The former TRS choice used this D-series envelope; current CTRL jacks use
-# NJ6FD-V round holes. Keep the D-series hardware envelope for the PD coupler.
+# The PD coupler and, since #1088, both CTRL jacks use this D-series punch.
 D_TRS_BORE       = 24.0  # Neutrik: "standardized D sized 24 mm panel cutout"
 D_TRS_SCREW_D    = 3.2   # M3 clearance
 # The D-series flange carries its two M3 on DIAGONALLY OPPOSITE corners, not a
@@ -695,18 +691,18 @@ D_TRS_SCREW_D    = 3.2   # M3 clearance
 D_TRS_SCREW_DIAG = (19.0, 24.0)   # (du, dz) between the two diagonal M3 centres
 D_TRS_KEEPOUT    = 30.4  # bore + the M3 pair
 D_PD_BORE = D_TRS_BORE   # the PD coupler keeps the D-series punch (bore + M3 pair)
-# CTRL_1 / CTRL_2 are Neutrik NJ6FD-V since 2026-09-04 (owner call, #993): a
-# 6-pole switching 1/4" jack, vertical PCB pins, REAR-mounted through a plain
-# round hole and held by its snap-on POM cap. Neutrik's drawing (nj6fd-v-3.dxf,
-# "Panel cut out (rear side)") gives Ø12.00 and a panel of 1.20-1.50 mm; the
-# STEP shows the snout is only 3.5 mm long, so a 2.0 mm panel leaves the cap
-# nothing to snap to. Hence REAR_PANEL_T below. The old D-series TRS constants
-# stay for the PD coupler. The station keep-out is deliberately still
-# D_TRS_KEEPOUT: shrinking it would re-spread the stations and move the base's
-# rear-wall window, and the spare air costs nothing.
-D_CTRL_HOLE  = 12.0      # NJ6FD-V panel hole
-REAR_PANEL_T = 1.2       # owner approved 2026-09-05: allows coating under the NJ6FD-V cap
-CTRL_PANEL_T_RANGE = (1.2, 1.5)  # manufacturer's panel range, including applied finish
+# CTRL_1 / CTRL_2 (#1088, owner call 2026-09-29): MEIRIYFA 6.35 mm stereo panel
+# socket in a D-size zinc flange (Amazon B0G5FZNH49). Its drawing: flange 26 x 31,
+# body Ø23.6 through a 24 mm hole, 2 x Ø3.4 fixings at +-9.5 / +-12 on ONE
+# diagonal -- top-left and bottom-right seen from the front of the flange. It
+# mounts from outside with screws, so it takes any wall thickness; it replaced the
+# Neutrik NJ6FD-V, which only clamps a 1.20-1.50 mm panel and forced a separate
+# thin rear panel. The flange is a mirror of the PD coupler's diagonal as cut,
+# hence D_CTRL_DIAG below.
+D_CTRL_BORE = D_TRS_BORE      # "Hole dimensions 24mm"; body Ø23.6
+D_CTRL_DIAG = +1              # +1: fixings at (+du/2, +dz/2) and (-du/2, -dz/2) in wall
+                              # coords, i.e. top-left / bottom-right seen from behind
+                              # the console (u grows to the player's right)
 USB3_SQ       = 22.1 # four flats, square clipped by the concentric thread circle
 USB3_CORNER_D = 24.1 # thread-circle diameter, NOT a rounded-rectangle corner circle
 USB3_FLANGE_D = 28.5 # flange OD. This, not the cutout, is the real keep-out
@@ -729,10 +725,9 @@ REAR_IO_PROVENANCE = {
                          "dimensions (19mm*24mm)'; MEIRIYFA B0G5FZNH49 is the same "
                          "standard D shell (photos show the diagonal pair + screws)",
     "D_TRS_KEEPOUT":     "design: bore + the M3 pair (kept as the CTRL station width too)",
-    "D_CTRL_HOLE":       "datasheet: Neutrik nj6fd-v-3.dxf 'Panel cut out (rear side)' Ø12.00 "
-                         "[0.472\"], panel 1.20-1.50 mm; NJ6FD-V datasheet 'Chassis shape 12 mm'",
-    "REAR_PANEL_T":      "design: owner approved 1.2 mm stock plus coating, 2026-09-05; "
-                         "NJ6FD-V requires measured finished panel thickness 1.20-1.50 mm",
+    "D_CTRL_BORE":       "datasheet: MEIRIYFA B0G5FZNH49 drawing (owner, 2026-09-29): hole 24 mm, "
+                         "body Ø23.6, flange 26x31, 2-Ø3.4 at +-9.5/+-12, top-left/bottom-right",
+    "D_CTRL_DIAG":       "datasheet: same MEIRIYFA drawing, front view of the flange",
     "D_TRS_SCREW_D":     "datasheet: D-series fixings are M3",
     "USB3_SQ":           "datasheet: owner-supplied reference/usb3_dimensions.png, 2026-09-05; "
                          "22.1 x 22.1 mm FOUR flats on a round threaded barrel; nut-mounted",
@@ -779,38 +774,17 @@ REAR_IO_U      = None   # set to SCREEN_16_U below -- the panel is CENTRED ON TH
                         # ribbon from 402 mm to 30 mm. _check() asserts the
                         # right-justified form, so this constant cannot drift.
 
-# --- rear I/O sub-panel (#751) ------------------------------------------------
-# The cluster is DISMOUNTABLE: the wall carries a window, and a bolt-on panel
-# carries the nine connectors. It was folded straight into the wall for one
-# revision (77e0ef9b) on the grounds that the Pi's port window had gone away and
-# the sub-panel had no home -- but that reasoning was about the WINDOW, not about
-# the connectors. Cut into the wall, the loom can only be worked on inside a
-# 850x423 box through a 46 mm slot, and a single stripped thread scraps the base.
-# On a panel it lifts out, gets soldered on a bench, and a mis-drilled panel costs
-# a panel. It is NOT a folded face of the base; it needs its own bond -- see
+# --- rear I/O cut into the rear wall (#1088) ----------------------------------
+# Every connector is cut straight into the 2.0 mm rear wall (owner call, to cut
+# cost). From #751 to #1088 they sat on a separate bolt-on panel behind a window,
+# so the loom could come out on a bench; the lid now comes off instead, and the
+# connectors all fix with nuts or screws, so none of them threads into the base.
+# Their metal shells sit on the painted wall: they reach the chassis through the
+# board ground (H1), not through a bonded panel -- see
 # docs/design/console-grounding-and-bonding.md.
-REAR_WIN_CLR        = 3.0   # window clearance around the outermost station cutouts (v)
-REAR_WIN_SIDE_CLR   = 6.0   # window side padding BEYOND the outermost station KEEP-OUTS
-                            # (u). The window used to clear only the cutouts, which let
-                            # the PD coupler's keep-out poke 0.2 past the opening's edge
-                            # -- the flange visually kissed the window and there was no
-                            # room to offer it up square (user call, 2026-08-18). Sides
-                            # clear what has to PASS (flanges, nuts), not just the holes.
-REAR_WIN_H_MIN      = 46.0  # minimum window height. Derived tight, the opening came
-                            # out 30 mm on a 90 mm wall -- a letterbox that makes
-                            # every connector a knuckle-scrape to reach and looks
-                            # like a mistake next to the panel around it. 46 is the
-                            # height the sub-panel carried before it was retired.
-REAR_PANEL_OV       = 15.0  # panel overlap past the window, every side
-REAR_PANEL_BOLT_OFF = 9.0   # bolt centres past the window edge (>=4 mm inside the
-                            # panel edge at OV 15, and clear of every flange)
-MASK_BOND_D         = 12.0  # bare bonding land around ONE panel bolt, both faces.
-                            # The panel carries the TRS sleeves (which ARE board
-                            # GND) and both USB coupler flanges, and it bolts to a
-                            # powder-coated wall through four painted holes -- so
-                            # without this it is a floating metal plate holding
-                            # every shield in the machine. ONE land, not four:
-                            # a single defined path, same rule as H1 on the board.
+REAR_IO_BAND_PAD = 21.0   # the vent block and the earth stud are laid out against the
+                          # I/O band's left edge: the outermost keep-out plus this,
+                          # which is where the panel's edge was, so neither moved
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
@@ -1068,6 +1042,12 @@ BASE_OUTER_W = W - 0.2                # the base's outer width across the side s
 LID_OVERHANG = 2.0                    # the lid runs one sheet past each side skin (owner call,
                                       # #1067): its edge caps the side walls' top edges
 LID_W = BASE_OUTER_W + 2.0 * LID_OVERHANG   # lid blank full width
+# At the back the lid meets the rear wall and shoulder, which stay at the base's
+# outer width, so a full-width rear lap stood 2 mm proud of them at each corner.
+# Over the last LID_TAPER_L of the slope, up to the rear bend's tangent, each
+# side edge runs in by LID_OVERHANG; the rear bend and lap are BASE_OUTER_W wide,
+# flush with the base (owner call, #1088).
+LID_TAPER_L = 40.0                    # taper length along the slope, ending at the rear bend tangent
 LID_OX = (LID_W - FP_W) / 2.0         # schedule content offset inside the wider blank
 FP_V = L_SLOPE                        # faceplate length up the slope (control area)
 
@@ -1474,7 +1454,7 @@ LID_UNDER_Z0 = LID_UNDER_NORMAL / math.cos(math.radians(SLOPE_ANGLE))
 # 25%. The nonlinear shell model behind issue #1019 rates the band between pads
 # at 47 kg of point load to dent and the band over one at 232 kg. A continuous
 # pad backs every u, and the weakest point on the band becomes 475 kg. The beam
-# costs the BOTTOM plate margin, because fourteen bolts concentrate the in-plane
+# costs the BOTTOM plate margin, because its floor bolts concentrate the in-plane
 # restraint the plate used to spread: at a 1 kN stomp the floor goes from 96 MPa
 # (util 1.01) with no beam to 135 MPa (util 1.42) bolted through slotted holes,
 # or 147 MPa (util 1.54) through plain ones. Both stay inside the RC-600
@@ -1491,20 +1471,15 @@ BEAM_V     = 165.0                 # web depth (user call 2026-08-19: "move the 
                                    # module BODY, whose front face is 11.8 mm forward of the aperture.
                                    # That body is what pins BEAM_V, not the aperture: the web's rear
                                    # face clears it by 1.43 mm and the gate below holds that.
-# The bolt STATIONS are unchanged from the seven posts: the FRONT_SCREW_U
-# interior pedal gaps, two M4 each, fourteen holes already in the base flat.
-# Keeping them means the floor pattern, the FE model and the rails all still
-# describe the same hardware; only the metal above them became continuous.
+# The bolt STATIONS are the seven posts' stations, the FRONT_SCREW_U interior
+# pedal gaps. Each used to take two M4, 20.1 mm apart, because each post was a
+# separate part. The beam is one part, so each gap takes ONE M4 at its centre
+# (owner call, #1088): seven screws instead of fourteen.
 BEAM_BOLT_U   = FRONT_SCREW_U[1:-1]   # 7 stations, the interior pedal gaps
-BEAM_U_CLR    = 1.5                   # u clearance that used to set the post pad width; kept
-                                      # because the bolt spacing derives from it
-_BEAM_BOLT_PW = ((_row1_u(1) - _row1_u(0)) - LED_SLOT_W - 2*LED_INS_FLANGE
-                 - 2*BEAM_U_CLR)      # 30.14: the old post width, now only a bolt-spacing datum
-BEAM_BOLT_DU  = _BEAM_BOLT_PW / 2.0 - 5.0   # M4 at +/- this in u about each station
 BEAM_BOLT_SLOT = 2.0               # the fixing holes are SLOTTED in DEPTH (v) by this much
                                    # beyond the M4 clearance. A slot lets the bottom plate
                                    # stretch under the beam instead of being pinned at
-                                   # fourteen points: 135 MPa instead of 147 at a 1 kN stomp.
+                                   # each bolt (with fourteen: 135 MPa instead of 147 at 1 kN).
                                    # Slotted in v only -- u is what locates the beam.
 BEAM_PAD   = 14.3                  # top pad length (v) -- bears on the faceplate underside.
                                    # 20 while this was seven posts, which dodged the LED
@@ -1665,13 +1640,12 @@ _BEAM_REL = BEAM_DD_FOOT + BEAM_EAR_RELIEF         # folded: how far the pad and
 
 
 def beam_bolt_u():
-    """The fourteen u where the beam bolts to the base floor, left to right.
+    """The seven u where the beam bolts to the base floor, left to right.
 
-    Two M4 either side of each of the seven interior pedal gaps -- the same
-    stations the seven posts used, so the holes already in the base flat did not
-    move when the posts became one beam.
+    One M4 at the centre of each of the seven interior pedal gaps (#1088); the
+    posts before the beam took two per gap.
     """
-    return [u + du for u in BEAM_BOLT_U for du in (-BEAM_BOLT_DU, BEAM_BOLT_DU)]
+    return list(BEAM_BOLT_U)
 
 
 def beam_cable_u():
@@ -1759,19 +1733,15 @@ def rear_io_layout():
     return out
 
 def rear_io_cutouts():
-    """The nine panel-mount connector cutouts, in WALL coords (u=0..W, z=0..REAR_WALL_H).
-
-    They are cut in the bolt-on sub-panel, not in the wall -- but they are laid out
-    against the wall's own u so the panel, the window and the wall all agree without
-    anyone converting coordinates by hand. rear_panel_holes() shifts them to
-    panel-local; nothing else re-derives them."""
+    """The nine connector cutouts, in WALL coords (u=0..W, z=0..REAR_WALL_H), all cut
+    straight into the rear wall (#1088)."""
     z = REAR_IO_Z
     at = rear_io_layout()
     cuts = []
     for ref, d in (("POWER", D_PWRBTN), ("FUSE", D_FUSE)):     # nut-mounted: bore only
         cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": d + .30, "ref": ref})
-    # DIN-5 stations: a bore with a HORIZONTAL M3 pair straddling it (the panel
-    # is 46 tall; across the panel there is room to spare).
+    # DIN-5 stations: a bore with a HORIZONTAL M3 pair straddling it (across the
+    # wall there is room to spare).
     for ref in ("MIDI_IN", "MIDI_OUT"):
         cu = at[ref][0]
         cuts.append({"kind": "circle", "u": cu, "v": z, "d": 15.50, "ref": ref})
@@ -1788,15 +1758,25 @@ def rear_io_cutouts():
         for s in (-1, 1):
             cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z - s*ddz/2.0,
                          "d": D_M3_METAL, "ref": ref + "_SCR"})
-    # CTRL jacks: Neutrik NJ6FD-V, one round Ø12 hole each, no fixings (rear
-    # body + front snap cap, see D_CTRL_HOLE)
+    # CTRL jacks: the MEIRIYFA D-flange socket, the same Ø24 punch and 19 x 24
+    # pair, but on the OTHER diagonal (see D_CTRL_DIAG).
     for ref in ("CTRL_1", "CTRL_2"):
-        cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": D_CTRL_HOLE + .30, "ref": ref})
+        cu = at[ref][0]
+        cuts.append({"kind": "circle", "u": cu, "v": z, "d": D_CTRL_BORE + .40, "ref": ref})
+        for s in (-1, 1):
+            cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z + D_CTRL_DIAG*s*ddz/2.0,
+                         "d": D_M3_METAL, "ref": ref + "_SCR"})
     for ref in ("USB3_1", "USB3_2"):
         cu = at[ref][0]
         cuts.append({"kind": "rect", "u": cu - USB3_CUT_SQ/2.0, "v": z - USB3_CUT_SQ/2.0,
                      "w": USB3_CUT_SQ, "h": USB3_CUT_SQ, "clip_d": USB3_CUT_D, "ref": ref})
     return cuts
+
+def rear_io_left_edge():
+    """Left edge of the I/O band: where the full-width panel's edge used to be. The
+    vent block and the earth stud are laid out against it and did not move."""
+    lay = rear_io_layout()
+    return min(cu - kw/2.0 for cu, kw in lay.values()) - REAR_IO_BAND_PAD
 
 def _feat_extent(f):
     """(u_lo, u_hi, z_lo, z_hi) of one cutout feature."""
@@ -1805,81 +1785,16 @@ def _feat_extent(f):
         return (f["u"] - r, f["u"] + r, f["v"] - r, f["v"] + r)
     return (f["u"], f["u"] + f["w"], f["v"], f["v"] + f["h"])
 
-def rear_window():
-    """The I/O WINDOW in the rear wall: (u_lo, z_lo, w, h).
-
-    Derived from the cutouts it has to pass, not typed. The window used to be a
-    290x46 constant while the cluster it framed was laid out by rear_io_layout(),
-    so the two could drift apart silently -- and did, when the cluster moved right
-    to follow the boards (#743). Now the wall opening is whatever the connectors
-    need plus REAR_WIN_CLR, and a station that grows drags the window with it."""
-    ext = [_feat_extent(f) for f in rear_io_cutouts()]
-    # u: the opening must pass the station KEEP-OUTS (flanges, nuts), not just the
-    # holes -- the panel mounts from the inside, so every connector's widest part
-    # crosses the window plane. See REAR_WIN_SIDE_CLR.
-    lay = rear_io_layout()
-    u_lo = min(cu - kw/2.0 for cu, kw in lay.values()) - REAR_WIN_SIDE_CLR
-    u_hi = max(cu + kw/2.0 for cu, kw in lay.values()) + REAR_WIN_SIDE_CLR
-    z_lo = min(e[2] for e in ext) - REAR_WIN_CLR
-    z_hi = max(e[3] for e in ext) + REAR_WIN_CLR
-    if z_hi - z_lo < REAR_WIN_H_MIN:            # open it up about the cluster centreline
-        z_mid = (z_lo + z_hi) / 2.0
-        z_lo, z_hi = z_mid - REAR_WIN_H_MIN/2.0, z_mid + REAR_WIN_H_MIN/2.0
-    return (u_lo, z_lo, u_hi - u_lo, z_hi - z_lo)
-
-def rear_panel_bolts():
-    """Bolt centres (u, z) in WALL coords -- drilled in the wall AND the panel from
-    this one list, so they cannot disagree."""
-    u0, z0, w, h = rear_window()
-    cu, cz = u0 + w/2.0, z0 + h/2.0
-    return [(cu + su*(w/2.0 + REAR_PANEL_BOLT_OFF), cz + sz*(h/2.0 + REAR_PANEL_BOLT_OFF))
-            for su in (-1, 1) for sz in (-1, 1)]
-
-def rear_panel_outline():
-    """Panel blank (u_lo, z_lo, w, h) in WALL coords: the window plus an overlap wide
-    enough that the bolts clear its edge."""
-    u0, z0, w, h = rear_window()
-    return (u0 - REAR_PANEL_OV, z0 - REAR_PANEL_OV, w + 2*REAR_PANEL_OV, h + 2*REAR_PANEL_OV)
-
-def rear_panel_holes():
-    """Sub-panel features in PANEL-LOCAL coords (origin = panel centre)."""
-    u0, z0, w, h = rear_panel_outline()
-    cu, cz = u0 + w/2.0, z0 + h/2.0
-    out = []
-    for f in rear_io_cutouts():
-        g = dict(f)
-        g["u"] = f["u"] - cu
-        g["v"] = f["v"] - cz
-        out.append(g)
-    _bond = rear_panel_bolts()[0]
-    for bu, bz in rear_panel_bolts():
-        out.append({"kind": "circle", "u": bu - cu, "v": bz - cz, "d": D_M3_METAL,
-                    "ref": "PANEL_BOLT"})
-        if (bu, bz) == _bond:
-            out.append({"kind": "circle", "u": bu - cu, "v": bz - cz,
-                        "d": MASK_BOND_D, "ref": "PANEL_BOND", "layer": "MASK"})
-    return out
-
 def rear_holes():
-    """Rear WALL features: the I/O WINDOW and its four bolt holes, the fixed exhaust
-    vents and the earth stud. The connectors themselves are NOT here -- they are in
-    the bolt-on sub-panel (segno_rear_panel), so the whole connector loom lifts out
-    as one assembly instead of being trapped in a folded face of the base.
-    u=0..W, z=0..REAR_WALL_H."""
-    u0, z0, w, h = rear_window()
-    cuts = [{"kind": "rect", "u": u0, "v": z0, "w": w, "h": h, "ref": "IO_WINDOW"}]
-    _bond = rear_panel_bolts()[0]                          # the one nearest the stud
-    for bu, bz in rear_panel_bolts():
-        cuts.append({"kind": "circle", "u": bu, "v": bz, "d": D_M3_METAL, "ref": "PANEL_BOLT"})
-        if (bu, bz) == _bond:
-            cuts.append({"kind": "circle", "u": bu, "v": bz, "d": MASK_BOND_D,
-                         "ref": "PANEL_BOND", "layer": "MASK"})
-    # Vents fill the wall to the LEFT of the panel: the wall's EDGE margin to the
-    # panel's left edge - EDGE, columns evenly pitched to land exactly on both.
+    """Rear WALL features: the nine connector cutouts (#1088), the fixed exhaust
+    vents and the earth stud. u=0..W, z=0..REAR_WALL_H."""
+    cuts = [dict(c) for c in rear_io_cutouts()]
+    # Vents fill the wall to the LEFT of the I/O band: the wall's EDGE margin to
+    # the band's left edge - EDGE, columns evenly pitched to land exactly on both.
     # (Mirror of the original rule, which had them to the RIGHT -- they swapped when
     # the cluster moved right to follow the boards.)
     sl = VENT_SLOT[0]
-    cl_l = rear_panel_outline()[0]                         # panel LEFT edge
+    cl_l = rear_io_left_edge()                             # I/O band LEFT edge
     v_l = EDGE                                             # first vent column
     v_r = cl_l - EDGE                                      # last column's right edge
     ncol = max(2, round((v_r - v_l - sl) / (sl + 8.0)) + 1)
@@ -1950,10 +1865,6 @@ def _check(strict_board_mount=True):
             f"side vent at v={_f['v']:.1f} is within 2T of the wall's top edge")
     assert 0 < FRONT_BARE_GAP_MIN <= LIP_BARE_CLEAR <= FRONT_BARE_GAP_MAX, (
         "front seam: nominal clearance must lie within the bare assembly fit band")
-    # Nominal design allowance only; the finished prototype must still be measured.
-    assert CTRL_PANEL_T_RANGE[0] <= REAR_PANEL_T + 2*COAT_MIN and \
-           REAR_PANEL_T + 2*COAT_MAX <= CTRL_PANEL_T_RANGE[1], (
-        "CTRL_PANEL: finished rear panel including coating must fit 1.20-1.50 mm")
     # The plate drills holes for a board this file does not own. Those numbers came
     # from measuring the V1 board, and stayed put while the board they were meant
     # for was replaced and then resized twice -- so they are read from the board
@@ -1996,7 +1907,7 @@ def _check(strict_board_mount=True):
 
     cuts = faceplate_holes()
     rear = rear_holes()            # WALL: window, bolts, vents, earth stud
-    rear_io = rear_io_cutouts()    # PANEL: the nine connector stations
+    rear_io = rear_io_cutouts()    # the nine connector stations (wall + CTRL plate)
     byref = {c["ref"]: c for c in cuts}
 
     # 1. width budget: the front row of 8 pedals must fit across FP_W
@@ -2541,56 +2452,15 @@ def _check(strict_board_mount=True):
         f"REAR_IO: {boxes[0][2]} keep-out starts at u={boxes[0][0]:.1f}, inside "
         f"the {EDGE:.0f} mm edge margin")
 
-    # 8c. the dismountable I/O panel (#751). The wall carries a window; the panel
-    # carries the connectors and bolts over it. Four ways that goes wrong, four
-    # gates -- the panel is derived from the cutouts, so each one is a statement
-    # about what the derivation must keep true, not a repetition of it.
-    _pu0, _pz0, _pw, _ph = rear_panel_outline()
-    _wu0, _wz0, _ww, _wh = rear_window()
-    # (i) the window has to pass every cutout it frames. Derived, but a station
-    # that grows past the derivation -- a rect with a corner radius, a bore that
-    # picks up a flange -- would be trimmed by the wall instead of the panel.
-    for c in rear_io:
-        lo, hi, zlo, zhi = _feat_extent(c)
-        assert (_wu0 <= lo and hi <= _wu0 + _ww
-                and _wz0 <= zlo and zhi <= _wz0 + _wh), (
-            f"REAR_PANEL: {c['ref']} spans u {lo:.1f}..{hi:.1f}, z {zlo:.1f}..{zhi:.1f} "
-            f"but the window is u {_wu0:.1f}..{_wu0+_ww:.1f}, z {_wz0:.1f}..{_wz0+_wh:.1f} "
-            "-- the wall would cut into the connector")
-    # (ii) a bolt through a flange is a panel that cannot be done up. The bolts sit
-    # outside the window; the flanges reach past the cutouts, and on the outermost
-    # stations they reach FURTHER than the window edge does.
-    for _bu, _bz in rear_panel_bolts():
-        for _ref, (_cu, _kw) in lay.items():
-            _clr = abs(_bu - _cu) - _kw/2.0 - D_M3/2.0
-            assert _clr >= 0.0 or abs(_bz - REAR_IO_Z) > _kw/2.0 + D_M3/2.0, (
-                f"REAR_PANEL: bolt at ({_bu:.1f}, {_bz:.1f}) fouls {_ref}'s "
-                f"Ø{_kw:.1f} flange by {-_clr:.1f} mm")
-        assert (_bu - _pu0 >= 4.0 and _pu0 + _pw - _bu >= 4.0
-                and _bz - _pz0 >= 4.0 and _pz0 + _ph - _bz >= 4.0), (
-            f"REAR_PANEL: bolt at ({_bu:.1f}, {_bz:.1f}) leaves under 4 mm of "
-            f"panel edge -- REAR_PANEL_OV {REAR_PANEL_OV} vs bolt offset "
-            f"{REAR_PANEL_BOLT_OFF}")
-    # (iii) the panel is a plate bolted to the OUTSIDE of a wedge-topped wall, so
-    # it does not owe the wall's EDGE margin -- that margin is for features cut
-    # into a face that has to fold. The panel must stay on the wall and lie flat;
-    # the finished rear welds must preserve that seating surface.
-    _bw_wall = W - 2*T
-    assert _pu0 >= 4.0 and _pu0 + _pw <= _bw_wall - 4.0, (
-        f"REAR_PANEL: panel spans u {_pu0:.1f}..{_pu0+_pw:.1f}, off a "
-        f"{_bw_wall:.0f} mm wall")
-    assert _pz0 >= 4.0 and _pz0 + _ph <= REAR_WALL_H - 4.0, (
-        f"REAR_PANEL: panel spans z {_pz0:.1f}..{_pz0+_ph:.1f}, which does not "
-        f"leave 4 mm of wall above and below on a {REAR_WALL_H:.0f} mm wall")
-    # (iv) the gap to the vent block carries the earth stud (D_GND) and still has
-    # to leave a spanner's width either side. Measured to the PANEL edge now, not
-    # the first station: the panel overhangs the cluster by REAR_PANEL_OV, and it
-    # is the panel a spanner collides with.
+    # 8c. every connector is cut into the wall (#1088).
+    # The gap to the vent block carries the earth stud (D_GND) and still has to
+    # leave a spanner's width either side. Measured to the I/O band's left edge,
+    # where the full-width panel's edge used to be.
     _v_r = max(c["u"] + c.get("w", 0.0) for c in rear if c["ref"] == "VENT")
-    _gap = _pu0 - _v_r
+    _gap = rear_io_left_edge() - _v_r
     assert _gap >= D_GND + 2*8.0, (
-        f"REAR_PANEL: only {_gap:.1f} mm between the last vent column and the "
-        f"panel edge -- the earth stud (Ø{D_GND}) and its spanner do not fit")
+        f"REAR_IO: only {_gap:.1f} mm between the last vent column and the "
+        f"I/O band -- the earth stud (Ø{D_GND}) and its spanner do not fit")
     # every station has to fit BETWEEN the wall's top and bottom edges too -- the
     # USB coupler flange is the tall one, and the wall is only REAR_WALL_H
     _tall = max(kw for _cu, kw in lay.values())
@@ -2621,7 +2491,7 @@ def _check(strict_board_mount=True):
     _dims = [k for k in globals()
              if k.startswith(("D_TRS", "MIDI_", "USB3_")) and k not in
              ("USB3_CUT_D", "USB3_CUT_SQ", "USB3_FIT")]
-    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND", "D_CTRL_HOLE", "REAR_PANEL_T"]
+    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND", "D_CTRL_BORE", "D_CTRL_DIAG"]
     _missing = sorted(set(_dims) - set(REAR_IO_PROVENANCE))
     assert not _missing, (
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
@@ -3133,9 +3003,9 @@ def _poly(msp, pts, layer="CUT", closed=True):
 
 # Feature refs that are coating masks, not holes. Named so _emit can hold the one
 # invariant that matters: a mask can never be emitted onto a cutting layer (#775 R3).
-MASK_REFS = ("PANEL_BOND", "EARTH_MASK")
+MASK_REFS = ("EARTH_MASK",)
 
-def _mask_circle(msp, x, y, d, what):
+def _mask_circle(msp, x, y, d, what, compact=False):
     """A NO-PAINT coating-mask ring plus its own leader and callout.
 
     Never a cut. Every mask ring in the package gets one of these instead of a bare
@@ -3144,6 +3014,15 @@ def _mask_circle(msp, x, y, d, what):
     even if someone flattens layers or looks only at the PDF (#775 R3, Spanish #778)."""
     r = d / 2.0
     _circle(msp, x, y, d, "MASK")
+    if compact:
+        # A small part (the ~90 mm CTRL plate, #1088): the one-line callout is
+        # wider than the part and would set the sheet scale, so it stacks in
+        # four short lines below the ring. "NO CORTAR" stays one line.
+        _poly(msp, [(x + r * 0.707, y - r * 0.707), (x + r + 6.0, y - r - 6.0),
+                    (x + r + 30.0, y - r - 6.0)], "MASK", closed=False)
+        for i, line in enumerate((f"MASK Ø{d:.0f}", "NO PINTAR,", "NO CORTAR", f"({what})")):
+            _text(msp, x + r + 7.0, y - r - 12.0 - 6.5 * i, 4.5, line, "MASK")
+        return
     _poly(msp, [(x + r * 0.707, y + r * 0.707), (x + r + 6.0, y + r + 6.0),
                 (x + r + 30.0, y + r + 6.0)], "MASK", closed=False)
     _text(msp, x + r + 7.0, y + r + 8.0, 4.5,
@@ -3244,7 +3123,8 @@ def _emit(msp, feats, ox=0.0, oy=0.0):
         x, y = f["u"] + ox, f["v"] + oy
         if f["kind"] == "circle":
             if layer == "MASK":
-                _mask_circle(msp, x, y, f["d"], f.get("ref", "coating mask"))
+                _mask_circle(msp, x, y, f["d"], f.get("ref", "coating mask"),
+                             f.get("compact", False))
             else:
                 _circle(msp, x, y, f["d"], layer)
         elif f["kind"] == "ring":
@@ -3287,9 +3167,12 @@ def dxf_faceplate(path):
     LW, ox = LID_W, LID_OX               # full-width blank; schedule content offset inside it
     yr0 = ffl + PV                       # rear fold (top plate -> rear lap)
     yr1 = yr0 + rl
-    _poly(msp, [(0, 0), (LW, 0), (LW, yr1), (0, yr1)], "CUT")
+    oh = LID_OVERHANG                    # the side edges step in by this at the back...
+    yt = yr0 - bend_allowance(SLOPE_ANGLE + TRANS_ANGLE) / 2.0   # ...reaching it at the rear bend tangent
+    _poly(msp, [(0, 0), (LW, 0), (LW, yt - LID_TAPER_L), (LW - oh, yt), (LW - oh, yr1),
+                (oh, yr1), (oh, yt), (0, yt - LID_TAPER_L)], "CUT")
     _poly(msp, [(0, ffl), (LW, ffl)], "BEND", closed=False)                # front lip fold (FULL width)
-    _poly(msp, [(0, yr0), (LW, yr0)], "BEND", closed=False)                # rear lap fold (FULL width)
+    _poly(msp, [(oh, yr0), (LW - oh, yr0)], "BEND", closed=False)          # rear lap fold (base width)
 
     cuts = faceplate_holes()                   # canonical layout, 7" left
     # Metal aperture allowance is separate from the unchanged printed lenses.
@@ -3550,7 +3433,7 @@ def dxf_base(path):
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
     for (au, av) in STAND_ANCHORS:                 # screen-stand feet: M3 tap pilots (#762)
         _circle(msp, au, av, 2.5)
-    for bu in beam_bolt_u():                       # the support BEAM's 14 floor bolts (issues #292/#1019)
+    for bu in beam_bolt_u():                       # the support BEAM's 7 floor bolts (#292/#1019/#1088)
         _circle(msp, bu, _BEAM_FOOT_VP, D_M4)      # foot forward of the web, clear of the display
     _text(msp, beam_bolt_u()[0]-24, _BEAM_FOOT_VP + 8, 5,
           f"Pies de la VIGA DE APOYO, {len(beam_bolt_u())} pasos M4 (issues #292/#1019); "
@@ -3585,7 +3468,7 @@ def dxf_base(path):
             _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
                          "zona de puesta a tierra del perno M6, AMBAS CARAS")
     _mask_top = _note(msp, 8, BD+Hr+Ht+10,
-          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las cuatro esquinas, cerrar sus alivios inferiores y las dos uniones superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable. Taladrar el frente DESPUÉS de todos los plegados y soldaduras, ANTES DE PINTAR; confirmar quién hace esta operación y dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, todos +0.10/-0.00 SIN PINTAR; no roscar los pasos libres. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
+          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las cuatro esquinas, cerrar sus alivios inferiores y las dos uniones superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable. Taladrar el frente DESPUÉS de todos los plegados y soldaduras, ANTES DE PINTAR; confirmar quién hace esta operación y dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, todos +0.10/-0.00 SIN PINTAR; no roscar los pasos libres. Conectores cortados en la pared trasera, cotas SIN PINTAR: FUSE Ø12.30 ±0.10; POWER Ø19.80 ±0.10; MIDI Ø15.50 y PD Ø24.40 (+0.10/-0.00); USB cuatro planos 22.80 x22.80 limitados por círculo concéntrico Ø24.80, ambos ±0.10; ligamentos PD/MIDI medidos >=1.20 mm; el Ø24 es el punzón D de Neutrik, redondo, sin plano. Jacks CTRL: punzón D Ø24.40 (+0.10/-0.00) con par M3 en la diagonal OPUESTA a la del PD, según CUT. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
     _note(msp, 8, _mask_top + 8,
           "MASK = máscara de pintura: sólo contactos eléctricos de tierra indicados; NO CORTAR. Pilotos M3 sin rosca: el propietario limpia y rosca después de pintar. El resto del metal, incluidos asientos y pasos libres, se pinta.", layer="MASK")
     _save(doc, path)
@@ -3610,25 +3493,6 @@ def platform_foot_holes():
             out.append({"kind": "circle", "u": u + fy, "v": vb + fx,
                         "d": D_M3_METAL, "ref": "PLAT_SCR"})
     return out
-
-def dxf_rear_panel(path):
-    """The dismountable rear I/O panel: a flat plate that closes the rear WINDOW with
-    a bolt-on overlap and carries all nine connector stations. Its separate
-    1.2 mm stock leaves coating allowance under the CTRL jack caps; no bends.
-
-    Everything here is derived: the outline from the window, the window from the
-    cutouts, the cutouts from rear_io_layout(). Move a station and the panel, the
-    window and the wall's bolt pattern all follow."""
-    doc = _doc(); msp = doc.modelspace()
-    _u0, _z0, pw, ph = rear_panel_outline()
-    _poly(msp, [(-pw/2, -ph/2), (pw/2, -ph/2), (pw/2, ph/2), (-pw/2, ph/2)], "CUT")
-    _emit(msp, rear_panel_holes())
-    _note(msp, -pw/2 + 4, ph/2 + 6,
-          f"Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa {REAR_PANEL_T:.1f} mm (los jacks CTRL Neutrik NJ6FD-V "
-          f"admiten espesor FINAL de 1.20 a 1.50 mm, incluida pintura; medir antes de montar)  CANT. 1  "
-          "PIEZA PLANA, sin plegados: entrada USB-C PD 20 V (punzón D) + botón de apagado + fusible + 2 x DIN-5 + "
-          "2 x jack Neutrik NJ6FD-V (Ø12) + 2 x USB3; la máscara PANEL_BOND va en la cara que apoya contra el cuerpo")
-    _save(doc, path); return {}
 
 # screen_bracket REMOVED (#760): the screens are bonded to the shell; the
 # bracket fallback was dropped entirely (user call 2026-08-18).
@@ -3681,7 +3545,7 @@ def dxf_beam(path):
     _poly(msp, [(x_a, y_f), (x_b, y_f)], "BEND", closed=False)   # web -> foot (fold 90)
     _poly(msp, [(x_w0, y_e0), (x_w0, y_e1)], "BEND", closed=False)   # left ear (fold 90)
     _poly(msp, [(x_w1, y_e0), (x_w1, y_e1)], "BEND", closed=False)   # right ear (fold 90)
-    for bu in beam_bolt_u():                          # 14 M4 in the foot, slotted in DEPTH
+    for bu in beam_bolt_u():                          # 7 M4 in the foot, slotted in DEPTH
         _rrect(msp, _u2x(bu) - D_M4/2.0, Wd - foot/2.0 - (D_M4 + BEAM_BOLT_SLOT)/2.0,
                D_M4, D_M4 + BEAM_BOLT_SLOT, r=D_M4/2.0)
     for wu in beam_cable_u():                         # cable windows through the web
@@ -5644,14 +5508,14 @@ def _beam_solid():
                           .extrude(BEAM_EAR_H).translate((0, 0, BEAM_EAR_Z0)))
         # One M4 through the side wall, slotted VERTICALLY: the tie braces the
         # two walls against each other and is not asked to carry the beam, which
-        # its fourteen floor bolts already do.
+        # its floor bolts already do.
         body = body.cut(cq.Workplane("YZ")
                         .slot2D(D_M4 + BEAM_EAR_SLOT, D_M4, 90.0).extrude(4*t)
                         .translate((x_out - 2*t, f + t + BEAM_EAR_BOLT_V,
                                     BEAM_EAR_Z0 + BEAM_EAR_H/2.0)))
-    # --- fourteen M4 to the floor, slotted in DEPTH (v) ----------------------
-    # See BEAM_BOLT_SLOT: pinning the bottom plate at fourteen points is what
-    # costs it margin, and a slot in v hands most of that back.
+    # --- seven M4 to the floor, slotted in DEPTH (v) ------------------------
+    # See BEAM_BOLT_SLOT: pinning the bottom plate at each bolt is what costs it
+    # margin, and a slot in v hands most of that back.
     for bu in beam_bolt_u():
         body = body.cut(cq.Workplane("XY")
                         .slot2D(D_M4 + BEAM_BOLT_SLOT, D_M4, 90.0).extrude(3*t)
@@ -6217,15 +6081,6 @@ def build_step():
             asm.add(solid, loc=_metal_location(matrix), name=f"{stem}_{i+1}")
             if stem == "segno_faceplate":
                 lid = solid.moved(_metal_location(matrix))
-    # The removable rear panel is flat and comes directly from its CUT wires.
-    panel = cq.importers.importDXF(os.path.join(OUT,"segno_rear_panel.dxf"),
-                                   include=["CUT"]).extrude(-REAR_PANEL_T).val()
-    assert panel.isValid() and len(panel.Solids()) == 1
-    cq.exporters.export(panel, os.path.join(OUT,"segno_rear_panel.step"))
-    x0,z0,w,h = rear_panel_outline()
-    matrix = [[1,0,0,x0+w/2], [0,0,-1,D-3*T+DEV90-REAR_PANEL_T],
-              [0,1,0,z0+h/2+DEV90], [0,0,0,1]]
-    asm.add(panel, loc=_metal_location(matrix), name="segno_rear_panel")
     asm.add(_beam_solid().translate((BEAM_U0, _BEAM_VP-BEAM_FOOTL, T)),
             name="segno_beam")
     ring = cq.importers.importStep(os.path.join(OUT,"segno_ring_disc.step")).val()
@@ -6267,8 +6122,6 @@ def build_step():
 # matches a sheet to a file by them. Numbers, units, symbols (Ø ± °) and standard
 # designations (5052-H32, M3, K, R2) are international and are left alone.
 AL_SHEET  = f"aluminio {ALLOY_2MM} de {T:.1f} mm"
-AL_REAR_PANEL = (f"aluminio de {REAR_PANEL_T:.1f} mm "
-                 f"(aleación y temple {ALLOY_REAR})")
 STEEL_CR  = f"acero laminado en frío de {BEAM_T:.1f} mm"
 
 # EVERY printed part in this console is BLACK PETG at >=40% infill (owner call
@@ -6296,7 +6149,6 @@ PKG_TILES      = "tiles"        # 2-ply engraved plastic, laser cut + engrave
 PART_SPECS = {
     "segno_base":                (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_faceplate":           (AL_SHEET, 1, PKG_SHEETMETAL),
-    "segno_rear_panel":          (AL_REAR_PANEL, 1, PKG_SHEETMETAL),
     "segno_ring_disc":           (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_beam":                (STEEL_CR, 1, PKG_SHEETMETAL),
     "segno_pedal_tiles":         (PLY_2MM, 10, PKG_TILES),
@@ -6308,7 +6160,6 @@ PART_SPECS = {
 PART_TITLES_ES = {
     "segno_base":                "CUERPO (piso + frente + laterales + trasera)",
     "segno_faceplate":           "TAPA SUPERIOR",
-    "segno_rear_panel":          "PANEL TRASERO DE CONECTORES",
     "segno_ring_disc":           "DISCO CENTRAL DEL ARO DE LEDS",
     "segno_beam":                "VIGA DE APOYO DE LA TAPA",
     "segno_pedal_tiles":         "AZULEJOS DE PEDAL (plástico bicapa grabado)",
@@ -6396,7 +6247,7 @@ DN_AWAY   = "ABAJO, opuesto a la cara dibujada"
 
 def _bend_tables():
     BW, BD = W - 2*T, D - 2*T
-    lid_w  = LID_W                      # both lid folds run the FULL lid blank width
+    lid_w  = LID_W                      # the front lip fold runs the FULL lid blank width
     ffl    = LID_FRONT_FL
     tabs = {}
     # Base, listed in the only fold order that is buildable on a brake: the
@@ -6412,7 +6263,7 @@ def _bend_tables():
     ]
     tabs["segno_faceplate"] = [
         (1, "pestaña frontal", "y", ffl,        lid_w, 90.0 - SLOPE_ANGLE,        DN_AWAY, RI, DD_LIP),
-        (2, "solapa trasera",  "y", ffl + FP_V + LID_FRONT_EXTRA, lid_w, SLOPE_ANGLE + TRANS_ANGLE, DN_AWAY, RI, DD_LAP),
+        (2, "solapa trasera",  "y", ffl + FP_V + LID_FRONT_EXTRA, BASE_OUTER_W, SLOPE_ANGLE + TRANS_ANGLE, DN_AWAY, RI, DD_LAP),
     ]
     # The two EARS fold FIRST: they are small flaps at the ends of the web band,
     # and both long bend lines stop short of them, so the C's tooling never has
@@ -6455,7 +6306,7 @@ BEND_FOOTNOTES = {
                    "Después de pintar: calces metálicos Ø7/paso4.0-4.2 ajustados individualmente entre caras pintadas. Verificar apoyo y paralelismo. "
                    "Arandelas M3 Ø7 delante; Ø12/paso3.2/espesor1 detrás, referencia de compra por confirmar. No apretar sobre la luz vacía. "
                    f"Soldar las cuatro esquinas del cuerpo, cerrar sus alivios y las dos uniones superiores trasera/lateral en otro taller; aporte 5356 elegido por el soldador. Terminación exterior al ras sin adelgazar chapa ni unión; conservar el asiento de la tapa desmontable. No soldar la tapa. Mantener escuadra sin forzar paredes; plegar la trasera a escuadra "
-                   f"antes de levantar los laterales. La máscara PANEL_BOND es en la CARA INTERIOR. Ignorar DRILL/NOTE/MASK/SILK al anidar."),
+                   f"antes de levantar los laterales. Ignorar DRILL/NOTE/MASK/SILK al anidar."),
     "segno_faceplate": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T). "
                         f"Material entre pliegue frontal y pedales: {_front_pedal_bend_land:.3f} mm; verificar herramental. "
                         "PLEGAR con la cara DIBUJADA como CARA EXTERIOR; encoder a la IZQUIERDA del músico. "
@@ -6470,11 +6321,6 @@ BEND_FOOTNOTES = {
                         "La estimación de luz pintada 0.357-1.488 mm presupone esa aceptación en seco; verificar asiento y paralelismo. "
                         "Arandelas M3 Ø7 delante y Ø12/paso3.2/espesor1 detrás; confirmar hardware. "
                         "La trasera no garantiza cobertura completa de la ranura ni asiento inclinado."),
-    "segno_rear_panel": ("PIEZA PLANA. La cara DIBUJADA es la cara INTERIOR, la que apoya contra la pared trasera del cuerpo: la "
-                         "máscara PANEL_BOND Ø12 va en esa cara y coincide con la del cuerpo; montado al revés, la máscara cae sobre "
-                         f"pintura y el panel pierde la puesta a tierra. Chapa de {REAR_PANEL_T:.1f} mm; pintura {COAT_MIN:.2f}-{COAT_MAX:.2f} mm por cara. "
-                         "Pintar pasos. Cotas SIN PINTAR: CTRL/FUSE Ø12.30 ±0.10; POWER Ø19.80 ±0.10; MIDI Ø15.50 y PD Ø24.40 (+0.10/-0.00); fijaciones M3 Ø3.60 (+0.10/-0.00). USB: cuatro planos 22.80 x22.80 limitados por círculo concéntrico Ø24.80, ambos ±0.10. Ligamentos PD/MIDI medidos >=1.20 mm. CTRL: espesor FINAL 1.20-1.50 mm. Verificar patrón y retención con piezas reales y probeta pintada. "
-                         "El Ø24 es el punzón D de Neutrik: redondo, sin plano."),
     "segno_ring_disc": (f"PIEZA PLANA. Cotas SIN PINTAR: Ø exterior {DISC_BLANK_D:.2f} ±{DISC_SIZE_TOL:.2f}; "
                        f"paso Ø{DISC_BORE_D:.2f} ±{DISC_SIZE_TOL:.2f} pasante recto por láser; SIN BISEL. "
                        f"Centro del paso: X e Y ±{DISC_BORE_CENTER_TOL:.2f} respecto del centro del Ø exterior. "
@@ -6574,7 +6420,6 @@ SEALED = {}
 SEALED_EXPECTED = {
     "segno_faceplate":           11,   # sheet outline + 10 pedal apertures
     "segno_base":                 1,   # the folded blank's outline (31 vertices)
-    "segno_rear_panel":           1,
     "segno_beam":                 1,
     "segno_ring_disc":            0,   # two circles, no straight-sided loop
 }
@@ -6852,7 +6697,6 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
 # ===========================================================================
 
 AL_2MM = f"Aluminio {ALLOY_2MM} 2,0 mm"
-AL_PANEL_PAINT = f"Aluminio {REAR_PANEL_T:.1f} mm ({ALLOY_REAR})".replace(".",",")
 ST_16  = "Acero laminado en frío 1,6 mm"
 
 PAINT_FINISH = "Negro liso mate (RAL 9005) - a confirmar contra cupón de muestra"
@@ -6863,8 +6707,6 @@ PAINT_FINISH = "Negro liso mate (RAL 9005) - a confirmar contra cupón de muestr
 PAINT_BOM = [
     ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza más grande"),
     ("segno_faceplate",          "Tapa superior",                               1, AL_2MM, "Cara vista principal"),
-    ("segno_rear_panel",         "Panel trasero de conectores",                 1, AL_PANEL_PAINT,
-     "LLEVA MÁSCARA: land PANEL_BOND"),
     ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM,
      (f"Pintar canto y paso recto; sin bisel: Ø final {DISC_BLANK_D-DISC_SIZE_TOL+2*COAT_MIN:.2f}-{DISC_BLANK_D+DISC_SIZE_TOL+2*COAT_MAX:.2f}; "
       f"paso {DISC_BORE_D-DISC_SIZE_TOL-2*COAT_MAX:.2f}-{DISC_BORE_D+DISC_SIZE_TOL-2*COAT_MIN:.2f} mm").replace(".",",")),
@@ -7030,11 +6872,11 @@ def _wrap_to_page(text, pt, page_w_in, frac=0.92, ratio=0.55):
 # segno_pintura.zip ships a 1-page file missing both masking pages. Recorded
 # here and asserted in _verify_drawing_package.
 PAINT_PAGES = {}
-PAINT_PAGES_EXPECTED = 4
+PAINT_PAGES_EXPECTED = 3   # cover + a masking/detail page per PAINT_MASK_PAGES part (#1088: no rear panel)
 # The parts that get a masking / detail page of their own, after the cover page.
 # Named here so _verify_paint_bom can check it against the parts that actually
 # carry a MASK ring, rather than trusting the list inside paint_quote_pdf.
-PAINT_MASK_PAGES = {"segno_base", "segno_faceplate", "segno_rear_panel"}
+PAINT_MASK_PAGES = {"segno_base", "segno_faceplate"}
 
 
 def paint_quote_pdf(path):
@@ -7057,7 +6899,7 @@ def paint_quote_pdf(path):
         y = 0.885
         for k, v in (("Dimensiones nominales del diseño",
                       f"{W:.0f} x {D:.0f} x {H_REAR:.0f} mm"),
-                     ("Material del cuerpo", f"Aluminio {ALLOY_2MM} de {T:.1f} mm; panel trasero {REAR_PANEL_T:.1f} mm, aleación {ALLOY_REAR} (láser)".replace(".",",")),
+                     ("Material del cuerpo", f"Aluminio {ALLOY_2MM} de {T:.1f} mm (láser)".replace(".",",")),
                      ("Terminación pedida", PAINT_FINISH),
                      ("Superficie de referencia", f"{grand:.2f} m2 por equipo (ambas caras, sin contar cantos)"),
                      ("Cantidad", "1 juego de piezas")):
@@ -7121,9 +6963,6 @@ def paint_quote_pdf(path):
              "Pintar todo salvo contactos eléctricos de tierra indicados; pilotos M3 sin rosca."),
             ("segno_faceplate", "TAPA SUPERIOR - aberturas críticas",
              "Pintar ambas caras, asientos, cantos, los 9 pasos frontales y las 9 ranuras traseras; sin máscaras en esta pieza."),
-            ("segno_rear_panel", "PANEL TRASERO - plano de enmascarado",
-             "Rojo = PANEL_BOND Ø12, sólo en cara que MIRA AL CUERPO; unir a su máscara para contacto eléctrico. "
-             "Pintar paredes de pasos. Medir cotas y espesor FINAL antes de montar."),
         ]
         for stem, title, note in sheets:
             dxf = os.path.join(OUT, stem + ".dxf")
@@ -7187,7 +7026,7 @@ def report():
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(case top flush with the slot's upper rim, pad +{PEDAL_PAD_T:.1f} above, #373)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
-    P(f"Rear I/O        : USB-C PD + btn + fuse + 2x MIDI DIN-5 + 2x Neutrik NJ6FD-V (O12) + 2x USB3 + vents + earth (no window)")
+    P(f"Rear I/O        : USB-C PD + btn + fuse + 2x MIDI DIN-5 + 2x CTRL 6.35 mm in D flanges + 2x USB3, all cut in the rear wall + vents + earth")
     _unc = rear_io_unconfirmed()
     if _unc:
         P("  DO NOT CUT     : " + ", ".join(
@@ -7308,9 +7147,9 @@ def _render_parts(cq, explode=0.0):
               .translate((0, 0, -LID_FRONT_FL))), FACE)               # front lip (full width;
                                                                       # the lid has NO side wings)
     # rear lap: raked DOWN at the transition angle, resting on the shoulder (lifts with the lid)
-    lap_loc = (cq.Location(cq.Vector(FACE_RUN, T, H_REAR + T + explode))
+    lap_loc = (cq.Location(cq.Vector(FACE_RUN, (W - BASE_OUTER_W) / 2.0, H_REAR + T + explode))
                * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
-    add(cq.Workplane("XY").box(LID_REAR_LAP, LID_W, T, centered=False).val().moved(lap_loc), FACE)
+    add(cq.Workplane("XY").box(LID_REAR_LAP, BASE_OUTER_W, T, centered=False).val().moved(lap_loc), FACE)  # flush (#1088)
     cuts = faceplate_holes()
     for label,u,v in PEDALS:
         ph=platform_h(v); add(_platform_printed(cq,ph,v).val().moved(cq.Location(cq.Vector(v,u+T,T))), PLAT)
@@ -7714,7 +7553,6 @@ def pdf_one_pedal_tile(path, label):
 DXF_PARTS = [
     ("segno_faceplate",        dxf_faceplate),
     ("segno_base",             dxf_base),     # bottom + front/rear/side walls, ONE folded blank
-    ("segno_rear_panel",       dxf_rear_panel),  # dismountable I/O panel (#751)
     ("segno_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
     ("segno_beam",             dxf_beam),  # base-anchored faceplate support post, one per
                                            # pedal gap (issue #292 sized it, #1019 spread it)
