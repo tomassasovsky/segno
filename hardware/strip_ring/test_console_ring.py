@@ -28,6 +28,16 @@ class ConsoleRingTest(unittest.TestCase):
         self.assertAlmostEqual(ring.centre_cap().BoundingBox().zmax, 0.0, places=6)
         self.assertLess(ring.cup().BoundingBox().zmax, -ring.FACEPLATE_T + 1e-6)
 
+    def test_bench_plate_is_the_faceplate_where_it_matters(self):
+        bench = ring.bench_faceplate()
+        self.assertTrue(bench.isValid())
+        # the window is the faceplate's, and the cup's glue face meets the
+        # plate underside exactly where it meets the metal
+        self.assertEqual(ring.BENCH_WINDOW_R, 33.5)
+        self.assertAlmostEqual(ring.cup().BoundingBox().zmax, -ring.FACEPLATE_T, places=6)
+        self.assertLess(ring.cup().BoundingBox().zmin, 0)
+        self.assertGreater(ring.BENCH_LEG_H, 26.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -301,6 +301,8 @@ class ManufacturingPipelineTest(unittest.TestCase):
                 'segno_encoder_knob',                 # purchased, not made
                 'segno_pedal_base_fit_test',          # jig
                 'segno_screen7_fit_test',             # jig
+                'segno_rear_wall_fit_test_L',         # jig (#1090)
+                'segno_rear_wall_fit_test_R',
                 'segno_screen7_deck_fit_test',        # jig (#1070)
                 'segno_screen16_vesa_fit_test',       # jig (#1070)
                 'segno_screen16_deck_fit_test_L',     # jig (#1070)

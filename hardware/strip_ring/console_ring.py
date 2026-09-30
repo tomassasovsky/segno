@@ -133,6 +133,43 @@ def led_strip():
     return fpc, leds
 
 
+BENCH_PLATE = 120.0                # square faceplate stand-in (fits a 220 mm bed)
+BENCH_LEG_H = 34.0                 # under the plate: clears the carrier's underside
+                                   # parts (down to about z -26) with the bench below
+BENCH_WINDOW_R = 33.5              # the faceplate's Ø67 window, bare
+
+
+def bench_faceplate():
+    """BENCH STAND-IN for the faceplate (print BLACK, #1090): a 2 mm plate with
+    the real Ø67 window on four legs, so the console ring can be lit and judged
+    at its real optics (34 LEDs, 3 mm chamber) before the ring choice is made.
+    Printed plate-down, the bed face is the visible face. The cup's roof glues
+    (or tapes) to the plate's underside exactly as it will to the metal; the
+    sides are open between the legs, so the carrier's cable leaves freely."""
+    h = FACEPLATE_T
+    plate = (cq.Workplane("XY").box(BENCH_PLATE, BENCH_PLATE, h, centered=(True, True, False))
+             .translate((0, 0, -h)))
+    plate = plate.cut(cq.Workplane("XY").workplane(offset=-h - 0.1).circle(BENCH_WINDOW_R).extrude(h + 0.2))
+    leg = 8.0
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            plate = plate.union(cq.Workplane("XY").box(leg, leg, BENCH_LEG_H, centered=(True, True, False))
+                                .translate((sx * (BENCH_PLATE - leg) / 2.0, sy * (BENCH_PLATE - leg) / 2.0,
+                                            -h - BENCH_LEG_H)))
+    solid = plate.val()
+    assert solid.isValid() and len(plate.solids().vals()) == 1
+    assert (BENCH_PLATE - 2 * leg) / 2.0 > CUP_R + 2.0, "bench legs foul the cup"
+    return solid
+
+
+def print_pose(name, shape):
+    """Bed orientation, as the standalone ring prints them: the visible or glue
+    face down for the diffuser, cup and cap, everything else as modelled."""
+    if name in ("diffuser", "cup", "centre_cap"):
+        shape = shape.rotate((0, 0, 0), (1, 0, 0), 180)
+    return shape.translate((0, 0, -shape.BoundingBox().zmin))
+
+
 def parts():
     return {"diffuser": diffuser(), "cup": cup(), "encoder_retainer": encoder_retainer(),
             "centre_cap": centre_cap(), "encoder_spacer": spacer()}
@@ -159,9 +196,14 @@ def export():
     asm = cq.Assembly(name="strip_ring_console_34")
     for name, shape in parts().items():
         cq.exporters.export(shape, str(OUT / f"console_ring_{name}.step"))
-        cq.exporters.export(shape, str(OUT / f"console_ring_{name}.stl"),
+        cq.exporters.export(print_pose(name, shape), str(OUT / f"console_ring_{name}.stl"),
                             tolerance=0.03, angularTolerance=0.1)
         asm.add(shape, name=name, color=cq.Color("ivory" if name in ("diffuser", "cup") else "black"))
+    bench = bench_faceplate()
+    cq.exporters.export(bench, str(OUT / "console_ring_bench_faceplate.step"))
+    cq.exporters.export(print_pose("bench", bench.rotate((0, 0, 0), (1, 0, 0), 180)),
+                        str(OUT / "console_ring_bench_faceplate.stl"),
+                        tolerance=0.03, angularTolerance=0.1)
     fpc, leds = led_strip()
     asm.add(fpc, name="strip_backing_reference", color=cq.Color("white"))
     asm.add(cq.Compound.makeCompound(leds), name=f"{COUNT}_leds_reference", color=cq.Color("gold"))

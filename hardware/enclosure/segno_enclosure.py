@@ -5229,6 +5229,68 @@ def build_ring_diffuser_step():
     return step
 
 
+REAR_FIT_HALVES = (("L", ("PD_IN", "POWER", "FUSE", "MIDI_IN", "MIDI_OUT")),
+                   ("R", ("CTRL_1", "CTRL_2", "USB3_1", "USB3_2")))
+REAR_FIT_MARGIN = 8.0     # plate beyond the outermost keep-out
+REAR_FIT_HALF_H = 30.0    # plate half-height about REAR_IO_Z
+
+def build_rear_wall_fit_test():
+    """REAR WALL FIT TEST (3D print, #1090): the rear connector cutouts at the
+    wall's 2.0 mm thickness, in two halves that fit a 220 mm bed, so every
+    purchased connector can be dry-fitted before the metal is cut -- the PD
+    coupler's screw diagonal above all, which was never checked against the part.
+
+    Printed flat, the TOP face is the wall's OUTSIDE face (as seen from behind
+    the console), marked OUTSIDE with an arrow pointing up the wall. Holes are the
+    bare, pre-paint sizes from rear_io_cutouts(); paint closes each by about
+    0.15-0.2 mm and a printer usually prints holes ~0.1-0.2 mm small, so a part
+    that is snug here will be tight in the painted wall."""
+    import cadquery as cq
+    at = rear_io_layout()
+    cuts = rear_io_cutouts()
+    paths = []
+    for tag, refs in REAR_FIT_HALVES:
+        u0 = min(at[r][0] - at[r][1] / 2.0 for r in refs) - REAR_FIT_MARGIN
+        u1 = max(at[r][0] + at[r][1] / 2.0 for r in refs) + REAR_FIT_MARGIN
+        uc = (u0 + u1) / 2.0
+        X = lambda u: -(u - uc)                     # seen from outside: mirrored
+        Y = lambda z: z - REAR_IO_Z
+        plate = (cq.Workplane("XY").box(u1 - u0, 2 * REAR_FIT_HALF_H, T,
+                                        centered=(True, True, False)))
+        mine = [c for c in cuts if c["ref"].split("_SCR")[0] in refs]
+        for c in mine:
+            if c["kind"] == "circle":
+                plate = plate.cut(cq.Workplane("XY").center(X(c["u"]), Y(c["v"]))
+                                  .circle(c["d"] / 2.0).extrude(T))
+            else:
+                cx, cy = X(c["u"] + c["w"] / 2.0), Y(c["v"] + c["h"] / 2.0)
+                sq = cq.Workplane("XY").center(cx, cy).rect(c["w"], c["h"]).extrude(T)
+                sq = sq.intersect(cq.Workplane("XY").center(cx, cy)
+                                  .circle(c["clip_d"] / 2.0).extrude(T))
+                plate = plate.cut(sq)
+        # OUTSIDE mark and an arrow pointing up the wall, 0.4 deep in the top face
+        mark_x = (u1 - u0) / 2.0 - 16.0
+        plate = plate.cut(cq.Workplane("XY").workplane(offset=T - 0.4)
+                          .center(mark_x, REAR_FIT_HALF_H - 9.0)
+                          .polyline([(-3, -4), (3, -4), (3, 1), (5, 1), (0, 6), (-5, 1), (-3, 1)])
+                          .close().extrude(0.4))
+        try:
+            plate = plate.cut(cq.Workplane("XY").workplane(offset=T - 0.4)
+                              .center(0, REAR_FIT_HALF_H - 6.0)
+                              .text(f"OUTSIDE  {tag}", 5.0, 0.4, combine=False,
+                                    halign="center", valign="center"))
+        except Exception:
+            pass                                      # no font here: the arrow still marks it
+        solid = plate.val()
+        assert solid.isValid(), f"rear wall fit test {tag} is not valid"
+        stem = f"segno_rear_wall_fit_test_{tag}"
+        sp = os.path.join(OUT, stem + ".step")
+        cq.exporters.export(solid, sp)
+        cq.exporters.export(solid, os.path.join(OUT, stem + ".stl"))
+        paths.append(sp)
+    return paths
+
+
 def build_screen7_fit_test():
     """7" screen FIT TEST plate (3D print, x1, #762): a stand-in for the
     faceplate around the 7" aperture, at the REAL sheet gauge (T = 2.0) so the
@@ -8177,6 +8239,8 @@ def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
         _not_a_console_part = {"segno_encoder_knob",            # purchased
                                "segno_pedal_base_fit_test",     # jig
                                "segno_screen7_fit_test",        # jig
+                               "segno_rear_wall_fit_test_L",    # jig (#1090)
+                               "segno_rear_wall_fit_test_R",
                                "segno_screen7_deck_fit_test",   # jig (#1070)
                                "segno_screen16_vesa_fit_test",  # jig (#1070)
                                "segno_screen16_deck_fit_test_L",  # jig (#1070)
@@ -8820,6 +8884,8 @@ def main(argv):
             build_screen16_monitor_step()
             build_screen16_portclear_step()
             build_buck_reference_step()
+            for p in build_rear_wall_fit_test():
+                print("Rear wall FIT TEST (3D print, #1090): out/" + os.path.basename(p) + " (+ .stl)")
             ftp = build_screen7_fit_test()
             print("7in screen FIT TEST plate (3D print, x1): out/" + os.path.basename(ftp) + " (+ .stl)")
             print("7in DECK fit test (3D print, x1): out/"
