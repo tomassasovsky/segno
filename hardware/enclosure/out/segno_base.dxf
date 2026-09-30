@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461314.562951389
+2461314.5677777776
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461314.562951389
+2461314.5677777776
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{76757D64-3D4B-4606-82E1-3170BF7DF232}
+{31FA933D-E5ED-44F2-B9AA-DB2D24F73CB3}
   9
 $VERSIONGUID
   2
-{D6511AF0-C6D9-4002-81B9-C95FBAF91409}
+{CD66CE8C-8E4B-4B79-9BB2-D5D372FE2C24}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -10001,7 +10001,7 @@ AcDbCircle
  10
 450.9857142857142
  20
-476.0
+452.0
  30
 0.0
  40
@@ -10021,7 +10021,7 @@ AcDbCircle
  10
 469.9857142857142
  20
-452.0
+476.0
  30
 0.0
  40
@@ -13633,7 +13633,7 @@ AcDbText
  40
 9.0
   1
-diagonal OPUESTA a la del PD, según CUT. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en
+MISMA diagonal que el PD, según CUT. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en
  11
 8.0
  21
@@ -14835,7 +14835,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-30T16:30:39.801615+00:00
+1.4.4 @ 2026-09-30T16:37:36.525536+00:00
   0
 VISUALSTYLE
   5
@@ -21397,7 +21397,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-30T16:30:39.976262+00:00
+1.4.4 @ 2026-09-30T16:37:36.694827+00:00
   0
 ENDSEC
   0

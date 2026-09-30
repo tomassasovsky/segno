@@ -733,7 +733,9 @@ D_TRS_SCREW_D    = 3.2   # M3 clearance
 # the bore centre. Compensated CUT sizes below leave a smaller ligament; the
 # actual bare local web must measure at least 1.2 mm and pass the shop coupon.
 # Rotating a diagonal pair 180 degrees preserves that pair; it cannot adapt
-# a connector whose fixing holes are on the opposite diagonal.
+# a connector whose fixing holes are on the opposite diagonal. WHICH diagonal
+# is D_TRS_DIAG below: the owner checked the coupler against the cut
+# (2026-09-30, #1090) and it had been drawn on the wrong one.
 D_TRS_SCREW_DIAG = (19.0, 24.0)   # (du, dz) between the two diagonal M3 centres
 D_TRS_KEEPOUT    = 30.4  # bore + the M3 pair
 D_PD_BORE = D_TRS_BORE   # the PD coupler keeps the D-series punch (bore + M3 pair)
@@ -745,10 +747,10 @@ D_PD_BORE = D_TRS_BORE   # the PD coupler keeps the D-series punch (bore + M3 pa
 # flange 26 x 31, Ø23.6 barrel through a 24 mm hole, 2 x Ø3.4 fixings at
 # +-9.5 / +-12 on ONE diagonal -- top-left and bottom-right seen from the front.
 # It screws on from outside, so the 2.0 mm wall needs no thin sub-panel for the
-# NJ6FD-V's 1.20-1.50 mm clamp range. The diagonal is the mirror of the PD
-# coupler's as cut, hence D_CTRL_DIAG below.
+# NJ6FD-V's 1.20-1.50 mm clamp range. Same diagonal as the PD coupler.
 D_CTRL_BORE = D_TRS_BORE      # "Hole dimensions 24mm"; body Ø23.6
-D_CTRL_DIAG = +1              # +1: fixings at (+du/2, +dz/2) and (-du/2, -dz/2) in wall
+D_TRS_DIAG = +1               # every D flange on the wall (PD coupler, both CTRL plates):
+                              # fixings at (+du/2, +dz/2) and (-du/2, -dz/2) in wall
                               # coords, i.e. top-left / bottom-right seen from behind
                               # the console (u grows to the player's right)
 USB3_SQ       = 22.1 # four flats, square clipped by the concentric thread circle
@@ -776,7 +778,8 @@ REAR_IO_PROVENANCE = {
     "D_CTRL_BORE":       "datasheet: MEIRIYFA B0G5FZNH49 flange-plate drawing (owner, 2026-09-29): "
                          "hole 24 mm, barrel Ø23.6, flange 26x31, 2-Ø3.4 at +-9.5/+-12, "
                          "top-left/bottom-right; carries the NJ6FD-V (owner fit check)",
-    "D_CTRL_DIAG":       "datasheet: same MEIRIYFA drawing, front view of the flange",
+    "D_TRS_DIAG":        "datasheet: same MEIRIYFA drawing, front view of the flange; "
+                         "measured: owner checked the QIANRENON coupler against the cut (2026-09-30)",
     "D_TRS_SCREW_D":     "datasheet: D-series fixings are M3",
     "USB3_SQ":           "datasheet: owner-supplied reference/usb3_dimensions.png, 2026-09-05; "
                          "22.1 x 22.1 mm FOUR flats on a round threaded barrel; nut-mounted",
@@ -1797,23 +1800,16 @@ def rear_io_cutouts():
         for s in (-1, 1):
             cuts.append({"kind": "circle", "u": cu + s*MIDI_SCREW_PITCH/2.0, "v": z,
                          "d": D_M3_METAL, "ref": ref + "_SCR"})
-    # PD coupler: Ø24 bore and the sourced diagonal M3 pair, 19 x 24 mm.
-    # A 180-degree rotation preserves this diagonal; it cannot adapt a part
-    # whose mounting pair is on the opposite diagonal.
+    # D flanges: the PD coupler and both CTRL plates (NJ6FD-V in the MEIRIYFA
+    # plate) take the same Ø24 punch and the same 19 x 24 M3 pair, on the one
+    # diagonal D_TRS_DIAG. A 180-degree rotation preserves a diagonal; it
+    # cannot adapt a part whose pair is on the other one.
     ddu, ddz = D_TRS_SCREW_DIAG
-    for ref in ("PD_IN",):
+    for ref in ("PD_IN", "CTRL_1", "CTRL_2"):
         cu = at[ref][0]
-        cuts.append({"kind": "circle", "u": cu, "v": z, "d": 24.40, "ref": ref})
+        cuts.append({"kind": "circle", "u": cu, "v": z, "d": D_TRS_BORE + .40, "ref": ref})
         for s in (-1, 1):
-            cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z - s*ddz/2.0,
-                         "d": D_M3_METAL, "ref": ref + "_SCR"})
-    # CTRL jacks: NJ6FD-V in the MEIRIYFA D-flange plate, the same Ø24 punch and
-    # 19 x 24 pair, but on the OTHER diagonal (see D_CTRL_DIAG).
-    for ref in ("CTRL_1", "CTRL_2"):
-        cu = at[ref][0]
-        cuts.append({"kind": "circle", "u": cu, "v": z, "d": D_CTRL_BORE + .40, "ref": ref})
-        for s in (-1, 1):
-            cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z + D_CTRL_DIAG*s*ddz/2.0,
+            cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z + D_TRS_DIAG*s*ddz/2.0,
                          "d": D_M3_METAL, "ref": ref + "_SCR"})
     for ref in ("USB3_1", "USB3_2"):
         cu = at[ref][0]
@@ -2620,7 +2616,7 @@ def _check(strict_board_mount=True):
     _dims = [k for k in globals()
              if k.startswith(("D_TRS", "MIDI_", "USB3_")) and k not in
              ("USB3_CUT_D", "USB3_CUT_SQ", "USB3_FIT")]
-    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND", "D_CTRL_BORE", "D_CTRL_DIAG"]
+    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND", "D_CTRL_BORE", "D_TRS_DIAG"]
     _missing = sorted(set(_dims) - set(REAR_IO_PROVENANCE))
     assert not _missing, (
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
@@ -3661,7 +3657,7 @@ def dxf_base(path):
             _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
                          "zona de puesta a tierra del perno M6, AMBAS CARAS")
     _mask_top = _note(msp, 8, BD+Hr+Ht+10,
-          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las cuatro esquinas, cerrar sus alivios inferiores y las dos uniones superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable. Frente: el láser corta 9 pilotos Ø{FRONT_PILOT_D:.1f}; Dinacut los agranda con mecha a Ø2.5 DESPUÉS de plegar y ANTES de soldar. Dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, todos +0.10/-0.00 SIN PINTAR; no roscar los pasos libres. Conectores cortados en la pared trasera, cotas SIN PINTAR: FUSE Ø12.30 ±0.10; POWER Ø19.80 ±0.10; MIDI Ø15.50 y PD Ø24.40 (+0.10/-0.00); USB cuatro planos 22.80 x22.80 limitados por círculo concéntrico Ø24.80, ambos ±0.10; ligamentos PD/MIDI medidos >=1.20 mm; el Ø24 es el punzón D de Neutrik, redondo, sin plano. Jacks CTRL: punzón D Ø24.40 (+0.10/-0.00) con par M3 en la diagonal OPUESTA a la del PD, según CUT. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
+          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las cuatro esquinas, cerrar sus alivios inferiores y las dos uniones superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable. Frente: el láser corta 9 pilotos Ø{FRONT_PILOT_D:.1f}; Dinacut los agranda con mecha a Ø2.5 DESPUÉS de plegar y ANTES de soldar. Dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, todos +0.10/-0.00 SIN PINTAR; no roscar los pasos libres. Conectores cortados en la pared trasera, cotas SIN PINTAR: FUSE Ø12.30 ±0.10; POWER Ø19.80 ±0.10; MIDI Ø15.50 y PD Ø24.40 (+0.10/-0.00); USB cuatro planos 22.80 x22.80 limitados por círculo concéntrico Ø24.80, ambos ±0.10; ligamentos PD/MIDI medidos >=1.20 mm; el Ø24 es el punzón D de Neutrik, redondo, sin plano. Jacks CTRL: punzón D Ø24.40 (+0.10/-0.00) con par M3 en la MISMA diagonal que el PD, según CUT. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
     _note(msp, 8, _mask_top + 8,
           "MASK = máscara de pintura: sólo contactos eléctricos de tierra indicados; NO CORTAR. Pilotos M3 sin rosca: el propietario limpia y rosca después de pintar. El resto del metal, incluidos asientos y pasos libres, se pinta.", layer="MASK")
     _save(doc, path)

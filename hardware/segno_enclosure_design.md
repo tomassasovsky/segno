@@ -292,11 +292,11 @@ The generated source and `MANUFACTURING.md` define the current revision.
 
 | Ref | Pre-coating opening / finished requirement | Purchased interface |
 |---|---|---|
-| PD_IN | Raw Ø24.40(+0.10/−0), M3Ø3.60(+0.10/−0), diagonal 19×24 mm | QIANRENON D-series USB-C PD coupler |
+| PD_IN | Raw Ø24.40(+0.10/−0), M3Ø3.60(+0.10/−0), diagonal 19×24 mm, same diagonal as CTRL | QIANRENON D-series USB-C PD coupler |
 | POWER | Raw Ø19.80 ±0.10 | APIELE M19 high-round momentary switch; retaining nut |
 | FUSE | Raw Ø12.30 ±0.10 | 5×20 screw-cap holder; retaining nut |
 | MIDI_IN / MIDI_OUT | Raw Ø15.50 (+0.10/−0), M3 Ø3.60 (+0.10/−0), pitch 22.2 mm | REAN NYS325 |
-| CTRL_1 / CTRL_2 | Raw Ø24.40 (+0.10/−0), M3 Ø3.60 (+0.10/−0), diagonal 19×24 mm, the OTHER diagonal from PD_IN | Neutrik NJ6FD-V fitted in the D-size zinc flange plate from the MEIRIYFA listing (B0G5FZNH49), owner fit check 2026-09-29; the plate screws to the 2.0 mm wall, so the jack's 1.20–1.50 mm clamp range no longer needs a thin panel |
+| CTRL_1 / CTRL_2 | Raw Ø24.40 (+0.10/−0), M3 Ø3.60 (+0.10/−0), diagonal 19×24 mm, the same diagonal as PD_IN | Neutrik NJ6FD-V fitted in the D-size zinc flange plate from the MEIRIYFA listing (B0G5FZNH49), owner fit check 2026-09-29; the plate screws to the 2.0 mm wall, so the jack's 1.20–1.50 mm clamp range no longer needs a thin panel |
 | USB3_1 / USB3_2 | Raw four flats 22.80 ×22.80 clipped by concentric Ø24.80, both ±0.10 | PENGLIN nut-mounted bulkhead, flange Ø28.5 |
 
 The [owner-supplied USB drawing](enclosure/reference/usb3_dimensions.png)
@@ -324,7 +324,7 @@ are plain text in [MANUFACTURING.md](MANUFACTURING.md).
 **The D-series fixings ARE cut, on the sourced diagonal.** The two M3 sit on
 *diagonally opposite* corners of the flange, not on a horizontal pair. The
 pattern was sourced 2026-08-18 from the QIANRENON PD coupler's own listing —
-"D-type panel mounting dimensions (19 mm × 24 mm)": hole centres at (±9.5, ∓12)
+"D-type panel mounting dimensions (19 mm × 24 mm)": hole centres at (±9.5, ±12)
 about the bore, one per diagonal. Each screw centre is 15.305 mm from the
 bore centre. With the compensated bore and fixing sizes, inspect a minimum
 **1.20 mm actual bare web** between holes; this local requirement overrides
@@ -334,9 +334,10 @@ alone does not guarantee the two-screw pattern or local web.
 
 A 180° turn preserves a diagonal pair; it cannot adapt to the opposite diagonal.
 The CTRL sockets' drawing puts their fixings top-left and bottom-right seen from
-the front, which is the other diagonal: in wall coordinates (±9.5, ±12), seen
-from behind the console. `D_CTRL_DIAG` records it. Check the PD coupler's real
-flange against its own diagonal before cutting.
+the front: in wall coordinates (±9.5, ±12), seen from behind the console. The
+PD coupler was first drawn on the other diagonal; the owner checked the part
+against the cut on 2026-09-30 and it takes the same one. `D_TRS_DIAG` records
+it for all three flanges.
 
 ### Gates
 

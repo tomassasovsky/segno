@@ -42,9 +42,9 @@ Open before cutting metal (owner):
    first-article proof test below.
 3. ~~Post-weld fitting/drilling provider~~ settled (#1090): Dinacut drills the
    nine front stations from Ø1.0 laser pilots after folding, before welding.
-4. **PD coupler diagonal**: check the QIANRENON coupler's two M3 holes against
-   the cut diagonal (top-right/bottom-left seen from behind) before cutting; it
-   was never checked against the part.
+4. ~~PD coupler diagonal~~ settled (#1090): the owner found the cut flipped
+   against the part; it now takes the CTRL plates' diagonal (top-left /
+   bottom-right seen from behind).
 5. **Ring choice** after the bench light test: Ring24 holder + aluminium centre
    disc, or the 34-LED strip ring (no disc; reprint the 7in tower with the
    notch; check the knob grips the shaft 8 mm in).

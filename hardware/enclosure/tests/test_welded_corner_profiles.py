@@ -25,8 +25,9 @@ UNCHANGED_FEATURES = {
     # the CLEAR/BANK pedals (both bucks moved, eight standoff holes for the
     # screen-power and PD boards), and the right 15.6in stand's four holes
     # mirrored with the left (#1070). #1090: the beam's two side-wall tie holes
-    # are gone and each of the nine front stations gains its Ø1.0 laser pilot.
-    'CUT': (143, '24438f0b102acbe945554f8bb06bbf0d4ef9aac8973a87d788326e3e9a34f8de'),
+    # are gone and each of the nine front stations gains its Ø1.0 laser pilot;
+    # the PD coupler's M3 pair moves to the CTRL plates' diagonal.
+    'CUT': (143, 'c694eb1922e95d6f488b243ba2c132fedf45ceace25cef06e07fb3266509e27a'),
     'VENT': (570, 'ddec63663b8c2670400d01a6431b1ff677d8574ec2cb33b2e0d91362fb5ab681'),
     'BEND': (5, 'ebc80b8fa031008706f13bae4e9e4fc5d213aab31402eb04c449ad7a128c3991'),
     'DRILL': (9, '034f8f332d55ffc49090ff7030430b4e375578c61a97c88984c200c48e312b60'),

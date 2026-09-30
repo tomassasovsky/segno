@@ -85,11 +85,12 @@ class ManufacturingFitTest(unittest.TestCase):
                         with self.assertRaisesRegex(AssertionError, 'weld corner'):
                             enclosure._check()
 
-    def test_ctrl_jacks_take_the_d_flange_on_the_other_diagonal(self):
+    def test_every_d_flange_takes_the_same_diagonal(self):
         # #1088: NJ6FD-V in the MEIRIYFA D-flange plate, Ø24 hole, 2 x Ø3.4 at +-9.5 / +-12,
         # top-left and bottom-right from the front, i.e. (+du, +dz) and (-du, -dz)
         # in wall coords (u grows to the player's right, the wall is seen from
-        # behind). The PD coupler keeps its own, opposite diagonal.
+        # behind). The PD coupler takes the same diagonal: the owner checked the
+        # part against the cut (2026-09-30, #1090).
         cuts = {c['ref']: [] for c in enclosure.rear_io_cutouts()}
         for c in enclosure.rear_io_cutouts():
             cuts[c['ref']].append(c)
@@ -102,7 +103,7 @@ class ManufacturingFitTest(unittest.TestCase):
         pd = cuts['PD_IN'][0]
         pd_screws = sorted((c['u'] - pd['u'], c['v'] - pd['v']) for c in cuts['PD_IN_SCR'])
         self.assertEqual([tuple(round(x, 6) for x in p) for p in pd_screws],
-                         [(-9.5, 12.0), (9.5, -12.0)])
+                         [(-9.5, -12.0), (9.5, 12.0)])
 
     def test_usb_openings_clear_the_supplier_four_flat_barrel(self):
         from flat_pattern_check import _face

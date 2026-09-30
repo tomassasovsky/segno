@@ -190,8 +190,8 @@ All connectors are cut straight into the 2.0 mm rear wall (#1088); there is no
 separate I/O panel. The two CTRL jacks stay Neutrik NJ6FD-V, each fitted in the
 D-size zinc flange plate from the MEIRIYFA listing (Amazon B0G5FZNH49): Ø24
 hole, flange 26 × 31 mm, two Ø3.4 fixings at ±9.5 / ±12 mm, top-left and
-bottom-right seen from the front. The wall is cut to that diagonal, which is the
-opposite one to the PD coupler's as cut. The plate screws on from outside, so
+bottom-right seen from the front. The wall is cut to that diagonal, and the PD
+coupler takes the same one (owner check against the part, 2026-09-30). The plate screws on from outside, so
 the 2.0 mm wall does not limit the NJ6FD-V's 1.20–1.50 mm clamp range.
 Verify the selected power/fuse hardware and all complete M3/M4 mounting
 patterns after coating; a screw fitting one bare hole is insufficient.
