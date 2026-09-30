@@ -11032,7 +11032,7 @@
     ]
   },
   "segno_faceplate": {
-    "flat_sha256": "20ec87afce9d4f5cb70de7e100e13191ce2f2f22af1b19ec3c0e0272e1c49233",
+    "flat_sha256": "836a96f194750f4f2aacdd05281bf2576eb56511f71221a9580eebf9a99419cd",
     "curves": {
       "CUT": [
         [
@@ -12467,7 +12467,7 @@
           "C",
           [
             123.4714,
-            242.2365
+            228.0767
           ],
           33.7
         ],

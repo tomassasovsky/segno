@@ -14,10 +14,10 @@ One line now carries everything the owner has chosen or printed:
   prints, pocketing the buck bolt heads.
 - **Screen mounts (#1070):** mirrored 15.6in stands with splice and shims; the
   base's right-stand holes moved to the mirrored positions; the closed-deck 7in
-  tower, now with the strip-ring carrier notch.
+  tower, unchanged from the one printed (the ring moved down the slope instead
+  of notching it, #1090).
 - **Console strip ring (#1075):** 34 LEDs, an alternative to the Ring24 holder.
-- **Printed parts on hand:** mirrored stands, closed-deck tower (to be reprinted
-  with the notch if the strip ring is fitted), 2.4 mm-wall front collars, solid
+- **Printed parts on hand:** mirrored stands, closed-deck tower (current), 2.4 mm-wall front collars, solid
   CLEAR/BANK collars, tall eight-LED pills (#1074).
 
 Evidence:
@@ -46,8 +46,8 @@ Open before cutting metal (owner):
    against the part; it now takes the CTRL plates' diagonal (top-left /
    bottom-right seen from behind).
 5. **Ring choice** after the bench light test: Ring24 holder + aluminium centre
-   disc, or the 34-LED strip ring (no disc; reprint the 7in tower with the
-   notch; check the knob grips the shaft 8 mm in).
+   disc, or the 34-LED strip ring (no disc; check the knob grips the shaft
+   8 mm in). Either way the ring now sits at v 215.0 (owner drag, #1090).
 6. **Screen-power USB host leads** are about 40-45 cm from the Pi to the board,
    longer than the 30 cm the #1072 review assessed.
 

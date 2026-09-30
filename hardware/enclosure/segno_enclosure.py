@@ -468,14 +468,13 @@ S7T_SCREW_CLR  = 3.4    # below the insert: a longer M3 passes, it does not self
 S7C_PORTS_Y    = (-7.75, 45.95)
 S7C_PORTS_X0   = 73.55
 S7T_PLUG_MARGIN = 3.0
-# Strip-ring carrier notch (#1075; console variant in hardware/strip_ring/
-# console_ring.py on the #1088 branch). The 34-LED strip ring hangs its Ø80 v3
-# XIAO carrier 7 mm deeper than the Ring24 stack did, and there it cuts the deck's
-# front edge and the front wall top (369 mm3 in the Fusion clone). A cylinder
-# about the encoder axis, the carrier's radius plus air, removes exactly that and
-# nothing the module needs: the module's nearest point is 42.9 from the axis.
-S7T_RING_NOTCH_R = 41.5                  # carrier r 40.0 + 1.5 air
-S7T_RING_NOTCH_AXIAL = (-28.0, -2.0)     # from the faceplate TOP along the axis:
+# Strip-ring carrier clearance (#1075, #1090). The 34-LED strip ring hangs its
+# Ø80 v3 XIAO carrier 7 mm deeper than the Ring24 stack did. At the old ENC_V
+# (229.16) that cut the deck's front edge and needed a notch; at ENC_V 215.0 the
+# tower is the closed-deck version the owner printed, unchanged, and this
+# cylinder about the encoder axis (carrier radius plus air) must stay clear of it.
+S7T_RING_CLEAR_R = 41.5                  # carrier r 40.0 + 1.5 air
+S7T_RING_CLEAR_AXIAL = (-28.0, -2.0)     # from the faceplate TOP along the axis:
                                          # below the carrier's underside parts up
                                          # to the faceplate underside
 
@@ -1331,8 +1330,12 @@ NO_LED_PEDALS = ()
 def _has_led(label):
     return label not in NO_LED_PEDALS
 
-# Preserve the accepted encoder position independently of the retired overlay.
-ENC_V = 229.15982117368537
+# Encoder + ring centre, v up the slope. Owner placement 2026-09-30 (#1090,
+# drag canvas): 14.16 mm down the slope from the old 229.16, same u. Chosen at
+# 215.0 rather than the dragged 217.5 so the strip ring's Ø80 carrier clears the
+# closed-deck 7in tower the owner already printed with 1.5 mm of air (at 217.5 it
+# clipped 49 mm3 of the deck's front edge); S7T_RING_CLEAR_* gates that.
+ENC_V = 215.0
 
 # Legends. Two transport controls read as SYMBOLS rather than words (owner call
 # 2026-08-21): "REC/PLAY" was a two-line block eating the tallest label slot on
@@ -6345,17 +6348,17 @@ def build_screen7_tower_step():
     ports = (wp(1.0).center((px0 + mcx + W) / 2.0, (py0 + py1) / 2.0)
              .rect(mcx + W - px0, py1 - py0).extrude(-(1.0 + dt + gable)))
     tower = tower.cut(ports)
-    # STRIP-RING CARRIER NOTCH (S7T_RING_NOTCH_*), about the encoder axis.
+    # STRIP-RING CARRIER CLEARANCE (S7T_RING_CLEAR_*), about the encoder axis:
+    # a gate, not a cut -- the printed closed-deck tower must not change.
     _under, _n = screen7_tower_encoder_axis()
     _under, _n = cq.Vector(*_under), cq.Vector(*_n)
-    _a0, _a1 = S7T_RING_NOTCH_AXIAL
-    _ring_notch = cq.Solid.makeCylinder(S7T_RING_NOTCH_R, _a1 - _a0,
+    _a0, _a1 = S7T_RING_CLEAR_AXIAL
+    _ring_clear = cq.Solid.makeCylinder(S7T_RING_CLEAR_R, _a1 - _a0,
                                         _under + _n * (_a0 + T), _n)
-    for (hx, hy) in S7C_HOLES:
-        _boss = wp().center(hx, hy).circle(S7T_BOSS_D / 2.0).extrude(boss_h).val()
-        assert _boss.intersect(_ring_notch).Volume() < 1e-6, (
-            "7in tower: the strip-ring notch reaches a tab boss")
-    tower = tower.cut(cq.Workplane().add(_ring_notch))
+    _hit = tower.val().intersect(_ring_clear).Volume()
+    assert _hit < 1e-6, (
+        f"7in tower: the strip-ring carrier (r {S7T_RING_CLEAR_R}) reaches the tower "
+        f"({_hit:.1f} mm3) -- move ENC_V down the slope or notch the tower")
 
     # tab bosses + heat-set insert pilots + screw clearance (front-view positions)
     assert boss_h > S7T_INSERT_L, "7in tower: tab boss shorter than its insert pilot"

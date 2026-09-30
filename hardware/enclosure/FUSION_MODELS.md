@@ -1,5 +1,25 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
+## Ring and knob down the slope, PD diagonal - 2026-09-30 (#1090)
+
+Same clone, saved.
+
+- `ENC_V` 229.16 -> 215.0 (owner's drag canvas said 217.5; 215.0 keeps the
+  strip ring's carrier clear of the printed tower). `faceplate` CUT ring circle
+  moved in place (volume unchanged). `encoder_knob_50x18_alu`, `ring_disc_51_5`,
+  `ring_comet`, `ring_board_v3` and `strip_ring_console_34` translated by
+  (0, -13.8243, -3.0643) mm, i.e. 14.1598 mm down the lid. The strip ring's
+  origin lands within 7 um of `encoder_axis_world()`'s faceplate-top point.
+  Interference: only the cup/diffuser glue faces on the lid (0.113 / 0.339 mm3,
+  as before); nothing against the tower, beam, screens, boards or pills.
+- `screen7_tower`: the notched body swapped back to the closed-deck tower the
+  owner printed (`BaseFeature.updateBody` with `out/segno_screen7_tower.step`
+  imported into a temporary component; the base feature's own source body, not
+  the component body, is the one `updateBody` accepts). 564,536.625 mm3,
+  identical to commit de4fae79's tower both ways.
+- `base`: the PD coupler's two M3 moved to the CTRL plates' diagonal in CUT
+  (volume unchanged).
+
 ## No wall ties, laser-piloted front stations - 2026-09-30 (#1090)
 
 Same clone, saved.

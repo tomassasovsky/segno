@@ -155,7 +155,7 @@
         ]
       ]
     },
-    "step_sha256": "6f2aa0e04cf9c6f3a08a8ac48ba4122b89374fc2a2915b06cf6e7d65da435ff4",
+    "step_sha256": "88d599486f5a732bcb6a3f666dab3d5ce1d9c3ad8faa72565caa65e6f4079a54",
     "placements_mm": [
       [
         [
@@ -197,11 +197,11 @@
         97.51987163183323
       ]
     ],
-    "flat_pattern_sha256": "daab743c7ab29f9c1f9c06d9464ac12cd59071261b685e5cf21f3e1939de4ee8",
+    "flat_pattern_sha256": "087facfdb66f8f8cc68ad18001b89fd5e2c230cfbd408c88c09660fe66a7b558",
     "flat_pattern_drawn_face": "same"
   },
   "segno_faceplate": {
-    "flat_sha256": "20ec87afce9d4f5cb70de7e100e13191ce2f2f22af1b19ec3c0e0272e1c49233",
+    "flat_sha256": "836a96f194750f4f2aacdd05281bf2576eb56511f71221a9580eebf9a99419cd",
     "forming": {
       "rule": {
         "thickness_mm": 2.0,
@@ -308,7 +308,7 @@
         ]
       ]
     },
-    "step_sha256": "23359a5ffc37b4e6dbba4d910b9b980492e5bed8919ee1ee891655d7add80852",
+    "step_sha256": "3ac672906b26158ec5910656df63e62f899db3a483aafd9a92effeab8aa0d846",
     "placements_mm": [
       [
         [
@@ -337,7 +337,7 @@
         ]
       ]
     ],
-    "volume_mm3": 406307.21466248634,
+    "volume_mm3": 406307.2146624886,
     "bounds_mm": [
       [
         0.0,
@@ -350,7 +350,7 @@
         0.0
       ]
     ],
-    "flat_pattern_sha256": "1cd0e4dca2a7374aef6ed4849611b251ab820efa881a9d9022224cd52eaee982",
+    "flat_pattern_sha256": "a23ff337235c81ad0426c48ac9838704ed01166028990c7af61a29f3314d95b1",
     "flat_pattern_drawn_face": "opposite"
   }
 }

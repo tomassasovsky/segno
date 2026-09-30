@@ -26,8 +26,8 @@
 <text x="163.6" y="122.4" fill="#4a7f96" font-size="12" text-anchor="middle">7" TOUCH - waveform</text>
 <rect x="498.4" y="79.6" width="341.8" height="191.1" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
 <text x="669.3" y="175.2" fill="#4a7f96" font-size="12" text-anchor="middle">16" TOUCH - main UI</text>
-<circle cx="163.6" cy="221.5" r="33.5" fill="none" stroke="#a855f7" stroke-width="3"/>
-<circle cx="163.6" cy="221.5" r="3.6" fill="#cbd5e1"/>
+<circle cx="163.6" cy="235.6" r="33.5" fill="none" stroke="#a855f7" stroke-width="3"/>
+<circle cx="163.6" cy="235.6" r="3.6" fill="#cbd5e1"/>
 <circle cx="547.7" cy="583.6" r="9.9" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
 <circle cx="584.7" cy="583.6" r="6.2" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
 <circle cx="621.5" cy="583.6" r="7.8" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
