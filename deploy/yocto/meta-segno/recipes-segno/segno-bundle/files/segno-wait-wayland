@@ -1,0 +1,34 @@
+#!/bin/sh
+# Hold startup until Weston's socket keeps the same inode for 0.8 seconds.
+# This narrows the #970 startup race; it does not prove EGL is ready.
+set -eu
+
+case "${WAYLAND_DISPLAY:?}" in
+    /*) wayland_sock=$WAYLAND_DISPLAY ;;
+    *) wayland_sock="${XDG_RUNTIME_DIR:?}/$WAYLAND_DISPLAY" ;;
+esac
+attempts=${SEGNO_WAYLAND_WAIT_ATTEMPTS:-100}
+settle=${SEGNO_WAYLAND_SETTLE_SECS:-0.8}
+
+socket_inode() {
+    if [ -S "$wayland_sock" ]; then
+        LC_ALL=C ls -di "$wayland_sock" 2>/dev/null | awk '{print $1}'
+    fi
+}
+
+i=0
+while [ "$i" -lt "$attempts" ]; do
+    inode=$(socket_inode)
+    if [ -n "$inode" ]; then
+        sleep "$settle"
+        if [ "$inode" = "$(socket_inode)" ]; then
+            exit 0
+        fi
+    else
+        sleep 0.1
+    fi
+    i=$((i + 1))
+done
+
+echo "segno-wait-wayland: Wayland socket $wayland_sock not ready" >&2
+exit 1

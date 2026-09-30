@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "console_board.py")
-    (date "08/18/2026 12:45 PM")
+    (date "09/04/2026 04:19 AM")
     (tool "SKiDL (2.3.0)")
     (sheet
       (number 1)
@@ -55,16 +55,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "20u7Cq6ZWB")
+          (name "SKiDL Tag") "kskMcQ281b")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "63805a6b-7ddb-5b91-a265-f121f21f37e2"))
+      (tstamps "a124fd15-bf0f-5a5d-8217-5197f15ce7cc"))
     (comp
       (ref "C10")
       (value "100nF")
@@ -78,16 +78,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "4Q4ffyftge")
+          (name "SKiDL Tag") "yyXT6Dgqe0")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "b3d16319-ada5-5e94-bcb1-61be97a017f7"))
+      (tstamps "be22a9fb-7ca0-5f5e-8cdb-a58befe80f08"))
     (comp
       (ref "C11")
       (value "100nF")
@@ -101,16 +101,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "AVOXNUEk9G")
+          (name "SKiDL Tag") "RkqBmDVczs")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "8d7575b4-fafb-5800-9829-8ecb3b3b4ca1"))
+      (tstamps "da737dfa-f87a-57bf-ae6d-53109e9c8c41"))
     (comp
       (ref "C13")
       (value "10nF")
@@ -124,16 +124,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "gocvOrZlV6")
+          (name "SKiDL Tag") "V57fOWTNfq")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "cde4dd43-7f79-55ad-9f64-98f57c786e9a"))
+      (tstamps "5b241cbf-a18f-538c-9efa-14b59866c9da"))
     (comp
       (ref "C14")
       (value "10nF")
@@ -147,16 +147,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "VUEKKJSAxG")
+          (name "SKiDL Tag") "Kzp78_733f")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "215ee040-43ba-5978-aa18-4dd82d123440"))
+      (tstamps "3d4637d0-3f33-5aaa-96e6-ad7f26629982"))
     (comp
       (ref "C2")
       (value "100nF")
@@ -170,16 +170,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "DXTqwvYtLk")
+          (name "SKiDL Tag") "CKeBeqnhvN")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "5519c365-7f7a-5d66-b03d-5647f662acdb"))
+      (tstamps "dd5bf034-92f8-5ec1-b532-1dc8588ca76c"))
     (comp
       (ref "C20")
       (value "100nF")
@@ -193,16 +193,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "jRTyYBoLLN")
+          (name "SKiDL Tag") "UO61rU8P0R")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "d905e0f7-5b0c-54bb-bfee-33164b846443"))
+      (tstamps "90efcc6e-7f7e-56a9-8c53-b2cc25283122"))
     (comp
       (ref "C3")
       (value "100nF")
@@ -216,16 +216,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "0JKNEX7t_5")
+          (name "SKiDL Tag") "nGj_vrlmxy")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "dcce78dd-2c05-544a-a0b8-2cee44d5abad"))
+      (tstamps "fa8e9209-3805-5969-8a31-cd3c56f682e3"))
     (comp
       (ref "C30")
       (value "470uF 25V low-ESR <=0.15R")
@@ -239,16 +239,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "FD3O7de5Kx")
+          (name "SKiDL Tag") "FyU6G5EXcE")
         (field
-          (name "SKiDL Line") "console_board.py:114"))
+          (name "SKiDL Line") "console_board.py:115"))
       (libsource
         (lib "Device")
         (part "C_Polarized"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "0cfb4534-7294-53e1-a58c-5815dbdae2a7"))
+      (tstamps "1fc6a123-9eef-5aa5-b79b-885ec635da31"))
     (comp
       (ref "C31")
       (value "100uF 16V")
@@ -262,16 +262,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "wY1sUIfGd9")
+          (name "SKiDL Tag") "0GA4riummd")
         (field
-          (name "SKiDL Line") "console_board.py:114"))
+          (name "SKiDL Line") "console_board.py:115"))
       (libsource
         (lib "Device")
         (part "C_Polarized"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "09337bf0-b544-58db-97d9-ad35cf1df502"))
+      (tstamps "f057e9ea-d601-5357-883c-aca0d3282b1b"))
     (comp
       (ref "C4")
       (value "100nF")
@@ -285,16 +285,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "pFN0s6n4tc")
+          (name "SKiDL Tag") "LvG1_hWveQ")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "943470ec-1f14-5811-9300-00996d4be188"))
+      (tstamps "6924d257-0431-5a92-907c-b3716d331166"))
     (comp
       (ref "C5")
       (value "100nF")
@@ -308,16 +308,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "8DmGSNQ5Nx")
+          (name "SKiDL Tag") "C8rkKbI7q0")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "791e6a6f-3eb2-5a32-9009-cef7fe4c9779"))
+      (tstamps "e676a1b9-62ac-59ba-8966-87198ea7fa57"))
     (comp
       (ref "C6")
       (value "100nF")
@@ -331,16 +331,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "lZKTSCJVmn")
+          (name "SKiDL Tag") "teN5jmqsNK")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "2736cfde-f690-5fc9-8078-a69a741456e9"))
+      (tstamps "f3d7df9f-a1e5-5191-9015-bc7be26b429f"))
     (comp
       (ref "C7")
       (value "100nF")
@@ -354,16 +354,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "Dcmi2BVaes")
+          (name "SKiDL Tag") "ib6U3FzIKZ")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "58007e37-ba81-56f7-b583-f998806f7853"))
+      (tstamps "f13b8465-c5d3-5315-9657-da89522076e5"))
     (comp
       (ref "C8")
       (value "100nF")
@@ -377,16 +377,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "53xQbbA6t8")
+          (name "SKiDL Tag") "5LcN8K_NxI")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "28720174-c2fc-5355-96fd-12eae79825a6"))
+      (tstamps "b64cf4db-ca0a-5962-9f4a-21479e54fc39"))
     (comp
       (ref "C9")
       (value "100nF")
@@ -400,16 +400,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "ATdLDoGS_E")
+          (name "SKiDL Tag") "wSUCvei0lO")
         (field
-          (name "SKiDL Line") "console_board.py:101"))
+          (name "SKiDL Line") "console_board.py:102"))
       (libsource
         (lib "Device")
         (part "C"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "79188f09-db3b-5b02-b807-8ff6303582a5"))
+      (tstamps "49ad6c54-0daf-5a0f-9004-4732d96e5d0f"))
     (comp
       (ref "D1")
       (value "1N4148")
@@ -423,16 +423,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "yUc2zOUdsF")
+          (name "SKiDL Tag") "luaif1Nfy1")
         (field
-          (name "SKiDL Line") "console_board.py:312"))
+          (name "SKiDL Line") "console_board.py:368"))
       (libsource
         (lib "Device")
         (part "D"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "bb0379b4-15d9-51f0-83ae-1eec1ca96706"))
+      (tstamps "d1427737-ea5d-5442-903e-4a1b5f7261d8"))
     (comp
       (ref "H1")
       (value "M3 CHASSIS")
@@ -446,16 +446,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "xsEsvDFh24")
+          (name "SKiDL Tag") "9RtknpsEWT")
         (field
-          (name "SKiDL Line") "console_board.py:467"))
+          (name "SKiDL Line") "console_board.py:581"))
       (libsource
         (lib "Mechanical")
         (part "MountingHole_Pad"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "e4a3706a-dbd8-589c-8600-a11f1a730e8b"))
+      (tstamps "f715743e-c104-5312-86c6-b9ba5c96338c"))
     (comp
       (ref "H2")
       (value "M3")
@@ -469,16 +469,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "szjBg_zYRJ")
+          (name "SKiDL Tag") "W51siZCpM_")
         (field
-          (name "SKiDL Line") "console_board.py:467"))
+          (name "SKiDL Line") "console_board.py:581"))
       (libsource
         (lib "Mechanical")
         (part "MountingHole_Pad"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "73393aaa-5f1d-5c21-9b4b-5904caf037ee"))
+      (tstamps "45cf8f82-71eb-5a2b-8cce-61bb0d4de7c5"))
     (comp
       (ref "H3")
       (value "M3")
@@ -492,16 +492,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "d6AW6dDFly")
+          (name "SKiDL Tag") "uskxYcljhx")
         (field
-          (name "SKiDL Line") "console_board.py:467"))
+          (name "SKiDL Line") "console_board.py:581"))
       (libsource
         (lib "Mechanical")
         (part "MountingHole_Pad"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "77ab5b81-9d00-562d-a386-99b754fdd083"))
+      (tstamps "05a0a826-1083-513d-addc-365c0a8e4571"))
     (comp
       (ref "H4")
       (value "M3")
@@ -515,16 +515,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "7SmXd7OrCd")
+          (name "SKiDL Tag") "B_2kUxTu6L")
         (field
-          (name "SKiDL Line") "console_board.py:467"))
+          (name "SKiDL Line") "console_board.py:581"))
       (libsource
         (lib "Mechanical")
         (part "MountingHole_Pad"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "8d004a75-9d70-5fa4-9545-fb3e3af961d4"))
+      (tstamps "74b4b6b9-4979-5431-abac-a00b5fc043c9"))
     (comp
       (ref "J1")
       (value "Pico2")
@@ -538,16 +538,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "q4JXdcdu9z")
+          (name "SKiDL Tag") "X85mo6SqBE")
         (field
-          (name "SKiDL Line") "console_board.py:173"))
+          (name "SKiDL Line") "console_board.py:182"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x40"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "ff986d40-5e96-5b8e-9ce8-c1d294c9ebb8"))
+      (tstamps "34f3f959-cdbe-5b63-916e-1529054d5ada"))
     (comp
       (ref "J10")
       (value "FSW_RECPLAY")
@@ -561,16 +561,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "SXtC7TNyiQ")
+          (name "SKiDL Tag") "yAr9SPwlkO")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "6fd8c164-bba2-54bb-8c0a-289a6440b23d"))
+      (tstamps "944e7d1b-e38a-57af-99b9-561770eb089c"))
     (comp
       (ref "J11")
       (value "FSW_STOP")
@@ -584,16 +584,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "ieIbdDqnGB")
+          (name "SKiDL Tag") "Vm8CC_K2wO")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "545ba191-9c81-5417-836a-6f5c538237e5"))
+      (tstamps "71aaad37-9f9e-52d0-87fc-adfd2b4cdbae"))
     (comp
       (ref "J12")
       (value "FSW_UNDO")
@@ -607,16 +607,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "jxNszbAk4v")
+          (name "SKiDL Tag") "8jHJ08Yhu2")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "987f9d3c-aa3a-54a4-a45f-6cb268dc3fd3"))
+      (tstamps "822dd5e6-ac53-5a52-ae01-8abd7f853364"))
     (comp
       (ref "J13")
       (value "FSW_MODE")
@@ -630,16 +630,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "kn1VfzOroD")
+          (name "SKiDL Tag") "nStDqsUE5R")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "04435cda-8e9e-503c-ac13-575c2138365f"))
+      (tstamps "c2d6ca6b-51ed-5602-94e4-72434bdf2e89"))
     (comp
       (ref "J14")
       (value "FSW_TRACK1")
@@ -653,16 +653,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "uPUYOIptEQ")
+          (name "SKiDL Tag") "A3aJzU1ZVy")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "74c20553-493c-5432-8ad3-9b9f29feff9a"))
+      (tstamps "511a5cb7-4582-52a3-a8ee-8f7b85cabdcf"))
     (comp
       (ref "J15")
       (value "FSW_TRACK2")
@@ -676,16 +676,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "pWrt91XIGQ")
+          (name "SKiDL Tag") "8TScnQzi5u")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "1d370498-a8b5-56b9-8207-1e526e1aeee2"))
+      (tstamps "92ebcb1a-3e6e-59d9-9b4f-05d170e0694a"))
     (comp
       (ref "J16")
       (value "FSW_TRACK3")
@@ -699,16 +699,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "qkdyIOE1qz")
+          (name "SKiDL Tag") "SzPhbkKVPq")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "46ce7aa6-f61d-5577-ba15-42237d9d849d"))
+      (tstamps "a13e0b85-ef87-5966-9543-7ee5072d6329"))
     (comp
       (ref "J17")
       (value "FSW_TRACK4")
@@ -722,16 +722,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "a4sZy1EUzU")
+          (name "SKiDL Tag") "NqPRCnB7Da")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "6aa6a3ba-3ee7-5907-b96c-47674cdafabb"))
+      (tstamps "b2f798b4-4574-5004-815e-aafa3789fbc0"))
     (comp
       (ref "J18")
       (value "FSW_CLEAR")
@@ -745,16 +745,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "JVLqb9957E")
+          (name "SKiDL Tag") "bOC72RXtAD")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "a8efe1b6-419d-5ff3-8657-ade74293662d"))
+      (tstamps "0b0aece1-8df7-5ad5-b2d6-ff94d5351c1f"))
     (comp
       (ref "J19")
       (value "FSW_BANK")
@@ -768,16 +768,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "ilNkMLdFxP")
+          (name "SKiDL Tag") "zT9QYaRndx")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "c5edefd8-e976-57b9-aa63-3a2cdfa5a9ed"))
+      (tstamps "f1b55382-c901-54fd-830d-6f4b545a7f25"))
     (comp
       (ref "J2")
       (value "PI_RIBBON")
@@ -791,85 +791,108 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "OzXAjft5Sy")
+          (name "SKiDL Tag") "h3aDTFGg4x")
         (field
-          (name "SKiDL Line") "console_board.py:632"))
+          (name "SKiDL Line") "console_board.py:766"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_02x20_Odd_Even"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "d65a2dd5-091e-54e5-9a04-b980260a5d5d"))
+      (tstamps "45f5dc29-4273-58bf-8b36-59ba1211e6b8"))
     (comp
       (ref "J20")
-      (value "CTRL_TRS")
-      (description "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical")
+      (value "CTRL_TRS_SW")
+      (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
       (fields
         (field
-          (name "Description") "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)")
+          (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical")
+          (name "Footprint") "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "0LDrcgX2uh")
+          (name "SKiDL Tag") "30IJIbbCiL")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
-        (part "Conn_01x03"))
+        (part "Conn_01x04"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "b9632e53-3e34-57fc-8bbf-419ba6654862"))
+      (tstamps "3bdc5fd4-b50d-5031-a26b-31ebd4b52370"))
     (comp
       (ref "J21")
-      (value "CTRL_TRS")
-      (description "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical")
+      (value "CTRL_TRS_SW")
+      (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
       (fields
         (field
-          (name "Description") "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)")
+          (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical")
+          (name "Footprint") "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "vpIVlP4Uju")
+          (name "SKiDL Tag") "LlXMGrtWy_")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
-        (part "Conn_01x03"))
+        (part "Conn_01x04"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "5f5398ff-be87-5654-a806-eba6aae52af2"))
+      (tstamps "3fdd519e-36d9-5f6d-acdf-888f8c2052d2"))
     (comp
       (ref "J22")
       (value "EXPANSION")
-      (description "Generic connector, double row, 02x04, odd/even pin numbering scheme (row 1 odd numbers, row 2 even numbers), script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_PinHeader_2.54mm:PinHeader_2x04_P2.54mm_Vertical")
+      (description "Generic connector, double row, 02x03, odd/even pin numbering scheme (row 1 odd numbers, row 2 even numbers), script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_PinHeader_2.54mm:PinHeader_2x03_P2.54mm_Vertical")
       (fields
         (field
-          (name "Description") "Generic connector, double row, 02x04, odd/even pin numbering scheme (row 1 odd numbers, row 2 even numbers), script generated (kicad-library-utils/schlib/autogen/connector/)")
+          (name "Description") "Generic connector, double row, 02x03, odd/even pin numbering scheme (row 1 odd numbers, row 2 even numbers), script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_PinHeader_2.54mm:PinHeader_2x04_P2.54mm_Vertical")
+          (name "Footprint") "Connector_PinHeader_2.54mm:PinHeader_2x03_P2.54mm_Vertical")
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "7Z6_XRSDPR")
+          (name "SKiDL Tag") "Zj3PJIOiUE")
         (field
-          (name "SKiDL Line") "console_board.py:429"))
+          (name "SKiDL Line") "console_board.py:521"))
       (libsource
         (lib "Connector_Generic")
-        (part "Conn_02x04_Odd_Even"))
+        (part "Conn_02x03_Odd_Even"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "5c2fd818-ef7f-5039-a973-772409283748"))
+      (tstamps "f05cac3c-d8e1-5d9a-ae54-cb3829759de4"))
+    (comp
+      (ref "J23")
+      (value "PD_I2C")
+      (description "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical")
+      (fields
+        (field
+          (name "Description") "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)")
+        (field
+          (name "Footprint") "Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "WtmjEKL27A")
+        (field
+          (name "SKiDL Line") "console_board.py:119"))
+      (libsource
+        (lib "Connector_Generic")
+        (part "Conn_01x03"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (tstamps "f8e60921-1f7d-5f48-8343-ee2b990064eb"))
     (comp
       (ref "J3")
       (value "5V_IN")
@@ -883,16 +906,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "8Vun5OdtL2")
+          (name "SKiDL Tag") "8LMOhSAjz2")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "d2ec6b6c-603b-5031-90b8-f9d4bf87e4cc"))
+      (tstamps "1a5bc21f-da6f-5fd8-af0a-5dba95a2edc3"))
     (comp
       (ref "J4")
       (value "MIDI_OUT")
@@ -906,16 +929,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "aqtNVQJCao")
+          (name "SKiDL Tag") "kwdNj2ZXuJ")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x03"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "0a6c3b49-1a0f-553b-90ad-56a1e3a7c187"))
+      (tstamps "9f675e4e-fc14-5d49-b2bd-856cde69f75f"))
     (comp
       (ref "J5")
       (value "MIDI_IN")
@@ -929,39 +952,39 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "lssgpU0L9U")
+          (name "SKiDL Tag") "N_bu2mWPlT")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "184c6310-36e4-506f-888f-5ca5ef38c8f3"))
+      (tstamps "82fd5936-b1cf-592a-8f5d-72dee37f8f2b"))
     (comp
       (ref "J6")
-      (value "RING_ENC")
-      (description "Generic connector, single row, 01x08, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_JST:JST_XH_B8B-XH-A_1x08_P2.50mm_Vertical")
+      (value "RING_LINK")
+      (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
+      (footprint "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
       (fields
         (field
-          (name "Description") "Generic connector, single row, 01x08, script generated (kicad-library-utils/schlib/autogen/connector/)")
+          (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_JST:JST_XH_B8B-XH-A_1x08_P2.50mm_Vertical")
+          (name "Footprint") "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical")
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "qSdohJ9NTm")
+          (name "SKiDL Tag") "WibE6XHrto")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
-        (part "Conn_01x08"))
+        (part "Conn_01x04"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "41647871-5e5a-5c1e-a5ed-4c8f73478ce7"))
+      (tstamps "821d5ef8-7e02-5f36-8ba2-84fa696a774f"))
     (comp
       (ref "J7")
       (value "INDICATORS")
@@ -975,16 +998,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "2LWToO52dY")
+          (name "SKiDL Tag") "y50LSqjmQ2")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x03"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "0d33da16-d118-54a8-b365-78644790182f"))
+      (tstamps "4308c97c-db5d-5901-9802-55d3bbd11159"))
     (comp
       (ref "J8")
       (value "PWR_BTN")
@@ -998,16 +1021,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "CaqHInTznC")
+          (name "SKiDL Tag") "ovpyoEDb3c")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "7c132719-253b-5b6f-afd7-fbf5c6118eb4"))
+      (tstamps "e621d4fa-8958-5ff5-bf39-7d525faf496f"))
     (comp
       (ref "J9")
       (value "PI_PWR_PADS")
@@ -1021,39 +1044,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "jAzanliMWh")
+          (name "SKiDL Tag") "qnuODZph8u")
         (field
-          (name "SKiDL Line") "console_board.py:118"))
+          (name "SKiDL Line") "console_board.py:119"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "5158af8f-dc6a-557f-b0ea-6328f3bc0ded"))
-    (comp
-      (ref "R1")
-      (value "330")
-      (description "Resistor")
-      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-      (fields
-        (field
-          (name "Description") "Resistor")
-        (field
-          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "dD964CVwlE")
-        (field
-          (name "SKiDL Line") "console_board.py:97"))
-      (libsource
-        (lib "Device")
-        (part "R"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (tstamps "09d43283-ef17-5c79-bb03-32a52a55d13c"))
+      (tstamps "ff885c5d-e258-59fe-9896-6fc1dfe6c473"))
     (comp
       (ref "R10")
       (value "10k")
@@ -1067,16 +1067,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "jjmkBeu5L6")
+          (name "SKiDL Tag") "ZidvVu6kAU")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "3fb4609c-4810-58d8-a74a-a43d9f28affa"))
+      (tstamps "fce24fa8-404d-5bf9-8536-0e44fdfe698d"))
     (comp
       (ref "R11")
       (value "10k")
@@ -1090,16 +1090,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "7OWQIBpQzS")
+          (name "SKiDL Tag") "Gd_u6t1S0f")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "105b31b1-27c5-57db-8c58-01a7450711fa"))
+      (tstamps "40a1acf3-6cad-57d0-8e0a-33a5b3da0f67"))
     (comp
       (ref "R12")
       (value "10k")
@@ -1113,39 +1113,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "65TyPTNhjw")
+          (name "SKiDL Tag") "1QIPY3Jd6Z")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "29c7ef5c-01db-53f4-8d97-bed88c262804"))
-    (comp
-      (ref "R13")
-      (value "10k")
-      (description "Resistor")
-      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-      (fields
-        (field
-          (name "Description") "Resistor")
-        (field
-          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "0ULn3WTKOY")
-        (field
-          (name "SKiDL Line") "console_board.py:97"))
-      (libsource
-        (lib "Device")
-        (part "R"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (tstamps "5903d9fb-f459-562b-9ea3-edf7ab248a21"))
+      (tstamps "5b7933af-09db-5d94-b512-4e53b8ff9f5f"))
     (comp
       (ref "R14")
       (value "100k")
@@ -1159,39 +1136,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "YvbpZtX9qF")
+          (name "SKiDL Tag") "3dXpGNGL8g")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "25eced03-24e9-5c21-80ac-ef246e7c7d6d"))
-    (comp
-      (ref "R15")
-      (value "100k")
-      (description "Resistor")
-      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-      (fields
-        (field
-          (name "Description") "Resistor")
-        (field
-          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
-        (field
-          (name "Datasheet"))
-        (field
-          (name "SKiDL Tag") "ctyLCrzoKZ")
-        (field
-          (name "SKiDL Line") "console_board.py:97"))
-      (libsource
-        (lib "Device")
-        (part "R"))
-      (sheetpath
-        (names "/")
-        (tstamps "/"))
-      (tstamps "170903fe-b5e6-589c-aed8-c028f9ce7250"))
+      (tstamps "b73815b5-c3ee-5306-ac1a-a19b62ca3f30"))
     (comp
       (ref "R16")
       (value "100k")
@@ -1205,16 +1159,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "vvVw4P35GD")
+          (name "SKiDL Tag") "nNY1U5JL72")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "538bfa15-eb43-55d7-a805-2fc39ab4893a"))
+      (tstamps "b10ced08-13b9-54e0-ae89-8370bcec26cf"))
     (comp
       (ref "R17")
       (value "10k")
@@ -1228,16 +1182,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "E_JUY4lkY1")
+          (name "SKiDL Tag") "WQ6aywun56")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "3ae6582d-6cf2-5b8b-bac8-f3ae0bed97c8"))
+      (tstamps "97389e32-f8f5-582a-b5b3-28199d7a4ead"))
     (comp
       (ref "R18")
       (value "10k")
@@ -1251,16 +1205,39 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "PQqLZkO68g")
+          (name "SKiDL Tag") "3k7gLWuYC6")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "d370aaa8-e18f-53f3-a175-2048b4bf12f3"))
+      (tstamps "2150f719-cb99-5c03-818d-98167712089d"))
+    (comp
+      (ref "R19")
+      (value "4.7k")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "gH0snSsQRO")
+        (field
+          (name "SKiDL Line") "console_board.py:98"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (tstamps "76245375-1fbc-5b33-a9e9-1a8cdc48ba41"))
     (comp
       (ref "R2")
       (value "330")
@@ -1274,16 +1251,85 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "QbMeS2n1ya")
+          (name "SKiDL Tag") "UDmKkGmG92")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "f8d8f18f-1408-5ab9-928c-de7ef6ea1106"))
+      (tstamps "e7c9c4fc-527d-58ea-9b0d-3c6a20359896"))
+    (comp
+      (ref "R20")
+      (value "4.7k")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "QrKXlWo_gc")
+        (field
+          (name "SKiDL Line") "console_board.py:98"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (tstamps "4843c8c9-4fb6-59f3-80e9-94656adad2fb"))
+    (comp
+      (ref "R21")
+      (value "4.7k")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "9MvG3ZWKk_")
+        (field
+          (name "SKiDL Line") "console_board.py:98"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (tstamps "7e4dd2df-9596-54e3-a8f9-3dafa83b3c54"))
+    (comp
+      (ref "R22")
+      (value "4.7k")
+      (description "Resistor")
+      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "bjD53NckwO")
+        (field
+          (name "SKiDL Line") "console_board.py:98"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (tstamps "70251729-387c-55cc-8831-f6ca86e58b1f"))
     (comp
       (ref "R3")
       (value "220")
@@ -1297,16 +1343,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "z3uD4wG7Kj")
+          (name "SKiDL Tag") "C_vNByw5AD")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "5b77e20d-0db2-5656-a61b-f402afbe1512"))
+      (tstamps "a0c96255-46d7-5f37-b610-22d19d2c40f8"))
     (comp
       (ref "R4")
       (value "220")
@@ -1320,16 +1366,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "C1G6xZphad")
+          (name "SKiDL Tag") "fqx3OYpePr")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "2b200212-8378-5384-921d-2ef42f272e4f"))
+      (tstamps "46c817ea-40db-544a-977f-51c5284e70f6"))
     (comp
       (ref "R5")
       (value "220")
@@ -1343,16 +1389,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "8BgG_rX3kC")
+          (name "SKiDL Tag") "MrdrMsIwjP")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "ffb7a0d3-c056-51f9-a345-bef757fa7172"))
+      (tstamps "6ca08d5b-575f-5e85-ad3c-aae7a88744f1"))
     (comp
       (ref "R6")
       (value "10k")
@@ -1366,16 +1412,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "VplYsaXYt3")
+          (name "SKiDL Tag") "mcWpKhXllP")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "d178ea73-da78-5b5d-af06-eb1e52324799"))
+      (tstamps "b6f61a55-e4d7-53b9-af37-1efddf9557de"))
     (comp
       (ref "R7")
       (value "1k")
@@ -1389,16 +1435,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "EQro3oM0_3")
+          (name "SKiDL Tag") "qnBE2vBgdC")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "b5586832-bebd-5440-9436-61bbdf21c862"))
+      (tstamps "76a92df0-dfd8-5301-81f1-a00c91e268bc"))
     (comp
       (ref "R8")
       (value "10k")
@@ -1412,16 +1458,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "FAnTkzvSmb")
+          (name "SKiDL Tag") "f1UHpeRmrB")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "8f41fbf7-1fb8-50cf-acc8-ebfc74af243a"))
+      (tstamps "f3075bc4-16ff-54b4-af8d-80f18adf5c83"))
     (comp
       (ref "R9")
       (value "1k")
@@ -1435,16 +1481,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "pPFeMa7vX1")
+          (name "SKiDL Tag") "6FaMYIfsie")
         (field
-          (name "SKiDL Line") "console_board.py:97"))
+          (name "SKiDL Line") "console_board.py:98"))
       (libsource
         (lib "Device")
         (part "R"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "cfef315f-7194-5848-9ccc-c0d4ea291eba"))
+      (tstamps "26ce6894-f09e-5f37-8c42-14d92e11d8a0"))
     (comp
       (ref "U1")
       (value "74AHCT125N")
@@ -1458,16 +1504,16 @@
         (field
           (name "Datasheet") "https://www.ti.com/lit/ds/symlink/sn74ahct125.pdf")
         (field
-          (name "SKiDL Tag") "JJaJM_S_Tz")
+          (name "SKiDL Tag") "G1WDy8vQ83")
         (field
-          (name "SKiDL Line") "console_board.py:275"))
+          (name "SKiDL Line") "console_board.py:326"))
       (libsource
         (lib "74xx")
         (part "74AHCT125"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "8ff65842-314c-54cc-9a13-d1a003de0062"))
+      (tstamps "a1e937fe-813b-506e-9a3d-e29750bd9a09"))
     (comp
       (ref "U2")
       (value "H11L1")
@@ -1481,16 +1527,16 @@
         (field
           (name "Datasheet") "https://www.onsemi.com/pub/Collateral/H11L3M-D.PDF")
         (field
-          (name "SKiDL Tag") "HmiuW6Bnrb")
+          (name "SKiDL Tag") "_N5_5cx7kb")
         (field
-          (name "SKiDL Line") "console_board.py:303"))
+          (name "SKiDL Line") "console_board.py:359"))
       (libsource
         (lib "Isolator")
         (part "H11L1"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "a2a526d9-d20b-5885-96ad-eb7a4c6e5605")))
+      (tstamps "e50edcd2-d2ae-592b-a27a-a5aae65be0be")))
   (nets
     (net
       (code 1)
@@ -1522,10 +1568,6 @@
         (pintype "PASSIVE"))
       (node
         (ref "R12")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R13")
         (pin "1")
         (pintype "PASSIVE"))
       (node
@@ -1585,10 +1627,6 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
-        (ref "J6")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
         (ref "J7")
         (pin "1")
         (pintype "PASSIVE"))
@@ -1603,7 +1641,11 @@
       (node
         (ref "U1")
         (pin "14")
-        (pintype "POWER-IN")))
+        (pintype "POWER-IN"))
+      (node
+        (ref "U1")
+        (pin "4")
+        (pintype "INPUT")))
     (net
       (code 3)
       (name "CHASSIS_H2")
@@ -1630,6 +1672,30 @@
         (pintype "INPUT")))
     (net
       (code 6)
+      (name "CTRL1_PRESENT")
+      (class "Default")
+      (node
+        (ref "J1")
+        (pin "25")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R21")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 7)
+      (name "CTRL1_RING")
+      (class "Default")
+      (node
+        (ref "J1")
+        (pin "26")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R19")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 8)
       (name "CTRL1_TIP")
       (class "Default")
       (node
@@ -1649,7 +1715,31 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 7)
+      (code 9)
+      (name "CTRL2_PRESENT")
+      (class "Default")
+      (node
+        (ref "J1")
+        (pin "29")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R22")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 10)
+      (name "CTRL2_RING")
+      (class "Default")
+      (node
+        (ref "J1")
+        (pin "27")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R20")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 11)
       (name "CTRL2_TIP")
       (class "Default")
       (node
@@ -1669,103 +1759,31 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 8)
-      (name "ENC_A")
+      (code 12)
+      (name "EXP_GP12")
       (class "Default")
       (node
         (ref "J1")
-        (pin "17")
-        (pintype "PASSIVE"))
-      (node
-        (ref "J6")
-        (pin "6")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R11")
-        (pin "2")
-        (pintype "PASSIVE")))
-    (net
-      (code 9)
-      (name "ENC_B")
-      (class "Default")
-      (node
-        (ref "J1")
-        (pin "19")
-        (pintype "PASSIVE"))
-      (node
-        (ref "J6")
-        (pin "7")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R12")
-        (pin "2")
-        (pintype "PASSIVE")))
-    (net
-      (code 10)
-      (name "ENC_SW")
-      (class "Default")
-      (node
-        (ref "J1")
-        (pin "20")
-        (pintype "PASSIVE"))
-      (node
-        (ref "J6")
-        (pin "8")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R13")
-        (pin "2")
-        (pintype "PASSIVE")))
-    (net
-      (code 11)
-      (name "EXP_GP19")
-      (class "Default")
-      (node
-        (ref "J1")
-        (pin "25")
+        (pin "16")
         (pintype "PASSIVE"))
       (node
         (ref "J22")
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 12)
-      (name "EXP_GP20")
+      (code 13)
+      (name "EXP_GP15")
       (class "Default")
       (node
         (ref "J1")
-        (pin "26")
+        (pin "20")
         (pintype "PASSIVE"))
       (node
         (ref "J22")
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 13)
-      (name "EXP_GP21")
-      (class "Default")
-      (node
-        (ref "J1")
-        (pin "27")
-        (pintype "PASSIVE"))
-      (node
-        (ref "J22")
-        (pin "5")
-        (pintype "PASSIVE")))
-    (net
       (code 14)
-      (name "EXP_GP22")
-      (class "Default")
-      (node
-        (ref "J1")
-        (pin "29")
-        (pintype "PASSIVE"))
-      (node
-        (ref "J22")
-        (pin "6")
-        (pintype "PASSIVE")))
-    (net
-      (code 15)
       (name "EXP_GP28")
       (class "Default")
       (node
@@ -1774,10 +1792,10 @@
         (pintype "PASSIVE"))
       (node
         (ref "J22")
-        (pin "7")
+        (pin "5")
         (pintype "PASSIVE")))
     (net
-      (code 16)
+      (code 15)
       (name "GND")
       (class "Default")
       (node
@@ -1966,7 +1984,11 @@
         (pintype "PASSIVE"))
       (node
         (ref "J22")
-        (pin "8")
+        (pin "6")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J23")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "J3")
@@ -1982,11 +2004,7 @@
         (pintype "PASSIVE"))
       (node
         (ref "J6")
-        (pin "3")
-        (pintype "PASSIVE"))
-      (node
-        (ref "J6")
-        (pin "4")
+        (pin "2")
         (pintype "PASSIVE"))
       (node
         (ref "J7")
@@ -2002,10 +2020,6 @@
         (pintype "PASSIVE"))
       (node
         (ref "R14")
-        (pin "2")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R15")
         (pin "2")
         (pintype "PASSIVE"))
       (node
@@ -2026,7 +2040,7 @@
         (pintype "INPUT"))
       (node
         (ref "U1")
-        (pin "4")
+        (pin "5")
         (pintype "INPUT"))
       (node
         (ref "U1")
@@ -2037,7 +2051,7 @@
         (pin "5")
         (pintype "POWER-IN")))
     (net
-      (code 17)
+      (code 16)
       (name "IND_DATA")
       (class "Default")
       (node
@@ -2053,7 +2067,7 @@
         (pin "2")
         (pintype "INPUT")))
     (net
-      (code 18)
+      (code 17)
       (name "IND_DATA_BUF")
       (class "Default")
       (node
@@ -2065,7 +2079,7 @@
         (pin "3")
         (pintype "TRISTATE")))
     (net
-      (code 19)
+      (code 18)
       (name "IND_DATA_OUT")
       (class "Default")
       (node
@@ -2077,7 +2091,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 20)
+      (code 19)
       (name "J20_REF")
       (class "Default")
       (node
@@ -2085,8 +2099,24 @@
         (pin "2")
         (pintype "PASSIVE"))
       (node
+        (ref "R19")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
         (ref "R7")
         (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 20)
+      (name "J20_TN")
+      (class "Default")
+      (node
+        (ref "J20")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R21")
+        (pin "1")
         (pintype "PASSIVE")))
     (net
       (code 21)
@@ -2097,11 +2127,27 @@
         (pin "2")
         (pintype "PASSIVE"))
       (node
+        (ref "R20")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
         (ref "R9")
         (pin "2")
         (pintype "PASSIVE")))
     (net
       (code 22)
+      (name "J21_TN")
+      (class "Default")
+      (node
+        (ref "J21")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R22")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 23)
       (name "LINK_RX")
       (class "Default")
       (node
@@ -2113,7 +2159,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 23)
+      (code 24)
       (name "LINK_RX_PI")
       (class "Default")
       (node
@@ -2125,7 +2171,39 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 24)
+      (code 25)
+      (name "LINK_TO_CONSOLE")
+      (class "Default")
+      (node
+        (ref "J1")
+        (pin "19")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J6")
+        (pin "4")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R12")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 26)
+      (name "LINK_TO_RING")
+      (class "Default")
+      (node
+        (ref "J1")
+        (pin "17")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J6")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R11")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 27)
       (name "LINK_TX")
       (class "Default")
       (node
@@ -2137,7 +2215,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 25)
+      (code 28)
       (name "LINK_TX_PI")
       (class "Default")
       (node
@@ -2149,7 +2227,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 26)
+      (code 29)
       (name "MIDI_OUT_BUF")
       (class "Default")
       (node
@@ -2161,7 +2239,7 @@
         (pin "8")
         (pintype "TRISTATE")))
     (net
-      (code 27)
+      (code 30)
       (name "MIDI_RX")
       (class "Default")
       (node
@@ -2177,7 +2255,7 @@
         (pin "4")
         (pintype "OUTPUT")))
     (net
-      (code 28)
+      (code 31)
       (name "MIDI_TX")
       (class "Default")
       (node
@@ -2193,7 +2271,7 @@
         (pin "9")
         (pintype "INPUT")))
     (net
-      (code 29)
+      (code 32)
       (name "N$1")
       (class "Default")
       (node
@@ -2205,7 +2283,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 30)
+      (code 33)
       (name "N$2")
       (class "Default")
       (node
@@ -2217,7 +2295,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 31)
+      (code 34)
       (name "N$3")
       (class "Default")
       (node
@@ -2229,7 +2307,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 32)
+      (code 35)
       (name "N$4")
       (class "Default")
       (node
@@ -2245,7 +2323,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 33)
+      (code 36)
       (name "N$5")
       (class "Default")
       (node
@@ -2261,7 +2339,31 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 34)
+      (code 37)
+      (name "PD_SCL")
+      (class "Default")
+      (node
+        (ref "J1")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J23")
+        (pin "3")
+        (pintype "PASSIVE")))
+    (net
+      (code 38)
+      (name "PD_SDA")
+      (class "Default")
+      (node
+        (ref "J1")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "J23")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 39)
       (name "PWR_BTN")
       (class "Default")
       (node
@@ -2273,47 +2375,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 35)
-      (name "RING_DATA")
-      (class "Default")
-      (node
-        (ref "J1")
-        (pin "16")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R15")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "U1")
-        (pin "5")
-        (pintype "INPUT")))
-    (net
-      (code 36)
-      (name "RING_DATA_BUF")
-      (class "Default")
-      (node
-        (ref "R1")
-        (pin "1")
-        (pintype "PASSIVE"))
-      (node
-        (ref "U1")
-        (pin "6")
-        (pintype "TRISTATE")))
-    (net
-      (code 37)
-      (name "RING_DATA_OUT")
-      (class "Default")
-      (node
-        (ref "J6")
-        (pin "5")
-        (pintype "PASSIVE"))
-      (node
-        (ref "R1")
-        (pin "2")
-        (pintype "PASSIVE")))
-    (net
-      (code 38)
+      (code 40)
       (name "SWCLK")
       (class "Default")
       (node
@@ -2325,7 +2387,7 @@
         (pin "18")
         (pintype "PASSIVE")))
     (net
-      (code 39)
+      (code 41)
       (name "SWDIO")
       (class "Default")
       (node
@@ -2337,7 +2399,7 @@
         (pin "22")
         (pintype "PASSIVE")))
     (net
-      (code 40)
+      (code 42)
       (name "SW_BANK")
       (class "Default")
       (node
@@ -2353,7 +2415,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 41)
+      (code 43)
       (name "SW_CLEAR")
       (class "Default")
       (node
@@ -2369,7 +2431,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 42)
+      (code 44)
       (name "SW_MODE")
       (class "Default")
       (node
@@ -2385,7 +2447,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 43)
+      (code 45)
       (name "SW_RECPLAY")
       (class "Default")
       (node
@@ -2401,7 +2463,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 44)
+      (code 46)
       (name "SW_STOP")
       (class "Default")
       (node
@@ -2417,7 +2479,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 45)
+      (code 47)
       (name "SW_TRACK1")
       (class "Default")
       (node
@@ -2433,7 +2495,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 46)
+      (code 48)
       (name "SW_TRACK2")
       (class "Default")
       (node
@@ -2449,7 +2511,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 47)
+      (code 49)
       (name "SW_TRACK3")
       (class "Default")
       (node
@@ -2465,7 +2527,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 48)
+      (code 50)
       (name "SW_TRACK4")
       (class "Default")
       (node
@@ -2481,7 +2543,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 49)
+      (code 51)
       (name "SW_UNDO")
       (class "Default")
       (node

@@ -39,24 +39,6 @@ class _FakeEnv implements ApplianceEnv {
     return body;
   }
 
-  String? pendingVersion;
-  int flashCalls = 0;
-  int abortCalls = 0;
-
-  @override
-  Future<String?> pedalPending() async => pendingVersion;
-
-  @override
-  Stream<double> flashPedal() {
-    flashCalls++;
-    return Stream.fromIterable(const [0.5, 1.0]);
-  }
-
-  @override
-  Future<void> abortPedalFlash() async {
-    abortCalls++;
-  }
-
   @override
   Stream<double> stage(String version) {
     stagedVersionArg = version;
@@ -89,7 +71,6 @@ const _version = '/etc/segno/build-version';
 const _channel = '/etc/segno/update-channel';
 const _channelOverride = '/data/segno/update-channel';
 const _staged = '/data/.ota-staged-version';
-const _helper = '/usr/bin/segno-update-ctl';
 
 AppliancePlatformBackend backend(ApplianceEnv env) =>
     AppliancePlatformBackend(env: env);
@@ -98,14 +79,19 @@ void main() {
   group('isSupported', () {
     test('true only when both the version file and the helper exist', () {
       expect(
-        backend(_FakeEnv(files: {_version: '0.2.0', _helper: ''})).isSupported,
+        backend(
+          _FakeEnv(files: {_version: '0.2.0', kApplianceHelperPath: ''}),
+        ).isSupported,
         isTrue,
       );
       expect(
         backend(_FakeEnv(files: {_version: '0.2.0'})).isSupported,
         isFalse,
       );
-      expect(backend(_FakeEnv(files: {_helper: ''})).isSupported, isFalse);
+      expect(
+        backend(_FakeEnv(files: {kApplianceHelperPath: ''})).isSupported,
+        isFalse,
+      );
       expect(backend(_FakeEnv()).isSupported, isFalse);
     });
   });
@@ -251,111 +237,6 @@ void main() {
     test('applyAndRestart surfaces a reboot failure', () {
       final env = _FakeEnv(rebootError: Exception('reboot denied'));
       expect(backend(env).applyAndRestart(), throwsA(isA<Exception>()));
-    });
-  });
-
-  _pedalFirmwareStagingTests();
-}
-
-void _pedalFirmwareStagingTests() {
-  const version = '/etc/segno/build-version';
-  const helper = '/usr/bin/segno-update-ctl';
-
-  UpdateManifest manifest({PedalFirmwareManifest? firmware}) => UpdateManifest(
-    version: Version.parse('0.3.0'),
-    bundle: 'b.raucb',
-    pedalFirmware: firmware,
-  );
-
-  PedalFirmwareManifest firmware() => PedalFirmwareManifest(
-    version: Version.parse('0.3.0'),
-    hex: 'segno-pedal-0.3.0.hex',
-  );
-
-  group('downloadAndStage with pedal firmware', () {
-    // Staging runs inside the image being replaced, so a flash started here
-    // would run the OUTGOING flasher — which is why a flash-pedal fix could
-    // never apply on the update carrying it (#444). The published firmware is
-    // now flashed after the reboot by segno-pedal-flash.service, so a manifest
-    // that advertises firmware must stage exactly like one that does not.
-    test('stages identically whether or not firmware is published', () async {
-      final withFirmware = _FakeEnv(files: {version: '0.2.0\n', helper: ''});
-      final without = _FakeEnv(files: {version: '0.2.0\n', helper: ''});
-
-      final a = await AppliancePlatformBackend(
-        env: withFirmware,
-      ).downloadAndStage(manifest(firmware: firmware())).toList();
-      final b = await AppliancePlatformBackend(
-        env: without,
-      ).downloadAndStage(manifest()).toList();
-
-      expect(a, b);
-      expect(withFirmware.stagedVersionArg, '0.3.0');
-    });
-
-    test('a staging failure surfaces', () async {
-      final env = _FakeEnv(
-        files: {version: '0.2.0\n', helper: ''},
-        stageError: Exception('rauc failed'),
-      );
-      final backend = AppliancePlatformBackend(env: env);
-
-      expect(
-        backend.downloadAndStage(manifest(firmware: firmware())).toList(),
-        throwsException,
-      );
-    });
-  });
-
-  group('abortPedalFlash', () {
-    test('delegates the helper kill to the env', () async {
-      final env = _FakeEnv();
-      await AppliancePlatformBackend(env: env).abortPedalFlash();
-      expect(env.abortCalls, 1);
-    });
-  });
-
-  group('lastPedalFlashFailure', () {
-    const failFile = '/data/segno/pedal-firmware-failed';
-
-    AppliancePlatformBackend backendWith(Map<String, String> files) =>
-        AppliancePlatformBackend(env: _FakeEnv(files: files));
-
-    test('reads the class the flasher recorded', () async {
-      expect(
-        await backendWith({
-          failFile: 'not-started 0.4.0\n',
-        }).lastPedalFlashFailure(),
-        PedalFlashFailureClass.notStarted,
-      );
-      expect(
-        await backendWith({
-          failFile: 'interrupted 0.4.0\n',
-        }).lastPedalFlashFailure(),
-        PedalFlashFailureClass.interrupted,
-      );
-    });
-
-    test('a version-less marker still carries its class', () async {
-      // Written when the flash failed before the manifest revealed a version.
-      expect(
-        await backendWith({failFile: 'not-started\n'}).lastPedalFlashFailure(),
-        PedalFlashFailureClass.notStarted,
-      );
-    });
-
-    test('no marker, or an illegible one, is null', () async {
-      expect(await backendWith({}).lastPedalFlashFailure(), isNull);
-      expect(
-        await backendWith({failFile: '\n'}).lastPedalFlashFailure(),
-        isNull,
-      );
-      // The pre-#670 format was a bare version with no class token; the
-      // caller treats null as interrupted rather than inventing comfort.
-      expect(
-        await backendWith({failFile: '0.4.0\n'}).lastPedalFlashFailure(),
-        isNull,
-      );
     });
   });
 }

@@ -6,9 +6,167 @@ import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
+import 'package:segno/visualizer/waveform_window_service.dart';
 import 'package:segno/window/window_chrome.dart';
 
 void main() {
+  group('waveform frame diff', () {
+    test('the first frame carries samples — nothing has been sent yet', () {
+      final payload = waveformFramePayload(
+        samples: Float32List.fromList([0.1, 0.2, 0.3]),
+        progress: 0,
+        selectedTrack: 'Drums',
+        lastSent: null,
+      );
+
+      expect(payload.containsKey('samples'), isTrue);
+    });
+
+    test('an unchanged buffer is not re-sent, but progress still is', () {
+      final peaks = Float32List.fromList([0.1, 0.2, 0.3]);
+      final payload = waveformFramePayload(
+        // A NEW list with the same contents: `readVisual` copies out of the
+        // native buffer every call, so identity would never match and only
+        // value equality can suppress anything.
+        samples: Float32List.fromList([0.1, 0.2, 0.3]),
+        progress: 0.5,
+        selectedTrack: 'Drums',
+        lastSent: peaks,
+      );
+
+      expect(
+        payload.containsKey('samples'),
+        isFalse,
+        reason: 'steady playback re-shipped 512 unchanged floats',
+      );
+      expect(payload['progress'], 0.5);
+      expect(payload['selectedTrack'], 'Drums');
+    });
+
+    test('a changed peak re-sends the buffer', () {
+      final payload = waveformFramePayload(
+        samples: Float32List.fromList([0.1, 0.9, 0.3]),
+        progress: 0.5,
+        selectedTrack: 'Drums',
+        lastSent: Float32List.fromList([0.1, 0.2, 0.3]),
+      );
+
+      expect(payload.containsKey('samples'), isTrue);
+    });
+
+    test('a resized buffer re-sends — a new loop length is a new picture', () {
+      final payload = waveformFramePayload(
+        samples: Float32List.fromList([0.1, 0.2]),
+        progress: 0,
+        selectedTrack: '',
+        lastSent: Float32List.fromList([0.1, 0.2, 0.3]),
+      );
+
+      expect(payload.containsKey('samples'), isTrue);
+    });
+  });
+
+  group('waveformFrameFrom', () {
+    WaveformFrame frameOf(List<double> samples) => (
+      samples: Float32List.fromList(samples),
+      progress: 0,
+      selectedTrack: 'Drums',
+    );
+
+    test('a progress-only frame HOLDS the samples already on screen', () {
+      final previous = frameOf([0.1, 0.2, 0.3]);
+
+      final next = waveformFrameFrom(
+        {'progress': 0.75, 'selectedTrack': 'Drums'},
+        previous,
+      );
+
+      expect(
+        next.samples,
+        previous.samples,
+        reason: 'an absent samples key blanked the waveform mid-playback',
+      );
+      expect(next.progress, 0.75);
+    });
+
+    test('a frame that carries samples replaces them', () {
+      final next = waveformFrameFrom(
+        {
+          'samples': Float32List.fromList([0.4, 0.5]),
+          'progress': 0.1,
+          'selectedTrack': 'Bass',
+        },
+        frameOf([0.1, 0.2, 0.3]),
+      );
+
+      expect(next.samples, Float32List.fromList([0.4, 0.5]));
+      expect(next.selectedTrack, 'Bass');
+    });
+
+    test('a malformed samples value HOLDS the waveform on screen', () {
+      // The absent key is the easy case (a progress-only push). A present but
+      // garbled value is what a damaged frame actually looks like, and
+      // decoding it to an empty buffer would blank the second screen mid-set
+      // — the one outcome the hold exists to prevent.
+      final previous = frameOf([0.1, 0.2, 0.3]);
+
+      final next = waveformFrameFrom(
+        {'samples': 'nope', 'progress': 0.4, 'selectedTrack': 'Drums'},
+        previous,
+      );
+
+      expect(next.samples, previous.samples);
+      expect(next.progress, 0.4);
+    });
+
+    test('a malformed progress holds the playhead instead of resetting it', () {
+      final next = waveformFrameFrom(
+        {'progress': 'nope', 'selectedTrack': 'Bass'},
+        (
+          samples: Float32List.fromList([0.1]),
+          progress: 0.62,
+          selectedTrack: 'Drums',
+        ),
+      );
+
+      expect(
+        next.progress,
+        0.62,
+        reason: 'a garbled frame snapped the playhead back to the loop start',
+      );
+      expect(next.selectedTrack, 'Bass');
+    });
+
+    test('a malformed selectedTrack degrades instead of throwing', () {
+      // The comment two lines above the field promises the second screen does
+      // not go down mid-set on a garbled frame. `as String?` would have
+      // thrown here — a present-but-wrong value is the shape a garbled frame
+      // actually takes; an absent key is the easy case.
+      final next = waveformFrameFrom(
+        {'progress': 0.2, 'selectedTrack': 7},
+        frameOf([0.1, 0.2]),
+      );
+
+      expect(next.selectedTrack, 'Drums');
+      expect(next.progress, 0.2);
+    });
+
+    test('samples survive a list-encoded round trip', () {
+      // `desktop_multi_window` can hand the payload back as a plain List of
+      // numbers rather than a Float32List when it crosses engines.
+      final next = waveformFrameFrom(
+        {
+          'samples': <double>[0.4, 0.5],
+          'progress': 0.1,
+          'selectedTrack': 'Bass',
+        },
+        frameOf([0.1]),
+      );
+
+      expect(next.samples, Float32List.fromList([0.4, 0.5]));
+    });
+  });
+
   group('waveformWindowPlacement', () {
     const args = WaveformWindowArgs(); // defaults: 120, 120, 960x320
 

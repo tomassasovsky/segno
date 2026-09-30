@@ -39,35 +39,39 @@ import 'package:segno_engine/segno_engine.dart'
 
 import 'helpers/fake_audio_engine.dart';
 
-const _playingSnapshot = EngineSnapshot(
-  isRunning: true,
-  sampleRate: 48000,
-  bufferFrames: 128,
-  inputChannels: 2,
-  outputChannels: 4,
-  framesProcessed: 0,
-  xrunCount: 0,
-  inputRms: 0,
-  inputPeak: 0,
-  outputRms: 0,
-  latencyState: le.LatencyState.idle,
-  measuredLatencyMs: -1,
-  masterLengthFrames: 96000,
-  masterPositionFrames: 24000,
-  tracks: [
-    TrackSnapshot(
-      state: TrackState.playing,
-      volume: 0.8,
-      muted: false,
-      lengthFrames: 96000,
-      undoDepth: 1,
-      rms: 0.3,
-      peak: 0.5,
-      inputMask: 0x2,
-      outputMask: 0x2,
-    ),
-  ],
-);
+final EngineSnapshot _playingSnapshot = _playingAt(24000);
+
+/// One playing track with independently controlled transport and meter values.
+EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
+    EngineSnapshot(
+      isRunning: true,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      inputChannels: 2,
+      outputChannels: 4,
+      framesProcessed: 0,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: le.LatencyState.idle,
+      measuredLatencyMs: -1,
+      masterLengthFrames: 96000,
+      masterPositionFrames: masterPositionFrames,
+      tracks: [
+        TrackSnapshot(
+          state: TrackState.playing,
+          volume: 0.8,
+          muted: false,
+          lengthFrames: 96000,
+          undoDepth: 1,
+          rms: 0.3,
+          peak: peak,
+          inputMask: 0x2,
+          outputMask: 0x2,
+        ),
+      ],
+    );
 
 /// One playing track with one real lane — the cache-telemetry gate is a
 /// per-lane concern, and [_playingSnapshot]'s tracks carry no lanes.
@@ -122,6 +126,104 @@ void main() {
 
   LooperRepository buildRepo() =>
       LooperRepository(engine: engine, ticker: ticker.stream);
+
+  group('lastState (the cached projection)', () {
+    test("serves the poll's projection without walking the engine", () async {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      // The listen above ran one poll; let it land.
+      await Future<void>.delayed(Duration.zero);
+
+      final walked = engine.snapshotCalls;
+      final first = repo.lastState;
+      final second = repo.lastState;
+
+      expect(
+        engine.snapshotCalls,
+        walked,
+        reason: 'a cached read must not cross the FFI boundary at all',
+      );
+      expect(
+        identical(first, second),
+        isTrue,
+        reason: 'the same projection object, not an equal rebuild of it',
+      );
+    });
+
+    test('equals what a fresh engine walk projects', () async {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      // The whole substitution rests on this: `_project` is pure over the
+      // snapshot, so the cache is not a staler answer, it is the SAME answer
+      // arrived at without paying for it again.
+      expect(repo.lastState, repo.state);
+    });
+
+    test('follows the poll', () async {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.lastState.transport.masterPositionFrames, 24000);
+
+      engine.nextSnapshot = _laneSnapshot;
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        repo.lastState.transport.masterPositionFrames,
+        0,
+        reason: 'the cache is refreshed by the poll, not frozen at first read',
+      );
+    });
+
+    test('falls back to a real walk once polling has STOPPED', () async {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.lastState.transport.masterPositionFrames, 24000);
+
+      // Polling is wired to onListen/onCancel, so the last listener leaving
+      // freezes the cache. "Nothing has ever polled" and "nothing is polling
+      // any more" are the same situation from a reader's point of view, and
+      // serving a frozen projection to either is how a caller ends up acting
+      // on a rig that has moved on.
+      await sub.cancel();
+      engine.nextSnapshot = _laneSnapshot;
+      final walked = engine.snapshotCalls;
+
+      expect(repo.lastState.transport.masterPositionFrames, 0);
+      expect(
+        engine.snapshotCalls,
+        greaterThan(walked),
+        reason: 'a frozen cache was served after the poll refreshing it died',
+      );
+    });
+
+    test('falls back to a real walk before the first poll lands', () {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+
+      // Nobody has listened, so nothing has polled and there is no cache. A
+      // reader must still see the engine rather than an invented empty rig.
+      expect(engine.snapshotCalls, 0);
+      expect(repo.lastState.transport.isRunning, isTrue);
+      expect(engine.snapshotCalls, greaterThan(0));
+    });
+  });
 
   group('cache telemetry gate', () {
     // The shared snapshot above carries no lanes, and this gate is entirely
@@ -278,7 +380,7 @@ void main() {
       expect(state.track.volume, closeTo(0.8, 1e-6));
       expect(state.track.muted, isFalse);
       expect(state.track.lengthFrames, 96000);
-      expect(state.track.playheadFrames, 24000);
+      expect(state.track.peak, closeTo(0.5, 1e-6));
       expect(state.track.canUndo, isTrue);
       expect(state.track.hasContent, isTrue);
       expect(state.track.inputMask, 0x2);
@@ -288,6 +390,27 @@ void main() {
       expect(state.status.inputChannels, 2);
       expect(state.status.outputChannels, 4);
       expect(state.status.isConnected, isTrue);
+    });
+
+    test('the master playhead moving does not change any track', () {
+      // The transport position belongs to the TRANSPORT. Copying it onto every
+      // `Track` (as `playheadFrames` once did) made all eight tracks compare
+      // unequal on every poll tick of a running loop, regardless of their own
+      // levels — which silently put every track tile back on the rebuild path
+      // #646/#654/#832 built to keep it off.
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      final before = repo.state;
+
+      engine.nextSnapshot = _playingAt(48000);
+      final after = repo.state;
+
+      expect(after.transport.masterPositionFrames, 48000);
+      expect(
+        after.tracks,
+        before.tracks,
+        reason: 'a track carries a copy of the master transport position',
+      );
     });
 
     test('projects multiple tracks with their channel indices', () {
@@ -637,6 +760,32 @@ void main() {
   });
 
   group('looperState stream', () {
+    test(
+      'a peak-only poll reaches subscribers without changing steady facts',
+      () async {
+        engine.nextSnapshot = _playingAt(24000, peak: 0.1);
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        final emitted = <LooperState>[];
+        final sub = repo.looperState.listen(emitted.add);
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+
+        engine.nextSnapshot = _playingAt(24000, peak: 0.9);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+
+        // The unchanged following poll is still suppressed.
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(emitted, hasLength(2));
+        expect(emitted.map((state) => state.track.peak), [0.1, 0.9]);
+        expect(emitted.last.transport, emitted.first.transport);
+        expect(emitted.last.track.steadyProps, emitted.first.track.steadyProps);
+      },
+    );
+
     test('emits a projected state on each tick, distinctly', () async {
       final repo = buildRepo();
       final emitted = <LooperState>[];

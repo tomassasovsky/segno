@@ -32,7 +32,23 @@ class TrackColumn extends StatelessWidget {
     super.key,
   });
 
-  /// The track this column renders.
+  /// The track this column renders — every fact drawn here comes from it
+  /// except the meter's level.
+  ///
+  /// **The level comes from the ambient [LooperBloc], for `track.channel`.**
+  /// That is the rebuild split (#646/#654/#832): the [TrackPeakMeter] leaf
+  /// subscribes to the one moving number itself, so this instance may carry a
+  /// tick-stale `peak` and the column still draws correctly — and so a meter
+  /// tick redraws a bar instead of this whole tile.
+  ///
+  /// The cost of that is a real constraint on callers: a column is a LIVE
+  /// view, not a function of its argument. Passing a [Track] that is not the
+  /// bloc's own track for that channel — a synthesized preview, a session or
+  /// preset snapshot, a frozen "before" state in an A/B — draws that track's
+  /// steady facts under the rig's current level, or under no level at all for
+  /// a channel the rig does not have. Such a surface needs its own meter
+  /// widget, not this one. Enforced by an assert in [build], so the mistake
+  /// fails loudly in debug instead of rendering perfectly and lying.
   final Track track;
 
   /// The FX stage the footswitch bound to this cell attaches to, in FX mode.
@@ -87,6 +103,27 @@ class TrackColumn extends StatelessWidget {
     final looper = theme.extension<LooperTheme>()!;
     final surface = context.surface;
     final bloc = context.read<LooperBloc>();
+    // Debug-only enforcement of the live-view rule on [track]. The meter reads
+    // its level out of THIS bloc by channel, so handing a column a track the
+    // bloc does not hold draws one track's facts under another's level — a
+    // mis-wiring that renders perfectly and is invisible in a screenshot.
+    //
+    // Compared as `SteadyTrack`, not by `listEquals` on the prop lists: the
+    // comparison has to be Equatable-deep, because `_project` builds a fresh
+    // `lanes` literal every poll and a shallow list compare would call two
+    // value-equal projections one tick apart different — rejecting the
+    // tick-stale instance this widget is DESIGNED to be handed. Steady, so a
+    // stale `peak` stays legal, which is the whole point of the split.
+    assert(
+      () {
+        final live = bloc.state.tracks.where((t) => t.channel == track.channel);
+        if (live.length != 1) return false;
+        return SteadyTrack(live.first) == SteadyTrack(track);
+      }(),
+      'TrackColumn was given a Track the ambient LooperBloc does not hold '
+      '(channel ${track.channel}). A column is a live view of that bloc, not '
+      'a function of its argument — see TrackColumn.track.',
+    );
 
     // The ring is always 2px; selection changes it from the card stroke to
     // white. The meter bar color is one table lookup on the track's meter state
@@ -275,8 +312,14 @@ class TrackColumn extends StatelessWidget {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: PeakMeterBar(
-                        peak: track.peak,
+                      // The one part of the column a level tick redraws: the
+                      // bar subscribes to this channel's peak itself, so the
+                      // ~250 lines around it stay off the meter's rebuild path
+                      // (#646/#654/#832).
+                      child: TrackPeakMeter(
+                        // Live, by channel: [track]'s own `peak` is
+                        // deliberately not read here — see [track]'s doc.
+                        channel: track.channel,
                         color: barColor,
                         hasContent: track.hasContent,
                         // A stopped track reports no live peak; hold the last

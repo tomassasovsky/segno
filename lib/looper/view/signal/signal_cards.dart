@@ -599,7 +599,7 @@ String chainSummary(
 /// those chains.
 ///
 /// The loop and track faces cannot `context.select` the roster: a [Track]
-/// carries live meters, so `state.tracks` changes at the meter rate, and a
+/// carries a live `peak`, so `state.tracks` changes at the meter rate, and a
 /// `List` compares by identity anyway, so a projected list would never test
 /// equal either. Both faces drive a `buildWhen` off this instead — and what
 /// they draw is the shape plus each chain's SUMMARY LINE — the names in it and

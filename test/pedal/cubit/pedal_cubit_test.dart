@@ -1,403 +1,292 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_key_value_store.dart';
-import '../helpers/fake_pedal_transport.dart';
 
-/// The pedal LINK tests: output binding, hotplug reconciliation, and the
-/// picker state. The pedal's BEHAVIOR (footswitch decode, LED frames) is
-/// `ControlCubit`'s and is covered by test/control/control_cubit_test.dart.
+/// The pedal LINK tests: the board's status and firmware version, mirrored
+/// for the settings UI. The pedal's BEHAVIOR (footswitch decode, LED frames)
+/// is `ControlCubit`'s and is covered by test/control/control_cubit_test.dart.
 void main() {
   group('PedalCubit', () {
-    late FakePedalTransport transport;
+    late FakePedalLink link;
+    late PedalRepository pedal;
+
+    setUp(() {
+      link = FakePedalLink();
+      pedal = PedalRepository(link);
+    });
+
+    test('starts disconnected with no firmware version', () async {
+      final cubit = PedalCubit(pedal: pedal);
+      expect(cubit.state, const PedalState());
+      await cubit.close();
+    });
+
+    test('mirrors the board hello as connected + firmware version', () async {
+      final cubit = PedalCubit(pedal: pedal);
+      link.hello(firmwareMinor: 2);
+      await pumpEventQueue();
+      expect(cubit.state.status, PedalLinkStatus.connected);
+      expect(cubit.state.firmwareVersion, '1.2');
+      await cubit.close();
+    });
+
+    test('seeds from a repository that is already connected', () async {
+      link.hello();
+      await pumpEventQueue();
+      final cubit = PedalCubit(pedal: pedal);
+      expect(cubit.state.status, PedalLinkStatus.connected);
+      expect(cubit.state.firmwareVersion, '1.0');
+      await cubit.close();
+    });
+
+    test('close sends a goodbye frame and releases the link', () async {
+      final cubit = PedalCubit(pedal: pedal);
+      link.hello();
+      await pumpEventQueue();
+      await cubit.close();
+      expect(link.lastFrame?.isGoodbye, isTrue);
+      expect(link.disposed, isTrue);
+    });
+  });
+
+  group('PedalCubit CTRL calibration', () {
+    late FakePedalLink link;
     late PedalRepository pedal;
     late SettingsRepository settings;
 
     setUp(() {
-      transport = FakePedalTransport(
-        outputs: const [MidiDevice(id: 'out', name: 'Pedal')],
-      );
-      pedal = PedalRepository(transport);
+      link = FakePedalLink();
+      pedal = PedalRepository(link);
       settings = SettingsRepository(store: FakeKeyValueStore());
+      link.hello();
     });
 
-    PedalCubit buildCubit() => PedalCubit(
-      pedal: pedal,
-      settings: settings,
-      pollInterval: Duration.zero, // tests drive reconnect() directly
+    CtrlMessage raw(int value) => CtrlMessage(
+      jack: PedalCtrlJack.ctrl1,
+      kind: PedalCtrlKind.expression,
+      value: value,
     );
 
-    test('reconnect re-binds the saved output across replugs', () async {
-      await settings.savePedalOutputDevice(id: 'pedal', name: 'Pedal');
-      transport.outputs = const []; // saved device absent at launch
-      final cubit = buildCubit();
-      await cubit.load();
-      expect(cubit.state.boundOutputId, isNull);
+    test('a session collects the ends the pedal reaches, and Done keeps and '
+        'persists them', () async {
+      final cubit = PedalCubit(pedal: pedal, settings: settings);
+      await pumpEventQueue();
+      cubit.beginCtrlCalibration(PedalCtrlJack.ctrl1);
+      expect(cubit.state.calibrating, PedalCtrlJack.ctrl1);
+      expect(cubit.state.calibrationSeen, isNull);
 
-      // Appears -> reconnect binds it.
-      transport.outputs = const [MidiDevice(id: 'pedal', name: 'Pedal')];
-      cubit.reconnect();
-      expect(cubit.state.boundOutputId, 'pedal');
+      link
+        ..emit(raw(120))
+        ..emit(raw(24))
+        ..emit(raw(255))
+        ..emit(raw(100));
+      await pumpEventQueue();
+      expect(
+        cubit.state.calibrationSeen,
+        const PedalCtrlCalibration(min: 24, max: 255),
+      );
 
-      // Vanishes -> reconnect drops the stale handle.
-      transport.outputs = const [];
-      cubit.reconnect();
-      expect(cubit.state.boundOutputId, isNull);
+      await cubit.finishCtrlCalibration();
+      expect(cubit.state.calibrating, isNull);
+      expect(cubit.state.calibrated, {PedalCtrlJack.ctrl1});
+      expect(
+        pedal.ctrlCalibration(PedalCtrlJack.ctrl1),
+        const PedalCtrlCalibration(min: 24, max: 255),
+      );
+      expect(await settings.loadCtrlCalibration(0), (24, 255));
 
-      // Reappears -> reconnect re-binds without a relaunch.
-      transport.outputs = const [MidiDevice(id: 'pedal', name: 'Pedal')];
-      cubit.reconnect();
-      expect(cubit.state.boundOutputId, 'pedal');
+      // From here readings arrive calibrated.
+      link.emit(raw(24));
+      await pumpEventQueue();
+      const tip = PedalCtrlInput(
+        PedalCtrlJack.ctrl1,
+        PedalCtrlContact.tip,
+      );
+      expect(cubit.state.ctrl[tip]?.value, 0);
+      expect(cubit.state.ctrl[tip]?.raw, 24);
       await cubit.close();
     });
 
-    test('reconnect leaves an unpinned (None) output alone', () async {
-      final cubit = buildCubit();
-      await cubit.load(); // nothing saved -> no pinned device
-      transport.outputs = const [MidiDevice(id: 'pedal', name: 'Pedal')];
-      cubit.reconnect();
-      expect(cubit.state.boundOutputId, isNull);
+    test('Done on a pedal that was not swept changes nothing', () async {
+      final cubit = PedalCubit(pedal: pedal, settings: settings)
+        ..beginCtrlCalibration(PedalCtrlJack.ctrl1);
+      link
+        ..emit(raw(100))
+        ..emit(raw(105));
+      await pumpEventQueue();
+
+      await cubit.finishCtrlCalibration();
+      expect(cubit.state.calibrating, isNull);
+      expect(cubit.state.calibrated, isEmpty);
+      expect(pedal.ctrlCalibration(PedalCtrlJack.ctrl1), isNull);
+      expect(await settings.loadCtrlCalibration(0), isNull);
       await cubit.close();
     });
 
-    test('reconnect reflects the output set into state', () async {
-      transport.outputs = const [];
-      final cubit = buildCubit();
-      await cubit.load();
-      expect(cubit.state.availableOutputs, isEmpty);
-
-      // Set changes -> the picker reads the new outputs off state.
-      transport.outputs = const [MidiDevice(id: 'pedal', name: 'Pedal')];
-      cubit.reconnect();
-      // The repository maps the transport MidiDevice to a domain PedalOutput.
-      expect(cubit.state.availableOutputs, const [
-        PedalOutput(id: 'pedal', name: 'Pedal'),
-      ]);
-
-      // Vanishes -> state reflects the empty set again.
-      transport.outputs = const [];
-      cubit.reconnect();
-      expect(cubit.state.availableOutputs, isEmpty);
+    test('Cancel abandons the session', () async {
+      final cubit = PedalCubit(pedal: pedal, settings: settings)
+        ..beginCtrlCalibration(PedalCtrlJack.ctrl2);
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl2,
+          kind: PedalCtrlKind.expression,
+          value: 0,
+        ),
+      );
+      await pumpEventQueue();
+      cubit.cancelCtrlCalibration();
+      expect(cubit.state.calibrating, isNull);
+      expect(cubit.state.calibrationSeen, isNull);
+      expect(pedal.ctrlCalibration(PedalCtrlJack.ctrl2), isNull);
       await cubit.close();
     });
 
     test(
-      'selectOutput binds + persists; selectNone unbinds + clears',
+      'the other jack, the ring, and a switch do not feed the session',
       () async {
-        final cubit = buildCubit();
-        await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
+        final cubit = PedalCubit(pedal: pedal, settings: settings)
+          ..beginCtrlCalibration(PedalCtrlJack.ctrl1);
+        link
+          ..emit(
+            const CtrlMessage(
+              jack: PedalCtrlJack.ctrl2,
+              kind: PedalCtrlKind.expression,
+              value: 0,
+            ),
+          )
+          ..emit(
+            const CtrlMessage(
+              jack: PedalCtrlJack.ctrl1,
+              contact: PedalCtrlContact.ring,
+              kind: PedalCtrlKind.switchPedal,
+              value: 255,
+            ),
+          )
+          ..emit(
+            const CtrlMessage(
+              jack: PedalCtrlJack.ctrl1,
+              kind: PedalCtrlKind.switchPedal,
+              value: 255,
+            ),
+          );
         await pumpEventQueue();
-        expect(cubit.state.bindStatus, PedalBindStatus.bound);
-        expect(cubit.state.boundOutputId, 'out');
-        expect((await settings.loadPedalOutputDevice())?.id, 'out');
-
-        await cubit.selectNone();
-        await pumpEventQueue();
-        expect(cubit.state.boundOutputId, isNull);
-        expect(await settings.loadPedalOutputDevice(), isNull);
+        expect(cubit.state.calibrationSeen, isNull);
+        expect(cubit.state.ctrl, hasLength(3));
         await cubit.close();
       },
     );
 
-    test('close sends a goodbye frame to the bound pedal', () async {
-      final cubit = buildCubit();
-      await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
-      transport.sent.clear();
-
-      await cubit.close();
-
-      final frame = PedalCodec.decodeFrame(transport.sent.last);
-      expect(frame?.isGoodbye, isTrue);
-    });
-
-    group('console auto-detect', () {
-      const pedalOut = MidiDevice(
-        id: 'out-p',
-        name: 'Segno Loopstation MIDI 1',
-      );
-      const otherOut = MidiDevice(id: 'out-x', name: 'Launchpad Mini');
-      const productNames = ['Segno Loopstation'];
-
-      PedalCubit buildAuto() => PedalCubit(
-        pedal: pedal,
-        settings: settings,
-        pollInterval: Duration.zero,
-        autoBindProductNames: productNames,
-      );
-
-      test('binds the matching output with nothing persisted', () async {
-        transport.outputs = const [otherOut, pedalOut];
-        final cubit = buildAuto();
-        await cubit.load();
-
-        expect(cubit.state.boundOutputId, 'out-p');
-        await cubit.close();
-      });
-
-      test('binds nothing when no output matches', () async {
-        transport.outputs = const [otherOut];
-        final cubit = buildAuto();
-        await cubit.load();
-
-        expect(cubit.state.boundOutputId, isNull);
-        await cubit.close();
-      });
-
-      test('never binds when auto-detect is off (desktop)', () async {
-        transport.outputs = const [pedalOut];
-        final cubit = buildCubit();
-        await cubit.load();
-
-        expect(cubit.state.boundOutputId, isNull);
-        await cubit.close();
-      });
-
-      test('binds the pedal when it appears after launch', () async {
-        transport.outputs = const [otherOut];
-        final cubit = buildAuto();
-        await cubit.load();
-        expect(cubit.state.boundOutputId, isNull);
-
-        transport.outputs = const [otherOut, pedalOut];
-        cubit.reconnect();
-
-        expect(cubit.state.boundOutputId, 'out-p');
-        await cubit.close();
-      });
-
-      test(
-        'a persisted device outranks auto-detect, even when absent',
-        () async {
-          await settings.savePedalOutputDevice(id: 'ghost', name: 'Ghost');
-          transport.outputs = const [pedalOut];
-          final cubit = buildAuto();
-          await cubit.load();
-
-          expect(cubit.state.boundOutputId, isNull);
-          await cubit.close();
-        },
-      );
-
-      test('a user pick outranks auto-detect and survives a vanish', () async {
-        transport.outputs = const [otherOut, pedalOut];
-        final cubit = buildAuto();
-        await cubit.load();
-
-        await cubit.selectOutput(
-          const PedalOutput(id: 'out-x', name: 'Launchpad Mini'),
-        );
-        transport.outputs = const [pedalOut]; // the picked device unplugs
-        cubit.reconnect();
-
-        // The pin stays on the user's device rather than jumping to the pedal.
-        expect(cubit.state.boundOutputId, isNull);
-        expect((await settings.loadPedalOutputDevice())?.id, 'out-x');
-        await cubit.close();
-      });
-
-      test(
-        're-resolves an auto-bound pin whose id changed on replug',
-        () async {
-          transport.outputs = const [pedalOut];
-          final cubit = buildAuto();
-          await cubit.load();
-          expect(cubit.state.boundOutputId, 'out-p');
-
-          // ALSA renumbers clients across a replug; a console has no picker to
-          // recover with, so the pin has to follow the name, not the id.
-          transport.outputs = const [
-            MidiDevice(
-              id: 'out-p-renumbered',
-              name: 'Segno Loopstation MIDI 1',
+    test(
+      'an empty jack drops its row and abandons a calibration on it',
+      () async {
+        final cubit = PedalCubit(pedal: pedal, settings: settings)
+          ..beginCtrlCalibration(PedalCtrlJack.ctrl1);
+        link
+          ..emit(raw(100))
+          ..emit(
+            const CtrlMessage(
+              jack: PedalCtrlJack.ctrl1,
+              contact: PedalCtrlContact.ring,
+              kind: PedalCtrlKind.switchPedal,
+              value: 255,
             ),
-          ];
-          cubit.reconnect();
+          );
+        await pumpEventQueue();
+        expect(cubit.state.ctrl, hasLength(2));
 
-          expect(cubit.state.boundOutputId, 'out-p-renumbered');
-          await cubit.close();
-        },
-      );
-
-      test('selecting None is not undone by the next poll', () async {
-        transport.outputs = const [pedalOut];
-        final cubit = buildAuto();
-        await cubit.load();
-        expect(cubit.state.boundOutputId, 'out-p');
-
-        await cubit.selectNone();
-        cubit.reconnect();
-
-        expect(cubit.state.boundOutputId, isNull);
-        await cubit.close();
-      });
-
-      test('an auto-bound pin is not persisted', () async {
-        transport.outputs = const [pedalOut];
-        final cubit = buildAuto();
-        await cubit.load();
-        expect(cubit.state.boundOutputId, 'out-p');
-
-        // Re-deriving every launch is what keeps a renumbered id from sticking.
-        expect(await settings.loadPedalOutputDevice(), isNull);
-        await cubit.close();
-      });
-    });
-
-    group('flashed firmware version (part B)', () {
-      PedalCubit buildWithFlashed(Future<int?> Function() reader) => PedalCubit(
-        pedal: pedal,
-        settings: settings,
-        pollInterval: Duration.zero,
-        flashedProtocolVersion: reader,
-      );
-
-      test('a flashed record outranks the manual setting', () async {
-        // The flasher wrote that pedal, so it knows what runs on it; the
-        // manual setting is a guess a firmware update silently invalidates.
-        await settings.savePedalFirmwareVersion(PedalCodec.protocolVersionV2);
-        final cubit = buildWithFlashed(
-          () async => PedalCodec.protocolVersionV3,
+        link.emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.none,
+            value: 0,
+          ),
         );
-
-        await cubit.load();
-
-        expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
-        expect(pedal.firmwareProtocolVersion, PedalCodec.protocolVersionV3);
+        await pumpEventQueue();
+        const tip = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.tip);
+        const ring = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.ring);
+        expect(cubit.state.ctrl.containsKey(tip), isFalse);
+        expect(cubit.state.ctrl.containsKey(ring), isFalse);
+        expect(cubit.state.calibrating, isNull);
+        expect(cubit.state.calibrationSeen, isNull);
         await cubit.close();
-      });
+      },
+    );
 
-      test('falls back to the manual setting with no record', () async {
-        await settings.savePedalFirmwareVersion(PedalCodec.protocolVersionV3);
-        final cubit = buildWithFlashed(() async => null);
-
-        await cubit.load();
-
-        expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
-        await cubit.close();
-      });
-
-      test('no record and no setting keeps the unknown => v2 floor', () async {
-        final cubit = buildWithFlashed(() async => null);
-
-        await cubit.load();
-
-        expect(cubit.state.firmwareVersion, isNull);
-        expect(pedal.targetProtocolVersion, PedalCodec.protocolVersionV2);
-        await cubit.close();
-      });
-
-      test('desktop (no reader) is unaffected', () async {
-        await settings.savePedalFirmwareVersion(PedalCodec.protocolVersionV3);
-        final cubit = buildCubit();
-
-        await cubit.load();
-
-        expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
-        await cubit.close();
-      });
+    test('an expression pedal on the tip drops a footswitch-B row', () async {
+      final cubit = PedalCubit(pedal: pedal, settings: settings);
+      link
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            contact: PedalCtrlContact.ring,
+            kind: PedalCtrlKind.switchPedal,
+            value: 255,
+          ),
+        )
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl2,
+            contact: PedalCtrlContact.ring,
+            kind: PedalCtrlKind.switchPedal,
+            value: 255,
+          ),
+        )
+        ..emit(raw(100));
+      await pumpEventQueue();
+      const tip = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.tip);
+      const ring = PedalCtrlInput(PedalCtrlJack.ctrl1, PedalCtrlContact.ring);
+      const other = PedalCtrlInput(PedalCtrlJack.ctrl2, PedalCtrlContact.ring);
+      expect(cubit.state.ctrl.keys, unorderedEquals([tip, other]));
+      expect(cubit.state.ctrl.containsKey(ring), isFalse);
+      await cubit.close();
     });
 
-    group('firmware version (R6 pre-#331 gate)', () {
-      test(
-        'load applies the persisted version to the repository before frames '
-        'flow, and reflects it in state',
-        () async {
-          await settings.savePedalFirmwareVersion(
-            PedalCodec.protocolVersionV3,
-          );
-          final cubit = buildCubit();
-          await cubit.load();
-          expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
-          expect(
-            pedal.targetProtocolVersion,
-            PedalCodec.protocolVersionV3,
-          );
-          await cubit.close();
-        },
+    test('a stored calibration is applied at start', () async {
+      await settings.saveCtrlCalibration(1, min: 30, max: 230);
+      final cubit = PedalCubit(pedal: pedal, settings: settings);
+      await pumpEventQueue();
+      expect(cubit.state.calibrated, {PedalCtrlJack.ctrl2});
+      expect(
+        pedal.ctrlCalibration(PedalCtrlJack.ctrl2),
+        const PedalCtrlCalibration(min: 30, max: 230),
       );
+      await cubit.close();
+    });
 
-      test(
-        'load with nothing persisted keeps the unknown => v2 floor',
-        () async {
-          final cubit = buildCubit();
-          await cubit.load();
-          expect(cubit.state.firmwareVersion, isNull);
-          expect(pedal.targetProtocolVersion, PedalCodec.protocolVersionV2);
-          await cubit.close();
-        },
-      );
+    test('a corrupt stored calibration is ignored', () async {
+      await settings.saveCtrlCalibration(0, min: 200, max: 100);
+      final cubit = PedalCubit(pedal: pedal, settings: settings);
+      await pumpEventQueue();
+      expect(cubit.state.calibrated, isEmpty);
+      expect(pedal.ctrlCalibration(PedalCtrlJack.ctrl1), isNull);
+      await cubit.close();
+    });
 
-      test(
-        'selectFirmwareVersion persists, applies, and drives what pushState '
-        'encodes',
-        () async {
-          final cubit = buildCubit();
-          await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV3);
+    test('Reset forgets the calibration everywhere', () async {
+      await settings.saveCtrlCalibration(0, min: 24, max: 255);
+      final cubit = PedalCubit(pedal: pedal, settings: settings);
+      await pumpEventQueue();
+      await cubit.resetCtrlCalibration(PedalCtrlJack.ctrl1);
+      expect(cubit.state.calibrated, isEmpty);
+      expect(pedal.ctrlCalibration(PedalCtrlJack.ctrl1), isNull);
+      expect(await settings.loadCtrlCalibration(0), isNull);
+      await cubit.close();
+    });
 
-          expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
-          expect(
-            await settings.loadPedalFirmwareVersion(),
-            PedalCodec.protocolVersionV3,
-          );
-
-          // The knob is live: a frame pushed now goes out at v3.
-          await cubit.selectOutput(const PedalOutput(id: 'out', name: 'P'));
-          transport.sent.clear();
-          pedal.pushState(PedalStateFrame.blank());
-          expect(transport.sent.last[2], PedalCodec.protocolVersionV3);
-          await cubit.close();
-        },
-      );
-
-      test(
-        'swapping in a DIFFERENT pedal drops the version back to unknown',
-        () async {
-          final cubit = buildCubit();
-          await cubit.selectOutput(const PedalOutput(id: 'out', name: 'P'));
-          await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV2);
-
-          // A version learned for one pedal says nothing about the next one:
-          // carried over it would encode a v3 pedal's frames at v2 and tell
-          // the user to flash firmware it already runs.
-          await cubit.selectOutput(const PedalOutput(id: 'out2', name: 'P2'));
-
-          expect(cubit.state.firmwareVersion, isNull);
-          expect(await settings.loadPedalFirmwareVersion(), isNull);
-          expect(pedal.targetProtocolVersion, PedalCodec.protocolVersionV2);
-          await cubit.close();
-        },
-      );
-
-      test(
-        're-selecting the SAME pedal keeps the version the user set',
-        () async {
-          final cubit = buildCubit();
-          await cubit.selectOutput(const PedalOutput(id: 'out', name: 'P'));
-          await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV3);
-
-          await cubit.selectOutput(const PedalOutput(id: 'out', name: 'P'));
-
-          expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
-          await cubit.close();
-        },
-      );
-
-      test(
-        'selectFirmwareVersion(null) clears back to unknown => v2',
-        () async {
-          final cubit = buildCubit();
-          await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV3);
-          await cubit.selectFirmwareVersion(null);
-
-          expect(cubit.state.firmwareVersion, isNull);
-          expect(await settings.loadPedalFirmwareVersion(), isNull);
-          expect(pedal.targetProtocolVersion, PedalCodec.protocolVersionV2);
-          await cubit.close();
-        },
-      );
+    test('without settings a calibration lasts the session', () async {
+      final cubit = PedalCubit(pedal: pedal)
+        ..beginCtrlCalibration(PedalCtrlJack.ctrl1);
+      link
+        ..emit(raw(0))
+        ..emit(raw(255));
+      await pumpEventQueue();
+      await cubit.finishCtrlCalibration();
+      expect(cubit.state.calibrated, {PedalCtrlJack.ctrl1});
+      await cubit.close();
     });
   });
 }

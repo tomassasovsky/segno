@@ -8,18 +8,16 @@ import 'package:segno/looper/view/tracks/tracks_face.dart';
 /// defence against rebuilding at the meter rate, and a widget test that seeds
 /// one state and never emits a second never runs them at all.
 void main() {
-  /// Two tracks that differ ONLY in their live meters — the change that
+  /// Two tracks that differ ONLY in their live meter — the change that
   /// arrives many times a second and must NOT rebuild a face.
   const quiet = Track(lanes: [Lane(inputChannel: 0)]);
   const loud = Track(
-    rms: 0.8,
     peak: 0.9,
-    playheadFrames: 4096,
-    lanes: [Lane(inputChannel: 0, rms: 0.8, peak: 0.9)],
+    lanes: [Lane(inputChannel: 0)],
   );
 
   group('sameRouting', () {
-    test('ignores meters, playheads and lane levels', () {
+    test('ignores the live meter', () {
       expect(sameRouting(const [quiet], const [loud]), isTrue);
     });
 

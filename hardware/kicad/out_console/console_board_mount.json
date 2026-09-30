@@ -1,6 +1,6 @@
 {
   "source": "console_board_pcb.py",
-  "board": "segno console board v2 (#747)",
+  "board": "segno console board v3 (#747, #987)",
   "outline_mm": [
     99.5,
     99.5

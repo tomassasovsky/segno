@@ -7,293 +7,247 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'pedal_state.dart';
 
-/// The pedal LINK feature: binds the MIDI output device, keeps it bound
-/// across hotplugs, and surfaces the picker state ([PedalState]) for the
-/// settings UI. Nothing else.
+/// The pedal LINK feature: whether the console board is talking, what
+/// firmware it announced, and what its CTRL jacks are reporting — plus the
+/// calibration of an expression pedal on one, which is the one thing about a
+/// CTRL jack a user decides.
 ///
 /// The pedal's BEHAVIOR — decoding footswitch events into intents and
 /// pushing projected LED frames — is `ControlCubit`'s job: both cubits sit
 /// on the shared [PedalRepository] (events in / frames out for control,
-/// binding for this one) and know nothing about each other.
+/// status for this one) and know nothing about each other.
 class PedalCubit extends Cubit<PedalState> {
   /// Creates a [PedalCubit].
   ///
-  /// [autoBindProductNames] enables console auto-detect for the LED output:
-  /// with no persisted device the cubit adopts the output whose name matches
-  /// any of those USB product strings. `null` (the default, and every desktop
-  /// build) leaves binding entirely manual. Mirrors `MidiDeviceRepository`'s
-  /// input-side flag — the pedal is one device on two links, so both have to
-  /// resolve.
-  ///
-  /// [flashedProtocolVersion] reads what wire version the firmware currently on
-  /// the pedal speaks, when something on this platform knows (the console
-  /// records it when it flashes). It outranks the manual setting, and `null`
-  /// (every desktop build) leaves the manual setting in charge.
-  PedalCubit({
-    required PedalRepository pedal,
-    required SettingsRepository settings,
-    Duration pollInterval = const Duration(seconds: 2),
-    List<String>? autoBindProductNames,
-    Future<int?> Function()? flashedProtocolVersion,
-  }) : _pedal = pedal,
-       _settings = settings,
-       _autoBindProductNames = autoBindProductNames,
-       _flashedProtocolVersion = flashedProtocolVersion,
-       super(const PedalState()) {
-    _statusSub = _pedal.statusChanges.listen(_onBindStatus);
-    // Seed the output set so the settings picker has it before the first
-    // poll.
-    _syncOutputs();
-    // Hotplug auto-reconnect for the bound output (mirrors MidiSetupCubit).
-    // Pass Duration.zero to disable the timer (tests drive [reconnect]).
-    if (pollInterval > Duration.zero) {
-      _pollTimer = Timer.periodic(pollInterval, (_) => reconnect());
-    }
+  /// [settings] keeps each jack's calibration across restarts; without it
+  /// (tests, a desktop with no board) calibrations last the session.
+  PedalCubit({required PedalRepository pedal, SettingsRepository? settings})
+    : _pedal = pedal,
+      _settings = settings,
+      super(
+        PedalState(
+          status: pedal.status,
+          firmwareVersion: pedal.firmwareVersion,
+        ),
+      ) {
+    _statusSub = _pedal.statusChanges.listen(_onStatus);
+    _eventsSub = _pedal.events.listen(_onEvent);
+    _initialLoad = _loadCalibrations();
   }
 
   final PedalRepository _pedal;
-  final SettingsRepository _settings;
-  final List<String>? _autoBindProductNames;
-  final Future<int?> Function()? _flashedProtocolVersion;
+  final SettingsRepository? _settings;
+  late final StreamSubscription<PedalLinkStatus> _statusSub;
+  late final StreamSubscription<PedalEvent> _eventsSub;
+  late final Future<void> _initialLoad;
+  Future<void>? _pendingWrite;
+  bool _closing = false;
 
-  late final StreamSubscription<PedalBindStatus> _statusSub;
+  bool get _inactive => _closing || isClosed;
 
-  // Hotplug reconnect for the bound output: the pinned device id and the poll
-  // timer that re-binds it when it (re)appears. The enumerated set + bound id
-  // live in PedalState (see _syncOutputs); Equatable dedups no-op refreshes.
-  Timer? _pollTimer;
-  String? _savedOutputId;
-
-  /// Whether [_savedOutputId] came from auto-detect rather than from the
-  /// persisted device or a user pick. Only an auto-bound pin is re-resolved.
-  bool _autoBound = false;
-
-  /// Set once the user has explicitly chosen "None", which auto-detect must not
-  /// undo for the rest of the session.
-  bool _autoBindSuppressed = false;
-
-  Future<void>? _loadFuture;
-
-  /// Loads the persisted pedal output and auto-binds it, and applies the
-  /// persisted manual firmware version to the repository's target-version
-  /// knob (R6). (The boot-default MODE and the undo long-press threshold are
-  /// control state, restored by `ControlCubit.load`.)
-  Future<void> load() => _loadFuture ??= _restore();
-
-  Future<void> _restore() async {
-    // Both reads are independent platform-channel round trips — start them
-    // together so they overlap instead of stacking on the boot path.
-    final firmwareVersionFuture = _settings.loadPedalFirmwareVersion();
-    final savedFuture = _settings.loadPedalOutputDevice();
-
-    // The firmware version gates what pushState encodes, so apply it before
-    // any bind can start streaming frames. Unset (null) keeps the
-    // repository's unknown ⇒ v2 floor.
-    //
-    // What the console actually FLASHED outranks the manual setting: the
-    // flasher wrote that pedal, so it knows what runs on it, while the manual
-    // setting is a human's guess that a firmware update silently invalidates.
-    // Falling back the other way would leave a freshly-flashed console pinned
-    // to whatever someone once picked.
-    final flashed = await _flashedProtocolVersion?.call();
-    _applyFirmwareVersion(flashed ?? await firmwareVersionFuture);
-
-    final saved = await savedFuture;
-    if (saved == null) {
-      // Nothing persisted: let auto-detect adopt the pedal and bind it, reusing
-      // [reconnect]'s reconcile rather than repeating the bind here.
-      if (_autoBindProductNames != null) reconnect();
-      return;
+  Future<void> _loadCalibrations() async {
+    final settings = _settings;
+    if (settings == null) return;
+    final calibrated = <PedalCtrlJack>{};
+    var failed = false;
+    for (final jack in PedalCtrlJack.values) {
+      if (_inactive) return;
+      (int, int)? stored;
+      try {
+        stored = await settings.loadCtrlCalibration(jack.index);
+      } on Object {
+        failed = true;
+        continue;
+      }
+      if (_inactive) return;
+      if (stored == null) continue;
+      final (min, max) = stored;
+      if (min < 0 || max > 255 || min > max) continue;
+      _pedal.setCtrlCalibration(
+        jack,
+        PedalCtrlCalibration(min: min, max: max),
+      );
+      calibrated.add(jack);
     }
-    // Pin the saved output so the poll can reconnect it; bind now if present,
-    // otherwise the poll binds it as soon as it appears.
-    _savedOutputId = saved.id;
-    if (_pedal.availableOutputs().any((d) => d.id == saved.id)) {
-      _pedal.bind(saved.id);
-    }
-    _syncOutputs();
-  }
-
-  /// Folds the host's enumerated MIDI outputs and the bound destination into
-  /// [PedalState], so the settings picker reads them from state rather than
-  /// via read-through accessors. Equatable dedups when nothing changed.
-  void _syncOutputs() {
-    if (isClosed) return;
+    if (_inactive) return;
     emit(
       state.copyWith(
-        availableOutputs: _pedal.availableOutputs(),
-        boundOutputId: _pedal.boundOutputId,
-        firmwareUpdateAvailable: _firmwareUpdateAvailable,
+        calibrated: {...state.calibrated, ...calibrated},
+        calibrationError: () => failed ? PedalCalibrationError.load : null,
       ),
     );
   }
 
-  /// Whether a REAL pedal is bound and the codec is downgrading what segno
-  /// sends it (flow err-4). Reads the repository's own resolved wire version
-  /// rather than re-deriving the floor, so the banner follows whatever
-  /// decides the version — the manual setting today, #331's identity reply
-  /// later. The on-screen pedal is excluded: there is no firmware behind it
-  /// to flash, so "update available" would be a lie even while it rehearses
-  /// a pinned downgrade.
-  bool get _firmwareUpdateAvailable =>
-      _pedal.boundOutputId != null &&
-      _pedal.boundOutputId != kSimulatorOutputId &&
-      _pedal.targetProtocolVersion < PedalCodec.protocolVersionMax;
-
-  /// Binds the pedal output to [device] and persists the choice.
-  ///
-  /// Switching to a DIFFERENT device drops the manual firmware version back
-  /// to unknown: the version is one setting, not one per device, and what one
-  /// pedal's firmware speaks says nothing about the next one's. Carrying it
-  /// over would encode at the old pedal's version — silently downgrading a
-  /// newer pedal's frames, and telling the user to flash firmware it already
-  /// runs — so the R6 v2 floor takes over until they say otherwise.
-  Future<void> selectOutput(PedalOutput device) async {
-    // Only when REPLACING one pedal with another — a first bind keeps a
-    // version the user set before picking the device.
-    final replacingDevice =
-        _savedOutputId != null && _savedOutputId != device.id;
-    _savedOutputId = device.id;
-    // An explicit pick takes the pin away from auto-detect.
-    _autoBound = false;
-    _pedal.bind(device.id);
-    if (replacingDevice && state.firmwareVersion != null) {
-      await selectFirmwareVersion(null);
-    }
-    _syncOutputs();
-    await _settings.savePedalOutputDevice(id: device.id, name: device.name);
+  void _onStatus(PedalLinkStatus status) {
+    if (_inactive) return;
+    emit(
+      state.copyWith(
+        status: status,
+        firmwareVersion: () => _pedal.firmwareVersion,
+      ),
+    );
   }
 
-  /// Unbinds the pedal output and clears the saved device.
-  ///
-  /// Drops the manual firmware version with it, for the same reason
-  /// [selectOutput] does when replacing a pedal: once no device is selected
-  /// there is nothing the version describes, and keeping it would let the
-  /// NEXT pedal bound inherit this one's protocol — `selectOutput` cannot
-  /// catch that, since by then it has no previous device to compare against.
-  Future<void> selectNone() async {
-    _savedOutputId = null;
-    // "None" outranks auto-detect, or the next poll would re-adopt the pedal
-    // the user just unbound. Session-scoped: the cleared device is what
-    // persists, so a relaunch starts auto-detect over.
-    _autoBound = false;
-    _autoBindSuppressed = true;
-    _pedal.unbind();
-    if (state.firmwareVersion != null) await selectFirmwareVersion(null);
-    _syncOutputs();
-    await _settings.clearPedalOutputDevice();
-    if (!isClosed) emit(state.copyWith(boundOutputId: null));
-  }
-
-  /// Records what wire-protocol version the pedal's firmware speaks
-  /// ([version] `null` = unknown), persists it, and applies it to the
-  /// repository's target-version knob.
-  ///
-  /// The manual pre-#331 version-discovery gate (R6): unknown keeps outbound
-  /// frames at the v2 safety floor — the repository never encodes v3 at a
-  /// pedal not known to speak it.
-  Future<void> selectFirmwareVersion(int? version) async {
-    _applyFirmwareVersion(version);
-    if (version == null) {
-      await _settings.clearPedalFirmwareVersion();
-    } else {
-      await _settings.savePedalFirmwareVersion(version);
-    }
-  }
-
-  /// The one seam that applies a firmware version: repository knob first
-  /// (it gates what the next pushed frame encodes), then the state mirror.
-  /// Every current and future source of a version — the persisted setting
-  /// in [load], the picker via [selectFirmwareVersion], #331's identity
-  /// reply later — must route through here so the pairing cannot diverge.
-  void _applyFirmwareVersion(int? version) {
-    _pedal.firmwareProtocolVersion = version;
-    if (!isClosed) {
+  /// Keeps the last reading from each CTRL control, so a pedal can be watched
+  /// while it is bound — and, while one is being calibrated, the raw ends it
+  /// has reached. Only CTRL events land here: the footswitches and the
+  /// encoder are the control cubit's.
+  void _onEvent(PedalEvent event) {
+    if (_inactive || event is! CtrlChanged) return;
+    if (event.kind == PedalCtrlKind.none) {
+      // The plug came out: every row of the jack goes, and a calibration in
+      // progress on it is abandoned — there is no pedal to sweep any more.
+      final gone = state.calibrating == event.jack;
       emit(
         state.copyWith(
-          firmwareVersion: version,
-          firmwareUpdateAvailable: _firmwareUpdateAvailable,
+          ctrl: {...state.ctrl}
+            ..removeWhere((input, _) => input.jack == event.jack),
+          calibrating: gone ? () => null : null,
+          calibrationSeen: gone ? () => null : null,
         ),
       );
+      return;
     }
+    final calibrating = state.calibrating;
+    var seen = state.calibrationSeen;
+    if (calibrating != null &&
+        event.jack == calibrating &&
+        event.contact == PedalCtrlContact.tip &&
+        event.kind == PedalCtrlKind.expression) {
+      seen = seen == null
+          ? PedalCtrlCalibration(min: event.raw, max: event.raw)
+          : seen.including(event.raw);
+    }
+    // A pot's ring is its supply, not a switch: a footswitch-B row on a jack
+    // that turns out to hold an expression pedal was the plug brushing past.
+    final ctrl = {...state.ctrl};
+    if (event.contact == PedalCtrlContact.tip &&
+        event.kind == PedalCtrlKind.expression) {
+      ctrl.remove(PedalCtrlInput(event.jack, PedalCtrlContact.ring));
+    }
+    ctrl[event.input] = PedalCtrlReading(
+      kind: event.kind,
+      value: event.value,
+      raw: event.raw,
+    );
+    emit(state.copyWith(ctrl: ctrl, calibrationSeen: () => seen));
   }
 
-  /// Hotplug poll: re-enumerates the host's MIDI outputs and reconciles the
-  /// pinned pedal output — (re)binds it when it appears (launch, replug, or a
-  /// retry after a failed open) and drops the stale handle when it vanishes,
-  /// so the LED-feedback link survives unplugs without relaunching segno.
-  /// Mirrors `MidiSetupCubit.refresh`; runs on the poll timer and is callable
-  /// directly.
-  void reconnect() {
-    if (isClosed) return;
-    final outputs = _pedal.availableOutputs();
-    _maybeAutoPin(outputs);
-    final saved = _savedOutputId;
-    if (saved != null) {
-      final present = outputs.any((d) => d.id == saved);
-      if (present && _pedal.boundOutputId != saved) {
-        _pedal.bind(saved); // (re)connect on appear / replug / retry
-      } else if (!present && _pedal.boundOutputId == saved) {
-        _pedal.unbind(); // pinned device vanished: drop the stale port handle
-      }
-    }
-    // Reflect the (possibly changed) output set + bound id into state; the
-    // settings picker re-renders only when one of them actually changed.
-    _syncOutputs();
-  }
-
-  /// Console auto-detect: pins the output whose name matches the configured USB
-  /// product string, so [reconnect]'s existing reconcile binds it on the same
-  /// tick. Sets the pin only — never persists it.
-  ///
-  /// Not persisted for the same reason the input side isn't: the per-OS id is
-  /// not stable across a replug, and a saved stale id would leave the pedal
-  /// permanently unbound on a console that has no picker to fix it with. An
-  /// auto-bound pin that has vanished is therefore re-resolved by name rather
-  /// than waited on.
-  ///
-  /// A persisted or user-picked device always wins.
-  void _maybeAutoPin(List<PedalOutput> outputs) {
-    final productNames = _autoBindProductNames;
-    if (productNames == null || _autoBindSuppressed) return;
-    final pinned = _savedOutputId;
-    if (pinned != null) {
-      if (!_autoBound) return;
-      if (outputs.any((o) => o.id == pinned)) return;
-    }
-
-    PedalOutput? match;
-    for (final output in outputs) {
-      if (midiDeviceNameMatches(output.name, productNames)) {
-        match = output;
-        break;
-      }
-    }
-    if (match == null || match.id == pinned) return;
-
-    _autoBound = true;
-    _savedOutputId = match.id;
-  }
-
-  void _onBindStatus(PedalBindStatus status) {
-    if (isClosed) return;
-    // A bind/unbind changes which device's wire version applies, so the
-    // update flag is re-derived with the status it rides in on.
+  /// Starts calibrating the expression pedal on [jack]: from here until
+  /// [finishCtrlCalibration] the lowest and highest raw readings it reaches
+  /// are collected as its ends. One jack at a time.
+  void beginCtrlCalibration(PedalCtrlJack jack) {
+    if (_inactive || state.calibrationBusy) return;
     emit(
       state.copyWith(
-        bindStatus: status,
-        firmwareUpdateAvailable: _firmwareUpdateAvailable,
+        calibrating: () => jack,
+        calibrationSeen: () => null,
+        calibrationError: () => null,
       ),
     );
+  }
+
+  /// Ends the calibration and keeps what was seen, if the pedal was swept
+  /// far enough to trust ([PedalCtrlCalibration.isUsable]); otherwise the
+  /// session simply ends and the jack stays as it was. Persisted.
+  Future<void> finishCtrlCalibration() async {
+    if (_inactive || state.calibrationBusy) return;
+    final jack = state.calibrating;
+    final seen = state.calibrationSeen;
+    if (jack == null) return;
+    if (seen == null || !seen.isUsable) {
+      cancelCtrlCalibration();
+      return;
+    }
+    emit(state.copyWith(calibrationBusy: true, calibrationError: () => null));
+    try {
+      // A late startup read must never replace the user's newer choice.
+      await _initialLoad;
+      if (_inactive) return;
+      _pendingWrite = _settings?.saveCtrlCalibration(
+        jack.index,
+        min: seen.min,
+        max: seen.max,
+      );
+      await _pendingWrite;
+      if (_inactive) return;
+      _pedal.setCtrlCalibration(jack, seen);
+      emit(
+        state.copyWith(
+          calibrating: () => null,
+          calibrationSeen: () => null,
+          calibrated: {...state.calibrated, jack},
+          calibrationError: () => null,
+        ),
+      );
+    } on Object {
+      if (!_inactive) {
+        emit(
+          state.copyWith(calibrationError: () => PedalCalibrationError.save),
+        );
+      }
+    } finally {
+      _pendingWrite = null;
+      if (!_inactive) emit(state.copyWith(calibrationBusy: false));
+    }
+  }
+
+  /// Abandons a calibration in progress; nothing changes.
+  void cancelCtrlCalibration() {
+    if (_inactive || state.calibrationBusy || state.calibrating == null) return;
+    emit(
+      state.copyWith(
+        calibrating: () => null,
+        calibrationSeen: () => null,
+        calibrationError: () => null,
+      ),
+    );
+  }
+
+  /// Forgets [jack]'s calibration: its ends are learned from the pedal again.
+  Future<void> resetCtrlCalibration(PedalCtrlJack jack) async {
+    if (_inactive || state.calibrationBusy) return;
+    emit(state.copyWith(calibrationBusy: true, calibrationError: () => null));
+    try {
+      await _initialLoad;
+      if (_inactive) return;
+      _pendingWrite = _settings?.clearCtrlCalibration(jack.index);
+      await _pendingWrite;
+      if (_inactive) return;
+      _pedal.setCtrlCalibration(jack, null);
+      emit(
+        state.copyWith(
+          calibrated: {...state.calibrated}..remove(jack),
+          calibrationError: () => null,
+        ),
+      );
+    } on Object {
+      if (!_inactive) {
+        emit(
+          state.copyWith(calibrationError: () => PedalCalibrationError.reset),
+        );
+      }
+    } finally {
+      _pendingWrite = null;
+      if (!_inactive) emit(state.copyWith(calibrationBusy: false));
+    }
   }
 
   @override
   Future<void> close() async {
-    _pollTimer?.cancel();
+    _closing = true;
+    // Storage has no cancellation API. Finish an already-started write before
+    // releasing the repository; a mutation still waiting for load never starts.
+    try {
+      await _pendingWrite;
+    } on Object {
+      // The mutation handles failure; shutdown must still release the link.
+    }
     await _statusSub.cancel();
-    // Darken the pedal on shutdown (no-op when not bound), then release the
-    // transport — this cubit is the pedal repository's lifecycle owner.
-    _pedal.pushState(PedalStateFrame.blank(goodbye: true));
+    await _eventsSub.cancel();
+    // Darken the console on shutdown, then release the link — this cubit is
+    // the pedal repository's lifecycle owner.
+    _pedal.goodbye();
     await _pedal.dispose();
     return super.close();
   }

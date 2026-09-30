@@ -6,7 +6,26 @@ enum ControllerSourceKind {
   midiNote,
 
   /// A MIDI Control Change message.
-  midiCc;
+  midiCc,
+
+  /// A footswitch in one of the console's CTRL jacks. [RawControllerInput.id]
+  /// is the jack, `0` or `1`.
+  consoleSwitch,
+
+  /// An expression pedal in one of the console's CTRL jacks.
+  /// [RawControllerInput.id] is the jack, `0` or `1`.
+  consoleExpression;
+
+  /// Whether this kind is one of the console's own CTRL jacks, rather than a
+  /// MIDI control from some device.
+  bool get isConsoleCtrl => this == consoleSwitch || this == consoleExpression;
+
+  /// Whether this kind reports a position rather than a press.
+  ///
+  /// A continuous control is captured by MIDI-learn at ANY value, because its
+  /// rest position is a real position; a momentary one is captured on the
+  /// press edge only, so learn does not bind the release.
+  bool get isContinuous => this == midiCc || this == consoleExpression;
 
   /// Maps a persisted [name] back to a kind, or `null` when it names none.
   static ControllerSourceKind? fromName(String? name) {

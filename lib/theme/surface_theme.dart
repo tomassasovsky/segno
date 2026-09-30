@@ -84,9 +84,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// Overlay scrim behind dialogs and trays (DS `bg-scrim`).
   final Color scrim;
 
-  /// The cast shadow under a surface that sits *over* the stage — today only
-  /// the tray sheet, which the mockups lift off the tracks grid rather than
-  /// letting it sit flush against it.
+  /// The cast shadow under a surface that sits *over* the stage — the tray
+  /// sheet, which the mockups lift off the tracks grid rather than letting it
+  /// sit flush against it, and the stage status bar, which is lifted the same
+  /// way off the tracks below it.
   ///
   /// A token rather than a literal in `tray_panel.dart` because
   /// `test/theme/token_adoption_test.dart` fails on any colour literal in the

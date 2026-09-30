@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart' show PedalLinkStatus;
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/signal_graph/signal_knob.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -34,13 +36,26 @@ class MidiLearnSection extends StatelessWidget {
     final cubit = context.watch<ControlCubit>();
     final bindings = cubit.state.controllerBindings;
     final learn = cubit.state.controllerLearn;
-    // A mapping cannot fire while nothing is delivering MIDI, so every row goes
-    // inert rather than pretending to be live (flow err-3). The selection is
-    // kept — the device may simply be unplugged — and each row still offers the
-    // one-tap relearn that re-points it at whatever IS connected.
-    final connected =
+    // A mapping cannot fire while the thing that drives it is absent, so a row
+    // goes inert rather than pretending to be live (flow err-3). Liveness is
+    // per ROW, not global: a console CTRL pedal is bound here too and does not
+    // care whether any MIDI device is connected. The binding is kept either
+    // way — the device may simply be unplugged — and each row still offers the
+    // one-tap relearn that re-points it at whatever IS delivering now.
+    final midiConnected =
         context.watch<MidiSetupCubit>().state.connection.status ==
         MidiConnectionStatus.connected;
+    final linkConnected =
+        context.watch<PedalCubit>().state.status == PedalLinkStatus.connected;
+    bool liveFor(MappingTrigger trigger) => switch (trigger.kind) {
+      ControllerSourceKind.midiNote ||
+      ControllerSourceKind.midiCc => midiConnected,
+      ControllerSourceKind.consoleSwitch ||
+      ControllerSourceKind.consoleExpression => linkConnected,
+    };
+    final anyMidi = bindings.bindings.any(
+      (binding) => !binding.trigger.kind.isConsoleCtrl,
+    );
 
     return Column(
       key: const Key('midiLearn_section'),
@@ -49,7 +64,9 @@ class MidiLearnSection extends StatelessWidget {
         SetupGroupLabel(l10n.midiLearnGroup),
         const SizedBox(height: 12),
         AppText(l10n.midiLearnHint, style: context.setupBody),
-        if (!connected) ...[
+        // Only when a row actually depends on MIDI: a rig driven entirely
+        // from the console's CTRL jacks has no device to miss.
+        if (anyMidi && !midiConnected) ...[
           const SizedBox(height: 12),
           _Notice(
             key: const Key('midiLearn_deviceMissing'),
@@ -70,7 +87,7 @@ class MidiLearnSection extends StatelessWidget {
                 // editable while it listens, and a nudged knob must not make
                 // the listening state (and its Cancel) disappear.
                 learn: learn?.replacingKey == binding.key ? learn : null,
-                connected: connected,
+                connected: liveFor(binding.trigger),
               ),
             ),
         const SizedBox(height: 8),

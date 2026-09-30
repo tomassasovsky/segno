@@ -843,16 +843,18 @@ void main() {
   });
 
   group('what a panel redraws for', () {
-    test('a meter tick is not a reason to redraw', () {
-      // The whole point: `Lane == Lane` is false on every audio frame, so the
-      // panel cannot key its rebuild off the object.
+    test('a self-moving number is not a reason to redraw', () {
+      // The whole point: a running recording rewrites `lengthFrames` on every
+      // poll tick, and a playing track rewrites `peak`, so `==` on the object
+      // is false many times a second and the panel cannot key its rebuild off
+      // it.
       const quiet = Lane(inputChannel: 0, volume: 0.5);
-      const loud = Lane(inputChannel: 0, volume: 0.5, rms: 0.8, peak: 0.9);
-      expect(quiet == loud, isFalse);
-      expect(sameLaneFacts(quiet, loud), isTrue);
+      const growing = Lane(inputChannel: 0, volume: 0.5, lengthFrames: 4410);
+      expect(quiet == growing, isFalse);
+      expect(sameLaneFacts(quiet, growing), isTrue);
 
       const bus = Track(volume: 0.5);
-      const busLoud = Track(volume: 0.5, rms: 0.8, peak: 0.9);
+      const busLoud = Track(volume: 0.5, peak: 0.9);
       expect(bus == busLoud, isFalse);
       expect(sameTrackFacts(bus, busLoud), isTrue);
     });

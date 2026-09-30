@@ -164,3 +164,4 @@ hardware/kicad/out_console/*.kicad_prl
 
 # Widget Preview related
 .widget_preview/
+ios/Flutter/ephemeral/.swift_pm.lock

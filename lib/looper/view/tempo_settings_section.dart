@@ -10,6 +10,22 @@ import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
 
+/// The settings slice this section draws. A record, so `context.select`
+/// compares it structurally and a snapshot poll that only moved the playhead
+/// rebuilds nothing.
+typedef _TempoSettings = ({
+  double bpm,
+  int tsNum,
+  int tsDen,
+  bool syncTempo,
+  GridDivision quantizeDiv,
+  ClickMode clickMode,
+  int clickMask,
+  double clickVolume,
+  int countInBars,
+  int outputChannelCount,
+});
+
 /// The looper feature's own tempo settings surface (index plan's UI
 /// conventions: tempo/click/quantize/count-in controls live here, not in
 /// `audio_setup`, which stays device/routing-oriented): BPM + tap tempo, the
@@ -32,11 +48,29 @@ class TempoSettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final looperState = context.watch<LooperBloc>().state;
-    final transport = looperState.transport;
-    final outputChannelCount = looperState.status.outputChannels > 0
-        ? looperState.status.outputChannels
-        : 2;
+    // Selected, not watched: `LooperState` also carries the moving playhead
+    // and per-track levels, so `context.watch` rebuilt this whole page at the
+    // snapshot-poll rate while nothing on it had changed. The record holds
+    // exactly the settings drawn below.
+    final settings = context.select<LooperBloc, _TempoSettings>((bloc) {
+      final transport = bloc.state.transport;
+      return (
+        bpm: transport.tempoBpm,
+        tsNum: transport.tsNum,
+        tsDen: transport.tsDen,
+        syncTempo: transport.syncTempo,
+        quantizeDiv: transport.quantizeDiv,
+        clickMode: transport.clickMode,
+        clickMask: transport.clickMask,
+        clickVolume: transport.clickVolume,
+        countInBars: transport.countInBars,
+        // A stopped engine reports no outputs; the picker still needs a
+        // plausible width, and stereo is the floor every rig has.
+        outputChannelCount: bloc.state.status.outputChannels > 0
+            ? bloc.state.status.outputChannels
+            : 2,
+      );
+    });
     final cubit = context.read<TempoCubit>();
 
     return Column(
@@ -47,7 +81,7 @@ class TempoSettingsSection extends StatelessWidget {
         SetupGroupLabel(l10n.tempoGroupLabel),
         const SizedBox(height: 12),
         _BpmControl(
-          bpm: transport.tempoBpm,
+          bpm: settings.bpm,
           onSubmit: (bpm) => unawaited(cubit.setTempo(bpm)),
           onTap: cubit.tapTempo,
         ),
@@ -55,8 +89,8 @@ class TempoSettingsSection extends StatelessWidget {
         AppText(l10n.timeSignatureLabel, style: context.setupBody),
         const SizedBox(height: 12),
         _TimeSignaturePicker(
-          tsNum: transport.tsNum,
-          tsDen: transport.tsDen,
+          tsNum: settings.tsNum,
+          tsDen: settings.tsDen,
           onSelected: (sigNum, sigDen) =>
               unawaited(cubit.setTimeSignature(sigNum, sigDen)),
         ),
@@ -65,7 +99,7 @@ class TempoSettingsSection extends StatelessWidget {
           toggleKey: const Key('tempoSettings_sync_switch'),
           title: l10n.syncTempoTitle,
           subtitle: l10n.syncTempoSubtitle,
-          value: transport.syncTempo,
+          value: settings.syncTempo,
           onChanged: (on) => unawaited(cubit.setSyncTempo(value: on)),
         ),
         const SizedBox(height: 28),
@@ -74,7 +108,7 @@ class TempoSettingsSection extends StatelessWidget {
         AppText(l10n.quantizeDivIntro, style: context.setupBody),
         const SizedBox(height: 12),
         _QuantizeDivisionPicker(
-          selected: transport.quantizeDiv,
+          selected: settings.quantizeDiv,
           onSelected: (div) => unawaited(cubit.setQuantizeDiv(div)),
         ),
         const SizedBox(height: 28),
@@ -83,10 +117,10 @@ class TempoSettingsSection extends StatelessWidget {
         AppText(l10n.clickModeIntro, style: context.setupBody),
         const SizedBox(height: 12),
         _ClickSettingsGroup(
-          mode: transport.clickMode,
-          outputMask: transport.clickMask,
-          volume: transport.clickVolume,
-          outputChannelCount: outputChannelCount,
+          mode: settings.clickMode,
+          outputMask: settings.clickMask,
+          volume: settings.clickVolume,
+          outputChannelCount: settings.outputChannelCount,
           onModeSelected: (mode) => unawaited(cubit.setClickMode(mode)),
           onOutputChanged: (mask) => unawaited(cubit.setClickOutput(mask)),
           onVolumeChanged: (volume) => unawaited(cubit.setClickVolume(volume)),
@@ -97,7 +131,7 @@ class TempoSettingsSection extends StatelessWidget {
         AppText(l10n.countInIntro, style: context.setupBody),
         const SizedBox(height: 12),
         _CountInPicker(
-          bars: transport.countInBars,
+          bars: settings.countInBars,
           onSelected: (bars) => unawaited(cubit.setCountInBars(bars)),
         ),
       ],

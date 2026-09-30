@@ -831,6 +831,9 @@ pockets clear of unnecessary supports and verify the actual inserts, cable,
 screws and assembly before batching; no physical strength qualification is
 implied by this profile.
 
+Pedals, screens, encoder, LEDs, Pi, board and the (external) audio interface are in
+`segno_console_shopping_list.md` and the board BOM
+(`kicad/fab/segno_console_board_bom.csv`).
 The console's Ring24 procurement must match the selected Ø80 PCB/header assembly;
 its older Ø68 Gerber package is not released by this sheet-metal work.
 

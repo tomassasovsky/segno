@@ -1,0 +1,19 @@
+[Unit]
+Description=Put the console board on this image's firmware
+# Before the app, so it never opens the link onto a board that is about to be
+# reset by a flash. After the device node's overlay has had a chance to appear.
+Before=segno.service
+DefaultDependencies=no
+After=local-fs.target
+Wants=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/segno-console-flash
+# The board answers within a second; the flash itself is a few seconds. This is
+# a bound on a boot-blocking unit, not an expectation.
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

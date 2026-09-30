@@ -362,9 +362,8 @@ per-quote artifact, same freshness gate as the other vendor packs (#236).
 
 | Board | Files | Qty | Notes |
 |---|---|---|---|
-| **Console board v2** (`console_board.py`, #747) | `kicad/out_console/segno_console_board_gerbers.zip` (run `route_console_board.sh` to produce) + `kicad/fab/segno_console_board_bom.csv` | 1 | **The console's control board** — Pico 2, MIDI front end, all pedal/panel headers. |
-| Main board (`segno_pedal_main`, THT) | `kicad/fab/segno_pedal_main_gerbers.zip` + `_bom.csv` + `_cpl.csv` | 1 | The manufactured V1 — **standalone pedal product only**; the console does not use it. LCSC part map: `kicad/fab/segno_combined_bom_lcsc.csv`. |
-| Encoder ring PCB | **Console procurement revision must be frozen before ordering** | 1 | The populated Fusion console uses the owner-selected **Ø80 PR #990 assembly**. The Ø68 `kicad/fab/segno_pedal_ring_gerbers.zip` in this checkout belongs to another revision and is **not approved here for this console**. Select the matching board/holder files and physically verify the EC11 nut, washer and glued holder stack before electronics procurement. This sheet-metal review does not release PCB fabrication. |
+| **Console board v3** (`console_board.py`, #990) | `kicad/out_console/segno_console_board_gerbers.zip` (run `route_console_board.sh` to produce) + `kicad/fab/segno_console_board_bom.csv` | 1 | Hardware work in progress: Pico 2, MIDI front end, sensed CTRL jacks, ring-board link and PD header. The ring-link and PD firmware are unfinished; this is not the v2 board running release 137. See the [integration record](../docs/APPLIANCE_INTEGRATION.md). |
+| Encoder ring carrier (v3, #987) | the v3 XIAO ring carrier, Ø80, from `codex/console-v3-runtime-publication` (`hardware/kicad/fab/segno_pedal_ring_gerbers.zip`, September 24 export; see `kicad/RING_ASSEMBLY.md` there) | 1 | The board the populated Fusion console carries (`ring_board_v3`). Fit the Ring 24 at J3 for the Ring 24 ring, or leave J3 empty and plug the 34-LED strip into J2 for the console strip ring. The Ø68 package on master is an older revision; do not order it for the console. |
 | LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 0 | **NOT ORDERED for the console.** Owner call 2026-08-28: the indicators are eight-LED segments cut from a **144 LEDs/m bare IP20 strip**, and the diffuser channel is sized for that (**12 mm wide, 0.53 thick**, 56.96 long), not for this 16×8 board. The design is kept because it is finished and the footprint may suit another build — but ordering it will not fit the current diffuser. |
 
 
@@ -375,8 +374,8 @@ overlay or separate overlay supplier package is required.
 
 ## 5. Purchased parts
 
-Full lists with links: **`segno_console_shopping_list.md`** (console) and
-**`segno_pedal_shopping_list.md`** (board THT parts). Headlines:
+Full list with links: **`segno_console_shopping_list.md`**; the console board's
+parts are `kicad/fab/segno_console_board_bom.csv`. Headlines:
 
 - 10× Cherub WTB-006 footswitches; 15.6" 5V USB-C touch panel; APROTII 7" monitor
 - Raspberry Pi 5 + Active Cooler

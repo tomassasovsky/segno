@@ -24,6 +24,7 @@ SEGNO_UPDATE_CHANNEL ?= "production"
 
 SRC_URI = "file://segno.service \
            file://segno-kiosk-launch \
+           file://segno-wait-wayland \
            file://segno-runtime.conf \
            file://segno-rtirq.service \
            file://segno-rtirq \
@@ -93,10 +94,7 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # they're guaranteed in the image (hard `=`, so keep everything ON this line).
 # curl/jq/ca-certificates: the OTA client (segno-ota-check). rauc: the installer.
 # parted + e2fsprogs-resize2fs: segno-data-grow (expand /data to fill the SD card).
-# avrdude + coreutils: segno-update-ctl flash-pedal writes the published .hex to
-# the Pro Micro (avrdude -c avr109) after stty does the Caterina 1200bps touch
-# reset. avrdude comes from meta-segno's own recipe (#430) — no layer we use
-# ships one.
+# coreutils: the app's pedal link configures the pedal UART with stty.
 # iw: segno-wifi-regdom. NOT wireless-regdb — packagegroup-base-wifi already
 # pulls wireless-regdb-static and the two RCONFLICT, so requesting the modern
 # db here fails the rootfs outright. Whether this kernel reads the CRDA
@@ -116,7 +114,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   bluez5 ddcutil \
                   iw \
                   weston-examples \
-                  avrdude coreutils"
+                  coreutils"
 
 inherit systemd
 # App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and
@@ -127,7 +125,7 @@ inherit systemd
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
 SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount"
 
-FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
+FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-wayland ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
                 ${bindir}/segno-ota-check \
                 ${bindir}/segno-update-ctl \
@@ -202,6 +200,7 @@ do_install() {
 
     install -d ${D}${bindir}
     install -m 0755 ${UNPACKDIR}/segno-kiosk-launch ${D}${bindir}/segno-kiosk-launch
+    install -m 0755 ${UNPACKDIR}/segno-wait-wayland ${D}${bindir}/segno-wait-wayland
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/segno.service ${D}${systemd_system_unitdir}/segno.service
@@ -366,3 +365,9 @@ do_install() {
 # Rebuild when CI stamps a new version/channel (otherwise sstate can leave a
 # stale /etc/segno/* from a prior package).
 do_install[vardeps] += "SEGNO_BUILD_VERSION SEGNO_UPDATE_CHANNEL"
+# The prebuilt bundle is read from outside SRC_URI, so bitbake has to be told
+# it is an input or shared state would reuse a stale package. Today the
+# version stamp above happens to re-run this task on every release; this
+# makes the binaries themselves part of the signature, so a rebuild of the
+# same version with a different app cannot ship the old one.
+do_install[file-checksums] += "${SEGNO_BUNDLE_DIR}/:True"

@@ -5,8 +5,6 @@ library;
 
 export 'package:pub_semver/pub_semver.dart' show Version;
 
-export 'src/pedal_firmware_manifest.dart' show PedalFirmwareManifest;
-export 'src/pedal_flash_failure.dart' show PedalFlashFailureClass;
 export 'src/platform_update_backend.dart' show PlatformUpdateBackend;
 export 'src/unsupported_platform_backend.dart' show UnsupportedPlatformBackend;
 export 'src/update_channel.dart' show normalizeUpdateChannel;
