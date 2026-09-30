@@ -38,13 +38,15 @@ Open before cutting metal (owner):
 
 1. **Dinacut** accepts the tooling, fold sequence and developed profile of the
    four-corner base.
-2. **#1019** structural hold: the owner's call, with the numbers and the
-   first-article proof test below.
+2. ~~#1019~~ the owner proceeds without the proof test below (2026-09-30).
+   Fallback if the floor ever takes a set: a fourth printed rail row at
+   v 221.4, which the model puts at 86 MPa / 0.74 mm; no metal rework.
 3. ~~Post-weld fitting/drilling provider~~ settled (#1090): Dinacut drills the
    nine front stations from Ø1.0 laser pilots after folding, before welding.
 4. ~~PD coupler diagonal~~ settled (#1090): the owner found the cut flipped
    against the part; it now takes the CTRL plates' diagonal (top-left /
-   bottom-right seen from behind).
+   bottom-right seen from behind). The printed rear-wall coupons fit every
+   purchased connector (owner, 2026-09-30).
 5. **Ring choice** after the bench light test: Ring24 holder + aluminium centre
    disc, or the 34-LED strip ring (no disc; check the knob grips the shaft
    8 mm in). Either way the ring now sits at v 215.0 (owner drag, #1090).
