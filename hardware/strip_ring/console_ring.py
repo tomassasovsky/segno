@@ -66,6 +66,23 @@ CAP_HEAD_FLOOR_Z = -2.6
 CAP_SEAT_Z = CAP_HEAD_FLOOR_Z - 1.0
 KNOB_BOTTOM = 0.5
 
+# Carrier snap hold (#1090). The v3 carrier has no screw holes: RING_ASSEMBLY.md
+# says it snap-mounts. Three arms hang from the cup's roof, outside the strip
+# wall, and click a 45-degree lead-in catch under the board edge. They only stop
+# the board dropping, swinging or turning: the EC11 nut still sets its height, so
+# the catch sits CLIP_PLAY below the board and the arms clear its edge radially.
+PCB_R, PCB_T = 40.0, 1.6           # v3 carrier: Ø80 Edge.Cuts circle, 1.6 mm FR4
+PCB_BOTTOM = CARRIER_TOP - PCB_T
+CLIP_ANGLES = (30.0, 150.0, 270.0)  # deg from +x; the strip seam and its wires are at 0
+CLIP_W = 6.0                       # tangential arm width
+CLIP_GAP = 0.12                    # arm inner face off the cup wall's outer face
+CLIP_T = 1.0                       # arm thickness (radial): ~0.6 % strain over its length
+CLIP_PLAY = 0.3                    # catch below the board's underside
+CLIP_CATCH_R = 39.0                # catch reaches in to here: 1.0 mm under the board edge
+CLIP_CATCH_H = 1.2                 # catch height; its underside is the 45-degree lead-in
+CARRIER_PARTS_R = 37.4             # outermost underside part (D1), measured in Fusion
+TOWER_CLEAR_R = 41.5               # segno_enclosure.S7T_RING_CLEAR_R (tower gate)
+
 # Hard limits this variant exists to meet (Fusion clone, 2026-09-30, ENC_V 215.0):
 SCREEN7_CLEAR_R = 57.0             # 7in module's nearest point to the axis
 WINDOW_R = 33.7                    # coated Ø67 window in the faceplate
@@ -89,13 +106,42 @@ def diffuser():
     return lens.fuse(neck, floor).clean()
 
 
+def _sector(ro, ri, z0, z1, deg_c, width):
+    span = degrees(width / ((ro + ri) / 2.0))
+    w = (cq.Workplane("XZ").polyline([(ri, z0), (ro, z0), (ro, z1), (ri, z1)]).close()
+         .revolve(span, (0, 0, 0), (0, 1, 0)).val())
+    return w.rotate((0, 0, 0), (0, 0, 1), deg_c - span / 2.0)
+
+
+def carrier_clip(deg_c):
+    """One snap arm: a bridge off the roof, a flexing arm down past the carrier,
+    and the catch under the board edge with its lead-in on the underside."""
+    r_in = CUP_R + CLIP_GAP
+    r_out = r_in + CLIP_T
+    z_top = PCB_BOTTOM - CLIP_PLAY
+    z_bot = z_top - CLIP_CATCH_H
+    bridge = _sector(r_out, CUP_R - 0.4, UNDER - 1.2, UNDER, deg_c, CLIP_W)
+    arm = _sector(r_out, r_in, z_bot, UNDER - 1.2, deg_c, CLIP_W)
+    span = degrees(CLIP_W / r_in)
+    catch = (cq.Workplane("XZ")
+             .polyline([(r_in + 0.01, z_top), (CLIP_CATCH_R, z_top),
+                        (CLIP_CATCH_R, z_top - 0.2), (r_in + 0.01, z_bot)])
+             .close().revolve(span, (0, 0, 0), (0, 1, 0)).val()
+             .rotate((0, 0, 0), (0, 0, 1), deg_c - span / 2.0))
+    return bridge.fuse(arm, catch)
+
+
 def cup():
     """Roof glued to the faceplate underside; the diffuser's flange rests on the
-    inner shelf; the wall carries the strip down to just above the carrier."""
+    inner shelf; the wall carries the strip down to just above the carrier; three
+    arms snap the carrier in place."""
     roof = annulus(CUP_R, 35.65, UNDER - 1.2, UNDER)
     shelf = annulus(36.2, 34.4, UNDER - 2.0, UNDER - 1.2)
     wall = annulus(CUP_R, GLUE_R, STRIP_BOTTOM, UNDER)
-    return roof.fuse(shelf, wall).clean()
+    body = roof.fuse(shelf, wall)
+    for a in CLIP_ANGLES:
+        body = body.fuse(carrier_clip(a))
+    return body.clean()
 
 
 def encoder_retainer():
@@ -187,6 +233,12 @@ def check():
     assert LED_FACE_R > 36.2, "LED faces foul the cup's diffuser shelf"
     assert STRIP_TOP <= UNDER - 2.0, "strip top reaches the shelf/roof"
     assert STRIP_BOTTOM > CARRIER_TOP, "strip edge reaches below the carrier PCB top"
+    assert CUP_R + CLIP_GAP + CLIP_T < TOWER_CLEAR_R, "snap arms reach the 7in tower's clearance"
+    assert CUP_R + CLIP_GAP > PCB_R + 0.2, "snap arms grip the board edge radially"
+    assert CLIP_CATCH_R < PCB_R - 0.8, "catch overlaps the board edge by too little"
+    assert CLIP_CATCH_R > CARRIER_PARTS_R + 1.0, "catch reaches the carrier's underside parts"
+    for a in CLIP_ANGLES:
+        assert min(abs(a), abs(360 - a)) > 15, "a snap arm sits on the strip seam"
     for name, shape in parts().items():
         assert shape.isValid() and len(shape.Solids()) == 1, name
     return {"leds": COUNT, "neutral_r": NEUTRAL_R, "led_face_r": LED_FACE_R,

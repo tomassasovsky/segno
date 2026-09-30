@@ -19,6 +19,9 @@ Same clone, saved.
   identical to commit de4fae79's tower both ways.
 - `base`: the PD coupler's two M3 moved to the CTRL plates' diagonal in CUT
   (volume unchanged).
+- `strip_ring_console_34` / `cup`: body swapped for the snap-arm cup
+  (`console_ring_cup.step`, 7,054.3 mm3). Arms 2.15 mm from the tower, catches
+  2.1 mm from D1, 0.39 mm under the modelled 1.51 mm board.
 
 ## No wall ties, laser-piloted front stations - 2026-09-30 (#1090)
 
