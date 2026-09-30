@@ -96,7 +96,9 @@ class ManufacturingFitTest(unittest.TestCase):
             cuts[c['ref']].append(c)
         for ref in ('CTRL_1', 'CTRL_2'):
             (bore,) = cuts[ref]
-            self.assertAlmostEqual(bore['d'], 24.40)
+            # ±0.20 shop tolerance plus full coating still passes the 23.6 barrel (#1090)
+            self.assertAlmostEqual(bore['d'], enclosure.D_FLANGE_CUT_D)
+            self.assertGreaterEqual(bore['d'] - enclosure.SHOP_TOL - 2*enclosure.COAT_MAX, 23.6 + 0.05)
             screws = sorted((c['u'] - bore['u'], c['v'] - bore['v']) for c in cuts[ref + '_SCR'])
             self.assertEqual([tuple(round(x, 6) for x in p) for p in screws],
                              [(-9.5, -12.0), (9.5, 12.0)])

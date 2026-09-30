@@ -43,7 +43,7 @@ $EXTMAX
  10
 943.6090320219502
  20
-710.434341583298
+696.034341583298
  30
 0.0
   9
@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461314.5677777776
+2461314.8527314817
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461314.5677777776
+2461314.8527314817
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-199
+198
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{31FA933D-E5ED-44F2-B9AA-DB2D24F73CB3}
+{65B55398-6D66-472E-91E8-55C9DE20D109}
   9
 $VERSIONGUID
   2
-{CD66CE8C-8E4B-4B79-9BB2-D5D372FE2C24}
+{2B0DE2B0-1F70-4962-81EE-3780E83A8096}
   9
 $EXTNAMES
 290
@@ -3257,7 +3257,7 @@ ACAD
   0
 APPID
   5
-196
+195
 330
 3
 100
@@ -3271,7 +3271,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-197
+196
 330
 3
 100
@@ -9845,7 +9845,7 @@ AcDbCircle
  30
 0.0
  40
-6.15
+6.25
   0
 CIRCLE
   5
@@ -9865,7 +9865,7 @@ AcDbCircle
  30
 0.0
  40
-7.75
+7.85
   0
 CIRCLE
   5
@@ -9925,7 +9925,7 @@ AcDbCircle
  30
 0.0
  40
-7.75
+7.85
   0
 CIRCLE
   5
@@ -9985,7 +9985,7 @@ AcDbCircle
  30
 0.0
  40
-12.2
+12.1
   0
 CIRCLE
   5
@@ -10045,7 +10045,7 @@ AcDbCircle
  30
 0.0
  40
-12.2
+12.1
   0
 CIRCLE
   5
@@ -10105,7 +10105,7 @@ AcDbCircle
  30
 0.0
  40
-12.2
+12.1
   0
 CIRCLE
   5
@@ -13387,7 +13387,7 @@ AcDbText
  10
 8.0
  20
-670.034341583298
+655.634341583298
  30
 0.0
  40
@@ -13397,7 +13397,7 @@ Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, esp
  11
 8.0
  21
-670.034341583298
+655.634341583298
  31
 0.0
 100
@@ -13417,7 +13417,7 @@ AcDbText
  10
 8.0
  20
-655.634341583298
+641.2343415832979
  30
 0.0
  40
@@ -13427,7 +13427,7 @@ plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las
  11
 8.0
  21
-655.634341583298
+641.2343415832979
  31
 0.0
 100
@@ -13447,7 +13447,7 @@ AcDbText
  10
 8.0
  20
-641.2343415832979
+626.8343415832979
  30
 0.0
  40
@@ -13457,7 +13457,7 @@ superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras 
  11
 8.0
  21
-641.2343415832979
+626.8343415832979
  31
 0.0
 100
@@ -13477,7 +13477,7 @@ AcDbText
  10
 8.0
  20
-626.8343415832979
+612.434341583298
  30
 0.0
  40
@@ -13487,7 +13487,7 @@ tapa queda desmontable. Frente: el láser corta 9 pilotos Ø1.0; Dinacut los agr
  11
 8.0
  21
-626.8343415832979
+612.434341583298
  31
 0.0
 100
@@ -13507,7 +13507,7 @@ AcDbText
  10
 8.0
  20
-612.434341583298
+598.034341583298
  30
 0.0
  40
@@ -13517,7 +13517,7 @@ pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario:
  11
 8.0
  21
-612.434341583298
+598.034341583298
  31
 0.0
 100
@@ -13537,17 +13537,17 @@ AcDbText
  10
 8.0
  20
-598.034341583298
+583.634341583298
  30
 0.0
  40
 9.0
   1
-M4 Ø4.6, patas Ø4.8, todos +0.10/-0.00 SIN PINTAR; no roscar los pasos libres. Conectores cortados en la pared trasera, cotas SIN PINTAR: FUSE Ø12.30
+M4 Ø4.6, patas Ø4.8, SIN PINTAR; no roscar los pasos libres. Conectores cortados en la pared trasera, cotas SIN PINTAR: FUSE Ø12.50; POWER Ø19.80; MIDI
  11
 8.0
  21
-598.034341583298
+583.634341583298
  31
 0.0
 100
@@ -13567,17 +13567,17 @@ AcDbText
  10
 8.0
  20
-583.634341583298
+569.2343415832979
  30
 0.0
  40
 9.0
   1
-±0.10; POWER Ø19.80 ±0.10; MIDI Ø15.50 y PD Ø24.40 (+0.10/-0.00); USB cuatro planos 22.80 x22.80 limitados por círculo concéntrico Ø24.80, ambos ±0.10;
+Ø15.70; PD Ø24.20; USB cuatro planos 22.80 x22.80 limitados por círculo concéntrico Ø24.80; redondos, sin plano. Jacks CTRL: Ø24.20 con par M3 en la MISMA
  11
 8.0
  21
-583.634341583298
+569.2343415832979
  31
 0.0
 100
@@ -13597,17 +13597,17 @@ AcDbText
  10
 8.0
  20
-569.2343415832979
+554.8343415832979
  30
 0.0
  40
 9.0
   1
-ligamentos PD/MIDI medidos >=1.20 mm; el Ø24 es el punzón D de Neutrik, redondo, sin plano. Jacks CTRL: punzón D Ø24.40 (+0.10/-0.00) con par M3 en la
+diagonal que el PD, según CUT. Todas las cotas con la tolerancia general ±0.20; no se pide nada más ajustado. Pintar ambas caras, asientos, cantos y
  11
 8.0
  21
-569.2343415832979
+554.8343415832979
  31
 0.0
 100
@@ -13627,17 +13627,17 @@ AcDbText
  10
 8.0
  20
-554.8343415832979
+540.434341583298
  30
 0.0
  40
 9.0
   1
-MISMA diagonal que el PD, según CUT. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en
+paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.
  11
 8.0
  21
-554.8343415832979
+540.434341583298
  31
 0.0
 100
@@ -13651,23 +13651,23 @@ TEXT
 100
 AcDbEntity
   8
-NOTE
+MASK
 100
 AcDbText
  10
 8.0
  20
-540.434341583298
+687.034341583298
  30
 0.0
  40
 9.0
   1
-texto.
+MASK = máscara de pintura: sólo contactos eléctricos de tierra indicados; NO CORTAR. Pilotos M3 sin rosca: el propietario limpia y rosca después de
  11
 8.0
  21
-540.434341583298
+687.034341583298
  31
 0.0
 100
@@ -13687,37 +13687,7 @@ AcDbText
  10
 8.0
  20
-701.434341583298
- 30
-0.0
- 40
-9.0
-  1
-MASK = máscara de pintura: sólo contactos eléctricos de tierra indicados; NO CORTAR. Pilotos M3 sin rosca: el propietario limpia y rosca después de
- 11
-8.0
- 21
-701.434341583298
- 31
-0.0
-100
-AcDbText
-  0
-TEXT
-  5
-195
-330
-17
-100
-AcDbEntity
-  8
-MASK
-100
-AcDbText
- 10
-8.0
- 20
-687.034341583298
+672.634341583298
  30
 0.0
  40
@@ -13727,7 +13697,7 @@ pintar. El resto del metal, incluidos asientos y pasos libres, se pinta.
  11
 8.0
  21
-687.034341583298
+672.634341583298
  31
 0.0
 100
@@ -14145,7 +14115,7 @@ Model
  15
 943.6090320219502
  25
-710.434341583298
+696.034341583298
  35
 0.0
 146
@@ -14823,7 +14793,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-198
+197
   0
 DICTIONARYVAR
   5
@@ -14835,7 +14805,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-30T16:37:36.525536+00:00
+1.4.4 @ 2026-09-30T23:27:56.809431+00:00
   0
 VISUALSTYLE
   5
@@ -21389,7 +21359,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-198
+197
 330
 2D
 100
@@ -21397,7 +21367,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-30T16:37:36.694827+00:00
+1.4.4 @ 2026-09-30T23:27:56.992200+00:00
   0
 ENDSEC
   0

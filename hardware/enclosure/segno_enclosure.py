@@ -758,6 +758,10 @@ USB3_FLANGE_D = 28.5 # flange OD. This, not the cutout, is the real keep-out
 MIDI_BODY_D      = 15.1  # REAN NYS325 panel cutout (distributor spec)
 MIDI_SCREW_PITCH = 22.2  # RS attribute "Mounting Hole Distance 0.874 in" = 22.2
 MIDI_SCREW_D     = 3.2   # M3 clearance
+MIDI_CUT_D       = 15.70 # bare ±0.20; worst coated 15.30 over the 15.1 body (#1090)
+# D flanges (PD coupler, CTRL plates): worst coated 23.80 over the 23.6 barrels.
+# Not bigger: with every hole at +SHOP_TOL the web to the M3 pair is still 1.20.
+D_FLANGE_CUT_D   = 24.20
 
 # What each rear-I/O dimension actually rests on. "measured" = the user's own
 # calipers or dimensioned photo; "datasheet" = manufacturer or distributor
@@ -780,6 +784,8 @@ REAR_IO_PROVENANCE = {
     "D_TRS_DIAG":        "datasheet: same MEIRIYFA drawing, front view of the flange; "
                          "measured: owner checked the QIANRENON coupler against the cut (2026-09-30)",
     "D_TRS_SCREW_D":     "datasheet: D-series fixings are M3",
+    "MIDI_CUT_D":        "derived: MIDI_BODY_D 15.1 + SHOP_TOL + 2 x COAT_MAX + 0.2 fit; owner's printed coupon fit the part (2026-09-30)",
+    "D_FLANGE_CUT_D":    "derived: 23.6 barrel + SHOP_TOL + 2 x COAT_MAX (coated worst 23.80); capped by the 1.20 web to the M3 pair",
     "USB3_SQ":           "datasheet: owner-supplied reference/usb3_dimensions.png, 2026-09-05; "
                          "22.1 x 22.1 mm FOUR flats on a round threaded barrel; nut-mounted",
     "USB3_CORNER_D":     "datasheet: reference/usb3_dimensions.png, concentric thread circle Ø24.1",
@@ -802,8 +808,13 @@ def rear_io_unconfirmed():
 # A tangent rounded rectangle with the same bounding dimensions is smaller
 # along the flat-to-arc junctions and interferes with the supplier's barrel.
 USB3_FIT = 0.2
-USB3_CUT_SQ = 22.80  # bare +/-0.10; final 22.50..22.78
-USB3_CUT_D = 24.80   # bare +/-0.10; final 24.50..24.78
+# Dinacut's stated laser capability is ±0.20 on size and position, and asking for
+# tighter costs far more (owner, 2026-09-30, #1090). Every fit is designed to work
+# at SHOP_TOL plus the full coating (COAT_MAX per wall), and the drawings state
+# nothing tighter.
+SHOP_TOL = 0.20
+USB3_CUT_SQ = 22.80  # bare ±0.20; worst coated 22.40 over the 22.1 flats
+USB3_CUT_D = 24.80   # bare ±0.20; worst coated 24.40 over the 24.1 thread circle
 
 # The old REAR_WIN_U did two jobs -- it placed the window AND anchored the board,
 # Pi and buck inside. Those are now separate: the internal layout keeps its 175
@@ -994,8 +1005,8 @@ def _rail_v(row_v, side):
 RIDE_H = RAIL_T + (TAPE_T - RAIL_CH_D)   # 7.7 mm; the feet it replaces were 5.0
 
 # --- fasteners ----------------------------------------------------------------
-D_M3_METAL = 3.6     # bare +0.10/-0.00; fully coated M3 clearance
-D_LID_SCREW = 4.5    # front clearance, bare +0.10/-0.00; drilled out after forming
+D_M3_METAL = 3.6     # bare ±0.20; worst coated 3.2 still clears M3
+D_LID_SCREW = 4.5    # front clearance, bare ±0.20; drilled out after forming
 FRONT_PILOT_D = 1.0  # laser-cut centre pilot at each front station (lid and body): the
                      # stations sit inside the V12 die zone, so a full-size hole cut flat
                      # would distort in the fold. Dinacut drills the pilot out to size
@@ -1801,13 +1812,16 @@ def rear_io_cutouts():
     z = REAR_IO_Z
     at = rear_io_layout()
     cuts = []
-    for ref, d in (("POWER", D_PWRBTN), ("FUSE", D_FUSE)):     # nut-mounted: bore only
-        cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": d + .30, "ref": ref})
+    # Nut-mounted: bore only. Worst coated (-SHOP_TOL, -2 x COAT_MAX): POWER 19.40
+    # over the M19 thread, FUSE 12.10 over its 12.0 aperture (#1090 opened it
+    # from 12.30).
+    for ref, d in (("POWER", D_PWRBTN + .30), ("FUSE", D_FUSE + .50)):
+        cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": d, "ref": ref})
     # DIN-5 stations: a bore with a HORIZONTAL M3 pair straddling it (across the
     # wall there is room to spare).
     for ref in ("MIDI_IN", "MIDI_OUT"):
         cu = at[ref][0]
-        cuts.append({"kind": "circle", "u": cu, "v": z, "d": 15.50, "ref": ref})
+        cuts.append({"kind": "circle", "u": cu, "v": z, "d": MIDI_CUT_D, "ref": ref})
         for s in (-1, 1):
             cuts.append({"kind": "circle", "u": cu + s*MIDI_SCREW_PITCH/2.0, "v": z,
                          "d": D_M3_METAL, "ref": ref + "_SCR"})
@@ -1818,7 +1832,7 @@ def rear_io_cutouts():
     ddu, ddz = D_TRS_SCREW_DIAG
     for ref in ("PD_IN", "CTRL_1", "CTRL_2"):
         cu = at[ref][0]
-        cuts.append({"kind": "circle", "u": cu, "v": z, "d": D_TRS_BORE + .40, "ref": ref})
+        cuts.append({"kind": "circle", "u": cu, "v": z, "d": D_FLANGE_CUT_D, "ref": ref})
         for s in (-1, 1):
             cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z + D_TRS_DIAG*s*ddz/2.0,
                          "d": D_M3_METAL, "ref": ref + "_SCR"})
@@ -2495,6 +2509,15 @@ def _check(strict_board_mount=True):
                 f"REAR_IO: {c['ref']} spans {lo:.2f}..{hi:.2f} but {ref} only "
                 f"reserves {cu - kw/2.0:.2f}..{cu + kw/2.0:.2f} -- the keep-out "
                 "does not contain what it is meant to protect")
+    # Every connector opening still passes its part at -SHOP_TOL and full coating.
+    _need = {"POWER": 19.0, "FUSE": D_FUSE, "MIDI_IN": MIDI_BODY_D, "MIDI_OUT": MIDI_BODY_D,
+             "PD_IN": 23.6, "CTRL_1": 23.6, "CTRL_2": 23.6}
+    for c in rear_io:
+        if c["ref"] in _need:
+            _worst = c["d"] - SHOP_TOL - 2*COAT_MAX
+            assert _worst >= _need[c["ref"]] + 0.05, (
+                f"REAR_IO: {c['ref']} Ø{c['d']:.2f} can come out Ø{_worst:.2f} at -{SHOP_TOL} and full "
+                f"coating, under the part's Ø{_need[c['ref']]:.2f}")
     # A fixing hole that breaks into its own bore is not a fixing hole. This is
     # the check that caught the "D-series M3 pair sits at 24 mm" figure: on a Ø24
     # bore that puts the screw centres exactly on the bore edge, leaving no land.
@@ -2504,9 +2527,8 @@ def _check(strict_board_mount=True):
         base = c["ref"][:-4]
         bore = next(b for b in rear_io if b["ref"] == base)
         off = math.hypot(c["u"] - bore["u"], c["v"] - bore["v"])
-        # Local laser webs: >=1.20 mm MEASURED on the raw rear panel; the
-        # hardware-pattern gauge and measured web override general position tolerance.
-        assert off - (c["d"]+.10)/2.0 >= (bore["d"]+.10)/2.0 + 1.20, (
+        # Local laser webs: >=1.20 mm with BOTH holes at their largest (+SHOP_TOL).
+        assert off - (c["d"]+SHOP_TOL)/2.0 >= (bore["d"]+SHOP_TOL)/2.0 + 1.20 - 1e-6, (
             f"REAR_IO: {c['ref']} at {off:.2f} from centre leaves "
             f"{off - c['d']/2.0 - bore['d']/2.0:.2f} mm of land against the "
             f"Ø{bore['d']:g} bore -- the screw would break into the hole")
@@ -3395,7 +3417,7 @@ def dxf_faceplate(path):
           f"Segno TAPA SUPERIOR (segno_faceplate), aluminio {ALLOY_2MM} {T:.1f} mm, CANT. 1. "
           "Cara dibujada EXTERIOR, espejado canónico: encoder a la izquierda del músico. "
           "Plegar pestaña frontal y solapa trasera. Leyendas en pedales individuales. "
-          f"Frente: 9 pasos Ø{D_LID_SCREW:.1f} (+0.10/-0.00): el láser corta sólo el piloto Ø{FRONT_PILOT_D:.1f}; "
+          f"Frente: 9 pasos Ø{D_LID_SCREW:.1f} (±0.20): el láser corta sólo el piloto Ø{FRONT_PILOT_D:.1f}; "
           "agrandar con mecha DESPUÉS de plegar. "
           f"Trasera: 9 ranuras oblongas {LID_REAR_SLOT_L:.1f} x {LID_REAR_SLOT_W:.1f} mm, "
           f"largo y ancho ±{LID_REAR_SLOT_TOL:.2f} SIN PINTAR, eje largo en profundidad de solapa; CUT por láser. "
@@ -3406,7 +3428,7 @@ def dxf_faceplate(path):
           "La arandela trasera aporta apoyo, no tapa necesariamente toda la ranura. "
           "Calces frontales metálicos Ø7/paso4.0-4.2: ajustar cada espesor entre caras pintadas; "
           "verificar paralelismo y apoyo, sin cerrar la luz a fuerza de tornillo. "
-          "Aberturas de lentes LED 60.4 x6.4 R3.2 y aro Ø67.4 (+0.10/-0.00 SIN PINTAR).")
+          "Aberturas de lentes LED 60.4 x6.4 R3.2 y aro Ø67.4 SIN PINTAR, tolerancia general ±0.20.")
     _save(doc, path)
     return {"blank": (LW, yr1)}
 
@@ -3668,7 +3690,7 @@ def dxf_base(path):
             _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
                          "zona de puesta a tierra del perno M6, AMBAS CARAS")
     _mask_top = _note(msp, 8, BD+Hr+Ht+10,
-          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las cuatro esquinas, cerrar sus alivios inferiores y las dos uniones superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable. Frente: el láser corta 9 pilotos Ø{FRONT_PILOT_D:.1f}; Dinacut los agranda con mecha a Ø2.5 DESPUÉS de plegar y ANTES de soldar. Dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, todos +0.10/-0.00 SIN PINTAR; no roscar los pasos libres. Conectores cortados en la pared trasera, cotas SIN PINTAR: FUSE Ø12.30 ±0.10; POWER Ø19.80 ±0.10; MIDI Ø15.50 y PD Ø24.40 (+0.10/-0.00); USB cuatro planos 22.80 x22.80 limitados por círculo concéntrico Ø24.80, ambos ±0.10; ligamentos PD/MIDI medidos >=1.20 mm; el Ø24 es el punzón D de Neutrik, redondo, sin plano. Jacks CTRL: punzón D Ø24.40 (+0.10/-0.00) con par M3 en la MISMA diagonal que el PD, según CUT. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
+          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las cuatro esquinas, cerrar sus alivios inferiores y las dos uniones superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable. Frente: el láser corta 9 pilotos Ø{FRONT_PILOT_D:.1f}; Dinacut los agranda con mecha a Ø2.5 DESPUÉS de plegar y ANTES de soldar. Dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, SIN PINTAR; no roscar los pasos libres. Conectores cortados en la pared trasera, cotas SIN PINTAR: FUSE Ø{D_FUSE+.50:.2f}; POWER Ø{D_PWRBTN+.30:.2f}; MIDI Ø{MIDI_CUT_D:.2f}; PD Ø{D_FLANGE_CUT_D:.2f}; USB cuatro planos {USB3_CUT_SQ:.2f} x{USB3_CUT_SQ:.2f} limitados por círculo concéntrico Ø{USB3_CUT_D:.2f}; redondos, sin plano. Jacks CTRL: Ø{D_FLANGE_CUT_D:.2f} con par M3 en la MISMA diagonal que el PD, según CUT. Todas las cotas con la tolerancia general ±0.20; no se pide nada más ajustado. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
     _note(msp, 8, _mask_top + 8,
           "MASK = máscara de pintura: sólo contactos eléctricos de tierra indicados; NO CORTAR. Pilotos M3 sin rosca: el propietario limpia y rosca después de pintar. El resto del metal, incluidos asientos y pasos libres, se pinta.", layer="MASK")
     _save(doc, path)
@@ -6753,9 +6775,8 @@ PART_TITLES_ES = {
 # tolerances, applied wherever a dimension is not called out individually.
 #
 # Values are what a laser + press brake shop actually holds on 2 mm 5052:
-#   posición ± 0,15   - laser positional repeatability is ~± 0,10; 0,15 leaves the
-#                       screw pairs inside the Ø4.5-on-M3 clearance.
-#   diámetro ± 0,10   - kerf variation on 2 mm; M3/M4 clearance holes tolerate it.
+#   posición ± 0,20   - Dinacut's stated capability (#1090); nothing tighter is asked.
+#   diámetro ± 0,20   - likewise; every fit is sized for it plus full coating.
 #   plegado  ± 1,0°   - proposed shop allowance; joint seating and welded
 #                       distortion still need their separate fit checks.
 #   exteriores ± 0,3  - flat/blank dimensions off the laser.
@@ -6769,9 +6790,8 @@ PART_TITLES_ES = {
 # the drawing and its own geometry is how a 0,15 becomes a 15.
 TOLERANCE_TITLE = "TOLERANCIAS (salvo indicación contraria)"
 TOLERANCE_ROWS = [
-    ("posición de agujeros",                "± 0,15 mm"),
-    ("diámetro de agujeros",                "± 0,10 mm"),
-    ("pasos redondos M3/M4/patas/tapa SIN PINTAR",     "+0,10 / -0,00 mm"),
+    ("posición de agujeros",                "± 0,20 mm"),
+    ("diámetro de agujeros y ranuras",      "± 0,20 mm"),
     ("ángulos de plegado",                  "± 1,0°"),
     ("dimensiones exteriores (desarrollo)", "± 0,3 mm"),
     ("dimensiones medidas sobre un pliegue", "± 0,5 mm"),
@@ -6891,7 +6911,7 @@ BEND_FOOTNOTES = {
     "segno_faceplate": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T). "
                         f"Material entre pliegue frontal y pedales: {_front_pedal_bend_land:.3f} mm; verificar herramental. "
                         "PLEGAR con la cara DIBUJADA como CARA EXTERIOR; encoder a la IZQUIERDA del músico. "
-                        f"Frente: 9 pasos Ø{D_LID_SCREW:.1f} (+0.10/-0.00), centro a "
+                        f"Frente: 9 pasos Ø{D_LID_SCREW:.1f} (±0.20), centro a "
                         f"{abs(LID_FRONT_FL-(FRONT_SCREW_Z+DEV90)):.3f} mm del pliegue, dentro de la V12. "
                         f"El láser corta un piloto Ø{FRONT_PILOT_D:.1f}; DRILL es el diámetro final, con mecha DESPUÉS de plegar. "
                         f"Trasera: 9 ranuras CUT {LID_REAR_SLOT_L:.1f} x {LID_REAR_SLOT_W:.1f}, "

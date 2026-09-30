@@ -111,12 +111,14 @@ cuts only the Ø1.0 pilot at the same centre, on `CUT`. `BEND` is reference only
 cut, score or engrave it. `MASK` identifies electrical-bond coating protection,
 never a cutting contour.
 
-The **currently implemented** general block is a project table, not an
-ISO 2768-m designation: hole position ±0.15 mm, hole diameter ±0.10 mm, round
-M3/M4/floor/front-lid clearances +0.10/−0.00 mm, bend angle ±1°, flat exterior
-size ±0.30 mm and dimensions across one fold ±0.50 mm. Specific callouts below
-control where they differ. A proposed general laser capability of ±0.20 mm
-has not been applied indiscriminately to connector and mounting fits.
+The general block is Dinacut's stated capability and nothing tighter (owner
+call 2026-09-30, #1090: tighter tolerances cost far more): hole position and
+hole or slot size ±0.20 mm, bend angle ±1°, flat exterior size ±0.30 mm and
+dimensions across one fold ±0.50 mm. The design carries the margin instead:
+every opening below still passes its part at −0.20 with the full coating, and
+the generator gates that. Fuse and MIDI were opened and the D flanges trimmed
+to Ø24.20 for it; at +0.20 on both holes the D-flange web to its M3 pair is
+still 1.20 mm.
 
 ### Lid fit and front drilling
 
@@ -132,7 +134,7 @@ Only the **nine front lid clearances and nine matching body pilots** are
 stations (A at the bare floor underside, B at the bare left-wall interior) are
 for checking. Nominal front axis height is 6.455 mm above A. After folding and
 before welding, drill the body pilots out to Ø2.5 and the lid's nine front
-passages to **Ø4.50 +0.10/−0.00**. The parts are drilled separately, not as a
+passages to **Ø4.50 ±0.20**. The parts are drilled separately, not as a
 fitted pair: the Ø4.5 clearance on an M3 leaves 0.75 mm of float for the fold
 and weld stack.
 Leave all body pilots untapped. The nine rear body pilots remain CUT; the
@@ -161,23 +163,23 @@ All dimensions are mm. Finished ranges assume the stated local film on each
 opposed wall. They do not establish positional fit of a complete screw pattern.
 Keep connector centres and purchased fixing pitches fixed. Retained functional callouts override the general block.
 
-| Opening | Before painting | Predicted finished range |
-|---|---:|---:|
-| Metal M3 clearances, except front lid | Ø3.60 +0.10/−0.00 | Ø3.40–3.58 |
-| Nine front lid clearances | Ø4.50 +0.10/−0.00 | Ø4.30–4.48 |
-| Nine rear lid slots, length ×width | 10.00 ×6.00, each ±0.20 | 9.60–10.08 ×5.60–6.08 |
-| Metal M4 clearances | Ø4.60 +0.10/−0.00 | Ø4.40–4.58 |
-| Ø4.80 floor clearances where called out | Ø4.80 +0.10/−0.00 | Ø4.60–4.78 |
-| Pill lens apertures | 60.40 ×6.40, R3.20; +0.10/−0.00 | 60.20–60.38 ×6.20–6.38 |
-| Ring lens aperture | Ø67.40 +0.10/−0.00 | Ø67.20–67.38 |
-| Selected fuse | Ø12.30 ±0.10 | Ø12.00–12.28 |
-| Power switch | Ø19.80 ±0.10 | Ø19.50–19.78 |
-| MIDI NYS325 | Ø15.50 +0.10/−0.00 | Ø15.30–15.48 |
-| PD coupler and two CTRL D-flange sockets | Ø24.40 +0.10/−0.00 | Ø24.20–24.38 |
-| USB four flats | 22.80 ×22.80 ±0.10 | 22.50–22.78 across each pair |
-| Same USB concentric circle | Ø24.80 ±0.10 | Ø24.50–24.78 |
-| Disc outside diameter | Ø50.70 ±0.20 | Ø50.62–51.10 |
-| Disc straight bore | Ø8.70 ±0.20 | Ø8.30–8.78 |
+| Opening | Before painting (all ±0.20) | Predicted finished range | Must pass |
+|---|---:|---:|---|
+| Metal M3 clearances, except front lid | Ø3.60 | 3.20–3.68 | M3 3.0 |
+| Nine front lid clearances (drilled) | Ø4.50 | 4.10–4.58 | M3 3.0 |
+| Nine rear lid slots, length ×width | 10.00 ×6.00 | 9.60–10.08 ×5.60–6.08 | M3 + float |
+| Metal M4 clearances | Ø4.60 | 4.20–4.68 | M4 4.0 |
+| Ø4.80 floor clearances where called out | Ø4.80 | 4.40–4.88 | M4 4.0 |
+| Pill lens apertures | 60.40 ×6.40, R3.20 | 60.00–60.48 ×6.00–6.48 | lens 59.80 ×5.80 |
+| Ring lens aperture | Ø67.40 | 67.00–67.48 | lens Ø66.80 |
+| Fuse | Ø12.50 | 12.10–12.58 | 12.0 aperture |
+| Power switch | Ø19.80 | 19.40–19.88 | M19 thread |
+| MIDI NYS325 | Ø15.70 | 15.30–15.78 | 15.1 body |
+| PD coupler and two CTRL D-flange sockets | Ø24.20 | 23.80–24.28 | 23.6 barrel |
+| USB four flats | 22.80 ×22.80 | 22.40–22.88 across each pair | 22.1 flats |
+| Same USB concentric circle | Ø24.80 | 24.40–24.88 | 24.1 thread circle |
+| Disc outside diameter | Ø51.00 | 50.92–51.40 | lens bore Ø51.70 |
+| Disc straight bore | Ø8.70 | 8.30–8.78 | shaft/bushing |
 
 The USB contour is the intersection of the four flats and concentric circle.
 PD/CTRL/MIDI local ligaments must measure at least **1.20 mm bare**, including
