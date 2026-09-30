@@ -280,13 +280,16 @@ class ManufacturingPipelineTest(unittest.TestCase):
                 # 38 until 2026-09-10, when the twelve floor rail segments and
                 # the mid-field prop were added. They had been generated into
                 # out/ and shipped in no package at all since #1019 created them.
-                'segno_3dprint.zip':64,
+                # 64 until #1070 added the 15.6in splice and the two four-shim
+                # height kits: nine parts, STEP + STL each.
+                'segno_3dprint.zip':82,
             })
             for members in packages.values():
                 self.assertFalse([name for name in members if 'corner_bracket' in name])
             for part in ('segno_platform_sled', 'segno_platform_mid_sled',
                          'segno_lid_prop', 'segno_floor_rail_front_a_1',
-                         'segno_floor_rail_rear_4'):
+                         'segno_floor_rail_rear_4', 'segno_screen16_splice',
+                         'segno_screen7_shim_0p2', 'segno_screen16_shim_1p6'):
                 for extension in ('.step', '.stl'):
                     self.assertIn(part+extension, packages['segno_3dprint.zip'])
             # and nothing printed is left out again
@@ -296,6 +299,10 @@ class ManufacturingPipelineTest(unittest.TestCase):
                 'segno_encoder_knob',                 # purchased, not made
                 'segno_pedal_base_fit_test',          # jig
                 'segno_screen7_fit_test',             # jig
+                'segno_screen7_deck_fit_test',        # jig (#1070)
+                'segno_screen16_vesa_fit_test',       # jig (#1070)
+                'segno_screen16_deck_fit_test_L',     # jig (#1070)
+                'segno_screen16_deck_fit_test_R',
                 'segno_mini_console_tray',            # a different product
                 'segno_mini_console_lid',
                 'segno_mini_console_sled'})

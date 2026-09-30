@@ -1447,3 +1447,44 @@ baselines. Counts remain 452/1002 and 45/45 occurrences/bodies. Feature warnings
 remain at eight pre-existing unique-component warnings in populated and zero
 in sheet metal. No metal part, mini-console or sheet-metal archive changed.
 See [the verification](../../docs/reviews/mid-platform-mount/final-verification.json).
+
+## Screen mounts: closed deck, mirrored stand, shims — #1070
+
+**In the #1067 clone only** ("VAMP console (populated) - 1067 tabs + seat
+flanges"), on the owner's instruction, 2026-09-18. Unsaved at the time of
+writing: the clone already had unsaved #1067 edits, and saving is the owner's
+call. The original "VAMP console (populated)" and "VAMP sheet metal" were not
+touched.
+
+What was done in the clone:
+
+1. **`base:1` only**: the four right-stand pilots moved in its `CUT` sketch
+   (timeline marker rolled back to just after the sketch at index 1503, circle
+   centres moved, `moveToEnd`: 2.9 s, no errors). The formed body now has
+   Ø2.5 holes at (770.571, 205), (770.571, 327), (796.571, 236), (796.571, 296)
+   and none at the old stations. The seven `base_1067_*` trials and
+   `base_pre1067` were left as they were.
+2. **Body swaps** (base-feature `updateBody`, placements untouched):
+   `screen7_tower:1`, `screen16_stand_L:1`, `screen16_stand_R:1`. The tower keeps
+   `(11.95714, 32.1676, 0.2)` cm; the stands stay at identity. Their feet are at
+   world z 3.0 because the parts stand on the nominal shim stack.
+3. **New components**: `screen16_splice` (identity); `screen16_shim_{L,R}_{0p2,0p8}`
+   (world geometry, identity; the R ones are pre-mirrored bodies);
+   `screen7_shim_0p2` and `_0p8` (tower-local geometry, the 0p8 raised 0.2 mm,
+   at the tower's transform).
+4. **Interference sweep**: every new or changed part against every visible
+   body plus `base:1`, 699 bbox-overlapping pairs, found nothing except 0.859 mm³
+   against `screen7_module:1`. That is the four tab bosses touching the module
+   tabs they seat (about 0.004 mm over four faces), unchanged from v3.
+
+Still open:
+
+- The formed export was NOT rerun. `formed/` on the #1019 branch comes from the
+  original populated document, and exporting from the clone would bring the
+  #1067 tabs and flanges with it. Until the two lines of work are reconciled,
+  the generator stops on "segno_base: native formed export is stale", and so do
+  four tests.
+- `screen_floor_interfaces` in `reference/coated_support_datums.json` still
+  comes from the generator (see its provenance field). The clone's bodies are
+  exact imports of the same STEPs, so re-probing them would return the same
+  values.

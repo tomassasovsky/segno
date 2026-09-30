@@ -32,8 +32,11 @@ class ScreenAdjustmentTest(unittest.TestCase):
             # the measured in-plane mounting stations and the floor interface.
             plane = cq.Plane(origin=(x, c*y-s*7.8, 66.06+s*y+c*7.8),
                              xDir=(1, 0, 0), normal=(0, -s, c))
-            bore = cq.Workplane(plane).circle(1.99).extrude(-4.99).val()
-            seat = cq.Workplane(plane).circle(4.49).circle(2.01).extrude(-.1).val()
+            # M3 x 5 x 5 insert pilot (O4.5 x 6.0) in a O10.5 boss (#1070)
+            bore = (cq.Workplane(plane).circle(enclosure.S7T_INSERT_D / 2 - .01)
+                    .extrude(-enclosure.S7T_INSERT_L + .01).val())
+            seat = (cq.Workplane(plane).circle(enclosure.S7T_BOSS_D / 2 - .01)
+                    .circle(enclosure.S7T_INSERT_D / 2 + .01).extrude(-.1).val())
             self.assertLess(tower.intersect(bore).Volume(), 1e-7)
             self.assertLess(seat.cut(tower).Volume(), 1e-7)
             jig_bore = cq.Workplane('XY').center(x, y).circle(1.29).extrude(-5.4).val()
@@ -41,9 +44,15 @@ class ScreenAdjustmentTest(unittest.TestCase):
         expected_floor = ((-93.775, -42.19668095881), (-93.775, 37.803319041184),
                           (98.225, -42.19668095881), (98.225, 37.803319041184),
                           (2.225, -75.56156369584), (2.225, 71.168201778209))
+        # #1070: float holes (O5.5, +-1.25 on an M3), flange on the 1.0 mm
+        # nominal shim stack. The O9 washer must still bear all round.
+        lift = enclosure.STAND_SHIM_NOM
+        float_r = enclosure.STAND_FLOAT_D / 2.0
         for x, y in expected_floor:
-            bore = cq.Workplane('XY').center(x, y).circle(1.59).extrude(5).val()
-            seat = cq.Workplane('XY').center(x, y).circle(3).circle(1.61).extrude(1).val()
+            bore = (cq.Workplane('XY').workplane(offset=lift).center(x, y)
+                    .circle(float_r - .01).extrude(5).val())
+            seat = (cq.Workplane('XY').workplane(offset=lift).center(x, y)
+                    .circle(4.5).circle(float_r + .01).extrude(1).val())
             self.assertLess(tower.intersect(bore).Volume(), 1e-7)
             self.assertLess(seat.cut(tower).Volume(), 1e-7)
 

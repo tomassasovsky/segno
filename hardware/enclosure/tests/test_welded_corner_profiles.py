@@ -23,8 +23,9 @@ UNCHANGED_FEATURES = {
     # every connector cutout in the rear wall instead of the panel window, the
     # earth stud centred between the vents and PD_IN, and the power group behind
     # the CLEAR/BANK pedals (both bucks moved, eight standoff holes for the
-    # screen-power and PD boards).
-    'CUT': (136, 'e21dc36b3af8962a6f47b667d4fc886a04b10ee641024bdaef2b65e50636636a'),
+    # screen-power and PD boards), and the right 15.6in stand's four holes
+    # mirrored with the left (#1070).
+    'CUT': (136, '741b37cd42f47c198163ca76722f53c793af6a7e55f73ca7edaf9799187d9254'),
     'VENT': (570, 'ddec63663b8c2670400d01a6431b1ff677d8574ec2cb33b2e0d91362fb5ab681'),
     'BEND': (5, 'ebc80b8fa031008706f13bae4e9e4fc5d213aab31402eb04c449ad7a128c3991'),
     'DRILL': (9, '034f8f332d55ffc49090ff7030430b4e375578c61a97c88984c200c48e312b60'),

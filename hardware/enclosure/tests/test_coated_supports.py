@@ -22,13 +22,18 @@ def moved(shape, matrix):
     return shape.moved(cq.Location(transform))
 
 
+# #1070: every stand stands on the nominal shim stack, so its feet sit
+# STAND_SHIM_NOM above the floor it used to touch.
+FOOT_LIFT = enclosure.STAND_SHIM_NOM
+
+
 def floor_faces(shape):
     return sorted([
         round(face.Area(), 6),
         sorted([round(value, 6) for value in vertex.Center().toTuple()]
                for vertex in face.Vertices()),
     ] for face in shape.Faces() if face.geomType() == 'PLANE'
-        and face.normalAt().z < -.99999 and face.Center().z < 2.01)
+        and face.normalAt().z < -.99999 and face.Center().z < 2.01 + FOOT_LIFT)
 
 
 def cylinders(shape, radius, floor_only=False):
@@ -41,7 +46,7 @@ def cylinders(shape, radius, floor_only=False):
             continue
         bounds = face.BoundingBox()
         if floor_only and not (abs(cylinder.Axis().Direction().Z()) > .99999
-                               and bounds.zmax <= 7.001):
+                               and bounds.zmax <= 7.001 + FOOT_LIFT):
             continue
         center = cylinder.Location()
         rows.append([round(value, 6) for value in (
@@ -117,7 +122,7 @@ class CoatedSupportTest(unittest.TestCase):
                 self.assertTrue(part.isValid())
                 self.assertEqual(len(part.Solids()), 1)
                 self.assertEqual(floor_faces(part), expected['floor_faces'])
-                measured = cylinders(part, 1.6, floor_only=True)
+                measured = cylinders(part, enclosure.STAND_FLOAT_D / 2.0, floor_only=True)
                 self.assertEqual(measured, expected['anchor_cylinders'])
                 anchor_count += len(measured)
         self.assertEqual(anchor_count, 14)

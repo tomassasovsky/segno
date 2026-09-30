@@ -422,32 +422,78 @@ S7C_GAP      = 0.5     # deck sits this far behind the module back --
                        # only the bosses touch the module (PCB never contacts)
 S7C_FRAME_W  = 180.0   # tower outline (centred on the module body)
 S7C_FRAME_H  = 138.0
-# --- one-piece support TOWER (v3, "more beefy" -- user call 2026-08-19) -------
-# A closed wedge box: 4 mm perimeter walls, sloped deck carrying the window +
+# --- one-piece support TOWER (v4, #1070) --------------------------------------
+# A closed wedge box: 4 mm perimeter walls, a CLOSED sloped deck carrying the
 # tab bosses, wide floor flange with SIX M3 anchors into the base floor (the
-# #762 stations). Touch loads on the screen go tabs -> bosses -> deck -> four
-# walls -> floor; no slender columns, no bolted joints in the load path.
+# #762 stations). Touch loads on the screen go tabs -> bosses -> deck -> walls
+# and ribs -> floor; no slender columns, no bolted joints in the load path.
+# v3 had a 146 x 96 deck window and a cable window in each side wall. The
+# vendor STEP (lcd 7inch cap 1024 600, corrected 5.6 tabs) shows the window
+# was never needed for clearance: every back-side part stops short of the deck
+# plane, and all four connectors (HDMI, 2x micro-USB, backlight switch) leave
+# through ONE short edge, the +x one, toward the console centre. The window
+# existed so the deck could print without support, its 45 degree sides carrying
+# the deck out from the walls. v4 gets the same from internal ribs: S7T_RIBS
+# front-to-back walls split the box into cells, and each cell's ceiling is a 45
+# degree gable, so the deck closes over the cells. The one opening left is the
+# connector notch on the +x edge. v3's front ring-board notch served a ring
+# board that has since been replaced by one that clears the deck.
 S7T_WALL   = 4.0       # wall thickness
-S7T_DECK   = 5.0       # deck thickness (along the deck normal)
+S7T_DECK   = 5.0       # deck thickness (along the deck normal) at a gable ridge
 S7T_FLANGE = 12.0      # floor flange width (outward)
+S7T_RIBS   = 4         # internal front-to-back ribs (-> S7T_RIBS + 1 gabled cells)
+S7T_RIB_T  = 4.0       # rib thickness (along u)
 S7T_H0     = 66.06     # deck-top height (mm, above the base floor TOP) under the
                        # display-window centre. From the MEASURED underside plane
                        # in Fusion (world: z = 12.43 + tan(SLOPE)*y mm).
                        # Bosses include SCREEN_COATED_SETBACK below the original
-                       # glass-contact datum; fit compliant support after coating.
-S7C_FRAME_T  = 5.0     # frame plate thickness
-S7C_WIN_W    = 146.0   # open window: PCB + connectors + backlight switch live
-S7C_WIN_H    = 96.0    # here untouched (ports point rearward through the window)
-S7C_LEG_SEP  = 158.0   # leg centres, symmetric about COL_U -- ON the frame's side
-                       # rails (u +-70..88), clear of the open window
-S7C_LEG_W    = 30.0    # leg web width (along u)
-S7C_LEG_T    = 6.0     # leg web thickness (along v)
-S7C_FOOT_L   = 40.0    # foot flange (along v), 2x M3 to floor anchors (#762)
-S7C_FOOT_GAUGE = 24.0  # foot hole spacing along v
-S7C_ADJ      = 6.0     # height regulation budget: felt compression (~1) + up to
-                       # ~5 of M3 washer shims between leg pad and frame
-# (nominal leg height is computed in build_screen7_cradle_steps -- it needs
-#  SCREEN_TOP_V, which is defined further down)
+                       # glass-contact datum; the shim stack under the flange
+                       # (STAND_SHIM_*) takes up what the metal and paint add.
+# Connector field on the module's +x edge, in the tower's lit-centred frame.
+# Vendor STEP (model x + 1.75, model z - 0.25 after the lit re-anchor and the
+# 0.50 front shift): HDMI y 30.95..45.95, micro-USB 16.85..24.75 and
+# 3.75..11.65, backlight switch -7.75..1.25, receptacles from x 73.55 out to the
+# module edge at 85.25. The notch adds S7T_PLUG_MARGIN on each side for plug
+# overmoulds and stops short of the rear +x tab boss (y 50.25 at its edge).
+# Tab bosses (#1070): M3 x 5.0 x 5.0 heat-set inserts, the same part as the
+# pedal sleds and the 15.6in splice, so the build needs one insert. Their
+# O4.5 x 6.0 pilot needs a bigger boss than the old O9 (2.25 mm of wall);
+# O10.5 leaves 3.0. The vendor STEP shows nothing of the module within 6 mm of
+# a tab axis on the boss side, and the connector notch still clears the rear
+# +x boss.
+S7T_BOSS_D     = 10.5
+S7T_INSERT_D   = 4.5
+S7T_INSERT_L   = 6.0
+S7T_SCREW_CLR  = 3.4    # below the insert: a longer M3 passes, it does not self-tap
+S7C_PORTS_Y    = (-7.75, 45.95)
+S7C_PORTS_X0   = 73.55
+S7T_PLUG_MARGIN = 3.0
+# Strip-ring carrier notch (#1075; console variant in hardware/strip_ring/
+# console_ring.py on the #1088 branch). The 34-LED strip ring hangs its Ø80 v3
+# XIAO carrier 7 mm deeper than the Ring24 stack did, and there it cuts the deck's
+# front edge and the front wall top (369 mm3 in the Fusion clone). A cylinder
+# about the encoder axis, the carrier's radius plus air, removes exactly that and
+# nothing the module needs: the module's nearest point is 42.9 from the axis.
+S7T_RING_NOTCH_R = 41.5                  # carrier r 40.0 + 1.5 air
+S7T_RING_NOTCH_AXIAL = (-28.0, -2.0)     # from the faceplate TOP along the axis:
+                                         # below the carrier's underside parts up
+                                         # to the faceplate underside
+
+# --- floor interface shared by the 7in tower and the 15.6in stands (#1070) ---
+# In-plane: every flange hole is a FLOAT hole, M3 with an M3 DIN 9021 washer
+# (O9), so a stand can move +-STAND_FLOAT on the floor. The base floor keeps
+# its plain M3 tap pilots.
+# Height: the stands are built STAND_SHIM_NOM short of the lid and sit on
+# printed shims. The kit is binary, so any stack from 0 to 3.0 mm in 0.2 steps
+# is available: -1.0..+2.0 mm around nominal. Nominal is 0.2 + 0.8.
+STAND_FLOAT    = 1.25
+STAND_FLOAT_D  = 3.0 + 2 * STAND_FLOAT     # 5.5
+STAND_WASHER_D = 9.0
+STAND_SHIM_SET = (0.2, 0.4, 0.8, 1.6)
+STAND_SHIM_NOMINAL = (0.2, 0.8)
+STAND_SHIM_NOM = sum(STAND_SHIM_NOMINAL)   # 1.0
+assert STAND_WASHER_D / 2.0 > STAND_FLOAT_D / 2.0 + STAND_FLOAT, \
+    "float hole: the washer no longer covers it at full travel"
 
 # --- LEDs / encoder -----------------------------------------------------------
 # Status indicators = SMD LEDs (WS2812B), NOT through-hole: a WHITE PLA pill
@@ -2716,7 +2762,9 @@ STAND_ANCHORS_156 = [
     # 15.6in bridge stands (doc-verified 0.1; build_screen16_stand_steps()
     # cross-checks these against its computed flange stations at build time, #767)
     (480.0, 205.0), (480.0, 327.0), (454.0, 236.0), (454.0, 296.0),  # 15.6 L
-    (765.0, 205.0), (765.0, 327.0), (739.0, 236.0), (739.0, 296.0),  # 15.6 R
+    # #1070: the right stand is the left one mirrored about SCREEN_16_U (625.286),
+    # so these four are the left four mirrored, and the flange faces outboard.
+    (770.571, 205.0), (770.571, 327.0), (796.571, 236.0), (796.571, 296.0),  # 15.6 R
 ]
 STAND_ANCHORS = STAND_ANCHORS_7IN + STAND_ANCHORS_156
 STAND_ANCHOR_TOL = 0.15   # mm; tighter than any real drift, looser than float noise
@@ -2761,8 +2809,8 @@ BOARD_U = 560.0   # +48 from 512 (user call 2026-08-19: centre the cluster under
                   # PCB 670.5..726.5 -- keeping the 10cm ribbon's ~61 gap).
                   # Electrically BETTER: CTRL_1/2 at u 662/706, so the move
                   # SHORTENS the unshielded analog runs by 48. Nearby limits:
-                  # Pi right edge 726.5 vs the 15.6 R-stand flange at ~733
-                  # (6.5 clear). Also widens the 15.6 L-tower strip to ~93.
+                  # Pi right edge 726.5 vs the 15.6 R-stand tower at 750.6
+                  # (its flange faces outboard since #1070). Also widens the 15.6 L-tower strip to ~93.
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("CONSOLE_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
@@ -5221,6 +5269,176 @@ def build_screen7_fit_test():
     return sp
 
 
+def build_screen7_deck_fit_test():
+    """7" DECK fit test (#1070): the tower's deck, printed FLAT, bosses up, no
+    support. The deck plate is the real 5 mm, and the four tab bosses match the
+    tower's: O10.5, full height, O4.5 x 6.0 pilots for the M3 5x5 inserts,
+    O3.4 below. The connector notch is cut through the +x edge, where the
+    module's HDMI, micro-USB and backlight switch are. The middle is open to
+    save filament; the tower's real deck is closed.
+    Checks: the inserts set flush; four M3 x 8 land through the tabs without
+    forcing; only the bosses touch the module (its tallest back part clears the
+    deck by the designed ~0.3 mm, so a 0.2 feeler passes under the connector
+    edge); your real cables plug in through the notch."""
+    import cadquery as cq
+    W, D = S7C_FRAME_W, S7C_FRAME_H
+    x0, y0, x1, y1 = S7C_MOD_BB
+    mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    dt = S7T_DECK
+    boss_h = (S7C_MOD_DEPTH + S7C_GAP - (S7C_GLASS_TO_TABF + S7C_TAB_T)
+              - SCREEN_COATED_SETBACK)
+    plate = cq.Workplane("XY").center(mcx, mcy).rect(W, D).extrude(dt)
+    # open middle, but keep the +x strip the connector notch runs through
+    plate = plate.cut(cq.Workplane("XY").center((-W / 2.0 + mcx + 16.0 + 55.0) / 2.0, mcy)
+                      .rect(55.0 - (mcx - W / 2.0 + 16.0), D - 32.0).extrude(dt))
+    py0 = S7C_PORTS_Y[0] - S7T_PLUG_MARGIN
+    py1 = S7C_PORTS_Y[1] + S7T_PLUG_MARGIN
+    px0 = S7C_PORTS_X0 - S7T_PLUG_MARGIN
+    plate = plate.cut(cq.Workplane("XY").center((px0 + mcx + W) / 2.0, (py0 + py1) / 2.0)
+                      .rect(mcx + W - px0, py1 - py0).extrude(dt))
+    for (hx, hy) in S7C_HOLES:
+        plate = plate.union(cq.Workplane("XY").workplane(offset=dt).center(hx, hy)
+                            .circle(S7T_BOSS_D / 2.0).extrude(boss_h))
+        plate = plate.cut(cq.Workplane("XY").workplane(offset=dt + boss_h).center(hx, hy)
+                          .circle(S7T_INSERT_D / 2.0).extrude(-S7T_INSERT_L))
+        plate = plate.cut(cq.Workplane("XY").center(hx, hy)
+                          .circle(S7T_SCREW_CLR / 2.0).extrude(dt + boss_h))
+    sp = os.path.join(OUT, "segno_screen7_deck_fit_test.step")
+    cq.exporters.export(plate.val(), sp)
+    cq.exporters.export(plate.val(), os.path.join(OUT, "segno_screen7_deck_fit_test.stl"))
+    return sp
+
+
+def _s16_deck_frame_z0():
+    """World z of the stand deck plane at y = 0 (see build_screen16_stand_steps)."""
+    cs = math.cos(math.radians(SLOPE_ANGLE))
+    return LID_UNDER_Z0 - (S16_BLOCK_D + S16_GAP) / cs
+
+
+def _s16_deck_fit_skeleton(cq, deck):
+    """What of a deck half the whole-fit test keeps (#1070). The full slab was
+    200 cm3 of mostly solid 10 mm plate; a fit test only needs every CONTACT at
+    its true place and height. So: the tower pad on its own footprint, a column
+    round the VESA hole and round each splice insert, all full depth, and a
+    10 mm-deep open ladder -- both long edges, both ends, and a cross bar
+    through the VESA column -- to hold them where the stand holds them. All
+    vertical walls on the bed face: it still prints flat without support."""
+    bb = deck.BoundingBox()
+    h = 100.0
+    rail = 8.0
+    def box(x0, x1, y0, y1):
+        return cq.Solid.makeBox(x1 - x0, y1 - y0, h, cq.Vector(x0, y0, -1.0))
+    def column(x, y, r):
+        return cq.Solid.makeCylinder(r, h, cq.Vector(x, y, -1.0))
+    holes = {}
+    for f in deck.Faces():
+        if f.geomType() != "CYLINDER":
+            continue
+        from OCP.BRepAdaptor import BRepAdaptor_Surface
+        cyl = BRepAdaptor_Surface(f.wrapped).Cylinder()
+        loc = cyl.Location()
+        holes.setdefault(round(cyl.Radius(), 3), set()).add((round(loc.X(), 3), round(loc.Y(), 3)))
+    vesa = holes[round(S16_VESA_CLR_D / 2.0, 3)]
+    inserts = holes[round(S16_SPLICE_INSERT_D / 2.0, 3)]
+    assert len(vesa) == 1 and len(inserts) == 2, (vesa, inserts)
+    (vx, vy), = vesa
+    joint_x = SCREEN_16_U
+    outer = bb.xmin if abs(bb.xmax - joint_x) < 1e-3 else bb.xmax
+    sgn = 1.0 if outer < joint_x else -1.0          # direction from the outer end inward
+    pad_top = [f for f in deck.Faces() if f.geomType() == "PLANE" and f.normalAt().z > .99999
+               and abs(f.Center().z - bb.zmax) < 1e-6]
+    assert len(pad_top) == 1, "deck fit test: expected one tower pad"
+    pb = pad_top[0].BoundingBox()
+    parts = [box(pb.xmin - 2.0, pb.xmax + 2.0, pb.ymin - 2.0, pb.ymax + 2.0),
+             box(min(outer, outer + sgn * rail), max(outer, outer + sgn * rail),
+                 bb.ymin, bb.ymax),
+             box(bb.xmin, bb.xmax, bb.ymin, bb.ymin + rail),
+             box(bb.xmin, bb.xmax, bb.ymax - rail, bb.ymax),
+             box(min(joint_x, joint_x - sgn * rail), max(joint_x, joint_x - sgn * rail),
+                 bb.ymin, bb.ymax),
+             box(vx - rail / 2.0, vx + rail / 2.0, bb.ymin, bb.ymax),
+             column(vx, vy, 12.0)]
+    parts += [column(x, y, 7.0) for x, y in inserts]
+    mask = parts[0]
+    for p in parts[1:]:
+        mask = mask.fuse(p)
+    return mask.clean()
+
+
+def build_screen16_deck_fit_test():
+    """15.6" WHOLE-FIT test (#1070): the real stands' top. Each half is the
+    shipped stand half, turned into its deck frame and cut off at the deck's
+    underside, then cut down to a skeleton (_s16_deck_fit_skeleton) that keeps
+    every contact the monitor meets exactly as the stand has it: VESA bosses
+    and fixed M4 holes, BOTH tower pads, the splice inserts. It
+    prints flat (deck down, bosses and pads up, no support) and joins with the
+    real segno_screen16_splice. Derived from the stand STEPs, so it cannot
+    drift from them: build_screen16_stand_steps() must have run.
+    Checks, monitor face-down, the spliced pair on its back, M4 x 16 in: both
+    screws start by hand; both bosses bear on the raised block; both pads
+    touch the flat back at the same time (a feeler under either pad is the
+    number to report); nothing touches the ports on the left edge."""
+    import cadquery as cq
+    out = []
+    for side in ("L", "R"):
+        stand = cq.importers.importStep(
+            os.path.join(OUT, f"segno_screen16_stand_{side}.step")).val()
+        deck = (stand.translate((0, 0, -_s16_deck_frame_z0()))
+                .rotate((0, 0, 0), (1, 0, 0), -SLOPE_ANGLE))
+        keep = cq.Solid.makeBox(2000, 2000, 100, cq.Vector(-1000, -1000, -S16_BEAM_T))
+        deck = deck.intersect(keep).translate((0, 0, S16_BEAM_T))
+        deck = deck.intersect(_s16_deck_fit_skeleton(cq, deck))
+        assert deck.isValid() and len(deck.Solids()) == 1, f"deck fit test {side}"
+        bb = deck.BoundingBox()
+        assert abs(bb.zmin) < 1e-6 and max(bb.xlen, bb.ylen) <= ENDER_BED
+        nm = f"segno_screen16_deck_fit_test_{side}"
+        cq.exporters.export(deck, os.path.join(OUT, nm + ".step"))
+        cq.exporters.export(deck, os.path.join(OUT, nm + ".stl"))
+        out.append(os.path.join(OUT, nm + ".step"))
+    return out
+
+
+def build_screen16_vesa_fit_test():
+    """15.6" VESA fit test (#1070): a short piece of the stand deck across the
+    two monitor screws, printed FLAT, contact side up, no support. It is the
+    real 10 mm deck with fixed O4.8 M4 holes at S16_VESA pitch and the same
+    0.3 mm contact bosses; screw it on with M4 x 16 + DIN 125 washers from the
+    flat side, exactly as the stands go on.
+    The raised lip along the top edge stands S16_BLOCK_PROUD above the boss tops
+    and 1 mm beyond the raised block's top edge, so it should just touch the
+    monitor's FLAT back while the bosses sit on the block. This is the height
+    the stand's tower pads are built to.
+    Checks: the 75 mm pitch lands; M4 x 16 goes fully home without bottoming in
+    the monitor's threads; the bar sits on both bosses without rocking and the
+    lip touches (a gap means the block stands prouder than 7.8, a rock or a lip
+    clash means it is lower, or the screw row is not where it was measured)."""
+    import cadquery as cq
+    t = S16_BEAM_T
+    boss = S16_GAP - SCREEN_COATED_SETBACK            # what the stand's bosses rise
+    lip = S16_PAD_H - SCREEN_COATED_SETBACK           # what the tower pads rise
+    to_block_top = S16_BLOCK_INSET + S16_BLOCK_H - S16_VESA_UP   # from the screw row
+    lip_y0 = to_block_top + 1.0
+    lip_y1 = lip_y0 + 6.0
+    y_lo = -15.0
+    half = S16_VESA / 2.0 + 22.0
+    bar = (cq.Workplane("XY").center(0.0, (y_lo + lip_y1) / 2.0)
+           .rect(2 * half, lip_y1 - y_lo).extrude(t))
+    bar = bar.union(cq.Workplane("XY").workplane(offset=t)
+                    .center(0.0, (lip_y0 + lip_y1) / 2.0)
+                    .rect(2 * half, lip_y1 - lip_y0).extrude(lip))
+    for sx in (-1, 1):
+        hx = sx * S16_VESA / 2.0
+        bar = bar.union(cq.Workplane("XY").workplane(offset=t).center(hx, 0.0)
+                        .circle(9.0).extrude(boss))
+        bar = bar.cut(cq.Workplane("XY").center(hx, 0.0)
+                      .circle(S16_VESA_CLR_D / 2.0).extrude(t + boss))
+    assert lip - boss == S16_BLOCK_PROUD or abs(lip - boss - S16_BLOCK_PROUD) < 1e-9
+    sp = os.path.join(OUT, "segno_screen16_vesa_fit_test.step")
+    cq.exporters.export(bar.val(), sp)
+    cq.exporters.export(bar.val(), os.path.join(OUT, "segno_screen16_vesa_fit_test.stl"))
+    return sp
+
+
 # --- 15.6" screen stand (3D print x2, #762) -- the 7" tower concept, split for
 # the Ender 3 V3 bed (220^2) and bridging OVER the electronics bay (boards at
 # x 46-68, y 23-32: no floor there). LEFT part = end tower + half-deck; RIGHT
@@ -5234,7 +5452,8 @@ def build_screen7_fit_test():
 #   1. The mount is a TWO-hole horizontal row at VESA-75 pitch, not a 75x75
 #      square -- the "2-hole ultra-slim variant" the release plan anticipated.
 #      The boss field is re-derived below; the metal is untouched, which is
-#      exactly what converting the bosses to O9.3 floats bought.
+#      exactly what converting the bosses to O9.3 floats bought. (#1070 made
+#      them fixed O4.8 clearance holes; the stands now adjust on the floor.)
 #   2. Those screws sit on a RAISED BLOCK 14.6 deep from the glass face, while
 #      the flat back around it is shallower. One plane no longer describes the
 #      monitor's back, so the deck now indexes off the BLOCK and the tower pads
@@ -5256,6 +5475,8 @@ assert abs(S16_BLOCK_D - 14.6) <= 0.2, (
 S16_VESA    = 75.0    # measured: horizontal pitch between the two screws (VESA-75)
 S16_VESA_ROWS = 1     # measured: ONE horizontal row, not a 75x75 square
 S16_VESA_UP = 76.5    # measured: screw axis height above the BODY's bottom edge
+S16_VESA_CLR_D  = 4.8 # M4 clearance, ISO 273 coarse; FIXED since #1070 (was a
+                      # O9.3 float). M4 x 16 with an M4 DIN 125 washer (O9).
 S16_DISPLAY_T   = 0.1     # decal-carrier lens thickness in the reference model (not a
                       # measurement -- just enough to give the visible image its own body)
 S16_BLOCK_H     = 83.0    # measured: the raised block's height (v)
@@ -5270,6 +5491,15 @@ S16_BEAM_T  = 10.0    # deck plate thickness
 S16_RIB_H   = 15.0    # stiffening ribs under the beam edges
 S16_WALL    = 4.0
 S16_FLANGE  = 12.0
+# Centre splice (#1070): a flat plate between the deck's edge ribs, four M3 up
+# into heat-set inserts, two per half. Short enough to stay clear of the VESA
+# screws' O12 washers at the end of their +-2.5 float (asserted in the builder).
+S16_SPLICE_L   = 52.0
+S16_SPLICE_T   = 6.0
+S16_SPLICE_CLR = 0.3        # per side, against the edge ribs
+S16_SPLICE_SCREWS = ((-14.0, -30.0), (-14.0, 30.0), (14.0, -30.0), (14.0, 30.0))
+S16_SPLICE_INSERT_D = 4.5   # M3 heat-set insert pilot: the sleds' 5.0 x 5.0 insert,
+S16_SPLICE_INSERT_L = 6.0   # so the build needs one insert part; 4 mm roof left
 S16_PAD_H   = S16_BLOCK_PROUD + S16_GAP   # 8.3 mm unrecessed contact datum;
                       # the printed pads subtract SCREEN_COATED_SETBACK.
 ENDER_BED   = 218.0   # Ender 3 V3 printable square (2mm margin) -- gate below
@@ -5384,8 +5614,9 @@ def build_screen16_monitor_step():
             f"glass, but the panel's flat back is at {S16_BODY_D:.3f}. The pads "
             f"{'stand proud of' if min(sv) < S16_BODY_D else 'fall short of'} the panel.")
         fz = min(v.Center().z for v in stand.Vertices())
-        assert abs(fz - FLOOR_TOP) < 1e-6, (
-            f"{nm}: feet at z={fz:.3f}, not on the floor's top face ({FLOOR_TOP:.3f})")
+        assert abs(fz - (FLOOR_TOP + STAND_SHIM_NOM)) < 1e-6, (
+            f"{nm}: feet at z={fz:.3f}, not on the nominal shim stack "
+            f"({FLOOR_TOP:.3f} + {STAND_SHIM_NOM:.1f})")
     sp = os.path.join(OUT, "segno_screen16_monitor.step")
     cq.exporters.export(cq.Compound.makeCompound(
         [display.val(), body.val(), block.val()]), sp)
@@ -5414,16 +5645,30 @@ def build_screen16_portclear_step():
     return sp
 
 
+def _export_shims(stem, make):
+    """One STEP + STL per STAND_SHIM_SET thickness, e.g. <stem>_0p2. `make(t)`
+    returns the flange ring t thick, lying where the stack starts."""
+    import cadquery as cq
+    for t in STAND_SHIM_SET:
+        sol = make(t).val()
+        assert sol.isValid() and len(sol.Solids()) == 1, f"{stem} {t}: bad shim solid"
+        nm = f"{stem}_{str(t).replace('.', 'p')}"
+        cq.exporters.export(sol, os.path.join(OUT, nm + ".step"))
+        cq.exporters.export(sol, os.path.join(OUT, nm + ".stl"))
+
+
 def build_screen16_stand_steps():
-    """15.6" monitor stand, LEFT + RIGHT prints (BLACK PETG, #762).
+    """15.6" monitor stand, LEFT + mirrored RIGHT prints + splice (BLACK PETG, #762).
     Every monitor number here is caliper-measured (2026-09-01).
     World-mm coordinates: floor BOTTOM at z=0, feet at z=T. Place
     in Fusion at identity. Lid underside (measured): z(y) = LID_UNDER_Z0 +
     tan(SLOPE)*y; world y = cos(SLOPE)*v_plan - 2.093. The monitor's glass
     clears the bare underside by SCREEN_COATED_SETBACK; only the shortened
     VESA bosses and tower pads touch the monitor. The deck plane stays fixed.
-    Bed constraint: splice at x=600 (off-centre, clear of the VESA bosses),
-    outboard flange edges trimmed flush so each part stays under ENDER_BED."""
+    Bed constraint: the halves meet at the screen centre, where a printed
+    splice plate joins them (#1070); the right half is the left one mirrored.
+    The feet stand on the nominal shim stack (STAND_SHIM_NOM) and float
+    +-STAND_FLOAT on the floor."""
     import cadquery as cq
     cs = math.cos(math.radians(SLOPE_ANGLE))
     sn = math.sin(math.radians(SLOPE_ANGLE))
@@ -5460,21 +5705,16 @@ def build_screen16_stand_steps():
     _L2v = lambda L: L + 2.093 / cs - _skew      # deck local y -> plan v
     _beam_v1 = _L2v(pyc + S16_BEAM_D / 2.0)
 
-    def deck_half(x0, x1, lapdir):
+    def deck_half(x0, x1):
         d = (wp().center((x0 + x1) / 2.0, pyc)
              .rect(x1 - x0, S16_BEAM_D).extrude(-S16_BEAM_T))
         for sy in (-1, 1):
             d = d.union(wp(-S16_BEAM_T)
                         .center((x0 + x1) / 2.0, pyc + sy * (S16_BEAM_D / 2.0 - 5.0))
                         .rect(x1 - x0, 10.0).extrude(-S16_RIB_H))
-        lap_x = x1 if lapdir > 0 else x0
-        if lapdir > 0:   # lower lap tongue continues past the joint
-            d = d.union(wp(-S16_BEAM_T).center(lap_x + 11.0, pyc)
-                        .rect(22.0, S16_BEAM_D - 12.0).extrude(S16_BEAM_T / 2.0))
-        else:            # upper half relieved so the tongue nests under it
-            d = d.cut(wp(-S16_BEAM_T).center(lap_x + 11.0, pyc)
-                      .rect(22.4, S16_BEAM_D).extrude(S16_BEAM_T / 2.0 + 0.2))
         return d
+
+    shim_rings = []
 
     def tower(x0, x1, fl_out_sign):
         # Feet start at the floor's TOP FACE, not at z=0. z=0 in this frame is the
@@ -5486,37 +5726,50 @@ def build_screen16_stand_steps():
         # solid for it to show up, as the stand pads standing T proud of the panel's
         # back. The 7in tower already builds from its floor top and places at identity
         # + floor top in Fusion; this now matches, and places at IDENTITY.
-        z0f = FLOOR_TOP
+        # #1070: the feet stand on the nominal shim stack, STAND_SHIM_NOM above it.
+        z0f = FLOOR_TOP + STAND_SHIM_NOM
         t = (cq.Workplane("XY").workplane(offset=z0f)
              .center((x0 + x1) / 2.0, yc).rect(x1 - x0, S16_BEAM_D)
              .extrude(300.0))
         t = t.cut(cq.Workplane("XY").workplane(offset=z0f)
                   .center((x0 + x1) / 2.0, yc)
                   .rect(x1 - x0 - 2 * S16_WALL, S16_BEAM_D - 2 * S16_WALL).extrude(301.0))
-        t = t.cut(wp(-S16_BEAM_T - S16_RIB_H).center((x0 + x1) / 2.0, pyc)
+        # The tube runs up to the deck's underside, not to the ribs' bottom edge:
+        # stopping at the ribs left a 15 mm slot in both end walls (#1070).
+        t = t.cut(wp(-S16_BEAM_T).center((x0 + x1) / 2.0, pyc)
                   .rect(2000, 2000).extrude(500))
         # flange: fl_out_sign=+1/-1 adds the inboard x flange; 0 = y-only
         # (the LEFT tower lives in a 48mm strip between platform_mid's body
         # edge at x~417 and the board standoffs at x~465 -- no x room at all)
         fx0 = x0 - (S16_FLANGE if fl_out_sign < 0 else 0.0)
         fx1 = x1 + (S16_FLANGE if fl_out_sign > 0 else 0.0)
-        fl = (cq.Workplane("XY").workplane(offset=z0f)
-              .center((fx0 + fx1) / 2.0, yc)
-              .rect(fx1 - fx0, S16_BEAM_D + 2 * S16_FLANGE).extrude(5.0))
-        fl = fl.cut(cq.Workplane("XY").workplane(offset=z0f)
-                    .center((x0 + x1) / 2.0, yc)
-                    .rect(x1 - x0 - 2 * S16_WALL, S16_BEAM_D - 2 * S16_WALL).extrude(5.0))
-        t = t.union(fl)
-        anchors = []
         sites = [((x0 + x1) / 2.0, yc - (S16_BEAM_D + S16_FLANGE) / 2.0),
                  ((x0 + x1) / 2.0, yc + (S16_BEAM_D + S16_FLANGE) / 2.0)]
         if fl_out_sign != 0:
             inx = (x1 + S16_FLANGE / 2.0) if fl_out_sign > 0 else (x0 - S16_FLANGE / 2.0)
             sites += [(inx, yc - 30.0), (inx, yc + 30.0)]
-        for ax, ay in sites:
-            anchors.append((ax, ay))
+        anchors = list(sites)
+
+        def ring(z, h):
+            r = (cq.Workplane("XY").workplane(offset=z)
+                 .center((fx0 + fx1) / 2.0, yc)
+                 .rect(fx1 - fx0, S16_BEAM_D + 2 * S16_FLANGE).extrude(h))
+            r = r.cut(cq.Workplane("XY").workplane(offset=z - 1.0)
+                      .center((x0 + x1) / 2.0, yc)
+                      .rect(x1 - x0 - 2 * S16_WALL, S16_BEAM_D - 2 * S16_WALL)
+                      .extrude(h + 2.0))
+            for ax, ay in anchors:
+                r = r.cut(cq.Workplane("XY").workplane(offset=z - 1.0)
+                          .center(ax, ay).circle(STAND_FLOAT_D / 2.0).extrude(h + 2.0))
+            return r
+        t = t.cut(cq.Workplane("XY").workplane(offset=z0f)
+                  .center((x0 + x1) / 2.0, yc)
+                  .rect(x1 - x0 - 2 * S16_WALL, S16_BEAM_D - 2 * S16_WALL).extrude(5.0))
+        t = t.union(ring(z0f, 5.0))
+        for ax, ay in anchors:
             t = t.cut(cq.Workplane("XY").workplane(offset=z0f)
-                      .center(ax, ay).circle(3.2 / 2.0).extrude(5.0))
+                      .center(ax, ay).circle(STAND_FLOAT_D / 2.0).extrude(5.0))
+        shim_rings.append(ring)
         # Pad rising from the deck plane to the monitor's FLAT back (S16_PAD_H = the
         # block's proud height plus the deck gap). It lives entirely BEHIND the block:
         # centred on the deck it would run ~31 mm under the slab. That does leave the
@@ -5534,11 +5787,19 @@ def build_screen16_stand_steps():
                     .extrude(S16_PAD_H - SCREEN_COATED_SETBACK))
         return t, anchors
 
-    SPLICE = 600.0
-    lt, la = tower(460.0, 500.0, -1)  # strip: platform_mid 417 | board PCB now 510
-    left = lt.union(deck_half(460.0, SPLICE, +1))
-    rt, ra = tower(745.0, 785.0, -1)
-    right = rt.union(deck_half(SPLICE, 785.0, -1))
+    # ONE half, mirrored (#1070). The left half is built from its tower (x
+    # 460..500, the 48 mm strip between platform_mid at x~417 and the board
+    # standoffs) to the screen centre; the right half is its mirror image about
+    # SCREEN_16_U, so the pair is a single part printed once as-is and once
+    # mirrored. Before #1070 the joint sat at x 600 with a lap tongue and the
+    # right tower was placed on its own, 5.6 mm off the mirror position with its
+    # flange facing inboard -- two different parts.
+    XM = SCREEN_16_U
+    mirror = lambda shape: shape.mirror("YZ", (XM, 0, 0))
+    lt, la = tower(460.0, 500.0, -1)
+    _export_shims("segno_screen16_shim", lambda t: shim_rings[0](FLOOR_TOP, t))
+    left = lt.union(deck_half(460.0, XM))
+    ra = [(2 * XM - ax, ay) for ax, ay in la]
     # CROSS-CHECK the frozen base-floor stations against what the stands just
     # computed (#767). These flange holes ARE the base holes: the stands are
     # built in world plan coords (x, y_world) with the floor's own frame, so the
@@ -5569,28 +5830,44 @@ def build_screen16_stand_steps():
         for sx in sxs:
             hx = xc + sx * S16_VESA / 2.0
             hy = boss_y
-            # O9.3 float hole: M4 + O12 fender washer gives +-2.5 of
-            # monitor position adjust in BOTH axes -- the metal aperture
-            # never depends on the panel's viewport offsets (11-day
-            # de-risk, user-approved 2026-08-19)
+            # FIXED M4 clearance (#1070). The monitor used to float +-2.5 on
+            # O9.3 holes, but an O12 washer cannot cover a O9.3 hole with the
+            # screw at the end of that travel, and a panel held at two points
+            # is the wrong place to adjust. The spliced stand pair is one rigid
+            # platform, and it adjusts on its floor float holes instead.
+            # O4.8 is ISO 273 coarse: enough for the 75 mm pitch across two
+            # printed halves and the splice, not an adjustment.
             d = d.union(wp().center(hx, hy).circle(9.0)
                         .extrude(S16_GAP - SCREEN_COATED_SETBACK))
-            d = d.cut(wp(S16_GAP).center(hx, hy).circle(9.3 / 2.0)
+            d = d.cut(wp(S16_GAP).center(hx, hy).circle(S16_VESA_CLR_D / 2.0)
                       .extrude(-(S16_GAP + S16_BEAM_T + 1.0)))
             d = d.cut(wp(-S16_BEAM_T).center(hx, hy).circle(14.0 / 2.0)
                       .extrude(-S16_RIB_H))
         return d
     left = add_vesa(left, (-1,))
-    right = add_vesa(right, (+1,))
-    def add_splice(d):
-        for sy in (-1, 1):
-            d = d.cut(wp(1.0).center(SPLICE + 11.0, pyc + sy * (S16_BEAM_D / 2.0 - 20.0))
-                      .circle(3.4 / 2.0).extrude(-(S16_BEAM_T + 3.0)))
-        return d
-    left = add_splice(left)
-    right = add_splice(right)
+    # SPLICE: the halves butt at XM and a plate between the edge ribs bolts up
+    # into heat-set inserts in both deck undersides. Blind from below: the deck's
+    # top face sits S16_GAP off the monitor's block, with no room for a head.
+    for sx, sy in S16_SPLICE_SCREWS:
+        left = left.cut(wp(-S16_BEAM_T).center(XM + sx, pyc + sy)
+                        .circle(S16_SPLICE_INSERT_D / 2.0).extrude(S16_SPLICE_INSERT_L))
+    right = cq.Workplane("XY").add(mirror(left.val()))
+    splice = (wp(-S16_BEAM_T).center(XM, pyc)
+              .rect(S16_SPLICE_L, S16_BEAM_D - 20.0 - 2 * S16_SPLICE_CLR)
+              .extrude(-S16_SPLICE_T))
+    for sx, sy in S16_SPLICE_SCREWS:
+        splice = splice.cut(wp(-S16_BEAM_T).center(XM + sx, pyc + sy)
+                            .circle(3.4 / 2.0).extrude(-S16_SPLICE_T))
+    # the plate must stay clear of the VESA screw's washer at the end of its float
+    _washer_x = S16_VESA / 2.0 - 12.0 / 2.0 - 2.5
+    assert S16_SPLICE_L / 2.0 < _washer_x - 0.5, (
+        f"15.6in splice plate (half length {S16_SPLICE_L/2:.1f}) reaches the VESA washer "
+        f"at full float ({_washer_x:.1f} from the centre)")
 
     out = []
+    sp = os.path.join(OUT, "segno_screen16_splice.step")
+    cq.exporters.export(splice.val(), sp)
+    cq.exporters.export(splice.val(), os.path.join(OUT, "segno_screen16_splice.stl"))
     for nm, sol, anc in (("segno_screen16_stand_L", left, la),
                           ("segno_screen16_stand_R", right, ra)):
         bb = sol.val().BoundingBox()
@@ -5867,32 +6144,66 @@ def build_beam_step():
     return step
 
 
+def _gable_cutter(cq, plane, x0, x1, y0, y1, top, bottom):
+    """A triangular prism running along the deck plane's y axis: base (x0..x1) on
+    the plane offset `bottom`, apex at the cell centre on offset `top` (both
+    along the plane normal, negative = into the part). Its sides lean 45 degrees
+    when (x1 - x0) / 2 == top - bottom. It is the void under one gable of a
+    deck: the ceiling stays self-supporting when the part prints flange-down."""
+    e = 1.0                                       # run the base past the rib faces' bottom
+    yd = plane.yDir
+    p = cq.Plane(origin=plane.origin + yd * y0, xDir=plane.xDir, normal=yd)
+    # in p, local y is -plane.normal, so depth into the part reads positive
+    return (cq.Workplane(p)
+            .polyline([(x0 - e, -bottom + e), (x1 + e, -bottom + e), ((x0 + x1) / 2.0, -top)])
+            .close().extrude(y1 - y0))
+
+
+def screen7_tower_encoder_axis():
+    """The encoder axis in the 7in tower's own frame: (point at the faceplate
+    UNDERSIDE, unit direction outward). The tower is placed by translation only,
+    so its origin is recovered from the frozen front-centre floor anchor, which
+    is this tower's own flange hole; the axis comes from the same numbers that
+    place segno_ring_disc in the assembly."""
+    c = math.cos(math.radians(SLOPE_ANGLE))
+    sn = math.sin(math.radians(SLOPE_ANGLE))
+    x0, y0, x1, y1 = S7C_MOD_BB
+    mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    cy_w = mcy * c
+    front = STAND_ANCHORS_7IN[4]
+    ox = front[0] - mcx
+    oy = front[1] - (cy_w - (S7C_FRAME_H * c + S7T_FLANGE) / 2.0)
+    under = (COL_U - ox, c * ENC_V - 2.093 - oy,
+             LID_UNDER_Z0 + sn * (ENC_V - 2.093 / c) - T)
+    return under, (0.0, -sn, c)
+
+
 def build_screen7_tower_step():
-    """7" screen support TOWER (3D print in BLACK PETG, x1, #762): the one-piece
-    replacement for the frame+legs cradle ("more beefy", user call). A closed
-    wedge box in WORLD coordinates (x = console x, y = depth, z = up; origin =
-    the base-floor point under the display-window centre):
+    """7" screen support TOWER (3D print in BLACK PETG, x1, #762, v4 #1070): a
+    closed wedge box in WORLD coordinates (x = console x, y = depth, z = up;
+    origin = the base-floor point under the display-window centre):
 
-    - sloped DECK (parallel to the faceplate underside) carrying the open
-      window and the four tab BOSSES -- module mounts exactly as before
-      (M3 x 8 through the O3.1 tabs into heat-set inserts / self-tap pilots),
-      only the bosses touch the module, the PCB floats over the window;
-    - 4 mm perimeter WALLS from the deck straight down to the floor -- the box
-      section takes touch loads without racking;
-    - floor FLANGE with SIX M3 anchor stations (these define the #762 base
-      floor holes; positions printed at build time);
-    - cable windows in both side walls.
+    - sloped, CLOSED deck (parallel to the faceplate underside) carrying the four
+      tab BOSSES (M3 through the O3.1 tabs into M3 x 5 x 5 heat-set inserts).
+      Only the bosses touch the module;
+    - 4 mm perimeter WALLS and S7T_RIBS front-to-back RIBS from the deck to the
+      floor. The deck closes over the cells between them as 45 degree gables, so
+      the part prints flange-down with no support;
+    - floor FLANGE with SIX float holes over the #762 anchor stations, standing
+      on the nominal shim stack (STAND_SHIM_NOM);
+    - one CONNECTOR NOTCH through the +x rim, where the module's plugs are.
+      Nothing else is open.
 
-    Height: bosses put the glass SCREEN_COATED_SETBACK behind the measured
-    bare underside plane. Fit compliant pads after coating without lifting
-    the lid. Built in world frame, holes at front-view positions, placed by
-    translation only; the separate forward image correction is unchanged."""
+    Height: bosses put the glass SCREEN_COATED_SETBACK behind the measured bare
+    underside plane with the nominal shims under the flange; the shim kit trims
+    it -1.0..+2.0 mm. Built in world frame, placed by translation only."""
     import cadquery as cq
     c = math.cos(math.radians(SLOPE_ANGLE))
     W, D = S7C_FRAME_W, S7C_FRAME_H
     x0, y0, x1, y1 = S7C_MOD_BB
     mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
     H0, wall, fl, dt = S7T_H0, S7T_WALL, S7T_FLANGE, S7T_DECK
+    zf = STAND_SHIM_NOM                              # flange underside: on the shims
     boss_h = (S7C_MOD_DEPTH + S7C_GAP - (S7C_GLASS_TO_TABF + S7C_TAB_T)
               - SCREEN_COATED_SETBACK)
 
@@ -5901,45 +6212,56 @@ def build_screen7_tower_step():
                 .transformed(rotate=(SLOPE_ANGLE, 0, 0))
                 .workplane(offset=off))
 
-    # deck: a THICK slab whose window is cut with 45-degree expanding sides,
-    # leaving corbels that carry the deck rim into the walls (the "structure"
-    # in the hollow box: monocoque walls + corbelled deck + two ribs below).
-    # The corbels also make the standing print support-free.
-    tower = wp().center(mcx, mcy).rect(W, D).extrude(-(dt + 26.0))
-    tower = tower.cut(wp(1.0).center(mcx, mcy).rect(S7C_WIN_W, S7C_WIN_H)
-                      .extrude(-(dt + 29.0), taper=-45.0))
-    # walls: vertical prism ring, cut above the deck's bottom plane
+    # cells: S7T_RIBS ribs share the inner width evenly with S7T_RIBS + 1 cells
+    in_x0, in_x1 = mcx - W / 2.0 + wall, mcx + W / 2.0 - wall
+    cell = ((in_x1 - in_x0) - S7T_RIBS * S7T_RIB_T) / (S7T_RIBS + 1)
+    gable = cell / 2.0                               # 45 degree sides
+    cells = [(in_x0 + i * (cell + S7T_RIB_T), in_x0 + i * (cell + S7T_RIB_T) + cell)
+             for i in range(S7T_RIBS + 1)]
     cy_w = mcy * c                                   # footprint centre, world y
-    ring = (cq.Workplane("XY").center(mcx, cy_w).rect(W, D * c)
-            .extrude(H0 + 60.0))
-    ring = ring.cut(cq.Workplane("XY").center(mcx, cy_w)
-                    .rect(W - 2 * wall, D * c - 2 * wall).extrude(H0 + 61.0))
-    above_deck = wp(-dt).center(mcx, mcy).rect(2000, 2000).extrude(500)
-    ring = ring.cut(above_deck)
-    tower = tower.union(ring)
-    # keep the deck stack inside the wall footprint
-    tower = tower.intersect(cq.Workplane("XY").center(mcx, cy_w)
-                            .rect(W, D * c).extrude(H0 + 60.0)
-                            .union(cq.Workplane("XY").center(mcx, cy_w)
-                                   .rect(W + 2 * fl, D * c + 2 * fl).extrude(5.0)))
-    # two full-height transverse RIBS flanking the window, deck to floor
-    for sx in (-1, 1):
-        rib = (cq.Workplane("XY").center(mcx + sx * (S7C_WIN_W / 2.0 + 6.0), cy_w)
-               .rect(4.0, D * c - 2 * wall).extrude(H0 + 60.0))
-        rib = rib.cut(wp(-dt).center(mcx, mcy).rect(2000, 2000).extrude(500))
-        tower = tower.union(rib)
-    # floor flange + six anchor stations
-    flange = (cq.Workplane("XY").center(mcx, cy_w).rect(W + 2 * fl, D * c + 2 * fl)
-              .extrude(5.0))
-    flange = flange.cut(cq.Workplane("XY").center(mcx, cy_w)
-                        .rect(W - 2 * wall, D * c - 2 * wall).extrude(5.0))
-    anchors = []
-    for ax, ay in ((-(W + fl) / 2.0, -40.0), (-(W + fl) / 2.0, 40.0),
-                   ((W + fl) / 2.0, -40.0), ((W + fl) / 2.0, 40.0),
-                   (0.0, -(D * c + fl) / 2.0), (0.0, (D * c + fl) / 2.0)):
-        anchors.append((mcx + ax, cy_w + ay))
-        flange = flange.cut(cq.Workplane("XY").center(mcx + ax, cy_w + ay)
-                            .circle(3.2 / 2.0).extrude(5.0))
+    inner = (cq.Workplane("XY").workplane(offset=zf).center(mcx, cy_w)
+             .rect(W - 2 * wall, D * c - 2 * wall).extrude(H0 + 60.0))
+    outer = (cq.Workplane("XY").workplane(offset=zf).center(mcx, cy_w)
+             .rect(W, D * c).extrude(H0 + 60.0))
+
+    # the deck: a slab dt + gable deep, hollowed from below one gable per cell
+    deck = wp().center(mcx, mcy).rect(W, D).extrude(-(dt + gable))
+    for cx0, cx1 in cells:
+        deck = deck.cut(_gable_cutter(cq, wp().plane, cx0, cx1, mcy - D, mcy + D,
+                                      -dt, -(dt + gable)).intersect(inner))
+    below_deck = wp(-(dt + gable)).center(mcx, mcy).rect(2000, 2000).extrude(-500)
+    # walls and ribs: vertical prisms from the flange up to the deck's underside
+    frame = outer.cut(inner)
+    for cx0, cx1 in cells[:-1]:
+        frame = frame.union(cq.Workplane("XY").workplane(offset=zf)
+                            .center(cx1 + S7T_RIB_T / 2.0, cy_w)
+                            .rect(S7T_RIB_T, D * c - 2 * wall).extrude(H0 + 60.0))
+    tower = deck.union(frame.intersect(below_deck)).intersect(outer)
+
+    # floor flange + six anchor stations (float holes). The shims are the whole
+    # underside -- flange ring AND rib feet -- at their own thickness, so the
+    # tower bears evenly on any stack and they cannot drift from the part. (Ribs
+    # lifted clear of the shims would print as 127 mm bridges over air.)
+    anchors = [(mcx + ax, cy_w + ay) for ax, ay in
+               ((-(W + fl) / 2.0, -40.0), (-(W + fl) / 2.0, 40.0),
+                ((W + fl) / 2.0, -40.0), ((W + fl) / 2.0, 40.0),
+                (0.0, -(D * c + fl) / 2.0), (0.0, (D * c + fl) / 2.0))]
+
+    def ring(z, h):
+        r = (cq.Workplane("XY").workplane(offset=z).center(mcx, cy_w)
+             .rect(W + 2 * fl, D * c + 2 * fl).extrude(h))
+        r = r.cut(cq.Workplane("XY").workplane(offset=z - 1.0).center(mcx, cy_w)
+                  .rect(W - 2 * wall, D * c - 2 * wall).extrude(h + 2.0))
+        for cx0, cx1 in cells[:-1]:
+            r = r.union(cq.Workplane("XY").workplane(offset=z)
+                        .center(cx1 + S7T_RIB_T / 2.0, cy_w)
+                        .rect(S7T_RIB_T, D * c - 2 * wall).extrude(h))
+        for ax, ay in anchors:
+            r = r.cut(cq.Workplane("XY").workplane(offset=z - 1.0).center(ax, ay)
+                      .circle(STAND_FLOAT_D / 2.0).extrude(h + 2.0))
+        return r
+    flange = ring(zf, 5.0)
+    _export_shims("segno_screen7_shim", lambda t: ring(0.0, t))
     # CROSS-CHECK the frozen base-floor stations for the tower (#767). Unlike the
     # 15.6 stands this STEP is built in a LOCAL frame (origin = the display-window
     # centre) and placed in Fusion by a translation the generator never sees, so an
@@ -5951,27 +6273,47 @@ def build_screen7_tower_step():
     # generator cannot know.
     _check_stand_anchor_pattern(anchors, STAND_ANCHORS_7IN, "7in tower")
     tower = tower.union(flange)
-    # cable windows, both side walls
-    for sx in (-1, 1):
-        cutter = (cq.Workplane("XY").workplane(offset=8.0)
-                  .center(mcx + sx * W / 2.0, cy_w).rect(3 * wall, 40.0)
-                  .extrude(26.0))
-        tower = tower.cut(cutter)
-    # RING-BOARD CLEARANCE NOTCH (#762): the populated 60x60 ring/encoder board
-    # hangs over the tower's front rim with its under-side pins -- the real
-    # board came within 1.7 mm of the wall top. Drop the front wall/rim centre
-    # (70 wide, x-centred on the ring axis = the window centre) to 30 mm so the
-    # board passes with >=6 mm of air. The front tab bosses sit outside this
-    # span; their corbels are untouched.
-    notch = (cq.Workplane("XY").workplane(offset=30.0)
-             .center(0.0, -64.0).rect(70.0, 32.0).extrude(80.0))
-    tower = tower.cut(notch)
-    # tab bosses + heat-set counterbores + pilots (front-view positions)
+
+    # No ring-board notch any more. v3 dropped the front rim to 30 mm because the
+    # first ring board came within 1.7 mm of it. The PR #990 Ring24 board sits
+    # higher: its lowest part over the tower (the DIP-14) clears the closed deck
+    # by about 3.3 mm. tests/test_screen7_adjustment.py checks the probed
+    # envelopes in reference/ring_board_envelope.json.
+    # CONNECTOR NOTCH: open the deck and the +x wall over the connector field,
+    # down to the deck's underside, so the plugs (straight or angled) and their
+    # cables leave the module sideways or drop into the outer cell.
+    py0 = S7C_PORTS_Y[0] - S7T_PLUG_MARGIN
+    py1 = S7C_PORTS_Y[1] + S7T_PLUG_MARGIN
+    px0 = S7C_PORTS_X0 - S7T_PLUG_MARGIN
+    rear_boss = max(y for x, y in S7C_HOLES if x > 0)
+    assert py1 < rear_boss - S7T_BOSS_D / 2.0 - 0.5, (
+        f"7in tower: the connector notch (to y {py1:.2f}) runs into the rear +x tab "
+        f"boss (edge at y {rear_boss - S7T_BOSS_D / 2.0:.2f})")
+    assert px0 > cells[-1][0], "7in tower: the connector notch cuts into the last rib"
+    ports = (wp(1.0).center((px0 + mcx + W) / 2.0, (py0 + py1) / 2.0)
+             .rect(mcx + W - px0, py1 - py0).extrude(-(1.0 + dt + gable)))
+    tower = tower.cut(ports)
+    # STRIP-RING CARRIER NOTCH (S7T_RING_NOTCH_*), about the encoder axis.
+    _under, _n = screen7_tower_encoder_axis()
+    _under, _n = cq.Vector(*_under), cq.Vector(*_n)
+    _a0, _a1 = S7T_RING_NOTCH_AXIAL
+    _ring_notch = cq.Solid.makeCylinder(S7T_RING_NOTCH_R, _a1 - _a0,
+                                        _under + _n * (_a0 + T), _n)
     for (hx, hy) in S7C_HOLES:
-        tower = tower.union(wp().center(hx, hy).circle(4.5).extrude(boss_h))
-        tower = tower.cut(wp(boss_h).center(hx, hy).circle(4.0 / 2.0).extrude(-5.0))
-        tower = tower.cut(wp(boss_h).center(hx, hy).circle(2.6 / 2.0)
+        _boss = wp().center(hx, hy).circle(S7T_BOSS_D / 2.0).extrude(boss_h).val()
+        assert _boss.intersect(_ring_notch).Volume() < 1e-6, (
+            "7in tower: the strip-ring notch reaches a tab boss")
+    tower = tower.cut(cq.Workplane().add(_ring_notch))
+
+    # tab bosses + heat-set insert pilots + screw clearance (front-view positions)
+    assert boss_h > S7T_INSERT_L, "7in tower: tab boss shorter than its insert pilot"
+    for (hx, hy) in S7C_HOLES:
+        tower = tower.union(wp().center(hx, hy).circle(S7T_BOSS_D / 2.0).extrude(boss_h))
+        tower = tower.cut(wp(boss_h).center(hx, hy).circle(S7T_INSERT_D / 2.0)
+                          .extrude(-S7T_INSERT_L))
+        tower = tower.cut(wp(boss_h).center(hx, hy).circle(S7T_SCREW_CLR / 2.0)
                           .extrude(-(boss_h + dt + 2.0)))
+    print("  tower: %d cells of %.1f mm, 45 degree gables %.1f deep" % (len(cells), cell, gable))
     print("  tower floor anchors (world mm, relative to the display-window centre):")
     for a in anchors:
         print("    (%+.1f, %+.1f)" % a)
@@ -7798,7 +8140,11 @@ def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
         printed = ["segno_platform_front_ring","segno_platform_mid_ring","segno_platform_sled","segno_platform_mid_sled",
                    "segno_led_diffuser","segno_ring_diffuser"]
         printed += [_tile_stem(label) for label,_,_ in PEDALS]
-        printed += ["segno_screen7_tower","segno_screen16_stand_L","segno_screen16_stand_R"]
+        printed += ["segno_screen7_tower","segno_screen16_stand_L","segno_screen16_stand_R",
+                    "segno_screen16_splice"]
+        # the height shims (#1070): one binary kit per stand
+        printed += [f"{stem}_{str(t).replace('.', 'p')}" for stem in
+                    ("segno_screen7_shim", "segno_screen16_shim") for t in STAND_SHIM_SET]
         # The floor rails and the mid-field prop are printed parts too. They
         # arrived after this list was written and shipped in no package at all
         # until 2026-09-10: twelve rail segments and the prop, generated into
@@ -7810,6 +8156,10 @@ def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
         _not_a_console_part = {"segno_encoder_knob",            # purchased
                                "segno_pedal_base_fit_test",     # jig
                                "segno_screen7_fit_test",        # jig
+                               "segno_screen7_deck_fit_test",   # jig (#1070)
+                               "segno_screen16_vesa_fit_test",  # jig (#1070)
+                               "segno_screen16_deck_fit_test_L",  # jig (#1070)
+                               "segno_screen16_deck_fit_test_R",
                                "segno_mini_console_tray",       # a different product
                                "segno_mini_console_lid",
                                "segno_mini_console_sled"}
@@ -8441,11 +8791,20 @@ def main(argv):
             print("7in screen support tower (3D print, x1): out/" + os.path.basename(tw) + " (+ .stl)")
             for sp16 in build_screen16_stand_steps():
                 print("15.6in stand (3D print, measured): out/" + os.path.basename(sp16) + " (+ .stl)")
+            print("15.6in stand splice (3D print, x1): out/segno_screen16_splice.step (+ .stl)")
+            print("Stand height shims (3D print, #1070): out/segno_screen{7,16}_shim_*.step (+ .stl), "
+                  "kit %s, nominal %s" % (STAND_SHIM_SET, " + ".join(map(str, STAND_SHIM_NOMINAL))))
             build_screen16_monitor_step()
             build_screen16_portclear_step()
             build_buck_reference_step()
             ftp = build_screen7_fit_test()
             print("7in screen FIT TEST plate (3D print, x1): out/" + os.path.basename(ftp) + " (+ .stl)")
+            print("7in DECK fit test (3D print, x1): out/"
+                  + os.path.basename(build_screen7_deck_fit_test()) + " (+ .stl)")
+            for p in build_screen16_deck_fit_test():
+                print("15.6in whole-fit test (3D print, x1): out/" + os.path.basename(p) + " (+ .stl)")
+            print("15.6in VESA fit test (3D print, x1): out/"
+                  + os.path.basename(build_screen16_vesa_fit_test()) + " (+ .stl)")
             for pp in build_platform_steps():
                 print("Printed platform: out/" + os.path.basename(pp) + " (+ .stl)")
             build_mini_console()

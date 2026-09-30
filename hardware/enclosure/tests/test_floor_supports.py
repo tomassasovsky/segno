@@ -175,7 +175,11 @@ class FloorSupportTest(unittest.TestCase):
     def test_two_anchors_sit_inside_the_tower_bounding_box(self):
         """Which is why assert_head_clear() may only use the box to skip work,
         never to pass a point. The 7in tower is an L in plan; its box covers a
-        third of the rear rail, and the two left anchors fall inside it."""
+        third of the rear rail, and the two left anchors fall inside it.
+
+        The nearest tower metal to (129.4, 343.25) is one of the internal ribs
+        #1070 added so the deck could close. Its head envelope clears that rib
+        by 3.47 mm; the head envelope is itself a conservative O9."""
         inside = [p for p in ANCHORS
                   if box_distance(self.head(p).BoundingBox(),
                                   self.tower.BoundingBox()) == 0.0]
@@ -184,7 +188,7 @@ class FloorSupportTest(unittest.TestCase):
         for point in inside:
             head = self.head(point)
             self.assertLess(head.intersect(self.tower).Volume(), 1e-7)
-            self.assertGreater(head.distance(self.tower), 4.0)
+            self.assertGreater(head.distance(self.tower), 3.0)
 
     def test_the_tightest_anchor_is_the_one_beside_the_16in_stand(self):
         """(488, 343.25) passes 4.6 mm from the stand's rear anchor at (480, 327).
