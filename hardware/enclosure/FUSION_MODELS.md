@@ -1,5 +1,19 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
+## Tall pills and the mirrored stand holes - 2026-09-30 (#1074, #1070)
+
+Same clone.
+
+- `tall_pill` x10: the #1074 carrier + lens (PR #1084, `hardware/pill_light_mask`)
+  as one component, shifted -0.2 mm so its origin is the faceplate underside,
+  and placed with each old `led_diffuser_*` occurrence's transform (the old
+  diffuser's origin is the same underside plane). The ten old diffusers are
+  hidden, not deleted. `addExistingComponent` copies only kept their transform
+  when it was set again in a second script call. Interference: none.
+- `base`: the right 15.6in stand's four holes moved to the mirrored positions
+  of #1070 (u 770.571 / 796.571), CUT edited in place; formed base re-exported.
+  Both stands' flange holes now sit within 0.1 mm of the base holes.
+
 ## 34-LED strip ring in the console - 2026-09-30 (#1075, #1088)
 
 Same clone. A trial of the strip ring inside the console, from

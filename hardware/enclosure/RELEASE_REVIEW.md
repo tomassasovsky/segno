@@ -1,5 +1,59 @@
 # Manufacturing release review
 
+## Integrated revision - 2026-09-30 (#1088, #1070, #1075, #1067)
+
+One line now carries everything the owner has chosen or printed:
+
+- **Base (#1067, #1088):** the #1025 base again (no lid-seat flanges, no rear
+  tabs, no spot welding), four fusion-welded corners, seven M4 beam screws, the
+  lid overhang tapering to flush at the back, and every rear connector cut into
+  the 2.0 mm rear wall (no I/O panel). CTRL jacks are NJ6FD-V in MEIRIYFA
+  D-flange plates. The earth stud is centred between the vents and PD_IN.
+- **Power group (#1088):** screen-power board, both bucks and the PD board behind
+  CLEAR/BANK at the owner's placement. Rear rail segments 2 and 3 are their own
+  prints, pocketing the buck bolt heads.
+- **Screen mounts (#1070):** mirrored 15.6in stands with splice and shims; the
+  base's right-stand holes moved to the mirrored positions; the closed-deck 7in
+  tower, now with the strip-ring carrier notch.
+- **Console strip ring (#1075):** 34 LEDs, an alternative to the Ring24 holder.
+- **Printed parts on hand:** mirrored stands, closed-deck tower (to be reprinted
+  with the notch if the strip ring is fitted), 2.4 mm-wall front collars, solid
+  CLEAR/BANK collars, tall eight-LED pills (#1074).
+
+Evidence:
+
+- The full generator and all 154 enclosure tests pass; the console ring's own
+  four tests pass. Master is merged in.
+- The populated Fusion clone ("VAMP console (populated) - 1067 tabs + seat
+  flanges") matches: base CUT edited in place (plate 4,986.9663 cm2, healthy),
+  formed base re-exported and verified by `fusion_export_formed.py`, and the
+  generator's flat-pattern parity passes against it.
+- Interference in the clone: the power group only touches what it bolts to
+  (Q5's untrimmed model leg reaches the floor; trim it); the strip ring only
+  meets the faceplate at its glue faces; the tall pills touch nothing at any of
+  the ten stations; both 15.6in stands' flange holes sit within 0.1 mm of the
+  base holes (±1.25 float).
+
+Open before cutting metal (owner):
+
+1. **Dinacut** accepts the tooling, fold sequence and developed profile of the
+   four-corner base.
+2. **#1019** independent structural/load assessment.
+3. **Post-weld fitting/drilling provider** for the nine front lid stations.
+4. **PD coupler diagonal**: check the QIANRENON coupler's two M3 holes against
+   the cut diagonal (top-right/bottom-left seen from behind) before cutting; it
+   was never checked against the part.
+5. **Ring choice** after the bench light test: Ring24 holder + aluminium centre
+   disc, or the 34-LED strip ring (no disc; reprint the 7in tower with the
+   notch; check the knob grips the shaft 8 mm in).
+6. **Screen-power USB host leads** are about 40-45 cm from the Pi to the board,
+   longer than the 30 cm the #1072 review assessed.
+
+Also open, not blocking the cut: the `VAMP console (populated)` original and the
+`VAMP sheet metal` document still hold the September 15 revision; promote the
+clone (or port its edits) before treating the originals as current. Fastener
+lengths marked "measure before ordering" stay open until the parts are in hand.
+
 ## Printed-platform synchronization - 2026-09-15 (#1037)
 
 The second-row CLEAR/BANK collars now use the solid version with four driver
