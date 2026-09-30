@@ -46,7 +46,7 @@ documentation, plan, consolidated review and native/package evidence.
 ## Documentation and Release Consistency
 
 - The source, native recipe, release record and separate Spanish supplier
-  messages agree on Ø6.5 mm reliefs, 0.15 mm front-end trims and 2.50 mm native
+  messages agree on Ø6.5 mm reliefs, 0.15 mm front end trims and 2.50 mm native
   rear regrowth. The construction recipe restores intermediate trims and
   requires final flat comparison; it no longer permits a model-only corner
   exception.

@@ -566,7 +566,7 @@ a single call have crashed Fusion):
    numbers (`dev_deduct` in the generator).
 4. The current DXF contains four angular weld reliefs: 0.50 mm nominal root
    gap and 1.00 mm projected lap. Do not add the former circular reliefs or
-   front-end trims. For Fusion construction only, cut `RETURN_CONSTRUCTION_TRIM`
+   front end trims. For Fusion construction only, cut `RETURN_CONSTRUCTION_TRIM`
    rectangles x∈[−0.21,0.06] and [84.54,84.81] cm,
    y∈[50.5566828917,53.1] cm. The first y is the upper bend tangent,
    `(D-2*T) + HR_FLAT + bend_allowance(90-TRANS_ANGLE)/2`, in mm (divide by 10 for Fusion), derived from the current generator; recompute it if
@@ -627,7 +627,7 @@ outgoing arc bulge)` in mm. Subtract 2 mm from height for the canonical base's
 local Z. Close the five-point wire and extrude +2 mm along local X on planes
 `X=-DEV90` and `X=W-3*T+DEV90`. The arc's outgoing bulge is negative in the
 depth/height frame; derive the native arc from it. Preserve all existing folds,
-Ø6.5 corner reliefs and front-end trims, and check the final native flat against
+Ø6.5 corner reliefs and front end trims, and check the final native flat against
 the generated perimeter. The new flat width is **1041.218 mm**, including the
 ridge arc's interior apex. The measured bare lid clearance is 0.299727 mm;
 with the specified coating and seated lid translation, the new top retains
@@ -1013,7 +1013,7 @@ DXFs: it's a soft good cut with scissors, not a fab feature.
 The generated DXFs and final formed native geometry must agree. Intermediate
 construction trims are acceptable only when restored to the final cutting
 profile. On September 5 the source was corrected to Ø6.5 mm corner reliefs
-and 0.15 mm front-end trims; native rear regrowth changed from 2.51 to 2.50 mm.
+and 0.15 mm front end trims; native rear regrowth changed from 2.51 to 2.50 mm.
 That revision’s actual base flats had zero missing or extra area against
 CUT/VENT plus deferred DRILL. No model-only corner exception is permitted;
 repeat the check for the current welded revision.
@@ -1103,7 +1103,7 @@ same floor-bottom/lid-underside datum. Its two mounting holes are 75 mm apart,
 ## Previous full manufacturing pass — 2026-09-05 (historical)
 
 The dimensions and masking process in this paragraph are superseded by the
-fully coated disc and plain-text process above. At that revision the ring disc had a secondary **C0.5 (+0.10/−0.00) ×45° underside chamfer**,
+fully coated disc and plain text process above. At that revision the ring disc had a secondary **C0.5 (+0.10/−0.00) ×45° underside chamfer**,
 where it meets the EC11 body; the laser through-hole remains Ø7.2. Both native
 `ring_disc_51_5` components have `EC11_ROOT_CLEARANCE_C0_5_UNDERSIDE`, preserving
 their component identities and placements. The straight bore remains 1.5 mm
@@ -1118,7 +1118,7 @@ flats for base, lid and both handed brackets. The known lid export is viewed fro
 underside, opposite the source's exterior: its explicit view correction is
 guarded by source-sketch geometry and signed fold checks; arbitrary mirror
 matching is not allowed. Partial `--no-step` runs generate intermediate DXFs,
-not metal or painting vendor archives. The current process uses plain-text
+not metal or painting vendor archives. The current process uses plain text
 precoat machining instructions in `MANUFACTURING.md`, with compensated bores
 and postcoat assembly; the old operation-sheet process is superseded.
 

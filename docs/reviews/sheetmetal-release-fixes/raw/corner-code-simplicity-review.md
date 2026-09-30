@@ -4,7 +4,7 @@
 
 ### Core Purpose
 
-Make the base's cut contour agree with the final native unfolded sheet, then reject stale or geometrically different inputs before packaging. The current correction covers the 6.5 mm relief diameter, 0.15 mm front-end trim, and the native rear contour. Preserve the user's visibility settings while exporting formed parts.
+Make the base's cut contour agree with the final native unfolded sheet, then reject stale or geometrically different inputs before packaging. The current correction covers the 6.5 mm relief diameter, 0.15 mm front end trim, and the native rear contour. Preserve the user's visibility settings while exporting formed parts.
 
 ### Scope and Evidence
 

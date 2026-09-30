@@ -276,7 +276,7 @@ protects defined electrical-bond contacts only; the M3 threads are cut afterward
 general-bore masks and encoder-disc interface masks are superseded.
 
 The individual pedal tiles retain the labels. The overlay files/package and
-extra machining PDF page are retired. Use the plain-text drilling datums and
+extra machining PDF page are retired. Use the plain text drilling datums and
 fit table in [MANUFACTURING.md](../MANUFACTURING.md) and the short Spanish
 [supplier drafts](SHOP_REVIEW.md). Seven distinct fabricated metal parts make
 eight pieces; nine purchased shim packs and eighteen purchased head washers

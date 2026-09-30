@@ -843,7 +843,7 @@ and fastener stacks, PD local web, complete mating patterns, the coating coupon
 and finished assembled fit. Screen body and pedal dimensions are measured
 references; caps, adapters, thread depths, print tolerance, torque, coating and
 structural behavior still need the stated physical checks. The user receives
-short plain-text handoffs for the metal shop and separate painter, with no
+short plain text handoffs for the metal shop and separate painter, with no
 large review PDF or additional machining drawing page.
 
 ## Console rear cable opening — September 9
