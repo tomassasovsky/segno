@@ -81,7 +81,7 @@ or release the unresolved corner detail for cutting.
 
 ### Owner clarification — separate suppliers and text only
 
-Use short plain-text questions for the metal shop and a separate painter.
+Use short plain text questions for the metal shop and a separate painter.
 Withdraw the additional shop-review PDF; the technical part drawings remain.
 Resolve the known base DXF/formed-STEP corner discrepancy within the design
 before cutting authorization. Shop replies establish available stock/tooling
