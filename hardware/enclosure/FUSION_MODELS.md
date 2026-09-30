@@ -1,5 +1,26 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
+## No wall ties, laser-piloted front stations - 2026-09-30 (#1090)
+
+Same clone, saved.
+
+- `base`: the two wall-tie holes were CUT circles on the side-wall flaps in
+  this clone (not the post-fold `ISSUE_1019_BEAM_WALL_TIES` cut the original
+  document used). Deleted from `CUT` with the marker rolled back before
+  `Extrude1`, profile re-selected: volume +66.476 mm3, exactly the two
+  Ø4.6 x 2 mm holes. The base CUT sketch does not carry the front pilots: the
+  exporter checks the base from its unfolded body, and the Ø2.5 drills
+  swallow the pilots.
+- `faceplate`: nine Ø1.0 pilots added to `CUT` at the front stations, same
+  rollback. Volume change 0.000 mm3: each pilot is concentric with its Ø4.5
+  drill. `FRONT_DRILL_AFTER_FORMING` sits on the lip face and now also shows
+  nine linked Ø1.0 projections of those pilots; the exporter counts only
+  drawn (non-reference) circles.
+- `faceplate_support_beam`: `ISSUE_1090_NO_EAR_SLOTS`, a Delete Face over each
+  ear slot's two half-cylinders and two walls. Volume +75.261 mm3 = the two
+  slots; the body now matches `out/segno_beam.step` (99,648.46 mm3).
+- Formed base and lid re-exported with `fusion_export_formed.py`.
+
 ## Tall pills and the mirrored stand holes - 2026-09-30 (#1074, #1070)
 
 Same clone.

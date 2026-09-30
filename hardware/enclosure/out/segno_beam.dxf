@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461313.601597222
+2461314.5629745373
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461313.6016087965
+2461314.5629745373
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-B5
+B3
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{C91CEA95-1776-49D9-9095-206F9C9700C8}
+{1AD0BC90-DB87-4838-A785-305F915F6360}
   9
 $VERSIONGUID
   2
-{F131200A-8F67-4C7E-9101-59F5940E137A}
+{A5607325-E1E5-473A-853E-4CD51E105B4F}
   9
 $EXTNAMES
 290
@@ -3257,7 +3257,7 @@ ACAD
   0
 APPID
   5
-B2
+B0
 330
 3
 100
@@ -3271,7 +3271,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-B3
+B1
 330
 3
 100
@@ -6473,105 +6473,9 @@ AcDbPolyline
  42
 0.4142135623730951
   0
-LWPOLYLINE
-  5
-A7
-330
-17
-100
-AcDbEntity
-  8
-CUT
-100
-AcDbPolyline
- 90
-6
- 70
-1
- 10
-9.0
- 20
-32.868834270950124
- 42
-0.4142135623730951
- 10
-11.3
- 20
-35.16883427095012
- 10
-11.3
- 20
-36.66883427095013
- 42
-0.4142135623730951
- 10
-9.000000000000002
- 20
-38.968834270950126
- 42
-0.4142135623730951
- 10
-6.700000000000002
- 20
-36.66883427095013
- 10
-6.700000000000002
- 20
-35.16883427095012
- 42
-0.4142135623730951
-  0
-LWPOLYLINE
-  5
-A8
-330
-17
-100
-AcDbEntity
-  8
-CUT
-100
-AcDbPolyline
- 90
-6
- 70
-1
- 10
-868.8853091668391
- 20
-32.868834270950124
- 42
-0.4142135623730951
- 10
-871.185309166839
- 20
-35.16883427095012
- 10
-871.185309166839
- 20
-36.66883427095013
- 42
-0.4142135623730951
- 10
-868.885309166839
- 20
-38.968834270950126
- 42
-0.4142135623730951
- 10
-866.585309166839
- 20
-36.66883427095013
- 10
-866.585309166839
- 20
-35.16883427095012
- 42
-0.4142135623730951
-  0
 TEXT
   5
-A9
+A7
 330
 17
 100
@@ -6601,7 +6505,7 @@ AcDbText
   0
 TEXT
   5
-AA
+A8
 330
 17
 100
@@ -6631,7 +6535,7 @@ AcDbText
   0
 TEXT
   5
-AB
+A9
 330
 17
 100
@@ -6661,7 +6565,7 @@ AcDbText
   0
 TEXT
   5
-AC
+AA
 330
 17
 100
@@ -6691,7 +6595,7 @@ AcDbText
   0
 TEXT
   5
-AD
+AB
 330
 17
 100
@@ -6709,11 +6613,71 @@ AcDbText
  40
 9.0
   1
-M4 en agujeros ovalados de 6.6 mm en profundidad: el ovalado deja que la chapa del piso trabaje) y cada oreja lleva 1 M4 a su
+M4 en agujeros ovalados de 6.6 mm en profundidad: el ovalado deja que la chapa del piso trabaje). Las orejas NO llevan agujero ni
  11
 21.57132729170977
  21
 139.06148885436966
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+AC
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+21.57132729170977
+ 20
+124.66148885436967
+ 30
+0.0
+ 40
+9.0
+  1
+tornillo: apoyan contra las paredes laterales y ubican la viga. Fieltro sobre el apoyo; holgura perpendicular nominal SIN PINTAR
+ 11
+21.57132729170977
+ 21
+124.66148885436967
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+AD
+330
+17
+100
+AcDbEntity
+  8
+NOTE
+100
+AcDbText
+ 10
+21.57132729170977
+ 20
+110.26148885436966
+ 30
+0.0
+ 40
+9.0
+  1
+1.2 mm, medir nuevamente después de pintar con todos los asientos de tapa pintados. Medir la holgura final montada y ajustar el
+ 11
+21.57132729170977
+ 21
+110.26148885436966
  31
 0.0
 100
@@ -6733,17 +6697,17 @@ AcDbText
  10
 21.57132729170977
  20
-124.66148885436967
+95.86148885436967
  30
 0.0
  40
 9.0
   1
-pared lateral (ovalado vertical de 6.1 mm: el tirante arriostra las paredes, no sostiene la viga). Fieltro sobre el apoyo; holgura
+fieltro sin levantar la tapa de sus asientos; deducción aplicada (K 0.33, Ri 1.6): 2.08 mm en el plegado del apoyo, 1.53 mm en el
  11
 21.57132729170977
  21
-124.66148885436967
+95.86148885436967
  31
 0.0
 100
@@ -6763,73 +6727,13 @@ AcDbText
  10
 21.57132729170977
  20
-110.26148885436966
- 30
-0.0
- 40
-9.0
-  1
-perpendicular nominal SIN PINTAR 1.2 mm, medir nuevamente después de pintar con todos los asientos de tapa pintados. Medir la
- 11
-21.57132729170977
- 21
-110.26148885436966
- 31
-0.0
-100
-AcDbText
-  0
-TEXT
-  5
-B0
-330
-17
-100
-AcDbEntity
-  8
-NOTE
-100
-AcDbText
- 10
-21.57132729170977
- 20
-95.86148885436967
- 30
-0.0
- 40
-9.0
-  1
-holgura final montada y ajustar el fieltro sin levantar la tapa de sus asientos; deducción aplicada (K 0.33, Ri 1.6): 2.08 mm en
- 11
-21.57132729170977
- 21
-95.86148885436967
- 31
-0.0
-100
-AcDbText
-  0
-TEXT
-  5
-B1
-330
-17
-100
-AcDbEntity
-  8
-NOTE
-100
-AcDbText
- 10
-21.57132729170977
- 20
 81.46148885436966
  30
 0.0
  40
 9.0
   1
-el plegado del apoyo, 1.53 mm en el del pie y en cada oreja; desarrollo 75.46 x 877.89 mm
+del pie y en cada oreja; desarrollo 75.46 x 877.89 mm
  11
 21.57132729170977
  21
@@ -7929,7 +7833,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-B4
+B2
   0
 DICTIONARYVAR
   5
@@ -7941,7 +7845,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-29T17:26:18.998425+00:00
+1.4.4 @ 2026-09-30T16:30:41.073657+00:00
   0
 VISUALSTYLE
   5
@@ -14495,7 +14399,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-B4
+B2
 330
 2D
 100
@@ -14503,7 +14407,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-29T17:26:19.017394+00:00
+1.4.4 @ 2026-09-30T16:30:41.092615+00:00
   0
 ENDSEC
   0

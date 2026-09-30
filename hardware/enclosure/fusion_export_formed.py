@@ -145,7 +145,10 @@ def run(_context):
         _validate_sketch_curves(stem,layers,actual)
         if name in ("base","faceplate"):
             drill = component.sketches.itemByName("FRONT_DRILL_AFTER_FORMING")
-            assert drill and drill.sketchCurves.sketchCircles.count == 9, f"{stem}: missing formed drilling"
+            # Count drawn circles only: the lid's drill sketch sits on the lip face and
+            # also carries linked projections of that face's Ø1.0 laser pilots (#1090).
+            drawn = [c for c in drill.sketchCurves.sketchCircles if not c.isReference] if drill else []
+            assert len(drawn) == 9, f"{stem}: missing formed drilling"
         forming = _native_forming(component,occurrences[0])
         _validate_forming(expected[stem],forming)
         parts[stem] = (component,occurrences,forming)
