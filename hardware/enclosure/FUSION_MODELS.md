@@ -1,5 +1,28 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
+## 34-LED strip ring in the console - 2026-09-30 (#1075, #1088)
+
+Same clone. A trial of the strip ring inside the console, from
+`hardware/strip_ring/console_ring.py` (34 LEDs; 40 would put the strip's back
+past the 7in module, whose nearest point is 42.9 from the encoder axis).
+
+- `strip_ring_console_34`: diffuser, cup, retainer, spacer, centre cap and the
+  strip reference, transform `[1,0,0,11.9571 | 0,c,-s,22.1196 | 0,s,c,6.3503]`
+  (the faceplate TOP at the encoder axis; `c`/`s` of `SLOPE_ANGLE`).
+- `ring_board_v3` moved 7.0 mm down the axis (the standalone's light lift) and
+  its `NeoPixel_Ring24` hidden: the strip plugs into J2 instead.
+- `encoder_knob_50x18_alu` moved so its underside is 0.5 above the face. The
+  shaft enters it 8.0 mm; how much of that grips depends on the bought knob's
+  underside (the model's 4.5 mm nut relief is an assumption).
+- `ring_comet` and `ring_disc_51_5` hidden, not deleted: they are the Ring24
+  design this trial would replace.
+- `screen7_tower` swapped for the #1070 branch's tower with the strip-ring
+  carrier notch (commit 85a9f7a4 on `claude/screen-mount-design-8a1f6f`); new
+  minus old is exactly zero, old minus new is the notch (5,877 mm3).
+- Interference in the ring area: only the cup/diffuser glue faces on the
+  faceplate (0.34 / 0.11 mm3), the spacer on the EC11 shoulder (0.19 mm3), and
+  the shaft in the knob bore.
+
 ## Power group, V3 boards, earth stud - 2026-09-30 (#1088)
 
 Same clone. Owner placement from the drag canvas: the screen-power board, both
