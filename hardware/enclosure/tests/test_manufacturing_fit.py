@@ -277,8 +277,13 @@ class ManufacturingFitTest(unittest.TestCase):
                 self.assertTrue(all(e.dxftype() == 'CIRCLE' and
                                     abs(2*e.dxf.radius-diameter) < 1e-8 for e in drills))
                 cuts = [e for e in entities if e.dxf.layer == 'CUT' and e.dxftype() == 'CIRCLE']
-                self.assertFalse(any(e.dxf.center.distance(d.dxf.center) < .01
-                                     for e in cuts for d in drills))
+                # The laser cuts only a centre pilot at each station (#1090): a
+                # full-size hole this close to the fold would distort in the brake.
+                for d in drills:
+                    at = [e for e in cuts if e.dxf.center.distance(d.dxf.center) < .01]
+                    self.assertEqual(len(at), 1)
+                    self.assertAlmostEqual(2*at[0].dxf.radius, enclosure.FRONT_PILOT_D, places=8)
+                cuts = [e for e in cuts if abs(2*e.dxf.radius - enclosure.FRONT_PILOT_D) > 1e-8]
                 if stem == 'base':
                     # 53.9 pitch; hole row 31.3 from the forward edge of 57.6 body.
                     # The power group's front line puts that edge at 307 (#1088).

@@ -59,9 +59,9 @@ files with material, thickness and quantity in their names; no assembly,
 hardware, printed parts, drafts, removed brackets or posts.
 
 Dinacut cuts/folds/deburrs; a separate welder joins both rear corners. The two
-brackets and ten base rivet holes are removed. Fit and match-drill nine front
-lid/body stations **after welding and before painting**; the provider is still
-pending. No electronics trial or second manufacture is requested. A separate
+brackets and ten base rivet holes are removed. The nine front lid/body stations
+are laser-piloted and drilled out by Dinacut **after folding and before
+welding** (#1090). No electronics trial or second manufacture is requested. A separate
 painter coats all faces and clearance passages smooth matte black RAL 9005,
 0.06–0.10 mm locally per face, protecting identified electrical-bond contacts.
 The owner then cleans Ø2.5 pilots and taps **32 M3 threads** (18 lid, 14 screen

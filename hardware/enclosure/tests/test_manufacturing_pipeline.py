@@ -56,8 +56,8 @@ class ManufacturingPipelineTest(unittest.TestCase):
                 Path(tmp)/'segno_base.dxf',
                 Path(enclosure.HERE)/'formed/segno_base_flat.dxf')
             # Not exact zero: Fusion's flat export writes a circle as arc
-            # segments, so a hole cut after the folds (the beam's two wall ties)
-            # lands a few tenths of a micron of area off a true circle. The
+            # segments, so a hole lands a few tenths of a micron of area off a
+            # true circle. The
             # comparator's own 0.01 mm2 floor is the meaningful gate; anything
             # real is orders of magnitude above this.
             self.assertLess(result['missing_area_mm2'], 1e-3)

@@ -48,8 +48,25 @@ def _face(entity):
     return face
 
 
+def _drop_drilled_pilots(faces, layers_by_face):
+    """A laser pilot inside a deferred DRILL circle is drilled away after
+    forming (#1090); the native flat shows only the finished hole. Drop the
+    pilot so it is not read as a nested duplicate cut."""
+    drills = [f for f, layer in zip(faces, layers_by_face) if layer == "DRILL"]
+    keep = []
+    for face, layer in zip(faces, layers_by_face):
+        if layer != "DRILL" and any(face.cut(d).Area() <= 1e-8 for d in drills
+                                    if d.Area() > face.Area()):
+            continue
+        keep.append(face)
+    return keep
+
+
 def _profile(document, layers):
-    faces = [_face(e) for e in document.modelspace() if e.dxf.layer in layers]
+    entities = [e for e in document.modelspace() if e.dxf.layer in layers]
+    faces = [_face(e) for e in entities]
+    if "DRILL" in layers:
+        faces = _drop_drilled_pilots(faces, [e.dxf.layer for e in entities])
     assert faces, "flat pattern has no cutting contours"
     faces.sort(key=lambda face: face.Area(), reverse=True)
     outer, holes = faces[0], faces[1:]

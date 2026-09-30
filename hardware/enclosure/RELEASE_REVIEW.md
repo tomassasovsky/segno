@@ -40,7 +40,8 @@ Open before cutting metal (owner):
    four-corner base.
 2. **#1019** structural hold: the owner's call, with the numbers and the
    first-article proof test below.
-3. **Post-weld fitting/drilling provider** for the nine front lid stations.
+3. ~~Post-weld fitting/drilling provider~~ settled (#1090): Dinacut drills the
+   nine front stations from Ø1.0 laser pilots after folding, before welding.
 4. **PD coupler diagonal**: check the QIANRENON coupler's two M3 holes against
    the cut diagonal (top-right/bottom-left seen from behind) before cutting; it
    was never checked against the part.
@@ -57,6 +58,11 @@ comment say ring-normal. Electrically both would read "high = empty" on this
 board (the tip sits on a 10k pull-up, the ring on its 1k bias), but TN opens
 last as a plug goes in, which is the "ignore a plug until it is seated"
 behaviour the netlist describes.
+
+**Beam ears unbolted** (owner call 2026-09-30): no M4 through the side walls,
+so no screw heads show there. The ears still locate the beam across the width
+and stop either wall bowing inward past 0.5 mm; the FE model never counted the
+ties, so the numbers below are unchanged.
 
 ### #1019 decision package
 
@@ -78,11 +84,12 @@ a model: the proof test below is what rates the real part.
 
 **First-article proof test** (welded base, bare metal, before paint):
 
-1. Assemble without electronics: beam bolted (7 × M4, slotted, snug), wall
-   ties, rails with the neoprene strip, all ten printed collars. The M3 pilots
+1. Assemble without electronics: beam bolted (7 × M4, slotted, snug),
+   rails with the neoprene strip, all ten printed collars. The M3 pilots
    are still untapped (tapping comes after paint), so seat the lid freely and
    hold it with four spring clamps, two on the front lip and two on the rear
    lap: less restraint than 18 screws, so the test errs on the safe side.
+   (The front stations are drilled by now, but the pilots are untapped.)
    Stand it on a flat hard floor.
 2. Mark four stations: CLEAR, BANK, the centre front-row pedal and an end
    front-row pedal. At each, measure the lid top height against a straightedge

@@ -19,8 +19,8 @@ tooling acceptance and the independent #1019 structural/load assessment. Use
 open items.
 
 [Internal supplier drafts](enclosure/SHOP_REVIEW.md) cover Dinacut, a separate
-welder and a separate painter. The post-weld front fitting/drilling provider is
-still pending. No supplier message or cutting authorization is implied here.
+welder and a separate painter. Dinacut drills every deferred hole after folding
+and before welding (owner call 2026-09-30, #1090). No supplier message or cutting authorization is implied here.
 
 CAD, drawings and vendor archives come from
 [segno_enclosure.py](enclosure/segno_enclosure.py). For an authorized order,
@@ -38,9 +38,9 @@ these canonical part stems:
 | Part | Qty | Material | Notes |
 |---|---|---|---|
 | `segno_base` | 1 | 2.0 mm 1100-H14 aluminium | One folded blank; weld all four corners and close all corner reliefs, including the two indicated upper edges, after forming. Every rear connector is cut straight into its rear wall (#1088). |
-| `segno_faceplate` | 1 | 2.0 mm 1100-H14 aluminium | Removable sloped lid, 853.8 mm wide (2 mm past each side wall) along the slope; over the last 40 mm before the rear bend it narrows to 849.8 mm, so the rear lap is flush with the rear wall. Nine front drilled clearances and nine rear CUT slots. |
+| `segno_faceplate` | 1 | 2.0 mm 1100-H14 aluminium | Removable sloped lid, 853.8 mm wide (2 mm past each side wall) along the slope; over the last 40 mm before the rear bend it narrows to 849.8 mm, so the rear lap is flush with the rear wall. Nine front clearances (laser pilot, drilled out after folding) and nine rear CUT slots. |
 | `segno_ring_disc` | 1 | 2.0 mm 1100-H14 aluminium | Flat encoder disc; straight laser bore, no chamfer. |
-| `segno_beam` | 1 | **1.6 mm cold-rolled steel** | Full-width support beam, seven floor fixings; grade to confirm. Fold both wall ears before the long folds. |
+| `segno_beam` | 1 | **1.6 mm cold-rolled steel** | Full-width support beam, seven floor fixings; grade to confirm. Fold both wall ears before the long folds. The ears are unbolted locators: no hole in them or in the side walls (#1090). |
 
 `PART_SPECS` supplies these quantities and materials to the drawings and
 archive manifest. The 2.0 mm material identification follows the Alcast
@@ -54,7 +54,11 @@ remain internal assembly aids. Labels stay on individual pedal tiles.
 
 ### Work sequence
 
-1. **Dinacut:** cut, fold and deburr, without chamfering, tapping or painting.
+1. **Dinacut:** cut, fold, drill and deburr, without chamfering, tapping or
+   painting. The nine front stations on the lid and on the body are cut as
+   Ø1.0 laser pilots only, because they sit inside the V12 die zone and a
+   full-size hole would distort in the fold. After folding, and before the base
+   goes to the welder, drill them out to Ø2.5 (body) and Ø4.5 (lid).
    Confirm stock, tool access, inside radii and bend development before final
    files. The source uses K=0.33, R2 for aluminium and R1.6 for the steel beam;
    follow each part's fold order and drawn-face orientation. Confirm tool access,
@@ -67,11 +71,11 @@ remain internal assembly aids. Labels stay on individual pedal tiles.
    not welded. The former 0.00–0.10 mm riveted-seam requirement is retired.
    This accepted scope does not constitute a qualified weld procedure or load
    assessment.
-3. **Post-weld fitting/drilling provider, pending:** check and correct the
-   unforced bare lid seating, face alignment and front gap in a metal-only
-   fixture. Then match-drill the nine front lid/body stations, finish the front
-   lid clearances and deburr before painting. This operation does not require
-   presentation with electronics or a second manufacture.
+3. **Bare fit check after welding (owner, before paint):** seat the lid
+   freely on the welded base and check face alignment, the 0.70–1.50 mm front
+   gap and that all nine front screws start without forcing. Correct the metal
+   before coating; nothing is drilled at this step. Run the #1019 first-article
+   proof test (release review) at the same time.
 4. **Separate painter:** coat the welded base and the other parts separately,
    smooth matte black RAL 9005, without texture. Coat all faces, seats, edges,
    holes and slots, with 0.06–0.10 mm local film per face. Protect only identified
@@ -102,7 +106,8 @@ cutting. Do not issue the previous two-corner archive as this four-corner revisi
 Shop-facing instructions and title blocks are Spanish. Part stems and layer
 names remain the identifiers used in the matching files. `CUT` and `VENT` both
 cut through; the floor has no vents, while side/rear openings remain. `DRILL`
-is a deferred operation, not laser cutting. `BEND` is reference only: do not
+is the finished diameter, drilled after folding and before welding; the laser
+cuts only the Ø1.0 pilot at the same centre, on `CUT`. `BEND` is reference only: do not
 cut, score or engrave it. `MASK` identifies electrical-bond coating protection,
 never a cutting contour.
 
@@ -123,10 +128,13 @@ Correct face alignment before coating: parallel shim packs cannot correct a
 wedge between the lip and wall.
 
 Only the **nine front lid clearances and nine matching body pilots** are
-`DRILL`. Use the current drawing stations, with A at the bare floor underside
-and B at the bare left-wall interior, away from radii/burrs. Nominal front
-axis height is 6.455 mm above A. Match-drill Ø2.5 through the fitted bare pair;
-separate the lid and finish its nine front passages to **Ø4.50 +0.10/−0.00**.
+`DRILL`. Each has a Ø1.0 laser pilot on `CUT` at its centre; the drawing
+stations (A at the bare floor underside, B at the bare left-wall interior) are
+for checking. Nominal front axis height is 6.455 mm above A. After folding and
+before welding, drill the body pilots out to Ø2.5 and the lid's nine front
+passages to **Ø4.50 +0.10/−0.00**. The parts are drilled separately, not as a
+fitted pair: the Ø4.5 clearance on an M3 leaves 0.75 mm of float for the fold
+and weld stack.
 Leave all body pilots untapped. The nine rear body pilots remain CUT; the
 lid's rear openings are **10 ×6 mm CUT slots, length along lap depth**, each
 dimension ±0.20 mm. Do not transfer-drill the retired rear round-hole pattern.
@@ -196,8 +204,8 @@ verify actual printed clearance, retention, push-button action and knob rotation
 The bore is a clearance fit, not a locating feature.
 
 The steel beam retains its 1.2 mm nominal normal bare lid gap, seven
-depth-slotted floor fixings (one per interior pedal gap, #1088) and two
-vertically slotted wall-ear fixings.
+depth-slotted floor fixings (one per interior pedal gap, #1088). Its two wall
+ears are unbolted locators (#1090): no screw heads on the side walls.
 Fit it after separate coating, then select felt from the measured finished gap.
 Preserve the #1019 rails, central prop and support heights; earlier numerical
 load estimates are not a rating of the current welded assembly.

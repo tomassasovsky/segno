@@ -229,8 +229,10 @@ holes. Weld the two rear vertical corner joints after folding. Confirm joint
 preparation and distortion control with the separate welder before finalizing
 the cut files; no welding procedure is specified by this CAD record.
 
-The nine front lid/body stations are fitted and match-drilled **after welding
-and before painting**. The drilling provider is not yet agreed. The owner
+The nine front lid/body stations are Ø1.0 laser pilots in the flat that Dinacut
+drills out to size **after folding and before welding** (#1090). The native
+models carry the finished holes (`FRONT_DRILL_AFTER_FORMING`); the flat
+comparison drops a pilot that lies inside its drill. The owner
 cleans the Ø2.5 body pilots and taps all **32 M3 threads after painting**
 (18 lid, 14 screen supports). No new holes or enlarged screw passages are
 planned after painting. All metal faces, seats, edges and clearance passages

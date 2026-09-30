@@ -108,7 +108,7 @@ class SupportBeam(unittest.TestCase):
 
     def test_every_window_and_every_fixing_is_actually_cut(self):
         """Both cutters missed once: the windows were extruded away from the web
-        and the right ear's slot landed past the end of its own ear. The solid
+        and a (since removed) ear slot landed past the end of its own ear. The solid
         was still valid and still the right size, so only counting the geometry
         catches it."""
         solid = enclosure._beam_solid()
@@ -118,7 +118,7 @@ class SupportBeam(unittest.TestCase):
                 r = round(face._geomAdaptor().Radius(), 3)
                 radii[r] = radii.get(r, 0) + 1
         windows = len(enclosure.beam_cable_u())
-        fixings = len(enclosure.beam_bolt_u()) + 2          # + one tie per ear
+        fixings = len(enclosure.beam_bolt_u())              # the ears are unbolted (#1090)
         self.assertEqual(radii.get(enclosure.BEAM_CABLE_R), 4*windows)
         self.assertEqual(radii.get(round(enclosure.D_M4/2.0, 3)), 2*fixings)
         self.assertEqual(radii.get(enclosure.BEAM_RI), 4)                    # 2 long folds
@@ -195,7 +195,6 @@ class SupportBeam(unittest.TestCase):
     def test_the_fixings_are_slotted_and_the_flat_says_so(self):
         """Plain holes cost the bottom plate 147 MPa at 1 kN; slots, 135."""
         self.assertGreater(enclosure.BEAM_BOLT_SLOT, 0.0)
-        self.assertGreater(enclosure.BEAM_EAR_SLOT, 0.0)
         import tempfile
         import ezdxf
         with tempfile.TemporaryDirectory() as tmp:
@@ -208,27 +207,29 @@ class SupportBeam(unittest.TestCase):
                      if e.dxftype() == 'LWPOLYLINE' and e.dxf.layer == 'BEND']
         # no plain circles at all: every fixing is an obround
         self.assertEqual([e for e in cuts if e.dxftype() == 'CIRCLE'], [])
-        # outline + 7 foot slots (one per pedal gap, #1088) + 10 cable windows + 2 ear slots
-        self.assertEqual(len(cuts), 1 + 7 + 10 + 2)
+        # outline + 7 foot slots (one per pedal gap, #1088) + 10 cable windows;
+        # the ears are unbolted (#1090), so they carry no slot
+        self.assertEqual(len(cuts), 1 + 7 + 10)
         # pad, foot and one bend line per ear
         self.assertEqual(len(bends), 4)
 
-    def test_the_wall_ties_are_in_the_base_cut_file(self):
+    def test_no_screw_goes_through_the_side_walls(self):
+        """Owner call (#1090): the beam's ears are unbolted, so the side walls
+        carry no hole in the band where the ears sit."""
         import tempfile
         import ezdxf
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)/'segno_base.dxf'
             enclosure.dxf_base(str(path))
-            bores = [(e.dxf.center.x, e.dxf.center.y)
-                     for e in ezdxf.readfile(path).modelspace()
-                     if e.dxftype() == 'CIRCLE' and e.dxf.layer == 'CUT'
-                     and abs(e.dxf.radius - enclosure.D_M4/2.0) < 1e-7]
-        offset = enclosure.wall_flat_z(enclosure.BEAM_EAR_BOLT_Z)
-        depth = enclosure._BEAM_REAR_Y + enclosure.BEAM_EAR_BOLT_V
-        for want in ((-offset, depth), (enclosure.W - 2*enclosure.T + offset, depth)):
-            with self.subTest(tie=want):
-                self.assertTrue(any(math.hypot(x-want[0], y-want[1]) < 1e-6
-                                    for x, y in bores))
+            circles = [(e.dxf.center.x, e.dxf.center.y)
+                       for e in ezdxf.readfile(path).modelspace()
+                       if e.dxftype() == 'CIRCLE' and e.dxf.layer == 'CUT']
+        v0 = enclosure._BEAM_REAR_Y
+        v1 = v0 + enclosure.BEAM_EAR_V
+        wall_x1 = enclosure.W - 2*enclosure.T
+        in_walls = [(x, y) for x, y in circles
+                    if (x < 0.0 or x > wall_x1) and v0 - 1.0 <= y <= v1 + 1.0]
+        self.assertEqual(in_walls, [])
 
     def test_the_ears_fold_into_clear_air_behind_the_web(self):
         """They fold rearward, and the 16in module body is also behind the web."""
