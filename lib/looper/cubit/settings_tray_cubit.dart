@@ -85,7 +85,7 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Opens the tray (tap-on-handle, or programmatic).
   void open() => emit(state.copyWith(dragProgress: 1));
 
-  /// Closes the tray (tap-on-handle, tap-on-scrim, or programmatic). Named
+  /// Closes the tray (handle activation, drag, or programmatic). Named
   /// `closeTray` rather than `close` — the latter is `Cubit.close()`, which
   /// disposes the bloc's stream; overriding it here would be a hard
   /// invalid-override error, not a UI action. Always returns to the landing

@@ -1,7 +1,17 @@
-SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — the rootfs slot"
+SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — boot + rootfs slots"
 # Builds a signed, verity-format RAUC bundle carrying segno-kiosk-image's rootfs.
 # `rauc install` writes it to the inactive A/B slot. CI publishes it per channel.
 inherit bundle
+
+# Inspect with the same pinned native tools that create the bundle. Host RAUC
+# versions can be too old to read verity bundles; bundle.bbclass already adds
+# rauc-native and squashfs-tools-native to the task's dependencies.
+DEPENDS += "jq-native"
+
+# The bundle carries this project's own images and one hook script. Declaring
+# it keeps the QA check that fires as soon as a recipe fetches any file — the
+# hook — from demanding a licence checksum for material we author.
+LICENSE = "CLOSED"
 
 RAUC_BUNDLE_FORMAT     = "verity"
 # MUST byte-match [system] compatible in the installed system.conf — both are
@@ -14,6 +24,9 @@ RAUC_BUNDLE_COMPATIBLE = "${SEGNO_RAUC_COMPATIBLE}"
 # Deterministic — using ${DATETIME} makes the task basehash non-reproducible.
 SEGNO_BUILD_VERSION   ?= "0"
 RAUC_BUNDLE_VERSION    = "${SEGNO_BUILD_VERSION}"
+# Collection names the exact requested release instead of selecting an older
+# cached bundle when metadata did not reach this recipe.
+BUNDLE_NAME = "${BUNDLE_BASENAME}-${MACHINE}-${RAUC_BUNDLE_VERSION}"
 
 # Signing material. RAUC_KEYDIR holds development-1.{key,cert}.pem. Default is a
 # gitignored dir INSIDE meta-segno so it's visible inside the kas container (which
@@ -40,8 +53,41 @@ python __anonymous() {
             "update bundle." % keyfile)
 }
 
-# One slot: the whole rootfs. (Kernel lives in the boot slot; grouping the boot
-# slot into the bundle is a follow-up once single-rootfs updates are proven.)
-RAUC_BUNDLE_SLOTS = "rootfs"
+# Two slots, updated together. The rootfs alone is not a whole update: the
+# kernel lives in the boot slot, and so does config.txt — so with rootfs-only
+# bundles nothing about how the console STARTS could ever change on a unit in
+# the field. A device-tree overlay is exactly what the console board's link
+# needs, and it could only ever arrive by re-imaging by hand (#989).
+#
+# system.conf already declares firmware.0/.1 parented to rootfs.0/.1, and the Pi
+# firmware tryboot path already rolls back a slot that fails to boot, so this
+# adds an artifact to a mechanism that was built for it rather than a new one.
+RAUC_BUNDLE_SLOTS = "rootfs firmware"
+
 RAUC_SLOT_rootfs  = "segno-kiosk-image"
 RAUC_SLOT_rootfs[fstype] = "ext4"
+
+# A deployed FILE, not an image recipe: the boot slot's contents are assembled
+# from IMAGE_BOOT_FILES rather than built as a rootfs, so there is no
+# do_image_complete for the bundle to wait on — it waits on the deploy instead.
+RAUC_SLOT_firmware = "segno-bootfs"
+RAUC_SLOT_firmware[type] = "file"
+RAUC_SLOT_firmware[file] = "segno-bootfs-${MACHINE}.tar"
+RAUC_SLOT_firmware[depends] = "segno-bootfs:do_deploy"
+# The hook does the WRITE, not just a fix-up afterwards. RAUC's own vfat
+# handler drives GNU tar, which this rootfs's busybox tar rejects, and labels
+# the filesystem after the slot (FIRMWARE_0) where the layout expects bootA /
+# bootB. Writing it here also keeps the bundle carrying a tar rather than a
+# partition-sized image, so it is not tied to the size the layout uses today.
+RAUC_SLOT_firmware[hooks] = "install"
+
+# The boot slot arrives with cmdline.txt's root=XXX placeholder intact; the hook
+# points each slot at its own rootfs, the way the image build does per slot.
+# Only the file: the hook is per-SLOT (declared above), not a bundle-wide one.
+RAUC_BUNDLE_HOOKS[file] = "segno-bundle-hook.sh"
+SRC_URI += "file://segno-bundle-hook.sh file://check_bundle.sh"
+
+do_bundle:append() {
+    bash "${UNPACKDIR}/check_bundle.sh" "${B}/bundle.raucb" \
+        "${RAUC_BUNDLE_COMPATIBLE}" "${RAUC_BUNDLE_VERSION}"
+}

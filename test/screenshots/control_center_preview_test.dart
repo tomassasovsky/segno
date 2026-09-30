@@ -511,10 +511,9 @@ void main() {
     addTearDown(performance.dispose);
     final control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(const NoopPedalTransport()),
+      pedal: PedalRepository(NoopPedalLink()),
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     final midi = MidiSetupCubit(repository: devices);
     // The Loop face's own providers. A mock bloc rather than a real one over
@@ -596,9 +595,7 @@ void main() {
       settings: settings,
     );
     final pedal = PedalCubit(
-      pedal: PedalRepository(const NoopPedalTransport()),
-      settings: settings,
-      pollInterval: Duration.zero,
+      pedal: PedalRepository(NoopPedalLink()),
     );
     final update = _MockUpdateCubit();
     whenListen(
@@ -933,13 +930,13 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('control domain, midi tab on a live link', (tester) async {
+  testWidgets('control domain, controllers tab on a live link', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     final cubit = SettingsTrayCubit(settings: settings)
       ..open()
       ..showDestination(SettingsTrayDestination.control)
-      ..showControlTab(ControlTab.midi);
+      ..showControlTab(ControlTab.controllers);
     addTearDown(cubit.close);
 
     final rig = controlProviders(
@@ -988,7 +985,7 @@ void main() {
     final cubit = SettingsTrayCubit(settings: settings)
       ..open()
       ..showDestination(SettingsTrayDestination.control)
-      ..showControlTab(ControlTab.midi);
+      ..showControlTab(ControlTab.controllers);
     addTearDown(cubit.close);
 
     final rig = controlProviders(

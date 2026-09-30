@@ -10,6 +10,10 @@ LICENSE = "MIT"
 # ships segno-mark-good.service in its place, behind a health gate (#307).
 require recipes-graphics/images/core-image-weston.bb
 
+# segno-console-board carries the console board's firmware and the boot-time
+# check that applies it: the board is a second computer, and the image owns
+# what runs on it (#989). No comments inside the list below — BitBake treats a
+# '#' in a line-continued value as part of the value, not as a comment.
 IMAGE_INSTALL:append = " \
     segno-bundle \
     gtk+3 \
@@ -27,6 +31,7 @@ IMAGE_INSTALL:append = " \
     rauc-conf \
     rauc-rpi-backend \
     raspi-utils \
+    segno-console-board \
     dtc \
     ddcutil \
     networkmanager-nmcli \

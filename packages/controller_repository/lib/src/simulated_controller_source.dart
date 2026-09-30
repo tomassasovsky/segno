@@ -10,7 +10,7 @@ import 'package:controller_repository/src/controller_source.dart';
 /// `sources` list at bootstrap — never a public `simulate()` on the
 /// repository. That is the whole point: a pushed input enters through the
 /// EXACT seam a real CC delivers on, so the repository's `_onInput` — its learn
-/// capture, its smoothing ramps, its `learnIgnore` filtering — cannot tell it
+/// capture, its smoothing ramps, its filtering — cannot tell it
 /// from hardware. Nothing downstream of the controller-truth boundary gains a
 /// test-only branch.
 ///

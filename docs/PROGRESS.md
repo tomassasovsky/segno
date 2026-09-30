@@ -1,5 +1,7 @@
 # Segno — Progress & Roadmap
 
+<!-- cspell:words hashlib -->
+
 Living status doc for the Flutter desktop loopstation. Pairs with the original
 plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
 Update this as work lands so any session (human or agent) can resume cold.
@@ -311,6 +313,72 @@ stomp strength. Generator/drawing material callouts await controlled reissue;
 no output/CAD geometry changed for this evidence review.
 [Certificate assessment](reviews/material-certificate/review.md).
 
+## September 2026 Mac recording companion
+
+The standalone [Segno Transfer app](../apps/segno_transfer/README.md) implements
+the owner-requested Mac workflow in #1056: connect using existing SSH access,
+browse and select performance audio, name downloaded copies, verify transfers,
+and stream recording previews with seeking. Its Swift package is independent
+of the instrument runtime. The helper uses the appliance's minimal Python with
+jq and sha256sum; Python json/hashlib modules are not required.
+
+The streaming update uses bounded SSH range reads through the native player,
+replacing full-file preview preparation. Local acceptance includes a real two-file download, custom filenames, matching
+source hashes, and Finder reveal. Automated checks cover the transfer failure
+paths, selection state and playback. Source review and product approval remain
+separate from this local app delivery; #1056 retains its merge gate.
+
+The owner approved free GitHub distribution with local signing and no paid
+Apple signing or notarization. Companion tags use `transfer-vVERSION`; their
+workflow tests and builds the Apple Silicon disk image, includes installation
+instructions and the license, and publishes a checksum alongside the download.
+Release review also corrected preview shutdown: quitting waits for cancelled
+reads to finish their connection and temporary-file cleanup, including previews
+closed or replaced just before quitting. Closing previews remains responsive.
+
+## September 2026 appliance integration
+
+The console link, CTRL jacks, and appliance delivery stack (#984, #986, #990)
+integrates with the newer master changes. See
+[the integration record](APPLIANCE_INTEGRATION.md) for release 137's verified
+source commit, retained v2 behavior, pending v3 firmware, and the separate
+software and device validation boundaries. Merging source does not publish or
+install an appliance update.
+
+The update helper now requests tryboot explicitly when an update is staged
+(#977); an ordinary restart keeps the active slot. Isolated shell tests cover
+both paths. This source correction does not validate a new installed image or
+resolve the separate crash-loop health-gate issue (#976).
+
+## September 2026 click timing
+
+With Sync tempo off, later recordings now take their click timing from the
+existing loop (#1051), including loop-top downbeats for loops shorter than one
+beat. Native regression and sanitizer checks pass. The appliance listening
+check remains pending; this source change does not install an update.
+
+## Startup readiness and bundle inspection (#980 / #982)
+
+The remaining startup work from #982 now follows the current appliance stack:
+the launcher waits for a stable Wayland socket and stops if that wait fails,
+restarts pause for three seconds, and the secondary native window opens after
+a 750 ms startup delay. Preference changes cannot bypass that delay, and
+unmounting cancels it. These timings mitigate #970; they do not establish that
+EGL is ready or replace compositor-restart verification on the appliance.
+
+The bundle build inspects the actual RAUC artifact for the selected board and
+version, its rootfs and boot archive, and the firmware install hook. The boot
+archive producer and installer from #990 stay authoritative. See the
+[integration record](APPLIANCE_INTEGRATION.md#startup-readiness-and-release-inspection)
+for checks and the remaining device boundary.
+
+Builds 138 and 139 compiled successfully but failed collection: the release
+host lacked an archive extractor, then its RAUC version could not read verity
+bundles. Inspection now runs before bundle deployment using the pinned
+Yocto-native RAUC with JSON support, archive tools and jq. The checker matches
+the existing boot archive filename ending in `.tar.img`; the producer and
+install hook remain unchanged. A failed inspection stops the release build.
+
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
@@ -465,7 +533,7 @@ packages/
   daw_export/          DATA  — pure-Dart Ableton Live 12 (.als) exporter for a performance capture
   midi_client/         DATA  — native USB-MIDI device client (ControllerSource) over the FFI seam
   midi_device_repository/ REPO — MIDI device enumeration/selection + hotplug (audio-independent)
-  pedal_repository/    REPO  — hardware pedal (footswitch/LED) protocol over MIDI SysEx
+  pedal_repository/    REPO  — console pedal-board link (footswitch/encoder in, LED frames out) over UART
   routing_graph/       UI KIT — reusable routing-graph canvas/wires/cards + theme (Signal, FX editor)
 lib/
   app/        App + MultiRepositoryProvider (looper, controller, settings)
@@ -911,15 +979,15 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   (`wav_codec` for the WAV side, new `performance_repository` for capture
   lifecycle — arm/finalize/recover-unfinalized/rename/discard), surfaced by a
   recorder UI + app state (record/play toolbar affordance).
-- **Performance recording — pedal firmware parity.** The pedal has no spare
-  footswitch, so arm/disarm rides the existing MODE button via a
+- **Performance recording — pedal firmware parity.** The console's pedal board
+  has no spare footswitch, so arm/disarm rides the existing MODE button via a
   tap-vs-long-press split (tap still toggles Rec/Play; a ≥500 ms hold
   arms/disarms). The armed state rides the wire but is **not** rendered on the
-  pedal: it once blinked the MODE LED red, dropped in #693 because armed
+  pedal board: it once blinked the MODE LED red, dropped in #693 because armed
   already shows on the screens and blink-vs-solid was too fine a distinction on
   one LED at stage distance. The MODE LED now reports the interaction mode
-  only — rec red / play green / FX blue, solid in every state — in both
-  sketches and on the on-screen `PedalFaceplate` simulator.
+  only — rec red / play green / FX blue, solid in every state — in
+  `firmware/console_board` and on the on-screen `PedalFaceplate` simulator.
 - **DAW export.** New `daw_export` package (pure Dart, no Flutter/engine
   dependency) turns a completed performance capture into a real **Ableton
   Live 12 `.als`** project: one audio track per non-empty track/live-input
@@ -1002,7 +1070,7 @@ remains open — see "On-hardware validations" below.
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
   `le_midi_*` capture seam → `MidiControllerSource` → `ControllerRepository`,
-  with a device-selection UI. Hardware-gated only for a live-pedal smoke test.
+  with a device-selection UI. Hardware-gated only for a live DIN-MIDI smoke test.
 - **VST3/CLAP plugin hosting — Linux (X11) port.** See the "Effects chain"
   Done entry above for macOS/Windows status; Linux needs an X11 embedding
   target, deferred to on-platform work.
