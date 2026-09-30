@@ -51,9 +51,8 @@ class RailLayout(unittest.TestCase):
         own = {(round(x, 3), round(v + enclosure._rail_screw_dy(n), 3))
                for n, v, u0, u1, sc in self.rails for x in sc if u0 <= x <= u1}
         # buck bolts whose heads the segment above them pockets (#1088)
-        bolt_v = enclosure.buck_mounts()[0][2] + enclosure.BUCK_HOLE_OFFSET_V
-        own |= {(round(x, 3), round(bolt_v, 3)) for n, _k, a, b, _o in self.segments
-                for x in enclosure.rail_pockets(n, a, b)}
+        own |= {(round(x, 3), round(y, 3)) for n, _k, a, b, _o in self.segments
+                for x, y in enclosure.rail_pockets(n, a, b)}
         for name, v, u0, u1, _s in self.rails:
             for c in bores:
                 if not (u0 <= c['u'] <= u1):

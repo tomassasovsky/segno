@@ -282,7 +282,9 @@ class ManufacturingPipelineTest(unittest.TestCase):
                 # out/ and shipped in no package at all since #1019 created them.
                 # 64 until #1070 added the 15.6in splice and the two four-shim
                 # height kits: nine parts, STEP + STL each.
-                'segno_3dprint.zip':82,
+                # 80 since the console's pills became the tall #1074 set: the old
+                # segno_led_diffuser is the mini console's part only.
+                'segno_3dprint.zip':80,
             })
             for members in packages.values():
                 self.assertFalse([name for name in members if 'corner_bracket' in name])
@@ -305,7 +307,8 @@ class ManufacturingPipelineTest(unittest.TestCase):
                 'segno_screen16_deck_fit_test_R',
                 'segno_mini_console_tray',            # a different product
                 'segno_mini_console_lid',
-                'segno_mini_console_sled'})
+                'segno_mini_console_sled',
+                'segno_led_diffuser'})                # the mini's pill; see above
             metal_sources = packages[METAL_ARCHIVE].values()
             self.assertEqual(set(metal_sources), {
                 stem+extension

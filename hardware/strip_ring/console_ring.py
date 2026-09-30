@@ -146,7 +146,7 @@ def check():
     assert 35.4 > WINDOW_R + 1.0, "diffuser flange does not reach under the faceplate"
     assert LED_FACE_R > 36.2, "LED faces foul the cup's diffuser shelf"
     assert STRIP_TOP <= UNDER - 2.0, "strip top reaches the shelf/roof"
-    assert STRIP_BOTTOM > CARRIER_TOP, "strip stands on the carrier's components"
+    assert STRIP_BOTTOM > CARRIER_TOP, "strip edge reaches below the carrier PCB top"
     for name, shape in parts().items():
         assert shape.isValid() and len(shape.Solids()) == 1, name
     return {"leds": COUNT, "neutral_r": NEUTRAL_R, "led_face_r": LED_FACE_R,

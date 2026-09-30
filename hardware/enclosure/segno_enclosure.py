@@ -738,7 +738,8 @@ D_TRS_SCREW_DIAG = (19.0, 24.0)   # (du, dz) between the two diagonal M3 centres
 D_TRS_KEEPOUT    = 30.4  # bore + the M3 pair
 D_PD_BORE = D_TRS_BORE   # the PD coupler keeps the D-series punch (bore + M3 pair)
 # CTRL_1 / CTRL_2 (#1088, owner call 2026-09-29): the jacks stay Neutrik NJ6FD-V
-# (PCB pins, ring-normal contact for presence sensing). Each one sits in the
+# (PCB pins, a switched normal contact on J20/J21 pin 4 for presence sensing; the
+# v3 netlist says tip-normal, its firmware README ring-normal). Each one sits in the
 # D-size zinc flange plate from the MEIRIYFA listing (Amazon B0G5FZNH49), which
 # the owner confirmed the NJ6FD-V fits. The plate, not the jack, meets the wall:
 # flange 26 x 31, Ø23.6 barrel through a 24 mm hole, 2 x Ø3.4 fixings at
@@ -2296,8 +2297,8 @@ def _check(strict_board_mount=True):
     _own = {(round(x, 3), round(v + _rail_screw_dy(n), 3))
             for n, v, u0, u1, sc in floor_rail_lines() for x in sc if u0 <= x <= u1}
     # a buck bolt under a rail is fine where that segment pockets its head
-    _own |= {(round(x, 3), round(buck_mounts()[0][2] + BUCK_HOLE_OFFSET_V, 3))
-             for n, _k, a, b, _on in floor_rail_segments() for x in rail_pockets(n, a, b)}
+    _own |= {(round(x, 3), round(y, 3))
+             for n, _k, a, b, _on in floor_rail_segments() for x, y in rail_pockets(n, a, b)}
     for name, v, u0, u1, _s in floor_rail_lines():
         lo, hi = v - RAIL_W/2.0, v + RAIL_W/2.0
         for c in dxf_base_bores():
@@ -6030,12 +6031,14 @@ def _rail_print(a, b):
 
 
 def rail_pockets(name, a, b):
-    """u of every buck bolt head that lands under rail `name` between a and b."""
+    """(u, v) of every buck bolt head that lands under rail `name` between a and
+    b, each at its own brick's hole row."""
     v = dict((r[0], r[1]) for r in floor_rail_lines())[name]
-    return sorted(bu + du for _n, bu, bv, sp in buck_mounts()
+    return sorted((bu + du, bv + BUCK_HOLE_OFFSET_V)
+                  for _n, bu, bv, sp in buck_mounts()
                   for du in (-sp/2.0, sp/2.0)
                   if a <= bu + du <= b
-                  and abs(bv + BUCK_HOLE_OFFSET_V - v) + RAIL_POCKET_D/2.0 < RAIL_W/2.0 + RAIL_POCKET_D)
+                  and abs(bv + BUCK_HOLE_OFFSET_V - v) < RAIL_W/2.0 + RAIL_POCKET_D/2.0)
 
 def _rail_solid(length, screws_local, pockets_local=()):
     """One printed floor-rail segment (issue #1019).
@@ -6087,8 +6090,7 @@ def build_floor_rail_steps():
         start, length = _rail_print(a, b)
         dy = _rail_screw_dy(name)
         v = dict((r[0], r[1]) for r in floor_rail_lines())[name]
-        pk = [(x - start, buck_mounts()[0][2] + BUCK_HOLE_OFFSET_V - v)
-              for x in rail_pockets(name, a, b)]
+        pk = [(x - start, y - v) for x, y in rail_pockets(name, a, b)]
         solid = _rail_solid(length, [(x - start, dy) for x in on], pk)
         stem = f"segno_floor_rail_{name}_{k}"
         cq.exporters.export(solid, os.path.join(OUT, stem + ".step"))
@@ -6158,6 +6160,25 @@ def _gable_cutter(cq, plane, x0, x1, y0, y1, top, bottom):
             .close().extrude(y1 - y0))
 
 
+def encoder_axis_world():
+    """The encoder axis in world mm: (point on the faceplate UNDERSIDE, unit
+    direction outward). segno_ring_disc, the strip ring and the 7in tower's
+    carrier notch all hang off this one line."""
+    c = math.cos(math.radians(SLOPE_ANGLE))
+    sn = math.sin(math.radians(SLOPE_ANGLE))
+    return ((COL_U, c * ENC_V - 2.093, LID_UNDER_Z0 + sn * (ENC_V - 2.093 / c)),
+            (0.0, -sn, c))
+
+
+def screen7_tower_front_anchor():
+    """The 7in tower's front-centre flange hole among STAND_ANCHORS_7IN: of the
+    anchors between the two side columns, the one furthest forward."""
+    xs = sorted({round(x, 6) for x, _y in STAND_ANCHORS_7IN})
+    centre = [(x, y) for x, y in STAND_ANCHORS_7IN if xs[0] < round(x, 6) < xs[-1]]
+    assert len(centre) == 2, "7in tower: expected one front and one rear centre anchor"
+    return min(centre, key=lambda a: a[1])
+
+
 def screen7_tower_encoder_axis():
     """The encoder axis in the 7in tower's own frame: (point at the faceplate
     UNDERSIDE, unit direction outward). The tower is placed by translation only,
@@ -6169,12 +6190,11 @@ def screen7_tower_encoder_axis():
     x0, y0, x1, y1 = S7C_MOD_BB
     mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
     cy_w = mcy * c
-    front = STAND_ANCHORS_7IN[4]
+    front = screen7_tower_front_anchor()
     ox = front[0] - mcx
     oy = front[1] - (cy_w - (S7C_FRAME_H * c + S7T_FLANGE) / 2.0)
-    under = (COL_U - ox, c * ENC_V - 2.093 - oy,
-             LID_UNDER_Z0 + sn * (ENC_V - 2.093 / c) - T)
-    return under, (0.0, -sn, c)
+    (wx, wy, wz), axis = encoder_axis_world()
+    return (wx - ox, wy - oy, wz - T), axis
 
 
 def build_screen7_tower_step():
@@ -6601,8 +6621,8 @@ def build_step():
     ring = cq.importers.importStep(os.path.join(OUT,"segno_ring_disc.step")).val()
     c, sn = math.cos(_ra), math.sin(_ra)
     # Ring STEP is centred on its shaft, plate bottom at z=0, seated on the lid underside plane.
-    matrix = [[1,0,0,COL_U],[0,c,-sn,c*ENC_V-2.093],
-              [0,sn,c,LID_UNDER_Z0+sn*(ENC_V-2.093/c)], [0,0,0,1]]
+    (_ex, _ey, _ez), _axis = encoder_axis_world()
+    matrix = [[1,0,0,_ex],[0,c,-sn,_ey],[0,sn,c,_ez], [0,0,0,1]]
     asm.add(ring, loc=_metal_location(matrix), name="segno_ring_disc")
     shim = _front_shim_pack_solid()
     cq.exporters.export(shim, os.path.join(OUT,"segno_front_shim_pack_reference.step"))
@@ -8137,7 +8157,9 @@ def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
     packages["segno_pedal_tiles.zip"] = {n:n for n in _tile_package_files(with_pdf)}
     if with_step:
         printed = ["segno_platform_front_ring","segno_platform_mid_ring","segno_platform_sled","segno_platform_mid_sled",
-                   "segno_led_diffuser","segno_ring_diffuser"]
+                   "segno_ring_diffuser"]
+        # The pill diffusers are the tall #1074 set (hardware/pill_light_mask,
+        # PR #1084); segno_led_diffuser is superseded and no longer shipped.
         printed += [_tile_stem(label) for label,_,_ in PEDALS]
         printed += ["segno_screen7_tower","segno_screen16_stand_L","segno_screen16_stand_R",
                     "segno_screen16_splice"]
@@ -8161,7 +8183,9 @@ def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
                                "segno_screen16_deck_fit_test_R",
                                "segno_mini_console_tray",       # a different product
                                "segno_mini_console_lid",
-                               "segno_mini_console_sled"}
+                               "segno_mini_console_sled",
+                               "segno_led_diffuser"}            # the mini's pill; the console
+                                                                # uses the tall #1074 set
         _emitted = {os.path.splitext(n)[0] for n in os.listdir(OUT) if n.endswith(".stl")}
         _missing = _emitted - set(printed) - _not_a_console_part
         assert not _missing, (
