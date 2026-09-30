@@ -50,6 +50,10 @@ class RailLayout(unittest.TestCase):
         half = enclosure.RAIL_W / 2.0
         own = {(round(x, 3), round(v + enclosure._rail_screw_dy(n), 3))
                for n, v, u0, u1, sc in self.rails for x in sc if u0 <= x <= u1}
+        # buck bolts whose heads the segment above them pockets (#1088)
+        bolt_v = enclosure.buck_mounts()[0][2] + enclosure.BUCK_HOLE_OFFSET_V
+        own |= {(round(x, 3), round(bolt_v, 3)) for n, _k, a, b, _o in self.segments
+                for x in enclosure.rail_pockets(n, a, b)}
         for name, v, u0, u1, _s in self.rails:
             for c in bores:
                 if not (u0 <= c['u'] <= u1):
@@ -122,12 +126,13 @@ class RailLayout(unittest.TestCase):
         """Same two offsets in every segment, or the segments are not one part;
         and far enough in that the screw has wall around it, which is what the
         45 mm inset was for before the converters took those offsets away."""
-        rear = [(a, b, on) for n, _k, a, b, on in self.segments if n == 'rear']
+        rear = [(k, a, b, on) for n, k, a, b, on in self.segments if n == 'rear']
         self.assertEqual(len(rear), enclosure.RAIL_SEGMENTS)
-        for a, b, on in rear:
+        for k, a, b, on in rear:
             start, length = enclosure._rail_print(a, b)
+            offsets = enclosure.RAIL_REAR_ANCHORS_BY_SEG.get(k, enclosure.RAIL_REAR_ANCHORS)
             self.assertEqual([round(x - a, 6) for x in on],
-                             [round(o, 6) for o in enclosure.RAIL_REAR_ANCHORS])
+                             [round(o, 6) for o in offsets])
             for x in on:
                 self.assertGreater(x - start, enclosure.RAIL_W)
                 self.assertLess(x - start, length - enclosure.RAIL_W)
@@ -261,12 +266,18 @@ class Solid(unittest.TestCase):
     def test_every_segment_of_a_rail_is_the_same_printed_part(self):
         """The owner asked for four identical strips, not four that tile. Taking
         the joint gap off only the shared ends left the first and last of each
-        rail 1.5 mm longer, and the span-based check could not see it."""
+        rail 1.5 mm longer, and the span-based check could not see it. The two
+        rear segments under the bucks are their own prints on purpose (#1088):
+        they pocket the bolt heads, and segment 2 moves its anchors."""
+        special = {("rear", k) for k in enclosure.RAIL_REAR_ANCHORS_BY_SEG}
+        special |= {(n, k) for n, k, a, b, _o in enclosure.floor_rail_segments()
+                    if enclosure.rail_pockets(n, a, b)}
+        self.assertEqual(special, {("rear", 2), ("rear", 3)})
         for name, _v, _u0, _u1, _s in enclosure.floor_rail_lines():
             parts = {(round(enclosure._rail_print(a, b)[1], 6),
                       tuple(round(x - enclosure._rail_print(a, b)[0], 6) for x in on))
-                     for n, _k, a, b, on in enclosure.floor_rail_segments()
-                     if n == name}
+                     for n, k, a, b, on in enclosure.floor_rail_segments()
+                     if n == name and (n, k) not in special}
             with self.subTest(rail=name):
                 self.assertEqual(len(parts), 1)
 

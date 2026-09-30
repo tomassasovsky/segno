@@ -296,7 +296,7 @@ The generated source and `MANUFACTURING.md` define the current revision.
 | POWER | Raw Ø19.80 ±0.10 | APIELE M19 high-round momentary switch; retaining nut |
 | FUSE | Raw Ø12.30 ±0.10 | 5×20 screw-cap holder; retaining nut |
 | MIDI_IN / MIDI_OUT | Raw Ø15.50 (+0.10/−0), M3 Ø3.60 (+0.10/−0), pitch 22.2 mm | REAN NYS325 |
-| CTRL_1 / CTRL_2 | Raw Ø24.40 (+0.10/−0), M3 Ø3.60 (+0.10/−0), diagonal 19×24 mm, the OTHER diagonal from PD_IN | MEIRIYFA 6.35 mm stereo socket in a D-size zinc flange (B0G5FZNH49), owner-selected 2026-09-29; replaced the Neutrik NJ6FD-V, which needed a 1.20–1.50 mm panel |
+| CTRL_1 / CTRL_2 | Raw Ø24.40 (+0.10/−0), M3 Ø3.60 (+0.10/−0), diagonal 19×24 mm, the OTHER diagonal from PD_IN | Neutrik NJ6FD-V fitted in the D-size zinc flange plate from the MEIRIYFA listing (B0G5FZNH49), owner fit check 2026-09-29; the plate screws to the 2.0 mm wall, so the jack's 1.20–1.50 mm clamp range no longer needs a thin panel |
 | USB3_1 / USB3_2 | Raw four flats 22.80 ×22.80 clipped by concentric Ø24.80, both ±0.10 | PENGLIN nut-mounted bulkhead, flange Ø28.5 |
 
 The [owner-supplied USB drawing](enclosure/reference/usb3_dimensions.png)

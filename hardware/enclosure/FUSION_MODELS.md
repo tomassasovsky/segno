@@ -1,5 +1,40 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
+## Power group, V3 boards, earth stud - 2026-09-30 (#1088)
+
+Same clone. Owner placement from the drag canvas: the screen-power board, both
+bucks and the PD board sit behind the CLEAR/BANK pedals (`buck_mounts()`,
+`aux_board_mounts()` in the generator). World mm = generator (u, v); floor top
+at z 2.
+
+- `base`: `CUT` edited in place as before (marker rolled back before
+  `Extrude1`). Earth stud and its `MASK` ring moved to u 419.79; buck ear holes,
+  eight board standoff holes and rear-rail anchor u 331.71 -> 242.71 moved.
+  Plate 4,986.9663 cm2, 972,964.8 mm3.
+- `screen_power_board_revP`: KiCad STEP of the #1072 board (Revision P, exported
+  with `kicad-cli pcb export step --subst-models`), transform
+  `[-1,0,0,30.1 | 0,-1,0,30.7 | 0,0,1,1.2]` (turned 180 deg, 10 mm standoffs).
+  Q5's untrimmed model leg is the only thing that reaches the floor.
+- `pd_board_stusb4500`: simple model built from SparkFun's Eagle board (outline,
+  four holes, J1, J5, J4, U1, Q1, S1), transform `[1,0,0,35.722 | 0,1,0,37.8 | 0,0,1,1.0]`.
+- `aux_standoffs`: eight M3 hex standoffs in world coordinates (identity).
+- `electronics:1+buck_converter_10a:1` (BUCK_PI) at (41.085, 33.58, 0.2) and `:2`
+  (BUCK_AUX) at (33.915, 33.58, 0.2) cm.
+- `console_board_v3` (identity rotation, `[.., 41.025 | .., 38.375 | .., 1.7]`) and
+  `ring_board_v3` (the old `ring_board_asm` transform) replace the retired
+  `console_board_v4` and `ring_board_asm`.
+- `floor_rails`: **rebuilt** from the generator (24 solids, rails + strips, world
+  coordinates). Deleting one body of the old import deleted the whole import
+  feature, and the API has no undo; rebuild with the same script rather than
+  editing single bodies. Rear segments 2 and 3 are their own prints (buck bolt
+  head pockets; segment 2's anchors ahead of BUCK_AUX).
+- Deleted: every `base_1067_*` variant, `faceplate_pre_wide`, the notched beam
+  and felt, `rear_panel_retired_1088`, `ring_holder24`, the loose
+  `neopixel_ring24`. The hidden `texts` legends stay (deleting them kills the
+  component).
+- Interference: only Q5's model leg on the floor (0.017 mm3) and each rail's
+  strip in its rounded channel corners (1.29 mm3, modelling only).
+
 ## Seven beam screws, tapered lid, rear I/O in the wall - 2026-09-29 (#1088)
 
 Same clone, still unsaved at the time of writing. All three edits were made in

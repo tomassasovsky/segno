@@ -86,7 +86,7 @@ class ManufacturingFitTest(unittest.TestCase):
                             enclosure._check()
 
     def test_ctrl_jacks_take_the_d_flange_on_the_other_diagonal(self):
-        # #1088: MEIRIYFA D-flange socket, Ø24 hole, 2 x Ø3.4 at +-9.5 / +-12,
+        # #1088: NJ6FD-V in the MEIRIYFA D-flange plate, Ø24 hole, 2 x Ø3.4 at +-9.5 / +-12,
         # top-left and bottom-right from the front, i.e. (+du, +dz) and (-du, -dz)
         # in wall coords (u grows to the player's right, the wall is seen from
         # behind). The PD coupler keeps its own, opposite diagonal.
@@ -281,11 +281,12 @@ class ManufacturingFitTest(unittest.TestCase):
                                      for e in cuts for d in drills))
                 if stem == 'base':
                     # 53.9 pitch; hole row 31.3 from the forward edge of 57.6 body.
+                    # The power group's front line puts that edge at 307 (#1088).
                     actual = [(e.dxf.center.x,e.dxf.center.y) for e in cuts
                               if abs(2*e.dxf.radius-4.6) < .001 and
-                              320 < e.dxf.center.x < 490 and 350 < e.dxf.center.y < 370]
+                              300 < e.dxf.center.x < 450 and 330 < e.dxf.center.y < 345]
                     self.assertEqual(len(actual), 4)
-                    expected = [(u+du, 367.5) for u in (372.15,447.85) for du in (-26.95,26.95)]
+                    expected = [(u+du, 307+31.3) for u in (339.15,410.85) for du in (-26.95,26.95)]
                     for a,b in zip(sorted(actual),sorted(expected)):
                         self.assertAlmostEqual(a[0],b[0],places=6)
                         self.assertAlmostEqual(a[1],b[1],places=6)

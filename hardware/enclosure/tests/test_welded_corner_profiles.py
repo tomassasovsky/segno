@@ -20,8 +20,11 @@ from flat_pattern_check import _face, validate_cut_contours
 # datum without retaining a second manufacturing DXF or its GUID/timestamp noise.
 UNCHANGED_FEATURES = {
     # #1088 re-froze CUT on purpose: seven beam floor holes instead of fourteen,
-    # and every connector cutout in the rear wall instead of the panel window.
-    'CUT': (128, 'b2ba86a3e25fae9f809873e623ebbd9bded1795704ddb1d260978b83922cc277'),
+    # every connector cutout in the rear wall instead of the panel window, the
+    # earth stud centred between the vents and PD_IN, and the power group behind
+    # the CLEAR/BANK pedals (both bucks moved, eight standoff holes for the
+    # screen-power and PD boards).
+    'CUT': (136, 'e21dc36b3af8962a6f47b667d4fc886a04b10ee641024bdaef2b65e50636636a'),
     'VENT': (570, 'ddec63663b8c2670400d01a6431b1ff677d8574ec2cb33b2e0d91362fb5ab681'),
     'BEND': (5, 'ebc80b8fa031008706f13bae4e9e4fc5d213aab31402eb04c449ad7a128c3991'),
     'DRILL': (9, '034f8f332d55ffc49090ff7030430b4e375578c61a97c88984c200c48e312b60'),
@@ -88,7 +91,7 @@ class WeldedCornerProfilesTest(unittest.TestCase):
                          for entity in self.entities
                          if entity.dxf.layer in UNCHANGED_FEATURES)
         self.assertEqual(counts, {
-            ('CUT', 'LWPOLYLINE'): 3, ('CUT', 'CIRCLE'): 112,
+            ('CUT', 'LWPOLYLINE'): 3, ('CUT', 'CIRCLE'): 120,
             ('VENT', 'LWPOLYLINE'): 95, ('BEND', 'LWPOLYLINE'): 5,
             ('DRILL', 'CIRCLE'): 9,
         })

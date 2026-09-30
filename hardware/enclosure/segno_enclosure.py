@@ -691,14 +691,15 @@ D_TRS_SCREW_D    = 3.2   # M3 clearance
 D_TRS_SCREW_DIAG = (19.0, 24.0)   # (du, dz) between the two diagonal M3 centres
 D_TRS_KEEPOUT    = 30.4  # bore + the M3 pair
 D_PD_BORE = D_TRS_BORE   # the PD coupler keeps the D-series punch (bore + M3 pair)
-# CTRL_1 / CTRL_2 (#1088, owner call 2026-09-29): MEIRIYFA 6.35 mm stereo panel
-# socket in a D-size zinc flange (Amazon B0G5FZNH49). Its drawing: flange 26 x 31,
-# body Ø23.6 through a 24 mm hole, 2 x Ø3.4 fixings at +-9.5 / +-12 on ONE
-# diagonal -- top-left and bottom-right seen from the front of the flange. It
-# mounts from outside with screws, so it takes any wall thickness; it replaced the
-# Neutrik NJ6FD-V, which only clamps a 1.20-1.50 mm panel and forced a separate
-# thin rear panel. The flange is a mirror of the PD coupler's diagonal as cut,
-# hence D_CTRL_DIAG below.
+# CTRL_1 / CTRL_2 (#1088, owner call 2026-09-29): the jacks stay Neutrik NJ6FD-V
+# (PCB pins, ring-normal contact for presence sensing). Each one sits in the
+# D-size zinc flange plate from the MEIRIYFA listing (Amazon B0G5FZNH49), which
+# the owner confirmed the NJ6FD-V fits. The plate, not the jack, meets the wall:
+# flange 26 x 31, Ø23.6 barrel through a 24 mm hole, 2 x Ø3.4 fixings at
+# +-9.5 / +-12 on ONE diagonal -- top-left and bottom-right seen from the front.
+# It screws on from outside, so the 2.0 mm wall needs no thin sub-panel for the
+# NJ6FD-V's 1.20-1.50 mm clamp range. The diagonal is the mirror of the PD
+# coupler's as cut, hence D_CTRL_DIAG below.
 D_CTRL_BORE = D_TRS_BORE      # "Hole dimensions 24mm"; body Ø23.6
 D_CTRL_DIAG = +1              # +1: fixings at (+du/2, +dz/2) and (-du/2, -dz/2) in wall
                               # coords, i.e. top-left / bottom-right seen from behind
@@ -725,8 +726,9 @@ REAR_IO_PROVENANCE = {
                          "dimensions (19mm*24mm)'; MEIRIYFA B0G5FZNH49 is the same "
                          "standard D shell (photos show the diagonal pair + screws)",
     "D_TRS_KEEPOUT":     "design: bore + the M3 pair (kept as the CTRL station width too)",
-    "D_CTRL_BORE":       "datasheet: MEIRIYFA B0G5FZNH49 drawing (owner, 2026-09-29): hole 24 mm, "
-                         "body Ø23.6, flange 26x31, 2-Ø3.4 at +-9.5/+-12, top-left/bottom-right",
+    "D_CTRL_BORE":       "datasheet: MEIRIYFA B0G5FZNH49 flange-plate drawing (owner, 2026-09-29): "
+                         "hole 24 mm, barrel Ø23.6, flange 26x31, 2-Ø3.4 at +-9.5/+-12, "
+                         "top-left/bottom-right; carries the NJ6FD-V (owner fit check)",
     "D_CTRL_DIAG":       "datasheet: same MEIRIYFA drawing, front view of the flange",
     "D_TRS_SCREW_D":     "datasheet: D-series fixings are M3",
     "USB3_SQ":           "datasheet: owner-supplied reference/usb3_dimensions.png, 2026-09-05; "
@@ -782,9 +784,9 @@ REAR_IO_U      = None   # set to SCREEN_16_U below -- the panel is CENTRED ON TH
 # Their metal shells sit on the painted wall: they reach the chassis through the
 # board ground (H1), not through a bonded panel -- see
 # docs/design/console-grounding-and-bonding.md.
-REAR_IO_BAND_PAD = 21.0   # the vent block and the earth stud are laid out against the
-                          # I/O band's left edge: the outermost keep-out plus this,
-                          # which is where the panel's edge was, so neither moved
+REAR_IO_BAND_PAD = 21.0   # the vent block is laid out against the I/O band's left
+                          # edge: the outermost keep-out plus this, which is where
+                          # the panel's edge was, so the vents did not move
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
@@ -911,6 +913,16 @@ RAIL_REAR_V    = (327.0 + 359.5) / 2.0   # 343.25, 1.5 mm clear of each stand ro
 # a rail works in compression between the plate and the floor, so an unscrewed
 # tail still carries load, and two screws already fix the segment against turning.
 RAIL_REAR_ANCHORS = (65.0, 111.0)   # offsets from each segment's near end
+# Rear segment 2 runs under BUCK_AUX since the power group moved there (owner
+# placement 2026-09-29): its 111 anchor would stand inside the brick, so that
+# segment is its own print with both anchors ahead of the bricks, next to the
+# 7in tower (heads under the screen board, which stands clear of them).
+RAIL_REAR_ANCHORS_BY_SEG = {2: (22.0, 65.0)}   # 22: RAIL_W of wall past the tip
+# The bricks bolt through the rail's lane with the M4 heads UNDER the floor, so
+# every rail segment under a buck bolt carries a blind pocket in its top face
+# (the face against the floor) for an ISO 7380 M4 head: dk 7.6, k 2.2.
+RAIL_POCKET_D = 8.4
+RAIL_POCKET_H = 2.6               # leaves RAIL_T - RAIL_POCKET_H - RAIL_CH_D of PETG
 RAIL_HEAD_D = 9.0             # conservative envelope for the nut/washer stack that
                               # stands on the floor at an anchor, inside the console
 # The bottom plate has NO vents. It used to carry 3,840 mm2 of intake at v 134..162,
@@ -1758,8 +1770,8 @@ def rear_io_cutouts():
         for s in (-1, 1):
             cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z - s*ddz/2.0,
                          "d": D_M3_METAL, "ref": ref + "_SCR"})
-    # CTRL jacks: the MEIRIYFA D-flange socket, the same Ø24 punch and 19 x 24
-    # pair, but on the OTHER diagonal (see D_CTRL_DIAG).
+    # CTRL jacks: NJ6FD-V in the MEIRIYFA D-flange plate, the same Ø24 punch and
+    # 19 x 24 pair, but on the OTHER diagonal (see D_CTRL_DIAG).
     for ref in ("CTRL_1", "CTRL_2"):
         cu = at[ref][0]
         cuts.append({"kind": "circle", "u": cu, "v": z, "d": D_CTRL_BORE + .40, "ref": ref})
@@ -1774,9 +1786,13 @@ def rear_io_cutouts():
 
 def rear_io_left_edge():
     """Left edge of the I/O band: where the full-width panel's edge used to be. The
-    vent block and the earth stud are laid out against it and did not move."""
+    vent block is laid out against it and did not move."""
     lay = rear_io_layout()
     return min(cu - kw/2.0 for cu, kw in lay.values()) - REAR_IO_BAND_PAD
+
+def rear_io_first_keepout():
+    """Left edge of the leftmost connector's keep-out (PD_IN's flange)."""
+    return min(cu - kw/2.0 for cu, kw in rear_io_layout().values())
 
 def _feat_extent(f):
     """(u_lo, u_hi, z_lo, z_hi) of one cutout feature."""
@@ -1799,8 +1815,11 @@ def rear_holes():
     v_r = cl_l - EDGE                                      # last column's right edge
     ncol = max(2, round((v_r - v_l - sl) / (sl + 8.0)) + 1)
     cp = (v_r - v_l - sl) / (ncol - 1)
-    cuts.append({"kind": "circle", "u": (v_r + cl_l)/2.0, "v": REAR_WALL_H/2.0,
-                 "d": D_GND, "ref": "EARTH_STUD"})         # centred in that gap
+    # The earth stud is centred between the last vent column and the first
+    # connector's keep-out. It used to centre on the gap to the panel's edge; with
+    # the panel gone (#1088) that edge is no longer anything a fitter can see.
+    cuts.append({"kind": "circle", "u": (v_r + rear_io_first_keepout())/2.0,
+                 "v": REAR_WALL_H/2.0, "d": D_GND, "ref": "EARTH_STUD"})
     vr = 7                                                 # rows, centred on mid-height
     vz0 = REAR_WALL_H/2.0 - ((vr-1)*VENT_PITCH + VENT_SLOT[1])/2.0
     cuts += _vent_array(u0=v_l, z0=vz0, cols=ncol, rows=vr, cp=cp)
@@ -1937,8 +1956,10 @@ def _check(strict_board_mount=True):
     # Supplier buck envelope must clear the screen stand's rear floor flange.
     stand_rear = (S16_DECK_V*math.cos(math.radians(SLOPE_ANGLE))-2.093
                   + S16_BEAM_D/2 + S16_FLANGE)
+    _stand_u0 = SCREEN_16_U - S16_BODY_W / 2.0 - 5.0      # the L stand's outer foot
     for name, u, v, _pitch in buck_mounts():
-        assert v-BUCK_BODY[1]/2-stand_rear >= 3.0, f"{name}: stand flange clearance <3 mm"
+        if u + BUCK_BODY[0]/2 > _stand_u0:                  # only where they share u
+            assert v-BUCK_BODY[1]/2-stand_rear >= 3.0, f"{name}: stand flange clearance <3 mm"
         assert v+BUCK_BODY[1]/2 < D-3*T+DEV90-3.0, f"{name}: rear wall clearance"
 
     # 2b. the faceplate support BEAM (issues #292/#1019): bears on the panel JUST
@@ -2210,10 +2231,14 @@ def _check(strict_board_mount=True):
         assert len(on) >= 2, f"RAIL {name}: only {len(on)} screws on it"
     # Every segment of a rail must be the SAME PART: same length, same screw
     # offsets. Spanning plate-edge to plate-edge drifted them 5.2 mm apart.
+    # Segments that carry buck-bolt pockets or their own anchors (#1088) are
+    # deliberately their own prints; every OTHER segment of a rail is one part.
     for name, _v, u0, u1, _s in floor_rail_lines():
         shapes = set()
         for n, _k, a, b, on in floor_rail_segments():
             if n != name:
+                continue
+            if (n == "rear" and _k in RAIL_REAR_ANCHORS_BY_SEG) or rail_pockets(n, a, b):
                 continue
             start, length = _rail_print(a, b)
             shapes.add((round(length, 6), tuple(round(x - start, 6) for x in on)))
@@ -2225,6 +2250,9 @@ def _check(strict_board_mount=True):
     # the rail would foul, or a hole it would blind.
     _own = {(round(x, 3), round(v + _rail_screw_dy(n), 3))
             for n, v, u0, u1, sc in floor_rail_lines() for x in sc if u0 <= x <= u1}
+    # a buck bolt under a rail is fine where that segment pockets its head
+    _own |= {(round(x, 3), round(buck_mounts()[0][2] + BUCK_HOLE_OFFSET_V, 3))
+             for n, _k, a, b, _on in floor_rail_segments() for x in rail_pockets(n, a, b)}
     for name, v, u0, u1, _s in floor_rail_lines():
         lo, hi = v - RAIL_W/2.0, v + RAIL_W/2.0
         for c in dxf_base_bores():
@@ -2453,14 +2481,19 @@ def _check(strict_board_mount=True):
         f"the {EDGE:.0f} mm edge margin")
 
     # 8c. every connector is cut into the wall (#1088).
-    # The gap to the vent block carries the earth stud (D_GND) and still has to
-    # leave a spanner's width either side. Measured to the I/O band's left edge,
-    # where the full-width panel's edge used to be.
+    # The gap between the vent block and PD_IN's keep-out carries the earth stud,
+    # centred, and its bare bonding land has to clear both neighbours by a
+    # spanner's width.
     _v_r = max(c["u"] + c.get("w", 0.0) for c in rear if c["ref"] == "VENT")
-    _gap = rear_io_left_edge() - _v_r
-    assert _gap >= D_GND + 2*8.0, (
-        f"REAR_IO: only {_gap:.1f} mm between the last vent column and the "
-        f"I/O band -- the earth stud (Ø{D_GND}) and its spanner do not fit")
+    _k_l = rear_io_first_keepout()
+    _stud = next(c for c in rear if c["ref"] == "EARTH_STUD")
+    assert abs((_stud["u"] - _v_r) - (_k_l - _stud["u"])) < 1e-9, (
+        f"REAR_IO: earth stud at u={_stud['u']:.2f} is not centred between the "
+        f"vents ({_v_r:.2f}) and PD_IN's keep-out ({_k_l:.2f})")
+    _gap = _k_l - _v_r
+    assert _gap >= MASK_GND_D + 2*8.0, (
+        f"REAR_IO: only {_gap:.1f} mm between the last vent column and PD_IN -- "
+        f"the earth stud's Ø{MASK_GND_D:g} land and a spanner either side do not fit")
     # every station has to fit BETWEEN the wall's top and bottom edges too -- the
     # USB coupler flange is the tall one, and the wall is only REAR_WALL_H
     _tall = max(kw for _cu, kw in lay.values())
@@ -2485,6 +2518,65 @@ def _check(strict_board_mount=True):
         assert _bu - BUCK_BODY[0]/2.0 >= EDGE and _bu + BUCK_BODY[0]/2.0 <= W - 2*T - EDGE, (
             f"BUCK_SPLIT: {_bn} spans u {_bu - BUCK_BODY[0]/2.0:.1f}.."
             f"{_bu + BUCK_BODY[0]/2.0:.1f}, outside the {EDGE:.0f} mm edge margins")
+
+    # 8d. the screen-power and PD boards (#1072, #754). Plan first: nothing else
+    #     that stands on the floor may share their footprint, and a standoff may
+    #     not land on a head, a nut or a washer.
+    _so_r = 3.2                                    # M3 hex standoff, across corners
+    _rect = lambda cu, cv, su, sv: (cu - su/2.0, cu + su/2.0, cv - sv/2.0, cv + sv/2.0)
+    _floor = [(n, _rect(u, v, BUCK_BODY[0], BUCK_BODY[1])) for n, u, v, _ in _bk]
+    _cb = board_mounts()[0]
+    _floor.append(("CONSOLE_BOARD", _rect(_cb[1], _cb[2], *BOARD_SIZE)))
+    _floor.append(("PI", pi_pcb_extent()))
+    _aux = aux_board_mounts()
+    for i, (ref, cu, cv, _h, (su, sv), so, tall) in enumerate(_aux):
+        r = _rect(cu, cv, su, sv)
+        _others = _floor + [(n2, _rect(u2, v2, *sz2))
+                            for n2, u2, v2, _h2, sz2, _s2, _t2 in _aux if n2 != ref]
+        for n2, o in _others:
+            _gap = max(o[0] - r[1], r[0] - o[1], o[2] - r[3], r[2] - o[3])
+            assert _gap >= 1.5, (
+                f"AUX_BOARD: {ref} ({r[0]:.1f}..{r[1]:.1f}, {r[2]:.1f}..{r[3]:.1f}) "
+                f"is {_gap:.1f} mm from {n2} -- boards need 1.5 mm of air around them")
+        assert r[3] <= _bd - 3.0 and r[0] >= EDGE and r[1] <= W - 2*T - EDGE, (
+            f"AUX_BOARD: {ref} runs off the floor or onto the rear wall's bend")
+    _heads = ([(u, v, RAIL_HEAD_D/2.0) for u, v in base_foot_xy()]
+              + [(u + dx, v + BUCK_HOLE_OFFSET_V, 6.0)
+                 for _n, u, v, sp in _bk for dx in (-sp/2.0, sp/2.0)])
+    for ref, hu, hv in aux_board_holes():
+        for u, v, rr in _heads:
+            _d = math.hypot(hu - u, hv - v)
+            assert _d >= rr + _so_r + 1.0, (
+                f"AUX_BOARD: the {ref} standoff at ({hu:.1f}, {hv:.1f}) lands "
+                f"{_d:.1f} mm from floor hardware at ({u:.1f}, {v:.1f})")
+    # The screws go in from below: a head may not sit on a rail.
+    for ref, hu, hv in aux_board_holes():
+        for name, v, u0, u1, _s in floor_rail_lines():
+            if u0 <= hu <= u1:
+                _d = abs(hv - v) - RAIL_W/2.0 - AUX_HEAD_D/2.0
+                assert _d >= 0.5, (
+                    f"AUX_BOARD: the {ref} screw head at ({hu:.1f}, {hv:.1f}) "
+                    f"overlaps the {name} rail by {-_d:.2f} mm under the floor")
+    # Height. Under the 16in screen the module's underside sets the ceiling; in the
+    # rear band the connector metal does, and the lowest of it is _lowest (the
+    # same number the bucks are held to).
+    _band_v = _bd - REAR_CONN_DEPTH
+    for ref, cu, cv, _h, (su, sv), so, tall in _aux:
+        v0, v1 = cv - sv/2.0, cv + sv/2.0
+        _floor_z = T                                   # top of the floor plate
+        _top = _floor_z + so + AUX_PCB_T + tall
+        _ceil = min(lid_under_z(v) - BIG_DEPTH for v in (v0, v1))
+        assert _top + 3.0 <= _ceil, (
+            f"AUX_BOARD: {ref} stands {_top:.1f} tall under a {_ceil:.1f} ceiling")
+        if v1 > _band_v:
+            _rear_h = SCREEN_PWR_REAR_H if ref == "SCREEN_POWER" else tall
+            _rear_top = _floor_z + so + AUX_PCB_T + _rear_h
+            assert _rear_top + 2.0 <= _lowest, (
+                f"AUX_BOARD: {ref} reaches {_rear_top:.1f} under the rear connector "
+                f"band, whose lowest metal is at z={_lowest:.1f}")
+    # The tall part on the screen board must stay out of that band.
+    assert POWER_FRONT_V + SCREEN_PWR_Q5_V[1] <= _band_v, (
+        "AUX_BOARD: SCREEN_POWER's Q5 sits under the rear connector band")
 
     # ...and no rear-I/O dimension may exist without a recorded provenance, so a
     # new connector cannot be added without saying where its numbers came from
@@ -2771,16 +2863,72 @@ BUCK_EAR_SPACING = 53.9  # centre-to-centre, supplier dimension image
 #   BUCK_AUX -> both screens + this board + LEDs ~6.7 A / 34 W   (67% of part)
 # BUCK_AUX is the tighter one and the one that wants airflow; a cheap 10 A module
 # is rarely honest at 10 A in still air.
-BUCK_GAP = 12.0               # between the two bricks, for wiring and air
+BUCK_GAP = 8.0                # between the two bricks, for wiring and air (the
+                              # BUCK_SPLIT gate's floor)
+
+# --- the power group (owner placement 2026-09-29, from the drag canvas) --------
+# Both bucks, the PD board and the #1072 screen-power board sit together in the
+# empty floor behind the CLEAR/BANK pedals:
+#
+#   screen-power board | BUCK_AUX  BUCK_PI      front edges on POWER_FRONT_V
+#                             PD board          centred behind the two bricks
+#
+# The bricks stand straight over the rear floor rail. Their four M4 bolts go in
+# from BELOW (ISO 7380 button head under the floor, washer and nut on the ear)
+# and the rail segments under them carry a pocket for each head -- see
+# rail_pockets(). Rear segment 2 also moves its anchors out from under
+# BUCK_AUX (RAIL_REAR_ANCHORS_BY_SEG). The boards' standoff screws also go in
+# from below, and those heads stay off the rail's lane.
+POWER_FRONT_V = 307.0         # front line of the screen board and both bricks
+SCREEN_PWR_U0 = 233.0         # 9.2 clear of the 7in tower
+BUCK_PAIR_U   = 375.0         # centre of the two bricks, as placed by the owner
+PD_BOARD_V0   = 378.0         # 13.4 behind the bricks
+
 def buck_mounts():
-    """Both bricks, side by side in the rear airflow bay, long axis along u. Left of
-    the console board keeps the runs to the inlet and to J3 short and stays clear of
-    the CLEAR/BANK pedal platform, which owns u 230..313."""
-    bd = D - 2*T
-    v = bd - 54.0  # 6 mm rearward: supplier envelope clears the 15.6in stand flange
+    """Both bricks side by side on the power group's front line, long axis along u."""
     pitch = BUCK_BODY[0] + BUCK_GAP
-    return [("BUCK_PI",  410.0 - pitch/2.0, v, BUCK_EAR_SPACING),
-            ("BUCK_AUX", 410.0 + pitch/2.0, v, BUCK_EAR_SPACING)]
+    v = POWER_FRONT_V + BUCK_BODY[1] / 2.0
+    return [("BUCK_PI",  BUCK_PAIR_U + pitch / 2.0, v, BUCK_EAR_SPACING),
+            ("BUCK_AUX", BUCK_PAIR_U - pitch / 2.0, v, BUCK_EAR_SPACING)]
+
+# SCREEN_POWER: the #1072 screen-power board, Revision P. 68 x 76 outline, M3
+# holes at (4, 4), (64, 4), (4, 72) and (64, 72) -- hardware/kicad/screen_power/
+# README.md on codex/screen-power-board-1072. Placed 68 along u and 76 along v,
+# turned 180 deg from the KiCad view: the USB input edge (KiCad x = 0) faces +u,
+# toward the Pi its host tails come from; the touch outputs face the 7in.
+#
+# PD_BOARD: SparkFun STUSB4500 (DEV-15801). Eagle outline 35.56 x 33.02, M3
+# stand-off holes 3.175 in from each corner (SparkFun_STUSB4500_USB-PD.brd, via
+# github.com/sparkfun/Power_Delivery_Board-USB-C). Unrotated: J1 (USB-C, in from
+# PD_IN) faces -u, J5 (screw terminal, out to the fuse and both bucks) faces +u.
+SCREEN_PWR_SIZE  = (68.0, 76.0)    # (u, v) as placed
+SCREEN_PWR_HOLES = (60.0, 68.0)    # (u, v) hole spacing as placed
+SCREEN_PWR_STANDOFF_H = 10.0       # M3 x 10 F-F: clears the rail anchor nut under it
+SCREEN_PWR_TALLEST = 18.8          # Q5 TO-220 above the PCB (KiCad STEP)
+SCREEN_PWR_REAR_H  = 13.0          # rear 20 mm: relays/fuses 11.0 + mated XH plugs
+SCREEN_PWR_Q5_V = (21.5, 25.9)     # Q5's v span from the front edge (KiCad y)
+PD_BOARD_SIZE  = (35.56, 33.02)    # (u, v) as placed
+PD_BOARD_HOLES = (29.21, 26.67)    # (u, v) hole spacing as placed
+PD_BOARD_STANDOFF_H = 8.0
+PD_BOARD_TALLEST = 10.0            # J5, 3.5 mm two-way screw terminal (assumed; measure)
+AUX_PCB_T = 1.6
+AUX_HEAD_D = 5.7                   # ISO 7380 M3 button head, under the floor
+
+def aux_board_mounts():
+    """(ref, centre_u, centre_v, (hole_du, hole_dv), (size_u, size_v), standoff_h,
+    tallest) for the two boards bolted to the floor in the power group."""
+    return [
+        ("SCREEN_POWER", SCREEN_PWR_U0 + SCREEN_PWR_SIZE[0]/2.0,
+         POWER_FRONT_V + SCREEN_PWR_SIZE[1]/2.0, SCREEN_PWR_HOLES, SCREEN_PWR_SIZE,
+         SCREEN_PWR_STANDOFF_H, SCREEN_PWR_TALLEST),
+        ("PD_BOARD", BUCK_PAIR_U, PD_BOARD_V0 + PD_BOARD_SIZE[1]/2.0,
+         PD_BOARD_HOLES, PD_BOARD_SIZE, PD_BOARD_STANDOFF_H, PD_BOARD_TALLEST)]
+
+def aux_board_holes():
+    """[(ref, u, v)] for every aux-board standoff."""
+    return [(ref, cu + du, cv + dv)
+            for ref, cu, cv, (hu, hv), _sz, _so, _t in aux_board_mounts()
+            for du in (-hu/2.0, hu/2.0) for dv in (-hv/2.0, hv/2.0)]
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -3428,6 +3576,16 @@ def dxf_base(path):
         # than that, so stack them instead of printing one over the other
         _text(msp, bkx - bsp/2, bky + BUCK_BODY[1]/2 + 4 + 8.0*_i, 5,
               f"{_bn} 20V>5V 10A (B0GGHN97TK; paso 53.9; eje +2.5; arandelas Ø12)", "NOTE")
+    _aux = aux_board_mounts()
+    for ref, cx, cy, (hu, hv), (su, sv), so, _t in _aux:
+        for dx in (-hu/2, hu/2):
+            for dy in (-hv/2, hv/2):
+                _circle(msp, cx+dx, cy+dy, D_M3_METAL)
+    # one label for the pair: they share a front line, so per-board labels collide
+    _x0 = min(cx - su/2 for _r, cx, _cy, _h, (su, _sv), _s, _t in _aux)
+    _y0 = min(cy - sv/2 for _r, _cx, cy, _h, (_su, sv), _s, _t in _aux)
+    _text(msp, _x0, _y0 - 9, 5, "SCREEN_POWER + PD_BOARD: separadores M3 "
+          f"{SCREEN_PWR_STANDOFF_H:.0f} mm", "NOTE")
     for x, y in base_foot_xy():                    # M4 clearance; heads clear rings
         _circle(msp, x, y, D_FOOT)
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
@@ -3635,7 +3793,7 @@ def base_foot_xy():
     seg = (u1 - u0) / RAIL_SEGMENTS
     return [(u0 + i*seg + off, RAIL_REAR_V)
             for i in range(RAIL_SEGMENTS)
-            for off in RAIL_REAR_ANCHORS]
+            for off in RAIL_REAR_ANCHORS_BY_SEG.get(i + 1, RAIL_REAR_ANCHORS)]
 
 
 def _rail_span():
@@ -3717,9 +3875,10 @@ def dxf_base_bores():
     for _bn, _bu, _bv, (_sx, _sy) in board_mounts():
         out += [{"u": _bu + dx, "v": _bv + dy, "ref": "BOARD"}
                 for dx in (-_sx/2.0, _sx/2.0) for dy in (-_sy/2.0, _sy/2.0)]
-    for _bn, bkx, _bky, bsp in buck_mounts():
-        out += [{"u": bkx + dx, "v": buck_mounts()[0][2] + BUCK_HOLE_OFFSET_V,
+    for _bn, bkx, bky, bsp in buck_mounts():
+        out += [{"u": bkx + dx, "v": bky + BUCK_HOLE_OFFSET_V,
                  "ref": "BUCK"} for dx in (-bsp/2.0, bsp/2.0)]
+    out += [{"u": u, "v": v, "ref": ref} for ref, u, v in aux_board_holes()]
     return out
 
 
@@ -5594,7 +5753,15 @@ def _rail_print(a, b):
     return a + RAIL_JOINT/2.0, (b - a) - RAIL_JOINT
 
 
-def _rail_solid(length, screws_local):
+def rail_pockets(name, a, b):
+    """u of every buck bolt head that lands under rail `name` between a and b."""
+    v = dict((r[0], r[1]) for r in floor_rail_lines())[name]
+    return sorted(bu + du for _n, bu, bv, sp in buck_mounts()
+                  for du in (-sp/2.0, sp/2.0)
+                  if a <= bu + du <= b
+                  and abs(bv + BUCK_HOLE_OFFSET_V - v) + RAIL_POCKET_D/2.0 < RAIL_W/2.0 + RAIL_POCKET_D)
+
+def _rail_solid(length, screws_local, pockets_local=()):
     """One printed floor-rail segment (issue #1019).
 
     Local frame: x along the rail, 0 at its low-u end; y across it, 0 on the
@@ -5622,6 +5789,10 @@ def _rail_solid(length, screws_local):
         body = body.cut(cq.Workplane("XY").center(x, y)      # head, buried in the PETG
                         .circle(RAIL_CBORE_D/2.0)
                         .extrude(RAIL_CBORE_H).translate((0, 0, RAIL_CH_D)))
+    for x, y in pockets_local:                            # buck bolt heads (#1088)
+        body = body.cut(cq.Workplane("XY").center(x, y)
+                        .circle(RAIL_POCKET_D/2.0)
+                        .extrude(RAIL_POCKET_H + 1).translate((0, 0, RAIL_T - RAIL_POCKET_H)))
     solid = body.val()
     assert solid.isValid() and len(body.solids().vals()) == 1, "rail is not one solid"
     return solid
@@ -5639,7 +5810,10 @@ def build_floor_rail_steps():
     for name, k, a, b, on in floor_rail_segments():
         start, length = _rail_print(a, b)
         dy = _rail_screw_dy(name)
-        solid = _rail_solid(length, [(x - start, dy) for x in on])
+        v = dict((r[0], r[1]) for r in floor_rail_lines())[name]
+        pk = [(x - start, buck_mounts()[0][2] + BUCK_HOLE_OFFSET_V - v)
+              for x in rail_pockets(name, a, b)]
+        solid = _rail_solid(length, [(x - start, dy) for x in on], pk)
         stem = f"segno_floor_rail_{name}_{k}"
         cq.exporters.export(solid, os.path.join(OUT, stem + ".step"))
         cq.exporters.export(solid, os.path.join(OUT, stem + ".stl"))
@@ -7168,6 +7342,8 @@ def _render_parts(cq, explode=0.0):
     blk={"CONSOLE_BOARD":(BOARD_SIZE[0],BOARD_SIZE[1],16,(0.26,0.52,0.92))}
     for name,cx,cy,_ in board_mounts():
         bx,by,bz,col=blk[name]; add(cq.Workplane("XY").box(bx,by,bz,centered=(True,True,False)).translate((cy+T,cx+T,STANDOFF_H)).val(), col)
+    for name,cx,cy,_h,(su,sv),so,tall in aux_board_mounts():   # screen-power + PD boards
+        add(cq.Workplane("XY").box(sv,su,AUX_PCB_T+tall,centered=(True,True,False)).translate((cy+T,cx+T,T+so)).val(), (0.26,0.52,0.92))
     # --- fasteners (show how it bolts together; visible from the underside) ----
     bw,bd=W-2*T,D-2*T; SCR=(0.70,0.71,0.76); FEET=(0.10,0.10,0.12); BRASS=(0.74,0.62,0.34)
     RAIL_PETG=(0.16,0.17,0.19)

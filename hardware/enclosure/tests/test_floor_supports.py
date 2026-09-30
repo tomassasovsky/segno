@@ -37,14 +37,14 @@ import segno_enclosure as enclosure
 # gated in the generator; these are the stations that come out of it.
 REAR_V = 343.25
 ANCHORS = ((83.428571, REAR_V), (129.428571, REAR_V),
-           (285.714286, REAR_V), (331.714286, REAR_V),
+           (242.714286, REAR_V), (285.714286, REAR_V),
            (488.0, REAR_V), (534.0, REAR_V),
            (690.285714, REAR_V), (736.285714, REAR_V))
 FOOT_RADIUS = 9.0
 HEAD_RADIUS = 4.5
 HEAD_HEIGHT = 5.0
-BUCK_WASHERS = ((345.2, 367.5), (399.1, 367.5),
-                (420.9, 367.5), (474.8, 367.5))
+BUCK_WASHERS = ((312.2, 338.3), (366.1, 338.3),
+                (383.9, 338.3), (437.8, 338.3))
 
 
 def rounded(point):
