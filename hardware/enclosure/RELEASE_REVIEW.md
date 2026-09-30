@@ -38,7 +38,8 @@ Open before cutting metal (owner):
 
 1. **Dinacut** accepts the tooling, fold sequence and developed profile of the
    four-corner base.
-2. **#1019** independent structural/load assessment.
+2. **#1019** structural hold: the owner's call, with the numbers and the
+   first-article proof test below.
 3. **Post-weld fitting/drilling provider** for the nine front lid stations.
 4. **PD coupler diagonal**: check the QIANRENON coupler's two M3 holes against
    the cut diagonal (top-right/bottom-left seen from behind) before cutting; it
@@ -48,6 +49,50 @@ Open before cutting metal (owner):
    notch; check the knob grips the shaft 8 mm in).
 6. **Screen-power USB host leads** are about 40-45 cm from the Pi to the board,
    longer than the 30 cm the #1072 review assessed.
+
+Settled since: **CTRL presence contact is tip-normal (TN).** J20/J21 pin 4 goes
+to each NJ6FD-V's tip-normal lug. The netlist, the v2 soldering guide and the
+firmware on master all say TN; only the unmerged PR #1082's README and sketch
+comment say ring-normal. Electrically both would read "high = empty" on this
+board (the tip sits on a 10k pull-up, the ring on its 1k bias), but TN opens
+last as a plug goes in, which is the "ignore a plug until it is seated"
+behaviour the netlist describes.
+
+### #1019 decision package
+
+Nonlinear shell FE (`_stomp_fea_beam.py`, re-run on this revision with its seven
+beam bolts), 1 kN on the worst pedal station:
+
+| Case | Floor peak | Deflection | Util. vs yield | Worst station |
+|---|---|---|---|---|
+| no beam | 95 MPa | 3.28 mm | 1.00 | BANK |
+| beam, 7 bolts, slotted (as drawn) | 139 MPa | 2.98 mm | 1.46 | CLEAR |
+| beam, 7 bolts, plain holes | 175 MPa | 2.89 mm | 1.85 | CLEAR |
+
+All stay under the RC-600 calibration point (util 2.00, a shipping product run
+through the same model). The beam costs 0.46 of floor margin and raises the
+faceplate's weakest point on the band from 47 kg to 475 kg. The model does not
+represent the welds; welded corners are stiffer than the riveted brackets it
+was calibrated against, so this is not optimistic on that account. It is still
+a model: the proof test below is what rates the real part.
+
+**First-article proof test** (welded base, bare metal, before paint):
+
+1. Assemble without electronics: beam bolted (7 × M4, slotted, snug), wall
+   ties, rails with the neoprene strip, all ten printed collars. The M3 pilots
+   are still untapped (tapping comes after paint), so seat the lid freely and
+   hold it with four spring clamps, two on the front lip and two on the rear
+   lap: less restraint than 18 screws, so the test errs on the safe side.
+   Stand it on a flat hard floor.
+2. Mark four stations: CLEAR, BANK, the centre front-row pedal and an end
+   front-row pedal. At each, measure the lid top height against a straightedge
+   laid across both side walls (feeler gauge or dial gauge).
+3. Load each station through a Ø60 mm hard puck with 100 kg of weights
+   (about 1 kN) for 60 s. Unload and measure again.
+4. Pass: residual set ≤ 0.2 mm at every station, no crease or dent, no crack at
+   the welds or the beam ears, front lid gap still 0.70–1.50 mm at all nine
+   stations. Then 20 ordinary stomps on each tested station, and look again.
+5. Fail: stop, record the station and the set, and do not send to paint.
 
 Also open, not blocking the cut: the `VAMP console (populated)` original and the
 `VAMP sheet metal` document still hold the September 15 revision; promote the

@@ -738,8 +738,8 @@ D_TRS_SCREW_DIAG = (19.0, 24.0)   # (du, dz) between the two diagonal M3 centres
 D_TRS_KEEPOUT    = 30.4  # bore + the M3 pair
 D_PD_BORE = D_TRS_BORE   # the PD coupler keeps the D-series punch (bore + M3 pair)
 # CTRL_1 / CTRL_2 (#1088, owner call 2026-09-29): the jacks stay Neutrik NJ6FD-V
-# (PCB pins, a switched normal contact on J20/J21 pin 4 for presence sensing; the
-# v3 netlist says tip-normal, its firmware README ring-normal). Each one sits in the
+# (PCB pins; J20/J21 pin 4 is the tip-normal contact, for presence sensing, as
+# console_board.py and the firmware on master have it). Each one sits in the
 # D-size zinc flange plate from the MEIRIYFA listing (Amazon B0G5FZNH49), which
 # the owner confirmed the NJ6FD-V fits. The plate, not the jack, meets the wall:
 # flange 26 x 31, Ø23.6 barrel through a 24 mm hole, 2 x Ø3.4 fixings at
