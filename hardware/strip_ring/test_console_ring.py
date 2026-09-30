@@ -17,11 +17,11 @@ class ConsoleRingTest(unittest.TestCase):
     def test_cup_clears_the_7in_module(self):
         self.assertLessEqual(ring.CUP_R, ring.SCREEN7_CLEAR_R - 2.0)
 
-    def test_40_leds_would_not_fit(self):
-        """Why 34: at 40 the strip's back alone is past the 7in module's edge."""
-        from math import pi
-        back_40 = (40 * ring.PITCH + ring.SEAM) / (2 * pi) + ring.FPC_T / 2
-        self.assertGreater(back_40, ring.SCREEN7_CLEAR_R)
+    def test_34_keeps_the_leds_close_to_the_lens(self):
+        """Why 34 (owner's call, #1090): the LED faces sit about 3 mm outside the
+        lens, which keeps one LED's spot narrow and the comet head sharp. A
+        40-LED strip would put them 9.6 mm out."""
+        self.assertLess(ring.LED_FACE_R - ring.LENS_R, 3.5)
 
     def test_lens_face_is_flush_and_the_carrier_sits_one_light_lift_down(self):
         self.assertAlmostEqual(ring.diffuser().BoundingBox().zmax, 0.0, places=6)

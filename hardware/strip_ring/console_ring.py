@@ -12,9 +12,12 @@ only what sits between the faceplate and the ring carrier:
   retainer, spacer, centre cap
              the standalone encoder stack unchanged, cap flush with the face.
 
-Why 34 LEDs: at 40 the strip's back is at r 45.1 and the 7in screen module's
-lower edge sits ~42.9 from the encoder axis under the faceplate (measured in
-the populated Fusion clone). 34 LEDs put the cup's outer wall at r 40.3.
+Why 34 LEDs: owner's call, 2026-09-30 (#1090). 34 was first forced by the 7in
+module (42.9 from the axis at ENC_V 229.16). Since the ring moved to ENC_V 215.0
+the module is 57.0 away and a 40-LED cup (r 46.9) would also fit, but at 34 the
+LEDs sit 3 mm from the lens instead of 9.6: in the light model one LED lights
+~22 deg of the ring instead of ~32, and the ring is ~1.7x brighter at the same
+drive, so the comet's head reads sharper. The cup's outer wall is at r 40.3.
 
 Frame: z = 0 is the faceplate TOP at the encoder axis, +z outward, the axis at
 the origin. The faceplate underside is z = -FACEPLATE_T. The standalone ring's
@@ -63,8 +66,8 @@ CAP_HEAD_FLOOR_Z = -2.6
 CAP_SEAT_Z = CAP_HEAD_FLOOR_Z - 1.0
 KNOB_BOTTOM = 0.5
 
-# Hard limits this variant exists to meet (Fusion clone, 2026-09-30):
-SCREEN7_CLEAR_R = 42.9             # 7in module's nearest point to the axis
+# Hard limits this variant exists to meet (Fusion clone, 2026-09-30, ENC_V 215.0):
+SCREEN7_CLEAR_R = 57.0             # 7in module's nearest point to the axis
 WINDOW_R = 33.7                    # coated Ø67 window in the faceplate
 
 
