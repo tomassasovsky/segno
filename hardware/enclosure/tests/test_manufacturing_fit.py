@@ -146,12 +146,15 @@ class ManufacturingFitTest(unittest.TestCase):
             self.assertEqual(len(disc.Solids()),1)
             self.assertLess(disc.intersect(root).Volume(),1e-7)
             self.assertFalse(any(f.geomType()=='CONE' for f in disc.Faces()))
-            bore = min((f for f in disc.Faces() if f.geomType()=='CYLINDER'),
-                       key=lambda f:f._geomAdaptor().Radius())
+            # the shaft bore is the hole on the axis; the two Ø8 holes at ±18 are
+            # the cap-screw access (#1090)
+            bore = next(f for f in disc.Faces() if f.geomType()=='CYLINDER'
+                        and abs(f.Center().x) < 1e-6 and abs(f.Center().y) < 1e-6
+                        and f._geomAdaptor().Radius() < 5)
             self.assertAlmostEqual(bore.BoundingBox().zlen,2.0,places=6)
             self.assertAlmostEqual(bore._geomAdaptor().Radius()*2,8.7,places=6)
         # Minimum raw hole with maximum local paint; OD at largest coated size.
-        coated = cq.Workplane('XY').circle(51.10/2).circle(8.30/2).extrude(2.2).val()
+        coated = cq.Workplane('XY').circle(51.40/2).circle(8.30/2).extrude(2.2).val()
         self.assertLess(coated.intersect(root).Volume(),1e-7)
         washer = fixture['washer']; shaft = fixture['modeled_mount']['bushing_diameter_mm']
         # Even allow the bore and washer to move in opposite directions around
@@ -211,10 +214,10 @@ class ManufacturingFitTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(enclosure,'OUT',tmp):
             holder = cq.importers.importStep(enclosure.build_ring_diffuser_step()).val()
         # Saved disc/holder registration, independent of the generator. The
-        # Bare Ø50.70±0.20 plus 60–100 µm per side yields Ø50.62..51.10;
+        # Bare Ø51.00±0.20 (#1090) plus 60–100 µm per side yields Ø50.92..51.40;
         # no perimeter mask is used. Retain the original too-large control.
         offset = (-.00143,-.00364390070516,.00012873401494)
-        for diameter in (50.62,51.10):
+        for diameter in (50.92,51.40):
             disc = (cq.Workplane('XY').circle(diameter/2).circle(4.1)
                     .extrude(2).translate(offset).val())
             self.assertLess(disc.intersect(holder).Volume(),1e-7)
@@ -492,7 +495,7 @@ class ManufacturingFitTest(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self._assert_front_shim_seats(unsupported,base,lid)
             displaced = [s.translate((1,0,0))
-                         if abs(s.BoundingBox().xlen-50.7)<.001 else s for s in solids]
+                         if abs(s.BoundingBox().xlen-enclosure.DISC_BLANK_D)<.001 else s for s in solids]
             with self.assertRaises(AssertionError):
                 self._assert_remaining_seats(displaced,base,lid)
             for solid in beam_solids:
@@ -627,7 +630,7 @@ class ManufacturingFitTest(unittest.TestCase):
         self.assertEqual(self._cylinder_axes(base,1.65),[])
         # #1088: no bolt-on rear panel; every connector is cut in the base's rear
         # wall, so there is no panel seat to check here.
-        ring = next(s for s in solids if abs(s.BoundingBox().xlen-50.7)<.001)
+        ring = next(s for s in solids if abs(s.BoundingBox().xlen-enclosure.DISC_BLANK_D)<.001)
         shaft = self._cylinder_axes(ring,4.35)[0]
         aperture = self._cylinder_axes(lid,33.7)[0]
         self.assertGreater(abs(shaft.Direction().Dot(aperture.Direction())),.999999)

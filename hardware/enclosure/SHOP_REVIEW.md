@@ -22,9 +22,9 @@ What changed since the 2026-09-15 drafts, as far as the shops are concerned:
 - Dinacut drills (owner call 2026-09-30): the nine front stations on lid and
   body are Ø1.0 laser pilots, drilled out to Ø2.5 / Ø4.5 after folding and
   before welding. There is no post-weld drilling step and no provider to pick.
-- **Ring disc is conditional.** If the owner chooses the 34-LED strip ring
-  (#1075 bench test), its printed centre cap replaces `segno_ring_disc`: drop the
-  disc and say "tres piezas" below. The faceplate is identical either way.
+- **Ring disc stays in the order** (owner call 2026-09-30): with the 34-LED strip
+  ring it is glued on the printed centre cap so the centre matches the lid. It is
+  now Ø51.0 with two Ø8.0 access holes over the cap screws.
 
 Matías's scope is settled: weld all four base corners and close all corner
 reliefs, including the two indicated upper edges, with his 5356 filler and a

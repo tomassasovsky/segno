@@ -19,6 +19,10 @@ Same clone, saved.
   identical to commit de4fae79's tower both ways.
 - `base`: the PD coupler's two M3 moved to the CTRL plates' diagonal in CUT
   (volume unchanged).
+- `ring_disc_51_5`: body swapped for the Ø51.0 disc with two Ø8.0 cap-screw
+  access holes (3,765.69 mm3) and shown again; `centre_cap` swapped for the
+  version 2 mm lower (2,902.74 mm3). Only the glue face touches; disc 0.35 mm
+  inside the lens bore, 0.5 mm under the knob.
 - `strip_ring_console_34` / `cup`: body swapped for the snap-arm cup
   (`console_ring_cup.step`, 7,054.3 mm3). Arms 2.15 mm from the tower, catches
   2.1 mm from D1, 0.39 mm under the modelled 1.51 mm board.

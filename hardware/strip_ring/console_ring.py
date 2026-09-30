@@ -152,13 +152,21 @@ def encoder_retainer():
     return plate.clean()
 
 
+# The lid's aluminium centre disc (segno_ring_disc, 2.0 mm, coated with the lid)
+# is glued on the cap so the centre matches the faceplate (#1090): the cap's plate
+# sits one disc thickness down and the disc's top is flush with the face. The
+# screw heads stay where they were and rise into the disc's two access holes.
+DISC_T = 2.0
+CAP_TOP = -DISC_T
+
+
 def centre_cap():
-    cap = annulus(25.6, 4.25, -1.0, 0.0)
-    cap = cap.fuse(annulus(25.6, 24.2, -7.0, -1.0))
+    cap = annulus(25.6, 4.25, CAP_TOP - 1.0, CAP_TOP)
+    cap = cap.fuse(annulus(25.6, 24.2, -7.0, CAP_TOP - 1.0))
     for x, y in CAP_SCREWS:
-        cap = cap.fuse(cq.Solid.makeCylinder(5, -1.0 - CAP_SEAT_Z, cq.Vector(x, y, CAP_SEAT_Z)))
+        cap = cap.fuse(cq.Solid.makeCylinder(5, CAP_TOP - CAP_SEAT_Z, cq.Vector(x, y, CAP_SEAT_Z)))
         cap = cap.cut(cq.Solid.makeCylinder(1.7, -CAP_SEAT_Z + .02, cq.Vector(x, y, CAP_SEAT_Z - .01)))
-        cap = cap.cut(cq.Solid.makeCylinder(3.7, -CAP_HEAD_FLOOR_Z + .01, cq.Vector(x, y, CAP_HEAD_FLOOR_Z)))
+        cap = cap.cut(cq.Solid.makeCylinder(3.7, CAP_TOP - CAP_HEAD_FLOOR_Z + .01, cq.Vector(x, y, CAP_HEAD_FLOOR_Z)))
     return cap.clean()
 
 

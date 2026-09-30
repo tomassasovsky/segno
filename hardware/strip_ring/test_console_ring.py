@@ -25,7 +25,8 @@ class ConsoleRingTest(unittest.TestCase):
 
     def test_lens_face_is_flush_and_the_carrier_sits_one_light_lift_down(self):
         self.assertAlmostEqual(ring.diffuser().BoundingBox().zmax, 0.0, places=6)
-        self.assertAlmostEqual(ring.centre_cap().BoundingBox().zmax, 0.0, places=6)
+        # the cap sits one disc thickness down; the glued aluminium disc is flush
+        self.assertAlmostEqual(ring.centre_cap().BoundingBox().zmax, -ring.DISC_T, places=6)
         self.assertLess(ring.cup().BoundingBox().zmax, -ring.FACEPLATE_T + 1e-6)
 
     def test_snap_arms_hold_the_carrier_without_clamping_it(self):

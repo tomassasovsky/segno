@@ -30,17 +30,22 @@ class ShopToleranceFitsTest(unittest.TestCase):
                                   'ec11_disc_interface.json').read_text())
         path = Path(cls.output.name)/'disc.dxf'
         enclosure.dxf_ring_disc(str(path))
-        cls.disc_circles = sorted(
-            (e.dxf.radius*2 for e in ezdxf.readfile(path).modelspace()
-             if e.dxftype() == 'CIRCLE' and e.dxf.layer == 'CUT'))
+        circles = [e for e in ezdxf.readfile(path).modelspace()
+                   if e.dxftype() == 'CIRCLE' and e.dxf.layer == 'CUT']
+        # the centred circles (bore and outside), then the two off-centre
+        # cap-screw access holes (#1090)
+        centred = sorted(e.dxf.radius*2 for e in circles if abs(e.dxf.center.x) < 1e-6)
+        access = sorted(e.dxf.radius*2 for e in circles if abs(e.dxf.center.x) >= 1e-6)
+        cls.disc_circles = [centred[0], *access, centred[-1]]
 
     @classmethod
     def tearDownClass(cls):
         cls.output.cleanup()
 
     def test_disc_can_seat_with_size_coating_and_bore_eccentricity_together(self):
-        self.assertEqual(len(self.disc_circles), 2)
-        bore, outside = self.disc_circles
+        # bore, two cap-screw access holes (#1090), outside
+        self.assertEqual(len(self.disc_circles), 4)
+        bore, outside = self.disc_circles[0], self.disc_circles[-1]
         finished_outside = outside + .20 + 2*.10
         finished_bore = bore - .20 - 2*.10
         root_radius = self.encoder['modeled_mount']['root_max_diameter_mm']/2
@@ -66,7 +71,7 @@ class ShopToleranceFitsTest(unittest.TestCase):
                 self.assertLess(disc.intersect(self.holder).Volume(), 1e-7)
 
     def test_measured_washer_covers_maximum_bore_with_opposite_float(self):
-        bore, _ = self.disc_circles
+        bore = self.disc_circles[0]
         washer = self.encoder['washer']
         bush = self.encoder['modeled_mount']['bushing_diameter_mm']
         # Check bare handling as well as the thinnest coating in the hole.

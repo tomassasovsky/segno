@@ -1006,7 +1006,15 @@ LID_REAR_SLOT_TOL = 0.20 # +/- width/length allowance, bare
 # Purchased references, OD / ID / thickness, mm; rear procurement limits pending.
 # The rear washer provides bearing, not complete coverage of the displaced slot.
 LID_WASHERS = {"FRONT":(7.0,3.2,.5), "REAR":(12.0,3.2,1.0)}
-DISC_BLANK_D = 50.70 # bare; leave room for laser size error and full coating
+DISC_BLANK_D = 51.00 # bare; coated max 51.40 clears the Ø51.70 strip-ring lens bore (and
+                     # the Ring24 holder pocket) by 0.15 a side; coated min 50.92 leaves at
+                     # most 0.14 of the Ø51.2 black printed cap showing (#1090)
+# With the 34-LED strip ring (#1090) the disc is GLUED on the printed centre cap so
+# the centre matches the lid's coating. Two access holes over the cap's M3 screws
+# (console_ring.CAP_SCREWS, ±18 on one diameter) let the screws, and so the cap
+# with its disc, come out; they sit under the Ø50 knob.
+DISC_ACCESS_D = 8.00
+DISC_ACCESS_X = 18.0
 DISC_BORE_D = 8.70   # straight laser bore; no secondary chamfer
 DISC_SIZE_TOL = 0.20 # +/- diameter allowance for this disc only
 DISC_BORE_CENTER_TOL = 0.20 # +/- X and Y from the outer-circle centre
@@ -5108,6 +5116,8 @@ def build_ring_disc_step():
     """
     import cadquery as cq
     d = (cq.Workplane("XY").circle(DISC_BLANK_D / 2.0).circle(DISC_BORE_D / 2.0).extrude(T))
+    d = d.cut(cq.Workplane("XY").pushPoints([(-DISC_ACCESS_X, 0), (DISC_ACCESS_X, 0)])
+              .circle(DISC_ACCESS_D / 2.0).extrude(T))
     # The disc may settle in the unchanged pocket before the encoder nut is tight.
     # Bounds include laser size/centre error and coating; qualify the printed fit.
     # The measured ID7.25/OD11.85 washer bridges the straight bore.
@@ -6897,7 +6907,8 @@ BEND_FOOTNOTES = {
                        f"Centro del paso: X e Y ±{DISC_BORE_CENTER_TOL:.2f} respecto del centro del Ø exterior. "
                        f"Pintar todas las superficies. Final Ø{DISC_BLANK_D-DISC_SIZE_TOL+2*COAT_MIN:.2f}-{DISC_BLANK_D+DISC_SIZE_TOL+2*COAT_MAX:.2f} "
                        f"y paso Ø{DISC_BORE_D-DISC_SIZE_TOL-2*COAT_MAX:.2f}-{DISC_BORE_D+DISC_SIZE_TOL-2*COAT_MIN:.2f}. "
-                       "Tuerca/arandela arriba; permitir que el disco se asiente antes de apretar. "
+                       f"Dos pasos Ø{DISC_ACCESS_D:.2f} ±{DISC_SIZE_TOL:.2f} a ±{DISC_ACCESS_X:.1f} del centro, sobre un mismo diámetro. "
+                       "El propietario lo pega sobre la tapa central impresa; los pasos dan acceso a sus dos tornillos. "
                        "El propietario debe comprobar el encaje impreso y la sujeción."),
     "segno_beam": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {BEAM_T:.1f} mm (1.0 x T). "
                    f"Deducción aplicada con K {KF} y Ri {BEAM_RI:.1f} mm (= T): {BEAM_DD_PAD:.2f} mm en apoyo->alma (102.5°), "
@@ -7807,6 +7818,8 @@ def dxf_ring_disc(path):
     doc = _doc(); msp = doc.modelspace()
     _circle(msp, 0, 0, DISC_BLANK_D)                 # outline: clearance inside printed pocket
     _circle(msp, 0, 0, DISC_BORE_D)                   # encoder bush hole (centre)
+    for _x in (-DISC_ACCESS_X, DISC_ACCESS_X):        # cap-screw access (#1090)
+        _circle(msp, _x, 0, DISC_ACCESS_D)
     _note(msp, -DISC_BLANK_D/2, DISC_BLANK_D/2 + 6,
           f"Segno DISCO CENTRAL (segno_ring_disc), aluminio {ALLOY_2MM} {T:.1f} mm, CANT. 1. "
           + BEND_FOOTNOTES["segno_ring_disc"] + " SIN PLEGADOS.")
