@@ -51,15 +51,26 @@ class ScreenMountTest(unittest.TestCase):
 
     def test_7in_deck_is_closed_except_the_connector_notch(self):
         """v3 had a 146 x 96 window here. Sample the deck skin every 5 mm across
-        the module's footprint: every point is metal unless it lies in the notch."""
+        the module's footprint: every point is metal unless it lies in the
+        connector notch or in the strip-ring carrier notch, a 44 x 6 mm bite out
+        of the front edge under the module's bottom bezel."""
         x0, y0, x1, y1 = enclosure.S7C_MOD_BB
         ny0 = enclosure.S7C_PORTS_Y[0] - enclosure.S7T_PLUG_MARGIN
         ny1 = enclosure.S7C_PORTS_Y[1] + enclosure.S7T_PLUG_MARGIN
         nx0 = enclosure.S7C_PORTS_X0 - enclosure.S7T_PLUG_MARGIN
+        (ux, uy, uz), (nx, ny, nz) = enclosure.screen7_tower_encoder_axis()
+
+        def in_ring_notch(p):
+            d = (p.x - ux, p.y - uy, p.z - uz)
+            along = d[0]*nx + d[1]*ny + d[2]*nz
+            radial = math.sqrt(max(0.0, sum(v*v for v in d) - along*along))
+            return radial <= enclosure.S7T_RING_NOTCH_R + 0.5
+
         open_points = []
         for i, j in itertools.product(range(int(x0) + 5, int(x1) - 4, 5),
                                       range(int(y0) + 5, int(y1) - 4, 5)):
-            in_notch = i > nx0 - 0.5 and ny0 - 0.5 < j < ny1 + 0.5
+            in_notch = ((i > nx0 - 0.5 and ny0 - 0.5 < j < ny1 + 0.5)
+                        or in_ring_notch(self.deck_point(i, j, 1.0)))
             if any(math.dist((i, j), h) < 3.0 for h in enclosure.S7C_HOLES):
                 continue                              # a tab boss's own pilot
             if not self.tower.isInside(self.deck_point(i, j, 1.0)):

@@ -467,6 +467,16 @@ S7T_SCREW_CLR  = 3.4    # below the insert: a longer M3 passes, it does not self
 S7C_PORTS_Y    = (-7.75, 45.95)
 S7C_PORTS_X0   = 73.55
 S7T_PLUG_MARGIN = 3.0
+# Strip-ring carrier notch (#1075; console variant in hardware/strip_ring/
+# console_ring.py on the #1088 branch). The 34-LED strip ring hangs its Ø80 v3
+# XIAO carrier 7 mm deeper than the Ring24 stack did, and there it cuts the deck's
+# front edge and the front wall top (369 mm3 in the Fusion clone). A cylinder
+# about the encoder axis, the carrier's radius plus air, removes exactly that and
+# nothing the module needs: the module's nearest point is 42.9 from the axis.
+S7T_RING_NOTCH_R = 41.5                  # carrier r 40.0 + 1.5 air
+S7T_RING_NOTCH_AXIAL = (-28.0, -2.0)     # from the faceplate TOP along the axis:
+                                         # below the carrier's underside parts up
+                                         # to the faceplate underside
 
 # --- floor interface shared by the 7in tower and the 15.6in stands (#1070) ---
 # In-plane: every flange hole is a FLOAT hole, M3 with an M3 DIN 9021 washer
@@ -6170,6 +6180,25 @@ def _gable_cutter(cq, plane, x0, x1, y0, y1, top, bottom):
             .close().extrude(y1 - y0))
 
 
+def screen7_tower_encoder_axis():
+    """The encoder axis in the 7in tower's own frame: (point at the faceplate
+    UNDERSIDE, unit direction outward). The tower is placed by translation only,
+    so its origin is recovered from the frozen front-centre floor anchor, which
+    is this tower's own flange hole; the axis comes from the same numbers that
+    place segno_ring_disc in the assembly."""
+    c = math.cos(math.radians(SLOPE_ANGLE))
+    sn = math.sin(math.radians(SLOPE_ANGLE))
+    x0, y0, x1, y1 = S7C_MOD_BB
+    mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    cy_w = mcy * c
+    front = STAND_ANCHORS_7IN[4]
+    ox = front[0] - mcx
+    oy = front[1] - (cy_w - (S7C_FRAME_H * c + S7T_FLANGE) / 2.0)
+    under = (COL_U - ox, c * ENC_V - 2.093 - oy,
+             LID_UNDER_Z0 + sn * (ENC_V - 2.093 / c) - T)
+    return under, (0.0, -sn, c)
+
+
 def build_screen7_tower_step():
     """7" screen support TOWER (3D print in BLACK PETG, x1, #762, v4 #1070): a
     closed wedge box in WORLD coordinates (x = console x, y = depth, z = up;
@@ -6285,6 +6314,17 @@ def build_screen7_tower_step():
     ports = (wp(1.0).center((px0 + mcx + W) / 2.0, (py0 + py1) / 2.0)
              .rect(mcx + W - px0, py1 - py0).extrude(-(1.0 + dt + gable)))
     tower = tower.cut(ports)
+    # STRIP-RING CARRIER NOTCH (S7T_RING_NOTCH_*), about the encoder axis.
+    _under, _n = screen7_tower_encoder_axis()
+    _under, _n = cq.Vector(*_under), cq.Vector(*_n)
+    _a0, _a1 = S7T_RING_NOTCH_AXIAL
+    _ring_notch = cq.Solid.makeCylinder(S7T_RING_NOTCH_R, _a1 - _a0,
+                                        _under + _n * (_a0 + T), _n)
+    for (hx, hy) in S7C_HOLES:
+        _boss = wp().center(hx, hy).circle(S7T_BOSS_D / 2.0).extrude(boss_h).val()
+        assert _boss.intersect(_ring_notch).Volume() < 1e-6, (
+            "7in tower: the strip-ring notch reaches a tab boss")
+    tower = tower.cut(cq.Workplane().add(_ring_notch))
 
     # tab bosses + heat-set insert pilots + screw clearance (front-view positions)
     assert boss_h > S7T_INSERT_L, "7in tower: tab boss shorter than its insert pilot"
