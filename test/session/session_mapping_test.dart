@@ -260,7 +260,7 @@ void main() {
       looper = _MockLooperRepository();
       when(looper.allLaneChains).thenReturn(const {});
       when(looper.allTrackChains).thenReturn(const {});
-      when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+      when(looper.allOutputChains).thenReturn(const {});
       when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
       when(looper.allMonitors).thenReturn(const {});
     });
@@ -382,18 +382,18 @@ void main() {
       expect(chainsFromLooper(looper).allTracksChain, '');
     });
 
-    test('captures the two BUS stages (Track + Master) as envelopes', () {
+    test('captures Track and destination output chains as envelopes', () {
       when(looper.allTrackChains).thenReturn({
         1: FxChainEnvelope(
           chainEnabled: false,
           entries: [BuiltInEffect(type: TrackEffectType.reverb)],
         ),
       });
-      when(looper.masterChainEnvelope).thenReturn(
-        FxChainEnvelope(
+      when(looper.allOutputChains).thenReturn({
+        0: FxChainEnvelope(
           entries: [BuiltInEffect(type: TrackEffectType.filter)],
         ),
-      );
+      });
 
       final chains = chainsFromLooper(looper);
 
@@ -404,22 +404,20 @@ void main() {
         (track.entries.single as BuiltInEffect).type,
         TrackEffectType.reverb,
       );
-      final master = decodeFxChain(chains.masterChain);
-      expect(master.chainEnabled, isTrue);
+      final output = decodeFxChain(chains.outputChains.single.encoded);
+      expect(chains.outputChains.single.bus, 0);
+      expect(output.chainEnabled, isTrue);
       expect(
-        (master.entries.single as BuiltInEffect).type,
+        (output.entries.single as BuiltInEffect).type,
         TrackEffectType.filter,
       );
     });
 
-    test("emits the manifest's empty-string Master spelling for a rig with no "
-        'Master state — one way to say "empty", and it still overwrites a '
-        'leftover on load', () {
+    test('omits unconfigured output chains from the manifest', () {
       final chains = chainsFromLooper(looper);
 
       expect(chains.trackChains, isEmpty);
-      expect(chains.masterChain, '');
-      expect(decodeFxChain(chains.masterChain), const FxChainEnvelope());
+      expect(chains.outputChains, isEmpty);
     });
   });
 
@@ -430,7 +428,7 @@ void main() {
       looper = _MockLooperRepository();
       when(looper.allLaneChains).thenReturn(const {});
       when(looper.allTrackChains).thenReturn(const {});
-      when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+      when(looper.allOutputChains).thenReturn(const {});
       when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
       when(looper.allMonitors).thenReturn(const {});
       when(() => looper.limiterEnabled).thenReturn(true);
@@ -561,14 +559,14 @@ void main() {
           entries: [BuiltInEffect(type: TrackEffectType.reverb)],
         ),
       });
-      when(looper.masterChainEnvelope).thenReturn(
-        FxChainEnvelope(
+      when(looper.allOutputChains).thenReturn({
+        0: FxChainEnvelope(
           chainEnabled: false,
           entries: [
             BuiltInEffect(type: TrackEffectType.filter, enabled: false),
           ],
         ),
-      );
+      });
       when(looper.allMonitors).thenReturn(const {
         0: InputMonitor(input: 0, mode: MonitorMode.on, chainEnabled: false),
       });
@@ -788,11 +786,16 @@ void main() {
               ),
             ),
           ],
-          masterChain: encodeFxChain(
-            FxChainEnvelope(
-              entries: [BuiltInEffect(type: TrackEffectType.filter)],
+          outputChains: [
+            SessionOutputChain(
+              bus: 0,
+              encoded: encodeFxChain(
+                FxChainEnvelope(
+                  entries: [BuiltInEffect(type: TrackEffectType.filter)],
+                ),
+              ),
             ),
-          ),
+          ],
         ),
         laneStems: {
           (0, 0): [pcm],
@@ -807,9 +810,9 @@ void main() {
         (track.entries.single as BuiltInEffect).type,
         TrackEffectType.reverb,
       );
-      expect(rig.masterChain.chainEnabled, isTrue);
+      expect(rig.outputChains[0]!.chainEnabled, isTrue);
       expect(
-        (rig.masterChain.entries.single as BuiltInEffect).type,
+        (rig.outputChains[0]!.entries.single as BuiltInEffect).type,
         TrackEffectType.filter,
       );
     });
@@ -852,7 +855,7 @@ void main() {
         final rig = rigFromBundle(bundle);
 
         expect(rig.trackChains, isEmpty);
-        expect(rig.masterChain, const FxChainEnvelope());
+        expect(rig.outputChains, isEmpty);
         // The lane it DID describe loads enabled at both levels, with no
         // inheritance marker — and no slot ids yet (the repository mints
         // those).

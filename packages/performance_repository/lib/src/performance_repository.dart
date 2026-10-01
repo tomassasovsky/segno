@@ -338,6 +338,7 @@ class PerformanceRepository {
       // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the
       // whole four-stage rig, bypass state included.
       trackChains: chains.trackChains,
+      outputChains: chains.outputChains,
     );
     // Re-checked here, not just at entry: the awaits above suspend this arm,
     // and a boot-salvage ([recoverCapture]) starting inside that window

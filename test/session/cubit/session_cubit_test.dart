@@ -79,7 +79,7 @@ void main() {
     // to read; individual tests override as needed.
     when(looper.allLaneChains).thenReturn(const {});
     when(looper.allTrackChains).thenReturn(const {});
-    when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+    when(looper.allOutputChains).thenReturn(const {});
     when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
     when(looper.allMonitors).thenReturn(const {});
     when(() => looper.sessionTransport).thenReturn(const TransportState());

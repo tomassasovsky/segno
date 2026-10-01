@@ -48,9 +48,8 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
         ),
       ),
   ],
-  // The two bus stages (manifest v5). Both go through the same envelope codec
-  // as the stages above; the Master insert is a single chain, so it persists as
-  // one string rather than a keyed list.
+  // The bus stages. All go through the same envelope codec as the stages
+  // above; the output chains are keyed by destination (manifest v9).
   trackChains: [
     for (final entry in looper.allTrackChains().entries)
       SessionTrackChain(
@@ -58,7 +57,10 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
         encoded: encodeFxChain(entry.value),
       ),
   ],
-  masterChain: _encodedMasterChain(looper),
+  outputChains: [
+    for (final entry in looper.allOutputChains().entries)
+      SessionOutputChain(bus: entry.key, encoded: encodeFxChain(entry.value)),
+  ],
   allTracksChain: _encodedAllTracksChain(looper),
 );
 
@@ -137,24 +139,17 @@ OutputSetup outputSetupFromSession(SessionOutputSetup setup) =>
       balance: setup.balance,
     );
 
-/// The Master insert as an envelope string, or the manifest's own "no chain"
-/// spelling (`''`) when the rig has no Master state at all — so a default rig
-/// does not persist a redundant envelope, and the manifest has ONE way to say
-/// "empty". Both spellings decode to the same empty enabled envelope, and both
-/// reset a leftover Master chain on load.
-String _encodedMasterChain(LooperRepository looper) {
-  final master = looper.masterChainEnvelope();
-  return master == const FxChainEnvelope() ? '' : encodeFxChain(master);
-}
-
 /// The All tracks recorded-mix chain as an envelope string, or the manifest's
-/// "no chain" spelling (`''`) — the Master rule exactly, for the same reason.
+/// own "no chain" spelling (`''`) when the rig has no All tracks state at all
+/// — so a default rig does not persist a redundant envelope, and the manifest
+/// has ONE way to say "empty". Both spellings decode to the same empty enabled
+/// envelope, and both reset a leftover chain on load.
 String _encodedAllTracksChain(LooperRepository looper) {
   final chain = looper.allTracksChainEnvelope();
   return chain == const FxChainEnvelope() ? '' : encodeFxChain(chain);
 }
 
-/// Gathers the same live four-stage chains into the models a
+/// Gathers the same live chains into the models a
 /// performance-capture arm snapshot records, plus the master-limiter state the
 /// engine snapshot cannot read back. The rig — not settings — is the truth
 /// being captured, exactly as in [chainsFromLooper]; the manifest keeps effects
@@ -196,6 +191,17 @@ PerformanceChains performanceChainsFromLooper(LooperRepository looper) {
           chainEnabled: entry.value.chainEnabled,
         ),
     ],
+    // One read path for the output stage, the same accessor
+    // [chainsFromLooper] uses — two ways to read one piece of state at one
+    // boundary would be free to drift.
+    outputChains: [
+      for (final entry in looper.allOutputChains().entries)
+        PerformanceOutputChain(
+          bus: entry.key,
+          effects: trackEffectsToEngine(entry.value.entries),
+          chainEnabled: entry.value.chainEnabled,
+        ),
+    ],
     limiterEnabled: looper.limiterEnabled,
     limiterCeiling: looper.limiterCeiling,
   );
@@ -221,14 +227,17 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
     for (final monitor in bundle.session.monitors)
       _rigMonitor(monitor, decodeFxChain(monitor.encoded)),
   ],
-  // The bus stages (manifest v5). A v4-or-earlier bundle carries neither, so
-  // both arrive empty — and `applySession` resets whatever the live rig had.
+  // Current schema v9 carries every configured bus stage. An absent chain
+  // resets that destination when the session replaces the live rig.
   trackChains: {
     for (final chain in bundle.session.trackChains)
       chain.channel: decodeFxChain(chain.encoded),
   },
-  masterChain: decodeFxChain(bundle.session.masterChain),
-  // Required in the current manifest. An empty string clears the live chain.
+  outputChains: {
+    for (final chain in bundle.session.outputChains)
+      chain.bus: decodeFxChain(chain.encoded),
+  },
+  // The required All tracks field also resets any old live chain when empty.
   allTracksChain: decodeFxChain(bundle.session.allTracksChain),
   // Looper mode + crown (schema v4, B5c) — session-level, so read straight
   // off the manifest rather than through `_rigTracks`.

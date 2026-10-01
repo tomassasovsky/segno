@@ -64,7 +64,14 @@ extension ControlValueResolver on LooperRepository {
         trackEffects(channel),
       );
     }
-    add(const FxAddress(stage: FxStage.master), masterEffects);
+    add(const FxAddress(stage: FxStage.allTracks), allTracksEffects);
+    // Every destination the OPEN DEVICE has, not only the ones already
+    // carrying a chain: a destination exists because the interface has the
+    // jacks, and a picker that hid the empty ones would have nowhere to point
+    // a binding at the chain the player is about to build there.
+    for (var bus = 0; bus < state.outputBusCount; bus++) {
+      add(FxAddress(stage: FxStage.output, index: bus), outputEffects(bus));
+    }
     for (final track in state.tracks) {
       targets.add(TrackVolumeTarget(track.channel));
     }
@@ -115,8 +122,15 @@ extension ControlValueResolver on LooperRepository {
               param: param,
               value: clamped,
             );
-          case FxStage.master:
-            setMasterEffectParam(
+          case FxStage.allTracks:
+            setAllTracksEffectParam(
+              index: slot.index,
+              param: param,
+              value: clamped,
+            );
+          case FxStage.output:
+            setOutputEffectParam(
+              bus: address.index,
               index: slot.index,
               param: param,
               value: clamped,

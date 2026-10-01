@@ -6206,13 +6206,13 @@ final class le_output_fx_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int chain_enabled;
 
-  @ffi.Array.multi([8])
+  @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> type;
 
-  @ffi.Array.multi([8])
+  @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> enabled;
 
-  @ffi.Array.multi([8, 4])
+  @ffi.Array.multi([64, 4])
   external ffi.Array<ffi.Array<ffi.Float>> params;
 }
 
@@ -6327,28 +6327,28 @@ final class le_fx_recipe extends ffi.Struct {
   @ffi.Int32()
   external int enabled;
 
-  @ffi.Array.multi([8])
+  @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> type;
 
-  @ffi.Array.multi([8])
+  @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> slot_enabled;
 
-  @ffi.Array.multi([8, 4])
+  @ffi.Array.multi([64, 4])
   external ffi.Array<ffi.Array<ffi.Float>> params;
 
-  @ffi.Array.multi([8])
+  @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> input_mode;
 
-  @ffi.Array.multi([8])
+  @ffi.Array.multi([64])
   external ffi.Array<ffi.Int32> output_mode;
 
-  @ffi.Array.multi([8])
+  @ffi.Array.multi([64])
   external ffi.Array<ffi.Float> placement;
 
-  @ffi.Array.multi([8])
+  @ffi.Array.multi([64])
   external ffi.Array<ffi.Float> level;
 
-  @ffi.Array.multi([8])
+  @ffi.Array.multi([64])
   external ffi.Array<ffi.Pointer<le_plugin_slot>> plugin;
 }
 
@@ -7351,7 +7351,7 @@ const int LE_COUNT_IN_MAX_BARS = 64;
 
 const int LE_LENGTH_PRESET_MAX_BARS = 64;
 
-const int LE_FX_MAX = 8;
+const int LE_FX_MAX = 64;
 
 const int LE_FX_PARAMS = 4;
 

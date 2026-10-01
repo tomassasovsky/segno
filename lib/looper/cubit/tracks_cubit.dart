@@ -39,27 +39,14 @@ class TracksCubit extends Cubit<TracksState> {
       final saved = await _settings.loadTrackName(i);
       if (saved != null && saved.isNotEmpty) names[i] = saved;
     }
-    final showIndicators = await _settings.loadShowTrackIndicators(
-      // Console/kiosk builds default the readiness strip off (still user-
-      defaultValue: false,
-    );
     if (!isClosed && generation == _loadGeneration) {
-      emit(state.copyWith(names: names, showIndicators: showIndicators));
+      emit(state.copyWith(names: names));
     }
   }
 
   /// Shows [view] on the main display — a presentation change only.
   void showView(StageView view) {
     if (view != state.stageView) emit(state.copyWith(stageView: view));
-  }
-
-  /// Sets and persists whether the Signal face's lane-cache indicators are
-  /// wanted.
-  Future<void> setShowIndicators({required bool value}) async {
-    if (value != state.showIndicators) {
-      emit(state.copyWith(showIndicators: value));
-    }
-    await _settings.saveShowTrackIndicators(value: value);
   }
 
   /// Renames track [channel] and persists the new [name].

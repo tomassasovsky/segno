@@ -365,6 +365,43 @@ class SessionTrackChain {
   int get hashCode => Object.hash(channel, encoded);
 }
 
+/// One output destination's post-sum effect chain within a [Session] (schema
+/// v9): the destination [bus] and its [encoded] chain envelope.
+@immutable
+class SessionOutputChain {
+  /// Creates a [SessionOutputChain].
+  const SessionOutputChain({required this.bus, required this.encoded});
+
+  /// Projects a [SessionOutputChain] from a decoded JSON map.
+  factory SessionOutputChain.fromJson(Map<String, dynamic> json) {
+    final bus = json['bus'];
+    if (bus is! int || bus < 0 || bus >= 16) {
+      throw const FormatException('invalid output chain destination');
+    }
+    return SessionOutputChain(bus: bus, encoded: json['encoded'] as String);
+  }
+
+  /// The output destination this chain sits after.
+  final int bus;
+
+  /// The chain as an opaque chain-envelope string.
+  final String encoded;
+
+  /// Serializes this chain to a JSON map.
+  Map<String, dynamic> toJson() => {'bus': bus, 'encoded': encoded};
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionOutputChain &&
+          runtimeType == other.runtimeType &&
+          bus == other.bus &&
+          encoded == other.encoded;
+
+  @override
+  int get hashCode => Object.hash(bus, encoded);
+}
+
 /// One hardware input's live-monitor configuration within a [Session]:
 /// routing / mix plus the monitor's [encoded] effect chain.
 @immutable
@@ -640,7 +677,7 @@ class SessionOutputSetup {
 /// Loop (`false`) and values equal to the default, remain explicit.
 /// Mixer gain and pan live in [trackLevels] and [trackPans], so an empty track
 /// keeps both choices. [inputSetup] owns recording trim, mono pan and pairs.
-/// [trackChains] and [masterChain] are the bus stages; [monitors] and
+/// [trackChains] and [outputChains] are the bus stages; [monitors] and
 /// [laneChains] are the input and loop stages. Their chain strings use the
 /// current chain envelope. [pedalBindings] remains opaque to this package.
 @immutable
@@ -654,7 +691,7 @@ class Session {
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
-    this.masterChain = '',
+    this.outputChains = const [],
     this.allTracksChain = '',
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
@@ -725,7 +762,7 @@ class Session {
         for (final c in json['trackChains'] as List<dynamic>)
           SessionTrackChain.fromJson(c as Map<String, dynamic>),
       ],
-      masterChain: json['masterChain'] as String,
+      outputChains: _readOutputChains(json['outputChains']),
       allTracksChain: json['allTracksChain'] as String,
       tempoBpm: (json['tempoBpm'] as num).toDouble(),
       tempoSource: _readEnum(json['tempoSource'], TempoSource.values),
@@ -814,7 +851,7 @@ class Session {
 
   /// The single Master insert chain as an opaque chain-envelope string;
   /// `''` when the session defines none.
-  final String masterChain;
+  final List<SessionOutputChain> outputChains;
 
   /// The single All tracks recorded-mix chain as an opaque chain-envelope
   /// string; `''` when the session defines none.
@@ -961,7 +998,7 @@ class Session {
     'laneChains': [for (final c in laneChains) c.toJson()],
     'monitors': [for (final m in monitors) m.toJson()],
     'trackChains': [for (final c in trackChains) c.toJson()],
-    'masterChain': masterChain,
+    'outputChains': [for (final c in outputChains) c.toJson()],
     'allTracksChain': allTracksChain,
     'tempoBpm': tempoBpm,
     'tempoSource': tempoSource.name,
@@ -1037,7 +1074,7 @@ class Session {
           countInBars == other.countInBars &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
-          masterChain == other.masterChain &&
+          _listEquals(outputChains, other.outputChains) &&
           allTracksChain == other.allTracksChain &&
           pedalBindings == other.pedalBindings &&
           _listEquals(tracks, other.tracks) &&
@@ -1092,7 +1129,7 @@ class Session {
     countInBars,
     looperMode,
     primaryTrack,
-    masterChain,
+    Object.hashAll(outputChains),
     allTracksChain,
     pedalBindings,
     Object.hashAll(tracks),
@@ -1233,4 +1270,15 @@ Map<int, V> _channelMapFromJson<V>(Object? raw, V Function(Object?) value) {
     for (final entry in (raw as Map<String, dynamic>).entries)
       int.parse(entry.key): value(entry.value),
   };
+}
+
+List<SessionOutputChain> _readOutputChains(Object? value) {
+  final chains = [
+    for (final c in value! as List<dynamic>)
+      SessionOutputChain.fromJson(c as Map<String, dynamic>),
+  ];
+  if (chains.map((chain) => chain.bus).toSet().length != chains.length) {
+    throw const FormatException('duplicate output chain destination');
+  }
+  return chains;
 }

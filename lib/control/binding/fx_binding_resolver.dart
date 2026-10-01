@@ -59,8 +59,15 @@ extension FxBindingResolver on LooperRepository {
         trackEffects(channel),
       );
     }
-    // The Master insert always exists, so it is always offerable.
-    add(const FxAddress(stage: FxStage.master), masterEffects);
+    // The All tracks chain always exists, so it is always offerable.
+    add(const FxAddress(stage: FxStage.allTracks), allTracksEffects);
+    // Every destination the OPEN DEVICE has, not only the ones already
+    // carrying a chain: a destination exists because the interface has the
+    // jacks, and a picker that hid the empty ones would have nowhere to point
+    // a binding at the chain the player is about to build there.
+    for (var bus = 0; bus < state.outputBusCount; bus++) {
+      add(FxAddress(stage: FxStage.output, index: bus), outputEffects(bus));
+    }
     return targets;
   }
 
@@ -111,26 +118,32 @@ extension FxBindingResolver on LooperRepository {
       // address, so this branch is unreachable without one.
       FxStage.loop => laneChainEnabled(address.index, address.lane!),
       FxStage.track => trackChainEnabled(address.index),
-      FxStage.master => masterChainEnvelope().chainEnabled,
+      FxStage.allTracks => allTracksChainEnabled,
+      FxStage.output => outputChainEnabled(address.index),
     };
   }
 
   bool _setChainEnabled(FxAddress address, {required bool enabled}) {
-    switch (address.stage) {
-      case FxStage.input:
-        setMonitorChainEnabled(input: address.index, enabled: enabled);
-      case FxStage.loop:
-        setLaneChainEnabled(
-          channel: address.index,
-          lane: address.lane!, // resolved above; see `chainEntriesAt`
-          enabled: enabled,
-        );
-      case FxStage.track:
-        setTrackChainEnabled(channel: address.index, enabled: enabled);
-      case FxStage.master:
-        setMasterChainEnabled(enabled: enabled);
-    }
-    return true;
+    return switch (address.stage) {
+      FxStage.input => setMonitorChainEnabled(
+        input: address.index,
+        enabled: enabled,
+      ).isOk,
+      FxStage.loop => setLaneChainEnabled(
+        channel: address.index,
+        lane: address.lane!, // resolved above; see `chainEntriesAt`
+        enabled: enabled,
+      ).isOk,
+      FxStage.track => setTrackChainEnabled(
+        channel: address.index,
+        enabled: enabled,
+      ).isOk,
+      FxStage.allTracks => setAllTracksChainEnabled(enabled: enabled).isOk,
+      FxStage.output => setOutputChainEnabled(
+        bus: address.index,
+        enabled: enabled,
+      ).isOk,
+    };
   }
 
   bool _setSlotEnabled(
@@ -140,30 +153,33 @@ extension FxBindingResolver on LooperRepository {
   }) {
     final index = _slotIndex(address, slotId);
     if (index == null) return false;
-    switch (address.stage) {
-      case FxStage.input:
-        setMonitorEffectEnabled(
-          input: address.index,
-          index: index,
-          enabled: enabled,
-        );
-      case FxStage.loop:
-        setLaneEffectEnabled(
-          channel: address.index,
-          lane: address.lane!, // resolved above; see `chainEntriesAt`
-          index: index,
-          enabled: enabled,
-        );
-      case FxStage.track:
-        setTrackEffectEnabled(
-          channel: address.index,
-          index: index,
-          enabled: enabled,
-        );
-      case FxStage.master:
-        setMasterEffectEnabled(index: index, enabled: enabled);
-    }
-    return true;
+    return switch (address.stage) {
+      FxStage.input => setMonitorEffectEnabled(
+        input: address.index,
+        index: index,
+        enabled: enabled,
+      ).isOk,
+      FxStage.loop => setLaneEffectEnabled(
+        channel: address.index,
+        lane: address.lane!, // resolved above; see `chainEntriesAt`
+        index: index,
+        enabled: enabled,
+      ).isOk,
+      FxStage.track => setTrackEffectEnabled(
+        channel: address.index,
+        index: index,
+        enabled: enabled,
+      ).isOk,
+      FxStage.allTracks => setAllTracksEffectEnabled(
+        index: index,
+        enabled: enabled,
+      ).isOk,
+      FxStage.output => setOutputEffectEnabled(
+        bus: address.index,
+        index: index,
+        enabled: enabled,
+      ).isOk,
+    };
   }
 
   /// The CURRENT position of [slotId] within [address]'s chain, or `null` when

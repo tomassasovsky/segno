@@ -405,30 +405,39 @@ Future<AutoStartResult> _tryAutoStartEngine({
     }
   }
 
-  final masterChain = decodeFxChain(await settings.loadMasterFxChain());
-  if (masterChain.entries.isNotEmpty || !masterChain.chainEnabled) {
-    if (!admitted(
-      repository.setMasterEffects(
-        effects: masterChain.entries,
-        chainEnabled: masterChain.chainEnabled,
-        allowUnavailable: true,
-      ),
-    )) {
-      return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
-    }
-    if (masterChain.entries.any((e) => e.slotId == null)) {
-      mintedChains.add(
-        () => settings.saveMasterFxChain(
-          encodeFxChain(
-            FxChainEnvelope(
-              chainEnabled: masterChain.chainEnabled,
-              entries: repository.masterEffects,
+  // Restore one complete recipe per output destination. A chain's power and
+  // entries must share admission and the minted identities wait for its ack.
+  for (var bus = 0; bus < kMaxOutputBuses; bus++) {
+    final outputChain = decodeFxChain(await settings.loadOutputFxChain(bus));
+    if (outputChain.entries.isNotEmpty || !outputChain.chainEnabled) {
+      if (!admitted(
+        repository.setOutputEffects(
+          bus: bus,
+          effects: outputChain.entries,
+          chainEnabled: outputChain.chainEnabled,
+          allowUnavailable: true,
+        ),
+      )) {
+        return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+      }
+      if (outputChain.entries.any((e) => e.slotId == null)) {
+        final outputBus = bus;
+        mintedChains.add(
+          () => settings.saveOutputFxChain(
+            outputBus,
+            encodeFxChain(
+              FxChainEnvelope(
+                chainEnabled: outputChain.chainEnabled,
+                entries: repository.outputEffects(outputBus),
+              ),
             ),
           ),
-        ),
-      );
+        );
+      }
     }
   }
+
+  // Restore the All tracks recorded-mix chain envelope (slice 3e).
   final allTracksChain = decodeFxChain(await settings.loadAllTracksFxChain());
   if (allTracksChain.entries.isNotEmpty || !allTracksChain.chainEnabled) {
     if (!admitted(

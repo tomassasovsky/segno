@@ -815,11 +815,12 @@ class _QueuedCue extends StatelessWidget {
 }
 
 /// The generic FX stage label of an FX-mode cell — the stage the bound chain
-/// sits on: `INPUT n` / `TRACK n` / `LANE n` / `MASTER` (#692).
+/// sits on: `INPUT n` / `TRACK n` / `LANE n` / `ALL TRACKS` / `OUT n`
+/// (#692).
 ///
 /// Indices are 1-based, matching every other jack name the rig gives. This is
 /// name-free by design: TRACK never borrows the column's track name (the
-/// conflation fix), and LANE / MASTER carry no name. A NAMED input's own name
+/// conflation fix), and the others carry no name. A NAMED input's own name
 /// is layered on TOP of this in [TrackColumn] as a two-tier identity (the name
 /// over this `INPUT n` sub-label); this helper always returns the generic form.
 String _stageFxTargetLabel(AppLocalizations l10n, FxAddress address) =>
@@ -827,7 +828,8 @@ String _stageFxTargetLabel(AppLocalizations l10n, FxAddress address) =>
       FxStage.input => l10n.stageFxTargetInput(address.index + 1),
       FxStage.loop => l10n.stageFxTargetLane(address.lane ?? 0),
       FxStage.track => l10n.stageFxTargetTrack(address.index + 1),
-      FxStage.master => l10n.stageFxTargetMaster,
+      FxStage.allTracks => l10n.stageFxTargetAllTracks,
+      FxStage.output => l10n.stageFxTargetOutput(address.index + 1),
     };
 
 /// The FX-mode re-dressing drawn over a track's (receded) meter (#692).
