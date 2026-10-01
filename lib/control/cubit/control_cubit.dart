@@ -15,6 +15,9 @@ import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/controller_learn.dart';
+import 'package:segno/control/binding/external_control_writer.dart';
+import 'package:segno/control/binding/external_controls.dart';
+import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
@@ -181,6 +184,664 @@ class ControlCubit extends Cubit<ControlState> {
     _midiSub = midiDevices?.connections.listen(_onMidiConnection);
   }
 
+  final _externalContacts = <PedalCtrlInput, bool>{};
+  final _externalRetiring = <PedalCtrlInput>{};
+  final _externalOn = <PedalCtrlInput, bool>{};
+  Future<void> _pedalSetupWrites = Future<void>.value();
+  final _externalGestures = <PedalCtrlInput, _HoldGesture>{};
+  final _externalTokens = <PedalCtrlInput, Object>{};
+  final _externalActions = <PedalCtrlInput, Object>{};
+  final _activationHolders =
+      <FxBindingTarget, Map<MappingTrigger, ({bool value, int order})>>{};
+  final _parameterHolders =
+      <ControlValueTarget, Map<MappingTrigger, ({double value, int order})>>{};
+  final _activationBase = <FxBindingTarget, bool>{};
+  var _activationOrder = 0;
+  Future<void> _externalTail = Future<void>.value();
+  final _externalNumericReleases =
+      <PedalCtrlInput, Map<ControlValueTarget, double>>{};
+  final _externalPowerReleases = <PedalCtrlInput, Map<FxBindingTarget, bool>>{};
+  Object? _externalReleaseEligibility;
+  final _externalHeldSetups = <PedalCtrlInput, ExternalSwitchSetup>{};
+  final _externalQueues = <PedalCtrlInput, Future<void>>{};
+  final _expressionRaw = <PedalCtrlJack, int>{};
+  PedalCtrlJack? _externalCalibrating;
+  int? _externalSession;
+  Object? _externalCalibrationOwner;
+
+  /// Suspends the measured source synchronously. Capture remains read-only;
+  /// leaving the editor never replays its last measured position.
+  void beginExternalCalibration(PedalCtrlJack jack, {required Object owner}) {
+    _externalCalibrationOwner = owner;
+    _setExternalCalibrating(jack);
+  }
+
+  /// Ends only the editor lifetime that currently owns measurement.
+  void endExternalCalibration(Object token) {
+    if (!identical(_externalCalibrationOwner, token)) return;
+    _externalCalibrationOwner = null;
+    _setExternalCalibrating(null);
+  }
+
+  void _setExternalCalibrating(PedalCtrlJack? jack) {
+    if (_externalCalibrating == jack) return;
+    final old = _externalCalibrating;
+    _externalCalibrating = jack;
+    for (final input in PedalCtrlInput.values) {
+      if (input.jack == old || input.jack == jack) _retireExternal(input);
+    }
+  }
+
+  MappingTrigger _externalTrigger(PedalCtrlInput input) => MappingTrigger(
+    kind: ControllerSourceKind.consoleSwitch,
+    id: input.jack.index + (input.contact == PedalCtrlContact.ring ? 2 : 0),
+  );
+
+  PedalCtrlInput? _externalInput(MappingTrigger trigger) {
+    if (!trigger.kind.isConsoleCtrl || trigger.id < 0 || trigger.id > 3) {
+      return null;
+    }
+    return PedalCtrlInput(
+      trigger.id.isEven ? PedalCtrlJack.ctrl1 : PedalCtrlJack.ctrl2,
+      trigger.id < 2 ? PedalCtrlContact.tip : PedalCtrlContact.ring,
+    );
+  }
+
+  void _retireExternal(PedalCtrlInput input, {bool sessionChanged = false}) {
+    if (!sessionChanged && !_externalRetiring.add(input)) return;
+    final trigger = _externalTrigger(input);
+    final pending =
+        _externalQueues.containsKey(input) ||
+        _activationHolders.values.any(
+          (holders) => holders.containsKey(trigger),
+        ) ||
+        _parameterHolders.values.any((holders) => holders.containsKey(trigger));
+    _externalGestures.remove(input)?.cancel();
+    _externalTokens.remove(input);
+    _externalActions.remove(input);
+    final heldSetup = _externalHeldSetups.remove(input);
+    if (!sessionChanged && (pending || heldSetup != null)) {
+      // Resolve claims when this queued retirement executes: an already
+      // admitted recipe may still be waiting for its exact acknowledgment.
+      _queueExternalWrite(
+        input,
+        const {},
+        {
+          for (final row
+              in heldSetup?.controls.parameters ?? <ExternalParameter>[])
+            if (row.condition == ExternalValueCondition.heldReleased)
+              row.target: row.inactive,
+        },
+        token: Object(),
+        session: _looper.sessionRevision,
+        held: false,
+        restoring: true,
+        retiring: true,
+      );
+    }
+    _expressionRaw.remove(input.jack);
+    if (sessionChanged) {
+      _externalRetiring.remove(input);
+      _externalNumericReleases.remove(input);
+      _externalPowerReleases.remove(input);
+      final trigger = _externalTrigger(input);
+      for (final holders in _activationHolders.values) {
+        holders.remove(trigger);
+      }
+      for (final holders in _parameterHolders.values) {
+        holders.remove(trigger);
+      }
+    }
+  }
+
+  void _retireAllExternal({bool sessionChanged = false}) {
+    for (final input in PedalCtrlInput.values) {
+      _retireExternal(input, sessionChanged: sessionChanged);
+    }
+  }
+
+  void _onConsoleEvent(ControllerSourceEvent event) {
+    if (_closing || isClosed) return;
+    final session = _looper.sessionRevision;
+    if (_externalSession != null && _externalSession != session) {
+      _retireAllExternal(sessionChanged: true);
+    }
+    _externalSession = session;
+    if (event case ControllerSourceUnavailable(:final trigger)) {
+      final input = _externalInput(trigger);
+      if (input != null) {
+        _retireExternal(input);
+        _externalContacts.remove(input);
+      }
+      return;
+    }
+    if (_pedal.status != PedalLinkStatus.connected) return;
+    final raw = event as RawControllerInput;
+    final input = _externalInput(raw.trigger);
+    if (input == null) return;
+    _externalRetiring.remove(input);
+    if (raw.kind == ControllerSourceKind.consoleExpression) {
+      final before = _expressionRaw[input.jack];
+      _expressionRaw[input.jack] = raw.value;
+      if (before == null ||
+          before == raw.value ||
+          state.pedalSetupUnavailable ||
+          _externalCalibrating == input.jack) {
+        return;
+      }
+      final jack = state.pedalSetup.external.forJack(input.jack);
+      if (jack.type != ExternalJackType.expression) return;
+      final position = jack.expression.calibration?.positionOf(raw.value);
+      if (position == null) return;
+      final parameters = <ControlValueTarget, double>{
+        for (final mapping in jack.expression.mappings)
+          mapping.target: mapping.valueAt(position),
+      };
+      final token = Object();
+      _externalTokens[input] = token;
+      _queueExternalWrite(
+        input,
+        const {},
+        parameters,
+        token: token,
+        session: session,
+      );
+      return;
+    }
+    final closed = raw.value != 0;
+    final previous = _externalContacts[input];
+    _externalContacts[input] = closed;
+    if (previous == closed) return;
+    if (_takeLocked() ||
+        state.pedalSetupUnavailable ||
+        _externalCalibrating == input.jack) {
+      _retireExternal(input);
+      return;
+    }
+    final setup = state.pedalSetup.external.switchFor(input);
+    if (setup == null) return;
+    if (setup.hardware == ExternalSwitchHardware.latching) {
+      // Establish the first physical state without replaying a held latch.
+      if (previous == null) return;
+      _fireExternal(input, setup, setup.change, on: closed);
+      return;
+    }
+    if (closed) {
+      _externalTokens.putIfAbsent(input, Object.new);
+      _externalHeldSetups[input] = setup;
+      _queueExternalControls(input, setup, held: true);
+      if (setup.gestures.hold == null) {
+        _fireExternal(input, setup, setup.gestures.press);
+      } else {
+        _armGesture(
+          _externalGestures.putIfAbsent(input, _HoldGesture.new),
+          onHold: () {
+            final live = state.pedalSetup.external.switchFor(input);
+            if (live != null) {
+              _fireExternal(input, live, live.gestures.hold, toggle: false);
+            }
+          },
+          onTap: () {
+            final live = state.pedalSetup.external.switchFor(input);
+            if (live != null) _fireExternal(input, live, live.gestures.press);
+          },
+        );
+      }
+    } else {
+      _externalGestures[input]?.release();
+      final held = _externalHeldSetups.remove(input);
+      if (held != null) {
+        _queueExternalControls(input, held, held: false, restoring: true);
+      }
+    }
+  }
+
+  void _fireExternal(
+    PedalCtrlInput input,
+    ExternalSwitchSetup setup,
+    ControlAction? action, {
+    bool? on,
+    bool toggle = true,
+  }) {
+    if (_takeLocked() || state.pedalSetupUnavailable) return;
+    final session = _looper.sessionRevision;
+    final token = Object();
+    _externalActions[input] = token;
+    _externalTokens.putIfAbsent(input, Object.new);
+    final result = action == null
+        ? true
+        : _runAction(action, _channelsForAction(action));
+    void finish({required bool accepted}) {
+      if (!accepted ||
+          _closing ||
+          isClosed ||
+          _looper.sessionRevision != session ||
+          !identical(_externalActions[input], token) ||
+          state.pedalSetup.external.switchFor(input) != setup) {
+        return;
+      }
+      if (!toggle && on == null) return;
+      _queueExternalControls(
+        input,
+        setup,
+        on: on ?? false,
+        toggleLogical: on == null,
+        actionAccepted: action != null,
+      );
+    }
+
+    if (result is Future<bool>) {
+      unawaited(
+        result.then(
+          (accepted) => finish(accepted: accepted),
+          onError: addError,
+        ),
+      );
+    } else {
+      finish(accepted: result);
+    }
+  }
+
+  void _queueExternalControls(
+    PedalCtrlInput input,
+    ExternalSwitchSetup setup, {
+    bool? on,
+    bool? held,
+    bool restoring = false,
+    bool toggleLogical = false,
+    bool actionAccepted = false,
+  }) {
+    final activations = <FxBindingTarget, bool>{};
+    final parameters = <ControlValueTarget, double>{};
+    for (final row in setup.controls.activations) {
+      final value = switch (row.condition) {
+        ExternalCondition.on => on,
+        ExternalCondition.off => on == null ? null : !on,
+        ExternalCondition.held => held,
+        ExternalCondition.released => held == null ? null : !held,
+      };
+      if (value != null) activations[row.target] = value;
+    }
+    for (final row in setup.controls.parameters) {
+      final value = row.condition == ExternalValueCondition.onOff ? on : held;
+      if (value != null) {
+        parameters[row.target] = value ? row.active : row.inactive;
+      }
+    }
+    final token = _externalTokens[input] ?? Object();
+    _queueExternalWrite(
+      input,
+      activations,
+      parameters,
+      token: token,
+      session: _looper.sessionRevision,
+      held: held,
+      restoring: restoring,
+      logicalSetup: on == null ? null : setup,
+      logicalOn: on,
+      toggleLogical: toggleLogical,
+      actionAccepted: actionAccepted,
+    );
+  }
+
+  bool _externalIsOn(PedalCtrlInput input) =>
+      _externalOn[input] ?? state.pedalSetup.external.logicalOn[input] ?? false;
+
+  void _queueExternalWrite(
+    PedalCtrlInput input,
+    Map<FxBindingTarget, bool> requested,
+    Map<ControlValueTarget, double> requestedParameters, {
+    required Object token,
+    required int session,
+    bool? held,
+    bool restoring = false,
+    bool retiring = false,
+    ExternalSwitchSetup? logicalSetup,
+    bool? logicalOn,
+    bool toggleLogical = false,
+    bool actionAccepted = false,
+  }) {
+    final before = _externalTail;
+    late final Future<void> next;
+    next = before
+        .then((_) async {
+          bool cancelled() =>
+              (_closing && !restoring) ||
+              isClosed ||
+              _looper.sessionRevision != session ||
+              (!restoring &&
+                  (!identical(_externalTokens[input], token) ||
+                      _externalCalibrating == input.jack));
+          if (cancelled()) return;
+          final trigger = _externalTrigger(input);
+          final activations = Map<FxBindingTarget, bool>.of(requested);
+          final parameters = Map<ControlValueTarget, double>.of(
+            requestedParameters,
+          );
+          final logical = logicalSetup;
+          final nextOn = logical == null
+              ? null
+              : toggleLogical
+              ? !_externalIsOn(input)
+              : logicalOn;
+          if (logical != null && nextOn != null) {
+            for (final row in logical.controls.activations) {
+              if (!row.condition.readsContact) {
+                activations[row.target] = row.condition == ExternalCondition.on
+                    ? nextOn
+                    : !nextOn;
+              }
+            }
+            for (final row in logical.controls.parameters) {
+              if (row.condition == ExternalValueCondition.onOff) {
+                parameters[row.target] = nextOn ? row.active : row.inactive;
+              }
+            }
+          }
+          var applied = actionAccepted;
+          if (held == false) {
+            for (final entry
+                in (_externalNumericReleases[input] ?? {}).entries) {
+              parameters.putIfAbsent(entry.key, () => entry.value);
+            }
+            for (final entry in (_externalPowerReleases[input] ?? {}).entries) {
+              activations.putIfAbsent(entry.key, () => entry.value);
+            }
+          }
+          if (retiring) {
+            for (final entry in _activationHolders.entries) {
+              if (entry.value.containsKey(trigger)) {
+                activations[entry.key] = false;
+              }
+            }
+            for (final entry in _parameterHolders.entries) {
+              if (!entry.value.containsKey(trigger)) continue;
+              final survivor = _survivingParameter(
+                entry.key,
+                excluding: trigger,
+              );
+              if (survivor != null && !parameters.containsKey(entry.key)) {
+                parameters[entry.key] =
+                    _looper.readValueTarget(entry.key) ?? survivor;
+              } else if (survivor == null &&
+                  !parameters.containsKey(entry.key)) {
+                entry.value.remove(trigger);
+              }
+            }
+          }
+          if (held == false) {
+            (_externalNumericReleases[input] ??= {}).addAll(parameters);
+            (_externalPowerReleases[input] ??= {}).addAll(activations);
+          }
+          final literalActivations = Map<FxBindingTarget, bool>.of(activations);
+          final literalParameters = Map<ControlValueTarget, double>.of(
+            parameters,
+          );
+          void resolveSurvivors() {
+            if (held != false) return;
+            for (final entry in literalActivations.entries) {
+              activations[entry.key] =
+                  (!retiring && entry.value) ||
+                  (_survivingActivation(entry.key, excluding: trigger) ??
+                      entry.value);
+            }
+            for (final entry in literalParameters.entries) {
+              parameters[entry.key] =
+                  _survivingParameter(entry.key, excluding: trigger) ??
+                  entry.value;
+            }
+          }
+
+          resolveSurvivors();
+          parameters.removeWhere(
+            (target, _) => !_looper.valueTargetResolves(target),
+          );
+          activations.removeWhere(
+            (target, _) => !_looper.bindingResolves(target),
+          );
+          final fx = <FxParamTarget, double>{
+            for (final e in parameters.entries)
+              if (e.key is FxParamTarget && _looper.valueTargetResolves(e.key))
+                e.key as FxParamTarget: e.value,
+          };
+          final owners = <FxAddress>{
+            ...activations.keys.map((t) => t.address),
+            ...fx.keys.map((t) => t.address),
+          };
+          final priorValues = {
+            for (final target in activations.keys)
+              target: _looper.bindingEnabled(target),
+          };
+          void recordParameter(ControlValueTarget target) {
+            if (held == false) {
+              _parameterHolders[target]?.remove(trigger);
+              _externalNumericReleases[input]?.remove(target);
+            } else {
+              // Only accepted work supersedes an older same-target cleanup.
+              // Later queued releases register when their FIFO work executes.
+              _externalNumericReleases[input]?.remove(target);
+              (_parameterHolders[target] ??= {})[trigger] = (
+                value: parameters[target]!,
+                order: ++_activationOrder,
+              );
+            }
+          }
+
+          void recordAdmission(Set<FxAddress> admitted) {
+            if (held != false) {
+              for (final target in fx.keys) {
+                if (admitted.contains(target.address)) recordParameter(target);
+              }
+            }
+            for (final target in activations.keys) {
+              if (!admitted.contains(target.address)) continue;
+              if (held != false ||
+                  (!retiring && literalActivations[target] == true)) {
+                _externalPowerReleases[input]?.remove(target);
+                final prior = priorValues[target];
+                if (prior != null) {
+                  _activationBase.putIfAbsent(target, () => prior);
+                }
+                (_activationHolders[target] ??= {})[trigger] = (
+                  value: activations[target]!,
+                  order: ++_activationOrder,
+                );
+              }
+            }
+          }
+
+          var accepted = _looper.writeExternalFx(
+            activations: activations,
+            parameters: fx,
+          );
+          recordAdmission(accepted);
+          if (accepted.length < owners.length && !cancelled()) {
+            if (held == false && !_looper.mixSettingsSettled) {
+              await _looper.settleMixSettings();
+            }
+            await _looper.settleFxRecipes(
+              waitForCallback: true,
+              cancelled: cancelled,
+            );
+            if (cancelled()) return;
+            resolveSurvivors();
+            for (final target in fx.keys) {
+              fx[target] = parameters[target]!;
+            }
+            final retry = _looper.writeExternalFx(
+              activations: {
+                for (final e in activations.entries)
+                  if (!accepted.contains(e.key.address)) e.key: e.value,
+              },
+              parameters: {
+                for (final e in fx.entries)
+                  if (!accepted.contains(e.key.address)) e.key: e.value,
+              },
+            );
+            recordAdmission(retry);
+            accepted = {...accepted, ...retry};
+          }
+          if (accepted.isNotEmpty) {
+            final settled = await _looper.settleFxRecipes(
+              waitForCallback: true,
+              cancelled: cancelled,
+            );
+            if (!settled.isOk || cancelled()) return;
+            if (held == false) {
+              for (final target in fx.keys) {
+                if (accepted.contains(target.address)) recordParameter(target);
+              }
+              for (final target in activations.keys) {
+                if (!accepted.contains(target.address)) continue;
+                final holders = _activationHolders[target] ??= {};
+                if (retiring || literalActivations[target] != true) {
+                  holders.remove(trigger);
+                }
+                if (holders.isEmpty) _activationBase.remove(target);
+                _externalPowerReleases[input]?.remove(target);
+              }
+            }
+            applied = true;
+            if (nextOn != null) _externalOn[input] = nextOn;
+            for (final address in accepted) {
+              if (cancelled()) return;
+              await saveFxOwner(
+                settings: _settings,
+                looper: _looper,
+                address: address,
+              );
+            }
+          }
+          if (cancelled()) return;
+          for (final entry in parameters.entries) {
+            switch (entry.key) {
+              case FxParamTarget():
+                break;
+              case TrackVolumeTarget(:final channel):
+                var outcome = await _mixSettings.setTrackVolume(
+                  entry.value,
+                  channel: channel,
+                );
+                if (!outcome.isOk && held == false && !cancelled()) {
+                  // Wait for the existing exclusive owner, once. This is an
+                  // admission boundary, not a polling retry or new mix owner.
+                  await _mixSettings.runExclusive(() async {});
+                  if (cancelled()) return;
+                  resolveSurvivors();
+                  outcome = await _mixSettings.setTrackVolume(
+                    parameters[entry.key]!,
+                    channel: channel,
+                  );
+                }
+                if (outcome.isOk && !cancelled()) {
+                  applied = true;
+                  recordParameter(entry.key);
+                }
+              case MasterGainTarget():
+                if (_looper.setMasterGain(entry.value).isOk) {
+                  _masterGain = entry.value;
+                  applied = true;
+                  recordParameter(entry.key);
+                }
+            }
+            if (cancelled()) return;
+          }
+          if (applied && nextOn != null && !cancelled()) {
+            _externalOn[input] = nextOn;
+            try {
+              await _enqueuePedalSetup(
+                () => _withLiveLogicalIntent(state.pedalSetup),
+              );
+            } on Object catch (error, trace) {
+              if (!_closing && !isClosed) {
+                emit(state.copyWith(pedalSetupRuntimeUnsaved: true));
+                addError(error, trace);
+              }
+            }
+          }
+          if (_externalNumericReleases.values.any((v) => v.isNotEmpty) ||
+              _externalPowerReleases.values.any((v) => v.isNotEmpty)) {
+            _externalReleaseEligibility = _releaseEligibility;
+          }
+          _pushProjected();
+        })
+        .catchError((Object error, StackTrace trace) {
+          if (logicalSetup != null && !_closing && !isClosed) {
+            emit(state.copyWith(pedalSetupRuntimeUnsaved: true));
+          }
+          addError(error, trace);
+        })
+        .whenComplete(() {
+          if (identical(_externalQueues[input], next)) {
+            final _ = _externalQueues.remove(input);
+          }
+        });
+    _externalQueues[input] = next;
+    _externalTail = next;
+  }
+
+  Object get _releaseEligibility => (
+    _looper.sessionRevision,
+    _looper.mixGeneration,
+    _looper.mixSettingsSettled,
+    _looper.fxRecipesSettled,
+    _looper.mixSettingsSnapshot,
+  );
+
+  void _retryExternalReleases() {
+    if (_externalNumericReleases.values.every((v) => v.isEmpty) &&
+        _externalPowerReleases.values.every((v) => v.isEmpty)) {
+      return;
+    }
+    final eligibility = _releaseEligibility;
+    if (eligibility == _externalReleaseEligibility) return;
+    _externalReleaseEligibility = eligibility;
+    if (!_looper.mixSettingsSettled || !_looper.fxRecipesSettled) return;
+    for (final input in PedalCtrlInput.values) {
+      if (_externalQueues.containsKey(input)) continue;
+      final parameters = _externalNumericReleases[input] ?? {};
+      final powers = _externalPowerReleases[input] ?? {};
+      if (parameters.isEmpty && powers.isEmpty) continue;
+      _queueExternalWrite(
+        input,
+        Map.of(powers),
+        Map.of(parameters),
+        token: Object(),
+        session: _looper.sessionRevision,
+        held: false,
+        restoring: true,
+      );
+    }
+  }
+
+  bool? _survivingActivation(
+    FxBindingTarget target, {
+    MappingTrigger? excluding,
+  }) {
+    ({bool value, int order})? latest;
+    for (final entry in (_activationHolders[target] ?? {}).entries) {
+      if (entry.key == excluding) continue;
+      if (latest == null || entry.value.order > latest.order) {
+        latest = entry.value;
+      }
+    }
+    return latest?.value;
+  }
+
+  double? _survivingParameter(
+    ControlValueTarget target, {
+    MappingTrigger? excluding,
+  }) {
+    ({double value, int order})? latest;
+    for (final entry in (_parameterHolders[target] ?? {}).entries) {
+      if (entry.key == excluding) continue;
+      if (latest == null || entry.value.order > latest.order) {
+        latest = entry.value;
+      }
+    }
+    return latest?.value;
+  }
+
   /// The default `currentChains`: an empty rig, which is what
   /// [PerformanceRepository.arm] already assumes when given nothing.
   static PerformanceChains _noChains() => const PerformanceChains();
@@ -216,11 +877,11 @@ class ControlCubit extends Cubit<ControlState> {
   late final StreamSubscription<PedalEvent> _eventsSub;
   late final StreamSubscription<PedalLinkStatus> _statusSub;
   late final StreamSubscription<PerformanceCaptureStatus> _perfStatusSub;
-  StreamSubscription<ControllerBindingEvent>? _bindingSub;
+  StreamSubscription<ControllerDispatchEvent>? _bindingSub;
   StreamSubscription<MidiConnection>? _midiSub;
 
-  // Encoder accumulator: the engine exposes no master-gain read-back, so the
-  // control layer tracks the value it last sent (unity until the first turn).
+  // Encoder accumulator, kept in step with accepted controller writes.
+  // The repository separately retains desired master gain across restarts.
   static const double _encoderStep = 1 / 64;
   double _masterGain = 1;
 
@@ -497,14 +1158,43 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
   /// leaves both the current gestures and the confirmed setup untouched.
-  Future<void> setPedalSetup(PedalSetup setup) async {
+  Future<void> setPedalSetup(PedalSetup setup) => _enqueuePedalSetup(
+    () => _withLiveLogicalIntent(
+      setup.copyWith(
+        external: state.pedalSetup.external.withConfigurationFrom(
+          setup.external,
+        ),
+      ),
+    ),
+  );
+
+  PedalSetup _withLiveLogicalIntent(PedalSetup setup) {
+    var external = setup.external;
+    for (final entry in _externalOn.entries) {
+      external = external.withLogicalOn(entry.key, on: entry.value);
+    }
+    return setup.copyWith(external: external);
+  }
+
+  Future<void> _enqueuePedalSetup(PedalSetup Function() latest) {
+    final write = _pedalSetupWrites.then((_) async {
+      await load();
+      if (_closing || isClosed) return;
+      await _persistPedalSetup(latest());
+    });
+    _pedalSetupWrites = write.catchError((Object _, StackTrace _) {});
+    return write;
+  }
+
+  Future<void> _persistPedalSetup(PedalSetup setup) async {
     // The boot read may already hold an older checkpoint. Settle it first so
     // it cannot publish that checkpoint after this Save completes.
     await load();
     if (isClosed) return;
     if (setup == state.pedalSetup &&
         !state.pedalSetupPersistenceUncertain &&
-        !state.pedalSetupUnavailable) {
+        !state.pedalSetupUnavailable &&
+        !state.pedalSetupRuntimeUnsaved) {
       return;
     }
     try {
@@ -521,8 +1211,14 @@ class ControlCubit extends Cubit<ControlState> {
     // changed, or when recovering from an unavailable stored setup.
     final behaviorChanged =
         state.pedalSetupUnavailable ||
-        setup.copyWith(palette: state.pedalSetup.palette) != state.pedalSetup;
+        setup.copyWith(
+              palette: state.pedalSetup.palette,
+              external: state.pedalSetup.external,
+            ) !=
+            state.pedalSetup ||
+        !setup.external.sameConfigurationAs(state.pedalSetup.external);
     if (behaviorChanged) {
+      _retireAllExternal();
       _invalidateGestures();
       _customLastActions.clear();
       _fxReturn = InteractionMode.record;
@@ -530,6 +1226,7 @@ class ControlCubit extends Cubit<ControlState> {
     emit(
       state.copyWith(
         pedalSetup: setup,
+        pedalSetupRuntimeUnsaved: false,
         pedalSetupPersistenceUncertain: false,
         pedalSetupUnavailable: false,
       ),
@@ -1730,6 +2427,9 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   void _invalidateGestures() {
+    for (final gesture in _externalGestures.values) {
+      gesture.cancel();
+    }
     _undoGesture.cancel();
     _modeGesture.cancel();
     _bankGesture.cancel();
@@ -1954,19 +2654,18 @@ class ControlCubit extends Cubit<ControlState> {
             binding.behavior == BindingBehavior.momentary)
           binding.key,
     };
-    var released = 0;
     for (final entry in _heldControllerRestore.entries.toList()) {
-      entry.value.holders.removeWhere(
-        (trigger) => !live.contains((trigger, entry.key)),
-      );
-      if (entry.value.holders.isNotEmpty) continue;
-      _heldControllerRestore.remove(entry.key);
-      _looper.setBindingEnabled(entry.value.target, enabled: entry.value.prior);
-      released++;
+      for (final trigger in entry.value.holders.toList()) {
+        if (!live.contains((trigger, entry.key))) {
+          _applyControllerSwitch(
+            entry.key,
+            trigger,
+            BindingBehavior.momentary,
+            pressed: false,
+          );
+        }
+      }
     }
-    if (released == 0) return;
-    _log('released $released held MIDI momentary(s) the edit stranded');
-    _pushProjected();
   }
 
   /// Decodes every binding's target once, for the dispatch path to look up.
@@ -2191,8 +2890,10 @@ class ControlCubit extends Cubit<ControlState> {
   /// Unlike a pedal binding, external control is NOT gated on FX mode: a
   /// mapping the user made explicitly, on hardware whose only job is that
   /// mapping, has no contextual default it could be shadowing.
-  void _onControllerBindingEvent(ControllerBindingEvent event) {
+  void _onControllerBindingEvent(ControllerDispatchEvent event) {
     switch (event) {
+      case ControllerConsoleEvent(:final input):
+        _onConsoleEvent(input);
       case ControllerValueEvent(:final target, :final value):
         _applyControllerValue(target, value);
       case ControllerSwitchEvent(
@@ -2226,8 +2927,11 @@ class ControlCubit extends Cubit<ControlState> {
     MappingTrigger trigger,
     BindingBehavior behavior, {
     required bool pressed,
+    bool retryRelease = true,
   }) {
-    final decoded = _controllerSwitchTargets[target];
+    final decoded =
+        _controllerSwitchTargets[target] ??
+        _heldControllerRestore[target]?.target;
     final prior = decoded == null ? null : _looper.bindingEnabled(decoded);
     if (decoded == null || prior == null) {
       // Stale mapping: a no-op, like a stale pedal binding (R25). Its row is
@@ -2250,27 +2954,66 @@ class ControlCubit extends Cubit<ControlState> {
       case BindingBehavior.momentary:
         final entry = _heldControllerRestore[target];
         if (pressed) {
-          // Capture on the FIRST hold only — a repeated ON edge with no release
-          // between them, or a second control joining the hold, must not
-          // re-capture the state the hold itself enabled.
+          // A refused native write does not acquire hold priority.
+          if (!prior && !_looper.setBindingEnabled(decoded, enabled: true)) {
+            return;
+          }
           if (entry == null) {
             _heldControllerRestore[target] = (
               target: decoded,
-              prior: prior,
+              prior: _activationBase[decoded] ?? prior,
               holders: {trigger},
             );
           } else {
             entry.holders.add(trigger);
           }
-          _looper.setBindingEnabled(decoded, enabled: true);
+          _activationBase.putIfAbsent(decoded, () => prior);
+          (_activationHolders[decoded] ??= {})[trigger] = (
+            value: true,
+            order: ++_activationOrder,
+          );
         } else {
-          if (entry == null) return;
+          if (entry == null || !entry.holders.contains(trigger)) return;
+          final surviving = _survivingActivation(decoded, excluding: trigger);
+          final value = surviving ?? entry.prior;
+          if (prior != value &&
+              !_looper.setBindingEnabled(decoded, enabled: value)) {
+            if (retryRelease) {
+              final session = _looper.sessionRevision;
+              final holderOrder = _activationHolders[decoded]?[trigger]?.order;
+              unawaited(() async {
+                bool cancelled() =>
+                    _closing || isClosed || _looper.sessionRevision != session;
+                await _looper.settleFxRecipes(
+                  waitForCallback: true,
+                  cancelled: cancelled,
+                );
+                if (cancelled() ||
+                    _activationHolders[decoded]?[trigger]?.order !=
+                        holderOrder ||
+                    !identical(
+                      _heldControllerRestore[target]?.holders,
+                      entry.holders,
+                    )) {
+                  return;
+                }
+                _applyControllerSwitch(
+                  target,
+                  trigger,
+                  behavior,
+                  pressed: false,
+                  retryRelease: false,
+                );
+              }());
+            }
+            return;
+          }
+          _activationHolders[decoded]?.remove(trigger);
+          if (_activationHolders[decoded]?.isEmpty ?? true) {
+            _activationBase.remove(decoded);
+          }
           entry.holders.remove(trigger);
-          // Another control is still holding this target down.
-          if (entry.holders.isNotEmpty) return;
-          _heldControllerRestore.remove(target);
-          _log('midi momentary released -> ${entry.prior}');
-          _looper.setBindingEnabled(entry.target, enabled: entry.prior);
+          if (entry.holders.isEmpty) _heldControllerRestore.remove(target);
         }
     }
     _pushProjected();
@@ -2292,13 +3035,16 @@ class ControlCubit extends Cubit<ControlState> {
   /// sweep put it, because snapping a filter back to a stored value the moment
   /// a cable wobbles is the louder failure.
   void releaseAllControllerMomentary() {
-    if (_heldControllerRestore.isEmpty) return;
-    for (final held in _heldControllerRestore.values) {
-      _looper.setBindingEnabled(held.target, enabled: held.prior);
+    for (final entry in _heldControllerRestore.entries.toList()) {
+      for (final trigger in entry.value.holders.toList()) {
+        _applyControllerSwitch(
+          entry.key,
+          trigger,
+          BindingBehavior.momentary,
+          pressed: false,
+        );
+      }
     }
-    _log('released ${_heldControllerRestore.length} held MIDI momentary(s)');
-    _heldControllerRestore.clear();
-    _pushProjected();
   }
 
   void _onMidiConnection(MidiConnection connection) {
@@ -2324,6 +3070,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// stays editable while a simulation could be requested, so what runs is the
   /// range that is there NOW, not a stale snapshot.
   void simulateMapping(ControllerBinding binding) {
+    if (binding.trigger.kind.isConsoleCtrl) return;
     final live = _liveBinding(binding.key) ?? binding;
     final values = switch (live) {
       ContinuousBinding() => _sweepValues,
@@ -2521,7 +3268,15 @@ class ControlCubit extends Cubit<ControlState> {
   // ---------------------------------------------------------------------------
 
   void _onLooperState(LooperState looperState) {
+    if (_externalSession != null &&
+        _externalSession != _looper.sessionRevision) {
+      _retireAllExternal(sessionChanged: true);
+      _externalSession = _looper.sessionRevision;
+    } else if (_takeLocked()) {
+      _retireAllExternal();
+    }
     _looperState = looperState;
+    _retryExternalReleases();
     _reduce(looperState);
     _pendingRestore.toList().forEach(_tryRestoreBinding);
     _pushProjected();
@@ -2533,6 +3288,8 @@ class ControlCubit extends Cubit<ControlState> {
     // never coming, so a held momentary would leave its target enabled
     // forever (B1). Restore now. A reconnect needs nothing from here: the
     // repository answers the board's hello with the current frame.
+    _retireAllExternal();
+    _externalContacts.clear();
     _pressedButtons.clear();
     _acceptedContacts.clear();
     _clearHeld = false;
@@ -2722,6 +3479,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   @override
   Future<void> close() async {
+    _retireAllExternal();
     _closing = true;
     _learnTimer?.cancel();
     // Stop any simulation in flight — its ticker must not outlive the cubit.
@@ -2751,6 +3509,7 @@ class ControlCubit extends Cubit<ControlState> {
     await _perfStatusSub.cancel();
     await _bindingSub?.cancel();
     await _midiSub?.cancel();
+    await _externalTail;
     return super.close();
   }
 }

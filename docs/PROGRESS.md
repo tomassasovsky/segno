@@ -8,6 +8,21 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 external pedal reconstruction (#1026)
+
+Single, Dual and Expression now share a confirmed External setup and the
+existing UART CTRL ingress. Multiple actions, FX activation, parameter ranges,
+directed calibration, unavailable-target repair and independent jack profiles
+are implemented. Source retirement and refused release cleanup preserve newer
+accepted controller contributions; the old generic console editor is removed.
+
+The [verification record](reviews/design-external-controls-restack/README.md)
+binds the final source, 2,467 passing app tests, five package suites, coverage,
+firmware and 54 independent adversarial probes. Source and five quality-role
+reviews have no unresolved actionable finding. Native render references are
+saved in Pen. Published-head CI and human merge remain separate gates; physical
+pedal validation is not established by the desktop checks. MIDI setup is next.
+
 ## September 2026 design-stack reconstruction (#1058)
 
 The accepted Tracks, selected-track display and crown slice (#1010 / #1011)

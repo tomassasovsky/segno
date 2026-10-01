@@ -29,8 +29,11 @@ class FxFamily {
   String get selectorAsset => 'assets/images/selector/$slug.png';
 
   /// The footswitch illustration.
-  String get footswitchAsset => 'assets/images/footswitch/$slug.png';
+  String get footswitchAsset => fxFootswitchAsset(slug);
 }
+
+/// Factory footswitch artwork for one catalogue slug.
+String fxFootswitchAsset(String slug) => 'assets/images/footswitch/$slug.png';
 
 /// Each family's artwork slug, by folder name.
 ///

@@ -57,7 +57,7 @@ void main() {
         ]),
       );
       addTearDown(repo.dispose);
-      final events = <ControllerBindingEvent>[];
+      final events = <ControllerDispatchEvent>[];
       repo.bindingEvents.listen(events.add);
 
       cc(11, 127);
@@ -65,7 +65,7 @@ void main() {
 
       expect(events, hasLength(1));
       expect((events.single as ControllerValueEvent).value, closeTo(1, 1e-9));
-      expect(events.single.target, 'cutoff');
+      expect((events.single as ControllerBindingEvent).target, 'cutoff');
     });
 
     test('later moves ramp to the new value and land exactly on it', () {
@@ -153,13 +153,16 @@ void main() {
         ]),
       );
       addTearDown(repo.dispose);
-      final events = <ControllerBindingEvent>[];
+      final events = <ControllerDispatchEvent>[];
       repo.bindingEvents.listen(events.add);
 
       cc(11, 127);
       await Future<void>.delayed(Duration.zero);
 
-      expect(events.map((e) => e.target), ['cutoff', 'volume']);
+      expect(events.cast<ControllerBindingEvent>().map((e) => e.target), [
+        'cutoff',
+        'volume',
+      ]);
     });
 
     test('many controls on one target are last-writer-wins', () async {
@@ -190,7 +193,7 @@ void main() {
         ]),
       );
       addTearDown(repo.dispose);
-      final events = <ControllerBindingEvent>[];
+      final events = <ControllerDispatchEvent>[];
       repo.bindingEvents.listen(events.add);
 
       cc(11, 40);
@@ -270,67 +273,31 @@ void main() {
     });
   });
 
-  group('source release', () {
+  group('console dispatch', () {
     for (final kind in [
       ControllerSourceKind.consoleSwitch,
       ControllerSourceKind.consoleExpression,
     ]) {
-      test(
-        '${kind.name} releases only its discrete edges and rearms',
-        () async {
-          final trigger = MappingTrigger(kind: kind, id: 0);
-          final repo = build(
-            bindings: ControllerBindingSet([
-              DiscreteBinding(
-                trigger: trigger,
-                target: 'chain',
-                behavior: BindingBehavior.momentary,
-              ),
-              ContinuousBinding(trigger: trigger, target: 'level'),
-              const DiscreteBinding(
-                trigger: stomp,
-                target: 'chain',
-                behavior: BindingBehavior.momentary,
-              ),
-            ]),
-          );
-          addTearDown(repo.dispose);
-          final events = <ControllerBindingEvent>[];
-          repo.bindingEvents.listen(events.add);
-          final input = RawControllerInput(kind: kind, id: 0, value: 127);
-
-          source.emit(input);
-          cc(21, 127);
-          await Future<void>.delayed(Duration.zero);
-          events.clear();
-
-          repo
-            ..releaseSwitches({kind})
-            ..releaseSwitches({kind});
-          await Future<void>.delayed(Duration.zero);
-          expect(events, [
-            ControllerSwitchEvent(
-              target: 'chain',
-              trigger: trigger,
-              behavior: BindingBehavior.momentary,
-              pressed: false,
-            ),
-          ], reason: 'no duplicate release, MIDI release, or level write');
-          events.clear();
-
-          source.emit(input);
-          cc(21, 127);
-          await Future<void>.delayed(Duration.zero);
-          expect(events, [
-            ControllerSwitchEvent(
-              target: 'chain',
-              trigger: trigger,
-              behavior: BindingBehavior.momentary,
-              pressed: true,
-            ),
-          ], reason: 'console rearms while MIDI keeps its existing edge');
-        },
-      );
+      test('${kind.name} bypasses old mappings and MIDI learn', () async {
+        final trigger = MappingTrigger(kind: kind, id: 0);
+        final repo = build(
+          bindings: ControllerBindingSet([
+            DiscreteBinding(trigger: trigger, target: 'chain'),
+            ContinuousBinding(trigger: trigger, target: 'level'),
+          ]),
+        );
+        addTearDown(repo.dispose);
+        final events = <ControllerDispatchEvent>[];
+        repo.bindingEvents.listen(events.add);
+        final capture = repo.learnNext();
+        final input = RawControllerInput(kind: kind, id: 0, value: 201);
+        source.emit(input);
+        await Future<void>.delayed(Duration.zero);
+        expect(events, [ControllerConsoleEvent(input)]);
+        expect(repo.isLearning, isTrue);
+        cc(11, 73);
+        expect((await capture)!.value, 73);
+      });
     }
   });
 
@@ -382,7 +349,7 @@ void main() {
         ]),
       );
       addTearDown(repo.dispose);
-      final events = <ControllerBindingEvent>[];
+      final events = <ControllerDispatchEvent>[];
       repo.bindingEvents.listen(events.add);
 
       unawaited(repo.learnNext());
@@ -404,7 +371,7 @@ void main() {
             DiscreteBinding(trigger: stomp, target: 'chain'),
           ]),
         );
-        final events = <ControllerBindingEvent>[];
+        final events = <ControllerDispatchEvent>[];
         repo.bindingEvents.listen(events.add);
 
         await Future<void>.delayed(Duration.zero);
@@ -423,7 +390,7 @@ void main() {
           ]),
         );
         addTearDown(repo.dispose);
-        final events = <ControllerBindingEvent>[];
+        final events = <ControllerDispatchEvent>[];
         repo.bindingEvents.listen(events.add);
 
         repo.setBindings(ControllerBindingSet.empty);

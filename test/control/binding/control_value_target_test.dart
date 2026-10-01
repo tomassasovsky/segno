@@ -51,6 +51,10 @@ void main() {
       expect(ControlValueTarget.tryParse('[]'), isNull);
       expect(ControlValueTarget.tryParse('{"ctl":"nope"}'), isNull);
       expect(ControlValueTarget.tryParse('{"ctl":"trackVolume"}'), isNull);
+      expect(
+        ControlValueTarget.tryParse('{"ctl":"trackVolume","index":0.5}'),
+        isNull,
+      );
       // An FX target missing its slot or param would otherwise widen to
       // "some parameter of some effect", which is exactly the retarget A9
       // forbids.
@@ -60,6 +64,12 @@ void main() {
             ...const FxAddress(stage: FxStage.track, index: 1).toJson(),
             'param': 0,
           }),
+        ),
+        isNull,
+      );
+      expect(
+        ControlValueTarget.tryParse(
+          '{"stage":"track","index":1,"slot":"x","param":0.5}',
         ),
         isNull,
       );
@@ -81,5 +91,36 @@ void main() {
 
       expect(ControlValueTarget.tryParse(chain.canonicalString()), isNull);
     });
+
+    test(
+      'invalid coordinates reject while a valid missing target survives',
+      () {
+        expect(const TrackVolumeTarget(-1).isStructurallyValid, isFalse);
+        expect(
+          const FxParamTarget(
+            address: FxAddress(stage: FxStage.loop),
+            slotId: 's',
+            param: 0,
+          ).isStructurallyValid,
+          isFalse,
+        );
+        expect(
+          ControlValueTarget.tryParse(
+            '{"stage":"allTracks","index":3,"slot":"s","param":0}',
+          ),
+          isNull,
+        );
+        const unavailable = FxParamTarget(
+          address: FxAddress(stage: FxStage.loop, index: 999, lane: 7),
+          slotId: 'removed-slot',
+          param: 99,
+        );
+        expect(unavailable.isStructurallyValid, isTrue);
+        expect(
+          ControlValueTarget.tryParse(unavailable.canonicalString()),
+          unavailable,
+        );
+      },
+    );
   });
 }

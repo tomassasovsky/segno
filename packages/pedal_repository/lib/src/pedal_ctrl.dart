@@ -32,16 +32,15 @@ enum PedalCtrlKind {
   switchPedal,
 
   /// An expression pedal: the board sends its RAW position `0`..`255`, and
-  /// `PedalRepository` maps that onto the pedal's travel (see
-  /// [PedalCtrlCalibration]).
+  /// ControlCubit maps that onto the confirmed pedal travel.
   expression,
 
   /// Nothing on the jack: a plug came out (or, on a switched jack, was never
   /// in). Sent once, on the tip, with value `0`, and it covers the whole
-  /// jack: the ring's switch goes with the tip's, released first if it was
-  /// down. Whatever the jack drove holds where it was, and the jack is
-  /// classified afresh on the next plug. An [expression] tip likewise rules
-  /// out a ring switch: a pot's ring is its supply.
+  /// jack: both contacts retire without synthetic switch-release gestures.
+  /// Expression values hold; the application retires configured button holds.
+  /// The jack is classified afresh on the next plug. An [expression] tip also
+  /// rules out a ring switch: a pot's ring is its supply.
   none,
 }
 
@@ -73,60 +72,4 @@ class PedalCtrlInput extends Equatable {
 
   @override
   String toString() => '${jack.name}.${contact.name}';
-}
-
-/// Where an expression pedal's ends are, in the board's raw `0`..`255`.
-///
-/// A pedal never uses the whole scale: the tip's pull-up and the ring's
-/// series resistor compress both ends, and every pedal's travel and range
-/// knob differ again. Measured on the bench, an M-Audio EX-P covers 24..255.
-/// Mapping raw straight to travel would leave a bound level never reaching
-/// its bottom.
-///
-/// So the ends are learned and the travel between them stretched onto
-/// `0`..`255`. [margin] trims a little off each end before stretching: the
-/// learned end is the noisiest sample ever seen there, and without the
-/// margin a pedal held at heel would sit a count or two short of it and
-/// never report a hard zero.
-class PedalCtrlCalibration extends Equatable {
-  /// Creates a [PedalCtrlCalibration] from the lowest and highest raw
-  /// readings seen across the pedal's travel.
-  const PedalCtrlCalibration({required this.min, required this.max})
-    : assert(min >= 0 && min <= 255, 'min must fit a byte'),
-      assert(max >= 0 && max <= 255, 'max must fit a byte');
-
-  /// The raw reading at one end of the travel.
-  final int min;
-
-  /// The raw reading at the other end.
-  final int max;
-
-  /// The smallest `max - min` a calibration is trusted at: about a tenth of
-  /// the scale. Below it the pedal has not been swept (or is not a pedal),
-  /// and stretching that onto the whole range would turn noise into travel.
-  static const minSpan = 25;
-
-  /// How much of each learned end is treated as "the end", in raw counts.
-  static const margin = 2;
-
-  /// Whether the ends are far enough apart to trust.
-  bool get isUsable => max - min >= minSpan;
-
-  /// The travel `0`..`255` for a raw reading, clamped to the ends.
-  int apply(int raw) {
-    final lo = min + margin;
-    final hi = max - margin;
-    if (hi <= lo) return raw;
-    return ((raw - lo) * 255 / (hi - lo)).round().clamp(0, 255);
-  }
-
-  /// This calibration widened to include [raw], for learning ends from what
-  /// a pedal does.
-  PedalCtrlCalibration including(int raw) => PedalCtrlCalibration(
-    min: raw < min ? raw : min,
-    max: raw > max ? raw : max,
-  );
-
-  @override
-  List<Object?> get props => [min, max];
 }

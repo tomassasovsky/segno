@@ -1,0 +1,415 @@
+import 'package:equatable/equatable.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/control_action.dart';
+import 'package:segno/control/binding/external_controls.dart';
+import 'package:segno/control/binding/external_expression.dart';
+import 'package:segno/control/binding/pedal_setup.dart';
+
+/// What is plugged into a jack.
+///
+/// A jack keeps the assignments for every type it has been configured as, so
+/// switching to Dual switch and back does not cost the single switch its
+/// actions. Only the active type is dispatched.
+enum ExternalJackType {
+  /// A continuous pedal on a potentiometer.
+  expression,
+
+  /// One switch.
+  singleSwitch,
+
+  /// Two switches on a ring-tip-sleeve jack.
+  dualSwitch;
+
+  /// How many switches this type puts under the foot.
+  int get switchCount => switch (this) {
+    ExternalJackType.expression => 0,
+    ExternalJackType.singleSwitch => 1,
+    ExternalJackType.dualSwitch => 2,
+  };
+
+  /// Parses an explicit persisted type, rejecting unknown values.
+  static ExternalJackType fromName(String name) => values.firstWhere(
+    (type) => type.name == name,
+    orElse: () => throw FormatException('Invalid external jack type: $name'),
+  );
+}
+
+/// How an external switch reports its contact.
+///
+/// The distinction is not a preference: it decides which gestures a switch can
+/// carry at all. A momentary switch reports a closure and a release, so it has
+/// a press and a hold. A latching switch reports only that its state changed,
+/// so there is nothing to time a hold against and it carries one action.
+enum ExternalSwitchHardware {
+  /// Closes while held and opens on release.
+  momentary,
+
+  /// Flips and stays.
+  latching;
+
+  /// Parses an explicit persisted hardware type, rejecting unknown values.
+  static ExternalSwitchHardware fromName(String name) => values.firstWhere(
+    (hardware) => hardware.name == name,
+    orElse: () => throw FormatException('Invalid external hardware: $name'),
+  );
+}
+
+/// One external switch: what kind it is, and what it does.
+class ExternalSwitchSetup extends Equatable {
+  /// Creates an [ExternalSwitchSetup].
+  const ExternalSwitchSetup({
+    this.hardware = ExternalSwitchHardware.momentary,
+    this.gestures = ControlGesturePair.empty,
+    this.change,
+    this.controls = ExternalControls.empty,
+  });
+
+  /// Rebuilds a switch from its [toJson] map.
+  factory ExternalSwitchSetup.fromJson(Map<String, dynamic> json) {
+    final change = json['change'];
+    final controls = json['controls'];
+    final rawHardware = json['hardware'];
+    if (json.containsKey('hardware') && rawHardware is! String ||
+        json.containsKey('change') && (change is! String || change.isEmpty) ||
+        json.containsKey('controls') && controls is! Map<String, dynamic>) {
+      throw const FormatException('Invalid external switch');
+    }
+    return ExternalSwitchSetup(
+      hardware: rawHardware is String
+          ? ExternalSwitchHardware.fromName(rawHardware)
+          : ExternalSwitchHardware.momentary,
+      gestures: ControlGesturePair.fromJson(json),
+      change: change is String
+          ? ControlAction.tryParse(change) ?? UnavailableAction(change)
+          : null,
+      controls: controls is Map<String, dynamic>
+          ? ExternalControls.fromJson(controls)
+          : ExternalControls.empty,
+    );
+  }
+
+  /// The switch with nothing on it.
+  static const ExternalSwitchSetup empty = ExternalSwitchSetup();
+
+  /// What the hardware is.
+  final ExternalSwitchHardware hardware;
+
+  /// What a press and a hold do, when [hardware] is momentary.
+  final ControlGesturePair gestures;
+
+  /// What a state change does, when [hardware] is latching.
+  final ControlAction? change;
+
+  /// The effects and parameters this switch drives beside its actions.
+  ///
+  /// Beside, not instead: a press can run an action AND flip every effect
+  /// here in the same gesture, which is the accepted design's point of having
+  /// both panels on one button.
+  final ExternalControls controls;
+
+  /// Whether this switch is exactly as it shipped, and so has nothing worth
+  /// storing.
+  ///
+  /// The HARDWARE counts. Telling the rig a latching switch is plugged in is
+  /// a setting in its own right, and a switch that read as empty until it
+  /// carried an action would lose that the moment it was chosen.
+  ///
+  /// Both gesture halves are kept whatever the hardware is, so a switch
+  /// retyped to latching and back finds its press and hold where it left
+  /// them; this asks whether any of them is set, not whether the active one
+  /// is.
+  bool get isEmpty =>
+      hardware == ExternalSwitchHardware.momentary &&
+      gestures.isEmpty &&
+      change == null &&
+      controls.isEmpty;
+
+  /// The action the ACTIVE hardware runs on a plain closure.
+  ControlAction? get closureAction =>
+      hardware == ExternalSwitchHardware.latching ? change : gestures.press;
+
+  /// Returns a copy with the given fields replaced; [clearChange] drops the
+  /// latching action, which `change: null` cannot express.
+  ExternalSwitchSetup copyWith({
+    ExternalSwitchHardware? hardware,
+    ControlGesturePair? gestures,
+    ControlAction? change,
+    ExternalControls? controls,
+    bool clearChange = false,
+  }) => ExternalSwitchSetup(
+    hardware: hardware ?? this.hardware,
+    gestures: gestures ?? this.gestures,
+    change: clearChange ? null : change ?? this.change,
+    controls: controls ?? this.controls,
+  );
+
+  /// Serializes this switch, omitting anything unassigned.
+  Map<String, dynamic> toJson() => {
+    'hardware': hardware.name,
+    ...gestures.toJson(),
+    if (change != null) 'change': change!.key,
+    if (!controls.isEmpty) 'controls': controls.toJson(),
+  };
+
+  @override
+  List<Object?> get props => [hardware, gestures, change, controls];
+}
+
+/// One jack: which type is active, and the switches configured for each.
+///
+/// Every type's assignments are kept side by side. The accepted design is
+/// explicit that choosing another type retains the others, and a jack that
+/// forgot them would punish a performer for plugging in a different pedal for
+/// one song.
+class ExternalJackSetup extends Equatable {
+  /// Creates an [ExternalJackSetup].
+  const ExternalJackSetup({
+    this.type = ExternalJackType.singleSwitch,
+    this.single = ExternalSwitchSetup.empty,
+    this.dualFirst = ExternalSwitchSetup.empty,
+    this.dualSecond = ExternalSwitchSetup.empty,
+    this.expression = ExternalExpressionSetup.empty,
+  });
+
+  /// Rebuilds a jack from its [toJson] map.
+  factory ExternalJackSetup.fromJson(Map<String, dynamic> json) {
+    ExternalSwitchSetup read(String key) {
+      final raw = json[key];
+      if (json.containsKey(key) && raw is! Map<String, dynamic>) {
+        throw FormatException('Invalid external $key');
+      }
+      return raw is Map<String, dynamic>
+          ? ExternalSwitchSetup.fromJson(raw)
+          : ExternalSwitchSetup.empty;
+    }
+
+    final expression = json['expression'];
+    final rawType = json['type'];
+    if (json.containsKey('type') && rawType is! String ||
+        json.containsKey('expression') && expression is! Map<String, dynamic>) {
+      throw const FormatException('Invalid external jack');
+    }
+    return ExternalJackSetup(
+      type: rawType is String
+          ? ExternalJackType.fromName(rawType)
+          : ExternalJackType.singleSwitch,
+      single: read('single'),
+      dualFirst: read('dualFirst'),
+      dualSecond: read('dualSecond'),
+      expression: expression is Map<String, dynamic>
+          ? ExternalExpressionSetup.fromJson(expression)
+          : ExternalExpressionSetup.empty,
+    );
+  }
+
+  /// The jack as it ships.
+  static const ExternalJackSetup empty = ExternalJackSetup();
+
+  /// Which type is plugged in, and therefore which assignments dispatch.
+  final ExternalJackType type;
+
+  /// The switch used when [type] is [ExternalJackType.singleSwitch].
+  final ExternalSwitchSetup single;
+
+  /// The first of the two switches on a dual pedal.
+  final ExternalSwitchSetup dualFirst;
+
+  /// The second of them.
+  final ExternalSwitchSetup dualSecond;
+
+  /// The travel and the mappings used when [type] is
+  /// [ExternalJackType.expression].
+  final ExternalExpressionSetup expression;
+
+  /// The switch at [index] under the ACTIVE type, or `null` when the active
+  /// type has no such switch.
+  ExternalSwitchSetup? switchAt(int index) => switch (type) {
+    ExternalJackType.expression => null,
+    ExternalJackType.singleSwitch => index == 0 ? single : null,
+    ExternalJackType.dualSwitch => switch (index) {
+      0 => dualFirst,
+      1 => dualSecond,
+      _ => null,
+    },
+  };
+
+  /// Resolves the active switch on one physical contact.
+  ExternalSwitchSetup? switchFor(PedalCtrlInput input) =>
+      switchAt(input.contact == PedalCtrlContact.tip ? 0 : 1);
+
+  /// Returns a copy with [setup] at [index] under the active type; an index
+  /// the active type has no switch for is ignored rather than inventing one.
+  ExternalJackSetup withSwitch(int index, ExternalSwitchSetup setup) =>
+      switch (type) {
+        ExternalJackType.expression => this,
+        ExternalJackType.singleSwitch =>
+          index == 0 ? copyWith(single: setup) : this,
+        ExternalJackType.dualSwitch => switch (index) {
+          0 => copyWith(dualFirst: setup),
+          1 => copyWith(dualSecond: setup),
+          _ => this,
+        },
+      };
+
+  /// Whether anything is configured here, under any type.
+  ///
+  /// The taught travel counts, like a switch's hardware does: a pedal
+  /// calibrated but not yet assigned anything has had work done to it, and a
+  /// jack that read as empty would throw that away on the next save.
+  bool get isEmpty =>
+      type == ExternalJackType.singleSwitch &&
+      single.isEmpty &&
+      dualFirst.isEmpty &&
+      dualSecond.isEmpty &&
+      expression.isEmpty;
+
+  /// Returns a copy with the given fields replaced.
+  ExternalJackSetup copyWith({
+    ExternalJackType? type,
+    ExternalSwitchSetup? single,
+    ExternalSwitchSetup? dualFirst,
+    ExternalSwitchSetup? dualSecond,
+    ExternalExpressionSetup? expression,
+  }) => ExternalJackSetup(
+    type: type ?? this.type,
+    single: single ?? this.single,
+    dualFirst: dualFirst ?? this.dualFirst,
+    dualSecond: dualSecond ?? this.dualSecond,
+    expression: expression ?? this.expression,
+  );
+
+  /// Serializes this jack, omitting the switches nothing has touched.
+  Map<String, dynamic> toJson() => {
+    'type': type.name,
+    if (!single.isEmpty) 'single': single.toJson(),
+    if (!dualFirst.isEmpty) 'dualFirst': dualFirst.toJson(),
+    if (!dualSecond.isEmpty) 'dualSecond': dualSecond.toJson(),
+    if (!expression.isEmpty) 'expression': expression.toJson(),
+  };
+
+  @override
+  List<Object?> get props => [type, single, dualFirst, dualSecond, expression];
+}
+
+/// Both external jacks.
+///
+/// One value, because the accepted screen saves both ports as one draft.
+class ExternalPedalSetup extends Equatable {
+  /// Creates a detached map of the two physical jacks.
+  factory ExternalPedalSetup({
+    Map<PedalCtrlJack, ExternalJackSetup> jacks = const {},
+    Map<PedalCtrlInput, bool> logicalOn = const {},
+  }) => ExternalPedalSetup._(
+    Map.unmodifiable(jacks),
+    Map.unmodifiable(logicalOn),
+  );
+
+  const ExternalPedalSetup._(this.jacks, this.logicalOn);
+
+  /// Rebuilds both jacks from their [toJson] map.
+  factory ExternalPedalSetup.fromJson(Map<String, dynamic> json) {
+    for (final key in json.keys) {
+      if (key != 'on' &&
+          !PedalCtrlJack.values.any((jack) => jack.name == key)) {
+        throw FormatException('Invalid external jack: $key');
+      }
+    }
+    final rawOn = json['on'];
+    if (json.containsKey('on') && rawOn is! Map<String, dynamic>) {
+      throw const FormatException('Invalid external logical state');
+    }
+    final logicalOn = <PedalCtrlInput, bool>{};
+    if (rawOn is Map<String, dynamic>) {
+      for (final entry in rawOn.entries) {
+        final matches = PedalCtrlInput.values.where(
+          (input) => input.toString() == entry.key,
+        );
+        if (matches.length != 1 || entry.value is! bool) {
+          throw const FormatException('Invalid external logical state');
+        }
+        logicalOn[matches.single] = entry.value as bool;
+      }
+    }
+    final jacks = <PedalCtrlJack, ExternalJackSetup>{};
+    for (final jack in PedalCtrlJack.values) {
+      final raw = json[jack.name];
+      if (!json.containsKey(jack.name)) continue;
+      if (raw is! Map<String, dynamic>) {
+        throw FormatException('Invalid external jack: ${jack.name}');
+      }
+      final setup = ExternalJackSetup.fromJson(raw);
+      if (setup.isEmpty) continue;
+      jacks[jack] = setup;
+    }
+    return ExternalPedalSetup(jacks: jacks, logicalOn: logicalOn);
+  }
+
+  /// The jacks that carry something; an absent one is
+  /// [ExternalJackSetup.empty].
+  final Map<PedalCtrlJack, ExternalJackSetup> jacks;
+
+  /// Confirmed logical toggle intent, separate from the physical contact.
+  /// Missing inputs are off. The map is persisted with this setup atomically.
+  final Map<PedalCtrlInput, bool> logicalOn;
+
+  /// What is on [jack].
+  ExternalJackSetup forJack(PedalCtrlJack jack) =>
+      jacks[jack] ?? ExternalJackSetup.empty;
+
+  /// The configured switch on [input], when its jack currently uses switches.
+  ExternalSwitchSetup? switchFor(PedalCtrlInput input) =>
+      forJack(input.jack).switchFor(input);
+
+  /// Returns a copy with [setup] on [jack]; an empty jack drops its entry, so
+  /// a jack set back to how it shipped encodes like one never touched.
+  ExternalPedalSetup withJack(PedalCtrlJack jack, ExternalJackSetup setup) {
+    final next = {...jacks};
+    if (setup.isEmpty) {
+      next.remove(jack);
+    } else {
+      next[jack] = setup;
+    }
+    return ExternalPedalSetup(jacks: next, logicalOn: logicalOn);
+  }
+
+  /// Returns a copy after one confirmed completed press changes logical state.
+  ExternalPedalSetup withLogicalOn(PedalCtrlInput input, {required bool on}) =>
+      ExternalPedalSetup(jacks: jacks, logicalOn: {...logicalOn, input: on});
+
+  /// Incorporates a UI configuration draft without overwriting newer intent.
+  ExternalPedalSetup withConfigurationFrom(ExternalPedalSetup draft) =>
+      ExternalPedalSetup(jacks: draft.jacks, logicalOn: logicalOn);
+
+  /// Compares assignments only; a logical transition is not a setup change.
+  bool sameConfigurationAs(ExternalPedalSetup other) {
+    for (final jack in PedalCtrlJack.values) {
+      if (forJack(jack) != other.forJack(jack)) return false;
+    }
+    return true;
+  }
+
+  /// Whether either jack carries anything.
+  bool get isEmpty => jacks.isEmpty && logicalOn.isEmpty;
+
+  /// Serializes both jacks in a fixed order.
+  Map<String, dynamic> toJson() => {
+    for (final jack in PedalCtrlJack.values)
+      if (jacks.containsKey(jack)) jack.name: jacks[jack]!.toJson(),
+    if (logicalOn.isNotEmpty)
+      'on': {
+        for (final input in PedalCtrlInput.values)
+          if (logicalOn.containsKey(input)) input.toString(): logicalOn[input],
+      },
+  };
+
+  @override
+  List<Object?> get props => [
+    // Ordered, not the map: two setups built in different insertion orders
+    // must compare equal, which a Map does not promise through Equatable.
+    for (final jack in PedalCtrlJack.values) jacks[jack],
+    for (final input in PedalCtrlInput.values) logicalOn[input],
+  ];
+
+  /// Fresh setup with no external assignments.
+  static const ExternalPedalSetup empty = ExternalPedalSetup._({}, {});
+}

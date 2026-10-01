@@ -30,6 +30,14 @@ sealed class ControlValueTarget extends Equatable {
   /// Const base constructor for the sealed subtypes.
   const ControlValueTarget();
 
+  /// Valid target coordinates, independent of whether the rig has that target.
+  bool get isStructurallyValid => switch (this) {
+    FxParamTarget(:final address, :final slotId, :final param) =>
+      address.isStructurallyValid && slotId.isNotEmpty && param >= 0,
+    TrackVolumeTarget(:final channel) => channel >= 0,
+    MasterGainTarget() => true,
+  };
+
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
   /// not a decodable one.
   ///
@@ -48,8 +56,8 @@ sealed class ControlValueTarget extends Equatable {
     if (ctl != null) {
       final index = raw['index'];
       return switch (ctl) {
-        'trackVolume' when index is num && index >= 0 => TrackVolumeTarget(
-          index.toInt(),
+        'trackVolume' when index is int && index >= 0 => TrackVolumeTarget(
+          index,
         ),
         'masterGain' => const MasterGainTarget(),
         _ => null,
@@ -60,11 +68,11 @@ sealed class ControlValueTarget extends Equatable {
     final slot = raw['slot'];
     final param = raw['param'];
     if (slot is! String || slot.isEmpty) return null;
-    if (param is! num || param < 0) return null;
+    if (param is! int || param < 0) return null;
     return FxParamTarget(
       address: address,
       slotId: slot,
-      param: param.toInt(),
+      param: param,
     );
   }
 

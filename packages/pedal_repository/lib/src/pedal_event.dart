@@ -62,8 +62,7 @@ final class CtrlChanged extends PedalEvent {
     required this.kind,
     required this.value,
     this.contact = PedalCtrlContact.tip,
-    int? raw,
-  }) : raw = raw ?? value;
+  });
 
   /// Which jack reported.
   final PedalCtrlJack jack;
@@ -74,13 +73,11 @@ final class CtrlChanged extends PedalEvent {
   /// What the board decided is plugged into it.
   final PedalCtrlKind kind;
 
-  /// `0`..`255`: a switch reports the ends, an expression pedal its travel
-  /// between the ends `PedalRepository` knows for it.
+  /// The exact raw `0..255` sample. Calibration belongs to the application.
   final int value;
 
-  /// What the board actually read, `0`..`255`, before any calibration. Equal
-  /// to [value] for a switch. What a calibration is learned from.
-  final int raw;
+  /// The physical sample, before application calibration.
+  int get raw => value;
 
   /// The control this event is from.
   PedalCtrlInput get input => PedalCtrlInput(jack, contact);

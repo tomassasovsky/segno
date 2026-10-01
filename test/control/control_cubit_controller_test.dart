@@ -86,6 +86,7 @@ void main() {
     setUp(() {
       mappingsWriteDebounce = Duration.zero;
       looper = _MockLooperRepository();
+      when(() => looper.sessionRevision).thenReturn(0);
       looperStates = StreamController<LooperState>.broadcast(sync: true);
       source = _FakeSource();
       simulated = SimulatedControllerSource();
@@ -206,149 +207,29 @@ void main() {
     Future<void> use(List<ControllerBinding> bindings) =>
         cubit.setControllerBindings(ControllerBindingSet(bindings));
 
-    group('console source lifecycle', () {
-      const ctrl = MappingTrigger(
-        kind: ControllerSourceKind.consoleSwitch,
-        id: 0,
-      );
-
-      void pressCtrl({required bool down}) => link.emit(
-        CtrlMessage(
-          jack: PedalCtrlJack.ctrl1,
-          kind: PedalCtrlKind.switchPedal,
-          value: down ? 255 : 0,
-        ),
-      );
-
-      void incompatible() => link.emit(
-        const HelloMessage(
-          protocolVersion: PedalLinkCodec.protocolVersion + 1,
-          firmwareMajor: 1,
-          firmwareMinor: 0,
-        ),
-      );
-
-      List<ControllerBinding> bindings({bool withMidi = false}) => [
+    test('quarantined console mappings do not dispatch or learn', () async {
+      await use([
         DiscreteBinding(
-          trigger: ctrl,
+          trigger: const MappingTrigger(
+            kind: ControllerSourceKind.consoleSwitch,
+            id: 0,
+          ),
           target: chainTarget.canonicalString(),
           behavior: BindingBehavior.momentary,
         ),
-        if (withMidi)
-          DiscreteBinding(
-            trigger: stomp,
-            target: chainTarget.canonicalString(),
-            behavior: BindingBehavior.momentary,
+      ]);
+      chainEnabled[0] = false;
+      link
+        ..hello()
+        ..emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.switchPedal,
+            value: 255,
           ),
-      ];
-
-      test('HELLO timeout releases a CTRL momentary', () async {
-        await use(bindings());
-        chainEnabled[0] = false;
-        final disconnected = pedal.statusChanges.firstWhere(
-          (status) => status == PedalLinkStatus.disconnected,
         );
-        link.hello();
-        pressCtrl(down: true);
-        await settle();
-        expect(chainEnabled[0], isTrue);
-
-        await disconnected;
-        await settle();
-        expect(chainEnabled[0], isFalse);
-      });
-
-      test('queued CTRL press cannot survive an incompatible hello', () async {
-        await use(bindings());
-        chainEnabled[0] = false;
-        link.hello();
-        await settle();
-        pressCtrl(down: true);
-        incompatible();
-        await settle();
-        expect(chainEnabled[0], isFalse);
-        link.hello();
-        pressCtrl(down: true);
-        await settle();
-        expect(chainEnabled[0], isTrue);
-      });
-
-      test(
-        'incompatible firmware releases CTRL and reconnect rearms it',
-        () async {
-          await use(bindings());
-          chainEnabled[0] = false;
-          link.hello();
-          pressCtrl(down: true);
-          await settle();
-          expect(chainEnabled[0], isTrue);
-
-          incompatible();
-          await settle();
-          expect(chainEnabled[0], isFalse);
-
-          link.hello();
-          pressCtrl(down: true);
-          await settle();
-          expect(
-            chainEnabled[0],
-            isTrue,
-            reason: 'no missing release strands the edge',
-          );
-        },
-      );
-
-      test('board loss preserves a MIDI holder on the same target', () async {
-        await use(bindings(withMidi: true));
-        chainEnabled[0] = false;
-        link.hello();
-        pressCtrl(down: true);
-        source.cc(21, 127);
-        await settle();
-        expect(chainEnabled[0], isTrue);
-
-        incompatible();
-        await settle();
-        expect(
-          chainEnabled[0],
-          isTrue,
-          reason: 'MIDI is still holding the target',
-        );
-        source.cc(21, 0);
-        await settle();
-        expect(
-          chainEnabled[0],
-          isFalse,
-          reason: 'the final holder restores the original state',
-        );
-      });
-
-      test('MIDI loss preserves a CTRL holder on the same target', () async {
-        await use(bindings(withMidi: true));
-        chainEnabled[0] = false;
-        link.hello();
-        pressCtrl(down: true);
-        source.cc(21, 127);
-        await settle();
-        expect(chainEnabled[0], isTrue);
-
-        connections.add(
-          const MidiConnection(status: MidiConnectionStatus.deviceGone),
-        );
-        await settle();
-        expect(
-          chainEnabled[0],
-          isTrue,
-          reason: 'CTRL is still holding the target',
-        );
-        pressCtrl(down: false);
-        await settle();
-        expect(
-          chainEnabled[0],
-          isFalse,
-          reason: 'the final holder restores the original state',
-        );
-      });
+      await settle();
+      expect(chainEnabled[0], isFalse);
     });
 
     group('continuous bindings', () {

@@ -6289,6 +6289,9 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
+  /// The current desired master gain, retained across engine restarts.
+  double get masterGain => _masterGain;
+
   /// Sets the global master output gain (`0..1`, clamped by the engine).
   /// Remembered and re-applied on every (re)start so it survives device changes
   /// and reconnects.

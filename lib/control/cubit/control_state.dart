@@ -17,6 +17,7 @@ class ControlState extends Equatable {
     this.pedalSetup = const PedalSetup(),
     this.pedalSetupUnavailable = false,
     this.pedalSetupPersistenceUncertain = false,
+    this.pedalSetupRuntimeUnsaved = false,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -47,8 +48,9 @@ class ControlState extends Equatable {
   /// Record / Play or track hold adds, and the Custom-controls map.
   ///
   /// Per-rig, persisted under `pedal.setup` and restored at boot.
-  /// Invalidation rule: only an explicit edit
-  /// ([ControlCubit.setPedalSetup]) writes it — engine truth never can.
+  /// Static assignment changes are explicit edits. Accepted external toggle
+  /// intent also updates this envelope after confirmed durable persistence;
+  /// it does not invalidate configured gestures.
   final PedalSetup pedalSetup;
 
   /// Explicit saved setup was malformed. Configurable pedal gestures stay
@@ -58,6 +60,9 @@ class ControlState extends Equatable {
   /// A failed Save could not restore its exact durable checkpoint. The live
   /// setup remains authoritative until a confirmed Save repairs storage.
   final bool pedalSetupPersistenceUncertain;
+
+  /// Accepted external toggle intent has not yet been durably saved.
+  final bool pedalSetupRuntimeUnsaved;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -182,6 +187,7 @@ class ControlState extends Equatable {
     PedalSetup? pedalSetup,
     bool? pedalSetupUnavailable,
     bool? pedalSetupPersistenceUncertain,
+    bool? pedalSetupRuntimeUnsaved,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -198,6 +204,8 @@ class ControlState extends Equatable {
     defaultMode: defaultMode ?? this.defaultMode,
     pedalSetup: pedalSetup ?? this.pedalSetup,
     pedalSetupUnavailable: pedalSetupUnavailable ?? this.pedalSetupUnavailable,
+    pedalSetupRuntimeUnsaved:
+        pedalSetupRuntimeUnsaved ?? this.pedalSetupRuntimeUnsaved,
     pedalSetupPersistenceUncertain:
         pedalSetupPersistenceUncertain ?? this.pedalSetupPersistenceUncertain,
     cursor: cursor ?? this.cursor,
@@ -223,6 +231,7 @@ class ControlState extends Equatable {
     pedalSetup,
     pedalSetupUnavailable,
     pedalSetupPersistenceUncertain,
+    pedalSetupRuntimeUnsaved,
     cursor,
     activeBank,
     excluded,

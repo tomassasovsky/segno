@@ -76,20 +76,24 @@ class FxAddress extends Equatable {
 
   /// Rebuilds an [FxAddress] from its [toJson] map. Unknown keys are ignored
   /// (additive-only contract); an unknown or missing `stage` yields `null`.
-  /// Wrong-TYPED fields never throw — a corrupt persisted binding string must
-  /// decode to `null`, not a TypeError, since parts 6/7 feed this parser
-  /// strings that crossed package boundaries and app restarts.
+  /// Explicit malformed coordinates decode to `null` without retargeting or
+  /// throwing, since bindings cross package boundaries and app restarts.
   static FxAddress? fromJson(Map<String, dynamic> json) {
     final rawStage = json['stage'];
     final stage = FxStage.fromName(rawStage is String ? rawStage : null);
     if (stage == null) return null;
     final index = json['index'];
     final lane = json['lane'];
-    return FxAddress(
+    if (json.containsKey('index') && (index is! int || index < 0) ||
+        json.containsKey('lane') && (lane is! int || lane < 0)) {
+      return null;
+    }
+    final address = FxAddress(
       stage: stage,
-      index: index is num ? index.toInt() : 0,
-      lane: lane is num ? lane.toInt() : null,
+      index: index is int ? index : 0,
+      lane: lane is int ? lane : null,
     );
+    return address.isStructurallyValid ? address : null;
   }
 
   /// Parses a [canonicalString] (or any JSON-object encoding of one) back to
@@ -115,6 +119,16 @@ class FxAddress extends Equatable {
   /// The lane within track [index] — only meaningful for [FxStage.loop];
   /// null for every other stage.
   final int? lane;
+
+  /// Whether these coordinates name a possible chain at this stage.
+  /// Availability in the current rig is a separate question.
+  bool get isStructurallyValid =>
+      index >= 0 &&
+      switch (stage) {
+        FxStage.loop => lane != null && lane! >= 0,
+        FxStage.allTracks => index == 0 && lane == null,
+        FxStage.input || FxStage.track || FxStage.output => lane == null,
+      };
 
   /// The canonical JSON map: fixed key order `stage`, `index`, `lane`; an
   /// absent [lane] is omitted, never null-valued.

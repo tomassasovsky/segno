@@ -41,3 +41,60 @@ Future<void> saveTrackFxChain({
     ),
   );
 }
+
+/// Persists an acknowledged complete FX owner, retaining lane provenance.
+Future<void> saveFxOwner({
+  required SettingsRepository settings,
+  required LooperRepository looper,
+  required FxAddress address,
+}) {
+  String encode(
+    List<TrackEffect> entries, {
+    required bool enabled,
+    FxChainMeta? meta,
+  }) => encodeFxChain(
+    FxChainEnvelope(
+      entries: entries,
+      chainEnabled: enabled,
+      meta: meta ?? const FxChainMeta(),
+    ),
+  );
+  return switch (address.stage) {
+    FxStage.input => settings.saveMonitorEffects(
+      address.index,
+      encode(
+        looper.monitorEffects(address.index),
+        enabled: looper.monitorChainEnabled(address.index),
+      ),
+    ),
+    FxStage.loop => settings.saveLaneEffects(
+      address.index,
+      address.lane!,
+      encode(
+        looper.laneEffects(address.index, address.lane!),
+        enabled: looper.laneChainEnabled(address.index, address.lane!),
+        meta: FxChainMeta(
+          inheritedFrom: looper.laneChainInheritedFrom(
+            address.index,
+            address.lane!,
+          ),
+        ),
+      ),
+    ),
+    FxStage.track => saveTrackFxChain(
+      settings: settings,
+      looper: looper,
+      channel: address.index,
+    ),
+    FxStage.allTracks => settings.saveAllTracksFxChain(
+      encode(looper.allTracksEffects, enabled: looper.allTracksChainEnabled),
+    ),
+    FxStage.output => settings.saveOutputFxChain(
+      address.index,
+      encode(
+        looper.outputEffects(address.index),
+        enabled: looper.outputChainEnabled(address.index),
+      ),
+    ),
+  };
+}

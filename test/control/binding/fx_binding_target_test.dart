@@ -5,6 +5,22 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 
 void main() {
+  test('structural target rule rejects aliases, retains unavailable slots', () {
+    const invalid = FxChainTarget(
+      FxAddress(stage: FxStage.allTracks, index: 2),
+    );
+    expect(invalid.isStructurallyValid, isFalse);
+    expect(FxBindingTarget.tryParse(invalid.canonicalString()), isNull);
+    const unavailable = FxSlotTarget(
+      address: FxAddress(stage: FxStage.loop, index: 999, lane: 5),
+      slotId: 'removed-slot',
+    );
+    expect(unavailable.isStructurallyValid, isTrue);
+    expect(
+      FxBindingTarget.tryParse(unavailable.canonicalString()),
+      unavailable,
+    );
+  });
   group('FxBindingTarget', () {
     const track = FxAddress(stage: FxStage.track, index: 5);
     const loop = FxAddress(stage: FxStage.loop, index: 1, lane: 2);
@@ -84,6 +100,12 @@ void main() {
         expect(
           FxBindingTarget.tryParse(
             jsonEncode({...track.toJson(), 'slot': ''}),
+          ),
+          isNull,
+        );
+        expect(
+          FxBindingTarget.tryParse(
+            jsonEncode({...track.toJson(), 'slot': null}),
           ),
           isNull,
         );

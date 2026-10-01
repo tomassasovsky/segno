@@ -1,79 +1,22 @@
 part of 'pedal_cubit.dart';
 
-/// The calibration storage operation that needs to be retried.
-enum PedalCalibrationError {
-  /// Saved calibrations could not be read.
-  load,
-
-  /// The new calibration could not be saved.
-  save,
-
-  /// The stored calibration could not be removed.
-  reset,
-}
-
-/// The pedal LINK state: whether the console board is on the other end of the
-/// link, the firmware it announced, and what its CTRL jacks report.
-/// LED behavior is projected by control; this state only mirrors its published
-/// frame so the on-screen hardware map and the board share one answer.
+/// Link status, raw physical readings and the canonical LED frame.
 class PedalState extends Equatable {
-  /// Creates a [PedalState].
   const PedalState({
     this.status = PedalLinkStatus.disconnected,
     this.firmwareVersion,
     this.frame,
     this.ctrl = const {},
-    this.calibrating,
-    this.calibrationSeen,
-    this.calibrated = const {},
-    this.calibrationBusy = false,
-    this.calibrationError,
   });
-
-  /// Whether the board is talking.
   final PedalLinkStatus status;
-
-  /// The firmware version the board announced (`major.minor`) while it is
-  /// talking, or `null` while it is not.
   final String? firmwareVersion;
-
-  /// The frame control last published, or null before its first projection.
   final PedalStateFrame? frame;
-
-  /// The last reading from each CTRL control that has reported, so a pedal
-  /// can be watched while it is bound. Absent until it sends something: the
-  /// board only reports a jack once it has decided what is plugged into it.
   final Map<PedalCtrlInput, PedalCtrlReading> ctrl;
-
-  /// The jack whose expression pedal is being calibrated, or `null`.
-  final PedalCtrlJack? calibrating;
-
-  /// The raw ends the pedal has reached so far in that calibration, or
-  /// `null` before it has moved.
-  final PedalCtrlCalibration? calibrationSeen;
-
-  /// The jacks with a calibration the user made, as opposed to ends learned
-  /// from the pedal.
-  final Set<PedalCtrlJack> calibrated;
-
-  /// A save or reset is waiting for storage; further edits must wait.
-  final bool calibrationBusy;
-
-  /// The failed storage operation, or `null` when none needs attention.
-  final PedalCalibrationError? calibrationError;
-
-  /// A copy with the given fields replaced. Nullable fields take a thunk so
-  /// that "set to null" and "leave alone" are different calls.
   PedalState copyWith({
     PedalLinkStatus? status,
     PedalStateFrame? frame,
     String? Function()? firmwareVersion,
     Map<PedalCtrlInput, PedalCtrlReading>? ctrl,
-    PedalCtrlJack? Function()? calibrating,
-    PedalCtrlCalibration? Function()? calibrationSeen,
-    Set<PedalCtrlJack>? calibrated,
-    bool? calibrationBusy,
-    PedalCalibrationError? Function()? calibrationError,
   }) => PedalState(
     status: status ?? this.status,
     frame: frame ?? this.frame,
@@ -81,46 +24,24 @@ class PedalState extends Equatable {
         ? firmwareVersion()
         : this.firmwareVersion,
     ctrl: ctrl ?? this.ctrl,
-    calibrating: calibrating != null ? calibrating() : this.calibrating,
-    calibrationSeen: calibrationSeen != null
-        ? calibrationSeen()
-        : this.calibrationSeen,
-    calibrated: calibrated ?? this.calibrated,
-    calibrationBusy: calibrationBusy ?? this.calibrationBusy,
-    calibrationError: calibrationError != null
-        ? calibrationError()
-        : this.calibrationError,
   );
-
   @override
-  List<Object?> get props => [
-    status,
-    firmwareVersion,
-    frame,
-    ctrl,
-    calibrating,
-    calibrationSeen,
-    calibrated,
-    calibrationBusy,
-    calibrationError,
-  ];
+  List<Object?> get props => [status, firmwareVersion, frame, ctrl];
 }
 
 /// What a CTRL control last reported.
 class PedalCtrlReading extends Equatable {
   /// Creates a [PedalCtrlReading].
-  const PedalCtrlReading({required this.kind, required this.value, int? raw})
-    : raw = raw ?? value;
+  const PedalCtrlReading({required this.kind, required this.value});
 
   /// What the board decided is plugged into the jack.
   final PedalCtrlKind kind;
 
-  /// `0`..`255`: a switch reports the ends, an expression pedal its travel
-  /// between the ends known for it.
+  /// The exact `0..255` physical sample; no calibration is applied here.
   final int value;
 
-  /// What the board read, before calibration. Equal to [value] for a switch.
-  final int raw;
+  /// What the board read, before application calibration.
+  int get raw => value;
 
   /// The travel as a percentage, for display.
   int get percent => (value * 100 / 255).round();
@@ -129,5 +50,5 @@ class PedalCtrlReading extends Equatable {
   int get rawPercent => (raw * 100 / 255).round();
 
   @override
-  List<Object?> get props => [kind, value, raw];
+  List<Object?> get props => [kind, value];
 }

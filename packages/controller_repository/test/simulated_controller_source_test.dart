@@ -39,8 +39,8 @@ void main() {
       addTearDown(realRepo.dispose);
       addTearDown(simRepo.dispose);
 
-      final realEvents = <ControllerBindingEvent>[];
-      final simEvents = <ControllerBindingEvent>[];
+      final realEvents = <ControllerDispatchEvent>[];
+      final simEvents = <ControllerDispatchEvent>[];
       realRepo.bindingEvents.listen(realEvents.add);
       simRepo.bindingEvents.listen(simEvents.add);
 
@@ -76,7 +76,7 @@ void main() {
           ]),
         );
         addTearDown(repo.dispose);
-        final events = <ControllerBindingEvent>[];
+        final events = <ControllerDispatchEvent>[];
         repo.bindingEvents.listen(events.add);
 
         simulated

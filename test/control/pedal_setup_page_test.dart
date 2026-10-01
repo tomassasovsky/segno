@@ -9,6 +9,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_map.dart';
@@ -689,6 +690,28 @@ void main() {
     expect(await settings.loadPedalSetup(), isNull);
   });
 
+  testWidgets('saving built-in edits preserves a newer External save', (
+    tester,
+  ) async {
+    await pump(tester);
+    await choose(tester, field: press, group: 'modes', choice: 'mode_fx');
+    final external = control.state.pedalSetup.external.withJack(
+      PedalCtrlJack.ctrl2,
+      const ExternalJackSetup(type: ExternalJackType.dualSwitch),
+    );
+    await control.setPedalSetup(
+      control.state.pedalSetup.copyWith(external: external),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(save));
+    await tester.pumpAndSettle();
+    expect(control.state.pedalSetup.external, external);
+    expect(
+      control.state.pedalSetup.modePress,
+      InteractionMode.fx,
+    );
+  });
+
   testWidgets('startup waits for the saved setup before the first edit', (
     tester,
   ) async {
@@ -771,6 +794,29 @@ void main() {
       PedalSetup.decode((await settings.loadPedalSetup())!).modePress,
       InteractionMode.mute,
     );
+  });
+
+  testWidgets('runtime-unsaved intent stays visible after Cancel and retries', (
+    tester,
+  ) async {
+    await pump(tester);
+    await choose(tester, field: press, group: 'modes', choice: 'mode_fx');
+    control.emit(control.state.copyWith(pedalSetupRuntimeUnsaved: true));
+    await tester.pump();
+    await tester.tap(find.byKey(cancel));
+    await tester.pumpAndSettle();
+    expect(control.state.pedalSetupRuntimeUnsaved, isTrue);
+    expect(find.byKey(const Key('pedal_setup_save_failed')), findsOneWidget);
+    expect(find.byKey(const Key('pedal_setup_saved')), findsNothing);
+    expect(
+      tester.widget<LoopOutlinedButton>(find.byKey(save)).onTap,
+      isNotNull,
+    );
+    await tester.tap(find.byKey(save));
+    await tester.pumpAndSettle();
+    expect(control.state.pedalSetupRuntimeUnsaved, isFalse);
+    expect(find.byKey(const Key('pedal_setup_save_failed')), findsNothing);
+    expect(find.byKey(const Key('pedal_setup_saved')), findsOneWidget);
   });
 
   testWidgets(
@@ -929,9 +975,14 @@ void main() {
           0,
         );
         expect(control.state.activeBank, 0);
-        for (final section in ['tracks', 'custom', 'leds']) {
+        for (final key in [
+          'pedal_setup_context_tracks',
+          'pedal_setup_context_custom',
+          'pedal_setup_context_leds',
+          'pedal_setup_external',
+        ]) {
           final choice = tester.getRect(
-            find.byKey(Key('pedal_setup_context_$section')),
+            find.byKey(Key(key)),
           );
           for (final button in PedalButton.values) {
             final cap = tester.getRect(

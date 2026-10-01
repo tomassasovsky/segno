@@ -8,7 +8,23 @@ import 'package:equatable/equatable.dart';
 ///
 /// `ControlCubit` is the only subscriber: the single dispatch point where a
 /// discrete CC means exactly what the same binding on a footswitch means.
-sealed class ControllerBindingEvent extends Equatable {
+sealed class ControllerDispatchEvent extends Equatable {
+  const ControllerDispatchEvent();
+}
+
+/// One exact console sample or lifetime boundary on the dispatch stream.
+final class ControllerConsoleEvent extends ControllerDispatchEvent {
+  /// Carries a raw console event without interpreting configuration.
+  const ControllerConsoleEvent(this.input);
+
+  /// The physical sample or lifetime boundary.
+  final ControllerSourceEvent input;
+  @override
+  List<Object?> get props => [input];
+}
+
+/// A resolved MIDI mapping, with a still-opaque application target.
+sealed class ControllerBindingEvent extends ControllerDispatchEvent {
   /// Const base constructor for the sealed subtypes.
   const ControllerBindingEvent({required this.target});
 

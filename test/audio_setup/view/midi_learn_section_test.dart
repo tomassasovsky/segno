@@ -333,12 +333,9 @@ void main() {
       expect(find.text(l10n.midiLearnLearn), findsNothing);
     });
 
-    testWidgets('a CTRL binding stays live with no MIDI connected', (
+    testWidgets('a saved CTRL row is unavailable and removable', (
       tester,
     ) async {
-      // The complaint this fixes: a pedal in a CTRL jack is not a MIDI
-      // device, so a rig driven entirely from the console must not be told
-      // its mappings are idle, and its rows must not read as dead.
       final link = FakePedalLink();
       await pump(
         tester,
@@ -359,8 +356,13 @@ void main() {
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
 
       expect(find.byKey(const Key('midiLearn_deviceMissing')), findsNothing);
-      expect(find.text(l10n.midiLearnLearn), findsOneWidget);
+      expect(
+        find.text(l10n.controllerConsoleMappingsUnavailable),
+        findsOneWidget,
+      );
+      expect(find.text(l10n.midiLearnLearn), findsNothing);
       expect(find.text(l10n.midiLearnRelearn), findsNothing);
+      expect(find.text(l10n.midiLearnClear), findsOneWidget);
       expect(find.textContaining('CTRL 2'), findsOneWidget);
 
       // Let the link's hello watchdog fire: it outlives the widget tree

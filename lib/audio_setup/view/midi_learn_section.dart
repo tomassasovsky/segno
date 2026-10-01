@@ -5,14 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
-import 'package:pedal_repository/pedal_repository.dart' show PedalLinkStatus;
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/signal_graph/signal_knob.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
-import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -45,14 +43,8 @@ class MidiLearnSection extends StatelessWidget {
     final midiConnected =
         context.watch<MidiSetupCubit>().state.connection.status ==
         MidiConnectionStatus.connected;
-    final linkConnected =
-        context.watch<PedalCubit>().state.status == PedalLinkStatus.connected;
-    bool liveFor(MappingTrigger trigger) => switch (trigger.kind) {
-      ControllerSourceKind.midiNote ||
-      ControllerSourceKind.midiCc => midiConnected,
-      ControllerSourceKind.consoleSwitch ||
-      ControllerSourceKind.consoleExpression => linkConnected,
-    };
+    bool liveFor(MappingTrigger trigger) =>
+        !trigger.kind.isConsoleCtrl && midiConnected;
     final anyMidi = bindings.bindings.any(
       (binding) => !binding.trigger.kind.isConsoleCtrl,
     );
@@ -196,6 +188,22 @@ class _MappingRow extends StatelessWidget {
     );
     final label = resolved ?? l10n.midiLearnStale;
     final control = controlLabel(l10n, binding.trigger);
+    if (binding.trigger.kind.isConsoleCtrl) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppText('$control — $label'),
+          _Notice(
+            text: l10n.controllerConsoleMappingsUnavailable,
+            warning: true,
+          ),
+          TextButton(
+            onPressed: () => unawaited(cubit.removeControllerBinding(binding)),
+            child: AppText(l10n.midiLearnClear),
+          ),
+        ],
+      );
+    }
 
     return Semantics(
       label: l10n.a11yMidiLearnRow(control, label),

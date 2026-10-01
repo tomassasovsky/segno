@@ -604,7 +604,6 @@ class _AppState extends State<App> {
             lazy: false,
             create: (context) => PedalCubit(
               pedal: context.read<PedalRepository>(),
-              settings: context.read<SettingsRepository>(),
             ),
           ),
           // Eager (not lazy): the recovery cubit must be watching at boot for a

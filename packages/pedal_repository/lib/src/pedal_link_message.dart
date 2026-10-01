@@ -68,7 +68,7 @@ final class CtrlMessage extends PedalLinkMessage {
   final PedalCtrlKind kind;
 
   /// `0`..`255`: a switch sends the ends, an expression pedal its RAW
-  /// position — uncalibrated; see [PedalCtrlCalibration].
+  /// position; calibration belongs to the application setup.
   final int value;
 
   @override

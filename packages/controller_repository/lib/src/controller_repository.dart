@@ -57,13 +57,13 @@ class ControllerRepository {
   }
 
   final List<ControllerSource> _sources;
-  final List<StreamSubscription<RawControllerInput>> _subscriptions = [];
+  final List<StreamSubscription<ControllerSourceEvent>> _subscriptions = [];
   final StreamController<ControllerEvent> _events =
       StreamController<ControllerEvent>.broadcast();
   final StreamController<ControllerMapping> _mappings =
       StreamController<ControllerMapping>.broadcast();
-  final StreamController<ControllerBindingEvent> _bindingEvents =
-      StreamController<ControllerBindingEvent>.broadcast();
+  final StreamController<ControllerDispatchEvent> _bindingEvents =
+      StreamController<ControllerDispatchEvent>.broadcast();
 
   /// How long a continuous binding takes to ramp to a newly received value.
   final Duration smoothing;
@@ -95,7 +95,7 @@ class ControllerRepository {
 
   /// Resolved binding events — continuous values and discrete edges.
   /// Suppressed while learning.
-  Stream<ControllerBindingEvent> get bindingEvents => _bindingEvents.stream;
+  Stream<ControllerDispatchEvent> get bindingEvents => _bindingEvents.stream;
 
   /// Emits the action mapping whenever it changes (binding / replacement).
   Stream<ControllerMapping> get mappingChanges => _mappings.stream;
@@ -109,7 +109,20 @@ class ControllerRepository {
   /// Whether a MIDI-learn capture is in progress.
   bool get isLearning => _learnCompleter != null;
 
-  void _onInput(RawControllerInput input) {
+  void _onInput(ControllerSourceEvent event) {
+    if (event case ControllerSourceUnavailable(:final trigger)) {
+      if (trigger.kind.isConsoleCtrl) {
+        _bindingEvents.add(ControllerConsoleEvent(event));
+      }
+      return;
+    }
+    final input = event as RawControllerInput;
+    if (input.kind.isConsoleCtrl) {
+      // Console configuration belongs exclusively to PedalSetup. It cannot
+      // also run a generic mapping or be captured by MIDI Learn.
+      _bindingEvents.add(ControllerConsoleEvent(input));
+      return;
+    }
     final learn = _learnCompleter;
     if (learn != null) {
       // A CC is captured at ANY value: an expression pedal's rest position is
@@ -122,8 +135,8 @@ class ControllerRepository {
       }
       return;
     }
-    final event = _mapping.resolve(input);
-    if (event != null) _events.add(event);
+    final mapped = _mapping.resolve(input);
+    if (mapped != null) _events.add(mapped);
     _dispatchBindings(input);
   }
 

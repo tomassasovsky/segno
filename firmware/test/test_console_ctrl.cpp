@@ -111,10 +111,51 @@ static void testKnownSwitchEdgesRemainPrompt() {
 }
 
 
+static void testPresenceDetachHasNoSyntheticRelease() {
+  bootAt(CTRL_MAX);
+  fake_arduino::analog[CTRL_PIN[0]] = 0;
+  fake_arduino::digital[CTRL_RING_PIN[0]] = LOW;
+  advance(20);
+  CHECK(g_ctrlSwitchClosed[0][PEDAL_CTRL_TIP] && g_ctrlSwitchClosed[0][PEDAL_CTRL_RING],
+        "both contacts must be held before detach");
+  fake_arduino::sent.clear();
+  fake_arduino::analog[CTRL_PIN[0]] = CTRL_MAX;
+  fake_arduino::digital[CTRL_RING_PIN[0]] = HIGH;
+  fake_arduino::digital[CTRL_PRESENT_PIN[0]] = HIGH;
+  advance(40);
+  CHECK(readings().empty(), "raw absence must suppress open edges during presence debounce");
+  advance(30);
+  const auto events = readings();
+  CHECK(events.size() == 1 && events[0].kind == PEDAL_CTRL_KIND_NONE,
+        "detach sends one lifetime boundary, never SWITCH0");
+  CHECK(!g_ctrlSwitchClosed[0][PEDAL_CTRL_TIP] && !g_ctrlSwitchClosed[0][PEDAL_CTRL_RING],
+        "detach resets both contacts internally");
+}
+
+static void testReclassificationHasNoSyntheticRelease(bool ringOnly) {
+  bootAt(CTRL_MAX);
+  if (!ringOnly) fake_arduino::analog[CTRL_PIN[0]] = 0;
+  fake_arduino::digital[CTRL_RING_PIN[0]] = LOW;
+  advance(20);
+  fake_arduino::sent.clear();
+  fake_arduino::analog[CTRL_PIN[0]] = 2048;
+  fake_arduino::digital[CTRL_RING_PIN[0]] = HIGH;
+  advance(100);
+  CHECK(readings().empty(), "midscale candidate cannot open a known switch");
+  advance(500);
+  const auto events = readings();
+  CHECK(events.size() == 2, "reclassification sends lifetime boundary and expression only");
+  CHECK(events[0].kind == PEDAL_CTRL_KIND_NONE && events[1].kind == PEDAL_CTRL_KIND_EXPRESSION,
+        "NONE must precede expression even for ring-only prior switch");
+}
+
 int main() {
   testUnplugHoldsTheLastValue();
   testOrdinaryToeTravelStillReportsFullScale();
   testMovementCancelsPendingDetach();
   testKnownSwitchEdgesRemainPrompt();
+  testPresenceDetachHasNoSyntheticRelease();
+  testReclassificationHasNoSyntheticRelease(false);
+  testReclassificationHasNoSyntheticRelease(true);
   std::puts("Console sketch CTRL tests: ALL PASSED");
 }

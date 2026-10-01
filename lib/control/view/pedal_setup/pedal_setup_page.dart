@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
@@ -173,6 +174,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                     ),
                     if (control.state.pedalSetupUnavailable ||
                         control.state.pedalSetupPersistenceUncertain ||
+                        control.state.pedalSetupRuntimeUnsaved ||
                         _saveFailed)
                       Positioned(
                         left: _left,
@@ -186,7 +188,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                                 l10n.pedalSetupUnavailable,
                               if (control.state.pedalSetupPersistenceUncertain)
                                 l10n.pedalSetupSaveUncertain
-                              else if (_saveFailed)
+                              else if (_saveFailed ||
+                                  control.state.pedalSetupRuntimeUnsaved)
                                 l10n.pedalSetupSaveFailed,
                             ].join('\n'),
                             key: Key(
@@ -240,11 +243,13 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     final dirty = _draft != null;
     final uncertain = control.state.pedalSetupPersistenceUncertain;
     final unavailable = control.state.pedalSetupUnavailable;
-    final canSave = (dirty || uncertain || unavailable) && !_saving;
+    final runtimeUnsaved = control.state.pedalSetupRuntimeUnsaved;
+    final canSave =
+        (dirty || uncertain || unavailable || runtimeUnsaved) && !_saving;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_saved && !dirty && !uncertain && !unavailable)
+        if (_saved && !dirty && !uncertain && !unavailable && !runtimeUnsaved)
           Padding(
             padding: const EdgeInsets.only(right: 24),
             child: AppText(
@@ -277,6 +282,13 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             const SizedBox(width: 16),
           ],
         ],
+        LoopOutlinedButton(
+          key: const Key('pedal_setup_external'),
+          width: 268,
+          label: l10n.externalPedalsTitle,
+          onTap: () => unawaited(openExternalPedals()),
+        ),
+        const SizedBox(width: 24),
         Opacity(
           opacity: dirty && !_saving ? 1 : surface.disabledOpacity,
           child: LoopOutlinedButton(
@@ -315,7 +327,11 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
       _saveFailed = false;
     });
     try {
-      await control.setPedalSetup(setup);
+      // External has its own draft and may have been saved while this page
+      // remained underneath it. Commit only the fields edited here.
+      await control.setPedalSetup(
+        setup.copyWith(external: control.state.pedalSetup.external),
+      );
       if (!mounted) return;
       setState(() {
         _draft = null;

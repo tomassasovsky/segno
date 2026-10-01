@@ -67,18 +67,53 @@ void main() {
       expect(FxAddress.tryParse('[1,2]'), isNull);
     });
 
-    test('wrong-TYPED fields never throw — corrupt persisted bindings decode '
-        'to null or safe defaults, not a TypeError', () {
-      // The corrupt shapes parts 6/7 can feed across package boundaries.
-      expect(FxAddress.tryParse('{"stage":3,"index":0}'), isNull);
-      expect(FxAddress.fromJson(const {'stage': 3}), isNull);
+    test(
+      'wrong-typed and fractional coordinates reject without retargeting',
+      () {
+        // The corrupt shapes parts 6/7 can feed across package boundaries.
+        expect(FxAddress.tryParse('{"stage":3,"index":0}'), isNull);
+        expect(FxAddress.fromJson(const {'stage': 3}), isNull);
+        expect(
+          FxAddress.fromJson(const {'stage': 'track', 'index': 'four'}),
+          isNull,
+        );
+        expect(
+          FxAddress.fromJson(const {'stage': 'loop', 'index': 1, 'lane': 'x'}),
+          isNull,
+        );
+        expect(
+          FxAddress.fromJson(const {'stage': 'track', 'index': 0.5}),
+          isNull,
+        );
+        expect(
+          FxAddress.fromJson(const {'stage': 'loop', 'index': 1, 'lane': 0.5}),
+          isNull,
+        );
+      },
+    );
+
+    test('stage coordinates reject aliases but allow absent rig targets', () {
+      for (final raw in [
+        {'stage': 'loop', 'index': 1},
+        {'stage': 'input', 'index': 1, 'lane': 0},
+        {'stage': 'track', 'index': 1, 'lane': 0},
+        {'stage': 'allTracks', 'index': 1},
+        {'stage': 'allTracks', 'index': 0, 'lane': 0},
+        {'stage': 'output', 'index': 1, 'lane': 0},
+      ]) {
+        expect(FxAddress.fromJson(raw), isNull);
+      }
       expect(
-        FxAddress.fromJson(const {'stage': 'track', 'index': 'four'}),
-        const FxAddress(stage: FxStage.track),
+        FxAddress.fromJson(const {'stage': 'loop', 'index': 99, 'lane': 7}),
+        const FxAddress(stage: FxStage.loop, index: 99, lane: 7),
       );
       expect(
-        FxAddress.fromJson(const {'stage': 'loop', 'index': 1, 'lane': 'x'}),
-        const FxAddress(stage: FxStage.loop, index: 1),
+        FxAddress.fromJson(const {'stage': 'track', 'index': 999}),
+        const FxAddress(stage: FxStage.track, index: 999),
+      );
+      expect(
+        const FxAddress(stage: FxStage.loop).isStructurallyValid,
+        isFalse,
       );
     });
 
