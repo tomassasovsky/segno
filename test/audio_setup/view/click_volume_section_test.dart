@@ -5,8 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
-import 'package:segno/audio_setup/view/click_output_section.dart';
-import 'package:segno/l10n/l10n.dart';
+import 'package:segno/audio_setup/view/click_volume_section.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -21,20 +20,6 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 const _fourOut = AudioSetupState(
   status: AudioSetupStatus.running,
   engineStatus: EngineStatus(isConnected: true, outputChannels: 4),
-);
-
-/// A pinned 20-out Scarlett the engine has NOT opened yet.
-const _pinnedScarlett = AudioSetupState(
-  playbackDeviceId: 'scarlett-out',
-  devices: [
-    AudioDevice(
-      id: 'scarlett-out',
-      name: 'Scarlett 18i20',
-      isDefault: false,
-      isInput: false,
-      outputChannels: 20,
-    ),
-  ],
 );
 
 void main() {
@@ -72,89 +57,20 @@ void main() {
         BlocProvider<TempoCubit>.value(value: tempo),
       ],
       child: const Material(
-        child: SingleChildScrollView(child: ClickOutputSection()),
+        child: SingleChildScrollView(child: ClickVolumeSection()),
       ),
     ),
   );
 
-  Finder chip(int index) => find.byKey(Key('audioSettings_clickOutput_$index'));
-
-  group('clickOutputCount', () {
-    test('takes the pinned device over the engine and stereo last', () {
-      expect(clickOutputCount(_pinnedScarlett), 20);
-      expect(clickOutputCount(_fourOut), 4);
-      // A stopped engine with nothing pinned reports no outputs, and a click
-      // with nowhere to go is not a useful thing to draw.
-      expect(clickOutputCount(const AudioSetupState()), 2);
-    });
-  });
-
-  group('clickOutputSummary', () {
-    testWidgets('names a few outputs, counts many, and has words for the '
-        'edges', (tester) async {
+  group('ClickVolumeSection', () {
+    testWidgets('says nothing about where the click goes: Audio routing owns '
+        'that now', (tester) async {
       seed(_fourOut);
       await pump(tester);
-      final l10n = AppLocalizations.of(
-        tester.element(find.byType(ClickOutputSection)),
-      );
-
-      expect(clickOutputSummary(l10n, mask: 0, outputs: 4), 'nowhere');
-      expect(clickOutputSummary(l10n, mask: 0xF, outputs: 4), 'all outputs');
       expect(
-        clickOutputSummary(l10n, mask: 0x5, outputs: 4),
-        'Out 1 · Out 3',
+        find.byKey(const Key('audioSettings_clickOutput_0')),
+        findsNothing,
       );
-      expect(clickOutputSummary(l10n, mask: 0xF, outputs: 6), '4 outputs');
-      // Bits above the rig's own outputs do not make it "all".
-      expect(
-        clickOutputSummary(l10n, mask: 0x13, outputs: 4),
-        'Out 1 · Out 2',
-      );
-    });
-  });
-
-  group('ClickOutputSection', () {
-    testWidgets('draws one chip per hardware output', (tester) async {
-      seed(_fourOut);
-      await pump(tester);
-
-      for (var i = 0; i < 4; i++) {
-        expect(chip(i), findsOneWidget);
-      }
-      expect(chip(4), findsNothing);
-    });
-
-    testWidgets('a pinned device sets the width before the engine opens it', (
-      tester,
-    ) async {
-      seed(_pinnedScarlett);
-      await pump(tester);
-
-      expect(chip(19), findsOneWidget);
-      expect(chip(20), findsNothing);
-    });
-
-    testWidgets('tapping a chip toggles that bit through the cubit', (
-      tester,
-    ) async {
-      seed(_fourOut);
-      await pump(tester);
-
-      await tester.tap(chip(0));
-      await tester.pumpAndSettle();
-      expect(tempo.state.clickOutputMask, 0x1);
-      verify(() => repository.setClickOutput(0x1)).called(1);
-
-      await tester.tap(chip(2));
-      await tester.pumpAndSettle();
-      expect(tempo.state.clickOutputMask, 0x5);
-      verify(() => repository.setClickOutput(0x5)).called(1);
-
-      // A second tap clears the bit rather than replacing the answer.
-      await tester.tap(chip(0));
-      await tester.pumpAndSettle();
-      expect(tempo.state.clickOutputMask, 0x4);
-      verify(() => repository.setClickOutput(0x4)).called(1);
     });
 
     testWidgets('the slider spans the engine gain ceiling and writes through', (

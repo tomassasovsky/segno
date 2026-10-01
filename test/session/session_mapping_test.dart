@@ -164,6 +164,7 @@ void main() {
       when(() => looper.trackOneShotOverrides).thenReturn(const {});
       when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
       when(() => looper.state).thenReturn(const LooperState());
+      when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
       expect(settingsFromLooper(looper).loopBars, 7);
     });
 

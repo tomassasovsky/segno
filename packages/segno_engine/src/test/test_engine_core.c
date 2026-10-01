@@ -432,6 +432,14 @@ static void drain(le_engine* e) {
   process_const(e, 0.0f, 0, out); /* frames=0 just drains the ring */
 }
 
+/* Setup helpers explicitly publish structural commands before later import
+ * or capture steps depend on their lane count. Raw admission has separate tests. */
+static int32_t set_lane_count_and_publish(le_engine* e, int32_t ch, int32_t n) {
+  const int32_t rc = le_engine_set_lane_count(e, ch, n);
+  if (rc == LE_OK) drain(e);
+  return rc;
+}
+
 /* Processes silent blocks until no track has an overdub layer in flight — the
  * punch-out fade tail must fully retire before undo/redo (a tap during it only
  * queues) or an export (it would copy a mid-fade buffer). Bounded. */
@@ -14027,7 +14035,7 @@ static void test_track_meter_sums_all_lanes(void) {
   printf("test_track_meter_sums_all_lanes\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 200000);
-  le_engine_set_lane_count(e, 0, 2);
+  set_lane_count_and_publish(e, 0, 2);
   le_engine_set_lane_input(e, 0, 0, 0);
   le_engine_set_lane_input(e, 0, 1, 1);
   le_engine_set_lane_output(e, 0, 0, 0x1);
@@ -14076,7 +14084,7 @@ static void test_multi_lane_long_loop_dub_roundtrip(void) {
   printf("test_multi_lane_long_loop_dub_roundtrip\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 200000);
-  le_engine_set_lane_count(e, 0, 2);
+  set_lane_count_and_publish(e, 0, 2);
   le_engine_set_lane_input(e, 0, 0, 0);
   le_engine_set_lane_input(e, 0, 1, 1);
   le_engine_set_lane_output(e, 0, 0, 0x1);
@@ -14973,7 +14981,7 @@ static void test_export_track_lane_multi_lane(void) {
   printf("test_export_track_lane_multi_lane\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000);
-  le_engine_set_lane_count(e, 0, 2);
+  set_lane_count_and_publish(e, 0, 2);
   le_engine_set_lane_input(e, 0, 0, 0); /* lane 0 records input 0 */
   le_engine_set_lane_input(e, 0, 1, 1); /* lane 1 records input 1 */
   drain(e);
@@ -15396,7 +15404,7 @@ static void test_layer_reconstruct_two_redo(void) {
 static le_engine* make_two_lane_engine(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000);
-  le_engine_set_lane_count(e, 0, 2);
+  set_lane_count_and_publish(e, 0, 2);
   le_engine_set_lane_input(e, 0, 0, 0);  /* lane 0 records input 0 */
   le_engine_set_lane_input(e, 0, 1, 1);  /* lane 1 records input 1 */
   le_engine_set_lane_output(e, 0, 0, 0x1);
@@ -15879,6 +15887,196 @@ static void test_mix_transaction_acceptance(void) {
   drain(e);
   le_engine_get_snapshot(e, &s); CHECK(s.mix_revision == 7);
   le_engine_get_lane(e, 0, 0, &lane); CHECK(lane.volume == .25f);
+  le_engine_destroy(e);
+}
+
+/* Count admission is not activation. A callback owns the entire structural
+ * batch and its final block acknowledgement releases buffer preparation. */
+static void test_atomic_routing_admission(void) {
+  printf("test_atomic_routing_admission\n");
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  CHECK(le_lanes_active(&e->tracks[0]) == 1);
+  CHECK(le_engine_set_lane_count(e, 1, 2) == LE_ERR_INVALID);
+  float pcm[4] = {.125f, .25f, .375f, .5f};
+  CHECK(le_engine_import_track_lane(e, 0, 1, pcm, 4) == LE_ERR_INVALID);
+  drain(e);
+  CHECK(le_lanes_active(&e->tracks[0]) == 2);
+  CHECK(le_engine_set_lane_count(e, 1, 2) == LE_OK);
+  drain(e);
+  CHECK(le_lanes_active(&e->tracks[1]) == 2);
+  for (int i = 0; i < LE_RING_CAPACITY - 1; ++i)
+    CHECK(le_engine_set_master_gain(e, 1) == LE_OK);
+  CHECK(le_engine_set_lane_count(e, 0, 3) != LE_OK);
+  CHECK(le_lanes_active(&e->tracks[0]) == 2);
+  drain(e);
+  CHECK(le_engine_set_lane_count(e, 0, 3) == LE_OK);
+  drain(e);
+  CHECK(le_lanes_active(&e->tracks[0]) == 3);
+  le_mix_settings mix = {.revision = 51, .routing_input_mask = 3,
+    .routing_output_mask = 0xff, .lane_count_mask = 1};
+  mix.lane_count[0] = 4;
+  mix.lane_input[0] = 0; mix.lane_input[1] = -1;
+  for (int l = 0; l < LE_MAX_LANES; ++l) mix.lane_output[l] = 0x80000001u;
+  CHECK(le_engine_set_mix(e, &mix) == LE_OK);
+  CHECK(le_lanes_active(&e->tracks[0]) == 3);
+  drain(e);
+  CHECK(le_lanes_active(&e->tracks[0]) == 4);
+  CHECK(atomic_load_explicit(&e->a_mix_revision, memory_order_acquire) == 51);
+  for (int l = 0; l < LE_MAX_LANES; ++l)
+    CHECK(atomic_load_explicit(&e->tracks[0].lanes[l].a_output_mask,
+                              memory_order_acquire) == 0x80000001u);
+  CHECK(load_i32(&e->tracks[0].lanes[1].a_input_channel) == -1);
+  /* A preceding arm reaches the callback after control preflight. All fields,
+   * including output routes and revision, must refuse together. */
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  mix.revision = 52; mix.lane_count_mask = 0;
+  mix.lane_input[0] = 1;
+  mix.lane_output[0] = 2;
+  CHECK(le_engine_set_mix(e, &mix) == LE_OK);
+  drain(e);
+  CHECK(atomic_load_explicit(&e->a_mix_revision, memory_order_acquire) == 51);
+  CHECK(load_i32(&e->tracks[0].lanes[0].a_input_channel) == 0);
+  CHECK(atomic_load_explicit(&e->tracks[0].lanes[0].a_output_mask,
+                            memory_order_acquire) == 0x80000001u);
+  CHECK(le_engine_cut_sound(e) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_mix(e, &mix) == LE_OK);
+  drain(e);
+  CHECK(atomic_load_explicit(&e->a_mix_revision, memory_order_acquire) == 52);
+  le_engine_destroy(e);
+}
+
+/* Independent rec/dub oracle: the newly selected second input must survive
+ * the first Undo as 128 samples of .3, rather than disappear as an empty lane. */
+static void test_structural_record_fence_preserves_undo(void) {
+  printf("test_structural_record_fence_preserves_undo\n");
+  for (int image_aware = 0; image_aware <= 1; ++image_aware) {
+    for (int compound = 0; compound <= 1; ++compound) {
+      le_engine* e = le_engine_create();
+      CHECK(le_engine_configure(e, 1000, 2, 2, 4096) == LE_OK);
+      CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
+      drain(e);
+      le_mix_settings mix = {.revision = 61, .lane_count_mask = 1};
+      mix.lane_count[0] = 2;
+      CHECK((compound ? le_engine_set_mix(e, &mix)
+                      : le_engine_set_lane_count(e, 0, 2)) == LE_OK);
+      le_record_image image = {.revision = 62, .lane_mask = 3};
+      image.gain[0] = image.gain[1] = 1;
+      CHECK((image_aware ? le_engine_record_with_image(e, 0, &image)
+                         : le_engine_record(e, 0)) == LE_ERR_INVALID);
+      CHECK(e->tracks[0].outstanding_count == 0);
+      CHECK(e->tracks[0].undo_count == 0);
+      CHECK(e->tracks[0].redo_count == 0);
+      CHECK(atomic_load_explicit(&e->tracks[0].a_image_revision,
+                                 memory_order_acquire) == 0);
+      drain(e);
+      CHECK(le_lanes_active(&e->tracks[0]) == 2);
+      CHECK((image_aware ? le_engine_record_with_image(e, 0, &image)
+                         : le_engine_record(e, 0)) == LE_OK);
+      float in[256], silence[256] = {0}, out[256], saved[128];
+      for (int f = 0; f < 128; ++f) {
+        in[f * 2] = .1f; in[f * 2 + 1] = .3f;
+      }
+      le_engine_process(e, out, in, 128);
+      /* Growth on another track cannot block finishing an active recording. */
+      CHECK(le_engine_set_lane_count(e, 1, 2) == LE_OK);
+      CHECK((image_aware ? le_engine_record_with_image(e, 0, &image)
+                         : le_engine_record(e, 0)) == LE_OK);
+      le_engine_process(e, out, silence, 128);
+      CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_OVERDUBBING);
+      CHECK(le_engine_undo(e, 0) == LE_OK);
+      for (int step = 0; step < 6; ++step) {
+        le_engine_process(e, out, silence, 64);
+        le_engine_drain_events(e);
+      }
+      CHECK(le_engine_export_track_lane(e, 0, 1, saved, 128) == 128);
+      for (int f = 32; f < 96; ++f) CHECK(fabsf(saved[f] - .3f) < 1e-6f);
+      CHECK(le_engine_export_track_lane(e, 0, 0, saved, 128) == 128);
+      for (int f = 32; f < 96; ++f) CHECK(fabsf(saved[f] - .1f) < 1e-6f);
+      /* Starting a later overdub is fenced too; an active punch-out is not. */
+      CHECK(le_engine_set_lane_count(e, 1, 3) == LE_OK);
+      CHECK((image_aware ? le_engine_record_with_image(e, 0, &image)
+                         : le_engine_record(e, 0)) == LE_ERR_INVALID);
+      drain(e);
+      CHECK((image_aware ? le_engine_record_with_image(e, 0, &image)
+                         : le_engine_record(e, 0)) == LE_OK);
+      le_engine_process(e, out, silence, 32);
+      CHECK(le_engine_set_lane_count(e, 1, 4) == LE_OK);
+      CHECK((image_aware ? le_engine_record_with_image(e, 0, &image)
+                         : le_engine_record(e, 0)) == LE_OK);
+      le_engine_process(e, out, silence, 32);
+      CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+      le_engine_destroy(e);
+    }
+  }
+}
+
+static void test_structural_record_fence_keeps_cancellation(void) {
+  printf("test_structural_record_fence_keeps_cancellation\n");
+  for (int image_aware = 0; image_aware <= 1; ++image_aware) {
+    for (int trigger = 0; trigger < 3; ++trigger) {
+      le_engine* e = le_engine_create();
+      CHECK(le_engine_configure(e, 1000, 1, 1, 4096) == LE_OK);
+      le_record_image image = {.revision = 71, .lane_mask = 1};
+      image.gain[0] = 1;
+      int ch = 0;
+      if (trigger == 0) {
+        CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+      } else if (trigger == 1) {
+        CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+        CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+      } else {
+        float pcm[128] = {0}, out[1];
+        CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 128) == LE_OK);
+        CHECK(le_engine_commit_session(e, 128, 0) == LE_OK);
+        CHECK(le_engine_play(e, 0) == LE_OK);
+        CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+        le_engine_process(e, out, pcm, 1); /* leave the loop boundary */
+        ch = 1;
+      }
+      drain(e);
+      CHECK((image_aware ? le_engine_record_with_image(e, ch, &image)
+                         : le_engine_record(e, ch)) == LE_OK);
+      drain(e);
+      CHECK(trigger == 1 ? load_i32(&e->a_counting_in)
+                         : load_i32(&e->tracks[ch].a_pending));
+      CHECK(le_engine_set_lane_count(e, 2, 2) == LE_OK);
+      CHECK((image_aware ? le_engine_record_with_image(e, ch, &image)
+                         : le_engine_record(e, ch)) == LE_OK);
+      drain(e);
+      CHECK(load_i32(&e->a_counting_in) == 0);
+      CHECK(load_i32(&e->tracks[ch].a_pending) == 0);
+      CHECK(load_i32(&e->tracks[ch].a_state) == LE_TRACK_EMPTY);
+      CHECK(e->tracks[ch].outstanding_count == 0);
+      le_engine_destroy(e);
+    }
+  }
+}
+
+static void test_structural_import_and_trim_retry(void) {
+  printf("test_structural_import_and_trim_retry\n");
+  le_engine* e = make_configured_engine();
+  CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 1, 2) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 1, 1, -1) == LE_OK);
+  /* The first trim holds the shared fence; the second keeps its retry. */
+  for (int step = 0; step < 4; ++step) { drain(e); le_engine_drain_events(e); }
+  CHECK(le_lanes_active(&e->tracks[0]) == 1);
+  CHECK(le_lanes_active(&e->tracks[1]) == 1);
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_lane_count(e, 0, 1) == LE_OK);
+  float pcm[4] = {.125f, .25f, .375f, .5f};
+  CHECK(le_engine_import_track_lane(e, 0, 1, pcm, 4) == LE_ERR_INVALID);
+  CHECK(le_engine_import_layer(e, 0, 1, 0, pcm, 4) == LE_ERR_INVALID);
+  drain(e);
+  CHECK(le_engine_import_track_lane(e, 0, 1, pcm, 4) == LE_OK);
+  CHECK(le_lanes_active(&e->tracks[0]) == 2);
+  for (int i = 0; i < 4; ++i)
+    CHECK(e->tracks[0].lanes[1].pool[load_i32(&e->tracks[0].lanes[1].a_live)][i] == pcm[i]);
   le_engine_destroy(e);
 }
 
@@ -16414,7 +16612,7 @@ static void test_lazy_lane_allocation(void) {
   CHECK(le_engine_lane_buffer_allocated_for_test(e, 3, 1) == 0);
 
   /* Growing track 0 to three lanes allocates lanes 1 and 2 (and only those). */
-  CHECK(le_engine_set_lane_count(e, 0, 3) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 0, 3) == LE_OK);
   CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 1) == 1);
   CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 2) == 1);
   CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 3) == 0);
@@ -16448,7 +16646,7 @@ static void test_lane_phase_lock_matches_baseline(void) {
   le_engine_set_lane_mute(e, 0, 0, 1);
 
   /* Track 1 gets two lanes (in0 -> out0, in1 -> out1). */
-  le_engine_set_lane_count(e, 1, 2);
+  set_lane_count_and_publish(e, 1, 2);
   le_engine_set_lane_input(e, 1, 0, 0);
   le_engine_set_lane_input(e, 1, 1, 1);
   le_engine_set_lane_output(e, 1, 0, 0x1);
@@ -16550,26 +16748,28 @@ static void test_lane_count_shrink_then_regrow(void) {
   le_engine_process(e, out, zin, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
 
-  /* Shrink to one lane: lane 1 stops contributing, only lane 0 (1.0) plays. Its
-   * buffer is retained for reuse (still allocated). */
-  CHECK(le_engine_set_lane_count(e, 0, 1) == LE_OK);
+  /* A recoverable source may not be hidden or destroyed by count editing. */
+  CHECK(set_lane_count_and_publish(e, 0, 1) == LE_ERR_INVALID);
   CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 1) == 1);
-  drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].lane_count == 1);
+  CHECK(s.tracks[0].lane_count == 2);
   le_engine_process(e, out, zin, LOOP_N);
-  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
-
-  /* Re-grow to two lanes: lane 1 comes back reset (default input 1, clean buffer
-   * — NOT the stale 2.0), so it plays silence until recorded again. */
-  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2] - 3.0f) < 1e-6f);
+  float saved[LOOP_N];
+  CHECK(le_engine_export_track_lane(e, 0, 1, saved, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(saved[i] == 2.0f);
+  /* Explicit Clear releases content; shrink and regrow now preserve lane
+   * identity, and the reused buffer is silent until the next take. */
+  CHECK(le_engine_clear(e, 0) == LE_OK);
   drain(e);
+  CHECK(set_lane_count_and_publish(e, 0, 1) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK);
   le_lane_snapshot ls1;
   le_engine_get_lane(e, 0, 1, &ls1);
   CHECK(ls1.input_channel == 1);
   CHECK(ls1.length_frames == 0);
   le_engine_process(e, out, zin, LOOP_N);
-  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(out[i * 2] == 0);
 
   le_engine_destroy(e);
 }
@@ -16665,7 +16865,7 @@ static void test_multi_lane_loop_multiple(void) {
   le_engine_set_lane_mute(e, 0, 0, 1);
 
   /* Track 1: two lanes (in0 -> out0, in1 -> out1), fixed to two base loops. */
-  le_engine_set_lane_count(e, 1, 2);
+  set_lane_count_and_publish(e, 1, 2);
   le_engine_set_lane_input(e, 1, 0, 0);
   le_engine_set_lane_input(e, 1, 1, 1);
   le_engine_set_lane_output(e, 1, 0, 0x1);
@@ -16718,9 +16918,9 @@ static void test_lane_setters_reject_invalid_args(void) {
   printf("test_lane_setters_reject_invalid_args\n");
   le_engine* e = make_configured_engine(); /* configured, device-free */
 
-  CHECK(le_engine_set_lane_count(NULL, 0, 2) == LE_ERR_INVALID);
-  CHECK(le_engine_set_lane_count(e, -1, 2) == LE_ERR_INVALID);
-  CHECK(le_engine_set_lane_count(e, 99, 2) == LE_ERR_INVALID);
+  CHECK(set_lane_count_and_publish(NULL, 0, 2) == LE_ERR_INVALID);
+  CHECK(set_lane_count_and_publish(e, -1, 2) == LE_ERR_INVALID);
+  CHECK(set_lane_count_and_publish(e, 99, 2) == LE_ERR_INVALID);
 
   CHECK(le_engine_set_lane_input(e, 0, -1, 0) == LE_ERR_INVALID);
   CHECK(le_engine_set_lane_input(e, 0, LE_MAX_LANES, 0) == LE_ERR_INVALID);
@@ -16729,8 +16929,8 @@ static void test_lane_setters_reject_invalid_args(void) {
   CHECK(le_engine_set_lane_mute(e, 0, LE_MAX_LANES, 1) == LE_ERR_INVALID);
 
   /* Count clamps to [1, LE_MAX_LANES] rather than erroring. */
-  CHECK(le_engine_set_lane_count(e, 0, 999) == LE_OK);
-  CHECK(le_engine_set_lane_count(e, 0, 0) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 0, 999) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 0, 0) == LE_OK);
 
   /* get_lane on out-of-range indices yields an empty (input -1) lane. */
   le_lane_snapshot ls;
@@ -26290,7 +26490,7 @@ static void test_idle_track_lane_skip(void) {
     le_engine* b = make_configured_engine();
     bus_fx_record_loop(b, 0.5f);
     for (int t = 1; t < LE_MAX_TRACKS; ++t) {
-      CHECK(le_engine_set_lane_count(b, t, LE_MAX_LANES) == LE_OK);
+      CHECK(set_lane_count_and_publish(b, t, LE_MAX_LANES) == LE_OK);
     }
     drain(b);
     process_n(b, 0.0f, FX_EN_SETTLE, crowded);
@@ -26372,7 +26572,7 @@ static void test_track_fx_empty_set_then_empty_bit_identity(void) {
  * (1.0) to output 0 only; lane 1 records input 1 (2.0) to output 1 only.
  * Legacy placement is out0 = 1.0, out1 = 2.0. */
 static void bus_fx_two_lane_rig(le_engine* e) {
-  le_engine_set_lane_count(e, 0, 2);
+  set_lane_count_and_publish(e, 0, 2);
   CHECK(le_engine_set_lane_input(e, 0, 0, 0) == LE_OK);
   CHECK(le_engine_set_lane_input(e, 0, 1, 1) == LE_OK);
   CHECK(le_engine_set_lane_output(e, 0, 0, 0x1) == LE_OK);
@@ -29811,7 +30011,7 @@ static void reclaim_pump(le_engine* e, int ch_in, int frames) {
 static le_engine* make_reclaim_engine(int lanes) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 4, 2, 1000);
-  le_engine_set_lane_count(e, 0, lanes);
+  set_lane_count_and_publish(e, 0, lanes);
   for (int l = 0; l < lanes; ++l) {
     le_engine_set_lane_input(e, 0, l, l);
     le_engine_set_lane_output(e, 0, l, 0x1);
@@ -29980,12 +30180,13 @@ static void test_unroute_burst_reclaims_all_trailing_on_drain(void) {
   CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
   CHECK(le_engine_set_lane_input(e, 0, 2, -1) == LE_OK);
   CHECK(le_engine_set_lane_input(e, 0, 3, -1) == LE_OK);
-  CHECK(le_lanes_active(&e->tracks[0]) == 3); /* immediate trim freed lane 3 */
+  CHECK(le_lanes_active(&e->tracks[0]) == 4); /* acceptance precedes activation */
   /* Apply the queued commands on the audio thread (routing publishes) WITHOUT
    * draining events, then drive the event drain: its deferred pass reclaims the
    * lanes the burst stranded, now that every un-route reads -1. */
   drain(e);
   le_engine_drain_events(e);
+  drain(e); /* publish the deferred structural trim */
   CHECK(reclaim_lane_count(e) == 1); /* lanes 1 and 2 reclaimed too */
   CHECK(reclaim_lane_input(e, 0) == 0);
   /* Idempotent: a second drain with nothing pending leaves the count alone. */
@@ -30060,7 +30261,7 @@ static void test_unroute_trim_declines_while_capturing(void) {
   CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
   drain(e);
   CHECK(reclaim_lane_count(e) == 1);
-  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK); /* re-grow for the test */
+  CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK); /* re-grow for the test */
   /* Park lane 1 on an input the device does not have (no trim: the request
    * was not an un-route) so the capture below never latches it. */
   CHECK(le_engine_set_lane_input(e, 0, 1, 9) == LE_OK);
@@ -30082,7 +30283,7 @@ static void test_unroute_trim_declines_while_capturing(void) {
   CHECK(reclaim_lane_count(e) == 1);
   CHECK(lane_recoverable(e, 0) == 1);
   /* le_lane_reset's half of the lifecycle: a re-grown lane holds nothing. */
-  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK);
   CHECK(lane_recoverable(e, 1) == 0);
   le_engine_destroy(e);
 }
@@ -30095,7 +30296,7 @@ static void test_unroute_trim_declines_while_capturing(void) {
 static void test_lane_count_shrink_evicts_wet_cache(void) {
   printf("test_lane_count_shrink_evicts_wet_cache\n");
   le_engine* e = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
-  le_engine_set_lane_count(e, 0, 2);
+  set_lane_count_and_publish(e, 0, 2);
   le_engine_set_lane_input(e, 0, 1, 0); /* both lanes record input 0 */
   le_engine_set_lane_output(e, 0, 1, 0x1);
   drain(e);
@@ -30113,17 +30314,23 @@ static void test_lane_count_shrink_evicts_wet_cache(void) {
   le_engine_get_lane_cache(e, 0, 1, &info);
   CHECK(info.entry_frames == CACHE_LOOP);
   CHECK(le_engine_fx_cache_used_bytes(e) > 0);
-  /* ...so the shrink must take the accounting to zero, tick-free. */
-  CHECK(le_engine_set_lane_count(e, 0, 1) == LE_OK);
-  CHECK(le_engine_fx_cache_used_bytes(e) == 0);
-  le_engine_get_lane_cache(e, 0, 1, &info);
-  CHECK(info.entry_frames == 0);
-  /* Re-grow: reset lane, no cached identity, nothing recoverable — engine
-   * defaults meet a caller that also evicted its side (#594 hazard 2). */
+  /* Recoverable audio refuses shrink and keeps its existing cache. */
+  CHECK(set_lane_count_and_publish(e, 0, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_fx_cache_used_bytes(e) > 0);
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  CHECK(set_lane_count_and_publish(e, 0, 1) == LE_OK);
+  /* No control drain between shrink publication and growth preparation.
+   * The inactive lane's old wet pointer must be retired before activation. */
   CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  CHECK(atomic_load_explicit(&e->tracks[0].lanes[1].a_wet,
+                            memory_order_acquire) == NULL);
+  CHECK(le_engine_fx_cache_used_bytes(e) == 0);
+  drain(e);
   CHECK(lane_recoverable(e, 1) == 0);
   le_engine_get_lane_cache(e, 0, 1, &info);
   CHECK(info.entry_frames == 0);
+
   le_engine_destroy(e);
 }
 
@@ -30183,7 +30390,7 @@ static void test_session_import_round_trips_recoverable(void) {
   drain(e);
   CHECK(reclaim_lane_count(e) == 2);
   /* A lane grown fresh beside them has nothing to give back. */
-  CHECK(le_engine_set_lane_count(e, 0, 3) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 0, 3) == LE_OK);
   CHECK(lane_recoverable(e, 2) == 0);
   le_engine_destroy(e);
 }
@@ -30541,6 +30748,10 @@ int main(void) {
   test_lane_volume_and_mute();
   test_mix_trim_boundaries();
   test_mix_transaction_acceptance();
+  test_atomic_routing_admission();
+  test_structural_record_fence_preserves_undo();
+  test_structural_record_fence_keeps_cancellation();
+  test_structural_import_and_trim_retry();
   test_record_image_punch_in_preserves_history();
   test_record_image_fresh_capture_admits_first_shadow();
   test_record_image_grid_clear_is_in_capture_batch();

@@ -52,7 +52,7 @@ static inline int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
 /* A track's active lane count, clamped to a usable range (a track always has at
  * least one lane). */
 static inline int32_t le_lanes_active(const le_track* t) {
-  int32_t n = t->lane_count;
+  int32_t n = atomic_load_explicit(&t->lane_count, memory_order_acquire);
   if (n < 1) n = 1;
   if (n > LE_MAX_LANES) n = LE_MAX_LANES;
   return n;

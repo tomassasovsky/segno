@@ -315,13 +315,21 @@ class _SettingsRail extends StatelessWidget {
             // Loop settings are their own route (accepted design, slice
             // 2c): a row after Audio that opens it and leaves this page on
             // its current section.
-            if (section == SettingsSection.audio)
+            if (section == SettingsSection.audio) ...[
               _RailTab(
                 key: const Key('settings_tab_loop'),
                 label: l10n.settingsSectionLoop,
                 selected: false,
                 onTap: () => unawaited(openLoopSettings()),
               ),
+              // Audio routing is its own route too (slice 3c), beside Loop.
+              _RailTab(
+                key: const Key('settings_tab_routing'),
+                label: l10n.settingsSectionRouting,
+                selected: false,
+                onTap: () => unawaited(openAudioRouting()),
+              ),
+            ],
           ],
         ],
       ),

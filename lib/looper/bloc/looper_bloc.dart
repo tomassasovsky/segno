@@ -82,28 +82,21 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         channel: event.channel,
       ),
     );
-    on<LooperLaneCountChanged>((event, _) {
-      _repository.setLaneCount(channel: event.channel, count: event.count);
-      unawaited(_settings?.saveLaneCount(event.channel, event.count));
-    });
-    on<LooperLaneInputChanged>((event, _) {
-      _repository.setLaneInput(
-        channel: event.channel,
-        lane: event.lane,
-        inputChannel: event.inputChannel,
-      );
+    on<LooperRecordingInputChanged>((event, _) {
       unawaited(
-        _settings?.saveLaneInput(event.channel, event.lane, event.inputChannel),
+        _mixSettings.setRecordingInput(
+          channel: event.channel,
+          input: event.input,
+          selected: event.selected,
+        ),
       );
     });
-    on<LooperLaneOutputChanged>((event, _) {
-      _repository.setLaneOutput(
-        channel: event.channel,
-        lane: event.lane,
-        mask: event.mask,
-      );
+    on<LooperTrackOutputChanged>((event, _) {
       unawaited(
-        _settings?.saveLaneOutput(event.channel, event.lane, event.mask),
+        _mixSettings.setTrackOutput(
+          channel: event.channel,
+          mask: event.mask,
+        ),
       );
     });
     on<LooperLaneVolumeChanged>((event, _) {
@@ -811,9 +804,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     // [_cancelPendingArms].
     final channels = _repository.state.tracks.length;
     for (var channel = 0; channel < channels; channel++) {
-      unawaited(
-        settings.saveLaneCount(channel, _repository.laneCount(channel)),
-      );
       for (var lane = 0; lane < kMaxLanes; lane++) {
         if (lanes.containsKey((channel, lane))) {
           _persistLaneChain(channel, lane);

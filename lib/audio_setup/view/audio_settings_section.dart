@@ -6,7 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_picker.dart';
 import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
-import 'package:segno/audio_setup/view/click_output_section.dart';
+import 'package:segno/audio_setup/view/click_volume_section.dart';
 import 'package:segno/audio_setup/view/midi_learn_section.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
@@ -95,16 +95,14 @@ class AudioSettingsSection extends StatelessWidget {
               includeSystemDefault: false,
             ),
           ],
-          // Where the click sounds and how loud, beside the outputs it sounds
-          // on; WHEN it sounds is a Loop setting.
+          // How loud the click is. WHERE it goes is Audio routing's, and WHEN
+          // it sounds is a Loop setting.
           const SizedBox(height: 24),
           SetupGroupLabel(l10n.clickGroupLabel),
           const SizedBox(height: 12),
-          const ClickOutputSection(),
-          // There is no foot-controller PICKER: the pedal is the console
-          // board on its own link, so a chooser would only offer the one
-          // answer. CONFIGURING the pedal is not the same as choosing it, so
-          // the assignment route below stays.
+          const ClickVolumeSection(),
+          // The pedal is the console board on its own link, so there is no
+          // device picker. Its assignment route remains below.
           const SizedBox(height: 28),
           const PedalSettingsSection(),
           const SizedBox(height: 28),

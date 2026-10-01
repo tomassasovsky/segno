@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:segno/common/console_surface.dart';
@@ -33,6 +35,7 @@ Future<String?> showConsoleRenameSheet(
   bool allowEmpty = false,
   bool useRootNavigator = false,
   RouteSettings? routeSettings,
+  Future<String?> Function(String name)? onSave,
 }) {
   final surface = context.surface;
   return showModalBottomSheet<String>(
@@ -40,6 +43,8 @@ Future<String?> showConsoleRenameSheet(
     useRootNavigator: useRootNavigator,
     routeSettings: routeSettings,
     barrierColor: surface.scrim.withValues(alpha: 0.62),
+    isDismissible: false,
+    enableDrag: false,
     backgroundColor: Colors.transparent,
     // Material caps a bottom sheet at 640px wide, which would make a toy of a
     // keyboard on a 1920px console. Same override the join sheet takes.
@@ -51,6 +56,7 @@ Future<String?> showConsoleRenameSheet(
       current: current,
       fieldLabel: fieldLabel,
       allowEmpty: allowEmpty,
+      onSave: onSave,
     ),
   );
 }
@@ -62,6 +68,7 @@ class _ConsoleRenameSheet extends StatefulWidget {
     required this.current,
     required this.fieldLabel,
     required this.allowEmpty,
+    required this.onSave,
   });
 
   final String title;
@@ -69,6 +76,7 @@ class _ConsoleRenameSheet extends StatefulWidget {
   final String current;
   final String fieldLabel;
   final bool allowEmpty;
+  final Future<String?> Function(String name)? onSave;
 
   @override
   State<_ConsoleRenameSheet> createState() => _ConsoleRenameSheetState();
@@ -77,6 +85,8 @@ class _ConsoleRenameSheet extends StatefulWidget {
 class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
   /// The sheet holds its own text — there is no [TextField] to hold it.
   late String _name = widget.current;
+  bool _saving = false;
+  String? _saveError;
 
   void _type(String key) => setState(() => _name += key);
 
@@ -93,9 +103,32 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
   /// nameless: its fallback IS a name, `TracksCubit.rename` drops an empty one
   /// anyway, and a sheet that shut on one would look like it had renamed the
   /// track to nothing.
-  void _submit() {
+  Future<void> _submit() async {
+    if (_saving) return;
     final trimmed = _name.trim();
     if (trimmed.isEmpty && !widget.allowEmpty) return;
+    if (widget.onSave case final save?) {
+      setState(() {
+        _saving = true;
+        _saveError = null;
+      });
+      final saveFailed = context.l10n.routingNameSaveFailed;
+      String? error;
+      try {
+        error = await save(trimmed);
+      } on Object {
+        error = saveFailed;
+      }
+      if (!mounted) return;
+      if (error != null) {
+        setState(() {
+          _saving = false;
+          _saveError = error;
+        });
+        return;
+      }
+    }
+    if (!mounted) return;
     Navigator.of(context).pop(trimmed);
   }
 
@@ -111,7 +144,7 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
     }
     if (event.logicalKey == LogicalKeyboardKey.enter ||
         event.logicalKey == LogicalKeyboardKey.numpadEnter) {
-      _submit();
+      unawaited(_submit());
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.escape) {
@@ -177,6 +210,10 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
             ),
             const SizedBox(height: 12),
             _NameField(text: _name, label: widget.fieldLabel),
+            if (_saveError case final error?) ...[
+              const SizedBox(height: 8),
+              AppText(error, key: const Key('console_rename_error')),
+            ],
             const SizedBox(height: 13),
             OnScreenKeyboard(
               layout: OnScreenKeyboardLayout.text,
@@ -184,7 +221,7 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
               doneLabel: l10n.save,
               onKey: _type,
               onBackspace: _backspace,
-              onDone: _submit,
+              onDone: () => unawaited(_submit()),
             ),
           ],
         ),

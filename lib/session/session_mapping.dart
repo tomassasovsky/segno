@@ -84,6 +84,9 @@ SessionSettings settingsFromLooper(LooperRepository looper) {
       for (final track in looper.state.tracks)
         if (track.pan != 0) track.channel: track.pan,
     },
+    laneInputs: looper.mixSettingsSnapshot.laneInputs,
+    laneOutputs: looper.mixSettingsSnapshot.laneOutputs,
+    laneCounts: looper.mixSettingsSnapshot.laneCounts,
     laneMix: {
       for (final track in looper.state.tracks)
         for (var lane = 0; lane < track.lanes.length; lane++)
@@ -235,6 +238,9 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   trackOneShotOverrides: bundle.session.trackOneShotOverrides,
   trackLengthPresetOverrides: bundle.session.trackLengthPresetOverrides,
   trackPans: bundle.session.trackPans,
+  laneInputs: bundle.session.laneInputs,
+  laneOutputs: bundle.session.laneOutputs,
+  laneCounts: bundle.session.laneCounts,
   clickMode: bundle.session.clickMode,
   clickMask: bundle.session.clickOutputMask,
   clickVolume: bundle.session.clickVolume,

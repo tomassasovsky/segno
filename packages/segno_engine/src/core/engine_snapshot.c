@@ -90,7 +90,7 @@ static int32_t le_max_fx_latency(le_engine* engine) {
   int32_t max_lat = 0;
   for (int32_t t = 0; t < engine->track_count; ++t) {
     le_track* tr = &engine->tracks[t];
-    for (int32_t l = 0; l < tr->lane_count; ++l) {
+    for (int32_t l = 0; l < le_lanes_active(tr); ++l) {
       le_lane* ln = &tr->lanes[l];
       int32_t n = load_i32(&ln->a_fx_count);
       if (n > LE_FX_MAX) n = LE_FX_MAX;

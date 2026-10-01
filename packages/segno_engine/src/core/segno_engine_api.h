@@ -259,9 +259,9 @@ typedef enum le_command_code {
                                   * bars disable sound start and its arms. */
   /* ---- multi-lane recording (a track owns an array of lanes) ----
    * Each lane records one hardware input into its own clean mono buffer; all
-   * lanes of a track share one transport and one undo span. The lane *count* is
-   * a control-thread plain int (le_engine_set_lane_count), not a ring command;
-   * these RT-concurrent lane edits go through the ring. arg packing differs per
+   * lanes of a track share one transport and one undo span. Count activation
+   * and these RT-concurrent lane edits go through the ring; control-side
+   * preparation allocates before activation. Argument packing differs per
    * command so a 32-bit mask / a negative channel / a float volume each
    * round-trips exactly (see the lane setters). */
   LE_CMD_SET_LANE_INPUT = 26,  /* lane records this input channel (-1 = none).
@@ -497,6 +497,7 @@ typedef enum le_command_code {
    * tail_reset_rev advances. Monitors keep their preferences: new live
    * input sounds again at once. Perf-logged. */
   LE_CMD_CUT_SOUND = 73,
+  LE_CMD_SET_LANE_COUNT = 74, /* internal structural activation; callback-owned */
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -695,6 +696,13 @@ typedef struct le_mix_settings {
   float input_trim[LE_MAX_CHANNELS];
   uint32_t output_mask, output_muted, output_mono;
   float output_level[LE_MAX_OUTPUT_BUSES], output_balance[LE_MAX_OUTPUT_BUSES];
+  /* Future capture assignments and playback routes share this publication.
+   * Source guards include pair edits even when no assignment changes. */
+  uint64_t routing_input_mask, routing_output_mask;
+  uint32_t lane_count_mask, source_track_mask;
+  int32_t lane_input[LE_MAX_TRACKS * LE_MAX_LANES];
+  uint32_t lane_output[LE_MAX_TRACKS * LE_MAX_LANES];
+  int32_t lane_count[LE_MAX_TRACKS];
 } le_mix_settings;
 
 /* Source context frozen at the accepted record/arm gesture. The image is
@@ -1691,12 +1699,13 @@ LE_EXPORT int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
  * (volume/mute/input/output mask) operate on lane 0 for backward
  * compatibility. */
 
-/* Sets track [channel]'s active lane count to [count] (clamped 1..LE_MAX_LANES)
- * on the calling (control) thread, lazily allocating the loop buffers for any
- * newly added lanes before the audio thread can read them. New lanes default to
- * recording input channel == their lane index, full stereo output, unity
- * volume, unmuted. Shrinking the count leaves the dropped lanes' buffers
- * allocated for reuse but stops playing/recording them. */
+/* Internal structural count command. Valid count is 1..LE_MAX_LANES.
+ * Allocates only newly needed inactive buffers on the control thread and
+ * queues activation; LE_OK means accepted, not published. Await commandsSettled
+ * before depending on the count or importing. A prior count command retains
+ * its buffer lifetime through the end of the callback block. Shrinking refuses
+ * recoverable lanes. Retained routing and effects remain attached to their
+ * lane identities. User routing edits use the atomic mix transaction instead. */
 LE_EXPORT int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
                                            int32_t count);
 

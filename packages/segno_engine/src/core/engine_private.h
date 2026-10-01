@@ -669,9 +669,8 @@ typedef struct le_track {
    * read index for the last frame of the block, or the write head while
    * RECORDING. Published once per block beside the level above. */
   _Atomic int32_t a_play_pos;
-  int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
-                       * int, like track_count — not an atomic, not a ring
-                       * command (set before the first record into a new lane). */
+  _Atomic int32_t lane_count; /* Active lanes, release-published after prepared
+                               * buffers and routing become callback-owned. */
 
   /* Track-stage chain (FX v3 part 1b): the chain all this track's audible
    * lanes sum into when it is non-empty — see le_fx_bus's doc for the full
@@ -1331,6 +1330,10 @@ struct le_engine {
   /* All accepted commands: control owns posted, callback owns applied.
    * Published is released only after the block's snapshot values are stored,
    * so session capture cannot mistake dequeued for applied/published. */
+  /* Control-only ticket of the last batch that may activate prepared lanes.
+   * a_commands_published releases it after the entire callback, on success
+   * or refusal. Configure resets it with the command counters. */
+  uint64_t lane_growth_command;
   uint64_t commands_posted;
   uint64_t commands_applied;
   _Atomic uint64_t a_commands_published;

@@ -356,11 +356,11 @@ abstract interface class LooperTransport {
 /// lanes), plus the per-track solo and the per-input capture trim beside them
 /// (accepted design, slice 3: the Mixer's facts).
 abstract interface class EngineRouting {
-  /// Sets track [channel]'s active lane count to [count] (clamped by the engine
-  /// to `1..` the native lane ceiling) on the control thread, lazily allocating
-  /// the loop buffers for any newly added lanes before the audio thread reads
-  /// them. Shrinking leaves dropped lanes' buffers allocated for reuse but
-  /// stops playing/recording them.
+  /// Prepares inactive buffers and queues a callback-owned count change.
+  /// The count is clamped to the native lane range. Success means accepted;
+  /// await [EngineMetering.commandsSettled] before importing or relying on
+  /// the new count. Recoverable lanes cannot be removed. User routing uses
+  /// [EngineMixSettings] so every lane change belongs to one transaction.
   EngineResult setLaneCount({required int channel, required int count});
 
   /// Sets lane [lane] of track [channel]'s playback gain, clamped to

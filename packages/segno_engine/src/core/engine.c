@@ -355,7 +355,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
     /* Track transport: one lane active by default, empty, one base loop. */
-    tr->lane_count = 1;
+    atomic_store_explicit(&tr->lane_count, 1, memory_order_release);
     tr->undo_count = 0;
     tr->redo_count = 0;
     store_i32(&tr->a_state, LE_TRACK_EMPTY);
@@ -470,6 +470,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * take to one base loop). Same rule the audio thread keeps live. */
   store_i32(&engine->a_primary_track, -1);
   atomic_store(&engine->a_mix_revision, 0);
+  engine->lane_growth_command = 0;
   engine->clock_commands_posted = 0;
   atomic_store_explicit(&engine->a_clock_commands_applied, 0, memory_order_relaxed);
   engine->commands_posted = 0;
@@ -748,7 +749,7 @@ void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
   if (channel < 0 || channel >= engine->track_count) return;
   if (count < 1) count = 1;
   if (count > LE_MAX_LANES) count = LE_MAX_LANES;
-  engine->tracks[channel].lane_count = count; /* no buffer allocation */
+  atomic_store_explicit(&engine->tracks[channel].lane_count, count, memory_order_release); /* no buffer allocation */
 }
 
 void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
