@@ -1549,11 +1549,13 @@ BEAM_V     = 165.0                 # web depth (user call 2026-08-19: "move the 
                                    # module BODY, whose front face is 11.8 mm forward of the aperture.
                                    # That body is what pins BEAM_V, not the aperture: the web's rear
                                    # face clears it by 1.43 mm and the gate below holds that.
-# The bolt STATIONS are the seven posts' stations, the FRONT_SCREW_U interior
-# pedal gaps. Each used to take two M4, 20.1 mm apart, because each post was a
-# separate part. The beam is one part, so each gap takes ONE M4 at its centre
-# (owner call, #1088): seven screws instead of fourteen.
-BEAM_BOLT_U   = FRONT_SCREW_U[1:-1]   # 7 stations, the interior pedal gaps
+# The bolt STATIONS are the lid's nine front screw stations (FRONT_SCREW_U): the
+# seven interior pedal gaps (#1088, one M4 at each gap's centre instead of the
+# posts' two) plus one outboard of each end pedal (#1090), so beam, base floor
+# and lid all line up on one row of stations.
+BEAM_BOLT_U   = FRONT_SCREW_U          # 9 stations, the lid's front screw stations: the 7
+                                       # interior pedal gaps plus one outboard of each end
+                                       # pedal (owner call 2026-10-01, #1090)
 BEAM_BOLT_SLOT = 2.0               # the fixing holes are SLOTTED in DEPTH (v) by this much
                                    # beyond the M4 clearance. A slot lets the bottom plate
                                    # stretch under the beam instead of being pinned at
@@ -1599,8 +1601,9 @@ BEAM_CABLE_W = 24.0                # window width (u)
 BEAM_CABLE_H = 12.0                # window height (z); leaves 15.4 mm of web above and below
 BEAM_CABLE_R = 3.0                 # corner radius; a square corner in a loaded web is a crack start
 BEAM_CABLE_U = tuple(_row1_u(i) for i in range(8))   # the 8 front-row pedal centrelines
-BEAM_LED_U   = (30.0, FP_W - 30.0) # LED strip feed, one per side. Outboard of the outermost
-                                   # pedal window (which ends at u=81) and 18 mm off the wall.
+BEAM_LED_U   = (36.0, FP_W - 36.0) # LED strip feed, one per side, between the outboard floor
+                                   # bolt (u 18.4) and the end pedal's window (57..81), with
+                                   # BEAM_WEB_MIN to the window and a bolt's clearance (#1090)
 BEAM_WEB_MIN = 8.0                 # floor on the web left above/below any window, and on the
                                    # web left between two windows
 
@@ -1696,10 +1699,11 @@ BEAM_WEB_XF  = BEAM_LEN                            # no fold crosses the length:
 
 
 def beam_bolt_u():
-    """The seven u where the beam bolts to the base floor, left to right.
+    """The nine u where the beam bolts to the base floor, left to right.
 
-    One M4 at the centre of each of the seven interior pedal gaps (#1088); the
-    posts before the beam took two per gap.
+    One M4 at each of the lid's nine front screw stations (#1090): the centre of
+    each interior pedal gap (#1088) plus one outboard of each end pedal, so the
+    beam, base and lid share one row of stations.
     """
     return list(BEAM_BOLT_U)
 
@@ -3728,7 +3732,7 @@ def dxf_beam(path):
     _poly(msp, [(x_w0, 0), (x_w1, 0), (x_w1, Wd), (x_w0, Wd)], "CUT")
     _poly(msp, [(x_w0, y_p), (x_w1, y_p)], "BEND", closed=False)   # pad -> web (fold 90 + tilt)
     _poly(msp, [(x_w0, y_f), (x_w1, y_f)], "BEND", closed=False)   # web -> foot (fold 90)
-    for bu in beam_bolt_u():                          # 7 M4 in the foot, slotted in DEPTH
+    for bu in beam_bolt_u():                          # 9 M4 in the foot, slotted in DEPTH
         _rrect(msp, _u2x(bu) - D_M4/2.0, Wd - foot/2.0 - (D_M4 + BEAM_BOLT_SLOT)/2.0,
                D_M4, D_M4 + BEAM_BOLT_SLOT, r=D_M4/2.0)
     for wu in beam_cable_u():                         # cable windows through the web

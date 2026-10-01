@@ -71,10 +71,13 @@ class SupportBeam(unittest.TestCase):
         # room for the 0.2 mm an FDM shoulder can grow, plus a glue bead
         self.assertGreater(gap, 1.4)
 
-    def test_one_floor_fixing_at_the_centre_of_each_pedal_gap(self):
-        """#1088: seven M4, one per interior pedal gap, where the posts' pairs were."""
+    def test_one_floor_fixing_at_each_front_screw_station(self):
+        """#1090: nine M4 on the lid's nine front screw stations -- the seven
+        interior pedal gaps of #1088 plus one outboard of each end pedal."""
         self.assertEqual([round(u, 3) for u in enclosure.beam_bolt_u()],
-                         [119.571, 220.714, 321.857, 423.0, 524.143, 625.286, 726.429])
+                         [round(u, 3) for u in enclosure.FRONT_SCREW_U])
+        self.assertEqual([round(u, 3) for u in enclosure.beam_bolt_u()],
+                         [18.429, 119.571, 220.714, 321.857, 423.0, 524.143, 625.286, 726.429, 827.571])
         self.assertAlmostEqual(enclosure._BEAM_FOOT_VP, 148.99693697984182, places=9)
 
     def test_a_cable_window_sits_on_every_front_pedal_and_one_each_side(self):
@@ -158,9 +161,10 @@ class SupportBeam(unittest.TestCase):
     def test_the_section_is_strong_enough_that_the_steel_grade_is_free(self):
         """No grade is called out on the drawing, and this is why.
 
-        The beam's own worst case is its end overhang: 116.5 mm of C section
-        past the outermost bolt, free at the end (no wall ears). A 1 kN stomp landing
-        on the very tip reads 85 MPa. The softest cold-rolled mild steel a shop
+        Since the outboard bolts (#1090) the end overhang is only 15.3 mm, so
+        the beam's worst case is a 1 kN stomp midway between two bolts, 101.1 mm
+        apart: PL/4 even taken as simply supported reads well under 100 MPa,
+        against the ~140 the softest cold-rolled mild steel a shop
         stocks yields around 140, so any of them carries it, and E is 210 GPa
         for all of them so stiffness does not depend on the choice either.
         Everything else the beam does is bearing and short-range compression at
@@ -186,10 +190,13 @@ class SupportBeam(unittest.TestCase):
         self.assertAlmostEqual(area, 122.2, places=1)
         self.assertAlmostEqual(second, 33097, delta=50)
         overhang = min(enclosure.beam_bolt_u()) - enclosure.BEAM_U0
-        self.assertAlmostEqual(overhang, 116.5, places=1)
-        tip = 1000.0*overhang*fibre/second
-        self.assertLess(tip, 100.0)          # 85.4 as drawn, against a 140 floor
-        self.assertLess(1000.0*overhang**3/(3*210000.0*second), 0.1)
+        self.assertAlmostEqual(overhang, 15.3, places=1)
+        bolts = enclosure.beam_bolt_u()
+        span = max(b - a for a, b in zip(bolts, bolts[1:]))
+        self.assertAlmostEqual(span, 101.1, places=1)
+        mid = 1000.0*span/4.0*fibre/second   # simply supported, centre load
+        self.assertLess(mid, 100.0)
+        self.assertLess(1000.0*overhang*fibre/second, mid)
 
     def test_the_fixings_are_slotted_and_the_flat_says_so(self):
         """Plain holes cost the bottom plate 147 MPa at 1 kN; slots, 135."""
@@ -206,9 +213,9 @@ class SupportBeam(unittest.TestCase):
                      if e.dxftype() == 'LWPOLYLINE' and e.dxf.layer == 'BEND']
         # no plain circles at all: every fixing is an obround
         self.assertEqual([e for e in cuts if e.dxftype() == 'CIRCLE'], [])
-        # outline + 7 foot slots (one per pedal gap, #1088) + 10 cable windows;
+        # outline + 9 foot slots (one per front screw station, #1090) + 10 cable windows;
         # the ears are unbolted (#1090), so they carry no slot
-        self.assertEqual(len(cuts), 1 + 7 + 10)
+        self.assertEqual(len(cuts), 1 + 9 + 10)
         # pad and foot: the only folds
         self.assertEqual(len(bends), 2)
 

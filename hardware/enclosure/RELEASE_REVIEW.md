@@ -5,7 +5,7 @@
 One line now carries everything the owner has chosen or printed:
 
 - **Base (#1067, #1088):** the #1025 base again (no lid-seat flanges, no rear
-  tabs, no spot welding), four fusion-welded corners, seven M4 beam screws, the
+  tabs, no spot welding), four fusion-welded corners, nine M4 beam screws, the
   lid overhang tapering to flush at the back, and every rear connector cut into
   the 2.0 mm rear wall (no I/O panel). CTRL jacks are NJ6FD-V in MEIRIYFA
   D-flange plates. The earth stud is centred between the vents and PD_IN.
@@ -68,14 +68,15 @@ both coatings. The floor bolts locate it; nothing touches the side walls.
 
 ### #1019 decision package
 
-Nonlinear shell FE (`_stomp_fea_beam.py`, re-run on this revision: seven beam
-bolts, beam ends free since the ears went), 1 kN on the worst pedal station:
+Nonlinear shell FE (`_stomp_fea_beam.py`, re-run on this revision: nine beam
+bolts on the front screw stations, beam ends free since the ears went), 1 kN on
+the worst pedal station:
 
 | Case | Floor peak | Deflection | Util. vs yield | Worst station |
 |---|---|---|---|---|
 | no beam | 95 MPa | 3.28 mm | 1.00 | BANK |
-| beam, 7 bolts, slotted (as drawn) | 112 MPa | 3.09 mm | 1.17 | BANK |
-| beam, 7 bolts, plain holes | 148 MPa | 3.01 mm | 1.56 | BANK |
+| beam, 9 bolts, slotted (as drawn) | 114 MPa | 3.08 mm | 1.20 | BANK |
+| beam, 9 bolts, plain holes | 150 MPa | 3.00 mm | 1.58 | BANK |
 
 With the ears (beam ends on the side walls) the slotted case read 139 MPa /
 2.98 mm: the wall supports fed load back into the floor near the walls.
@@ -89,7 +90,7 @@ a model: the proof test below is what rates the real part.
 
 **First-article proof test** (welded base, bare metal, before paint):
 
-1. Assemble without electronics: beam bolted (7 × M4, slotted, snug),
+1. Assemble without electronics: beam bolted (9 × M4, slotted, snug),
    rails with the neoprene strip, all ten printed collars. The M3 pilots
    are still untapped (tapping comes after paint), so seat the lid freely and
    hold it with four spring clamps, two on the front lip and two on the rear

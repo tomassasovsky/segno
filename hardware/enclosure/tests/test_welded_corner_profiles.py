@@ -27,8 +27,9 @@ UNCHANGED_FEATURES = {
     # mirrored with the left (#1070). #1090: the beam's two side-wall tie holes
     # are gone and each of the nine front stations gains its Ø1.0 laser pilot;
     # the PD coupler's M3 pair moves to the CTRL plates' diagonal; fuse, MIDI
-    # and D-flange openings resized for the shop's ±0.20 (#1090).
-    'CUT': (143, 'd4a88dd9b5727b74a1ca278c413ef94a4329b617658c35023b789e0d70270f26'),
+    # and D-flange openings resized for the shop's ±0.20; two outboard beam
+    # bolts so the beam takes all nine front screw stations (#1090).
+    'CUT': (145, 'c7755ba271e47040441e476bd137c115367458a5919ae9277d5557f8777e6985'),
     'VENT': (570, 'ddec63663b8c2670400d01a6431b1ff677d8574ec2cb33b2e0d91362fb5ab681'),
     'BEND': (5, 'ebc80b8fa031008706f13bae4e9e4fc5d213aab31402eb04c449ad7a128c3991'),
     'DRILL': (9, '034f8f332d55ffc49090ff7030430b4e375578c61a97c88984c200c48e312b60'),
@@ -95,7 +96,7 @@ class WeldedCornerProfilesTest(unittest.TestCase):
                          for entity in self.entities
                          if entity.dxf.layer in UNCHANGED_FEATURES)
         self.assertEqual(counts, {
-            ('CUT', 'LWPOLYLINE'): 3, ('CUT', 'CIRCLE'): 127,
+            ('CUT', 'LWPOLYLINE'): 3, ('CUT', 'CIRCLE'): 129,
             ('VENT', 'LWPOLYLINE'): 95, ('BEND', 'LWPOLYLINE'): 5,
             ('DRILL', 'CIRCLE'): 9,
         })

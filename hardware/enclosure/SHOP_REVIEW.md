@@ -12,7 +12,7 @@ structural hold is a separate owner call and these drafts do not release it.
 
 What changed since the 2026-09-15 drafts, as far as the shops are concerned:
 
-- The beam has seven floor fixings (one per interior pedal gap), not fourteen.
+- The beam has nine floor fixings, on the lid's nine front screw stations.
 - Every rear connector is cut into the base's rear wall; there is no rear
   panel. The two CTRL jacks sit in D-size flange plates (D punch + M3 pair).
 - The floor gained Ø3.6 holes for the power boards and the earth stud moved to

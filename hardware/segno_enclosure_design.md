@@ -611,8 +611,10 @@ in-plane restraint the plate used to spread. At a 1 kN stomp the floor reads:
 | beam on slotted holes | 135 MPa | 2.95 mm | 1.42 |
 | beam on plain holes | 147 MPa | 2.83 mm | 1.54 |
 | 7 M4, slotted, beam ends on the walls (#1088) | 139 MPa | 2.98 mm | 1.46 |
-| **7 M4, slotted, no ears, ends free (#1090, current)** | **112 MPa** | **3.09 mm** | **1.17** |
+| 7 M4, slotted, no ears, ends free (#1090) | 112 MPa | 3.09 mm | 1.17 |
 | 7 M4, plain holes, ends free | 148 MPa | 3.01 mm | 1.56 |
+| **9 M4 on the front screw stations, slotted, ends free (#1090, current)** | **114 MPa** | **3.08 mm** | **1.20** |
+| 9 M4, plain holes, ends free | 150 MPa | 3.00 mm | 1.58 |
 
 Since #1088 the beam takes **one M4 per interior pedal gap**, at the gap's
 centre, instead of two: seven instead of fourteen (owner call). Rerun of

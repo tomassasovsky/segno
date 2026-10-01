@@ -12,6 +12,10 @@ Same clone, saved.
   touches only the floor it sits on.
 - `base`: fuse Ø12.50, MIDI Ø15.70, PD/CTRL Ø24.20 in CUT (+18.41 mm3, exact);
   formed base re-exported.
+- Nine beam bolts (#1090): two M4 floor holes added at u 18.43 / 827.57,
+  v 149.00 in the base CUT (-66.48 mm3, exact); beam body swapped again
+  (97,767.83 mm3, LED windows at u 36 / 810). `snapshots.add()` raises "no
+  pending snapshot" when no transform changed, which rolls back the whole call.
 
 ## Ring and knob down the slope, PD diagonal - 2026-09-30 (#1090)
 
