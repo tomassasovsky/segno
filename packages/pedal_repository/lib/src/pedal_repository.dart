@@ -96,6 +96,15 @@ class PedalRepository {
   /// holds still for far longer than this.
   static const settleTime = Duration(milliseconds: 100);
   PedalStateFrame? _lastFrame;
+  final StreamController<PedalStateFrame> _frames =
+      StreamController<PedalStateFrame>.broadcast();
+
+  /// The canonical frame published by control, even without a connected board.
+  /// Null only before the first projection; no surface should re-project it.
+  PedalStateFrame? get lastFrame => _lastFrame;
+
+  /// Changes to the canonical frame, including the final dark goodbye frame.
+  Stream<PedalStateFrame> get frames => _frames.stream;
   Timer? _helloWatchdog;
   bool _goodbye = false;
   bool _disposed = false;
@@ -153,6 +162,7 @@ class PedalRepository {
   void pushState(PedalStateFrame frame) {
     if (_disposed || _goodbye || frame == _lastFrame) return;
     _lastFrame = frame;
+    _frames.add(frame);
     if (_connected) _link.send(StateMessage(frame));
   }
 
@@ -338,5 +348,6 @@ class PedalRepository {
     await _link.dispose();
     await _events.close();
     await _statusChanges.close();
+    await _frames.close();
   }
 }

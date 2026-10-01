@@ -46,6 +46,7 @@ class ControlContext {
     required this.frame,
     this.boundChains = const {},
     this.customFunctions = const {},
+    this.physicalCustomStates = const {},
   });
 
   /// Engine truth (the polled snapshot projection).
@@ -64,6 +65,9 @@ class ControlContext {
 
   /// Function-state facts for Custom's physical track switches, by LED slot.
   final Map<int, bool> customFunctions;
+
+  /// Current function-state facts for all ten physical switches in Custom.
+  final Map<PedalButton, bool> physicalCustomStates;
 }
 
 /// One named rule whose check returns `null` when satisfied, or a description
@@ -207,6 +211,23 @@ final List<ControlInvariant> controlInvariants = [
       if (lit != active) {
         return 'custom track $channel is ${lit ? 'lit' : 'dark'} but its '
             'function is ${active ? 'active' : 'inactive'}';
+      }
+    }
+    return null;
+  }),
+  ControlInvariant('physical-custom-led-mirrors-function-state', (c) {
+    if (c.overlay.mode != InteractionMode.custom) return null;
+    for (final button in PedalButton.values) {
+      if (button == PedalButton.mode || button == PedalButton.bank) continue;
+      final pair = c.overlay.pedalSetup.customFor(
+        button,
+        bank: c.overlay.activeBank,
+      );
+      final available = pair.press != null || pair.hold != null;
+      final active = available && (c.physicalCustomStates[button] ?? false);
+      if (c.frame.isLit(button) != active) {
+        return 'custom ${button.name} physical LED disagrees with its '
+            'current function state';
       }
     }
     return null;

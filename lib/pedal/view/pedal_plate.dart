@@ -23,11 +23,11 @@ const _row1V = 61.5; // front-row pedal centre (v)
 const _row2V = 229.5; // CLEAR/BANK centre (v)
 const _screenTopV = 372.0; // rear edge of both screens (v)
 const _ledBehind = 12.0; // LED_GAP — status LED behind a pedal (toward rear)
-const _ledD = 5.1; // D_LED
+const _ledD = 6.0; // LED_SLOT_H
+const _ledW = 60.0; // LED_SLOT_W
 const _silkH = 25.0; // SILK_H — single cap height for every legend line
 const _silkCw = 0.66; // SILK_CW — est. glyph width = SILK_H * SILK_CW per char
 const _silkLineSpacing = 1.15; // line-to-line pitch multiplier on SILK_H
-const _silkNoLedGap = 8.0; // label lift above a plain pedal rear edge
 const _silkLedExtra = 7.0; // extra lift above CLEAR/BANK LED centreline
 const _ringOd = 58.0; // encoder ring outer diameter
 const _colU = 119.55; // 7" screen + encoder column (pedal 1/2 gap)
@@ -145,6 +145,7 @@ class PedalPlate extends StatelessWidget {
             trackNames: trackNames,
             mode: mode,
             led: channel == null ? null : frame.trackLeds[channel],
+            active: frame.isLit(button),
             channel: channel,
             selected: selected.contains(button),
           );
@@ -152,7 +153,7 @@ class PedalPlate extends StatelessWidget {
             return box(u, v, _slotW, _slotD, pedal);
           }
 
-          // CLEAR/BANK: LED between pedal and silk (faceplate_holes layout).
+          // Each pedal has a pill between its pad and silk legend.
           const aboveHmm = _ledD + _ledBehind;
           return box(
             u,
@@ -163,7 +164,9 @@ class PedalPlate extends StatelessWidget {
               children: [
                 Expanded(
                   flex: _ledD.round(),
-                  child: statusLed,
+                  child: Center(
+                    child: SizedBox(width: _ledW * scale, child: statusLed),
+                  ),
                 ),
                 Expanded(
                   flex: _ledBehind.round(),
@@ -240,12 +243,10 @@ class PedalPlate extends StatelessWidget {
                   _silk(PedalButton.clear),
                   _pedalU(2),
                   _row2V,
-                  statusLed: _Led(
+                  statusLed: _PedalIndicator(
+                    frame: frame,
+                    button: PedalButton.clear,
                     ledKey: const Key('pedalFaceplate_led_clear'),
-                    color: frame.clearFadeActive
-                        ? surface.ledRed
-                        : surface.ledOff,
-                    glow: frame.globalColor != GlobalColor.off,
                   ),
                 ),
                 footswitch(
@@ -253,12 +254,10 @@ class PedalPlate extends StatelessWidget {
                   _silk(PedalButton.bank),
                   _pedalU(3),
                   _row2V,
-                  statusLed: _Led(
+                  statusLed: _PedalIndicator(
+                    frame: frame,
+                    button: PedalButton.bank,
                     ledKey: const Key('pedalFaceplate_led_bank'),
-                    color: frame.activeBank == 1
-                        ? surface.ledBlue
-                        : surface.ledOff,
-                    glow: frame.activeBank == 1,
                   ),
                 ),
                 ...silkLabels(_silk(PedalButton.clear), _pedalU(2), _row2V),
@@ -269,41 +268,43 @@ class PedalPlate extends StatelessWidget {
                   _silk(PedalButton.recPlay),
                   _pedalU(0),
                   _row1V,
+                  statusLed: _PedalIndicator(
+                    frame: frame,
+                    button: PedalButton.recPlay,
+                    ledKey: const Key('pedalFaceplate_led_recPlay'),
+                  ),
                 ),
                 footswitch(
                   PedalButton.stop,
                   _silk(PedalButton.stop),
                   _pedalU(1),
                   _row1V,
+                  statusLed: _PedalIndicator(
+                    frame: frame,
+                    button: PedalButton.stop,
+                    ledKey: const Key('pedalFaceplate_led_stop'),
+                  ),
                 ),
                 footswitch(
                   PedalButton.undo,
                   _silk(PedalButton.undo),
                   _pedalU(2),
                   _row1V,
+                  statusLed: _PedalIndicator(
+                    frame: frame,
+                    button: PedalButton.undo,
+                    ledKey: const Key('pedalFaceplate_led_undo'),
+                  ),
                 ),
                 footswitch(
                   PedalButton.mode,
                   _silk(PedalButton.mode),
                   _pedalU(3),
                   _row1V,
-                  // The tri-state mode indicator (A1), mirroring the firmware
-                  // verbatim: rec red, mute green, FX blue (#693), SOLID —
-                  // with the goodbye frame darkening it, exactly as both
-                  // sketches render it (`goodbye ? Black : modeColor(...)`).
-                  //
-                  // `frame.performanceArmed` is deliberately NOT read here.
-                  // This LED used to blink red while armed; #693 removed that
-                  // reading, because armed already shows on the screens (the
-                  // 7" readout's REC block with running elapsed, and the
-                  // stage status bar) and the duplicate cost this dot its
-                  // one unambiguous meaning. It now says the mode, only.
-                  statusLed: _Led(
+                  statusLed: _PedalIndicator(
+                    frame: frame,
+                    button: PedalButton.mode,
                     ledKey: const Key('pedalFaceplate_led_mode'),
-                    color: frame.isGoodbye
-                        ? surface.ledOff
-                        : _modeColor(surface, frame.mode),
-                    glow: !frame.isGoodbye,
                   ),
                 ),
                 ...silkLabels(_silk(PedalButton.recPlay), _pedalU(0), _row1V),
@@ -318,20 +319,17 @@ class PedalPlate extends StatelessWidget {
                     _row1V,
                     channel: bankBase + t,
                   ),
-                // Status LEDs sit behind each track switch (and CLEAR/BANK), as
-                // on the plate. The four track LEDs come from the frame; BANK
-                // lights on bank B and CLEAR lights while there is activity to
-                // clear.
+                // Activity and hue come from the same snapshot as the board.
                 for (var t = 0; t < _trackButtons.length; t++)
                   box(
                     _pedalU(4 + t),
                     _row1V + _slotD / 2 + _ledBehind,
+                    _ledW,
                     _ledD,
-                    _ledD,
-                    _Led(
+                    _PedalIndicator(
+                      frame: frame,
+                      button: _trackButtons[t],
                       ledKey: Key('pedalFaceplate_led_track${bankBase + t}'),
-                      color: _ledColor(surface, frame.trackLeds[bankBase + t]),
-                      glow: frame.trackLeds[bankBase + t] != PedalTrackLed.off,
                     ),
                   ),
 
@@ -381,18 +379,12 @@ List<String> _silkLines(String label) {
   return [label];
 }
 
-bool _silkHasLed(String label) =>
-    label == 'CLEAR' || label == 'BANK' || label.startsWith('TRACK');
-
 /// Mirrors segno_enclosure.faceplate_holes engraving layout.
 List<_SilkLine> _silkLabelLines(String label, double pedalU, double pedalV) {
   final lines = _silkLines(label);
   if (lines.isEmpty) return const [];
 
-  final vLbl =
-      pedalV +
-      _slotD / 2 +
-      (_silkHasLed(label) ? _ledBehind + _silkLedExtra : _silkNoLedGap);
+  final vLbl = pedalV + _slotD / 2 + _ledBehind + _silkLedExtra;
 
   final infos = <({String text, double dispW})>[];
   for (final ln in lines) {
@@ -544,6 +536,7 @@ class _Footswitch extends StatefulWidget {
     required this.trackNames,
     required this.mode,
     required this.selected,
+    required this.active,
     this.led,
     this.channel,
   });
@@ -563,6 +556,7 @@ class _Footswitch extends StatefulWidget {
   /// Highlighted for the pedal-assignment UI (FX v3 part 6); `false` renders
   /// exactly as the plate always has.
   final bool selected;
+  final bool active;
 
   final PedalTrackLed? led;
   final int? channel;
@@ -627,11 +621,15 @@ class _FootswitchState extends State<_Footswitch> {
     final label = switch (widget.channel) {
       final int channel => widget.l10n.pedalSimTrackSemantics(
         widget.l10n.trackName(widget.trackNames, channel),
-        _ledStateLabel(
-          widget.l10n,
-          widget.led ?? PedalTrackLed.off,
-          widget.mode,
-        ),
+        widget.mode == InteractionMode.custom
+            ? widget.active
+                  ? widget.l10n.pedalSimLedActive
+                  : widget.l10n.pedalSimLedInactive
+            : _ledStateLabel(
+                widget.l10n,
+                widget.led ?? PedalTrackLed.off,
+                widget.mode,
+              ),
       ),
       // Stop is the FX panic control in FX mode (a press bypasses every
       // chain, a hold restores them) — a plain "STOP footswitch" hides that.
@@ -683,7 +681,7 @@ class _FootswitchState extends State<_Footswitch> {
   }
 }
 
-/// A status LED dot, filling the box the plate sizes it to. Lit dots glow.
+/// A physical LED pill, filling the slot the plate sizes it to.
 class _Led extends StatelessWidget {
   const _Led({required this.ledKey, required this.color, required this.glow});
 
@@ -697,7 +695,7 @@ class _Led extends StatelessWidget {
       key: ledKey,
       decoration: BoxDecoration(
         color: color,
-        shape: BoxShape.circle,
+        borderRadius: BorderRadius.circular(3),
         boxShadow: glow ? [BoxShadow(color: color, blurRadius: 6)] : null,
       ),
     );
@@ -1000,49 +998,29 @@ const _trackButtons = <PedalButton>[
   PedalButton.track4,
 ];
 
-Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
-  PedalTrackLed.off => surface.ledOff,
-  PedalTrackLed.green => surface.ledGreen,
-  PedalTrackLed.red => surface.ledRed,
-  // FX-mode chain-enabled (FX v3 part 5a) — rendered like the
-  // firmware's verbatim blue; the FX-mode projection that emits it is 5b's.
-  PedalTrackLed.blue => surface.ledBlue,
-};
+/// One physical indicator consumes the same activity and hue as the board.
+class _PedalIndicator extends StatelessWidget {
+  const _PedalIndicator({
+    required this.frame,
+    required this.button,
+    required this.ledKey,
+  });
 
-/// The tri-state MODE indicator's color (A1), one per interaction mode —
-/// the on-screen twin of the firmware's `modeColor`.
-///
-/// Rec red, mute green, FX blue (#693, owner's call from the bench). This
-/// used to read rec GREEN and mute AMBER, which put the plate at odds with
-/// every screen: the console's mode pill has always drawn rec in red, and the
-/// owner's call is that mute reads green everywhere. Recolouring mute alone
-/// was not possible — green was already spoken for by rec, and collapsing the
-/// two would have made the pedal's two BOOT modes (`record` and `mute`)
-/// indistinguishable on the one indicator that names them. So rec moves to
-/// red in the same stroke, which is where the screens had it all along.
-///
-/// The wire is untouched: the frame carries the 2-bit mode, never a colour,
-/// so this is a rendering change on both sides. Keep it in lockstep with the
-/// firmware's `modeColor`.
-///
-/// Both sides now have exactly ONE call site for this mapping: the MODE LED.
-/// The firmware's `modeColor()` used to also tint the ring's idle sweep, so
-/// the plate carried a mode reading this widget could not show; #693 dropped
-/// that in both sketches in favour of the neutral `kRingIdleGlow` (the app's
-/// [SurfaceTheme.ringGlow]), because a dim red idle ring in rec mode reads as
-/// a live take from stage distance. The ring renders straight from
-/// `_ringColor(frame.globalColor)` here and from the activity colour there —
-/// mode-blind on both.
-///
-/// The MODE LED is also SOLID in every state on both sides. The armed blink is
-/// gone (armed shows on the screens); `PedalStateFrame.performanceArmed` still
-/// crosses the wire and is deliberately not read for display.
-Color _modeColor(SurfaceTheme surface, PedalMode mode) => switch (mode) {
-  PedalMode.rec => surface.ledRed,
-  PedalMode.play => surface.ledGreen,
-  PedalMode.fx => surface.ledBlue,
-  PedalMode.custom => surface.ledAmber,
-};
+  final PedalStateFrame frame;
+  final PedalButton button;
+  final Key ledKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = frame.isLit(button);
+    final hue = frame.colorFor(button);
+    return _Led(
+      ledKey: ledKey,
+      color: active ? Color(0xFF000000 | hue.rgb) : context.surface.ledOff,
+      glow: active && hue.rgb != 0,
+    );
+  }
+}
 
 Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {
   GlobalColor.off => surface.ringGlow,

@@ -14,13 +14,14 @@ enum PedalCalibrationError {
 
 /// The pedal LINK state: whether the console board is on the other end of the
 /// link, the firmware it announced, and what its CTRL jacks report.
-/// Everything else about the pedal — mode, cursor, bank, LEDs — is control
-/// state, projected elsewhere.
+/// LED behavior is projected by control; this state only mirrors its published
+/// frame so the on-screen hardware map and the board share one answer.
 class PedalState extends Equatable {
   /// Creates a [PedalState].
   const PedalState({
     this.status = PedalLinkStatus.disconnected,
     this.firmwareVersion,
+    this.frame,
     this.ctrl = const {},
     this.calibrating,
     this.calibrationSeen,
@@ -35,6 +36,9 @@ class PedalState extends Equatable {
   /// The firmware version the board announced (`major.minor`) while it is
   /// talking, or `null` while it is not.
   final String? firmwareVersion;
+
+  /// The frame control last published, or null before its first projection.
+  final PedalStateFrame? frame;
 
   /// The last reading from each CTRL control that has reported, so a pedal
   /// can be watched while it is bound. Absent until it sends something: the
@@ -62,6 +66,7 @@ class PedalState extends Equatable {
   /// that "set to null" and "leave alone" are different calls.
   PedalState copyWith({
     PedalLinkStatus? status,
+    PedalStateFrame? frame,
     String? Function()? firmwareVersion,
     Map<PedalCtrlInput, PedalCtrlReading>? ctrl,
     PedalCtrlJack? Function()? calibrating,
@@ -71,6 +76,7 @@ class PedalState extends Equatable {
     PedalCalibrationError? Function()? calibrationError,
   }) => PedalState(
     status: status ?? this.status,
+    frame: frame ?? this.frame,
     firmwareVersion: firmwareVersion != null
         ? firmwareVersion()
         : this.firmwareVersion,
@@ -90,6 +96,7 @@ class PedalState extends Equatable {
   List<Object?> get props => [
     status,
     firmwareVersion,
+    frame,
     ctrl,
     calibrating,
     calibrationSeen,

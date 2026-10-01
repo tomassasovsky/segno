@@ -13,6 +13,8 @@ const _waveformScreenKey = Key('waveformScreen');
 PedalStateFrame _frame({
   int activeBank = 0,
   Map<int, PedalTrackLed> leds = const {},
+  int activeButtonMask = 0,
+  List<PedalColor>? pedalColors,
 }) => PedalStateFrame.blank().copyWith(
   trackLeds: [
     for (var i = 0; i < PedalStateFrame.trackCount; i++)
@@ -20,6 +22,8 @@ PedalStateFrame _frame({
   ],
   activeBank: activeBank,
   selectedTrack: activeBank * 4,
+  activeButtonMask: activeButtonMask,
+  pedalColors: pedalColors,
 );
 
 void main() {
@@ -77,10 +81,22 @@ void main() {
     expect(find.byKey(_recPlayKey), findsOneWidget);
   });
 
-  testWidgets('the frame drives LED rendering', (tester) async {
+  testWidgets('physical activity and hue drive LEDs, not logical track state', (
+    tester,
+  ) async {
     await pumpPlate(
       tester,
-      frame: _frame(leds: {0: PedalTrackLed.red, 1: PedalTrackLed.green}),
+      frame: _frame(
+        leds: {2: PedalTrackLed.red},
+        activeButtonMask: 0x30,
+        pedalColors: [
+          for (var i = 0; i < 10; i++)
+            if (i == 4)
+              const PedalColor(219, 24, 62)
+            else
+              const PedalColor(47, 208, 96),
+        ],
+      ),
     );
 
     Color ledColor(int channel) =>
@@ -91,8 +107,8 @@ void main() {
                     .decoration!
                 as BoxDecoration)
             .color!;
-    expect(ledColor(0), SurfaceTheme.dark.ledRed);
-    expect(ledColor(1), SurfaceTheme.dark.ledGreen);
+    expect(ledColor(0), const Color(0xFFDB183E));
+    expect(ledColor(1), const Color(0xFF2FD060));
     expect(ledColor(2), SurfaceTheme.dark.ledOff);
   });
 
@@ -103,7 +119,7 @@ void main() {
     await pumpPlate(
       tester,
       mode: InteractionMode.custom,
-      frame: _frame(leds: {0: PedalTrackLed.blue}),
+      frame: _frame(activeButtonMask: 0x10),
     );
     expect(find.bySemanticsLabel('drums, action active'), findsOneWidget);
     expect(find.bySemanticsLabel('bass, action inactive'), findsOneWidget);
@@ -177,20 +193,82 @@ void main() {
     expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
   });
 
-  testWidgets('the MODE LED reflects the frame mode color', (tester) async {
-    final colors = {
-      PedalMode.rec: SurfaceTheme.dark.ledRed,
-      PedalMode.play: SurfaceTheme.dark.ledGreen,
-      PedalMode.fx: SurfaceTheme.dark.ledBlue,
-      PedalMode.custom: SurfaceTheme.dark.ledAmber,
-    };
-    expect(colors.keys, PedalMode.values.toSet());
+  testWidgets('a mode value cannot override the physical mask or saved hue', (
+    tester,
+  ) async {
     for (final mode in PedalMode.values) {
-      await pumpPlate(tester, frame: _frame().copyWith(mode: mode));
+      await pumpPlate(
+        tester,
+        frame: _frame(activeButtonMask: 0x08).copyWith(mode: mode),
+      );
       final led = tester.widget<Container>(
         find.byKey(const Key('pedalFaceplate_led_mode')),
       );
-      expect((led.decoration! as BoxDecoration).color, colors[mode]);
+      expect((led.decoration! as BoxDecoration).color, Colors.white);
+    }
+    await pumpPlate(
+      tester,
+      frame: _frame().copyWith(mode: PedalMode.custom),
+    );
+    final off = tester.widget<Container>(
+      find.byKey(const Key('pedalFaceplate_led_mode')),
+    );
+    expect((off.decoration! as BoxDecoration).color, SurfaceTheme.dark.ledOff);
+  });
+
+  testWidgets('all ten pills use their own bit, and Goodbye darkens them', (
+    tester,
+  ) async {
+    const names = [
+      'recPlay',
+      'stop',
+      'undo',
+      'mode',
+      'track0',
+      'track1',
+      'track2',
+      'track3',
+      'clear',
+      'bank',
+    ];
+    final colors = [
+      for (var i = 0; i < 10; i++) PedalColor(20 + i, 60 + i, 100 + i),
+    ];
+    Color color(int index) =>
+        (tester
+                    .widget<Container>(
+                      find.byKey(Key('pedalFaceplate_led_${names[index]}')),
+                    )
+                    .decoration!
+                as BoxDecoration)
+            .color!;
+    for (var active = 0; active < 10; active++) {
+      await pumpPlate(
+        tester,
+        frame: _frame(
+          activeButtonMask: 1 << active,
+          pedalColors: colors,
+        ),
+        selected: {PedalButton.values[(active + 1) % 10]},
+      );
+      for (var index = 0; index < 10; index++) {
+        expect(
+          color(index),
+          index == active
+              ? Color.fromARGB(255, 20 + index, 60 + index, 100 + index)
+              : SurfaceTheme.dark.ledOff,
+        );
+      }
+    }
+    await pumpPlate(
+      tester,
+      frame: _frame(
+        activeButtonMask: 0x3ff,
+        pedalColors: colors,
+      ).copyWith(isGoodbye: true),
+    );
+    for (var index = 0; index < 10; index++) {
+      expect(color(index), SurfaceTheme.dark.ledOff);
     }
   });
 

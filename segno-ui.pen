@@ -298740,9 +298740,9 @@
       "id": "qaI7U",
       "x": 34744,
       "y": -4122,
-      "name": "Native implementation / Pedal setup and Custom / PR 1028–1030",
+      "name": "Native implementation / Pedal setup and indicators / PR 1028–1031",
       "width": 1920,
-      "height": 860,
+      "height": 1060,
       "fill": "#111215",
       "layout": "vertical",
       "gap": 24,
@@ -298780,11 +298780,266 @@
           "fill": "#98A2B3",
           "textGrowth": "fixed-width",
           "width": "fill_container",
-          "content": "Custom setup now uses the same map, with per-bank Press and Hold assignments. Fresh Mode is Mute on Press and Custom on Hold. In Custom, Mode returns to Tracks and Bank changes the four visible assignments. A hold fires once without replaying Press. LEDs show the action state or active contact, not assignment presence.\n\nClear affects Custom assignments only; Restore keeps later Track controls edits. Save warnings remain between pedal rows, clear of the header actions. Solo shares the Mixer command owner. LED colors, external pedals and other performance actions remain separate slices; physical controls need appliance validation.\n\nThis repository canvas predates the full accepted working design. Preserve that newer source during final synchronization; this note does not claim the old screens are current.",
+          "content": "Custom setup uses the same map, with per-bank Press and Hold assignments. Fresh Mode is Mute on Press and Custom on Hold. In Custom, Mode returns to Tracks and Bank changes the four visible assignments. A hold fires once without replaying Press. All ten LEDs use the action state or an accepted contact, never assignment presence or editor selection.\n\nThe setup map reads the same published state as the physical board. Selection marks the pedal body. Editing another bank does not change performance: its track indicators stay dark until that bank is active. Fixed controls can show their live state while their editing targets remain disabled. Rejected commands and released contacts do not remain lit.\n\nClear affects Custom assignments only; Restore keeps later Track controls edits. Save warnings remain between pedal rows. Solo shares the Mixer command owner. Configurable hue is independent of activity; fresh indicators are white and black is a deliberate dark choice. The palette editor is the next slice. UART v8 is required with the ten-pill board; older protocol versions are not accepted. Physical operation and brightness still need appliance validation.\n\nThis repository canvas predates the full accepted working design. Preserve that newer source during final synchronization; this note does not claim the old screens are current.",
           "lineHeight": 1.4,
           "fontFamily": "Inter",
           "fontSize": 24,
           "fontWeight": "normal"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "a4DSEH",
+      "x": 34744,
+      "y": -3022,
+      "name": "Pedal indicators / selection is separate from live state",
+      "width": 1920,
+      "height": 430,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 30,
+      "padding": 48,
+      "children": [
+        {
+          "type": "text",
+          "id": "Dfzml",
+          "name": "Indicator rule heading",
+          "fill": "#F1F2F4",
+          "content": "Selection edits the pedal. The LED shows its state.",
+          "fontFamily": "Inter",
+          "fontSize": 32,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "HlDKj",
+          "name": "Indicator state examples",
+          "width": "fill_container",
+          "height": 240,
+          "gap": 28,
+          "children": [
+            {
+              "type": "frame",
+              "id": "ngKry",
+              "name": "Selected",
+              "width": 435,
+              "height": 240,
+              "layout": "vertical",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 6,
+                  "id": "OsFZj",
+                  "name": "Selected indicator",
+                  "fill": "#24272D",
+                  "width": 114,
+                  "height": 12
+                },
+                {
+                  "type": "frame",
+                  "id": "r1zZM",
+                  "name": "Selected cap",
+                  "width": 260,
+                  "height": 90,
+                  "fill": "#29394F",
+                  "cornerRadius": 8,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "n66Wk",
+                      "name": "Selected label",
+                      "fill": "#F1F2F4",
+                      "content": "Selected",
+                      "fontFamily": "Inter",
+                      "fontSize": 23,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "QkKBL",
+                  "name": "Selected explanation",
+                  "fill": "#C7CDD6",
+                  "content": "No active action",
+                  "fontFamily": "Inter",
+                  "fontSize": 23,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "uUc8Y",
+              "name": "While held",
+              "width": 435,
+              "height": 240,
+              "layout": "vertical",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 6,
+                  "id": "IPgXT",
+                  "name": "While held indicator",
+                  "fill": "#FFFFFF",
+                  "width": 114,
+                  "height": 12
+                },
+                {
+                  "type": "frame",
+                  "id": "IUcbS",
+                  "name": "While held cap",
+                  "width": 260,
+                  "height": 90,
+                  "fill": "#1D222A",
+                  "cornerRadius": 8,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "zq2zv",
+                      "name": "While held label",
+                      "fill": "#F1F2F4",
+                      "content": "While held",
+                      "fontFamily": "Inter",
+                      "fontSize": 23,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "hVg6I",
+                  "name": "While held explanation",
+                  "fill": "#C7CDD6",
+                  "content": "Dark on release",
+                  "fontFamily": "Inter",
+                  "fontSize": 23,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qKmlb",
+              "name": "Toggle on",
+              "width": 435,
+              "height": 240,
+              "layout": "vertical",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 6,
+                  "id": "cOnKT",
+                  "name": "Toggle on indicator",
+                  "fill": "#FFFFFF",
+                  "width": 114,
+                  "height": 12
+                },
+                {
+                  "type": "frame",
+                  "id": "emD5t",
+                  "name": "Toggle on cap",
+                  "width": 260,
+                  "height": 90,
+                  "fill": "#1D222A",
+                  "cornerRadius": 8,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "JDsKb",
+                      "name": "Toggle on label",
+                      "fill": "#F1F2F4",
+                      "content": "Toggle on",
+                      "fontFamily": "Inter",
+                      "fontSize": 23,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "fHDa7",
+                  "name": "Toggle on explanation",
+                  "fill": "#C7CDD6",
+                  "content": "Lit until toggled off",
+                  "fontFamily": "Inter",
+                  "fontSize": 23,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "pvCiE",
+              "name": "Command refused",
+              "width": 435,
+              "height": 240,
+              "layout": "vertical",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 6,
+                  "id": "B1NJGX",
+                  "name": "Command refused indicator",
+                  "fill": "#24272D",
+                  "width": 114,
+                  "height": 12
+                },
+                {
+                  "type": "frame",
+                  "id": "PVssS",
+                  "name": "Command refused cap",
+                  "width": 260,
+                  "height": 90,
+                  "fill": "#1D222A",
+                  "cornerRadius": 8,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "X5zOF",
+                      "name": "Command refused label",
+                      "fill": "#F1F2F4",
+                      "content": "Command refused",
+                      "fontFamily": "Inter",
+                      "fontSize": 23,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "u3RfmW",
+                  "name": "Command refused explanation",
+                  "fill": "#C7CDD6",
+                  "content": "Stays dark",
+                  "fontFamily": "Inter",
+                  "fontSize": 23,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
         }
       ]
     }

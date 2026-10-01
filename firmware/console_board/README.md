@@ -3,22 +3,62 @@
 The console's pedal firmware: `console_board.ino` on the board's Pico 2 (RP2350,
 `hardware/kicad/console_board.py`, #747). A pure thin client, like the pedal it
 replaces — it holds no looper state. It sends raw footswitch and encoder events
-to segno over the link and renders the encoder ring and the indicator pills from
+to segno over the link and renders the encoder ring and all ten eight-pixel indicator pills from
 the state frames segno pushes back. segno runs the behavior machine.
 
 | Signal | GPIO | Notes |
 |---|---|---|
 | Link TX / RX | GP16 / GP17 | UART0 → Pi uart3 (GPIO8/9, `/dev/ttyAMA3`), 115200 8N1 |
 | Footswitches | GP2–GP11 | REC/PLAY, STOP, UNDO, MODE, TRACK1–4, CLEAR, BANK. Internal pull-up, active low, 8 ms stable-edge debounce |
-| Ring data | GP12 | **v2 only**: via 74AHCT125 → J6 pin 5, NeoPixel Ring 24. On v3 (#987) the ring board clocks its own LEDs and GP12 is on the expansion header |
+| Ring data | GP12 | **v2 only**: via 74AHCT125 → J6 pin 5, one continuous 40-pixel GRB strip. On v3 (#987) the ring board clocks its own LEDs and GP12 is on the expansion header |
 | Encoder A / B / SW | GP13 / GP14 / GP15 | **v2 only**: internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts |
 | Ring link | GP13 / GP14 | **v3** (#987): full-duplex UART to the ring board's XIAO RP2350 — GP13 drives, GP14 listens, 115200, PIO UART (neither pin is on a free hardware UART). The console board's 10 k pull-ups hold both lines. **Not implemented in this firmware yet**: it still drives GP12 and reads GP13–15 as an encoder, which is the v2 board |
-| Indicator data | GP18 | via 74AHCT125 → J7 pin 2, **seven** WS2812 pucks in chain order: MODE (above footswitch 1), TRACK1–4, CLEAR, BANK |
+| Indicator data | GP18 | via 74AHCT125 → J7 pin 2, **80** GRB WS2812 pixels, eight per pill, sent with PIO/DMA |
 | CTRL1 / CTRL2 tip | GP26 / GP27 | ADC0 / ADC1: a footswitch at the rails, an expression pedal's wiper between them. The first press on a jack the board has not yet classified is held 200 ms (a plug sliding in drags the tip low the same way); once the jack is known to hold a footswitch, edges are debounced at 8 ms and sent at once |
 | CTRL1 / CTRL2 ring | GP20 / GP21 | On v3 a trace from each jack's ring through 4.7 kΩ (R19/R20). **Not a trace on v2** — one wire from each jack's ring pin to the J22 expansion pads does the same. With it, the B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B` (its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it); without it the pin's internal pull-up holds it open and nothing reports |
 | CTRL1 / CTRL2 present | GP19 / GP22 | Internal pull-down, **present = low**. On v3 the switched jack's tip-normal contact (Neutrik NJ6FD-V, through 4.7 kΩ R21/R22) drives it high only while the jack is empty; an empty jack reports CTRL kind `NONE` and is classified afresh on the next plug. On v2 these are J22's unpopulated pads: they float low, every jack reads "plugged", and the firmware's plug heuristics (a 40% jump starts a 200 ms quiet period; a jump that parks on the top rail for 1 s is an empty jack) do the same job less certainly |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
 | PD trigger I2C | GP0 / GP1 | **v3** (J23): I2C0 SDA/SCL to the STUSB4500 on the SparkFun PD board, to read the negotiated contract (RDO 0x91–0x94, capability mismatch; voltage at 0x21) and report it up the pedal link. **Not implemented in this firmware yet.** On v2 the same read is possible from J22's GP20/GP21 when those pads are free |
+
+## Physical rendering and source boundary
+
+Firmware 1.12 uses public UART protocol 8. The physical renderer is reconciled
+from PR #1079 (`ecea3af76fdb0708ca04632e260de5aa3fde09cd`), whose old-v2
+firmware 1.11 used protocol 7 with a different 21-byte Song queue payload.
+PR #1082 also uses public protocol 7 (and historical 6 for PD telemetry), with
+a separate new-v3 pin map and private ring link. Neither format is accepted
+here. Reconstructed Custom protocol 6 was a software intermediate and is not a
+standalone hardware recommendation. Update this firmware and its matching app
+together; no downgrade or compatibility format is emitted.
+
+The fitted chain order is Track4, Track3, Track2, Track1, Mode, Undo, Stop,
+Record/Play, Clear, Bank. The first eight groups enter from the right;
+Clear/Bank enter from the left. Button IDs on the wire keep their existing
+Record/Play, Stop, Undo, Mode, Track1–4, Clear, Bank order.
+
+The app supplies every pill's active bit and RGB hue. Inactive means dark;
+local switch contact, legacy track colors and mode do not override that fact.
+Optical output retains the sourced peak 191, center weights
+38/92/201/255/255/201/92/38, color gamma and total channel budget 6000.
+The limiter recomputes from the source frame so refreshes do not progressively
+dim the display. NeoPixelBus PIO/DMA preserves interrupts during the longer
+80-pixel transfer. Forced refresh, goodbye and stale-link darkening cover the
+whole chain. RGB black is a valid deliberately dark hue.
+
+The independent 40-pixel ring retains the sourced sustained comet: 1100 ms per
+turn, 30 lit positions, fractional circular interpolation, peak duty 192 and
+color-only gamma. It freezes position/color on a stopped loaded loop, shows
+master gain for 900 ms, and breathes green when empty. Ambient/startup output
+retains brightness 96; every transfer has a total channel budget of 11520.
+The combined estimated current is about 1.635 A including assumed pixel idle
+and logic consumption. This is a planning bound, not a measured guarantee.
+The app's semantic activity fields drive the ring independently of pill hue.
+
+Only this physical renderer and its limits are sourced from #1079. Its Song
+queue fields and progress-fill behavior, native audio changes, bench diagnostic
+and CAD are excluded. New-v3 ring UART/PD firmware is a separate hardware
+boundary. No physical deployment or electrical/optical validation is implied
+by the host tests or a successful Arduino compile.
 
 ## Wire format: the pedal link
 
@@ -27,16 +67,22 @@ mirrored byte for byte by `PedalLinkCodec` in `packages/pedal_repository`. Every
 message is one frame: `A5 <type> <len> <payload> <xor>`, where `xor` covers
 type, length and payload. Plain 8-bit bytes — no MIDI, no 7-bit packing, no
 version byte on the state frame; `HELLO` carries the protocol version so a
-mismatched build shows up in segno's log.
+mismatched build shows up in segno's log and cannot exchange control/state.
+STATE bytes 0–18 retain their current meanings; bytes 19–48 hold ten RGB
+triples, and bytes 49–50 hold the physical activity mask (bits 10–15 must be
+zero). The parser accepts exactly 51 bytes and preserves the last good frame
+on malformed input. Logical track LEDs remain snapshot facts; they do not
+compete with the ten-button mask for physical output.
 
 | Type | Direction | Payload |
 |---|---|---|
 | `0x01 BUTTON` | board → segno | `button (0–9), pressed (0/1)` |
 | `0x02 ENCODER` | board → segno | `int8 detents` (positive = clockwise) |
 | `0x03 HELLO` | board → segno | `protocol, fw major, fw minor` — at boot and once a second; segno counts the board as connected while these keep coming |
-| `0x10 STATE` | segno → board | 19 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain — see `pedal_link.h` |
+| `0x04 CTRL` | board → segno | `jack, contact, kind, value` (unchanged four bytes) |
+| `0x10 STATE` | segno → board | 51 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16) — see `pedal_link.h` |
 
-segno answers every `HELLO` with its current `STATE`, so a board that just
+segno answers every compatible protocol-8 `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`
 arrives for `PEDAL_LINK_FRAME_TIMEOUT_MS` (5 s) and on the goodbye flag, and
 segno reads the board as disconnected after three silent hello intervals. Both
@@ -56,11 +102,11 @@ bash firmware/test/run_tests.sh
 ## Build
 
 Needs `arduino-cli`, the arduino-pico core (`rp2040:rp2040`, RP2350 support) and
-the `Adafruit NeoPixel` library.
+`Adafruit NeoPixel@1.15.5` and `NeoPixelBus by Makuna@2.8.4`.
 
 ```sh
 arduino-cli core install rp2040:rp2040 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-arduino-cli lib install "Adafruit NeoPixel"
+arduino-cli lib install "Adafruit NeoPixel@1.15.5" "NeoPixelBus by Makuna@2.8.4"
 arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir firmware/console_board/build
 ```
 
@@ -101,7 +147,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 02 01 00 03 (HELLO, protocol 2, fw 1.0), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 08 01 0c 05 (HELLO, protocol 8, fw 1.12), once a second
 ```
 
 ## Bring-up record

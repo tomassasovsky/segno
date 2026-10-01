@@ -308,6 +308,37 @@ static void check_rejections(void) {
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN - 1, &out) == 0, "short payload accepted");
 }
 
+static void check_physical_state(void) {
+  const uint8_t p[51] = {0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,255,
+    0,128,255,165,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,
+    18,19,20,21,22,23,254,253,252,1,2};
+  pedal_state state;
+  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 8 && PEDAL_LINK_STATE_LEN == 51,
+        "wire reservation changed");
+  CHECK(pedal_link_decode_state(p,51,&state),"literal RGB state refused");
+  CHECK(state.active_button_mask == 0x201 && state.pedal_colors[0].g == 128 &&
+        state.pedal_colors[1].r == 165 && state.pedal_colors[9].b == 252,
+        "literal RGB/mask positions changed");
+  uint8_t encoded[PEDAL_LINK_MAX_FRAME];
+  CHECK(pedal_link_encode_state(&state,encoded)==55 && !memcmp(encoded+3,p,51),
+        "literal state encoding differs");
+  uint8_t bad[52]; memcpy(bad,p,51); bad[51]=0;
+  for (unsigned bit=2; bit<8; ++bit) {
+    bad[50]=(uint8_t)(1u<<bit);
+    pedal_state before; memset(&before,0x5a,sizeof(before));
+    state=before;
+    CHECK(!pedal_link_decode_state(bad,51,&state),"reserved mask accepted");
+    CHECK(!memcmp(&state,&before,sizeof(state)),"refusal mutated output");
+  }
+  bad[50]=2;
+  const uint8_t lengths[]={0,19,21,49,50,52};
+  for (size_t i=0;i<sizeof(lengths);++i) {
+    pedal_state before; memset(&before,0x5a,sizeof(before)); state=before;
+    CHECK(!pedal_link_decode_state(bad,lengths[i],&state),"wrong length accepted");
+    CHECK(!memcmp(&state,&before,sizeof(state)),"length refusal mutated output");
+  }
+}
+
 int main(int argc, char **argv) {
   /* Liveness: the board must outlive one lost STATE reply. */
   CHECK(PEDAL_LINK_FRAME_TIMEOUT_MS >= 2u * PEDAL_LINK_HELLO_MS,
@@ -336,6 +367,7 @@ int main(int argc, char **argv) {
           TABLES[t].table, g_enum_seen[t], TABLES[t].count);
   }
   check_rejections();
+  check_physical_state();
   if (g_failures) {
     fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

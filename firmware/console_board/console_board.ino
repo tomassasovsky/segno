@@ -14,11 +14,12 @@
 // mandatory), a release edge is an RC of ~5-8 ms through the 100 nF debounce
 // caps, and GP23 high puts the module's SMPS in PWM mode for a quieter ADC.
 //
-// Build: arduino-pico core (rp2040:rp2040:rpipico2) + Adafruit NeoPixel.
+// Build: arduino-pico core + Adafruit NeoPixel + NeoPixelBus (PIO/DMA pills).
 //   arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir firmware/console_board/build
 // Flash from the Pi over SWD: README.md.
 
 #include <Adafruit_NeoPixel.h>
+#include <NeoPixelBus.h>
 
 #include "pedal_link.h"
 
@@ -26,7 +27,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 5;
+static const uint8_t FW_MINOR = 12;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -56,28 +57,32 @@ static const uint8_t CTRL_PRESENT_PIN[PEDAL_CTRL_COUNT] = {19, 22};
 static const uint8_t PIN_SMPS_PWM = 23;
 
 // ---- LEDs --------------------------------------------------------------------
-// The encoder's NeoPixel Ring 24 on J6 (O65.5 / O52.3, the fitted part). Its
-// WS2812 index order runs clockwise seen from the front of the panel, which is
-// the direction the sweep travels, so pixel index IS ring position — no
-// reversal (bench-verified 2026-09-03: reversing it ran the hump backwards).
-static const uint16_t RING_N = 24;
-// The indicator pills on J7, one WS2812 puck each, chained in this order along
-// the faceplate. The first sits above footswitch 1 and is the mode indicator;
-// then the four active-bank tracks, the clear pill and the bank pill. Same map
-// the pedal this board replaces used (its LEDs 12..18).
-enum {
-  IND_MODE = 0,
-  IND_TRACK1,
-  IND_TRACK2,
-  IND_TRACK3,
-  IND_TRACK4,
-  IND_CLEAR,
-  IND_BANK,
-  IND_N
+// One continuous 40-pixel GRB WS2812B strip around the encoder, driven by
+// the existing v2 GP12/J6 path. Keep the established clockwise index order.
+static const uint16_t RING_N = 40;
+// Ten eight-pixel pills on J7, in the owner-verified data-chain order.
+static const uint8_t PILL_PIXELS = 8, IND_N = PEDAL_BTN_COUNT * PILL_PIXELS;
+static const uint8_t PILL_BUTTON[PEDAL_BTN_COUNT] = {
+  PEDAL_BTN_TRACK4, PEDAL_BTN_TRACK3, PEDAL_BTN_TRACK2, PEDAL_BTN_TRACK1,
+  PEDAL_BTN_MODE, PEDAL_BTN_UNDO, PEDAL_BTN_STOP, PEDAL_BTN_REC_PLAY,
+  PEDAL_BTN_CLEAR, PEDAL_BTN_BANK
 };
+static const uint8_t PILL_PEAK = 191;
+static const uint8_t PILL_WEIGHTS[PILL_PIXELS] = {38, 92, 201, 255, 255, 201, 92, 38};
+// Limit the whole pill chain to ~471 mA of color-channel current using the
+// conservative 20 mA/channel model. The ring's 11520-channel budget adds
+// <=904 mA; 120 mA pixel idle +140 mA logic gives ~1.635 A on the old PCB's
+// estimated ~1.65 A rail. This is a planning model, not measured consumption.
+static const uint32_t PILL_CHANNEL_BUDGET = 6000;
 Adafruit_NeoPixel ring(RING_N, PIN_RING, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel ind(IND_N, PIN_IND, NEO_GRB + NEO_KHZ800);
-static const uint8_t LED_BRIGHTNESS = 64;
+// DMA keeps interrupts available throughout the 80-pixel transfer.
+NeoPixelBus<NeoGrbFeature, Rp2040x4Pio1Ws2812xMethod> ind(IND_N, PIN_IND);
+static const uint8_t RING_AMBIENT_BRIGHTNESS = 96;
+static const uint32_t RING_CHANNEL_BUDGET = RING_N * 3UL * RING_AMBIENT_BRIGHTNESS;
+
+static uint8_t pillPixelIndex(uint8_t group, uint8_t pixel) {
+  return group * PILL_PIXELS + (group < 8 ? PILL_PIXELS - 1 - pixel : pixel);
+}
 
 
 // ---- link ----------------------------------------------------------------------
@@ -92,7 +97,6 @@ static const unsigned long FRAME_TIMEOUT_MS = PEDAL_LINK_FRAME_TIMEOUT_MS;
 static pedal_link_parser g_parser;
 static pedal_state g_frame;
 static bool g_haveFrame = false;
-static bool g_frameDirty = false;  // a STATE (or timeout/goodbye) changed what to render
 static unsigned long g_lastFrameMs = 0;
 static unsigned long g_lastHelloMs = 0;
 // How long the ring shows the master level after the encoder moves it, before
@@ -125,7 +129,6 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
         }
         g_frame = decoded;
         g_haveFrame = true;
-        g_frameDirty = true;
         g_lastFrameMs = millis();
       }
       break;  // a malformed frame is dropped; the last good one is kept
@@ -535,81 +538,112 @@ static void pollCtrl() {
 static uint32_t rgb(uint8_t r, uint8_t g, uint8_t b) {
   return Adafruit_NeoPixel::gamma32(Adafruit_NeoPixel::Color(r, g, b));
 }
+// `level` dims a colour. Gamma goes on the colour and on the level separately,
+// and the two multiply, rounded: scaling before gamma, or truncating, drops a
+// mixed colour's weaker channel to 0 first, so a fading yellow went red at the
+// dim end. For pure red, green and blue the result is the same as before.
 static uint32_t scaled(uint8_t r, uint8_t g, uint8_t b, uint8_t level) {
-  return rgb((uint8_t)((r * (uint16_t)level) / 255), (uint8_t)((g * (uint16_t)level) / 255),
-             (uint8_t)((b * (uint16_t)level) / 255));
+  const uint16_t k = Adafruit_NeoPixel::gamma8(level);
+  const uint32_t c = rgb(r, g, b);
+  return Adafruit_NeoPixel::Color((uint8_t)((((c >> 16) & 0xFF) * k + 127) / 255),
+                                  (uint8_t)((((c >> 8) & 0xFF) * k + 127) / 255),
+                                  (uint8_t)(((c & 0xFF) * k + 127) / 255));
 }
 
-static Rgb ledColor(uint8_t led) {
-  switch (led) {
-    case PEDAL_LED_GREEN: return {0, 255, 0};
-    case PEDAL_LED_RED: return {255, 0, 0};
-    case PEDAL_LED_BLUE: return {0, 0, 255};
-    default: return {0, 0, 0};
-  }
+// Preserve the established startup, volume and breathe output. The driver
+// itself stays at full scale so the comet can use a brighter, localized head.
+static uint32_t ambientRingColor(uint32_t c) {
+  const uint16_t k = RING_AMBIENT_BRIGHTNESS + 1;
+  return Adafruit_NeoPixel::Color(((c >> 16) & 255) * k >> 8,
+                                  ((c >> 8) & 255) * k >> 8,
+                                  (c & 255) * k >> 8);
 }
-// The mode pill's colour: rec red, play green, FX blue, Custom amber. Solid,
-// always — this pill means the interaction mode and nothing else.
-static Rgb modeColor(uint8_t mode) {
-  switch (mode) {
-    case PEDAL_MODE_PLAY: return {0, 255, 0};
-    case PEDAL_MODE_FX: return {0, 0, 255};
-    case PEDAL_MODE_CUSTOM: return {255, 255, 0};
-    default: return {255, 0, 0};  // PEDAL_MODE_REC
+
+// Every ring transfer shares the previous full-white current ceiling. Normal
+// patterns fit without dimming; a larger frame is scaled uniformly for hue.
+static void showRing() {
+  uint32_t total = 0;
+  for (uint16_t i = 0; i < RING_N; ++i) {
+    const uint32_t c = ring.getPixelColor(i);
+    total += ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255);
   }
+  if (total > RING_CHANNEL_BUDGET) {
+    for (uint16_t i = 0; i < RING_N; ++i) {
+      const uint32_t c = ring.getPixelColor(i);
+      ring.setPixelColor(i, Adafruit_NeoPixel::Color(
+          ((c >> 16) & 255) * RING_CHANNEL_BUDGET / total,
+          ((c >> 8) & 255) * RING_CHANNEL_BUDGET / total,
+          (c & 255) * RING_CHANNEL_BUDGET / total));
+    }
+  }
+  ring.show();
 }
+
 static Rgb globalColor(uint8_t color) {
   switch (color) {
     case PEDAL_GLOBAL_GREEN: return {0, 255, 0};
     case PEDAL_GLOBAL_RED: return {255, 0, 0};
-    case PEDAL_GLOBAL_AMBER: return {255, 255, 0};  // yellow, on the owner's call
+    // Yellow, on the owner's call. Equal red and green read lime on these LEDs;
+    // green at 235 was matched by eye on the unit (#1064).
+    case PEDAL_GLOBAL_AMBER: return {255, 235, 0};
     case PEDAL_GLOBAL_BLUE: return {0, 0, 255};
     default: return {0, 0, 0};
   }
 }
 
-// A smooth brightness hump travels the ring at a FIXED cadence — it says
+// A comet travels the ring at a FIXED cadence — it says
 // "something is happening", in the activity colour, and deliberately does not
 // track the loop: one revolution per loop is unreadably slow at any musical
 // length, and the playhead is already on the screens (owner's call,
 // 2026-09-03).
 //
-// A Stop that leaves a loop loaded freezes the hump where it was. With nothing
+// A Stop that leaves a loop loaded freezes the comet where it was. With nothing
 // loaded and nothing playing the ring breathes green so it reads as alive; the
 // breathe never reaches black, so an idle panel still shows the board is up.
-static const unsigned long RING_MS_PER_REV = 700;
+static const unsigned long RING_MS_PER_REV = 1100;
 static const unsigned long BREATHE_MS = 1200;
 // The dimmest the breathe goes, as a fraction of full: never off.
 static const float BREATHE_FLOOR = 0.35f;
-static const float RING_WIDTH = 11.0f;
-static float g_ringPhase = 0.0f;  // hump centre, 0..RING_N
+// Owner-approved sustained-fade preview: physical channel duties, head first.
+// The last quarter is dark. These values already describe LED output, so only
+// the hue receives gamma; applying brightness gamma again shortens the tail.
+static const uint8_t COMET_DUTY[RING_N] = {
+  192, 192, 180, 174, 168, 162, 156, 150, 144, 138,
+  132, 126, 120, 114, 108, 102, 96, 89, 82, 74,
+  66, 58, 50, 41, 33, 25, 18, 11, 6, 2,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+static float g_ringPhase = 0.0f;  // comet head, 0..RING_N
 static unsigned long g_ringLastMs = 0;
 // What the ring buffer currently holds. One question, asked once: every branch
 // of renderRing() states which view it just painted, and the caller pushes the
 // strip only when that key changed. Per-branch latches were tried and each one
 // grew its own reset rule — the arc forgot to restore what it painted over,
 // and the dark branch forgot to repaint at all.
-enum RingView : uint8_t { RING_NONE = 0, RING_DARK, RING_ARC, RING_HUMP, RING_BREATHE };
+enum RingView : uint8_t { RING_NONE = 0, RING_DARK, RING_ARC, RING_COMET, RING_BREATHE };
 static uint8_t g_ringView = RING_NONE;
-static uint8_t g_ringKeyA = 0;  // arc: lit pixels; hump: phase in whole pixels
+static uint8_t g_ringKeyA = 0;  // arc: lit pixels; comet: phase in whole pixels
 static uint8_t g_ringKeyB = 0;  // the colour that view was painted in
-// The colour the hump was last drawn in. A Stop freezes the hump but sends
+// The colour the comet was last drawn in. A Stop freezes the comet but sends
 // GLOBAL_OFF, so the frame no longer says what colour to freeze it at; without
-// remembering it, restoring the hump paints it black.
-static Rgb g_humpColour = {0, 255, 0};
+// remembering it, restoring the comet paints it black.
+static Rgb g_cometColour = {0, 255, 0};
 
-// Draws the hump at the current phase, in `c`.
-static void paintHump(Rgb c) {
+// Draws the comet with its head at the current phase, in `c`.
+static void paintComet(Rgb c) {
+  const uint32_t colour = rgb(c.r, c.g, c.b);
+  const uint16_t head = (uint16_t)g_ringPhase;
+  const float fraction = g_ringPhase - head;
   for (uint16_t i = 0; i < RING_N; i++) {
-    float d = fabsf((float)i - g_ringPhase);
-    if (d > RING_N / 2.0f) d = RING_N - d;
-    const float dn = d / RING_WIDTH;
-    uint8_t level = 0;
-    if (dn < 1.0f) {
-      const float b = 1.0f - dn * sqrtf(dn);  // dn^1.5, without powf
-      level = (uint8_t)(b * 255.0f + 0.5f);
-    }
-    ring.setPixelColor(i, scaled(c.r, c.g, c.b, level));
+    const uint16_t behind = (head + RING_N - i) % RING_N;
+    const uint8_t a = COMET_DUTY[behind];
+    const uint8_t b = COMET_DUTY[(behind + 1) % RING_N];
+    // Blend neighboring circular positions, including across the wire notch.
+    const uint16_t duty = (uint16_t)(a * (1.0f - fraction) + b * fraction + 0.5f);
+    ring.setPixelColor(i, Adafruit_NeoPixel::Color(
+        (((colour >> 16) & 255) * duty + 127) / 255,
+        (((colour >> 8) & 255) * duty + 127) / 255,
+        ((colour & 255) * duty + 127) / 255));
   }
 }
 
@@ -646,20 +680,20 @@ static bool renderRing() {
     const uint8_t lit = (uint8_t)((g_frame.master_gain * RING_N + 254) / 255);
     if (!settle(RING_ARC, lit, g_frame.global_color)) return false;
     for (uint16_t i = 0; i < RING_N; i++) {
-      ring.setPixelColor(i, i < lit ? rgb(c.r, c.g, c.b) : 0);
+      ring.setPixelColor(i, i < lit ? ambientRingColor(rgb(c.r, c.g, c.b)) : 0);
     }
     return true;
   }
   g_gainArmed = false;
 
   const bool active = (activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE;
-  // A Stop with a loop still loaded freezes the hump where it was — in the
+  // A Stop with a loop still loaded freezes the comet where it was — in the
   // colour it was playing in, which the frame no longer carries.
   if (!active && g_frame.loop_length_micros > 0) {
-    if (!settle(RING_HUMP, (uint8_t)g_ringPhase, PEDAL_GLOBAL_COUNT)) {
+    if (!settle(RING_COMET, (uint8_t)g_ringPhase, PEDAL_GLOBAL_COUNT)) {
       return false;
     }
-    paintHump(g_humpColour);
+    paintComet(g_cometColour);
     return true;
   }
   if (!active) {  // standby: breathe green
@@ -669,41 +703,63 @@ static bool renderRing() {
     t = t * t * (3.0f - 2.0f * t);
     const uint8_t level =
         (uint8_t)((BREATHE_FLOOR + (1.0f - BREATHE_FLOOR) * t) * 255.0f + 0.5f);
-    const uint32_t green = scaled(0, 255, 0, level);  // same for every pixel
+    const uint32_t green = ambientRingColor(scaled(0, 255, 0, level));
     for (uint16_t i = 0; i < RING_N; i++) ring.setPixelColor(i, green);
     settle(RING_BREATHE, level, 0);
     return true;  // it animates every tick
   }
   g_ringPhase =
       fmodf(g_ringPhase + (float)dt / (float)RING_MS_PER_REV * (float)RING_N, (float)RING_N);
-  g_humpColour = activity;
-  settle(RING_HUMP, (uint8_t)g_ringPhase, g_frame.global_color);
-  paintHump(activity);
+  g_cometColour = activity;
+  settle(RING_COMET, (uint8_t)g_ringPhase, g_frame.global_color);
+  paintComet(activity);
   return true;
 }
 
-// The pills only change with the frame; the caller pushes them when it did.
-static void renderIndicators() {
-  if (!g_haveFrame || g_frame.goodbye) {
-    ind.clear();
-    return;
+// The app owns both activation and hue for every physical button. The MCU
+// only maps that snapshot to the fitted harness and applies optical limits.
+static bool renderIndicators() {
+  RgbColor desired[IND_N];
+  uint32_t channelTotal = 0;
+  for (uint8_t group = 0; group < PEDAL_BTN_COUNT; ++group) {
+    const uint8_t button = PILL_BUTTON[group];
+    Rgb color = {0, 0, 0};
+    if (g_haveFrame && !g_frame.goodbye &&
+        (g_frame.active_button_mask & (1u << button))) {
+      const pedal_color c = g_frame.pedal_colors[button];
+      color = {c.r, c.g, c.b};
+    }
+    // Preserve calibrated color ratios and the tested spatial curve, with no
+    // extra gamma/dimmer. The total-current budget only dims crowded patterns.
+    const uint32_t corrected = rgb(color.r, color.g, color.b);
+    for (uint8_t pixel = 0; pixel < PILL_PIXELS; ++pixel) {
+      uint8_t level = (uint8_t)(PILL_PEAK * PILL_WEIGHTS[pixel] / 255.0f + 0.5f);
+      const RgbColor value(
+          (uint8_t)((((corrected >> 16) & 255) * level + 127) / 255),
+          (uint8_t)((((corrected >> 8) & 255) * level + 127) / 255),
+          (uint8_t)(((corrected & 255) * level + 127) / 255));
+      desired[pillPixelIndex(group, pixel)] = value;
+      channelTotal += value.R + value.G + value.B;
+    }
   }
-  // The active bank's four tracks, solid, from each track's LED state. Selection
-  // is not highlighted here; it lives on the screens.
-  const uint8_t base = g_frame.active_bank * 4;
-  for (uint8_t t = 0; t < 4; t++) {
-    const Rgb c = ledColor(g_frame.track_leds[base + t]);
-    ind.setPixelColor(IND_TRACK1 + t, rgb(c.r, c.g, c.b));
+  bool changed = false;
+  for (uint8_t pixel = 0; pixel < IND_N; ++pixel) {
+    RgbColor value = desired[pixel];
+    if (channelTotal > PILL_CHANNEL_BUDGET) {
+      value.R = (uint32_t)value.R * PILL_CHANNEL_BUDGET / channelTotal;
+      value.G = (uint32_t)value.G * PILL_CHANNEL_BUDGET / channelTotal;
+      value.B = (uint32_t)value.B * PILL_CHANNEL_BUDGET / channelTotal;
+    }
+    if (ind.GetPixelColor(pixel) != value) {
+      ind.SetPixelColor(pixel, value);
+      changed = true;
+    }
   }
-  const Rgb m = modeColor(g_frame.mode);
-  ind.setPixelColor(IND_MODE, rgb(m.r, m.g, m.b));
-  ind.setPixelColor(IND_CLEAR, g_frame.clear_fade ? rgb(255, 0, 0) : 0);
-  ind.setPixelColor(IND_BANK, g_frame.active_bank == 1 ? rgb(0, 0, 80) : 0);
+  return changed;
 }
 
-// show() is a blocking PIO push with interrupts masked (~30 us per pixel), so
-// a strip is pushed only when its buffer changed — plus once every REFRESH_MS
-// regardless, so a pixel that glitched still heals.
+// The short ring transfer remains unchanged. The 80-pixel chain uses DMA;
+// unchanged frames are skipped, with a forced refresh to heal a glitched LED.
 static const unsigned long RENDER_MS = 20;
 static const unsigned long REFRESH_MS = 250;
 static unsigned long g_lastRenderMs = 0;
@@ -759,20 +815,19 @@ void setup() {
   pedal_link_parser_init(&g_parser);
 
   ring.begin();
-  ring.setBrightness(LED_BRIGHTNESS);
-  ind.begin();
-  ind.setBrightness(LED_BRIGHTNESS);
+  ring.setBrightness(255);  // Physical duties and the total limit are applied above.
+  ind.Begin();
 
   // A brief green sweep so the panel visibly comes alive before segno's first frame.
   for (uint16_t i = 0; i < RING_N; i++) {
-    ring.setPixelColor(i, rgb(0, 24, 0));
-    ring.show();
+    ring.setPixelColor(i, ambientRingColor(rgb(0, 24, 0)));
+    showRing();
     delay(12);
   }
   ring.clear();
-  ring.show();
-  ind.clear();
-  ind.show();
+  showRing();
+  ind.ClearTo(RgbColor(0));
+  ind.Show();
 
   sendHello();
   g_lastHelloMs = millis();
@@ -792,23 +847,23 @@ void loop() {
   }
   if (g_haveFrame && now - g_lastFrameMs > FRAME_TIMEOUT_MS) {
     g_haveFrame = false;
-    g_frameDirty = true;
   }
   if (now - g_lastRenderMs >= RENDER_MS) {
     g_lastRenderMs = now;
     const bool refresh = now - g_lastRefreshMs >= REFRESH_MS;
     if (refresh) g_lastRefreshMs = now;
     const bool ringChanged = renderRing();
-    const bool frameChanged = g_frameDirty;
-    g_frameDirty = false;
-    if (frameChanged) renderIndicators();
+    const bool indicatorsChanged = renderIndicators();
     // show() masks interrupts briefly: drain the link and sample the encoder
     // either side of each push so a click turned across one cannot be lost.
     pollLink();
     encoderSampleFromLoop();
-    if (ringChanged || refresh) ring.show();
+    if (ringChanged || refresh) showRing();
     encoderSampleFromLoop();
-    if (frameChanged || refresh) ind.show();
+    if (indicatorsChanged || refresh) {
+      if (refresh) ind.Dirty();
+      ind.Show();
+    }
     encoderSampleFromLoop();
     pollLink();
   }
