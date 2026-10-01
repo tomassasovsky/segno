@@ -1075,9 +1075,9 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
 
   le_pr_fx_chain chain;
   le_pr_fx_chain_init_from_lane(&chain, arm_lane);
-  float volume = (float)le_json_number(
+  float track_gain = (float)le_json_number(
       arm_track != NULL ? le_json_get(arm_track, "volume") : NULL, 1.0);
-  volume = (float)le_json_number(le_json_get(arm_lane, "volume"), volume);
+  float volume = (float)le_json_number(le_json_get(arm_lane, "volume"), 1.0);
   int muted = le_json_bool(le_json_get(arm_lane, "muted"),
       le_json_bool(le_json_get(arm_track, "muted"), 0));
   float pan = (float)le_json_number(le_json_get(arm_lane, "pan"), 0);
@@ -1247,7 +1247,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
           }
           break;
         case LE_CMD_SET_VOLUME:
-          if (cmd->arg_i == channel) volume = cmd->arg_f;
+          if (cmd->arg_i == channel) track_gain = cmd->arg_f;
           break;
         case LE_CMD_SET_LANE_MUTE:
           if (cmd->lanef.channel == channel && cmd->lanef.lane == 0) {
@@ -1287,6 +1287,8 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     float r = in;
     fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r, chain.count,
                    chain.type, chain.params, effective);
+    l *= track_gain;
+    r *= track_gain;
     wet[f] = l;
     const float far = fabsf(pan) >= 1 ? 0 : cosf(fabsf(pan) * 1.57079632679f);
     l *= pan > 0 ? far : 1;

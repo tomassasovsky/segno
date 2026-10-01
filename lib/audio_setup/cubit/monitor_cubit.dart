@@ -60,6 +60,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     // [_readMonitor].
     _monitorWatch = _repository.monitorChanges.listen(_readMonitor);
     _paramWatch = _repository.monitorParamChanges.listen(_readMonitorParams);
+    _fxReplayWatch = _repository.fxReplayConfirmed.listen(_onFxReplayConfirmed);
   }
 
   final LooperRepository _repository;
@@ -98,6 +99,10 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// announces, so a CC sweeping an input-stage param moves the console knob
   /// as it moves the audio — not at the next structural announce (#605).
   late final StreamSubscription<int> _paramWatch;
+  late final StreamSubscription<({int mixGeneration, int sessionRevision})>
+  _fxReplayWatch;
+  final Map<int, ({int sessionRevision, Object token})> _pendingFxSaves = {};
+  final Set<int> _savingFxInputs = {};
 
   /// Whether [_restore] has pushed the saved monitors into the repository.
   bool _restored = false;
@@ -123,7 +128,12 @@ class MonitorCubit extends Cubit<MonitorState> {
     for (final monitor in loaded) {
       if (monitor != null) restored[monitor.input] = monitor;
     }
-    restored.values.forEach(_applyMonitor);
+    final priorFx = await _repository.settleFxRecipes();
+    if (!priorFx.isOk) throw StateError('previous monitor FX was refused');
+    for (final monitor in restored.values) {
+      final result = _applyMonitor(monitor);
+      if (!result.isOk) throw StateError('saved monitor FX was refused');
+    }
     final monitorLevels = {
       for (final monitor in restored.values) monitor.input: monitor.volume,
     };
@@ -140,6 +150,8 @@ class MonitorCubit extends Cubit<MonitorState> {
         throw StateError('saved monitor levels were refused');
       }
     }
+    final settledFx = await _repository.settleFxRecipes();
+    if (!settledFx.isOk) throw StateError('saved monitor FX was refused');
     if (isClosed) return;
     emit(MonitorState(inputs: restored));
     // Read the APPLIED chains back into state. What was decoded from settings
@@ -243,7 +255,87 @@ class MonitorCubit extends Cubit<MonitorState> {
       _cancelEditorTimers(input);
     }
     emit(state.withInput(applied));
-    unawaited(_persistMonitor(applied));
+    // Every monitor write persists the whole envelope, including FX. Even a
+    // mode-only announce can arrive while an earlier recipe is still pending.
+    unawaited(_persistMonitorAfterFx(applied));
+  }
+
+  Future<void> _persistMonitorAfterFx(InputMonitor monitor) async {
+    final sessionRevision = _repository.sessionRevision;
+    _pendingFxSaves[monitor.input] = (
+      sessionRevision: sessionRevision,
+      token: Object(),
+    );
+    final result = await _repository.settleFxRecipes(
+      waitForCallback: true,
+      cancelled: () => isClosed,
+    );
+    if (!result.isOk || isClosed || state.forInput(monitor.input) != monitor) {
+      return;
+    }
+    await _savePendingFx(monitor.input, sessionRevision);
+  }
+
+  void _onFxReplayConfirmed(
+    ({int mixGeneration, int sessionRevision}) replay,
+  ) {
+    if (isClosed ||
+        replay.mixGeneration != _repository.mixGeneration ||
+        replay.sessionRevision != _repository.sessionRevision) {
+      return;
+    }
+    for (final entry in _pendingFxSaves.entries.toList()) {
+      if (entry.value.sessionRevision == replay.sessionRevision) {
+        unawaited(
+          _savePendingFx(entry.key, replay.sessionRevision, replay: true),
+        );
+      }
+    }
+  }
+
+  Future<void> _savePendingFx(
+    int input,
+    int sessionRevision, {
+    bool replay = false,
+  }) async {
+    if (!_savingFxInputs.add(input)) return;
+    Object? attemptedToken;
+    try {
+      while (true) {
+        final pending = _pendingFxSaves[input];
+        if (pending == null ||
+            pending.sessionRevision != sessionRevision ||
+            sessionRevision != _repository.sessionRevision ||
+            isClosed ||
+            !_repository.fxRecipesSettled) {
+          return;
+        }
+        attemptedToken = pending.token;
+        final applied = replay
+            ? (_repository.allMonitors()[input] ?? InputMonitor(input: input))
+            : state.forInput(input);
+        try {
+          await _persistMonitor(applied);
+        } on Object catch (error, stackTrace) {
+          addError(error, stackTrace);
+          return;
+        }
+        if (identical(_pendingFxSaves[input]?.token, pending.token)) {
+          _pendingFxSaves.remove(input);
+          return;
+        }
+      }
+    } finally {
+      _savingFxInputs.remove(input);
+      final next = _pendingFxSaves[input];
+      if (next != null &&
+          !identical(next.token, attemptedToken) &&
+          next.sessionRevision == _repository.sessionRevision &&
+          !isClosed &&
+          _repository.fxRecipesSettled) {
+        unawaited(_savePendingFx(input, next.sessionRevision));
+      }
+    }
   }
 
   /// Re-reads only [input]'s chain, following a throttled param announce.
@@ -369,6 +461,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// the pre-load leftover. Reads only from the repository; never re-applies to
   /// the engine (the load already did), so it cannot desync engine vs cache.
   Future<void> syncFromRepository() async {
+    _pendingFxSaves.clear();
     // A loaded session supersedes every knob edit still in flight; the sweep
     // below writes the loaded truth for both the applied and the dropped
     // inputs, so a pending write has nothing left to say.
@@ -445,21 +538,30 @@ class MonitorCubit extends Cubit<MonitorState> {
     await _settings.saveMonitorMute(input, muted: muted);
   }
 
-  /// Appends a default effect (drive) to monitor [input]'s chain.
+  /// Appends a default effect (drive) to monitor [input]'s chain, Pre.
+  ///
+  /// A live input's new instances default to Pre (slice 3e): the accepted
+  /// design's own default, and the one that matches what this chain is for —
+  /// an input's Pre entries are what a take records, its Post entries are
+  /// copied onto the lane and run after that take's player.
   void addEffect(int input, {TrackEffectType? type}) {
     final effects = state.forInput(input).effects;
     _pushEffects(input, [
       ...effects,
-      BuiltInEffect(type: type ?? TrackEffectType.drive),
+      BuiltInEffect(
+        type: type ?? TrackEffectType.drive,
+        placement: FxPlacement.pre,
+      ),
     ]);
   }
 
-  /// Appends a hosted plugin (identified by [ref]) to monitor [input]'s chain.
-  /// The repository loads it through the slot ABI on the next chain apply.
+  /// Appends a hosted plugin (identified by [ref]) to monitor [input]'s chain,
+  /// Pre — see [addEffect]. The repository loads it through the slot ABI on
+  /// the next chain apply.
   void insertPlugin(int input, PluginRef ref) {
     _pushEffects(input, [
       ...state.forInput(input).effects,
-      PluginEffect(ref: ref),
+      PluginEffect(ref: ref, placement: FxPlacement.pre),
     ]);
   }
 
@@ -470,12 +572,15 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (index < 0 || index >= monitor.effects.length) return;
     final fx = monitor.effects[index];
     if (fx is! PluginEffect) return;
-    _repository.relinkMonitorPlugin(input: input, index: index, ref: ref);
+    final result = _repository.relinkMonitorPlugin(
+      input: input,
+      index: index,
+      ref: ref,
+    );
+    if (!result.isOk) return;
     final applied = _repository.monitorEffects(input);
     emit(state.withInput(monitor.copyWith(effects: applied)));
-    unawaited(
-      _settings.saveMonitorEffects(input, _encodedChain(input, applied)),
-    );
+    unawaited(_persistAppliedFx(input));
   }
 
   /// Removes monitor [input]'s chain entry at [index].
@@ -493,9 +598,40 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (target < 0) target = 0;
     if (target > effects.length - 1) target = effects.length - 1;
     if (from == target) return;
+    // Reorder stays within a stage (slice 3e). A drag across the Pre/Post
+    // boundary is refused rather than honoured, because the chain is stored
+    // Pre-first: honouring it would re-partition the result straight back and
+    // the entry would appear to snap to somewhere nobody asked for. Placement
+    // moves through the placement control, which says where it lands.
+    if (effects[from].placement != effects[target].placement) return;
     final next = [...effects];
     next.insert(target, next.removeAt(from));
     _pushEffects(input, next);
+  }
+
+  /// Moves monitor [input]'s chain entry [index] to [placement] (slice 3e).
+  ///
+  /// The entry keeps its identity, parameters and enable state and lands at
+  /// the end of the destination stage's run. A live input's Pre entries are
+  /// what a take records; its Post entries are copied onto the lane and run
+  /// after that take's player.
+  void setEffectPlacement(int input, int index, FxPlacement placement) {
+    final effects = state.forInput(input).effects;
+    if (index < 0 || index >= effects.length) return;
+    final fx = effects[index];
+    if (fx.placement == placement) return;
+    final moved = switch (fx) {
+      BuiltInEffect() => fx.copyWith(placement: placement),
+      PluginEffect() => fx.copyWith(placement: placement),
+    };
+    // Removed and appended, not edited in place: the accepted design puts a
+    // re-placed instance at the end of its destination stage, and the stable
+    // partition in _pushEffects keeps it there.
+    _pushEffects(input, [
+      for (var i = 0; i < effects.length; i++)
+        if (i != index) effects[i],
+      moved,
+    ]);
   }
 
   /// Sets the type of monitor [input]'s chain entry [index] (resets its DSP
@@ -503,7 +639,17 @@ class MonitorCubit extends Cubit<MonitorState> {
   void setEffectType(int input, int index, TrackEffectType type) {
     final effects = state.forInput(input).effects;
     if (index < 0 || index >= effects.length) return;
-    final next = [...effects]..[index] = BuiltInEffect(type: type);
+    // Retyping resets the DSP parameters while retaining the slot's identity
+    // and the player's power, placement, and channel settings.
+    final old = effects[index];
+    final next = [...effects]
+      ..[index] = BuiltInEffect(
+        type: type,
+        enabled: old.enabled,
+        slotId: old.slotId,
+        placement: old.placement,
+        channels: old.channels,
+      );
     _pushEffects(input, next);
   }
 
@@ -518,13 +664,14 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (param < 0 || param >= fx.params.length) return;
     final params = List<double>.of(fx.params)..[param] = value;
     final next = [...monitor.effects]..[index] = fx.copyWith(params: params);
-    emit(state.withInput(monitor.copyWith(effects: next)));
-    _repository.setMonitorEffectParam(
+    final result = _repository.setMonitorEffectParam(
       input: input,
       index: index,
       param: param,
       value: value,
     );
+    if (!result.isOk) return;
+    emit(state.withInput(monitor.copyWith(effects: next)));
     _schedulePersist(input);
   }
 
@@ -540,13 +687,14 @@ class MonitorCubit extends Cubit<MonitorState> {
     final values = Map<int, double>.of(fx.paramValues)..[paramId] = value;
     final next = [...monitor.effects]
       ..[index] = fx.copyWith(paramValues: values);
-    emit(state.withInput(monitor.copyWith(effects: next)));
-    _repository.setMonitorPluginParam(
+    final result = _repository.setMonitorPluginParam(
       input: input,
       index: index,
       paramId: paramId,
       value: value,
     );
+    if (!result.isOk) return;
+    emit(state.withInput(monitor.copyWith(effects: next)));
     _schedulePersist(input);
   }
 
@@ -560,11 +708,12 @@ class MonitorCubit extends Cubit<MonitorState> {
     // flag flip across the sealed entry hierarchy, so re-reading it is more
     // honest than reproducing that dispatch here. [setChainEnabled] keeps the
     // same order for the same reason.
-    _repository.setMonitorEffectEnabled(
+    final result = _repository.setMonitorEffectEnabled(
       input: input,
       index: index,
       enabled: enabled,
     );
+    if (!result.isOk) return;
     // Fall back to the optimistic chain when the repository reports nothing:
     // it rejects the write (leaving its cache untouched) whenever it holds no
     // chain for this input — engine not running yet, a session load that just
@@ -589,7 +738,11 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (!state.hasInput(input)) return;
     final monitor = state.forInput(input);
     // Write, then emit — the same order as [setEffectEnabled].
-    _repository.setMonitorChainEnabled(input: input, enabled: enabled);
+    final result = _repository.setMonitorChainEnabled(
+      input: input,
+      enabled: enabled,
+    );
+    if (!result.isOk) return;
     emit(state.withInput(monitor.copyWith(chainEnabled: enabled)));
     unawaited(
       _settings.saveMonitorEffects(
@@ -637,30 +790,44 @@ class MonitorCubit extends Cubit<MonitorState> {
     emit(state.withInput(next));
   }
 
-  void _pushEffects(int input, List<TrackEffect> effects) {
+  void _pushEffects(int input, List<TrackEffect> rawEffects) {
     // A structural edit reseats the input's slots, so cancel any editor-sync
     // poll keyed by a now-stale chain index (a reorder would otherwise rebind
     // the poll to a different plugin).
     _cancelEditorTimers(input);
+    // Partition Pre-first here as well as at the repository write boundary
+    // (slice 3e), so the optimistic emit below is never an order the
+    // repository is about to change under it: adding a Pre entry to a chain
+    // that ends in Post ones would otherwise draw it last for one frame and
+    // then jump.
+    final effects = partitionByPlacement(rawEffects);
+    final result = _repository.setMonitorEffects(
+      input: input,
+      effects: effects,
+    );
+    if (!result.isOk) return;
     emit(state.withInput(state.forInput(input).copyWith(effects: effects)));
-    _repository.setMonitorEffects(input: input, effects: effects);
     // The repository enriches plugin entries with their enumerated params
-    // while applying the chain (so the in-app knobs render). Re-read to pick
-    // those up; fall back to the optimistic chain when the repo reports nothing
-    // (engine not running yet, or a unit-test fake).
+    // while applying the chain. Re-read those before the confirmed write.
     final applied = _repository.monitorEffects(input);
     if (applied.isNotEmpty) {
       emit(state.withInput(state.forInput(input).copyWith(effects: applied)));
     }
-    // Persist the enriched chain (it carries each plugin's resolved display
-    // name, so it survives a restart); fall back to the optimistic input only
-    // when the repo reported nothing (engine not running / a unit-test fake).
-    unawaited(
-      _settings.saveMonitorEffects(
-        input,
-        _encodedChain(input, applied.isNotEmpty ? applied : effects),
-      ),
+    unawaited(_persistAppliedFx(input));
+  }
+
+  Future<void> _persistAppliedFx(int input) async {
+    final sessionRevision = _repository.sessionRevision;
+    _pendingFxSaves[input] = (
+      sessionRevision: sessionRevision,
+      token: Object(),
     );
+    final result = await _repository.settleFxRecipes(
+      waitForCallback: true,
+      cancelled: () => isClosed,
+    );
+    if (!result.isOk || isClosed) return;
+    await _savePendingFx(input, sessionRevision);
   }
 
   /// Trailing-debounced persistence of monitor [input]'s chain, for the two
@@ -670,15 +837,33 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Re-reads the chain from the cubit's state at flush time rather than
   /// closing over the list that scheduled it, so a coalesced burst persists
   /// the value the user let go on.
-  void _schedulePersist(int input) => _fxPersist.schedule(
-    input,
-    () => unawaited(
-      _settings.saveMonitorEffects(
-        input,
-        _encodedChain(input, state.forInput(input).effects),
-      ),
-    ),
-  );
+  void _schedulePersist(int input) =>
+      _fxPersist.schedule(input, () => _persistScheduledFx(input));
+
+  void _persistScheduledFx(int input) {
+    final sessionRevision = _repository.sessionRevision;
+    _pendingFxSaves[input] = (
+      sessionRevision: sessionRevision,
+      token: Object(),
+    );
+    if (_repository.fxRecipesSettled) {
+      unawaited(_savePendingFx(input, sessionRevision));
+    } else {
+      unawaited(_waitAndPersistScheduledFx(input, sessionRevision));
+    }
+  }
+
+  Future<void> _waitAndPersistScheduledFx(
+    int input,
+    int sessionRevision,
+  ) async {
+    final result = await _repository.settleFxRecipes(
+      waitForCallback: true,
+      cancelled: () => isClosed,
+    );
+    if (!result.isOk || isClosed) return;
+    await _savePendingFx(input, sessionRevision);
+  }
 
   /// Encodes monitor [input]'s chain as the persisted envelope string (R15):
   /// the chain-enabled flag rides beside the entries in the one monitor-fx
@@ -703,14 +888,18 @@ class MonitorCubit extends Cubit<MonitorState> {
   }
 
   /// Pushes [monitor]'s non-mix fields; restore applies all levels together.
-  void _applyMonitor(InputMonitor monitor) {
+  EngineResult _applyMonitor(InputMonitor monitor) {
     final input = monitor.input;
     _repository
       ..setMonitorInputMode(input: input, mode: monitor.mode)
       ..setMonitorOutput(input: input, mask: monitor.outputMask)
-      ..setMonitorMute(input: input, muted: monitor.muted)
-      ..setMonitorEffects(input: input, effects: monitor.effects)
-      ..setMonitorChainEnabled(input: input, enabled: monitor.chainEnabled);
+      ..setMonitorMute(input: input, muted: monitor.muted);
+    return _repository.setMonitorEffects(
+      input: input,
+      effects: monitor.effects,
+      chainEnabled: monitor.chainEnabled,
+      allowUnavailable: true,
+    );
   }
 
   @override
@@ -725,6 +914,8 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(_catalogWatch?.cancel());
     unawaited(_monitorWatch.cancel());
     unawaited(_paramWatch.cancel());
+    unawaited(_fxReplayWatch.cancel());
+    _pendingFxSaves.clear();
     return super.close();
   }
 

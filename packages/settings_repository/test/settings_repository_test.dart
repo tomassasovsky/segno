@@ -415,6 +415,7 @@ void main() {
         await repository.replaceMixSettings(
           device: 'test',
           mix: (
+            trackLevels: const {},
             trackPans: const {},
             laneLevels: const {(1, 0): 0.6},
             monitorLevels: const {},
@@ -1057,6 +1058,7 @@ void main() {
     const builtIn = 'Built-in';
 
     StoredMixSettings mix({
+      Map<int, double> trackLevels = const {},
       Map<int, double> pans = const {},
       Map<(int, int), double> levels = const {},
       Map<int, double> monitors = const {},
@@ -1068,6 +1070,7 @@ void main() {
         balance: {},
       ),
     }) => (
+      trackLevels: trackLevels,
       trackPans: pans,
       laneLevels: levels,
       monitorLevels: monitors,
@@ -1088,6 +1091,7 @@ void main() {
         await repository.replaceMixSettings(
           device: scarlett,
           mix: mix(
+            trackLevels: {0: .8, 7: 1.5},
             pans: {0: -0.5},
             levels: {(0, 1): 0.4},
             monitors: {2: 0.7},
@@ -1102,6 +1106,7 @@ void main() {
         expect(store.values.containsKey('monitor_vol.2'), isFalse);
         expect(store.values.containsKey('input_setup.Scarlett'), isFalse);
         final loaded = await repository.loadMixSettings(scarlett);
+        expect(loaded.trackLevels, {0: .8, 7: 1.5});
         expect(loaded.trackPans, {0: -0.5});
         expect(loaded.laneLevels, {(0, 1): 0.4});
         expect(loaded.monitorLevels, {2: 0.7});
@@ -1120,6 +1125,7 @@ void main() {
         await repository.replaceMixSettings(
           device: scarlett,
           mix: mix(
+            trackLevels: {7: .75},
             pans: {0: .5},
             levels: {(0, 0): .25},
             monitors: {1: .6},
@@ -1133,11 +1139,38 @@ void main() {
           throwsStateError,
         );
         expect(await repository.readMixSettingsCheckpoint(), checkpoint);
+        expect((await repository.loadMixSettings(scarlett)).trackLevels, {
+          7: .75,
+        });
         await repository.replaceMixSettings(device: scarlett, mix: mix());
         await repository.restoreMixSettingsCheckpoint(checkpoint);
         expect(await repository.readMixSettingsCheckpoint(), checkpoint);
         expect((await repository.loadMixSettings(scarlett)).inputSetup.pairs, {
           2: 0,
+        });
+      },
+    );
+
+    test(
+      'an empty track keeps its gain through sparse value removal',
+      () async {
+        expect(await repository.readMixSettingsCheckpoint(), isNull);
+        await repository.replaceMixSettings(
+          device: scarlett,
+          mix: mix(trackLevels: {7: .65}),
+        );
+        final checkpoint = await repository.readMixSettingsCheckpoint();
+        expect(checkpoint, isNotNull);
+        expect((await repository.loadMixSettings(scarlett)).trackLevels, {
+          7: .65,
+        });
+
+        await repository.replaceMixSettings(device: scarlett, mix: mix());
+        expect(await repository.readMixSettingsCheckpoint(), isNull);
+        await repository.restoreMixSettingsCheckpoint(checkpoint);
+        expect(await repository.readMixSettingsCheckpoint(), checkpoint);
+        expect((await repository.loadMixSettings(scarlett)).trackLevels, {
+          7: .65,
         });
       },
     );

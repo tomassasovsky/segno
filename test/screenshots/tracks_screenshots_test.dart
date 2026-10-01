@@ -119,6 +119,9 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.mixGeneration).thenReturn(0);

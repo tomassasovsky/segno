@@ -76,6 +76,7 @@ void main() {
       await settings.replaceMixSettings(
         device: 'Fake Device',
         mix: (
+          trackLevels: saved.trackLevels,
           trackPans: saved.trackPans,
           laneLevels: saved.laneLevels,
           monitorLevels: saved.monitorLevels,
@@ -594,12 +595,13 @@ void main() {
       );
 
       expect(started.started, isTrue);
-      // The repository maps domain → engine effect types at the boundary, so
-      // the engine records the engine enum; compare native codes across it.
-      expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.filter.code);
-      expect(engine.laneFx[(0, 0, 1)]?.code, TrackEffectType.delay.code);
-      expect(engine.laneFxCount[(0, 0)], 2);
-      expect(engine.laneFxParam[(0, 0, 1, 1)], 0.42);
+      // Restore submits the ordered chain as one recipe, including params.
+      final recipe = engine.fxRecipes[(FxOwner.lane, 0, 0)]!;
+      expect(recipe.slots.map((slot) => slot.type.code), [
+        TrackEffectType.filter.code,
+        TrackEffectType.delay.code,
+      ]);
+      expect(recipe.slots[1].params[1], 0.42);
     });
 
     test('a LEGACY restored chain persists its freshly-minted slot ids back '
@@ -702,17 +704,51 @@ void main() {
 
       expect(started.started, isTrue);
       // Lane chain + its envelope-borne flag and provenance.
-      expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.filter.code);
-      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
+      final lane = engine.fxRecipes[(FxOwner.lane, 0, 0)]!;
+      expect(lane.slots.single.type.code, TrackEffectType.filter.code);
+      expect(lane.enabled, isFalse);
       expect(repository.laneChainInheritedFrom(0, 0), [2]);
       // Track-stage chain + flag.
-      expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.trackFxCount[0], 1);
-      expect(engine.trackFxChainEnabled[0], isFalse);
-      // Master insert chain (enabled envelope pushes no disable).
-      expect(engine.masterFx[0]?.code, TrackEffectType.reverb.code);
-      expect(engine.masterFxCount, 1);
-      expect(engine.masterFxChainEnabled, isNull);
+      final track = engine.fxRecipes[(FxOwner.track, 0, 0)]!;
+      expect(track.slots.single.type.code, TrackEffectType.delay.code);
+      expect(track.enabled, isFalse);
+      // Master output has an explicitly enabled envelope.
+      final output = engine.fxRecipes[(FxOwner.output, 0, 0)]!;
+      expect(output.slots.single.type.code, TrackEffectType.reverb.code);
+      expect(output.enabled, isTrue);
+    });
+
+    test('invalid explicit FX metadata refuses boot and stops audio', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      await settings.saveMasterFxChain(
+        '{"chainEnabled":true,"entries":['
+        '{"type":1,"channels":{"input":"sideways"}}]}',
+      );
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final result = await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(result.started, isFalse);
+      expect(engine.stopCalls, greaterThan(0));
+      expect(repository.masterEffects, isEmpty);
     });
 
     test('restores a saved multi-lane setup on launch', () async {
@@ -758,7 +794,10 @@ void main() {
       expect(engine.laneOutput[(0, 1)], 0x2);
       expect(engine.laneVol[(0, 1)], 0.4);
       expect(engine.laneMute[(0, 1)], isTrue);
-      expect(engine.laneFx[(0, 1, 0)]?.code, TrackEffectType.tremolo.code);
+      expect(
+        engine.fxRecipes[(FxOwner.lane, 0, 1)]!.slots.single.type.code,
+        TrackEffectType.tremolo.code,
+      );
     });
 
     test('starts the engine with the saved config', () async {
@@ -831,6 +870,7 @@ void main() {
       await settings.replaceMixSettings(
         device: 'Fake Device',
         mix: (
+          trackLevels: savedMix.trackLevels,
           trackPans: savedMix.trackPans,
           laneLevels: savedMix.laneLevels,
           monitorLevels: savedMix.monitorLevels,
@@ -1277,8 +1317,10 @@ void main() {
       final rebooted = await coldBoot();
 
       // Loop: the loaded filter, not the pre-load drive — and not empty.
-      expect(rebooted.laneFx[(0, 0, 0)]?.code, TrackEffectType.filter.code);
-      expect(rebooted.laneFxCount[(0, 0)], 1);
+      expect(
+        rebooted.fxRecipes[(FxOwner.lane, 0, 0)]!.slots.single.type.code,
+        TrackEffectType.filter.code,
+      );
       // Lane 1 exists only in the LOADED session. It comes back only if the
       // write-back re-persisted `lane_count.0` too — the boot restore bounds
       // its lane loop by that key, so a stale count would drop this chain
@@ -1287,10 +1329,19 @@ void main() {
         (await settings.loadMixSettings('Fake Device')).laneCounts[0],
         2,
       );
-      expect(rebooted.laneFx[(0, 1, 0)]?.code, TrackEffectType.echo.code);
+      expect(
+        rebooted.fxRecipes[(FxOwner.lane, 0, 1)]!.slots.single.type.code,
+        TrackEffectType.echo.code,
+      );
       // Track + Master: the loaded chains, not the pre-load drive.
-      expect(rebooted.trackFx[(0, 0)]?.code, TrackEffectType.reverb.code);
-      expect(rebooted.masterFx[0]?.code, TrackEffectType.delay.code);
+      expect(
+        rebooted.fxRecipes[(FxOwner.track, 0, 0)]!.slots.single.type.code,
+        TrackEffectType.reverb.code,
+      );
+      expect(
+        rebooted.fxRecipes[(FxOwner.output, 0, 0)]!.slots.single.type.code,
+        TrackEffectType.delay.code,
+      );
       // Input is the stage that was already correct — the regression canary
       // for folding its listener into the shared one. Monitors are restored by
       // MonitorCubit.load(), so assert the key it reads.

@@ -255,11 +255,13 @@ void main() {
 
     test('waits for the callback to acknowledge a queued arm before reading '
         'its selected destination', () async {
+      final queued = Completer<void>();
       engine
         ..perfArmQueues = true
+        ..onPerfArmQueued = queued.complete
         ..perfCaptureBusAtArm = 1;
       final arming = repo.arm();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await queued.future.timeout(const Duration(seconds: 5));
       expect(engine.perfArmPending, isTrue);
       expect(repo.armedDirectory, engine.lastPerfCaptureDir);
       expect(engine.perfArmed, isFalse);

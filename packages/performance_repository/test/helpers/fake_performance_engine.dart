@@ -43,6 +43,7 @@ class FakePerformanceEngine implements AudioEngine {
   bool perfArmed = false;
   bool perfArmQueues = false;
   bool perfArmPending = false;
+  void Function()? onPerfArmQueued;
   String? lastPerfCaptureDir;
   EngineResult perfArmResult = EngineResult.ok;
   EngineResult perfDisarmResult = EngineResult.ok;
@@ -219,6 +220,7 @@ class FakePerformanceEngine implements AudioEngine {
     }
     if (perfArmQueues) {
       perfArmPending = true;
+      onPerfArmQueued?.call();
       return EngineResult.ok;
     }
     _acknowledgePerfArm();
@@ -323,6 +325,38 @@ class FakePerformanceEngine implements AudioEngine {
   List<AudioDevice> enumerateAsioDrivers() => const [];
   @override
   EngineResult measureLatency() => EngineResult.ok;
+
+  // This capture harness does not apply structural FX or host plugins.
+  // Refuse those operations instead of reporting a fictitious publication.
+  @override
+  EngineResult setFxRecipe({
+    required FxOwner owner,
+    required FxRecipe recipe,
+    required int revision,
+    int channel = 0,
+    int lane = 0,
+  }) => EngineResult.invalid;
+
+  @override
+  int fxRecipeRevision({
+    required FxOwner owner,
+    int channel = 0,
+    int lane = 0,
+  }) => 0;
+
+  @override
+  PluginSlotHandle? preparePlugin({required String pluginId}) => null;
+
+  @override
+  EngineResult discardPreparedPlugin(PluginSlotHandle slot) =>
+      EngineResult.invalid;
+
+  @override
+  EngineResult preparePluginParam(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) => EngineResult.invalid;
   @override
   EngineResult record({int channel = 0}) => EngineResult.ok;
 
@@ -551,6 +585,7 @@ class FakePerformanceEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) => EngineResult.ok;
   @override
   EngineResult setLaneFxParam({
@@ -572,6 +607,19 @@ class FakePerformanceEngine implements AudioEngine {
     required int channel,
     required int lane,
     required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
   }) => EngineResult.ok;
   @override
   EngineResult setMonitorInputFxEnabled({
@@ -597,6 +645,7 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult setTrackFxCount({
     required int channel,
     required int count,
+    int preCount = 0,
   }) => EngineResult.ok;
   @override
   EngineResult setTrackFxParam({
@@ -642,6 +691,47 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult setOutputFxChainEnabled({
     required int bus,
     required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  // ---- The All tracks recorded-mix chain (slice 3e): no repository path in
+  // this package reaches it, so plain ok stubs like the stages above. ----
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setAllTracksFxCount({required int count}) => EngineResult.ok;
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
   }) => EngineResult.ok;
 
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a

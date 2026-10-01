@@ -14,6 +14,10 @@ import 'package:segno_engine/segno_engine.dart'
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
+        FxChannelInput,
+        FxChannelOutput,
+        FxChannels,
+        FxPlacement,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
@@ -25,11 +29,13 @@ import 'package:segno_engine/segno_engine.dart'
         TrackEffect,
         TrackEffectParam,
         TrackEffectType,
-        encodeTrackEffects;
+        encodeTrackEffects,
+        fxPreCount;
 import 'package:segno_engine/segno_engine.dart'
     as le
     show
         AudioDevice,
+        FxChannelOutput,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
@@ -2389,13 +2395,13 @@ void main() {
             ),
           ],
         );
-      expect(engine.laneFx, isEmpty); // not running yet
+      expect(engine.recipes, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      // Track-addressed effects map to lane 0.
-      expect(engine.laneFx[(1, 0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.laneFxParam[(1, 0, 0, 1)], 0.4);
-      expect(engine.laneFxCount[(1, 0)], 1);
+      final recipe = engine.recipes[(FxOwner.lane, 1, 0)]!;
+      expect(recipe.slots.single.type.code, TrackEffectType.delay.code);
+      expect(recipe.slots.single.params[1], 0.4);
+      expect(recipe.slots, hasLength(1));
     });
 
     test('a live param tweak updates the entry without resetting it', () {
@@ -2416,23 +2422,20 @@ void main() {
         value: 0.9,
       );
       expect(engine.laneFxParam[(0, 0, 0, 0)], 0.9);
-      // No setLaneFx (which would reset DSP) — only the granular param call.
-      expect(engine.calls, isNot(contains('setLaneFx')));
+      // No complete recipe replacement (which would reset DSP).
+      expect(engine.calls, isNot(contains('setFxRecipe')));
       expect(engine.calls, contains('setLaneFxParam'));
 
       // The tweak is remembered and re-applied on restart.
-      engine.laneFxParam.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.laneFxParam[(0, 0, 0, 0)], 0.9);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]!.slots.single.params[0], 0.9);
     });
 
     test(
-      'a plugin entry loads through the slot ABI, not the built-in FX push',
+      'a plugin entry is one prepared slot inside the admitted lane recipe',
       () {
-        // A plugin slot loads through the dedicated slot ABI (setLanePlugin)
-        // rather than the built-in setLaneFx push: it must not disturb the
-        // built-in entries around it, and the active count still spans the
-        // whole chain (so trailing built-ins keep their indices).
+        // Preparation supplies one handle, while the callback receives all
+        // three slots in one ordered recipe, including the trailing built-in.
         buildRepo()
           ..startEngine(const EngineConfig())
           ..setLaneEffects(
@@ -2448,14 +2451,13 @@ void main() {
             ],
           );
 
-        // Built-in entries pushed at their own indices; the plugin loads via
-        // the slot ABI at index 1 (never setLaneFx).
-        expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
-        expect(engine.laneFx.containsKey((0, 0, 1)), isFalse);
-        expect(engine.lanePlugins[(0, 0, 1)], 'p');
-        expect(engine.laneFx[(0, 0, 2)]?.code, TrackEffectType.reverb.code);
-        // The active count still spans all three entries.
-        expect(engine.laneFxCount[(0, 0)], 3);
+        final slots = engine.recipes[(FxOwner.lane, 0, 0)]!.slots;
+        expect(slots, hasLength(3));
+        expect(slots[0].type.code, TrackEffectType.drive.code);
+        expect(slots[1].plugin, isNotNull);
+        expect(slots[2].type.code, TrackEffectType.reverb.code);
+        expect(engine.calls, contains('preparePlugin'));
+        expect(engine.calls, contains('setFxRecipe'));
       },
     );
 
@@ -2657,23 +2659,30 @@ void main() {
       );
     });
 
-    test('persisted plugin paramValues replay through the RT queue', () {
-      buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setLaneEffects(
-          lane: 0,
-          channel: 0,
-          effects: const [
-            PluginEffect(
-              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
-              paramValues: {100: 0.25},
-            ),
-          ],
+    test(
+      'persisted plugin paramValues are prepared before recipe admission',
+      () {
+        buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            lane: 0,
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+                paramValues: {100: 0.25},
+              ),
+            ],
+          );
+        expect(engine.preparedPluginParams, hasLength(1));
+        expect(engine.preparedPluginParams.single.paramId, 100);
+        expect(engine.preparedPluginParams.single.value, 0.25);
+        expect(
+          engine.recipes[(FxOwner.lane, 0, 0)]?.slots.single.plugin,
+          isNotNull,
         );
-      expect(engine.pluginParamSets, hasLength(1));
-      expect(engine.pluginParamSets.single.paramId, 100);
-      expect(engine.pluginParamSets.single.value, 0.25);
-    });
+      },
+    );
 
     test('setLanePluginParam routes to the loaded slot and remembers it', () {
       final repo = buildRepo()
@@ -2755,7 +2764,10 @@ void main() {
             ),
           ],
         );
-      expect(engine.monitorPlugins[(2, 0)], 'm');
+      expect(
+        engine.recipes[(FxOwner.monitor, 2, 0)]?.slots.single.plugin,
+        isNotNull,
+      );
 
       expect(
         repo.setMonitorPluginParam(
@@ -2775,7 +2787,8 @@ void main() {
     });
 
     test('a plugin param set with no loaded slot is invalid', () {
-      // Engine not started => no slot loaded for the remembered chain.
+      // A recalled unavailable entry is retained dry with no hosted slot.
+      engine.nextSlotHandle = null;
       final repo = buildRepo()
         ..setLaneEffects(
           lane: 0,
@@ -2787,17 +2800,7 @@ void main() {
           ],
         )
         ..startEngine(const EngineConfig());
-      // Simulate a failed load: the next plugin load returns no handle.
-      engine.nextSlotHandle = null;
-      repo.setLaneEffects(
-        lane: 0,
-        channel: 0,
-        effects: const [
-          PluginEffect(
-            ref: PluginRef(format: PluginFormat.clap, id: 'p'),
-          ),
-        ],
-      );
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots.single.plugin, isNull);
       expect(
         repo.setLanePluginParam(
           channel: 0,
@@ -2994,19 +2997,16 @@ void main() {
         isTrue,
       );
 
-      // Re-apply the chain: every structural edit, engine restart and session
-      // reload comes back through here.
-      engine.pluginParamSets.clear();
-      repo.setLaneEffects(
-        lane: 0,
-        channel: 0,
-        effects: repo.laneEffects(0, 0),
-      );
+      // A restart prepares a new detached host from the remembered values.
+      engine.preparedPluginParams.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
 
       // The exact set, not `everyElement` — which is true of an empty list,
       // and an empty list is the failure where the replay is dropped
       // altogether.
-      expect(engine.pluginParamSets.map((s) => s.paramId).toSet(), {101});
+      expect(engine.preparedPluginParams.map((s) => s.paramId).toSet(), {101});
     });
 
     test('what the console will draw is read back at load', () {
@@ -3185,11 +3185,9 @@ void main() {
         // whose relink browses every installed plugin.
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
         expect(fx.paramValues, isEmpty);
-        expect(engine.pluginParamSets, isEmpty);
-        // The blob still travels: a plugin that does not recognise one
-        // rejects it, and the alternative is losing the settings of an entry
-        // whose plugin merely moved.
-        expect(fx.state, 'AAAA');
+        expect(engine.preparedPluginParams, isEmpty);
+        // A different plugin must not receive another plugin's opaque blob.
+        expect(fx.state, isEmpty);
       },
     );
 
@@ -3291,7 +3289,7 @@ void main() {
         );
 
       expect(
-        engine.pluginParamSets.map((s) => (s.paramId, s.value)),
+        engine.preparedPluginParams.map((s) => (s.paramId, s.value)),
         contains((42, 0.75)),
       );
     });
@@ -3392,11 +3390,13 @@ void main() {
                 ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
               ),
             ],
+            allowUnavailable: true,
           );
         // Cold-start recovery kicks a scan; let it complete (it finds nothing)]
         // so the entry settles from the transient loading state to the genuine
         // unavailable placeholder.
         await repo.pluginCatalog.scan();
+        await Future<void>.delayed(Duration.zero);
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
         // Preserved as a placeholder, never dropped to `none`.
         expect(fx.unavailable, isTrue);
@@ -3421,8 +3421,10 @@ void main() {
                 name: 'Saved Reverb',
               ),
             ],
+            allowUnavailable: true,
           );
         await repo.pluginCatalog.scan(); // settle recovery -> unavailable
+        await Future<void>.delayed(Duration.zero);
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
         // The persisted name survives the bind + recovery, so the placeholder
         // reads as the plugin's name rather than a cryptic id.
@@ -3463,6 +3465,7 @@ void main() {
                 ref: PluginRef(format: PluginFormat.clap, id: 'p'),
               ),
             ],
+            allowUnavailable: true,
           );
         // First apply against the empty cache fails; recovery flips it to
         // loading (not a premature "unavailable") and its scan is now in
@@ -3475,6 +3478,7 @@ void main() {
         // scan drives the re-apply.
         engine.nextSlotHandle = MockPluginSlotHandle('p');
         await repo.pluginCatalog.scan();
+        await Future<void>.delayed(Duration.zero);
 
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
         expect(fx.loading, isFalse);
@@ -3510,6 +3514,7 @@ void main() {
             ref: PluginRef(format: PluginFormat.clap, id: 'synth'),
           ),
         ],
+        allowUnavailable: true,
       );
 
       final fx = repo.laneEffects(0, 0).single as PluginEffect;
@@ -3691,9 +3696,14 @@ void main() {
             ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
           ),
         ],
+        allowUnavailable: true,
       );
       await repo.pluginCatalog.scan(); // settle the lane's own recovery
-      final pushes = engine.calls.where((c) => c == 'setLanePlugin').length;
+      await Future<void>.delayed(Duration.zero);
+      final revision = engine.recipeRevisions[(FxOwner.lane, 0, 0)];
+      final preparations = engine.calls
+          .where((c) => c == 'preparePlugin')
+          .length;
       expect((repo.laneEffects(0, 0).single as PluginEffect).loading, isFalse);
 
       // A knob on a bus chain, fired at drag rate. The lane recovery must not
@@ -3711,7 +3721,11 @@ void main() {
       final fx = repo.laneEffects(0, 0).single as PluginEffect;
       expect(fx.loading, isFalse);
       expect(fx.unavailable, isTrue);
-      expect(engine.calls.where((c) => c == 'setLanePlugin').length, pushes);
+      expect(engine.recipeRevisions[(FxOwner.lane, 0, 0)], revision);
+      expect(
+        engine.calls.where((c) => c == 'preparePlugin').length,
+        preparations,
+      );
     });
 
     test('a TRACK bus chain alone is named when the scan lands', () async {
@@ -3923,6 +3937,7 @@ void main() {
         total: 1,
       );
       await repo.pluginCatalog.scan(); // joins + drains the in-flight scan
+      await Future<void>.delayed(Duration.zero);
 
       fx = repo.laneEffects(0, 0).single as PluginEffect;
       expect(fx.loading, isFalse);
@@ -3983,44 +3998,48 @@ void main() {
       expect(fx.versionChanged, isFalse);
     });
 
-    test('relinkLanePlugin swaps the ref, keeps state, and reloads', () async {
-      engine.nextSlotHandle = null; // initial load fails -> unavailable
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setLaneEffects(
-          lane: 0,
-          channel: 0,
-          effects: [
-            PluginEffect(
-              ref: const PluginRef(format: PluginFormat.clap, id: 'gone'),
-              state: base64Encode([1, 2, 3]),
-            ),
-          ],
+    test(
+      'relinkLanePlugin swaps the ref without replaying foreign state',
+      () async {
+        engine.nextSlotHandle = null; // initial load fails -> unavailable
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            lane: 0,
+            channel: 0,
+            effects: [
+              PluginEffect(
+                ref: const PluginRef(format: PluginFormat.clap, id: 'gone'),
+                state: base64Encode([1, 2, 3]),
+              ),
+            ],
+            allowUnavailable: true,
+          );
+        await repo.pluginCatalog.scan(); // settle recovery -> unavailable
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          (repo.laneEffects(0, 0).single as PluginEffect).unavailable,
+          isTrue,
         );
-      await repo.pluginCatalog.scan(); // settle recovery -> unavailable
-      expect(
-        (repo.laneEffects(0, 0).single as PluginEffect).unavailable,
-        isTrue,
-      );
 
-      // A working plugin is now available; relink to it.
-      engine.nextSlotHandle = MockPluginSlotHandle('new');
-      expect(
-        repo.relinkLanePlugin(
-          channel: 0,
-          lane: 0,
-          index: 0,
-          ref: const PluginRef(format: PluginFormat.vst3, id: 'new'),
-        ),
-        EngineResult.ok,
-      );
-      final fx = repo.laneEffects(0, 0).single as PluginEffect;
-      expect(fx.ref.id, 'new');
-      expect(fx.unavailable, isFalse);
-      expect(fx.state, base64Encode([1, 2, 3])); // preserved
-      // The reloaded (frozen) instance received the preserved state blob.
-      expect(engine.stateSets.last, [1, 2, 3]);
-    });
+        // A working plugin is now available; relink to it.
+        engine.nextSlotHandle = MockPluginSlotHandle('new');
+        expect(
+          repo.relinkLanePlugin(
+            channel: 0,
+            lane: 0,
+            index: 0,
+            ref: const PluginRef(format: PluginFormat.vst3, id: 'new'),
+          ),
+          EngineResult.ok,
+        );
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(fx.ref.id, 'new');
+        expect(fx.unavailable, isFalse);
+        expect(fx.state, isEmpty);
+        expect(engine.stateSets, isEmpty);
+      },
+    );
 
     test('an empty chain drops the lane and zeroes the count on restart', () {
       final repo = buildRepo()
@@ -4030,14 +4049,16 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
-      expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
+      expect(
+        engine.recipes[(FxOwner.lane, 0, 0)]!.slots.single.type.code,
+        TrackEffectType.drive.code,
+      );
 
       repo.setLaneEffects(lane: 0, channel: 0, effects: const []);
-      expect(engine.laneFxCount[(0, 0)], 0);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]!.slots, isEmpty);
 
-      engine.laneFx.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.laneFx.containsKey((0, 0, 0)), isFalse);
+      expect(engine.recipes.containsKey((FxOwner.lane, 0, 0)), isFalse);
     });
 
     test('a monitor chain is deferred then re-applied on start', () {
@@ -4051,12 +4072,13 @@ void main() {
             ),
           ],
         );
-      expect(engine.monitorFx, isEmpty); // not running yet
+      expect(engine.recipes, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.monitorFxParam[(0, 0, 1)], 0.4);
-      expect(engine.monitorFxCount[0], 1);
+      final recipe = engine.recipes[(FxOwner.monitor, 0, 0)]!;
+      expect(recipe.slots.single.type.code, TrackEffectType.delay.code);
+      expect(recipe.slots.single.params[1], 0.4);
+      expect(recipe.slots, hasLength(1));
     });
 
     test('a monitor param tweak updates the entry without resetting it', () {
@@ -4070,14 +4092,16 @@ void main() {
 
       repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.9);
       expect(engine.monitorFxParam[(0, 0, 0)], 0.9);
-      // No setMonitorInputFx (which would reset DSP) — only the granular call.
-      expect(engine.calls, isNot(contains('setMonitorInputFx')));
+      // No complete recipe replacement (which would reset DSP).
+      expect(engine.calls, isNot(contains('setFxRecipe')));
       expect(engine.calls, contains('setMonitorInputFxParam'));
 
       // The tweak is remembered and re-applied on restart.
-      engine.monitorFxParam.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.monitorFxParam[(0, 0, 0)], 0.9);
+      expect(
+        engine.recipes[(FxOwner.monitor, 0, 0)]!.slots.single.params[0],
+        0.9,
+      );
     });
 
     test('setMonitorOutput routes the chain and reapplies on restart', () {
@@ -4195,10 +4219,13 @@ void main() {
           input: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
-      expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.drive.code);
+      expect(
+        engine.recipes[(FxOwner.monitor, 0, 0)]!.slots.single.type.code,
+        TrackEffectType.drive.code,
+      );
 
       repo.setMonitorEffects(input: 0, effects: const []);
-      expect(engine.monitorFxCount[0], 0);
+      expect(engine.recipes[(FxOwner.monitor, 0, 0)]!.slots, isEmpty);
     });
 
     test('setOutputEnabled applies the gate and reapplies on restart', () {
@@ -4555,7 +4582,7 @@ void main() {
 
     test(
       'applySession clears destructively — a loaded session is not undoable',
-      () {
+      () async {
         engine.nextSnapshot = const EngineSnapshot(
           isRunning: true,
           sampleRate: 48000,
@@ -4573,7 +4600,7 @@ void main() {
         addTearDown(repo.dispose);
         engine.calls.clear();
 
-        unawaited(repo.applySession(const SessionRig()));
+        await repo.applySession(const SessionRig());
 
         expect(engine.calls, contains('clear'));
         expect(engine.calls, isNot(contains('clearUndoable')));
@@ -4715,18 +4742,15 @@ void main() {
         )
         ..record();
 
-      // The engine's lane FX now mirror the snapshot the repo computed. (The
-      // fake records the engine-package enum, hidden here; compare by name.)
-      expect(engine.laneFx[(0, 0, 0)]?.name, 'delay');
-      expect(engine.laneFx[(0, 0, 1)]?.name, 'reverb');
-      expect(engine.laneFxCount[(0, 0)], 2);
-      // The lane-FX push is enqueued BEFORE the record command, so the chain is
-      // published before the take can ever play back (no audible gap).
-      expect(
-        engine.calls.lastIndexOf('setLaneFxCount') <
-            engine.calls.indexOf('record'),
-        isTrue,
-      );
+      // One arm owns both recipes. A refusal cannot leave a lane chain changed
+      // while the track stays empty, and acceptance publishes at capture start.
+      final image = engine.lastRecordImage!;
+      expect(image.laneFx[0]!.slots.map((s) => s.type.name), [
+        'delay',
+        'reverb',
+      ]);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]!.slots.length, 2);
+      expect(engine.calls, isNot(contains('setLaneFxCount')));
     });
 
     test('record pushes the captured plugin WITH its frozen state to the '
@@ -4761,7 +4785,10 @@ void main() {
       // The lane plugin was loaded on the engine and seeded with the exact
       // opaque state captured from the monitor slot — the frozen instance, not
       // a stateless placeholder (the C-side clobber the fix removes).
-      expect(engine.lanePlugins[(0, 0, 0)], 'p');
+      expect(
+        engine.lastRecordImage!.laneFx[0]!.slots.single.plugin,
+        same(engine.nextSlotHandle),
+      );
       expect(engine.stateSets, isNotEmpty);
       expect(engine.stateSets.last, Uint8List.fromList([1, 2, 3, 4]));
     });
@@ -4880,10 +4907,10 @@ void main() {
       engine.calls.clear();
       repo.record();
 
-      // Cache is emptied AND the engine was pushed the empty chain (count 0) —
+      // Cache is emptied AND the engine was pushed the empty recipe —
       // the staged reverb no longer sounds anywhere.
       expect(repo.laneEffects(0, 0), isEmpty);
-      expect(engine.laneFxCount[(0, 0)], 0);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots, isEmpty);
     });
 
     test('a later take captures the CURRENT monitor chain, leaving an earlier '
@@ -5127,7 +5154,7 @@ void main() {
     );
 
     test(
-      'setVolume on a multi-lane track sets EVERY lane, not just lane 0',
+      'setVolume changes track gain without overwriting part levels',
       () {
         engine.nextSnapshot = _playingTracksSnapshot(3);
         final repo = buildRepo()
@@ -5135,10 +5162,13 @@ void main() {
           ..setLaneCount(channel: 2, count: 3);
         addTearDown(repo.dispose);
 
-        repo.setVolume(0.4, channel: 2);
-        expect(engine.laneVol[(2, 0)], 0.4);
-        expect(engine.laneVol[(2, 1)], 0.4);
-        expect(engine.laneVol[(2, 2)], 0.4);
+        repo.setLaneVolume(0.7, channel: 2, lane: 1);
+        expect(repo.setVolume(0.4, channel: 2), EngineResult.ok);
+        expect(engine.trackLevels[2], 0.4);
+        expect(repo.state.tracks[2].volume, 0.4);
+        expect(engine.laneVol[(2, 1)], 0.7);
+        expect(engine.laneVol[(2, 0)] ?? 1, 1);
+        expect(engine.laneVol[(2, 2)] ?? 1, 1);
       },
     );
 
@@ -6262,20 +6292,18 @@ void main() {
         clearPollInterval: Duration.zero,
       );
 
-      // Engine chain lengths were explicitly zeroed (leftovers can't sound).
-      expect(engine.laneFxCount[(0, 0)], 0);
-      expect(engine.monitorFxCount[1], 0);
+      // Complete empty recipes remove both leftover chains atomically.
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots, isEmpty);
+      expect(engine.recipes[(FxOwner.monitor, 1, 0)]?.slots, isEmpty);
       expect(repo.laneEffects(0, 0), isEmpty);
       expect(repo.monitorEffects(1), isEmpty);
 
       // And a restart replays nothing stale.
-      engine.laneFx.clear();
-      engine.monitorFx.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.laneFx, isEmpty);
-      expect(engine.monitorFx, isEmpty);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)], isNull);
+      expect(engine.recipes[(FxOwner.monitor, 1, 0)], isNull);
     });
 
     test('resets remembered TRACK-stage and MASTER chains the rig does not '
@@ -6296,8 +6324,8 @@ void main() {
         )
         ..setMasterChainEnabled(enabled: false);
       addTearDown(repo.dispose);
-      expect(engine.trackFxCount[0], 1);
-      expect(engine.outputFxCount[0], 1);
+      expect(engine.recipes[(FxOwner.track, 0, 0)]?.slots, hasLength(1));
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.slots, hasLength(1));
 
       // Session B defines neither bus stage.
       await repo.applySession(
@@ -6306,10 +6334,10 @@ void main() {
       );
 
       // Engine chain lengths zeroed and every chain flag back to enabled.
-      expect(engine.trackFxCount[0], 0);
-      expect(engine.outputFxCount[0], 0);
-      expect(engine.trackFxChainEnabled[1], isTrue);
-      expect(engine.outputFxChainEnabled[0], isTrue);
+      expect(engine.recipes[(FxOwner.track, 0, 0)]?.slots, isEmpty);
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.slots, isEmpty);
+      expect(engine.recipes[(FxOwner.track, 1, 0)]?.enabled, isTrue);
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.enabled, isTrue);
       // Repository caches clean.
       expect(repo.trackEffects(0), isEmpty);
       expect(repo.masterEffects, isEmpty);
@@ -6319,13 +6347,11 @@ void main() {
       expect(repo.allTrackChains(), isEmpty);
 
       // And a restart replays nothing stale.
-      engine.trackFx.clear();
-      engine.outputFx.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackFx, isEmpty);
-      expect(engine.outputFx, isEmpty);
+      expect(engine.recipes[(FxOwner.track, 0, 0)], isNull);
+      expect(engine.recipes[(FxOwner.output, 0, 0)], isNull);
     });
 
     test('applies the rig BUS stages, chain flags included (R17)', () async {
@@ -6349,22 +6375,31 @@ void main() {
         clearPollInterval: Duration.zero,
       );
 
-      expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.trackFxCount[0], 1);
-      expect(engine.trackFxChainEnabled[1], isFalse);
-      expect(engine.outputFx[(0, 0)]?.code, TrackEffectType.filter.code);
-      expect(engine.outputFxChainEnabled[0], isFalse);
+      expect(
+        engine.recipes[(FxOwner.track, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.delay.code,
+      );
+      expect(engine.recipes[(FxOwner.track, 1, 0)]?.enabled, isFalse);
+      expect(
+        engine.recipes[(FxOwner.output, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.filter.code,
+      );
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.enabled, isFalse);
       expect(repo.trackChainEnabled(1), isFalse);
       expect(repo.masterChainEnabled, isFalse);
 
       // The caches are truthful: a restart reproduces the loaded bus chains.
-      engine.trackFx.clear();
-      engine.outputFx.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.outputFx[(0, 0)]?.code, TrackEffectType.filter.code);
+      expect(
+        engine.recipes[(FxOwner.track, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.delay.code,
+      );
+      expect(
+        engine.recipes[(FxOwner.output, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.filter.code,
+      );
     });
 
     test('resets a remembered bus chain on a channel this engine cannot own, '
@@ -6396,6 +6431,35 @@ void main() {
       expect(repo.trackEffects(5), isEmpty);
       expect(repo.allTrackChains(), isEmpty);
     });
+
+    test(
+      'drops an out-of-range remembered lane chain on session load',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        expect(
+          repo.setLaneEffects(
+            channel: 5,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        await repo.applySession(
+          SessionRig(
+            laneChains: {
+              (5, 0): FxChainEnvelope(
+                entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+              ),
+            },
+          ),
+          clearPollInterval: Duration.zero,
+        );
+        expect(repo.laneEffects(5, 0), isEmpty);
+        expect(repo.allLaneChains(), isEmpty);
+      },
+    );
 
     test('restores a lane envelope whole — entries, chain flag, and the '
         'inheritance marker (R13/R15)', () async {
@@ -6433,13 +6497,13 @@ void main() {
 
       expect(repo.laneChainEnabled(0, 0), isFalse);
       expect(repo.laneChainInheritedFrom(0, 0), [2, 3]);
-      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.enabled, isFalse);
       // The undefined lane's leftover flag/marker are gone.
       expect(repo.laneChainEnabled(1, 0), isTrue);
       expect(repo.laneChainInheritedFrom(1, 0), isEmpty);
       // A monitor's chain flag restores from its own envelope too.
       expect(repo.monitorChainEnabled(0), isFalse);
-      expect(engine.monitorFxChainEnabled[0], isFalse);
+      expect(engine.recipes[(FxOwner.monitor, 0, 0)]?.enabled, isFalse);
     });
 
     test('fully resets a leftover monitor the rig does not define — routing '
@@ -6526,22 +6590,31 @@ void main() {
           clearPollInterval: Duration.zero,
         );
 
-        expect(engine.laneFx[(1, 0, 0)]?.code, TrackEffectType.delay.code);
-        expect(engine.laneFxCount[(1, 0)], 1);
-        expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.reverb.code);
+        expect(
+          engine.recipes[(FxOwner.lane, 1, 0)]?.slots.single.type.code,
+          TrackEffectType.delay.code,
+        );
+        expect(
+          engine.recipes[(FxOwner.monitor, 0, 0)]?.slots.single.type.code,
+          TrackEffectType.reverb.code,
+        );
         expect(engine.monitorInputEnabled[0], isTrue);
         expect(engine.monitorOutput[0], 0x1);
         expect(engine.monitorVolume[0], 0.7);
         expect(engine.monitorMute[0], isFalse);
 
         // The caches are truthful: a restart reproduces the loaded chains.
-        engine.laneFx.clear();
-        engine.monitorFx.clear();
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.laneFx[(1, 0, 0)]?.code, TrackEffectType.delay.code);
-        expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.reverb.code);
+        expect(
+          engine.recipes[(FxOwner.lane, 1, 0)]?.slots.single.type.code,
+          TrackEffectType.delay.code,
+        );
+        expect(
+          engine.recipes[(FxOwner.monitor, 0, 0)]?.slots.single.type.code,
+          TrackEffectType.reverb.code,
+        );
       },
     );
 
@@ -7354,6 +7427,639 @@ void main() {
     });
   });
 
+  group('per-entry channel handling and level (slice 3e)', () {
+    const channels = FxChannels(
+      input: FxChannelInput.monoSum,
+      output: FxChannelOutput.mono,
+      placement: -0.5,
+      level: 0.25,
+    );
+
+    test('rides a chain write to the engine, per entry', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.echo, channels: channels),
+        ],
+      );
+
+      // The complete admitted recipe carries both slots' channel settings.
+      final slots = engine.recipes[(FxOwner.lane, 0, 0)]!.slots;
+      expect(slots[0].channels.level, 1.0);
+      expect(slots[1].channels.level, 0.25);
+      expect(
+        slots[1].channels.output,
+        le.FxChannelOutput.mono,
+      );
+    });
+
+    test('the setter names the instance by slot id, never by index', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.echo),
+        ],
+      );
+      final second = repo.laneEffects(0, 0)[1].slotId!;
+
+      expect(
+        repo.setLaneEffectChannels(
+          channel: 0,
+          lane: 0,
+          slotId: second,
+          channels: channels,
+        ),
+        EngineResult.ok,
+      );
+      expect(repo.laneEffects(0, 0)[1].channels, channels);
+      expect(repo.laneEffects(0, 0)[0].channels, FxChannels.defaults);
+      expect(
+        engine.recipes[(FxOwner.lane, 0, 0)]!.slots[1].channels.level,
+        0.25,
+      );
+
+      // Reordering carries the settings with the entry, and the re-apply puts
+      // them on the slot the entry now occupies.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: repo.laneEffects(0, 0).reversed.toList(),
+      );
+      expect(repo.laneEffects(0, 0)[0].channels, channels);
+      final slots = engine.recipes[(FxOwner.lane, 0, 0)]!.slots;
+      expect(slots[0].channels.level, 0.25);
+      expect(slots[1].channels.level, 1.0);
+    });
+
+    test(
+      'a refused channel tuple changes neither remembered nor native recipe',
+      () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        expect(
+          repo.setLaneEffects(
+            channel: 0,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        expect(
+          repo.setMonitorEffects(
+            input: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        final laneBefore = repo.laneEffects(0, 0).single;
+        final monitorBefore = repo.monitorEffects(0).single;
+        final nativeLane = engine.recipes[(FxOwner.lane, 0, 0)];
+        final nativeMonitor = engine.recipes[(FxOwner.monitor, 0, 0)];
+        engine.nextRecipeResult = EngineResult.notReady;
+        expect(
+          repo.setLaneEffectChannels(
+            channel: 0,
+            lane: 0,
+            slotId: laneBefore.slotId!,
+            channels: channels,
+          ),
+          EngineResult.notReady,
+        );
+        expect(
+          repo.setMonitorEffectChannels(
+            input: 0,
+            slotId: monitorBefore.slotId!,
+            channels: channels,
+          ),
+          EngineResult.notReady,
+        );
+        expect(repo.laneEffects(0, 0).single.channels, laneBefore.channels);
+        expect(repo.monitorEffects(0).single.channels, monitorBefore.channels);
+        expect(engine.recipes[(FxOwner.lane, 0, 0)], same(nativeLane));
+        expect(engine.recipes[(FxOwner.monitor, 0, 0)], same(nativeMonitor));
+      },
+    );
+
+    test('an unknown slot id is invalid on both stages', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+
+      expect(
+        repo.setLaneEffectChannels(
+          channel: 0,
+          lane: 0,
+          slotId: 'nobody',
+          channels: channels,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMonitorEffectChannels(
+          input: 0,
+          slotId: 'nobody',
+          channels: channels,
+        ),
+        EngineResult.invalid,
+      );
+    });
+
+    test('survives persist and restore through the envelope', () {
+      final restored = decodeFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            entries: [
+              BuiltInEffect(type: TrackEffectType.echo, channels: channels),
+            ],
+          ),
+        ),
+      );
+      expect(restored.entries.single.channels, channels);
+    });
+  });
+
+  group('the All tracks recorded-mix chain (slice 3e)', () {
+    test('a chain write pushes types, params, count and every enabled bit', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksEffects(
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            params: const [0.1, 0.2, 0.3, 0.4],
+          ),
+          BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+        ],
+      );
+
+      final recipe = engine.recipes[(FxOwner.allTracks, 0, 0)]!;
+      expect(recipe.slots.map((slot) => slot.type.code), [
+        TrackEffectType.reverb.code,
+        TrackEffectType.drive.code,
+      ]);
+      expect(recipe.slots.first.params[2], 0.3);
+      expect(recipe.slots.last.enabled, isFalse);
+      expect(recipe.preCount, 0);
+    });
+
+    test('is stored wholly post — the stage has no dry original', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksEffects(
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            placement: FxPlacement.pre,
+          ),
+        ],
+      );
+
+      expect(repo.allTracksEffects.single.placement, FxPlacement.post);
+      expect(fxPreCount(repo.allTracksEffects), 0);
+    });
+
+    test('re-applies on restart, chain flag included', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setAllTracksEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        )
+        ..setAllTracksChainEnabled(enabled: false)
+        ..stopEngine();
+      engine.calls.clear();
+      repo.startEngine(const EngineConfig());
+
+      final recipe = engine.recipes[(FxOwner.allTracks, 0, 0)]!;
+      expect(recipe.slots.single.type.code, TrackEffectType.echo.code);
+      expect(recipe.enabled, isFalse);
+    });
+
+    test(
+      'a session that describes no such chain resets the live one',
+      () async {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        repo.setAllTracksEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        );
+        await repo.applySession(const SessionRig());
+
+        // R17: a stage the session does not describe is reset on apply, never
+        // left carrying the previous session's chain.
+        expect(repo.allTracksEffects, isEmpty);
+      },
+    );
+  });
+
+  group('per-instance placement (slice 3e)', () {
+    BuiltInEffect at(TrackEffectType type, FxPlacement placement) =>
+        BuiltInEffect(type: type, placement: placement);
+
+    test('a chain write partitions pre entries ahead of post ones', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.delay, FxPlacement.post),
+          at(TrackEffectType.echo, FxPlacement.pre),
+        ],
+      );
+
+      expect(
+        repo.laneEffects(0, 0).map((e) => (e as BuiltInEffect).type),
+        [
+          TrackEffectType.filter,
+          TrackEffectType.echo,
+          TrackEffectType.drive,
+          TrackEffectType.delay,
+        ],
+      );
+      expect(fxPreCount(repo.laneEffects(0, 0)), 2);
+    });
+
+    test('an over-long chain loses trailing post entries, never the '
+        'partition', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // Nine entries, the last of them Pre. Clamping before the partition
+      // would drop that Pre entry and leave eight Post ones; clamping after
+      // it keeps every Pre entry and cuts the Post tail.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          for (var i = 0; i < 8; i++)
+            at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.reverb, FxPlacement.pre),
+        ],
+      );
+
+      final chain = repo.laneEffects(0, 0);
+      expect(chain, hasLength(kTrackEffectMax));
+      expect(fxPreCount(chain), 1);
+      expect((chain.first as BuiltInEffect).type, TrackEffectType.reverb);
+    });
+
+    test('a placement move keeps the id and lands at the destination '
+        'stage end', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // The moved entry starts AHEAD of the entries it joins, so "the end of
+      // the destination stage" and "wherever it already was" are different
+      // answers: leaving it in place would order filter before delay.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.laneEffects(0, 0).first.slotId!;
+
+      expect(
+        repo.setLaneEffectPlacement(
+          channel: 0,
+          lane: 0,
+          slotId: moving,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+
+      final chain = repo.laneEffects(0, 0);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+        TrackEffectType.filter,
+      ]);
+      expect(chain.last.slotId, moving);
+      expect(chain.last.placement, FxPlacement.post);
+      expect(fxPreCount(chain), 0);
+    });
+
+    test('a move into a stage that already holds entries goes behind '
+        'them', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.laneEffects(0, 0)[1].slotId!;
+
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: moving,
+        placement: FxPlacement.pre,
+      );
+
+      final chain = repo.laneEffects(0, 0);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.filter,
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+      ]);
+      expect(chain[1].slotId, moving);
+      expect(fxPreCount(chain), 2);
+    });
+
+    test('a placement move preserves parameters and the enable state', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.delay,
+            params: const [0.11, 0.22, 0.33, 0.44],
+            enabled: false,
+          ),
+        ],
+      );
+      final id = repo.laneEffects(0, 0).single.slotId!;
+
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: id,
+        placement: FxPlacement.pre,
+      );
+
+      final moved = repo.laneEffects(0, 0).single as BuiltInEffect;
+      expect(moved.slotId, id);
+      expect(moved.params, const [0.11, 0.22, 0.33, 0.44]);
+      expect(moved.enabled, isFalse);
+      expect(moved.placement, FxPlacement.pre);
+    });
+
+    test('a move to the placement an entry already has changes nothing', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final before = repo.laneEffects(0, 0);
+
+      expect(
+        repo.setLaneEffectPlacement(
+          channel: 0,
+          lane: 0,
+          slotId: before.first.slotId!,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+      // Order too: a no-op move must not send the entry to the stage end.
+      expect(repo.laneEffects(0, 0), before);
+    });
+
+    test('an unknown slot id is invalid on every switchable stage', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        )
+        ..setTrackEffects(
+          channel: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        );
+
+      expect(
+        repo.setLaneEffectPlacement(
+          channel: 0,
+          lane: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMonitorEffectPlacement(
+          input: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setTrackEffectPlacement(
+          channel: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+    });
+
+    test('a monitor instance moves the same way a lane one does', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setMonitorEffects(
+        input: 1,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.echo, FxPlacement.pre),
+        ],
+      );
+      final monitorId = repo.monitorEffects(1).first.slotId!;
+
+      repo.setMonitorEffectPlacement(
+        input: 1,
+        slotId: monitorId,
+        placement: FxPlacement.post,
+      );
+
+      expect(repo.monitorEffects(1).last.slotId, monitorId);
+      expect(fxPreCount(repo.monitorEffects(1)), 1);
+    });
+
+    test('a whole track carries the switch, and its split reaches the '
+        'engine', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // A whole track's Pre run is rendered over the combination of its
+      // parts, so unlike an output chain it does carry the switch.
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          at(TrackEffectType.reverb, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+        ],
+      );
+
+      expect(repo.trackEffects(2).map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.post,
+      ]);
+      expect(fxPreCount(repo.trackEffects(2)), 1);
+      expect(engine.recipes[(FxOwner.track, 2, 0)]?.slots, hasLength(2));
+      expect(engine.recipes[(FxOwner.track, 2, 0)]?.preCount, 1);
+    });
+
+    test('a whole-track instance moves to the end of its new stage, keeping '
+        'its identity', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.trackEffects(2).first.slotId!;
+
+      expect(
+        repo.setTrackEffectPlacement(
+          channel: 2,
+          slotId: moving,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+
+      final chain = repo.trackEffects(2);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+        TrackEffectType.filter,
+      ]);
+      expect(chain.last.slotId, moving);
+      expect(fxPreCount(chain), 0);
+      expect(engine.recipes[(FxOwner.track, 2, 0)]?.preCount, 0);
+    });
+
+    test('an output chain is stored wholly post, whatever it is handed', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // The accepted design omits the control here because the stage is fixed
+      // after the mix, so a chain arriving with Pre entries — pasted, or
+      // restored from a destination that had them — must land Post rather
+      // than name a Pre count the output stage cannot honour.
+      repo.setMasterEffects(
+        effects: [
+          at(TrackEffectType.reverb, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+        ],
+      );
+
+      expect(
+        repo.masterEffects.map((e) => e.placement),
+        [FxPlacement.post, FxPlacement.post],
+      );
+      expect(fxPreCount(repo.masterEffects), 0);
+      // Order is the order it was handed: nothing moved, only the placement.
+      expect(repo.masterEffects.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.reverb,
+        TrackEffectType.drive,
+      ]);
+    });
+
+    test('the split reaches the engine with the count it belongs to', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots, hasLength(3));
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.preCount, 1);
+
+      // Moving the one Pre entry to Post leaves nothing printed.
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: repo.laneEffects(0, 0).first.slotId!,
+        placement: FxPlacement.post,
+      );
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots, hasLength(3));
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.preCount, 0);
+    });
+
+    test('placement survives persist and restore through the envelope', () {
+      final chain = [
+        at(TrackEffectType.filter, FxPlacement.pre),
+        at(TrackEffectType.drive, FxPlacement.post),
+      ];
+      final restored = decodeFxChain(
+        encodeFxChain(FxChainEnvelope(entries: chain)),
+      );
+      expect(restored.entries.map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.post,
+      ]);
+    });
+  });
+
   group('four-stage chains: track + master setters (FX v3 part 3a)', () {
     test('setTrackEffects updates cache and pushes type/params/enabled/count '
         'to the engine bus stage', () {
@@ -7372,13 +8078,13 @@ void main() {
       );
 
       expect(repo.trackEffects(1), hasLength(2));
-      expect(engine.trackFx[(1, 0)]?.name, 'delay');
-      expect(engine.trackFx[(1, 1)]?.name, 'reverb');
-      expect(engine.trackFxParam[(1, 0, 0)], 0.3);
-      // The per-slot enabled bit is pushed for EVERY slot on every apply.
-      expect(engine.trackFxEnabled[(1, 0)], isTrue);
-      expect(engine.trackFxEnabled[(1, 1)], isFalse);
-      expect(engine.trackFxCount[1], 2);
+      final recipe = engine.recipes[(FxOwner.track, 1, 0)]!;
+      expect(recipe.slots.map((slot) => slot.type.code), [
+        TrackEffectType.delay.code,
+        TrackEffectType.reverb.code,
+      ]);
+      expect(recipe.slots.first.params.first, 0.3);
+      expect(recipe.slots.map((slot) => slot.enabled), [true, false]);
     });
 
     test('setMasterEffects updates cache and pushes the Master insert', () {
@@ -7390,9 +8096,9 @@ void main() {
       );
 
       expect(repo.masterEffects, hasLength(1));
-      expect(engine.outputFx[(0, 0)]?.name, 'echo');
-      expect(engine.outputFxEnabled[(0, 0)], isFalse);
-      expect(engine.outputFxCount[0], 1);
+      final recipe = engine.recipes[(FxOwner.output, 0, 0)]!;
+      expect(recipe.slots.single.type.code, TrackEffectType.echo.code);
+      expect(recipe.slots.single.enabled, isFalse);
     });
 
     test('a hosted plugin at a bus stage publishes as passthrough (no bus '
@@ -7426,9 +8132,14 @@ void main() {
       final masterPlugin = repo.masterEffects.single as PluginEffect;
       expect(masterPlugin.unavailable, isTrue);
       expect(masterPlugin.unsupported, isTrue);
-      expect(engine.trackFx[(0, 0)]?.name, 'none');
-      expect(engine.trackFxCount[0], 1);
-      expect(engine.outputFx[(0, 0)]?.name, 'none');
+      expect(
+        engine.recipes[(FxOwner.track, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.none.code,
+      );
+      expect(
+        engine.recipes[(FxOwner.output, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.none.code,
+      );
     });
 
     test('track/master chains and flags are projected onto LooperState', () {
@@ -7506,7 +8217,7 @@ void main() {
       expect(repo.monitorEffects(2).single.enabled, isFalse);
       expect(repo.trackEffects(1).single.enabled, isFalse);
       expect(repo.masterEffects.single.enabled, isFalse);
-      // Engine side.
+      // Granular enable commands act on the already installed recipe.
       expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
       expect(engine.monitorFxEnabled[(2, 0)], isFalse);
       expect(engine.trackFxEnabled[(1, 0)], isFalse);
@@ -7532,9 +8243,7 @@ void main() {
       );
     });
 
-    test('enabled setters work while STOPPED on ALL FOUR stages — the flag '
-        'lands on the engine immediately, no ring', () {
-      // Never started: the direct-atomic bindings must still be called.
+    test('enabled setters while stopped are replayed in all four recipes', () {
       final repo = buildRepo();
       addTearDown(repo.dispose);
 
@@ -7564,14 +8273,22 @@ void main() {
         ..setTrackChainEnabled(channel: 0, enabled: false)
         ..setMasterChainEnabled(enabled: false);
 
-      expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
-      expect(engine.monitorFxEnabled[(1, 0)], isFalse);
-      expect(engine.trackFxEnabled[(0, 0)], isFalse);
-      expect(engine.outputFxEnabled[(0, 0)], isFalse);
-      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
-      expect(engine.monitorFxChainEnabled[1], isFalse);
-      expect(engine.trackFxChainEnabled[0], isFalse);
-      expect(engine.outputFxChainEnabled[0], isFalse);
+      expect(repo.laneEffects(0, 0).single.enabled, isFalse);
+      expect(repo.monitorEffects(1).single.enabled, isFalse);
+      expect(repo.trackEffects(0).single.enabled, isFalse);
+      expect(repo.masterEffects.single.enabled, isFalse);
+      expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+      for (final owner in [
+        FxOwner.lane,
+        FxOwner.monitor,
+        FxOwner.track,
+        FxOwner.output,
+      ]) {
+        final channel = owner == FxOwner.monitor ? 1 : 0;
+        final recipe = engine.recipes[(owner, channel, 0)]!;
+        expect(recipe.slots.single.enabled, isFalse);
+        expect(recipe.enabled, isFalse);
+      }
     });
 
     test('per-chain setters update the remembered flag + engine on all four '
@@ -7608,8 +8325,10 @@ void main() {
       final drive = BuiltInEffect(type: TrackEffectType.drive);
       final delay = BuiltInEffect(type: TrackEffectType.delay, enabled: false);
       repo.setLaneEffects(channel: 0, lane: 0, effects: [drive, delay]);
-      expect(engine.laneFxEnabled[(0, 0, 0)], isTrue);
-      expect(engine.laneFxEnabled[(0, 0, 1)], isFalse);
+      expect(
+        engine.recipes[(FxOwner.lane, 0, 0)]?.slots.map((slot) => slot.enabled),
+        [true, false],
+      );
 
       // Reorder: the disabled DELAY moves to index 0. Every index is
       // re-pushed from the domain chain, so the flags follow the effects.
@@ -7618,8 +8337,10 @@ void main() {
         lane: 0,
         effects: repo.laneEffects(0, 0).reversed.toList(),
       );
-      expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
-      expect(engine.laneFxEnabled[(0, 0, 1)], isTrue);
+      expect(
+        engine.recipes[(FxOwner.lane, 0, 0)]?.slots.map((slot) => slot.enabled),
+        [false, true],
+      );
     });
   });
 
@@ -7666,6 +8387,65 @@ void main() {
   });
 
   group('re-apply on restart: four-stage chains + flags', () {
+    test(
+      'raw reconnect announces a folded dry Clear to its settings owner',
+      () {
+        engine.publishRecipes = false;
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(
+          repo.setLaneEffects(
+            channel: 0,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        expect(repo.clear(), EngineResult.ok);
+        var notices = 0;
+        repo.onLaneChainChanged = (_, _) => notices++;
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(repo.laneEffects(0, 0), isEmpty);
+        expect(notices, 1);
+      },
+    );
+
+    test(
+      'only a subsequent start announces exact FX replay confirmation',
+      () async {
+        engine.publishRecipes = false;
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        final confirmed = <({int mixGeneration, int sessionRevision})>[];
+        final sub = repo.fxReplayConfirmed.listen(confirmed.add);
+        addTearDown(sub.cancel);
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        await Future<void>.delayed(Duration.zero);
+        expect(confirmed, isEmpty, reason: 'cold boot has not loaded settings');
+
+        expect(
+          repo.setTrackEffects(
+            channel: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        expect(repo.stopEngine(), EngineResult.ok);
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(confirmed, isEmpty, reason: 'replay is still queued');
+        engine.publishRecipe((FxOwner.track, 0, 0));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(confirmed, [
+          (
+            mixGeneration: repo.mixGeneration,
+            sessionRevision: repo.sessionRevision,
+          ),
+        ]);
+      },
+    );
+
     test('a restart replays track/master chains and every stage chain '
         'flag', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
@@ -7685,26 +8465,20 @@ void main() {
         ..setMasterChainEnabled(enabled: false)
         ..stopEngine();
 
-      // Wipe the fake's records so only the restart replay repopulates them.
-      engine.trackFx.clear();
-      engine.trackFxCount.clear();
-      engine.outputFx.clear();
-      engine.outputFxCount.remove(0);
-      engine.laneFxChainEnabled.clear();
-      engine.monitorFxChainEnabled.clear();
-      engine.trackFxChainEnabled.clear();
-      engine.outputFxChainEnabled.remove(0);
+      expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
 
-      repo.startEngine(const EngineConfig());
-
-      expect(engine.trackFx[(0, 0)]?.name, 'delay');
-      expect(engine.trackFxCount[0], 1);
-      expect(engine.outputFx[(0, 0)]?.name, 'reverb');
-      expect(engine.outputFxCount[0], 1);
-      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
-      expect(engine.monitorFxChainEnabled[1], isFalse);
-      expect(engine.trackFxChainEnabled[0], isFalse);
-      expect(engine.outputFxChainEnabled[0], isFalse);
+      expect(
+        engine.recipes[(FxOwner.track, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.delay.code,
+      );
+      expect(
+        engine.recipes[(FxOwner.output, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.reverb.code,
+      );
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.enabled, isFalse);
+      expect(engine.recipes[(FxOwner.monitor, 1, 0)]?.enabled, isFalse);
+      expect(engine.recipes[(FxOwner.track, 0, 0)]?.enabled, isFalse);
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.enabled, isFalse);
     });
   });
 
@@ -7736,7 +8510,7 @@ void main() {
       // resets a slot's DSP state on every type push — the audible cost this
       // setter exists to avoid.
       expect(engine.calls, contains('setTrackFxParam'));
-      expect(engine.calls, isNot(contains('setTrackFx')));
+      expect(engine.calls, isNot(contains('setFxRecipe')));
       expect(
         (repo.trackEffects(0)[1] as BuiltInEffect).params[0],
         0.75,
@@ -7763,7 +8537,7 @@ void main() {
       );
 
       expect(engine.calls, contains('setOutputFxParam'));
-      expect(engine.calls, isNot(contains('setOutputFx')));
+      expect(engine.calls, isNot(contains('setFxRecipe')));
       expect((repo.masterEffects.single as BuiltInEffect).params[0], 0.4);
     });
 
@@ -7781,8 +8555,7 @@ void main() {
       );
     });
 
-    test('a track PLUGIN param write remembers the value and pushes no '
-        'chain', () {
+    test('a track plugin placeholder refuses a live param write', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setTrackEffects(
@@ -7804,21 +8577,16 @@ void main() {
           paramId: 42,
           value: 0.3,
         ),
-        EngineResult.ok,
+        EngineResult.invalid,
       );
 
-      // No slot type re-push, so the reverb sharing the bus keeps its tail...
-      expect(engine.calls, isNot(contains('setTrackFx')));
-      // ...and a bus plugin has no live slot, so nothing reaches the RT queue.
+      // Bus plugins have no host, so no live value can be accepted or stored.
+      expect(engine.calls, isNot(contains('setFxRecipe')));
       expect(engine.pluginParamSets, isEmpty);
-      // The value is remembered against the day a bus slot ABI lands.
-      expect(
-        (repo.trackEffects(0)[1] as PluginEffect).paramValues[42],
-        0.3,
-      );
+      expect((repo.trackEffects(0)[1] as PluginEffect).paramValues, isEmpty);
     });
 
-    test('a master PLUGIN param write behaves the same', () {
+    test('a master plugin placeholder refuses a live param write', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setMasterEffects(
@@ -7833,13 +8601,13 @@ void main() {
 
       expect(
         repo.setMasterPluginParam(index: 0, paramId: 7, value: 0.9),
-        EngineResult.ok,
+        EngineResult.invalid,
       );
 
       expect(engine.calls, isNot(contains('setOutputFx')));
       expect(engine.calls, isNot(contains('setOutputFxParam')));
       expect(engine.pluginParamSets, isEmpty);
-      expect((repo.masterEffects.single as PluginEffect).paramValues[7], 0.9);
+      expect((repo.masterEffects.single as PluginEffect).paramValues, isEmpty);
     });
 
     test('a bus plugin param write on a built-in entry is rejected', () {
@@ -8030,6 +8798,35 @@ void main() {
         effects: [BuiltInEffect(type: TrackEffectType.reverb)],
       );
       expect(repo.laneEffects(0, 0), take);
+    });
+
+    test("the take inherits each entry's placement, so an input's Pre run "
+        'becomes what the take prints (slice 3e)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(
+              type: TrackEffectType.delay,
+              placement: FxPlacement.pre,
+            ),
+            BuiltInEffect(type: TrackEffectType.reverb),
+          ],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      // The input's Pre entry is what the take records; its Post entry runs
+      // after that take's player. Both ride the same copy.
+      final take = repo.laneEffects(0, 0);
+      expect(take.map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.post,
+      ]);
+      expect(fxPreCount(take), 1);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.preCount, 1);
     });
 
     test('copied entries carry FRESH slot ids — bindings on the input chain '
@@ -8443,12 +9240,9 @@ void main() {
         );
         await Future<void>.delayed(Duration.zero);
 
-        // TWO: the write itself, and the apply behind it rewriting the entry
-        // with what the bind resolved — here the display name. That second one
-        // is the only announce a device reconnect makes, since `_reapplyAll`
-        // rebinds every slot without anyone calling a setter, and a plugin that
-        // comes back fine would otherwise read "loading…" forever.
-        expect(seen, [0, 0]);
+        // The atomic prepared recipe publishes the bound name with its one
+        // accepted chain change; it needs only one monitor notification.
+        expect(seen, [0]);
         expect(
           (repo.monitorEffects(0).single as PluginEffect).name,
           'Catalog Reverb',

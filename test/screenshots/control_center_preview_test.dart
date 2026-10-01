@@ -397,6 +397,9 @@ void main() {
     LooperState looperState = const LooperState(),
   }) {
     final looper = _MockLooperRepository();
+    when(() => looper.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
     final looperStates = StreamController<LooperState>.broadcast();
     addTearDown(looperStates.close);
     when(() => looper.monitorChanges).thenAnswer(

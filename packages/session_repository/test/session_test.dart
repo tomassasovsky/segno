@@ -115,14 +115,14 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the manifest version (v8)', () {
+    test('serializes the manifest version (v9)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 8);
+      expect(json['version'], 9);
       expect(json['baseLengthFrames'], 96000);
     });
 
-    test('schema 8 keeps output setup and all four nullable override maps', () {
+    test('schema 9 keeps output setup and all four nullable override maps', () {
       final manifest = session.toJson()
         ..['tracks'] = <Object>[]
         ..['outputSetup'] = {
@@ -154,7 +154,7 @@ void main() {
       expect(roundTrip.trackLengthPresetOverrides, {3: 0});
     });
 
-    test('invalid output facts in schema 8 are rejected', () {
+    test('invalid output facts in schema 9 are rejected', () {
       final manifest = session.toJson();
       expect(
         () => Session.fromJson(
@@ -176,7 +176,35 @@ void main() {
       );
     });
 
-    group('monitor gate (schema 8)', () {
+    group('the All tracks chain (schema v9)', () {
+      test('round-trips as an opaque envelope string', () {
+        const encoded = '{"chainEnabled":true,"entries":[{"type":1}]}';
+        final json = Session(
+          sampleRate: session.sampleRate,
+          channels: session.channels,
+          baseLengthFrames: session.baseLengthFrames,
+          tracks: session.tracks,
+          allTracksChain: encoded,
+        ).toJson();
+        expect(json['allTracksChain'], encoded);
+        expect(Session.fromJson(json).allTracksChain, encoded);
+      });
+
+      test('a current manifest requires the All tracks field', () {
+        final json = session.toJson()..remove('allTracksChain');
+        expect(() => Session.fromJson(json), throwsA(isA<TypeError>()));
+      });
+
+      test('schema 8 is not silently upgraded to schema 9', () {
+        final json = session.toJson()..['version'] = 8;
+        expect(
+          () => Session.fromJson(json),
+          throwsA(isA<SessionUnsupportedVersion>()),
+        );
+      });
+    });
+
+    group('monitor gate (schema 9)', () {
       test('a named gate round-trips', () {
         const monitor = SessionMonitor(
           input: 2,
@@ -227,7 +255,7 @@ void main() {
       });
     });
 
-    group('pedal remap blob (schema 8)', () {
+    group('pedal remap blob (schema 9)', () {
       test('round-trips byte-intact — the control layer compares these '
           'strings for equality, so a single character of drift would look '
           'like an edit', () {
@@ -253,7 +281,7 @@ void main() {
         );
       });
 
-      test('a missing required remap field is corrupt schema 8', () {
+      test('a missing required remap field is corrupt schema 9', () {
         final json = session.toJson()..remove('pedalBindings');
         expect(() => Session.fromJson(json), throwsA(isA<TypeError>()));
       });
@@ -359,6 +387,20 @@ void main() {
       expect(loaded.defaultMultiple, 3);
     });
 
+    test('rejects invalid whole-track gain facts', () {
+      for (final invalid in [
+        {'8': .5},
+        {'0': -0.1},
+        {'0': 2.1},
+        {'0': 'unity'},
+      ]) {
+        expect(
+          () => Session.fromJson(session.toJson()..['trackLevels'] = invalid),
+          throwsFormatException,
+        );
+      }
+    });
+
     test('all-empty sessions retain explicit defaults and Use default', () {
       const empty = Session(
         sampleRate: 48000,
@@ -371,6 +413,7 @@ void main() {
         trackOverdubDecayOverrides: {0: 25, 1: 0},
         trackOneShotOverrides: {0: false, 1: true},
         trackLengthPresetOverrides: {0: 4},
+        trackLevels: {7: .65},
       );
       final loaded = Session.fromJson(
         jsonDecode(jsonEncode(empty.toJson())) as Map<String, dynamic>,
@@ -380,6 +423,7 @@ void main() {
       expect(loaded.trackOverdubDecayOverrides, {0: 25, 1: 0});
       expect(loaded.trackOneShotOverrides, {0: false, 1: true});
       expect(loaded.trackLengthPresetOverrides, {0: 4});
+      expect(loaded.trackLevels, {7: .65});
       expect(loaded, empty);
       expect(loaded.hashCode, empty.hashCode);
     });
@@ -398,6 +442,7 @@ void main() {
         'trackOverdubDecayOverrides': {'0': 30},
         'trackOneShotOverrides': {'0': true},
         'trackLengthPresetOverrides': {'0': 4},
+        'trackLevels': {'7': .65},
       };
       for (final entry in variants.entries) {
         final changed = Session.fromJson(

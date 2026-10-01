@@ -27,8 +27,7 @@ class _FakeTrack {
   int get liveIndex => undoDepth;
 
   // Lane-0 conveniences (the single-lane accessors the setters/seed use).
-  double get volume => lanes[0].volume;
-  set volume(double v) => lanes[0].volume = v;
+  double volume = 1;
   bool get muted => lanes[0].muted;
   set muted(bool m) => lanes[0].muted = m;
   Float32List liveOf(int lane) => lanes[lane].layers[liveIndex];
@@ -101,10 +100,12 @@ class FakeSessionEngine implements AudioEngine {
     Float32List pcm, {
     int multiple = 1,
     double volume = 1,
+    double trackVolume = 1,
     bool muted = false,
   }) {
     final frames = pcm.length ~/ channels;
     final track = _tracks[channel]
+      ..volume = trackVolume
       ..state = TrackState.playing
       ..multiple = multiple
       ..lengthFrames = frames
@@ -346,7 +347,7 @@ class FakeSessionEngine implements AudioEngine {
 
   @override
   EngineResult setLaneVolume(double volume, {int channel = 0, int lane = 0}) {
-    _tracks[channel].volume = volume;
+    _tracks[channel].lanes[lane].volume = volume;
     return EngineResult.ok;
   }
 
@@ -417,6 +418,42 @@ class FakeSessionEngine implements AudioEngine {
   List<AudioDevice> enumerateAsioDrivers() => const [];
   @override
   EngineResult measureLatency() => EngineResult.ok;
+  final _fxRevisions = <(FxOwner, int, int), int>{};
+
+  @override
+  EngineResult setFxRecipe({
+    required FxOwner owner,
+    required FxRecipe recipe,
+    required int revision,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    if (!recipe.isValid || revision <= 0) return EngineResult.invalid;
+    _fxRevisions[(owner, channel, lane)] = revision;
+    return EngineResult.ok;
+  }
+
+  @override
+  int fxRecipeRevision({
+    required FxOwner owner,
+    int channel = 0,
+    int lane = 0,
+  }) => _fxRevisions[(owner, channel, lane)] ?? 0;
+
+  @override
+  PluginSlotHandle? preparePlugin({required String pluginId}) => null;
+
+  @override
+  EngineResult discardPreparedPlugin(PluginSlotHandle slot) =>
+      EngineResult.invalid;
+
+  @override
+  EngineResult preparePluginParam(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) => EngineResult.invalid;
+
   @override
   EngineResult record({int channel = 0}) => EngineResult.ok;
 
@@ -429,6 +466,9 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setMix(EngineMixSettings settings) {
     if (!settings.isValid) return EngineResult.invalid;
+    for (final entry in settings.trackLevels.entries) {
+      _tracks[entry.key].volume = entry.value;
+    }
     mixRevision = settings.revision;
     return EngineResult.ok;
   }
@@ -551,6 +591,7 @@ class FakeSessionEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) => EngineResult.ok;
   @override
   EngineResult setLaneFxParam({
@@ -597,6 +638,7 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setTrackFxCount({
     required int channel,
     required int count,
+    int preCount = 0,
   }) => EngineResult.ok;
   @override
   EngineResult setTrackFxParam({
@@ -642,6 +684,67 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setOutputFxChainEnabled({
     required int bus,
     required bool enabled,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) =>
+      EngineResult.ok;
+
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
   }) => EngineResult.ok;
 
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a

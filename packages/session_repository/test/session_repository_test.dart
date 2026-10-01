@@ -89,11 +89,12 @@ void main() {
   });
 
   test(
-    'empty-track pan and input setup survive a session save and read',
+    'empty-track gain, pan and input setup survive a session save and read',
     () async {
       final engine = FakeSessionEngine();
       final directory = '${tempDir.path}/empty-mix';
       const settings = SessionSettings(
+        trackLevels: {7: .65},
         trackPans: {7: 0.75},
         inputSetup: SessionInputSetup(
           trimDb: {0: -6},
@@ -106,6 +107,7 @@ void main() {
       final loaded = (await repoFor(engine).read(directory)).session;
       expect(saved.tracks, isEmpty);
       expect(loaded.tracks, isEmpty);
+      expect(loaded.trackLevels, {7: .65});
       expect(loaded.trackPans, {7: 0.75});
       expect(loaded.inputSetup.trimDb, {0: -6});
       expect(loaded.inputSetup.pan, {1: -0.5});
@@ -138,6 +140,7 @@ void main() {
       final playback = {0: false};
       final presets = {0: 4};
       final pans = {6: -0.6};
+      final gains = {6: .7};
       final trims = {2: 3.0};
       final dir = '${tempDir.path}/detached';
       final pending = repoFor(engine).save(
@@ -148,6 +151,7 @@ void main() {
           trackOneShotOverrides: playback,
           trackLengthPresetOverrides: presets,
           trackPans: pans,
+          trackLevels: gains,
           inputSetup: SessionInputSetup(trimDb: trims),
         ),
       );
@@ -159,6 +163,7 @@ void main() {
       playback[0] = true;
       presets[0] = 8;
       pans[6] = 0.4;
+      gains[6] = 1.2;
       trims.clear();
       final saved = await pending;
       final read = (await repoFor(engine).read(dir)).session;
@@ -167,6 +172,7 @@ void main() {
         expect(session.trackOverdubDecayOverrides, {0: 25});
         expect(session.trackOneShotOverrides, {0: false});
         expect(session.trackLengthPresetOverrides, {0: 4});
+        expect(session.trackLevels, {6: .7});
         expect(session.trackPans, {6: -0.6});
         expect(session.inputSetup.trimDb, {2: 3});
       }
@@ -869,6 +875,53 @@ void main() {
     expect(File('$dir/track0_lane0_L1.wav').existsSync(), isFalse);
     expect(File('$dir/track0_lane0_L2.wav').existsSync(), isFalse);
   });
+
+  test(
+    'save and live export apply track gain once after unequal part levels',
+    () async {
+      final engine = FakeSessionEngine()
+        ..seedTrack(
+          0,
+          Float32List.fromList([.2, .2, .2, .2]),
+          volume: .25,
+          trackVolume: .5,
+        )
+        ..seedLane(0, 1, Float32List.fromList([.1, .1, .1, .1]), volume: 1.5);
+      final repository = repoFor(engine);
+      final directory = '${tempDir.path}/separate_gains';
+      final saved = await repository.save(
+        directory,
+        settings: const SessionSettings(
+          trackLevels: {0: .5},
+          laneMix: {
+            (0, 0): (level: .25, imagePan: 0, balance: 1),
+            (0, 1): (level: 1.5, imagePan: 0, balance: 1),
+          },
+        ),
+      );
+      final livePath = '${tempDir.path}/live.wav';
+      await repository.exportMixdown(livePath);
+      // (.2 * .25 + .1 * 1.5) * .5 = .1. Applying the fader to
+      // lane zero only, deriving it from that lane, or applying twice differs.
+      for (final path in [
+        '$directory/${SessionRepository.mixdownName}',
+        livePath,
+      ]) {
+        final wav = WavCodec.decodeFloat32(File(path).readAsBytesSync());
+        expect(wav.samples, everyElement(closeTo(.1, 1e-6)));
+      }
+      expect(saved.trackLevels, {0: .5});
+      expect(saved.tracks.single.lanes.map((lane) => lane.volume), [.25, 1.5]);
+      final original0 = WavCodec.decodeFloat32(
+        File('$directory/track0_lane0_L0.wav').readAsBytesSync(),
+      );
+      final original1 = WavCodec.decodeFloat32(
+        File('$directory/track0_lane1_L0.wav').readAsBytesSync(),
+      );
+      expect(original0.samples, everyElement(closeTo(.2, 1e-6)));
+      expect(original1.samples, everyElement(closeTo(.1, 1e-6)));
+    },
+  );
 
   test('mixdown sums unmuted tracks over the LCM period', () async {
     final engine = FakeSessionEngine()
