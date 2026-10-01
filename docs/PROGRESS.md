@@ -987,3 +987,12 @@ color context and non-overlapping placement beside the raised pedal row.
 Verification and review are recorded in
 [the palette report](reviews/design-led-palette-restack/README.md). Physical
 color appearance and brightness remain appliance checks.
+
+## Pedal artwork reconciliation — October 1, 2026
+
+PR #1034 restores measured geometry in the existing pedal widget, preserving
+its enclosing hit areas, labels and state-driven indicators. The source and
+independent render reviews are clean; the app suite passes 2,374 tests with
+90.069% coverage. See `docs/reviews/design-pedal-art-restack/` for the source
+binding, saved Pen reference, author visuals and separate review evidence.
+Published-head CI and the human merge gate remain required.

@@ -299375,6 +299375,2077 @@
           "fontWeight": "normal"
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "BdRcY",
+      "x": 34744,
+      "y": -1512,
+      "name": "Native implementation / Measured pedal artwork / PR 1034",
+      "width": 1920,
+      "height": 760,
+      "fill": "#13171E",
+      "layout": "none",
+      "children": [
+        {
+          "type": "text",
+          "id": "rCd5H",
+          "x": 48,
+          "y": 36,
+          "name": "Artwork heading",
+          "fill": "#E4E9EF",
+          "content": "PEDAL HARDWARE • NATIVE WIDGET",
+          "fontFamily": "Inter",
+          "fontSize": 34,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "ndS5j",
+          "x": 48,
+          "y": 96,
+          "name": "Artwork explanation",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 1800,
+          "content": "Measured Fusion geometry: tapered metal body, side hinges, rolled edges, rubber pad and thirty raised grips. One reusable widget; its enclosing control owns touch and encoder selection.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 25,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "N7AD5",
+          "x": 80,
+          "y": 248,
+          "name": "Hardware / Segno pedal face",
+          "context": "Reusable vector reconstruction from Fusion: tapered metal body, rubber pad, thirty grips and manufacturing label outlines. Instances override label, selected colors and size.",
+          "reusable": true,
+          "width": 252,
+          "height": 342,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "TPizG",
+              "x": 0,
+              "y": 0,
+              "name": "Left hinge",
+              "geometry": "M3.8 20.9h-1.1q-2.2 0.2-2.2 3.1v3q0 2.1 2.2 2.3h1.1z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#424a53",
+              "width": 252,
+              "height": 342,
+              "stroke": "#777f88",
+              "strokeWidth": 0.8999787949233475,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "O3S9if",
+              "x": 0,
+              "y": 0,
+              "name": "Right hinge",
+              "geometry": "M80.2 20.9h1.1q2.2 0.2 2.2 3.1v3q0 2.1-2.2 2.3h-1.1z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#424a53",
+              "width": 252,
+              "height": 342,
+              "stroke": "#777f88",
+              "strokeWidth": 0.8999787949233475,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "XeKYa",
+              "x": 0,
+              "y": 0,
+              "name": "Tapered metal body",
+              "geometry": "M3.825 2h76.35l-1.64 109.88h-73.07z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -90,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#2b3035",
+                    "position": 0
+                  },
+                  {
+                    "color": "#737b83",
+                    "position": 0.18
+                  },
+                  {
+                    "color": "#333a42",
+                    "position": 0.85
+                  },
+                  {
+                    "color": "#737b83",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#565f69",
+              "strokeWidth": 1.0499752607439055,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "NftWW",
+              "x": 0,
+              "y": 0,
+              "name": "Left rolled edge",
+              "geometry": "M3.825 2h2.675l1.6 109.88h-2.635z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#343b43",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "iId9f",
+              "x": 0,
+              "y": 0,
+              "name": "Right rolled edge",
+              "geometry": "M77.5 2h2.675l-1.64 109.88h-2.635z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#242a31",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "wyyZL",
+              "x": 0,
+              "y": 0,
+              "name": "Textured rubber pad",
+              "geometry": "M11.73 5.45h60.54q2.03 0 2 2.03l-1.49 99q-0.03 1.97-2.03 1.97h-57.5q-2 0-2.03-1.97l-1.49-99q-0.03-2.03 2-2.03z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#191d21",
+              "width": 252,
+              "height": 342,
+              "stroke": "#13161a",
+              "strokeWidth": 1.1999717265644636,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "Qnl21",
+              "x": 0,
+              "y": 0,
+              "name": "Trapezoid nameplate",
+              "geometry": "M14.8205 10.53h54.359l-0.302 19.9h-53.755z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#20252b",
+              "width": 252,
+              "height": 342,
+              "stroke": "#3b4149",
+              "strokeWidth": 0.6599844496104549,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "FhlFf",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "OKI5P",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "wkvgY",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "WnRFw",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "W6Skw0",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "TyQ7M",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "p5i32",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "XyVgX",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "FsME1",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "GZElt",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "qTRTv",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "o5XLXW",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "OTIEM",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "QKfoY",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "e6cC93",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "gDjZN",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "MNQNc",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "i6I4U",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "TdTE6",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "i2jUNh",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "B5OWcA",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "ok5Tr",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "VDaLb",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "YxJkI",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "AR3s0",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "sVHVH",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "wV2o2",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "PmzHk",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "lzdtF",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "jHlxM",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "GsaFP",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "X8zoHL",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "u3CcsY",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "SzuiL",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "CFLUQ",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "aSfpp",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "sdYcY",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "V5v5B",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "Yzsn1",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "ojwfN",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "F88eRp",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "rdyq1",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "p83eq0",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "CK6in",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "haRvP",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "H8b3eO",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "Dr3NF",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "bsg9X",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "F3nql",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "FqnFg",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "yPclk",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "qqyMp",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "JcEk6",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "x4sitA",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "e9vsE",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "G3uSNC",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "r7PhE",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "itPvN",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "vti6B",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "Hml6o",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "text",
+              "id": "K8DDzA",
+              "x": 48,
+              "y": 36,
+              "name": "Dynamic app label",
+              "fill": "#E4E9EF",
+              "textGrowth": "fixed-width-height",
+              "width": 156,
+              "height": 51,
+              "content": "1",
+              "lineHeight": 1,
+              "textAlign": "center",
+              "textAlignVertical": "middle",
+              "fontFamily": "JetBrains Mono",
+              "fontSize": 33,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "id": "ZjRJ1",
+          "type": "ref",
+          "ref": "N7AD5",
+          "name": "Selected pedal",
+          "x": 548,
+          "y": 248,
+          "descendants": {
+            "XeKYa": {
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -90,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#52647B",
+                    "position": 0
+                  },
+                  {
+                    "color": "#849AB4",
+                    "position": 0.18
+                  },
+                  {
+                    "color": "#38485E",
+                    "position": 0.85
+                  },
+                  {
+                    "color": "#849AB4",
+                    "position": 1
+                  }
+                ]
+              },
+              "stroke": "#CBD8E9",
+              "strokeWidth": 3
+            },
+            "Qnl21": {
+              "fill": "#273449"
+            },
+            "K8DDzA": {
+              "content": "MODE"
+            }
+          }
+        },
+        {
+          "id": "K8oqVQ",
+          "type": "ref",
+          "ref": "N7AD5",
+          "name": "Unavailable pedal",
+          "x": 1016,
+          "y": 248,
+          "opacity": 0.32,
+          "descendants": {
+            "K8DDzA": {
+              "content": "STOP"
+            }
+          }
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 9,
+          "id": "Swpat",
+          "x": 116,
+          "y": 211,
+          "name": "AVAILABLE indicator",
+          "fill": "#E4E9EF",
+          "width": 180,
+          "height": 18
+        },
+        {
+          "type": "text",
+          "id": "lkGks",
+          "x": 60,
+          "y": 617,
+          "name": "AVAILABLE caption",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 292,
+          "content": "AVAILABLE",
+          "textAlign": "center",
+          "fontFamily": "Inter",
+          "fontSize": 23,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 9,
+          "id": "BGP8h",
+          "x": 584,
+          "y": 211,
+          "name": "SELECTED indicator",
+          "fill": "#E4E9EF",
+          "width": 180,
+          "height": 18
+        },
+        {
+          "type": "text",
+          "id": "QxipX",
+          "x": 528,
+          "y": 617,
+          "name": "SELECTED caption",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 292,
+          "content": "SELECTED",
+          "textAlign": "center",
+          "fontFamily": "Inter",
+          "fontSize": 23,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 9,
+          "id": "TnBQC",
+          "x": 1052,
+          "y": 211,
+          "name": "FIXED ACTION indicator",
+          "fill": "#4C535D",
+          "width": 180,
+          "height": 18
+        },
+        {
+          "type": "text",
+          "id": "IekSt",
+          "x": 996,
+          "y": 617,
+          "name": "FIXED ACTION caption",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 292,
+          "content": "FIXED ACTION",
+          "textAlign": "center",
+          "fontFamily": "Inter",
+          "fontSize": 23,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "edPYG",
+          "x": 1380,
+          "y": 260,
+          "name": "Interaction note",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 480,
+          "content": "Dynamic labels retain the current bank and translated names.\n\nSelection brightens the metal. LED state is independent.\n\nThe raised upper row and all existing hit areas remain unchanged.",
+          "lineHeight": 1.5,
+          "fontFamily": "Inter",
+          "fontSize": 25,
+          "fontWeight": "normal"
+        }
+      ]
     }
   ],
   "variables": {
