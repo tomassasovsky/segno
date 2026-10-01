@@ -1228,8 +1228,9 @@ class SettingsRepository {
       if (setup.level.isEmpty &&
           setup.muted.isEmpty &&
           setup.mono.isEmpty &&
-          setup.balance.isEmpty)
+          setup.balance.isEmpty) {
         continue;
+      }
       outputs[entry.key] = {
         'level': encoded(setup.level),
         'muted': {for (final e in setup.muted.entries) '${e.key}': e.value},
