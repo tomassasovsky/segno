@@ -5047,19 +5047,26 @@ void main() {
     });
 
     test('setInputMask maps the lowest selected input onto lane 0', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
       // 0x6 selects inputs 1 and 2; the lowest (1) records into lane 0.
-      buildRepo().setInputMask(channel: 2, mask: 0x6);
-      expect(engine.calls, contains('setLaneInput'));
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputMask(channel: 2, mask: 0x6);
+      expect(engine.calls, contains('setMix'));
       expect(engine.laneInput[(2, 0)], 1);
     });
 
     test('setOutputMask forwards the mask onto lane 0', () {
-      buildRepo().setOutputMask(channel: 1, mask: 0x5);
-      expect(engine.calls, contains('setLaneOutput'));
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setOutputMask(channel: 1, mask: 0x5);
+      expect(engine.calls, contains('setMix'));
       expect(engine.laneOutput[(1, 0)], 0x5);
     });
 
     test('setLaneCount remembers, defers, and re-applies on start', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
       final repo = buildRepo()..setLaneCount(channel: 2, count: 3);
       // Not running yet: remembered but not pushed to the engine.
       expect(engine.laneCount, isEmpty);
@@ -5068,12 +5075,12 @@ void main() {
       repo.startEngine(const EngineConfig());
       expect(engine.laneCount[2], 3);
 
-      // Count 1 (the default) drops the override and does not re-apply.
+      // The canonical count is explicit, including the default on replay.
       repo.setLaneCount(channel: 2, count: 1);
       expect(repo.laneCount(2), 1);
       engine.laneCount.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.laneCount.containsKey(2), isFalse);
+      expect(engine.laneCount[2], 1);
     });
 
     test('setMute on a multi-lane track mutes EVERY lane, not just lane 0', () {
@@ -6964,6 +6971,45 @@ void main() {
       });
     }
 
+    test(
+      'same-name reopen publishes a new lifetime for an identical snapshot',
+      () async {
+        engine.nextSnapshot = runningSnapshot(devicePresent: true);
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        addTearDown(repo.dispose);
+        final states = <LooperState>[];
+        final sub = repo.looperState.listen(states.add);
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+
+        engine.nextSnapshot = runningSnapshot(devicePresent: false);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        final before = repo.state;
+        expect(before.status.isConnected, isTrue);
+        expect(before.mixGeneration, repo.mixGeneration);
+        states.clear();
+
+        // The supervisor does a raw stop/start. Keep exactly the same running
+        // native snapshot: no synthetic disconnected projection drives this.
+        engine.devices = const [pinned];
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(startCount(), 2);
+        expect(stopCount(), 1);
+        expect(states, isNotEmpty);
+        expect(states.every((state) => state.status.isConnected), isTrue);
+        final after = states.last;
+        expect(after.status, before.status);
+        expect(after.transport, before.transport);
+        expect(after.tracks, before.tracks);
+        expect(after.mixGeneration, greaterThan(before.mixGeneration));
+        expect(after.mixGeneration, repo.mixGeneration);
+        expect(after, isNot(before));
+      },
+    );
+
     test('reopens a pinned device when it reappears', () async {
       engine.nextSnapshot = runningSnapshot(devicePresent: true);
       final repo = buildSupervised()
@@ -6998,7 +7044,10 @@ void main() {
     test(
       'a reconnect re-applies the remembered rig (lanes + monitors)',
       () async {
-        engine.nextSnapshot = runningSnapshot(devicePresent: true);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 1,
+        );
         final repo = buildSupervised()
           ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'))
           // Stage some live rig state: a monitor enable + a lane routing.
@@ -7012,11 +7061,14 @@ void main() {
             .where((c) => c == 'setMonitorInputEnabled')
             .length;
         final laneReapplyBefore = engine.calls
-            .where((c) => c == 'setLaneOutput')
+            .where((c) => c == 'setMix')
             .length;
 
         // Device lost, then reappears → reconnect.
-        engine.nextSnapshot = runningSnapshot(devicePresent: false);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 1,
+        );
         ticker.add(null);
         await Future<void>.delayed(Duration.zero);
         engine.devices = const [pinned];
@@ -7031,9 +7083,10 @@ void main() {
           greaterThan(monitorReapplyBefore),
         );
         expect(
-          engine.calls.where((c) => c == 'setLaneOutput').length,
+          engine.calls.where((c) => c == 'setMix').length,
           greaterThan(laneReapplyBefore),
         );
+        expect(engine.laneOutput[(0, 0)], 0x2);
       },
     );
 

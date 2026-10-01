@@ -528,6 +528,15 @@ class MockAudioEngine implements AudioEngine {
     if (!settings.isValid) return EngineResult.invalid;
     final result = _requireRunning();
     if (!result.isOk) return result;
+    for (final e in settings.laneInputs.entries) {
+      _tracks[e.key.$1].laneAt(e.key.$2).inputChannel = e.value;
+    }
+    for (final e in settings.laneOutputs.entries) {
+      _tracks[e.key.$1].laneAt(e.key.$2).outputMask = e.value;
+    }
+    for (final e in settings.laneCounts.entries) {
+      _tracks[e.key].laneCount = e.value;
+    }
     for (final e in settings.lanes.entries) {
       _tracks[e.key.$1].laneAt(e.key.$2)
         ..liveLevel = e.value.gain

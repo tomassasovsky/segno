@@ -357,48 +357,85 @@ void main() {
     });
   });
 
-  group('lane routing', () {
-    test('returns sensible defaults when nothing is stored', () async {
-      expect(await repository.loadLaneCount(0), 1);
-      expect(await repository.loadLaneInput(0, 0), isNull);
-      expect(await repository.loadLaneOutput(0, 0), isNull);
-      expect(
-        (await repository.loadMixSettings('test')).laneLevels[(0, 0)],
-        isNull,
+  group('output names', () {
+    test('round-trips a saved name, keyed per device', () async {
+      await repository.saveOutputName(
+        device: 'Scarlett',
+        bus: 1,
+        name: 'monitors',
       );
-      expect(await repository.loadLaneMute(0, 0), isNull);
+      expect(
+        await repository.loadOutputName(device: 'Scarlett', bus: 1),
+        'monitors',
+      );
+      expect(await repository.loadOutputName(device: 'Scarlett', bus: 0), null);
+      expect(await repository.loadOutputName(device: 'Built-in', bus: 1), null);
     });
 
-    test('round-trips a saved lane count per track', () async {
-      await repository.saveLaneCount(1, 3);
-      expect(await repository.loadLaneCount(1), 3);
-      expect(await repository.loadLaneCount(0), 1);
+    test('the unit is the DESTINATION, not the jack', () async {
+      // Bus 1 is outputs 3 and 4. Its name must not collide with bus 3's, and
+      // it must not collide with the per-jack output GATE either: a name and a
+      // gate are different facts about different units.
+      await repository.saveOutputName(
+        device: 'Scarlett',
+        bus: 1,
+        name: 'monitors',
+      );
+      await repository.saveOutputEnabled(
+        device: 'Scarlett',
+        output: 1,
+        enabled: false,
+      );
+      expect(await repository.loadOutputName(device: 'Scarlett', bus: 3), null);
+      expect(
+        await repository.loadOutputName(device: 'Scarlett', bus: 1),
+        'monitors',
+      );
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 1),
+        isFalse,
+      );
     });
 
-    test('round-trips per-lane input / output / volume / mute', () async {
-      await repository.saveLaneInput(1, 0, 2);
-      await repository.saveLaneOutput(1, 0, 0x5);
-      await repository.replaceMixSettings(
-        device: 'test',
-        mix: (
-          trackPans: {},
-          laneLevels: {(1, 0): 0.6},
-          monitorLevels: {},
-          inputSetup: (trimDb: {}, pan: {}, pairs: {}),
-          outputSetup: (level: {}, muted: {}, mono: {}, balance: {}),
-        ),
+    test('clearing REMOVES the key, never stores an empty name', () async {
+      await repository.saveOutputName(
+        device: 'Scarlett',
+        bus: 2,
+        name: 'wedge',
       );
-      await repository.saveLaneMute(1, 0, muted: true);
-      expect(await repository.loadLaneInput(1, 0), 2);
-      expect(await repository.loadLaneOutput(1, 0), 0x5);
-      expect(
-        (await repository.loadMixSettings('test')).laneLevels[(1, 0)],
-        closeTo(0.6, 1e-6),
-      );
-      expect(await repository.loadLaneMute(1, 0), isTrue);
-      // A different lane is independent.
-      expect(await repository.loadLaneInput(1, 1), isNull);
+      await repository.clearOutputName(device: 'Scarlett', bus: 2);
+      expect(await repository.loadOutputName(device: 'Scarlett', bus: 2), null);
     });
+  });
+
+  group('canonical lane routing', () {
+    test(
+      'one saved mix retains source, destination and count facts together',
+      () async {
+        await repository.replaceMixSettings(
+          device: 'test',
+          mix: (
+            trackPans: const {},
+            laneLevels: const {(1, 0): 0.6},
+            monitorLevels: const {},
+            laneInputs: const {(1, 0): 2},
+            laneOutputs: const {(1, 0): 0x5, (1, 7): 0x5},
+            laneCounts: const {1: 2},
+            inputSetup: const (trimDb: {}, pan: {}, pairs: {}),
+            outputSetup: const (level: {}, muted: {}, mono: {}, balance: {}),
+          ),
+        );
+        final loaded = await repository.loadMixSettings('test');
+        expect(loaded.laneInputs, {(1, 0): 2});
+        expect(loaded.laneOutputs, {(1, 0): 0x5, (1, 7): 0x5});
+        expect(loaded.laneCounts, {1: 2});
+        expect(loaded.laneLevels[(1, 0)], closeTo(0.6, 1e-6));
+        expect(
+          (await repository.loadMixSettings('other')).laneOutputs,
+          loaded.laneOutputs,
+        );
+      },
+    );
   });
 
   group('lane effects', () {
@@ -1034,6 +1071,9 @@ void main() {
       trackPans: pans,
       laneLevels: levels,
       monitorLevels: monitors,
+      laneInputs: const {},
+      laneOutputs: const {},
+      laneCounts: const {},
       inputSetup: input,
       outputSetup: output,
     );

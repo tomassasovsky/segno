@@ -112,6 +112,9 @@ typedef StoredMixSettings = ({
   Map<int, double> trackPans,
   Map<(int, int), double> laneLevels,
   Map<int, double> monitorLevels,
+  Map<(int, int), int> laneInputs,
+  Map<(int, int), int> laneOutputs,
+  Map<int, int> laneCounts,
   StoredInputSetup inputSetup,
   StoredOutputSetup outputSetup,
 });
@@ -1171,6 +1174,20 @@ class SettingsRepository {
       levels[(int.parse(address[0]), int.parse(address[1]))] =
           (entry.value as num).toDouble();
     }
+    Map<(int, int), int> laneValues(Object? source) {
+      final result = <(int, int), int>{};
+      for (final entry
+          in (source as Map<String, dynamic>? ?? const {}).entries) {
+        final address = entry.key.split('.');
+        if (address.length != 2 || entry.value is! int) {
+          throw const FormatException('bad routing lane');
+        }
+        result[(int.parse(address[0]), int.parse(address[1]))] =
+            entry.value as int;
+      }
+      return result;
+    }
+
     final devices = <String, StoredInputSetup>{};
     for (final entry
         in (json['inputSetups'] as Map<String, dynamic>? ?? const {}).entries) {
@@ -1201,6 +1218,14 @@ class SettingsRepository {
       pans: values(json['pans']),
       levels: levels,
       monitorLevels: values(json['monitorLevels']),
+      laneInputs: laneValues(json['laneInputs']),
+      laneOutputs: laneValues(json['laneOutputs']),
+      laneCounts: {
+        for (final entry
+            in (json['laneCounts'] as Map<String, dynamic>? ?? const {})
+                .entries)
+          int.parse(entry.key): entry.value as int,
+      },
       inputSetups: devices,
       outputSetups: outputs,
     );
@@ -1228,8 +1253,9 @@ class SettingsRepository {
       if (setup.level.isEmpty &&
           setup.muted.isEmpty &&
           setup.mono.isEmpty &&
-          setup.balance.isEmpty)
+          setup.balance.isEmpty) {
         continue;
+      }
       outputs[entry.key] = {
         'level': encoded(setup.level),
         'muted': {for (final e in setup.muted.entries) '${e.key}': e.value},
@@ -1240,6 +1266,9 @@ class SettingsRepository {
     if (saved.pans.isEmpty &&
         saved.levels.isEmpty &&
         saved.monitorLevels.isEmpty &&
+        saved.laneInputs.isEmpty &&
+        saved.laneOutputs.isEmpty &&
+        saved.laneCounts.isEmpty &&
         setups.isEmpty &&
         outputs.isEmpty) {
       return _store.remove(_mixSettingsKey);
@@ -1253,6 +1282,17 @@ class SettingsRepository {
             '${entry.key.$1}.${entry.key.$2}': entry.value,
         },
         'monitorLevels': encoded(saved.monitorLevels),
+        'laneInputs': {
+          for (final e in saved.laneInputs.entries)
+            '${e.key.$1}.${e.key.$2}': e.value,
+        },
+        'laneOutputs': {
+          for (final e in saved.laneOutputs.entries)
+            '${e.key.$1}.${e.key.$2}': e.value,
+        },
+        'laneCounts': {
+          for (final e in saved.laneCounts.entries) '${e.key}': e.value,
+        },
         'inputSetups': setups,
         'outputSetups': outputs,
       }),
@@ -1267,6 +1307,9 @@ class SettingsRepository {
       trackPans: saved.pans,
       laneLevels: saved.levels,
       monitorLevels: saved.monitorLevels,
+      laneInputs: saved.laneInputs,
+      laneOutputs: saved.laneOutputs,
+      laneCounts: saved.laneCounts,
       inputSetup: saved.inputSetups[device] ?? _emptyInputSetup(),
       outputSetup: saved.outputSetups[device] ?? _emptyOutputSetup(),
     );
@@ -1281,6 +1324,9 @@ class SettingsRepository {
       trackPans: Map<int, double>.of(mix.trackPans),
       laneLevels: Map<(int, int), double>.of(mix.laneLevels),
       monitorLevels: Map<int, double>.of(mix.monitorLevels),
+      laneInputs: Map<(int, int), int>.of(mix.laneInputs),
+      laneOutputs: Map<(int, int), int>.of(mix.laneOutputs),
+      laneCounts: Map<int, int>.of(mix.laneCounts),
       inputSetup: (
         trimDb: Map<int, double>.of(mix.inputSetup.trimDb),
         pan: Map<int, double>.of(mix.inputSetup.pan),
@@ -1296,6 +1342,11 @@ class SettingsRepository {
     return _serialize(() async {
       _validateMixerSettings(detached.trackPans, detached.laneLevels);
       _validateMonitorLevels(detached.monitorLevels);
+      _validateRouting(
+        detached.laneInputs,
+        detached.laneOutputs,
+        detached.laneCounts,
+      );
       _validateInputSetup(detached.inputSetup);
       _validateOutputSetup(detached.outputSetup);
       final saved = await _readMixSettings();
@@ -1308,6 +1359,15 @@ class SettingsRepository {
       saved.monitorLevels
         ..clear()
         ..addAll(detached.monitorLevels);
+      saved.laneInputs
+        ..clear()
+        ..addAll(detached.laneInputs);
+      saved.laneOutputs
+        ..clear()
+        ..addAll(detached.laneOutputs);
+      saved.laneCounts
+        ..clear()
+        ..addAll(detached.laneCounts);
       saved.inputSetups[device] = detached.inputSetup;
       saved.outputSetups[device] = detached.outputSetup;
       await _writeMixSettings(saved);
@@ -1350,6 +1410,26 @@ class SettingsRepository {
           e.value > 2,
     )) {
       throw ArgumentError('invalid monitor levels');
+    }
+  }
+
+  void _validateRouting(
+    Map<(int, int), int> inputs,
+    Map<(int, int), int> outputs,
+    Map<int, int> counts,
+  ) {
+    bool lane((int, int) key) =>
+        key.$1 >= 0 && key.$1 < 8 && key.$2 >= 0 && key.$2 < 8;
+    if (inputs.entries.any(
+          (e) => !lane(e.key) || e.value < -1 || e.value >= 32,
+        ) ||
+        outputs.entries.any(
+          (e) => !lane(e.key) || e.value < 0 || e.value > 0xffffffff,
+        ) ||
+        counts.entries.any(
+          (e) => e.key < 0 || e.key >= 8 || e.value < 1 || e.value > 8,
+        )) {
+      throw ArgumentError('invalid routing settings');
     }
   }
 
@@ -1438,6 +1518,37 @@ class SettingsRepository {
     pan: <int, double>{},
     pairs: <int, double>{},
   );
+
+  /// Keyed per DEVICE and DESTINATION, the pair-shaped twin of
+  /// [_inputNameKey].
+  ///
+  /// The unit is the destination (bus `k` = hardware outputs `2k` and
+  /// `2k+1`), not the jack, because that is what the player patches and names:
+  /// "monitor" is a pair of sockets, not one of them. The output GATE is per
+  /// jack and keeps its own key; a name and a gate are different facts about
+  /// different units and sharing a key would force one of them to lie.
+  String _outputNameKey(String device, int bus) => 'output_name.$device.$bus';
+
+  /// Loads the given name for destination [bus] on [device], or `null` if it
+  /// has none.
+  Future<String?> loadOutputName({
+    required String device,
+    required int bus,
+  }) => _store.getString(_outputNameKey(device, bus));
+
+  /// Saves the given [name] for destination [bus] on [device].
+  Future<void> saveOutputName({
+    required String device,
+    required int bus,
+    required String name,
+  }) => _store.setString(_outputNameKey(device, bus), name);
+
+  /// Forgets [bus]'s given name on [device], handing the destination back its
+  /// jack numbers.
+  Future<void> clearOutputName({
+    required String device,
+    required int bus,
+  }) => _store.remove(_outputNameKey(device, bus));
 
   StoredOutputSetup _emptyOutputSetup() => (
     level: <int, double>{},
@@ -1533,37 +1644,9 @@ class SettingsRepository {
       ? _store.remove(_trackOneShotKey(channel))
       : _store.setBool(_trackOneShotKey(channel), value: oneShot);
 
-  String _laneCountKey(int channel) => 'lane_count.$channel';
-  String _laneInputKey(int channel, int lane) => 'lane_input.$channel.$lane';
-  String _laneOutputKey(int channel, int lane) => 'lane_output.$channel.$lane';
   String _laneMuteKey(int channel, int lane) => 'lane_mute.$channel.$lane';
   String _laneEffectsKey(int channel, int lane) =>
       'lane_effects.$channel.$lane';
-
-  /// Loads track [channel]'s saved active lane count, or `1` if unset.
-  Future<int> loadLaneCount(int channel) async =>
-      await _store.getInt(_laneCountKey(channel)) ?? 1;
-
-  /// Saves track [channel]'s active lane [count].
-  Future<void> saveLaneCount(int channel, int count) =>
-      _store.setInt(_laneCountKey(channel), count);
-
-  /// Loads lane [lane] of track [channel]'s recorded input channel (`-1` =
-  /// none), or `null` if unset.
-  Future<int?> loadLaneInput(int channel, int lane) =>
-      _store.getInt(_laneInputKey(channel, lane));
-
-  /// Saves lane [lane] of track [channel]'s recorded [inputChannel].
-  Future<void> saveLaneInput(int channel, int lane, int inputChannel) =>
-      _store.setInt(_laneInputKey(channel, lane), inputChannel);
-
-  /// Loads lane [lane] of track [channel]'s output bitmask, or `null` if unset.
-  Future<int?> loadLaneOutput(int channel, int lane) =>
-      _store.getInt(_laneOutputKey(channel, lane));
-
-  /// Saves lane [lane] of track [channel]'s output [mask].
-  Future<void> saveLaneOutput(int channel, int lane, int mask) =>
-      _store.setInt(_laneOutputKey(channel, lane), mask);
 
   /// Loads lane [lane] of track [channel]'s mute state, or `null` if unset.
   Future<bool?> loadLaneMute(int channel, int lane) =>
@@ -1687,17 +1770,26 @@ class _SavedMixSettings {
     Map<int, double>? pans,
     Map<(int, int), double>? levels,
     Map<int, double>? monitorLevels,
+    Map<(int, int), int>? laneInputs,
+    Map<(int, int), int>? laneOutputs,
+    Map<int, int>? laneCounts,
     Map<String, StoredInputSetup>? inputSetups,
     Map<String, StoredOutputSetup>? outputSetups,
   }) : pans = pans ?? {},
        levels = levels ?? {},
        monitorLevels = monitorLevels ?? {},
+       laneInputs = laneInputs ?? {},
+       laneOutputs = laneOutputs ?? {},
+       laneCounts = laneCounts ?? {},
        inputSetups = inputSetups ?? {},
        outputSetups = outputSetups ?? {};
 
   final Map<int, double> pans;
   final Map<(int, int), double> levels;
   final Map<int, double> monitorLevels;
+  final Map<(int, int), int> laneInputs;
+  final Map<(int, int), int> laneOutputs;
+  final Map<int, int> laneCounts;
   final Map<String, StoredInputSetup> inputSetups;
   final Map<String, StoredOutputSetup> outputSetups;
 }

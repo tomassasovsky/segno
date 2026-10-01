@@ -8,7 +8,8 @@ import 'package:segno_engine/segno_engine.dart';
 /// way `session_repository`'s `SessionChains` works for session saves).
 ///
 /// All four stages of the FX v3 model are represented: Input ([monitors]),
-/// Loop ([laneChains]), Track ([trackChains]). The selected output stage is captured from the engine at arm.
+/// Loop ([laneChains]), Track ([trackChains]). The selected output stage is
+/// captured from the engine at arm.
 /// Every stage also carries its chain-enabled flag, and
 /// each entry its own `enabled` bit, so a replay can seed arm-time bypass
 /// state instead of guessing (R3).

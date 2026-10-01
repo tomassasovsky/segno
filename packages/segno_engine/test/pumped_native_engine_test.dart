@@ -75,6 +75,50 @@ void main() {
     );
   }, skip: skip);
 
+  test(
+    'atomic routing preserves high physical bits and activates after ack',
+    () {
+      final engine = PumpedNativeEngine();
+      addTearDown(engine.dispose);
+      engine
+        ..start(
+          const EngineConfig(
+            inputChannels: 2,
+            outputChannels: 2,
+            maxLoopFrames: 64,
+          ),
+        )
+        ..pump(frames: 0);
+      final edit = EngineMixSettings(
+        revision: 91,
+        laneCounts: const {7: 8},
+        laneInputs: const {(7, 7): 31, (7, 0): -1},
+        laneOutputs: {
+          for (var lane = 0; lane < 8; lane++) (7, lane): 0x80000001,
+        },
+      );
+      expect(engine.setMix(edit), EngineResult.ok);
+      expect(engine.snapshot().mixRevision, 0);
+      expect(engine.snapshot().tracks[7].laneCount, 1);
+      engine.pump(frames: 0);
+      final published = engine.snapshot();
+      expect(published.mixRevision, 91);
+      expect(published.tracks[7].laneCount, 8);
+      expect(published.tracks[7].lanes[7].inputChannel, 31);
+      expect(published.tracks[7].lanes[0].inputChannel, -1);
+      expect(
+        published.tracks[7].lanes.map((lane) => lane.outputMask),
+        everyElement(0x80000001),
+      );
+      expect(engine.setLaneCount(channel: 7, count: 2), EngineResult.ok);
+      expect(engine.snapshot().tracks[7].laneCount, 8);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tracks[7].laneCount, 2);
+      expect(engine.snapshot().mixRevision, 91);
+    },
+    skip: skip,
+  );
+
   test('queued tempo and Once publish only after the callback settles', () {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);

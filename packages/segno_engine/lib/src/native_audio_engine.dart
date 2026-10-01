@@ -663,6 +663,23 @@ class NativeAudioEngine implements AudioEngine {
         if (entry.value.muted) native.output_muted |= 1 << entry.key;
         if (entry.value.mono) native.output_mono |= 1 << entry.key;
       }
+      for (final entry in settings.laneInputs.entries) {
+        final i = entry.key.$1 * kMaxLanes + entry.key.$2;
+        native.routing_input_mask |= 1 << i;
+        native.lane_input[i] = entry.value;
+      }
+      for (final entry in settings.laneOutputs.entries) {
+        final i = entry.key.$1 * kMaxLanes + entry.key.$2;
+        native.routing_output_mask |= 1 << i;
+        native.lane_output[i] = entry.value;
+      }
+      for (final entry in settings.laneCounts.entries) {
+        native.lane_count_mask |= 1 << entry.key;
+        native.lane_count[entry.key] = entry.value;
+      }
+      for (final channel in settings.sourceTracks) {
+        native.source_track_mask |= 1 << channel;
+      }
       return EngineResult.fromCode(_bindings.le_engine_set_mix(_engine, ptr));
     } finally {
       calloc.free(ptr);

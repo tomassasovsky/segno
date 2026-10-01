@@ -39,6 +39,8 @@ void main() {
   /// "No audio device" branch and into everything this file exists to cover.
   LooperState rig({int channels = 2, int excluded = 0}) => LooperState(
     status: EngineStatus(
+      isConnected: channels > 0,
+      devicePresent: channels > 0,
       inputChannels: channels,
       excludedInputMask: excluded,
       deviceName: 'Fake',
@@ -59,6 +61,7 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     when(() => repository.looperState).thenAnswer((_) => states.stream);
     when(() => repository.state).thenReturn(rig());
+    when(() => repository.mixGeneration).thenReturn(0);
     tuner = _MockTunerCubit();
     readings = StreamController<TunerState>.broadcast();
     whenListen(

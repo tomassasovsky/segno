@@ -63,6 +63,10 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (frames <= 0) return LE_ERR_INVALID;
+  /* A queued shrink still owns its old buffers until the callback finishes
+   * the complete block. EMPTY alone cannot release that lifetime. */
+  if (engine->lane_growth_command > atomic_load_explicit(
+        &engine->a_commands_published, memory_order_acquire)) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
   /* Importing targets an empty track: its buffers are not read by the audio
    * thread, so the control thread can fill any lane directly. An undone-to-empty
@@ -93,11 +97,11 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
     store_i32(&t->a_redo_depth, 0);
     t->start_iter = 0;
   }
-  if (lane >= t->lane_count) {
-    for (int32_t l = t->lane_count; l <= lane; ++l) {
+  if (lane >= le_lanes_active(t)) {
+    for (int32_t l = le_lanes_active(t); l <= lane; ++l) {
       le_lane_reset(&t->lanes[l], l);
     }
-    t->lane_count = lane + 1;
+    atomic_store_explicit(&t->lane_count, lane + 1, memory_order_release);
   }
   le_lane* ln = &t->lanes[lane];
   const int live = load_i32(&ln->a_live);
@@ -180,6 +184,10 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
    * stacks on the same numbering), so it must fit the pool (R1 cap). */
   if (ordinal < 0 || ordinal >= LE_POOL_SLOTS) return LE_ERR_INVALID;
   if (frames <= 0 || frames > engine->max_loop_frames) return LE_ERR_INVALID;
+  /* A queued shrink still owns its old buffers until the callback finishes
+   * the complete block. EMPTY alone cannot release that lifetime. */
+  if (engine->lane_growth_command > atomic_load_explicit(
+        &engine->a_commands_published, memory_order_acquire)) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
   if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
   if (t->state_cmds_posted >
@@ -189,11 +197,11 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
   /* Activate the lane if this is the first layer landing on it; a grown lane
    * takes its standard record route (input == lane index). Never reset a lane
    * already being filled. */
-  if (lane >= t->lane_count) {
-    for (int32_t l = t->lane_count; l <= lane; ++l) {
+  if (lane >= le_lanes_active(t)) {
+    for (int32_t l = le_lanes_active(t); l <= lane; ++l) {
       le_lane_reset(&t->lanes[l], l);
     }
-    t->lane_count = lane + 1;
+    atomic_store_explicit(&t->lane_count, lane + 1, memory_order_release);
   }
   le_lane* ln = &t->lanes[lane];
   /* Undo/redo layers are quantized to the loop length (as the live rig sizes
@@ -225,6 +233,10 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
   if (undo_count < 0 || redo_count < 0) return LE_ERR_INVALID;
   const int32_t total = undo_count + 1 + redo_count;
   if (total > LE_POOL_SLOTS) return LE_ERR_INVALID; /* R1 cap */
+  /* A queued shrink still owns its old buffers until the callback finishes
+   * the complete block. EMPTY alone cannot release that lifetime. */
+  if (engine->lane_growth_command > atomic_load_explicit(
+        &engine->a_commands_published, memory_order_acquire)) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
   if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
   if (t->state_cmds_posted >

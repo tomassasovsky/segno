@@ -42,6 +42,8 @@ const _rig = LooperState(
   // The device name is load-bearing: `InputsCubit` keys a socket's name to
   // the OPEN INTERFACE, and refuses to store one against an empty device.
   status: EngineStatus(
+    isConnected: true,
+    devicePresent: true,
     deviceName: 'Scarlett 18i20',
     inputChannels: 4,
     outputChannels: 4,
@@ -269,8 +271,10 @@ void main() {
     ) async {
       await pump(tester);
       await tester.pumpAndSettle();
+      expect(inputs.state.device, 'Scarlett 18i20');
       await inputs.rename(0, 'guitar');
-      await tester.pump();
+      expect(inputs.state.nameOf(0), 'guitar');
+      await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
       expect(find.byKey(const Key('signal_card_input_0')), findsOneWidget);

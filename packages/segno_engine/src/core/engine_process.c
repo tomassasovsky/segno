@@ -2312,6 +2312,51 @@ static void le_cancel_signal_arms(le_engine* e) {
  * output but isn't logged here is a standing review-checklist item (the
  * umbrella plan). */
 
+/* Validate every affected source before publishing any route or count. */
+static int le_apply_routing(le_engine* e, const le_mix_settings* mix,
+                            uint64_t frame) {
+  if (!le_mix_valid(e, mix)) return 0;
+  uint32_t sources = mix->source_track_mask | mix->lane_count_mask;
+  for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES; ++i)
+    if (mix->routing_input_mask & (UINT64_C(1) << i)) sources |= 1u << (i / LE_MAX_LANES);
+  int blocked = 0;
+  for (int ch = 0; ch < e->track_count; ++ch) {
+    if (!(sources & (1u << ch))) continue;
+    le_track* t = &e->tracks[ch];
+    if (mix->lane_count_mask & (1u << ch)) {
+      for (int l = le_lanes_active(t); l < mix->lane_count[ch]; ++l) {
+        const int live = load_i32(&t->lanes[l].a_live);
+        if (t->lanes[l].pool[live] == NULL ||
+            t->lanes[l].pool_cap[live] < e->max_loop_frames) blocked = 1;
+      }
+    }
+    const int st = load_i32(&t->a_state);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+        t->pending_record || load_i32(&t->a_layer_in_flight) ||
+        (e->count_in_total > 0 && e->count_in_channel == ch)) blocked = 1;
+  }
+  if (blocked) return 0; /* refuse the whole batch before any observable write */
+  for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES; ++i) {
+    const uint64_t bit = UINT64_C(1) << i;
+    const int ch = i / LE_MAX_LANES, l = i % LE_MAX_LANES;
+    if (mix->routing_input_mask & bit) {
+      store_i32(&e->tracks[ch].lanes[l].a_input_channel, mix->lane_input[i]);
+      le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_INPUT,
+        .lanei = {ch, l, mix->lane_input[i]}});
+    }
+    if (mix->routing_output_mask & bit) {
+      atomic_store_explicit(&e->tracks[ch].lanes[l].a_output_mask,
+                            mix->lane_output[i], memory_order_relaxed);
+      le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_OUTPUT,
+        .lanei = {ch, l, (int32_t)mix->lane_output[i]}});
+    }
+  }
+  for (int ch = 0; ch < e->track_count; ++ch)
+    if (mix->lane_count_mask & (1u << ch))
+      atomic_store_explicit(&e->tracks[ch].lane_count, mix->lane_count[ch], memory_order_release);
+  return 1;
+}
+
 static void apply_command_image(le_engine* e, const le_command* cmd,
                                 uint64_t frame, int preserve_image);
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
@@ -2320,9 +2365,17 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
 static void apply_command_image(le_engine* e, const le_command* cmd,
                                 uint64_t frame, int preserve_image) {
   switch (cmd->code) {
+    case LE_CMD_SET_LANE_COUNT: {
+      const int ch = cmd->lanei.channel;
+      if (ch < 0 || ch >= e->track_count) break;
+      le_mix_settings mix = {.revision = 1, .lane_count_mask = 1u << ch};
+      mix.lane_count[ch] = cmd->lanei.value;
+      (void)le_apply_routing(e, &mix, frame);
+      break;
+    }
     case LE_CMD_SET_MIX: {
       const le_mix_settings* mix = &cmd->mix;
-      if (!le_mix_valid(e, mix)) break;
+      if (!le_apply_routing(e, mix, frame)) break;
       /* Emit only applied primitive facts; events.log's 16-byte payload must
        * never receive the much larger in-process batch arm. */
       for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES; ++i) {

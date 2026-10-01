@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/cubit/alias_rename_result.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -10,11 +11,26 @@ import '../../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _DelayedInputStore extends FakeKeyValueStore {
+  Completer<void>? firstReadGate;
+
+  @override
+  Future<String?> getString(String key) async {
+    if (key == 'input_name.Scarlett 18i20.0' && firstReadGate != null) {
+      final gate = firstReadGate!;
+      firstReadGate = null;
+      await gate.future;
+    }
+    return super.getString(key);
+  }
+}
+
 /// The engine with an interface open. The device NAME is the key the names are
 /// stored against, so a test that never opens one can never store a name.
 const _scarlett = LooperState(
   status: EngineStatus(
     isConnected: true,
+    devicePresent: true,
     deviceName: 'Scarlett 18i20',
     sampleRate: 48000,
     inputChannels: 18,
@@ -24,6 +40,7 @@ const _scarlett = LooperState(
 const _builtIn = LooperState(
   status: EngineStatus(
     isConnected: true,
+    devicePresent: true,
     deviceName: 'Built-in audio',
     sampleRate: 48000,
     inputChannels: 2,
@@ -34,14 +51,17 @@ void main() {
   late SettingsRepository settings;
   late _MockLooperRepository repository;
   late StreamController<LooperState> engine;
+  late int generation;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
     engine = StreamController<LooperState>.broadcast();
+    generation = 0;
     addTearDown(engine.close);
     when(() => repository.looperState).thenAnswer((_) => engine.stream);
     when(() => repository.state).thenReturn(_scarlett);
+    when(() => repository.mixGeneration).thenAnswer((_) => generation);
   });
 
   InputsCubit build() {
@@ -54,6 +74,22 @@ void main() {
   Future<void> settle() => pumpEventQueue();
 
   group('InputsCubit', () {
+    test('old same-name load cannot win after disconnect and reopen', () async {
+      final gate = Completer<void>();
+      final store = _DelayedInputStore()..firstReadGate = gate;
+      final owned = SettingsRepository(store: store);
+      final cubit = InputsCubit(settings: owned, repository: repository);
+      addTearDown(cubit.close);
+      engine
+        ..add(const LooperState())
+        ..add(_scarlett);
+      await settle();
+      await cubit.rename(0, 'current');
+      gate.complete();
+      await settle();
+      expect(cubit.state.nameOf(0), 'current');
+      expect(cubit.state.device, 'Scarlett 18i20');
+    });
     test('adopts the device the engine already has open', () async {
       final cubit = build();
       await settle();
@@ -154,19 +190,38 @@ void main() {
       expect(cubit.state.names, isEmpty);
     });
 
-    test('a reopen does not blank the names it is between', () async {
-      // The engine reports no device for the length of a device change. The
-      // outgoing names are kept until the incoming device names itself —
-      // clearing would blank every chip mid-reopen.
+    test('disconnect clears names from the outgoing device', () async {
       final cubit = build();
       await settle();
       await cubit.rename(0, 'guitar');
 
       engine.add(const LooperState());
       await settle();
-      expect(cubit.state.nameOf(0), 'guitar');
-      expect(cubit.state.device, 'Scarlett 18i20');
+      expect(cubit.state.nameOf(0), '');
+      expect(cubit.state.device, '');
     });
+
+    test(
+      'same-name restart refuses an old sheet before the next poll',
+      () async {
+        final cubit = build();
+        await settle();
+        final oldLifetime = cubit.state.lifetime;
+        generation++;
+        AliasRenameResult? result;
+        await cubit.rename(
+          0,
+          'stale',
+          expectedLifetime: oldLifetime,
+          onResult: (value) => result = value,
+        );
+        expect(result, AliasRenameResult.refused);
+        expect(
+          await settings.loadInputName(device: 'Scarlett 18i20', input: 0),
+          isNull,
+        );
+      },
+    );
 
     test('a rename racing the device read is MERGED, not dropped', () async {
       // The restore walks the sockets one await at a time. Abandoning it on a

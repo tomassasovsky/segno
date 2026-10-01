@@ -101,6 +101,7 @@ void main() {
     when(() => repository.clearAll(any())).thenReturn(EngineResult.ok);
     when(() => repository.undoClearAll()).thenReturn(EngineResult.ok);
     when(() => repository.state).thenReturn(const LooperState());
+    when(() => repository.mixGeneration).thenReturn(0);
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
     when(() => repository.trackChainEnabled(any())).thenReturn(true);

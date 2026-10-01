@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
@@ -337,11 +336,37 @@ class LooperRepository {
     inputSetup: _inputSetup,
     outputSetup: _outputSetup,
     trackSolos: _trackSolo,
+    laneInputs: _laneInput,
+    laneOutputs: _laneOutput,
+    laneCounts: _laneCount,
   );
 
   /// Validates a detached candidate before durable storage is touched.
   EngineResult validateMixSettings(MixSettingsSnapshot value) {
     if (!value.isValid) return EngineResult.invalid;
+    for (var channel = 0; channel < 8; channel++) {
+      final count = value.laneCounts[channel] ?? 1;
+      final sourceChanged =
+          count != laneCount(channel) ||
+          List.generate(kMaxLanes, (lane) => lane).any(
+            (lane) =>
+                (value.laneInputs[(channel, lane)] ?? lane) !=
+                (_laneInput[(channel, lane)] ?? lane),
+          );
+      if (sourceChanged && recordingInputsLocked(channel)) {
+        return EngineResult.invalid;
+      }
+      for (final lower in value.inputSetup.pairs.keys) {
+        if (!sourceChanged && _inputSetup.pairs.containsKey(lower)) continue;
+        final selected = {
+          for (var lane = 0; lane < count; lane++)
+            value.laneInputs[(channel, lane)] ?? lane,
+        };
+        if (selected.contains(lower) != selected.contains(lower + 1)) {
+          return EngineResult.invalid;
+        }
+      }
+    }
     for (final lower in {
       ...value.inputSetup.pairs.keys,
       ..._inputSetup.pairs.keys,
@@ -363,6 +388,25 @@ class LooperRepository {
     final next = _mixIntent()
       ..input = value.inputSetup
       ..output = value.outputSetup;
+    next.inputs
+      ..clear()
+      ..addAll(value.laneInputs);
+    next.routes
+      ..clear()
+      ..addAll(value.laneOutputs);
+    next.counts
+      ..clear()
+      ..addAll(value.laneCounts);
+    for (var channel = 0; channel < 8; channel++) {
+      final before = laneCount(channel);
+      final after = next.counts[channel] ?? 1;
+      if (before == after) continue;
+      final first = before < after ? before : after;
+      next.images.removeWhere((key, _) => key.$1 == channel && key.$2 >= first);
+      next.balances.removeWhere(
+        (key, _) => key.$1 == channel && key.$2 >= first,
+      );
+    }
     next.pans
       ..clear()
       ..addAll(value.trackPans);
@@ -402,6 +446,9 @@ class LooperRepository {
     monitorLevels: _monitorVolume,
     input: _inputSetup,
     output: _outputSetup,
+    inputs: _laneInput,
+    routes: _laneOutput,
+    counts: _laneCount,
   );
 
   void _acceptMix(_MixIntent value) {
@@ -430,6 +477,15 @@ class LooperRepository {
       ..addAll(value.monitorLevels);
     _inputSetup = value.input;
     _outputSetup = value.output;
+    _laneInput
+      ..clear()
+      ..addAll(value.inputs);
+    _laneOutput
+      ..clear()
+      ..addAll(value.routes);
+    _laneCount
+      ..clear()
+      ..addAll(value.counts);
     changedMonitors.forEach(_monitorChanged);
   }
 
@@ -440,10 +496,34 @@ class LooperRepository {
     final monitors = <int, StereoMix>{};
     final trims = <int, double>{};
     final solos = <int, bool>{};
+    final inputRoutes = <(int, int), int>{};
+    final outputRoutes = <(int, int), int>{};
+    final counts = <int, int>{};
+    final sourceTracks = <int>{};
+    final changedPairs = {...old.input.pairs.keys, ...next.input.pairs.keys}
+        .where(
+          (lower) =>
+              old.input.pairs.containsKey(lower) !=
+              next.input.pairs.containsKey(lower),
+        )
+        .toSet();
     final count = _engine.snapshot().tracks.length;
     for (var ch = 0; ch < count; ch++) {
+      final nextCount = next.counts[ch] ?? 1;
+      if (replay || nextCount != (old.counts[ch] ?? 1)) counts[ch] = nextCount;
       for (var lane = 0; lane < kMaxLanes; lane++) {
         final key = (ch, lane);
+        final input = next.inputs[key] ?? lane;
+        if (replay || input != (old.inputs[key] ?? lane)) {
+          inputRoutes[key] = input;
+        }
+        if (replay || (next.routes[key] ?? 3) != (old.routes[key] ?? 3)) {
+          outputRoutes[key] = next.routes[key] ?? 3;
+        }
+        if (lane < nextCount &&
+            changedPairs.any((lower) => input == lower || input == lower + 1)) {
+          sourceTracks.add(ch);
+        }
         final value = next.laneMix(key);
         if (replay || value != old.laneMix(key)) lanes[key] = value;
         final source = next.laneImage(key);
@@ -482,6 +562,10 @@ class LooperRepository {
       trims: trims,
       solos: solos,
       outputs: outputs,
+      laneInputs: inputRoutes,
+      laneOutputs: outputRoutes,
+      laneCounts: counts,
+      sourceTracks: sourceTracks,
     );
   }
 
@@ -1369,6 +1453,7 @@ class LooperRepository {
   }
 
   LooperState _project(EngineSnapshot s) => LooperState(
+    mixGeneration: _mixGeneration,
     tuner: TunerReading(
       hz: s.tunerHz,
       confidence: s.tunerConfidence,
@@ -1479,6 +1564,17 @@ class LooperRepository {
     masterChainEnabled: _masterChainEnabled,
     inputSetup: _inputSetup,
     outputSetup: _outputSetup,
+    laneInputs: Map.unmodifiable(_laneInput),
+    laneOutputs: Map.unmodifiable(_laneOutput),
+    laneCounts: Map.unmodifiable(_laneCount),
+    recordingInputLocks: Set.unmodifiable({
+      ..._pendingImages.keys,
+      for (var ch = 0; ch < s.tracks.length; ch++)
+        if (s.tracks[ch].pending ||
+            s.tracks[ch].state == TrackState.recording ||
+            s.tracks[ch].state == TrackState.overdubbing)
+          ch,
+    }),
     outputBusCount: s.outputBusCount,
     tailResetRev: s.tailResetRev,
     // Sized by the engine to the channels the device has.
@@ -1626,23 +1722,7 @@ class LooperRepository {
           feedback: feedbackOfDecay(percent),
         ),
       );
-      // Re-apply per-lane state: counts first (so added lanes are allocated),
-      // then routing / mix / effects per lane.
-      _laneCount.forEach(
-        (channel, count) =>
-            _engine.setLaneCount(channel: channel, count: count),
-      );
-      _laneInput.forEach(
-        (key, inputChannel) => _engine.setLaneInput(
-          channel: key.$1,
-          lane: key.$2,
-          inputChannel: inputChannel,
-        ),
-      );
-      _laneOutput.forEach(
-        (key, mask) =>
-            _engine.setLaneOutput(channel: key.$1, lane: key.$2, mask: mask),
-      );
+      // Replay routes, lane activation and live controls together.
       final mixResult = _requestMix(_mixIntent(), replay: true, startup: true);
       if (!mixResult.isOk) {
         stopEngine();
@@ -2564,6 +2644,8 @@ class LooperRepository {
     Duration clearPollInterval = const Duration(milliseconds: 8),
     int clearPollAttempts = 64,
   }) async {
+    final mix = MixSettingsSnapshot.fromRig(rig);
+    if (!mix.isValid) throw StateError('session mix cannot be restored');
     if (rig.loopBars < 0 || rig.loopBars > 0x7fffffff ~/ 15) {
       throw StateError('session grid cannot be restored');
     }
@@ -2622,6 +2704,9 @@ class LooperRepository {
       monitorLevels: const {},
       input: rig.inputSetup,
       output: rig.outputSetup.detached(),
+      inputs: mix.laneInputs,
+      routes: mix.laneOutputs,
+      counts: mix.laneCounts,
     );
     final revision = ++_sessionRevision;
     _cancelLengthSettings();
@@ -2693,8 +2778,8 @@ class LooperRepository {
     // defaults (lane_count 1; lane 0 records input 0 to the first output pair,
     // matching le_lane_reset) so the engine agrees with the purged caches; the
     // rig restore below re-grows and re-routes the tracks this session defines.
-    // Safe before the import — le_engine_import_track_lane fills any
-    // empty-track lane buffer directly and never reads lane_count.
+    // Imports grow settled EMPTY tracks; the final canonical mix publishes
+    // exact counts after import, without a queued reset racing that growth.
     if (_intendRunning) {
       for (var channel = 0; channel < trackCount; channel++) {
         _engine
@@ -2704,7 +2789,6 @@ class LooperRepository {
           ..setLanePan(pan: 0, channel: channel)
           ..setTrackSolo(channel: channel, solo: false)
           ..setLaneMute(muted: false, channel: channel)
-          ..setLaneCount(channel: channel, count: 1)
           // a_one_shot survives `clear` by design too (see above) — reset
           // every track to off here; the rig loop below re-arms it for any
           // track this session actually marks One Shot.
@@ -2868,23 +2952,8 @@ class LooperRepository {
       // not deactivate the top lane the imports just filled.
       final laneCount =
           track.lanes.map((l) => l.lane).reduce((a, b) => a > b ? a : b) + 1;
-      if (_intendRunning) {
-        _requireSessionSetting(
-          _engine.setLaneCount(channel: track.channel, count: laneCount),
-        );
-      }
-      _laneCount[track.channel] = laneCount;
+      restoredMix.counts.putIfAbsent(track.channel, () => laneCount);
       for (final lane in track.lanes) {
-        setLaneInput(
-          channel: track.channel,
-          lane: lane.lane,
-          inputChannel: lane.inputChannel,
-        );
-        setLaneOutput(
-          channel: track.channel,
-          lane: lane.lane,
-          mask: lane.outputMask,
-        );
         // The lane's recorded image (slice 3): the balance gain before the
         // level push composes with it, the image before the track pan
         // below lands on top of it.
@@ -3192,6 +3261,158 @@ class LooperRepository {
     return false;
   }
 
+  /// Immediate record/arm fence, including accepted requests not yet published.
+  bool recordingInputsLocked(int channel) {
+    if (_pendingImages.containsKey(channel)) return true;
+    final tracks = _engine.snapshot().tracks;
+    if (channel < 0 || channel >= 8) return true;
+    if (channel >= tracks.length) return false;
+    final track = tracks[channel];
+    return track.pending ||
+        track.state == TrackState.recording ||
+        track.state == TrackState.overdubbing;
+  }
+
+  bool _sourceAvailable(int input) {
+    final device = _engine.snapshot();
+    return input >= 0 &&
+        input < device.inputChannels &&
+        (device.excludedInputMask & (1 << input)) == 0;
+  }
+
+  MixSettingsSnapshot? _assignSources(
+    MixSettingsSnapshot snapshot,
+    int channel,
+    List<int> members,
+    bool selected,
+  ) {
+    if (recordingInputsLocked(channel)) return null;
+    if (selected && members.any((input) => !_sourceAvailable(input))) {
+      return null;
+    }
+    var count = snapshot.laneCounts[channel] ?? 1;
+    final inputs = Map<(int, int), int>.of(snapshot.laneInputs);
+    final levels = Map<(int, int), double>.of(snapshot.laneLevels);
+    for (final input in members) {
+      final assigned = [
+        for (var lane = 0; lane < count; lane++)
+          if ((inputs[(channel, lane)] ?? lane) == input) lane,
+      ];
+      if (!selected) {
+        for (final lane in assigned) {
+          inputs[(channel, lane)] = -1;
+        }
+        continue;
+      }
+      if (assigned.isNotEmpty) continue;
+      var free = -1;
+      for (var lane = 0; lane < count; lane++) {
+        if ((inputs[(channel, lane)] ?? lane) < 0) {
+          free = lane;
+          break;
+        }
+      }
+      if (free < 0) {
+        if (count >= kMaxLanes) return null;
+        free = count++;
+        levels[(channel, free)] = snapshot.laneLevels[(channel, 0)] ?? 1;
+      }
+      inputs[(channel, free)] = input;
+    }
+    return snapshot.copyWith(
+      laneInputs: inputs,
+      laneLevels: levels,
+      laneCounts: {...snapshot.laneCounts, channel: count},
+    );
+  }
+
+  /// Builds one admitted source selection without changing live or saved state.
+  /// Explicit stereo membership expands either selected member to both.
+  MixSettingsSnapshot? prepareRecordingInputs(
+    MixSettingsSnapshot snapshot, {
+    required int channel,
+    required int input,
+    required bool selected,
+  }) {
+    if (!snapshot.isValid ||
+        channel < 0 ||
+        channel >= 8 ||
+        input < 0 ||
+        input >= kMaxChannels) {
+      return null;
+    }
+    final lower = snapshot.inputSetup.pairOf(input);
+    return _assignSources(
+      snapshot,
+      channel,
+      lower == null ? [input] : [lower, lower + 1],
+      selected,
+    );
+  }
+
+  /// Links every affected track as one proposal, or refuses all of them.
+  /// Unlinking retains both source selections and the recorded lane identities.
+  MixSettingsSnapshot? prepareInputPair(
+    MixSettingsSnapshot snapshot, {
+    required int input,
+    required bool paired,
+  }) {
+    if (!snapshot.isValid ||
+        input < 0 ||
+        input + 1 >= kMaxChannels ||
+        input.isOdd ||
+        _inputPairLocked(input) ||
+        _inputPairLocked(input + 1)) {
+      return null;
+    }
+    if (paired && (!_sourceAvailable(input) || !_sourceAvailable(input + 1))) {
+      return null;
+    }
+    var next = snapshot.copyWith(
+      inputSetup: snapshot.inputSetup.withPair(input, paired: paired),
+    );
+    if (!paired) return next;
+    for (var channel = 0; channel < 8; channel++) {
+      final count = next.laneCounts[channel] ?? 1;
+      final affected = [
+        for (var lane = 0; lane < count; lane++)
+          next.laneInputs[(channel, lane)] ?? lane,
+      ].any((value) => value == input || value == input + 1);
+      if (!affected) continue;
+      final expanded = _assignSources(next, channel, [input, input + 1], true);
+      if (expanded == null) return null;
+      next = expanded;
+    }
+    return next;
+  }
+
+  /// Routes all current and future lane slots in one detached track edit.
+  /// Remembered absent destinations can be removed but never newly added.
+  MixSettingsSnapshot? prepareTrackOutput(
+    MixSettingsSnapshot snapshot, {
+    required int channel,
+    required int mask,
+  }) {
+    if (!snapshot.isValid ||
+        channel < 0 ||
+        channel >= 8 ||
+        mask < 0 ||
+        mask > 0xffffffff) {
+      return null;
+    }
+    final channels = _engine.snapshot().outputChannels;
+    final available = channels >= kMaxChannels
+        ? 0xffffffff
+        : (1 << channels) - 1;
+    final routes = Map<(int, int), int>.of(snapshot.laneOutputs);
+    for (var lane = 0; lane < kMaxLanes; lane++) {
+      final old = routes[(channel, lane)] ?? 3;
+      if ((mask & ~old & ~available) != 0) return null;
+      routes[(channel, lane)] = mask;
+    }
+    return snapshot.copyWith(laneOutputs: routes);
+  }
+
   bool _inputPairLocked(int input) {
     if (_pendingImages.values.any(
       (pending) => pending.inputs.contains(input),
@@ -3377,34 +3598,19 @@ class LooperRepository {
   /// buffers for any newly added lanes. Remembered and re-applied on every
   /// (re)start; takes effect immediately only while running.
   EngineResult setLaneCount({required int channel, required int count}) {
-    if (channel < 0 || channel >= 8) return EngineResult.invalid;
-    final bounded = count.clamp(1, kMaxLanes);
-    // Structural growth allocates on the control thread. Start only with an
-    // empty command queue, so the one following initialization batch can fit.
-    if (_pendingMix != null || (_intendRunning && !_engine.commandsSettled)) {
-      return _mixFailure(EngineResult.notReady);
+    if (channel < 0 || channel >= 8 || count < 1 || count > kMaxLanes) {
+      return EngineResult.invalid;
     }
-    final previous = laneCount(channel);
-    final next = _mixIntent();
-    next.images.removeWhere(
-      (key, _) => key.$1 == channel && key.$2 >= math.min(previous, bounded),
+    final levels = Map<(int, int), double>.of(_laneVolume);
+    for (var lane = laneCount(channel); lane < count; lane++) {
+      levels[(channel, lane)] = _trackLevel(channel);
+    }
+    return applyMixSettings(
+      mixSettingsSnapshot.copyWith(
+        laneCounts: {..._laneCount, channel: count},
+        laneLevels: levels,
+      ),
     );
-    next.balances.removeWhere(
-      (key, _) => key.$1 == channel && key.$2 >= math.min(previous, bounded),
-    );
-    for (var lane = previous; lane < bounded; lane++) {
-      next.levels[(channel, lane)] = _trackLevel(channel);
-    }
-    if (_intendRunning) {
-      final result = _engine.setLaneCount(channel: channel, count: bounded);
-      if (!result.isOk) return result;
-    }
-    if (bounded == 1) {
-      _laneCount.remove(channel);
-    } else {
-      _laneCount[channel] = bounded;
-    }
-    return _requestMix(next, replay: true);
   }
 
   /// Track [channel]'s remembered active lane count (`1` if unset).
@@ -3418,11 +3624,10 @@ class LooperRepository {
     required int lane,
     required int inputChannel,
   }) {
-    _laneInput[(channel, lane)] = inputChannel;
-    return _engine.setLaneInput(
-      channel: channel,
-      lane: lane,
-      inputChannel: inputChannel,
+    return applyMixSettings(
+      mixSettingsSnapshot.copyWith(
+        laneInputs: {..._laneInput, (channel, lane): inputChannel},
+      ),
     );
   }
 
@@ -3433,8 +3638,11 @@ class LooperRepository {
     required int lane,
     required int mask,
   }) {
-    _laneOutput[(channel, lane)] = mask;
-    return _engine.setLaneOutput(channel: channel, lane: lane, mask: mask);
+    return applyMixSettings(
+      mixSettingsSnapshot.copyWith(
+        laneOutputs: {..._laneOutput, (channel, lane): mask},
+      ),
+    );
   }
 
   /// Sets lane [lane] of track [channel]'s playback gain (`0..LE_MAX_GAIN`,
@@ -3557,14 +3765,14 @@ class LooperRepository {
 
   /// Pair membership cannot change while either source is armed/capturing.
   EngineResult setInputPair({required int input, required bool paired}) {
-    if (input < 0 ||
-        input + 1 >= kMaxChannels ||
-        input.isOdd ||
-        _inputPairLocked(input) ||
-        _inputPairLocked(input + 1)) {
-      return _mixFailure(EngineResult.invalid);
-    }
-    return setInputSetup(_inputSetup.withPair(input, paired: paired));
+    final next = prepareInputPair(
+      mixSettingsSnapshot,
+      input: input,
+      paired: paired,
+    );
+    return next == null
+        ? _mixFailure(EngineResult.invalid)
+        : applyMixSettings(next);
   }
 
   /// Changes both members' effective live mix atomically.
@@ -3581,14 +3789,14 @@ class LooperRepository {
   /// refusal. Call settleMixSettings before saving it.
   EngineResult setInputSetup(InputSetup setup) {
     if (!setup.isValid) return _mixFailure(EngineResult.invalid);
-    for (final lower in {...setup.pairs.keys, ..._inputSetup.pairs.keys}) {
-      if (setup.pairs.containsKey(lower) !=
-              _inputSetup.pairs.containsKey(lower) &&
-          (_inputPairLocked(lower) || _inputPairLocked(lower + 1))) {
-        return _mixFailure(EngineResult.invalid);
-      }
+    var next = mixSettingsSnapshot.copyWith(inputSetup: setup);
+    for (final lower in setup.pairs.keys) {
+      if (_inputSetup.pairs.containsKey(lower)) continue;
+      final expanded = prepareInputPair(next, input: lower, paired: true);
+      if (expanded == null) return _mixFailure(EngineResult.invalid);
+      next = expanded;
     }
-    return _requestMix(_mixIntent()..input = setup);
+    return applyMixSettings(next);
   }
 
   /// The track's level as the repository remembers it: lane 0's, else any
@@ -5676,7 +5884,13 @@ class _MixIntent {
     required Map<int, double> monitorLevels,
     required this.input,
     required this.output,
-  }) : pans = Map.of(pans),
+    required Map<(int, int), int> inputs,
+    required Map<(int, int), int> routes,
+    required Map<int, int> counts,
+  }) : inputs = Map.of(inputs),
+       routes = Map.of(routes),
+       counts = Map.of(counts),
+       pans = Map.of(pans),
        solos = Map.of(solos),
        levels = Map.of(levels),
        images = Map.of(images),
@@ -5688,6 +5902,9 @@ class _MixIntent {
   final Map<(int, int), double> images;
   final Map<(int, int), double> balances;
   final Map<int, double> monitorLevels;
+  final Map<(int, int), int> inputs;
+  final Map<(int, int), int> routes;
+  final Map<int, int> counts;
   InputSetup input;
   OutputSetup output;
   StereoMix laneMix((int, int) key) => (

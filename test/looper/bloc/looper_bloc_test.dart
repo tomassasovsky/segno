@@ -56,6 +56,20 @@ void main() {
     when(
       () => repository.validateMixSettings(any()),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.prepareInputPair(
+        any(),
+        input: any(named: 'input'),
+        paired: any(named: 'paired'),
+      ),
+    ).thenAnswer((call) {
+      final snapshot = call.positionalArguments.first as MixSettingsSnapshot;
+      final input = call.namedArguments[#input] as int;
+      final paired = call.namedArguments[#paired] as bool;
+      return snapshot.copyWith(
+        inputSetup: snapshot.inputSetup.withPair(input, paired: paired),
+      );
+    });
     when(() => repository.applyMixSettings(any())).thenAnswer((call) {
       currentMix = call.positionalArguments.first as MixSettingsSnapshot;
       return EngineResult.ok;
@@ -919,32 +933,6 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperLaneCountChanged forwards the new count to the repository',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperLaneCountChanged(1, 3)),
-    verify: (_) =>
-        verify(() => repository.setLaneCount(channel: 1, count: 3)).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperLaneInputChanged forwards channel, lane and input to the repository',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperLaneInputChanged(2, 1, 3)),
-    verify: (_) => verify(
-      () => repository.setLaneInput(channel: 2, lane: 1, inputChannel: 3),
-    ).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperLaneOutputChanged forwards channel, lane and mask to the repository',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperLaneOutputChanged(1, 2, 0x5)),
-    verify: (_) => verify(
-      () => repository.setLaneOutput(channel: 1, lane: 2, mask: 0x5),
-    ).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
     'LooperLaneVolumeChanged applies the live lane level',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperLaneVolumeChanged(3, 1, 0.5)),
@@ -1269,15 +1257,6 @@ void main() {
     setUp(() {
       settings = _MockSettingsRepository();
       when(
-        () => settings.saveLaneCount(any(), any()),
-      ).thenAnswer((_) async {});
-      when(
-        () => settings.saveLaneInput(any(), any(), any()),
-      ).thenAnswer((_) async {});
-      when(
-        () => settings.saveLaneOutput(any(), any(), any()),
-      ).thenAnswer((_) async {});
-      when(
         () => settings.saveLaneMute(any(), any(), muted: any(named: 'muted')),
       ).thenAnswer((_) async {});
       when(
@@ -1321,52 +1300,6 @@ void main() {
             enabled: false,
           ),
         ).called(1);
-      },
-    );
-
-    blocTest<LooperBloc, LooperState>(
-      'LooperLaneCountChanged persists the lane count',
-      build: () => LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        settings: settings,
-      ),
-      act: (bloc) => bloc.add(const LooperLaneCountChanged(3, 2)),
-      verify: (_) {
-        verify(() => repository.setLaneCount(channel: 3, count: 2)).called(1);
-        verify(() => settings.saveLaneCount(3, 2)).called(1);
-      },
-    );
-
-    blocTest<LooperBloc, LooperState>(
-      'LooperLaneInputChanged persists the input onto the lane',
-      build: () => LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        settings: settings,
-      ),
-      act: (bloc) => bloc.add(const LooperLaneInputChanged(3, 1, 2)),
-      verify: (_) {
-        verify(
-          () => repository.setLaneInput(channel: 3, lane: 1, inputChannel: 2),
-        ).called(1);
-        verify(() => settings.saveLaneInput(3, 1, 2)).called(1);
-      },
-    );
-
-    blocTest<LooperBloc, LooperState>(
-      'LooperLaneOutputChanged persists the output mask onto the lane',
-      build: () => LooperBloc(
-        mixSettings: testMixSettings(repository),
-        repository: repository,
-        settings: settings,
-      ),
-      act: (bloc) => bloc.add(const LooperLaneOutputChanged(0, 1, 0x6)),
-      verify: (_) {
-        verify(
-          () => repository.setLaneOutput(channel: 0, lane: 1, mask: 0x6),
-        ).called(1);
-        verify(() => settings.saveLaneOutput(0, 1, 0x6)).called(1);
       },
     );
 

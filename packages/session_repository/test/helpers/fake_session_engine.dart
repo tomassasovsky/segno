@@ -38,10 +38,11 @@ class _FakeTrack {
 /// and per-track PCM closely enough to exercise the session repository's
 /// save/load without the native engine.
 class FakeSessionEngine implements AudioEngine {
+  FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
+
   @override
   OutputFxSnapshot outputFxSnapshot({required int bus}) =>
       const OutputFxSnapshot();
-  FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
 
   final int channels;
   final int sampleRate;

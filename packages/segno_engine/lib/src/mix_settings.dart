@@ -34,12 +34,20 @@ class EngineMixSettings {
     Map<int, double> trims = const {},
     Map<int, bool> solos = const {},
     Map<int, OutputMix> outputs = const {},
+    Map<(int, int), int> laneInputs = const {},
+    Map<(int, int), int> laneOutputs = const {},
+    Map<int, int> laneCounts = const {},
+    Set<int> sourceTracks = const {},
   }) : lanes = Map.unmodifiable(lanes),
        images = Map.unmodifiable(images),
        monitors = Map.unmodifiable(monitors),
        trims = Map.unmodifiable(trims),
        solos = Map.unmodifiable(solos),
-       outputs = Map.unmodifiable(outputs);
+       outputs = Map.unmodifiable(outputs),
+       laneInputs = Map.unmodifiable(laneInputs),
+       laneOutputs = Map.unmodifiable(laneOutputs),
+       laneCounts = Map.unmodifiable(laneCounts),
+       sourceTracks = Set.unmodifiable(sourceTracks);
 
   /// Nonzero publication identity.
   final int revision;
@@ -62,10 +70,32 @@ class EngineMixSettings {
   /// Destination controls applied at the same publication boundary.
   final Map<int, OutputMix> outputs;
 
+  /// Future capture sources, including inactive lane slots.
+  final Map<(int, int), int> laneInputs;
+
+  /// Playback destinations, retaining unavailable physical identities.
+  final Map<(int, int), int> laneOutputs;
+
+  /// Active counts published with their prepared lane buffers.
+  final Map<int, int> laneCounts;
+
+  /// Tracks whose capture state must permit the entire source edit.
+  final Set<int> sourceTracks;
+
   /// Whether all addresses and values fit the native bounded payload.
   bool get isValid =>
       revision > 0 &&
       revision <= 0xffffffff &&
+      laneInputs.entries.every(
+        (e) => _validLane(e.key) && e.value >= -1 && e.value < 32,
+      ) &&
+      laneOutputs.entries.every(
+        (e) => _validLane(e.key) && e.value >= 0 && e.value <= 0xffffffff,
+      ) &&
+      laneCounts.entries.every(
+        (e) => e.key >= 0 && e.key < 8 && e.value >= 1 && e.value <= 8,
+      ) &&
+      sourceTracks.every((ch) => ch >= 0 && ch < 8) &&
       lanes.entries.every(
         (e) =>
             e.key.$1 >= 0 &&
@@ -107,6 +137,9 @@ class EngineMixSettings {
             e.value.balance <= 1,
       );
 }
+
+bool _validLane((int, int) key) =>
+    key.$1 >= 0 && key.$1 < 8 && key.$2 >= 0 && key.$2 < 8;
 
 bool _validMix(StereoMix mix) =>
     mix.gain.isFinite &&

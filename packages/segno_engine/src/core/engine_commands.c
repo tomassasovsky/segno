@@ -463,7 +463,7 @@ static int32_t le_post_clock_command(le_engine* engine, int32_t code,
 
 /* #595: trailing-lane reclaim, defined below but called from the event drain
  * (le_engine_drain_events) as well as the un-route itself. */
-static void le_trim_trailing_lanes(le_engine* engine, int32_t channel,
+static int le_trim_trailing_lanes(le_engine* engine, int32_t channel,
                                    int32_t unrouted_lane);
 
 /* Applies undo taps that were queued while a layer was in flight (control
@@ -774,12 +774,11 @@ void le_engine_drain_events(le_engine* engine) {
    * trim pass (unrouted_lane == -1, judging purely by published routing) frees
    * the whole trailing run a burst of un-routes left stranded — the immediate
    * trim in le_engine_set_lane_input could only reclaim the last of the burst.
-   * Cleared after the single attempt: a decline while capturing does not
-   * re-latch it, mirroring the immediate path's "the next un-route retries". */
+   * A refused structural admission remains pending for the next drain. */
   for (int32_t ch = 0; ch < engine->track_count; ++ch) {
     if (!engine->tracks[ch].pending_lane_trim) continue;
-    engine->tracks[ch].pending_lane_trim = 0;
-    le_trim_trailing_lanes(engine, ch, -1);
+    engine->tracks[ch].pending_lane_trim =
+        !le_trim_trailing_lanes(engine, ch, -1);
   }
   /* Loop-stage wet cache (FX v3 part 2): one scheduler pass per drain —
    * collect finished renders, publish [B5], chunked enqueue copies,
@@ -1109,10 +1108,22 @@ int le_mix_valid(const le_engine* e, const le_mix_settings* mix) {
          !le_mix_float(mix->output_balance[i], -1, 1))) return 0;
   }
   const uint32_t tracks = (1u << e->track_count) - 1u;
+  if ((mix->lane_count_mask | mix->source_track_mask) & ~tracks) return 0;
+  for (int ch = 0; ch < e->track_count; ++ch) {
+    if (!(mix->lane_count_mask & (1u << ch))) continue;
+    const int count = mix->lane_count[ch];
+    if (count < 1 || count > LE_MAX_LANES) return 0;
+    for (int l = count; l < le_lanes_active(&e->tracks[ch]); ++l)
+      if (atomic_load_explicit(&e->tracks[ch].lanes[l].a_recoverable,
+                               memory_order_acquire)) return 0;
+  }
   if ((mix->solo_mask & ~tracks) || (mix->solo_values & ~mix->solo_mask)) return 0;
   for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES; ++i) {
     const uint64_t bit = UINT64_C(1) << i;
-    if (((mix->lane_mask | mix->image_mask) & bit) &&
+    if ((mix->routing_input_mask & bit) &&
+        (mix->lane_input[i] < -1 || mix->lane_input[i] >= LE_MAX_CHANNELS)) return 0;
+    if (((mix->lane_mask | mix->image_mask | mix->routing_input_mask |
+          mix->routing_output_mask) & bit) &&
         i / LE_MAX_LANES >= e->track_count) return 0;
     if ((mix->lane_mask & bit) &&
         (!le_mix_float(mix->lane_gain[i], 0, LE_MAX_GAIN) ||
@@ -1143,9 +1154,41 @@ int le_image_valid(const le_engine* e, int32_t channel,
   return 1;
 }
 
+static int le_prepare_routing(le_engine* e, const le_mix_settings* mix) {
+  if (mix->lane_count_mask) {
+    /* The prior callback must finish every buffer access before preparation
+     * can touch an inactive lane again. Reuse the existing publication ack;
+     * unrelated startup commands do not block this allocation. */
+    if (e->lane_growth_command > atomic_load_explicit(
+          &e->a_commands_published, memory_order_acquire)) return LE_ERR_INVALID;
+    for (int ch = 0; ch < e->track_count; ++ch) {
+      if (!(mix->lane_count_mask & (1u << ch))) continue;
+      le_track* t = &e->tracks[ch];
+      const int st = le_effective_state(t);
+      if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+          load_i32(&t->a_pending) || load_i32(&t->a_layer_in_flight)) return LE_ERR_INVALID;
+      const int old_count = le_lanes_active(t);
+      if (mix->lane_count[ch] > old_count)
+        le_cache_evict_lanes(e, ch, old_count, mix->lane_count[ch]);
+      for (int l = old_count; l < mix->lane_count[ch]; ++l) {
+        le_lane* ln = &t->lanes[l];
+        const int live = load_i32(&ln->a_live);
+        if (!le_lane_ensure_slot(ln, live, e->max_loop_frames)) return LE_ERR_INVALID;
+        if (!load_i32(&ln->a_recoverable))
+          memset(ln->pool[live], 0, (size_t)e->max_loop_frames * sizeof(float));
+      }
+    }
+  }
+  return LE_OK;
+}
+
 int32_t le_engine_set_mix(le_engine* e, const le_mix_settings* mix) {
   if (!le_mix_valid(e, mix)) return LE_ERR_INVALID;
-  return le_push_cmd(e, (le_command){.code = LE_CMD_SET_MIX, .mix = *mix});
+  const int prepared = le_prepare_routing(e, mix);
+  if (prepared != LE_OK) return prepared;
+  const int32_t rc = le_push_cmd(e, (le_command){.code = LE_CMD_SET_MIX, .mix = *mix});
+  if (rc == LE_OK && mix->lane_count_mask) e->lane_growth_command = e->commands_posted;
+  return rc;
 }
 
 static void le_prepare_clear(le_track* t, int freeze) {
@@ -1281,6 +1324,24 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   const int quantized_arm =
       (le_effective_quantize(engine, channel) || sync_force_arm) &&
       capture_has_master && le_transport_active(engine);
+  /* Preparing a new capture while a structural command is unpublished
+   * would allocate shadows for the old lane count. The callback could then
+   * activate more lanes before RECORD, making their first Undo lose audio.
+   * Existing captures can still finish/punch out. Published owned arms and
+   * the global count-in can still cancel, without preparing any new image,
+   * buffer, shadow or history mutation. */
+  if (engine->lane_growth_command > atomic_load_explicit(
+          &engine->a_commands_published, memory_order_acquire) &&
+      st != LE_TRACK_RECORDING && st != LE_TRACK_OVERDUBBING) {
+    if (load_i32(&engine->a_counting_in))
+      return le_push(engine, LE_CMD_RECORD, channel, 0.0f);
+    const int cancelling_arm = engine->armed[channel] &&
+        load_i32(&t->a_pending) &&
+        ((sound_arm && engine->armed_trigger[channel] == 1) ||
+         (quantized_arm && engine->armed_trigger[channel] == 0));
+    if (cancelling_arm) return le_cancel_arm(engine, channel);
+    return LE_ERR_INVALID;
+  }
   int fresh_shadow = -1;
   int clear_first = 0;
   if (image && st == LE_TRACK_EMPTY) {
@@ -3201,46 +3262,23 @@ int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output,
 int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
                                  int32_t count) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire))
     return LE_ERR_NOT_RUNNING;
-  }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (count < 1) count = 1;
   if (count > LE_MAX_LANES) count = LE_MAX_LANES;
-  le_track* t = &engine->tracks[channel];
-  /* Growing lanes mid-capture would leave the new lanes without buffers in
-   * the armed shadow slot (a later undo would swap their a_live to NULL —
-   * silencing them) and races the audio thread's shared write head. Reject
-   * while the track captures or a layer is still in flight; the caller
-   * retries trivially once the take settles. */
-  const int32_t st = le_effective_state(t);
-  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
-      atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
-    return LE_ERR_INVALID;
-  }
-  const int32_t old = le_lanes_active(t);
-  /* Lazily allocate the live buffer of each newly activated lane on this
-   * (control) thread, before the audio thread reads it, and reset the lane to a
-   * clean state so no stale content from a prior grow/shrink plays back. */
-  if (count > old) {
-    const size_t cap = (size_t)engine->max_loop_frames;
-    for (int32_t l = old; l < count; ++l) {
-      le_lane* ln = &t->lanes[l];
-      le_lane_reset(ln, l); /* defaults to recording hardware input channel l */
-      if (!le_lane_ensure_slot(ln, 0, engine->max_loop_frames)) {
-        return LE_ERR_INVALID;
-      }
-      memset(ln->pool[0], 0, cap * sizeof(float));
-    }
-  }
-  t->lane_count = count;
-  /* #595 (D3): evict the freed lanes' wet-cache entries NOW, not on the next
-   * scheduler tick — a shrink-then-regrow otherwise meets le_lane_reset's
-   * engine defaults with a stale cached render still published for the lane
-   * index (#594's cache-desync hazard, engine side). The tick's deactivated-
-   * lane reclaim stays as the backstop for a render that lands after this. */
-  if (count < old) le_cache_evict_lanes(engine, channel, count, old);
-  return LE_OK;
+  le_mix_settings mix = {.revision = 1, .lane_count_mask = 1u << channel};
+  mix.lane_count[channel] = count;
+  if (!le_mix_valid(engine, &mix)) return LE_ERR_INVALID;
+  const int prepared = le_prepare_routing(engine, &mix);
+  if (prepared != LE_OK) return prepared;
+  /* Internal reclaim/import callers get queue acceptance, not publication.
+   * The callback shares the same admission and activation path as SET_MIX;
+   * its final block acknowledgement fences the next allocation. */
+  const int rc = le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_COUNT,
+    .lanei = {channel, 0, count}});
+  if (rc == LE_OK) engine->lane_growth_command = engine->commands_posted;
+  return rc;
 }
 
 /* #595: automatic trailing-lane reclaim, run when an un-route lands. Shrinks
@@ -3260,13 +3298,13 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
  * lane indices are >= 0). Declines silently while the track captures or a layer
  * is in flight (the same guard le_engine_set_lane_count enforces) — the next
  * un-route simply retries. */
-static void le_trim_trailing_lanes(le_engine* engine, int32_t channel,
+static int le_trim_trailing_lanes(le_engine* engine, int32_t channel,
                                    int32_t unrouted_lane) {
   le_track* t = &engine->tracks[channel];
   const int32_t st = le_effective_state(t);
   if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
       atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
-    return;
+    return 0;
   }
   const int32_t old = le_lanes_active(t);
   int32_t keep = old;
@@ -3281,7 +3319,8 @@ static void le_trim_trailing_lanes(le_engine* engine, int32_t channel,
     if (in >= 0 || load_i32(&ln->a_recoverable)) break;
     keep--;
   }
-  if (keep < old) (void)le_engine_set_lane_count(engine, channel, keep);
+  if (keep < old) return le_engine_set_lane_count(engine, channel, keep) == LE_OK;
+  return 1;
 }
 
 /* The four lane setters address the lane by (channel, lane), carried as named

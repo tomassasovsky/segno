@@ -109,6 +109,7 @@ void main() {
       sampleRate: 48000,
       bufferFrames: 128,
       isConnected: true,
+      devicePresent: true,
       inputChannels: 4,
       outputChannels: 4,
       latencyState: LatencyState.done,

@@ -15,6 +15,7 @@ class LooperState extends Equatable {
     this.transport = const TransportState(),
     this.tracks = const [],
     this.status = const EngineStatus(),
+    this.mixGeneration = 0,
     this.outputEnabledMask = 0xFFFFFFFF,
     this.masterEffects = const [],
     this.masterChainEnabled = true,
@@ -26,6 +27,10 @@ class LooperState extends Equatable {
     this.inputPeaks = const [],
     this.monitorPeaks = const [],
     this.outputPeaks = const [],
+    this.laneInputs = const {},
+    this.laneOutputs = const {},
+    this.laneCounts = const {},
+    this.recordingInputLocks = const {},
   });
 
   /// Master loop transport.
@@ -36,6 +41,10 @@ class LooperState extends Equatable {
 
   /// Device + engine health.
   final EngineStatus status;
+
+  /// Repository lifetime identity, including same-device reopen and session
+  /// replacement. Changes even when the native snapshot otherwise matches.
+  final int mixGeneration;
 
   /// Structural output gate: bit c set => hardware output c is enabled (a
   /// routing target). A cleared bit removes that output from the mix while its
@@ -82,6 +91,18 @@ class LooperState extends Equatable {
   /// per channel the device has. Live.
   final List<double> outputPeaks;
 
+  /// Confirmed future source choices, including inactive slots.
+  final Map<(int, int), int> laneInputs;
+
+  /// Confirmed output routes, including missing destinations and future slots.
+  final Map<(int, int), int> laneOutputs;
+
+  /// Confirmed active lane counts for tracks with or without audio.
+  final Map<int, int> laneCounts;
+
+  /// Tracks fenced by accepted record requests or active capture.
+  final Set<int> recordingInputLocks;
+
   /// Whether hardware output [output] is currently enabled (a routing target).
   bool isOutputEnabled(int output) =>
       output < 0 || (outputEnabledMask & (1 << output)) != 0;
@@ -97,6 +118,7 @@ class LooperState extends Equatable {
     transport,
     tracks,
     status,
+    mixGeneration,
     outputEnabledMask,
     masterEffects,
     masterChainEnabled,
@@ -108,5 +130,9 @@ class LooperState extends Equatable {
     inputPeaks,
     monitorPeaks,
     outputPeaks,
+    laneInputs,
+    laneOutputs,
+    laneCounts,
+    recordingInputLocks,
   ];
 }

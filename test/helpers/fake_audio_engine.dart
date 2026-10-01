@@ -195,6 +195,9 @@ class FakeAudioEngine implements AudioEngine {
   void publishMix() {
     final settings = lastMix;
     if (settings == null) return;
+    laneInput.addAll(settings.laneInputs);
+    laneOutput.addAll(settings.laneOutputs);
+    laneCount.addAll(settings.laneCounts);
     liveMix.addAll(settings.lanes);
     sourceImages.addAll(settings.images);
     settings.lanes.keys

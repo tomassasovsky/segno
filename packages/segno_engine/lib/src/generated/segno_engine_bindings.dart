@@ -3797,8 +3797,8 @@ class SegnoEngineBindings {
   late final _le_engine_cut_sound = _le_engine_cut_soundPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
-  /// Whether the performance capture follows the output bus's level, balance,
-  /// Mono and mute (1) or is tapped after the bus's chain and before them (0,
+  /// Whether capture applies the selected output bus's level and mute (1),
+  /// or taps after its chain before those controls (0,
   /// the default: adjusting the PA during a performance does not alter the
   /// saved performance; accepted design, "Follow output volume"). A direct
   /// store, frozen into the take at le_perf_arm, so a running take keeps the
@@ -5357,6 +5357,9 @@ enum le_command_code {
   /// input sounds again at once. Perf-logged.
   LE_CMD_CUT_SOUND(73),
 
+  /// internal structural activation; callback-owned
+  LE_CMD_SET_LANE_COUNT(74),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100),
@@ -5451,6 +5454,7 @@ enum le_command_code {
     71 => LE_CMD_SET_OUTPUT_FX,
     72 => LE_CMD_SET_OUTPUT_FX_COUNT,
     73 => LE_CMD_CUT_SOUND,
+    74 => LE_CMD_SET_LANE_COUNT,
     100 => LE_EVT_LAYER_RETIRED,
     101 => LE_EVT_TAKE_CANCELLED,
     102 => LE_EVT_CLEAR_FROZEN,
@@ -5630,6 +5634,29 @@ final class le_mix_settings extends ffi.Struct {
 
   @ffi.Array.multi([16])
   external ffi.Array<ffi.Float> output_balance;
+
+  /// Future capture assignments and playback routes share this publication.
+  /// Source guards include pair edits even when no assignment changes.
+  @ffi.Uint64()
+  external int routing_input_mask;
+
+  @ffi.Uint64()
+  external int routing_output_mask;
+
+  @ffi.Uint32()
+  external int lane_count_mask;
+
+  @ffi.Uint32()
+  external int source_track_mask;
+
+  @ffi.Array.multi([64])
+  external ffi.Array<ffi.Int32> lane_input;
+
+  @ffi.Array.multi([64])
+  external ffi.Array<ffi.Uint32> lane_output;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> lane_count;
 }
 
 /// Source context frozen at the accepted record/arm gesture. The image is

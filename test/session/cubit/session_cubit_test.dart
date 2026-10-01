@@ -86,6 +86,7 @@ void main() {
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
+    when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
     when(looper.stopEngine).thenReturn(EngineResult.ok);
     when(() => looper.defaultRecordTiming).thenReturn(RecordTiming.immediately);
     when(() => looper.defaultOverdubDecay).thenReturn(0);

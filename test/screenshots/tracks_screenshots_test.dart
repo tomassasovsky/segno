@@ -121,6 +121,7 @@ void main() {
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.state).thenReturn(const LooperState());
+    when(() => repository.mixGeneration).thenReturn(0);
     // The tray's Signal face reads these through `MonitorCubit`. A bare mock
     // returns null for each and the cubit dies in its constructor.
     when(() => repository.monitorChanges).thenAnswer(
